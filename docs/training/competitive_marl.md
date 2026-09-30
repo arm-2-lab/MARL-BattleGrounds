@@ -1,5 +1,9 @@
 # Competitive MARL Workflows
 
+Public experiment scripts use [Hydra settings and overrides](hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 ## Write Your Own CTDE Learner
 
 [`examples/own_learner.py`](../../examples/own_learner.py) is a complete small
@@ -15,14 +19,12 @@ weights and needs no privileged state to act.
 Run a small CPU check from an installed checkout:
 
 ```bash
-JAX_PLATFORMS=cpu python examples/own_learner.py \
-  --output-dir artifacts/own_ctde_check \
-  --num-envs 2 --updates 2 --rollout-length 2 --max-steps 3 \
-  --custom-reward --fade-rounds 4
+JAX_PLATFORMS=cpu python examples/own_learner.py output_dir=artifacts/own_ctde_check \
+  num_envs=2 updates=2 rollout_length=2 max_steps=3 custom_reward=true fade_rounds=4
 ```
 
 This collects eight environment transitions and makes two actual updates.
-It checks the workflow, not learned skill. `--max-steps` sets the training
+It checks the workflow, not learned skill. `max_steps` sets the training
 game's native horizon. Validation and final evaluation use their normal
 300-step games. Their separate batch uses at most 32 environments; this does
 not change the training budget. Every output folder must be new; matching names
@@ -33,9 +35,8 @@ example, 1,024 updates × 32 rounds × 128 environments means 4,194,304
 transitions. This is a budget example, not a measured training recommendation:
 
 ```bash
-JAX_PLATFORMS=cuda python examples/own_learner.py \
-  --output-dir artifacts/own_ctde_run \
-  --num-envs 128 --updates 1024 --rollout-length 32
+JAX_PLATFORMS=cuda python examples/own_learner.py output_dir=artifacts/own_ctde_run \
+  num_envs=128 updates=1024 rollout_length=32
 ```
 
 ### Follow One Learning Step
@@ -68,7 +69,7 @@ two declared save points. This execution structure is not a GPU speed claim.
 
 ### Add A Fading Custom Reward
 
-Without `--custom-reward`, the environment leaves `info.training_facts` as
+With `custom_reward=false`, the environment leaves `info.training_facts` as
 `None`. Enabling the example's reward requests selected existing Core facts and
 adds a small training adjustment for death contributions and new deaths. It
 never changes native scores or evaluation rewards.
@@ -238,7 +239,7 @@ Run the complete small CPU example in a new folder:
 
 ```bash
 JAX_PLATFORMS=cpu python examples/competitive_training.py \
-  --output-dir artifacts/competitive_demo
+  output_dir=artifacts/competitive_demo
 ```
 
 It trains two FF-IPPO candidates for eight environment transitions each. It
@@ -251,9 +252,9 @@ selected actor and evaluates it separately on map 47.
 These budgets test the workflow. They do not test learned competence. The
 population and final demonstration games use the explicit two-step horizon;
 confirmation uses normal 300-step games on map 42 with one common paired seed.
-Set `--evaluation-max-steps 300` for normal-length population games. Choose and
+Set `evaluation_max_steps=300` for normal-length population games. Choose and
 record an adequate training budget, seeds and evaluation conditions for your own
-research. `--num-envs`, `--updates` and `--rollout-length` change that budget through
+research. `num_envs`, `updates` and `rollout_length` change that budget through
 normal settings. Confirmation uses a separate batch capped at 32, leaving the
 training budget unchanged. Use an allowed batch such as 32 for GPU execution; the CPU
 example is not GPU cost evidence.
@@ -362,12 +363,11 @@ interface.
 
 ```bash
 JAX_PLATFORMS=cpu python examples/partner_training.py \
-  --output-dir artifacts/partner_demo \
-  --method ff_ippo --parameter-sharing none
+  output_dir=artifacts/partner_demo method=ff_ippo parameter_sharing=none
 ```
 
-`--method` accepts `mappo`, `ippo`, `ff_mappo`, `ff_ippo`, `qmix` and `pqn_vdn`.
-`--parameter-sharing all` uses one actor network, `class` uses one per class,
+`method` accepts `mappo`, `ippo`, `ff_mappo`, `ff_ippo`, `qmix` and `pqn_vdn`.
+`parameter_sharing=all` uses one actor network, `class` uses one per class,
 and `none` uses one per physical slot. The two Mages share weights in `class`
 mode and have separate weights in `none` mode. Each actor keeps its own
 recurrent memory when the method is recurrent. A class change at a future game
@@ -396,7 +396,7 @@ actor from `result.selected_actor`, then calls
 partner. The export contains the learner alone; reassembling the team preserves
 the intended ownership. Final evaluation keeps the declared repeated-class
 rosters and uses held-out map 47, a separate seed, both spawn ends and an explicit
-two-step demonstration horizon. Use `--evaluation-max-steps 300` for normal-length
+two-step demonstration horizon. Use `evaluation_max_steps=300` for normal-length
 final games. That setting does not shorten validation.
 
 Python callers can pass their own named partner mapping and physical

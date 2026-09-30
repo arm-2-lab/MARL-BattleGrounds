@@ -227,7 +227,17 @@ def test_earlier_checkpoint_step_breaks_point_ties_before_seed_order(
     }
     for row in items[roots[0]]["records"]:
         if row["checkpoint_id"] == "b":
-            row["env_steps"] = first_steps
+            row.update(
+                panel_task_description(
+                    checkpoint_id=row["checkpoint_id"],
+                    actor_digest=row["actor_digest"],
+                    env_steps=first_steps,
+                    panel=items[roots[0]]["panel"],
+                    purpose=row["purpose"],
+                    seed_pairs=row["seed_pairs"],
+                    red_zone_depth=row["red_zone_depth"],
+                )
+            )
     _reader(monkeypatch, items)
     result = selection.reselect_checkpoint(
         roots,
@@ -502,6 +512,11 @@ def test_known_seed_order_stays_checked_with_unfinished_runs(
 def _child_evidence(root: Path, *, confirmation_root: int = 19) -> dict[str, Any]:
     item = _evidence(root)
     item["validation_declaration"] = {
+        "schema_version": 1,
+        "panel_digest": item["panel"].digest,
+        "panel_schema_version": 2,
+        "red_zone_depth": 5.0,
+        "routine_seed_pairs": 2,
         "roots": {
             "routine": 11,
             "initialization": 12,
@@ -577,6 +592,11 @@ def test_across_run_confirmation_is_fresh_against_every_compared_run(
     items = {roots[0]: _evidence(roots[0], 1), roots[1]: _evidence(roots[1], 2)}
     items[roots[1]]["used_roots"] = [13]
     items[roots[1]]["validation_declaration"] = {
+        "schema_version": 1,
+        "panel_digest": items[roots[1]]["panel"].digest,
+        "panel_schema_version": 2,
+        "red_zone_depth": 5.0,
+        "routine_seed_pairs": 2,
         "roots": {"routine": 11, "initialization": 12, "confirmation": 14},
         "confirmation_seed_pairs": 2,
     }

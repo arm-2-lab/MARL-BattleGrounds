@@ -765,11 +765,11 @@ test("authorized roster exposes one native key-only action with isolated fact ow
 
     const liveAgent = await normalizedPresentation("live_no_shared_obs_agent_pov");
     panels.renderAuthorizedInspector(liveAgent);
-    assert.equal(pendingHeading.textContent, "Pending Joint Action");
+    assert.equal(pendingHeading.textContent, "Pending Manual Actions");
     assert.equal(pendingScope.hidden, false);
     assert.equal(
       pendingScope.textContent,
-      "This panel shows the complete researcher-space joint action staged for the next submission.",
+      "These Manual drafts join the policies' actions on Submit. Policies choose their own actions when the turn starts.",
     );
     assert.equal(
       pendingCount.textContent,
@@ -1226,9 +1226,9 @@ test("panel source has one branded render path and no raw fallbacks", async () =
 
 test("authorized inspector copy separates live draft and replay upcoming epochs", async () => {
   const source = await readFile(new URL("../src/panels.js", import.meta.url), "utf8");
-  assert.match(source, /complete researcher-space joint action staged/u);
+  assert.match(source, /Manual drafts join the policies/u);
   assert.match(source, /authorized recorded actions out of the current frame/u);
-  assert.match(source, /Pending Joint Action/u);
+  assert.match(source, /Pending Manual Actions/u);
   assert.match(source, /Upcoming Transition/u);
   assert.doesNotMatch(source, /Current Legality|Upcoming Target/u);
   assert.doesNotMatch(

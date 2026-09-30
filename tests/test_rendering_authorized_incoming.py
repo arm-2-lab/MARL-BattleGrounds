@@ -19,13 +19,6 @@ from typing import Literal, cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
-from scripts.dev.visual_debugger.control import (
-    create_session,
-    submit_next_script_frame,
-)
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    build_debugger_evaluation_launch_specification_v1,
-)
 from scripts.dev.visual_debugger.no_shared_visual import (
     build_live_no_shared_obs_visual_adjacent_slice_v1,
     build_replay_no_shared_obs_visual_content_v1,
@@ -38,6 +31,13 @@ from tests.evaluation_fixtures import (
 )
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    submit_next_script_frame,
+)
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_launch_specification_v1,
+)
 from marl_battlegrounds.core.types import Action
 from marl_battlegrounds.evaluation import pov as pov_module
 from marl_battlegrounds.evaluation.actor_projection import (

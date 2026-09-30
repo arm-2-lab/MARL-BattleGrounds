@@ -18,7 +18,7 @@ from marl_battlegrounds.viewer.static import (
 )
 
 if TYPE_CHECKING:
-    from scripts.dev.visual_debugger.evaluation_bridge import (
+    from marl_battlegrounds._battle_client.evaluation_bridge import (
         DebuggerEvaluationLaunchSpecificationV1,
     )
     from scripts.dev.visual_debugger.scenarios import DebuggerScenario
@@ -65,11 +65,11 @@ def run_static_renderer(
     Creates a session and opens a Matplotlib window. The numerical session constructor
     owns scenario and seed validation. No transition or replay file is written.
     """
+    from marl_battlegrounds._battle_client.control import create_session
     from marl_battlegrounds.rendering.evaluation_adapter import (
         EvaluationScenePresentationStateV1,
         build_researcher_analyzer_projection_v2,
     )
-    from scripts.dev.visual_debugger.control import create_session
 
     pyplot = _load_pyplot()
     session = create_session(

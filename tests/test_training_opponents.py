@@ -1254,3 +1254,48 @@ def test_all_external_games_skip_native_actor_work(
     _tree_equal(output.next_memory[0], memory[0])
     expected = pinned.apply(pinned.variables, memory[1], inputs, keys)
     _tree_equal(output.actions, expected.actions)
+
+
+def test_eleven_fixed_members_enumerate_and_share_history_fallback() -> None:
+    from marl_battlegrounds.training.opponents import (
+        configure_opponent_selection,
+        select_opponents,
+    )
+
+    names = tuple(f"member-{index}" for index in range(11))
+    history = init_opponent_history(
+        _variables(),
+        num_envs=14,
+        keep_past=1,
+        capture_interval_rounds=1,
+    )
+    shares = {"self": 0.6, "past": 0.2, **dict.fromkeys(names, 0.2 / 11)}
+    weighted = configure_opponent_selection(names, history, shares)
+    np.testing.assert_allclose(weighted.shares, [0.6, 0.2, *([0.2 / 11] * 11)])
+    sequence = configure_opponent_selection(names, history, ["self", "past", *names])
+    keys = jax.random.split(jax.random.key(12), 14)
+    choose = _jit(select_opponents)
+    chosen, sequence = choose(history, sequence, jnp.ones(14, jnp.bool_), keys)
+    np.testing.assert_array_equal(chosen.lane_snapshot, [-1, -1, *([-2] * 11), -1])
+    np.testing.assert_array_equal(sequence.choices[2:13], np.arange(11))
+    # Every fixed member is also reachable through the ordinary weighted route.
+    for index, name in enumerate(names):
+        selected = configure_opponent_selection(names, chosen, {name: 1})
+        actual, selected = choose(chosen, selected, jnp.ones(14, jnp.bool_), keys)
+        np.testing.assert_array_equal(actual.lane_snapshot, -2)
+        np.testing.assert_array_equal(selected.choices, index)
+    saved = chosen, sequence
+    unchanged = choose(chosen, sequence, jnp.zeros(14, jnp.bool_), keys)
+    _tree_equal(saved, unchanged)
+    schedule = make_training_schedule(total_env_steps=140, num_envs=14).arrays
+    captured, event = refresh_opponents(
+        history,
+        _variables(1),
+        completed_rounds=jnp.int32(1),
+        update_index=jnp.int32(1),
+        schedule=schedule,
+    )
+    assert bool(event.created)
+    past = configure_opponent_selection(names, captured, {"past": 1})
+    selected, _ = choose(captured, past, jnp.ones(14, jnp.bool_), keys)
+    np.testing.assert_array_equal(selected.captured_ids[selected.lane_snapshot], 0)

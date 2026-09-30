@@ -203,7 +203,9 @@ def _actor(root: Path, identifier: str, run: Record, snapshot: _Snapshot) -> Rec
     root is the original training run and identifier is its learner checkpoint ID. run
     carries the saved run config and provenance; snapshot tracks every read file.
     Return the checkpoint owner's actor identity with actor_path, artifact_id
-    (the export ID) and checkpoint_id (the learner boundary). Conflicting files,
+    (the export ID), checkpoint_id (the learner boundary) and original
+    confirmation_partners reference strings from that checked boundary. No
+    reference is loaded; missing live-only references stay absent. Conflicting files,
     settings or provenance raise ValueError.
 
     A pruned learner is valid ancestry; its missing numerical files are not read.
@@ -264,6 +266,14 @@ def _actor(root: Path, identifier: str, run: Record, snapshot: _Snapshot) -> Rec
         "actor_path": str(actor_path),
         "artifact_id": identity["checkpoint_id"],
         "checkpoint_id": identifier,
+        "confirmation_partners": {
+            **{
+                member["name"]: member["reference"]
+                for member in parent.get("collection", {}).get("partner_members", [])
+                if member.get("reference") is not None
+            },
+            **metadata.get("validation_partner_references", {}),
+        },
     }
 
 
@@ -530,6 +540,7 @@ def _record(
     snapshot: _Snapshot,
     confirmation_root: int | None,
     confirmation_seed_pairs: int | None = None,
+    point_cells: dict[str, Record] | None = None,
 ) -> Record:
     """Verify one original or supplied task and recompute its saved score summary.
 
@@ -545,7 +556,9 @@ def _record(
     counts. Return the original fields plus result_source and, for verified
     pre-Red-Zone games, their kill
     difference. Reject tasks, games, sampling facts or summaries that disagree.
-    No saved file changes and no model or game executes.
+    No saved file changes and no model or game executes. Optional point_cells
+    collects separately checked native means keyed by task ID. Missing legacy
+    point fields do not alter the returned historical record or selection rule.
     """
     saved = _object(snapshot.read(path), "Validation summary")
     if original is not None and saved != {
@@ -618,8 +631,41 @@ def _record(
     ):
         raise ValueError("Saved validation task differs from its declared identity")
     expected_summary, rows = _panel_evidence(path, saved, task, actor, panel, snapshot)
-    if expected_summary != saved:
+    # Older summaries may omit redundant native-point means. Compare every
+    # present field; missing points alone can be recovered from checked games.
+    comparable = json.loads(json.dumps(expected_summary))
+    for actual, expected_cell in zip(
+        saved.get("cells", []), comparable.get("cells", []), strict=False
+    ):
+        for field in ("mean_team_a_score", "mean_team_b_score"):
+            if field not in actual:
+                expected_cell.pop(field, None)
+    if comparable != saved:
         raise ValueError("Validation summary differs from its saved games")
+    if point_cells is not None:
+        facts = {
+            "checkpoint_id": identifier,
+            "actor_digest": actor["actor_digest"],
+            "result_source": str(path),
+            "summary": expected_summary,
+            "cells": [
+                {
+                    key: cell[key]
+                    for key in (
+                        "map_id",
+                        "opponent",
+                        "mean_team_a_score",
+                        "mean_team_b_score",
+                    )
+                }
+                for cell in expected_summary["cells"]
+            ],
+        }
+        previous = point_cells.setdefault(task["task_id"], facts)
+        if previous != facts:
+            raise ValueError(
+                "One validation task has conflicting verified point sources"
+            )
     result = {**(saved if original is None else original), "result_source": str(path)}
     if "mean_kill_difference" not in result and "red_zone_depth" not in task:
         # Only verified pre-rule task schemas make points equal to kills.
@@ -803,6 +849,7 @@ def read_inherited_candidates(
     declaration: Mapping[str, Any],
     _active: frozenset[str] = frozenset(),
     _verified: dict[str, tuple[Record, frozenset[str]]] | None = None,
+    point_cells: dict[str, Record] | None = None,
 ) -> Record:
     """Verify frozen parent sources and return compatible original candidates.
 
@@ -816,6 +863,8 @@ def read_inherited_candidates(
     _active is the internal set of parent paths being checked; callers leave it
     empty. It rejects cycles while following earlier child confirmations.
     _verified holds completed recursive results within this one top-level read.
+    point_cells optionally collects native point means from this same verification
+    pass, keyed by original task ID; it does not change returned old records.
     Each cache hit retains the original source hashes, and the enclosing final
     snapshot still hashes every consumed file. No result is cached across calls.
     Missing or changed pinned files, ambiguous IDs and an unpermitted comparison
@@ -883,6 +932,7 @@ def read_inherited_candidates(
                 declaration=run["validation_declaration"],
                 _active=_active | {reference["parent_checkpoint"]},
                 _verified=verified,
+                point_cells=point_cells,
             )
             previous_key = validation._digest([previous, run["validation_declaration"]])
             parent_paths.update(verified[previous_key][1])
@@ -919,42 +969,37 @@ def read_inherited_candidates(
             if path != expected:
                 raise ValueError("Inherited task path differs from its original owner")
             original = _object(local.read(path), "Inherited summary")
-            row = _record(path, original, run, panel, actors, root, local, None)
+            row = _record(
+                path,
+                original,
+                run,
+                panel,
+                actors,
+                root,
+                local,
+                None,
+                point_cells=point_cells,
+            )
             if row["checkpoint_id"] != identifier or row["task_id"] != task.get(
                 "task_id"
             ):
                 raise ValueError("Inherited task identity differs")
             if row["purpose"] in ("routine", "initialization"):
                 used_roots.add(row["root"])
-            from marl_battlegrounds.tasks import canonical_tournament_rosters
-
-            defaults = dict(
-                zip(
-                    ("system_roster", "opponent_roster"),
-                    canonical_tournament_rosters(),
-                    strict=True,
-                )
-            )
-            compatible = (
-                declaration.get("inherit_parent_candidates", True)
-                and row["panel_digest"] == declaration["panel_digest"]
-                and row.get("red_zone_depth") == declaration.get("red_zone_depth")
-                and row.get("selection_schema_version", 1)
-                == (2 if declaration.get("panel_schema_version") == 2 else 1)
-                and row["maps"]
-                == declaration.get("deployment", {}).get(
-                    "maps", list(validation.VALIDATION_MAPS)
-                )
-                and row.get("partners")
-                == declaration.get("deployment", {}).get("partners")
-                and row.get("learner_slots")
-                == declaration.get("deployment", {}).get("learner_slots")
-                and all(
-                    tuple(row.get(key, defaults[key]))
-                    == tuple(declaration.get("deployment", {}).get(key, defaults[key]))
-                    for key in defaults
-                )
-            )
+            expected_conditions = {
+                "panel_digest": declaration["panel_digest"],
+                "selection_schema_version": 2
+                if declaration.get("panel_schema_version") == 2
+                else 1,
+                "red_zone_depth": declaration.get("red_zone_depth"),
+                "maps": list(validation.VALIDATION_MAPS),
+                **declaration.get("deployment", {}),
+            }
+            compatible = declaration.get(
+                "inherit_parent_candidates", True
+            ) and validation.validation_conditions(
+                row
+            ) == validation.validation_conditions(expected_conditions)
             if not compatible:
                 continue
             if (
@@ -1000,6 +1045,7 @@ def read_run_evidence(
     confirmation_results: Sequence[Path] = (),
     confirmation_root: int | None = None,
     confirmation_seed_pairs: int | None = None,
+    point_cells: dict[str, Record] | None = None,
 ) -> Record:
     """Read checked selection inputs from one saved training run, without writes.
 
@@ -1025,6 +1071,11 @@ def read_run_evidence(
         are refused. None uses the original run's confirmation count. Original
         routine, initialization and confirmation records keep their run's counts.
 
+    point_cells : dict or None, default=None
+        Internal caller-owned collector of verified native cell means by task ID.
+        Original records stay unchanged. Discard the collector if this read fails;
+        only a successful final source check admits its contents.
+
     Returns
     -------
     dict
@@ -1036,6 +1087,8 @@ def read_run_evidence(
         methods is empty: this panel describes evidence and cannot execute games.
         Child results also include validation_declaration and used_roots. Their
         actors and records may name explicitly verified original parent paths.
+        A null selection.json means no original winner has been chosen. It does
+        not make an unfinished run complete or eligible for final selection.
 
     Raises
     ------
@@ -1116,6 +1169,7 @@ def read_run_evidence(
         inherited = read_inherited_candidates(
             run.get("continuation", {}).get("inherited_candidates", []),
             declaration=declaration,
+            point_cells=point_cells,
         )
         result["records"].extend(inherited["records"])
         result["actors"].update(inherited["actors"])
@@ -1178,6 +1232,7 @@ def read_run_evidence(
             snapshot,
             confirmation_root,
             confirmation_seed_pairs,
+            point_cells=point_cells,
         )
         if checked["task_id"] in seen:
             raise ValueError("Selection evidence repeats a validation task")
@@ -1185,9 +1240,11 @@ def read_run_evidence(
         result["records"].append(checked)
     selection_path = root / "selection.json"
     if selection_path.exists():
-        result["original_selection"] = _object(
-            snapshot.read(selection_path), "Original selection"
-        )
+        original_selection = snapshot.read(selection_path)
+        if original_selection is not None:
+            result["original_selection"] = _object(
+                original_selection, "Original selection"
+            )
     if result["status"] == "complete":
         final = state.get("final_actor")
         if not isinstance(final, str) or Path(final).parent != root / "actors":

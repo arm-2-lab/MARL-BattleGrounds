@@ -17,8 +17,9 @@
 """Provide recurrent PQN-VDN networks, its actor System and one minibatch update.
 
 This module adapts JaxMARL's recurrent PQN-VDN (``pqn_vdn_rnn.py``) at
-revision ``976aeb152cb184a5095021968bba94da96eb6394``. It owns the PQN
-settings and budget guards, the local Q-networks with input and hidden
+revision ``976aeb152cb184a5095021968bba94da96eb6394``. It re-exports
+settings and budget guards from baselines.config and owns
+the local Q-networks with input and hidden
 BatchNorm, the epsilon-greedy actor System, the exploration and learning-rate
 schedules, network initialization and one optimizer step on one expanded
 minibatch of recent game sequences. It owns no collection loop, recent-data
@@ -44,15 +45,41 @@ MARL-BGs.
 """
 
 import functools
-import math
 from collections.abc import Callable
-from dataclasses import dataclass
-from numbers import Real
 from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
 from jax import Array
+
+from marl_battlegrounds.baselines.config import (
+    _INT32_MAX as _INT32_MAX,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_PQN_CONFIG as DEFAULT_PQN_CONFIG,
+)
+from marl_battlegrounds.baselines.config import (
+    PQN_KEY_SCHEMA_VERSION as PQN_KEY_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import (
+    PQN_NORMALIZATION_SCHEMA_VERSION as PQN_NORMALIZATION_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import (
+    PQN_RECENT_WINDOW_SCHEMA_VERSION as PQN_RECENT_WINDOW_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import PQN_TIE_RULE as PQN_TIE_RULE
+from marl_battlegrounds.baselines.config import (
+    PQNConfig as PQNConfig,
+)
+from marl_battlegrounds.baselines.config import (
+    _fraction as _fraction,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    pqn_planned_learning_blocks as pqn_planned_learning_blocks,
+)
+from marl_battlegrounds.baselines.config import (
+    validate_pqn_batch_size as validate_pqn_batch_size,
+)
 
 try:
     import optax  # pyright: ignore[reportMissingTypeStubs]
@@ -67,7 +94,7 @@ except ImportError as error:
 # pyright: reportPrivateUsage=false
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
-    _masked_logits,
+    _masked_logits,  # pyright: ignore[reportPrivateUsage]
     categorical_action_mask,
     decode_actions,
     mirror_action_indices,
@@ -82,28 +109,26 @@ from marl_battlegrounds.baselines.inputs import (
     team_obstacle_partners,
 )
 from marl_battlegrounds.baselines.ppo import (
-    _PARAMETER_SHARING,
-    _actor_group_presence,
-    _actor_input_schema,
-    _batch_actor_groups,
-    _group_dense,
-    _group_gru,
-    _group_order,
-    _grouped_actor_inputs,
-    _input_scale,
-    _parameter_sharing,
-    _restore_group_rows,
-    _spawn_frame,
-    _update_actor_groups,
+    _PARAMETER_SHARING,  # pyright: ignore[reportPrivateUsage]
+    _actor_group_presence,  # pyright: ignore[reportPrivateUsage]
+    _actor_input_schema,  # pyright: ignore[reportPrivateUsage]
+    _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
+    _group_dense,  # pyright: ignore[reportPrivateUsage]
+    _group_gru,  # pyright: ignore[reportPrivateUsage]
+    _group_order,  # pyright: ignore[reportPrivateUsage]
+    _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
+    _input_scale,  # pyright: ignore[reportPrivateUsage]
+    _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
+    _restore_group_rows,  # pyright: ignore[reportPrivateUsage]
+    _spawn_frame,  # pyright: ignore[reportPrivateUsage]
+    _update_actor_groups,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.baselines.qmix import (
-    QMIX_TIE_RULE,
     TEAM_SLOTS,
-    _count,
-    _explore,
-    _finite,
-    _positive,
-    _unit_interval,
+    _count,  # pyright: ignore[reportPrivateUsage]
+    _explore,  # pyright: ignore[reportPrivateUsage]
+    _finite,  # pyright: ignore[reportPrivateUsage]
+    _unit_interval,  # pyright: ignore[reportPrivateUsage]
     greedy_actions,
 )
 from marl_battlegrounds.evaluation.policy_execution import (
@@ -119,233 +144,9 @@ PQN_METHOD = "pqn_vdn"
 """Training method name that selects PQN-VDN in configurations and checkpoints."""
 PQN_HIDDEN_SIZE = 512
 """Width of both hidden Dense layers and of each actor's recurrent memory."""
-PQN_TIE_RULE = QMIX_TIE_RULE
-"""Greedy rule: the lowest legal action index among equal best values wins."""
-PQN_KEY_SCHEMA_VERSION = 1
-"""Version of the learner's model-initialization and shuffle key tags."""
-PQN_RECENT_WINDOW_SCHEMA_VERSION = 1
-"""Version of the compact retained recent-row layout saved with the learner."""
-PQN_NORMALIZATION_SCHEMA_VERSION = 1
-"""Version of the BatchNorm statistics layout and its update rule."""
 _BATCH_NORM_MOMENTUM = 0.99
 _BATCH_NORM_EPSILON = 1e-5
 _LEARNING_RATE_END = 1e-10
-_INT32_MAX = 2**31 - 1
-
-
-def _fraction(value: object, name: str) -> float:
-    """Check one finite real number in (0, 1], excluding Booleans; return float."""
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise ValueError(f"{name} must be a finite real number in (0, 1].")
-    number = float(value)
-    if not math.isfinite(number) or not 0 < number <= 1:
-        raise ValueError(f"{name} must be a finite real number in (0, 1].")
-    return number
-
-
-@dataclass(frozen=True)
-class PQNConfig:
-    """Hold the static recurrent PQN-VDN settings.
-
-    Parameters
-    ----------
-    rollout_length : int, default=128
-        Real rounds in one normal collection block (T). One round is one
-        decision in every game lane. Only the block that reaches the declared
-        total budget may be shorter.
-    memory_window : int, default=4
-        Retained real rows per game lane (H), 1 <= H <= rollout_length. Each
-        learning window is these H older rows followed by the block's new rows,
-        and the H older rows take part in the loss (the donor's recent-data
-        rule). Initial random collection runs H + T rounds before learning.
-    epochs : int, default=4
-        Passes over each learning window (E). Each pass reshuffles the games.
-    num_minibatches : int, default=16
-        Equal game groups per pass (M). It must divide num_envs; each optimizer
-        step sees num_envs / M whole game sequences with all five teammates.
-    q_lr : float, default=0.00025
-        Starting RAdam learning rate. Positive finite real, not bool.
-    lr_linear_decay : bool, default=True
-        Python bool. True decays the rate linearly to 1e-10 over all planned
-        optimizer steps of the declared run; False keeps q_lr constant.
-    max_grad_norm : float, default=1.0
-        Global gradient-norm limit applied before RAdam. Positive finite.
-    gamma : float, default=0.99
-        Discount per transition, in [0, 1].
-    td_lambda : float, default=0.85
-        Lambda-return weight, in [0, 1]. Zero gives one-step targets.
-    eps_start : float, default=1.0
-        Exploration rate used for the first learning block, in [0, 1]. Initial
-        random collection always uses 1.0, whatever this value is.
-    eps_finish : float, default=0.01
-        Final exploration rate, 0 <= eps_finish <= eps_start.
-    eps_decay_fraction : float, default=0.1
-        Share of the planned learning blocks over which exploration falls
-        linearly from eps_start to eps_finish, in (0, 1]. A fractional block
-        span is kept, as in the donor.
-    input_scale : float, default=1.0
-        Positive finite multiplier applied to every actor feature before the
-        input BatchNorm. That BatchNorm divides each feature by its own
-        standard deviation, so the scale almost cancels: it changes only how
-        large BatchNorm's epsilon (0.00001) is next to the feature variance,
-        and the untrained network's first outputs. It is kept for identity
-        and compatibility with the other methods; it is not a useful knob to
-        tune.
-    spawn_frame : str, default="left"
-        Network frame for actor features, masks and actions: "left" reflects
-        every game to look like a start from the left bank, "world" keeps raw
-        coordinates. Stored recent rows stay in the world frame.
-
-    parameter_sharing : {"all", "class", "none"}, default="all"
-        Share actor weights across everyone, within each class, or not between
-        physical slots. Grouped modes have five parameter groups. Memory stays
-        separate per physical actor. Class changes at resets select new weights.
-
-    Raises
-    ------
-    ValueError
-        A count is not a plain integer in range, a float is nonfinite, Boolean
-        or outside its range, lr_linear_decay is not a bool, the spawn frame is
-        unknown, memory_window exceeds rollout_length, eps_finish exceeds
-        eps_start, or H + T exceeds int32.
-
-    Notes
-    -----
-    The architecture (input BatchNorm; two Dense 512, BatchNorm, ReLU layers;
-    GRU 512; Dense 198), the BatchNorm constants (momentum 0.99, epsilon 1e-5),
-    RAdam's own defaults and the 1e-10 schedule end are fixed contracts, not
-    settings. There is no reward multiplier, target network, replay or value
-    normalization. The record is immutable host setup; capture one instance in
-    compiled code.
-    """
-
-    rollout_length: int = 128
-    memory_window: int = 4
-    epochs: int = 4
-    num_minibatches: int = 16
-    q_lr: float = 0.00025
-    lr_linear_decay: bool = True
-    max_grad_norm: float = 1.0
-    gamma: float = 0.99
-    td_lambda: float = 0.85
-    eps_start: float = 1.0
-    eps_finish: float = 0.01
-    eps_decay_fraction: float = 0.1
-    input_scale: float = 1.0
-    spawn_frame: str = "left"
-    parameter_sharing: str = "all"
-
-    def __post_init__(self) -> None:
-        """Reject invalid settings on the host before any array is created."""
-        for name in ("rollout_length", "memory_window", "epochs", "num_minibatches"):
-            _count(getattr(self, name), name)
-        if self.memory_window > self.rollout_length:
-            raise ValueError("PQN needs memory_window <= rollout_length")
-        if self.memory_window + self.rollout_length > _INT32_MAX:
-            raise ValueError("PQN's initial rounds would overflow int32")
-        _positive(self.q_lr, "q_lr")
-        _positive(self.max_grad_norm, "max_grad_norm")
-        if type(self.lr_linear_decay) is not bool:
-            raise ValueError("lr_linear_decay must be a Python bool")
-        for name in ("gamma", "td_lambda", "eps_start", "eps_finish"):
-            _unit_interval(getattr(self, name), name)
-        if self.eps_finish > self.eps_start:
-            raise ValueError("PQN needs eps_finish <= eps_start")
-        _fraction(self.eps_decay_fraction, "eps_decay_fraction")
-        _input_scale(self.input_scale)
-        _spawn_frame(self.spawn_frame)
-        _parameter_sharing(self.parameter_sharing)
-
-    @property
-    def initial_rounds(self) -> int:
-        """Rounds of initial random collection before learning: W = H + T."""
-        return self.memory_window + self.rollout_length
-
-
-DEFAULT_PQN_CONFIG = PQNConfig()
-"""The donor's SMAX PQN-VDN settings without its reward multiplier, left frame."""
-
-
-def validate_pqn_batch_size(num_envs: int, pqn: PQNConfig) -> None:
-    """Check that num_envs fits PQN's minibatches and int32 block counters.
-
-    Parameters
-    ----------
-    num_envs : int
-        Plain positive number of game lanes (B).
-    pqn : PQNConfig
-        Settings whose rollout_length, memory_window, epochs and
-        num_minibatches bound one block.
-
-    Raises
-    ------
-    ValueError
-        num_envs is not a plain positive int32 value; num_minibatches does not
-        divide it; ``B * T * 5`` exceeds int32 (the shared update summary
-        reduces one block's actor rows into int32); or
-        ``E * B * (H + T - 1) * 5`` exceeds int32 (one learning block's used
-        agent utilities, the largest device reduction).
-
-    Notes
-    -----
-    Host-only; it creates no arrays. ``TrainConfig`` and ``init_pqn_learner``
-    both call it before any file or array work. Whole-run totals are Python
-    integers and are not limited by this check.
-    """
-    _count(num_envs, "num_envs")
-    if num_envs % pqn.num_minibatches:
-        raise ValueError("PQN needs num_minibatches to divide num_envs")
-    if num_envs * pqn.rollout_length * TEAM_SLOTS > _INT32_MAX:
-        raise ValueError("One PQN block's actor counts would overflow int32")
-    pairs = pqn.memory_window + pqn.rollout_length - 1
-    if pqn.epochs * num_envs * pairs * TEAM_SLOTS > _INT32_MAX:
-        raise ValueError("One PQN block's used utilities would overflow int32")
-
-
-def pqn_planned_learning_blocks(total_rounds: int, pqn: PQNConfig) -> int:
-    """Return the number of learning blocks a declared run will perform.
-
-    Parameters
-    ----------
-    total_rounds : int
-        Plain positive declared budget in rounds (R = total_env_steps /
-        num_envs), at most int32.
-    pqn : PQNConfig
-        Settings giving T, H, E and M.
-
-    Returns
-    -------
-    int
-        N = ceil((R - W) / T), where W = H + T initial random rounds. Each
-        learning block performs E * M optimizer steps, so the learning-rate
-        schedule spans N * E * M steps.
-
-    Raises
-    ------
-    ValueError
-        R is not a plain int in [1, 2**31 - 1]; R < W + 1 (there would be no
-        learning and no positive schedule horizon); N * E * M or
-        ceil(W / T) + N exceeds int32 (optimizer and block counters).
-
-    Notes
-    -----
-    Host-only and allocation-free; the runner's config check, learner setup,
-    validation and restore all call it. A saved boundary may still lie at or
-    before W inside a longer valid run.
-    """
-    rounds = _count(total_rounds, "total_rounds")
-    initial = pqn.initial_rounds
-    if rounds < initial + 1:
-        raise ValueError(
-            "A PQN run needs total rounds of at least memory_window + "
-            f"rollout_length + 1 ({initial + 1}); got {rounds}"
-        )
-    planned = -(-(rounds - initial) // pqn.rollout_length)
-    if planned * pqn.epochs * pqn.num_minibatches > _INT32_MAX:
-        raise ValueError("PQN's planned optimizer steps would overflow int32")
-    if -(-initial // pqn.rollout_length) + planned > _INT32_MAX:
-        raise ValueError("PQN's block counter would overflow int32")
-    return planned
 
 
 def epsilon_at(

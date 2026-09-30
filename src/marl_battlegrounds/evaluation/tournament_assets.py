@@ -504,41 +504,77 @@ def _download_asset(
     if not directory.resolve().is_relative_to(verifier.cache_dir):
         raise ValueError("Tournament cache directory escapes its declared root")
     destination = directory / descriptor["sha256"]
+
+    def before_request() -> None:
+        """Recheck the caller's optional download approval just before network I/O."""
+        if approval is not None:
+            approval.check(verifier.assets[asset_id], claim=False)
+
+    size = _download_file(
+        url,
+        destination,
+        size_bytes=descriptor["size_bytes"],
+        sha256_digest=descriptor["sha256"],
+        before_request=before_request,
+    )
+    verifier._verified[destination] = (  # pyright: ignore[reportPrivateUsage]
+        _file_stamp(destination),
+        descriptor["sha256"],
+        size,
+    )
+    _sync_directory(verifier.cache_dir)
+    _sync_directory(verifier.cache_dir.parent)
+    return size
+
+
+def _download_file(
+    url: str,
+    destination: Path,
+    *,
+    size_bytes: int,
+    sha256_digest: str,
+    before_request: Callable[[], None] | None = None,
+) -> int:
+    """Stream one explicitly requested file, checking bytes before publication.
+
+    url must use HTTP(S), including redirects. destination's parent must exist;
+    the caller owns admission and serializes writes. size_bytes and sha256_digest
+    are the declared exact identity. before_request optionally rechecks an
+    external approval immediately before network I/O. Return downloaded bytes.
+    Use bounded buffers and a 30-second request timeout, with no retry or archive
+    extraction. Errors remove only the unpublished temporary file; an already
+    published valid file survives a later directory-sync failure. Tournament and
+    portable-bundle callers share this transfer owner. No model code is loaded.
+    """
+    if (
+        urlparse(url).scheme not in {"http", "https"}
+        or type(size_bytes) is not int
+        or size_bytes < 0
+        or _DIGEST.fullmatch(sha256_digest) is None
+    ):
+        raise ValueError("Download needs an HTTP(S) URL, exact size and SHA-256")
+    directory = destination.parent
     descriptor_fd, temporary_name = tempfile.mkstemp(prefix=".download-", dir=directory)
     temporary = Path(temporary_name)
     try:
         digest = sha256()
         size = 0
         with os.fdopen(descriptor_fd, "wb") as output:
-            if approval is not None:
-                approval.check(verifier.assets[asset_id], claim=False)
+            if before_request is not None:
+                before_request()
             with build_opener(_HTTPOnlyRedirect()).open(url, timeout=30) as response:
                 while chunk := response.read(_BUFFER_BYTES):
                     size += len(chunk)
-                    if size > descriptor["size_bytes"]:
-                        raise ValueError(
-                            f"Downloaded asset {asset_id!r} exceeds its declared size"
-                        )
+                    if size > size_bytes:
+                        raise ValueError("Downloaded file exceeds its declared size")
                     digest.update(chunk)
                     output.write(chunk)
-            if (
-                size != descriptor["size_bytes"]
-                or digest.hexdigest() != descriptor["sha256"]
-            ):
-                raise ValueError(
-                    f"Downloaded asset {asset_id!r} has the wrong size or hash"
-                )
+            if size != size_bytes or digest.hexdigest() != sha256_digest:
+                raise ValueError("Downloaded file has the wrong size or hash")
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, destination)
-        verifier._verified[destination] = (  # pyright: ignore[reportPrivateUsage]
-            _file_stamp(destination),
-            descriptor["sha256"],
-            size,
-        )
         _sync_directory(directory)
-        _sync_directory(verifier.cache_dir)
-        _sync_directory(verifier.cache_dir.parent)
         return size
     finally:
         temporary.unlink(missing_ok=True)

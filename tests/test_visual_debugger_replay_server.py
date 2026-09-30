@@ -680,7 +680,7 @@ def test_replay_bootstrap_exposes_only_the_replay_product_identity(
     assert response.getheader("Cache-Control") == "no-store"
     assert body == (
         b"globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
-        b'{"authoring_available":false,"product_kind":"replay_viewer",'
+        b'{"product_kind":"replay_viewer",'
         b'"schema_version":1});\n'
     )
     assert service.frame_calls == 0
@@ -1031,14 +1031,14 @@ forbidden = (
     'numpy',
     'marl_battlegrounds.core',
     'marl_battlegrounds.evaluation.capture',
-    'scripts.dev.visual_debugger.control',
-    'scripts.dev.visual_debugger.protocol',
+    'marl_battlegrounds._battle_client.control',
+    'marl_battlegrounds._battle_client.protocol',
     'scripts.dev.visual_debugger.presentation',
     'scripts.dev.visual_debugger.presentation_protocol',
     'scripts.dev.visual_debugger.replay_protocol',
     'scripts.dev.visual_debugger.replay_service',
     'scripts.dev.visual_debugger.scenarios',
-    'scripts.dev.visual_debugger.service',
+    'marl_battlegrounds._battle_client.service',
     'marl_battlegrounds.rendering.authorized_presentation',
 )
 loaded = sorted(
@@ -1194,7 +1194,7 @@ def test_live_request_and_replay_replacement_are_serialized_and_coherent() -> No
         assert replay_bootstrap.status == HTTPStatus.OK
         assert replay_bootstrap_body == (
             b"globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
-            b'{"authoring_available":false,"product_kind":"replay_viewer",'
+            b'{"product_kind":"replay_viewer",'
             b'"schema_version":1});\n'
         )
         assert json.loads(replay_frame_body)["schema_version"] == 1
@@ -1495,7 +1495,7 @@ def test_shutdown_title_uses_the_active_product_after_live_to_replay_handoff(
 
     output = capsys.readouterr().out
     assert result == 0
-    assert "MARL-BattleGrounds DevClient: http://127.0.0.1:" in output
+    assert "MARL-BattleGrounds BattleClient: http://127.0.0.1:" in output
     assert "MARL-BattleGrounds Replay Viewer stopped." in output
 
 

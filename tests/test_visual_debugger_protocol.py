@@ -4,7 +4,8 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from scripts.dev.visual_debugger.protocol import (
+
+from marl_battlegrounds._battle_client.protocol import (
     ActionTupleCardV1,
     ActorActionResultV1,
     ActorPovTargetActionCommandV1,
@@ -34,7 +35,6 @@ from scripts.dev.visual_debugger.protocol import (
     SetViewCommandV1,
     TargetReferenceV1,
 )
-
 from marl_battlegrounds.core.types import NUM_MOVE_ACTIONS
 
 
@@ -247,7 +247,7 @@ def test_recording_status_enforces_exact_lifecycle_availability() -> None:
         review_available=False,
         retry_available=True,
         save_as_available=True,
-        discard_available=False,
+        discard_available=True,
         persistence_error_code="publication_failed",
     )
     saved = RecordingStatusV1(
@@ -255,7 +255,7 @@ def test_recording_status_enforces_exact_lifecycle_availability() -> None:
         captured_transition_count=5,
         expected_transition_count=5,
         completion_state="complete",
-        restart_fenced=True,
+        restart_fenced=False,
         finish_available=False,
         review_available=True,
         retry_available=False,
@@ -755,13 +755,24 @@ def test_hud_pending_scope_requires_exact_order_alias_and_playback_label() -> No
         == joint.roster_global_slots
     )
 
+    subset = HudFrameV1(
+        roster_global_slots=(0, 1),
+        controlled_global_slot=0,
+        selected_global_slot=None,
+        pending_submission_scope="joint_turn",
+        pending_actions=(pending_0,),
+        pending_action=pending_0,
+        latest_transition=None,
+        movement_legalities=_movement_legalities(),
+    )
+    assert subset.pending_actions == (pending_0,)
     with pytest.raises(ValidationError, match="submission scope"):
         HudFrameV1(
             roster_global_slots=(0, 1),
             controlled_global_slot=0,
             selected_global_slot=None,
             pending_submission_scope="joint_turn",
-            pending_actions=(pending_0,),
+            pending_actions=(pending_1, pending_0),
             pending_action=pending_0,
             latest_transition=None,
             movement_legalities=_movement_legalities(),
@@ -801,19 +812,18 @@ def test_hud_pending_scope_requires_exact_order_alias_and_playback_label() -> No
         )
 
     playback = pending_0.model_copy(update={"label": "PLAYBACK / INSPECTION ONLY"})
-    assert (
-        HudFrameV1(
-            roster_global_slots=(0,),
-            controlled_global_slot=0,
-            selected_global_slot=None,
-            pending_submission_scope="scripted_playback",
-            pending_actions=(playback,),
-            pending_action=playback,
-            latest_transition=None,
-            movement_legalities=_movement_legalities(),
-        ).pending_action.label
-        == "PLAYBACK / INSPECTION ONLY"
+    playback_hud = HudFrameV1(
+        roster_global_slots=(0,),
+        controlled_global_slot=0,
+        selected_global_slot=None,
+        pending_submission_scope="scripted_playback",
+        pending_actions=(playback,),
+        pending_action=playback,
+        latest_transition=None,
+        movement_legalities=_movement_legalities(),
     )
+    assert playback_hud.pending_action is not None
+    assert playback_hud.pending_action.label == "PLAYBACK / INSPECTION ONLY"
 
 
 def test_hud_rejects_public_action_endpoints_absent_from_authorized_roster() -> None:

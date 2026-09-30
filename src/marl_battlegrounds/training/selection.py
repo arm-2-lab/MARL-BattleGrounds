@@ -62,13 +62,15 @@ def _declaration(
     """Resolve paths and point-margin choices; admit old rules only when reading."""
     base = Path.cwd()
     if isinstance(value, (str, Path)):
-        path = Path(value).resolve()
+        path = Path(value).expanduser().resolve()
         base = path.parent
-        supplied = _read(path)
+        from marl_battlegrounds.training._launch import read_declaration
+
+        supplied = read_declaration(path)
     elif isinstance(cast(object, value), Mapping):
         supplied = dict(value)
     else:
-        raise TypeError("declaration must be a JSON path or mapping")
+        raise TypeError("declaration must be a JSON/YAML path or mapping")
     if set(supplied) - ({"name"} | set(_DEFAULTS)):
         raise ValueError("Unknown checkpoint selection declaration fields")
     result = {**_DEFAULTS, **supplied}
@@ -110,14 +112,16 @@ def _declaration(
     ):
         raise ValueError("confirmation_results must list saved summary paths")
     paths = cast(list[str | Path], paths)
-    result["confirmation_results"] = [str((base / p).resolve()) for p in paths]
+    result["confirmation_results"] = [
+        str((base / Path(p).expanduser()).resolve()) for p in paths
+    ]
     if len(set(result["confirmation_results"])) != len(paths):
         raise ValueError("confirmation_results must not repeat a path")
     prior = result["previous_decision"]
     if prior is not None:
         if not isinstance(prior, (str, Path)):
             raise ValueError("previous_decision must be a decision JSON path")
-        result["previous_decision"] = str((base / prior).resolve())
+        result["previous_decision"] = str((base / Path(prior).expanduser()).resolve())
     _digest(result)
     return result
 
@@ -158,30 +162,33 @@ def _roots(rows: Sequence[Mapping[str, Any]], declaration: Mapping[str, Any]) ->
 
 
 def _conditions(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Keep candidate panels, scoring layouts, maps and depth interpretations equal."""
-    if (
-        len(
-            {
-                (
-                    row["panel_digest"],
-                    row.get("selection_schema_version", 1),
-                    tuple(row["maps"]),
-                    row.get("red_zone_depth", 0.0),
-                )
-                for row in rows
-            }
+    """Refuse comparisons with different verified scientific conditions."""
+    from marl_battlegrounds.training.validation import validation_conditions
+
+    conditions = [validation_conditions(row) for row in rows]
+    if conditions and any(row != conditions[0] for row in conditions[1:]):
+        raise ValueError(
+            "Selection cannot mix panels, maps, team rosters, "
+            "deployed partners or scoring conditions"
         )
-        > 1
-    ):
-        raise ValueError("Selection cannot mix panels, maps or scoring conditions")
 
 
 def _request(
     evidence: Record, row: Record, declaration: Record, destination: Path
 ) -> Record:
-    """Describe the exact public call needed to obtain a missing confirmation."""
+    """Describe a missing confirmation using checked actor and task evidence.
+
+    evidence is the saved-run reader's result; row is an eligible routine result.
+    declaration supplies separate confirmation choices and destination owns the
+    future confirmation folder. Return finite JSON with the full expected task,
+    public keyword arguments and caller-owned live bindings still needed. No
+    model/factory/provider is called and no output is created. Saved references
+    are used only for the exact recorded partner names. The validation owner
+    restores their order/wrappers and checks the complete task before games.
+    """
     from marl_battlegrounds.training.validation import (
         check_confirmation_roots,
+        declared_panel_task,
         panel_task_description,
     )
 
@@ -200,16 +207,25 @@ def _request(
     # A verified old task has pre-Red-Zone rules. New games must name zero,
     # because the current validation API otherwise defaults to five map units.
     depth = row.get("red_zone_depth", 0.0)
-    task = panel_task_description(
-        checkpoint_id=row["checkpoint_id"],
-        actor_digest=row["actor_digest"],
-        env_steps=row["env_steps"],
-        panel=panel,
-        purpose="confirmation",
-        seed_pairs=pairs,
-        root_seed=root,
-        red_zone_depth=depth,
-    )
+    identity: Record = {
+        "checkpoint_id": row["checkpoint_id"],
+        "actor_digest": row["actor_digest"],
+        "env_steps": row["env_steps"],
+        "purpose": "confirmation",
+    }
+    if saved:
+        expected = {**saved, "confirmation_seed_pairs": pairs}
+        if root is not None:
+            expected["roots"] = {**saved["roots"], "confirmation": root}
+        task = declared_panel_task(expected, panel, **identity)
+    else:
+        task = panel_task_description(
+            **identity,
+            panel=panel,
+            seed_pairs=pairs,
+            root_seed=root,
+            red_zone_depth=depth,
+        )
     used_roots: set[int] = set(evidence.get("used_roots", ()))
     used_roots.update(evidence.get("comparison_used_roots", ()))
     used_roots.update(
@@ -229,22 +245,58 @@ def _request(
     }
     if root is not None:
         arguments["root_seed"] = root
-    call = (
-        "validate_checkpoint("
-        + ", ".join(f"{name}={value!r}" for name, value in arguments.items())
-        + ")"
-    )
+    for key in ("maps", "system_roster", "opponent_roster", "learner_slots"):
+        if key in task and (key != "maps" or "system_roster" in task):
+            arguments[key] = task[key]
+    # Legacy checkpoint panels do not accept custom-condition keywords.
+    if panel.schema_version == 1:
+        arguments.pop("maps", None)
+    required: Record = {"partners": [], "panel": []}
+    if task.get("partners"):
+        references = actor.get("confirmation_partners", {})
+        arguments["partners"] = {
+            member["name"]: references[member["name"]]
+            for member in task["partners"]
+            if member["name"] in references
+        }
+        arguments["partner_labels"] = {
+            member["name"]: member["label"] for member in task["partners"]
+        }
+        required["partners"] = [
+            {key: member[key] for key in ("name", "registration_id")}
+            for member in task["partners"]
+            if member["name"] not in references
+        ]
+    if panel.schema_version == 2:
+        required["panel"] = [
+            {"name": member.name, "registration_id": member.registration_id}
+            for member in panel.members
+            if member.reference is None
+        ]
+    arguments["expected_task"] = task
+    lines = ["from marl_battlegrounds import training", f"arguments = {arguments!r}"]
+    if required["partners"]:
+        lines += [
+            "# Set partners to the original live name-to-method bindings listed below.",
+            "arguments['partners'] = {**arguments['partners'], **partners}",
+        ]
+    if required["panel"]:
+        lines += [
+            "# Set panel_bindings to the original ordered panel methods.",
+            "arguments['panel'] = training.load_panel("
+            "arguments['panel'], bindings=panel_bindings)",
+        ]
+    lines.append("training.validate_checkpoint(**arguments)")
     return {
         "checkpoint_id": row["checkpoint_id"],
         "artifact_id": actor["artifact_id"],
         "actor_digest": row["actor_digest"],
         "expected_task": task,
-        "function": "marl_battlegrounds.training.validation.validate_checkpoint",
+        "function": "marl_battlegrounds.training.validate_checkpoint",
         "arguments": arguments,
-        "python": (
-            "from marl_battlegrounds.training.validation "
-            "import validate_checkpoint\n" + call
-        ),
+        "required_bindings": required,
+        "ready_to_run": not any(required.values()),
+        "python": "\n".join(lines),
     }
 
 
@@ -309,17 +361,11 @@ def _run_decision(evidence: Record, declaration: Record, destination: Path) -> R
             item
             for item in confirmations
             if all(
-                item.get(name, 0.0 if name == "red_zone_depth" else None)
-                == expected[name]
-                for name in (
-                    "checkpoint_id",
-                    "actor_digest",
-                    "env_steps",
-                    "panel_digest",
-                    "root",
-                    "maps",
-                    "seed_pairs",
-                    "red_zone_depth",
+                item.get(name) == value
+                for name, value in expected.items()
+                if not (
+                    "red_zone_depth" not in item
+                    and name in ("schema_version", "task_id", "red_zone_depth")
                 )
             )
         ]
@@ -387,6 +433,21 @@ def read_selection_decision(
     rebuilds the decision from its games without writing files or loading models.
     A mismatch raises ValueError. Hashes are integrity checks, not signatures.
     """
+    return _read_selection_decision(path, verify_evidence=verify_evidence)
+
+
+def _read_selection_decision(
+    path: str | Path,
+    *,
+    verify_evidence: bool = False,
+    point_cells: dict[str, Record] | None = None,
+) -> Record:
+    """Use the public reader's contract, optionally collecting checked point cells.
+
+    The collector belongs to this call and is usable only after full success.
+    It avoids a second actor/game verification for schema-two saved analysis.
+    The returned decision and its historical identity stay unchanged.
+    """
     source = Path(path).resolve()
     result = _read(source)
     identity = result.pop("decision_id", None)
@@ -410,6 +471,7 @@ def read_selection_decision(
             declared,
             source.parent,
             previous,
+            point_cells=point_cells,
         )
         if rebuilt != checked:
             raise ValueError(
@@ -423,12 +485,16 @@ def _build_selection(
     declared: Record,
     destination: Path,
     previous: Record | None,
+    *,
+    point_cells: dict[str, Record] | None = None,
 ) -> Record:
     """Verify sources and resolve a decision without creating output files.
 
     roots and declared are normalized inputs. destination names the decision
     folder solely for missing-task instructions. previous is the checked linked
     record, or None. Both writing and later report verification use this owner.
+    Optional point_cells collects native means during the same source checks;
+    it changes neither the decision payload nor its historical ranking.
     """
     from marl_battlegrounds.training._selection_evidence import read_run_evidence
 
@@ -449,6 +515,7 @@ def _build_selection(
             confirmation_results=extra,
             confirmation_root=declared["confirmation_root"],
             confirmation_seed_pairs=declared["confirmation_seed_pairs"],
+            point_cells=point_cells,
         )
         for root in roots
     ]
@@ -492,6 +559,15 @@ def _build_selection(
             item["comparison_used_roots"] = used_roots
         # A missing run has no verified seed yet. Keep it visible and incomplete;
         # its unverified place in the declared order cannot produce a winner.
+    if declared["across_runs"]:
+        _conditions(
+            [
+                row
+                for item in evidence
+                for row in item["records"]
+                if row["purpose"] == "routine" and row.get("complete") is True
+            ]
+        )
     runs = [_run_decision(item, declared, destination) for item in evidence]
     routine_comparison = None
     if declared["across_runs"]:
@@ -590,7 +666,8 @@ def reselect_checkpoint(
         Missing, failed or unfinished runs remain visible and prevent an
         across-run winner. A missing seed leaves its declared order unverified.
     declaration : str, Path or mapping
-        Schema 1 JSON with a required name. rule is point_margin (the only new
+        Schema 1 JSON/YAML or mapping with a required name. YAML needs the
+        optional hydra extra. rule is point_margin (the only new
         rule): mean Team A minus Team B points, then earlier steps and checkpoint
         ID. Every saved validation cell must contain finite points for both
         teams. Wins and kills remain descriptive. shortlist_size defaults to

@@ -1817,9 +1817,9 @@ banned = (
     'jaxlib',
     'numpy',
     'marl_battlegrounds.core',
-    'scripts.dev.visual_debugger.protocol',
-    'scripts.dev.visual_debugger.service',
-    'scripts.dev.visual_debugger.control',
+    'marl_battlegrounds._battle_client.protocol',
+    'marl_battlegrounds._battle_client.service',
+    'marl_battlegrounds._battle_client.control',
     'scripts.dev.visual_debugger.scenarios',
 )
 loaded = [

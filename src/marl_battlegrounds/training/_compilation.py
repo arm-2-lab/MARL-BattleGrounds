@@ -1,4 +1,4 @@
-"""Own MAPPO compilation settings and checked continuation identity.
+"""Own training compilation settings, setup placement and continuation identity.
 
 Training's outer JAX calls use training_compiler_options. Pure numerical helpers
 remain composable and do not set compiler options themselves. execution_identity
@@ -11,7 +11,10 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from importlib.metadata import version
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from jax.sharding import Sharding
 
 
 def training_compiler_options() -> dict[str, int]:
@@ -85,3 +88,30 @@ def execution_identity(
         },
         "declared_xla_flags": os.environ.get("XLA_FLAGS", ""),
     }
+
+
+def _place_training_state[State](  # pyright: ignore[reportUnusedFunction]
+    state: State, *, sharding: Sharding
+) -> State:
+    """Keep one device-placement rule for a numerical learner at host setup.
+
+    state is any learner PyTree; sharding is its environment root key's selected
+    placement. If every array is uncommitted, return the same tree so ordinary
+    fresh starts keep their existing compilation signature. If any JAX array
+    has explicit placement, place the whole tree once on sharding. This covers
+    loaded actor weights mixed with fresh optimizer, replay and counter arrays.
+    Values, shapes, dtypes and weak types stay unchanged. Arrays already on the
+    selected device reuse their buffers; other placements can require a copy.
+
+    This is host-only setup, never a per-update operation. It imports JAX when
+    called but changes no JAX setting. Unsupported array placement errors from
+    jax.device_put propagate.
+    """
+    import jax
+
+    if not any(
+        isinstance(leaf, jax.Array) and leaf.committed
+        for leaf in jax.tree.leaves(state)
+    ):
+        return state
+    return jax.device_put(state, sharding)

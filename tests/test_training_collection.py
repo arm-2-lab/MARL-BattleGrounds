@@ -48,7 +48,7 @@ from marl_battlegrounds.baselines.actions import (
 from marl_battlegrounds.baselines.inputs import encode_training_state
 from marl_battlegrounds.baselines.ppo import initialize_ppo, make_recurrent_mappo_system
 from marl_battlegrounds.core import env as core
-from marl_battlegrounds.core.types import EnvState
+from marl_battlegrounds.core.types import EnvConfig, EnvState
 from marl_battlegrounds.environment import (
     Environment,
     EnvironmentState,
@@ -1598,8 +1598,8 @@ def test_disabled_custom_reward_traces_no_facts_or_callback(
     def forbidden(*args: Tree, **kwargs: Tree) -> None:
         pytest.fail("Disabled custom reward must not trace its validation or callback")
 
-    monkeypatch.setattr(collection_module, "validate_reward", forbidden)
-    monkeypatch.setattr(collection_module, "reward_adjustments", forbidden)
+    monkeypatch.setattr(collection_module, "_prepare_reward", forbidden)
+    monkeypatch.setattr(collection_module, "_reward_output", forbidden)
     actor = _actor()
     context = init_training_collection(
         actor,
@@ -2041,3 +2041,61 @@ def test_invalid_partner_ownership_fails_before_any_action(
             learner_slots=slots,
             partner_population={"friend": actor},
         )
+
+
+def test_named_reward_totals_survive_split_collection_without_replay_fields(
+    prepared: PreparedTrainingContent,
+) -> None:
+    from marl_battlegrounds.training.shaping import (
+        RewardOutput,
+        _reward_totals_record,  # pyright: ignore[reportPrivateUsage]
+        _RewardTotals,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    actor = _actor()
+
+    def reward(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        config: EnvConfig,
+    ) -> RewardOutput:
+        del before, facts, after, progress
+        values = config.agent_profile.active_mask.astype(jnp.float32)
+        return RewardOutput(values, {"configured": values})
+
+    context = _synthetic(
+        init_training_collection(
+            actor,
+            actor.variables,
+            schedule=make_training_schedule(total_env_steps=8, num_envs=2),
+            prepared=prepared,
+            metrics="none",
+            keep_past=0,
+            history_capture_capacity=0,
+            reward=reward,
+            reward_identity={"reference": "tests:configured"},
+        )
+    )
+    whole, rollout = _scan(context, length=6)
+    middle, _ = _scan(context, length=1)
+    split, _ = _scan((context[0], middle), length=5)
+    assert isinstance(whole.reward_totals, _RewardTotals)
+    _equal(whole.reward_totals, split.reward_totals)
+    record = _reward_totals_record(
+        whole.reward_totals, context[0].reward_component_keys
+    )
+    owned = (
+        np.asarray(rollout.transitions.active)
+        & np.asarray(rollout.transitions.valid)[:, :, None]
+    )
+    assert record["real_transitions"] == 8
+    assert record["learner_agent_transitions"] == int(owned.sum())
+    assert record["components"] == {
+        "configured": {"recipient_sum": float(owned.sum()), "team_mean_sum": 8.0}
+    }
+    assert "components" not in rollout.transitions._fields
+    assert context[0].reward_identity is not None
+    assert context[0].reward_identity["component_keys"] == ["configured"]

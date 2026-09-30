@@ -1,12 +1,18 @@
-"""Use frozen Systems, exact schedules and saved result tables.
+"""Show paired and fixed-spawn games, authored starts and saved-result analysis.
 
-Run ``python examples/evaluation_results.py --help`` after installing MARL-BGs.
-The default workflow creates no files. Saving and resume need --output-dir. The
-read workflow imports only the result reader, so it needs no simulation backend.
-The tiny preference values illustrate checkpoints, not a trained learner.
+Install the hydra extra, then run::
+
+    python examples/evaluation_results.py workflow=paired
+    python examples/evaluation_results.py workflow=read run_dir=SAVED_RUN
+
+The short default games are software checks. Other workflow values demonstrate
+validation/selection, exact authored starts, saved recovery and tournaments.
+read starts no games. Use --help or --cfg job for settings. Python callers can
+use run or the individual lesson functions directly.
 """
 
-import argparse
+from __future__ import annotations
+
 from pathlib import Path
 
 
@@ -108,6 +114,7 @@ def exact(num_envs: int) -> None:
     num_envs controls workers only. Both examples keep a packaged scenario's
     starting state and explicitly shorten its horizon to one remaining step.
     No counterpart is required for the first schedule. Neither creates files.
+    Use scenario_evaluation.py for complete, unchanged packaged scenarios.
     """
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds.tasks import load_tdm_scenario
@@ -199,84 +206,113 @@ def saved(output_dir: Path, num_envs: int, max_steps: int) -> None:
         raise AssertionError("conflicting seed was accepted")
 
 
-def main() -> None:
-    """Run one selected workflow; files are created only by explicit save requests.
+def run(
+    *,
+    workflow: str = "paired",
+    num_envs: int = 32,
+    max_steps: int = 2,
+    output_dir: str | Path | None = None,
+    run_dir: str | Path | None = None,
+) -> None:
+    """Demonstrate saved results, exact starts, selection and result reading.
 
-    Command-line errors exit with a usage message. Provider, evaluation and file
-    failures propagate. No training, official tournament or automatic download
-    occurs. The reader-only branch imports no JAX-dependent module.
+    Parameters
+    ----------
+    workflow : str, default='paired'
+        paired, fixed, validation, authored, save, tournament or read. Each uses the
+        existing result and evaluation APIs.
+    num_envs : int, default=32
+        Number of parallel games. This changes batching, not the declared game or
+        transition budget.
+    max_steps : int, default=2
+        Horizon for generated example games. Authored starts keep their explicit
+        state and budget. read starts no games.
+    output_dir : str | Path | None, default=None
+        Optional result parent. save requires it; validation also saves its
+        illustrative checkpoints there. Authored starts do not use it.
+    run_dir : str | Path | None, default=None
+        Exact saved result folder required by read. Other workflows do not use it.
+
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "workflow",
-        nargs="?",
-        default="paired",
-        choices=(
-            "paired",
-            "fixed",
-            "validation",
-            "authored",
-            "save",
-            "tournament",
-            "read",
-        ),
-    )
-    parser.add_argument("--num-envs", type=int, default=32)
-    parser.add_argument("--max-steps", type=int, default=2)
-    parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--run-dir", type=Path)
-    args = parser.parse_args()
-    if args.workflow == "read":
-        if args.run_dir is None:
-            parser.error("read needs --run-dir naming an existing run")
+    output_dir = None if output_dir is None else Path(output_dir)
+    run_dir = None if run_dir is None else Path(run_dir)
+    if workflow not in (
+        "paired",
+        "fixed",
+        "validation",
+        "authored",
+        "save",
+        "tournament",
+        "read",
+    ):
+        raise ValueError("Unknown saved-results workflow")
+    if workflow == "read":
+        if run_dir is None:
+            raise ValueError("read needs run_dir naming an existing run")
         from marl_battlegrounds import load_results
 
-        result = load_results(args.run_dir)
+        result = load_results(run_dir)
         print("Status:", result.status)
         for rows in result.iter_table("episodes", rows=128):
             print(rows)
         return
-    if args.workflow == "validation":
-        validate(args.num_envs, args.max_steps, args.output_dir)
+    if workflow == "validation":
+        validate(num_envs, max_steps, output_dir)
         return
-    if args.workflow == "authored":
-        exact(args.num_envs)
+    if workflow == "authored":
+        exact(num_envs)
         return
-    if args.workflow == "save":
-        if args.output_dir is None:
-            parser.error("save needs --output-dir")
-        saved(args.output_dir, args.num_envs, args.max_steps)
+    if workflow == "save":
+        if output_dir is None:
+            raise ValueError("save needs output_dir")
+        saved(output_dir, num_envs, max_steps)
         return
     import marl_battlegrounds as marl_bgs
 
-    if args.workflow == "tournament":
+    if workflow == "tournament":
         result = marl_bgs.run_tournament(
             ["random", "tdm-alpha"],
             maps=[12],
             episodes_per_pair=2,
-            num_envs=args.num_envs,
-            max_steps=args.max_steps,
-            output_dir=args.output_dir,
+            num_envs=num_envs,
+            max_steps=max_steps,
+            output_dir=output_dir,
         )
         print("Rankings:", result.table("tournament_rankings"))
         print("Headlines:", result.table("tournament_headline_metrics"))
         return
-    fixed = args.workflow == "fixed"
+    fixed = workflow == "fixed"
     result = marl_bgs.evaluate(
         marl_bgs.shared_policy(marl_bgs.policy("random")),
         "random",
         num_episodes=1 if fixed else 2,
         maps=[12],
         spawn_mode="swapped" if fixed else "paired",
-        num_envs=args.num_envs,
-        max_steps=args.max_steps,
+        num_envs=num_envs,
+        max_steps=max_steps,
         metrics="priority",
-        output_dir=args.output_dir,
+        output_dir=output_dir,
     )
     print("Status:", result.status)
     print("Outcomes:", result.table("episodes"))
     print("Spawn Coverage:", result.metadata["spawn_balance"])
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("evaluation_results", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

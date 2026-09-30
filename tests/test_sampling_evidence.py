@@ -204,8 +204,9 @@ def test_validation_sampling_is_bound_to_saved_pass_and_preserves_old_summary(
     monkeypatch.setattr(evaluator, "evaluate", short)
     monkeypatch.setattr(evaluator, "_verify_evaluation", short_verify)
     folder = tmp_path / "task"
+    actor_path = tmp_path / "actor"
     result = validation.validate_checkpoint(
-        "unused", panel, output_dir=folder, seed_pairs=2, num_envs=2
+        actor_path, panel, output_dir=folder, seed_pairs=2, num_envs=2
     )
     assert result["sampling_evidence"]["supported_independent_sampling_units"] == 0
     assert result["ci_low"] is result["ci_high"] is None
@@ -244,7 +245,7 @@ def test_validation_sampling_is_bound_to_saved_pass_and_preserves_old_summary(
     original_bytes = (json.dumps(historical, separators=(",", ":")) + "\n").encode()
     summary.write_bytes(original_bytes)
     resumed = validation.validate_checkpoint(
-        "unused", panel, output_dir=folder, seed_pairs=2, num_envs=2
+        actor_path, panel, output_dir=folder, seed_pairs=2, num_envs=2
     )
     assert resumed == historical
     assert summary.read_bytes() == original_bytes
@@ -252,7 +253,7 @@ def test_validation_sampling_is_bound_to_saved_pass_and_preserves_old_summary(
     summary.unlink()
     sidecar.unlink()
     reanalyzed = validation.validate_checkpoint(
-        "unused", panel, output_dir=folder, seed_pairs=2, num_envs=2
+        actor_path, panel, output_dir=folder, seed_pairs=2, num_envs=2
     )
     assert reanalyzed["sampling_evidence"]["determinism"] == "Determinism Unknown"
     assert (

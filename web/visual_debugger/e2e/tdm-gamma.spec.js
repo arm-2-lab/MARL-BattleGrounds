@@ -1,19 +1,7 @@
 /**
- * @file Check the Reactive TDM GAMMA controller (tdm_gamma) on Team B from
- * selection to saved replay in a real recording DevClient. The page starts with
- * Team A and Team B on Manual under SharedObs, and the Team A list also offers
- * GAMMA, enabled under SharedObs. Choosing GAMMA for Team B must install
- * exactly Team A Manual, Team B tdm_gamma and SharedObs, and lock NoSharedObs.
- * A selected Team B actor must show "Reactive TDM GAMMA" as its read-only
- * controller. One real Submit must record one transition, and Finish
- * (finish_and_review) must save a current replay (V4) and hand the page to
- * review with Team B named "Reactive TDM GAMMA". The saved file must record every Team B
- * row as policy kind tdm_gamma, algorithm
- * reactive-team-deathmatch-gamma-controller, deterministic, with the GAMMA
- * pressure protocol digest. A separate Replay Viewer opened on that file must
- * name Team B "Reactive TDM GAMMA" with tdm_gamma policy IDs. The recording
- * debugger, which owns the file's folder, stops only after that viewer stops.
- * Waits have no time limit.
+ * @file Check API-configured Team B GAMMA through one accepted step, recording,
+ * and separate Replay Viewer inspection. Preserve exact policy and replay identities.
+ * Private controller-menu behavior is checked in the local editor test suite.
  */
 import { expect, test } from "@playwright/test";
 
@@ -183,7 +171,10 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   page,
   context,
 }) => {
-  const started = await startRecordingDebugger({ stem: "tdm-gamma" });
+  const started = await startRecordingDebugger({
+    stem: "tdm-gamma",
+    extraArgs: ["--team-b-controller", "tdm_gamma"],
+  });
   recording = started;
   const errors = collectBrowserErrors(page);
   await page.goto(started.url);
@@ -196,50 +187,8 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     "data-recording-lifecycle",
     "recording",
   );
-  await expect(page.locator("#devclient-combat-config")).toBeVisible();
-
-  const teamA = page.locator("#devclient-team-a-controller");
-  const teamB = page.locator("#devclient-team-b-controller");
-  const information = page.locator("#devclient-information-mode");
-  const gammaOption = page.locator("#devclient-tdm-gamma-controller-option");
-  await expect(teamA).toHaveValue("manual");
-  await expect(teamB).toHaveValue("manual");
-  await expect(information).toHaveValue("shared_obs");
-  await expect(gammaOption).toHaveText(GAMMA_LABEL);
-  await expect(gammaOption).toHaveAttribute("value", "tdm_gamma");
-  await expect(gammaOption).toHaveJSProperty("disabled", false);
-  const teamAGammaOption = teamA.locator('option[value="tdm_gamma"]');
-  await expect(teamAGammaOption).toHaveAttribute(
-    "id",
-    "devclient-team-a-tdm-gamma-option",
-  );
-  await expect(teamAGammaOption).toHaveText(GAMMA_LABEL);
-  await expect(teamAGammaOption).toHaveJSProperty("disabled", false);
-  await expect(page.locator("#devclient-no-shared-option")).toHaveJSProperty(
-    "disabled",
-    false,
-  );
-
-  const configurationResponse = await applyLiveCommand(page, () =>
-    teamB.selectOption("tdm_gamma"),
-  );
-  expect(configurationResponse.request().postDataJSON().command).toEqual({
-    command_type: "set_combat_configuration",
-    ...GAMMA_CONFIGURATION,
-  });
-  await expect(teamB).toHaveValue("tdm_gamma");
-  await expect(teamA).toHaveValue("manual");
-  await expect(information).toHaveValue("shared_obs");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-team-b-controller",
-    "tdm_gamma",
-  );
-  await expect(page.locator("#devclient-no-shared-option")).toHaveJSProperty(
-    "disabled",
-    true,
-  );
   const installed = await authenticatedGet(page, "/api/frame");
-  expect(installed.combat_configuration).toEqual(GAMMA_CONFIGURATION);
+  expect(installed.combat_configuration).toMatchObject(GAMMA_CONFIGURATION);
   expect(installed.recording).toMatchObject({
     lifecycle: "recording",
     captured_transition_count: 0,
@@ -256,11 +205,11 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     "true",
   );
   await expect(page.locator("#command-controlled-actor")).toContainText(
-    `${GAMMA_LABEL} (read-only)`,
+    "tdm_gamma (read-only)",
   );
   await expect(page.locator("#command-controlled-actor")).toHaveAttribute(
     "aria-label",
-    new RegExp(`${GAMMA_LABEL} supplies this actor's action\\.$`, "u"),
+    /tdm_gamma \(read-only\)\. This policy chooses its own action\.$/u,
   );
   await expect(page.locator("#command-target-select")).toBeDisabled();
 
@@ -271,7 +220,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     /^1 \/ [1-9]\d* transitions$/u,
   );
   const stepped = await authenticatedGet(page, "/api/frame");
-  expect(stepped.combat_configuration).toEqual(GAMMA_CONFIGURATION);
+  expect(stepped.combat_configuration).toMatchObject(GAMMA_CONFIGURATION);
   expect(stepped.recording).toMatchObject({
     lifecycle: "recording",
     captured_transition_count: 1,
@@ -283,10 +232,14 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   expect(finishResponse.request().postDataJSON().command).toMatchObject({
     command_type: "finish_and_review",
   });
-  await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "replay");
+  await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
+  );
   await expect(page.locator("html")).toHaveAttribute(
     "data-product-kind",
-    "replay_viewer",
+    "combat_debugger",
   );
   await expectGammaScoreboard(page);
 

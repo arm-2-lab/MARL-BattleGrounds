@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from marl_battlegrounds.training import _launch
+from marl_battlegrounds.training import _launch  # pyright: ignore[reportPrivateUsage]
 from marl_battlegrounds.training._run_io import (
     atomic_json,
     duration,
@@ -83,8 +83,8 @@ def screen_declaration() -> Record:
     default to 5.0. This preserves the screen's original numerical settings
     and scoring. This function writes no files.
     """
-    from marl_battlegrounds.baselines.ppo import PPOConfig
-    from marl_battlegrounds.training.runner import TrainConfig, config_to_dict
+    from marl_battlegrounds.baselines.config import PPOConfig
+    from marl_battlegrounds.training.config import TrainConfig, config_to_dict
 
     cases = [
         {"name": f"b{batch}-t{length}", "num_envs": batch, "rollout_length": length}
@@ -883,7 +883,8 @@ def _worker(
     """
     import jax
 
-    from marl_battlegrounds.training.runner import read_config, train
+    from marl_battlegrounds.training.config import read_config
+    from marl_battlegrounds.training.runner import train
 
     if (
         jax.default_backend() != "gpu"

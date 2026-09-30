@@ -570,7 +570,7 @@ especially c16's three 2-4M-step checkpoints, scored better on the routine check
 than their final models. The cause remains unresolved; noisy checks and selection
 of observed peaks must be considered.
 
-The [completed assessment](../../artifacts/m9-m10/packet-4/mappo-tuning-20m/reports/assessment.md)
+The completed assessment (historical local evidence: `artifacts/m9-m10/packet-4/mappo-tuning-20m/reports/assessment.md`)
 contains the ranked table, costs, matched-setting comparisons, limits and links
 to all 48 model identities, raw games, learning curves and threshold exposure.
 The leading mean remains far below the near-100% Random win goal. Three seeds

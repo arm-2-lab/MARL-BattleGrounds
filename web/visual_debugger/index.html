@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Shared native client page for DevClient and Replay Viewer. The server supplies
+  Shared native client page for BattleClient and Replay Viewer. The server supplies
   bootstrap.js, which selects the product; src/main.js installs its authorized
   data and controls. Stable IDs are binding points for that code. Keep scripts,
   styles and fonts local and preserve the content-security policy below.
@@ -27,19 +27,7 @@
         <p class="eyebrow">MARL-BattleGrounds</p>
         <h1 id="app-title">MARL-BattleGrounds</h1>
       </div>
-      <nav
-        id="devclient-nav"
-        class="devclient-nav"
-        aria-label="DevClient areas"
-        data-devclient-only
-        hidden
-      >
-        <button type="button" data-devclient-area="combat" aria-current="page">
-          Combat Debugger
-        </button>
-        <button type="button" data-devclient-area="maps">Maps</button>
-        <button type="button" data-devclient-area="scenarios">Scenarios</button>
-      </nav>
+
       <div class="header-status" aria-live="polite">
         <span id="connection-status" class="status-pill" data-state="loading">
           Connecting
@@ -68,54 +56,7 @@
         <span>Step <strong id="step-value">—</strong></span>
         <span>Transition <strong id="transition-value">—</strong></span>
       </fieldset>
-      <fieldset
-        id="devclient-combat-config"
-        class="devclient-combat-config"
-        aria-label="DevClient combat configuration"
-        data-devclient-only
-        hidden
-      >
-        <label>
-          <span>Saved asset</span>
-          <select id="devclient-scenario-select" aria-label="Saved valid map or scenario">
-            <option value="">Built-in arena</option>
-          </select>
-        </label>
-        <label>
-          <span>Task</span>
-          <select id="devclient-task-select" aria-label="Task for authored matches" disabled>
-            <option value="tdm">TDM</option>
-          </select>
-        </label>
-        <button id="devclient-scenario-load" type="button" disabled>Load</button>
-        <label>
-          <span>Team A controller</span>
-          <select id="devclient-team-a-controller">
-            <option value="manual" selected>Manual</option>
-            <option value="reactive_tdm" id="devclient-team-a-reactive-option" disabled>Reactive TDM ALPHA</option>
-            <option value="random_valid">Random</option>
-            <option value="scenario_5" id="devclient-team-a-scenario-5-option" disabled>Reactive TDM BETA</option>
-            <option value="tdm_gamma" id="devclient-team-a-tdm-gamma-option" disabled>Reactive TDM GAMMA</option>
-          </select>
-        </label>
-        <label>
-          <span>Team B controller</span>
-          <select id="devclient-team-b-controller">
-            <option value="manual" selected>Manual</option>
-            <option value="reactive_tdm" id="devclient-team-b-reactive-option" disabled>Reactive TDM ALPHA</option>
-            <option value="random_valid">Random</option>
-            <option value="scenario_5" id="devclient-scenario-5-controller-option" disabled>Reactive TDM BETA</option>
-            <option value="tdm_gamma" id="devclient-tdm-gamma-controller-option" disabled>Reactive TDM GAMMA</option>
-          </select>
-        </label>
-        <label>
-          <span>Information</span>
-          <select id="devclient-information-mode">
-            <option value="shared_obs" selected>SharedObs</option>
-            <option value="no_shared_obs" id="devclient-no-shared-option">NoSharedObs</option>
-          </select>
-        </label>
-      </fieldset>
+
       <div class="toolbar-actions">
         <button id="reconnect-button" class="button button--quiet" type="button">
           Reconnect
@@ -139,7 +80,7 @@
       <div class="recording-panel__summary">
         <div>
           <p class="eyebrow">Canonical replay capture</p>
-          <h2 id="recording-heading">Replay recording</h2>
+          <h2 id="recording-heading">Replay Recording</h2>
         </div>
         <dl class="recording-facts">
           <div>
@@ -169,7 +110,7 @@
           hidden
           disabled
         >
-          Finish &amp; Review
+          Finish And Save
         </button>
         <button
           id="recording-review-button"
@@ -178,13 +119,15 @@
           hidden
           disabled
         >
-          Review replay
+          Open Replay
         </button>
+        <!-- biome-ignore lint/a11y/useValidAnchor: This link stays hidden until the server supplies its separate replay URL. -->
+        <a id="recording-replay-link" target="_blank" rel="noopener noreferrer" hidden>Open Saved Replay In New Tab</a>
         <button id="recording-retry-button" type="button" hidden disabled>
-          Retry save
+          Retry Save
         </button>
         <div id="recording-save-as-control" class="recording-save-as" hidden>
-          <label for="recording-save-as-input">Save As basename</label>
+          <label for="recording-save-as-input">Save As File Name</label>
           <input
             id="recording-save-as-input"
             type="text"
@@ -379,7 +322,7 @@
           <summary class="command-deck__header">
             <span class="command-deck__title-group">
               <span class="command-deck__eyebrow">Joint action composer</span>
-              <strong class="command-deck__title">Stage, inspect, then submit</strong>
+              <strong class="command-deck__title">Stage, Inspect, Then Submit</strong>
             </span>
           </summary>
 
@@ -388,6 +331,8 @@
             class="disclosure-body command-deck__body"
             data-disclosure-body="command-deck"
           >
+            <p id="live-control-help" class="empty-copy">Choose a Manual agent, stage its action, then Submit. Changing focus keeps other drafts. Escape clears the target.</p>
+            <p id="live-match-rules" class="empty-copy"></p>
             <div class="command-deck__composer">
               <div class="command-group command-group--compose command-group--movement">
                 <div class="command-group__heading">
@@ -426,6 +371,11 @@
                     <option value="">No target</option>
                   </select>
                 </label>
+                <details id="policy-target-masks" hidden>
+                  <summary>Current Policy Target Masks</summary>
+                  <p class="empty-copy">These choices are allowed now. The policy has not chosen its action.</p>
+                  <ul id="policy-target-mask-rows" class="empty-copy"></ul>
+                </details>
                 <div class="button-row command-choice-row">
                   <button id="no-combat-button" type="button" data-key="0" data-command-role="draft" aria-pressed="false">No combat</button>
                   <button id="basic-button" type="button" data-key="1" data-command-role="draft" aria-pressed="false">Arm Basic</button>
@@ -443,6 +393,8 @@
               <div class="command-commit__actions">
                 <button id="cancel-system-button" type="button" hidden>Cancel System Work</button>
                 <span id="system-operation-status" role="status"></span>
+                <span id="live-run-status" role="status">Paused</span>
+                <button id="live-run-button" type="button" hidden disabled>Run</button>
                 <button id="submit-turn-button" type="button" data-key="Enter" data-command-role="interactive-submit" class="button--primary">
                   Submit joint turn
                 </button>
@@ -656,130 +608,7 @@
       </aside>
     </main>
 
-    <section id="authoring-shell" class="authoring-shell" data-devclient-only hidden>
-      <header class="authoring-toolbar">
-        <div>
-          <p id="authoring-eyebrow" class="eyebrow">Map Author</p>
-          <h2 id="authoring-title">Untitled map</h2>
-          <p id="authoring-persistence-status" class="eyebrow" aria-live="polite">
-            Unsaved map draft
-          </p>
-        </div>
-        <div class="authoring-toolbar__actions">
-          <label id="authoring-saved-draft-choice">
-            <span>Saved draft</span>
-            <select id="authoring-saved-draft-select" aria-label="Saved map draft">
-              <option value="">No saved map drafts</option>
-            </select>
-          </label>
-          <button
-            id="authoring-delete-saved"
-            class="button--danger"
-            type="button"
-            disabled
-          >
-            Delete Saved
-          </button>
-          <label id="authoring-new-scenario-choice" hidden>
-            <span>New scenario from</span>
-            <select id="authoring-new-scenario-mode">
-              <option value="blank">Blank scenario</option>
-              <option value="copy_saved_map">Copy saved map</option>
-              <option value="duplicate_saved_scenario">Duplicate saved scenario</option>
-            </select>
-          </label>
-          <label id="authoring-new-scenario-source-choice" hidden>
-            <span>Source asset</span>
-            <select id="authoring-new-scenario-source" aria-label="New scenario source">
-              <option value="">No source required</option>
-            </select>
-          </label>
-          <button id="authoring-new" type="button">New</button>
-          <button id="authoring-open" type="button">Open</button>
-          <button id="authoring-save" type="button">Save</button>
-          <button id="authoring-save-as" type="button">Save As</button>
-          <button id="authoring-validate" type="button">Validate</button>
-          <button id="authoring-open-debug" class="button--primary" type="button">
-            Open in Debug
-          </button>
-        </div>
-      </header>
 
-      <div class="authoring-grid">
-        <aside class="authoring-panel authoring-objects" aria-labelledby="authoring-objects-heading">
-          <div class="section-heading">
-            <h3 id="authoring-objects-heading">Objects</h3>
-            <span id="authoring-object-count" class="count-badge">0</span>
-          </div>
-          <div id="authoring-palette" class="authoring-palette">
-            <button type="button" data-authoring-add="wall">Wall</button>
-            <button type="button" data-authoring-add="pillar">Pillar</button>
-          </div>
-          <span id="authoring-object-list-help" class="sr-only">
-            Select an object for exact editing. Scenario agents can also be dragged onto the map.
-          </span>
-          <ol id="authoring-object-list" class="authoring-object-list"></ol>
-        </aside>
-
-        <section class="authoring-canvas-panel" aria-labelledby="authoring-canvas-heading">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Editable world</p>
-              <h3 id="authoring-canvas-heading">Map</h3>
-            </div>
-            <p class="authoring-hint">
-              Drag centers · wheel zoom · Space/middle-drag pan · Alt bypasses snap
-            </p>
-          </div>
-          <div class="authoring-canvas-shell">
-            <svg
-              id="authoring-canvas"
-              class="authoring-canvas"
-              role="application"
-              aria-label="Map authoring canvas"
-              tabindex="0"
-            ></svg>
-          </div>
-          <div class="authoring-canvas-actions">
-            <button id="authoring-reset" type="button">Reset (R)</button>
-            <button id="authoring-recenter" type="button">Recenter</button>
-            <button id="authoring-undo" type="button" disabled>Undo</button>
-            <button id="authoring-redo" type="button" disabled>Redo</button>
-            <button id="authoring-duplicate" type="button" disabled>Duplicate</button>
-            <button id="authoring-delete" class="button--danger" type="button" disabled>
-              Delete
-            </button>
-            <button id="authoring-order-up" type="button" disabled>Move up</button>
-            <button id="authoring-order-down" type="button" disabled>Move down</button>
-          </div>
-        </section>
-
-        <aside class="authoring-panel authoring-inspector" aria-labelledby="authoring-inspector-heading">
-          <div class="section-heading">
-            <h3 id="authoring-inspector-heading">Numeric Inspector</h3>
-          </div>
-          <span id="authoring-inspector-help" class="sr-only">
-            Edit the selected document, object, or agent with exact typed values.
-          </span>
-          <form id="authoring-inspector-form" novalidate>
-            <p class="empty-copy">Select an object or agent to edit exact values.</p>
-          </form>
-        </aside>
-      </div>
-
-      <section class="authoring-problems" aria-labelledby="authoring-problems-heading">
-        <div class="section-heading">
-          <h3 id="authoring-problems-heading">Linked Problems</h3>
-          <span id="authoring-problem-count" class="count-badge">0</span>
-        </div>
-        <span id="authoring-problem-list-help" class="sr-only">
-          Select a problem to focus its object and exact inspector field.
-        </span>
-        <ol id="authoring-problem-list" class="authoring-problem-list">
-          <li class="empty-copy">Validate to inspect host-authoritative errors and warnings.</li>
-        </ol>
-      </section>
-    </section>
 
     <aside
       id="visual-tooltip"
@@ -905,11 +734,11 @@
       data-live-only
     >
       <form method="dialog">
-        <p class="eyebrow">Destructive in-memory action</p>
-        <h2 id="recording-discard-heading">Discard captured prefix?</h2>
+        <p class="eyebrow">Start Another Match</p>
+        <h2 id="recording-discard-heading">Save This Game First?</h2>
         <p id="recording-discard-description">
-          This replaces the active episode and permanently discards its unpublished
-          in-memory recording prefix. No saved replay file is deleted or overwritten.
+          Save keeps a replay before starting the next match. Discard drops this
+          unsaved recording. Cancel keeps this match. Saved files stay unchanged.
         </p>
         <p class="recording-discard-dialog__intent">
           Requested replacement: <strong id="recording-discard-intent">Unavailable</strong>
@@ -921,14 +750,17 @@
             type="submit"
             value="cancel"
           >
-            Keep recording
+            Cancel
+          </button>
+          <button id="recording-save-replace-button" class="button--primary" type="button">
+            Save
           </button>
           <button
             id="recording-discard-confirm-button"
             class="button button--danger"
             type="button"
           >
-            Discard and replace
+            Discard
           </button>
         </div>
       </form>

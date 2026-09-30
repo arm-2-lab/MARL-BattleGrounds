@@ -18,6 +18,8 @@ validation, then resume with retained clients. They omit inherited candidate
 discovery; separate H300 tests verify inherited games and parent ranking. Their
 runtime identity and recording provenance stay fixed while other packet files
 change, so these checks do not qualify source compatibility.
+A shared factory reference is loaded once across training and validation roles;
+its reload reference and nested resource cleanup survive a setup interruption.
 """
 
 # pyright: reportPrivateUsage=false
@@ -366,7 +368,11 @@ def test_live_host_validation_keeps_32_lanes_and_reuses_completed_rows(
     monkeypatch.setattr(evaluator, "evaluate", short)
     monkeypatch.setattr(evaluator, "_verify_evaluation", short_verify)
     result = validation.validate_checkpoint(
-        "unused", panel, output_dir=tmp_path / "task", seed_pairs=1, num_envs=32
+        str(tmp_path / "unused"),
+        panel,
+        output_dir=tmp_path / "task",
+        seed_pairs=1,
+        num_envs=32,
     )
     assert result["games"] == 10 and result["complete"]
     assert client.calls and all(
@@ -376,11 +382,91 @@ def test_live_host_validation_keeps_32_lanes_and_reuses_completed_rows(
     before = len(client.calls)
     assert (
         validation.validate_checkpoint(
-            "unused", panel, output_dir=tmp_path / "task", seed_pairs=1, num_envs=32
+            str(tmp_path / "unused"),
+            panel,
+            output_dir=tmp_path / "task",
+            seed_pairs=1,
+            num_envs=32,
         )
         == result
     )
     assert len(client.calls) == before
+    from marl_battlegrounds.training import selection
+
+    partner_client = Client()
+    partner = System("Live Ally", partner_client.apply, execution="host")
+    _, deployment = validation.freeze_validation_partners(
+        {"Live Ally": partner},
+        learner_slots=[0],
+        partner_labels={"Live Ally": "held_out"},
+    )
+    deployment.update(
+        maps=[42], system_roster=["mage", "priest"], opponent_roster=["warrior"]
+    )
+    declared = {
+        "schema_version": 1,
+        "panel_digest": panel.digest,
+        "panel_schema_version": 2,
+        "roots": panel.roots,
+        "routine_seed_pairs": 1,
+        "confirmation_seed_pairs": 1,
+        "red_zone_depth": 5.0,
+        "deployment": deployment,
+    }
+    routine = validation.declared_panel_task(
+        declared,
+        panel,
+        checkpoint_id="checkpoint",
+        actor_digest="actor",
+        env_steps=32,
+        purpose="routine",
+    )
+    request = selection._request(
+        {
+            "panel": panel,
+            "panel_path": panel.path,
+            "config": {},
+            "validation_declaration": declared,
+            "records": [routine],
+            "actors": {
+                "checkpoint": {
+                    "actor_path": str(tmp_path / "unused"),
+                    "artifact_id": "export",
+                }
+            },
+        },
+        routine,
+        selection._declaration({"name": "Live Confirmation"}),
+        tmp_path / "missing",
+    )
+    assert not request["ready_to_run"]
+    assert request["required_bindings"]["partners"][0]["name"] == "Live Ally"
+    assert request["required_bindings"]["panel"][0]["name"] == "Host"
+    arguments = json.loads(json.dumps(request["arguments"], sort_keys=True))
+    calls_before = len(client.calls)
+    with pytest.raises(ValueError, match="live-only"):
+        validation.validate_checkpoint(**arguments, num_envs=32)
+    arguments["panel"] = validation.load_panel(panel.path, bindings=panel.methods)
+    with pytest.raises(ValueError, match="requested task identity"):
+        validation.validate_checkpoint(**arguments, num_envs=32)
+    arguments["partners"] = {
+        "Live Ally": System("Different", Client().apply, execution="host")
+    }
+    with pytest.raises(ValueError, match="requested task identity"):
+        validation.validate_checkpoint(**arguments, num_envs=32)
+    assert len(client.calls) == calls_before and not partner_client.calls
+    assert not Path(arguments["output_dir"]).exists()
+    arguments["partners"] = {"Live Ally": partner}
+    confirmed = validation.validate_checkpoint(**arguments, num_envs=32)
+    assert all(
+        confirmed[key] == value for key, value in request["expected_task"].items()
+    )
+    assert partner_client.calls and len(client.calls) > calls_before
+    calls_before = len(client.calls), len(partner_client.calls)
+    assert validation.validate_checkpoint(**arguments, num_envs=32) == confirmed
+    assert calls_before == (len(client.calls), len(partner_client.calls))
+    before = len(client.calls)
+
     from copy import deepcopy
 
     from marl_battlegrounds.evaluation.run_writer import RunWriter
@@ -714,7 +800,7 @@ def test_ranked_panel_checks_actual_pool_maps_pairs_and_stable_ties(
 
     monkeypatch.setattr(evaluator, "evaluate", short)
     result = validation.validate_checkpoint(
-        "unused",
+        tmp_path / "actor",
         selected,
         output_dir=tmp_path / "foreign-rule-task",
         red_zone_depth=6.0,
@@ -853,7 +939,7 @@ def test_direct_panel_checks_slot_actor_before_learner_or_writer_setup(
 def test_resume_can_rebind_the_same_client_from_a_saved_config_reference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from marl_battlegrounds.training import learner
+    from marl_battlegrounds.training import _checkpoint_metadata, learner
 
     class SetupReachedError(Exception):
         pass
@@ -888,12 +974,13 @@ def test_resume_can_rebind_the_same_client_from_a_saved_config_reference(
             "collection": {},
         }
 
-    def saved_config(saved: object) -> dict[str, Any]:
-        del saved
-        return runner.config_to_dict(config)
+    def resume_checkpoint(path: object) -> tuple[Path, dict[str, object]]:
+        return checkpoint, details(path)
 
-    monkeypatch.setattr(checkpoints, "read_checkpoint_details", details)
-    monkeypatch.setattr(checkpoints, "saved_training_config", saved_config)
+    monkeypatch.setattr(
+        _checkpoint_metadata, "read_resume_checkpoint", resume_checkpoint
+    )
+    monkeypatch.setattr(checkpoints, "read_checkpoint_description", details)
     with pytest.raises(ValueError, match="frozen M8 identity"):
         runner.train(resume_from=checkpoint, validation_opponents=("tdm-alpha",))
     with pytest.raises(SetupReachedError):
@@ -1725,6 +1812,62 @@ def test_fresh_partner_run_records_native_actor_validation_and_resumes(
     assert resumed.selected_actor == result.selected_actor
     assert resumed.final_checkpoint == result.final_checkpoint
 
+    from marl_battlegrounds import training
+
+    before = {
+        path: path.read_bytes() for path in result.run_dir.rglob("*") if path.is_file()
+    }
+    pending = training.reselect_checkpoint(
+        [result.run_dir],
+        declaration={"name": "Partner Confirmation", "confirmation_root": 9876501},
+        output_dir=tmp_path / "pending",
+    )
+    assert pending["status"] == "needs_confirmation"
+    requests = pending["runs"][0]["needs_confirmation"]
+    summaries = []
+    for request in requests:
+        arguments = json.loads(json.dumps(request["arguments"], sort_keys=True))
+        assert request["ready_to_run"]
+        assert arguments["partners"] == {
+            "Training Partner": "random",
+            "New Partner": "tdm-alpha",
+        }
+        assert arguments["system_roster"] == ["mage", "priest"]
+        assert arguments["opponent_roster"] == ["warrior"]
+        assert arguments["learner_slots"] == [0]
+        wrong = dict(
+            arguments,
+            partners={"Training Partner": "tdm-alpha", "New Partner": "tdm-alpha"},
+        )
+        with pytest.raises(ValueError, match="requested task identity"):
+            training.validate_checkpoint(**wrong, num_envs=2)
+        assert not Path(arguments["output_dir"]).exists()
+        confirmed = training.validate_checkpoint(**arguments, num_envs=2)
+        assert all(
+            confirmed[key] == value for key, value in request["expected_task"].items()
+        )
+        summaries.append(str(Path(arguments["output_dir"]) / "validation_summary.json"))
+    decision_path = tmp_path / "pending/selection_decision.json"
+    pending_bytes = decision_path.read_bytes()
+    complete = training.reselect_checkpoint(
+        [result.run_dir],
+        declaration={
+            "name": "Partner Confirmation",
+            "confirmation_root": 9876501,
+            "previous_decision": str(decision_path),
+            "confirmation_results": summaries,
+        },
+        output_dir=tmp_path / "confirmed",
+    )
+    assert complete["status"] == "complete"
+    assert (
+        complete["runs"][0]["winner"]["checkpoint_id"]
+        == evidence["final_checkpoint_id"]
+    )
+    assert complete["runs"][0]["winner"]["actor_digest"] == requests[0]["actor_digest"]
+    assert decision_path.read_bytes() == pending_bytes
+    assert {path: path.read_bytes() for path in before} == before
+
 
 def test_runner_rejects_custom_conditions_with_historical_panel_before_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1948,3 +2091,108 @@ def test_runner_panel_preflight_allows_a_corrected_retry(
     assert len(published) == 1 and published[0].path.is_file()
     assert published[0].methods[0].apply.__self__ is client
     assert not client.calls
+
+
+def test_one_reference_is_loaded_once_across_training_and_validation_roles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from collections.abc import Callable, Generator
+    from contextlib import contextmanager
+
+    from tests.training_continuation_helpers import fixed_source
+
+    from marl_battlegrounds import _method_loading
+    from marl_battlegrounds.baselines.ppo import PPOConfig
+
+    fixed_source(monkeypatch, "ff_ippo")
+    client = Client()
+    scopes: list[str] = []
+    factories: list[str] = []
+
+    @contextmanager
+    def scope(recording: bool) -> Generator[None]:
+        assert recording is False
+        scopes.append("enter")
+        try:
+            yield
+        finally:
+            scopes.append("exit")
+
+    def factory() -> System:
+        factories.append("constructed")
+        return System(
+            "Shared Client", client.apply, execution="host", resource_scope=scope
+        )
+
+    def installed(reference: str) -> Callable[[], System]:
+        assert reference == "clients:make"
+        return factory
+
+    def stop_after_setup(self: runner._Run) -> None:
+        assert _method_loading._setup_inputs.get() is None
+        assert self.panel is not None
+        assert self.panel.members[0].reference == "clients:make"
+        # The training scope stays open while validation takes its own nested
+        # scope. Both must close even when the attempt stops here.
+        with self.panel.methods[0].resource_scope(False):
+            raise RuntimeError("Software setup boundary")
+
+    monkeypatch.setattr(_method_loading, "installed_callable", installed)
+    monkeypatch.setattr(runner._Run, "execute", stop_after_setup)
+    config = runner.TrainConfig(
+        method="ff_ippo",
+        num_envs=4,
+        total_env_steps=8,
+        keep_past=0,
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        metrics="none",
+        verbose=False,
+        opponents={"peer": 1.0},
+        partners={"ally": 1.0},
+        learner_slots=(0, 2),
+        validation_opponents=("clients:make",),
+    )
+    with pytest.raises(RuntimeError, match="Software setup boundary"):
+        runner.train(
+            config,
+            output_dir=tmp_path / "run",
+            opponents={"peer": "clients:make"},
+            partners={"ally": "clients:make"},
+            validation_partners={"extra": "clients:make"},
+        )
+    assert factories == ["constructed"]
+    assert scopes == ["enter", "enter", "exit", "exit"]
+    assert client.calls == []
+    saved_panel = json.loads((tmp_path / "run/validation_panel/panel.json").read_text())
+    assert saved_panel["members"][0]["reference"] == "clients:make"
+
+
+def test_historical_panel_rejects_linked_member_before_loading(tmp_path: Path) -> None:
+    target = tmp_path / "actor"
+    target.mkdir()
+    link = tmp_path / "linked-actor"
+    link.symlink_to(target, target_is_directory=True)
+    content: dict[str, Any] = {
+        "schema_version": 1,
+        "provisional": True,
+        "qualified": False,
+        "inference": "Sampled masked categorical",
+        "members": [
+            {"name": "Halfway", "path": "linked-actor"},
+            {"name": "Final", "path": "linked-actor"},
+        ],
+    }
+    content["panel_digest"] = validation._panel_digest(content)
+    panel = tmp_path / "panel.json"
+    panel.write_text(json.dumps(content))
+    with pytest.raises(ValueError, match=r"[Ss]ymlink|symbolic link"):
+        validation.load_panel(panel)
+    portable: dict[str, Any] = {
+        "schema_version": 2,
+        "members": [{"reference": "linked-actor", "export_relative": True}],
+    }
+    portable["panel_digest"] = validation._panel_digest(portable)
+    references = validation._panel_input_references(panel, portable)
+    assert references == (str(link),)
+    with pytest.raises(ValueError, match=r"[Ss]ymlink|symbolic link"):
+        checkpoints.read_checkpoint_description(references[0])

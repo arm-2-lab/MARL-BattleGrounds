@@ -23,6 +23,7 @@ CONTINUATION_CHANGE_KEYS = frozenset(
         "history_capture_env_steps",
         "past_capture_interval",
         "keep_past",
+        "retain_all_actors",
         "opponents",
         "reward",
         "partners",
@@ -563,9 +564,7 @@ def resolve_learner_continuation(
     inherited = dict(values["loss_settings"])
     inherited.update(overrides)
     if inherited:
-        from marl_battlegrounds.baselines.ppo import PPOConfig
-        from marl_battlegrounds.baselines.pqn import PQNConfig
-        from marl_battlegrounds.baselines.qmix import QMIXConfig
+        from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
 
         # Reuse each method's existing scalar validation, not another range table.
         factory = {"ppo": PPOConfig, "qmix": QMIXConfig, "pqn": PQNConfig}[family]

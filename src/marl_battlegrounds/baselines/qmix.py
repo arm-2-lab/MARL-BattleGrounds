@@ -17,7 +17,8 @@
 """Provide recurrent QMIX networks, its actor System and one sampled update.
 
 This module adapts Mava's recurrent QMIX (``rec_qmix``) at revision
-``9f67e612654ecb7b7d45ff8052ce9ccfc6c68d93``. It owns the QMIX settings, the
+``9f67e612654ecb7b7d45ff8052ce9ccfc6c68d93``. It re-exports QMIX settings
+from baselines.config and owns the
 local Q-networks, the monotonic mixer, the epsilon-greedy actor System,
 the exploration clock, network initialization and one Double-Q optimizer step
 on an already expanded replay sample. It owns no replay buffer, collection
@@ -38,15 +39,45 @@ in MARL-BGs.
 
 import dataclasses
 import functools
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from numbers import Real
 from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
 from jax import Array
+
+from marl_battlegrounds.baselines.config import (
+    _INT32_MAX as _INT32_MAX,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_QMIX_CONFIG as DEFAULT_QMIX_CONFIG,
+)
+from marl_battlegrounds.baselines.config import (
+    QMIX_KEY_SCHEMA_VERSION as QMIX_KEY_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import (
+    QMIX_REPLAY_SCHEMA_VERSION as QMIX_REPLAY_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import QMIX_TIE_RULE as QMIX_TIE_RULE
+from marl_battlegrounds.baselines.config import (
+    TEAM_SLOTS as TEAM_SLOTS,
+)
+from marl_battlegrounds.baselines.config import (
+    QMIXConfig as QMIXConfig,
+)
+from marl_battlegrounds.baselines.config import (
+    _count as _count,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _positive as _positive,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _unit_interval as _unit_interval,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    validate_qmix_batch_size as validate_qmix_batch_size,
+)
 
 try:
     import optax  # pyright: ignore[reportMissingTypeStubs]
@@ -60,7 +91,7 @@ except ImportError as error:
 # pyright: reportPrivateUsage=false
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
-    _masked_logits,
+    _masked_logits,  # pyright: ignore[reportPrivateUsage]
     categorical_action_mask,
     decode_actions,
     mirror_action_indices,
@@ -77,20 +108,20 @@ from marl_battlegrounds.baselines.inputs import (
     team_obstacle_partners,
 )
 from marl_battlegrounds.baselines.ppo import (
-    _PARAMETER_SHARING,
+    _PARAMETER_SHARING,  # pyright: ignore[reportPrivateUsage]
     MLPTorso,
-    _actor_group_presence,
-    _actor_input_schema,
-    _batch_actor_groups,
-    _group_dense,
-    _group_gru,
-    _group_order,
-    _grouped_actor_inputs,
-    _input_scale,
-    _parameter_sharing,
-    _restore_group_rows,
-    _spawn_frame,
-    _update_actor_groups,
+    _actor_group_presence,  # pyright: ignore[reportPrivateUsage]
+    _actor_input_schema,  # pyright: ignore[reportPrivateUsage]
+    _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
+    _group_dense,  # pyright: ignore[reportPrivateUsage]
+    _group_gru,  # pyright: ignore[reportPrivateUsage]
+    _group_order,  # pyright: ignore[reportPrivateUsage]
+    _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
+    _input_scale,  # pyright: ignore[reportPrivateUsage]
+    _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
+    _restore_group_rows,  # pyright: ignore[reportPrivateUsage]
+    _spawn_frame,  # pyright: ignore[reportPrivateUsage]
+    _update_actor_groups,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.evaluation.policy_execution import (
     System,
@@ -109,212 +140,6 @@ QMIX_EMBED_SIZE = 32
 """Width of the mixer's hidden layer (the donor's ``qmix_embed_dim``)."""
 QMIX_HYPER_HIDDEN_SIZE = 64
 """Hidden width of the mixer's weight hypernetworks (``hyper_hidden_dim``)."""
-TEAM_SLOTS = 5
-"""Team A actor slots mixed into one team value; smaller rosters pad inactive."""
-QMIX_TIE_RULE = "first_legal_maximum"
-"""Greedy rule: the lowest legal action index among equal best scores wins."""
-QMIX_KEY_SCHEMA_VERSION = 1
-"""Version of the learner's model-initialization and sampling key tags."""
-QMIX_REPLAY_SCHEMA_VERSION = 1
-"""Version of the compact QMIX replay row layout."""
-_INT32_MAX = 2**31 - 1
-
-
-def _count(value: object, name: str, *, minimum: int = 1) -> int:
-    """Check one plain integer count within [minimum, int32 max] and return it.
-
-    Booleans, floats, arrays and out-of-range values raise ValueError. This
-    host-only check performs no device work.
-    """
-    if type(value) is not int or not minimum <= value <= _INT32_MAX:
-        raise ValueError(f"{name} must be a plain integer in [{minimum}, 2**31-1].")
-    return value
-
-
-def _unit_interval(value: object, name: str) -> float:
-    """Check one finite real number in [0, 1], excluding Booleans; return float."""
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise ValueError(f"{name} must be a finite real number in [0, 1].")
-    number = float(value)
-    if not math.isfinite(number) or not 0 <= number <= 1:
-        raise ValueError(f"{name} must be a finite real number in [0, 1].")
-    return number
-
-
-def _positive(value: object, name: str) -> float:
-    """Check one finite positive real number, excluding Booleans; return float."""
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise ValueError(f"{name} must be a finite positive real number.")
-    number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        raise ValueError(f"{name} must be a finite positive real number.")
-    return number
-
-
-@dataclass(frozen=True)
-class QMIXConfig:
-    """Hold the static recurrent QMIX settings, using the donor's names.
-
-    Parameters
-    ----------
-    rollout_length : int, default=8
-        Most real rounds collected in one block before replay insertion and
-        learning (T). One round is one decision in every game lane. Blocks may
-        be shorter at the end of a budget or in low-level use.
-    buffer_size : int, default=1000
-        Replay capacity in time rows per game lane (C). The total number of rows
-        is C times the number of lanes. It must be at least min_buffer_size and
-        at least rollout_length.
-    min_buffer_size : int, default=32
-        Rows per lane that must be stored before any sample or optimizer step.
-        It must be at least sample_sequence_length.
-    sample_sequence_length : int, default=20
-        Consecutive rows per sampled sequence (S). S rows give S-1 adjacent TD
-        pairs. Must be at least 2.
-    sample_batch_size : int, default=128
-        Sequences drawn for each optimizer step (M), with replacement.
-    epochs : int, default=4
-        Fresh samples and optimizer steps per ready block.
-    q_lr : float, default=0.00003
-        Adam learning rate shared by the online Q-network and mixer. Adam keeps
-        its defaults (b1 0.9, b2 0.999, eps 1e-8). There is no gradient clipping:
-        the donor configuration names ``max_grad_norm`` but its optimizer never
-        uses it, so it is not copied.
-    hard_update : bool, default=True
-        Python bool choosing the target-network rule. True copies the online
-        networks when the optimizer count before a step is a multiple of
-        update_period (counts 0, 200, 400 and so on). False blends the online
-        networks into the targets with weight tau after every step.
-    update_period : int, default=200
-        Optimizer steps between hard target copies. Kept and checked even when
-        hard_update is False.
-    tau : float, default=0.01
-        Soft-blend weight in [0, 1]. Kept and checked even when hard_update is
-        True.
-    gamma : float, default=0.99
-        Discount per transition, in [0, 1].
-    eps_min : float, default=0.05
-        Exploration rate reached at the end of the decay, in [0, 1].
-    eps_decay : int, default=100000
-        Real environment transitions (all game lanes counted) over which the
-        exploration rate falls linearly from 1 to eps_min. It is a number of
-        transitions, not a rate.
-    input_scale : float, default=1.0
-        Positive finite multiplier applied to every actor feature before the
-        first Dense layer. The mixer's physical state is never scaled.
-    spawn_frame : str, default="left"
-        Network frame for actor features, masks and actions: "left" reflects
-        every game to look like a start from the left bank, "world" keeps raw
-        coordinates. Replay rows and physical state stay in the world frame.
-
-    parameter_sharing : {"all", "class", "none"}, default="all"
-        Share actor weights across everyone, within each class, or not between
-        physical slots. Grouped modes have five parameter groups. Memory stays
-        separate per physical actor. Class changes at resets select new weights.
-
-    Raises
-    ------
-    ValueError
-        A count is not a plain integer in range, a float is nonfinite, Boolean
-        or outside its range, hard_update is not a bool, the spawn frame is
-        unknown, the buffer ordering ``buffer_size >= min_buffer_size >=
-        sample_sequence_length >= 2`` or ``rollout_length <= buffer_size``
-        fails, or a per-step or per-block sample count would overflow int32.
-
-    Notes
-    -----
-    The network widths (Q 256, recurrent 256, mixer embedding 32, hypernetwork
-    64) and the replay period of 1 are fixed contracts, not settings. The
-    record is immutable host setup; capture one instance in compiled code.
-    """
-
-    rollout_length: int = 8
-    buffer_size: int = 1000
-    min_buffer_size: int = 32
-    sample_sequence_length: int = 20
-    sample_batch_size: int = 128
-    epochs: int = 4
-    q_lr: float = 0.00003
-    hard_update: bool = True
-    update_period: int = 200
-    tau: float = 0.01
-    gamma: float = 0.99
-    eps_min: float = 0.05
-    eps_decay: int = 100000
-    input_scale: float = 1.0
-    spawn_frame: str = "left"
-    parameter_sharing: str = "all"
-
-    def __post_init__(self) -> None:
-        """Reject invalid settings on the host before any array is created."""
-        for name in (
-            "rollout_length",
-            "buffer_size",
-            "min_buffer_size",
-            "sample_batch_size",
-            "epochs",
-            "update_period",
-            "eps_decay",
-        ):
-            _count(getattr(self, name), name)
-        _count(self.sample_sequence_length, "sample_sequence_length", minimum=2)
-        if not (
-            self.buffer_size >= self.min_buffer_size >= self.sample_sequence_length
-        ):
-            raise ValueError(
-                "QMIX needs buffer_size >= min_buffer_size >= sample_sequence_length"
-            )
-        if self.rollout_length > self.buffer_size:
-            raise ValueError("QMIX needs rollout_length <= buffer_size")
-        _positive(self.q_lr, "q_lr")
-        _input_scale(self.input_scale)
-        _spawn_frame(self.spawn_frame)
-        _parameter_sharing(self.parameter_sharing)
-        for name in ("tau", "gamma", "eps_min"):
-            _unit_interval(getattr(self, name), name)
-        if type(self.hard_update) is not bool:
-            raise ValueError("hard_update must be a Python bool")
-        per_step = self.sample_batch_size * (self.sample_sequence_length - 1)
-        if per_step * TEAM_SLOTS > _INT32_MAX:
-            raise ValueError("One QMIX step's utility count would overflow int32")
-        if self.epochs * per_step * TEAM_SLOTS > _INT32_MAX:
-            raise ValueError("One QMIX block's sample counts would overflow int32")
-
-
-DEFAULT_QMIX_CONFIG = QMIXConfig()
-"""The donor's recurrent QMIX settings with the BG left spawn frame."""
-
-
-def validate_qmix_batch_size(num_envs: int, config: QMIXConfig) -> None:
-    """Check that QMIX's int32 counts for num_envs games cannot overflow.
-
-    Parameters
-    ----------
-    num_envs : int
-        Plain positive number of game lanes (B).
-    config : QMIXConfig
-        Settings whose rollout_length bounds one block and whose eps_decay
-        sets the exploration clock.
-
-    Raises
-    ------
-    ValueError
-        ``num_envs * rollout_length * 5`` exceeds int32 (the shared update
-        summary reduces one block's actor rows into int32 counters), or
-        ``eps_decay + num_envs - 1`` exceeds int32 (the largest value of the
-        saturated exploration clock in ``epsilon_at``).
-
-    Notes
-    -----
-    Host-only; it creates no arrays. ``TrainConfig`` and
-    ``init_qmix_learner`` both call it before any file or array work.
-    Whole-run totals are Python integers and are not limited by this check.
-    """
-    _count(num_envs, "num_envs")
-    if num_envs * config.rollout_length * TEAM_SLOTS > _INT32_MAX:
-        raise ValueError("One QMIX block's actor counts would overflow int32")
-    if config.eps_decay + num_envs - 1 > _INT32_MAX:
-        raise ValueError("The QMIX exploration clock would overflow int32")
 
 
 class QMIXActorVariables(NamedTuple):

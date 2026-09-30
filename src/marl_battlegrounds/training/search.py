@@ -32,7 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from marl_battlegrounds.training import _launch
+from marl_battlegrounds.training import _launch  # pyright: ignore[reportPrivateUsage]
 from marl_battlegrounds.training._run_io import (
     append_jsonl,
     atomic_json,
@@ -113,44 +113,41 @@ def declaration() -> Record:
     """Expand the fixed study's settings through the ordinary config owner.
 
     This setup-only function lazily imports the learner config. It starts no
-    training. Its imports and config construction use CPU array placement, then
-    restore the caller's device default. JAX may still discover other backends
-    in direct Python calls. Returned JSON fixes eight recipes, three discovery
+    training. Its imports and config construction start no numerical backend.
+    Returned JSON fixes eight recipes, three discovery
     seeds each, 20,054,016 transitions per discovery run and twice that per fresh
     finalist. Timing must fit fourteen hours including margin and reporting.
     The base config pins red_zone_depth to 0.0, the one-point scoring the
     study was designed under, so the new 5.0 default does not change it; a Red
     Zone study would be a new declaration.
     """
-    import jax
 
-    with jax.default_device(jax.devices("cpu")[0]):
-        from marl_battlegrounds.baselines.ppo import PPOConfig
-        from marl_battlegrounds.training.runner import TrainConfig, config_to_dict
+    from marl_battlegrounds.baselines.config import PPOConfig
+    from marl_battlegrounds.training.config import TrainConfig, config_to_dict
 
-        config = TrainConfig(
-            num_envs=512,
-            total_env_steps=_MINIMUM_STEPS,
-            red_zone_depth=0.0,
-            shaping=True,
-            shaping_mode="score_delta",
-            shaping_coefficient=0.01,
-            pinned_opponent="tdm-alpha",
-            pinned_opponent_share=0.1,
-            ppo=PPOConfig(
-                rollout_length=32,
-                input_scale=0.01,
-                spawn_frame="left",
-                gamma=0.999,
-                value_normalization=True,
-            ),
-            metrics="none",
-            recording=False,
-            validation_fractions=(0.25, 0.5, 0.75, 1.0),
-            routine_seed_pairs=4,
-            confirmation_seed_pairs=10,
-        )
-        base_config = config_to_dict(config)
+    config = TrainConfig(
+        num_envs=512,
+        total_env_steps=_MINIMUM_STEPS,
+        red_zone_depth=0.0,
+        shaping=True,
+        shaping_mode="score_delta",
+        shaping_coefficient=0.01,
+        pinned_opponent="tdm-alpha",
+        pinned_opponent_share=0.1,
+        ppo=PPOConfig(
+            rollout_length=32,
+            input_scale=0.01,
+            spawn_frame="left",
+            gamma=0.999,
+            value_normalization=True,
+        ),
+        metrics="none",
+        recording=False,
+        validation_fractions=(0.25, 0.5, 0.75, 1.0),
+        routine_seed_pairs=4,
+        confirmation_seed_pairs=10,
+    )
+    base_config = config_to_dict(config)
     return {
         "schema_version": 1,
         "name": "Eight-Recipe Recurrent MAPPO Search With Alpha Validation",
@@ -1053,7 +1050,9 @@ def _actor_identity(path: str | Path) -> Record:
     import jax
 
     with jax.default_device(jax.devices("cpu")[0]):
-        from marl_battlegrounds.training.validation import _artifact
+        from marl_battlegrounds.training.validation import (
+            _artifact,  # pyright: ignore[reportPrivateUsage]
+        )
 
         return _artifact(path)
 
@@ -1380,7 +1379,8 @@ def _worker(root: Path, job: Path, *, mode: str, resume: bool = False) -> None:
     """
     import jax
 
-    from marl_battlegrounds.training.runner import read_config, train
+    from marl_battlegrounds.training.config import read_config
+    from marl_battlegrounds.training.runner import train
     from marl_battlegrounds.training.validation import validate_checkpoint
 
     if (

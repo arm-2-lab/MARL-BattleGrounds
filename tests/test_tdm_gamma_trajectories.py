@@ -54,16 +54,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from scripts.dev.visual_debugger.authoring_compiler import (
-    CompiledDevScenarioV1,
-    canonicalize_inactive_rows,
-    compile_dev_scenario,
-)
-from scripts.dev.visual_debugger.authoring_models import (
-    DevPointV1,
-    DevWallV1,
-    new_scenario_draft,
-)
+from tests.scenario_controller_fixtures import ControllerScenario, load_controller_input
 from tests.tdm_gamma_fixtures import (
     BETA,
     GAMMA,
@@ -83,7 +74,8 @@ from tests.tdm_gamma_fixtures import (
 from marl_battlegrounds.core.axis_mappings import (
     UNIT_DIRECTION_VECTOR_BY_MOVEMENT_ACTION_ARRAY,
 )
-from marl_battlegrounds.core.env import step
+from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.env import initialize_scenario_state, step
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_BASIC_INTERACTION_RADIUS,
     AGENT_FEATURE_CURRENT_HEALTH,
@@ -97,8 +89,11 @@ from marl_battlegrounds.core.types import (
     MOVE_SOUTH,
     MOVE_STAY,
     MOVE_WEST,
+    NEUTRAL_CLASS_ID,
+    OBSTACLE_TYPE_WALL,
     PRIEST_CLASS_ID,
     ROGUE_CLASS_ID,
+    STUN_CHANNEL_HUNTER_TRAP,
     TEAM_B_ID,
     WARRIOR_CLASS_ID,
     Action,
@@ -167,7 +162,7 @@ class _Unit(NamedTuple):
 
 
 class _Trajectory(NamedTuple):
-    scenario: CompiledDevScenarioV1
+    scenario: ControllerScenario
     states: list[EnvState]
     observations: list[Observation]
     masks: list[ActionMask]
@@ -188,56 +183,75 @@ def _compile(
     walls: Sequence[tuple[float, float, float, float]] = (),
     episode: Mapping[str, object] | None = None,
     global_state: Mapping[str, object] | None = None,
-) -> CompiledDevScenarioV1:
-    # Controller behaviour, not scoring: keep the original one-point rule.
-    content = new_scenario_draft("gamma_trajectory", red_zone_depth=0.0).content
-    rosters = list(content.roster)
-    states = list(content.agent_states)
+) -> ControllerScenario:
+    # Keep the former blank input and one-point scoring; vary only this case's rows.
+    base = load_controller_input("blank_controller_start")
+    class_ids = {
+        "mage": MAGE_CLASS_ID,
+        "warrior": WARRIOR_CLASS_ID,
+        "hunter": HUNTER_CLASS_ID,
+        "rogue": ROGUE_CLASS_ID,
+        "priest": PRIEST_CLASS_ID,
+    }
+    requested = jnp.full(10, NEUTRAL_CLASS_ID, dtype=jnp.int32)
+    positions = jnp.zeros((10, 2), dtype=jnp.float32)
+    health = jnp.zeros(10, dtype=jnp.float32)
+    cooldowns = jnp.zeros(10, dtype=jnp.int32)
+    stuns = jnp.zeros_like(base.initial_state.stun_durations)
     for first_slot, units in ((0, team_a), (5, team_b)):
         for index, unit in enumerate(units):
             slot = first_slot + index
-            rosters[slot] = rosters[slot].model_copy(
-                update={"class_name": unit.class_name}
+            requested = requested.at[slot].set(class_ids[unit.class_name])
+            positions = positions.at[slot].set(jnp.asarray(unit.xy, dtype=jnp.float32))
+            health = health.at[slot].set(
+                _FULL_HEALTH[unit.class_name] if unit.hp is None else unit.hp
             )
-            states[slot] = states[slot].model_copy(
-                update={
-                    "position": DevPointV1(x=unit.xy[0], y=unit.xy[1]),
-                    "current_health": _FULL_HEALTH[unit.class_name]
-                    if unit.hp is None
-                    else unit.hp,
-                    "ultimate_cooldown_remaining": unit.cooldown,
-                    "hunter_trap_stun_duration": unit.trap_ticks,
-                }
+            cooldowns = cooldowns.at[slot].set(unit.cooldown)
+            stuns = stuns.at[slot, STUN_CHANNEL_HUNTER_TRAP].set(unit.trap_ticks)
+    profile = resolve_agent_profile(
+        requested, jnp.asarray([len(team_a), len(team_b)], dtype=jnp.int32)
+    )
+    obstacles = base.config.obstacles
+    for index, (x, y, width, height) in enumerate(walls):
+        obstacles = obstacles.at[index].set(
+            jnp.asarray(
+                [OBSTACLE_TYPE_WALL, x, y, 0.0, width, height, 0.0, 1.0],
+                dtype=jnp.float32,
             )
-    obstacles = tuple(
-        DevWallV1(
-            object_id=f"wall-{index}",
-            center_x=x,
-            center_y=y,
-            width=width,
-            height=height,
         )
-        for index, (x, y, width, height) in enumerate(walls)
+    settings = dict(episode or {})
+    wave_periods = base.config.team_respawn_wave_period_step_count
+    for team, prefix in enumerate(("team_a", "team_b")):
+        name = f"{prefix}_respawn_wave_period_steps"
+        if name in settings:
+            wave_periods = wave_periods.at[team].set(cast(int, settings.pop(name)))
+    config = base.config._replace(
+        agent_profile=profile,
+        obstacles=obstacles,
+        team_respawn_wave_period_step_count=wave_periods,
+        **settings,
     )
-    content = content.model_copy(
-        update={
-            "team_a_size": len(team_a),
-            "team_b_size": len(team_b),
-            "roster": tuple(rosters),
-            "agent_states": tuple(states),
-            "embedded_map": content.embedded_map.model_copy(
-                update={"obstacles": obstacles}
-            ),
-            "episode": content.episode.model_copy(update=dict(episode or {})),
-            "global_state": content.global_state.model_copy(
-                update=dict(global_state or {})
-            ),
-        }
+    starting = dict(global_state or {})
+    countdowns = base.initial_state.team_respawn_wave_countdowns
+    for team, prefix in enumerate(("team_a", "team_b")):
+        name = f"{prefix}_respawn_countdown"
+        if name in starting:
+            countdowns = countdowns.at[team].set(cast(int, starting.pop(name)))
+    if starting:
+        raise ValueError(f"Unsupported controller test state: {sorted(starting)}")
+    authored = base.initial_state._replace(
+        agent_positions=positions,
+        current_health=health,
+        alive_mask=profile.active_mask,
+        ultimate_cooldowns=cooldowns,
+        stun_durations=stuns,
+        team_respawn_wave_countdowns=countdowns,
     )
-    return compile_dev_scenario(canonicalize_inactive_rows(content))
+    state, obs, action_mask, info = initialize_scenario_state(authored, config)
+    return ControllerScenario(config, state, obs, action_mask, info)
 
 
-def _availability(compiled: CompiledDevScenarioV1) -> Array:
+def _availability(compiled: ControllerScenario) -> Array:
     profile = compiled.config.agent_profile
     return build_default_shared_obs_information_availability(
         profile.active_mask, profile.team_ids
@@ -245,7 +259,7 @@ def _availability(compiled: CompiledDevScenarioV1) -> Array:
 
 
 def _team_b(
-    compiled: CompiledDevScenarioV1,
+    compiled: ControllerScenario,
     obs: Observation,
     action_mask: ActionMask,
     policy: Callable[..., ActorAction],
@@ -263,7 +277,7 @@ def _team_b(
 
 
 def _run(
-    compiled: CompiledDevScenarioV1,
+    compiled: ControllerScenario,
     ticks: int,
     *,
     team_a_first_slot: Mapping[int, tuple[int, int, int]] | None = None,
@@ -341,7 +355,7 @@ def _distance(obs: Observation, slot: int, row: int) -> float:
 
 
 def _actor(
-    compiled: CompiledDevScenarioV1,
+    compiled: ControllerScenario,
     obs: Observation,
     action_mask: ActionMask,
     slot: int,

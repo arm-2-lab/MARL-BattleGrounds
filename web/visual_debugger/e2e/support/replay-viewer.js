@@ -106,7 +106,7 @@ export async function exportReplayAcceptanceArtifacts() {
 /**
  * Export the one-tick Red Zone metric replay and return its path.
  *
- * The Python exporter (`--red-zone`) writes a current version-4 DevClient capture
+ * The Python exporter (`--red-zone`) writes a current version-4 BattleClient capture
  * at Red Zone depth 5.0: Team A kills agents 5 and 6 inside Team B's Red Zone and
  * Team B kills agent 3 outside Team A's Red Zone, so the scores are 4 and 1. It
  * fails before writing a manifest unless those deaths and scores happen. The

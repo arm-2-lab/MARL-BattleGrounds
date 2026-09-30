@@ -16,8 +16,6 @@ their JAX opponents remain batched. Privileged training state stays separate.
 
 from __future__ import annotations
 
-# Private System adapter fields are shared only by their owning module's helpers.
-# pyright: reportPrivateUsage=false
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field
@@ -35,6 +33,12 @@ from jax.core import Tracer
 from marl_battlegrounds.core.types import AGENT_FEATURE_CLASS_ID, Action, ActionMask
 from marl_battlegrounds.evaluation.host_evidence import team_scope
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
+
+# Private System adapter fields are shared only by their owning module's helpers.
+# pyright: reportPrivateUsage=false
+from marl_battlegrounds.policies import (
+    BUILTIN_POLICY_NAMES as BUILTIN_POLICY_NAMES,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
@@ -187,12 +191,18 @@ def _shared_apply(function: SharedObsPolicy) -> PolicyApply:
     return apply
 
 
-_CONTROLLERS: dict[str, PolicyApply] = {
-    "random": _random_apply,
-    "tdm-alpha": _shared_apply(reactive_tdm_alpha_policy),
-    "tdm-beta": _shared_apply(reactive_tdm_beta_policy),
-    "tdm-gamma": _shared_apply(reactive_tdm_gamma_policy),
-}
+_CONTROLLERS: dict[str, PolicyApply] = dict(
+    zip(
+        BUILTIN_POLICY_NAMES,
+        (
+            _random_apply,
+            _shared_apply(reactive_tdm_alpha_policy),
+            _shared_apply(reactive_tdm_beta_policy),
+            _shared_apply(reactive_tdm_gamma_policy),
+        ),
+        strict=True,
+    )
+)
 
 
 def policy(name: str) -> Policy:
@@ -1340,7 +1350,9 @@ def _build_composition(
     members: tuple[System, ...], *, pooled: bool, weights: Array, slots: Array
 ) -> System:
     """Build ordinary System hooks and record each known member/component identity."""
-    from marl_battlegrounds.evaluation.recording_identity import _callable_evidence
+    from marl_battlegrounds.evaluation.recording_identity import (
+        _callable_evidence,  # pyright: ignore[reportPrivateUsage]
+    )
 
     components: list[dict[str, Any]] = []
     offsets: list[int] = []

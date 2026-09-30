@@ -514,3 +514,157 @@ def test_invalid_execution_size_never_constructs_an_entrant(
             )
         else:
             run_tournament(entrants, maps=[12], games_per_opponent=2, **options)
+
+
+@pytest.mark.parametrize("value", [1, None, "true"])
+def test_invalid_tournament_padding_fails_before_loading(value: object) -> None:
+    with pytest.raises(TypeError, match="keep_batch_size"):
+        run_tournament(
+            ["missing-factory:load", "random"], keep_batch_size=cast(bool, value)
+        )
+
+
+@pytest.mark.parametrize("keep_batch_size", [False, True])
+def test_tournament_padding_reaches_real_evaluator_without_extra_games(
+    monkeypatch: pytest.MonkeyPatch, keep_batch_size: bool
+) -> None:
+    evaluator = import_module("marl_battlegrounds.evaluation.evaluate")
+    original = evaluator._evaluate_tournament_episodes
+    batches: list[tuple[int, bool]] = []
+
+    def execute(*args: Any, **options: Any) -> Any:  # noqa: ANN401
+        batches.append((options["num_envs"], options["keep_batch_size"]))
+        return original(*args, **options)
+
+    monkeypatch.setattr(evaluator, "_evaluate_tournament_episodes", execute)
+    result = run_tournament(
+        ["random", "tdm-alpha"],
+        maps=[12],
+        games_per_opponent=2,
+        max_steps=1,
+        num_envs=4,
+        keep_batch_size=keep_batch_size,
+        chunk_size=1,
+    )
+    assert batches == [(4, keep_batch_size)]
+    assert len(result.matches) == 2
+
+
+@pytest.mark.parametrize("route", ["list", "short", "full"])
+def test_reference_challenger_is_loaded_once_and_completed_resume_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    _stable_source(monkeypatch)
+    calls: list[str] = []
+
+    def challenger() -> Policy:
+        calls.append("load")
+        return replace(policy("random"), name="Saved Challenger", checkpoint="fixed")
+
+    module = types.ModuleType("test_saved_challenger")
+    module.load = challenger  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    reference = module.__name__ + ":load"
+    options: dict[str, Any] = {
+        "policies": ["random", "tdm-alpha"],
+        "maps": [12],
+        "games_per_opponent": 2,
+        "max_steps": 1,
+    }
+    if route == "short":
+        options = {"config": {"entrants": options.pop("policies"), **options}}
+    elif route == "full":
+        config, _, _ = prepare_tournament_inputs(options.pop("policies"), **options)
+        options = {"config": config}
+    result = run_tournament(
+        **options,
+        challenger=reference,
+        num_envs=2,
+        chunk_size=1,
+        metrics="none",
+        output_dir=tmp_path,
+    )
+    assert calls == ["load"]
+    assert result.metadata["challenger_loadable"] is True
+    descriptor = next(
+        row
+        for row in result.metadata["participant_descriptors"]
+        if row["entrant_id"] == result.metadata["challenger_id"]
+    )
+    assert descriptor["controller"]["reference"] == reference
+    assert result.run_dir is not None
+    before = {
+        p.relative_to(result.run_dir): p.read_bytes()
+        for p in result.run_dir.rglob("*")
+        if p.is_file()
+    }
+
+    def no_load(*_: object, **__: object) -> Never:
+        raise AssertionError("Completed resume must not load a method")
+
+    monkeypatch.setattr(
+        import_module("marl_battlegrounds._method_loading"), "load_method", no_load
+    )
+    resumed = run_tournament(resume_from=result.run_dir, num_envs=2)
+    assert resumed.metadata["executed_this_call"] == 0
+    assert resumed.matches == result.matches
+    assert calls == ["load"]
+    assert before == {
+        p.relative_to(result.run_dir): p.read_bytes()
+        for p in result.run_dir.rglob("*")
+        if p.is_file()
+    }
+
+
+def test_pending_reference_challenger_is_checked_before_recovery_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stable_source(monkeypatch)
+    identity = "original"
+    calls: list[str] = []
+
+    def challenger() -> Policy:
+        calls.append(identity)
+        return replace(policy("random"), name="Saved Challenger", checkpoint=identity)
+
+    module = types.ModuleType("test_pending_challenger")
+    module.load = challenger  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    evaluator = import_module("marl_battlegrounds.evaluation.evaluate")
+    execute = evaluator._evaluate_tournament_episodes
+
+    def interrupt(*_: object, **__: object) -> Never:
+        raise RuntimeError("Stop before tournament games")
+
+    monkeypatch.setattr(evaluator, "_evaluate_tournament_episodes", interrupt)
+    with pytest.raises(RuntimeError, match="Stop before tournament games"):
+        run_tournament(
+            ["random", "tdm-alpha"],
+            challenger=module.__name__ + ":load",
+            maps=[12],
+            games_per_opponent=2,
+            max_steps=1,
+            metrics="none",
+            output_dir=tmp_path,
+            num_envs=2,
+        )
+    directory = next(tmp_path.iterdir())
+    before = {
+        p.relative_to(directory): p.read_bytes()
+        for p in directory.rglob("*")
+        if p.is_file()
+    }
+    identity = "changed"
+    with pytest.raises(ValueError, match="registration"):
+        run_tournament(resume_from=directory, num_envs=2)
+    assert before == {
+        p.relative_to(directory): p.read_bytes()
+        for p in directory.rglob("*")
+        if p.is_file()
+    }
+    identity = "original"
+    monkeypatch.setattr(evaluator, "_evaluate_tournament_episodes", execute)
+    resumed = run_tournament(resume_from=directory, num_envs=2, chunk_size=1)
+    assert len(resumed.matches) == 6
+    assert resumed.metadata["executed_this_call"] == 6
+    assert calls == ["original", "changed", "original"]

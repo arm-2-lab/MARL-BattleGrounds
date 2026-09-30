@@ -15,11 +15,13 @@ Callback resolution skips disabled work, records available code/source evidence,
 and leaves opaque configuration unknown without executing the reward.
 """
 
+# Private seams check one-call accounting without a training run.
+# pyright: reportPrivateUsage=false
 from collections.abc import Callable
 from functools import partial
 from itertools import pairwise
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -571,7 +573,7 @@ def test_custom_reward_is_per_agent_uses_rounds_and_keeps_terminal_feedback(
     )
     validate_reward(_custom_reward, *one, jnp.int32(0))
     apply = cast(
-        RewardFunction,
+        Callable[..., Array],
         jax.jit(
             jax.vmap(
                 partial(reward_adjustments, _custom_reward), in_axes=(0, 0, 0, None)
@@ -617,7 +619,7 @@ def test_custom_reward_rejects_bad_contracts_and_preserves_real_nonfinite_values
             validate_reward(callback, *one, jnp.int32(0))
         return
     validate_reward(callback, *one, jnp.int32(0))
-    apply = cast(RewardFunction, jax.jit(partial(reward_adjustments, callback)))
+    apply = cast(Callable[..., Array], jax.jit(partial(reward_adjustments, callback)))
     actual = apply(*one, jnp.int32(0))
     if kind == "nonfinite":
         assert np.all(np.isnan(actual))
@@ -732,3 +734,190 @@ def test_reward_resolution_uses_existing_installed_reference_rules(
 
     with pytest.raises(ValueError, match=r"module-level|module:function"):
         resolve_reward(reference)
+
+
+def test_config_reward_keeps_old_arguments_and_reuses_dynamic_values(
+    reward_inputs: tuple[EnvState, TrainingFacts, EnvState],
+    game: tuple[Environment, EnvironmentState],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.training import shaping
+    from marl_battlegrounds.training.shaping import RewardOutput, _prepare_reward
+
+    one = (
+        _row(reward_inputs[0], 0),
+        _row(reward_inputs[1], 0),
+        _row(reward_inputs[2], 0),
+    )
+    config = _row(game[1].config, 0)._replace(
+        team_deathmatch_red_zone_depth=jnp.float32(0)
+    )
+    calls: list[int] = []
+
+    def feedback(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        config: EnvConfig,
+    ) -> RewardOutput:
+        calls.append(1)
+        del before, facts, after, progress
+        amount = jnp.full(10, config.team_deathmatch_red_zone_depth, jnp.float32)
+        return RewardOutput(amount, {"declared": amount})
+
+    prepared = _prepare_reward(feedback)
+    with pytest.raises(ValueError, match="producing config"):
+        reward_adjustments(prepared, *one, jnp.int32(0))
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("A prepared reward must not inspect its signature again")
+
+    monkeypatch.setattr(shaping, "_reward_config_parameter", forbidden)
+    apply = cast(Callable[..., Array], jax.jit(partial(reward_adjustments, prepared)))
+    first = apply(*one, jnp.int32(0), config=config)
+    second = apply(
+        *one,
+        jnp.int32(0),
+        config=config._replace(team_deathmatch_red_zone_depth=jnp.float32(3)),
+    )
+    np.testing.assert_array_equal(first, 0)
+    np.testing.assert_array_equal(second, 3)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "fault", ["shape", "dtype", "name", "mapping", "empty", "nan", "inconsistent"]
+)
+def test_named_reward_parts_cannot_hide_bad_feedback(
+    reward_inputs: tuple[EnvState, TrainingFacts, EnvState],
+    fault: str,
+) -> None:
+    from marl_battlegrounds.training.shaping import RewardOutput
+
+    one = (
+        _row(reward_inputs[0], 0),
+        _row(reward_inputs[1], 0),
+        _row(reward_inputs[2], 0),
+    )
+
+    def feedback(*args: object) -> RewardOutput:
+        adjustment = jnp.ones(10, jnp.float32)
+        part = adjustment
+        if fault == "shape":
+            part = jnp.ones(9, jnp.float32)
+        elif fault == "dtype":
+            part = jnp.ones(10, jnp.int32)
+        elif fault == "nan":
+            part = part.at[0].set(jnp.nan)
+        elif fault == "inconsistent":
+            part = part * 2
+        return RewardOutput(
+            adjustment,
+            cast(
+                Any,
+                []
+                if fault == "mapping"
+                else {}
+                if fault == "empty"
+                else {"" if fault == "name" else "part": part},
+            ),
+        )
+
+    if fault in ("shape", "dtype", "name", "mapping", "empty"):
+        with pytest.raises((TypeError, ValueError), match="component"):
+            validate_reward(feedback, *one, jnp.int32(0))
+    else:
+        actual = reward_adjustments(feedback, *one, jnp.int32(0))
+        assert np.all(np.isnan(actual))
+        padding = one[1]._replace(has_transition=jnp.bool_(False))
+        np.testing.assert_array_equal(
+            reward_adjustments(feedback, one[0], padding, one[2], jnp.int32(0)), 0
+        )
+
+
+def test_component_windows_count_owned_recipients_and_real_games_once() -> None:
+    from marl_battlegrounds.training.shaping import (
+        RewardOutput,
+        _add_reward_totals,
+        _empty_reward_totals,
+        _merge_reward_records,
+        _reward_totals_record,
+        _RewardTotals,
+    )
+
+    totals = _empty_reward_totals(2, 2)
+    assert isinstance(totals, _RewardTotals)
+    assert _empty_reward_totals(2, 0) == ()
+    broadcast = jnp.full((2, 10), 0.1, jnp.float32)
+    individual = jnp.zeros((2, 10), jnp.float32).at[:, 0].set(0.2)
+    output = RewardOutput(
+        broadcast + individual, {"broadcast": broadcast, "individual": individual}
+    )
+    owned = jnp.asarray(
+        [[True, True, False, False, False], [True, False, True, False, False]]
+    )
+    add = cast(Callable[..., _RewardTotals], jax.jit(_add_reward_totals))
+    totals = add(totals, output, owned, jnp.asarray([True, False]))
+    record = _reward_totals_record(totals, ("broadcast", "individual"))
+    assert record["real_transitions"] == record["learner_team_transitions"] == 1
+    assert record["learner_agent_transitions"] == 2
+    assert record["components"] == {
+        "broadcast": {
+            "recipient_sum": pytest.approx(0.2),
+            "team_mean_sum": pytest.approx(0.1),
+        },
+        "individual": {
+            "recipient_sum": pytest.approx(0.2),
+            "team_mean_sum": pytest.approx(0.1),
+        },
+    }
+    prior = _merge_reward_records(None, record)
+    combined = _merge_reward_records(prior, record)
+    assert combined["real_transitions"] == 2 and prior == record
+    # Per-lane counts can be valid even when their batch sum exceeds int32.
+    large = totals._replace(transitions=jnp.full(2, 2**30 + 1, jnp.int32))
+    assert (
+        _reward_totals_record(large, ("broadcast", "individual"))["real_transitions"]
+        == 2**31 + 2
+    )
+
+
+def test_decorated_reward_receipt_binds_inner_body(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from marl_battlegrounds.training.shaping import resolve_reward
+
+    decorator = tmp_path / "reward_decorator.py"
+    decorator.write_text(
+        "from functools import wraps\n"
+        "def decorate(fn):\n    @wraps(fn)\n"
+        "    def wrapped(*args, **kwargs):\n"
+        "        return fn(*args, **kwargs)\n    return wrapped\n"
+    )
+    provider = tmp_path / "decorated_reward.py"
+    provider.write_text(
+        "from reward_decorator import decorate\n@decorate\n"
+        "def reward(before, facts, after, progress):\n"
+        "    return before.current_health\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        _, first = resolve_reward("decorated_reward:reward")
+        provider.write_text(
+            provider.read_text().replace(
+                "before.current_health", "after.current_health"
+            )
+        )
+        sys.modules.pop("decorated_reward", None)
+        _, second = resolve_reward("decorated_reward:reward")
+        assert first is not None and second is not None
+        assert first["callable"] == second["callable"]
+        assert first["wrapped_callables"] != second["wrapped_callables"]
+    finally:
+        sys.modules.pop("decorated_reward", None)
+        sys.modules.pop("reward_decorator", None)

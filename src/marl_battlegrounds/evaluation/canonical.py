@@ -779,9 +779,11 @@ def _run_resolved_tournament(
     output_dir: str | Path | None = None,
     resume_from: str | Path | None = None,
     num_envs: int = 128,
+    keep_batch_size: bool = False,
     chunk_size: int = 16,
     _bindings: Mapping[str, System | Policy] | None = None,
     _system_prepared: bool = False,
+    _system_reference: str | None = None,
     _input_metadata: Mapping[str, Any] | None = None,
     _explicit_config: bool = True,
     _official_snapshot_verified: bool = False,
@@ -802,10 +804,15 @@ def _run_resolved_tournament(
     when None. Metric and capture settings use public canonical meanings.
 
     output_dir and resume_from are mutually exclusive; neither means no files.
-    num_envs is the positive fixed number of parallel game lanes per matchup;
+    num_envs is the positive maximum number of parallel game lanes per matchup;
+    keep_batch_size=True keeps that many lanes with padding for shorter jobs;
     chunk_size is a positive tick count. Pair scheduling stays sequential.
     _bindings borrows already frozen local entrants. _system_prepared=True
     borrows the challenger frozen by list preparation, without another model copy.
+    _system_reference keeps that method's original resolved loader reference.
+    Current v2 fields save reference challengers through the same descriptor
+    owner as their incumbents. Live objects and older fields keep their existing
+    explicit-binding rules.
     _input_metadata carries the
     short/list result aliases from their shared normalizer. _explicit_config is
     private: True applies the supplied config's current asset hints; False keeps
@@ -840,7 +847,9 @@ def _run_resolved_tournament(
         summarize_headlines,
     )
     from marl_battlegrounds.evaluation.tournament_inputs import (
+        _participant,
         _prepare_tournament_method,
+        _reference,
     )
     from marl_battlegrounds.evaluation.tournament_schedule import TournamentMatch
     from marl_battlegrounds.evaluation.tournament_statistics import (
@@ -852,11 +861,29 @@ def _run_resolved_tournament(
         raise ValueError("output_dir and resume_from are mutually exclusive")
     if metrics not in {"priority", "full", "none"}:
         raise ValueError("metrics must be priority, full or none")
+    if type(keep_batch_size) is not bool:
+        raise TypeError("keep_batch_size must be Boolean")
     num_envs = positive_int(num_envs, "num_envs")
     chunk_size = positive_int(chunk_size, "chunk_size")
     incoming_config = copy.deepcopy(dict(config))
-    incoming_assets = copy.deepcopy(dict(challenger_assets or {}))
     saved = _saved_plan(resume_from)
+    reference = (
+        _reference(system, Path.cwd()) if isinstance(system, str) else _system_reference
+    )
+    if (
+        saved is None
+        and config.get("version", 1) == 2
+        and challenger_descriptor is None
+        and reference is not None
+    ):
+        if not _system_prepared:
+            system = _prepare_tournament_method(reference)
+        assert isinstance(system, (System, Policy))
+        assets = copy.deepcopy(dict(challenger_assets or {}))
+        challenger_descriptor = _participant(system, reference, assets)
+        challenger_assets = assets
+        _system_prepared = True
+    incoming_assets = copy.deepcopy(dict(challenger_assets or {}))
     saved_manifest = None if saved is None else saved[0]
     config = (
         incoming_config
@@ -1176,6 +1203,13 @@ def _run_resolved_tournament(
             preflight,
             preflight_evidence,
         )
+    if (
+        saved is not None
+        and method is None
+        and challenger_id is not None
+        and any(challenger_id in (job["team_a"], job["team_b"]) for job in pending_jobs)
+    ):
+        method = load_tournament_controller(participants[challenger_id], verifier)
     with ExitStack() as cleanup:
         writer = None
         if output_dir is not None or resume_from is not None:
@@ -1335,6 +1369,7 @@ def _run_resolved_tournament(
             writer=writer,
             run_id=manifest["run_id"],
             num_envs=num_envs,
+            keep_batch_size=keep_batch_size,
             metrics=metrics,
             chunk_size=chunk_size,
             registered_maps={
@@ -1695,10 +1730,12 @@ def _run_configured_tournament(
     output_dir: str | Path | None,
     resume_from: str | Path | None,
     num_envs: int,
+    keep_batch_size: bool = False,
     chunk_size: int,
     bindings: Mapping[str, System | Policy] | None = None,
     input_metadata: Mapping[str, Any] | None = None,
     challenger_prepared: bool = False,
+    challenger_reference: str | None = None,
 ) -> CanonicalTournamentResult:
     """Resolve supplied or saved field conditions through the one tournament engine.
 
@@ -1711,6 +1748,11 @@ def _run_configured_tournament(
     Caller-owned methods keep their existing lifetime. challenger_prepared
     borrows a method already frozen by list input preparation; references and
     other live methods are prepared once by the resolved runner.
+    challenger_reference preserves the resolved loader for that prepared method;
+    it does not replace or weaken its checked registration.
+    keep_batch_size keeps the requested execution batch using padding when true;
+    false uses only needed lanes. num_envs and chunk_size set execution capacity
+    and ticks per chunk. They do not change planned games.
     Invalid settings fail before writer recovery. This call does not grant
     official release qualification or publish/admit any method.
     """
@@ -1768,9 +1810,11 @@ def _run_configured_tournament(
         output_dir=output_dir,
         resume_from=resume_from,
         num_envs=num_envs,
+        keep_batch_size=keep_batch_size,
         chunk_size=chunk_size,
         _bindings=bindings,
         _system_prepared=challenger_prepared,
+        _system_reference=challenger_reference,
         _input_metadata=input_metadata,
         _explicit_config=config is not None,
         _official_snapshot_verified=(

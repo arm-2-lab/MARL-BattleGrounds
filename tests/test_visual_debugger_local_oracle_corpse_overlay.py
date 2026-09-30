@@ -17,7 +17,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from pydantic import ValidationError
-from scripts.dev.visual_debugger.control import create_session
 from scripts.dev.visual_debugger.local_oracle_corpse_overlay import (
     _host_has_clear_line_of_sight_v1,
     _host_within_observation_radius_v1,
@@ -47,6 +46,7 @@ from tests.evaluation_fixtures import (
 from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds.core.env import (
     _build_global_visibility_mask_and_distances,
     initialize_scenario_state,

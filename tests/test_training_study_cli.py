@@ -74,7 +74,17 @@ def test_study_status_and_stop_use_the_named_owner(
         return {"status": "Saved"}
 
     monkeypatch.setattr(study, owner, execute)
-    assert _cli.main(["study", action, str(tmp_path)]) == 0
+    assert (
+        _cli.main(
+            [
+                "study",
+                action,
+                str(tmp_path),
+                *(["--json"] if action == "status" else []),
+            ]
+        )
+        == 0
+    )
     assert calls == [str(tmp_path)]
     assert json.loads(capsys.readouterr().out) == {"status": "Saved"}
 
@@ -144,10 +154,14 @@ def test_study_example_uses_the_same_public_function(
     monkeypatch.setattr(
         training_study.training, "start_study" if background else "run_study", execute
     )
-    arguments = ["--resume-from" if resume else "--output-dir", str(tmp_path)]
-    if background:
-        arguments.append("--background")
-    assert training_study.main(arguments) == 0
+    assert (
+        training_study.run(
+            output_dir=None if resume else tmp_path,
+            resume_from=tmp_path if resume else None,
+            background=background,
+        )
+        == 0
+    )
     assert len(calls) == 1
     config, keywords = calls[0]
     if resume:

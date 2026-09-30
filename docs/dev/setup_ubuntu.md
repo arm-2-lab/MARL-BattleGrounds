@@ -12,7 +12,7 @@ the `cuda13` extra supplies its CUDA 13 dependencies. These are recorded setup
 conditions, not a promise that every driver or GPU combination is qualified.
 
 ```bash
-uv sync --locked --extra cuda13 --extra dev --extra viz --extra training
+uv sync --locked --extra cuda13 --extra dev --extra viz --extra training --extra notebook
 scripts/doctor/host_info.sh
 ```
 
@@ -28,7 +28,7 @@ implement every adapter. See the [dependency policy](dependency_policy.md).
 
 ## Prepare Browser Contributor Tools
 
-Researchers can use the DevClient and Replay Viewer without Node.js. Contributors
+Researchers can use BattleClient and Replay Viewer without Node.js. Contributors
 who change browser code need the Node version in `.node-version`, npm and the
 locked frontend dependencies:
 

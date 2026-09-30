@@ -1,5 +1,6 @@
 """Check Scenario 6's saved solution and its two matched interventions."""
 
+import json
 from collections.abc import Callable
 from operator import itemgetter
 from typing import Literal, NamedTuple, cast
@@ -9,11 +10,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev.visual_debugger.authoring_compiler import CompiledDevScenarioV1
 from tests.scenario_controller_fixtures import (
+    SCENARIO_6_FIXTURE_PATH,
     SCENARIO_6_SEMANTIC_DIGEST,
+    ControllerScenario,
     load_scenario_6,
-    load_scenario_6_draft,
 )
 
 from marl_battlegrounds.core.env import step
@@ -75,12 +76,12 @@ class WitnessTransition(NamedTuple):
 
 
 @pytest.fixture(scope="module")
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     return load_scenario_6()
 
 
 def _run_witness(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     intervention: _Intervention = "none",
 ) -> list[WitnessTransition]:
     state, observation, mask = (
@@ -180,18 +181,18 @@ def _run_witness(
 
 
 @pytest.fixture(scope="module")
-def trajectory(scenario: CompiledDevScenarioV1) -> list[WitnessTransition]:
+def trajectory(scenario: ControllerScenario) -> list[WitnessTransition]:
     return _run_witness(scenario)
 
 
 def test_scenario_6_fixture_binds_the_author_approved_score_correction(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
-    draft = load_scenario_6_draft()
-    assert draft.asset_id == "scenario_6"
-    assert draft.revision == 10  # Source revision, with the named score correction.
-    assert draft.content.description == draft.content.notes == ""
-    assert len(draft.content.embedded_map.obstacles) == 3
+    draft = json.loads(SCENARIO_6_FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert draft["asset_id"] == "scenario_6"
+    assert draft["revision"] == 10  # Source revision, with the named score correction.
+    assert draft["content"]["description"] == draft["content"]["notes"] == ""
+    assert len(draft["content"]["embedded_map"]["obstacles"]) == 3
     assert scenario.semantic_digest == SCENARIO_6_SEMANTIC_DIGEST
     np.testing.assert_array_equal(
         scenario.initial_state.team_deathmatch_scores, [17, 19]
@@ -202,7 +203,7 @@ def test_scenario_6_fixture_binds_the_author_approved_score_correction(
 
 
 def test_witness_repeats_and_wins_only_on_the_final_transition(
-    scenario: CompiledDevScenarioV1, trajectory: list[WitnessTransition]
+    scenario: ControllerScenario, trajectory: list[WitnessTransition]
 ) -> None:
     repeated = _run_witness(scenario)
     for first, second in zip(
@@ -301,7 +302,7 @@ def test_trap_burst_and_simultaneous_healing_have_the_documented_epochs(
 
 
 def test_warrior_is_new_information_and_hunter_is_the_only_charge_target(
-    scenario: CompiledDevScenarioV1, trajectory: list[WitnessTransition]
+    scenario: ControllerScenario, trajectory: list[WitnessTransition]
 ) -> None:
     availability = build_default_shared_obs_information_availability(
         scenario.config.agent_profile.active_mask,
@@ -327,7 +328,7 @@ def test_warrior_is_new_information_and_hunter_is_the_only_charge_target(
     (("early_hunter_basic", 3), ("omit_tick_4_heal", 4)),
 )
 def test_matched_interventions_lose_without_a_post_terminal_continuation(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     intervention: _Intervention,
     terminal_tick: int,
 ) -> None:
@@ -354,7 +355,7 @@ def test_matched_interventions_lose_without_a_post_terminal_continuation(
 
 
 def test_each_decision_has_one_current_bank_assembly_and_transition(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     calls = Mock()
     for name, original in (

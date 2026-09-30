@@ -16,8 +16,7 @@ A normal workflow is:
    for the current tick or the full captured game.
 5. Use Exit Replay Viewer or stop its terminal process when finished.
 
-Use [Combat Debugger](combat_debugger.md) for live play and map/scenario
-editing. New recordings use Replay V4, which records the Team Deathmatch Red
+Use [BattleClient](../battle_client.md) for live play. New recordings use Replay V4, which records the Team Deathmatch Red
 Zone depth in its configuration and in context column 19. Historical V1, V2 and
 V3 files retain their original meanings (V3 and older scored one point per
 death). Current policy rows store ally/enemy flags and a local self
@@ -28,7 +27,8 @@ historical POV V1 and V2 are still readable.
 
 ## Open An Installed Replay
 
-After installing MARL-BattleGrounds, open a saved replay from any directory:
+Follow the [base wheel installation commands](../battle_client.md#install-and-open),
+then open a saved replay from any directory:
 
 ```bash
 python -m marl_battlegrounds replay episode.marlbg-replay.json
@@ -45,7 +45,7 @@ The process reads the replay; it does not change that file or run simulator turn
 For a static frame, install the optional plotting extra and choose a frame:
 
 ```bash
-pip install 'marl-battlegrounds[viz]'
+python -m pip install "./marl_battlegrounds-0.0.0-py3-none-any.whl[viz]"
 python -m marl_battlegrounds replay episode.marlbg-replay.json \
   --static --frame-index 0
 ```
@@ -112,6 +112,17 @@ Agent POV. By default, it uses the lowest recorded focal-policy slot. If the
 replay has no focal slot, supply an active `--pov-slot` to open Agent POV. List
 operations reject unrelated options. `--static` has its own narrow matrix
 described below. Write complete option names; abbreviations are rejected.
+
+## Open A Saved BattleClient Game
+
+In [BattleClient](../battle_client.md), use **Finish And Save**, then **Open Replay**.
+The Viewer opens in a separate tab. The live page stays available for inspection
+and Restart. Each product has its own local URL and access token. Closing a tab
+leaves its server running; the Viewer's Exit stops only that Viewer. BattleClient
+can reopen it. Exiting BattleClient also closes the Viewer it opened.
+
+The Viewer reads the saved recording. It never adds turns to that file. Restart
+in BattleClient starts a fresh recording with a new file name and episode memory.
 
 ## Scripted-Scenario Isolation
 
@@ -332,7 +343,7 @@ recorded layout and version, not the newest map with the same ID. Old replay
 files and their recorded results are not rewritten. A36 lists the approved
 clearance limits and exact map exceptions.
 
-After installing the map update, restart DevClient, Replay Viewer and any
+After installing the map update, restart BattleClient, Replay Viewer and any
 long-running Python process to refresh the cached map catalog. Opening an old
 replay after restart still shows the old game. Earlier replay and speed results
 remain evidence for the map versions they actually used.
@@ -612,7 +623,7 @@ Closing the tab does not stop Python; use **Exit Replay Viewer** or `Ctrl-C`.
   canonicality, companion, frame, or POV error; the launcher intentionally did
   not bind a server.
 - **Manual arena selected as a scenario:** open it with the
-  [Combat Debugger](combat_debugger.md).
+  [BattleClient](../battle_client.md).
 - **Stress scenario rejected:** add `--include-stress` to the scenario command.
 - **Transport disabled:** reconnect if offline; Start/negative moves stop at the
   lower bound, positive moves/End stop at the captured endpoint, and artifact
@@ -630,7 +641,7 @@ Standard](documentation_standard.md). The replay format itself is documented in
 [replay_format.md](../evaluation/replay_format.md). Return to the [browser-tools
 migration page](visual_debugger.md) or the [project README](../../README.md).
 
-Current DevClient and scripted-scenario recording captures the replay without
+Current BattleClient and scripted-scenario recording captures the replay without
 computing the full metric suite. Opening Evaluation Metrics or requesting CSV
 opts into full replay analysis once; the result is cached across cursor and POV
 changes. Library callers likewise opt in with `analyze_replay(bundle,

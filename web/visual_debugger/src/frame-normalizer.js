@@ -550,18 +550,28 @@ function requireExactKeys(value, expected, message) {
  * or tdm_gamma (GAMMA). Information mode is shared_obs or no_shared_obs.
  * reactive_tdm, scenario_5 and tdm_gamma require shared_obs on either team. Throw
  * TypeError for extra/missing fields or an unsupported pair.
+ * Current frames also carry ordered manual_slots and ten slot_labels. Null labels
+ * mark unconfigured rows; dead configured Manual rows stay in manual_slots. Older
+ * fixtures may omit both. This is display data, not an action permission.
  * This describes controller setup; it does not instantiate or call a policy.
  *
  * @param {unknown} value
  */
-function normalizeCombatConfigurationV1(value) {
+export function normalizeCombatConfigurationV1(value) {
   const configuration = requireRecord(
     value,
     "Live combat configuration must be an object.",
   );
   requireExactKeys(
     configuration,
-    COMBAT_CONFIGURATION_KEYS_V1,
+    [
+      ...COMBAT_CONFIGURATION_KEYS_V1,
+      ...(Object.hasOwn(configuration, "manual_slots") ||
+      Object.hasOwn(configuration, "slot_labels")
+        ? ["manual_slots", "slot_labels"]
+        : []),
+      ...(Object.hasOwn(configuration, "red_zone_depth") ? ["red_zone_depth"] : []),
+    ].sort(),
     "Live combat configuration has unknown or missing fields.",
   );
   if (
@@ -576,10 +586,50 @@ function normalizeCombatConfigurationV1(value) {
   ) {
     throw new TypeError("Live combat configuration is invalid.");
   }
+  /** @type {Record<string, unknown>} */
+  const ownership = {};
+  if (Object.hasOwn(configuration, "red_zone_depth")) {
+    if (
+      configuration.red_zone_depth !== null &&
+      (typeof configuration.red_zone_depth !== "number" ||
+        !Number.isFinite(configuration.red_zone_depth) ||
+        configuration.red_zone_depth < 0)
+    ) {
+      throw new TypeError(
+        "Red zone depth must be a nonnegative finite number or null.",
+      );
+    }
+    ownership.red_zone_depth = configuration.red_zone_depth;
+  }
+  if (Object.hasOwn(configuration, "manual_slots")) {
+    const slots = configuration.manual_slots;
+    const labels = configuration.slot_labels;
+    if (
+      !Array.isArray(slots) ||
+      !Array.isArray(labels) ||
+      labels.length !== 10 ||
+      labels.some(
+        (label) => label !== null && (typeof label !== "string" || !label.trim()),
+      ) ||
+      slots.some(
+        (slot, index) =>
+          !Number.isInteger(slot) ||
+          slot < 0 ||
+          slot >= 10 ||
+          (index > 0 && slot <= slots[index - 1]) ||
+          labels[slot] !== "Manual",
+      )
+    ) {
+      throw new TypeError("Live controller ownership must match ten physical rows.");
+    }
+    ownership.manual_slots = Object.freeze([...slots]);
+    ownership.slot_labels = Object.freeze([...labels]);
+  }
   return Object.freeze({
     team_a_controller: configuration.team_a_controller,
     team_b_controller: configuration.team_b_controller,
     execution_information_mode: configuration.execution_information_mode,
+    ...ownership,
   });
 }
 
@@ -787,12 +837,14 @@ export function normalizeRecordingStatusV1(value, frameIndex) {
     status.completion_state,
   );
   const restartFenced =
-    status.captured_transition_count > 0 || status.lifecycle !== "recording";
+    !["saved", "reviewing"].includes(status.lifecycle) &&
+    (status.captured_transition_count > 0 || status.lifecycle !== "recording");
   const finishAvailable = status.lifecycle === "recording";
   const reviewAvailable = status.lifecycle === "saved";
   const retryAvailable = status.lifecycle === "persistence_failed";
   const discardAvailable =
-    status.lifecycle === "recording" && status.captured_transition_count > 0;
+    (status.lifecycle === "recording" && status.captured_transition_count > 0) ||
+    ["sealed", "finalized_unsaved", "persistence_failed"].includes(status.lifecycle);
   if (
     finalized !== (status.completion_state !== null) ||
     reasonRequired !== (status.completion_reason !== null) ||
@@ -1704,7 +1756,9 @@ function normalizeResearcherHud(rawHud, scene, frame) {
     ),
   );
   const expectedPendingSlots =
-    scope === "joint_turn" ? rosterSlots : [controlledGlobalSlot];
+    scope === "joint_turn"
+      ? (frame.combat_configuration?.manual_slots ?? rosterSlots)
+      : [controlledGlobalSlot];
   if (
     pendingActions.length !== expectedPendingSlots.length ||
     pendingActions.some(
@@ -1715,21 +1769,22 @@ function normalizeResearcherHud(rawHud, scene, frame) {
       "Researcher pending actions must exactly join their submission scope.",
     );
   }
-  const pendingAction = normalizeResearcherPendingAction(
-    requireRecord(
-      rawHud.pending_action,
-      "Researcher pending action must be an object.",
-    ),
-    scope,
-    roster,
-  );
-  const controlledPending = pendingActions.find(
-    (pending) => pending.actor_global_slot === controlledGlobalSlot,
-  );
-  if (
-    controlledPending === undefined ||
-    JSON.stringify(pendingAction) !== JSON.stringify(controlledPending)
-  ) {
+  const pendingAction =
+    rawHud.pending_action === null
+      ? null
+      : normalizeResearcherPendingAction(
+          requireRecord(
+            rawHud.pending_action,
+            "Researcher pending action must be an object.",
+          ),
+          scope,
+          roster,
+        );
+  const controlledPending =
+    pendingActions.find(
+      (pending) => pending.actor_global_slot === controlledGlobalSlot,
+    ) ?? null;
+  if (JSON.stringify(pendingAction) !== JSON.stringify(controlledPending)) {
     throw new TypeError(
       "Researcher pending action must equal the controlled pending-actions row.",
     );
@@ -5197,58 +5252,70 @@ function normalizePovHud(rawHud, selfActor, mask, visibleBodies, frame) {
   ) {
     throw new TypeError("POV candidate identities do not join recipient axes.");
   }
-  const pending = requireRecord(
-    rawHud.pending_action,
-    "POV pending action must be an object.",
-  );
-  requireExactKeys(
-    pending,
-    ACTOR_POV_PENDING_KEYS_V1,
-    "POV pending action has unknown or missing fields.",
-  );
-  const pendingTarget = normalizePovTarget(
-    requireRecord(pending.target, "POV pending target must be an object."),
-    "POV pending target",
-  );
-  const moveAction = requireInteger(pending.move_action, "POV pending movement");
-  const lane = pending.armed_lane;
-  const origin = pending.arm_origin;
-  const pairValue = pending.pair_mask_value;
-  const expectedLabel =
-    rawHud.pending_submission_scope === "scripted_playback"
-      ? "PLAYBACK / INSPECTION ONLY"
-      : "PENDING / WILL SUBMIT";
+  let normalizedPending = null;
+  const manualSlots = frame.combat_configuration?.manual_slots;
+  const physicalSlot = (selfActor.team_id - 1) * 5 + selfActor.team_local_slot;
   if (
-    pending.actor_public_agent_id !== selfId ||
-    pending.label !== expectedLabel ||
-    moveAction >= 9 ||
-    pendingTarget.target_action < 0 ||
-    pendingTarget.target_action >= targetIds.length ||
-    pendingTarget.public_agent_id !== targetIds[pendingTarget.target_action] ||
-    ![null, 0, 1].includes(lane) ||
-    ![null, "automatic", "explicit"].includes(origin) ||
-    (lane === null) !== (origin === null) ||
-    requireBoolean(pending.movement_mask_value, "POV pending movement-mask value") !==
-      mask.move[moveAction] ||
-    (lane === null
-      ? pairValue !== null
-      : requireBoolean(pairValue, "POV pending pair-mask value") !==
-        mask.select_target_use_ultimate_joint[pendingTarget.target_action][lane]) ||
-    typeof pending.summary !== "string"
+    Array.isArray(manualSlots) &&
+    rawHud.pending_submission_scope === "joint_turn" &&
+    (rawHud.pending_action !== null) !== manualSlots.includes(physicalSlot)
   ) {
-    throw new TypeError("POV pending action is incoherent.");
+    throw new TypeError("POV pending action must match configured Manual ownership.");
   }
-  const normalizedPending = Object.freeze({
-    label: expectedLabel,
-    actor_public_agent_id: selfId,
-    move_action: moveAction,
-    target: pendingTarget,
-    armed_lane: lane,
-    arm_origin: origin,
-    movement_mask_value: pending.movement_mask_value,
-    pair_mask_value: pairValue,
-    summary: pending.summary,
-  });
+  if (rawHud.pending_action !== null) {
+    const pending = requireRecord(
+      rawHud.pending_action,
+      "POV pending action must be an object.",
+    );
+    requireExactKeys(
+      pending,
+      ACTOR_POV_PENDING_KEYS_V1,
+      "POV pending action has unknown or missing fields.",
+    );
+    const pendingTarget = normalizePovTarget(
+      requireRecord(pending.target, "POV pending target must be an object."),
+      "POV pending target",
+    );
+    const moveAction = requireInteger(pending.move_action, "POV pending movement");
+    const lane = pending.armed_lane;
+    const origin = pending.arm_origin;
+    const pairValue = pending.pair_mask_value;
+    const expectedLabel =
+      rawHud.pending_submission_scope === "scripted_playback"
+        ? "PLAYBACK / INSPECTION ONLY"
+        : "PENDING / WILL SUBMIT";
+    if (
+      pending.actor_public_agent_id !== selfId ||
+      pending.label !== expectedLabel ||
+      moveAction >= 9 ||
+      pendingTarget.target_action < 0 ||
+      pendingTarget.target_action >= targetIds.length ||
+      pendingTarget.public_agent_id !== targetIds[pendingTarget.target_action] ||
+      ![null, 0, 1].includes(lane) ||
+      ![null, "automatic", "explicit"].includes(origin) ||
+      (lane === null) !== (origin === null) ||
+      requireBoolean(pending.movement_mask_value, "POV pending movement-mask value") !==
+        mask.move[moveAction] ||
+      (lane === null
+        ? pairValue !== null
+        : requireBoolean(pairValue, "POV pending pair-mask value") !==
+          mask.select_target_use_ultimate_joint[pendingTarget.target_action][lane]) ||
+      typeof pending.summary !== "string"
+    ) {
+      throw new TypeError("POV pending action is incoherent.");
+    }
+    normalizedPending = Object.freeze({
+      label: expectedLabel,
+      actor_public_agent_id: selfId,
+      move_action: moveAction,
+      target: pendingTarget,
+      armed_lane: lane,
+      arm_origin: origin,
+      movement_mask_value: pending.movement_mask_value,
+      pair_mask_value: pairValue,
+      summary: pending.summary,
+    });
+  }
   let latest = null;
   if (rawHud.latest_transition !== null) {
     const rawLatest = requireRecord(

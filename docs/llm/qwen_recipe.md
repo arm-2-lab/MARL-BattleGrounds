@@ -108,7 +108,11 @@ by default; `history_turns=2` retains up to two earlier living turns. The adapte
 vLLM's wrapped input token count. Only whole old history
 entries may be dropped to fit; current information is never silently cut.
 
-For the package CLI and DevClient, use the
+For a complete BattleClient launch with saved native actors and a living LLM
+slot, follow [Play Your Saved Methods](../battle_client_tutorial.md#hard-ten-different-controllers).
+Its hard and fixed-scenario modes use this separate service with stop-on-failure.
+
+For the package CLI and BattleClient, use the
 [default or custom factories](README.md#use-a-factory-from-the-package-command).
 Set `MARL_LLM_MODEL=qwen3.5-4b-fp8` and `MARL_LLM_REVISION` to the pinned 4B
 revision. Those convenience factories keep the API defaults: stop on failure

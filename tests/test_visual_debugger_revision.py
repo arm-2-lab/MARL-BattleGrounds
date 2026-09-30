@@ -212,12 +212,15 @@ def test_equal_checkouts_produce_equal_path_free_dirty_revision(
 
 def test_revision_discovery_rejects_non_path_and_non_repository(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(TypeError, match=r"must be a pathlib\.Path"):
         discover_code_revision_v1(
             os.fspath(tmp_path),  # type: ignore[arg-type]
             package_version="0.0.0",
         )
+    # Keep Git from finding a checkout above the temporary test directory.
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", os.fspath(tmp_path.parent.resolve()))
     with pytest.raises(ValueError, match="Git revision discovery failed"):
         discover_code_revision_v1(
             tmp_path,

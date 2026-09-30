@@ -73,6 +73,11 @@ def test_verified_selection_controls_report_and_groups_without_rewriting_history
 ) -> None:
     roots = [tmp_path / "first", tmp_path / "second"]
     evidence = {root: _run(root, seed) for seed, root in enumerate(roots)}
+    for root, rule in zip(roots, ("saved", "point_margin"), strict=True):
+        path = root / "run_details.json"
+        details = json.loads(path.read_text())
+        details["selection_rule"] = rule
+        path.write_text(json.dumps(details))
     _reader(monkeypatch, evidence)
     decision_dir = tmp_path / "decision"
     decision = selection.reselect_checkpoint(
@@ -98,6 +103,11 @@ def test_verified_selection_controls_report_and_groups_without_rewriting_history
             for index, root in enumerate(roots)
         ],
     }
+    ordinary = analysis.analyze(
+        roots, output_dir=tmp_path / "ordinary-grouped", grouping=grouping
+    )["training_variation"]
+    assert ordinary["groups"][0]["score"] is None
+    assert all(not row["available"] for row in ordinary["runs"])
     observed: list[bool] = []
     reader = selection.read_selection_decision
 
@@ -117,6 +127,7 @@ def test_verified_selection_controls_report_and_groups_without_rewriting_history
         "path": str(decision_path),
         "decision_id": decision["decision_id"],
         "name": "Declared New Choice",
+        "rule": "point_margin",
     }
     for root, row in zip(roots, report["runs"], strict=True):
         assert row["selection"]["checkpoint_id"] == "b"

@@ -37,8 +37,10 @@ def _entrants() -> tuple[Policy, Policy]:
     )
 
 
+@pytest.mark.parametrize("keep_batch_size", [False, True])
 def test_job_dispatch_preserves_arguments_and_releases_before_yield(
     monkeypatch: pytest.MonkeyPatch,
+    keep_batch_size: bool,
 ) -> None:
     module = import_module("marl_battlegrounds.evaluation.evaluate")
     events: list[object] = []
@@ -77,6 +79,7 @@ def test_job_dispatch_preserves_arguments_and_releases_before_yield(
         writer=cast(Any, writer),
         run_id="saved-run",
         num_envs=3,
+        keep_batch_size=keep_batch_size,
         metrics="none",
         chunk_size=5,
         registered_maps=maps,
@@ -86,6 +89,7 @@ def test_job_dispatch_preserves_arguments_and_releases_before_yield(
     assert events[1] == {
         "seed": 91,
         "num_envs": 3,
+        "keep_batch_size": keep_batch_size,
         "metrics": "none",
         "full_metrics_episodes": (9,),
         "replay_episodes": (11,),

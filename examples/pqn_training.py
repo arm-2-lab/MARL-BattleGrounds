@@ -1,74 +1,105 @@
-"""Run a small complete CPU recurrent PQN-VDN workflow through the public API.
+"""Train, load and inspect a small recurrent PQN-VDN run through the public API.
 
-Install training and viz extras. Run with JAX_PLATFORMS=cpu::
+Install training and hydra, then use JAX_PLATFORMS=cpu::
 
-    python examples/pqn_training.py --output-dir artifacts/pqn-example
-    python examples/pqn_training.py --output-dir artifacts/pqn-c --curriculum
-    python examples/pqn_training.py --resume-from CHECKPOINT --evaluate
+    python examples/pqn_training.py output_dir=artifacts/pqn-example
+    python examples/pqn_training.py output_dir=artifacts/pqn-shaped shaping=true
 
-The tiny default run uses four games and 176 real transitions: blocks of 4
-rounds and a memory window of 2, so the first 6 rounds (a chunk of 4, then a
-chunk of 2) are random initial collection, and the next 38 rounds are ten
-learning blocks of two optimizer steps each (the last block has 2 rounds).
-It checks wiring, not learning. --curriculum and --shaping each add one
-setting (together they give C-RS) to that tiny new run; they are refused with
---config or --resume-from, whose settings come from the file or the saved
-run. --config reads the same JSON settings as
-the package train command; use the training guide's panel-backed
-configuration for real checkpoint selection. The loaded actor plays greedily
-(epsilon 0). --evaluate plays two games against the scripted "tdm-alpha" and a
-two-entrant tournament; these are diagnostics, and no trained competence is
-implied.
+Four games and 176 real transitions cover the small lesson's warmup and updates.
+These budgets establish no learning claim. curriculum=true and shaping=true
+apply only to the tiny fresh recipe; config and resume_from own their settings.
+config accepts the existing JSON file or a plain mapping. evaluate=true adds
+separate evaluation and tournament calls after loading the saved actor. Reports
+print their locations. Use --help or --cfg job; import run for plain Python.
 """
 
-import argparse
+from __future__ import annotations
+
 from pathlib import Path
 
 
-def main() -> None:
-    """Parse paths, call public training/loading/evaluation/analysis and show outputs.
+def run(
+    *,
+    output_dir: str | Path | None = None,
+    resume_from: str | Path | None = None,
+    config: str | Path | dict[str, object] | None = None,
+    curriculum: bool = False,
+    shaping: bool = False,
+    evaluate: bool = False,
+) -> None:
+    """Train a small recurrent PQN-VDN example and inspect its saved actor.
 
-    Exactly one new output directory or complete learner checkpoint is required.
-    --config overrides the tiny new-run example; resume inherits its saved config.
-    --curriculum and --shaping change only the tiny new-run example; with
-    --config or --resume-from the parser exits with status 2 before any work.
-    --evaluate
-    adds two CPU games against "tdm-alpha" and a two-entrant tournament, and
-    saves their ordinary M8 records. Invalid settings and execution errors
-    propagate without an automatic retry.
+    Parameters
+    ----------
+    output_dir : str | Path | None, default=None
+        Chosen output folder, relative to the current working directory. The lesson
+        prints the actual saved locations.
+    resume_from : str | Path | None, default=None
+        Saved run or checkpoint to continue. Omit output_dir on exact resume. None
+        starts new work.
+    config : str | Path | dict[str, object] | None, default=None
+        Training settings as a JSON path or a plain mapping. None uses this lesson's
+        small software-check settings for a fresh run; resumed work inherits its
+        saved settings.
+    curriculum : bool, default=False
+        Enable the built-in curriculum for the tiny fresh run. Cannot accompany
+        config or resume_from.
+    shaping : bool, default=False
+        Enable the built-in reward shaping for the tiny fresh run. Cannot accompany
+        config or resume_from.
+    evaluate : bool, default=False
+        Whether to play the lesson's separate small evaluation after loading the
+        saved actor. False skips those games; saved training analysis still runs.
+
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    paths = parser.add_mutually_exclusive_group(required=True)
-    paths.add_argument("--output-dir", type=Path)
-    paths.add_argument("--resume-from", type=Path)
-    parser.add_argument("--config", type=Path)
-    parser.add_argument("--curriculum", action="store_true")
-    parser.add_argument("--shaping", action="store_true")
-    parser.add_argument("--evaluate", action="store_true")
-    args = parser.parse_args()
-    if (args.curriculum or args.shaping) and (
-        args.config is not None or args.resume_from is not None
+    for flag, value in (
+        ("curriculum", curriculum),
+        ("shaping", shaping),
+        ("evaluate", evaluate),
     ):
-        parser.error(
-            "--curriculum and --shaping cannot accompany --config or --resume-from"
+        if type(value) is not bool:
+            raise TypeError(f"{flag} must be true or false")
+    output_dir = None if output_dir is None else Path(output_dir)
+    resume_from = None if resume_from is None else Path(resume_from)
+    if (output_dir is None) == (resume_from is None):
+        raise ValueError("Choose exactly one output_dir or resume_from")
+    source_config = config
+    if (curriculum or shaping) and (
+        source_config is not None or resume_from is not None
+    ):
+        raise ValueError(
+            "curriculum and shaping cannot accompany config or resume_from"
         )
 
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds import training
-    from marl_battlegrounds.baselines.pqn import PQNConfig
-    from marl_battlegrounds.training.runner import read_config
+    from marl_battlegrounds.baselines.config import PQNConfig
+    from marl_battlegrounds.training.config import config_from_dict, read_config
 
-    config = None
-    if args.config:
-        config = read_config(args.config)
-    elif args.resume_from is None:
-        config = training.TrainConfig(
+    parsed_config = None
+    if source_config is not None:
+        parsed_config = (
+            config_from_dict(source_config)
+            if isinstance(source_config, dict)
+            else read_config(source_config)
+        )
+    elif resume_from is None:
+        parsed_config = training.TrainConfig(
             method="pqn_vdn",
             seed=42,
             num_envs=4,
             total_env_steps=176,
-            curriculum=args.curriculum,
-            shaping=args.shaping,
+            curriculum=curriculum,
+            shaping=shaping,
             pqn=PQNConfig(
                 rollout_length=4,
                 memory_window=2,
@@ -77,12 +108,12 @@ def main() -> None:
             ),
         )
     result = training.train(
-        config,
-        output_dir=args.output_dir,
-        resume_from=args.resume_from,
+        parsed_config,
+        output_dir=output_dir,
+        resume_from=resume_from,
     )
     actor = training.load_system(result.selected_actor or result.final_actor)
-    if args.evaluate:
+    if evaluate:
         marl_bgs.evaluate(
             actor,
             "tdm-alpha",
@@ -108,5 +139,12 @@ def main() -> None:
     print(f"Summary: {reports['artifacts']['summary']}")
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("pqn_training", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

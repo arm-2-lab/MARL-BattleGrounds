@@ -16,7 +16,12 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     LiveOracleAuthorizedPresentationFrameV1,
     PresentationResourceResultV1,
 )
-from scripts.dev.visual_debugger.protocol import (
+from scripts.dev.visual_debugger.server import DebuggerHTTPServer, create_server
+from tests.test_visual_debugger_service import (
+    _service,  # pyright: ignore[reportPrivateUsage]
+)
+
+from marl_battlegrounds._battle_client.protocol import (
     ActorPovLiveDebuggerFrameV2,
     CommandRequestV1,
     CommandResponseV2,
@@ -25,11 +30,7 @@ from scripts.dev.visual_debugger.protocol import (
     ResetCommandV1,
     SetViewCommandV1,
 )
-from scripts.dev.visual_debugger.server import DebuggerHTTPServer, create_server
-from scripts.dev.visual_debugger.service import DebuggerService
-from tests.test_visual_debugger_service import (
-    _service,  # pyright: ignore[reportPrivateUsage]
-)
+from marl_battlegrounds._battle_client.service import DebuggerService
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _ASSET_ROOT = _REPOSITORY_ROOT / "web" / "visual_debugger"

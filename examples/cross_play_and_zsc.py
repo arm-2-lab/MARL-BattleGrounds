@@ -1,22 +1,20 @@
 """Save fixed focal, partner and opponent games, including a local host partner.
 
-Run from an installed checkout with ``python examples/cross_play_and_zsc.py
---output-dir artifacts/cross_play``. The default plays four CPU games capped
-at two steps. Use --max-steps 300 and more --seed-pairs for a real evaluation.
-Repeat --focal, --partner or --opponent to compare built-ins, saved actor
-folders or trusted module:function factories. Python callers can pass live
-Systems directly to run(). No learner or external service is needed.
+Install the hydra extra and run the small CPU example::
 
-The focal controls Team A slots 0 through 3; its partner controls slot 4. All games use
-canonical 5v5 rosters. Each map/seed is played from both spawn ends. The focal
-stays Team A. Familiarity means the researcher's declared training exposure to
-that partner, relative to that focal; unknown is the default. Neither a label
-nor these short games establish zero-shot coordination competence.
+    python examples/cross_play_and_zsc.py output_dir=artifacts/cross-play
+
+The default plays four games capped at two steps, with no external provider.
+Use named focals, partners and opponents mappings to compare built-ins, saved
+actors or trusted module:function factories. Python run accepts live Systems.
+The focal controls Team A slots 0--3 and its partner controls slot 4. Canonical
+5v5 games exchange spawn ends while keeping the focal on Team A. Familiarity is
+declared exposure, relative to each focal; missing pairs remain unknown. Neither
+these labels nor tiny games prove zero-shot coordination. Use --help or --cfg job.
 """
 
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import os
@@ -125,7 +123,7 @@ def run(
         game settings and method identity before executing or resuming games.
     """
     import marl_battlegrounds as marl_bgs
-    from marl_battlegrounds._method_loading import load_method
+    from marl_battlegrounds import load_method
     from marl_battlegrounds.evaluation.recording_identity import (
         normalize_system_registration,
     )
@@ -297,66 +295,73 @@ def run(
     return rows
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run the local demo or chosen references; return zero when all cells finish.
+def launch(
+    output_dir: str | Path,
+    *,
+    focals: dict[str, str] | None = None,
+    partners: dict[str, str] | None = None,
+    opponents: dict[str, str] | None = None,
+    familiarity: dict[str, dict[str, str]] | str | None = None,
+    maps: Sequence[int] = (42,),
+    seed_pairs: int = 1,
+    max_steps: int = 2,
+    num_envs: int = 2,
+    seed: int = 17,
+) -> int:
+    """Load declared references once and run every focal/partner/opponent cell.
 
-    argv is an optional argument list; None reads the process command line.
-    --familiarity reads the nested JSON mapping described by run(). Parsing
-    happens before numerical imports. CPU is the default unless the caller set
-    JAX_PLATFORMS. Repeating the same command resumes its saved cells.
+    output_dir holds the saved matrix; repeating unchanged settings resumes it.
+    Named mappings retain their labels. The reserved partner reference local-host
+    demonstrates a local idle host System. familiarity is a nested exposure-label
+    mapping or its JSON file, never inferred from these games. maps, seed_pairs,
+    max_steps, num_envs and seed have the same meanings as run. CPU is the fallback
+    when no backend was chosen. Print game location and return zero on success.
     """
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    for role in ("focal", "partner", "opponent"):
-        parser.add_argument(
-            "--" + role,
-            action="append",
-            help="Repeat a built-in name, actor folder or module:function",
-        )
-    parser.add_argument(
-        "--familiarity",
-        type=Path,
-        help="JSON: focal reference -> partner reference -> exposure label",
-    )
-    parser.add_argument("--maps", type=int, nargs="+", default=[42])
-    parser.add_argument("--seed-pairs", type=int, default=1)
-    parser.add_argument("--max-steps", type=int, default=2)
-    parser.add_argument("--num-envs", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=17)
-    args = parser.parse_args(argv)
     os.environ.setdefault("JAX_PLATFORMS", "cpu")
     import marl_battlegrounds as marl_bgs
 
+    if isinstance(familiarity, str):
+        familiarity = cast(
+            dict[str, dict[str, str]], json.loads(Path(familiarity).read_text())
+        )
+    focals = {"tdm-alpha": "tdm-alpha"} if focals is None else focals
     partners = (
-        dict.fromkeys(args.partner)
-        if args.partner
-        else {"random": None, "local-host": None}
+        {"random": "random", "local-host": "local-host"}
+        if partners is None
+        else partners
     )
+    opponents = {"tdm-beta": "tdm-beta"} if opponents is None else opponents
+    destination = Path(output_dir)
     rows = run(
-        args.output_dir,
-        focals={name: name for name in (args.focal or ["tdm-alpha"])},
+        destination,
+        focals=focals,
         partners={
             name: marl_bgs.System("Local Idle Host", host_idle, execution="host")
-            if name == "local-host"
-            else name
-            for name in partners
+            if reference == "local-host"
+            else reference
+            for name, reference in partners.items()
         },
-        opponents={name: name for name in (args.opponent or ["tdm-beta"])},
-        familiarity=json.loads(args.familiarity.read_text())
-        if args.familiarity
-        else None,
-        maps=args.maps,
-        seed_pairs=args.seed_pairs,
-        max_steps=args.max_steps,
-        num_envs=args.num_envs,
-        seed=args.seed,
+        opponents=opponents,
+        familiarity=familiarity,
+        maps=maps,
+        seed_pairs=seed_pairs,
+        max_steps=max_steps,
+        num_envs=num_envs,
+        seed=seed,
     )
-    print(f"Saved {len(rows)} games to {args.output_dir / 'games.csv'}")
+    print(f"Saved {len(rows)} games to {destination / 'games.csv'}")
     print(
         "Familiarity is declared exposure. "
         "These games alone do not prove ZSC competence."
     )
     return 0
+
+
+def main() -> int:
+    """Compose packaged YAML, call the Python lesson and return its exit status."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("cross_play_and_zsc", launch)
 
 
 if __name__ == "__main__":

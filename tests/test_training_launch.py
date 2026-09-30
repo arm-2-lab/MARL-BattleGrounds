@@ -407,6 +407,7 @@ def test_resume_requires_marker_checkpoint_and_never_falls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import marl_battlegrounds.training.checkpoints as checkpoints
+    from marl_battlegrounds.training import _checkpoint_metadata
 
     run = tmp_path / "run"
     run.mkdir()
@@ -438,7 +439,7 @@ def test_resume_requires_marker_checkpoint_and_never_falls_back(
         seen.append(path)
         return describe(path)
 
-    monkeypatch.setattr(checkpoints, "read_checkpoint_description", describe)
+    monkeypatch.setattr(_checkpoint_metadata, "read_checkpoint_description", describe)
     monkeypatch.setattr(checkpoints, "read_checkpoint_details", read)
     assert launch._checkpoint(tmp_path, None) == recovering
     assert seen == [recovering]

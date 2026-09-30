@@ -21,7 +21,7 @@ from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from marl_battlegrounds._method_loading import load_method
+from marl_battlegrounds._method_loading import _reference_kind, load_method
 from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.evaluation.evaluate import normalize_episode_specs
 from marl_battlegrounds.evaluation.evaluation_conditions import (
@@ -30,7 +30,7 @@ from marl_battlegrounds.evaluation.evaluation_conditions import (
     config_record,
 )
 from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
-from marl_battlegrounds.evaluation.policy_execution import Policy, System, policy
+from marl_battlegrounds.evaluation.policy_execution import Policy, System
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
 )
@@ -141,21 +141,17 @@ def resolve_tournament_budget(
 def _reference(value: str, base: Path) -> str:
     """Resolve folder references while preserving built-in and factory spelling.
 
-    Built-in names keep the shared loader's priority over a same-named folder.
-    Existing folders, including names containing a colon, are made absolute.
-    Other strings reach the shared loader unchanged; it owns useful failures.
+    The shared loader owns name priority. Built-ins and bare module:factory
+    references stay unchanged even beside same-named folders. Explicit paths
+    and other existing folders become absolute; use ./ for a colon-named folder.
+    Unknown names stay unchanged so the loader can explain the failure.
     """
-    try:
-        policy(value)
+    if _reference_kind(value, base_dir=base) != "artifact":
         return value
-    except ValueError:
-        pass
     candidate = Path(value).expanduser()
     if not candidate.is_absolute():
         candidate = base / candidate
-    if candidate.is_dir() or "/" in value or "\\" in value:
-        return str(candidate.resolve())
-    return value
+    return str(candidate.resolve())
 
 
 def read_short_tournament_config(

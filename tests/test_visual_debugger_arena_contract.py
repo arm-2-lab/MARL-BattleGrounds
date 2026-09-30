@@ -4,20 +4,20 @@ from dataclasses import replace
 
 import jax.numpy as jnp
 import numpy as np
-from scripts.dev.visual_debugger.control import (
-    create_session,
-    set_pending_movement,
-    submit_interactive,
-)
-from scripts.dev.visual_debugger.model import DebuggerSession
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
     LiveOracleAuthorizedPresentationFrameV1,
 )
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    set_pending_movement,
+    submit_interactive,
+)
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.types import (
     CONTEXT_FEATURE_MAP_HEIGHT,
     CONTEXT_FEATURE_MAP_WIDTH,

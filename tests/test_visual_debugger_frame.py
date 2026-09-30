@@ -10,7 +10,18 @@ from typing import cast
 
 import jax.numpy as jnp
 import pytest
-from scripts.dev.visual_debugger.control import (
+from scripts.dev.visual_debugger.no_shared_visual import (
+    build_live_no_shared_obs_visual_current_slice_v1,
+)
+from scripts.dev.visual_debugger.scenarios import (
+    RESEARCHER_SCENARIOS,
+    STRESS_SCENARIOS,
+    get_scenario,
+    list_scenarios,
+)
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+from marl_battlegrounds._battle_client.control import (
     arm_ultimate,
     create_session,
     make_neutral_joint_action,
@@ -21,12 +32,12 @@ from scripts.dev.visual_debugger.control import (
     submit_joint_action,
     submit_next_script_frame,
 )
-from scripts.dev.visual_debugger.frame import LiveDebuggerFrame, build_debugger_frame
-from scripts.dev.visual_debugger.model import DebuggerSession
-from scripts.dev.visual_debugger.no_shared_visual import (
-    build_live_no_shared_obs_visual_current_slice_v1,
+from marl_battlegrounds._battle_client.frame import (
+    LiveDebuggerFrame,
+    build_debugger_frame,
 )
-from scripts.dev.visual_debugger.protocol import (
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.protocol import (
     ActorPovLiveDebuggerFrameV2,
     ApiErrorV2,
     CommandResponseV2,
@@ -35,13 +46,6 @@ from scripts.dev.visual_debugger.protocol import (
     SharedObsAgentPovLiveDebuggerFrameV2,
     ViewMode,
 )
-from scripts.dev.visual_debugger.scenarios import (
-    RESEARCHER_SCENARIOS,
-    STRESS_SCENARIOS,
-    get_scenario,
-)
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.types import MOVE_EAST, MOVE_NORTH, NUM_MOVE_ACTIONS
 from marl_battlegrounds.evaluation.actor_projection import (
@@ -92,6 +96,7 @@ def _frame(
         preset="analysis",
         include_stress=include_stress,
         recording_status=recording_status,
+        scenario_catalog=list_scenarios(include_stress=True),
     )
 
 
@@ -241,7 +246,7 @@ def test_pov_recording_status_redacts_reducer_processing_failure_reason() -> Non
         expected_transition_count=5,
         completion_state="interrupted",
         completion_reason="evaluation_processing_failure",
-        restart_fenced=True,
+        restart_fenced=False,
         finish_available=False,
         review_available=True,
         retry_available=False,
@@ -300,6 +305,7 @@ def test_scripted_frame_marks_controlled_pending_row_inspection_only() -> None:
     assert frame.hud.pending_submission_scope == "scripted_playback"
     assert len(frame.hud.pending_actions) == 1
     assert frame.hud.pending_actions == (frame.hud.pending_action,)
+    assert frame.hud.pending_action is not None
     assert frame.hud.pending_action.label == "PLAYBACK / INSPECTION ONLY"
 
 
@@ -632,3 +638,42 @@ def test_joint_action_test_inputs_keep_exact_int32_heads() -> None:
     assert action.move.dtype == jnp.int32
     assert action.select_target.dtype == jnp.int32
     assert action.use_ultimate.dtype == jnp.int32
+
+
+def test_frame_without_catalog_lists_only_its_current_scenario() -> None:
+    session = _session("basic_support")
+    frame = build_debugger_frame(
+        session,
+        session_id="current-scenario-only",
+        revision=0,
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+    )
+    assert isinstance(frame, ResearcherLiveDebuggerFrameV2)
+    assert tuple(row.name for row in frame.available_scenarios) == (
+        session.scenario_name,
+    )
+
+
+def test_injected_catalog_keeps_caller_order_and_filters_stress() -> None:
+    session = _session()
+    scenarios = (
+        get_scenario("basic_support"),
+        get_scenario("charge_convergence"),
+        session.scenario,
+    )
+    frame = build_debugger_frame(
+        session,
+        session_id="custom-catalog",
+        revision=0,
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+        scenario_catalog=scenarios,
+    )
+    assert isinstance(frame, ResearcherLiveDebuggerFrameV2)
+    assert tuple(row.name for row in frame.available_scenarios) == (
+        "basic_support",
+        "arena_5v5",
+    )

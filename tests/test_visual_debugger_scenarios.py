@@ -3,21 +3,10 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev.visual_debugger.control import (
-    build_scripted_joint_action,
-    create_session,
-    submit_next_script_frame,
-)
-from scripts.dev.visual_debugger.model import (
-    ActorCommand,
-    DebuggerScenario,
-    DebuggerSession,
-)
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
     LiveOracleAuthorizedPresentationFrameV1,
 )
-from scripts.dev.visual_debugger.protocol import CommandRequestV1, KeyboardCommandV1
 from scripts.dev.visual_debugger.scenarios import (
     RESEARCHER_SCENARIOS,
     SCENARIOS,
@@ -27,13 +16,27 @@ from scripts.dev.visual_debugger.scenarios import (
     iter_scenario_summaries,
     list_scenarios,
 )
-from scripts.dev.visual_debugger.service import DebuggerService
 from tests.visual_debugger_fixtures import (
     debugger_test_launch_specification,
     rejection_lane_scenario,
     submit_fixture_frame,
 )
 
+from marl_battlegrounds._battle_client.control import (
+    build_scripted_joint_action,
+    create_session,
+    submit_next_script_frame,
+)
+from marl_battlegrounds._battle_client.model import (
+    ActorCommand,
+    DebuggerScenario,
+    DebuggerSession,
+)
+from marl_battlegrounds._battle_client.protocol import (
+    CommandRequestV1,
+    KeyboardCommandV1,
+)
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,

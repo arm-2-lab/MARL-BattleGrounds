@@ -17,7 +17,10 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from marl_battlegrounds._battle_client.launch import battle_client
+    from marl_battlegrounds._method_loading import load_method as load_method
     from marl_battlegrounds.autoreset import AutoReset
+    from marl_battlegrounds.bundles import export_bundle, prepare_bundle
     from marl_battlegrounds.collection import collect_rollout
     from marl_battlegrounds.environment import (
         Environment,
@@ -35,6 +38,7 @@ if TYPE_CHECKING:
         EpisodeSpec,
         evaluate,
         evaluate_episodes,
+        evaluate_scenarios,
     )
     from marl_battlegrounds.evaluation.policy_execution import (
         Policy,
@@ -92,20 +96,25 @@ __all__ = [
     "TrainingFacts",
     "apply_systems",
     "balanced_spawn_configs",
+    "battle_client",
     "canonical_tournament_rosters",
     "collect_rollout",
     "evaluate",
     "evaluate_episodes",
+    "evaluate_scenarios",
+    "export_bundle",
     "independent_policies",
     "init_episode_tracking",
     "init_systems",
     "list_tdm_maps",
     "list_tdm_scenarios",
+    "load_method",
     "load_results",
     "load_tdm_scenario",
     "make",
     "policy",
     "pool",
+    "prepare_bundle",
     "run_canonical_tournament",
     "run_tournament",
     "select_initial_population",
@@ -116,8 +125,12 @@ __all__ = [
 ]
 
 _MODULES = {
+    "battle_client": "_battle_client.launch",
+    "load_method": "_method_loading",
     "AutoReset": "autoreset",
     "collect_rollout": "collection",
+    "export_bundle": "bundles",
+    "prepare_bundle": "bundles",
     "EpisodeTrackingState": "episode_tracking",
     "init_episode_tracking": "episode_tracking",
     "track_episode_step": "episode_tracking",
@@ -129,6 +142,7 @@ _MODULES = {
     "CanonicalTournamentResult": "evaluation.results",
     "EpisodeSpec": "evaluation.evaluate",
     "evaluate_episodes": "evaluation.evaluate",
+    "evaluate_scenarios": "evaluation.evaluate",
     "load_results": "evaluation.results",
     "evaluate": "evaluation.evaluate",
     "Policy": "evaluation.policy_execution",

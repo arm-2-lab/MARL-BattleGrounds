@@ -44,12 +44,15 @@ frame, content and schema before arrays or recovery files are touched.
 All/class/none actor exports preserve all six methods, exact inference and
 actor-only warm-start checks. Grouped learner state restores exactly at update
 zero for PPO, QMIX and PQN; these cases do not claim trained-state equivalence.
+Artifact relocation keeps historical exposure only with the same checked receipt
+and exact inference registration. Changed or missing receipts do not bypass checks.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections import namedtuple
 from collections.abc import Callable
 from contextlib import ExitStack
@@ -1959,6 +1962,9 @@ def test_readable_names_keep_exact_ids_and_immutable_artifacts(
 
     execution = object.__new__(runner._Run)  # pyright: ignore[reportPrivateUsage]
     execution.root = tmp_path
+    execution.start = time.monotonic()
+    execution.prior_elapsed = 0.0
+    execution.created_at = time.time()
     execution.config = runner.TrainConfig(num_envs=4, total_env_steps=20, ppo=PPO)
     execution.checkpoint = legacy
     execution.checkpoint_id = first_id
@@ -1966,7 +1972,7 @@ def test_readable_names_keep_exact_ids_and_immutable_artifacts(
     execution.state = state
     execution.qmix = execution.pqn = None
     execution.metadata = {**metadata, "run_id": "same_name"}
-    execution.host = {"env_steps": 0, "actors": {}}
+    execution.host = {"env_steps": 0, "actors": {}, "training_seconds": 0.0}
     old_bytes = _files(legacy_actor)
     assert execution.actor() == legacy_actor
     assert _files(legacy_actor) == old_bytes
@@ -2276,3 +2282,231 @@ def test_sharing_full_checkpoint_restores_grouped_state_exactly(
     _equal(warm.variables, saved_actor.variables)
     assert _files(tmp_path) == before
     assert not (tmp_path / "checkpoint_recovery.json").exists()
+
+
+def test_member_relocation_preserves_provenance_only_with_exact_artifact_receipt() -> (
+    None
+):
+    from copy import deepcopy
+
+    from marl_battlegrounds.training import checkpoints
+
+    saved: dict[str, Any] = {
+        "name": "member",
+        "reference": "/old/actor",
+        "registration": {"actor": "one"},
+        "registration_id": "r",
+        "variables_digest": "weights",
+        "input_identity": {"kind": "artifact", "checkpoint_id": "a" * 64},
+        "evidence": {"source": "verified export", "exposure": "known"},
+    }
+    current: dict[str, Any] = {
+        **saved,
+        "reference": "/new/actor",
+        "evidence": {"source": "declared export", "exposure": "unknown"},
+    }
+    accepted = checkpoints._checked_member_binding(saved, current)  # pyright: ignore[reportPrivateUsage]
+    assert accepted == {**current, "evidence": saved["evidence"]}
+    assert current["evidence"]["exposure"] == "unknown"
+    for field in (
+        "name",
+        "registration",
+        "registration_id",
+        "variables_digest",
+        "input_identity",
+    ):
+        changed = deepcopy(current)
+        changed[field] = "different"
+        with pytest.raises(ValueError, match="member binding differs"):
+            checkpoints._checked_member_binding(saved, changed)  # pyright: ignore[reportPrivateUsage]
+    legacy = {key: value for key, value in saved.items() if key != "input_identity"}
+    with pytest.raises(ValueError, match="member binding differs"):
+        checkpoints._checked_member_binding(legacy, current)  # pyright: ignore[reportPrivateUsage]
+    assert checkpoints._checked_member_binding(legacy, saved) == saved  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("array_reward", [False, True])
+def test_pre_component_carry_payload_restores_without_migration(
+    context: Context,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    array_reward: bool,
+) -> None:
+    from marl_battlegrounds.core.types import EnvState
+    from marl_battlegrounds.environment import TrainingFacts
+
+    collection, state = context
+    if array_reward:
+
+        def reward(
+            before: EnvState, facts: TrainingFacts, after: EnvState, progress: jax.Array
+        ) -> jax.Array:
+            return jnp.zeros(10, jnp.float32)
+
+        collection, carry = collection_module.change_training_reward(
+            collection,
+            state.carry,
+            shaping=collection.shaping,
+            shaping_mode=collection.shaping_mode,
+            discount=float(state.carry.discount),
+            coefficient=float(state.carry.coefficient),
+            reward=reward,
+            reward_identity={"reference": "tests:legacy_array"},
+        )
+        state = state._replace(carry=carry)
+    assert state.carry.reward_totals == ()
+    historical_type = namedtuple("HistoricalTrainingCarry", state.carry._fields[:-1])  # pyright: ignore[reportUntypedNamedTuple]
+    old_state = state._replace(carry=historical_type(*state.carry[:-1]))
+    assert checkpoints._layout(old_state) == checkpoints._layout(state)  # pyright: ignore[reportPrivateUsage]
+    original_payload = checkpoints._state_payload  # pyright: ignore[reportPrivateUsage]
+    _equal(original_payload(old_state), original_payload(state))
+    actual_old_write: list[bool] = []
+
+    def old_payload(value: Tree, method: str = "mappo") -> dict[str, Any]:
+        assert value is state
+        actual_old_write.append(True)
+        return original_payload(old_state, method)
+
+    metadata = _metadata()
+    writer = _writer(tmp_path, collection, metadata)
+    monkeypatch.setattr(checkpoints, "_state_payload", old_payload)
+    try:
+        path = save_checkpoint(
+            tmp_path, collection, state, metadata=metadata, writer=writer, ppo=PPO
+        )
+    finally:
+        if writer is not None:
+            writer.close()
+        monkeypatch.setattr(checkpoints, "_state_payload", original_payload)
+    assert actual_old_write == [True]
+    before = _files(tmp_path)
+    restored = restore_checkpoint(
+        path, collection, state, expected_metadata=_expected(metadata), ppo=PPO
+    )
+    assert restored.state.carry.reward_totals == ()
+    _equal(restored.state, state)
+    details = read_checkpoint_details(path)
+    assert "component_keys" not in details["collection"].get("reward_identity", {})
+    assert details["actor_digest"] == tree_digest(state.carry.history.current_variables)
+    assert _files(tmp_path) == before
+
+
+def test_undrained_component_window_restores_with_saved_shape(
+    variant_content: PreparedTrainingContent,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.core.types import EnvState
+    from marl_battlegrounds.environment import TrainingFacts
+    from marl_battlegrounds.training.runner import (
+        _restored_reward_shape,  # pyright: ignore[reportPrivateUsage]
+    )
+    from marl_battlegrounds.training.shaping import (
+        RewardOutput,
+        _reward_totals_record,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    def reward(
+        before: EnvState, facts: TrainingFacts, after: EnvState, progress: jax.Array
+    ) -> RewardOutput:
+        amount = jnp.ones(10, jnp.float32)
+        return RewardOutput(amount, {"pending": amount})
+
+    collection, state = init_learner(
+        schedule=make_training_schedule(total_env_steps=8, num_envs=4),
+        seed=42,
+        ppo=PPO,
+        method="ff_ippo",
+        prepared=variant_content,
+        metrics="none",
+        recording=False,
+        reward=reward,
+        reward_identity={"reference": "tests:pending"},
+    )
+    update = cast(
+        Any,
+        jax.jit(
+            partial(update_learner, ppo=PPO, method="ff_ippo"),
+            compiler_options=training_compiler_options(),
+        ),
+    )
+    carry, rollout = collect_training_rollout(collection, state.carry, length=2)
+    state, result = update(state, carry, rollout)
+    assert result.performed
+    keys = collection.reward_component_keys
+    pending = _reward_totals_record(state.carry.reward_totals, keys)
+    assert pending["real_transitions"] == 8
+    metadata = _metadata()
+    cast(dict[str, Any], metadata["config"]).update(method="ff_ippo", total_env_steps=8)
+    path = save_checkpoint(
+        tmp_path, collection, state, metadata=metadata, ppo=PPO, method="ff_ippo"
+    )
+    before = _files(tmp_path)
+    # An explicit reward change restores the parent's shape without executing
+    # the old callback, then installs the child callback after checked recovery.
+    template_collection, template_state = init_learner(
+        schedule=make_training_schedule(total_env_steps=8, num_envs=4),
+        seed=42,
+        ppo=PPO,
+        method="ff_ippo",
+        prepared=variant_content,
+        metrics="none",
+        recording=False,
+        reward=partial(_restored_reward_shape, component_keys=keys),
+        reward_identity=collection.reward_identity,
+    )
+    restored = restore_checkpoint(
+        path,
+        template_collection,
+        template_state,
+        expected_metadata=_expected(metadata),
+        ppo=PPO,
+        method="ff_ippo",
+    )
+    assert _reward_totals_record(restored.state.carry.reward_totals, keys) == pending
+    _equal(restored.state, state)
+    assert _files(tmp_path) == before
+
+    window = state.carry.reward_totals
+    faults = (
+        window._replace(transitions=window.transitions.at[0].set(-1)),
+        window._replace(transitions=window.transitions.at[0].set(3)),
+        window._replace(team_transitions=window.team_transitions.at[0].set(-1)),
+        window._replace(team_transitions=window.team_transitions.at[0].set(3)),
+        window._replace(recipients=window.recipients.at[0, 0].set(-1)),
+        window._replace(recipients=window.recipients.at[0, 0].set(3)),
+        window._replace(recipients=window.recipients.at[0].set(0)),
+        window._replace(recipient_sums=window.recipient_sums.at[0, 0].set(jnp.nan)),
+        window._replace(
+            team_transitions=window.team_transitions.at[0].set(0),
+            recipients=window.recipients.at[0].set(0),
+        ),
+    )
+    real_restore = checkpoints._restore_arrays  # pyright: ignore[reportPrivateUsage]
+    for corrupted in faults:
+        bad = state._replace(carry=state.carry._replace(reward_totals=corrupted))
+        with pytest.raises(ValueError, match="reward component"):
+            save_checkpoint(
+                tmp_path, collection, bad, metadata=metadata, ppo=PPO, method="ff_ippo"
+            )
+        assert _files(tmp_path) == before
+
+        def restored_payload(
+            path: Path, template: Tree, device: object | None, bad: Tree = bad
+        ) -> Tree:
+            if path.name == "state":
+                return checkpoints._state_payload(bad, "ff_ippo")  # pyright: ignore[reportPrivateUsage]
+            return real_restore(path, template, device)
+
+        with monkeypatch.context() as probe:
+            probe.setattr(checkpoints, "_restore_arrays", restored_payload)
+            with pytest.raises(ValueError, match="reward component"):
+                restore_checkpoint(
+                    path,
+                    template_collection,
+                    template_state,
+                    expected_metadata=_expected(metadata),
+                    ppo=PPO,
+                    method="ff_ippo",
+                )
+        assert _files(tmp_path) == before

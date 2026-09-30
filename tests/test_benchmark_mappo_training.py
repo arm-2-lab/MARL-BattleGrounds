@@ -75,6 +75,7 @@ def _result() -> UpdateResult:
         cast(Tree, np.zeros(17, np.int32)),
         cast(Tree, np.zeros((22, 3), np.int32)),
         cast(Tree, np.zeros((22, 2), np.int32)),
+        per_member_length_sum=cast(Tree, np.zeros(22, np.int32)),
     )
     snapshot = SnapshotEvent(
         false, zero - 1, zero - 1, zero - 1, cast(Tree, np.zeros(20, bool)), zero - 1

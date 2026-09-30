@@ -1,0 +1,73 @@
+{
+  "cases": {
+    "lucky--seed-101": {
+      "attempts": [
+        {
+          "exit_code": 0,
+          "number": 1,
+          "qualification": "Synthetic software fixture",
+          "run_attempt_id": "synthetic-runner-lucky--seed-101",
+          "run_status": {
+            "env_steps": 8,
+            "status": "complete"
+          },
+          "status": "complete",
+          "study_attempt_id": "synthetic-lucky--seed-101"
+        }
+      ],
+      "status": "complete"
+    },
+    "lucky--seed-102": {
+      "attempts": [
+        {
+          "exit_code": 0,
+          "number": 1,
+          "qualification": "Synthetic software fixture",
+          "run_attempt_id": "synthetic-runner-lucky--seed-102",
+          "run_status": {
+            "env_steps": 8,
+            "status": "complete"
+          },
+          "status": "complete",
+          "study_attempt_id": "synthetic-lucky--seed-102"
+        }
+      ],
+      "status": "complete"
+    },
+    "steady--seed-201": {
+      "attempts": [
+        {
+          "exit_code": 0,
+          "number": 1,
+          "qualification": "Synthetic software fixture",
+          "run_attempt_id": "synthetic-runner-steady--seed-201",
+          "run_status": {
+            "env_steps": 8,
+            "status": "complete"
+          },
+          "status": "complete",
+          "study_attempt_id": "synthetic-steady--seed-201"
+        }
+      ],
+      "status": "complete"
+    },
+    "steady--seed-202": {
+      "attempts": [
+        {
+          "exit_code": 0,
+          "number": 1,
+          "qualification": "Synthetic software fixture",
+          "run_attempt_id": "synthetic-runner-steady--seed-202",
+          "run_status": {
+            "env_steps": 8,
+            "status": "complete"
+          },
+          "status": "complete",
+          "study_attempt_id": "synthetic-steady--seed-202"
+        }
+      ],
+      "status": "complete"
+    }
+  },
+  "schema_version": 1
+}

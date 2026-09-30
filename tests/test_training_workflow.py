@@ -18,7 +18,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from examples import training_distributions as example
+from scripts.dev import training_distribution_reference as example
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.training import (

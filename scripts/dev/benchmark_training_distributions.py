@@ -34,7 +34,6 @@ from typing import Any, cast
 import jax
 import jax.numpy as jnp
 import numpy as np
-from examples import training_distributions as workflow
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core.types import EnvConfig
@@ -43,6 +42,7 @@ from marl_battlegrounds.evaluation.recording_identity import (
     ordered_source_bank_identity,
 )
 from marl_battlegrounds.training import prepare_training_content
+from scripts.dev import training_distribution_reference as workflow
 
 type Tree = Any
 
@@ -346,7 +346,7 @@ def main() -> None:
         "src/marl_battlegrounds/episode_tracking.py",
         "src/marl_battlegrounds/collection.py",
         "src/marl_battlegrounds/evaluation/run_writer.py",
-        "examples/training_distributions.py",
+        "scripts/dev/training_distribution_reference.py",
         "scripts/dev/benchmark_training_distributions.py",
         "uv.lock",
     ]

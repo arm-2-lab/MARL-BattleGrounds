@@ -11,10 +11,11 @@ import {
   acquireCapabilityToken,
   acquireClientId,
   DebuggerApiError,
-  extractFrame,
   extractJoinedFrame,
   extractNotice,
+  extractReplayUrl,
   getCurrentFrameAndPresentation,
+  getCurrentLiveSnapshot,
   getCurrentPresentation,
   getReplayEpisodeDetails,
   getReplayMetricCatalog,
@@ -28,6 +29,7 @@ import {
   authorizedOracleCommandSlotForPublicAgentId,
   authorizedPresentationAgentDisplayId,
   authorizedPresentationAudience,
+  authorizedPresentationController,
   authorizedPresentationIdentityRows,
   authorizedPresentationInspectionState,
   authorizedPresentationLatestTransitionId,
@@ -53,12 +55,11 @@ import {
   keyboardCommand,
   presentationRequiresSubmissionSettle,
   recordingCommandDecision,
-  recordingReviewHandoffRequired,
   recordingSaveAsCommand,
   targetSelectionCommand,
 } from "./controls.js";
 import { explainAgent, explainLegality, explainTechnicalFact } from "./explanations.js";
-import { renderMatchSummary } from "./match-summary.js";
+import { matchSummaryView, renderMatchSummary } from "./match-summary.js";
 import {
   buildMetricSearchIndex,
   renderMetricDefinition,
@@ -132,7 +133,6 @@ const elements = {
   matchTask: requiredElement("match-task"),
   matchTeamA: requiredElement("match-team-a"),
   matchTeamB: requiredElement("match-team-b"),
-  taskSelect: requiredElement("devclient-task-select"),
   recordingBadge: requiredElement("recording-badge"),
   viewSelect: requiredElement("view-select"),
   stepValue: requiredElement("step-value"),
@@ -148,6 +148,7 @@ const elements = {
   recordingMetricsHelp: requiredElement("recording-metrics-help"),
   recordingFinishButton: requiredElement("recording-finish-button"),
   recordingReviewButton: requiredElement("recording-review-button"),
+  recordingReplayLink: requiredElement("recording-replay-link"),
   recordingRetryButton: requiredElement("recording-retry-button"),
   recordingSaveAsControl: requiredElement("recording-save-as-control"),
   recordingSaveAsInput: requiredElement("recording-save-as-input"),
@@ -156,6 +157,7 @@ const elements = {
   recordingDiscardIntent: requiredElement("recording-discard-intent"),
   recordingDiscardCancelButton: requiredElement("recording-discard-cancel-button"),
   recordingDiscardConfirmButton: requiredElement("recording-discard-confirm-button"),
+  recordingSaveReplaceButton: requiredElement("recording-save-replace-button"),
   replayTimeline: requiredElement("replay-timeline"),
   replayArtifactReference: requiredElement("replay-artifact-reference"),
   replayCompletionBadge: requiredElement("replay-completion-badge"),
@@ -209,6 +211,10 @@ const elements = {
   battlefieldEmpty: requiredElement("battlefield-empty"),
   commandDeck: document.querySelector(".command-deck"),
   commandControlledActor: requiredElement("command-controlled-actor"),
+  liveRunButton: requiredElement("live-run-button"),
+  liveRunStatus: requiredElement("live-run-status"),
+  liveControlHelp: requiredElement("live-control-help"),
+  liveMatchRules: requiredElement("live-match-rules"),
   roster: requiredElement("roster"),
   rosterCount: requiredElement("roster-count"),
   agentDetails: requiredElement("agent-details"),
@@ -227,6 +233,8 @@ const elements = {
   pendingCard: requiredElement("pending-card"),
   stayButton: requiredElement("stay-button"),
   commandTargetSelect: requiredElement("command-target-select"),
+  policyTargetMasks: requiredElement("policy-target-masks"),
+  policyTargetMaskRows: requiredElement("policy-target-mask-rows"),
   noCombatButton: requiredElement("no-combat-button"),
   basicButton: requiredElement("basic-button"),
   ultimateButton: requiredElement("ultimate-button"),
@@ -573,16 +581,12 @@ let workspaceMinimumHeightBeforeAuthorityInstall = null;
 const expectedDisclosureToggles = new WeakMap();
 
 const PRODUCT_TITLES = Object.freeze({
-  combat_debugger: "MARL-BattleGrounds DevClient",
+  combat_debugger: "MARL-BattleGrounds BattleClient",
   replay_viewer: "MARL-BattleGrounds Replay Viewer",
 });
 const REPLAY_SAVE_MESSAGE = "Saving replay. Longer recordings can take longer.";
 const METRIC_PREPARATION_MESSAGE = "Preparing metrics. Longer replays can take longer.";
-const PRODUCT_HANDOFF_COMMANDS = new Set([
-  "finish_and_review",
-  "review_replay",
-  "save_as",
-]);
+
 const SCRIPTED_INSPECTION_RECORDING_COMMANDS = new Set([
   "finish_and_review",
   "review_replay",
@@ -598,27 +602,21 @@ const SCRIPTED_INSPECTION_RECORDING_COMMANDS = new Set([
  * a reconnect instead of showing a live frame in the Replay Viewer or vice versa.
  */
 class ProductIdentityMismatchError extends Error {}
-/**
- * Signal that accepted recording review requires a page reload.
- * This Error subclass is an internal control-flow signal caught by the live
- * command handler; it does not mean the recording command failed.
- */
-class ProductReviewHandoff extends Error {}
 
-/** @type {Readonly<{schema_version: 1, product_kind: "combat_debugger" | "replay_viewer", authoring_available: boolean}> | null} */
+/** @type {Readonly<{schema_version: 1, product_kind: "combat_debugger" | "replay_viewer"}> | null} */
 let productIdentity = null;
 /** @type {string | null} */
 let startupProductIdentityError = null;
 
 /**
  * Validate and install the launcher product identity before accepting frames.
- * Accept schema version 1, a known product, boolean authoring permission, and an
- * optional boolean initial range choice; Replay Viewer cannot enable authoring.
+ * Accept schema version 1, a known product and an
+ * optional boolean initial range choice.
  * Throw TypeError for invalid input. Update page labels and product state, and
  * apply initial range/filter defaults only on their first installation.
  *
  * @param {unknown} rawIdentity
- * @returns {Readonly<{schema_version: 1, product_kind: "combat_debugger" | "replay_viewer", authoring_available: boolean}>}
+ * @returns {Readonly<{schema_version: 1, product_kind: "combat_debugger" | "replay_viewer"}>}
  */
 function applyBootstrap(rawIdentity) {
   if (!isRecord(rawIdentity)) {
@@ -631,12 +629,7 @@ function applyBootstrap(rawIdentity) {
   const keys = Object.keys(rawIdentity)
     .filter((key) => key !== "initial_show_ranges")
     .sort();
-  if (
-    keys.length !== 3 ||
-    keys[0] !== "authoring_available" ||
-    keys[1] !== "product_kind" ||
-    keys[2] !== "schema_version"
-  ) {
+  if (keys.length !== 2 || keys[0] !== "product_kind" || keys[1] !== "schema_version") {
     throw new TypeError("Product bootstrap has an invalid shape.");
   }
   if (rawIdentity.schema_version !== 1) {
@@ -648,12 +641,6 @@ function applyBootstrap(rawIdentity) {
   ) {
     throw new TypeError("Product bootstrap kind is unsupported.");
   }
-  if (typeof rawIdentity.authoring_available !== "boolean") {
-    throw new TypeError("Product bootstrap authoring capability is invalid.");
-  }
-  if (rawIdentity.product_kind === "replay_viewer" && rawIdentity.authoring_available) {
-    throw new TypeError("Replay Viewer cannot receive authoring authority.");
-  }
   if (!agentLocalRangesInitialized && hasInitialRanges) {
     agentLocalRangesVisible = rawIdentity.initial_show_ranges;
     agentLocalRangesInitialized = true;
@@ -661,7 +648,6 @@ function applyBootstrap(rawIdentity) {
   productIdentity = Object.freeze({
     schema_version: 1,
     product_kind: rawIdentity.product_kind,
-    authoring_available: rawIdentity.authoring_available,
   });
   if (!visualFilterProductDefaultsApplied) {
     visualFilterState =
@@ -680,7 +666,7 @@ function applyBootstrap(rawIdentity) {
   elements.helpHeading.textContent =
     productIdentity.product_kind === "replay_viewer"
       ? "Replay Viewer help"
-      : "DevClient help";
+      : "BattleClient help";
   document.documentElement.dataset.productKind = productIdentity.product_kind;
   return productIdentity;
 }
@@ -708,43 +694,13 @@ function assertFrameMatchesProductIdentity(frame) {
 }
 
 try {
-  const startupIdentity = applyBootstrap(
-    Reflect.get(globalThis, "__MARL_DEBUGGER_BOOTSTRAP__"),
-  );
-  if (
-    startupIdentity.product_kind === "combat_debugger" &&
-    startupIdentity.authoring_available
-  ) {
-    void import("./dev-client.js").then(() => {
-      publishInstalledCombatConfiguration(state.frame);
-    });
-  }
+  applyBootstrap(Reflect.get(globalThis, "__MARL_DEBUGGER_BOOTSTRAP__"));
 } catch (error) {
   startupProductIdentityError =
     error instanceof Error ? error.message : "Product bootstrap is invalid.";
 }
 
 const CONTROL_HELP = Object.freeze([
-  [
-    "[data-devclient-area]",
-    "DevClient Area",
-    "Switch between the Combat Debugger, reusable Maps, and task-controlled Scenarios.",
-  ],
-  [
-    "#devclient-scenario-select",
-    "Saved Debug Asset",
-    "Choose an execution-valid scenario or a map to inspect through the explicit default 5v5 TDM preview.",
-  ],
-  [
-    "#devclient-scenario-load",
-    "Load Debug Asset",
-    "Reopen, compile, and revalidate the selected scenario or map preview before replacing the current Debug session.",
-  ],
-  [
-    "#devclient-task-select",
-    "Task",
-    "TDM is the available task for authored matches. Load a saved scenario or map to use its captured configuration.",
-  ],
   [
     "#metric-scope",
     "Evaluation Metric Scope",
@@ -759,100 +715,6 @@ const CONTROL_HELP = Object.freeze([
     "#replay-episode-details-button",
     "Episode Details",
     "Download the recorded episode identity, policies, configuration, completion and runtime details as JSON.",
-  ],
-  [
-    "#devclient-team-a-controller",
-    "Team A Controller",
-    "Choose manual control, the scripted Team Deathmatch policy, or Random, then restart from the same snapshot.",
-  ],
-  [
-    "#devclient-team-b-controller",
-    "Team B Controller",
-    "Choose manual control, the scripted Team Deathmatch policy, or Random, then restart from the same snapshot.",
-  ],
-  [
-    "#devclient-information-mode",
-    "Information Mode",
-    "Choose SharedObs or NoSharedObs, then restart from the same scenario snapshot and seed.",
-  ],
-  [
-    "#authoring-saved-draft-select",
-    "Saved Draft",
-    "Choose an exact saved revision for the active Map or Scenario Author tab.",
-  ],
-  [
-    "#authoring-new-scenario-mode",
-    "Scenario Starting Point",
-    "Start blank, copy a saved map, or duplicate a saved scenario.",
-  ],
-  [
-    "#authoring-new-scenario-source",
-    "Scenario Source Asset",
-    "Choose the exact saved revision to copy into a new independent scenario draft.",
-  ],
-  ["#authoring-new", "New Draft", "Create a new local map or scenario draft."],
-  ["#authoring-open", "Open Draft", "Open an exact saved draft revision."],
-  [
-    "#authoring-delete-saved",
-    "Delete Saved Asset",
-    "After confirmation, permanently delete the selected saved map or scenario and all of its revisions.",
-  ],
-  [
-    "#authoring-save",
-    "Save Draft",
-    "Atomically save the complete draft at its current revision.",
-  ],
-  [
-    "#authoring-save-as",
-    "Save Draft As",
-    "Save the complete draft under a new safe asset identity.",
-  ],
-  [
-    "#authoring-validate",
-    "Validate Draft",
-    "Compile the current draft with host-authoritative rules and show linked problems.",
-  ],
-  [
-    "#authoring-open-debug",
-    "Open in Debug",
-    "Compile and revalidate an immutable scenario snapshot or an explicit default 5v5 TDM map preview, then atomically replace the Combat Debugger session.",
-  ],
-  [
-    "[data-authoring-add]",
-    "Add Obstacle",
-    "Append a wall or pillar to the map's ordered active obstacle prefix.",
-  ],
-  [
-    "#authoring-reset",
-    "Reset Draft",
-    "Restore the latest new, opened, or successfully saved draft baseline. The reset is undoable.",
-  ],
-  [
-    "#authoring-recenter",
-    "Recenter Map",
-    "Fit the complete authored map in the canvas without changing draft content.",
-  ],
-  ["#authoring-undo", "Undo", "Undo the most recent browser-local edit."],
-  ["#authoring-redo", "Redo", "Redo the most recently undone browser-local edit."],
-  [
-    "#authoring-duplicate",
-    "Duplicate Obstacle",
-    "Append a copy of the selected wall or pillar.",
-  ],
-  [
-    "#authoring-delete",
-    "Delete Obstacle",
-    "Delete the selected wall or pillar and compact the ordered obstacle prefix.",
-  ],
-  [
-    "#authoring-order-up",
-    "Move Obstacle Up",
-    "Move the selected obstacle earlier in fixed-slot order.",
-  ],
-  [
-    "#authoring-order-down",
-    "Move Obstacle Down",
-    "Move the selected obstacle later in fixed-slot order.",
   ],
   [
     "#replay-timeline",
@@ -875,13 +737,13 @@ const CONTROL_HELP = Object.freeze([
   ["#exit-button", "Exit", "Ask the local Python service to close safely."],
   [
     "#recording-finish-button",
-    "Finish and Review",
-    "Finalize the captured prefix, save it, and enter read-only review.",
+    "Finish And Save",
+    "Save this game and keep it open for inspection. Restart begins another match.",
   ],
   [
     "#recording-review-button",
-    "Review Replay",
-    "Enter read-only review for the saved replay.",
+    "Open Replay",
+    "Open the saved game in a separate Replay Viewer tab.",
   ],
   [
     "#recording-retry-button",
@@ -890,7 +752,7 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#recording-save-as-input",
-    "Save As Basename",
+    "Save As File Name",
     "Enter a basename only; paths and overwrites are rejected.",
   ],
   [
@@ -900,13 +762,23 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#recording-discard-cancel-button",
-    "Keep Recording",
+    "Cancel",
     "Cancel replacement and preserve the captured prefix.",
   ],
   [
     "#recording-discard-confirm-button",
-    "Discard and Replace",
+    "Discard",
     "Confirm permanent loss of the unpublished prefix and start its named replacement.",
+  ],
+  [
+    "#recording-save-replace-button",
+    "Save",
+    "Save this game, then start the selected next match.",
+  ],
+  [
+    "#recording-replay-link",
+    "Open Saved Replay In New Tab",
+    "Open the separate local Replay Viewer.",
   ],
   ["#replay-first-button", "Start Replay Tick", "Seek to settled replay tick zero."],
   [
@@ -953,7 +825,12 @@ const CONTROL_HELP = Object.freeze([
   [
     "#submit-turn-button",
     "Apply Authorized Action",
-    "Submit an editable draft or advance an inspection-only scripted frame through the authoritative Python service.",
+    "Submit all Manual and policy actions for one turn, or advance one scripted turn. Inspecting a policy does not give you control of it.",
+  ],
+  [
+    "#live-run-button",
+    "Run Or Pause",
+    "Run advances matches with no Manual slots. Pause stops the next turn; a turn already choosing actions may finish.",
   ],
   [
     "#reset-button",
@@ -1194,10 +1071,11 @@ let activatedAgentPublicId = null;
 let lastBattlefieldSizeKey = "";
 /** @type {number | null} */
 let pendingResizeFrame = null;
-/** @type {Readonly<Record<string, unknown>> | null} */
+/** @type {{session_id: string, run_generation: number, revision: number,
+ * label: string, perform: (choice: "save" | "discard") => Promise<unknown>} | null} */
 let pendingRecordingReplacement = null;
-let productHandoffOutcomeUnknown = false;
-let productHandoffReloadRequested = false;
+/** @type {string | null} */
+let openedReplayEpisodeId = null;
 
 /**
  * Remove the element attributes that expose a presentation-owned tooltip.
@@ -1267,6 +1145,8 @@ function renderPendingPresentationChrome() {
   elements.recordingSaveAsButton.disabled = true;
   elements.recordingDiscardIntent.textContent = pending.recording.status;
   elements.recordingDiscardConfirmButton.disabled = true;
+  elements.recordingSaveReplaceButton.disabled = true;
+  elements.recordingReplayLink.hidden = true;
   if (elements.recordingDiscardDialog.open) {
     elements.recordingDiscardDialog.close();
   }
@@ -1328,6 +1208,7 @@ function clearPresentationAuthority(reason) {
     elements.recordingSaveAsInput,
     elements.recordingSaveAsButton,
     elements.recordingDiscardConfirmButton,
+    elements.recordingSaveReplaceButton,
   ]) {
     control.disabled = true;
   }
@@ -1537,18 +1418,6 @@ function applyAuthorizedInspectorChrome() {
   } else {
     elements.agentDetails.removeAttribute("data-accent");
   }
-}
-
-/**
- * Reload the page once after a live-to-replay product handoff.
- * A page flag suppresses duplicate reload attempts from later callbacks.
- */
-function reloadForProductHandoff() {
-  if (productHandoffReloadRequested) {
-    return;
-  }
-  productHandoffReloadRequested = true;
-  window.location.reload();
 }
 
 /**
@@ -2387,7 +2256,7 @@ function combatConfigurationFromFrame(frame) {
 }
 
 /**
- * Publish confirmed combat settings to DevClient through a document event.
+ * Publish confirmed combat settings to BattleClient through a document event.
  * Only the Combat Debugger sends this event, and only for a valid configuration.
  * No event is sent for replay or missing settings.
  *
@@ -2402,10 +2271,21 @@ function publishInstalledCombatConfiguration(frame) {
     return;
   }
   document.dispatchEvent(
-    new CustomEvent("marl-devclient-combat-configuration-installed", {
+    new CustomEvent("marl-combat-configuration-installed", {
       detail: {
         ...configuration,
+        task_mode: matchSummaryView(state.presentation)?.taskMode ?? null,
         system_choices: isRecord(frame) ? (frame.system_choices ?? []) : [],
+        manual_slots: isRecord(frame)
+          ? (frame.combat_configuration?.manual_slots ?? [])
+          : [],
+        slot_labels: isRecord(frame)
+          ? (frame.combat_configuration?.slot_labels ?? [])
+          : [],
+        scenario_name: isRecord(frame) ? (frame.scenario?.name ?? null) : null,
+        revision: isRecord(frame) ? frame.revision : null,
+        session_id: isRecord(frame) ? frame.session_id : null,
+        run_generation: isRecord(frame) ? frame.run_generation : null,
       },
     }),
   );
@@ -3654,13 +3534,13 @@ const FENCED_LIVE_BATTLEFIELD_LABEL =
 const FENCED_LIVE_BATTLEFIELD_INSTRUCTIONS =
   "Live battlefield interaction is unavailable while authority is pending, offline, resynchronizing, shutting down, or terminal.";
 const READ_ONLY_LIVE_SCIENTIFIC_LABEL =
-  "Read-only live battlefield. Scientific facts can be inspected; simulator and actor activation controls are unavailable.";
+  "Read-only live battlefield. Select an agent to inspect it; new actions are unavailable.";
 const READ_ONLY_LIVE_SCIENTIFIC_INSTRUCTIONS =
-  "Scientific tooltip facts remain inspectable. Live simulator and actor activation controls are unavailable while recording is closing, the session is offline or resynchronizing, or the frame is terminal.";
+  "Inspect the accepted game. Select an agent to see its facts. This view does not submit actions; Restart starts another match when available.";
 const AGENT_CLOSEOUT_BATTLEFIELD_LABEL =
   "Agent POV recording closeout battlefield. Authorized bodies can be inspected; simulator controls are unavailable.";
 const AGENT_CLOSEOUT_BATTLEFIELD_INSTRUCTIONS =
-  "Authorized visible bodies can still be inspected locally; recording closeout has fenced POV switching, simulator input, and pending-action controls.";
+  "Inspect visible bodies here, or choose an agent in the roster to inspect its view. This recording cannot accept another turn.";
 const TERMINAL_REPLAY_BATTLEFIELD_LABEL =
   "Read-only terminal replay battlefield snapshot.";
 const TERMINAL_REPLAY_BATTLEFIELD_INSTRUCTIONS =
@@ -3684,6 +3564,9 @@ function liveBattlefieldCommandsInteractive() {
     !state.shuttingDown &&
     !state.resyncRequired &&
     !state.offline &&
+    (!state.frame?.system_operation ||
+      (state.frame?.fresh_launch_required &&
+        state.frame.system_operation.state === "failed")) &&
     !recordingScientificControlsFenced()
   );
 }
@@ -3978,6 +3861,9 @@ function renderRecordingControls(installed) {
     return;
   }
   const recording = recordingStatus();
+  elements.recordingReplayLink.hidden =
+    openedReplayEpisodeId !== installed.transport.episode_id ||
+    !elements.recordingReplayLink.hasAttribute("href");
   const unavailable = isReplayMode() || recording === null;
   elements.recordingPanel.toggleAttribute("hidden", unavailable);
   elements.recordingBadge.toggleAttribute("hidden", unavailable);
@@ -4015,7 +3901,13 @@ function renderRecordingControls(installed) {
     persistenceLabel ?? "No persistence error";
 
   const interactionDisabled =
-    state.busy || state.shuttingDown || state.resyncRequired || state.offline;
+    state.busy ||
+    state.shuttingDown ||
+    state.resyncRequired ||
+    state.offline ||
+    recordingCommandDecision(installed.transport, {
+      command_type: "finish_and_review",
+    }).action === "block";
   const actionAvailability = [
     [elements.recordingFinishButton, recording.finish_available === true],
     [elements.recordingReviewButton, recording.review_available === true],
@@ -4032,16 +3924,16 @@ function renderRecordingControls(installed) {
 
   elements.recordingStatusNote.textContent =
     recording.lifecycle === "recording" && recording.discard_available === true
-      ? "Capture is active. Reset requires confirmation because it replaces this recorded prefix."
+      ? "Capture is active. Restart offers Save, Discard or Cancel."
       : recording.lifecycle === "recording"
-        ? "Capture is active. Scientific controls remain authoritative in Python."
+        ? "Capture starts at frame zero. Finish And Save ends this recording."
         : recording.lifecycle === "persistence_failed"
-          ? "The exact canonical replay bytes remain cached. Retry the same destination or choose a basename-only Save As target."
+          ? "Your recording is kept in memory. Retry Save or choose a new file name with Save As."
           : recording.lifecycle === "saved"
-            ? "The replay and metric report were saved and publicly verified. Review opens the same local session in read-only mode."
+            ? "Replay saved. Inspect this game, open it in a separate Viewer, or Restart to play again."
             : recording.lifecycle === "reviewing"
-              ? "The local service is switching this session to read-only replay review."
-              : "Recording closeout has fenced scientific controls while the canonical artifact is finalized.";
+              ? "Replay saved. Open Replay uses a separate Viewer."
+              : "This recording has ended. Save or discard it before starting another match.";
   const preparation =
     state.busy && !state.offline && !state.resyncRequired
       ? activeLiveCommandTransaction?.recordingPreparation
@@ -4052,7 +3944,7 @@ function renderRecordingControls(installed) {
     elements.recordingStatusNote.textContent =
       preparation === "metrics"
         ? REPLAY_SAVE_MESSAGE
-        : "Processing the recorded game. If the episode ends, its metrics will be prepared before saving. Longer replays can take longer.";
+        : "Saving the recorded game. Longer replays can take longer. Metrics can be computed in Replay Viewer.";
   }
 
   if (recording.discard_available !== true && elements.recordingDiscardDialog.open) {
@@ -4153,46 +4045,22 @@ const DEFERRED_SUBMIT_PREPARATION_COMMAND_TYPES = new Set([
 ]);
 
 /**
- * Return the selected live editable actor team and automatic controller, or null.
- * Resolve the actor through the authorized researcher directory and confirmed
- * combat settings. Manual teams, missing identity, and noneditable modes return null.
+ * Read the selected actor's actual slot owner from the paired accepted frame.
+ * Return null for Manual or unavailable ownership. A System team may contain
+ * Manual slots; its whole-team runtime name does not grant or remove control.
  */
 function policyControlledActor() {
-  const configuration = combatConfigurationFromFrame(state.frame);
-  if (configuration === null) {
-    return null;
-  }
-  const inspectionState = authorizedPresentationResearcherInspectionState(
+  const inspection = authorizedPresentationResearcherInspectionState(
     state.presentation,
-  );
-  if (inspectionState.state_kind !== "live_editable") {
-    return null;
-  }
-  const inspection = isRecord(inspectionState.inspection)
-    ? inspectionState.inspection
-    : null;
-  if (inspection === null) {
-    return null;
-  }
-  const actor = authorizedResearcherAgentForPresentationKey(
+  ).inspection;
+  if (!isRecord(inspection)) return null;
+  const controller = authorizedPresentationController(
     state.presentation,
-    inspection.actor_presentation_key,
+    state.frame?.combat_configuration,
+    inspection.actor_public_agent_id,
   );
-  if (actor === null || actor.public_agent_id !== inspection.actor_public_agent_id) {
-    return null;
-  }
-  let team;
-  let controller;
-  if (actor.team_id === 1) {
-    team = "Team A";
-    controller = configuration.team_a_controller;
-  } else if (actor.team_id === 2) {
-    team = "Team B";
-    controller = configuration.team_b_controller;
-  } else {
-    return null;
-  }
-  return controller === "manual" ? null : Object.freeze({ team, controller });
+  if (controller === null || controller.manual) return null;
+  return Object.freeze({ label: controller.label });
 }
 
 /**
@@ -4396,6 +4264,25 @@ function commandRole(command) {
  */
 function modeAvailability(command, frame) {
   const role = commandRole(command);
+  if (
+    frame?.fresh_launch_required &&
+    (role !== null ||
+      [
+        "reset",
+        "run",
+        "switch_scenario",
+        "set_combat_configuration",
+        "battlefield_pointer",
+      ].includes(String(command.command_type)) ||
+      (command.command_type === "keyboard" &&
+        ["r", "escape"].includes(String(command.key).toLowerCase())) ||
+      (command.command_type === "roster_selection" && command.role === "target"))
+  )
+    return {
+      allowed: false,
+      notice:
+        "Start a fresh Python launch before playing again. The accepted game remains available for inspection and saving.",
+    };
   if (!role) {
     return { allowed: true, notice: null };
   }
@@ -4599,7 +4486,10 @@ function renderSessionToolbar(installed = installedPresentationAuthority()) {
         ? "Exit combat debugger"
         : "Exit";
   elements.resetButton.disabled =
-    disabled || restartControlsBlocked || liveScriptedInspectionOnly();
+    disabled ||
+    Boolean(frame?.fresh_launch_required) ||
+    restartControlsBlocked ||
+    liveScriptedInspectionOnly();
   const authorizedLive =
     !replay &&
     (authorizedPresentationAudience(presentation) === "researcher" ||
@@ -4628,7 +4518,6 @@ function renderInstalledMatch(presentation) {
       root: elements.matchScoreboard,
       task: elements.matchTask,
       teams: [elements.matchTeamA, elements.matchTeamB],
-      taskSelect: elements.taskSelect,
     },
     presentation,
   );
@@ -4719,7 +4608,17 @@ function renderCommandTargets(presentation, inspection) {
   const mask = isRecord(inspection.decision_mask) ? inspection.decision_mask : {};
   const action = isRecord(inspection.draft_action) ? inspection.draft_action : {};
   const selectedTargetAction = Number(action.target_action);
+  const policy = !isRecord(inspection.draft_action);
+  elements.policyTargetMasks.hidden = !policy;
+  elements.policyTargetMaskRows.replaceChildren();
   const fragment = document.createDocumentFragment();
+  if (!isRecord(inspection.draft_action)) {
+    const pending = document.createElement("option");
+    pending.value = "policy-pending";
+    pending.textContent = "Policy chooses its target on Submit";
+    pending.selected = true;
+    fragment.append(pending);
+  }
   for (const target of asArray(mask.target_actions).filter(isRecord)) {
     const targetAction = Number(target.target_action);
     if (!Number.isInteger(targetAction)) {
@@ -4747,6 +4646,15 @@ function renderCommandTargets(presentation, inspection) {
       option.dataset.presentationKey = target.target_presentation_key;
     }
     option.selected = targetAction === selectedTargetAction;
+    if (policy) {
+      const row = document.createElement("li");
+      const targetLabel =
+        target.target_kind === "no_target"
+          ? String(target.display_name ?? "No target")
+          : agentIdentity(target.target_public_agent_id);
+      row.textContent = `${targetLabel}: ${targetAction === 0 ? "No Combat" : "Basic"} ${asArray(pairMask)[0] === true ? "Allowed" : "Not Allowed"}; Ultimate ${asArray(pairMask)[1] === true ? "Allowed" : "Not Allowed"}`;
+      elements.policyTargetMaskRows.append(row);
+    }
     fragment.append(option);
   }
   if (fragment.childNodes.length === 0) {
@@ -4759,8 +4667,8 @@ function renderCommandTargets(presentation, inspection) {
 }
 
 /**
- * Paint the pending live action and its decision-mask explanations.
- * Use only the authorized editable researcher branch and a matching actor identity.
+ * Paint current masks and, only for Manual slots, the staged action.
+ * A policy has no selected action until Submit. Match every fact to its actor.
  * Update movement, stance, ability, and target controls; clear owner-bound facts
  * where their exact authorized owner cannot be found.
  *
@@ -4773,6 +4681,7 @@ function renderDraftState(presentation) {
     : {};
   const mask = isRecord(inspection.decision_mask) ? inspection.decision_mask : {};
   const pending = isRecord(inspection.draft_action) ? inspection.draft_action : {};
+  const policyReadOnly = inspectionState.state_kind === "live_policy";
   const controlledCandidate = authorizedResearcherAgentForPresentationKey(
     presentation,
     inspection.actor_presentation_key,
@@ -4834,8 +4743,13 @@ function renderDraftState(presentation) {
     ? Number(pending.target_action)
     : 0;
   const pairMask = asArray(mask.target_use_ultimate_joint_mask)[targetAction];
-  const basicAvailable = targetAction > 0 && asArray(pairMask)[0] === true;
-  const ultimateAvailable = asArray(pairMask)[1] === true;
+  const pairs = asArray(mask.target_use_ultimate_joint_mask);
+  const basicAvailable = policyReadOnly
+    ? pairs.some((pair, index) => index > 0 && asArray(pair)[0] === true)
+    : targetAction > 0 && asArray(pairMask)[0] === true;
+  const ultimateAvailable = policyReadOnly
+    ? pairs.some((pair) => asArray(pair)[1] === true)
+    : asArray(pairMask)[1] === true;
   const noCombatSelected =
     pending.armed_lane === "none" ||
     (pending.armed_lane === "basic" && targetAction === 0);
@@ -4848,7 +4762,9 @@ function renderDraftState(presentation) {
   setAuthoritativeAvailability(
     elements.noCombatButton,
     true,
-    "No combat is always a valid staged choice; movement can still be submitted.",
+    policyReadOnly
+      ? "The policy may choose no combat. It has not chosen an action yet."
+      : "No combat is always a valid staged choice; movement can still be submitted.",
   );
   const legality =
     controlledOwner === null
@@ -4856,7 +4772,7 @@ function renderDraftState(presentation) {
       : {
           owner_presentation_key: controlledOwner.presentation_key,
           owner_public_agent_id: controlledOwner.public_agent_id,
-          lane_0_available: asArray(pairMask)[0] === true,
+          lane_0_available: basicAvailable,
           lane_1_available: ultimateAvailable,
           basic_available: basicAvailable,
           ultimate_available: ultimateAvailable,
@@ -4897,6 +4813,7 @@ function renderCommandAvailability() {
   const presentation = state.presentation;
   const inspectionState = authorizedPresentationResearcherInspectionState(presentation);
   const editableDraft = inspectionState.state_kind === "live_editable";
+  const policyInspection = inspectionState.state_kind === "live_policy";
   const scriptedAdvance = liveScriptedInspectionOnly();
   const disabled =
     state.busy ||
@@ -4926,9 +4843,17 @@ function renderCommandAvailability() {
     }
     return;
   }
-  if (editableDraft && presentation) {
+  elements.policyTargetMasks.hidden = !policyInspection;
+  if ((editableDraft || policyInspection) && presentation) {
     renderDraftState(presentation);
   } else {
+    for (const button of elements.commandDeck?.querySelectorAll(
+      "button[data-move-action], #no-combat-button, #basic-button, #ultimate-button",
+    ) ?? []) {
+      const actionButton = /** @type {HTMLButtonElement} */ (button);
+      setDraftSelection(actionButton, false);
+      clearOwnerBoundLegalityAvailability(actionButton);
+    }
     elements.commandControlledActor.textContent = "Actor · unavailable";
     delete elements.commandControlledActor.dataset.controlledSlot;
     const option = document.createElement("option");
@@ -4943,16 +4868,18 @@ function renderCommandAvailability() {
     String(policyControllerReadOnly),
   );
   if (policyControlled !== null) {
-    const controllerLabel = combatControllerLabel(policyControlled.controller);
+    const controllerLabel = policyControlled.label;
     elements.commandControlledActor.textContent += ` · ${controllerLabel} (read-only)`;
     elements.commandControlledActor.setAttribute(
       "aria-label",
-      `${elements.commandControlledActor.getAttribute("aria-label") ?? `Controlled ${policyControlled.team} actor`}. ${controllerLabel} supplies this actor's action.`,
+      `${elements.commandControlledActor.textContent}. This policy chooses its own action.`,
     );
   }
   elements.commandTargetSelect.disabled =
     disabled ||
     !editableDraft ||
+    Boolean(state.frame?.system_operation) ||
+    Boolean(state.frame?.fresh_launch_required) ||
     scientificFenced ||
     isTerminal(state.frame) ||
     policyControllerReadOnly;
@@ -4967,9 +4894,14 @@ function renderCommandAvailability() {
       const mode = modeAvailability(command, state.frame);
       const recordingDecision = recordingCommandDecision(state.frame ?? {}, command);
       const enabledByInspection =
-        editableDraft || (scriptedAdvance && button === elements.submitTurnButton);
+        editableDraft ||
+        policyInspection ||
+        (scriptedAdvance && button === elements.submitTurnButton);
       button.disabled =
         disabled ||
+        Boolean(state.frame?.system_operation) ||
+        (state.frame?.run_state === "running" &&
+          button === elements.submitTurnButton) ||
         scientificFenced ||
         !enabledByInspection ||
         policyControllerBlocksActionEdit(command) ||
@@ -5083,12 +5015,6 @@ function authorizedAgentActivation(presentationKey) {
       audience,
     });
   }
-  if (isTerminal(state.frame) && !isReplayMode()) {
-    return null;
-  }
-  if (audience === "researcher" && recordingScientificControlsFenced()) {
-    return null;
-  }
   if (replayPovSwitch) {
     return Object.freeze({
       effect: "replay_pov_switch",
@@ -5114,8 +5040,9 @@ function authorizedAgentActivation(presentationKey) {
       presentation,
       agent.public_agent_id,
     );
-    return researcherInspectionState.state_kind === "live_editable" &&
-      Number.isInteger(commandSlot)
+    return ["live_editable", "live_policy"].includes(
+      researcherInspectionState.state_kind,
+    ) && Number.isInteger(commandSlot)
       ? Object.freeze({
           effect: "live_control",
           presentationKey,
@@ -5152,7 +5079,7 @@ function authorizedAgentActivation(presentationKey) {
       audience,
     });
   }
-  return researcherInspectionState.state_kind === "live_editable"
+  return ["live_editable", "live_policy"].includes(researcherInspectionState.state_kind)
     ? Object.freeze({
         effect: "live_control",
         presentationKey,
@@ -5313,9 +5240,95 @@ function pauseReplayAfterPresentationFailure(reason) {
 }
 
 /** @type {number | null} */
-let systemPollTimer = null;
+let livePollTimer = null;
+let livePollInFlight = false;
 
-/** Show pending work and poll its explicit completion command without a new turn. */
+/** Schedule one conditional read. The server owns Run and every simulator turn. */
+function scheduleLivePoll() {
+  if (
+    isReplayMode() ||
+    !state.frame ||
+    state.offline ||
+    state.resyncRequired ||
+    state.shuttingDown
+  ) {
+    if (livePollTimer !== null) window.clearTimeout(livePollTimer);
+    livePollTimer = null;
+    return;
+  }
+  if (livePollTimer !== null || livePollInFlight) return;
+  livePollTimer = window.setTimeout(
+    () => {
+      void pollLiveMatch();
+    },
+    state.frame.run_state === "running" || state.frame.system_operation ? 250 : 1000,
+  );
+}
+
+/**
+ * Read a changed live snapshot without blocking a Pause click during network I/O.
+ * Discard reads overtaken by a command or another installed frame. The existing
+ * installation owner checks identity and disclosure before painting anything.
+ */
+async function pollLiveMatch() {
+  livePollTimer = null;
+  if (
+    livePollInFlight ||
+    state.busy ||
+    isReplayMode() ||
+    !state.frame ||
+    state.offline ||
+    state.resyncRequired ||
+    state.shuttingDown
+  ) {
+    scheduleLivePoll();
+    return;
+  }
+  livePollInFlight = true;
+  const previousFrame = state.frame;
+  const previousAuthority = state.authority;
+  try {
+    const joined = await getCurrentLiveSnapshot(
+      state.token,
+      `"${previousFrame.session_id}:${previousFrame.revision}"`,
+    );
+    if (
+      joined === null ||
+      state.busy ||
+      state.shuttingDown ||
+      state.frame !== previousFrame
+    )
+      return;
+    const outcome = await presentationInstallation.installFromGet({
+      reason: "live_poll",
+      pendingPolicy: "retain_last_authorized",
+      getJoined: async () =>
+        prepareJoinedAuthority(joined, {
+          previousAuthority,
+          continuityResult: "stale_resync",
+        }),
+    });
+    if (outcome.status !== "superseded") render();
+  } catch (error) {
+    if (state.busy || state.frame !== previousFrame || state.shuttingDown) return;
+    if (error instanceof ProductIdentityMismatchError) failClosedProductIdentity(error);
+    state.offline =
+      error instanceof DebuggerApiError && [0, 401, 403].includes(error.status);
+    state.resyncRequired = true;
+    setNotice(
+      error instanceof Error
+        ? `${error.message} Use Reconnect to read the match.`
+        : "Could not refresh the match. Use Reconnect.",
+      "error",
+    );
+    render();
+  } finally {
+    livePollInFlight = false;
+    scheduleLivePoll();
+  }
+}
+
+/** Show worker status and the shared Run/Pause state without starting another turn. */
 function renderSystemOperation() {
   const button = document.getElementById("cancel-system-button");
   const status = document.getElementById("system-operation-status");
@@ -5342,26 +5355,44 @@ function renderSystemOperation() {
     };
     status.textContent = operation ? `System: ${labels[operation.state]}` : "";
   }
-  if (systemPollTimer !== null) window.clearTimeout(systemPollTimer);
-  systemPollTimer = null;
-  if (
-    operation &&
-    operation.state !== "failed" &&
-    !isReplayMode() &&
-    !state.shuttingDown &&
-    !state.offline &&
-    !state.resyncRequired
-  ) {
-    systemPollTimer = window.setTimeout(() => {
-      systemPollTimer = null;
-      if (!state.busy)
-        void dispatchCommand({
-          command_type: "finish_system",
-          operation_id: operation.operation_id,
-        });
-      else renderSystemOperation();
-    }, 250);
-  }
+  const manual = state.frame?.combat_configuration?.manual_slots;
+  const running = state.frame?.run_state === "running";
+  const scripted = liveScriptedInspectionOnly();
+  elements.liveRunButton.hidden =
+    isReplayMode() || scripted || !Array.isArray(manual) || manual.length !== 0;
+  elements.liveRunButton.textContent = running ? "Pause" : "Run";
+  elements.liveRunButton.disabled =
+    state.busy ||
+    state.offline ||
+    state.resyncRequired ||
+    state.shuttingDown ||
+    !installedAuthorityIsCoherent() ||
+    Boolean(state.frame?.fresh_launch_required) ||
+    (!running &&
+      (Boolean(operation) ||
+        isTerminal(state.frame) ||
+        recordingScientificControlsFenced()));
+  elements.liveRunStatus.textContent = state.frame?.fresh_launch_required
+    ? "Fresh Launch Required · Accepted Game Kept"
+    : scripted
+      ? "Scripted Playback"
+      : running
+        ? "Running"
+        : operation
+          ? "Paused · Finishing This Turn"
+          : "Paused";
+  elements.liveControlHelp.textContent = state.frame?.fresh_launch_required
+    ? "Start a fresh Python launch before playing again. You can still inspect and save the accepted game."
+    : Array.isArray(manual) && manual.length === 0
+      ? "Use Run to watch, Pause to stop after the current turn, or Submit for one turn. You can inspect every agent."
+      : "Choose a Manual agent, stage its movement and Basic or Ultimate action, then Submit. Changing focus keeps other drafts. Escape clears the target. Dead Manual slots still wait for Submit.";
+  const match = state.presentation?.match_summary;
+  const configuration = state.frame?.combat_configuration;
+  elements.liveMatchRules.textContent =
+    match && configuration
+      ? `Rules: Step Limit ${match.episode_limit ?? state.frame?.terminal?.declared_horizon ?? "—"} · Score Limit ${match.score_threshold} · Red Zone Depth ${configuration.red_zone_depth ?? "—"} · ${configuration.execution_information_mode === "shared_obs" ? "SharedObs" : "NoSharedObs"}`
+      : "";
+  scheduleLivePoll();
 }
 
 /**
@@ -5422,11 +5453,16 @@ function render() {
     resyncRequired: state.resyncRequired,
     offline: state.offline,
     activationDisabled:
-      (transportFrame !== null && isTerminal(transportFrame) && !isReplayMode()) ||
-      (!isReplayMode() && recordingScientificControlsFenced()),
+      !isReplayMode() &&
+      Boolean(transportFrame?.system_operation) &&
+      !(
+        transportFrame?.fresh_launch_required &&
+        transportFrame.system_operation.state === "failed"
+      ),
     localInspectedPresentationKey:
       installedLocalInspectedPresentationKey(presentationFrame),
     activatedAgentPublicId,
+    combatConfiguration: transportFrame?.combat_configuration ?? null,
   });
   tooltipController.refresh();
   restorePresentationPreferenceAfterRender();
@@ -5541,26 +5577,93 @@ function recordingReplacementLabel(replacement) {
 }
 
 /**
- * Store a proposed replacement and open its recording-discard confirmation dialog.
- * Refresh toolbar availability, describe the replacement, and focus Cancel.
- * No destructive command is sent until a later explicit confirmation.
+ * Check the exact match and revision captured when replacement was requested.
+ * Confirmations cannot silently follow a newer frame, another tab or a restart.
+ *
+ * @param {{session_id: string, run_generation: number, revision: number}} request
+ */
+function recordingReplacementIsCurrent(request) {
+  return (
+    installedAuthorityIsCoherent() &&
+    !state.busy &&
+    !state.shuttingDown &&
+    !state.resyncRequired &&
+    !state.offline &&
+    !state.frame?.fresh_launch_required &&
+    request.session_id === state.frame?.session_id &&
+    request.run_generation === state.frame?.run_generation &&
+    request.revision === state.frame?.revision &&
+    recordingStatus()?.discard_available === true
+  );
+}
+
+/**
+ * Show Save, Discard and Cancel for one exact, already selected replacement.
+ * perform sends one revision-guarded request; Cancel sends no request.
+ *
+ * @param {NonNullable<typeof pendingRecordingReplacement>} request
+ * @returns {boolean} Whether this request still owns the displayed match.
+ */
+function showRecordingReplacementDialog(request) {
+  if (!recordingReplacementIsCurrent(request)) return false;
+  pendingRecordingReplacement = Object.freeze({ ...request });
+  elements.recordingDiscardConfirmButton.disabled = false;
+  elements.recordingSaveReplaceButton.disabled = false;
+  elements.recordingDiscardIntent.textContent = request.label;
+  if (!elements.recordingDiscardDialog.open)
+    elements.recordingDiscardDialog.showModal();
+  elements.recordingDiscardCancelButton.focus({ preventScroll: true });
+  return true;
+}
+
+/**
+ * Capture a live replacement and its current revision for the shared dialog.
+ * No save or replacement happens until an explicit confirmation.
  *
  * @param {Readonly<Record<string, unknown>>} replacement
  */
 function requestRecordingDiscardConfirmation(replacement) {
-  pendingRecordingReplacement = replacement;
-  elements.recordingDiscardConfirmButton.disabled =
-    state.busy ||
-    state.shuttingDown ||
-    state.resyncRequired ||
-    state.offline ||
-    !isAuthorizedPresentationFrame(state.presentation);
-  renderSessionToolbar();
-  elements.recordingDiscardIntent.textContent = recordingReplacementLabel(replacement);
-  if (!elements.recordingDiscardDialog.open) {
-    elements.recordingDiscardDialog.showModal();
+  showRecordingReplacementDialog({
+    session_id: state.frame?.session_id,
+    run_generation: state.frame?.run_generation,
+    revision: state.frame?.revision,
+    label: recordingReplacementLabel(replacement),
+    perform: (choice) =>
+      dispatchCommand({
+        command_type:
+          choice === "save" ? "save_and_replace" : "confirm_discard_and_replace",
+        replacement,
+      }),
+  });
+}
+
+/**
+ * Confirm one replacement only while its original match and revision still exist.
+ * Errors leave the accepted match available and are shown through the normal notice.
+ *
+ * @param {"save" | "discard"} choice
+ */
+async function confirmRecordingReplacement(choice) {
+  const request = pendingRecordingReplacement;
+  pendingRecordingReplacement = null;
+  elements.recordingDiscardDialog.close();
+  if (request === null || !recordingReplacementIsCurrent(request)) {
+    setNotice(
+      "The match changed. Choose the replacement again; nothing was replaced.",
+      "warning",
+    );
+    renderConnection();
+    return;
   }
-  elements.recordingDiscardCancelButton.focus({ preventScroll: true });
+  try {
+    await request.perform(choice);
+  } catch (error) {
+    setNotice(
+      error instanceof Error ? error.message : "The match could not be replaced.",
+      "error",
+    );
+    renderConnection();
+  }
 }
 
 /**
@@ -5669,7 +5772,7 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
        * promise rejects on fetch, join or preparation failure; no command is repeated.
        */
       getJoined: async () =>
-        prepareJoinedAuthority(await getCurrentFrameAndPresentation(state.token), {
+        prepareJoinedAuthority(await getCurrentAuthority(), {
           previousAuthority,
           continuityResult: "stale_resync",
         }),
@@ -5926,7 +6029,7 @@ function dispatchPanelCommand(command, { pointerOriginated = false } = {}) {
  * Optional deferredSubmit defaults to null and may retain one fresh Enter after
  * draft preparation. Send the POST once, install a coherent successor, and only
  * then dispatch retained input. Show handled failures, require resync when needed,
- * and reload on accepted recording review; normal completion resolves without a value.
+ * and open requested replays separately; normal completion resolves without a value.
  *
  * @param {Record<string, unknown>} command
  * @param {{deferredSubmit?: Readonly<Record<string, unknown>> | null}} options
@@ -5979,10 +6082,9 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
   }
   const policyControlled = policyControlledActor();
   if (policyControllerBlocksActionEdit(command)) {
-    const team = policyControlled?.team ?? "This team";
-    const controller = combatControllerLabel(policyControlled?.controller);
+    const controller = policyControlled?.label ?? "A policy";
     setNotice(
-      `${team} is controlled by ${controller}. Its actions are read-only; Submit remains available.`,
+      `${controller} chooses this agent's action. Inspect it here, or choose a Manual agent to stage a draft.`,
       "warning",
     );
     renderConnection();
@@ -6054,7 +6156,9 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
     releaseFocusAfterSettlement: false,
     recordingPreparation:
       ["recording", "sealed"].includes(recordingLifecycle) &&
-      ["finish_and_review", "exit"].includes(String(command.command_type))
+      ["finish_and_review", "save_and_replace", "exit"].includes(
+        String(command.command_type),
+      )
         ? "metrics"
         : null,
   };
@@ -6071,7 +6175,6 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
         }, 2000)
       : null;
   setNotice("Waiting for the authoritative Python response…", "info");
-  let reviewHandoff = false;
   /** @type {Readonly<Record<string, unknown>> | null} */
   let deferredDraftToDispatch = null;
   /** @type {Readonly<Record<string, unknown>> | null} */
@@ -6080,6 +6183,12 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
   const request = commandRequest(command);
   /** @type {{current: {kind: "success" | "stale", payload: any} | null}} */
   const commandOutcome = { current: null };
+  const replayWindow =
+    command.command_type === "review_replay"
+      ? window.open("about:blank", "_blank")
+      : null;
+  if (replayWindow !== null) replayWindow.opener = null;
+  let replayOpened = false;
   try {
     const installPromise = presentationInstallation.installFromCommand({
       reason:
@@ -6106,18 +6215,10 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
       },
       /**
        * Prepare the supplied live command outcome for authority installation.
-       * If it switches into recording review, mark the handoff and reject with
-       * ProductReviewHandoff so the caller reloads that route. Otherwise fetch the
-       * presentation and require a valid join; API/join/preparation errors reject.
+       * Fetch the presentation and require a valid join. Saving and opening a
+       * separate Viewer leave this live product unchanged.
        */
       joinCommandResult: async (outcome) => {
-        const transportCandidate = extractFrame(outcome.payload);
-        if (transportCandidate && recordingReviewHandoffRequired(transportCandidate)) {
-          reviewHandoff = true;
-          throw new ProductReviewHandoff(
-            "Recording review handoff requires a route reload.",
-          );
-        }
         const joined = await extractJoinedFrame(
           outcome.payload,
           await getCurrentPresentation(state.token),
@@ -6136,7 +6237,7 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
        * view. Fetch/join/preparation failures reject; this does not resubmit the action.
        */
       getJoined: async () =>
-        prepareJoinedAuthority(await getCurrentFrameAndPresentation(state.token), {
+        prepareJoinedAuthority(await getCurrentAuthority(), {
           previousAuthority,
           continuityResult: "stale_resync",
         }),
@@ -6166,6 +6267,34 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
         ? "warning"
         : "success",
     );
+    if (!stale && command.command_type === "review_replay") {
+      const replayUrl = extractReplayUrl(payload);
+      const replayFrame = payload?.frame;
+      const replayMatchesInstalledEpisode =
+        replayFrame !== undefined &&
+        state.frame !== null &&
+        replayFrame.session_id === state.frame.session_id &&
+        replayFrame.run_generation === state.frame.run_generation &&
+        replayFrame.episode_id === state.frame.episode_id;
+      if (replayUrl !== null && !replayMatchesInstalledEpisode) {
+        setNotice(
+          "The match changed while opening the replay. The earlier replay was saved; its link was not attached to this match.",
+          "warning",
+        );
+      } else if (replayUrl !== null) {
+        elements.recordingReplayLink.href = replayUrl;
+        openedReplayEpisodeId = replayFrame.episode_id;
+        if (replayWindow !== null && !replayWindow.closed) {
+          replayWindow.location.replace(replayUrl);
+          replayOpened = true;
+        } else {
+          setNotice(
+            "Replay ready. Use Open Saved Replay In New Tab below if your browser blocked the new tab.",
+            "info",
+          );
+        }
+      }
+    }
     if (commandResponseSchedulesShutdown(command, payload)) {
       state.shuttingDown = true;
       setNotice("Exit accepted. The local product server is shutting down.", "info");
@@ -6187,11 +6316,7 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
       deferredSubmitToDispatch = liveCommandTransaction.deferredSubmit;
     }
   } catch (error) {
-    if (error instanceof ProductReviewHandoff) {
-      state.offline = false;
-      state.resyncRequired = false;
-      setNotice("Recording review accepted. Opening the replay route…", "info");
-    } else if (error instanceof ProductIdentityMismatchError) {
+    if (error instanceof ProductIdentityMismatchError) {
       failClosedProductIdentity(error);
     } else {
       const status = error instanceof DebuggerApiError ? error.status : 0;
@@ -6208,12 +6333,6 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
           "info",
         );
         return;
-      }
-      if (
-        (status === 0 && PRODUCT_HANDOFF_COMMANDS.has(String(command.command_type))) ||
-        (status === 404 && productIdentity?.product_kind === "combat_debugger")
-      ) {
-        productHandoffOutcomeUnknown = true;
       }
       state.offline =
         error instanceof DebuggerApiError &&
@@ -6234,16 +6353,11 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
     if (activeLiveCommandTransaction === liveCommandTransaction) {
       activeLiveCommandTransaction = null;
     }
-    if (!reviewHandoff || state.shuttingDown || state.resyncRequired) {
-      render();
-    }
+    if (replayWindow !== null && !replayOpened) replayWindow.close();
+    render();
     if (liveCommandTransaction.releaseFocusAfterSettlement) {
       releaseBattlefieldFocus();
     }
-  }
-  if (reviewHandoff && !state.shuttingDown && !state.resyncRequired) {
-    reloadForProductHandoff();
-    return;
   }
   if (deferredDraftToDispatch !== null) {
     await dispatchCommand(deferredDraftToDispatch, {
@@ -6254,20 +6368,20 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
   }
 }
 
+/** Fetch one coherent live snapshot, or the existing paired replay resources. */
+function getCurrentAuthority() {
+  return isReplayMode()
+    ? getCurrentFrameAndPresentation(state.token)
+    : getCurrentLiveSnapshot(state.token);
+}
+
 /**
  * Load and install the current matched transport, presentation, and replay timeline.
- * reviewHandoff defaults to false; when true, reload the route instead. Skip busy
- * or shutting-down pages, preserve permitted old display while loading, and show
+ * Skip busy or shutting-down pages, preserve permitted old display while loading, and show
  * handled failures with resync required. A successful first replay load focuses
  * the timeline; this never retries a simulator command.
- *
- * @param {{reviewHandoff?: boolean}} options
  */
-async function loadCurrentFrame({ reviewHandoff = false } = {}) {
-  if (reviewHandoff) {
-    reloadForProductHandoff();
-    return;
-  }
+async function loadCurrentFrame() {
   if (productIdentity === null) {
     state.offline = true;
     state.resyncRequired = true;
@@ -6301,7 +6415,7 @@ async function loadCurrentFrame({ reviewHandoff = false } = {}) {
        * The promise rejects if fetching, matching or preparation fails.
        */
       getJoined: async () =>
-        prepareJoinedAuthority(await getCurrentFrameAndPresentation(state.token), {
+        prepareJoinedAuthority(await getCurrentAuthority(), {
           previousAuthority,
           continuityResult: "stale_resync",
         }),
@@ -6587,23 +6701,10 @@ elements.recordingDiscardDialog.addEventListener("cancel", () => {
 });
 
 elements.recordingDiscardConfirmButton.addEventListener("click", () => {
-  const replacement = pendingRecordingReplacement;
-  if (!replacement || recordingStatus()?.discard_available !== true) {
-    pendingRecordingReplacement = null;
-    elements.recordingDiscardDialog.close();
-    setNotice(
-      "The recording lifecycle changed before discard confirmation. No episode replacement was sent.",
-      "warning",
-    );
-    renderConnection();
-    return;
-  }
-  pendingRecordingReplacement = null;
-  elements.recordingDiscardDialog.close();
-  void dispatchCommand({
-    command_type: "confirm_discard_and_replace",
-    replacement,
-  });
+  void confirmRecordingReplacement("discard");
+});
+elements.recordingSaveReplaceButton.addEventListener("click", () => {
+  void confirmRecordingReplacement("save");
 });
 
 elements.exitButton.addEventListener("click", () => {
@@ -6617,15 +6718,35 @@ elements.exitButton.addEventListener("click", () => {
 
 elements.reconnectButton.addEventListener("click", () => {
   invalidateReplayArtifactAction();
-  if (productHandoffOutcomeUnknown) {
-    reloadForProductHandoff();
-    return;
-  }
   void loadCurrentFrame();
 });
 
 if (!isReplayMode()) {
-  document.addEventListener("marl-devclient-combat-configuration", (event) => {
+  // Private setup supplies an explicit callback; the public product never imports
+  // private code or tries to discover private sources.
+  document.addEventListener("marl-client-recording-replacement", (event) => {
+    const detail = event instanceof CustomEvent ? event.detail : null;
+    if (
+      !isRecord(detail) ||
+      typeof detail.session_id !== "string" ||
+      !Number.isSafeInteger(detail.run_generation) ||
+      !Number.isSafeInteger(detail.revision) ||
+      typeof detail.label !== "string" ||
+      typeof detail.perform !== "function"
+    )
+      return;
+    if (
+      showRecordingReplacementDialog({
+        session_id: detail.session_id,
+        run_generation: detail.run_generation,
+        revision: detail.revision,
+        label: detail.label,
+        perform: detail.perform,
+      })
+    )
+      event.preventDefault();
+  });
+  document.addEventListener("marl-combat-configuration", (event) => {
     const command = requestedCombatConfigurationCommand(
       event instanceof CustomEvent ? event.detail : null,
     );
@@ -6637,17 +6758,30 @@ if (!isReplayMode()) {
   });
   // A rejected load has no new frame. Show its error without changing the
   // current match; a later successful load uses the ordinary reconnect notice.
-  document.addEventListener("marl-devclient-debug-load-failed", (event) => {
+  document.addEventListener("marl-client-load-failed", (event) => {
     const message = event instanceof CustomEvent ? event.detail?.message : null;
     if (typeof message === "string" && message.length > 0) {
       setNotice(message, "error");
       renderConnection();
     }
   });
-  document.addEventListener("marl-devclient-debug-session-replaced", () => {
+  document.addEventListener("marl-client-session-replaced", () => {
     void loadCurrentFrame();
   });
 }
+
+elements.liveRunButton.addEventListener("click", () => {
+  if (elements.liveRunButton.disabled || isReplayMode() || !state.frame) return;
+  void dispatchCommand(
+    state.frame.run_state === "running"
+      ? {
+          command_type: "pause",
+          session_id: state.frame.session_id,
+          run_generation: state.frame.run_generation,
+        }
+      : { command_type: "run" },
+  );
+});
 
 elements.helpButton.addEventListener("click", () => {
   elements.helpDialog.showModal();

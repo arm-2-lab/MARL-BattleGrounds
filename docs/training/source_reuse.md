@@ -913,3 +913,40 @@ terminal value, `1e-10`; using that rate during added optimizer work requires an
 explicit choice. Keeping the terminal rate does not freeze the actor: BatchNorm
 statistics can still change. Each child records its parent, actual source,
 future rules and cumulative counts. Related children are not independent seeds.
+
+## Hydra Parser Compatibility
+
+The optional launcher supports `hydra-core==1.3.6` and `omegaconf==2.3.0` on
+Python 3.14. Hydra's `get_args_parser` passes its nested `LazyCompletionHelp`
+object to argparse. Python 3.14 checks help strings while adding actions; this
+particular lazy object needs to defer that check until help is rendered.
+
+`marl_battlegrounds.experiments.hydra` wraps parser construction, including
+`hydra.main`'s imported reference. During that call only, it skips `_check_help`
+for the exact nested help type and `shell_completion` action. Every other action
+uses the original check. A `finally` block restores argparse after success or
+failure. No installed file changes. The upstream implementation is in
+[Hydra's parser owner](https://github.com/facebookresearch/hydra/blob/main/hydra/_internal/utils.py);
+the qualified source is the installed 1.3.6 distribution recorded in `uv.lock`,
+not a claim about that moving branch. The shim uses our own wrapper; no Hydra
+parser body or completion implementation is copied.
+
+The compatibility tests exercise run, both help routes, configuration display,
+resolution, overrides, finite BasicSweeper jobs, completion help, completion
+script and query, ordinary malformed help and restoration after failure.
+Remove the wrapper when a new pinned upstream release passes that same matrix
+without it. An unqualified Hydra version on Python 3.14 fails with the supported
+installation command instead of silently applying the patch to unknown code.
+
+
+## Finite Hydra Sweeps
+
+The optional `hydra_plugins.marl_battlegrounds_study.StudyLauncher` implements
+Hydra's installed Launcher protocol. It asks Hydra to compose its ordered jobs,
+then calls the existing MARL-BGs study runner once. No upstream scheduler body is
+copied. The study still owns resources, attempts, stop, recovery and case outputs.
+
+The supported sweeper is BasicSweeper with one complete finite batch. Adaptive
+sweepers, partial batches, nested launchers and Hydra job callbacks are rejected
+because they would add another execution owner. Researchers can use the ordinary
+study API for explicit finite declarations and detached execution.

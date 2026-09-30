@@ -8,7 +8,6 @@ rejection. CPU budgets are software proofs, not learning or speed evidence.
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -143,26 +142,10 @@ def test_complete_competitive_example_preserves_full_state_and_measures_every_ce
         example.run(root, updates=1)
 
 
-def test_cli_rejects_duplicate_alias_before_creating_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = tmp_path / "duplicate"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "competitive_training",
-            "--output-dir",
-            str(root),
-            "--opponent",
-            "same=random",
-            "--opponent",
-            "same=tdm-alpha",
-        ],
-    )
-    with pytest.raises(SystemExit) as error:
-        example.main()
-    assert error.value.code == 2
+def test_reserved_opponent_alias_fails_before_creating_output(tmp_path: Path) -> None:
+    root = tmp_path / "invalid"
+    with pytest.raises(ValueError, match="reserved"):
+        example.run(root, opponents={"self": "random"})
     assert not root.exists()
     assert (
         example._cell_name("My Actor!", "Other/Team", 2, 3)

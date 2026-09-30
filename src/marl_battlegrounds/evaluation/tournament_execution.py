@@ -74,6 +74,7 @@ def execute_tournament_jobs(
     writer: RunWriter | None,
     run_id: str,
     num_envs: int,
+    keep_batch_size: bool = False,
     metrics: MetricMode,
     chunk_size: int,
     registered_maps: Mapping[int, Mapping[str, Any]] | None = None,
@@ -96,6 +97,8 @@ def execute_tournament_jobs(
     num_envs : int
         Positive maximum number of games evaluated at once within each matchup.
         Public tournament calls default to 128.
+    keep_batch_size : bool, default=False
+        Keep num_envs lanes with padding for shorter jobs. Padding creates no games.
     metrics : MetricMode
         Caller-selected priority, full or none mode, unchanged for each job.
     chunk_size : int
@@ -142,6 +145,7 @@ def execute_tournament_jobs(
                 job.episodes,
                 seed=job.seed,
                 num_envs=num_envs,
+                keep_batch_size=keep_batch_size,
                 metrics=metrics,
                 full_metrics_episodes=job.full_metrics_episodes,
                 replay_episodes=job.replay_episodes,

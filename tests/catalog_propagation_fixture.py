@@ -12,12 +12,12 @@ from decimal import ROUND_HALF_UP, Decimal
 from math import isfinite
 from typing import cast
 
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.frame import build_debugger_frame
-from scripts.dev.visual_debugger.protocol import ResearcherLiveDebuggerFrameV2
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.frame import build_debugger_frame
+from marl_battlegrounds._battle_client.protocol import ResearcherLiveDebuggerFrameV2
 from marl_battlegrounds.evaluation.capture import (
     capture_initial_evaluation_frame_v3,
 )

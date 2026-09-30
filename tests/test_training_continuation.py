@@ -174,7 +174,8 @@ def test_saved_child_keeps_parent_scientific_settings(
 ) -> None:
     from copy import deepcopy
 
-    from marl_battlegrounds.training import checkpoints, runner
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
+    from marl_battlegrounds.training import runner
 
     parent_config = runner.config_to_dict(
         runner.TrainConfig(keep_past=0, num_envs=4, total_env_steps=8)
@@ -315,21 +316,18 @@ def test_completed_game_totals_survive_child_and_grandchild(
 
 @pytest.mark.parametrize("empty_folder", [False, True])
 def test_child_resume_names_its_missing_parent_description(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, empty_folder: bool
+    tmp_path: Path, empty_folder: bool
 ) -> None:
-    from marl_battlegrounds.training import checkpoints, runner
+    from marl_battlegrounds.training import runner
 
     parent = tmp_path / "original-parent/checkpoints/selected"
     if empty_folder:
         parent.mkdir(parents=True)
 
-    def saved_training_config(_: dict[str, Any]) -> dict[str, Any]:
-        return {}
-
-    monkeypatch.setattr(checkpoints, "saved_training_config", saved_training_config)
     details = {
         "metadata": {
-            "continuation": {"schema_version": 1, "parent_checkpoint": str(parent)}
+            "config": {},
+            "continuation": {"schema_version": 1, "parent_checkpoint": str(parent)},
         }
     }
     with pytest.raises(ValueError, match="continuation parent") as caught:
@@ -521,8 +519,9 @@ def test_seed_branch_changes_real_streams_and_resume_does_not_branch_twice(
 
 
 @pytest.mark.parametrize("method", ["ff_ippo", "qmix", "pqn_vdn"])
+@pytest.mark.parametrize("named", [False, True], ids=["array", "components"])
 def test_changed_reward_child_refill_resume_and_learning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: TrainingMethod
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: TrainingMethod, named: bool
 ) -> None:
     import numpy as np
     from tests.training_continuation_helpers import fixed_source
@@ -542,7 +541,9 @@ def test_changed_reward_child_refill_resume_and_learning(
         total_env_steps=24,
         keep_past=0,
         shaping=False,
-        reward="tests.training_continuation_helpers:reward_one",
+        reward="tests.training_continuation_helpers:reward_named_one"
+        if named
+        else "tests.training_continuation_helpers:reward_one",
         ppo=PPOConfig(rollout_length=2, epochs=1)
         if method == "ff_ippo"
         else PPOConfig(),
@@ -575,7 +576,11 @@ def test_changed_reward_child_refill_resume_and_learning(
         parent.final_checkpoint,
         additional_env_steps=4,
         output_dir=tmp_path / "child",
-        changes={"reward": "tests.training_continuation_helpers:reward_seven"},
+        changes={
+            "reward": "tests.training_continuation_helpers:reward_named_seven"
+            if named
+            else "tests.training_continuation_helpers:reward_seven"
+        },
     )
     collection, boundary = starts[child.run_dir]
     equal(boundary.carry.state, previous.carry.state)
@@ -585,7 +590,9 @@ def test_changed_reward_child_refill_resume_and_learning(
         previous.carry.history.current_variables,
     )
     equal(boundary.carry.root_key, previous.carry.root_key)
-    assert collection.reward_identity["reference"].endswith(":reward_seven")
+    assert collection.reward_identity["reference"].endswith(
+        ":reward_named_seven" if named else ":reward_seven"
+    )
     if method == "ff_ippo":
         equal(boundary.actor_opt_state, previous.actor_opt_state)
         equal(boundary.critic_opt_state, previous.critic_opt_state)
@@ -609,6 +616,23 @@ def test_changed_reward_child_refill_resume_and_learning(
     assert change["changed"]
     assert change["cleared_stored_experience"] == (method != "ff_ippo")
     assert change["optimizer_and_statistics"] == "carried_over"
+    if named:
+        totals = details["metadata"]["host_state"]["collected_reward_components"]
+        parent_totals = details["metadata"]["continuation"]["parent_statistics"][
+            "collected_reward_components"
+        ]
+        assert totals["real_transitions"] == 4
+        assert totals["learner_agent_transitions"] == 20
+        assert totals["components"]["second"] == {
+            "recipient_sum": 140.0,
+            "team_mean_sum": 28.0,
+        }
+        assert parent_totals["real_transitions"] == 24
+        assert set(parent_totals["components"]) == {"first"}
+        assert not np.any(
+            np.asarray(ends[child.run_dir].carry.reward_totals.transitions)
+        )
+
     rows = [
         json.loads(line)
         for line in (child.run_dir / "training_updates.jsonl").read_text().splitlines()

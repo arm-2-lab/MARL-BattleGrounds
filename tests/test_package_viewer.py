@@ -109,8 +109,9 @@ def test_loaded_replay_uses_resources_until_server_returns(
     bundle = cast("LoadedReplayBundle", object())
 
     class Service:
-        def __init__(self, received: object, **_kwargs: object) -> None:
+        def __init__(self, received: object, **kwargs: object) -> None:
             assert received is bundle
+            self.show_ranges = kwargs["show_ranges"]
             calls.append("validate")
 
         def current_frame(self, **_kwargs: object) -> object:
@@ -140,6 +141,9 @@ def test_loaded_replay_uses_resources_until_server_returns(
         assert kwargs["asset_root"] == tmp_path
         assert kwargs["port"] == 0
         assert kwargs["open_browser"] is False
+        binding = kwargs["coordinator"]
+        assert isinstance(binding, server.HttpCoordinatorBinding)
+        assert binding.initial_show_ranges is False
         calls.append("serve")
         return 17
 

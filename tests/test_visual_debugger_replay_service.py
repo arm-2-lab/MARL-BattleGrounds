@@ -25,7 +25,6 @@ from typing import Any, Literal, cast
 
 import jax
 import pytest
-import scripts.dev.visual_debugger.control as live_control_module
 import scripts.dev.visual_debugger.replay_service as replay_service_module
 from scripts.dev.visual_debugger.presentation import (
     build_replay_no_shared_obs_authorized_presentation_v1,
@@ -80,6 +79,7 @@ from tests.evaluation_fixtures import (
 )
 from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
 
+import marl_battlegrounds._battle_client.control as live_control_module
 import marl_battlegrounds.core.env as core_env_module
 import marl_battlegrounds.core.geometry as core_geometry_module
 import marl_battlegrounds.evaluation.analysis as analysis_module
@@ -4916,9 +4916,9 @@ banned = (
     'marl_battlegrounds.runner',
     'marl_battlegrounds.runners',
     'marl_battlegrounds.simulator',
-    'scripts.dev.visual_debugger.protocol',
-    'scripts.dev.visual_debugger.service',
-    'scripts.dev.visual_debugger.control',
+    'marl_battlegrounds._battle_client.protocol',
+    'marl_battlegrounds._battle_client.service',
+    'marl_battlegrounds._battle_client.control',
     'scripts.dev.visual_debugger.scenarios',
 )
 loaded = [

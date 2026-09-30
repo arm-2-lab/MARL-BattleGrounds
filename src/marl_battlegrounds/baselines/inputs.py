@@ -34,6 +34,15 @@ import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
 
+from marl_battlegrounds.baselines.config import (
+    ACTOR_INPUT_SCHEMA_VERSION as ACTOR_INPUT_SCHEMA_VERSION,
+)
+from marl_battlegrounds.baselines.config import (
+    SPAWN_FRAMES as SPAWN_FRAMES,
+)
+from marl_battlegrounds.baselines.config import (
+    TRAINING_STATE_SCHEMA_VERSION as TRAINING_STATE_SCHEMA_VERSION,
+)
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_ACTIVE,
     AGENT_FEATURE_CLASS_ID,
@@ -59,13 +68,10 @@ from marl_battlegrounds.policies.input import (
     team_on_right,
 )
 
-ACTOR_INPUT_SCHEMA_VERSION = 2
-TRAINING_STATE_SCHEMA_VERSION = 2
 # A baseline's spawn frame: "world" keeps raw coordinates; "left" reflects the
 # view of any actor whose team starts on the right bank. The position is the
 # frame's saved index, so "world" stays 0 and "left" stays 1. "right" was
 # removed on 22 September 2026; nothing saved outside frozen packages used it.
-SPAWN_FRAMES = ("world", "left")
 # Context columns in each actor input schema. Schema 2 appends column 19, the
 # Team Deathmatch Red Zone depth; columns 0-18 keep their schema-1 meaning.
 _CONTEXT_WIDTHS: Mapping[int, int] = MappingProxyType({1: 19, 2: 20})

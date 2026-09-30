@@ -682,8 +682,10 @@ test("main resolves one certified activation to Oracle, live-local, or Replay PO
     resolver,
     /state\.busy[\s\S]*state\.resyncRequired[\s\S]*state\.offline/u,
   );
-  assert.match(resolver, /isTerminal\(state\.frame\)/u);
-  assert.match(resolver, /isTerminal\(state\.frame\) && !isReplayMode\(\)/u);
+  assert.doesNotMatch(
+    resolver,
+    /if \(isTerminal\(state\.frame\) && !isReplayMode\(\)\)/u,
+  );
   assert.match(
     resolver,
     /const replayPovSwitch = isReplayMode\(\) && audience === "agent_pov"/u,
@@ -701,7 +703,7 @@ test("main resolves one certified activation to Oracle, live-local, or Replay PO
   assert.doesNotMatch(resolver, /isLocalOracleCorpsePresentationKey/u);
   assert.match(
     resolver,
-    /audience === "agent_pov"[\s\S]*authorizedOracleCommandSlotForPublicAgentId\([\s\S]*researcherInspectionState\.state_kind === "live_editable"/u,
+    /audience === "agent_pov"[\s\S]*authorizedOracleCommandSlotForPublicAgentId\([\s\S]*\["live_editable", "live_policy"\]\.includes\([\s\S]*researcherInspectionState\.state_kind/u,
   );
   assert.match(
     panel,
@@ -778,11 +780,11 @@ test("command legality requires one exact authorized owner and has no generic fa
   );
   assert.match(
     renderDraft,
-    /basicAvailable = targetAction > 0 && asArray\(pairMask\)\[0\] === true/u,
+    /basicAvailable = policyReadOnly[\s\S]*pairs\.some\([\s\S]*: targetAction > 0 && asArray\(pairMask\)\[0\] === true/u,
   );
   assert.match(
     renderDraft,
-    /lane_0_available: asArray\(pairMask\)\[0\] === true[\s\S]*basic_available: basicAvailable/u,
+    /lane_0_available: basicAvailable[\s\S]*basic_available: basicAvailable/u,
   );
   assert.match(renderDraft, /explainLegality\(legality, 0, controlledOwner\)/u);
   assert.match(renderDraft, /explainLegality\(legality, 1, controlledOwner\)/u);
@@ -1244,10 +1246,7 @@ test("main renders ranges and inspector chrome only from installed presentation 
     visibilityStart,
   );
   const inspectorStart = source.indexOf("function applyAuthorizedInspectorChrome()");
-  const inspectorEnd = source.indexOf(
-    "function reloadForProductHandoff()",
-    inspectorStart,
-  );
+  const inspectorEnd = source.indexOf("function registerControlHelp()", inspectorStart);
   const replayReferenceStart = source.indexOf(
     "function applyReplayReferenceSemantics()",
   );
@@ -1397,7 +1396,7 @@ test("main describes live Agent POV as globally controllable while preserving fo
   );
   assert.match(
     source,
-    /READ_ONLY_LIVE_SCIENTIFIC_LABEL[\s\S]*Scientific facts can be inspected/u,
+    /READ_ONLY_LIVE_SCIENTIFIC_LABEL[\s\S]*Select an agent to inspect it/u,
   );
   assert.match(
     source,
@@ -1471,7 +1470,7 @@ test("main labels every policy controller explicitly and fences its action editi
   }
   assert.match(
     source,
-    /controller === "manual"[\s\S]*Object\.freeze\(\{ team, controller \}\)/u,
+    /authorizedPresentationController\([\s\S]*controller === null \|\| controller\.manual[\s\S]*Object\.freeze\(\{ label: controller\.label \}\)/u,
   );
   assert.match(source, /function policyControllerBlocksActionEdit\(command\)/u);
   assert.match(source, /data-policy-controller-read-only/u);
@@ -1552,7 +1551,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   assert.doesNotMatch(availabilitySource, /button\.dataset\.key === "Tab"/u);
   assert.match(
     availabilitySource,
-    /editableDraft \|\| \(scriptedAdvance && button === elements\.submitTurnButton\)/u,
+    /editableDraft \|\|[\s\S]*policyInspection \|\|[\s\S]*\(scriptedAdvance && button === elements\.submitTurnButton\)/u,
   );
   assert.match(
     availabilitySource,
@@ -1569,7 +1568,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   assert.doesNotMatch(source, /advance-script-button/u);
   assert.match(
     source,
-    /"Apply Authorized Action",\s*"Submit an editable draft or advance an inspection-only scripted frame through the authoritative Python service\."/u,
+    /"Apply Authorized Action",\s*"Submit all Manual and policy actions for one turn, or advance one scripted turn\. Inspecting a policy does not give you control of it\."/u,
   );
   assert.match(
     source,
@@ -1594,7 +1593,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   assert.match(source, /shuttingDown:\s*state\.shuttingDown,/u);
   assert.match(
     source,
-    /activationDisabled:[\s\S]*isTerminal\(transportFrame\)[\s\S]*!isReplayMode\(\)[\s\S]*recordingScientificControlsFenced\(\)/u,
+    /activationDisabled:[\s\S]*!isReplayMode\(\)[\s\S]*transportFrame\?\.system_operation[\s\S]*fresh_launch_required/u,
   );
   assert.match(source, /isInteractive: liveBattlefieldCommandsInteractive/u);
   assert.match(
@@ -1616,7 +1615,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   );
   assert.match(
     source,
-    /elements\.resetButton\.disabled =\s*disabled \|\| restartControlsBlocked \|\| liveScriptedInspectionOnly\(\);/u,
+    /elements\.resetButton\.disabled =\s*disabled \|\|\s*Boolean\(frame\?\.fresh_launch_required\) \|\|\s*restartControlsBlocked \|\|\s*liveScriptedInspectionOnly\(\);/u,
   );
   assert.match(
     index,

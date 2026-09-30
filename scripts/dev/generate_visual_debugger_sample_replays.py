@@ -30,6 +30,23 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPOSITORY_ROOT))
 
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_launch_specification_v1,
+)
+from marl_battlegrounds._battle_client.protocol import (
+    CommandRequestV1,
+    CommandResponseV2,
+    KeyboardCommandV1,
+)
+from marl_battlegrounds._battle_client.recording import (
+    build_debugger_recording_specification_v1,
+)
+from marl_battlegrounds._battle_client.recording_coordinator import (
+    RecordingDebuggerCoordinator,
+)
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     CodeRevisionV2,
@@ -46,22 +63,6 @@ from marl_battlegrounds.evaluation.revision import discover_code_revision_v1
 from marl_battlegrounds.evaluation.runtime_provenance import (
     capture_debugger_runtime_provenance_v1,
 )
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    build_debugger_evaluation_launch_specification_v1,
-)
-from scripts.dev.visual_debugger.protocol import (
-    CommandRequestV1,
-    CommandResponseV2,
-    KeyboardCommandV1,
-)
-from scripts.dev.visual_debugger.recording import (
-    build_debugger_recording_specification_v1,
-)
-from scripts.dev.visual_debugger.recording_coordinator import (
-    RecordingDebuggerCoordinator,
-)
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
 from scripts.dev.visual_debugger.sample_replays import (
     CURRENT_SAMPLE_REPLAY_DIRECTORY,
     CURRENT_SAMPLE_REPLAY_GENERATOR_ID,
@@ -77,8 +78,7 @@ from scripts.dev.visual_debugger.sample_replays import (
     canonical_sample_replay_manifest_json_bytes_v1,
     load_verified_sample_replay_set,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService
+from scripts.dev.visual_debugger.scenarios import get_scenario, list_scenarios
 
 
 def _path_entry_exists(path: Path) -> bool:
@@ -243,9 +243,11 @@ def _record_one_sample(
             view_mode="researcher",
             preset="analysis",
             include_stress=False,
+            scenario_catalog=list_scenarios(include_stress=True),
             session_id=f"sample-replay-generator-{sample.name}",
             recorder=recorder,
-        )
+        ),
+        asset_root=_REPOSITORY_ROOT / "web" / "visual_debugger",
     )
 
     for frame_index in range(len(scenario.frames)):

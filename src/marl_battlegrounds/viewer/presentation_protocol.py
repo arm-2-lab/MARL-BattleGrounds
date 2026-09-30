@@ -2274,9 +2274,7 @@ class LivePendingActionTupleV1(_PresentationProtocolModel):
 
 
 class LivePendingJointActionRowV1(_PresentationProtocolModel):
-    """Pair one active actor's identity with the action tuple prepared for
-    submission.
-    """
+    """Pair one configured Manual actor with its staged action, even when dead."""
 
     actor_presentation_key: _ScientificId
     actor_public_agent_id: _ScientificId
@@ -2294,7 +2292,11 @@ class LivePendingJointActionRowV1(_PresentationProtocolModel):
 
 
 class LivePendingJointActionV1(_PresentationProtocolModel):
-    """Hold ordered pending actor actions for one current simulator step."""
+    """Hold staged Manual rows for one step; no Manual slots means an empty tuple.
+
+    Rows follow configured roster order. Policy choices are unknown until submit
+    and never appear here. The paired raw frame supplies exact Manual ownership.
+    """
 
     current_simulator_step_count: _NonNegativeInt
     action_rows: tuple[LivePendingJointActionRowV1, ...]
@@ -2302,7 +2304,7 @@ class LivePendingJointActionV1(_PresentationProtocolModel):
     @model_validator(mode="after")
     def _validate_rows(self) -> Self:
         """Require exact rows and unique ordered actor identities."""
-        if not self.action_rows or any(
+        if any(
             type(row) is not LivePendingJointActionRowV1 for row in self.action_rows
         ):
             raise ValueError("Pending Joint Action requires exact action rows.")
@@ -3701,6 +3703,7 @@ def _validate_oracle_inspection(
     | ReplayOraclePresentationSourceIdentityV1,
     endpoint: OracleAuthorizedCurrentEndpointV1,
     inspection: LiveDraftInspectionPresentationV1
+    | LivePolicyInspectionV1
     | ReplayInspectionPresentationV1
     | None,
     replay: bool,
@@ -3708,7 +3711,7 @@ def _validate_oracle_inspection(
     """Bind global inspection to the current actor, mask, and live or replay epoch."""
     if inspection is None:
         if not replay:
-            raise ValueError("a live Oracle endpoint requires its draft inspection.")
+            raise ValueError("a live Oracle endpoint requires its action inspection.")
         replay_source = cast(ReplayOraclePresentationSourceIdentityV1, source)
         is_final = (
             replay_source.source_frame_index == replay_source.source_final_frame_index
@@ -3719,7 +3722,13 @@ def _validate_oracle_inspection(
             )
         return
     expected = (
-        ReplayInspectionPresentationV1 if replay else LiveDraftInspectionPresentationV1
+        ReplayInspectionPresentationV1
+        if replay
+        else (
+            LivePolicyInspectionV1
+            if isinstance(inspection, LivePolicyInspectionV1)
+            else LiveDraftInspectionPresentationV1
+        )
     )
     _require_exact_type(inspection, expected, name="inspection")
     if endpoint.action_axis is None:
@@ -3767,12 +3776,20 @@ def _validate_agent_inspection(
     | ReplaySharedObsPresentationSourceIdentityV1,
     endpoint: NoSharedObsAuthorizedCurrentEndpointV1
     | SharedObsAuthorizedCurrentEndpointV1,
-    inspection: LiveDraftInspectionPresentationV1 | ReplayInspectionPresentationV1,
+    inspection: LiveDraftInspectionPresentationV1
+    | LivePolicyInspectionV1
+    | ReplayInspectionPresentationV1,
     replay: bool,
 ) -> None:
     """Bind recipient inspection to its own decision mask and allowed local targets."""
     expected = (
-        ReplayInspectionPresentationV1 if replay else LiveDraftInspectionPresentationV1
+        ReplayInspectionPresentationV1
+        if replay
+        else (
+            LivePolicyInspectionV1
+            if isinstance(inspection, LivePolicyInspectionV1)
+            else LiveDraftInspectionPresentationV1
+        )
     )
     _require_exact_type(inspection, expected, name="inspection")
     parts = endpoint.parts
@@ -3830,6 +3847,40 @@ def _validate_agent_inspection(
             or replay_inspection.outgoing_transition_index != source.source_frame_index
         ):
             raise ValueError("Agent replay inspection is not outgoing T_n.")
+
+
+class LivePolicyInspectionV1(_PresentationProtocolModel):
+    """Show a policy actor's current legal choices without inventing its next action.
+
+    The policy runs only when a turn is submitted. This record has no draft and
+    grants no editing permission. Researcher panels set actor_anchor to None and
+    remove all target positions; battlefield inspection keeps authorized anchors.
+    """
+
+    inspection_kind: Literal["policy_read_only"]
+    submission_scope: Literal["joint_turn"]
+    current_simulator_step_count: _NonNegativeInt
+    actor_presentation_key: _ScientificId
+    actor_public_agent_id: _ScientificId
+    actor_anchor: tuple[float, float] | None
+    decision_mask: AuthorizedDecisionMaskV1
+
+    @model_validator(mode="after")
+    def _validate_policy(self) -> Self:
+        """Require the exact mask, matching actor identity, and finite anchors."""
+        _require_exact_type(
+            self.decision_mask, AuthorizedDecisionMaskV1, name="decision_mask"
+        )
+        if (
+            self.decision_mask.owner_presentation_key != self.actor_presentation_key
+            or self.decision_mask.owner_public_agent_id != self.actor_public_agent_id
+        ):
+            raise ValueError("policy inspection mask must belong to its actor.")
+        if self.actor_anchor is not None and not all(
+            isfinite(value) for value in self.actor_anchor
+        ):
+            raise ValueError("policy inspection anchor must be finite.")
+        return self
 
 
 class LiveEditableDraftInspectionV1(_PresentationProtocolModel):
@@ -3963,7 +4014,9 @@ class LiveResearcherEditableDraftInspectionV1(_PresentationProtocolModel):
 
 
 type LiveResearcherInputInspectionV1 = Annotated[
-    LiveResearcherEditableDraftInspectionV1 | LiveScriptedPlaybackInspectionV1,
+    LiveResearcherEditableDraftInspectionV1
+    | LivePolicyInspectionV1
+    | LiveScriptedPlaybackInspectionV1,
     Field(discriminator="inspection_kind"),
 ]
 
@@ -4099,7 +4152,18 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
             raise ValueError("live researcher Technical Frame misses its epoch.")
 
         inspection = self.pending_inspection
-        if type(inspection) is LiveResearcherEditableDraftInspectionV1:
+        if type(inspection) not in (
+            LiveResearcherEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
+            LiveScriptedPlaybackInspectionV1,
+        ):
+            raise ValueError(
+                "live researcher inspection uses an unknown strict variant."
+            )
+        if isinstance(
+            inspection,
+            (LiveResearcherEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             pending_joint = self.pending_joint_action
             _require_exact_type(
                 pending_joint,
@@ -4107,6 +4171,9 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
                 name="pending_joint_action",
             )
             checked_pending = cast(LivePendingJointActionV1, pending_joint)
+            pending_ids = {
+                row.actor_public_agent_id for row in checked_pending.action_rows
+            }
             if (
                 checked_pending.current_simulator_step_count
                 != self.simulator_step_count
@@ -4117,20 +4184,39 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
                 != tuple(
                     (row.presentation_key, row.public_agent_id)
                     for row in self.roster_agents
+                    if row.public_agent_id in pending_ids
                 )
             ):
                 raise ValueError(
                     "live researcher Pending Joint Action misses its roster or epoch."
                 )
-            draft = inspection.draft
-            selected_pending = next(
-                row
-                for row in checked_pending.action_rows
-                if row.actor_public_agent_id == self.selected_public_agent_id
+            draft = (
+                inspection
+                if isinstance(inspection, LivePolicyInspectionV1)
+                else inspection.draft
             )
-            if not _pending_action_matches_live_draft(
+            selected_pending = next(
+                (
+                    row
+                    for row in checked_pending.action_rows
+                    if row.actor_public_agent_id == self.selected_public_agent_id
+                ),
+                None,
+            )
+            if isinstance(inspection, LivePolicyInspectionV1):
+                if selected_pending is not None or inspection.actor_anchor is not None:
+                    raise ValueError(
+                        "policy researcher inspection cannot carry a Manual draft "
+                        "or geometry."
+                    )
+                if any(
+                    type(row) is not AuthorizedAxisOnlyTargetActionV1
+                    for row in draft.decision_mask.target_actions[1:]
+                ):
+                    raise ValueError("policy researcher targets must omit geometry.")
+            elif selected_pending is None or not _pending_action_matches_live_draft(
                 selected_pending.pending_action,
-                draft.draft_action,
+                inspection.draft.draft_action,
             ):
                 raise ValueError(
                     "live researcher Pending Joint Action changed the selected draft."
@@ -4173,7 +4259,9 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
 
 
 type LiveInputInspectionV1 = Annotated[
-    LiveEditableDraftInspectionV1 | LiveScriptedPlaybackInspectionV1,
+    LiveEditableDraftInspectionV1
+    | LivePolicyInspectionV1
+    | LiveScriptedPlaybackInspectionV1,
     Field(discriminator="inspection_kind"),
 ]
 
@@ -4197,6 +4285,7 @@ class LiveOracleInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact editable-draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live Oracle inspection uses an unknown strict variant.")
@@ -4225,6 +4314,7 @@ class LiveNoSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact actor draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live Agent inspection uses an unknown strict variant.")
@@ -4253,6 +4343,7 @@ class LiveSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact SharedObs draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live SharedObs inspection uses an unknown variant.")
@@ -4300,6 +4391,8 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
     schema_version: Literal[1]
     presentation_kind: Literal["live_oracle"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveOraclePresentationSourceIdentityV1
     authority: OraclePresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4343,7 +4436,10 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             pending_joint = self.pending_joint_action
             _require_exact_type(
                 pending_joint,
@@ -4351,6 +4447,9 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
                 name="pending_joint_action",
             )
             checked_pending = cast(LivePendingJointActionV1, pending_joint)
+            pending_ids = {
+                row.actor_public_agent_id for row in checked_pending.action_rows
+            }
             if (
                 checked_pending.current_simulator_step_count
                 != self.source.source_simulator_step_count
@@ -4361,20 +4460,33 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
                 != tuple(
                     (row.presentation_key, row.public_agent_id)
                     for row in self.current_endpoint.scene.agents
+                    if row.public_agent_id in pending_ids
                 )
             ):
                 raise ValueError(
                     "live Oracle Pending Joint Action misses its scene or epoch."
                 )
-            selected_pending = next(
-                row
-                for row in checked_pending.action_rows
-                if row.actor_public_agent_id
-                == self.live_inspection.inspection.draft.actor_public_agent_id
+            wrapper = self.live_inspection.inspection
+            inspection = (
+                wrapper
+                if isinstance(wrapper, LivePolicyInspectionV1)
+                else wrapper.draft
             )
-            if not _pending_action_matches_live_draft(
-                selected_pending.pending_action,
-                self.live_inspection.inspection.draft.draft_action,
+            selected_pending = next(
+                (
+                    row
+                    for row in checked_pending.action_rows
+                    if row.actor_public_agent_id == inspection.actor_public_agent_id
+                ),
+                None,
+            )
+            if isinstance(wrapper, LivePolicyInspectionV1):
+                if selected_pending is not None:
+                    raise ValueError(
+                        "policy inspection cannot also have a Manual pending action."
+                    )
+            elif selected_pending is None or not _pending_action_matches_live_draft(
+                selected_pending.pending_action, wrapper.draft.draft_action
             ):
                 raise ValueError(
                     "live Oracle Pending Joint Action changed the selected draft."
@@ -4382,7 +4494,13 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
             _validate_oracle_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         elif self.pending_joint_action is not None:
@@ -4410,6 +4528,8 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
     schema_version: Literal[1]
     presentation_kind: Literal["live_no_shared_obs_agent_pov"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveNoSharedObsPresentationSourceIdentityV1
     authority: NoSharedObsPresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4435,11 +4555,20 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             _validate_agent_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         _validate_live_researcher_space(self)
@@ -4457,6 +4586,8 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
     schema_version: Literal[1]
     presentation_kind: Literal["live_shared_obs_agent_pov"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveSharedObsPresentationSourceIdentityV1
     authority: SharedObsPresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4501,11 +4632,20 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             _validate_agent_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         _validate_live_researcher_space(self)
@@ -5156,13 +5296,20 @@ def _validate_live_researcher_space(
         raise ValueError(
             "live researcher space does not join its Agent presentation epoch."
         )
-    if type(researcher.pending_inspection) is LiveResearcherEditableDraftInspectionV1:
+    if isinstance(
+        researcher.pending_inspection,
+        (LiveResearcherEditableDraftInspectionV1, LivePolicyInspectionV1),
+    ):
         self_actor = next(
             row
             for row in frame.current_endpoint.parts.scene.agents
             if row.relation == "self"
         )
-        draft = researcher.pending_inspection.draft
+        draft = (
+            researcher.pending_inspection
+            if isinstance(researcher.pending_inspection, LivePolicyInspectionV1)
+            else researcher.pending_inspection.draft
+        )
         if (
             draft.actor_public_agent_id != self_actor.public_agent_id
             or draft.current_simulator_step_count
@@ -5170,9 +5317,19 @@ def _validate_live_researcher_space(
         ):
             raise ValueError("live researcher draft does not join the Agent self row.")
         local_inspection = frame.live_inspection.inspection
-        if type(local_inspection) is not LiveEditableDraftInspectionV1:
+        if (
+            local_inspection.inspection_kind
+            != researcher.pending_inspection.inspection_kind
+        ):
             raise ValueError("live researcher and Agent draft modes diverged.")
-        local_draft = local_inspection.draft
+        assert isinstance(
+            local_inspection, (LiveEditableDraftInspectionV1, LivePolicyInspectionV1)
+        )
+        local_draft = (
+            local_inspection
+            if isinstance(local_inspection, LivePolicyInspectionV1)
+            else local_inspection.draft
+        )
         researcher_mask = draft.decision_mask
         local_mask = local_draft.decision_mask
         researcher_target_ids = tuple(
@@ -5204,8 +5361,10 @@ def _validate_live_researcher_space(
             != local_mask.use_ultimate_action_mask
             or researcher_mask.target_use_ultimate_joint_mask
             != local_mask.target_use_ultimate_joint_mask
-            or draft.draft_action != local_draft.draft_action
-            or draft.draft_legality != local_draft.draft_legality
+            or getattr(draft, "draft_action", None)
+            != getattr(local_draft, "draft_action", None)
+            or getattr(draft, "draft_legality", None)
+            != getattr(local_draft, "draft_legality", None)
         ):
             raise ValueError("live researcher draft changed Agent action semantics.")
 
@@ -5429,6 +5588,9 @@ def _validate_live_oracle_inspection_envelope(
             or inspection.draft.actor_public_agent_id != axis.owner_public_agent_id
         ):
             raise ValueError("editable Oracle draft does not join its actor/scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live Oracle inspection variant.")
 
@@ -5472,6 +5634,9 @@ def _validate_live_no_shared_inspection_envelope(
             or inspection.draft.actor_public_agent_id != parts.recipient_public_agent_id
         ):
             raise ValueError("editable Agent draft does not join its joint scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live Agent inspection variant.")
 
@@ -5515,6 +5680,9 @@ def _validate_live_shared_inspection_envelope(
             or inspection.draft.actor_public_agent_id != parts.recipient_public_agent_id
         ):
             raise ValueError("editable SharedObs draft does not join its joint scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live SharedObs inspection variant.")
 

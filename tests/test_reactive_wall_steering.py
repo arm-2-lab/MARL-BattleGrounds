@@ -16,12 +16,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from scripts.dev.visual_debugger.authoring_compiler import (
-    CompiledDevScenarioV1,
-    compile_dev_scenario,
+from tests.scenario_controller_fixtures import (
+    ControllerScenario,
+    load_controller_input,
+    load_scenario_1,
 )
-from scripts.dev.visual_debugger.authoring_models import DevWallV1, new_scenario_draft
-from tests.scenario_controller_fixtures import load_scenario_1
 from tests.test_reactive_tdm import (
     _mask,  # pyright: ignore[reportPrivateUsage]
     _observation,  # pyright: ignore[reportPrivateUsage]
@@ -74,12 +73,12 @@ _STEP = cast(
 
 
 @pytest.fixture(scope="module")
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     return load_scenario_1()
 
 
 def _wall_observation(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     position: tuple[float, float] = (5.0, 4.664643),
     wall: tuple[float, ...] = (2, 6, 5, 0, 1, 3, 0, 1),
 ) -> Observation:
@@ -109,7 +108,7 @@ def _wall_observation(
     ],
 )
 def test_mirrored_south_turn_and_far_face_release(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     position: tuple[float, float],
     goal: tuple[float, float],
     direction: tuple[float, float],
@@ -141,7 +140,7 @@ def test_mirrored_south_turn_and_far_face_release(
     ],
 )
 def test_bounds_choose_north_only_when_south_cannot_fit(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     wall: tuple[float, ...],
     position: tuple[float, float],
     expected: int,
@@ -207,7 +206,7 @@ _BOTH_ENDS_CAPPED = (
     ],
 )
 def test_capped_wall_end_extends_once_past_its_cap(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     rows: tuple[tuple[float, ...], ...],
     position: tuple[float, float],
     goal: tuple[float, float],
@@ -236,7 +235,7 @@ def test_capped_wall_end_extends_once_past_its_cap(
     ids=["drift_within_margin", "drift_beyond_margin"],
 )
 def test_corner_drift_within_one_stride_keeps_useful_progress(
-    scenario: CompiledDevScenarioV1, x: float, expected: int
+    scenario: ControllerScenario, x: float, expected: int
 ) -> None:
     observation = _wall_observation(scenario, (x, 3.0))
     pillar = jnp.asarray(
@@ -260,7 +259,7 @@ def test_corner_drift_within_one_stride_keeps_useful_progress(
     ],
 )
 def test_equivalent_vertical_and_thin_walls_share_south_preference(
-    scenario: CompiledDevScenarioV1, wall: tuple[float, ...]
+    scenario: ControllerScenario, wall: tuple[float, ...]
 ) -> None:
     observation = _wall_observation(scenario, wall=wall)
     direction, active, end, _ = _STEER(observation, jnp.array([10.0, 5.5]), True)
@@ -279,7 +278,7 @@ def test_equivalent_vertical_and_thin_walls_share_south_preference(
     ],
 )
 def test_pillars_horizontal_oblique_and_inactive_rows_do_not_override(
-    scenario: CompiledDevScenarioV1, wall: tuple[float, ...]
+    scenario: ControllerScenario, wall: tuple[float, ...]
 ) -> None:
     observation = _wall_observation(scenario, wall=wall)
     goal = jnp.array([10.0, 5.5])
@@ -291,7 +290,7 @@ def test_pillars_horizontal_oblique_and_inactive_rows_do_not_override(
 
 @pytest.mark.parametrize("speed", [1.0, 0.2, 0.01])
 def test_geometric_end_strip_does_not_shrink_with_slowed_speed(
-    scenario: CompiledDevScenarioV1, speed: float
+    scenario: ControllerScenario, speed: float
 ) -> None:
     observation = _wall_observation(scenario, (3.5, 1.1))
     observation = observation._replace(
@@ -307,7 +306,7 @@ def test_geometric_end_strip_does_not_shrink_with_slowed_speed(
 
 @pytest.mark.parametrize("position", [(2.5, 4.5), (5.0, 0.75), (5.0, 8.0)])
 def test_positions_outside_local_wall_envelope_keep_their_goal(
-    scenario: CompiledDevScenarioV1, position: tuple[float, float]
+    scenario: ControllerScenario, position: tuple[float, float]
 ) -> None:
     observation = _wall_observation(scenario, position)
     goal = jnp.array([10.0, 5.5])
@@ -322,7 +321,7 @@ def test_positions_outside_local_wall_envelope_keep_their_goal(
     [AGENT_FEATURE_ACTIVE, AGENT_FEATURE_ALIVE, AGENT_FEATURE_EFFECTIVE_MOVEMENT_SPEED],
 )
 def test_lifecycle_and_zero_speed_do_not_activate_steering(
-    scenario: CompiledDevScenarioV1, feature: int
+    scenario: ControllerScenario, feature: int
 ) -> None:
     observation = _wall_observation(scenario)
     observation = observation._replace(
@@ -336,7 +335,7 @@ def test_lifecycle_and_zero_speed_do_not_activate_steering(
 
 
 def test_retreat_zero_intent_and_exact_movement_masks_remain_authoritative(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     observation = _wall_observation(scenario)
     origin = observation.self_features[:2]
@@ -364,7 +363,7 @@ def test_retreat_zero_intent_and_exact_movement_masks_remain_authoritative(
 
 
 def test_nearest_wall_then_fixed_slot_decides_competing_ends(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     observation = _wall_observation(scenario, (5.0, 3.0))
     lower_wall = jnp.array([2, 6, 1.5, 0, 1, 3, 0, 1], dtype=jnp.float32)
@@ -386,7 +385,7 @@ def test_nearest_wall_then_fixed_slot_decides_competing_ends(
 
 @pytest.mark.parametrize("from_west", [True, False], ids=["west_face", "east_face"])
 def test_wall_steering_preserves_specialist_shoulder_screening(
-    scenario: CompiledDevScenarioV1, from_west: bool
+    scenario: ControllerScenario, from_west: bool
 ) -> None:
     x = 5.0 if from_west else 7.0
     observation = _wall_observation(scenario, (x, 4.664643))
@@ -406,7 +405,7 @@ def test_wall_steering_preserves_specialist_shoulder_screening(
 
 
 def test_specialist_prey_on_expanded_east_face_keeps_east_exit(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     observation = _wall_observation(scenario)
     bodies = jnp.zeros_like(scenario.observation.self_features)
@@ -423,7 +422,7 @@ def test_specialist_prey_on_expanded_east_face_keeps_east_exit(
 
 
 def test_specialist_equal_phase_alignment_prefers_closer_prey_endpoint(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     observation = _wall_observation(
         scenario,
@@ -448,26 +447,17 @@ def test_specialist_equal_phase_alignment_prefers_closer_prey_endpoint(
 
 
 @pytest.fixture(scope="module")
-def physical_wall_scenario() -> CompiledDevScenarioV1:
-    draft = new_scenario_draft(
-        "isolated_wall_steering", red_zone_depth=DEFAULT_TDM_RED_ZONE_DEPTH
+def physical_wall_scenario() -> ControllerScenario:
+    base = load_controller_input("blank_controller_start")
+    wall = jnp.array([OBSTACLE_TYPE_WALL, 6.0, 5.0, 0.0, 1.0, 3.0, 0.0, 1.0])
+    config = base.config._replace(
+        team_deathmatch_red_zone_depth=DEFAULT_TDM_RED_ZONE_DEPTH,
+        obstacles=base.config.obstacles.at[0].set(wall),
     )
-    wall = DevWallV1(
-        object_id="vertical_wall", center_x=6.0, center_y=5.0, width=1.0, height=3.0
+    state, observation, action_mask, info = initialize_scenario_state(
+        base.initial_state, config
     )
-    return compile_dev_scenario(
-        draft.model_copy(
-            update={
-                "content": draft.content.model_copy(
-                    update={
-                        "embedded_map": draft.content.embedded_map.model_copy(
-                            update={"obstacles": (wall,)}
-                        )
-                    }
-                )
-            }
-        )
-    )
+    return ControllerScenario(config, state, observation, action_mask, info)
 
 
 @pytest.mark.parametrize(
@@ -475,7 +465,7 @@ def physical_wall_scenario() -> CompiledDevScenarioV1:
 )
 @pytest.mark.parametrize("from_west", [True, False], ids=["west_face", "east_face"])
 def test_paired_steering_clears_the_actual_wall_without_opposing_body_motion(
-    physical_wall_scenario: CompiledDevScenarioV1,
+    physical_wall_scenario: ControllerScenario,
     slots: tuple[int, int],
     from_west: bool,
 ) -> None:

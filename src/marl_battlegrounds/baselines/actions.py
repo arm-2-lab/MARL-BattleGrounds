@@ -14,6 +14,9 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+from marl_battlegrounds.baselines.config import (
+    ACTION_SCHEMA_VERSION as ACTION_SCHEMA_VERSION,
+)
 from marl_battlegrounds.core.types import (
     NUM_MOVE_ACTIONS,
     NUM_TARGET_ACTIONS,
@@ -23,7 +26,6 @@ from marl_battlegrounds.core.types import (
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.input import MOVE_MIRROR
 
-ACTION_SCHEMA_VERSION = 1
 NUM_ACTIONS = NUM_MOVE_ACTIONS * NUM_TARGET_ACTIONS * NUM_ULTIMATE_ACTIONS
 
 

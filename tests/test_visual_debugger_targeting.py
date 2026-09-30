@@ -1,14 +1,16 @@
 """Check debugger target selection against Core's target mapping."""
 
+from dataclasses import replace
+
 import pytest
-from scripts.dev.visual_debugger.control import (
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+from marl_battlegrounds._battle_client.control import (
     create_session,
     select_clicked_target,
     submit_interactive,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
 from marl_battlegrounds.core.axis_mappings import (
     global_slot_to_target_action,
     target_action_to_global_slot,
@@ -97,7 +99,12 @@ def test_clicked_global_target_routes_to_expected_recipient_for_both_teams(
     expected_target_action: int,
     expected_health: float,
 ) -> None:
-    scenario = get_scenario("basic_support")
+    scenario = replace(
+        get_scenario("basic_support"),
+        name="manual_targeting",
+        mode="interactive",
+        frames=(),
+    )
     session = create_session(
         scenario,
         seed=0,

@@ -1,6 +1,6 @@
 /**
  * @file Check live recording finish/discard/exit, saved interrupted prefixes and
- * multi-tab handoff to replay. Saved live recordings are replay V4 files (they record
+ * multi-tab save/restart and separate replay viewing. Saved live recordings are replay V4 files (they record
  * the Red Zone rule) without a metric sidecar. Exit must end the server with exit code 0 and no
  * signal, checked strictly by expectServerShutdown. A server that dies before its
  * shutdown response must reject that response promptly through the browser's real
@@ -12,8 +12,8 @@
  * fail the test instead of leaving it waiting. Each signal rechecks the server
  * owner token and process start time through the shared lifecycle helper.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 import { finishControllerClock } from "./support/choreography.js";
@@ -98,7 +98,7 @@ async function openRecording(page, url) {
   collectBrowserErrors(page);
   await page.goto(url);
   await expect(page.locator("#connection-status")).toHaveText("Online");
-  await expect(page).toHaveTitle("MARL-BattleGrounds DevClient");
+  await expect(page).toHaveTitle("MARL-BattleGrounds BattleClient");
   await expect(page.locator("html")).toHaveAttribute(
     "data-product-kind",
     "combat_debugger",
@@ -261,6 +261,25 @@ function captureOneTransition(page) {
   return captureNextTransition(page, 1);
 }
 
+/** @param {import("@playwright/test").Page} livePage */
+async function openSavedReplay(livePage) {
+  await expect(livePage.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
+  );
+  await expect(livePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  const popup = livePage.waitForEvent("popup");
+  await livePage.locator("#recording-review-button").click();
+  const replayPage = await popup;
+  collectBrowserErrors(replayPage);
+  await expect(replayPage.locator("#connection-status")).toHaveText("Online");
+  expect(new URL(replayPage.url()).origin).not.toBe(new URL(livePage.url()).origin);
+  await expect(livePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  await expect(livePage.locator("#submit-turn-button")).toBeDisabled();
+  await expect(livePage.locator("#reset-button")).toBeEnabled();
+  return replayPage;
+}
+
 /** @param {import("@playwright/test").Page} page
  * @param {"researcher" | "pov"} audience
  * @param {"shared_obs" | "no_shared_obs"} informationMode */
@@ -419,9 +438,9 @@ async function expectSavedArtifacts(replayPath, metricPath, transitionCount) {
   return { replay };
 }
 
-test("confirmed prefix discard restarts capture and Finish opens settled frame-zero replay", async ({
+test("confirmed prefix discard and save keep live inspection, separate replay and fresh restart", async ({
   page,
-}) => {
+}, testInfo) => {
   const started = requiredRecording();
   await openRecording(page, started.url);
   const stableUrl = page.url();
@@ -536,7 +555,8 @@ test("confirmed prefix discard restarts capture and Finish opens settled frame-z
   }
   const response = await finishResponse;
   expect(response.status()).toBe(200);
-  await expectSettledReplayHandoff(page);
+  const replayPage = await openSavedReplay(page);
+  await expectSettledReplayHandoff(replayPage);
   await expect(page.locator("#recording-metrics-progress")).toBeHidden();
   expect(page.url()).toBe(stableUrl);
   expect(
@@ -544,7 +564,51 @@ test("confirmed prefix discard restarts capture and Finish opens settled frame-z
       window.sessionStorage.getItem("marl-battlegrounds.debugger-token"),
     ),
   ).toBe(stableToken);
-  await expectSavedArtifacts(started.replayPath, started.metricReportPath, 1);
+  const savedNames = (await readdir(started.outputDirectory)).filter((name) =>
+    name.endsWith(".marlbg-replay.json"),
+  );
+  expect(savedNames).toHaveLength(1);
+  const firstPath = join(started.outputDirectory, savedNames[0]);
+  const firstSaved = await expectSavedArtifacts(
+    firstPath,
+    metricReportPathForReplay(firstPath),
+    1,
+  );
+  await page.locator("#roster .roster-primary-action").nth(1).click();
+  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#submit-turn-button")).toBeDisabled();
+  await page.locator("#reset-button").click();
+  const fresh = await expectRecordingCount(page, 0);
+  expect(fresh.episode_id).not.toBe(restarted.episode_id);
+  await captureOneTransition(page);
+  await page.locator("#reset-button").click();
+  await expect(page.locator("#recording-discard-dialog")).toBeVisible();
+  await page.locator("#recording-save-replace-button").click();
+  const afterSaveAndRestart = await expectRecordingCount(page, 0);
+  expect(afterSaveAndRestart.episode_id).not.toBe(fresh.episode_id);
+  const allNames = (await readdir(started.outputDirectory)).filter((name) =>
+    name.endsWith(".marlbg-replay.json"),
+  );
+  expect(allNames).toHaveLength(2);
+  expect(await readFile(firstPath)).toEqual(firstSaved.replay.bytes);
+  const evidencePath = testInfo.outputPath("saved-first.marlbg-replay.json");
+  await mkdir(dirname(evidencePath), { recursive: true });
+  await writeFile(evidencePath, firstSaved.replay.bytes);
+  const secondName = allNames.find((name) => !savedNames.includes(name));
+  if (secondName === undefined) throw new Error("The second recording was not saved.");
+  await writeFile(
+    testInfo.outputPath("saved-second.marlbg-replay.json"),
+    await readFile(join(started.outputDirectory, secondName)),
+  );
+  await writeFile(
+    testInfo.outputPath("accepted-restarts.json"),
+    JSON.stringify(
+      { first: restarted, second: fresh, third: afterSaveAndRestart },
+      null,
+      2,
+    ),
+  );
+  expectNoBrowserErrors(replayPage);
   expectNoBrowserErrors(page);
 });
 
@@ -711,7 +775,7 @@ test("Exit reports a server that dies before its shutdown response", async ({
   await page.unroute("**/api/command");
 });
 
-test("a second live tab cannot advance after Finish and Reconnect adopts replay", async ({
+test("a second live tab stays live after saving and rejects its old turn", async ({
   context,
   page,
 }) => {
@@ -719,37 +783,58 @@ test("a second live tab cannot advance after Finish and Reconnect adopts replay"
   await openRecording(page, started.url);
   const stalePage = await context.newPage();
   await openRecording(stalePage, started.url);
+  const before = await currentFrame(stalePage);
   await captureOneTransition(page);
-
   await page.locator("#recording-finish-button").click();
-  await expectSettledReplayHandoff(page);
-  await expect(stalePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
-  await expect(stalePage.locator("#recording-progress")).toContainText("0 /");
-
-  const rejectedPromise = stalePage.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/command",
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
   );
-  await stalePage.locator("#submit-turn-button").click();
-  const rejected = await rejectedPromise;
-  expect(rejected.status()).toBe(404);
-  await expect(stalePage.locator("#connection-status")).toHaveText("Resync required");
-  await expect(stalePage.locator("#step-value")).toHaveText("0");
-
-  await stalePage.locator("#reconnect-button").click();
-  const { frame } = await expectSettledReplayHandoff(stalePage);
+  const token = await stalePage.evaluate(() =>
+    sessionStorage.getItem("marl-battlegrounds.debugger-token"),
+  );
+  const rejected = await stalePage.request.post(
+    new URL("/api/command", stalePage.url()).href,
+    {
+      headers: { "X-MARL-Debugger-Token": token ?? "" },
+      data: {
+        schema_version: 1,
+        client_id: "stale-recording-tab",
+        command_id: "old-turn",
+        base_revision: before.revision,
+        command: {
+          command_type: "keyboard",
+          key: "Enter",
+          shift_key: false,
+          ctrl_key: false,
+          alt_key: false,
+          meta_key: false,
+          repeat: false,
+        },
+      },
+    },
+  );
+  expect(rejected.status()).toBe(409);
+  expect((await rejected.json()).latest_frame.recording.lifecycle).toBe("saved");
+  await stalePage.reload();
+  await expect(stalePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  await expect(stalePage.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
+  );
+  await expect(stalePage.locator("#submit-turn-button")).toBeDisabled();
+  const replayPage = await openSavedReplay(stalePage);
+  const { frame } = await expectSettledReplayHandoff(replayPage);
   expect(frame.cursor).toMatchObject({ frame_index: 0, final_frame_index: 1 });
   const saved = await readJsonArtifact(started.replayPath);
   expect(saved.value.transitions).toHaveLength(1);
   expectNoBrowserErrors(page);
-  expect(browserErrors.get(stalePage) ?? []).toEqual([
-    "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
-  ]);
+  expectNoBrowserErrors(stalePage);
+  expectNoBrowserErrors(replayPage);
   await stalePage.close();
 });
 
-test("actor POV handoff retains battlefield fog and artifact-wide facts", async ({
+test("actor POV separate Viewer retains battlefield fog and artifact-wide facts", async ({
   page,
 }) => {
   const started = requiredRecording();
@@ -782,6 +867,8 @@ test("actor POV handoff retains battlefield fog and artifact-wide facts", async 
   await page.locator("#recording-finish-button").click();
   const response = await responsePromise;
   expect(response.status()).toBe(200);
+  const livePage = page;
+  page = await openSavedReplay(livePage);
   const { frame, timeline } = await expectSettledReplayHandoff(page, "pov");
   expect(frame).toMatchObject({
     artifact_summary: {
@@ -840,6 +927,7 @@ test("actor POV handoff retains battlefield fog and artifact-wide facts", async 
   visit(timeline);
   expect([...leaked].sort()).toEqual([]);
   await expectSavedArtifacts(started.replayPath, started.metricReportPath, 1);
+  expectNoBrowserErrors(livePage);
   expectNoBrowserErrors(page);
 });
 
@@ -863,7 +951,7 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   await expect(page.locator("#recording-retry-button")).toBeEnabled();
   await expect(page.locator("#recording-save-as-input")).toBeEnabled();
   await expect(page.locator("#recording-save-as-button")).toBeEnabled();
-  await expect(page.locator("#reset-button")).toBeDisabled();
+  await expect(page.locator("#reset-button")).toBeEnabled();
   await expect(page.locator("#scenario-select")).toHaveCount(0);
   await expect(page.locator("#movement-scale-input")).toHaveCount(0);
   await expect(page.locator("#advance-script-button")).toHaveCount(0);
@@ -871,11 +959,11 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   await expect(page.locator("#preset-select")).toHaveCount(0);
   await expect(page.locator("#exit-button")).toBeEnabled();
   const oracleCloseoutLabel =
-    "Read-only live battlefield. Scientific facts can be inspected; simulator and actor activation controls are unavailable.";
+    "Read-only live battlefield. Select an agent to inspect it; new actions are unavailable.";
   await expect(page.getByRole("group", { name: oracleCloseoutLabel })).toBeVisible();
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Scientific tooltip facts remain inspectable. Live simulator and actor activation controls are unavailable while recording is closing, the session is offline or resynchronizing, or the frame is terminal.",
+    "Inspect the accepted game. Select an agent to see its facts. This view does not submit actions; Restart starts another match when available.",
   );
   await expect(page.locator('[data-key="g"]')).toBeEnabled();
   await expect(page.locator('[data-key="v"]')).toHaveCount(0);
@@ -886,7 +974,9 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   await expect.poll(() => rosterButtons.count()).toBeGreaterThan(0);
   expect(
     await rosterButtons.evaluateAll((buttons) =>
-      buttons.every((button) => button instanceof HTMLButtonElement && button.disabled),
+      buttons.every(
+        (button) => button instanceof HTMLButtonElement && !button.disabled,
+      ),
     ),
   ).toBe(true);
   const scientificOwner = page
@@ -918,10 +1008,8 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   const focusFence = await page.evaluate(() => {
     const blockedSelectors = [
       "#battlefield",
-      "#reset-button",
       "#command-target-select",
       '[data-key="w"]',
-      "#roster button",
     ];
     /** @param {Element | null} element */
     const tabFocusable = (element) =>
@@ -962,7 +1050,7 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   await expect(page.getByRole("group", { name: agentCloseoutLabel })).toBeVisible();
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Authorized visible bodies can still be inspected locally; recording closeout has fenced POV switching, simulator input, and pending-action controls.",
+    "Inspect visible bodies here, or choose an agent in the roster to inspect its view. This recording cannot accept another turn.",
   );
   const agentCloseoutBodies = page.locator("#battlefield .agent[role='button']");
   await expect.poll(() => agentCloseoutBodies.count()).toBeGreaterThan(0);
@@ -976,7 +1064,9 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   );
   expect(
     await agentCloseoutRows.evaluateAll((buttons) =>
-      buttons.every((button) => button instanceof HTMLButtonElement && button.disabled),
+      buttons.every(
+        (button) => button instanceof HTMLButtonElement && !button.disabled,
+      ),
     ),
   ).toBe(true);
   /** @type {unknown[]} */
@@ -1051,7 +1141,8 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   const recoveredMetricPath = metricReportPathForReplay(recoveredReplayPath);
   await page.locator("#recording-save-as-input").fill(recoveredName);
   await page.locator("#recording-save-as-button").click();
-  await expectSettledReplayHandoff(page, "pov");
+  const replayPage = await openSavedReplay(page);
+  await expectSettledReplayHandoff(replayPage, "pov");
   await expectSavedArtifacts(recoveredReplayPath, recoveredMetricPath, 1);
   expect(await readFile(started.replayPath)).toEqual(Buffer.from(sentinel));
   expectNoBrowserErrors(page);
@@ -1097,11 +1188,144 @@ test("Reconnect completes a lost Finish response without retrying publication", 
 
   await page.unroute("**/api/command");
   await page.locator("#reconnect-button").click();
-  await expectSettledReplayHandoff(page);
+  await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  const replayPage = await openSavedReplay(page);
+  await expectSettledReplayHandoff(replayPage);
   await expect(page.locator("#recording-metrics-progress")).toBeHidden();
   expect(finishRequests).toBe(1);
   await expectSavedArtifacts(started.replayPath, started.metricReportPath, 1);
 
   const errors = browserErrors.get(page) ?? [];
   expect(errors).toEqual(["console: Failed to load resource: net::ERR_FAILED"]);
+});
+
+test("blocked popups use a normal link and Viewer Exit can be reopened", async ({
+  page,
+}) => {
+  const started = requiredRecording();
+  await page.addInitScript(() => {
+    window.open = () => null;
+  });
+  await openRecording(page, started.url);
+  await page.locator("#recording-finish-button").click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
+  );
+  await page.locator("#recording-review-button").click();
+  const link = page.locator("#recording-replay-link");
+  await expect(link).toBeVisible();
+  const firstUrl = await link.getAttribute("href");
+  const popup = page.waitForEvent("popup");
+  await link.click();
+  const viewer = await popup;
+  await expectSettledReplayHandoff(viewer);
+  await viewer.locator("#exit-button").click();
+  await expect(viewer.locator("#connection-status")).toHaveText("Shutting down");
+  await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  await page.locator("#recording-review-button").click();
+  await expect(link).not.toHaveAttribute("href", firstUrl ?? "");
+  const reopened = page.waitForEvent("popup");
+  await link.click();
+  await expectSettledReplayHandoff(await reopened);
+  await expectSavedArtifacts(started.replayPath, started.metricReportPath, 0);
+  expectNoBrowserErrors(page);
+});
+
+test("an old replacement dialog cannot save or discard a newer match", async ({
+  page,
+  context,
+}) => {
+  const started = requiredRecording();
+  await openRecording(page, started.url);
+  await captureOneTransition(page);
+  await page.locator("#reset-button").click();
+  await expect(page.locator("#recording-discard-dialog")).toBeVisible();
+  const second = await context.newPage();
+  await second.goto(started.url);
+  await expect(second.locator("#connection-status")).toHaveText("Online");
+  await captureNextTransition(second, 2);
+  await expect
+    .poll(async () => (await currentFrame(page)).recording.captured_transition_count)
+    .toBe(2);
+  // The normal background read installs the newer revision while the dialog stays open.
+  await expect(page.locator("#recording-progress")).toContainText("2 /");
+  /** @type {import("@playwright/test").Request[]} */
+  const commands = [];
+  page.on("request", (request) => {
+    if (isLiveCommandPost(request)) commands.push(request);
+  });
+  await page.locator("#recording-save-replace-button").click();
+  await expect(page.locator("#notice")).toContainText("The match changed");
+  expect(commands).toHaveLength(0);
+  expect((await currentFrame(page)).recording.captured_transition_count).toBe(2);
+  expect(
+    (await readdir(started.outputDirectory)).filter((name) =>
+      name.endsWith(".marlbg-replay.json"),
+    ),
+  ).toHaveLength(0);
+});
+
+test("an old replay response cannot attach a link to a newer match", async ({
+  page,
+  context,
+}) => {
+  const started = requiredRecording();
+  await page.addInitScript(() => {
+    window.open = () => null;
+  });
+  await openRecording(page, started.url);
+  await page.locator("#recording-finish-button").click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "saved",
+  );
+  const previous = await currentFrame(page);
+  let release = () => {};
+  let held = () => {};
+  const heldPromise = new Promise((resolve) => {
+    held = () => resolve(null);
+  });
+  let armed = true;
+  await page.route("**/api/presentation/frame", async (route) => {
+    if (armed) {
+      armed = false;
+      await new Promise((resolve) => {
+        release = () => resolve(null);
+        held();
+      });
+    }
+    await route.continue();
+  });
+  await page.locator("#recording-review-button").click();
+  await heldPromise;
+  try {
+    const origin = new URL(started.url).origin;
+    const token = new URL(started.url).hash.slice("#token=".length);
+    const replacement = await context.request.post(`${origin}/api/command`, {
+      headers: { "X-MARL-Debugger-Token": token, Origin: origin },
+      data: {
+        client_id: "replay-response-race",
+        command_id: "restart",
+        base_revision: previous.revision,
+        command: { command_type: "reset" },
+      },
+    });
+    expect(replacement.status()).toBe(200);
+    expect((await replacement.json()).frame.episode_id).not.toBe(previous.episode_id);
+  } finally {
+    release();
+  }
+  await expect(page.locator("#notice")).toContainText(
+    "The match changed while opening the replay",
+  );
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-recording-lifecycle",
+    "recording",
+  );
+  await expect(page.locator("#recording-replay-link")).toBeHidden();
+  await expect(page.locator("#recording-review-button")).toBeHidden();
+  expect((await currentFrame(page)).episode_id).not.toBe(previous.episode_id);
+  await expectSavedArtifacts(started.replayPath, started.metricReportPath, 0);
+  expectNoBrowserErrors(page);
 });

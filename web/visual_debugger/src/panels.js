@@ -7,6 +7,7 @@
 import { canonicalAgentIdentity } from "./agent-identity.js";
 import {
   authorizedPresentationAudience,
+  authorizedPresentationController,
   authorizedPresentationHasResearcherSpace,
   authorizedPresentationIdentityRows,
   authorizedPresentationLatestTransitionId,
@@ -61,6 +62,7 @@ import { classTokenFromId, resolveVisualToken, teamTokenFromId } from "./vocabul
  *   activationDisabled?: boolean,
  *   localInspectedPresentationKey?: string | null,
  *   activatedAgentPublicId?: string | null,
+ *   combatConfiguration?: Record<string, any> | null,
  * }} PanelInteractionState
  */
 
@@ -70,6 +72,7 @@ import { classTokenFromId, resolveVisualToken, teamTokenFromId } from "./vocabul
  *   primaryButton: HTMLButtonElement,
  *   identityId: HTMLElement,
  *   identityClass: HTMLElement,
+ *   controller: HTMLElement,
  *   health: HTMLElement,
  *   statuses: HTMLElement,
  *   modifiers: HTMLElement,
@@ -618,7 +621,8 @@ export class DebuggerPanels {
     const identityContainer = htmlElement("span", "roster-identity");
     const identityId = htmlElement("span", "roster-id");
     const identityClass = htmlElement("span", "roster-class");
-    identityContainer.append(identityId, identityClass);
+    const controller = htmlElement("span", "roster-controller");
+    identityContainer.append(identityId, identityClass, controller);
     const health = htmlElement("span", "roster-health");
     summary.append(identityContainer, health);
     primaryButton.append(summary);
@@ -643,6 +647,7 @@ export class DebuggerPanels {
       primaryButton,
       identityId,
       identityClass,
+      controller,
       health,
       statuses,
       modifiers,
@@ -660,11 +665,13 @@ export class DebuggerPanels {
    * @param {Record<string, any>} presentation
    * @param {boolean} disabled
    * @param {string | null | undefined} [localInspectedPresentationKey]
+   * @param {Record<string, any> | null} [combatConfiguration]
    */
   renderAuthorizedRoster(
     presentation,
     disabled,
     localInspectedPresentationKey = undefined,
+    combatConfiguration = null,
   ) {
     const audience = authorizedPresentationAudience(presentation);
     const identities = authorizedPresentationIdentityRows(presentation);
@@ -720,6 +727,11 @@ export class DebuggerPanels {
         this.rosterRows.set(identity.display_key, row);
       }
       const publicId = String(agent.public_agent_id);
+      const controller = authorizedPresentationController(
+        presentation,
+        combatConfiguration,
+        publicId,
+      );
       const displayIdentity = canonicalAgentIdentity(agent).publicIdentity;
       const classToken = classTokenFromId(agent.class_id);
       const teamToken = teamTokenFromId(agent.team_id);
@@ -760,7 +772,9 @@ export class DebuggerPanels {
               public_agent_id: publicId,
             })
           : identity.activation_kind === "live_pov_global" &&
-              researcherInspectionState.state_kind === "live_editable"
+              ["live_editable", "live_policy"].includes(
+                researcherInspectionState.state_kind,
+              )
             ? Object.freeze({
                 command_type: "activate_live_pov_agent",
                 global_slot: identity.command_global_slot,
@@ -792,12 +806,16 @@ export class DebuggerPanels {
         "aria-label",
         rosterAudience === "researcher" &&
           presentation.viewer_mode === "live" &&
-          researcherInspectionState.state_kind === "live_editable"
+          (controller?.manual ??
+            researcherInspectionState.state_kind === "live_editable")
           ? `Control and inspect ${displayIdentity}`
           : `Inspect ${displayIdentity}`,
       );
       row.identityId.textContent = displayIdentity;
       row.identityClass.textContent = `${classToken.label} · ${teamToken.label}`;
+      row.controller.textContent =
+        controller === null ? "" : `Controller: ${controller.label}`;
+      row.controller.hidden = controller === null;
       row.health.textContent =
         `HP ${formatDisplayNumber(agent.current_health)} / ${formatDisplayNumber(agent.max_health ?? agent.maximum_health)}` +
         ` · cooldown ${agent.ultimate_cooldown_remaining ?? "—"}`;
@@ -902,7 +920,8 @@ export class DebuggerPanels {
     }
     this.pendingCard.dataset.inspectionState = inspectionState.state_kind;
     this.pendingHeading.textContent = {
-      live_editable: "Pending Joint Action",
+      live_editable: "Pending Manual Actions",
+      live_policy: "Pending Manual Actions",
       live_scripted: "Scripted playback inspection",
       replay_outgoing: "Upcoming Transition",
       replay_none: "Upcoming Transition",
@@ -914,8 +933,8 @@ export class DebuggerPanels {
     this.pendingScope.textContent =
       inspectionState.state_kind === "live_scripted"
         ? "This live frame advances registered scripted actions and has no editable draft."
-        : inspectionState.state_kind === "live_editable"
-          ? "This panel shows the complete researcher-space joint action staged for the next submission."
+        : ["live_editable", "live_policy"].includes(inspectionState.state_kind)
+          ? "These Manual drafts join the policies' actions on Submit. Policies choose their own actions when the turn starts."
           : inspectionState.state_kind === "replay_outgoing"
             ? "This panel shows the authorized recorded actions out of the current frame."
             : inspectionState.state_kind === "replay_none"
@@ -927,11 +946,15 @@ export class DebuggerPanels {
           ? authorizedTransitionList(upcomingRows)
           : htmlElement("p", "empty-copy", "No upcoming transition is available."),
       );
-    } else if (inspectionState.state_kind === "live_editable") {
+    } else if (["live_editable", "live_policy"].includes(inspectionState.state_kind)) {
       this.pendingCard.replaceChildren(
         pendingRows.length > 0
           ? authorizedTransitionList(pendingRows, true)
-          : htmlElement("p", "empty-copy", "No pending joint action is available."),
+          : htmlElement(
+              "p",
+              "empty-copy",
+              "All agents are policy controlled. Their next actions have not been chosen yet.",
+            ),
       );
     } else {
       this.pendingCard.replaceChildren(
@@ -1071,6 +1094,7 @@ export class DebuggerPanels {
         frame,
         disabled,
         interactionState.localInspectedPresentationKey,
+        interactionState.combatConfiguration ?? null,
       );
       this.renderAuthorizedInspector(
         frame,

@@ -13,9 +13,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from tests.scenario_controller_fixtures import (
+    SCENARIO_5_FIXTURE_PATH,
     SCENARIO_5_SEMANTIC_DIGEST,
     load_scenario_5,
-    load_scenario_5_draft,
 )
 
 from marl_battlegrounds.core.env import initialize_scenario_state, step
@@ -141,11 +141,11 @@ def _run_witness(scenario: TDMScenario) -> list[WitnessTransition]:
 def test_scenario_5_fixture_preserves_the_approved_physical_revision() -> None:
     # Keep the original r9 fixture separate from the current packaged solution.
     scenario = load_scenario_5()
-    draft = load_scenario_5_draft()
-    assert draft.asset_id == "scenario_5"
-    assert draft.revision == 9
-    assert draft.content.description == draft.content.notes == ""
-    assert len(draft.content.embedded_map.obstacles) == 7
+    draft = json.loads(SCENARIO_5_FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert draft["asset_id"] == "scenario_5"
+    assert draft["revision"] == 9
+    assert draft["content"]["description"] == draft["content"]["notes"] == ""
+    assert len(draft["content"]["embedded_map"]["obstacles"]) == 7
     assert scenario.semantic_digest == SCENARIO_5_SEMANTIC_DIGEST
     assert int(scenario.initial_state.step_count) == 295
     assert scenario.config.max_steps == 300

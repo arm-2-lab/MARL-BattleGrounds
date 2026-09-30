@@ -753,6 +753,7 @@
         },
         "simulator_step_count": 1
       },
+      "fresh_launch_required": false,
       "latest_events": {
         "agent_phase_trajectories": [
           {
@@ -1461,6 +1462,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "episode-001",
@@ -6858,6 +6860,7 @@
             "source_simulator_step_count": 0
           }
         },
+        "fresh_launch_required": false,
         "latest_events": null,
         "latest_transition": null,
         "live_inspection": {
@@ -8015,6 +8018,7 @@
             "technical_kind": "live_oracle_technical_frame"
           }
         },
+        "run_state": "paused",
         "schema_version": 1,
         "source": {
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
@@ -8042,6 +8046,31 @@
       "transport": {
         "combat_configuration": {
           "execution_information_mode": "no_shared_obs",
+          "manual_slots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "red_zone_depth": 0.0,
+          "slot_labels": [
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual"
+          ],
           "team_a_controller": "manual",
           "team_b_controller": "manual"
         },
@@ -8049,6 +8078,7 @@
         "frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:frame:0",
         "frame_index": 0,
         "frame_kind": "actor_pov_live_debugger",
+        "fresh_launch_required": false,
         "hud": {
           "candidate_legalities": [
             {
@@ -8692,6 +8722,7 @@
         "recording": null,
         "revision": 0,
         "run_generation": 0,
+        "run_state": "paused",
         "schema_version": 2,
         "session_id": "cp2-7-live-pov-fixture",
         "simulator_step_count": 0,
@@ -9776,6 +9807,7 @@
           },
           "simulator_step_count": 0
         },
+        "fresh_launch_required": false,
         "latest_events": null,
         "latest_transition": null,
         "live_inspection": {
@@ -10181,6 +10213,7 @@
         },
         "presentation_kind": "live_oracle",
         "product_kind": "combat_debugger",
+        "run_state": "paused",
         "schema_version": 1,
         "source": {
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
@@ -10211,73 +10244,35 @@
             "mode": "interactive",
             "name": "arena_5v5",
             "title": "5v5 geometry and combat laboratory"
-          },
-          {
-            "audience": "researcher",
-            "description": "Scripted simultaneous Basic damage, healing, and passives.",
-            "mode": "scripted",
-            "name": "basic_support",
-            "title": "Basic damage and support"
-          },
-          {
-            "audience": "researcher",
-            "description": "Scripted activation and lifecycle of all class Ultimates.",
-            "mode": "scripted",
-            "name": "ultimate_showcase",
-            "title": "Five-class Ultimate showcase"
-          },
-          {
-            "audience": "researcher",
-            "description": "Scripted reciprocal Basics under both aura families.",
-            "mode": "scripted",
-            "name": "aura_crossfire",
-            "title": "Aura crossfire"
-          },
-          {
-            "audience": "researcher",
-            "description": "Two same-team Mage and Warrior emitters stack on reciprocal Basics.",
-            "mode": "scripted",
-            "name": "stacked_team_auras",
-            "title": "Stacked team auras"
-          },
-          {
-            "audience": "researcher",
-            "description": "Scripted stacked control, mitigation, break, and movement.",
-            "mode": "scripted",
-            "name": "status_stack",
-            "title": "Status composition and lifecycle"
-          },
-          {
-            "audience": "researcher",
-            "description": "Repeated and simultaneous damage, healing, Crippling Poison, and Holy Word: Salvation.",
-            "mode": "scripted",
-            "name": "team_focus_crossfire",
-            "title": "Focus fire and coordinated healing"
-          },
-          {
-            "audience": "researcher",
-            "description": "Reciprocal and mirrored activation of all Ultimate families.",
-            "mode": "scripted",
-            "name": "mirrored_ultimates",
-            "title": "Mirrored five-class Ultimates"
-          },
-          {
-            "audience": "researcher",
-            "description": "A complete lethal, corpse, wave, respawn, and shield lifecycle.",
-            "mode": "scripted",
-            "name": "death_respawn_cycle",
-            "title": "Death, respawn, and spawn shield"
-          },
-          {
-            "audience": "researcher",
-            "description": "Regeneration, readiness, rejection, refresh, break, and expiry.",
-            "mode": "scripted",
-            "name": "recovery_refresh_cycle",
-            "title": "Recovery, refresh, and reapplication"
           }
         ],
         "combat_configuration": {
           "execution_information_mode": "no_shared_obs",
+          "manual_slots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "red_zone_depth": 0.0,
+          "slot_labels": [
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual"
+          ],
           "team_a_controller": "manual",
           "team_b_controller": "manual"
         },
@@ -10285,6 +10280,7 @@
         "frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:frame:0",
         "frame_index": 0,
         "frame_kind": "researcher_live_debugger",
+        "fresh_launch_required": false,
         "hud": {
           "candidate_legalities": [
             {
@@ -11547,6 +11543,7 @@
         "recording": null,
         "revision": 0,
         "run_generation": 0,
+        "run_state": "paused",
         "scenario": {
           "audience": "researcher",
           "completed_frame_count": 0,
@@ -12622,6 +12619,7 @@
             "source_simulator_step_count": 1
           }
         },
+        "fresh_launch_required": false,
         "latest_events": {
           "delta_count": 0,
           "deltas": [],
@@ -14123,6 +14121,7 @@
             "technical_kind": "live_oracle_technical_frame"
           }
         },
+        "run_state": "paused",
         "schema_version": 1,
         "source": {
           "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
@@ -14283,6 +14282,31 @@
       "transport": {
         "combat_configuration": {
           "execution_information_mode": "shared_obs",
+          "manual_slots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "red_zone_depth": 0.0,
+          "slot_labels": [
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual",
+            "Manual"
+          ],
           "team_a_controller": "manual",
           "team_b_controller": "manual"
         },
@@ -14290,6 +14314,7 @@
         "frame_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:frame:1",
         "frame_index": 1,
         "frame_kind": "shared_obs_agent_pov_live_debugger",
+        "fresh_launch_required": false,
         "incoming_recipient_transition_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:transition:0",
         "pending_submission_scope": "joint_turn",
         "preset": "analysis",
@@ -14298,6 +14323,7 @@
         "recording": null,
         "revision": 1,
         "run_generation": 0,
+        "run_state": "paused",
         "schema_version": 2,
         "session_id": "cp2-7-live-shared-pov-fixture",
         "simulator_step_count": 1,
@@ -21667,6 +21693,7 @@
           "source_simulator_step_count": 1
         }
       },
+      "fresh_launch_required": false,
       "latest_events": {
         "cue_count": 2,
         "cues": [
@@ -22913,6 +22940,7 @@
           "technical_kind": "live_oracle_technical_frame"
         }
       },
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "episode-001",
@@ -23887,6 +23915,7 @@
         },
         "simulator_step_count": 1
       },
+      "fresh_launch_required": false,
       "latest_events": {
         "agent_phase_trajectories": [
           {
@@ -24595,6 +24624,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "episode-001",
@@ -25662,6 +25692,7 @@
           "source_simulator_step_count": 1
         }
       },
+      "fresh_launch_required": false,
       "latest_events": {
         "delta_count": 0,
         "deltas": [],
@@ -27163,6 +27194,7 @@
           "technical_kind": "live_oracle_technical_frame"
         }
       },
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
@@ -33947,6 +33979,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -34277,6 +34310,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a",
@@ -35076,6 +35110,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -35406,6 +35441,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593",
@@ -36195,6 +36231,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -36525,6 +36562,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b",
@@ -37324,6 +37362,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -37654,6 +37693,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9",
@@ -38453,6 +38493,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -38783,6 +38824,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22",
@@ -39582,6 +39624,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -39912,6 +39955,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe",
@@ -40711,6 +40755,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -41041,6 +41086,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce",
@@ -41840,6 +41886,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -42170,6 +42217,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536",
@@ -42969,6 +43017,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -43299,6 +43348,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c",
@@ -44123,6 +44173,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -44453,6 +44504,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52",
@@ -45252,6 +45304,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -45582,6 +45635,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4",
@@ -46381,6 +46435,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -46711,6 +46766,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478",
@@ -52946,6 +53002,7 @@
           "source_simulator_step_count": 0
         }
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -54150,6 +54207,7 @@
           "technical_kind": "live_oracle_technical_frame"
         }
       },
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
@@ -54845,6 +54903,7 @@
           "source_simulator_step_count": 0
         }
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -55775,6 +55834,7 @@
           "technical_kind": "live_oracle_technical_frame"
         }
       },
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "episode-001",
@@ -56564,6 +56624,7 @@
         },
         "simulator_step_count": 0
       },
+      "fresh_launch_required": false,
       "latest_events": null,
       "latest_transition": null,
       "live_inspection": {
@@ -56848,6 +56909,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "run_state": "paused",
       "schema_version": 1,
       "source": {
         "episode_id": "episode-001",

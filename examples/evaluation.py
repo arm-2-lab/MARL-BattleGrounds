@@ -1,91 +1,112 @@
-"""Run complete matches, repeated validation passes or a small tournament.
+"""Evaluate fixed methods, run repeated validation and inspect a small tournament.
 
-Run ``python examples/evaluation.py --help`` after installing MARL-BGs.
-The package command ``python -m marl_battlegrounds evaluate --help`` calls the
-same evaluator. Copy example files separately; no checkout runtime is required.
-Selections are ordinary Python iterables; replace the examples with your own
-``range`` or list when integrating these calls into a research script.
-``--red-zone-depth 6.0`` plays with a deeper Red Zone (an agent that dies in
-its own team's spawn-side strip gives the enemy 2 points instead of 1), and
-``--red-zone-depth 0`` keeps one point per death; the default is 5.0. For
-example: ``python examples/evaluation.py evaluate --red-zone-depth 6.0``.
+Install the hydra extra alongside the evaluation dependencies, then run::
+
+    python examples/evaluation.py workflow=evaluate output_dir=runs/evaluation
+
+The default compares ALPHA with BETA for 32 paired games. metrics=full and
+save_replays=2 opt into richer offline inspection. workflow=validation uses one
+explicit shared writer for two labelled passes. workflow=tournament compares
+the same entrants. All paths use the existing public owners; printed locations
+identify the saved run. Use --help or --cfg job; import run for plain Python.
 """
 
-import argparse
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Literal
 
 
-def main() -> None:
-    """Read command-line options and run the selected public workflow.
+def run(
+    *,
+    workflow: str = "evaluate",
+    episodes: int | None = None,
+    num_envs: int = 32,
+    metrics: Literal["none", "priority", "full"] = "priority",
+    save_replays: int = 0,
+    red_zone_depth: float = 5.0,
+    output_dir: str | Path | None = None,
+) -> None:
+    """Run an evaluation, repeated validation or a small tournament.
 
-    Evaluation returns results in memory unless an output directory is given.
-    Validation shares one writer across two named passes and requires a directory.
-    Tournament mode prints each ranking row and any written file paths. Omitted
-    --episodes means 32 total evaluation/validation games or 100 games per
-    tournament matchup, covering all five maps with complete spawn pairs.
-    --red-zone-depth (map units, default 5.0) reaches every evaluate and
-    run_tournament call as red_zone_depth.
+    Parameters
+    ----------
+    workflow : str, default='evaluate'
+        evaluate compares ALPHA with BETA; validation writes two labelled passes;
+        tournament compares the two entrants.
+    episodes : int | None, default=None
+        Total games, or games per entrant pair for a tournament. None selects 32 for
+        evaluation/validation and 100 for tournaments.
+    num_envs : int, default=32
+        Number of parallel games. This changes batching, not the declared game or
+        transition budget.
+    metrics : Literal['none', 'priority', 'full'], default='priority'
+        none, priority or full. Priority keeps compact game measurements. Full
+        collects the larger behavior tables.
+    save_replays : int, default=0
+        Number of first scheduled game IDs to record for Viewer inspection, from
+        zero through the game budget. Zero skips replay recording.
+    red_zone_depth : float or int, default=5.0
+        Depth of the evaluation Red Zone in world units. This is a saved evaluation
+        condition.
+    output_dir : str | Path | None, default=None
+        None keeps evaluation/tournament results in memory. Otherwise these
+        workflows create a new run below this parent. Validation requires this exact
+        shared-writer folder.
 
-    Raises
-    ------
-    SystemExit
-        If arguments are invalid or help was requested.
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("workflow", choices=("evaluate", "validation", "tournament"))
-    parser.add_argument(
-        "--episodes",
-        type=int,
-        help=(
-            "Games: default 32 total for evaluation/validation, "
-            "100 per tournament matchup"
-        ),
-    )
-    parser.add_argument("--num-envs", type=int, default=32)
-    parser.add_argument(
-        "--metrics", choices=("none", "priority", "full"), default="priority"
-    )
-    parser.add_argument("--save-replays", type=int, default=0, metavar="FIRST_N")
-    parser.add_argument(
-        "--red-zone-depth",
-        type=float,
-        default=5.0,
-        help="Red Zone depth in map units (default 5.0; 0 keeps one point per death)",
-    )
-    parser.add_argument("--output-dir", type=Path)
-    args = parser.parse_args()
-    if args.episodes is None:
-        args.episodes = 100 if args.workflow == "tournament" else 32
+    from marl_battlegrounds.training.config import validate_red_zone_depth
+
+    if type(red_zone_depth) is int:
+        try:
+            red_zone_depth = float(red_zone_depth)
+        except OverflowError as error:
+            raise ValueError("red_zone_depth must be finite") from error
+    red_zone_depth = validate_red_zone_depth(red_zone_depth)
+    output_dir = None if output_dir is None else Path(output_dir)
+    if workflow not in ("evaluate", "validation", "tournament"):
+        raise ValueError("workflow must be evaluate, validation or tournament")
+    if episodes is None:
+        episodes = 100 if workflow == "tournament" else 32
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds.tasks import list_tdm_maps
 
-    if not 0 <= args.save_replays <= args.episodes:
-        parser.error("--save-replays must be between zero and --episodes")
-    replays = range(1, args.save_replays + 1)
+    if not 0 <= save_replays <= episodes:
+        raise ValueError("save_replays must be between zero and episodes")
+    replays = range(1, save_replays + 1)
 
-    if args.workflow == "tournament":
+    if workflow == "tournament":
         result = marl_bgs.run_tournament(
             ["tdm-alpha", "tdm-beta"],
-            episodes_per_pair=args.episodes,
+            episodes_per_pair=episodes,
             seed=42,
-            num_envs=args.num_envs,
-            metrics=args.metrics,
+            num_envs=num_envs,
+            metrics=metrics,
             replay_episodes=replays,
-            output_dir=args.output_dir,
-            red_zone_depth=args.red_zone_depth,
+            output_dir=output_dir,
+            red_zone_depth=red_zone_depth,
         )
         for row in result.tournament_results:
             print(row)
         print("Run Directory:", result.run_dir or "Results Were Not Saved")
         return
 
-    if args.workflow == "validation":
-        if args.output_dir is None:
-            parser.error("this shared-writer example requires --output-dir")
+    if workflow == "validation":
+        if output_dir is None:
+            raise ValueError("this shared-writer example requires output_dir")
         validation_maps = [
             item for item in list_tdm_maps() if item.split == "validation"
         ]
-        with marl_bgs.RunWriter(args.output_dir) as writer:
+        with marl_bgs.RunWriter(output_dir) as writer:
             for training_episode in (1_000, 5_000):
                 # A real trainer supplies its current frozen checkpoint here.
                 # Pass identity separates repeated episode IDs in the same CSV.
@@ -93,13 +114,13 @@ def main() -> None:
                     "tdm-alpha",
                     "tdm-beta",
                     maps=validation_maps,
-                    num_episodes=args.episodes,
+                    num_episodes=episodes,
                     seed=training_episode,
-                    num_envs=args.num_envs,
-                    metrics=args.metrics,
+                    num_envs=num_envs,
+                    metrics=metrics,
                     replay_episodes=replays,
                     writer=writer,
-                    red_zone_depth=args.red_zone_depth,
+                    red_zone_depth=red_zone_depth,
                     phase="validation",
                     pass_id=f"after-{training_episode}-training-episodes",
                 )
@@ -107,21 +128,28 @@ def main() -> None:
             print("Files:", writer.paths)
         return
 
-    # For example, --red-zone-depth 6.0 gives evaluate(..., red_zone_depth=6.0).
+    # For example, red_zone_depth 6.0 gives evaluate(..., red_zone_depth=6.0).
     result = marl_bgs.evaluate(
         "tdm-alpha",
         "tdm-beta",
-        num_episodes=args.episodes,
+        num_episodes=episodes,
         seed=42,
-        num_envs=args.num_envs,
-        metrics=args.metrics,
+        num_envs=num_envs,
+        metrics=metrics,
         replay_episodes=replays,
-        output_dir=args.output_dir,
-        red_zone_depth=args.red_zone_depth,
+        output_dir=output_dir,
+        red_zone_depth=red_zone_depth,
     )
     print("Completed episodes:", result.completed_episode_ids)
     print("Run Directory:", result.run_dir or "Results Were Not Saved")
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("evaluation", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

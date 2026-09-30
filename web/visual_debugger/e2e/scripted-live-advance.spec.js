@@ -77,7 +77,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(submit).toHaveAttribute("data-key", "n");
   await expect(submit).toHaveAttribute(
     "aria-description",
-    "Submit an editable draft or advance an inspection-only scripted frame through the authoritative Python service.",
+    "Submit all Manual and policy actions for one turn, or advance one scripted turn. Inspecting a policy does not give you control of it.",
   );
   await expect(submit).toBeEnabled();
   await expect(page.locator("#battlefield")).toHaveAttribute(
@@ -338,7 +338,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
       .locator("#roster .roster-primary-action")
       .evaluateAll((buttons) =>
         buttons.every(
-          (button) => button instanceof HTMLButtonElement && button.disabled,
+          (button) => button instanceof HTMLButtonElement && !button.disabled,
         ),
       ),
   ).toBe(true);
@@ -346,10 +346,10 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield")).toHaveAttribute(
     "aria-label",
-    "Read-only live battlefield. Scientific facts can be inspected; simulator and actor activation controls are unavailable.",
+    "Read-only live battlefield. Select an agent to inspect it; new actions are unavailable.",
   );
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Scientific tooltip facts remain inspectable. Live simulator and actor activation controls are unavailable while recording is closing, the session is offline or resynchronizing, or the frame is terminal.",
+    "Inspect the accepted game. Select an agent to see its facts. This view does not submit actions; Restart starts another match when available.",
   );
   expect(
     await page
@@ -357,21 +357,33 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
       .evaluateAll((agents) =>
         agents.every(
           (agent) =>
-            agent.getAttribute("role") === "img" &&
-            agent.getAttribute("tabindex") === "-1",
+            agent.getAttribute("role") === "button" &&
+            agent.getAttribute("tabindex") === "0",
         ),
       ),
   ).toBe(true);
   const terminalDetails = page.locator("#agent-details");
-  if ((await terminalDetails.getAttribute("open")) !== null) {
+  if ((await terminalDetails.getAttribute("open")) === null) {
     await page.locator("#agent-details > summary").click();
   }
-  await page.locator("#battlefield .agent").first().click({ force: true });
-  await page
-    .locator("#battlefield .agent")
-    .first()
-    .dispatchEvent("keydown", { key: "Enter" });
-  await expect(terminalDetails).not.toHaveAttribute("open", "");
+  const terminalRosterAction = rosterActions.first();
+  const terminalIdentity = (
+    await terminalRosterAction.getAttribute("aria-label")
+  )?.replace(/^Inspect /u, "");
+  const terminalKey = await terminalRosterAction.getAttribute("data-presentation-key");
+  expect(typeof terminalIdentity).toBe("string");
+  expect(terminalIdentity).not.toBe(localIdentity);
+  await terminalRosterAction.click();
+  await expect(page.locator("#selection-card")).toContainText(String(terminalIdentity));
+  await expect(terminalRosterAction).toHaveAttribute("aria-pressed", "true");
+  await localBody.click();
+  await expect(page.locator("#selection-card")).toContainText(String(localIdentity));
+  await expect(localBody).toHaveAttribute("data-selected", "true");
+  const terminalBody = page.locator(`.agent[data-presentation-key="${terminalKey}"]`);
+  await terminalBody.press("Enter");
+  await expect(page.locator("#selection-card")).toContainText(String(terminalIdentity));
+  await expect(terminalBody).toHaveAttribute("data-selected", "true");
+  await expect(terminalDetails).toHaveAttribute("open", "");
   expect(commandPosts).toHaveLength(1);
   await expect(page.locator("#command-commit-title")).toHaveText(
     "Advance the registered script",

@@ -28,8 +28,10 @@ from marl_battlegrounds.tasks import (
     balanced_spawn_configs,
     canonical_tournament_rosters,
 )
+from marl_battlegrounds.training.config import (
+    TRAINING_KEY_SCHEMA_VERSION as TRAINING_KEY_SCHEMA_VERSION,
+)
 
-TRAINING_KEY_SCHEMA_VERSION = 1
 type TrainingStream = Literal[
     "map", "roster", "opponent", "action", "reset", "step", "initialization"
 ]

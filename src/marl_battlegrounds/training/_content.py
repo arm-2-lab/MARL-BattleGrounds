@@ -20,7 +20,6 @@ import ast
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
-from math import isfinite
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, cast
 
@@ -51,7 +50,6 @@ from marl_battlegrounds.evaluation.models import (
     REQUIRED_SCHEMA_BINDINGS_V4,
     ContentAddressedIdentityV1,
     EvaluationModel,
-    _validate_recorded_red_zone_depth,  # pyright: ignore[reportPrivateUsage]
     canonical_digest_sha256,
     canonical_json_bytes,
 )
@@ -70,12 +68,14 @@ from marl_battlegrounds.tasks import (
     canonical_tournament_rosters,
     make_standard_team_deathmatch_config,
 )
+from marl_battlegrounds.training.config import (
+    _validate_red_zone_depth as _validate_red_zone_depth,  # pyright: ignore[reportPrivateUsage]
+)
 
 type _Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 _SHARED_NAMES = ("static-mechanics", "evaluation-schemas", "simulator-rules")
 # The largest finite float32 value. Used as a width that never binds, because a
 # binding records no map widths (Core checks each map's width instead).
-_FLOAT32_MAX = float(np.finfo(np.float32).max)
 # prepare_training_content's refusal for bindings saved before Red Zone scoring.
 _SAVED_BEFORE_RED_ZONE = (
     "This training content was saved before Red Zone scoring (content binding "
@@ -497,48 +497,6 @@ def _shared_definitions() -> tuple[ContentAddressedIdentityV1, ...]:
     )
 
 
-def _validate_red_zone_depth(depth: object) -> float:
-    """Check one Red Zone depth with Core's scalar rules, without a map width.
-
-    Parameters
-    ----------
-    depth : object
-        Red Zone depth in map units, declared for new content or read from a
-        version 3 binding. 0.0 keeps one point per kill.
-
-    Returns
-    -------
-    float
-        The same depth, unchanged.
-
-    Raises
-    ------
-    TypeError
-        depth is not exactly a Python float. bool, int and NumPy scalars are
-        refused, as Core refuses them.
-    ValueError
-        depth is not finite; has a negative sign (-0.0 included, so "off" has
-        one spelling); or, when positive, its float32 value is not finite or
-        is below the smallest normal float32 value.
-
-    Notes
-    -----
-    Host-only; reads no files. The sign and float32 rules come from the
-    recorded-config owner in evaluation.models. A binding records no map
-    widths, so the width limit is given as the largest float32 value and never
-    binds here; Core checks each map's width when preparation builds its
-    configuration.
-    """
-    if type(depth) is not float:
-        raise TypeError(
-            f"red_zone_depth must be a Python float, not {type(depth).__name__}"
-        )
-    if not isfinite(depth):
-        raise ValueError(f"red_zone_depth must be finite, not {depth}")
-    _validate_recorded_red_zone_depth(depth, task_mode=1, map_width=_FLOAT32_MAX)
-    return depth
-
-
 def _maximum_score_threshold(red_zone_depth: float | None) -> int:
     """Return the largest winning score a training content binding may declare.
 
@@ -850,27 +808,22 @@ def _export_origin(
         if not isinstance(identifier, str):
             return "declared", None
         try:
-            source = checkpoints.artifact_directory(
-                export.resolve().parent.parent, "checkpoints", identifier
+            from marl_battlegrounds.training._checkpoint_metadata import (
+                _actor_origin_directory,  # pyright: ignore[reportPrivateUsage]
             )
+
+            source = _actor_origin_directory(export, details)
             learner = checkpoints.read_checkpoint_description(source)
         except OSError, ValueError:
             return "declared", None
         saved = cast(dict[str, object], learner.get("metadata", {}))
-        config = cast(dict[str, object], saved.get("config", {}))
-        counters = cast(dict[str, object], learner.get("counters", {}))
         collection = cast(dict[str, object], learner.get("collection", {}))
+        try:
+            checkpoints._check_actor_origin(details, learner)  # pyright: ignore[reportPrivateUsage]
+        except ValueError:
+            return "declared", None
         linked = (
-            learner.get("checkpoint_id") == identifier
-            and learner.get("actor_digest") == details.get("actor_digest")
-            and saved.get("run_id") == metadata.get("run_id")
-            and config.get("seed") == metadata.get("seed")
-            and counters.get("env_steps") == metadata.get("env_steps")
-            and checkpoints._config_input_scale(config)  # pyright: ignore[reportPrivateUsage]
-            == checkpoints._actor_input_scale(details)  # pyright: ignore[reportPrivateUsage]
-            and checkpoints._config_spawn_frame(config)  # pyright: ignore[reportPrivateUsage]
-            == checkpoints._actor_spawn_frame(details)  # pyright: ignore[reportPrivateUsage]
-            and (
+            (
                 None
                 if collection.get("opponent_members")
                 else collection.get("pinned_opponent")

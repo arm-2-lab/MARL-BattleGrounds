@@ -420,7 +420,7 @@ test("supported resize preserves real installed authority at 960px", async ({
     const pathname = new URL(request.url()).pathname;
     if (
       request.method() === "GET" &&
-      (pathname === "/api/frame" || pathname === "/api/presentation/frame")
+      ["/api/frame", "/api/presentation/frame", "/api/live/snapshot"].includes(pathname)
     ) {
       authorityGets.add(pathname);
     }
@@ -437,7 +437,7 @@ test("supported resize preserves real installed authority at 960px", async ({
     "installed",
   );
   await settleResponsiveLayout(page);
-  expect([...authorityGets].sort()).toEqual(["/api/frame", "/api/presentation/frame"]);
+  expect([...authorityGets].sort()).toEqual(["/api/live/snapshot"]);
 
   const agentKeysBefore = await page
     .locator("#battlefield .agent")

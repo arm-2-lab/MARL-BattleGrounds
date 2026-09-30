@@ -1171,7 +1171,7 @@ async function expectPendingJointActionDom(page, presentation) {
   expect(pending).toBeTruthy();
   const rawRows = pending.action_rows;
   const rows = page.locator("#pending-card .accepted-action-row");
-  await expect(page.locator("#pending-heading")).toHaveText("Pending Joint Action");
+  await expect(page.locator("#pending-heading")).toHaveText("Pending Manual Actions");
   await expect(page.locator("#pending-count")).toHaveText(
     `${rawRows.length} ${rawRows.length === 1 ? "actor" : "actors"}`,
   );
@@ -1497,7 +1497,9 @@ async function openProductWithHeldInitialPresentation(page, url, mode, productKi
     releasePresentation = () => resolve(undefined);
   });
   let holdNextPresentation = true;
-  await page.route("**/api/presentation/frame", async (route) => {
+  const presentationRoute =
+    mode === "live" ? "**/api/live/snapshot" : "**/api/presentation/frame";
+  await page.route(presentationRoute, async (route) => {
     if (!holdNextPresentation) {
       await route.continue();
       return;
@@ -1580,7 +1582,7 @@ async function openProductWithHeldInitialPresentation(page, url, mode, productKi
   } finally {
     releasePresentation();
     await Promise.allSettled([opening]);
-    await page.unroute("**/api/presentation/frame");
+    await page.unroute(presentationRoute);
   }
   await opening;
 }
@@ -2398,7 +2400,28 @@ async function expectPendingAuthorityIsEmpty(
   await expect(page.locator("#replay-artifact-reference")).not.toHaveAttribute(
     "aria-description",
   );
-  await expect(page.locator("[data-authoritative-available]")).toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-authoritative-available]:not([data-authoritative-available="false"])',
+    ),
+  ).toHaveCount(0);
+  expect(
+    await page
+      .locator("[data-authoritative-available]")
+      .evaluateAll((buttons) =>
+        buttons.every(
+          (button) =>
+            button instanceof HTMLButtonElement &&
+            button.disabled &&
+            button.getAttribute("aria-disabled") === "true" &&
+            button.getAttribute("aria-pressed") === "false" &&
+            button.getAttribute("data-selected") !== "true" &&
+            !button.hasAttribute("aria-description") &&
+            !button.hasAttribute("data-tooltip-owner") &&
+            !button.hasAttribute("data-tooltip-text"),
+        ),
+      ),
+  ).toBe(true);
   await expect(page.locator("#battlefield")).not.toHaveAttribute(
     "aria-activedescendant",
   );
@@ -2474,7 +2497,7 @@ test("all five real service leaves install with safe pending continuity", async 
     "Live Oracle View is interactive. Activate an authorized actor to control it; Shift-click selects an authorized target; Escape clears the target and leaves battlefield focus. Battlefield keyboard commands apply only while this surface has focus.",
   );
   await expect(page.locator("#pending-scope")).toHaveText(
-    "This panel shows the complete researcher-space joint action staged for the next submission.",
+    "These Manual drafts join the policies' actions on Submit. Policies choose their own actions when the turn starts.",
   );
   await expect(
     page.locator("#visual-filters .visual-filters__ranges > #live-ranges-button"),
@@ -2630,7 +2653,7 @@ test("all five real service leaves install with safe pending continuity", async 
     "Live Agent POV is interactive. Activate a visible authorized actor or choose any active actor in Roster to control it and switch POV; Shift-click selects a visible authorized target; Escape clears the target and leaves battlefield focus.",
   );
   await expect(page.locator("#pending-scope")).toHaveText(
-    "This panel shows the complete researcher-space joint action staged for the next submission.",
+    "These Manual drafts join the policies' actions on Submit. Policies choose their own actions when the turn starts.",
   );
   await page.locator("#help-button").click();
   await expect(page.locator("#help-dialog")).toBeVisible();
@@ -3340,7 +3363,7 @@ test("all five real service leaves install with safe pending continuity", async 
   expect(afterScientificOwnerInput.revision).toBe(beforeScientificOwnerInput.revision);
   const stalePresentation = restoredOracle.presentation;
   let commandCount = 0;
-  let frameGetCount = 0;
+  let recoverySnapshotCount = 0;
   let presentationGetCount = 0;
   const countRaceRequests = (
     /** @type {import("@playwright/test").Request} */ request,
@@ -3349,8 +3372,12 @@ test("all five real service leaves install with safe pending continuity", async 
     if (request.method() === "POST" && path === "/api/command") {
       commandCount += 1;
     }
-    if (request.method() === "GET" && path === "/api/frame") {
-      frameGetCount += 1;
+    if (
+      request.method() === "GET" &&
+      path === "/api/live/snapshot" &&
+      request.headers()["if-none-match"] === undefined
+    ) {
+      recoverySnapshotCount += 1;
     }
   };
   page.on("request", countRaceRequests);
@@ -3371,8 +3398,8 @@ test("all five real service leaves install with safe pending continuity", async 
   );
   await expect(page.locator("#notice")).toContainText("command completed once");
   expect(commandCount).toBe(1);
-  expect(frameGetCount).toBe(1);
-  expect(presentationGetCount).toBe(2);
+  expect(recoverySnapshotCount).toBe(1);
+  expect(presentationGetCount).toBe(1);
   await page.unroute("**/api/presentation/frame");
   page.off("request", countRaceRequests);
 

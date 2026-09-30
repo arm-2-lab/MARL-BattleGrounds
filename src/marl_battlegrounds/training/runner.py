@@ -1,6 +1,7 @@
 """Run and resume one declared PPO, recurrent QMIX or recurrent PQN-VDN experiment.
 
-TrainConfig owns validated host settings. train joins existing collection,
+TrainConfig is re-exported from training.config, the host settings owner.
+train joins existing collection,
 learner, checkpoint and evaluation authorities; numerical work stays outside
 host logging and file handling. CLI commands use these same public functions.
 All methods share the run layout, validation, selection and reports; the
@@ -9,44 +10,30 @@ saved method chooses the learner, its settings block and its host counts.
 
 from __future__ import annotations
 
+import gc
 import json
 import math
 import os
 import shutil
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import ExitStack
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, fields, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from marl_battlegrounds._method_loading import validate_saved_method_reference
+from marl_battlegrounds.baselines.config import (
+    QMIXConfig,
+    pqn_planned_learning_blocks,
+)
 from marl_battlegrounds.baselines.methods import (
-    TrainingMethod,
     is_ppo_method,
     method_settings_field,
-    validate_training_method,
 )
-from marl_battlegrounds.baselines.ppo import (
-    PPOConfig,
-    validate_ppo_batch_size,
-)
-from marl_battlegrounds.baselines.pqn import (
-    DEFAULT_PQN_CONFIG,
-    PQNConfig,
-    pqn_planned_learning_blocks,
-    validate_pqn_batch_size,
-)
-from marl_battlegrounds.baselines.qmix import (
-    DEFAULT_QMIX_CONFIG,
-    QMIXConfig,
-    validate_qmix_batch_size,
-)
-from marl_battlegrounds.tasks import DEFAULT_TDM_RED_ZONE_DEPTH
 from marl_battlegrounds.training._continuation_schedules import (
     CONTINUATION_CHANGE_KEYS,
 )
@@ -61,14 +48,23 @@ from marl_battlegrounds.training._run_io import (
     qmix_fixed_block_counts,
     restore_log_cursor,
     run_lock,
+    study_attempt_binding,
     utc_now,
     validate_host_state,
     validate_log_cursor,
 )
-from marl_battlegrounds.training.opponents import (
-    _pinned_share,  # pyright: ignore[reportPrivateUsage]
+from marl_battlegrounds.training.config import (
+    TrainConfig as TrainConfig,
 )
-from marl_battlegrounds.training.shaping import validate_shaping
+from marl_battlegrounds.training.config import (
+    config_from_dict as config_from_dict,
+)
+from marl_battlegrounds.training.config import (
+    config_to_dict as config_to_dict,
+)
+from marl_battlegrounds.training.config import (
+    read_config as read_config,
+)
 
 if TYPE_CHECKING:
     from jax import Array
@@ -86,615 +82,13 @@ if TYPE_CHECKING:
     )
     from marl_battlegrounds.training.curriculum import TrainingSchedule
     from marl_battlegrounds.training.learner import LearnerState, UpdateResult
+    from marl_battlegrounds.training.shaping import RewardOutput
     from marl_battlegrounds.training.validation import FrozenPanel
 
     type _Updater = Callable[
         [LearnerState, TrainingCarry, TrainingRollout],
         tuple[LearnerState, UpdateResult],
     ]
-
-
-@dataclass(frozen=True)
-class TrainConfig:
-    """Declare one experiment without opening files or starting a backend.
-
-    Parameters
-    ----------
-    seed : int, default=42
-        Root seed for model and independent collection/shuffle/sampling streams.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
-default="mappo"
-        Learner saved with the run. MAPPO uses physical critic inputs; IPPO
-        uses each actor's permitted inputs. The ff_ methods use two 128-wide
-        layers without recurrent memory. "qmix" is recurrent QMIX with compact
-        replay, configured by qmix instead of ppo. "pqn_vdn" is recurrent
-        PQN-VDN (no replay or target network), configured by pqn.
-    num_envs : int, default=32
-        Fixed even environment batch. Recurrent PPO methods require
-        divisibility by PPO groups times minibatches. Feedforward methods
-        require divisibility by groups, and rollout_length*num_envs by groups
-        times minibatches. QMIX has no divisibility rule, but
-        num_envs*qmix.rollout_length*5 must fit a signed 32-bit integer.
-        PQN-VDN needs num_envs divisible by pqn.num_minibatches and the
-        int32 guards of ``validate_pqn_batch_size``.
-    total_env_steps : int, default=10000000
-        Exact real environment transitions, divisible by num_envs. Resets and
-        padding do not count. Per-lane rounds must fit a signed 32-bit integer.
-        Whole-run totals may exceed it. QMIX needs at least min_buffer_size
-        rounds per game, and rounds times qmix.epochs must fit int32.
-        PQN-VDN needs at least memory_window + rollout_length + 1 rounds per
-        game (W initial random rounds, counted in the budget, then at least
-        one learning round) and planned optimizer steps within int32.
-    curriculum, shaping : bool, default=False
-        Enable the existing 17-stage schedule and chosen team reward adjustment.
-        A custom list has 1..17 stages with positive share, maps, and either
-        team_size or rosters={"system": [...], "opponent": [...]}. Shares sum
-        to one. Optional score_threshold means the winning score. New stages
-        take effect at new games only. A child may replace its future stages
-        through changes.curriculum; the whole lineage can hold 17 distinct
-        stage IDs so old experience keeps its original meaning.
-    score_threshold_curriculum : bool, default=False
-        Use K1..10, K12, K15 and K20 at future resets, with 10%, nine shares
-        of 1/30, 5%, 5% and 50% of requested experience. Keeps canonical 5v5
-        and all training maps. Cannot be combined with curriculum=True.
-        Evaluation stays K20/H300. Actual played shares can lag stage changes.
-    red_zone_depth : float, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
-        Team Deathmatch Red Zone depth in map units for every training game
-        and every validation game of this run. When an agent dies inside its
-        own team's Red Zone (the strip this deep at its own spawn side), the
-        enemy team gets 2 points instead of 1; it is still one kill and one
-        death. 0.0 keeps one point per death. It must be a Python float that
-        passes Core's scalar rules: finite, not negative (-0.0 is refused) and,
-        when positive, a normal float32 value; training setup also checks it
-        against every map width before any file is written. It is fixed for a
-        run: a resume that declares another depth is refused. A JSON config
-        may write it as an integer such as 6, which reads as 6.0; a saved run
-        config without it was saved before the rule and reads as 0.0.
-    shaping_coefficient : float, default=0.01
-        Finite nonnegative shaping weight. Task reward remains separately logged.
-    shaping_mode : {"potential", "score_delta"}, default="potential"
-        Potential preserves the discounted task objective. Score_delta adds
-        reward for the team's new points minus the enemy's new points without
-        terminal cancellation; it deliberately changes the training objective.
-        Points follow the task's scoring, so with a positive red_zone_depth a
-        Red Zone death moves it by 2 instead of 1. Used only when shaping is
-        True. Evaluation always uses native task rewards and win rules.
-    opponents : mapping[str, float] or sequence[str] or None, default=None
-        Named weights or a repeating game-start order. Names are "self", "past",
-        method references, or aliases supplied by train's opponents argument.
-        Weights are normalized. New games choose in ascending lane order;
-        unfinished games keep their member. None preserves the default self/past
-        recipe and the legacy pin settings. Explicit populations cannot also
-        declare a legacy pin. Live bindings stay outside this JSON config.
-    keep_past : int, default=20
-        Number of most recent frozen actors eligible for new games. The bank
-        holds one extra copy so unfinished games never lose their weights.
-        Zero disables rotating history. An empty past share uses current weights.
-        Every captured actor is exported; dropping it from draws does not delete it.
-    past_capture_interval : int or None, default=None
-        Recurring spacing in real environment transitions, independent of the
-        run budget. Round up to a whole environment round, then capture at the
-        first completed learner update reaching it;
-        the next interval starts at that actual capture. Continuation keeps the
-        saved window and cadence. Do not combine with history_capture_env_steps.
-    history_capture_env_steps : tuple[int, ...] or None, default=None
-        Explicit increasing capture targets, at most 20, in real transitions.
-        Omit both capture settings to keep the 20 targets at 5% through 100%.
-        Actual publication boundaries must be at least one maximum game length
-        apart. An incompatible short run fails before files are written; use
-        keep_past=0 or a sparse schedule for a short wiring check.
-    learner_slots : tuple of int or None, default=None
-        Physical team slots owned by the learner; None means all five. Slots
-        never move when teammates are assigned. Every training stage needs at
-        least one active learner slot. Frozen partners fill the other active slots.
-    partners : mapping or sequence or None, default=None
-        Frozen partner names with relative weights, or a repeating game-start
-        order, using the same choice rule as opponents. Bind live members in
-        train(partners=...). The learner and its self/past mirrors retain these
-        partners on their other slots. Fixed partners receive no learner update.
-    validation_partners : mapping of str to str or None, default=None
-        Additional named method references for deployed-team validation. Live
-        members may be supplied through train(validation_partners=...). Training
-        partners already receive their own familiar rows by default.
-    validation_partner_labels : mapping of str to str or None, default=None
-        Declared familiar, held_out or unknown labels for additional validation
-        partners; missing labels mean unknown. Labels do not prove nonexposure.
-    reward : str or None, default=None
-        Optional pure ``module:function`` returning float32 (10,) training
-        adjustments from before state, transition facts, after state and the
-        completed-round count before that step. Multiply that count by num_envs
-        to obtain environment transitions, including parent training. Native
-        scores and evaluation rewards remain unchanged. A progress fade is one
-        reward definition. Explicitly changing the definition on continuation
-        clears and refills stored Q experience; resume rejects undeclared drift.
-    pinned_opponent_share : float, default=0.0
-        Legacy permanent-opponent share in [0, 0.8]. Without a named opponent,
-        freeze the first completed update separately from the rolling bank.
-        That pin remains available with keep_past=0. Before it exists its share
-        uses current weights. The remaining recipe draws 20% past and current
-        weights otherwise. New population settings do not inherit this share cap.
-    pinned_opponent : str or None, default=None
-        None keeps the pinned share playing that first-update actor. Otherwise
-        a method reference that plays the pinned share instead: a built-in name
-        ("random", "tdm-alpha", "tdm-beta", "tdm-gamma"), an absolute path to
-        an actor export or complete learner checkpoint directory (relative paths fail),
-        or a
-        ``module:function`` factory, resolved by
-        ``load_method`` when the run is set up and again on resume. Requires a
-        positive pinned_opponent_share. JAX methods and host methods (for
-        example LLM agents) are both accepted. Training does not enter a pinned
-        System's resource_scope: supply an already open caller-owned LLM client,
-        or keep the System's scope open around training yourself. Automatic
-        managed-client setup is supported by evaluation, not pinned training.
-        A host method with memory cannot be resumed while one of its games is
-        unfinished. The pinned opponent
-        is a training opponent: results against it, and its evidence of
-        protected-controller exposure, are recorded with the run.
-    initial_actor : str or None, default=None
-        Compatible saved actor weights for a new run. The critic, optimizer,
-        memory and counters start fresh. PQN also imports running statistics;
-        QMIX starts its target Q from the same weights and uses fresh mixers.
-        Resume restores the full saved learner and never reloads this path.
-        The source identity and known protected-controller exposure are kept.
-    ppo : PPOConfig, default=PPOConfig()
-        Immutable donor network update settings, including rollout length,
-        input scale and spawn frame. A shared random initialization result can
-        be reused only by a run with the same scale and frame. QMIX and
-        PQN-VDN runs must leave it at the default; it is not saved for them.
-    qmix : QMIXConfig or None, default=None
-        QMIX settings (replay sizes, sampling, target rule, exploration, input
-        scale and spawn frame). None means DEFAULT_QMIX_CONFIG for a QMIX run
-        and is required for other runs. It is saved only for QMIX.
-    pqn : PQNConfig or None, default=None
-        PQN-VDN settings (T, H, epochs, minibatches, rates, schedules, input
-        scale and spawn frame). None means DEFAULT_PQN_CONFIG for a PQN-VDN
-        run and is required for other runs. It is saved only for PQN-VDN.
-    metrics : {"priority", "none"}, default="priority"
-        Existing episode metric level. No replay recording is implied.
-    recording : bool, default=False
-        Save episode tables through a separate training RunWriter. False skips
-        recording drains; learner checkpoints and update summaries still save.
-    validation_panel : str or None, default=None
-        Existing frozen panel.json path. Use this or validation_opponents.
-        Demonstration needs a panel by train setup; development may omit it.
-    validation_opponents : tuple[str, ...] or None, default=None
-        Built-in names, absolute actor export/checkpoint paths or
-        module:function factories.
-        Freeze these once before training. Live methods instead belong in
-        train's validation_opponents keyword. Conflicting declarations fail.
-    slot_diagnostic_actor : str or None, default=None
-        Explicit absolute actor export (matching the run's method)
-        for the optional slot comparison with a
-        new System panel. Historical panels keep their final actor by default.
-        Enabled diagnostics verify this artifact before learner setup.
-    validation_fractions : tuple[float, ...], default=(0.1, ..., 1.0)
-        Increasing experience fractions, rounded up to the next completed
-        collection block. For PPO and QMIX blocks end at multiples of
-        rollout_length rounds; for PQN-VDN they end at multiples of T rounds
-        up to its W = memory_window + rollout_length initial rounds, then at
-        W + j * T, and at the final round (for example 4,096, 4,224, 8,320
-        transitions at 32 games with the defaults).
-        Initialization is diagnostic only. The final fraction must be one.
-    routine_seed_pairs, confirmation_seed_pairs : int, default=10, 50
-        Independent seed pairs per validation map and opponent.
-    checkpoint_interval_updates : int or None, default=None
-        Recovery-save interval in completed updates: PPO updates for PPO,
-        optimizer steps for QMIX and PQN-VDN. A save happens whenever
-        completed_updates crosses a multiple of it (a QMIX block adds epochs
-        steps, so 24 to 28 crosses 25; a PQN-VDN block adds epochs *
-        num_minibatches steps, and initial chunks add none). None means 25
-        for PPO and 1600 for QMIX and PQN-VDN (at the defaults: 102,400
-        transitions at 32 games for QMIX, 25 learning blocks for PQN-VDN);
-        QMIX checkpoints carry the replay (about 1 GB at 32 games);
-        the resolved number is what is saved. Initialization, capture points
-        and the final boundary always save. The number is resolved when the
-        config is built, so ``dataclasses.replace(ppo_config, method="qmix")``
-        or ``method="pqn_vdn"`` keeps PPO's 25; pass
-        ``checkpoint_interval_updates=None`` in that replace call to get the
-        1600 default.
-    checkpoint_env_steps : tuple[int, ...], default=()
-        Additional exact actor capture points, each exactly at a collection
-        boundary in transitions (the same boundaries as validation_fractions:
-        for PQN-VDN these are offset by its W initial rounds, so 8,320 is a
-        boundary at 32 games with the defaults and 8,192 is refused).
-    random_diagnostic_seed_pairs : int or None, default=None
-        Enable fixed Random diagnostics at initialization, checkpoint_env_steps
-        and the final budget. The positive count is paired seeds per each of
-        five validation maps; four gives 40 games. No panel is required and no
-        actor is selected from these results. None skips this optional work.
-    random_initialization_result : str or None, default=None
-        Original runner result copied to a JSON file for initialization reuse.
-        Requires Random diagnostics. Its actor inference, task and complete M8
-        evidence must match before output or recovery changes. Original evidence
-        paths must remain available; later captures still run their own games.
-    slot_diagnostic : bool, default=False
-        Run the declared diagnostic after final training. Requires a frozen panel.
-    purpose : {"development", "demonstration"}, default="development"
-        Demonstration requires frozen validation and final selection.
-    verbose : bool, default=True
-        Print existing host summaries at most every ten seconds and phase changes.
-        Adds no numerical calls or device transfers. Full-run use is qualified by
-        the separate measured reporting-cost check. False skips display and extra
-        ETA calculation while retaining required counters, timings and status.
-
-    Raises
-    ------
-    ValueError, TypeError
-        A count, option or numerical setting violates this contract. Booleans
-        are not accepted as integer counts. No files are changed on rejection.
-    """
-
-    seed: int = 42
-    method: TrainingMethod = "mappo"
-    num_envs: int = 32
-    total_env_steps: int = 10_000_000
-    curriculum: bool | Sequence[Mapping[str, object]] = False
-    score_threshold_curriculum: bool = False
-    red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH
-    shaping: bool = False
-    reward: str | None = None
-    shaping_coefficient: float = 0.01
-    shaping_mode: Literal["potential", "score_delta"] = "potential"
-    opponents: Mapping[str, float] | Sequence[str] | None = None
-    learner_slots: tuple[int, ...] | None = None
-    partners: Mapping[str, float] | Sequence[str] | None = None
-    validation_partners: Mapping[str, str] | None = None
-    validation_partner_labels: Mapping[str, str] | None = None
-    keep_past: int = 20
-    past_capture_interval: int | None = None
-    history_capture_env_steps: tuple[int, ...] | None = None
-    pinned_opponent_share: float = 0.0
-    pinned_opponent: str | None = None
-    initial_actor: str | None = None
-    ppo: PPOConfig = field(default_factory=PPOConfig)
-    qmix: QMIXConfig | None = None
-    pqn: PQNConfig | None = None
-    metrics: Literal["priority", "none"] = "priority"
-    recording: bool = False
-    validation_panel: str | None = None
-    validation_opponents: tuple[str, ...] | None = None
-    slot_diagnostic_actor: str | None = None
-    validation_fractions: tuple[float, ...] = tuple(i / 10 for i in range(1, 11))
-    routine_seed_pairs: int = 10
-    confirmation_seed_pairs: int = 50
-    checkpoint_interval_updates: int | None = None
-    checkpoint_env_steps: tuple[int, ...] = ()
-    random_diagnostic_seed_pairs: int | None = None
-    random_initialization_result: str | None = None
-    slot_diagnostic: bool = False
-    purpose: Literal["development", "demonstration"] = "development"
-    verbose: bool = True
-
-    def __post_init__(self) -> None:
-        """Reject invalid host settings without allocating numerical arrays.
-
-        Resolves qmix=None to DEFAULT_QMIX_CONFIG for QMIX runs, pqn=None to
-        DEFAULT_PQN_CONFIG for PQN-VDN runs and checkpoint_interval_updates=None
-        to 25 (PPO) or 1600 (QMIX and PQN-VDN). red_zone_depth is checked by
-        the training content owner's copy of Core's scalar rules
-        (``_content._validate_red_zone_depth``); map widths are checked later,
-        when train prepares the content.
-        """
-        method = validate_training_method(self.method)
-        if not isinstance(cast(object, self.ppo), PPOConfig):
-            raise TypeError("ppo must be PPOConfig")
-        if method == "qmix":
-            if self.ppo != PPOConfig():
-                raise ValueError("A QMIX run takes no PPO settings")
-            if self.qmix is None:
-                object.__setattr__(self, "qmix", DEFAULT_QMIX_CONFIG)
-            if not isinstance(cast(object, self.qmix), QMIXConfig):
-                raise TypeError("qmix must be QMIXConfig or None")
-        elif self.qmix is not None:
-            raise ValueError(
-                "A PQN-VDN run takes no QMIX settings"
-                if method == "pqn_vdn"
-                else "A PPO run takes no QMIX settings"
-            )
-        if method == "pqn_vdn":
-            if self.ppo != PPOConfig():
-                raise ValueError("A PQN-VDN run takes no PPO settings")
-            if self.pqn is None:
-                object.__setattr__(self, "pqn", DEFAULT_PQN_CONFIG)
-            if not isinstance(cast(object, self.pqn), PQNConfig):
-                raise TypeError("pqn must be PQNConfig or None")
-        elif self.pqn is not None:
-            raise ValueError(
-                "A QMIX run takes no PQN settings"
-                if method == "qmix"
-                else "A PPO run takes no PQN settings"
-            )
-        if self.checkpoint_interval_updates is None:
-            object.__setattr__(
-                self,
-                "checkpoint_interval_updates",
-                25 if is_ppo_method(method) else 1600,
-            )
-        if type(self.seed) is not int:
-            raise TypeError("seed must be a Python integer, not bool")
-        if not 0 <= self.seed < 2**32:
-            raise ValueError("seed must be in [0, 2**32)")
-        for name in (
-            "num_envs",
-            "total_env_steps",
-            "routine_seed_pairs",
-            "confirmation_seed_pairs",
-            "checkpoint_interval_updates",
-        ):
-            value = getattr(self, name)
-            if type(value) is not int or value <= 0:
-                raise ValueError(f"{name} must be a positive Python integer")
-        for name in (
-            "score_threshold_curriculum",
-            "shaping",
-            "recording",
-            "slot_diagnostic",
-            "verbose",
-        ):
-            if type(getattr(self, name)) is not bool:
-                raise TypeError(f"{name} must be bool")
-        if type(self.curriculum) is not bool:
-            from marl_battlegrounds.training.curriculum import (
-                _custom_stages,  # pyright: ignore[reportPrivateUsage]
-            )
-
-            _custom_stages(self.curriculum)
-            # Copy researcher-owned lists before the frozen config retains them.
-            object.__setattr__(
-                self,
-                "curriculum",
-                json.loads(json.dumps(self.curriculum, allow_nan=False)),
-            )
-        if self.curriculum and self.score_threshold_curriculum:
-            raise ValueError("Choose team/map curriculum or score-threshold curriculum")
-        from marl_battlegrounds.training._content import (
-            _validate_red_zone_depth,  # pyright: ignore[reportPrivateUsage]
-        )
-
-        _validate_red_zone_depth(self.red_zone_depth)
-        if self.num_envs % 2:
-            raise ValueError("num_envs must be even for paired spawn ends")
-        if self.total_env_steps % self.num_envs:
-            raise ValueError("total_env_steps must be divisible by num_envs")
-        rounds = self.total_env_steps // self.num_envs
-        if rounds > 2**31 - 1:
-            raise ValueError("per-lane rounds must fit int32")
-        if self.qmix is not None:
-            validate_qmix_batch_size(self.num_envs, self.qmix)
-            if rounds < self.qmix.min_buffer_size:
-                raise ValueError(
-                    "A QMIX budget needs at least min_buffer_size rounds per game"
-                )
-            if rounds * self.qmix.epochs > 2**31 - 1:
-                raise ValueError("QMIX optimizer counts for this budget exceed int32")
-            discount, rollout_length = self.qmix.gamma, self.qmix.rollout_length
-        elif self.pqn is not None:
-            validate_pqn_batch_size(self.num_envs, self.pqn)
-            pqn_planned_learning_blocks(rounds, self.pqn)
-            discount, rollout_length = self.pqn.gamma, self.pqn.rollout_length
-        else:
-            validate_ppo_batch_size(self.num_envs, self.ppo, method=method)
-            discount, rollout_length = self.ppo.gamma, self.ppo.rollout_length
-        if self.metrics not in ("priority", "none"):
-            raise ValueError("training metrics must be priority or none")
-        if (
-            isinstance(self.shaping_coefficient, bool)
-            or not math.isfinite(self.shaping_coefficient)
-            or self.shaping_coefficient < 0
-        ):
-            raise ValueError("shaping_coefficient must be finite and nonnegative")
-        validate_shaping(
-            discount=discount,
-            coefficient=self.shaping_coefficient,
-            mode=self.shaping_mode,
-        )
-        if self.reward is not None and (
-            not isinstance(cast(object, self.reward), str)
-            or self.reward.count(":") != 1
-            or not all(self.reward.split(":"))
-        ):
-            raise ValueError("reward must be a module:function reference or None")
-        if self.initial_actor is not None and (
-            not isinstance(cast(object, self.initial_actor), str)
-            or not self.initial_actor.strip()
-        ):
-            raise ValueError("initial_actor must be a nonempty artifact path or None")
-        if self.learner_slots is not None:
-            slots = tuple(self.learner_slots)
-            if (
-                not slots
-                or len(set(slots)) != len(slots)
-                or any(type(slot) is not int or not 0 <= slot < 5 for slot in slots)
-            ):
-                raise ValueError("learner_slots needs distinct slots from 0 through 4")
-            object.__setattr__(self, "learner_slots", slots)
-        if self.partners is not None:
-            from marl_battlegrounds.training.opponents import opponent_selection_names
-
-            names = opponent_selection_names(self.partners)
-            if {"self", "past"} & set(names):
-                raise ValueError("Partner names cannot be self or past")
-            object.__setattr__(
-                self,
-                "partners",
-                dict(self.partners)
-                if isinstance(self.partners, Mapping)
-                else tuple(self.partners),
-            )
-        for field_name in ("validation_partners", "validation_partner_labels"):
-            value = getattr(self, field_name)
-            if value is not None:
-                if not isinstance(value, Mapping):
-                    raise ValueError(f"{field_name} needs a mapping")
-                value = cast(Mapping[object, object], value)
-                if any(
-                    not isinstance(name, str)
-                    or not name.strip()
-                    or not isinstance(reference, str)
-                    or not reference.strip()
-                    for name, reference in value.items()
-                ):
-                    raise ValueError(
-                        f"{field_name} needs nonempty names and text values"
-                    )
-                object.__setattr__(self, field_name, dict(value))
-        if self.validation_partner_labels is not None and any(
-            label not in {"familiar", "held_out", "unknown"}
-            for label in self.validation_partner_labels.values()
-        ):
-            raise ValueError("Partner labels must be familiar, held_out or unknown")
-        if self.opponents is not None:
-            from marl_battlegrounds.training.opponents import opponent_selection_names
-
-            opponent_selection_names(self.opponents)
-            if self.pinned_opponent is not None or self.pinned_opponent_share != 0:
-                raise ValueError(
-                    "Declare opponents or legacy pinned settings, not both"
-                )
-            object.__setattr__(
-                self,
-                "opponents",
-                dict(self.opponents)
-                if isinstance(self.opponents, Mapping)
-                else tuple(self.opponents),
-            )
-        if type(self.keep_past) is not int or not 0 <= self.keep_past < 2**31 - 1:
-            raise ValueError("keep_past must be a nonnegative integer below 2**31 - 1")
-        if self.past_capture_interval is not None:
-            if (
-                type(self.past_capture_interval) is not int
-                or self.past_capture_interval <= 0
-                or -(-self.past_capture_interval // self.num_envs) >= 2**31
-            ):
-                raise ValueError(
-                    "past_capture_interval must be a positive transition count "
-                    "that fits the training round clock"
-                )
-            if self.history_capture_env_steps is not None:
-                raise ValueError(
-                    "Declare past_capture_interval or history_capture_env_steps, "
-                    "not both"
-                )
-        if self.history_capture_env_steps is not None:
-            points = self.history_capture_env_steps
-            if (
-                not isinstance(cast(object, points), tuple)
-                or len(points) > 20
-                or any(
-                    type(point) is not int
-                    or not 0 < point <= self.total_env_steps
-                    or point % self.num_envs
-                    for point in points
-                )
-                or tuple(sorted(set(points))) != points
-            ):
-                raise ValueError(
-                    "history_capture_env_steps needs at most 20 increasing "
-                    "whole-round targets within the budget"
-                )
-        _pinned_share(self.pinned_opponent_share)
-        if self.pinned_opponent is not None:
-            if (
-                not isinstance(cast(object, self.pinned_opponent), str)
-                or not self.pinned_opponent.strip()
-            ):
-                raise ValueError("pinned_opponent must be None or a nonempty string")
-            if not self.pinned_opponent_share > 0:
-                raise ValueError(
-                    "pinned_opponent needs a positive pinned_opponent_share"
-                )
-            validate_saved_method_reference(self.pinned_opponent)
-        if self.purpose not in ("development", "demonstration"):
-            raise ValueError("purpose must be development or demonstration")
-        if self.validation_panel is not None and (
-            not isinstance(cast(object, self.validation_panel), str)
-            or not self.validation_panel
-        ):
-            raise ValueError("validation_panel must be a nonempty path string or None")
-        if self.random_diagnostic_seed_pairs is not None and (
-            type(self.random_diagnostic_seed_pairs) is not int
-            or self.random_diagnostic_seed_pairs <= 0
-        ):
-            raise ValueError(
-                "random_diagnostic_seed_pairs must be a positive integer or None"
-            )
-        if self.random_initialization_result is not None and (
-            not isinstance(cast(object, self.random_initialization_result), str)
-            or not self.random_initialization_result
-            or self.random_diagnostic_seed_pairs is None
-        ):
-            raise ValueError(
-                "random_initialization_result needs a path and enabled "
-                "Random diagnostics"
-            )
-        if self.validation_opponents is not None:
-            if (
-                not isinstance(cast(object, self.validation_opponents), tuple)
-                or not self.validation_opponents
-            ):
-                raise ValueError(
-                    "validation_opponents must be a nonempty tuple of references"
-                )
-            for reference in self.validation_opponents:
-                validate_saved_method_reference(reference)
-            if self.validation_panel is not None:
-                raise ValueError(
-                    "Declare validation_panel or validation_opponents, not both"
-                )
-        if self.slot_diagnostic_actor is not None and (
-            not isinstance(cast(object, self.slot_diagnostic_actor), str)
-            or not Path(self.slot_diagnostic_actor).is_absolute()
-        ):
-            raise ValueError("slot_diagnostic_actor must be an absolute actor path")
-        if self.slot_diagnostic and not (
-            self.validation_panel
-            or self.validation_opponents
-            or self.slot_diagnostic_actor
-        ):
-            raise ValueError("slot_diagnostic requires a frozen validation panel")
-        fractions = self.validation_fractions
-        if (
-            not isinstance(cast(object, fractions), tuple)
-            or not fractions
-            or fractions[-1] != 1
-        ):
-            raise ValueError(
-                "validation_fractions must be a nonempty tuple ending at 1"
-            )
-        previous = 0.0
-        for fraction in fractions:
-            if (
-                isinstance(fraction, bool)
-                or not math.isfinite(fraction)
-                or not previous < fraction <= 1
-            ):
-                raise ValueError("validation_fractions must increase within (0, 1]")
-            previous = fraction
-        if not isinstance(cast(object, self.checkpoint_env_steps), tuple):
-            raise TypeError("checkpoint_env_steps must be a tuple")
-        from marl_battlegrounds.training.validation import (
-            _collection_boundary,  # pyright: ignore[reportPrivateUsage]
-        )
-
-        initial = self.pqn.initial_rounds if self.pqn is not None else 0
-        previous_step = 0
-        for step in self.checkpoint_env_steps:
-            if (
-                type(step) is not int
-                or not previous_step < step <= self.total_env_steps
-                or _collection_boundary(
-                    step,
-                    total_env_steps=self.total_env_steps,
-                    num_envs=self.num_envs,
-                    rollout_length=rollout_length,
-                    initial_rounds=initial,
-                )[0]
-                != step
-            ):
-                raise ValueError(
-                    "checkpoint_env_steps must increase at complete update boundaries"
-                )
-            previous_step = step
 
 
 @dataclass(frozen=True)
@@ -723,138 +117,76 @@ class TrainResult:
     final_checkpoint: Path
 
 
-def config_to_dict(config: TrainConfig) -> dict[str, Any]:
-    """Return version-1 JSON-ready settings; preserve every resolved option.
+def load_run(run_dir: str | Path) -> TrainResult:
+    """Read a complete saved training result without training or writing reports.
 
-    Parameters
-    ----------
-    config : TrainConfig
-        A validated training config. Its defaults are already resolved, for
-        example qmix=None has become DEFAULT_QMIX_CONFIG for a QMIX run.
+    run_dir is the run root, relative to the working directory when needed.
+    Return the same path/count record as train, using latest_checkpoint.json and
+    saved selected/final identities rather than a filename ranking. New saved
+    report paths are relative to the run. Historical runs reconstruct only known
+    existing report filenames. Moved local actors use the same basename under
+    actors/; an inherited selected actor keeps its external path when needed.
 
-    Returns
-    -------
-    dict[str, Any]
-        A new dictionary: "schema_version": 1 first, then every TrainConfig
-        field in field order after a JSON round trip, so tuples become lists
-        and settings objects become dictionaries. Only the run's own settings
-        block is kept (``methods.method_settings_field``): a PPO config omits
-        qmix and pqn, so historical PPO bytes are unchanged; a QMIX config
-        keeps only its resolved qmix settings and a PQN-VDN config only its
-        resolved pqn settings. red_zone_depth is always written as a JSON
-        number such as 5.0 (map units; 0.0 means the Red Zone rule is off), so
-        every new saved config states its scoring rule. The schema version
-        stays 1 (a config saved before the rule lacks the key).
-
-    Notes
-    -----
-    Host-only; config is not changed. train saves this dictionary in the run's
-    metadata, which checkpoints carry as metadata.config, and compares two of
-    them to check a resume config. config_from_dict reads it back.
+    Raises ValueError/OSError for incomplete/recovering runs, inconsistent saved
+    identities/counters, missing actors or reports. Reads small descriptions and
+    records only; load_system separately checks and loads numerical actor bytes.
+    A complete software run does not establish policy quality.
     """
-    data = json.loads(json.dumps(asdict(config)))
-    kept = method_settings_field(config.method)
-    for name in ("ppo", "qmix", "pqn"):
-        if name != kept:
-            data.pop(name)
-    return {"schema_version": 1, **data}
+    from marl_battlegrounds.training._checkpoint_metadata import read_resume_checkpoint
 
-
-def config_from_dict(value: dict[str, Any]) -> TrainConfig:
-    """Read version-1 settings and reject unknown fields before opening a run.
-
-    Parameters
-    ----------
-    value : dict[str, Any]
-        A JSON object with optional schema_version=1. Omitted settings use
-        TrainConfig defaults; ppo, qmix and pqn are settings objects. A config
-        may contain only its own method's block: a QMIX config no ppo or pqn,
-        a PQN-VDN config no ppo or qmix, a PPO config no qmix or pqn (method
-        defaults to "mappo"). red_zone_depth is the Red Zone depth in map
-        units; 0.0 turns the rule off.
-
-    Returns
-    -------
-    TrainConfig
-        The validated config. Lists for validation fractions, extra save points
-        (checkpoint_env_steps) and validation_opponents become tuples. A JSON
-        integer red_zone_depth (not true or false) becomes the equal float, so
-        6 reads as 6.0; an omitted depth takes the TrainConfig default
-        (DEFAULT_TDM_RED_ZONE_DEPTH, 5.0).
-
-    Raises
-    ------
-    ValueError
-        schema_version is not the integer 1; a field is unknown; a settings
-        block belongs to another method; an integer red_zone_depth is too
-        large to become a float ("red_zone_depth must be finite"); or
-        TrainConfig or a settings object rejects a value.
-    TypeError
-        ppo, qmix or pqn is not a JSON object; one of the three list settings
-        is not a JSON array; a settings object gets an unknown key; or
-        TrainConfig or a settings object rejects a value's type.
-
-    Notes
-    -----
-    Host-only; the input dictionary is not changed. An omitted depth means
-    5.0 here, so a config saved before the Red Zone rule must first pass
-    through checkpoints.saved_training_config, which fills the missing depth
-    with 0.0 (its original one-point scoring).
-    """
-    data = dict(value)
-    version = data.pop("schema_version", 1)
-    if type(version) is not int or version != 1:
-        raise ValueError("Unsupported training config schema_version")
-    unknown = set(data) - {item.name for item in fields(TrainConfig)}
-    if unknown:
-        raise ValueError(f"Unknown training config fields: {sorted(unknown)}")
-    method = data.get("method", "mappo")
-    label = {"qmix": "QMIX", "pqn_vdn": "PQN-VDN"}.get(str(method), "PPO")
-    kept = method_settings_field(method)
-    for name in ("ppo", "qmix", "pqn"):
-        if name != kept and name in data:
-            raise ValueError(f"A {label} training config takes no {name} settings")
-    if "ppo" in data:
-        if not isinstance(data["ppo"], dict):
-            raise TypeError("ppo must be a JSON object")
-        data["ppo"] = PPOConfig(**cast(dict[str, Any], data["ppo"]))
-    if "qmix" in data and data["qmix"] is not None:
-        if not isinstance(data["qmix"], dict):
-            raise TypeError("qmix must be a JSON object")
-        data["qmix"] = QMIXConfig(**cast(dict[str, Any], data["qmix"]))
-    if "pqn" in data and data["pqn"] is not None:
-        if not isinstance(data["pqn"], dict):
-            raise TypeError("pqn must be a JSON object")
-        data["pqn"] = PQNConfig(**cast(dict[str, Any], data["pqn"]))
-    for name in (
-        "validation_fractions",
-        "checkpoint_env_steps",
-        "history_capture_env_steps",
-        "validation_opponents",
+    root = Path(run_dir).expanduser().resolve()
+    info = json.loads((root / "run_details.json").read_text())
+    status = json.loads((root / "status.json").read_text())
+    if not isinstance(info, dict) or not isinstance(status, dict):
+        raise ValueError("Saved run and status must be JSON objects")
+    info, status = cast(dict[str, Any], info), cast(dict[str, Any], status)
+    if (
+        status.get("status") != "complete"
+        or (root / "checkpoint_recovery.json").exists()
     ):
-        if name in data and data[name] is not None:
-            if not isinstance(data[name], (list, tuple)):
-                raise TypeError(f"{name} must be a JSON array")
-            data[name] = tuple(data[name])
-    # JSON has one number type: a hand-written 6 means the depth 6.0.
-    if type(data.get("red_zone_depth")) is int:
-        try:
-            data["red_zone_depth"] = float(data["red_zone_depth"])
-        except OverflowError as error:
-            raise ValueError("red_zone_depth must be finite") from error
-    return TrainConfig(**data)
+        raise ValueError(
+            f"Training run is not complete: {root} ({status.get('status')})"
+        )
+    checkpoint, details = read_resume_checkpoint(root)
+    from marl_battlegrounds.training._run_io import saved_result_actors
 
+    _, final, selected = saved_result_actors(root, details, status, run_details=info)
+    assert final is not None  # Complete runs require a checked final actor.
+    recorded = status.get("evidence_paths")
+    if recorded is None:
+        # These are the historical runner's fixed local reports, never a ranking.
+        names = [
+            "learning_curves.png",
+            "learning_curves.svg",
+            "learning_curve.csv",
+            "validation_cells.csv",
+            "exposure_history.csv",
+            "run_summary.md",
+        ]
+        method = info["config"].get("method", "mappo")
+        if method in ("qmix", "pqn_vdn"):
+            family = "qmix" if method == "qmix" else "pqn"
+            names.extend([f"{family}_curves.png", f"{family}_curves.svg"])
+        recorded = [name for name in names if (root / name).is_file()]
+    if not isinstance(recorded, list) or not recorded:
+        raise ValueError(f"Complete run has no saved report paths: {root}")
+    from marl_battlegrounds.training._checkpoint_metadata import (
+        _relative,  # pyright: ignore[reportPrivateUsage]
+    )
 
-def read_config(path: str | Path) -> TrainConfig:
-    """Load a UTF-8 JSON training config through the shared strict validator.
-
-    path must name a JSON object. Read/parse errors propagate; invalid settings
-    raise ValueError or TypeError before training files or a backend are opened.
-    """
-    value = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("Training config must be a JSON object")
-    return config_from_dict(cast(dict[str, Any], value))
+    paths = tuple(_relative(root, name) for name in cast(list[object], recorded))
+    if any(not path.is_file() or not path.stat().st_size for path in paths):
+        raise ValueError(f"Complete run is missing a saved report: {root}")
+    return TrainResult(
+        root,
+        final,
+        selected,
+        status["env_steps"],
+        status["completed_updates"],
+        "complete",
+        paths,
+        checkpoint,
+    )
 
 
 def _preserve_reports(root: Path, attempt: str) -> None:
@@ -871,6 +203,7 @@ def _preserve_reports(root: Path, attempt: str) -> None:
         "random_diagnostics.json",
         "selection.json",
         "exposure.json",
+        "exposure_history.csv",
         "slot_diagnostic.json",
         "run_summary.md",
     ):
@@ -907,17 +240,26 @@ def _restored_reward_shape(
     facts: TrainingFacts,
     after: EnvState,
     progress: Array,
-) -> Array:
+    *,
+    component_keys: tuple[str, ...] = (),
+) -> Array | RewardOutput:
     """Build the old reward's output shape for an explicitly changed-reward fork.
 
     The saved identity and numerical state remain the parent's. This pure zero
     callback is used only while constructing its restore template. The child
     installs its checked new reward before any collection or learning call.
+    component_keys are the checked parent's saved names; they reconstruct its
+    pending component window. Empty names preserve historical array-only state.
     """
     del before, facts, after, progress
     import jax.numpy as jnp
 
-    return jnp.zeros((10,), dtype=jnp.float32)
+    from marl_battlegrounds.training.shaping import RewardOutput
+
+    value = jnp.zeros((10,), dtype=jnp.float32)
+    if component_keys:
+        return RewardOutput(value, {name: value for name in component_keys})
+    return value
 
 
 def _history_setup(
@@ -1241,6 +583,21 @@ def _check_panel_purpose(config: TrainConfig, panel: FrozenPanel | None) -> None
         raise ValueError("Demonstration requires a qualified frozen validation panel")
 
 
+@contextmanager
+def _checkpoint_memory_scope() -> Generator[None]:
+    """Collect unused saved-array cycles before setup and after a training call.
+
+    The inner runner has returned before normal exit cleanup. Failure cleanup
+    preserves the exception and its traceback; arrays still owned by that
+    traceback or by the caller remain live. This performs host cleanup only.
+    """
+    gc.collect()
+    try:
+        yield
+    finally:
+        gc.collect()
+
+
 def train(
     config: TrainConfig | None = None,
     *,
@@ -1263,10 +620,13 @@ def train(
     output_dir : str or Path or None, default=None
         Exact new or empty run directory. Required for new runs and mutually
         exclusive with resume_from. No generated parent run name is inserted.
+        Inside this source checkout the folder must be ignored by Git; package
+        source folders are refused so output cannot change source identity.
     resume_from : str or Path or None, default=None
-        Exact complete learner checkpoint directory. Discover the containing
-        run, verify scientific/source/content facts, execution identity and
-        numerical state before writer rewind. The saved compiler policy,
+        Saved run folder or exact complete learner checkpoint directory. A run
+        folder follows only its checked latest_checkpoint.json pointer. Discover
+        the containing run, verify scientific/source/content facts, execution
+        identity and numerical state before writer rewind. The saved compiler policy,
         backend, device kind, runtime and numerical settings must match.
         Older checkpoints without that identity remain readable but cannot
         resume. A saved config without ppo.spawn_frame means "world" whatever
@@ -1293,7 +653,10 @@ def train(
         Live named population bindings for config.opponents. Unbound names use
         the ordinary method loader. Additional bindings may start unused and be
         chosen later by matchmaking. Supply live-only methods again on resume.
-        Frozen numerical weights are stored in the learner checkpoint.
+        Frozen numerical weights are stored in the learner checkpoint. Repeated
+        references share one setup load, including factories; role memory stays
+        separate. Rebinding an identical saved artifact may change only its path.
+        Older records without an artifact receipt keep their original path check.
     partners : mapping[str, System | Policy | str] or None, default=None
         Frozen named teammates for config.partners. They control the slots
         outside learner_slots; current and past opponents mirror that team with
@@ -1315,13 +678,19 @@ def train(
         new games only.
         Add members at an explicit continuation boundary; this callback cannot
         change the population's structure. Exceptions stop through normal recovery.
+        Launcher factory code/kwargs receipts are saved. Ordinary resume requires
+        the same receipt; an explicit continuation may choose a new callback.
+        Live Python callback state remains caller-owned and is not restored.
     on_update : callable or None, default=None
         Receive a copy of each saved training_updates.jsonl row between blocks,
         after its normal file append. Includes run_id, env_steps and existing attempt
         and update counters. No per-step call or extra device work is added.
         Supply it again on resume; it is never saved in config JSON. Exceptions
         stop the run with that row intact and the last recovery checkpoint still
-        available. External logging may receive repeated work after recovery;
+        available. Launcher-created callbacks carry code/kwargs receipts; ordinary
+        resume requires the same receipts before recovery writes. Live callbacks
+        remain caller-owned and their hidden state is not saved.
+        External logging may receive repeated work after recovery;
         use run and step IDs to deduplicate. None skips the copy and call.
 
     Returns
@@ -1333,6 +702,9 @@ def train(
 
     Raises
     ------
+    ImportError
+        Report dependencies are missing or cannot import. Install the training
+        extra. This check runs before learner setup or changes to run files.
     ValueError, TypeError
         Settings, content, checkpoint or saved results are invalid/incompatible.
     RuntimeError
@@ -1351,18 +723,27 @@ def train(
     once (checking the depth against every map width) before a new
     validation panel is published, and passes it to the learner; a ranked
     panel whose recorded depth differs from the run's is refused.
+    Unused Python cycles holding saved arrays are collected before setup,
+    after saved states are replaced, and when this call exits. This host work
+    does not change learner calculations. Arrays held by the caller or a kept
+    error traceback remain live.
     """
-    return _train(
-        config,
-        output_dir=output_dir,
-        resume_from=resume_from,
-        validation_opponents=validation_opponents,
-        opponents=opponents,
-        partners=partners,
-        validation_partners=validation_partners,
-        matchmaking=matchmaking,
-        on_update=on_update,
+    from marl_battlegrounds._method_loading import (
+        _method_loading_scope,  # pyright: ignore[reportPrivateUsage]
     )
+
+    with _checkpoint_memory_scope(), _method_loading_scope():
+        return _train(
+            config,
+            output_dir=output_dir,
+            resume_from=resume_from,
+            validation_opponents=validation_opponents,
+            opponents=opponents,
+            partners=partners,
+            validation_partners=validation_partners,
+            matchmaking=matchmaking,
+            on_update=on_update,
+        )
 
 
 def extend_training(
@@ -1395,7 +776,9 @@ def extend_training(
         read only. The child can later use ordinary exact-config resume.
     changes : mapping or None, default=None
         Optional future validation, learning-rate, exploration, seed, curriculum,
-        opponent/partner selection, history and reward declarations. A new seed branches
+        opponent/partner selection, history, actor retention and reward declarations.
+        retain_all_actors changes only future child boundaries; old retained actors
+        and their provenance stay unchanged. A new seed branches
         library-owned streams once; method-owned opaque randomness is unchanged.
         A new reward definition or stored potential-shaping change clears and
         refills Q experience before learning; optimizer state and statistics
@@ -1421,7 +804,10 @@ def extend_training(
         Live named population bindings for config.opponents. Unbound names use
         the ordinary method loader. Additional bindings may start unused and be
         chosen later by matchmaking. Supply live-only methods again on resume.
-        Frozen numerical weights are stored in the learner checkpoint.
+        Frozen numerical weights are stored in the learner checkpoint. Repeated
+        references share one setup load, including factories; role memory stays
+        separate. Rebinding an identical saved artifact may change only its path.
+        Older records without an artifact receipt keep their original path check.
     partners : mapping[str, System | Policy | str] or None, default=None
         Frozen named teammates for config.partners. They control the slots
         outside learner_slots; current and past opponents mirror that team with
@@ -1443,13 +829,19 @@ def extend_training(
         new games only.
         Add members at an explicit continuation boundary; this callback cannot
         change the population's structure. Exceptions stop through normal recovery.
+        Launcher factory code/kwargs receipts are saved. Ordinary resume requires
+        the same receipt; an explicit continuation may choose a new callback.
+        Live Python callback state remains caller-owned and is not restored.
     on_update : callable or None, default=None
         Receive a copy of each saved training_updates.jsonl row between blocks,
         after its normal file append. Includes run_id, env_steps and existing attempt
         and update counters. No per-step call or extra device work is added.
         Supply it again on resume; it is never saved in config JSON. Exceptions
         stop the run with that row intact and the last recovery checkpoint still
-        available. External logging may receive repeated work after recovery;
+        available. Launcher-created callbacks carry code/kwargs receipts; ordinary
+        resume requires the same receipts before recovery writes. Live callbacks
+        remain caller-owned and their hidden state is not saved.
+        External logging may receive repeated work after recovery;
         use run and step IDs to deduplicate. None skips the copy and call.
 
     Returns
@@ -1462,6 +854,9 @@ def extend_training(
 
     Raises
     ------
+    ImportError
+        Report dependencies are missing or cannot import. Install the training
+        extra. This check runs before learner setup or changes to run files.
     ValueError, TypeError
         The budget, declaration, full checkpoint or source transition is not
         supported. Actor loading remains independent of this training rule.
@@ -1474,6 +869,8 @@ def extend_training(
     Runs synchronously on the caller's selected device. Saves the parent
     identity and future declaration before taking another training step.
     Parent and child are one training lineage, not independent training seeds.
+    Uses the same saved-array cleanup as train. Caller-held arrays and kept
+    error tracebacks remain live.
     """
     if type(additional_env_steps) is not int or additional_env_steps <= 0:
         raise ValueError("additional_env_steps must be a positive integer")
@@ -1500,21 +897,26 @@ def extend_training(
         declared["validation"] = validation_changes
     # Runtime clients stay outside JSON. Scientific settings remain finite data.
     declared = json.loads(json.dumps(declared, allow_nan=False))
-    return _train(
-        output_dir=output_dir,
-        resume_from=checkpoint,
-        validation_opponents=validation_opponents,
-        opponents=opponents,
-        partners=partners,
-        validation_partners=validation_partners,
-        matchmaking=matchmaking,
-        on_update=on_update,
-        extension={
-            "additional_env_steps": additional_env_steps,
-            "changes": declared,
-            "validation_bindings": future_bindings,
-        },
+    from marl_battlegrounds._method_loading import (
+        _method_loading_scope,  # pyright: ignore[reportPrivateUsage]
     )
+
+    with _checkpoint_memory_scope(), _method_loading_scope():
+        return _train(
+            output_dir=output_dir,
+            resume_from=checkpoint,
+            validation_opponents=validation_opponents,
+            opponents=opponents,
+            partners=partners,
+            validation_partners=validation_partners,
+            matchmaking=matchmaking,
+            on_update=on_update,
+            extension={
+                "additional_env_steps": additional_env_steps,
+                "changes": declared,
+                "validation_bindings": future_bindings,
+            },
+        )
 
 
 def _child_config(
@@ -1554,7 +956,7 @@ def _saved_config(details: dict[str, Any]) -> TrainConfig:
     at their recorded paths, even when old payloads are pruned. An unreadable
     parent raises ValueError naming that path. No payload or run file is changed.
     """
-    from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
 
     value = checkpoints.saved_training_config(details)
     context = details["metadata"].get("continuation")
@@ -1619,6 +1021,9 @@ def _saved_config(details: dict[str, Any]) -> TrainConfig:
             for name in ("shaping", "shaping_mode", "shaping_coefficient")
         },
         "reward": history_changes.get("reward", parent_config["reward"]),
+        "retain_all_actors": history_changes.get(
+            "retain_all_actors", parent_config["retain_all_actors"]
+        ),
         "keep_past": history_changes.get("keep_past", parent_config["keep_past"]),
         "past_capture_interval": history_changes.get(
             "past_capture_interval",
@@ -1636,6 +1041,7 @@ def _saved_config(details: dict[str, Any]) -> TrainConfig:
     if any(value[name] != setting for name, setting in expected_history.items()):
         raise ValueError("Continuation history settings differ from its declaration")
     inherited_fields = set(parent_config) - {
+        "retain_all_actors",
         "partners",
         "shaping",
         "shaping_mode",
@@ -1674,6 +1080,25 @@ def _saved_config(details: dict[str, Any]) -> TrainConfig:
     )
 
 
+def _require_training_reports() -> None:
+    """Check report dependencies before training setup or recovery changes.
+
+    Import plotting support without creating a figure. Every complete trainer
+    writes reports, so a missing or broken import raises an actionable ImportError
+    before learner setup, output creation or recovery mutation. Configuration
+    parsing and launcher help never call this execution-only check.
+    """
+    from importlib import import_module
+
+    try:
+        import_module("matplotlib.pyplot")
+    except ImportError as error:
+        raise ImportError(
+            "Training reports need Matplotlib and its dependencies. "
+            "Install marl-battlegrounds[training]."
+        ) from error
+
+
 def _train(
     config: TrainConfig | None = None,
     *,
@@ -1691,12 +1116,29 @@ def _train(
 
     Public callers use train or extend_training. extension is their normalized
     added budget and future-only changes; it never relaxes ordinary resume.
+    Runtime records include setup_stage_seconds: host wall times for named setup
+    owners. They add no device synchronization and are not isolated kernel costs.
     """
     if on_update is not None and not callable(on_update):
         raise TypeError("on_update must be callable or None")
     if matchmaking is not None and not callable(matchmaking):
         raise TypeError("matchmaking must be callable or None")
+    from marl_battlegrounds.training.callbacks import (
+        _callback_identities,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    callback_inputs = _callback_identities(on_update=on_update, matchmaking=matchmaking)
+    if output_dir is not None:
+        from marl_battlegrounds.evaluation.revision import (
+            _check_output_path,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        _check_output_path(Path(output_dir))
+    _require_training_reports()
     attempt_started = time.monotonic()
+    # Host wall times include any device waits inside each setup owner.
+    # They are not isolated kernel timings and add no new synchronization.
+    setup_seconds: dict[str, float] = {}
     started_at = utc_now()
     from marl_battlegrounds.training import checkpoints, learner, validation
     from marl_battlegrounds.training._compilation import execution_identity
@@ -1708,10 +1150,19 @@ def _train(
     if extension is not None and (output_dir is None or resume_from is None):
         raise ValueError("Continuation requires a parent checkpoint and child output")
     saved: dict[str, Any] | None = None
-    checkpoint = None if resume_from is None else Path(resume_from).resolve()
+    if extension is not None:
+        checkpoint = Path(str(resume_from)).resolve()
+    elif resume_from is not None:
+        from marl_battlegrounds.training._checkpoint_metadata import (
+            read_resume_checkpoint,
+        )
+
+        checkpoint, _ = read_resume_checkpoint(resume_from)
+    else:
+        checkpoint = None
     if checkpoint is not None:
         try:
-            saved = checkpoints.read_checkpoint_details(checkpoint)
+            saved = checkpoints.read_checkpoint_description(checkpoint)
         except (ValueError, FileNotFoundError) as error:
             if extension is None:
                 raise
@@ -1731,6 +1182,15 @@ def _train(
         # A checkpoint saved before Red Zone cannot resume here; refuse it
         # before any file (lock, panel or log) is touched.
         checkpoints._require_current_schemas(saved)  # pyright: ignore[reportPrivateUsage]
+        if (
+            extension is None
+            and "callback_inputs" in saved["metadata"]
+            and saved["metadata"]["callback_inputs"] != callback_inputs
+        ):
+            raise ValueError(
+                "Resume callback factories or kwargs differ from the saved run; "
+                "supply the same runtime callbacks or use an explicit continuation"
+            )
         inherited = _saved_config(saved)
         if config is not None and config.red_zone_depth != inherited.red_zone_depth:
             raise ValueError(
@@ -1820,10 +1280,12 @@ def _train(
     )
     # Prepare the content (every map checks the depth against its width)
     # before a new panel can be published, so a bad setting leaves no file.
+    setup_stage_started = time.monotonic()
     prepared = prepare_training_content(
         score_thresholds=schedule.score_thresholds,
         red_zone_depth=config.red_zone_depth,
     )
+    setup_seconds["content"] = time.monotonic() - setup_stage_started
     schedule, history_options = _history_setup(
         setup_config, schedule, prepared, check_spacing=saved is None
     )
@@ -1836,7 +1298,20 @@ def _train(
     if extension is not None and "reward" in extension["changes"]:
         assert saved is not None
         reward_identity = saved["collection"].get("reward_identity")
-        reward = None if reward_identity is None else _restored_reward_shape
+        from functools import partial
+
+        from marl_battlegrounds.training._checkpoint_metadata import (
+            _reward_component_keys,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        reward = (
+            None
+            if reward_identity is None
+            else partial(
+                _restored_reward_shape,
+                component_keys=_reward_component_keys(reward_identity),
+            )
+        )
     else:
         reward, reward_identity = resolve_reward(config.reward)
     initial_actor = None
@@ -1909,6 +1384,7 @@ def _train(
                 stack.enter_context(member.resource_scope(config.recording))
                 opened_members.add(id(member))
         # Setup performs no real action. Resume replaces all template numerical values.
+        setup_stage_started = time.monotonic()
         state: Any
         if config.qmix is not None:
             from marl_battlegrounds.training import qmix_learner
@@ -1993,6 +1469,7 @@ def _train(
                 reward=reward,
                 reward_identity=reward_identity,
             )
+        setup_seconds["learner_initialization"] = time.monotonic() - setup_stage_started
         from marl_battlegrounds.training.collection import (
             _bind_opponent_references,  # pyright: ignore[reportPrivateUsage]
             _bind_partner_references,  # pyright: ignore[reportPrivateUsage]
@@ -2094,6 +1571,7 @@ def _train(
         source = cast(dict[str, Any], identity["source"])
         dependencies = identity["dependencies"]
         runtime = _runtime_details(str(source["package_version"]), config.num_envs)
+        runtime["setup_stage_seconds"] = setup_seconds
         execution_identity_now = execution_identity(runtime=runtime["provenance"])
         extension_state = None
         if extension is not None:
@@ -2103,8 +1581,12 @@ def _train(
             compatibility = checkpoints.continuation_source_compatibility(
                 saved["metadata"]["source"], source
             )
+            collection = checkpoints._check_collection_compatibility(  # pyright: ignore[reportPrivateUsage]
+                saved, collection
+            )
             template = jax.eval_shape(_identity, state)
             state = None
+            setup_stage_started = time.monotonic()
             parent_restore = checkpoints.restore_checkpoint(
                 checkpoint,
                 collection,
@@ -2121,12 +1603,21 @@ def _train(
                 pqn=config.pqn,
                 _source_compatibility=compatibility,
             )
+            setup_seconds["checkpoint_restore"] = time.monotonic() - setup_stage_started
+            setup_stage_started = time.monotonic()
             validate_host_state(
                 parent_root,
                 parent_restore.details,
+                history_capture_count=int(
+                    parent_restore.state.carry.history.next_capture_id
+                ),
                 panel=panel,
                 validation_options=validation_options,
             )
+            setup_seconds["saved_host_validation"] = (
+                time.monotonic() - setup_stage_started
+            )
+            setup_stage_started = time.monotonic()
             config, collection, state, panel, declarations = _prepare_extension(
                 config,
                 collection,
@@ -2199,6 +1690,9 @@ def _train(
                 )
             )
             declarations["continuation"]["source_compatibility"] = compatibility
+            setup_seconds["continuation_preparation"] = (
+                time.monotonic() - setup_stage_started
+            )
             extension_state = parent_restore, declarations
         preflight_options = {
             name: value
@@ -2231,9 +1725,22 @@ def _train(
                 extension_state[0], state, collection
             )
             stack.callback(prepared_recording.close)
+        if saved is not None and extension_state is None:
+            collection = checkpoints._check_collection_compatibility(  # pyright: ignore[reportPrivateUsage]
+                saved, collection
+            )
         if new_panel_content is not None:
             assert panel is not None
             validation._publish_system_panel(panel, new_panel_content)  # pyright: ignore[reportPrivateUsage]
+        from marl_battlegrounds._method_loading import (
+            _release_setup_inputs,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        _release_setup_inputs()
+        # These temporary dictionaries contain unfrozen factory results. The
+        # checked collection/panel/deployment and ExitStack now own each role.
+        population = partner_population = None
+        additions = partner_additions = {}
         # A child recording is fully checked before even its folder is created.
         root.mkdir(parents=True, exist_ok=True)
         stack.enter_context(run_lock(root))
@@ -2271,6 +1778,7 @@ def _train(
 
                 # Release the fresh learner before restore reads the saved one.
                 state = jax.eval_shape(_identity, state)
+            setup_stage_started = time.monotonic()
             restored = checkpoints.restore_checkpoint(
                 checkpoint,
                 collection,
@@ -2286,6 +1794,7 @@ def _train(
                 qmix=config.qmix,
                 pqn=config.pqn,
             )
+            setup_seconds["checkpoint_restore"] = time.monotonic() - setup_stage_started
             metadata = dict(restored.details["metadata"])
             cursors = metadata.get("log_cursors", {})
             if set(cursors) != {"training_updates.jsonl"}:
@@ -2338,9 +1847,20 @@ def _train(
                     raise ValueError(
                         "Saved used exposure does not match the source bank"
                     )
+            if is_ppo_method(config.method) and "ppo_exposure" in host:
+                expected_sources = len(collection.binding.source_configurations)
+                if any(
+                    len(host["ppo_exposure"].get(f"{kind}_source", []))
+                    != expected_sources
+                    for kind in ("policy", "value")
+                ):
+                    raise ValueError(
+                        "Saved PPO exposure does not match the source bank"
+                    )
             validate_host_state(
                 root,
                 restored.details,
+                history_capture_count=int(restored.state.carry.history.next_capture_id),
                 panel=panel,
                 validation_options=validation_options,
             )
@@ -2358,6 +1878,18 @@ def _train(
             writer = checkpoints.resume_recording(restored, root)
             if writer is not None:
                 stack.callback(writer.close)
+            for name in ("checkpoints", "actors", "past_copies"):
+                for cleanup in checkpoints._cleanup_pending_writes(root / name):  # pyright: ignore[reportPrivateUsage]
+                    append_jsonl(
+                        root / "run_events.jsonl",
+                        {
+                            "event": "pending_write_cleanup",
+                            "time_utc": utc_now(),
+                            "attempt_id": metadata["attempt_id"],
+                            **cleanup,
+                        },
+                        durable=True,
+                    )
             abandoned = preserve_log_suffix(
                 root / "training_updates.jsonl",
                 cursors["training_updates.jsonl"],
@@ -2423,6 +1955,7 @@ def _train(
                 "execution": execution_identity_now,
                 "host_state": {},
                 "initial_actor": initial_origin,
+                "callback_inputs": callback_inputs,
                 "recording": None,
             }
             if deployment is not None:
@@ -2523,7 +2056,10 @@ def _prepare_extension(
     restored has passed full parent restore and host checks. All numerical
     changes are limited to declared segment accounting and future schedules.
     The result contains checked declarations; the runner publishes them before
-    calling the existing execution loop. Parent files remain read only.
+    calling the existing execution loop. After all changes, commit the child
+    state to the parent's selected device once. This keeps its first and later
+    update calls consistent without copying state on every update. Parent files
+    remain read only.
     """
     from copy import deepcopy
 
@@ -2565,6 +2101,15 @@ def _prepare_extension(
         if "reward" in changes
         else (collection.reward, collection.reward_identity)
     )
+    if child_reward_identity is not None and collection.reward_identity is not None:
+        original_definition = {
+            key: value
+            for key, value in collection.reward_identity.items()
+            if key not in ("component_schema", "component_keys")
+        }
+        if child_reward_identity == original_definition:
+            child_reward_identity = collection.reward_identity
+    changed_custom_reward = child_reward_identity != collection.reward_identity
     settings_before = continuation_config(
         config.qmix or config.pqn or config.ppo,
         learner_continuation(None if prior is None else prior["learner"]),
@@ -2574,7 +2119,7 @@ def _prepare_extension(
     shaping_after = changes.get("shaping", config.shaping)
     mode_after = changes.get("shaping_mode", config.shaping_mode)
     changed_reward = (
-        child_reward_identity != collection.reward_identity
+        changed_custom_reward
         or (
             shaping_after,
             mode_after,
@@ -2658,6 +2203,9 @@ def _prepare_extension(
                 for name in ("shaping", "shaping_mode", "shaping_coefficient")
             },
             "reward": changes.get("reward", config.reward),
+            "retain_all_actors": changes.get(
+                "retain_all_actors", config.retain_all_actors
+            ),
             "keep_past": changes.get("keep_past", config.keep_past),
             "past_capture_interval": changes.get(
                 "past_capture_interval",
@@ -2694,6 +2242,22 @@ def _prepare_extension(
         "parent_statistics": deepcopy(parent["host_state"]),
         "inherited_candidates": [],
     }
+    if changed_custom_reward and collection.reward_component_keys:
+        from marl_battlegrounds.training.shaping import (
+            _merge_reward_records,  # pyright: ignore[reportPrivateUsage]
+            _reward_totals_record,  # pyright: ignore[reportPrivateUsage]
+            _RewardTotals,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        assert isinstance(state.carry.reward_totals, _RewardTotals)
+        context["parent_statistics"]["collected_reward_components"] = (
+            _merge_reward_records(
+                context["parent_statistics"].get("collected_reward_components"),
+                _reward_totals_record(
+                    state.carry.reward_totals, collection.reward_component_keys
+                ),
+            )
+        )
     declared = validation.run_validation_declaration(
         config_to_dict(config), panel, continuation=context
     )
@@ -2880,11 +2444,20 @@ def _prepare_extension(
                 )
     context["reward_change"] = {
         "changed": changed_reward,
+        "changed_custom_reward": changed_custom_reward,
         "cleared_stored_experience": reward_reset,
         "optimizer_and_statistics": "carried_over",
     }
     context["key_root_bits"] = list(collection.root_bits)
     context["segment"] = _continuation_details(schedule)
+    from marl_battlegrounds.training._compilation import (
+        _place_training_state,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    # Later changes can add fresh arrays after the carry was placed.
+    state = _place_training_state(
+        state, sharding=restored.state.carry.root_key.sharding
+    )
     return (
         config,
         collection,
@@ -2982,6 +2555,20 @@ def _resize_member_statistics(
             counts.extend([0] * (new_rows - len(counts)))
             if len(counts) != new_rows:
                 raise ValueError("Child exposure rows differ from its population")
+    for key in ("member_length_sum", "last_member_length_sum"):
+        counts = host.get(key)
+        if counts is not None:
+            counts[old_capacity + 2 : old_capacity + 2] = [0] * inserted
+            counts.extend([0] * (new_rows - len(counts)))
+            if len(counts) != new_rows:
+                raise ValueError("Child member length rows differ from its population")
+    if "ppo_exposure" in host:
+        for kind in ("policy", "value"):
+            counts = host["ppo_exposure"][f"{kind}_opponent"]
+            counts[old_capacity + 2 : old_capacity + 2] = [0] * inserted
+            counts.extend([0] * (new_rows - len(counts)))
+            if len(counts) != new_rows:
+                raise ValueError("Child PPO exposure rows differ from its population")
 
 
 def _start_extension(
@@ -3015,8 +2602,17 @@ def _start_extension(
     from copy import deepcopy
 
     from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds.training.callbacks import (
+        _callback_identities,  # pyright: ignore[reportPrivateUsage]
+    )
 
     host = deepcopy(restored.details["metadata"]["host_state"])
+    if declarations["continuation"]["reward_change"]["changed_custom_reward"]:
+        host.pop("collected_reward_components", None)
+    if config.retain_all_actors and not restored.details["metadata"]["config"].get(
+        "retain_all_actors", False
+    ):
+        host["retention_start_capture_id"] = int(state.carry.history.next_capture_id)
     host.update(
         routine_results=[],
         confirmation_results=[],
@@ -3030,7 +2626,14 @@ def _start_extension(
         slot_complete=False,
         selection=None,
         recovery_checkpoints=[],
+        exposure_snapshots={},
     )
+    if "ppo_exposure" in host:
+        for kind in ("policy", "value"):
+            counts = host["ppo_exposure"][f"{kind}_source"]
+            counts.extend(
+                [0] * (len(collection.binding.source_configurations) - len(counts))
+            )
     if config.qmix is not None or config.pqn is not None:
         from marl_battlegrounds.training.qmix_learner import (
             _bank_size,  # pyright: ignore[reportPrivateUsage]
@@ -3059,6 +2662,9 @@ def _start_extension(
         "host_state": host,
         "recording": None,
         "initial_actor": restored.details["metadata"].get("initial_actor"),
+        "callback_inputs": _callback_identities(
+            on_update=on_update, matchmaking=matchmaking
+        ),
         **declarations,
     }
     writer = None
@@ -3391,6 +2997,45 @@ def _rejected_block_facts(result: Any) -> dict[str, object]:  # noqa: ANN401
     return facts
 
 
+def _checked_export_provenance(
+    saved: dict[str, Any], requested: dict[str, object]
+) -> dict[str, Any]:
+    """Reuse original actor provenance when only checked input paths have moved.
+
+    saved is an existing export's description metadata; requested is the current
+    boundary or capture declaration. Compare scientific facts exactly. Ignore
+    only display names and use the existing member-binding checker for relocated
+    identical opponent and partner inputs. Return the original saved metadata;
+    export_system still verifies all actor bytes and inference settings. Raise
+    ValueError if any other fact differs. No files change here.
+    """
+    from marl_battlegrounds.training.checkpoints import (
+        _checked_member_binding,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    previous = {"initial_actor": None, **saved}
+    expected = dict(requested)
+    previous.pop("display_name", None)
+    expected.pop("display_name", None)
+    for key in ("opponent_members", "partner_members"):
+        old_members = cast(list[dict[str, Any]], previous.get(key, []))
+        new_members = cast(list[dict[str, Any]], expected.get(key, []))
+        if len(old_members) != len(new_members):
+            raise ValueError("Saved actor provenance differs from this boundary")
+        for old_member, new_member in zip(old_members, new_members, strict=True):
+            _checked_member_binding(old_member, new_member)
+        if key in previous:
+            expected[key] = previous[key]
+    if "pinned_opponent" in previous or "pinned_opponent" in expected:
+        _checked_member_binding(
+            previous.get("pinned_opponent"), expected.get("pinned_opponent")
+        )
+        expected["pinned_opponent"] = previous.get("pinned_opponent")
+    if previous != expected:
+        raise ValueError("Saved actor provenance differs from this boundary")
+    return saved
+
+
 class _Run:
     """Own one locked process attempt and its small host bookkeeping.
 
@@ -3400,6 +3045,8 @@ class _Run:
     A QMIX run keeps exact Python-integer block, update and sampled-use totals
     in its host state instead of PPO's policy and value sample counts; a
     PQN-VDN run keeps block, update and used-row totals the same way.
+    Checkpoint writes request one host cleanup after an accepted update replaces
+    the saved state and drops its temporary arrays.
     """
 
     def __init__(
@@ -3488,9 +3135,19 @@ class _Run:
         )
         self.root, self.config = root, config
         self.collection, self.state = collection, state
+        self._checkpoint_cleanup_pending = False
         self.metadata, self.writer, self.panel = metadata, writer, panel
+        self.metadata["study_attempt"] = study_attempt_binding(root)
         self.runtime = runtime
         self.host = metadata["host_state"]
+        self.host.setdefault(
+            "past_copies_start_capture_id",
+            int(state.carry.history.next_capture_id)
+            if "past_copies" not in self.host
+            else 0,
+        )
+        if config.retain_all_actors:
+            self.host.setdefault("retention_start_capture_id", 0)
         defaults: dict[str, Any] = {
             "member_completed": [
                 [0, 0, 0] for _ in range(state.carry.progress.opponent_steps.shape[0])
@@ -3565,6 +3222,43 @@ class _Run:
                     "by_opponent": [0] * state.carry.progress.opponent_steps.shape[0],
                 },
             )
+        rows = state.carry.progress.opponent_steps.shape[0]
+        # Legacy checkpoints have no measured length totals or PPO grouping.
+        # Preserve that absence instead of pretending the earlier games were zero.
+        defaults["member_results_start_env_steps"] = (
+            0 if "member_completed" in self.host else self.host.get("env_steps", 0)
+        )
+        defaults["member_length_sum"] = (
+            [0] * rows if not self.host.get("env_steps", 0) else None
+        )
+        defaults["last_member_length_sum"] = (
+            [0] * rows if not self.host.get("env_steps", 0) else None
+        )
+        defaults["exposure_snapshots"] = {}
+        if is_ppo_method(config.method):
+            defaults["ppo_exposure"] = {
+                "start_env_steps": self.host.get("env_steps", 0),
+                "policy_offset": self.host.get("used_policy_samples", 0),
+                "value_offset": self.host.get("used_value_samples", 0),
+                **{
+                    f"{kind}_{dimension}": [0] * size
+                    for kind in ("policy", "value")
+                    for dimension, size in (
+                        ("source", len(collection.binding.source_configurations)),
+                        ("opponent", rows),
+                    )
+                },
+            }
+        if collection.reward_component_keys:
+            defaults["collected_reward_components"] = {
+                "real_transitions": 0,
+                "learner_team_transitions": 0,
+                "learner_agent_transitions": 0,
+                "components": {
+                    name: {"recipient_sum": 0.0, "team_mean_sum": 0.0}
+                    for name in collection.reward_component_keys
+                },
+            }
         for name, default in defaults.items():
             self.host.setdefault(name, default)
         from marl_battlegrounds.training.checkpoints import read_checkpoint_description
@@ -3665,8 +3359,13 @@ class _Run:
             {
                 "event": event_name,
                 "time_utc": utc_now(),
+                "run_id": self.metadata["run_id"],
                 "attempt_id": self.metadata["attempt_id"],
+                "study_attempt": self.metadata.get("study_attempt"),
                 "env_steps": self.host["env_steps"],
+                "training_seconds": self.host["training_seconds"],
+                "elapsed_seconds": self.prior_elapsed + time.monotonic() - self.start,
+                "wall_seconds": max(0.0, time.time() - self.created_at),
                 **facts,
             },
             durable=True,
@@ -3694,6 +3393,8 @@ class _Run:
                 "schema_version": 1,
                 "run_id": self.metadata["run_id"],
                 "attempt_id": self.metadata["attempt_id"],
+                "study_attempt": self.metadata.get("study_attempt"),
+                "training_seconds": self.host["training_seconds"],
                 "process": process_identity(),
                 "phase": phase,
                 "status": "running",
@@ -3853,6 +3554,232 @@ class _Run:
             if played
         ]
 
+    def _exposure_rows(self) -> list[dict[str, Any]]:
+        """Read compact marginal exposure with honest missing-data reasons.
+
+        Existing collection counters own played starts/transitions; host update
+        summaries own completions and optimizer-used samples. Source and map
+        completion cells were not collected and are left unknown. Marginal rows
+        never imply joint source/opponent observations. No rollout is transferred.
+        """
+        from marl_battlegrounds.training.collection import training_summary
+
+        summary = training_summary(self.collection, self.state.carry)
+        dimensions = ("stage", "source", "map", "opponent", "opponent_source")
+        names = (
+            "starts",
+            "real_transitions",
+            "wins",
+            "draws",
+            "losses",
+            "length_sum",
+            "completed_games",
+            "used_policy_samples",
+            "used_value_samples",
+            "used_td_pairs",
+        )
+        rows: list[dict[str, Any]] = []
+        q_exposure = self.host.get("sampled_exposure", self.host.get("used_exposure"))
+        ppo_exposure = self.host.get("ppo_exposure")
+
+        def row(
+            dimension: str, group: int | str, identity: object, **counts: int | None
+        ) -> dict[str, Any]:
+            """Build one marginal row; every unavailable count has a reason."""
+            value: dict[str, Any] = {
+                "dimension": dimension,
+                "group_id": str(group),
+                "identity": identity,
+                **{key: str(group) if key == dimension else None for key in dimensions},
+                **{key: counts.get(key) for key in names},
+            }
+            value["unavailable_reasons"] = {
+                key: (
+                    "Not applicable to this learner"
+                    if (key == "used_td_pairs" and is_ppo_method(self.config.method))
+                    or (
+                        key in ("used_policy_samples", "used_value_samples")
+                        and not is_ppo_method(self.config.method)
+                    )
+                    else "Not recorded for this dimension or historical prefix"
+                )
+                for key in names
+                if value[key] is None
+            }
+            if dimension in ("source", "opponent", "stage"):
+                index = int(group)
+                if q_exposure is not None:
+                    value["used_td_pairs"] = q_exposure[f"by_{dimension}"][index]
+                    value["unavailable_reasons"].pop("used_td_pairs", None)
+                if ppo_exposure is not None and dimension != "stage":
+                    for kind in ("policy", "value"):
+                        key = f"used_{kind}_samples"
+                        if ppo_exposure["start_env_steps"] == 0:
+                            value[key] = ppo_exposure[f"{kind}_{dimension}"][index]
+                            value["unavailable_reasons"].pop(key, None)
+                        else:
+                            value["unavailable_reasons"][key] = (
+                                "Legacy checkpoint did not record "
+                                "the earlier sample groups"
+                            )
+            rows.append(value)
+            return value
+
+        for index, starts in enumerate(
+            cast(list[int], summary["starts_by_episode_stage"])
+        ):
+            outcomes = self.host.get("stage_completed", [[0, 0, 0]] * 17)[index]
+            row(
+                "stage",
+                index,
+                {"episode_stage": index},
+                starts=starts,
+                real_transitions=cast(list[int], summary["steps_by_episode_stage"])[
+                    index
+                ],
+                wins=outcomes[0],
+                draws=outcomes[1],
+                losses=outcomes[2],
+                completed_games=sum(outcomes),
+                length_sum=self.host.get("stage_length_sum", [0] * 17)[index],
+            )
+        for index, identity in enumerate(self.collection.binding.source_configurations):
+            row("source", index, {"configuration_digest": identity})
+        for index, count in enumerate(cast(list[int], summary["steps_by_map"])):
+            row("map", index, {"map_id": index}, real_transitions=count)
+        members = self._member_statistics()
+        member_rows: list[dict[str, Any]] = []
+        for index, member in enumerate(members):
+            counts = member["cumulative"]
+            member_rows.append(
+                row(
+                    "opponent",
+                    index,
+                    {
+                        key: value
+                        for key, value in member.items()
+                        if key not in ("cumulative", "last_update")
+                    },
+                    starts=cast(list[int], summary["starts_by_opponent"])[index],
+                    real_transitions=cast(list[int], summary["steps_by_opponent"])[
+                        index
+                    ],
+                    **{
+                        key: counts[key]
+                        if self.host.get("member_results_start_env_steps", 0) == 0
+                        else None
+                        for key in (
+                            "wins",
+                            "draws",
+                            "losses",
+                            "completed_games",
+                            "length_sum",
+                        )
+                    },
+                )
+            )
+        for kind, selected_kinds in (
+            ("self", {"self"}),
+            ("history", {"past"}),
+            ("fixed", {"pin", "named"}),
+        ):
+            selected = [
+                value
+                for value, member in zip(member_rows, members, strict=True)
+                if member["kind"] in selected_kinds
+            ]
+            combined = row(
+                "opponent_source",
+                kind,
+                {"kind": kind},
+                **{
+                    name: sum(value[name] for value in selected)
+                    if selected and all(value[name] is not None for value in selected)
+                    else None
+                    for name in names
+                },
+            )
+            for name in names:
+                if combined[name] is None:
+                    combined["unavailable_reasons"][name] = (
+                        "No member rows"
+                        if not selected
+                        else next(
+                            value["unavailable_reasons"][name]
+                            for value in selected
+                            if value[name] is None
+                        )
+                    )
+        return rows
+
+    def _snapshot_exposure(self) -> None:
+        """Append a boundary event before its checkpoint can accept that evidence.
+
+        Only initial, routine validation and final boundaries create snapshots.
+        Multiple purposes at one step share an event. Repeated saves reuse the
+        same checked ID/digest. A failed save leaves raw unaccepted attempt data;
+        only a published checkpoint's mapping makes it active evidence.
+        """
+        from marl_battlegrounds.training._run_io import exposure_event_digest
+
+        steps = self.host["env_steps"]
+        continuation = cast(dict[str, Any], self.metadata.get("continuation") or {})
+        start = continuation.get("start_env_steps", 0)
+        purposes = ["initial"] if steps == start else []
+        if steps in self.validation_steps:
+            purposes.append("routine_validation")
+        if steps == self.config.total_env_steps:
+            purposes.append("final")
+        if not purposes:
+            return
+        boundary = f"{self.metadata['run_id']}:{steps}"
+        accepted = self.host["exposure_snapshots"]
+        if boundary in accepted:
+            return
+        requested = [steps]
+        if self.validation_declaration is not None:
+            requested = next(
+                (
+                    point["requested_steps"]
+                    for point in self.validation_declaration["points"]
+                    if point["env_steps"] == steps
+                ),
+                requested,
+            )
+        event = {
+            "event": "exposure_snapshot",
+            "event_id": uuid.uuid4().hex,
+            "run_id": self.metadata["run_id"],
+            "attempt_id": self.metadata["attempt_id"],
+            "boundary_id": boundary,
+            "purposes": purposes,
+            "time_utc": utc_now(),
+            "requested_env_steps": requested,
+            "actual_env_steps": steps,
+            "training_seconds": self.host["training_seconds"],
+            "elapsed_seconds": self.host["elapsed_seconds"],
+            "wall_seconds": max(0.0, time.time() - self.created_at),
+            "rows": self._exposure_rows(),
+        }
+        digest = exposure_event_digest(event)
+        append_jsonl(self.root / "run_events.jsonl", event, durable=True)
+        accepted[boundary] = {"event_id": event["event_id"], "digest": digest}
+
+    def _collect_checkpoint_garbage(self) -> None:
+        """Release unused saved-array cycles after dropping a block's old arrays.
+
+        Call only after accepting the new state and deleting block temporaries.
+        Several writes share one cleanup; blocks with no pending cleanup skip it. Charge
+        the host cost to save_seconds, not collection or learner time. Live
+        arrays are retained, and no device work or cache reset is requested.
+        """
+        if not self._checkpoint_cleanup_pending:
+            return
+        started = time.monotonic()
+        gc.collect()
+        self.host["save_seconds"] += time.monotonic() - started
+        self._checkpoint_cleanup_pending = False
+
     def save(self) -> Path:
         """Publish one accepted learner boundary with its exact host-log prefix."""
         from marl_battlegrounds.training.checkpoints import (
@@ -3863,6 +3790,7 @@ class _Run:
         self.host["elapsed_seconds"] = (
             self.prior_elapsed + time.monotonic() - self.start
         )
+        self._snapshot_exposure()
         self.metadata["log_cursors"] = {
             "training_updates.jsonl": log_cursor(self.root / "training_updates.jsonl")
         }
@@ -3884,6 +3812,7 @@ class _Run:
                 self.collection, self.state.carry
             )
         started = time.monotonic()
+        self._checkpoint_cleanup_pending = True
         self.checkpoint = save_checkpoint(
             self.root,
             self.collection,
@@ -3899,6 +3828,7 @@ class _Run:
             "checkpoint_id"
         ]
         self.metadata["parent_checkpoint"] = self.checkpoint_id
+        self.set_status(self.status.get("phase", "saving"))
         seconds = time.monotonic() - started
         self.host["save_seconds"] += seconds
         self.host["saves"] += 1
@@ -3907,11 +3837,13 @@ class _Run:
             checkpoint_id=self.checkpoint_id,
             seconds=seconds,
         )
+        if self.config.retain_all_actors:
+            self.actor()
         self.prune_recovery()
         return self.checkpoint
 
     def prune_recovery(self) -> None:
-        """Keep two recent recovery payloads and every exported candidate boundary.
+        """Keep two recent recovery payloads and explicitly used candidate boundaries.
 
         Only payload directories of older checkpoints from this active attempt's
         saved recovery list are removed after a new durable pointer. Small
@@ -3925,7 +3857,20 @@ class _Run:
             recent.append(self.checkpoint_id)
         while len(recent) > 2:
             identifier = recent.pop(0)
-            if identifier in self.host["actors"]:
+            candidates = (
+                {
+                    row["checkpoint_id"]
+                    for key in (
+                        "routine_results",
+                        "confirmation_results",
+                        "random_results",
+                    )
+                    for row in self.host.get(key, [])
+                }
+                if self.config.retain_all_actors
+                else self.host["actors"]
+            )
+            if identifier in candidates:
                 continue
             if len(identifier) != 64 or any(
                 char not in "0123456789abcdef" for char in identifier
@@ -3949,7 +3894,8 @@ class _Run:
 
         A QMIX export holds only the Q-network parameters and a PQN-VDN export
         only the network's parameters and statistics; both play greedily and
-        record the optimizer steps behind them.
+        record the optimizer steps behind them. A checked input artifact may move;
+        reusing this actor preserves its original provenance and never rewrites it.
         """
         from marl_battlegrounds.training.checkpoints import (
             artifact_directory,
@@ -4008,15 +3954,11 @@ class _Run:
         }
         reused = destination.exists()
         if reused:
-            saved = read_checkpoint_description(destination)["metadata"]
-            previous = {"initial_actor": None, **saved}
-            expected = dict(provenance)
-            previous.pop("display_name", None)
-            expected.pop("display_name", None)
-            if previous != expected:
-                raise ValueError("Saved actor provenance differs from this boundary")
-            # A published actor keeps its original optional display metadata.
-            provenance = saved
+            provenance = _checked_export_provenance(
+                read_checkpoint_description(destination)["metadata"], provenance
+            )
+        else:
+            self._checkpoint_cleanup_pending = True
         export_system(
             variables.params
             if self.qmix is not None
@@ -4053,7 +3995,10 @@ class _Run:
         started = time.monotonic()
         import jax
 
-        from marl_battlegrounds.training.checkpoints import export_system
+        from marl_battlegrounds.training.checkpoints import (
+            export_system,
+            read_checkpoint_description,
+        )
 
         capture_id = int(event.capture_id)
         steps = int(event.rounds) * self.config.num_envs
@@ -4112,6 +4057,12 @@ class _Run:
                 else {"pinned_opponent": self.collection.pinned_opponent}
             ),
         }
+        if destination.exists():
+            provenance = _checked_export_provenance(
+                read_checkpoint_description(destination)["metadata"], provenance
+            )
+        else:
+            self._checkpoint_cleanup_pending = True
         export_system(
             variables.params
             if self.qmix is not None
@@ -4129,6 +4080,7 @@ class _Run:
             "env_steps": steps,
             "path": str(destination),
             "sampled_epsilon": epsilon,
+            "artifact_id": read_checkpoint_description(destination)["checkpoint_id"],
         }
         self.event(
             "past_copy_exported",
@@ -4220,10 +4172,18 @@ class _Run:
 
     def finish_pending(self) -> None:
         """Finish the saved boundary's capture/validation without another decision."""
+        actor = None
+        if self.config.retain_all_actors:
+            known = self.host["actors"].get(self.checkpoint_id)
+            actor = self.actor() if known is None else Path(known)
+        # Resume may restore the pre-prune list saved at publication. Reconcile
+        # it before another save, after repairing any required current export.
+        self.prune_recovery()
         pending = self.host["pending"]
         if pending is None:
             return
-        actor = self.actor()
+        if actor is None:
+            actor = self.actor()
         if pending.get("routine"):
             self.validate(actor, "routine")
         if pending.get("random"):
@@ -4364,6 +4324,8 @@ class _Run:
 
         self.event(
             "attempt_started",
+            elapsed_start_seconds=self.prior_elapsed,
+            training_start_seconds=self.host["training_seconds"],
             resumed_from=None if self.checkpoint is None else str(self.checkpoint),
             setup_seconds=time.monotonic() - self.start,
             runtime=self.runtime,
@@ -4379,13 +4341,8 @@ class _Run:
                 self.save()
             self.finish_pending()
             if self.host["env_steps"] < self.config.total_env_steps:
-                self.set_status(
-                    "compiling_first_update"
-                    if not self.host.get(
-                        "completed_blocks", self.host["completed_updates"]
-                    )
-                    else "training"
-                )
+                # Every process prepares its first compiled call, including resume.
+                self.set_status("compiling_first_update")
             interval = cast(int, self.config.checkpoint_interval_updates)
             while self.host["env_steps"] < self.config.total_env_steps:
                 self._choose_next_games()
@@ -4426,6 +4383,7 @@ class _Run:
                     self._count_pqn_block(host_result)
                 else:
                     self.host["completed_updates"] += 1
+                    self._count_ppo_exposure(summary)
                     self.host["used_policy_samples"] += sum(
                         int(x) for x in np.asarray(metrics.actor_samples).flat
                     )
@@ -4461,6 +4419,7 @@ class _Run:
                     self._write_update(row, summary)
                     # Free the block's device arrays before saving or validating.
                     del rollout, collected, result, next_state
+                    self._collect_checkpoint_garbage()
                     self._after_block(
                         row,
                         summary,
@@ -4556,6 +4515,7 @@ class _Run:
                 }
                 self._write_update(row, summary)
                 del rollout, collected, result, next_state
+                self._collect_checkpoint_garbage()
                 steps = self.host["env_steps"]
                 capture = (
                     steps in self.validation_steps
@@ -4662,6 +4622,8 @@ class _Run:
             if self.config.slot_diagnostic:
                 self.run_slot_check()
             exposure = training_summary(self.collection, self.state.carry)
+            if is_ppo_method(self.config.method):
+                exposure["ppo_exposure"] = self.host["ppo_exposure"]
             if self.qmix is not None:
                 exposure["sampled_exposure"] = {
                     "unit": "TD pairs used by optimizer steps; repeats count again",
@@ -4721,6 +4683,9 @@ class _Run:
                 pending_work_seconds=0.0,
                 exit_code=0,
                 memory=memory,
+                evidence_paths=[
+                    path.relative_to(self.root).as_posix() for path in paths
+                ],
             )
             refresh_summary([self.root], output_dir=self.root)
             self.event("attempt_complete", memory=memory)
@@ -5016,6 +4981,23 @@ class _Run:
             else self.rollout_length
         )
 
+    def _count_ppo_exposure(self, summary: Any) -> None:  # noqa: ANN401
+        """Add optimizer-used samples from the same transferred update result.
+
+        Epochs already enter the device totals; minibatches are disjoint parts.
+        Python sums do not overflow. A resumed legacy prefix remains labelled
+        unknown through the saved offsets rather than filled with guessed counts.
+        """
+        for kind in ("policy", "value"):
+            for dimension in ("source", "opponent"):
+                key = f"{kind}_{dimension}"
+                incoming = getattr(summary, f"used_{kind}_by_{dimension}").tolist()
+                previous = self.host["ppo_exposure"][key]
+                self.host["ppo_exposure"][key] = [
+                    int(old) + int(new)
+                    for old, new in zip(previous, incoming, strict=True)
+                ]
+
     def _count_member_results(self, summary: Any) -> None:  # noqa: ANN401
         """Add one block's completed-game counts using unbounded Python integers."""
         for key, summary_field in (
@@ -5031,6 +5013,13 @@ class _Run:
                 [int(old) + int(new) for old, new in zip(left, right, strict=True)]
                 for left, right in zip(previous, incoming, strict=True)
             ]
+        incoming = summary.per_member_length_sum.tolist()
+        self.host["last_member_length_sum"] = incoming
+        previous = self.host["member_length_sum"]
+        if previous is not None:
+            self.host["member_length_sum"] = [
+                int(old) + int(new) for old, new in zip(previous, incoming, strict=True)
+            ]
 
     def _member_statistics(
         self, *, completed_only: bool = False
@@ -5040,14 +5029,28 @@ class _Run:
         Zero-game margins are None, never invented measurements. Logging asks
         for completed_only to avoid serializing every old capture every update;
         an enabled researcher rule can inspect the full declared population.
+        Cumulative counts start at start_env_steps; complete_history=False means
+        an old checkpoint did not record its earlier member outcomes. These
+        observed suffix counts remain useful to callbacks, but cannot describe
+        full-run exposure. Unknown legacy lengths remain None.
         """
         from marl_battlegrounds.training.collection import opponent_member_records
 
-        def counts(outcomes: list[int], points: list[int]) -> dict[str, Any]:
+        def counts(
+            outcomes: list[int], points: list[int], length: int | None
+        ) -> dict[str, Any]:
             """Describe Team A results; every native point retains its team owner."""
             games = sum(outcomes)
             return dict(
                 games=games,
+                completed_games=games,
+                length_sum=length,
+                mean_length=length / games if games and length is not None else None,
+                length_unavailable_reason=(
+                    "Legacy checkpoint did not record member lengths"
+                    if length is None
+                    else None
+                ),
                 wins=outcomes[0],
                 draws=outcomes[1],
                 losses=outcomes[2],
@@ -5067,13 +5070,33 @@ class _Run:
                 {
                     **member,
                     **capture,
-                    "cumulative": counts(
-                        self.host["member_completed"][index],
-                        self.host["member_score_sums"][index],
-                    ),
-                    "last_update": counts(
-                        last, self.host["last_member_score_sums"][index]
-                    ),
+                    "cumulative": {
+                        **counts(
+                            self.host["member_completed"][index],
+                            self.host["member_score_sums"][index],
+                            None
+                            if self.host["member_length_sum"] is None
+                            else self.host["member_length_sum"][index],
+                        ),
+                        "start_env_steps": self.host.get(
+                            "member_results_start_env_steps", 0
+                        ),
+                        "complete_history": self.host.get(
+                            "member_results_start_env_steps", 0
+                        )
+                        == 0,
+                    },
+                    "last_update": {
+                        **counts(
+                            last,
+                            self.host["last_member_score_sums"][index],
+                            None
+                            if self.host["last_member_length_sum"] is None
+                            else self.host["last_member_length_sum"][index],
+                        ),
+                        "recorded": self.host.get("env_steps", 0)
+                        > self.host.get("member_results_start_env_steps", 0),
+                    },
                 }
             )
         return result
@@ -5132,7 +5155,11 @@ class _Run:
         it cannot change bookkeeping. Disabled callbacks copy nothing. Callback
         errors propagate with the saved row intact; normal recovery may replay
         work, so external services must deduplicate rather than assume one call.
-        No device work or per-step callback is introduced.
+        Named custom components transfer only a small collection window here.
+        Prepare its finite row/totals first; only a successful append folds host
+        totals and clears the device window, before calling the logger. Earlier
+        checkpoints keep pending windows. Recovery restores those totals and
+        rewinds the abandoned row suffix. No per-step callback is introduced.
         """
         if summary.custom_reward_sum is not None:
             row["custom_reward_mean"] = (
@@ -5142,7 +5169,37 @@ class _Run:
             )
         row["run_id"] = self.metadata["run_id"]
         row["opponent_results"] = self._member_statistics(completed_only=True)
+        component_record = None
+        cleared_carry = None
+        if self.collection.reward_component_keys:
+            import jax
+            import jax.numpy as jnp
+
+            from marl_battlegrounds.training.shaping import (
+                _merge_reward_records,  # pyright: ignore[reportPrivateUsage]
+                _reward_totals_record,  # pyright: ignore[reportPrivateUsage]
+                _RewardTotals,  # pyright: ignore[reportPrivateUsage]
+            )
+
+            totals = self.state.carry.reward_totals
+            assert isinstance(totals, _RewardTotals)
+            delta = _reward_totals_record(totals, self.collection.reward_component_keys)
+            row["collected_reward_components"] = delta
+            component_record = _merge_reward_records(
+                self.host.get("collected_reward_components"), delta
+            )
+
+            def zero(value: Array) -> Array:
+                """Clear only the small accepted accounting window on its device."""
+                return jnp.zeros_like(value)
+
+            cleared_carry = self.state.carry._replace(
+                reward_totals=jax.tree.map(zero, totals)
+            )
         append_jsonl(self.root / "training_updates.jsonl", row)
+        if component_record is not None:
+            self.host["collected_reward_components"] = component_record
+            self.state = self.state._replace(carry=cleared_carry)
         if self.on_update is not None:
             try:
                 self.on_update(deepcopy(row))

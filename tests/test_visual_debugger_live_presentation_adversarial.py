@@ -9,9 +9,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from scripts.dev.visual_debugger.live_presentation import (
-    build_live_no_shared_obs_authorized_presentation_v1,
-)
 from scripts.dev.visual_debugger.no_shared_visual import (
     build_live_no_shared_obs_visual_adjacent_slice_v1,
     build_live_no_shared_obs_visual_current_slice_v1,
@@ -19,12 +16,6 @@ from scripts.dev.visual_debugger.no_shared_visual import (
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
 )
-from scripts.dev.visual_debugger.protocol import (
-    ActorPovLiveDebuggerFrameV2,
-    KeyboardCommandV1,
-    RosterSelectionCommandV1,
-)
-from scripts.dev.visual_debugger.service import DebuggerService
 from tests.test_visual_debugger_live_presentation import (
     _step_once,  # pyright: ignore[reportPrivateUsage]
     _switch_to_pov,  # pyright: ignore[reportPrivateUsage]
@@ -34,6 +25,15 @@ from tests.test_visual_debugger_service import (
     _service,  # pyright: ignore[reportPrivateUsage]
 )
 
+from marl_battlegrounds._battle_client.live_presentation import (
+    build_live_no_shared_obs_authorized_presentation_v1,
+)
+from marl_battlegrounds._battle_client.protocol import (
+    ActorPovLiveDebuggerFrameV2,
+    KeyboardCommandV1,
+    RosterSelectionCommandV1,
+)
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
@@ -457,7 +457,7 @@ def test_live_presentation_import_isolated_from_replay_and_array_runtimes() -> N
             sys.executable,
             "-c",
             _ISOLATED_IMPORT_PROBE,
-            "scripts.dev.visual_debugger.live_presentation",
+            "marl_battlegrounds._battle_client.live_presentation",
         ],
         cwd=_REPOSITORY_ROOT,
         check=True,
@@ -478,7 +478,7 @@ def test_replay_service_import_does_not_load_live_presentation() -> None:
                 "importlib.import_module("
                 "'scripts.dev.visual_debugger.replay_service'); "
                 "print(json.dumps("
-                "'scripts.dev.visual_debugger.live_presentation' in sys.modules))"
+                "'marl_battlegrounds._battle_client.live_presentation' in sys.modules))"
             ),
         ],
         cwd=_REPOSITORY_ROOT,

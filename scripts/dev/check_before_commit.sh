@@ -81,7 +81,7 @@ if ! before="$(candidate_fingerprint)"; then
 fi
 
 status=0
-marl_validation_init 2 before-commit
+marl_validation_init before-commit
 marl_validation_start "Complete Python validation" \
   env -u GIT_INDEX_FILE "${SCRIPT_DIR}/check.sh" "${timing_args[@]}"
 marl_validation_start "Complete frontend validation" \

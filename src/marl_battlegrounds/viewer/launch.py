@@ -16,6 +16,8 @@ from marl_battlegrounds.viewer.options import PlaybackOptions, validate_playback
 
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.replay_io import LoadedReplayBundle
+    from marl_battlegrounds.viewer.replay_service import ReplayViewerService
+    from marl_battlegrounds.viewer.server import HttpCoordinatorBinding
 
 
 def launch_replay(
@@ -93,16 +95,8 @@ def launch_replay(
         except ReplayLoadError as exc:
             raise ValueError(f"Replay could not be loaded: {exc}") from exc
 
-    from marl_battlegrounds.viewer.replay_protocol import (
-        ReplayApiErrorV1,
-        ReplayCommandRequestV1,
-    )
     from marl_battlegrounds.viewer.replay_service import ReplayViewerService
-    from marl_battlegrounds.viewer.server import (
-        REPLAY_HTTP_ROUTES,
-        HttpCoordinatorBinding,
-        serve_browser_debugger,
-    )
+    from marl_battlegrounds.viewer.server import serve_browser_debugger
 
     service = ReplayViewerService(
         bundle,
@@ -113,21 +107,7 @@ def launch_replay(
         show_ranges=options.ranges,
         verbose=False,
     )
-    coordinator = HttpCoordinatorBinding(
-        mode="replay",
-        initial_show_ranges=options.ranges,
-        routes=REPLAY_HTTP_ROUTES,
-        request_model=ReplayCommandRequestV1,
-        error_factory=ReplayApiErrorV1,
-        current_frame=service.current_frame,
-        apply_command=service.apply_command,
-        current_timeline=service.current_timeline,
-        current_presentation=service.current_presentation,
-        current_metric_report=service.current_metric_report,
-        metric_analysis=service.metric_analysis,
-        metric_catalog=service.metric_catalog,
-        episode_details=service.episode_details,
-    )
+    coordinator = replay_http_binding(service)
     resource_context = (
         nullcontext(asset_root)
         if asset_root is not None
@@ -141,3 +121,36 @@ def launch_replay(
             open_browser=not options.no_open,
             coordinator=coordinator,
         )
+
+
+def replay_http_binding(service: ReplayViewerService) -> HttpCoordinatorBinding:
+    """Bind one Viewer service to the shared replay HTTP routes.
+
+    service is an already validated ReplayViewerService. The returned binding
+    forwards requests to that same service. It does not open a socket, read
+    assets, or change the loaded replay. Launchers own those resources.
+    """
+    from marl_battlegrounds.viewer.replay_protocol import (
+        ReplayApiErrorV1,
+        ReplayCommandRequestV1,
+    )
+    from marl_battlegrounds.viewer.server import (
+        REPLAY_HTTP_ROUTES,
+        HttpCoordinatorBinding,
+    )
+
+    return HttpCoordinatorBinding(
+        mode="replay",
+        initial_show_ranges=service.show_ranges,
+        routes=REPLAY_HTTP_ROUTES,
+        request_model=ReplayCommandRequestV1,
+        error_factory=ReplayApiErrorV1,
+        current_frame=service.current_frame,
+        apply_command=service.apply_command,
+        current_timeline=service.current_timeline,
+        current_presentation=service.current_presentation,
+        current_metric_report=service.current_metric_report,
+        metric_analysis=service.metric_analysis,
+        metric_catalog=service.metric_catalog,
+        episode_details=service.episode_details,
+    )

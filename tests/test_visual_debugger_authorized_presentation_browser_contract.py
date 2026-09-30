@@ -84,6 +84,7 @@ def test_schema_compaction_and_keyword_universe_are_fail_closed() -> None:
         "anyOf",
         "const",
         "description",
+        "default",
         "discriminator",
         "enum",
         "exclusiveMaximum",

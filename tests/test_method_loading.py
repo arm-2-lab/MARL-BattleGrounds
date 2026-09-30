@@ -32,6 +32,8 @@ centred banks the schema-2 flag reads lane 0 Team A as left while the
 schema-1 flag keeps the old reading, right; and the schema-1 encoding equals
 the schema-2 encoding with flat feature 1128 (the depth) deleted at depths
 0.0, 5.0 and 6.0.
+Setup checks also cover factory/folder ambiguity, one load per reference and
+release of cached factory objects before the training loop.
 """
 
 # pyright: reportPrivateUsage=false
@@ -507,3 +509,118 @@ def test_directory_loading_is_shared_with_the_cli(
     assert load_method(str(folder)) is expected
     assert _cli._load_method(str(folder)) is expected
     assert seen == [folder, folder]
+
+
+def test_factory_grammar_wins_over_same_named_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, prepared: PreparedTrainingContent
+) -> None:
+    from marl_battlegrounds.training.collection import _prepare_opponent_member
+    from marl_battlegrounds.training.curriculum import make_training_schedule
+
+    host = System("Factory Team", _unused_apply, execution="host")
+    reference = _factory_module(monkeypatch, host)
+    (tmp_path / reference).mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert load_method(reference) is host
+    assert _cli._load_method(reference) is host
+    schedule = make_training_schedule(total_env_steps=16, num_envs=4, curriculum=False)
+    _, record = _prepare_opponent_member(
+        "factory", reference, schedule, prepared.binding
+    )
+    assert record["input_identity"]["kind"] == "factory"
+    assert record["evidence"]["source"] == "researcher method"
+    with pytest.raises(ValueError, match="Required regular file"):
+        load_method("./" + reference)
+
+
+def test_setup_cache_is_attempt_local_and_releases_factory_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import weakref
+
+    calls: list[str] = []
+    refs: list[Any] = []
+
+    def factory(reference: str) -> System:
+        calls.append(reference)
+        value = System("Factory Team", _unused_apply, execution="host")
+        refs.append(weakref.ref(value))
+        return value
+
+    monkeypatch.setattr(_method_loading, "load_factory", factory)
+    with _method_loading._method_loading_scope():
+        first = load_method("client:make")
+        assert load_method("client:make") is first
+        del first
+        assert refs[0]() is not None
+        _method_loading._release_setup_inputs()
+        assert refs[0]() is None
+    with _method_loading._method_loading_scope():
+        second = load_method("client:make")
+        assert load_method("client:make") is second
+    assert calls == ["client:make", "client:make"]
+
+
+def test_initial_actor_reuses_an_actor_already_loaded_for_another_role(
+    exported: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads: list[Path] = []
+    original = checkpoints.load_system
+
+    def load(path: str | Path) -> System:
+        reads.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(checkpoints, "load_system", load)
+    details = checkpoints.read_checkpoint_description(exported)
+    method = checkpoints._schema_method(details["schemas"])
+    with _method_loading._method_loading_scope():
+        opponent = load_method(str(exported))
+        initial, _ = checkpoints.load_initial_actor(
+            exported, method=method, input_scale=1.0, spawn_frame="left"
+        )
+        assert initial is opponent
+        assert reads == [exported]
+    checkpoints.load_initial_actor(
+        exported, method=method, input_scale=1.0, spawn_frame="left"
+    )
+    assert reads == [exported, exported]
+
+
+def test_artifact_cache_reuses_equivalent_paths_but_rejects_link_aliases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    actor = tmp_path / "actor"
+    actor.mkdir()
+    panel = tmp_path / "panel"
+    panel.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(actor, target_is_directory=True)
+    reads: list[str] = []
+    identities: list[str] = []
+    member = System("One frozen member", _unused_apply, execution="host")
+
+    def load(path: str | Path) -> System:
+        reads.append(str(path))
+        return member
+
+    def identity(reference: str) -> dict[str, object]:
+        identities.append(reference)
+        return {"kind": "artifact", "checkpoint_id": "same"}
+
+    monkeypatch.setattr(checkpoints, "load_system", load)
+    monkeypatch.setattr(_method_loading, "_read_reference_identity", identity)
+    with _method_loading._method_loading_scope():
+        first = load_method(str(actor))
+        assert load_method(str(panel / ".." / "actor")) is first
+        assert _method_loading._reference_identity(
+            str(actor)
+        ) == _method_loading._reference_identity(str(panel / ".." / "actor"))
+        for read in (load_method, _method_loading._reference_identity):
+            with pytest.raises(ValueError, match="symbolic links"):
+                read(str(link))
+    assert reads == identities == [str(actor)]
+
+
+def test_public_method_loader_is_the_existing_shared_owner() -> None:
+    assert marl_bgs.load_method is load_method

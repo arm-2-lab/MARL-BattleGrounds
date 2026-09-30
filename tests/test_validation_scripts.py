@@ -1,7 +1,7 @@
 """Check contributor and GPU validation commands from outside their implementation,
 including the --timings mode that saves one per-test timing file per Python shard
 and per browser profile.
-The optional Python worker limit preserves all checks and bounds concurrency.
+All Python shards and static checks start together without a worker cap.
 Copied candidate indexes stay with the parent gate; child checks use their own
 repositories. Raw donor fixtures keep their bytes without weakening source checks.
 """
@@ -104,6 +104,18 @@ def _fake_tool_script() -> str:
           "${PLAYWRIGHT_OUTPUT_DIR-${MARL_PLAYWRIGHT_OUTPUT_DIR-}}" \
           "$arguments" "${CI-}" "${PLAYWRIGHT_JSON_OUTPUT_FILE-}" >> "$FAKE_TOOL_LOG"
 
+        if [[ -n "${FAKE_WAIT_FOR_STARTS-}" ]]; then
+          deadline=$((SECONDS + 30))
+          while (( $(awk '$1 == "start" {n++} END {print n+0}' "$FAKE_TOOL_LOG")
+                   < FAKE_WAIT_FOR_STARTS )); do
+            if (( SECONDS >= deadline )); then
+              echo "Not all gate tasks started before the test barrier expired." >&2
+              exit 24
+            fi
+            sleep 0.01
+          done
+        fi
+
         if [[ -n "${FAKE_SLEEP_MATCH-}" && \
               "$arguments" == *"$FAKE_SLEEP_MATCH"* ]]; then
           sleep "${FAKE_SLEEP_SECONDS:-0.25}"
@@ -171,10 +183,6 @@ def test_python_gate_is_root_independent_cpu_only_and_exactly_sharded(
         ("JAX_XLA_BACKEND", "gpu"),
         ("PYTEST_ADDOPTS", "--ignore=tests"),
         ("JAX_DISABLE_JIT", "1"),
-        ("MARL_PYTHON_GATE_JOBS", "0"),
-        ("MARL_PYTHON_GATE_JOBS", "20"),
-        ("MARL_PYTHON_GATE_JOBS", "many"),
-        ("MARL_PYTHON_GATE_JOBS", ""),
     ):
         bypass_log = tmp_path / f"python-bypass-{variable}.log"
         rejected = _run(
@@ -192,8 +200,7 @@ def test_python_gate_is_root_independent_cpu_only_and_exactly_sharded(
             fake_bin,
             log_path,
             MARL_PYTHON_GATE_JOBS=jobs,
-            FAKE_SLEEP_MATCH="pytest",
-            FAKE_SLEEP_SECONDS="0.05",
+            FAKE_WAIT_FOR_STARTS="22",
         ),
     )
 
@@ -203,7 +210,7 @@ def test_python_gate_is_root_independent_cpu_only_and_exactly_sharded(
         active += 1 if line.startswith("start\t") else -1
         peak = max(peak, active)
     assert active == 0
-    assert 1 <= peak <= int(jobs)
+    assert peak == 22
     records = _log_records(log_path)
     uv_records = [record for record in records if record[1] == "uv"]
     assert len(uv_records) == 22

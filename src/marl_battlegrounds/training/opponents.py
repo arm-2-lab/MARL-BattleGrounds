@@ -28,18 +28,24 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
-    _CompositionVariables,
-    _default_reset,
-    _execution,
-    _host_apply,
-    _initial_memory,
-    _jax_apply,
-    _normal_output,
-    _SystemExecution,
+    _CompositionVariables,  # pyright: ignore[reportPrivateUsage]
+    _default_reset,  # pyright: ignore[reportPrivateUsage]
+    _execution,  # pyright: ignore[reportPrivateUsage]
+    _host_apply,  # pyright: ignore[reportPrivateUsage]
+    _initial_memory,  # pyright: ignore[reportPrivateUsage]
+    _jax_apply,  # pyright: ignore[reportPrivateUsage]
+    _normal_output,  # pyright: ignore[reportPrivateUsage]
+    _SystemExecution,  # pyright: ignore[reportPrivateUsage]
     select_policy_carry,
 )
 from marl_battlegrounds.evaluation.system_evaluation import prepare_evaluation_system
 from marl_battlegrounds.policies.actor import ActorAction
+from marl_battlegrounds.training.config import (
+    _pinned_share as _pinned_share,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
+    opponent_selection_names as opponent_selection_names,
+)
 from marl_battlegrounds.training.curriculum import ScheduleArrays
 
 type Tree = Any
@@ -137,41 +143,6 @@ class SnapshotEvent(NamedTuple):
     update_index: Array
     threshold_mask: Array
     capture_id: Array
-
-
-def opponent_selection_names(selection: object) -> tuple[str, ...]:
-    """Validate training shares or a repeating order and return distinct names.
-
-    None keeps the existing self/history recipe. A mapping gives finite,
-    nonnegative relative shares with a positive total. A nonempty sequence
-    gives an exact repeating game-start order; repeated names are allowed.
-    Names must be nonempty strings. This does not load or resolve any member.
-    """
-    if selection is None:
-        return ()
-    if isinstance(selection, Mapping):
-        if not selection:
-            raise ValueError("Opponent shares must not be empty")
-        values = list(cast(Mapping[Any, Any], selection).values())
-        if any(
-            isinstance(v, bool) or not isinstance(cast(object, v), (int, float))
-            for v in values
-        ):
-            raise TypeError("Opponent shares must be real numbers")
-        if any(not math.isfinite(v) or v < 0 for v in values):
-            raise ValueError("Opponent shares must be finite and nonnegative")
-        if not math.isfinite(sum(values)) or sum(values) <= 0:
-            raise ValueError("Opponent shares must have a finite positive total")
-        names = tuple(cast(Mapping[Any, Any], selection))
-    elif isinstance(selection, Sequence) and not isinstance(selection, (str, bytes)):
-        names = tuple(cast(Sequence[Any], selection))
-        if not names:
-            raise ValueError("Opponent order must not be empty")
-    else:
-        raise TypeError("Opponent selection must be a share mapping or a name sequence")
-    if any(not isinstance(name, str) or not name.strip() for name in names):
-        raise ValueError("Opponent names must be nonempty strings")
-    return tuple(dict.fromkeys(names))
 
 
 class OpponentSelection(NamedTuple):
@@ -359,30 +330,6 @@ def _matching_variables(variables: Tree, expected: Tree) -> None:
     _array_tree(variables, name="Actor variables")
     if _schema(variables) != expected:
         raise ValueError("Actor variables must keep the same tree, shapes and dtypes")
-
-
-def _pinned_share(value: object) -> None:
-    """Require a static Python pinned-opponent share within [0, 0.8].
-
-    Parameters
-    ----------
-    value : object
-        The share to check. Zero reserves no probability for a permanent pin.
-
-    Raises
-    ------
-    TypeError
-        value is bool, a traced array or another non-number.
-    ValueError
-        value is not finite or lies outside [0, 0.8].
-    """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TypeError(
-            "The pinned opponent share must be a Python number, not bool, string or "
-            "traced"
-        )
-    if not math.isfinite(value) or not 0 <= value <= 0.8:
-        raise ValueError("The pinned opponent share must be finite within [0, 0.8]")
 
 
 def _field(value: Array, shape: tuple[int, ...], dtype: DTypeLike, name: str) -> None:

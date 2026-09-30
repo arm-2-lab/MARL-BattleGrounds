@@ -12,13 +12,11 @@ partial boundary is kept, and explicit save steps are valid only on a
 boundary. With no initial rounds it equals the earlier rule
 ``min(total, ceil(q / (B * T)) * B * T)`` and its update count over a grid.
 
-Panel member names: two exports of one method both load under the method's
-name, so a System panel given their two paths refuses them with the
-"distinct names" error and writes no panel.json. Two ``module:function``
-factories in this file, each loading one export with load_system and
-returning a renamed copy, are accepted: panel.json keeps the two references
-and names, and load_panel runs both factories again and restores the same
-names, identities and digest.
+Panel member names: two exports of one method keep their original method
+names and identities. A System panel gives repeated display names numbered
+labels so each member stays distinct. ``module:function`` factories may also
+return renamed copies. panel.json keeps their references and names; load_panel
+runs both factories again and restores the same names, identities and digest.
 
 Red Zone depth: a task description built without a depth keeps its original
 bytes and ID (schema 1, and schema 2 for System panels); a depth builds schema
@@ -889,5 +887,5 @@ def test_kill_difference_and_selection_use_recorded_kills_not_points() -> None:
         {**more_kills, "red_zone_depth": 0.0},
         {key: value for key, value in more_kills.items() if key != "red_zone_depth"},
     ):
-        with pytest.raises(ValueError, match="Red Zone scoring rules"):
+        with pytest.raises(ValueError, match="scoring conditions"):
             _candidates([more_points, other])

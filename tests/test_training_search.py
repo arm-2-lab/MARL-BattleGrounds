@@ -11,7 +11,8 @@ games. Another valid export at the selected path must fail before any game
 writer is created or recovered. Returned summaries cannot hide a different
 actor, and final exports must match their completed learner descriptions.
 Fresh processes check CPU metadata placement, restoration after errors, lazy
-status and the separate CPU controller and GPU worker environments.
+status and the separate CPU controller and GPU worker environments. Declaring
+settings uses host-only config owners and must not import numerical readers.
 The declaration pins red_zone_depth 0.0 (the study's one-point scoring), every
 training config and assessment request carries it, assessment plays at the
 request's depth, and a summary at another depth is rejected unpublished.
@@ -984,7 +985,10 @@ else:
     assert not operation.endswith('_error')
 finally:
     builtins.__import__ = original_import
-assert seen
+if operation == 'declaration':
+    assert not seen
+else:
+    assert seen
 assert jax.config.jax_default_device is before_default
 assert dict(os.environ) == before_environment
 from marl_battlegrounds.policies.input import MOVE_MIRROR

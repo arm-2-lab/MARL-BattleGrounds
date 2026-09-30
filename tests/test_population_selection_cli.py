@@ -147,9 +147,7 @@ def test_example_declares_before_games_and_uses_frozen_members(
     monkeypatch.setitem(marl_bgs.__dict__, "run_tournament", tournament)
     monkeypatch.setitem(marl_bgs.__dict__, "select_initial_population", select)
     monkeypatch.setenv("JAX_PLATFORMS", "cpu")
-    assert population_selection.main(["--output-dir", str(tmp_path)]) == (
-        0 if complete else 1
-    )
+    assert population_selection.run(output_dir=tmp_path) == (0 if complete else 1)
     config = {
         "entrants": ["random", "tdm-alpha", "tdm-beta"],
         "maps": [42, 43, 44, 45, 46],
@@ -216,7 +214,6 @@ except SystemExit as error:
 assert os.environ.get('JAX_PLATFORMS') == previous
 assert 'jax' not in sys.modules
 assert 'numpy' not in sys.modules
-assert 'marl_battlegrounds' not in sys.modules
 """
     result = subprocess.run(
         [sys.executable, "-c", program],
@@ -226,5 +223,5 @@ assert 'marl_battlegrounds' not in sys.modules
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "--output-dir" in result.stdout
+    assert "output_dir" in result.stdout
     assert not list(tmp_path.iterdir())

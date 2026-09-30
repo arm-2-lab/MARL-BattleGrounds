@@ -162,7 +162,7 @@ Historical commands and results keep their original workload sizes.
 Install dependencies before validation:
 
 ```bash
-uv sync --locked --extra cuda13 --extra dev --extra viz --extra training
+uv sync --locked --extra cuda13 --extra dev --extra viz --extra training --extra notebook
 ```
 
 The check uses `uv run --no-sync`, so it does not silently replace the installed

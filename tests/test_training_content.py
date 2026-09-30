@@ -575,6 +575,9 @@ def test_an_export_trained_before_the_republish_links_as_declared(
     descriptions: dict[Path, dict[str, object]] = {
         export.resolve(): {
             "kind": "actor",
+            "files": {},
+            "checkpoint_id": "e" * 64,
+            "schemas": dict(checkpoints._SCHEMAS),
             "actor_digest": "d" * 64,
             "metadata": {
                 "checkpoint_id": identifier,
@@ -586,6 +589,7 @@ def test_an_export_trained_before_the_republish_links_as_declared(
         },
         learner.resolve(): {
             "kind": "learner",
+            "schemas": dict(checkpoints._SCHEMAS),
             "checkpoint_id": identifier,
             "actor_digest": "d" * 64,
             "metadata": {"run_id": "old-run", "config": {"seed": 3}},

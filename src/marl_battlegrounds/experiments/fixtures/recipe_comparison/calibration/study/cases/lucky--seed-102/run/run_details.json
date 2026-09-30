@@ -1,0 +1,21 @@
+{
+  "config": {
+    "method": "ff_ippo",
+    "num_envs": 2,
+    "ppo": {
+      "epochs": 1,
+      "groups": 1,
+      "minibatches": 1,
+      "rollout_length": 2
+    },
+    "red_zone_depth": 5.0,
+    "seed": 102,
+    "total_env_steps": 8
+  },
+  "qualification": "Synthetic saved rows; no model or game was run",
+  "run_id": "lucky--seed-102",
+  "selection_rule": "point_margin",
+  "source": {
+    "id": "recipe-comparison-software-fixture"
+  }
+}

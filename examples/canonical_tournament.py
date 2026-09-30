@@ -29,7 +29,10 @@ def fixture(
     True saves a result, reloads bounded tables and resumes without new games.
     No learned-method or official qualification claim is made.
     """
-    from canonical_fixture import build_record_bundle
+    if __package__:
+        from .canonical_fixture import build_record_bundle
+    else:
+        from canonical_fixture import build_record_bundle
 
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds.evaluation.tournament_assets import (
@@ -76,7 +79,7 @@ def compare(args: argparse.Namespace) -> None:
 
     args supplies the parsed snapshot/challenger, uniform budget, capture,
     save/resume and execution choices. Omitted values inherit saved conditions.
-    Explicit --prepare allows downloads first; otherwise execution is offline.
+    Explicit prepare=true allows downloads first; otherwise execution is offline.
     A missing official snapshot or insufficient reused coverage raises the public
     actionable error. This command never admits or publishes its challenger.
     """
@@ -179,72 +182,93 @@ def read(directory: Path, table: str) -> None:
         print(batch)
 
 
-def main() -> None:
-    """Parse only example choices and call the shared public Python authorities."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
-    artificial = commands.add_parser(
-        "fixture", help="Create artificial records, without official publication"
-    )
-    artificial.add_argument("--directory", type=Path)
-    artificial.add_argument("--entrants", type=int, default=12)
-    artificial.add_argument(
-        "--metrics", choices=("priority", "full", "none"), default="priority"
-    )
-    artificial.add_argument("--save", action="store_true")
-    canonical = commands.add_parser(
-        "compare", help="Use a separately released snapshot"
-    )
-    canonical.add_argument("--config", type=Path)
-    canonical.add_argument("--system")
-    canonical.add_argument("--games-per-opponent", type=int)
-    canonical.add_argument("--metrics", choices=("priority", "full", "none"))
-    canonical.add_argument("--save-replays", type=int)
-    canonical.add_argument(
-        "--rerun-existing", action=argparse.BooleanOptionalAction, default=None
-    )
-    canonical.add_argument("--output-dir", type=Path)
-    canonical.add_argument("--resume-from", type=Path)
-    canonical.add_argument(
-        "--num-envs",
-        type=int,
-        default=128,
-        help="Parallel games within one matchup (default: 128)",
-    )
-    canonical.add_argument("--chunk-size", type=int, default=16)
-    canonical.add_argument(
-        "--prepare",
-        action="store_true",
-        help="Explicitly download missing declared assets",
-    )
-    canonical.add_argument("--cache-dir", type=Path)
-    saved = commands.add_parser(
-        "read", help="Read existing results without games or JAX"
-    )
-    saved.add_argument("run_dir", type=Path)
-    saved.add_argument("--table", default="matches")
-    args = parser.parse_args()
-    if args.command == "fixture" and args.save and args.directory is None:
-        parser.error(
-            "fixture --save requires --directory so saved results remain available"
-        )
-    if args.command == "read":
-        read(args.run_dir, args.table)
-    elif args.command == "compare":
-        compare(args)
-    elif args.directory is not None:
-        fixture(
-            args.directory, entrants=args.entrants, metrics=args.metrics, save=args.save
-        )
-    else:
-        with TemporaryDirectory(prefix="marlbg-canonical-fixture-") as temporary:
-            fixture(
-                Path(temporary),
-                entrants=args.entrants,
-                metrics=args.metrics,
-                save=args.save,
+def run(
+    *,
+    command: str = "fixture",
+    directory: str | Path | None = None,
+    entrants: int = 12,
+    metrics: Literal["priority", "full", "none"] | None = None,
+    save: bool = False,
+    config: str | Path | None = None,
+    system: str | None = None,
+    games_per_opponent: int | None = None,
+    save_replays: int | None = None,
+    rerun_existing: bool | None = None,
+    output_dir: str | Path | None = None,
+    resume_from: str | Path | None = None,
+    num_envs: int = 128,
+    chunk_size: int = 16,
+    prepare: bool = False,
+    cache_dir: str | Path | None = None,
+    run_dir: str | Path | None = None,
+    table: str = "matches",
+) -> None:
+    """Run the artificial fixture, a released comparison, or a saved table read.
+
+    command is fixture (default), compare or read. Fixture uses directory,
+    entrants (2..32), metrics (omitted means priority) and save. Saving requires
+    an explicit directory; unsaved fixture files use a temporary folder.
+    Compare forwards config/system, games_per_opponent, metrics, save_replays
+    and rerun_existing only when non-null, preserving saved scientific settings.
+    output_dir/resume_from, num_envs/chunk_size and cache_dir have the existing
+    comparison meanings. prepare explicitly permits declared asset downloads.
+    Read needs run_dir and prints table in bounded batches without numerical work.
+    No mode publishes a policy or admits an official snapshot. API errors propagate.
+    """
+    for flag, value in (("save", save), ("prepare", prepare)):
+        if type(value) is not bool:
+            raise TypeError(f"{flag} must be true or false")
+    if rerun_existing is not None and type(rerun_existing) is not bool:
+        raise TypeError("rerun_existing must be true, false or None")
+    if command == "read":
+        if run_dir is None:
+            raise ValueError("read needs run_dir naming saved results")
+        read(Path(run_dir), table)
+    elif command == "compare":
+        compare(
+            argparse.Namespace(
+                config=config,
+                system=system,
+                games_per_opponent=games_per_opponent,
+                metrics=metrics,
+                save_replays=save_replays,
+                rerun_existing=rerun_existing,
+                output_dir=output_dir,
+                resume_from=resume_from,
+                num_envs=num_envs,
+                chunk_size=chunk_size,
+                prepare=prepare,
+                cache_dir=cache_dir,
             )
+        )
+    elif command == "fixture":
+        if save and directory is None:
+            raise ValueError("fixture save=true needs directory for durable results")
+        if directory is not None:
+            fixture(
+                Path(directory),
+                entrants=entrants,
+                metrics=metrics or "priority",
+                save=save,
+            )
+        else:
+            with TemporaryDirectory(prefix="marlbg-canonical-fixture-") as temporary:
+                fixture(
+                    Path(temporary),
+                    entrants=entrants,
+                    metrics=metrics or "priority",
+                    save=False,
+                )
+    else:
+        raise ValueError("command must be fixture, compare or read")
+
+
+def main() -> int:
+    """Compose settings and call the existing public tournament or reading owners."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("canonical_tournament", run)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

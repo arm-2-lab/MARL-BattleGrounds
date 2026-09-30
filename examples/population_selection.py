@@ -1,54 +1,43 @@
-"""Declare a small selection field, freeze two members, then run their test field.
+"""Declare a population selection before games, then test its frozen members.
 
-Run from the installed checkout with a new output directory::
+Install the hydra extra and use a new output folder::
 
-    JAX_PLATFORMS=cpu uv run --no-sync python examples/population_selection.py \
-        --output-dir artifacts/population-demo
+    python examples/population_selection.py output_dir=artifacts/population-demo
 
-This software demo uses random, tdm-alpha and tdm-beta on validation maps 42 through 46.
-It saves the selection rule before games, then tests only the frozen members on
-maps 47 through 51. Each matchup has 10 games, capped at 2 steps each. These short games
-show the workflow; they do not choose an official population or prove competence.
-The default backend is CPU unless JAX_PLATFORMS is already set. Help imports no
-numerical modules. Results go into separate selection, decision and test folders.
-
-For an existing declared run, the matching command is ``python -m
-marl_battlegrounds select-population RUN --output-dir DECISION``. Its optional
---declaration JSON only checks the rule already saved before games.
-See docs/evaluation/population_selection.md for the full declaration contract.
+This software lesson compares Random, ALPHA and BETA on validation maps 42--46.
+It saves the declared rule before games, selects with the public owner, and uses
+only the selected frozen members for the separate test. Incomplete selection
+returns status 1 and starts no test games. No short run proves learned skill.
+Use --help or --cfg job for settings; import run for plain Python.
 """
 
-import argparse
+from __future__ import annotations
+
 import json
 import os
-from collections.abc import Sequence
 from pathlib import Path
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run the bounded demo and return 0 on completion, or 1 if evidence is incomplete.
+def run(*, output_dir: str | Path) -> int:
+    """Declare a tournament, select its population and test the frozen members.
 
     Parameters
     ----------
-    argv : sequence of str or None, optional
-        Command arguments; None reads the process arguments. Required
-        --output-dir names a parent for new selection, decision and test folders.
+    output_dir : str | Path
+        Parent for the example's declaration, selection games and held-out test. An
+        incomplete selection does not start the test.
 
     Returns
     -------
     int
-        Zero after both fields finish; one if selection or testing is incomplete.
-        An incomplete selection never starts the test field.
+        Zero after complete selection/test, or one if selection is incomplete.
 
     Notes
     -----
-    Parsing finishes before runtime imports. CPU is selected when no backend was
-    set. Both fields use two parallel games and two steps per compiled chunk.
-    API and file errors reach the caller; existing output is not overwritten.
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
     """
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    args = parser.parse_args(argv)
+    output_dir = Path(output_dir)
     os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
     import marl_battlegrounds as marl_bgs
@@ -67,12 +56,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "failure_policy": "require-complete-field",
             },
         },
-        output_dir=args.output_dir / "selection",
+        output_dir=output_dir / "selection",
         num_envs=2,
         chunk_size=2,
     )
     decision = marl_bgs.select_initial_population(
-        result, output_dir=args.output_dir / "decision"
+        result, output_dir=output_dir / "decision"
     )
     print(json.dumps(decision, indent=2, allow_nan=False))
     if decision["status"] != "complete":
@@ -87,16 +76,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             "seed": 29,
             "selection": {
                 "stage": "test",
-                "population": str(args.output_dir / "decision" / "population.json"),
+                "population": str(output_dir / "decision" / "population.json"),
             },
         },
-        output_dir=args.output_dir / "test",
+        output_dir=output_dir / "test",
         num_envs=2,
         chunk_size=2,
     )
     print(f"Test Status: {tested.status.capitalize()}")
     print(f"Population: {decision['population_id']}")
     return 0 if tested.status == "complete" else 1
+
+
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("population_selection", run)
 
 
 if __name__ == "__main__":

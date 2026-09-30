@@ -11,9 +11,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from tests.scenario_controller_fixtures import (
+    SCENARIO_8_FIXTURE_PATH,
     SCENARIO_8_SEMANTIC_DIGEST,
     load_scenario_8,
-    load_scenario_8_draft,
 )
 
 from marl_battlegrounds.core.env import initialize_scenario_state, step
@@ -199,11 +199,11 @@ def trajectory(scenario: TDMScenario) -> list[WitnessTransition]:
 def test_scenario_8_fixture_binds_approved_revision_14_and_current_beta() -> None:
     # Keep the old immutable fixture separate from the current packaged route.
     scenario = load_scenario_8()
-    draft = load_scenario_8_draft()
-    assert draft.asset_id == "scenario_8"
-    assert draft.revision == 14
-    assert draft.content.description == draft.content.notes == ""
-    assert len(draft.content.embedded_map.obstacles) == 4
+    draft = json.loads(SCENARIO_8_FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert draft["asset_id"] == "scenario_8"
+    assert draft["revision"] == 14
+    assert draft["content"]["description"] == draft["content"]["notes"] == ""
+    assert len(draft["content"]["embedded_map"]["obstacles"]) == 4
     assert scenario.semantic_digest == SCENARIO_8_SEMANTIC_DIGEST
     assert reactive_tdm_beta_controller_descriptor()["version"] == 5
     np.testing.assert_array_equal(

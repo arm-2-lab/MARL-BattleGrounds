@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Run a bounded set of validation commands and print each worker's complete log.
+# Run validation commands together and print each worker's complete log.
 # Source this file from Bash 5.1 or later; do not execute it as a test suite. Call
 # marl_validation_init, marl_validation_start for each command, then
 # marl_validation_finish and marl_validation_cleanup. Commands run as argv arrays,
@@ -16,7 +16,6 @@ declare -Ag MARL_VALIDATION_STATUS_BY_TASK=()
 declare -Ag MARL_VALIDATION_DURATION_BY_TASK=()
 declare -ag MARL_VALIDATION_TASK_ORDER=()
 
-MARL_VALIDATION_MAX_JOBS=0
 MARL_VALIDATION_NEXT_TASK=0
 MARL_VALIDATION_FAILURES=0
 MARL_VALIDATION_LOG_DIR=""
@@ -53,23 +52,17 @@ marl_validation_handle_signal() {
   exit "${exit_status}"
 }
 
-# Create one process pool: $1 is a positive decimal concurrency limit; optional
-# $2 names its temporary directory (default validation). Return 2 for invalid limits
-# or repeated initialization. Install INT/TERM traps; call cleanup after finishing.
+# Set up validation logs. Optional $1 names the temporary directory (default
+# validation). Return 2 for repeated initialization. Install INT/TERM traps;
+# call cleanup after finishing. Every submitted command starts immediately.
 marl_validation_init() {
-  local max_jobs="${1:-}"
-  local suite_name="${2:-validation}"
+  local suite_name="${1:-validation}"
 
-  if [[ ! "${max_jobs}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "error: validation concurrency must be a positive integer." >&2
-    return 2
-  fi
-  if (( MARL_VALIDATION_MAX_JOBS != 0 )); then
+  if [[ -n "${MARL_VALIDATION_LOG_DIR}" ]]; then
     echo "error: validation process pool is already initialized." >&2
     return 2
   fi
 
-  MARL_VALIDATION_MAX_JOBS="${max_jobs}"
   MARL_VALIDATION_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/marl-${suite_name}.XXXXXX")"
   trap 'marl_validation_handle_signal INT' INT
   trap 'marl_validation_handle_signal TERM' TERM
@@ -151,15 +144,15 @@ marl_validation_reap_one() {
   return 0
 }
 
-# Queue a worker: $1 is its nonempty display label; remaining arguments are the
-# command and its exact arguments. Wait for room when the pool is full. Return 2
+# Start a worker: $1 is its nonempty display label; remaining arguments are the
+# command and its exact arguments. There is no worker limit or queue. Return 2
 # if uninitialized or missing a label/command. Run the command in a subshell and
 # capture stdout/stderr plus its exit status in the pool temporary directory.
 marl_validation_start() {
   local label="${1:-}"
   shift || true
 
-  if (( MARL_VALIDATION_MAX_JOBS == 0 )); then
+  if [[ -z "${MARL_VALIDATION_LOG_DIR}" ]]; then
     echo "error: initialize the validation process pool before adding work." >&2
     return 2
   fi
@@ -167,10 +160,6 @@ marl_validation_start() {
     echo "error: validation work requires a label and command." >&2
     return 2
   fi
-
-  while (( $(marl_validation_active_count) >= MARL_VALIDATION_MAX_JOBS )); do
-    marl_validation_reap_one
-  done
 
   MARL_VALIDATION_NEXT_TASK=$((MARL_VALIDATION_NEXT_TASK + 1))
   local task_id="${MARL_VALIDATION_NEXT_TASK}"
@@ -253,7 +242,6 @@ marl_validation_cleanup() {
   MARL_VALIDATION_STATUS_BY_TASK=()
   MARL_VALIDATION_DURATION_BY_TASK=()
   MARL_VALIDATION_TASK_ORDER=()
-  MARL_VALIDATION_MAX_JOBS=0
   MARL_VALIDATION_NEXT_TASK=0
   MARL_VALIDATION_FAILURES=0
   MARL_VALIDATION_LOG_DIR=""

@@ -80,3 +80,6 @@ docs/dev/milestone*.md
 !tests/fixtures/baseline_donor/qmix.npz
 !tests/fixtures/baseline_donor/mappo_registration_params.npz
 !tests/fixtures/baseline_donor/pqn.npz
+
+# Private local authoring product; public clients have no dependency on it.
+/.local/dev_client/

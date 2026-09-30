@@ -1,52 +1,36 @@
-"""Check the in-process handoff from live recording to replay.
+"""Check saving in the live client and opening a separate saved Replay Viewer.
 
 A live debugger recording is a current replay: frame V3 units in a replay V4
 whose context records the NoSharedObs V4 actor projection.
 """
 
+# pyright: reportPrivateUsage=false
 import csv
 import io
 import json
 import stat
+from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from http.client import HTTPConnection, HTTPResponse
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
+from threading import enumerate as enumerate_threads
 from typing import cast
 from unittest.mock import Mock
 
 import pytest
-import scripts.dev.visual_debugger.service as debugger_service_module
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    build_debugger_evaluation_launch_specification_v1,
-)
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveOracleAuthorizedPresentationFrameV1,
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
     ReplayOracleAuthorizedPresentationFrameV1,
-)
-from scripts.dev.visual_debugger.protocol import (
-    CommandRequestV1,
-    CommandResponseV2,
-    FinishAndReviewCommandV1,
-    KeyboardCommandV1,
-    ResearcherLiveDebuggerFrameV2,
-    ReviewReplayCommandV1,
-    SetCombatConfigurationCommandV1,
-    SetPresetCommandV1,
-)
-from scripts.dev.visual_debugger.recording import (
-    build_debugger_recording_specification_v1,
-)
-from scripts.dev.visual_debugger.recording_coordinator import (
-    RecordingDebuggerCoordinator,
 )
 from scripts.dev.visual_debugger.replay_protocol import (
     ActorPovReplayViewerFrameV1,
     ReplayCommandRequestV1,
     ReplayCommandResponseV1,
     ReplayCommandV1,
+    ReplayExitCommandV1,
     ReplayLastFrameCommandV1,
     ReplayNextFrameCommandV1,
     ReplaySelectAgentCommandV1,
@@ -56,14 +40,40 @@ from scripts.dev.visual_debugger.replay_protocol import (
     SharedObsAgentPovReplayTimelineV1,
     SharedObsAgentPovReplayViewerFrameV1,
 )
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
 from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from scripts.dev.visual_debugger.server import DebuggerHTTPServer, create_server
-from scripts.dev.visual_debugger.service import DebuggerService
 from tests.export_visual_debugger_replay_artifacts import export_artifacts
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+import marl_battlegrounds._battle_client.recording_coordinator as coordinator_module
+import marl_battlegrounds._battle_client.service as debugger_service_module
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_launch_specification_v1,
+)
+from marl_battlegrounds._battle_client.protocol import (
+    CommandRequestV1,
+    CommandResponseV2,
+    ExitCommandV1,
+    FinishAndReviewCommandV1,
+    KeyboardCommandV1,
+    ResearcherLiveDebuggerFrameV2,
+    ReviewReplayCommandV1,
+    SetCombatConfigurationCommandV1,
+    SetPresetCommandV1,
+)
+from marl_battlegrounds._battle_client.recording import (
+    build_debugger_recording_specification_v1,
+)
+from marl_battlegrounds._battle_client.recording_coordinator import (
+    RecordingDebuggerCoordinator,
+)
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
+from marl_battlegrounds._battle_client.service import (
+    DebuggerService,
+    ServiceCommandResult,
+)
 from marl_battlegrounds.evaluation.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
 )
@@ -79,11 +89,64 @@ from marl_battlegrounds.evaluation.replay_io import (
     preflight_replay_destination,
 )
 from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
+from marl_battlegrounds.viewer.server import HttpCoordinatorSnapshot
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _ASSET_ROOT = _REPOSITORY_ROOT / "web" / "visual_debugger"
 _TOKEN_HEADER = "X-MARL-Debugger-Token"
 _TOKEN = "recording-handoff-capability"
+
+
+@pytest.fixture(autouse=True)
+def close_coordinators(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    owners: list[RecordingDebuggerCoordinator] = []
+    original = RecordingDebuggerCoordinator.__init__
+
+    def tracked(
+        self: RecordingDebuggerCoordinator,
+        service: DebuggerService,
+        *,
+        asset_root: Path,
+    ) -> None:
+        original(self, service, asset_root=asset_root)
+        owners.append(self)
+
+    monkeypatch.setattr(RecordingDebuggerCoordinator, "__init__", tracked)
+    yield
+    for owner in owners:
+        owner.close()
+        owner.service.close()
+
+
+def _child(coordinator: RecordingDebuggerCoordinator) -> HttpCoordinatorSnapshot:
+    server = coordinator._viewer_server
+    assert server is not None
+    assert coordinator.router.snapshot().generation == 0
+    assert coordinator.router.snapshot().binding.mode == "live"
+    assert coordinator.router.snapshot().service is coordinator.service
+    return server.coordinator_snapshot()
+
+
+def _review(
+    coordinator: RecordingDebuggerCoordinator, command_id: str = "open-replay"
+) -> ServiceCommandResult:
+    return coordinator.apply_command(
+        _live_request(
+            command_id,
+            base_revision=coordinator.service.revision,
+            command=ReviewReplayCommandV1(),
+        )
+    )
+
+
+def _finish(coordinator: RecordingDebuggerCoordinator) -> ServiceCommandResult:
+    return coordinator.apply_command(
+        _live_request(
+            "finish",
+            base_revision=coordinator.service.revision,
+            command=FinishAndReviewCommandV1(),
+        )
+    )
 
 
 def _runtime_provenance() -> RuntimeProvenanceV1:
@@ -147,7 +210,7 @@ def _coordinator_and_recorder(
         session_id="recording-coordinator-test",
         recorder=recorder,
     )
-    return RecordingDebuggerCoordinator(service), recorder
+    return RecordingDebuggerCoordinator(service, asset_root=_ASSET_ROOT), recorder
 
 
 def _coordinator(tmp_path: Path) -> RecordingDebuggerCoordinator:
@@ -186,7 +249,7 @@ def _authorized_get(
     path: str,
 ) -> tuple[HTTPResponse, bytes]:
     connection = HTTPConnection("127.0.0.1", server.server_port)
-    connection.request("GET", path, headers={_TOKEN_HEADER: _TOKEN})
+    connection.request("GET", path, headers={_TOKEN_HEADER: server.capability_token})
     response = connection.getresponse()
     payload = response.read()
     connection.close()
@@ -213,7 +276,7 @@ def test_presentation_command_keeps_the_exact_live_binding(tmp_path: Path) -> No
     assert coordinator.router.snapshot().binding is initial.binding
 
 
-def test_finish_installs_replay_before_return_and_starts_settled_at_zero(
+def test_finish_keeps_live_and_explicit_review_opens_separate_viewer(
     tmp_path: Path,
 ) -> None:
     coordinator, recorder = _coordinator_and_recorder(tmp_path)
@@ -235,13 +298,21 @@ def test_finish_installs_replay_before_return_and_starts_settled_at_zero(
             command=FinishAndReviewCommandV1(),
         )
     )
-    replay = coordinator.router.snapshot()
+    assert result.replay_handoff is None
+    assert isinstance(result.payload, CommandResponseV2)
+    assert result.payload.replay_url is None
+    assert result.payload.frame.recording is not None
+    assert result.payload.frame.recording.lifecycle == "saved"
+    assert coordinator.router.snapshot() == live
+    result = _review(coordinator)
+    replay = _child(coordinator)
 
     assert result.replay_handoff is replay.service
     assert isinstance(result.payload, CommandResponseV2)
     assert result.payload.frame.recording is not None
-    assert result.payload.frame.recording.lifecycle == "reviewing"
-    assert replay.generation == 1
+    assert result.payload.frame.recording is not None
+    assert result.payload.frame.recording.lifecycle == "saved"
+    assert replay.generation == 0
     assert replay.binding.mode == "replay"
     assert replay.binding.product_kind == "replay_viewer"
     frame = replay.binding.current_frame()
@@ -332,15 +403,17 @@ def test_random_policy_recording_publishes_reloads_and_opens_in_replay(
             command=FinishAndReviewCommandV1(),
         )
     )
-    installed = coordinator.router.snapshot()
+    assert finished.replay_handoff is None
+    reviewed = _review(coordinator)
+    installed = _child(coordinator)
     viewer = cast(ReplayViewerService, installed.service)
-    assert finished.replay_handoff is viewer
+    assert reviewed.replay_handoff is viewer
     assert installed.binding.mode == "replay"
     assert installed.binding.metric_catalog == viewer.metric_catalog
 
-    loaded = load_replay(
-        tmp_path / "coordinator-arena_5v5.marlbg-replay.json",
-    )
+    saved_paths = tuple(tmp_path.glob("*.marlbg-replay.json"))
+    assert len(saved_paths) == 1
+    loaded = load_replay(saved_paths[0])
     context = loaded.replay.header.context
     aggregation = {row.name: row.value for row in context.aggregation_keys}
     assert aggregation["action_source"] == "policy"
@@ -396,13 +469,20 @@ def test_recording_handoff_http_gets_use_actual_private_shared_roots(
                 command=FinishAndReviewCommandV1(),
             )
         )
-        frame_response, frame_body = _authorized_get(server, "/api/frame")
+        assert result.replay_handoff is None
+        result = _review(coordinator)
+        child_server = coordinator._viewer_server
+        assert child_server is not None
+        live_response, live_body = _authorized_get(server, "/api/frame")
+        assert live_response.status == HTTPStatus.OK
+        assert json.loads(live_body)["frame_kind"] == "researcher_live_debugger"
+        frame_response, frame_body = _authorized_get(child_server, "/api/frame")
         timeline_response, timeline_body = _authorized_get(
-            server,
+            child_server,
             "/api/replay/timeline",
         )
         metric_response, metric_body = _authorized_get(
-            server,
+            child_server,
             "/api/replay/metric-report",
         )
     finally:
@@ -411,7 +491,7 @@ def test_recording_handoff_http_gets_use_actual_private_shared_roots(
         server.server_close()
         thread.join()
 
-    installed = coordinator.router.snapshot()
+    installed = _child(coordinator)
     assert result.replay_handoff is shared_viewer
     assert installed.service is shared_viewer
     assert installed.binding.current_frame == shared_viewer.current_frame
@@ -466,7 +546,9 @@ def test_duplicate_finish_does_not_reinstall_or_advance_router(tmp_path: Path) -
 
     duplicate = coordinator.service.apply_command(request)
 
-    assert first.replay_handoff is installed.service
+    assert first.replay_handoff is None
+    assert installed.binding.mode == "live"
+    assert installed.generation == 0
     assert duplicate.replay_handoff is None
     assert duplicate.outcome == "response"
     assert isinstance(duplicate.payload, CommandResponseV2)
@@ -610,12 +692,12 @@ def test_registered_capture_round_trip_preserves_exact_researcher_presentation(
             command=ReviewReplayCommandV1(),
         )
     )
-    installed = coordinator.router.snapshot()
+    installed = _child(coordinator)
     viewer = cast(ReplayViewerService, installed.service)
     assert reviewed_result.replay_handoff is viewer
     assert replay_viewer_factory.call_count == 1
     assert replay_viewer_factory.call_args.args[0] is recorder.verified_loaded_bundle
-    assert installed.generation == 1
+    assert installed.generation == 0
     assert installed.binding.mode == "replay"
     assert installed.binding.apply_command == viewer.apply_command
     assert installed.binding.current_presentation == viewer.current_presentation
@@ -749,3 +831,380 @@ def test_registered_capture_round_trip_preserves_exact_researcher_presentation(
     ):
         assert forbidden_path not in public_text
         assert forbidden_path.encode() not in prepared.replay_json_bytes
+
+
+def _http_request(
+    server: DebuggerHTTPServer,
+    *,
+    path: str = "/api/frame",
+    token: str | None = None,
+    request: CommandRequestV1 | ReplayCommandRequestV1 | None = None,
+) -> tuple[int, dict[str, object]]:
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+    headers = {_TOKEN_HEADER: token or server.capability_token}
+    if request is not None:
+        headers.update(
+            {"Origin": server.expected_origin, "Content-Type": "application/json"}
+        )
+    connection.request(
+        "GET" if request is None else "POST",
+        path,
+        body=None if request is None else request.model_dump_json(),
+        headers=headers,
+    )
+    response = connection.getresponse()
+    body = json.loads(response.read())
+    connection.close()
+    return response.status, body
+
+
+def test_two_http_tabs_share_one_separate_authenticated_viewer(tmp_path: Path) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    live_frame = coordinator.service.current_frame()
+    server = create_server(
+        asset_root=_ASSET_ROOT, port=0, coordinator_router=coordinator.router
+    )
+    thread = Thread(target=server.serve_forever)
+    thread.start()
+    try:
+
+        def open_tab(index: int) -> tuple[int, dict[str, object]]:
+            return _http_request(
+                server,
+                path="/api/command",
+                request=_live_request(
+                    f"tab-{index}",
+                    base_revision=coordinator.service.revision,
+                    command=ReviewReplayCommandV1(),
+                ),
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(open_tab, range(2)))
+        assert [response[0] for response in responses] == [200, 200]
+        urls = [response[1]["replay_url"] for response in responses]
+        assert urls[0] == urls[1]
+        child = coordinator._viewer_server
+        assert child is not None
+        assert child.capability_token != server.capability_token
+        assert len(child.capability_token) == 43
+        assert child.coordinator.mode == "replay"
+        assert server.coordinator.mode == "live"
+        assert _http_request(server)[1]["frame_id"] == live_frame.frame_id
+        assert _http_request(child)[1]["frame_id"] == live_frame.frame_id
+        assert _http_request(server, token=child.capability_token)[0] == 401
+        assert _http_request(child, token=server.capability_token)[0] == 401
+        assert _http_request(server, path="/api/replay/timeline")[0] == 404
+        assert _http_request(child, path="/api/replay/timeline")[0] == 200
+        assert str(tmp_path) not in json.dumps(responses)
+    finally:
+        if thread.is_alive():
+            server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_viewer_exit_and_stopped_thread_allow_reopen_without_dead_shutdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    first = _review(coordinator, "first")
+    child, thread = coordinator._viewer_server, coordinator._viewer_thread
+    assert child is not None and thread is not None
+    viewer = cast(ReplayViewerService, child.debugger_service)
+    status, _ = _http_request(
+        child,
+        path="/api/replay/command",
+        request=_replay_request(
+            viewer,
+            "exit",
+            ReplayExitCommandV1(),
+        ),
+    )
+    assert status == 200
+    thread.join()
+    monkeypatch.setattr(
+        child, "shutdown", Mock(side_effect=AssertionError("dead shutdown"))
+    )
+    second = _review(coordinator, "second")
+    assert isinstance(first.payload, CommandResponseV2)
+    assert isinstance(second.payload, CommandResponseV2)
+    assert first.payload.replay_url != second.payload.replay_url
+    child, thread = coordinator._viewer_server, coordinator._viewer_thread
+    assert child is not None and thread is not None
+    child.shutdown()
+    thread.join()
+    monkeypatch.setattr(
+        child, "shutdown", Mock(side_effect=AssertionError("dead shutdown"))
+    )
+    third = _review(coordinator, "third")
+    assert isinstance(third.payload, CommandResponseV2)
+    assert third.payload.replay_url != second.payload.replay_url
+    assert coordinator.service.current_frame().frame_index == 0
+
+
+@pytest.mark.parametrize("failure", ("assets", "bind", "thread", "probe"))
+def test_failed_viewer_start_keeps_saved_file_retryable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    coordinator, recorder = _coordinator_and_recorder(tmp_path)
+    _finish(coordinator)
+    saved = recorder.saved_bundle
+    assert saved is not None
+    saved_bytes = saved.replay_path.read_bytes()
+    before_threads = {
+        thread.ident
+        for thread in enumerate_threads()
+        if thread.name == "marl-recording-viewer"
+    }
+    with monkeypatch.context() as patch:
+        if failure == "assets":
+            patch.setattr(coordinator, "_asset_root", tmp_path / "missing-assets")
+        elif failure == "bind":
+            patch.setattr(
+                coordinator_module,
+                "create_server",
+                Mock(side_effect=OSError("bind failed")),
+            )
+        elif failure == "thread":
+            patch.setattr(
+                coordinator_module.Thread,
+                "start",
+                Mock(side_effect=RuntimeError("start failed")),
+            )
+        else:
+            patch.setattr(
+                coordinator_module.HTTPConnection,
+                "getresponse",
+                Mock(side_effect=OSError("probe failed")),
+            )
+        result = _review(coordinator, "failed-open")
+    assert isinstance(result.payload, CommandResponseV2)
+    assert result.payload.replay_url is None
+    assert "Try Open Replay again" in (result.payload.notice or "")
+    assert str(tmp_path) not in result.payload.model_dump_json()
+    assert coordinator._viewer_server is None
+    assert recorder.lifecycle == "saved"
+    assert saved.replay_path.read_bytes() == saved_bytes
+    assert {
+        thread.ident
+        for thread in enumerate_threads()
+        if thread.name == "marl-recording-viewer"
+    } == before_threads
+    retry = _review(coordinator, "retry-open")
+    assert isinstance(retry.payload, CommandResponseV2)
+    assert retry.payload.replay_url is not None
+    assert saved.replay_path.read_bytes() == saved_bytes
+
+
+def test_new_recording_replaces_viewer_only_after_successful_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    _review(coordinator, "old")
+    old_server, old_thread = coordinator._viewer_server, coordinator._viewer_thread
+    assert old_server is not None and old_thread is not None
+    second, _ = _coordinator_and_recorder(tmp_path, scenario_name="basic_support")
+    _finish(second)
+    next_viewer = second.service._build_replay_handoff()
+    original = DebuggerService._build_replay_handoff
+
+    def next_handoff(service: DebuggerService) -> ReplayViewerService:
+        return next_viewer if service is coordinator.service else original(service)
+
+    monkeypatch.setattr(DebuggerService, "_build_replay_handoff", next_handoff)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            coordinator_module,
+            "create_server",
+            Mock(side_effect=OSError("bind failed")),
+        )
+        failed = _review(coordinator, "fail-new")
+    assert isinstance(failed.payload, CommandResponseV2)
+    assert failed.payload.replay_url is None
+    assert coordinator._viewer_server is old_server
+    assert old_thread.is_alive()
+    original_response = HTTPConnection.getresponse
+
+    def checked_response(connection: HTTPConnection) -> HTTPResponse:
+        assert old_thread.is_alive()
+        assert old_server.socket.fileno() >= 0
+        return original_response(connection)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(HTTPConnection, "getresponse", checked_response)
+        replaced = _review(coordinator, "new")
+    assert isinstance(replaced.payload, CommandResponseV2)
+    assert replaced.payload.replay_url is not None
+    assert coordinator._viewer_server is not old_server
+    assert not old_thread.is_alive()
+    assert old_server.socket.fileno() == -1
+    assert _child(coordinator).service is next_viewer
+
+
+def test_parent_close_serializes_with_open_and_prevents_later_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    entered, release, closing = Event(), Event(), Event()
+    original = coordinator_module.create_server
+    children: list[DebuggerHTTPServer] = []
+
+    def delayed_start(*args: object, **kwargs: object) -> DebuggerHTTPServer:
+        entered.set()
+        release.wait()
+        child = original(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+        children.append(child)
+        return child
+
+    def close_parent() -> None:
+        closing.set()
+        coordinator.close()
+
+    monkeypatch.setattr(coordinator_module, "create_server", delayed_start)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        opened = pool.submit(_review, coordinator, "racing-open")
+        entered.wait()
+        closed = pool.submit(close_parent)
+        closing.wait()
+        release.set()
+        opened.result()
+        closed.result()
+    assert len(children) == 1
+    assert children[0].socket.fileno() == -1
+    assert coordinator._viewer_server is None
+    later = _review(coordinator, "after-close")
+    assert isinstance(later.payload, CommandResponseV2)
+    assert later.payload.replay_url is None
+    assert len(children) == 1
+
+
+@pytest.mark.parametrize("close_kind", ("exit", "interrupt"))
+def test_parent_exit_or_interrupt_closes_viewer(
+    tmp_path: Path, close_kind: str
+) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    _review(coordinator)
+    server, thread = coordinator._viewer_server, coordinator._viewer_thread
+    assert server is not None and thread is not None
+    if close_kind == "exit":
+        result = coordinator.apply_command(
+            _live_request(
+                "exit",
+                base_revision=coordinator.service.revision,
+                command=ExitCommandV1(),
+            )
+        )
+        assert result.shutdown_requested
+    else:
+        assert coordinator.graceful_close().exit_code == 0
+    assert not thread.is_alive()
+    assert server.socket.fileno() == -1
+    assert coordinator._viewer_server is None
+
+
+def test_repeated_viewer_reopens_keep_one_child_and_release_it(tmp_path: Path) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    baseline = {
+        thread.ident
+        for thread in enumerate_threads()
+        if thread.name == "marl-recording-viewer"
+    }
+    tokens: set[str] = set()
+    for index in range(4):
+        opened = _review(coordinator, f"open-{index}")
+        assert isinstance(opened.payload, CommandResponseV2)
+        assert opened.payload.replay_url is not None
+        server, thread = coordinator._viewer_server, coordinator._viewer_thread
+        assert server is not None and thread is not None
+        tokens.add(server.capability_token)
+        active = {
+            item.ident
+            for item in enumerate_threads()
+            if item.name == "marl-recording-viewer"
+        }
+        assert len(active - baseline) == 1
+        server.shutdown()
+        thread.join()
+    coordinator.close()
+    assert len(tokens) == 4
+    assert {
+        thread.ident
+        for thread in enumerate_threads()
+        if thread.name == "marl-recording-viewer"
+    } == baseline
+
+
+def test_reopening_same_recording_keeps_cursor_and_skips_server_asset_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator, _ = _coordinator_and_recorder(tmp_path, scenario_name="basic_support")
+    for index in range(2):
+        coordinator.apply_command(
+            _live_request(
+                f"tick-{index}",
+                base_revision=coordinator.service.revision,
+                command=KeyboardCommandV1(key="n"),
+            )
+        )
+    first = _review(coordinator, "first-open")
+    child = coordinator._viewer_server
+    assert child is not None
+    viewer = cast(ReplayViewerService, child.debugger_service)
+    viewer.apply_command(_replay_request(viewer, "last", ReplayLastFrameCommandV1()))
+    assert viewer.current_frame().cursor.frame_index == 2
+    monkeypatch.setattr(
+        coordinator_module,
+        "create_server",
+        Mock(
+            side_effect=AssertionError(
+                "reuse must not reload assets or open another socket"
+            ),
+        ),
+    )
+    reopened = _review(coordinator, "second-open")
+    assert isinstance(first.payload, CommandResponseV2)
+    assert isinstance(reopened.payload, CommandResponseV2)
+    assert reopened.payload.replay_url == first.payload.replay_url
+    assert reopened.payload.notice == first.payload.notice
+    assert coordinator._viewer_server is child
+    assert viewer.current_frame().cursor.frame_index == 2
+
+
+@pytest.mark.parametrize("fence", ("exit", "fault"))
+def test_unusable_viewer_service_is_replaced_while_http_thread_still_runs(
+    tmp_path: Path,
+    fence: str,
+) -> None:
+    coordinator = _coordinator(tmp_path)
+    _finish(coordinator)
+    _review(coordinator, "initial-open")
+    old_server, old_thread = coordinator._viewer_server, coordinator._viewer_thread
+    assert old_server is not None and old_thread is not None
+    viewer = cast(ReplayViewerService, old_server.debugger_service)
+    if fence == "exit":
+        result = viewer.apply_command(
+            _replay_request(viewer, "exit", ReplayExitCommandV1())
+        )
+        assert result.shutdown_requested
+    else:
+        viewer._faulted = True
+    assert old_thread.is_alive()
+    reopened = _review(coordinator, "reopen")
+    assert isinstance(reopened.payload, CommandResponseV2)
+    assert reopened.payload.replay_url is not None
+    assert coordinator._viewer_server is not old_server
+    assert not old_thread.is_alive()
+    assert old_server.socket.fileno() == -1

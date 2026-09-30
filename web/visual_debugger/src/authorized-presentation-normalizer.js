@@ -11,7 +11,10 @@
  */
 
 import { AUTHORIZED_PRESENTATION_SCHEMA_V1 } from "./authorized-presentation-schema.js";
-import { normalizeLiveDebuggerFrameV2 } from "./frame-normalizer.js";
+import {
+  normalizeCombatConfigurationV1,
+  normalizeLiveDebuggerFrameV2,
+} from "./frame-normalizer.js";
 import {
   joinReplayFrameAndTimeline,
   normalizeReplayArtifactFactsV1,
@@ -20,11 +23,7 @@ import {
   normalizeReplayViewerFrameV1,
   validateReplayFrameContinuity,
 } from "./replay-frame-normalizer.js";
-import {
-  isTeamController,
-  requiresSharedObs,
-  systemTransportKeys,
-} from "./system-controls.js";
+import { systemTransportKeys } from "./system-controls.js";
 import { CANONICAL_STATUS_ORDER, statusTokenIdFromCatalogId } from "./vocabulary.js";
 
 const PRESENTATION_KINDS = new Set([
@@ -1443,11 +1442,10 @@ function validateAcceptedActionTuple(action, label) {
 }
 
 /**
- * Check pending against the full ordered active roster at simulatorStep.
- * draft names the selected editable actor and its armed action. Require one bounded
- * pending action per roster row and exact identity order; the selected row must equal
- * the effective draft, with an unarmed combat lane represented as target-none/no-Ultimate.
- * Return undefined or throw TypeError naming label. Does not submit or simulate actions.
+ * Check Manual pending rows against an ordered subset of the roster at simulatorStep.
+ * The transport join checks exact configured ownership. An editable selected row must equal
+ * its draft, with an unarmed lane represented as target-none/no-Ultimate.
+ * A policy inspection must have no selected pending row. Return undefined or throw TypeError naming label. Does not submit or simulate actions.
  *
  * @param {Record<string, any> | null} pending
  * @param {any[]} roster
@@ -1459,17 +1457,19 @@ function validateLivePendingJointAction(pending, roster, simulatorStep, draft, l
   if (
     pending === null ||
     pending.current_simulator_step_count !== simulatorStep ||
-    !Array.isArray(pending.action_rows) ||
-    pending.action_rows.length !== roster.length
+    !Array.isArray(pending.action_rows)
   ) {
     invalid(`${label} misses its active roster or decision epoch.`);
   }
   const rows = /** @type {any[]} */ (pending.action_rows);
+  const pendingIds = new Set(rows.map((row) => row.actor_public_agent_id));
+  const manualRoster = roster.filter((row) => pendingIds.has(row.public_agent_id));
   if (
+    rows.length !== manualRoster.length ||
     rows.some(
       (row, index) =>
-        row.actor_presentation_key !== roster[index]?.presentation_key ||
-        row.actor_public_agent_id !== roster[index]?.public_agent_id,
+        row.actor_presentation_key !== manualRoster[index]?.presentation_key ||
+        row.actor_public_agent_id !== manualRoster[index]?.public_agent_id,
     )
   ) {
     invalid(`${label} changed active actor identity or order.`);
@@ -1480,6 +1480,10 @@ function validateLivePendingJointAction(pending, roster, simulatorStep, draft, l
   const selected = rows.find(
     (row) => row.actor_public_agent_id === draft.actor_public_agent_id,
   );
+  if (draft.inspection_kind === "policy_read_only") {
+    if (selected) invalid(`${label} cannot invent a pending policy action.`);
+    return;
+  }
   const expected = {
     move_action: draft.draft_action.move_action,
     target_action:
@@ -4452,11 +4456,12 @@ function validateLiveResearcherSpace(frame) {
   if (pending.submission_scope !== source.source_submission_scope) {
     invalid("Live researcher pending scope does not join its source.");
   }
-  if (pending.inspection_kind === "editable_live_draft") {
+  if (["editable_live_draft", "policy_read_only"].includes(pending.inspection_kind)) {
     if (pending.submission_scope !== "joint_turn") {
       invalid("Live researcher editable draft must submit one joint turn.");
     }
-    const draft = pending.draft;
+    const draft =
+      pending.inspection_kind === "policy_read_only" ? pending : pending.draft;
     const owner = roster.find(
       (row) => row.public_agent_id === researcher.selected_public_agent_id,
     );
@@ -4469,6 +4474,7 @@ function validateLiveResearcherSpace(frame) {
       draft.actor_presentation_key !== owner.presentation_key ||
       decision.owner_public_agent_id !== draft.actor_public_agent_id ||
       decision.owner_presentation_key !== draft.actor_presentation_key ||
+      (pending.inspection_kind === "policy_read_only" && draft.actor_anchor !== null) ||
       decision.target_actions[0].target_kind !== "no_target" ||
       /** @type {any[]} */ (decision.target_actions)
         .slice(1)
@@ -4502,41 +4508,45 @@ function validateLiveResearcherSpace(frame) {
       draft,
       "Live researcher Pending Joint Action",
     );
-    if (
-      !structurallyEqual(
-        draft.draft_target,
-        decision.target_actions[action.target_action],
-      ) ||
-      legality.move_action_is_legal !==
-        decision.movement_action_mask[action.move_action] ||
-      legality.target_action_is_legal !==
-        decision.target_action_mask[action.target_action]
-    ) {
-      invalid("Live researcher draft does not join its exact decision row.");
-    }
-    if (action.armed_lane === "none") {
+    if (pending.inspection_kind === "editable_live_draft") {
       if (
-        legality.armed_lane_is_legal !== null ||
-        legality.combat_pair_is_legal !== null
+        !structurallyEqual(
+          draft.draft_target,
+          decision.target_actions[action.target_action],
+        ) ||
+        legality.move_action_is_legal !==
+          decision.movement_action_mask[action.move_action] ||
+        legality.target_action_is_legal !==
+          decision.target_action_mask[action.target_action]
       ) {
-        invalid("Unarmed live researcher draft cannot carry combat legality.");
+        invalid("Live researcher draft does not join its exact decision row.");
       }
-    } else {
-      const lane = action.armed_lane === "basic" ? 0 : 1;
-      if (
-        legality.armed_lane_is_legal !== decision.use_ultimate_action_mask[lane] ||
-        legality.combat_pair_is_legal !==
-          decision.target_use_ultimate_joint_mask[action.target_action][lane]
-      ) {
-        invalid("Live researcher draft joint legality changed.");
+      if (action.armed_lane === "none") {
+        if (
+          legality.armed_lane_is_legal !== null ||
+          legality.combat_pair_is_legal !== null
+        ) {
+          invalid("Unarmed live researcher draft cannot carry combat legality.");
+        }
+      } else {
+        const lane = action.armed_lane === "basic" ? 0 : 1;
+        if (
+          legality.armed_lane_is_legal !== decision.use_ultimate_action_mask[lane] ||
+          legality.combat_pair_is_legal !==
+            decision.target_use_ultimate_joint_mask[action.target_action][lane]
+        ) {
+          invalid("Live researcher draft joint legality changed.");
+        }
       }
     }
-
     const localInspection = frame.live_inspection.inspection;
-    if (localInspection.inspection_kind !== "editable_live_draft") {
+    if (localInspection.inspection_kind !== pending.inspection_kind) {
       invalid("Live researcher and Agent draft modes diverged.");
     }
-    const localDraft = localInspection.draft;
+    const localDraft =
+      localInspection.inspection_kind === "policy_read_only"
+        ? localInspection
+        : localInspection.draft;
     const localDecision = localDraft.decision_mask;
     const researcherTargetIds = /** @type {any[]} */ (decision.target_actions).map(
       (row) => (row.target_kind === "no_target" ? null : row.target_public_agent_id),
@@ -4740,7 +4750,8 @@ function validateInspectionStateMatrix(
       }
       return;
     }
-    inspection = wrapper.draft;
+    inspection =
+      wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft;
   } else {
     if (source.source_frame_index > source.source_final_frame_index) {
       invalid("Replay source frame exceeds its retained prefix.");
@@ -4893,7 +4904,7 @@ function validateInspectionStateMatrix(
     ) {
       invalid("Replay accepted action is not its exact legal decision row.");
     }
-  } else {
+  } else if (inspection.inspection_kind !== "policy_read_only") {
     const action = inspection.draft_action;
     const legality = inspection.draft_legality;
     if (
@@ -5304,12 +5315,12 @@ function validateSemanticFrame(frame) {
   if (actionAxis !== null) validateActionAxis(actionAxis);
   if (live && oracle) {
     const wrapper = frame.live_inspection.inspection;
-    if (wrapper.inspection_kind === "editable_live_draft") {
+    if (["editable_live_draft", "policy_read_only"].includes(wrapper.inspection_kind)) {
       validateLivePendingJointAction(
         frame.pending_joint_action,
         sceneAgents,
         source.source_simulator_step_count,
-        wrapper.draft,
+        wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft,
         "Live Oracle Pending Joint Action",
       );
     } else if (frame.pending_joint_action !== null) {
@@ -5547,6 +5558,12 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
   const normalized = deepFreeze({
     ...frame,
     viewer_mode: semantic.live ? "live" : "replay",
+    ...(semantic.live
+      ? {
+          run_state: frame.run_state ?? "paused",
+          fresh_launch_required: frame.fresh_launch_required ?? false,
+        }
+      : {}),
     session_id: frame.source.source_session_id,
     revision: frame.source.source_revision,
     authority_epoch: frame.source.source_authority_epoch,
@@ -6282,7 +6299,11 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
   );
   requireExactSnapshotKeys(
     presentation,
-    Object.keys(rootSchema.properties),
+    Object.keys(rootSchema.properties).filter(
+      (key) =>
+        !["run_state", "fresh_launch_required"].includes(key) ||
+        Object.hasOwn(presentation, key),
+    ),
     "Authorized presentation candidate",
   );
   validateSchema(source, rootSchema.properties.source, "Presentation source identity");
@@ -6318,7 +6339,7 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
   }
   requireExactSnapshotKeys(
     raw,
-    live
+    raw.frame_kind.endsWith("_live_debugger")
       ? systemTransportKeys(RAW_FRAME_KEYS[raw.frame_kind], raw)
       : RAW_FRAME_KEYS[raw.frame_kind],
     "Raw transport candidate",
@@ -6358,29 +6379,33 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
     "Raw/presentation authority epoch",
   );
   if (live) {
-    const configuration = snapshotRecord(
-      raw.combat_configuration,
-      "Live combat configuration identity",
+    if (!["paused", "running"].includes(presentation.run_state ?? "paused"))
+      invalid("Live presentation run state is malformed.");
+    requireJoinEqual(
+      presentation.run_state ?? "paused",
+      raw.run_state ?? "paused",
+      "Live run state",
     );
-    requireExactSnapshotKeys(
-      configuration,
-      ["execution_information_mode", "team_a_controller", "team_b_controller"],
-      "Live combat configuration identity",
-    );
-    // Both teams accept the same five controllers; the three reactive ones
-    // (ALPHA, BETA and GAMMA) need SharedObs whichever team uses them.
     if (
-      !isTeamController(configuration.team_a_controller) ||
-      !isTeamController(configuration.team_b_controller) ||
-      !["shared_obs", "no_shared_obs"].includes(
-        configuration.execution_information_mode,
-      ) ||
-      ((requiresSharedObs(configuration.team_a_controller) ||
-        requiresSharedObs(configuration.team_b_controller)) &&
-        configuration.execution_information_mode !== "shared_obs") ||
-      (!oracle &&
-        configuration.execution_information_mode !==
-          (shared ? "shared_obs" : "no_shared_obs"))
+      Object.hasOwn(presentation, "fresh_launch_required") &&
+      typeof presentation.fresh_launch_required !== "boolean"
+    )
+      invalid("Live fresh launch state is malformed.");
+    if (
+      Object.hasOwn(raw, "fresh_launch_required") &&
+      typeof raw.fresh_launch_required !== "boolean"
+    )
+      invalid("Live fresh launch state must be a boolean.");
+    if (
+      (presentation.fresh_launch_required ?? false) !==
+      (raw.fresh_launch_required ?? false)
+    )
+      invalid("Live fresh launch state does not match its presentation.");
+    const configuration = normalizeCombatConfigurationV1(raw.combat_configuration);
+    if (
+      !oracle &&
+      configuration.execution_information_mode !==
+        (shared ? "shared_obs" : "no_shared_obs")
     ) {
       invalid("Live combat configuration identity is inconsistent.");
     }
@@ -6670,6 +6695,58 @@ export async function joinTransportAndAuthorizedPresentationV1(
   }
   const presentation = await normalizeAuthorizedPresentationFrameV1(presentationValue);
   validatePairedAgentPrivacy(transport, presentation);
+  if (
+    presentation.viewer_mode === "live" &&
+    Array.isArray(transport.combat_configuration.manual_slots)
+  ) {
+    const researcher = presentation.researcher_space;
+    const directory =
+      researcher?.identity_directory ??
+      presentation.current_endpoint.identity_directory;
+    const manualSlots = transport.combat_configuration.manual_slots;
+    const identities = /** @type {any[]} */ (directory.identities);
+    const manualIds = identities
+      .filter((row) =>
+        manualSlots.includes((row.team_id - 1) * 5 + row.team_local_slot),
+      )
+      .map((row) => row.public_agent_id);
+    const configuredSlots = identities
+      .filter((row) => row.configured_active)
+      .map((row) => (row.team_id - 1) * 5 + row.team_local_slot);
+    const labels = /** @type {(string | null)[]} */ (
+      transport.combat_configuration.slot_labels
+    );
+    if (
+      manualIds.length !== manualSlots.length ||
+      labels.some((label, slot) => (label !== null) !== configuredSlots.includes(slot))
+    ) {
+      invalid("Live controller ownership does not join the configured roster.");
+    }
+    const wrapper =
+      researcher?.pending_inspection ?? presentation.live_inspection.inspection;
+    if (wrapper.submission_scope === "joint_turn") {
+      const pending =
+        researcher?.pending_joint_action ?? presentation.pending_joint_action;
+      if (
+        !structurallyEqual(
+          /** @type {any[]} */ (pending.action_rows).map(
+            (row) => row.actor_public_agent_id,
+          ),
+          manualIds,
+        )
+      ) {
+        invalid("Live pending rows do not exactly join configured Manual ownership.");
+      }
+      const inspected =
+        wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft;
+      if (
+        (wrapper.inspection_kind === "editable_live_draft") !==
+        manualIds.includes(inspected.actor_public_agent_id)
+      ) {
+        invalid("Live inspection editing does not match configured Manual ownership.");
+      }
+    }
+  }
   const joined = deepFreeze({ transport, presentation });
   JOINED_PRESENTATION_ROOTS.add(joined);
   return joined;

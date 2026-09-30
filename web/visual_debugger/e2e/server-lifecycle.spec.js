@@ -11,8 +11,10 @@ test("standalone launchers install their exact product identity", async ({ page 
   const live = await startDebugger();
   try {
     await page.goto(live.url);
-    await expect(page).toHaveTitle("MARL-BattleGrounds DevClient");
-    await expect(page.locator("#app-title")).toHaveText("MARL-BattleGrounds DevClient");
+    await expect(page).toHaveTitle("MARL-BattleGrounds BattleClient");
+    await expect(page.locator("#app-title")).toHaveText(
+      "MARL-BattleGrounds BattleClient",
+    );
     await expect(page.locator("html")).toHaveAttribute(
       "data-product-kind",
       "combat_debugger",
