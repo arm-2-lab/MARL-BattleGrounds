@@ -28,7 +28,7 @@ implement every adapter. See the [dependency policy](dependency_policy.md).
 
 ## Prepare Browser Contributor Tools
 
-Researchers can use the DevClient and Replay Viewer without Node.js. Contributors
+Researchers can use BattleClient and Replay Viewer without Node.js. Contributors
 who change browser code need the Node version in `.node-version`, npm and the
 locked frontend dependencies:
 

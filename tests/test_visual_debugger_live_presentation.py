@@ -16,13 +16,6 @@ from threading import Event
 from typing import Any, cast
 
 import pytest
-import scripts.dev.visual_debugger.live_presentation as live_presentation_module
-import scripts.dev.visual_debugger.service as service_module
-from scripts.dev.visual_debugger.live_presentation import (
-    build_live_no_shared_obs_authorized_presentation_v1,
-    build_live_oracle_authorized_presentation_v1,
-    build_live_researcher_space_v1,
-)
 from scripts.dev.visual_debugger.no_shared_visual import (
     build_live_no_shared_obs_visual_adjacent_slice_v1,
     build_live_no_shared_obs_visual_current_slice_v1,
@@ -36,7 +29,20 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     LiveScriptedPlaybackInspectionV1,
     PresentationResourceResultV1,
 )
-from scripts.dev.visual_debugger.protocol import (
+from tests.test_visual_debugger_service import (
+    _recording_service,  # pyright: ignore[reportPrivateUsage]
+    _request,  # pyright: ignore[reportPrivateUsage]
+    _service,  # pyright: ignore[reportPrivateUsage]
+)
+
+import marl_battlegrounds._battle_client.live_presentation as live_presentation_module
+import marl_battlegrounds._battle_client.service as service_module
+from marl_battlegrounds._battle_client.live_presentation import (
+    build_live_no_shared_obs_authorized_presentation_v1,
+    build_live_oracle_authorized_presentation_v1,
+    build_live_researcher_space_v1,
+)
+from marl_battlegrounds._battle_client.protocol import (
     ActorPovLiveDebuggerFrameV2,
     CommandResponseV2,
     FinishAndReviewCommandV1,
@@ -46,12 +52,6 @@ from scripts.dev.visual_debugger.protocol import (
     RosterSelectionCommandV1,
     SetViewCommandV1,
 )
-from tests.test_visual_debugger_service import (
-    _recording_service,  # pyright: ignore[reportPrivateUsage]
-    _request,  # pyright: ignore[reportPrivateUsage]
-    _service,  # pyright: ignore[reportPrivateUsage]
-)
-
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
@@ -1100,7 +1100,7 @@ def test_live_presentation_getter_holds_lock_against_submit(
 
 
 def test_live_module_exposes_every_product_builder() -> None:
-    import scripts.dev.visual_debugger.live_presentation as module
+    import marl_battlegrounds._battle_client.live_presentation as module
 
     assert module.__all__ == [
         "build_live_no_shared_obs_authorized_presentation_v1",

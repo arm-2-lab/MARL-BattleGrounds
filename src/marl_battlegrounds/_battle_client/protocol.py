@@ -1,0 +1,1488 @@
+"""Define strict HTTP commands and live debugger response models.
+
+The server parses incoming commands and validates outgoing audience-specific
+frames with these immutable models. Researcher frames may carry global slot
+identities; actor views use authorized public identities and their action axes.
+Validators keep frame/transition IDs, pending drafts, action acceptance and
+recording progress on the same decision epoch. Model construction performs checks
+only; command execution, simulator steps and file writes belong to services.
+"""
+
+from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+from marl_battlegrounds.evaluation.wire_shapes import (
+    MAX_AGENT_SLOTS_V1 as MAX_AGENT_SLOTS,
+)
+from marl_battlegrounds.evaluation.wire_shapes import (
+    NUM_MOVE_ACTIONS_V1 as NUM_MOVE_ACTIONS,
+)
+from marl_battlegrounds.evaluation.wire_shapes import (
+    NUM_TARGET_ACTIONS_V1 as NUM_TARGET_ACTIONS,
+)
+from marl_battlegrounds.rendering.pov_scene import ActorPovAnalyzerProjectionV1
+from marl_battlegrounds.rendering.scene import (
+    ResearcherAnalyzerProjectionV2,
+    TargetDisclosure,
+)
+
+PROTOCOL_SCHEMA_VERSION = 1
+LIVE_FRAME_SCHEMA_VERSION = 2
+
+type ViewMode = Literal["researcher", "pov"]
+type Preset = Literal["presentation", "analysis"]
+type PresentationPreset = Preset
+type PendingSubmissionScope = Literal[
+    "joint_turn",
+    "scripted_playback",
+]
+type TeamController = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^(manual|reactive_tdm|random_valid|scenario_5|tdm_gamma|system:[a-z0-9_-]{1,64})$"
+    ),
+]
+type TeamBController = TeamController
+type ExecutionInformationMode = Literal["shared_obs", "no_shared_obs"]
+type CommandResult = Literal[
+    "applied",
+    "duplicate",
+    "no_op",
+    "shutdown_scheduled",
+]
+type RecordingLifecycleV1 = Literal[
+    "recording",
+    "sealed",
+    "finalized_unsaved",
+    "persistence_failed",
+    "saved",
+    "reviewing",
+    "discarded",
+]
+type RecordingCompletionStateV1 = Literal[
+    "complete",
+    "partial",
+    "interrupted",
+    "failed",
+]
+type RecordingPersistenceErrorCodeV1 = Literal[
+    "target_unavailable",
+    "publication_failed",
+    "verification_failed",
+]
+type ApiErrorCode = Literal[
+    "invalid_request",
+    "unauthorized",
+    "forbidden_origin",
+    "not_found",
+    "method_not_allowed",
+    "payload_too_large",
+    "unsupported_media_type",
+    "stale_revision",
+    "command_id_conflict",
+    "server_shutting_down",
+    "internal_error",
+]
+
+_OpaqueId = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    ),
+]
+_CanonicalScientificId = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    ),
+]
+_ScenarioName = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    ),
+]
+_KeyName = Annotated[str, StringConstraints(min_length=1, max_length=64)]
+_GlobalSlot = Annotated[int, Field(ge=0, lt=MAX_AGENT_SLOTS)]
+_MoveAction = Annotated[int, Field(ge=0, lt=NUM_MOVE_ACTIONS)]
+_TargetAction = Annotated[int, Field(ge=0, lt=NUM_TARGET_ACTIONS)]
+_NonNegativeInt = Annotated[int, Field(ge=0)]
+_FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+_PositiveUnitFloat = Annotated[
+    float,
+    Field(gt=0.0, le=1.0, allow_inf_nan=False),
+]
+
+
+class _ProtocolModel(BaseModel):
+    """Strict immutable base for every value crossing the HTTP boundary."""
+
+    model_config = ConfigDict(
+        allow_inf_nan=False,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+    )
+
+
+class _ModifiedInputV1(_ProtocolModel):
+    """Raw browser modifier state accompanying an input event."""
+
+    shift_key: bool = False
+    ctrl_key: bool = False
+    alt_key: bool = False
+    meta_key: bool = False
+
+
+class KeyboardCommandV1(_ModifiedInputV1):
+    """One browser key event with its modifier and repeat state.
+
+    The input dispatcher interprets the key against the current mode and focus.
+    """
+
+    command_type: Literal["keyboard"] = "keyboard"
+    key: _KeyName
+    repeat: bool = False
+
+
+class BattlefieldPointerCommandV1(_ModifiedInputV1):
+    """One primary or secondary pointer event at finite map-space x/y coordinates.
+
+    Modifier keys travel with the event; host hit testing decides its meaning.
+    """
+
+    command_type: Literal["battlefield_pointer"] = "battlefield_pointer"
+    world_x: _FiniteFloat
+    world_y: _FiniteFloat
+    button: Literal["primary", "secondary"]
+
+
+class RosterSelectionCommandV1(_ProtocolModel):
+    """Select a global roster slot for control or targeting in the researcher view."""
+
+    command_type: Literal["roster_selection"] = "roster_selection"
+    role: Literal["control", "target"]
+    global_slot: _GlobalSlot
+
+
+class ActorPovTargetActionCommandV1(_ProtocolModel):
+    """Select an authorized POV target without disclosing a global slot."""
+
+    command_type: Literal["actor_pov_target_action"] = "actor_pov_target_action"
+    target_action: _TargetAction
+
+
+class ScenarioSwitchCommandV1(_ProtocolModel):
+    """Request a registered scenario by its stable launcher name."""
+
+    command_type: Literal["scenario_switch"] = "scenario_switch"
+    scenario_name: _ScenarioName
+
+
+class ResetCommandV1(_ProtocolModel):
+    """Request a fresh endpoint for the currently loaded scenario."""
+
+    command_type: Literal["reset"] = "reset"
+
+
+class SetViewCommandV1(_ProtocolModel):
+    """Switch the displayed audience between researcher and authorized actor view."""
+
+    command_type: Literal["set_view"] = "set_view"
+    view_mode: ViewMode
+
+
+class SetPresetCommandV1(_ProtocolModel):
+    """Select a presentation preset while accepting historical compatibility names."""
+
+    command_type: Literal["set_preset"] = "set_preset"
+    preset: Preset
+
+    @field_validator("preset", mode="before")
+    @classmethod
+    def _canonicalize_legacy_technical_preset(
+        cls,
+        value: object,
+    ) -> object:
+        """Map supported legacy preset names to the current Analysis presentation."""
+        return (
+            "analysis"
+            if value in ("presentation", "analysis", "technical", "debug")
+            else value
+        )
+
+
+class CombatConfigurationV1(_ProtocolModel):
+    """Authoritative live execution settings that replace an episode."""
+
+    team_a_controller: TeamController
+    team_b_controller: TeamBController
+    execution_information_mode: ExecutionInformationMode
+
+    @model_validator(mode="after")
+    def _validate_reactive_controller_mode(self) -> Self:
+        """Require SharedObs when either selected controller needs that input
+        contract.
+        """
+        if (
+            any(
+                controller in ("reactive_tdm", "scenario_5", "tdm_gamma")
+                or controller.startswith("system:")
+                for controller in (self.team_a_controller, self.team_b_controller)
+            )
+            and self.execution_information_mode != "shared_obs"
+        ):
+            raise ValueError("Reactive controllers require SharedObs.")
+        return self
+
+
+class CombatSetupV1(CombatConfigurationV1):
+    """Display resolved physical ownership without making it a browser command.
+
+    Current live frames provide ownership and the effective Red Zone depth.
+    None is accepted only for older frame fixtures. Manual rows include configured
+    dead agents. Labels have
+    ten entries; None marks an unconfigured row. These are display facts, not
+    permission to edit a policy-controlled row or load browser-supplied code.
+    """
+
+    manual_slots: (
+        tuple[Annotated[int, Field(strict=True, ge=0, lt=MAX_AGENT_SLOTS)], ...] | None
+    ) = Field(default=None, exclude_if=lambda value: value is None)
+    slot_labels: tuple[str | None, ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    red_zone_depth: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def _validate_slot_ownership(self) -> Self:
+        """Require one coherent ordered set of ten physical ownership labels."""
+        if (self.manual_slots is None) != (self.slot_labels is None):
+            raise ValueError(
+                "Manual slots and controller labels must be supplied together"
+            )
+        if (
+            self.manual_slots is not None
+            and self.slot_labels is not None
+            and (
+                len(self.slot_labels) != MAX_AGENT_SLOTS
+                or tuple(sorted(set(self.manual_slots))) != self.manual_slots
+                or any(
+                    not label.strip() for label in self.slot_labels if label is not None
+                )
+                or any(self.slot_labels[slot] != "Manual" for slot in self.manual_slots)
+            )
+        ):
+            raise ValueError(
+                "Controller ownership must match ten configured physical rows"
+            )
+        return self
+
+
+class SetCombatConfigurationCommandV1(CombatConfigurationV1):
+    """Request new team controllers and execution information mode for a replacement
+    episode.
+    """
+
+    command_type: Literal["set_combat_configuration"] = "set_combat_configuration"
+
+
+class ExitCommandV1(_ProtocolModel):
+    """Request that the local product close through its normal lifecycle checks."""
+
+    command_type: Literal["exit"] = "exit"
+
+
+class FinishAndReviewCommandV1(_ProtocolModel):
+    """Finish and save this recording while keeping the live client open.
+
+    The historical wire name is retained. Opening Replay Viewer is a separate
+    ReviewReplayCommandV1 request."""
+
+    command_type: Literal["finish_and_review"] = "finish_and_review"
+
+
+class ReviewReplayCommandV1(_ProtocolModel):
+    """Open the already prepared saved replay for review when lifecycle rules permit."""
+
+    command_type: Literal["review_replay"] = "review_replay"
+
+
+class RetrySaveCommandV1(_ProtocolModel):
+    """Retry publication of retained recording data after a persistence failure."""
+
+    command_type: Literal["retry_save"] = "retry_save"
+
+
+class SaveAsCommandV1(_ProtocolModel):
+    """Request a new replay filename inside the existing allowed recording directory.
+
+    The value is a filename, not an arbitrary path, and must end in
+    ``.marlbg-replay.json``. Destination checks remain owned by persistence.
+    """
+
+    command_type: Literal["save_as"] = "save_as"
+    file_name: Annotated[
+        str,
+        StringConstraints(
+            min_length=20,
+            max_length=160,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.marlbg-replay\.json$",
+        ),
+    ]
+
+
+type RecordingReplacementCommandV1 = Annotated[
+    ResetCommandV1 | ScenarioSwitchCommandV1 | SetCombatConfigurationCommandV1,
+    Field(discriminator="command_type"),
+]
+
+
+class ConfirmDiscardAndReplaceCommandV1(_ProtocolModel):
+    """Explicitly confirm dropping the current recording before a replacement
+    command.
+    """
+
+    command_type: Literal["confirm_discard_and_replace"] = "confirm_discard_and_replace"
+    replacement: RecordingReplacementCommandV1
+
+
+class SaveAndReplaceCommandV1(_ProtocolModel):
+    """Save the accepted recording, then apply one replacement at this revision.
+
+    A save failure keeps the old match. A later replacement failure keeps its
+    verified saved replay; retrying a save never retries the replacement.
+    """
+
+    command_type: Literal["save_and_replace"] = "save_and_replace"
+    replacement: RecordingReplacementCommandV1
+
+
+class RunCommandV1(_ProtocolModel):
+    """Run autonomous turns until Pause, an endpoint, or a method failure.
+
+    The normal request revision must still be current. Every configured slot must
+    be policy-controlled; a dead Manual slot still prevents Run.
+    """
+
+    command_type: Literal["run"] = "run"
+
+
+class PauseCommandV1(_ProtocolModel):
+    """Stop starting turns in this exact live match.
+
+    An already accepted in-flight turn may finish. The request may use an older
+    revision when session_id and run_generation still match, so another tab can
+    stop a running match. A future revision or another match is rejected.
+    """
+
+    command_type: Literal["pause"] = "pause"
+    session_id: _OpaqueId
+    run_generation: _NonNegativeInt
+
+
+class FinishSystemCommandV1(_ProtocolModel):
+    """Poll one pending operation; accept its ready result at most once."""
+
+    command_type: Literal["finish_system"] = "finish_system"
+    operation_id: _OpaqueId
+
+
+class CancelSystemCommandV1(_ProtocolModel):
+    """Abandon a pending result and keep the last accepted game state."""
+
+    command_type: Literal["cancel_system"] = "cancel_system"
+    operation_id: _OpaqueId
+
+
+type DebuggerCommandV1 = Annotated[
+    KeyboardCommandV1
+    | BattlefieldPointerCommandV1
+    | RosterSelectionCommandV1
+    | ActorPovTargetActionCommandV1
+    | ScenarioSwitchCommandV1
+    | ResetCommandV1
+    | SetViewCommandV1
+    | SetPresetCommandV1
+    | SetCombatConfigurationCommandV1
+    | FinishAndReviewCommandV1
+    | ReviewReplayCommandV1
+    | RetrySaveCommandV1
+    | SaveAsCommandV1
+    | ConfirmDiscardAndReplaceCommandV1
+    | SaveAndReplaceCommandV1
+    | ExitCommandV1
+    | RunCommandV1
+    | PauseCommandV1
+    | FinishSystemCommandV1
+    | CancelSystemCommandV1,
+    Field(discriminator="command_type"),
+]
+
+
+class CommandRequestV1(_ProtocolModel):
+    """One versioned live command with client identity, command ID and expected
+    revision.
+
+    The service uses IDs for retries and base_revision to reject stale edits.
+    This model validates structure; it does not itself execute or deduplicate.
+    """
+
+    schema_version: Literal[1] = PROTOCOL_SCHEMA_VERSION
+    client_id: _OpaqueId
+    command_id: _OpaqueId
+    base_revision: _NonNegativeInt
+    command: DebuggerCommandV1
+
+
+class TargetReferenceV1(_ProtocolModel):
+    """A researcher-view target reference with explicit disclosure state.
+
+    Only public references include a global slot. Target-none and redacted values
+    must omit the slot so missing authorization cannot be mistaken for a target.
+    """
+
+    disclosure: TargetDisclosure
+    global_slot: _GlobalSlot | None = None
+
+    @model_validator(mode="after")
+    def _validate_disclosure(self) -> Self:
+        """Require a slot for public targets and omit it for every nonpublic
+        disclosure kind.
+        """
+        if self.disclosure == "public":
+            if self.global_slot is None:
+                raise ValueError("public target references require global_slot.")
+        elif self.global_slot is not None:
+            raise ValueError(
+                f"{self.disclosure} target references must omit global_slot."
+            )
+        return self
+
+
+class ActionTupleCardV1(_ProtocolModel):
+    """Readable submitted or accepted action with its target disclosure and exact
+    categories.
+    """
+
+    move_action: int
+    target_action: int | None
+    use_ultimate_action: int
+    target: TargetReferenceV1
+    summary: str
+
+    @model_validator(mode="after")
+    def _validate_target_action_disclosure(self) -> Self:
+        """Keep public, target-none, redacted and invalid target-action
+        representations distinct.
+        """
+        if self.target.disclosure == "public":
+            if self.target_action is None or self.target_action <= 0:
+                raise ValueError(
+                    "public action targets require a positive target_action."
+                )
+        elif self.target.disclosure == "target_none":
+            if self.target_action != 0:
+                raise ValueError("target-none actions require target_action zero.")
+        elif self.target.disclosure == "redacted":
+            if self.target_action is not None:
+                raise ValueError("redacted actions must omit target_action.")
+        elif self.target.disclosure == "invalid" and self.target_action is None:
+            raise ValueError("invalid actions retain their exact target_action.")
+        return self
+
+
+class PendingActionCardV1(_ProtocolModel):
+    """One researcher-authorized editable or playback-only action row.
+
+    Records movement, target, selected Basic/Ultimate lane and exact current mask
+    values. Redacted targets omit both the target action and pair-mask value.
+    """
+
+    label: Literal[
+        "PENDING / WILL SUBMIT",
+        "PLAYBACK / INSPECTION ONLY",
+    ] = "PENDING / WILL SUBMIT"
+    actor_global_slot: _GlobalSlot
+    move_action: _NonNegativeInt
+    target_action: _NonNegativeInt | None
+    armed_lane: Literal[0, 1] | None
+    arm_origin: Literal["automatic", "explicit"] | None
+    target: TargetReferenceV1
+    movement_mask_value: bool
+    pair_mask_value: bool | None
+    summary: str
+
+    @model_validator(mode="after")
+    def _validate_pending_disclosure(self) -> Self:
+        """Require valid pending target disclosure and omit unauthorized pair-mask
+        values.
+        """
+        if self.target.disclosure == "public":
+            if self.target_action is None or self.target_action <= 0:
+                raise ValueError(
+                    "public pending targets require a positive target_action."
+                )
+        elif self.target.disclosure == "target_none":
+            if self.target_action != 0:
+                raise ValueError(
+                    "target-none pending actions require target_action zero."
+                )
+        elif self.target.disclosure == "redacted":
+            if self.target_action is not None or self.pair_mask_value is not None:
+                raise ValueError(
+                    "redacted pending actions omit target and pair-mask values."
+                )
+        else:
+            raise ValueError("pending actions cannot carry an invalid target.")
+        return self
+
+
+class ActorActionResultV1(_ProtocolModel):
+    """Compare one actor's recorded submitted and accepted actions with rejection
+    facts.
+    """
+
+    actor_global_slot: _GlobalSlot
+    submitted: ActionTupleCardV1
+    accepted: ActionTupleCardV1
+    movement_mask_value: bool
+    pair_mask_value: bool | None
+    movement_accepted: bool
+    combat_result: Literal[
+        "accepted",
+        "rejected",
+        "canonical_noop",
+        "undisclosed",
+    ]
+
+
+class LatestTransitionCardV1(_ProtocolModel):
+    """Historical latest-action result using the original numeric transition
+    identity.
+    """
+
+    label: Literal["LATEST ACCEPTED RESULT"] = "LATEST ACCEPTED RESULT"
+    transition_id: _NonNegativeInt
+    submission_kind: Literal["interactive", "scripted"]
+    actors: tuple[ActorActionResultV1, ...]
+
+
+class LatestTransitionCardV2(_ProtocolModel):
+    """Latest-action result using a canonical transition ID and zero-based index."""
+
+    label: Literal["LATEST ACCEPTED RESULT"] = "LATEST ACCEPTED RESULT"
+    transition_index: _NonNegativeInt
+    transition_id: _CanonicalScientificId
+    submission_kind: Literal["interactive", "scripted"]
+    actors: tuple[ActorActionResultV1, ...]
+
+
+class DiagnosticFactV1(_ProtocolModel):
+    """One labeled diagnostic value with a stable ID and optional technical-only
+    flag.
+    """
+
+    fact_id: _OpaqueId
+    label: str
+    value: str
+    technical: bool = False
+
+
+class CandidateLegalityCardV1(_ProtocolModel):
+    """One exact controlled-actor target/lane row copied from the current mask."""
+
+    target_action: _TargetAction
+    target: TargetReferenceV1
+    lane_0_available: bool
+    lane_1_available: bool
+    basic_available: bool
+    ultimate_available: bool
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> Self:
+        """Keep target-none semantics distinct from Basic availability and preserve
+        lane-one truth.
+        """
+        if self.target_action == 0:
+            if self.target.disclosure != "target_none":
+                raise ValueError("target action zero requires a target-none reference.")
+        elif self.target.disclosure != "public":
+            raise ValueError(
+                "positive candidate target actions require public references."
+            )
+        expected_basic = self.target_action > 0 and self.lane_0_available
+        if self.basic_available != expected_basic:
+            raise ValueError(
+                "basic availability must exclude canonical target-none lane zero."
+            )
+        if self.ultimate_available != self.lane_1_available:
+            raise ValueError(
+                "ultimate availability must match the exact lane-one mask value."
+            )
+        return self
+
+
+class MovementLegalityCardV1(_ProtocolModel):
+    """One controlled-actor movement category copied from the current mask."""
+
+    move_action: _MoveAction
+    available: bool
+
+
+class HudFrameV1(_ProtocolModel):
+    """Historical researcher control panel with roster, draft, masks and latest
+    result.
+
+    Pending rows must match the declared submission scope; all public slot references
+    join the authorized roster and legality rows use canonical action order.
+    """
+
+    roster_global_slots: tuple[_GlobalSlot, ...]
+    controlled_global_slot: _GlobalSlot
+    selected_global_slot: _GlobalSlot | None
+    pending_submission_scope: PendingSubmissionScope
+    pending_actions: tuple[PendingActionCardV1, ...]
+    pending_action: PendingActionCardV1 | None
+    latest_transition: LatestTransitionCardV1 | None
+    movement_legalities: tuple[MovementLegalityCardV1, ...]
+    candidate_legalities: tuple[CandidateLegalityCardV1, ...] = ()
+    diagnostics: tuple[DiagnosticFactV1, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_slot_references(self) -> Self:
+        """Join roster, selection, pending rows, mask axes and latest results without
+        duplicates.
+        """
+        if len(self.roster_global_slots) != len(set(self.roster_global_slots)):
+            raise ValueError("roster_global_slots must be unique.")
+        roster = set(self.roster_global_slots)
+        if self.controlled_global_slot not in roster:
+            raise ValueError("controlled_global_slot must occur in the roster.")
+        if (
+            self.selected_global_slot is not None
+            and self.selected_global_slot not in roster
+        ):
+            raise ValueError("selected_global_slot must occur in the roster.")
+        if (
+            self.pending_action is not None
+            and self.pending_action.actor_global_slot != self.controlled_global_slot
+        ):
+            raise ValueError("pending action actor must be the controlled actor.")
+        pending_slots = tuple(
+            pending.actor_global_slot for pending in self.pending_actions
+        )
+        if len(pending_slots) != len(set(pending_slots)):
+            raise ValueError("pending action actor slots must be unique.")
+        if not set(pending_slots).issubset(roster):
+            raise ValueError("pending action actors must occur in the roster.")
+        controlled_pending = next(
+            (
+                pending
+                for pending in self.pending_actions
+                if pending.actor_global_slot == self.controlled_global_slot
+            ),
+            None,
+        )
+        if self.pending_action != controlled_pending:
+            raise ValueError(
+                "pending_action must equal the controlled pending_actions row."
+            )
+        movement_actions = tuple(
+            legality.move_action for legality in self.movement_legalities
+        )
+        if movement_actions != tuple(range(NUM_MOVE_ACTIONS)):
+            raise ValueError(
+                "movement legality rows must cover every movement action in "
+                "canonical order."
+            )
+        expected_pending_slots = (
+            tuple(slot for slot in self.roster_global_slots if slot in pending_slots)
+            if self.pending_submission_scope == "joint_turn"
+            else (self.controlled_global_slot,)
+        )
+        if pending_slots != expected_pending_slots:
+            raise ValueError(
+                "pending action rows must exactly match their submission scope."
+            )
+        expected_pending_label = (
+            "PLAYBACK / INSPECTION ONLY"
+            if self.pending_submission_scope == "scripted_playback"
+            else "PENDING / WILL SUBMIT"
+        )
+        if any(
+            pending.label != expected_pending_label for pending in self.pending_actions
+        ):
+            raise ValueError("pending action labels must match their submission scope.")
+        for pending in self.pending_actions:
+            target = pending.target.global_slot
+            if target is not None and target not in roster:
+                raise ValueError("public pending targets must occur in the roster.")
+        if self.candidate_legalities:
+            target_actions = tuple(
+                candidate.target_action for candidate in self.candidate_legalities
+            )
+            if len(target_actions) != len(set(target_actions)):
+                raise ValueError("candidate target actions must be unique.")
+            target_none_count = sum(
+                candidate.target.disclosure == "target_none"
+                for candidate in self.candidate_legalities
+            )
+            if target_none_count != 1:
+                raise ValueError(
+                    "candidate legality rows require exactly one target-none row."
+                )
+            public_target_rows = tuple(
+                candidate.target.global_slot
+                for candidate in self.candidate_legalities
+                if candidate.target.disclosure == "public"
+            )
+            if len(public_target_rows) != len(set(public_target_rows)):
+                raise ValueError("candidate public target slots must be unique.")
+            if set(public_target_rows) != roster:
+                raise ValueError(
+                    "candidate legality public targets must exactly match the roster."
+                )
+        latest_actors = (
+            () if self.latest_transition is None else self.latest_transition.actors
+        )
+        latest_actor_slots = tuple(actor.actor_global_slot for actor in latest_actors)
+        if len(latest_actor_slots) != len(set(latest_actor_slots)):
+            raise ValueError("latest-transition actor slots must be unique.")
+        for actor in latest_actors:
+            if actor.actor_global_slot not in roster:
+                raise ValueError("latest-transition actors must occur in the roster.")
+            for action in (actor.submitted, actor.accepted):
+                target = action.target.global_slot
+                if target is not None and target not in roster:
+                    raise ValueError(
+                        "public latest-transition targets must occur in the roster."
+                    )
+        return self
+
+
+class ResearcherHudFrameV2(_ProtocolModel):
+    """Researcher-authorized HUD with canonical transition identity."""
+
+    roster_global_slots: tuple[_GlobalSlot, ...]
+    controlled_global_slot: _GlobalSlot
+    selected_global_slot: _GlobalSlot | None
+    pending_submission_scope: PendingSubmissionScope
+    pending_actions: tuple[PendingActionCardV1, ...]
+    pending_action: PendingActionCardV1 | None
+    latest_transition: LatestTransitionCardV2 | None
+    movement_legalities: tuple[MovementLegalityCardV1, ...]
+    candidate_legalities: tuple[CandidateLegalityCardV1, ...] = ()
+    diagnostics: tuple[DiagnosticFactV1, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_researcher_hud(self) -> Self:
+        """Preserve the historical HUD checks with canonical latest-transition
+        identities.
+        """
+        HudFrameV1(
+            roster_global_slots=self.roster_global_slots,
+            controlled_global_slot=self.controlled_global_slot,
+            selected_global_slot=self.selected_global_slot,
+            pending_submission_scope=self.pending_submission_scope,
+            pending_actions=self.pending_actions,
+            pending_action=self.pending_action,
+            latest_transition=None,
+            movement_legalities=self.movement_legalities,
+            candidate_legalities=self.candidate_legalities,
+            diagnostics=self.diagnostics,
+        )
+        roster = set(self.roster_global_slots)
+        latest = self.latest_transition
+        if latest is not None:
+            actor_slots = tuple(row.actor_global_slot for row in latest.actors)
+            if len(actor_slots) != len(set(actor_slots)) or not set(
+                actor_slots
+            ).issubset(roster):
+                raise ValueError(
+                    "researcher latest-result actors must be unique roster members."
+                )
+            for actor in latest.actors:
+                for action in (actor.submitted, actor.accepted):
+                    target = action.target.global_slot
+                    if target is not None and target not in roster:
+                        raise ValueError(
+                            "researcher latest-result targets must occur in the roster."
+                        )
+        return self
+
+
+class ActorPovTargetReferenceV1(_ProtocolModel):
+    """Actor-relative target reference with no recipient global-slot disclosure."""
+
+    target_action: int
+    public_agent_id: _CanonicalScientificId | None = None
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> Self:
+        """Require public identity only for a valid positive actor-relative target
+        action.
+        """
+        in_domain = 0 <= self.target_action < NUM_TARGET_ACTIONS
+        if not in_domain:
+            if self.public_agent_id is not None:
+                raise ValueError("out-of-domain POV targets omit recipient identity.")
+        elif self.target_action == 0:
+            if self.public_agent_id is not None:
+                raise ValueError("POV target-none action omits recipient identity.")
+        elif self.public_agent_id is None:
+            raise ValueError("positive POV target actions require a public agent ID.")
+        return self
+
+
+class ActorPovActionTupleCardV1(_ProtocolModel):
+    """One actor-safe action tuple with its authorized target reference and readable
+    summary.
+    """
+
+    move_action: int
+    target: ActorPovTargetReferenceV1
+    use_ultimate_action: int
+    summary: str
+
+
+class ActorPovPendingActionCardV1(_ProtocolModel):
+    """The selected actor's draft or playback action, using only public actor identity.
+
+    Movement and Basic/Ultimate pair-mask values describe the current action choice.
+    No global target slot is disclosed through this row.
+    """
+
+    label: Literal[
+        "PENDING / WILL SUBMIT",
+        "PLAYBACK / INSPECTION ONLY",
+    ] = "PENDING / WILL SUBMIT"
+    actor_public_agent_id: _CanonicalScientificId
+    move_action: _MoveAction
+    target: ActorPovTargetReferenceV1
+    armed_lane: Literal[0, 1] | None
+    arm_origin: Literal["automatic", "explicit"] | None
+    movement_mask_value: bool
+    pair_mask_value: bool | None
+    summary: str
+
+
+class ActorPovActionResultV1(_ProtocolModel):
+    """One actor's recorded action acceptance and explicit rejection facts.
+
+    Submitted and accepted tuples stay separate. Outcome labels must agree with
+    recorded movement and combat-pair rejection flags.
+    """
+
+    actor_public_agent_id: _CanonicalScientificId
+    submitted: ActorPovActionTupleCardV1
+    accepted: ActorPovActionTupleCardV1
+    submitted_tuple_is_out_of_domain: bool
+    movement_rejected: bool
+    combat_pair_rejected: bool
+    movement_accepted: bool
+    combat_result: Literal["accepted", "rejected", "canonical_noop"]
+
+    @model_validator(mode="after")
+    def _validate_outcomes(self) -> Self:
+        """Require readable movement/combat results to match the recorded rejection
+        flags.
+        """
+        expected_movement = not (
+            self.submitted_tuple_is_out_of_domain or self.movement_rejected
+        )
+        if self.movement_accepted != expected_movement:
+            raise ValueError(
+                "POV movement outcome must match recorded rejection truth."
+            )
+        rejected_combat = (
+            self.submitted_tuple_is_out_of_domain or self.combat_pair_rejected
+        )
+        accepted = self.accepted
+        expected_combat = (
+            "rejected"
+            if rejected_combat
+            else "canonical_noop"
+            if (
+                accepted.target.target_action == 0 and accepted.use_ultimate_action == 0
+            )
+            else "accepted"
+        )
+        if self.combat_result != expected_combat:
+            raise ValueError("POV combat result must match recorded rejection truth.")
+        return self
+
+
+class ActorPovLatestTransitionCardV1(_ProtocolModel):
+    """The selected actor's latest result joined by its authorized transition
+    identity.
+    """
+
+    label: Literal["LATEST ACCEPTED RESULT"] = "LATEST ACCEPTED RESULT"
+    transition_index: _NonNegativeInt
+    pov_transition_id: _CanonicalScientificId
+    submission_kind: Literal["interactive", "scripted"]
+    actor: ActorPovActionResultV1
+
+
+class ActorPovCandidateLegalityCardV1(_ProtocolModel):
+    """Basic/Ultimate availability for one authorized actor-relative target category."""
+
+    target: ActorPovTargetReferenceV1
+    lane_0_available: bool
+    lane_1_available: bool
+    basic_available: bool
+    ultimate_available: bool
+
+    @model_validator(mode="after")
+    def _validate_availability(self) -> Self:
+        """Exclude target-none from Basic use and preserve the exact Ultimate lane
+        mask.
+        """
+        expected_basic = self.target.target_action > 0 and self.lane_0_available
+        if self.basic_available != expected_basic:
+            raise ValueError("POV Basic availability must exclude target-none.")
+        if self.ultimate_available != self.lane_1_available:
+            raise ValueError("POV Ultimate availability must equal lane one.")
+        return self
+
+
+class ActorPovHudFrameV1(_ProtocolModel):
+    """Show the selected actor's legal choices, accepted action and Manual draft.
+
+    pending_action is None for a policy actor. No draft predicts a future policy
+    action. Scripted playback keeps its existing inspection-only card.
+    """
+
+    controlled_public_agent_id: _CanonicalScientificId
+    pending_submission_scope: Literal["joint_turn", "scripted_playback"]
+    pending_action: ActorPovPendingActionCardV1 | None
+    latest_transition: ActorPovLatestTransitionCardV1 | None
+    movement_legalities: tuple[MovementLegalityCardV1, ...]
+    candidate_legalities: tuple[ActorPovCandidateLegalityCardV1, ...]
+    diagnostics: tuple[DiagnosticFactV1, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_actor_hud(self) -> Self:
+        """Join pending/latest rows to the controlled actor and require complete
+        canonical mask axes.
+        """
+        if (
+            self.pending_action is not None
+            and self.pending_action.actor_public_agent_id
+            != self.controlled_public_agent_id
+        ):
+            raise ValueError("POV pending action must belong to the controlled actor.")
+        if self.latest_transition is not None and (
+            self.latest_transition.actor.actor_public_agent_id
+            != self.controlled_public_agent_id
+        ):
+            raise ValueError("POV latest result must belong to the controlled actor.")
+        if tuple(row.move_action for row in self.movement_legalities) != tuple(
+            range(NUM_MOVE_ACTIONS)
+        ):
+            raise ValueError("POV movement rows must cover the canonical action axis.")
+        if tuple(
+            row.target.target_action for row in self.candidate_legalities
+        ) != tuple(range(NUM_TARGET_ACTIONS)):
+            raise ValueError("POV candidate rows must cover the canonical target axis.")
+        return self
+
+
+class ScenarioOptionV1(_ProtocolModel):
+    """A discoverable scenario name, display text, playback mode and audience
+    category.
+    """
+
+    name: _ScenarioName
+    title: str
+    description: str
+    mode: Literal["interactive", "scripted"]
+    audience: Literal["researcher", "stress"]
+
+
+class ScenarioMetadataV1(ScenarioOptionV1):
+    """Current scenario playback cursor and fixed product movement setting.
+
+    Next-frame index, label and description appear together. Interactive scenarios
+    have no scripted cursor; completed counts cannot exceed the script length.
+    """
+
+    ordinary_movement_distance_scale: _PositiveUnitFloat
+    completed_frame_count: _NonNegativeInt
+    frame_count: _NonNegativeInt
+    next_frame_index: _NonNegativeInt | None
+    next_frame_label: str | None
+    next_frame_description: str | None
+    script_complete: bool
+
+    @model_validator(mode="after")
+    def _validate_frame_cursor(self) -> Self:
+        """Keep script counts, next-frame metadata and completion flags consistent."""
+        if self.ordinary_movement_distance_scale != 1.0:
+            raise ValueError("live product movement scale must remain exactly 1.0.")
+        if self.completed_frame_count > self.frame_count:
+            raise ValueError("completed_frame_count must not exceed frame_count.")
+        has_next = self.next_frame_index is not None
+        if has_next != (self.next_frame_label is not None):
+            raise ValueError("next frame index and label must appear together.")
+        if has_next != (self.next_frame_description is not None):
+            raise ValueError("next frame index and description must appear together.")
+        if self.mode == "interactive":
+            if (
+                self.frame_count != 0
+                or self.completed_frame_count != 0
+                or has_next
+                or self.script_complete
+            ):
+                raise ValueError(
+                    "interactive scenarios do not expose a scripted frame cursor."
+                )
+            return self
+        if self.script_complete is has_next:
+            raise ValueError(
+                "script_complete must be true exactly when no next frame exists."
+            )
+        if (
+            self.next_frame_index is not None
+            and self.next_frame_index != self.completed_frame_count
+        ):
+            raise ValueError("next_frame_index must equal completed_frame_count.")
+        return self
+
+
+class TerminalStateV1(_ProtocolModel):
+    """Historical terminal flags with a matching terminated or truncated reason."""
+
+    is_terminal: bool
+    terminated: bool
+    truncated: bool
+    reason: Literal["terminated", "truncated"] | None
+
+    @model_validator(mode="after")
+    def _validate_terminal_reason(self) -> Self:
+        """Require terminal flags and the optional reason to describe the same
+        endpoint.
+        """
+        expected = (
+            "terminated" if self.terminated else "truncated" if self.truncated else None
+        )
+        if self.is_terminal != (expected is not None) or self.reason != expected:
+            raise ValueError("terminal flags and reason must describe one state.")
+        return self
+
+
+class TerminalStateV2(_ProtocolModel):
+    """Current sealed-endpoint state including the declared recording horizon.
+
+    Termination, truncation and horizon exhaustion are reported distinctly; the
+    selected reason must agree with the endpoint flags.
+    """
+
+    is_sealed: bool
+    terminated: bool
+    truncated: bool
+    reached_declared_horizon: bool
+    reason: Literal["terminated", "truncated", "declared_horizon"] | None
+
+    @model_validator(mode="after")
+    def _validate_terminal_reason(self) -> Self:
+        """Match the sealed flag and reason to termination, truncation or declared
+        horizon.
+        """
+        expected = (
+            "terminated"
+            if self.terminated
+            else "truncated"
+            if self.truncated
+            else "declared_horizon"
+            if self.reached_declared_horizon
+            else None
+        )
+        if self.is_sealed != (expected is not None) or self.reason != expected:
+            raise ValueError("terminal flags and reason must describe one state.")
+        return self
+
+
+class RecordingStatusV1(_ProtocolModel):
+    """Path-free capture state and actions shared by both live views.
+
+    Saved recordings allow Restart and Open Replay. Unsaved progress requires
+    Save or Discard before replacement. Capture can resume only in a new recorder.
+    """
+
+    schema_version: Literal[1] = PROTOCOL_SCHEMA_VERSION
+    lifecycle: RecordingLifecycleV1
+    captured_transition_count: _NonNegativeInt
+    expected_transition_count: Annotated[int, Field(gt=0)]
+    completion_state: RecordingCompletionStateV1 | None = None
+    completion_reason: (
+        Annotated[
+            str,
+            StringConstraints(min_length=1, max_length=256),
+        ]
+        | None
+    ) = None
+    restart_fenced: bool
+    """Whether replacing this recorder needs Save or Discard first."""
+    finish_available: bool
+    review_available: bool
+    retry_available: bool
+    save_as_available: bool
+    discard_available: bool
+    persistence_error_code: RecordingPersistenceErrorCodeV1 | None = None
+
+    @model_validator(mode="after")
+    def _validate_recording_lifecycle(self) -> Self:
+        """Require truthful recording counts, completion, action availability and
+        error exposure.
+        """
+        if self.captured_transition_count > self.expected_transition_count:
+            raise ValueError("recording progress cannot exceed the declared horizon.")
+        finalized = self.lifecycle in (
+            "sealed",
+            "finalized_unsaved",
+            "persistence_failed",
+            "saved",
+            "reviewing",
+        )
+        if finalized != (self.completion_state is not None):
+            raise ValueError(
+                "finalized recording lifecycle requires one completion state."
+            )
+        reason_required = self.completion_state in (
+            "partial",
+            "interrupted",
+            "failed",
+        )
+        if reason_required != (self.completion_reason is not None):
+            raise ValueError(
+                "non-complete recording completion requires one stable reason."
+            )
+        expected_restart_fenced = self.lifecycle not in ("saved", "reviewing") and (
+            self.captured_transition_count > 0 or self.lifecycle != "recording"
+        )
+        if self.restart_fenced != expected_restart_fenced:
+            raise ValueError("restart_fenced must follow exact recorder progress.")
+        expected_finish = self.lifecycle == "recording"
+        expected_review = self.lifecycle == "saved"
+        expected_retry = self.lifecycle == "persistence_failed"
+        expected_discard = (
+            self.lifecycle == "recording" and self.captured_transition_count > 0
+        ) or self.lifecycle in ("sealed", "finalized_unsaved", "persistence_failed")
+        if (
+            self.finish_available != expected_finish
+            or self.review_available != expected_review
+            or self.retry_available != expected_retry
+            or self.save_as_available != expected_retry
+            or self.discard_available != expected_discard
+        ):
+            raise ValueError(
+                "recording lifecycle availability flags are not canonical."
+            )
+        if (self.persistence_error_code is not None) != expected_retry:
+            raise ValueError(
+                "only persistence_failed may expose a coarse persistence error."
+            )
+        return self
+
+
+class SystemChoiceV1(_ProtocolModel):
+    """One launcher-declared browser choice; never a factory or server address."""
+
+    id: Annotated[str, StringConstraints(pattern=r"^system:[a-z0-9_-]{1,64}$")]
+    label: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+
+
+class SystemOperationV1(_ProtocolModel):
+    """One bounded pending operation; polling does not itself run a new turn."""
+
+    operation_id: _OpaqueId
+    state: Literal["loading", "thinking", "finishing", "cancelling", "failed"]
+
+
+class _LiveDebuggerEnvelopeV2(_ProtocolModel):
+    """Transport metadata shared without sharing audience payload authority."""
+
+    session_id: _OpaqueId
+    run_generation: _NonNegativeInt
+    revision: _NonNegativeInt
+    episode_id: _CanonicalScientificId
+    frame_index: _NonNegativeInt
+    frame_id: _CanonicalScientificId
+    simulator_step_count: _NonNegativeInt
+    combat_configuration: CombatSetupV1
+    preset: Preset
+    verbose: Literal[False] = False
+    terminal: TerminalStateV2
+    recording: RecordingStatusV1 | None = None
+    system_choices: tuple[SystemChoiceV1, ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
+    system_operation: SystemOperationV1 | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def _validate_common_epoch(self) -> Self:
+        """Keep the canonical frame identity and recording count on the current live
+        epoch.
+        """
+        if self.frame_id != f"{self.episode_id}:frame:{self.frame_index}":
+            raise ValueError("live frame ID must remain canonical.")
+        if (
+            self.recording is not None
+            and self.recording.captured_transition_count != self.frame_index
+        ):
+            raise ValueError("recording progress must equal the live frame index.")
+        return self
+
+
+class ResearcherLiveDebuggerFrameV2(_LiveDebuggerEnvelopeV2):
+    """Researcher-authorized live frame with full canonical evaluation truth."""
+
+    frame_kind: Literal["researcher_live_debugger"] = "researcher_live_debugger"
+    schema_version: Literal[2] = LIVE_FRAME_SCHEMA_VERSION
+    view_mode: Literal["researcher"] = "researcher"
+    incoming_transition_index: _NonNegativeInt | None
+    incoming_transition_id: _CanonicalScientificId | None
+    show_ranges: bool
+    scenario: ScenarioMetadataV1
+    available_scenarios: tuple[ScenarioOptionV1, ...]
+    projection: ResearcherAnalyzerProjectionV2
+    hud: ResearcherHudFrameV2
+
+    @model_validator(mode="after")
+    def _validate_researcher_frame(self) -> Self:
+        """Join global projection, HUD, selection and incoming transition to one live
+        endpoint.
+        """
+        if (self.incoming_transition_id is None) != (
+            self.incoming_transition_index is None
+        ):
+            raise ValueError("incoming transition index and ID must appear together.")
+        expected_transition_index = (
+            None if self.frame_index == 0 else self.frame_index - 1
+        )
+        if self.incoming_transition_index != expected_transition_index:
+            raise ValueError("incoming transition index must enter this frame.")
+        expected_transition_id = (
+            None
+            if expected_transition_index is None
+            else f"{self.episode_id}:transition:{expected_transition_index}"
+        )
+        if self.incoming_transition_id != expected_transition_id:
+            raise ValueError("incoming transition ID must remain canonical.")
+        projection = self.projection
+        scene = projection.scene
+        if (
+            scene.episode_id != self.episode_id
+            or scene.frame_index != self.frame_index
+            or scene.frame_id != self.frame_id
+            or scene.simulator_step_count != self.simulator_step_count
+            or scene.incoming_transition_id != self.incoming_transition_id
+        ):
+            raise ValueError("researcher projection must join the live envelope.")
+        roster_slots = tuple(agent.global_slot for agent in scene.agents)
+        if self.hud.roster_global_slots != roster_slots:
+            raise ValueError("researcher HUD roster must match the canonical scene.")
+        if self.hud.pending_submission_scope == "joint_turn":
+            manual = self.combat_configuration.manual_slots
+            if (
+                manual is not None
+                and tuple(row.actor_global_slot for row in self.hud.pending_actions)
+                != manual
+            ):
+                raise ValueError(
+                    "pending action rows must match configured Manual slots."
+                )
+        selection = scene.selection
+        if selection is None:
+            raise ValueError("live researcher scenes require a selection record.")
+        if (
+            self.hud.controlled_global_slot != selection.controlled_global_slot
+            or self.hud.selected_global_slot != selection.selected_global_slot
+        ):
+            raise ValueError("researcher HUD and scene selection must agree.")
+        if self.hud.controlled_global_slot not in self.hud.roster_global_slots:
+            raise ValueError(
+                "controlled actor must occur in the authorized HUD roster."
+            )
+        latest = self.hud.latest_transition
+        if latest is not None and (
+            latest.transition_index != self.incoming_transition_index
+            or latest.transition_id != self.incoming_transition_id
+        ):
+            raise ValueError("latest-transition HUD identity must join the envelope.")
+        return self
+
+
+class ActorPovLiveDebuggerFrameV2(_LiveDebuggerEnvelopeV2):
+    """Recipient-authorized live frame with no researcher projection or HUD."""
+
+    frame_kind: Literal["actor_pov_live_debugger"] = "actor_pov_live_debugger"
+    schema_version: Literal[2] = LIVE_FRAME_SCHEMA_VERSION
+    view_mode: Literal["pov"] = "pov"
+    incoming_pov_transition_id: _CanonicalScientificId | None
+    projection: ActorPovAnalyzerProjectionV1
+    hud: ActorPovHudFrameV1
+
+    @model_validator(mode="after")
+    def _validate_pov_frame(self) -> Self:
+        """Join actor projection, HUD and latest-result identity to the same live
+        recipient endpoint.
+        """
+        scene = self.projection.scene
+        expected_pov_transition_id = (
+            None
+            if self.frame_index == 0
+            else (
+                f"{self.episode_id}:actor-pov:"
+                f"{scene.self_actor.public_agent_id}:transition:{self.frame_index - 1}"
+            )
+        )
+        if (
+            scene.episode_id != self.episode_id
+            or scene.frame_index != self.frame_index
+            or scene.source_frame_id != self.frame_id
+            or scene.simulator_step_count != self.simulator_step_count
+            or self.projection.incoming_transition_id != expected_pov_transition_id
+            or self.incoming_pov_transition_id != expected_pov_transition_id
+            or self.hud.controlled_public_agent_id != scene.self_actor.public_agent_id
+        ):
+            raise ValueError("POV projection and HUD must join the live envelope.")
+        manual = self.combat_configuration.manual_slots
+        actor_slot = (
+            scene.self_actor.team_id - 1
+        ) * 5 + scene.self_actor.team_local_slot
+        if (
+            manual is not None
+            and self.hud.pending_submission_scope == "joint_turn"
+            and (self.hud.pending_action is not None) != (actor_slot in manual)
+        ):
+            raise ValueError(
+                "POV pending action must match configured Manual ownership."
+            )
+        latest = self.hud.latest_transition
+        if latest is not None and (
+            latest.transition_index != self.frame_index - 1
+            or latest.pov_transition_id != self.incoming_pov_transition_id
+        ):
+            raise ValueError("POV latest-result identity must join the envelope.")
+        return self
+
+
+class SharedObsAgentPovLiveDebuggerFrameV2(_LiveDebuggerEnvelopeV2):
+    """Projection-free live transport identity for one SharedObs recipient."""
+
+    frame_kind: Literal["shared_obs_agent_pov_live_debugger"] = (
+        "shared_obs_agent_pov_live_debugger"
+    )
+    schema_version: Literal[2] = LIVE_FRAME_SCHEMA_VERSION
+    view_mode: Literal["pov"] = "pov"
+    recipient_public_agent_id: _CanonicalScientificId
+    recipient_frame_id: _CanonicalScientificId
+    incoming_recipient_transition_id: _CanonicalScientificId | None
+    pending_submission_scope: PendingSubmissionScope
+
+    @model_validator(mode="after")
+    def _validate_shared_obs_frame(self) -> Self:
+        """Require canonical recipient frame and incoming-transition IDs for this
+        shared view.
+        """
+        prefix = (
+            f"{self.episode_id}:shared-obs-visual-union:"
+            f"{self.recipient_public_agent_id}"
+        )
+        if self.recipient_frame_id != f"{prefix}:frame:{self.frame_index}":
+            raise ValueError("SharedObs recipient frame ID is not canonical.")
+        expected_transition_id = (
+            None
+            if self.frame_index == 0
+            else f"{prefix}:transition:{self.frame_index - 1}"
+        )
+        if self.incoming_recipient_transition_id != expected_transition_id:
+            raise ValueError(
+                "SharedObs incoming recipient transition ID is not canonical."
+            )
+        return self
+
+
+type LiveDebuggerFrame = (
+    ResearcherLiveDebuggerFrameV2
+    | ActorPovLiveDebuggerFrameV2
+    | SharedObsAgentPovLiveDebuggerFrameV2
+)
+
+
+class CommandResponseV2(_ProtocolModel):
+    """A live command result with the latest validated audience-specific frame and
+    optional notice.
+    """
+
+    schema_version: Literal[2] = 2
+    result: CommandResult
+    frame: Annotated[LiveDebuggerFrame, Field(discriminator="frame_kind")]
+    notice: str | None = None
+    replay_url: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    """Separate local Viewer address, including its own access token; never a path."""
+
+    @field_validator("replay_url")
+    @classmethod
+    def _validate_replay_url(cls, value: str | None) -> str | None:
+        """Accept only a local Viewer URL with its generated access token."""
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        token = parts.fragment.removeprefix("token=")
+        if (
+            parts.scheme != "http"
+            or parts.hostname != "127.0.0.1"
+            or parts.port is None
+            or not 1 <= parts.port <= 65535
+            or parts.netloc != f"127.0.0.1:{parts.port}"
+            or value != f"http://127.0.0.1:{parts.port}/#token={token}"
+            or parts.path != "/"
+            or parts.query
+            or not parts.fragment.startswith("token=")
+            or len(token) != 43
+            or any(
+                character
+                not in (
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+                )
+                for character in token
+            )
+        ):
+            raise ValueError("Replay URL must name the local Viewer and its token")
+        return value
+
+
+class ApiErrorV2(_ProtocolModel):
+    """A stable live API error with a message and optional current authorized frame."""
+
+    schema_version: Literal[2] = 2
+    error_code: ApiErrorCode
+    message: str
+    latest_frame: (
+        Annotated[LiveDebuggerFrame, Field(discriminator="frame_kind")] | None
+    ) = None

@@ -1,7 +1,7 @@
 """Build TDM-GAMMA controller test inputs from a real Scenario 1 observation.
 
 This support module owns test construction only; it holds no tests. It starts
-from the compiled Scenario 1 observation (a real Core observation, canonical
+from the saved historical Scenario 1 observation (a real Core observation, canonical
 5v5 on a 20 x 10 map) and edits it with ``_replace``: the recipient's own row,
 visible ally and enemy rows (including Hunter Trap, Charge and Poison stun
 columns), the opposing public roster, both relative spawn-pad banks, own
@@ -19,8 +19,7 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 from jax import Array
-from scripts.dev.visual_debugger.authoring_compiler import CompiledDevScenarioV1
-from tests.scenario_controller_fixtures import load_scenario_1
+from tests.scenario_controller_fixtures import ControllerScenario, load_scenario_1
 
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_ACTIVE,
@@ -88,7 +87,7 @@ OPPOSING_PADS = tuple((0.5, 1.0 + 2.0 * row) for row in range(5))
 
 
 @cache
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     return load_scenario_1()
 
 

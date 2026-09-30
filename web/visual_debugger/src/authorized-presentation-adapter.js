@@ -391,8 +391,14 @@ export function authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId
         : null;
   const targetActions =
     liveResearcherSpace !== null &&
-    isRecord(liveResearcherSpace.pending_inspection?.draft?.decision_mask)
-      ? liveResearcherSpace.pending_inspection.draft.decision_mask.target_actions
+    isRecord(
+      liveResearcherSpace.pending_inspection?.draft?.decision_mask ??
+        liveResearcherSpace.pending_inspection?.decision_mask,
+    )
+      ? (
+          liveResearcherSpace.pending_inspection.draft?.decision_mask ??
+          liveResearcherSpace.pending_inspection.decision_mask
+        ).target_actions
       : isAuthorizedPresentationFrame(value) &&
           authorizedPresentationAudience(value) === "researcher" &&
           isRecord(value.action_axis)
@@ -424,6 +430,50 @@ export function authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId
 }
 
 /**
+ * Read one actor's configured controller from approved identity and transport facts.
+ * Dead actors keep ownership. Returns null for replay or an unknown actor; this
+ * display helper does not grant permission to send an edit to the server.
+ * @param {unknown} value - Approved live presentation.
+ * @param {unknown} combatConfiguration - Its paired normalized combat configuration.
+ * @param {unknown} publicAgentId - Actor identity from the approved roster.
+ * @returns {Readonly<{manual: boolean, label: string}> | null}
+ */
+export function authorizedPresentationController(
+  value,
+  combatConfiguration,
+  publicAgentId,
+) {
+  if (
+    !isAuthorizedPresentationFrame(value) ||
+    value.viewer_mode !== "live" ||
+    !isRecord(combatConfiguration)
+  )
+    return null;
+  const slot = authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId);
+  if (slot === null) return null;
+  if (
+    Array.isArray(combatConfiguration.manual_slots) &&
+    Array.isArray(combatConfiguration.slot_labels)
+  ) {
+    const label = combatConfiguration.slot_labels[slot];
+    return typeof label === "string"
+      ? Object.freeze({
+          manual: combatConfiguration.manual_slots.includes(slot),
+          label,
+        })
+      : null;
+  }
+  const controller =
+    slot < 5
+      ? combatConfiguration.team_a_controller
+      : combatConfiguration.team_b_controller;
+  return Object.freeze({
+    manual: controller === "manual",
+    label: controller === "manual" ? "Manual" : String(controller),
+  });
+}
+
+/**
  * Return the inspection field from authorizedPresentationInspectionState(value).
  * The result is the approved outgoing inspection or null; unavailable and scripted
  * states remain distinguishable only through the full state helper.
@@ -437,14 +487,15 @@ function presentationInspection(value) {
 /**
  * Return a frozen inspection state for value without guessing from missing data.
  * Unmarked input returns unavailable. A live editable draft returns live_editable,
- * its declared submission_scope, and draft inspection; scripted live playback returns
+ * its declared submission_scope, and draft inspection. Policy inspection returns
+ * live_policy with current masks and no draft; scripted live playback returns
  * live_scripted with no inspection. Replay returns replay_outgoing when an outgoing
  * inspection exists, otherwise replay_none. Replay submission_scope is null.
  * The joint_turn and scripted_playback scopes retain their exact server meaning.
  *
  * @param {unknown} value
  * @returns {Readonly<{
- *   state_kind: "live_editable" | "live_scripted" | "replay_outgoing" | "replay_none" | "unavailable",
+ *   state_kind: "live_editable" | "live_policy" | "live_scripted" | "replay_outgoing" | "replay_none" | "unavailable",
  *   submission_scope: "joint_turn" | "scripted_playback" | null,
  *   inspection: Readonly<Record<string, any>> | null,
  * }>}
@@ -466,6 +517,13 @@ export function authorizedPresentationInspectionState(value) {
         state_kind: "live_editable",
         submission_scope: live.submission_scope,
         inspection: isRecord(live.draft) ? live.draft : null,
+      });
+    }
+    if (isRecord(live) && live.inspection_kind === "policy_read_only") {
+      return Object.freeze({
+        state_kind: "live_policy",
+        submission_scope: live.submission_scope,
+        inspection: live,
       });
     }
     return Object.freeze({
@@ -491,7 +549,8 @@ export function authorizedPresentationInspectionState(value) {
  * Return the inspection state used by researcher panels and live controls.
  * For an approved live Agent POV with a researcher branch, read its global pending
  * inspection. Otherwise delegate to the ordinary inspection-state helper. The frozen
- * state distinguishes editable, scripted, replay-outgoing, replay-none, and unavailable.
+ * state distinguishes editable, policy read-only, scripted, replay-outgoing,
+ * replay-none, and unavailable.
  * The global live draft has no battlefield geometry; SVG consumers must use
  *  authorizedPresentationInspectionState instead.
  *
@@ -512,6 +571,13 @@ export function authorizedPresentationResearcherInspectionState(value) {
       state_kind: "live_editable",
       submission_scope: pending.submission_scope,
       inspection: isRecord(pending.draft) ? pending.draft : null,
+    });
+  }
+  if (isRecord(pending) && pending.inspection_kind === "policy_read_only") {
+    return Object.freeze({
+      state_kind: "live_policy",
+      submission_scope: pending.submission_scope,
+      inspection: pending,
     });
   }
   return Object.freeze({
@@ -1219,7 +1285,8 @@ export function authorizedPresentationLatestTransitionId(value) {
  * Prefer the attached researcher pending_joint_action, then the top-level branch.
  * Rows keep actor title/accent/team and copied integer action triples in source order.
  * Return an empty array for replay, unmarked input, absence, or any identity/action
- * mismatch. This displays the pending joint turn; it neither accepts nor sends actions.
+ * mismatch. These are staged Manual rows, including dead configured actors. Policy
+ * choices remain unknown until submit. This neither accepts nor sends actions.
  *
  * @param {unknown} value
  */

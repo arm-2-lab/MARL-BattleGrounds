@@ -105,7 +105,7 @@ def parse_words(
 
 
 def _factory(*, custom: bool) -> marl_bgs.System:
-    """Build a lazy CLI/DevClient System from the example's environment settings.
+    """Build a lazy CLI/BattleClient System from the example's environment settings.
 
     MARL_LLM_MODEL is the required served model name. MARL_LLM_URL defaults to
     http://127.0.0.1:8000/v1. MARL_LLM_REVISION optionally records pinned model

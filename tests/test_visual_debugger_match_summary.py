@@ -8,14 +8,12 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from scripts.dev.visual_debugger.control import create_session
 from scripts.dev.visual_debugger.match_summary import (
     MatchAgentV1,
     MatchDeathV1,
     MatchTeamV1,
     build_match_summary_v1,
 )
-from scripts.dev.visual_debugger.model import DebuggerScenarioProvenance
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.evaluation_fixtures import (
     captured_evaluation_trajectory,
@@ -23,6 +21,8 @@ from tests.evaluation_fixtures import (
 )
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.model import DebuggerScenarioProvenance
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     AssignedPolicySlotV1,

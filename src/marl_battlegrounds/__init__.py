@@ -17,6 +17,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from marl_battlegrounds._battle_client.launch import battle_client
     from marl_battlegrounds.autoreset import AutoReset
     from marl_battlegrounds.collection import collect_rollout
     from marl_battlegrounds.environment import (
@@ -92,6 +93,7 @@ __all__ = [
     "TrainingFacts",
     "apply_systems",
     "balanced_spawn_configs",
+    "battle_client",
     "canonical_tournament_rosters",
     "collect_rollout",
     "evaluate",
@@ -116,6 +118,7 @@ __all__ = [
 ]
 
 _MODULES = {
+    "battle_client": "_battle_client.launch",
     "AutoReset": "autoreset",
     "collect_rollout": "collection",
     "EpisodeTrackingState": "episode_tracking",

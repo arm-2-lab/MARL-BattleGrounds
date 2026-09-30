@@ -9,32 +9,36 @@ from unittest.mock import Mock
 
 import jax.numpy as jnp
 import pytest
-import scripts.dev.visual_debugger.control as control_module
-import scripts.dev.visual_debugger.input as input_module
-import scripts.dev.visual_debugger.replay_recorder as recording_module
-import scripts.dev.visual_debugger.service as service_module
-from scripts.dev.visual_debugger.control import (
-    create_session,
-    select_clicked_target,
-    set_combat_configuration,
-)
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    build_debugger_evaluation_launch_specification_v1,
-    debugger_action_source_kind_v1,
-)
-from scripts.dev.visual_debugger.frame import build_debugger_frame
-from scripts.dev.visual_debugger.input import InputDispatchResult
-from scripts.dev.visual_debugger.model import (
-    DebuggerSession,
-    TeamBController,
-    TeamController,
-)
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
     LiveOracleAuthorizedPresentationFrameV1,
     LiveSharedObsAuthorizedPresentationFrameV1,
 )
-from scripts.dev.visual_debugger.protocol import (
+from scripts.dev.visual_debugger.replay_protocol import ResearcherReplayViewerFrameV1
+from scripts.dev.visual_debugger.scenarios import get_scenario, list_scenarios
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control_module
+import marl_battlegrounds._battle_client.input as input_module
+import marl_battlegrounds._battle_client.replay_recorder as recording_module
+import marl_battlegrounds._battle_client.service as service_module
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    select_clicked_target,
+    set_combat_configuration,
+)
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_launch_specification_v1,
+    debugger_action_source_kind_v1,
+)
+from marl_battlegrounds._battle_client.frame import build_debugger_frame
+from marl_battlegrounds._battle_client.input import InputDispatchResult
+from marl_battlegrounds._battle_client.model import (
+    DebuggerSession,
+    TeamBController,
+    TeamController,
+)
+from marl_battlegrounds._battle_client.protocol import (
     ActorPovLiveDebuggerFrameV2,
     ActorPovTargetActionCommandV1,
     ApiErrorV2,
@@ -58,15 +62,11 @@ from scripts.dev.visual_debugger.protocol import (
     SharedObsAgentPovLiveDebuggerFrameV2,
     ViewMode,
 )
-from scripts.dev.visual_debugger.recording import (
+from marl_battlegrounds._battle_client.recording import (
     build_debugger_recording_specification_v1,
 )
-from scripts.dev.visual_debugger.replay_protocol import ResearcherReplayViewerFrameV1
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
-from scripts.dev.visual_debugger.scenarios import get_scenario, list_scenarios
-from scripts.dev.visual_debugger.service import DebuggerService
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.types import EnvConfig, EnvState
 from marl_battlegrounds.evaluation.metrics import EvaluationEpisodeObserverV1
 from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
@@ -245,13 +245,7 @@ def _close_recording_in_lifecycle(
             "publish_prepared_replay",
             fail_publish,
         )
-    elif lifecycle == "saved":
-
-        def fail_review(_self: DebuggerReplayRecorder) -> object:
-            raise RuntimeError("private closed-lifecycle review setup detail")
-
-        monkeypatch.setattr(DebuggerReplayRecorder, "begin_review", fail_review)
-    elif lifecycle != "reviewing":
+    elif lifecycle not in ("saved", "reviewing"):
         raise AssertionError(f"unsupported closed lifecycle {lifecycle!r}")
 
     closed = service.apply_command(
@@ -262,6 +256,9 @@ def _close_recording_in_lifecycle(
         )
     )
     assert isinstance(closed.payload, CommandResponseV2)
+    if lifecycle == "reviewing":
+        recorder.begin_review()
+        service._frame = service._build_frame()  # pyright: ignore[reportPrivateUsage]
     assert recorder.lifecycle == lifecycle
 
 
@@ -1265,7 +1262,7 @@ def test_stress_scenario_requires_explicit_service_authorization() -> None:
         )
 
 
-def test_recording_append_finish_handoff_and_duplicate_are_exactly_once(
+def test_recording_append_finish_and_explicit_review_are_exactly_once(
     tmp_path: Path,
 ) -> None:
     service, recorder = _recording_service(tmp_path)
@@ -1302,9 +1299,17 @@ def test_recording_append_finish_handoff_and_duplicate_are_exactly_once(
     assert isinstance(finished.payload, CommandResponseV2)
     assert finished.payload.frame.recording == recorder.status
     assert finished.payload.frame.recording is not None
-    assert finished.payload.frame.recording.lifecycle == "reviewing"
-    assert finished.replay_handoff is not None
-    replay_frame = finished.replay_handoff.current_frame()
+    assert finished.payload.frame.recording.lifecycle == "saved"
+    assert finished.replay_handoff is None
+    reviewed = service.apply_command(
+        _request(
+            "explicit-open",
+            base_revision=service.revision,
+            command=ReviewReplayCommandV1(),
+        )
+    )
+    assert reviewed.replay_handoff is not None
+    replay_frame = reviewed.replay_handoff.current_frame()
     assert isinstance(replay_frame, ResearcherReplayViewerFrameV1)
     assert replay_frame.viewer_session_id != "recording-test-session"
     assert replay_frame.cursor.frame_index == 0
@@ -1382,7 +1387,7 @@ def test_endpoint_auto_save_installs_saved_status_and_review_handoff(
     assert isinstance(reviewed.payload, CommandResponseV2)
     assert reviewed.replay_handoff is not None
     assert reviewed.replay_handoff.current_frame().cursor.frame_index == 0
-    assert recorder.lifecycle == "reviewing"
+    assert recorder.lifecycle == "saved"
 
 
 def test_scripted_service_fences_hidden_control_edits_before_advancing_once() -> None:
@@ -1828,6 +1833,111 @@ def test_recording_candidate_frame_failure_precedes_append(
     assert recorder.validated_transition_count == 0
 
 
+@pytest.mark.parametrize(
+    ("view_mode", "execution_information_mode"),
+    (("researcher", "no_shared_obs"), ("pov", "no_shared_obs"), ("pov", "shared_obs")),
+)
+def test_recording_closeout_reuses_equal_presentations_before_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    view_mode: ViewMode,
+    execution_information_mode: Literal["shared_obs", "no_shared_obs"],
+) -> None:
+    service, recorder = _recording_service(
+        tmp_path,
+        view_mode=view_mode,
+        execution_information_mode=execution_information_mode,
+    )
+    original_presentation = service._build_authorized_presentation  # pyright: ignore[reportPrivateUsage]
+    tracked_presentation = Mock(wraps=original_presentation)
+    original_closeout = service._prepare_failure_closeout_responses  # pyright: ignore[reportPrivateUsage]
+    closeouts: list[
+        tuple[DebuggerSession, service_module._FailureCloseoutCandidates]  # pyright: ignore[reportPrivateUsage]
+    ] = []
+
+    def track_closeout(*args: object, **kwargs: object) -> object:
+        candidates = original_closeout(*args, **kwargs)  # type: ignore[arg-type]
+        session = kwargs.get("session", service.session)
+        assert isinstance(session, DebuggerSession)
+        closeouts.append((session, candidates))
+        return candidates
+
+    original_append = DebuggerReplayRecorder.append
+
+    def checked_append(*args: object, **kwargs: object) -> None:
+        # Both failure epochs and the accepted successor are checked before capture.
+        assert len(closeouts) == 2
+        assert tracked_presentation.call_count == 3
+        original_append(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(service, "_build_authorized_presentation", tracked_presentation)
+    monkeypatch.setattr(service, "_prepare_failure_closeout_responses", track_closeout)
+    monkeypatch.setattr(DebuggerReplayRecorder, "append", checked_append)
+    result = service.apply_command(
+        _request(
+            "reuse-failure-display",
+            base_revision=0,
+            command=KeyboardCommandV1(key="Enter"),
+        )
+    )
+    assert isinstance(result.payload, CommandResponseV2)
+    assert result.payload.result == "applied"
+    assert recorder.validated_transition_count == 1
+    assert tracked_presentation.call_count == 3
+    for session, candidates in closeouts:
+        expected = original_presentation(
+            session=session, raw_frame=candidates.saved.frame, view_mode=view_mode
+        )
+        assert candidates.saved.frame.recording is not None
+        assert candidates.saved.frame.recording.lifecycle == "saved"
+        assert set(candidates.failures) == {
+            "target_unavailable",
+            "publication_failed",
+            "verification_failed",
+        }
+        for error_code, candidate in candidates.failures.items():
+            assert candidate.frame.recording is not None
+            assert candidate.frame.recording.lifecycle == "persistence_failed"
+            assert candidate.frame.recording.persistence_error_code == error_code
+            # Rebuilding each possible reply independently produces the same display.
+            assert (
+                original_presentation(
+                    session=session, raw_frame=candidate.frame, view_mode=view_mode
+                )
+                == expected
+            )
+
+
+def test_recording_failure_presentation_rejection_precedes_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, recorder = _recording_service(tmp_path)
+    initial_session = service.session
+    initial_frame = service.current_frame()
+    append = Mock(wraps=DebuggerReplayRecorder.append)
+    monkeypatch.setattr(DebuggerReplayRecorder, "append", append)
+    monkeypatch.setattr(
+        service,
+        "_build_authorized_presentation",
+        Mock(side_effect=ValueError("injected failure presentation rejection")),
+    )
+    with pytest.raises(ValueError, match="failure presentation rejection"):
+        service.apply_command(
+            _request(
+                "reject-failure-display",
+                base_revision=0,
+                command=KeyboardCommandV1(key="Enter"),
+            )
+        )
+    append.assert_not_called()
+    assert service.session is initial_session
+    assert service.current_frame() is initial_frame
+    assert service.revision == 0
+    assert recorder.lifecycle == "recording"
+    assert recorder.validated_transition_count == 0
+
+
 def test_finish_response_prebuild_failure_leaves_recorder_active(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1898,16 +2008,16 @@ def test_endpoint_outcome_frame_failure_precedes_recorder_append(
     assert recorder.validated_transition_count == 1
 
 
-def test_begin_review_failure_retains_saved_reviewable_state(
+def test_explicit_review_failure_retains_saved_reviewable_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, recorder = _recording_service(tmp_path)
 
-    def fail_review(_self: DebuggerReplayRecorder) -> object:
+    def fail_review() -> object:
         raise RuntimeError("injected review failure")
 
-    monkeypatch.setattr(DebuggerReplayRecorder, "begin_review", fail_review)
+    monkeypatch.setattr(service, "_build_replay_handoff", fail_review)
     result = service.apply_command(
         _request(
             "finish-with-review-failure",
@@ -1916,6 +2026,14 @@ def test_begin_review_failure_retains_saved_reviewable_state(
         )
     )
 
+    assert result.replay_handoff is None
+    result = service.apply_command(
+        _request(
+            "explicit-review-failure",
+            base_revision=service.revision,
+            command=ReviewReplayCommandV1(),
+        )
+    )
     assert isinstance(result.payload, CommandResponseV2)
     assert result.replay_handoff is None
     assert recorder.lifecycle == "saved"
@@ -1978,8 +2096,8 @@ def test_endpoint_persistence_failure_preserves_committed_prefix_then_save_as(
     )
 
     assert isinstance(recovered.payload, CommandResponseV2)
-    assert recovered.replay_handoff is not None
-    assert recorder.lifecycle == "reviewing"
+    assert recovered.replay_handoff is None
+    assert recorder.lifecycle == "saved"
     assert recovered.payload.frame.recording == recorder.status
     assert (tmp_path / "endpoint-recovered.marlbg-replay.json").is_file()
 
@@ -2031,7 +2149,7 @@ def test_exit_waits_for_durable_save_and_retry_before_shutdown(
     assert retried_exit.payload.frame.recording == recorder.status
 
 
-def test_retry_save_opens_review_without_replaying_finalization(
+def test_retry_save_stays_live_without_replaying_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2074,9 +2192,8 @@ def test_retry_save_opens_review_without_replaying_finalization(
     assert failed.payload.frame.recording is not None
     assert failed.payload.frame.recording.lifecycle == "persistence_failed"
     assert isinstance(retried.payload, CommandResponseV2)
-    assert retried.replay_handoff is not None
-    assert retried.replay_handoff.current_frame().cursor.frame_index == 0
-    assert recorder.lifecycle == "reviewing"
+    assert retried.replay_handoff is None
+    assert recorder.lifecycle == "saved"
     assert calls == 2
 
 
@@ -2188,7 +2305,7 @@ def test_keyboard_interrupt_closeout_failure_stays_recoverable_and_coherent(
     assert not service.shutting_down
 
 
-def test_concurrent_finish_publishes_and_hands_off_once(tmp_path: Path) -> None:
+def test_concurrent_finish_publishes_once_without_handoff(tmp_path: Path) -> None:
     service, recorder = _recording_service(tmp_path)
     requests = tuple(
         _request(
@@ -2207,8 +2324,8 @@ def test_concurrent_finish_publishes_and_hands_off_once(tmp_path: Path) -> None:
         "response",
         "stale_revision",
     ]
-    assert sum(result.replay_handoff is not None for result in results) == 1
-    assert recorder.lifecycle == "reviewing"
+    assert all(result.replay_handoff is None for result in results)
+    assert recorder.lifecycle == "saved"
     assert service.revision == 1
 
 
@@ -2231,10 +2348,6 @@ def test_concurrent_finish_publishes_and_hands_off_once(tmp_path: Path) -> None:
         (
             "roster-target",
             RosterSelectionCommandV1(role="target", global_slot=1),
-        ),
-        (
-            "roster-control",
-            RosterSelectionCommandV1(role="control", global_slot=1),
         ),
         ("actor-pov-target", ActorPovTargetActionCommandV1(target_action=0)),
     ),
@@ -2458,8 +2571,8 @@ def test_typed_transition_failure_with_save_failure_stays_recoverable(
         )
     )
     assert isinstance(recovered.payload, CommandResponseV2)
-    assert recovered.replay_handoff is not None
-    assert recorder.lifecycle == "reviewing"
+    assert recovered.replay_handoff is None
+    assert recorder.lifecycle == "saved"
 
 
 @pytest.mark.parametrize("view_mode", ("researcher", "pov"))
@@ -2643,3 +2756,33 @@ def test_horizon_append_failure_preserves_complete_rollout(
     assert completion.terminated is False
     assert completion.truncated is False
     assert not service.faulted
+
+
+def test_default_scenario_choice_follows_installed_session() -> None:
+    service = _service("arena_5v5")
+    before = service.current_frame()
+    assert isinstance(before, ResearcherLiveDebuggerFrameV2)
+    assert tuple(row.name for row in before.available_scenarios) == ("arena_5v5",)
+    service.load_scenario(get_scenario("basic_support"))
+    after = service.current_frame()
+    assert isinstance(after, ResearcherLiveDebuggerFrameV2)
+    assert tuple(row.name for row in after.available_scenarios) == ("basic_support",)
+
+
+def test_service_keeps_supplied_catalog_when_caller_changes_its_list() -> None:
+    catalog = [get_scenario("basic_support"), get_scenario("arena_5v5")]
+    service = DebuggerService(
+        _service("arena_5v5").session,
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+        scenario_catalog=catalog,
+    )
+    catalog.clear()
+    service.load_scenario(get_scenario("basic_support"))
+    frame = service.current_frame()
+    assert isinstance(frame, ResearcherLiveDebuggerFrameV2)
+    assert tuple(row.name for row in frame.available_scenarios) == (
+        "basic_support",
+        "arena_5v5",
+    )

@@ -1,5 +1,5 @@
 /**
- * @file Read and send DevClient/Replay Viewer HTTP data through the local token boundary.
+ * @file Read and send BattleClient/Replay Viewer HTTP data through the local token boundary.
  * Requests omit cookies, reject redirects, disable caching, and time out after five
  * minutes. POST helpers never retry an uncertain command. Transport frames must
  * join separately authorized presentation data before the UI installs them.
@@ -22,7 +22,6 @@ const TOKEN_STORAGE_KEY = "marl-battlegrounds.debugger-token";
 const CLIENT_STORAGE_KEY = "marl-battlegrounds.debugger-client-id";
 const TOKEN_HEADER = "X-MARL-Debugger-Token";
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
-const AUTHORING_COMMAND_ROUTE = "/api/dev/authoring/command";
 const UNJOINED_SHARED_REPLAY_FRAME_KINDS = new Set([
   "shared_obs_source_material_replay_viewer",
   "shared_obs_agent_pov_replay_viewer",
@@ -452,6 +451,58 @@ export async function getCurrentPresentation(token) {
 }
 
 /**
+ * Fetch one live frame and its authorized presentation from the same accepted turn.
+ * The server holds one snapshot while building both existing payloads. Validate
+ * their ordinary join; this request never submits or retries a simulator action.
+ *
+ * knownIdentity is the quoted session/revision ETag of the installed frame.
+ * A matching 304 returns null and skips payload work on both sides.
+ *
+ * @param {string | null} token
+ * @param {string | null} [knownIdentity]
+ * @returns {Promise<Readonly<Record<string, any>> | null>}
+ */
+export async function getCurrentLiveSnapshot(token, knownIdentity = null) {
+  let response;
+  try {
+    response = await fetchWithTimeout("/api/live/snapshot", {
+      method: "GET",
+      headers: {
+        ...authorizationHeaders(token),
+        ...(knownIdentity === null ? {} : { "If-None-Match": knownIdentity }),
+      },
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+    });
+  } catch (error) {
+    throw new DebuggerApiError(
+      error instanceof Error
+        ? `Could not reach the local match: ${error.message}`
+        : "Could not reach the local match.",
+    );
+  }
+  if (response.status === 304) {
+    if (knownIdentity === null || response.headers.get("ETag") !== knownIdentity) {
+      throw new TypeError(
+        "Unchanged live snapshot does not match the requested identity.",
+      );
+    }
+    return null;
+  }
+  const value = snapshotApiRecord(await decodeResponse(response), "Live snapshot");
+  requireExactEnvelopeKeys(
+    value,
+    ["schema_version", "frame", "presentation"],
+    "Live snapshot",
+  );
+  if (value.schema_version !== 1 || value.frame?.schema_version !== 2) {
+    throw new TypeError("Live snapshot has an unsupported frame version.");
+  }
+  return extractJoinedFrame(value.frame, value.presentation);
+}
+
+/**
  * Start one frame GET and one presentation GET using the same token, then join them.
  * Return the checked frozen joined frame, or null when no installable frame is
  * present. Either request or a mismatched source identity rejects the attempt.
@@ -507,43 +558,23 @@ export async function getReplayTimeline(token) {
  * @returns {Promise<any>}
  */
 export async function postCommand(token, request) {
-  let response;
-  try {
-    response = await fetchWithTimeout("/api/command", {
-      method: "POST",
-      headers: {
-        ...authorizationHeaders(token),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-      cache: "no-store",
-      credentials: "omit",
-      redirect: "error",
-    });
-  } catch (error) {
-    throw new DebuggerApiError(
-      error instanceof Error
-        ? `Command outcome is unknown because the connection failed: ${error.message}`
-        : "Command outcome is unknown because the connection failed.",
-    );
-  }
-  return decodeResponse(response);
+  return postJsonCommand("/api/command", token, request);
 }
 
 /**
- * Serialize request and POST one whole-draft authoring command using token.
- * Return parsed response data; the route exists only on a live authoring binding.
- * Do not retry on connection failure because the server outcome is unknown.
- * Serialization, network, HTTP, and decoding failures reject.
+ * POST one JSON command to a caller-owned local route. Never retry an uncertain
+ * response. Reuse the client token, timeout and checked JSON error decoding.
  *
- * @param {string | null} token
- * @param {unknown} request
- * @returns {Promise<any>}
+ * @param {string} route Local API path.
+ * @param {string | null} token Session capability token.
+ * @param {unknown} request JSON command.
+ * @param {string} [label] Name used when the connection outcome is unknown.
+ * @returns {Promise<any>} Parsed response.
  */
-export async function postAuthoringCommand(token, request) {
+export async function postJsonCommand(route, token, request, label = "Command") {
   let response;
   try {
-    response = await fetchWithTimeout(AUTHORING_COMMAND_ROUTE, {
+    response = await fetchWithTimeout(route, {
       method: "POST",
       headers: {
         ...authorizationHeaders(token),
@@ -557,8 +588,8 @@ export async function postAuthoringCommand(token, request) {
   } catch (error) {
     throw new DebuggerApiError(
       error instanceof Error
-        ? `Authoring outcome is unknown because the connection failed: ${error.message}`
-        : "Authoring outcome is unknown because the connection failed.",
+        ? `${label} outcome is unknown because the connection failed: ${error.message}`
+        : `${label} outcome is unknown because the connection failed.`,
     );
   }
   return decodeResponse(response);
@@ -683,7 +714,13 @@ export async function extractJoinedFrame(rawPayload, rawPresentationPayload) {
         envelope,
         replay
           ? ["schema_version", "result", "frame", "notice", "animate_incoming"]
-          : ["schema_version", "result", "frame", "notice"],
+          : [
+              "schema_version",
+              "result",
+              "frame",
+              "notice",
+              ...(Object.hasOwn(envelope, "replay_url") ? ["replay_url"] : []),
+            ],
         replay ? "Replay command response" : "Live command response",
       );
       if (
@@ -698,6 +735,7 @@ export async function extractJoinedFrame(rawPayload, rawPresentationPayload) {
       ) {
         throw new TypeError("Command response scalar contract is invalid.");
       }
+      if (!replay) extractReplayUrl(envelope);
       candidate = envelope.frame;
       requireEnvelopeFrameFamily(
         candidate,
@@ -797,6 +835,36 @@ export function extractFrame(payload) {
     return normalizeLiveDebuggerFrameV2(payload);
   }
   return null;
+}
+
+/**
+ * Read the separate Viewer's local URL from a successful command response.
+ * Missing URLs return null. Reject non-loopback hosts, paths, credentials,
+ * queries and malformed capability tokens before opening a browser tab.
+ *
+ * @param {unknown} payload
+ * @returns {string | null}
+ * @throws {TypeError} A supplied replay URL does not match the local server contract.
+ */
+export function extractReplayUrl(payload) {
+  if (!isRecord(payload) || payload.replay_url == null) return null;
+  const value = payload.replay_url;
+  if (
+    typeof value !== "string" ||
+    !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/#token=[A-Za-z0-9_-]{43}$/u.test(value)
+  ) {
+    throw new TypeError("The saved replay URL is not a local Viewer address.");
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new TypeError("The saved replay URL is not a valid local address.");
+  }
+  if (Number(url.port) < 1 || Number(url.port) > 65535) {
+    throw new TypeError("The saved replay URL has an invalid port.");
+  }
+  return value;
 }
 
 /**

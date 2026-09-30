@@ -549,6 +549,15 @@ class ReplayViewerService:
         )
 
     @property
+    def replay_id(self) -> str:
+        """Return the saved replay identity, unchanged by cursor or POV choices.
+
+        This host-only value lets a launcher reuse an existing Viewer. It reads
+        the identity already checked at load time without rebuilding a frame.
+        """
+        return self._artifact_summary.replay_reference.artifact_id
+
+    @property
     def show_ranges(self) -> bool:
         """Return the viewer preference without exposing an actor observation."""
         with self._lock:

@@ -144,8 +144,11 @@ async function liveRosterActorOutsideBattlefield(page) {
   return rosterActors.nth(index);
 }
 
-/** @param {import("@playwright/test").Page} page */
-async function holdNextPresentation(page) {
+/** @param {import("@playwright/test").Page} page
+ * @param {string} [path] */
+async function holdNextPresentation(page, path = "/api/presentation/frame") {
+  const routePattern = `**${path}`;
+  let captured = false;
   let markHeld = () => {};
   let releaseResponse = () => {};
   let released = false;
@@ -156,12 +159,18 @@ async function holdNextPresentation(page) {
     releaseResponse = () => resolve(undefined);
   });
   const handler = async (/** @type {import("@playwright/test").Route} */ route) => {
+    // A background poll must not consume the full Reconnect snapshot hold.
+    if (captured || route.request().headers()["if-none-match"] !== undefined) {
+      await route.continue();
+      return;
+    }
+    captured = true;
     const response = await route.fetch();
     markHeld();
     await release;
     await route.fulfill({ response });
   };
-  await page.route("**/api/presentation/frame", handler, { times: 1 });
+  await page.route(routePattern, handler);
   return {
     held,
     release() {
@@ -175,7 +184,7 @@ async function holdNextPresentation(page) {
         released = true;
         releaseResponse();
       }
-      await page.unroute("**/api/presentation/frame", handler);
+      await page.unroute(routePattern, handler);
     },
   };
 }
@@ -1761,6 +1770,15 @@ test("a stale tab adopts the latest ranges state without replaying its command",
 }) => {
   await page.goto(debuggerUrl);
   const stalePage = await context.newPage();
+  // Keep this tab stale while allowing a full read after its command is rejected.
+  await stalePage.route("**/api/live/snapshot", async (route) => {
+    const knownIdentity = route.request().headers()["if-none-match"];
+    if (knownIdentity !== undefined) {
+      await route.fulfill({ status: 304, headers: { ETag: knownIdentity } });
+      return;
+    }
+    await route.continue();
+  });
   await stalePage.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Online");
   await expect(stalePage.locator("#connection-status")).toHaveText("Online");
@@ -2290,7 +2308,7 @@ test("native panels preserve user state only within exact authority", async ({
     .toEqual({ surface: "roster", presentationKey: focusedPresentationKey });
 
   const refreshDisclosureOpen = await disclosureOpenState(page);
-  const heldRefresh = await holdNextPresentation(page);
+  const heldRefresh = await holdNextPresentation(page, "/api/live/snapshot");
   try {
     await page.locator("#reconnect-button").evaluate((button) => {
       if (!(button instanceof HTMLButtonElement)) {
@@ -2368,17 +2386,45 @@ test("declared System loads, accepts one turn and abandons a cancelled late repl
       "counter=tests.visual_debugger_system_browser_harness:make_system",
     ],
   });
+  /** @param {string} controller */
+  async function configureTeamA(controller) {
+    const result = await page.evaluate(async (choice) => {
+      const token = sessionStorage.getItem("marl-battlegrounds.debugger-token");
+      if (!token) throw new Error("Missing client token.");
+      const headers = { "X-MARL-Debugger-Token": token };
+      const frameResponse = await fetch("/api/frame", { headers });
+      if (!frameResponse.ok) throw new Error("Could not read current frame.");
+      const frame = await frameResponse.json();
+      const response = await fetch("/api/command", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: "browser-system-test",
+          command_id: crypto.randomUUID(),
+          base_revision: frame.revision,
+          command: {
+            command_type: "set_combat_configuration",
+            team_a_controller: choice,
+            team_b_controller: "manual",
+            execution_information_mode: "shared_obs",
+          },
+        }),
+      });
+      if (!response.ok) throw new Error(`Configuration failed: ${response.status}`);
+      return response.json();
+    }, controller);
+    await page.locator("#reconnect-button").click();
+    return result;
+  }
   page.on("pageerror", (error) => {
     throw error;
   });
   try {
     await page.goto(started.url);
-    await expect(
-      page.locator("#devclient-team-a-controller option[value='system:counter']"),
-    ).toHaveCount(1);
-    await page.locator("#devclient-team-a-controller").selectOption("system:counter");
-    await expect(page.locator("#devclient-team-a-controller")).toHaveValue(
-      "system:counter",
+    await configureTeamA("system:counter");
+    await expect(page.locator("#command-deck")).toHaveAttribute(
+      "data-policy-controller-read-only",
+      "true",
     );
     await expect(page.locator("#system-operation-status")).toHaveText("");
     await setDisclosureOpen(page, "#command-deck", true);
@@ -2393,10 +2439,20 @@ test("declared System loads, accepts one turn and abandons a cancelled late repl
     await page.locator("#cancel-system-button").click();
     await expect(page.locator("#system-operation-status")).toHaveText("");
     await expect(page.locator("#step-value")).toHaveText("1");
-    await page.locator("#devclient-team-a-controller").selectOption("manual");
-    await expect(page.locator("#devclient-team-a-controller")).toHaveValue("manual");
+    await expect(page.locator("#live-run-status")).toHaveText(
+      "Fresh Launch Required · Accepted Game Kept",
+    );
+    await expect(page.locator("#submit-turn-button")).toBeDisabled();
+    await expect(page.locator("#reset-button")).toBeDisabled();
+    await expect(page.locator("#live-control-help")).toContainText("inspect and save");
+    const rejected = await configureTeamA("manual");
+    expect(rejected.notice).toContain("fresh client launch");
+    await expect(page.locator("#command-deck")).toHaveAttribute(
+      "data-policy-controller-read-only",
+      "true",
+    );
     await expect(page.locator("#system-operation-status")).toHaveText("");
-    await expect(page.locator("#step-value")).toHaveText("0");
+    await expect(page.locator("#step-value")).toHaveText("1");
   } finally {
     await stopDebugger(started.process);
   }

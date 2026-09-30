@@ -10,8 +10,10 @@ import {
   extractFrame,
   extractJoinedFrame,
   extractNotice,
+  extractReplayUrl,
   getCurrentFrame,
   getCurrentFrameAndPresentation,
+  getCurrentLiveSnapshot,
   getCurrentPresentation,
   getReplayEpisodeDetails,
   getReplayMetricCatalog,
@@ -1030,4 +1032,116 @@ test("replay metrics accept recipient totals and require clear metadata and vers
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");
   }
+});
+
+test("live snapshot joins one response and checks unchanged snapshot identities", async () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const pair = presentationFixture.pairs.live_oracle;
+  const identity = `"${pair.transport.session_id}:${pair.transport.revision}"`;
+  let payload = {
+    schema_version: 1,
+    frame: pair.transport,
+    presentation: pair.presentation,
+  };
+  /** @type {Array<{path:string, options:RequestInit}>} */
+  const calls = [];
+  let unchanged = false;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      clearTimeout: globalThis.clearTimeout,
+      setTimeout: globalThis.setTimeout,
+      /** @param {string} path @param {RequestInit} options */
+      fetch: async (path, options) => {
+        calls.push({ path, options });
+        return unchanged
+          ? new Response(null, { status: 304, headers: { ETag: identity } })
+          : jsonResponse(payload);
+      },
+    },
+  });
+  try {
+    const joined = await getCurrentLiveSnapshot("capability");
+    assert.ok(joined);
+    assert.equal(joined.transport.revision, pair.transport.revision);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].path, "/api/live/snapshot");
+    assert.equal(calls[0].options.method, "GET");
+    assert.equal(
+      new Headers(calls[0].options.headers).get("X-MARL-Debugger-Token"),
+      "capability",
+    );
+    unchanged = true;
+    assert.equal(await getCurrentLiveSnapshot("capability", identity), null);
+    assert.equal(new Headers(calls[1].options.headers).get("If-None-Match"), identity);
+    await assert.rejects(
+      getCurrentLiveSnapshot("capability"),
+      /Unchanged live snapshot/u,
+    );
+    await assert.rejects(
+      getCurrentLiveSnapshot("capability", '"other:0"'),
+      /Unchanged live snapshot/u,
+    );
+    unchanged = false;
+    payload = { ...payload, schema_version: 2 };
+    await assert.rejects(
+      getCurrentLiveSnapshot("capability"),
+      /unsupported frame version/u,
+    );
+    payload = {
+      schema_version: 1,
+      frame: { ...pair.transport, revision: pair.transport.revision + 1 },
+      presentation: pair.presentation,
+    };
+    await assert.rejects(
+      getCurrentLiveSnapshot("capability"),
+      /revision|identity|source/iu,
+    );
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("separate replay URLs accept only the authenticated loopback Viewer", () => {
+  const token = "a".repeat(43);
+  const valid = `http://127.0.0.1:48123/#token=${token}`;
+  assert.equal(extractReplayUrl({ replay_url: valid }), valid);
+  assert.equal(extractReplayUrl({}), null);
+  assert.equal(extractReplayUrl({ replay_url: null }), null);
+  for (const value of [
+    "javascript:alert(1)",
+    `https://127.0.0.1:48123/#token=${token}`,
+    `http://localhost:48123/#token=${token}`,
+    `http://example.com:48123/#token=${token}`,
+    `http://127.0.0.1:65536/#token=${token}`,
+    `http://127.0.0.1:0/#token=${token}`,
+    `http://127.0.0.1:48123/private/#token=${token}`,
+    `http://127.0.0.1:48123/?next=example.com#token=${token}`,
+    `http://user@127.0.0.1:48123/#token=${token}`,
+    `http://127.0.0.1:48123/#token=short`,
+    123,
+    {},
+  ])
+    assert.throws(() => extractReplayUrl({ replay_url: value }), TypeError);
+});
+
+test("live command joins validate the optional separate Viewer URL", async () => {
+  const pair = presentationFixture.pairs.live_oracle;
+  const response = {
+    schema_version: 2,
+    result: "applied",
+    frame: pair.transport,
+    notice: null,
+    replay_url: `http://127.0.0.1:48123/#token=${"a".repeat(43)}`,
+  };
+  await extractJoinedFrame(response, pair.presentation);
+  await assert.rejects(
+    () =>
+      extractJoinedFrame(
+        { ...response, replay_url: "https://example.com/" },
+        pair.presentation,
+      ),
+    TypeError,
+  );
 });

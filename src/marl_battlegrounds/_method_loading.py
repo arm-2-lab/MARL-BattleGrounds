@@ -102,8 +102,10 @@ def load_method(reference: str) -> Policy | System:
     Returns
     -------
     Policy or System
-        The method exactly as its source produced it. Callers freeze it with
-        ``freeze_evaluation_method`` before use.
+        The method exactly as its source produced it. Evaluation callers use
+        ``freeze_evaluation_method`` when they own a snapshot. BattleClient
+        retains borrowed objects and their parameters for its blocking lifetime;
+        the caller must keep those parameters fixed. This loader does neither.
 
     Raises
     ------

@@ -30,7 +30,6 @@ from scripts.dev.generate_visual_debugger_sample_replays import (
     generate_sample_replays,
     verify_sample_replays,
 )
-from scripts.dev.visual_debugger.model import DebuggerScenario
 from scripts.dev.visual_debugger.sample_replays import (
     SAMPLE_REPLAY_DIRECTORY,
     SAMPLE_REPLAY_MANIFEST_PATH,
@@ -44,6 +43,7 @@ from scripts.dev.visual_debugger.sample_replays import (
 )
 
 import marl_battlegrounds.evaluation.replay_io as replay_io_module
+from marl_battlegrounds._battle_client.model import DebuggerScenario
 from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
@@ -88,7 +88,7 @@ import sys
 from pathlib import Path
 
 import scripts.dev.generate_visual_debugger_sample_replays as generator
-import scripts.dev.visual_debugger.control as control
+import marl_battlegrounds._battle_client.control as control
 from marl_battlegrounds.evaluation.models import CodeRevisionV1
 from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from scripts.dev.visual_debugger.sample_replays import (

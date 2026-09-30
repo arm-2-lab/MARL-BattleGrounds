@@ -177,12 +177,20 @@ function captureBrowserErrors(page) {
 
 /** @param {import("@playwright/test").Page} page */
 function captureApiRequests(page) {
-  /** @type {{method: string, path: string}[]} */
+  /** @type {{method: string, path: string, conditionalSnapshot?: boolean}[]} */
   const requests = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith("/api/")) {
-      requests.push({ method: request.method(), path });
+      requests.push({
+        method: request.method(),
+        path,
+        ...(request.method() === "GET" &&
+        path === "/api/live/snapshot" &&
+        request.headers()["if-none-match"] !== undefined
+          ? { conditionalSnapshot: true }
+          : {}),
+      });
     }
   });
   return requests;
@@ -238,7 +246,7 @@ async function settleLocalRender(page) {
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {{method: string, path: string}[]} apiRequests
+ * @param {{method: string, path: string, conditionalSnapshot?: boolean}[]} apiRequests
  * @param {() => Promise<void>} action
  * @param {{label: string, delayMs?: number}} options */
 async function expectLocalOnly(page, apiRequests, action, options) {
@@ -249,7 +257,10 @@ async function expectLocalOnly(page, apiRequests, action, options) {
   if (delayMs !== undefined && delayMs > 0) {
     await page.waitForTimeout(delayMs);
   }
-  expect(apiRequests.slice(mark), `${options.label} caused an API request`).toEqual([]);
+  const localRequests = apiRequests
+    .slice(mark)
+    .filter(({ conditionalSnapshot }) => !conditionalSnapshot);
+  expect(localRequests, `${options.label} caused an API request`).toEqual([]);
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -449,7 +460,7 @@ function cooldownInventory(page) {
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {{method: string, path: string}[]} apiRequests
+ * @param {{method: string, path: string, conditionalSnapshot?: boolean}[]} apiRequests
  * @param {boolean} replay
  * @param {string} label */
 async function expectCooldownToggle(page, apiRequests, replay, label) {
@@ -475,7 +486,7 @@ async function expectCooldownToggle(page, apiRequests, replay, label) {
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {{method: string, path: string}[]} apiRequests
+ * @param {{method: string, path: string, conditionalSnapshot?: boolean}[]} apiRequests
  * @param {string} filterId
  * @param {boolean} enabled
  * @param {string} label */
@@ -674,7 +685,7 @@ async function targetSelectionPaintSignature(page) {
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {{method: string, path: string}[]} apiRequests
+ * @param {{method: string, path: string, conditionalSnapshot?: boolean}[]} apiRequests
  * @param {{url: string}} replay
  * @param {string} expectedPresentationKind
  * @param {string} label */

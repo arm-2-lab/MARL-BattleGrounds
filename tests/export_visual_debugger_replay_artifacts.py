@@ -57,8 +57,7 @@ from marl_battlegrounds.evaluation.replay_io import (
 )
 
 if TYPE_CHECKING:
-    from scripts.dev.visual_debugger.model import ActorCommand
-
+    from marl_battlegrounds._battle_client.model import ActorCommand
     from marl_battlegrounds.core.types import EnvConfig, EnvState
     from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 
@@ -293,8 +292,8 @@ def export_acceptance_artifacts(output_directory: Path) -> dict[str, object]:
     from scripts.dev.qualify_tdm_scenarios import (
         _planned_episode,  # pyright: ignore[reportPrivateUsage]
     )
-    from scripts.dev.visual_debugger.model import ActorCommand
 
+    from marl_battlegrounds._battle_client.model import ActorCommand
     from marl_battlegrounds.core.types import MOVE_STAY
     from marl_battlegrounds.evaluation.evaluate import evaluate_episodes
     from marl_battlegrounds.evaluation.policy_execution import policy
@@ -389,16 +388,16 @@ def _one_step_devclient_replay(
     description: str,
     frame_description: str,
 ) -> tuple[ReplayArtifactV4, tuple[int, ...], tuple[int, int]]:
-    from scripts.dev.visual_debugger.control import (
+    from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+    from marl_battlegrounds._battle_client.control import (
         create_session,
         submit_next_script_frame,
     )
-    from scripts.dev.visual_debugger.evaluation_bridge import (
+    from marl_battlegrounds._battle_client.evaluation_bridge import (
         build_debugger_evaluation_launch_specification_v1,
     )
-    from scripts.dev.visual_debugger.model import DebuggerScenario, ScenarioFrame
-    from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
+    from marl_battlegrounds._battle_client.model import DebuggerScenario, ScenarioFrame
     from marl_battlegrounds.evaluation.replay_v4 import build_replay_v4
 
     scenario = DebuggerScenario(
@@ -449,8 +448,7 @@ def _one_step_devclient_replay(
 
 
 def export_red_zone_artifacts(output_directory: Path) -> dict[str, str]:
-    from scripts.dev.visual_debugger.model import ActorCommand
-
+    from marl_battlegrounds._battle_client.model import ActorCommand
     from marl_battlegrounds.core.types import MOVE_STAY
     from marl_battlegrounds.evaluation.replay_io import save_replay
 

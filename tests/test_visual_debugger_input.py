@@ -5,9 +5,15 @@ from unittest.mock import Mock
 
 import jax.numpy as jnp
 import pytest
-import scripts.dev.visual_debugger.control as control_module
-import scripts.dev.visual_debugger.input as input_module
-from scripts.dev.visual_debugger.control import (
+from scripts.dev.visual_debugger.no_shared_visual import (
+    build_live_no_shared_obs_visual_current_slice_v1,
+)
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control_module
+import marl_battlegrounds._battle_client.input as input_module
+from marl_battlegrounds._battle_client.control import (
     DebuggerTransitionFailureV1,
     arm_ultimate,
     create_session,
@@ -15,17 +21,14 @@ from scripts.dev.visual_debugger.control import (
     select_controlled_actor,
     set_pending_movement,
 )
-from scripts.dev.visual_debugger.input import (
+from marl_battlegrounds._battle_client.input import (
     dispatch_command,
     hit_test_scene_agents,
     normalize_key,
     recording_restart_intent_v1,
 )
-from scripts.dev.visual_debugger.model import DebuggerSession
-from scripts.dev.visual_debugger.no_shared_visual import (
-    build_live_no_shared_obs_visual_current_slice_v1,
-)
-from scripts.dev.visual_debugger.protocol import (
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.protocol import (
     ActorPovTargetActionCommandV1,
     BattlefieldPointerCommandV1,
     DebuggerCommandV1,
@@ -39,9 +42,6 @@ from scripts.dev.visual_debugger.protocol import (
     SetPresetCommandV1,
     SetViewCommandV1,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,

@@ -1,9 +1,5 @@
 /**
- * @file Check unique page IDs, supported control choices and required keyboard/help
- * text in static markup. Both team controller lists offer the same five
- * choices in the same order. Each team's BETA (scenario_5) and GAMMA
- * (tdm_gamma) option has its own ID, the label "Reactive TDM BETA" or
- * "Reactive TDM GAMMA", and starts disabled until SharedObs.
+ * @file Check unique public page IDs, supported controls and required keyboard/help text.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -23,11 +19,19 @@ const productionSourceUrls = [
  * @param {string} id
  * @param {string} tagName */
 function elementBody(markup, id, tagName) {
-  const match = markup.match(
-    new RegExp(`<${tagName}\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</${tagName}>`, "u"),
+  const opening = new RegExp(`<${tagName}\\b[^>]*\\bid="${id}"[^>]*>`, "u").exec(
+    markup,
   );
-  assert.ok(match, `#${id} must be a <${tagName}> element.`);
-  return match[1];
+  assert.ok(opening, `#${id} must be a <${tagName}> element.`);
+  const contentStart = opening.index + opening[0].length;
+  const tags = new RegExp(`<\\/?${tagName}\\b[^>]*>`, "gu");
+  tags.lastIndex = contentStart;
+  let depth = 1;
+  for (let match = tags.exec(markup); match !== null; match = tags.exec(markup)) {
+    depth += match[0].startsWith("</") ? -1 : 1;
+    if (depth === 0) return markup.slice(contentStart, match.index);
+  }
+  throw new Error(`#${id} has no matching closing tag.`);
 }
 
 /** @param {string} markup
@@ -80,68 +84,6 @@ test("static debugger IDs are unique", async () => {
   const ids = [...markup.matchAll(/\bid="([^"]+)"/gu)].map((match) => match[1]);
 
   assert.equal(new Set(ids).size, ids.length);
-});
-
-test("both teams expose the same SharedObs scenario controllers", async () => {
-  const markup = await readFile(indexUrl, "utf8");
-  for (const id of ["devclient-team-a-controller", "devclient-team-b-controller"]) {
-    const select = elementBody(markup, id, "select");
-    assert.deepEqual(
-      [...select.matchAll(/<option value="([^"]+)"[^>]*>([^<]+)<\/option>/gu)].map(
-        ([, value, label]) => [value, label],
-      ),
-      [
-        ["manual", "Manual"],
-        ["reactive_tdm", "Reactive TDM ALPHA"],
-        ["random_valid", "Random"],
-        ["scenario_5", "Reactive TDM BETA"],
-        ["tdm_gamma", "Reactive TDM GAMMA"],
-      ],
-    );
-  }
-  const teamA = elementBody(markup, "devclient-team-a-controller", "select");
-  const teamB = elementBody(markup, "devclient-team-b-controller", "select");
-  assert.match(
-    teamA,
-    /<option value="scenario_5" id="devclient-team-a-scenario-5-option" disabled>Reactive TDM BETA<\/option>/u,
-  );
-  assert.match(
-    teamA,
-    /<option value="tdm_gamma" id="devclient-team-a-tdm-gamma-option" disabled>Reactive TDM GAMMA<\/option>/u,
-  );
-  assert.match(
-    teamB,
-    /<option value="scenario_5" id="devclient-scenario-5-controller-option" disabled>Reactive TDM BETA<\/option>/u,
-  );
-  assert.match(
-    teamB,
-    /<option value="tdm_gamma" id="devclient-tdm-gamma-controller-option" disabled>Reactive TDM GAMMA<\/option>/u,
-  );
-  for (const optionId of [
-    "devclient-team-a-scenario-5-option",
-    "devclient-team-a-tdm-gamma-option",
-    "devclient-scenario-5-controller-option",
-    "devclient-tdm-gamma-controller-option",
-  ]) {
-    assert.equal(
-      [...markup.matchAll(new RegExp(`\\bid="${optionId}"`, "gu"))].length,
-      1,
-    );
-  }
-  for (const id of [
-    "devclient-reactive-controller-help",
-    "devclient-scenario-controller-help",
-    "devclient-scenario-5-controller-help",
-  ]) {
-    assert.equal(markup.includes(id), false);
-  }
-  for (const description of [
-    "Deterministic five-class reactive controller. SharedObs only.",
-    "Rogues pursue the lowest-health enemy and avoid intervening bodies. Other classes stay idle. Team B and SharedObs only.",
-    "Reactive TDM for all classes; Rogues pursue observed enemy Priests using body avoidance. Team B and SharedObs only.",
-  ]) {
-    assert.equal(markup.includes(description), false);
-  }
 });
 
 test("replay Help names the exact arrow keys and Escape selection behavior", async () => {

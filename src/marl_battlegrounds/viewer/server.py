@@ -1,4 +1,4 @@
-"""Serve the local DevClient and Replay Viewer through checked HTTP routes.
+"""Serve the local BattleClient and Replay Viewer through checked HTTP routes.
 
 ``create_server`` binds to 127.0.0.1 after loading an explicit browser asset
 list. ``serve_browser_debugger`` also prints the launch URL, optionally opens
@@ -17,7 +17,7 @@ import sys
 import webbrowser
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import Parameter, Signature, signature
@@ -28,6 +28,7 @@ from typing import Any, Literal, Protocol, cast, get_args
 
 from pydantic import BaseModel, ValidationError
 
+_LIVE_SNAPSHOT_ROUTE = "/api/live/snapshot"
 _TOKEN_HEADER = "X-MARL-Debugger-Token"
 _MAX_COMMAND_BODY_BYTES = 64 * 1024
 _CLIENT_SOCKET_TIMEOUT_SECONDS = 2.0
@@ -36,7 +37,6 @@ _METRIC_CATALOG_ROUTE = "/api/replay/metrics/catalog.json"
 _METRIC_ANALYSIS_ROUTE = re.compile(
     r"/api/replay/metrics/([0-9]{1,9})/(cursor|final)\.(json|csv)"
 )
-_AUTHORING_COMMAND_ROUTE = "/api/dev/authoring/command"
 _METRIC_REPORT_SUFFIX = ".marlbg-metrics.json"
 _METRIC_REPORT_CONTENT_TYPE = "application/json; charset=utf-8"
 _SAFE_METRIC_REPORT_STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
@@ -107,7 +107,7 @@ _PRODUCT_KIND_BY_MODE: dict[DebuggerServerMode, DebuggerProductKind] = {
     "replay": "replay_viewer",
 }
 _PRODUCT_TITLE_BY_KIND: dict[DebuggerProductKind, str] = {
-    "combat_debugger": "MARL-BattleGrounds DevClient",
+    "combat_debugger": "MARL-BattleGrounds BattleClient",
     "replay_viewer": "MARL-BattleGrounds Replay Viewer",
 }
 
@@ -241,26 +241,6 @@ def _require_http_status(value: object) -> HTTPStatus:
     return value
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class HttpAuthoringBinding:
-    """Strict live-only command boundary for DevClient authoring operations."""
-
-    request_model: type[BaseModel]
-    apply_command: Callable[[BaseModel], BaseModel]
-
-    def __post_init__(self) -> None:
-        """Require a Pydantic request class and a callable authoring command handler."""
-        request_model = cast(object, self.request_model)
-        if not isinstance(request_model, type) or not issubclass(
-            request_model, BaseModel
-        ):
-            raise TypeError(
-                "authoring request_model must be an exact Pydantic model class."
-            )
-        if not callable(self.apply_command):
-            raise TypeError("authoring apply_command must be callable.")
-
-
 def _validate_metric_report_filename(filename: object) -> str:
     """Validate the complete ASCII attachment basename at the HTTP boundary."""
     if type(filename) is not str or not filename.isascii():
@@ -317,10 +297,12 @@ def _validate_response_headers(
             raise TypeError(
                 "Optional response header names and values must be strings."
             )
-        if name != "Content-Disposition" or name in seen:
+        if name not in ("Content-Disposition", "ETag") or name in seen:
             raise ValueError("Optional response header is not allowlisted.")
         if not value.isascii() or "\r" in value or "\n" in value:
             raise ValueError("Optional response header value is unsafe.")
+        if name == "ETag" and re.fullmatch(r'"[A-Za-z0-9_-]+:[0-9]+"', value) is None:
+            raise ValueError("Snapshot ETag must contain a session and revision.")
         seen.add(name)
     return headers
 
@@ -336,13 +318,13 @@ class HttpCoordinatorBinding:
     current_frame: Callable[[], object]
     apply_command: Callable[..., HttpCommandResult]
     current_presentation: Callable[[], HttpPayloadResult]
+    current_snapshot: Callable[[], object] | None = None
     current_timeline: Callable[[], object] | None = None
     current_metric_report: Callable[[], HttpMetricReportResult] | None = None
     metric_analysis: Callable[[int, str, str], tuple[bytes, str | None]] | None = None
     metric_catalog: Callable[[], bytes] | None = None
     episode_details: Callable[[], tuple[bytes, str]] | None = None
     result_status: Callable[[HttpCommandResult], HTTPStatus] = _default_result_status
-    authoring: HttpAuthoringBinding | None = None
     initial_show_ranges: bool | None = None
 
     @property
@@ -383,6 +365,10 @@ class HttpCoordinatorBinding:
         for name, operation in operations.items():
             if not callable(operation):
                 raise TypeError(f"{name} must be callable.")
+        if self.current_snapshot is not None and (
+            self.mode != "live" or not callable(self.current_snapshot)
+        ):
+            raise ValueError("Live snapshots require a callable live operation.")
         if self.mode == "live" and self.current_timeline is not None:
             raise ValueError("live debugger mode cannot expose a replay timeline.")
         if self.mode == "replay" and not callable(self.current_timeline):
@@ -403,11 +389,6 @@ class HttpCoordinatorBinding:
             raise ValueError("episode details require a callable replay operation")
         if self.mode == "replay" and not callable(self.current_metric_report):
             raise ValueError("replay debugger mode requires a metric-report operation.")
-        if self.mode == "replay" and self.authoring is not None:
-            raise ValueError("replay debugger mode cannot expose DevClient authoring.")
-        authoring = cast(object, self.authoring)
-        if authoring is not None and not isinstance(authoring, HttpAuthoringBinding):
-            raise TypeError("authoring must be an exact HttpAuthoringBinding.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -591,6 +572,7 @@ def _legacy_live_binding(service: object) -> HttpCoordinatorBinding:
     current_frame = getattr(service, "current_frame", None)
     current_presentation = getattr(service, "current_presentation", None)
     apply_command = getattr(service, "apply_command", None)
+    current_snapshot = getattr(service, "current_snapshot", None)
     if (
         not callable(current_frame)
         or not callable(current_presentation)
@@ -639,6 +621,9 @@ def _legacy_live_binding(service: object) -> HttpCoordinatorBinding:
         current_frame=call_current_frame,
         apply_command=call_apply_command,
         current_presentation=call_current_presentation,
+        current_snapshot=cast(Callable[[], object], current_snapshot)
+        if callable(current_snapshot)
+        else None,
         current_metric_report=None,
         initial_show_ranges=getattr(
             getattr(service, "session", None), "show_ranges", None
@@ -996,7 +981,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 "globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
                 + json.dumps(
                     {
-                        "authoring_available": coordinator.authoring is not None,
                         "schema_version": 1,
                         "product_kind": coordinator.product_kind,
                         **(
@@ -1016,6 +1000,48 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 body,
                 content_type="text/javascript; charset=utf-8",
             )
+            return
+        if route == _LIVE_SNAPSHOT_ROUTE and coordinator.current_snapshot is not None:
+            if not self._authenticated(coordinator):
+                return
+            if (
+                self.headers.get("Content-Length", "0") != "0"
+                or self.headers.get("Transfer-Encoding") is not None
+            ):
+                self._send_api_error(
+                    coordinator,
+                    HTTPStatus.BAD_REQUEST,
+                    error_code="invalid_request",
+                    message="Live snapshot reads do not accept a body.",
+                )
+                return
+            try:
+                frame = coordinator.current_frame()
+                etag = (
+                    f'"{getattr(frame, "session_id", None)}:'
+                    f'{getattr(frame, "revision", None)}"'
+                )
+                if self.headers.get("If-None-Match") == etag:
+                    self._send_bytes(
+                        HTTPStatus.NOT_MODIFIED,
+                        b"",
+                        content_type="application/json; charset=utf-8",
+                        response_headers=(("ETag", etag),),
+                    )
+                    return
+                snapshot = coordinator.current_snapshot()
+                frame = getattr(snapshot, "frame", None)
+                etag = (
+                    f'"{getattr(frame, "session_id", None)}:'
+                    f'{getattr(frame, "revision", None)}"'
+                )
+                self._send_model(
+                    HTTPStatus.OK, snapshot, response_headers=(("ETag", etag),)
+                )
+            except BrokenPipeError, ConnectionError, TimeoutError:
+                self.close_connection = True
+            except Exception:
+                self._send_internal_error(coordinator)
             return
         if route == coordinator.routes.frame:
             if not self._authenticated(coordinator):
@@ -1233,7 +1259,9 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         if route is None or not self._valid_request_origin(coordinator):
             return
         metric_report_route = coordinator.routes.metric_report
-        if metric_report_route is not None and route == metric_report_route:
+        if (metric_report_route is not None and route == metric_report_route) or (
+            route == _LIVE_SNAPSHOT_ROUTE and coordinator.current_snapshot is not None
+        ):
             if not self._authenticated(coordinator):
                 return
             self._send_api_error(
@@ -1242,9 +1270,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 error_code="method_not_allowed",
                 message="Method is not supported by this debugger.",
             )
-            return
-        if route == _AUTHORING_COMMAND_ROUTE:
-            self._handle_authoring_post(coordinator)
             return
         if route != coordinator.routes.command:
             self._send_api_error(
@@ -1306,52 +1331,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         finally:
             if shutdown_requested:
                 self.debugger_server.request_shutdown()
-
-    def _handle_authoring_post(self, coordinator: HttpCoordinatorBinding) -> None:
-        """Apply one whole-draft command only for an installed live binding."""
-        authoring = coordinator.authoring
-        if coordinator.mode != "live" or authoring is None:
-            self._send_api_error(
-                coordinator,
-                HTTPStatus.NOT_FOUND,
-                error_code="not_found",
-                message="No such debugger route.",
-            )
-            return
-        if not self._authenticated(coordinator):
-            return
-        body = self._read_command_body(coordinator)
-        if body is None:
-            return
-        try:
-            request = authoring.request_model.model_validate_json(body)
-        except ValidationError as error:
-            malformed_json = any(
-                detail.get("type") == "json_invalid" for detail in error.errors()
-            )
-            self._send_api_error(
-                coordinator,
-                HTTPStatus.BAD_REQUEST
-                if malformed_json
-                else HTTPStatus.UNPROCESSABLE_ENTITY,
-                error_code="invalid_request",
-                message=(
-                    "Request body is not valid JSON."
-                    if malformed_json
-                    else (
-                        "Request body does not match "
-                        f"{authoring.request_model.__name__}."
-                    )
-                ),
-            )
-            return
-        try:
-            response = authoring.apply_command(request)
-            self._send_model(HTTPStatus.OK, response)
-        except BrokenPipeError, ConnectionError, TimeoutError:
-            self.close_connection = True
-        except Exception:
-            self._send_internal_error(coordinator)
 
     def do_OPTIONS(self) -> None:
         """Reject OPTIONS with a typed 405 response; dispatch no service operation."""
@@ -1555,7 +1534,13 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         )
         self._send_model(status, error)
 
-    def _send_model(self, status: HTTPStatus, model: object) -> None:
+    def _send_model(
+        self,
+        status: HTTPStatus,
+        model: object,
+        *,
+        response_headers: tuple[tuple[str, str], ...] = (),
+    ) -> None:
         """Serialize a model to UTF-8 JSON; reject objects without model_dump_json."""
         model_dump_json = getattr(model, "model_dump_json", None)
         if not callable(model_dump_json):
@@ -1565,6 +1550,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
             status,
             body,
             content_type="application/json; charset=utf-8",
+            response_headers=response_headers,
         )
 
     def _send_bytes(
@@ -1578,14 +1564,16 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         """Write one response with checked optional headers and fixed security headers.
 
         ``body`` is already encoded; Content-Length counts its bytes. Only a safe
-        Content-Disposition extra header is accepted. The connection closes after
-        the response. Header validation happens before any status bytes are sent.
+        Content-Disposition or live snapshot ETag extra header is accepted. The
+        connection closes after the response. Header validation happens before
+        any status bytes are sent.
         """
         validated_headers = _validate_response_headers(response_headers)
         self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        if status != HTTPStatus.NOT_MODIFIED:
+            self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         for name, value in validated_headers:
             self.send_header(name, value)
@@ -1686,8 +1674,8 @@ def serve_browser_debugger(
     open_browser: bool,
     coordinator: HttpCoordinatorBinding | None = None,
     coordinator_router: HttpCoordinatorRouter | None = None,
-    authoring: HttpAuthoringBinding | None = None,
     graceful_close: GracefulCloseCallback | None = None,
+    caller_drain: Callable[[], bool] | None = None,
 ) -> int:
     """Launch the local browser service and close its socket on exit.
 
@@ -1705,11 +1693,14 @@ def serve_browser_debugger(
         Explicit operations; None uses the router or adapts a live service.
     coordinator_router : HttpCoordinatorRouter or None, optional
         Existing router for live-to-replay replacement. Defaults to None.
-    authoring : HttpAuthoringBinding or None, optional
-        Extra live authoring operations. Router-backed callers install these on
-        the binding beforehand. Defaults to None.
     graceful_close : callable or None, optional
         No-argument callback used on KeyboardInterrupt. Defaults to None.
+
+    caller_drain : callable or None, optional
+        Pump live work or drain one callback in the original caller context.
+        When set, HTTP runs on an owned thread; the caller runs outside locks.
+        Return True after doing work, or False when idle. None uses the live
+        service pump when present; other services keep the request-loop lifetime.
 
     Returns
     -------
@@ -1722,7 +1713,7 @@ def serve_browser_debugger(
     TypeError
         Service, callback setup, or router contracts are invalid.
     ValueError
-        Authoring setup, port, identities, or assets are inconsistent.
+        Port, identities, or assets are inconsistent.
     OSError
         Assets cannot be read or the local socket cannot be bound.
 
@@ -1732,18 +1723,6 @@ def serve_browser_debugger(
     may open a browser, and invokes the optional close callback under the router
     lock. Browser-open failure only prints a warning.
     """
-    if authoring is not None:
-        if coordinator_router is not None:
-            raise ValueError(
-                "router-backed servers must install authoring on their live binding."
-            )
-        if coordinator is None:
-            if service is None:
-                raise TypeError("authoring requires a live debugger service.")
-            coordinator = _legacy_live_binding(service)
-        if coordinator.mode != "live" or coordinator.authoring is not None:
-            raise ValueError("authoring can be installed once on a live binding.")
-        coordinator = replace(coordinator, authoring=authoring)
     server = create_server(
         service,
         asset_root=asset_root,
@@ -1751,10 +1730,63 @@ def serve_browser_debugger(
         coordinator=coordinator,
         coordinator_router=coordinator_router,
     )
+    return serve_debugger_server(
+        server,
+        open_browser=open_browser,
+        graceful_close=graceful_close,
+        caller_drain=caller_drain,
+    )
+
+
+def serve_debugger_server(
+    server: DebuggerHTTPServer,
+    *,
+    open_browser: bool,
+    graceful_close: GracefulCloseCallback | None = None,
+    caller_drain: Callable[[], bool] | None = None,
+    product_title: str | None = None,
+) -> int:
+    """Serve an already prepared loopback server and close it on exit.
+
+    Parameters
+    ----------
+    server : DebuggerHTTPServer
+        Bound server whose assets and request handler are already installed.
+    open_browser : bool
+        Open the printed token URL in the default browser when True.
+    graceful_close : callable or None, optional
+        No-argument closeout callback for Ctrl-C; None stops without closeout.
+    product_title : str or None, optional
+        Local launch title. None uses the server's current live/replay title.
+
+    caller_drain : callable or None, optional
+        Pump live work or drain one callback in the original caller context.
+        When set, HTTP runs on an owned thread; the caller runs outside locks.
+        Return True after doing work, or False when idle. None uses the live
+        service pump when present; other services keep the request-loop lifetime.
+
+    Returns
+    -------
+    int
+        Zero for ordinary shutdown, or the graceful-close result on Ctrl-C.
+        A closeout failure returns one and prints an error.
+
+    Notes
+    -----
+    Blocks until Exit or Ctrl-C. Browser-open failures print the usable URL.
+    The shared server owns the socket and request loop; callers may supply a
+    prepared handler without copying this lifetime code.
+    """
+    if caller_drain is None:
+        pump = getattr(server.coordinator_snapshot().service, "pump", None)
+        if callable(pump):
+            caller_drain = cast(Callable[[], bool], pump)
     exit_code = 0
     with server:
         url = f"{server.expected_origin}/#token={server.capability_token}"
-        startup_title = _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+        startup_title = (
+            product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+        )
         print(f"{startup_title}: {url}")
         if open_browser:
             try:
@@ -1770,10 +1802,34 @@ def serve_browser_debugger(
                         "warning: browser could not be opened; use the URL above.",
                         file=sys.stderr,
                     )
+        server_thread: Thread | None = None
+        serving_done = Event()
+        serving_errors: list[BaseException] = []
+
+        def serve_http() -> None:
+            """Keep request transport separate from caller-owned method execution."""
+            try:
+                server.serve_forever(poll_interval=0.1)
+            except BaseException as error:
+                serving_errors.append(error)
+            finally:
+                serving_done.set()
+
         try:
-            server.serve_forever(poll_interval=0.1)
+            if caller_drain is None:
+                server.serve_forever(poll_interval=0.1)
+            else:
+                server_thread = Thread(target=serve_http, name="marl-battle-http")
+                server_thread.start()
+                while not serving_done.is_set():
+                    if not caller_drain():
+                        serving_done.wait(0.01)
+                if serving_errors:
+                    raise serving_errors[0]
         except KeyboardInterrupt:
-            active_title = _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+            active_title = (
+                product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+            )
             if graceful_close is None:
                 print(f"{active_title} stopped.")
             else:
@@ -1796,4 +1852,9 @@ def serve_browser_debugger(
                             ),
                         )
                     exit_code = close_result.exit_code
+        finally:
+            if server_thread is not None and server_thread.ident is not None:
+                if server_thread.is_alive():
+                    server.shutdown()
+                server_thread.join()
     return exit_code

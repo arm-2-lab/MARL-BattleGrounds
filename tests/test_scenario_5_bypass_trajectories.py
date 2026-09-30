@@ -7,13 +7,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev.visual_debugger.authoring_compiler import (
-    CompiledDevScenarioV1,
-    compile_dev_scenario,
-)
 from tests.scenario_controller_fixtures import (
     SCENARIO_3_SEMANTIC_DIGEST,
-    load_scenario_3_draft,
+    ControllerScenario,
+    load_controller_input,
 )
 
 from marl_battlegrounds.core.env import step
@@ -53,17 +50,10 @@ _STEP = cast(
 
 
 @pytest.fixture(scope="module", params=("hunter", "priest"))
-def scenario(request: pytest.FixtureRequest) -> CompiledDevScenarioV1:
-    draft = load_scenario_3_draft()
-    # Also exercise Priest pursuit with the same test-only body-blocking setup.
-    roster = list(draft.content.roster)
-    roster[2] = roster[2].model_copy(update={"class_name": request.param})
-    compiled = compile_dev_scenario(
-        draft.model_copy(
-            update={
-                "content": draft.content.model_copy(update={"roster": tuple(roster)})
-            }
-        )
+def scenario(request: pytest.FixtureRequest) -> ControllerScenario:
+    # Keep both original body-blocking inputs, including the Priest variant.
+    compiled = load_controller_input(
+        "scenario_3" if request.param == "hunter" else "scenario_3_priest"
     )
     if request.param == "hunter":
         assert compiled.semantic_digest == SCENARIO_3_SEMANTIC_DIGEST
@@ -71,7 +61,7 @@ def scenario(request: pytest.FixtureRequest) -> CompiledDevScenarioV1:
 
 
 def _run(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     first_warrior_move: int,
 ) -> list[tuple[ActorAction, EnvState]]:
     state, obs, mask = (
@@ -128,7 +118,7 @@ def _run(
     ],
 )
 def test_shoulder_bypass_preserves_three_tick_priority_prey_finish(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     warrior_move: int,
     expected_moves: list[int],
 ) -> None:
@@ -152,7 +142,7 @@ def test_shoulder_bypass_preserves_three_tick_priority_prey_finish(
 
 
 def test_bypass_responds_to_observed_moving_blocker_not_pending_actions(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     stationary = _run(scenario, MOVE_STAY)
     moving = _run(scenario, MOVE_NORTH)

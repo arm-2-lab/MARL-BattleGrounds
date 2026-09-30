@@ -69,14 +69,14 @@ export function matchSummaryView(presentation) {
 /**
  * Replace the supplied scoreboard DOM with the current authorized match labels.
  *
- * elements supplies root, task text, two team containers in left/right order and
- * the task selector. presentation is passed to matchSummaryView. If unavailable,
- * hide the root, clear team contents and disable the selector. Otherwise show
+ * elements supplies root, task text, and two team containers in left/right order.
+ * presentation is passed to matchSummaryView. If unavailable, hide the root and
+ * clear team contents. Otherwise show
  * task/map text, team names, TDM scores and any final result; policy references
  * become name tooltips. This mutates those elements and returns undefined.
  * The caller must supply matching containers; DOM shape is not validated.
  *
- * @param {{root: HTMLElement, task: HTMLElement, teams: HTMLElement[], taskSelect: HTMLSelectElement}} elements
+ * @param {{root: HTMLElement, task: HTMLElement, teams: HTMLElement[]}} elements
  * @param {unknown} presentation
  */
 export function renderMatchSummary(elements, presentation) {
@@ -85,11 +85,9 @@ export function renderMatchSummary(elements, presentation) {
   if (summary === null) {
     elements.task.textContent = "Task unavailable";
     for (const team of elements.teams) team.replaceChildren();
-    elements.taskSelect.disabled = true;
     return;
   }
   elements.task.textContent = `Task mode: ${summary.task}${summary.map ? ` · Map: ${summary.map}` : ""}`;
-  elements.taskSelect.disabled = summary.taskMode !== 1;
   for (const team of summary.teams) {
     const root = elements.teams[team.side === "left" ? 0 : 1];
     root.dataset.team = String(team.teamId);

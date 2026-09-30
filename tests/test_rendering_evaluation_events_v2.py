@@ -8,7 +8,6 @@ from importlib import import_module
 from typing import Protocol, cast
 
 import pytest
-from scripts.dev.visual_debugger.control import create_session, submit_next_script_frame
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
@@ -18,6 +17,10 @@ from tests.evaluation_fixtures import (
 )
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    submit_next_script_frame,
+)
 from marl_battlegrounds.core.types import EnvConfig, EnvState
 from marl_battlegrounds.evaluation.events import decode_evaluation_events_v1
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1

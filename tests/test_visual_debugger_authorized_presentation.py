@@ -1543,9 +1543,9 @@ forbidden = sorted(
     or name == 'numpy' or name.startswith('numpy.')
     or name == 'marl_battlegrounds.core'
     or name.startswith('marl_battlegrounds.core.')
-    or name == 'scripts.dev.visual_debugger.protocol'
+    or name == 'marl_battlegrounds._battle_client.protocol'
     or name == 'scripts.dev.visual_debugger.replay_protocol'
-    or name == 'scripts.dev.visual_debugger.service'
+    or name == 'marl_battlegrounds._battle_client.service'
     or name == 'scripts.dev.visual_debugger.replay_service'
 )
 print(json.dumps(forbidden))

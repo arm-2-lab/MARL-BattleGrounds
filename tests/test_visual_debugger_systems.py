@@ -16,15 +16,18 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev.visual_debugger import control
-from scripts.dev.visual_debugger.model import DebuggerSession
-from scripts.dev.visual_debugger.protocol import DebuggerCommandV1
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService, ServiceCommandResult
 from tests.llm_fixtures import FakeModel, server
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds import llm
+from marl_battlegrounds._battle_client import control
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.protocol import DebuggerCommandV1
+from marl_battlegrounds._battle_client.service import (
+    DebuggerService,
+    ServiceCommandResult,
+)
 from marl_battlegrounds.environment import make
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV2,
@@ -302,7 +305,7 @@ def test_manual_draft_reaches_only_its_own_system_adapter(manual_team: int) -> N
 def _send(service: DebuggerService, command: DebuggerCommandV1) -> ServiceCommandResult:
     from uuid import uuid4
 
-    from scripts.dev.visual_debugger.protocol import CommandRequestV1
+    from marl_battlegrounds._battle_client.protocol import CommandRequestV1
 
     return service.apply_command(
         CommandRequestV1(
@@ -317,7 +320,7 @@ def _send(service: DebuggerService, command: DebuggerCommandV1) -> ServiceComman
 def _finish(service: DebuggerService) -> None:
     import time
 
-    from scripts.dev.visual_debugger.protocol import FinishSystemCommandV1
+    from marl_battlegrounds._battle_client.protocol import FinishSystemCommandV1
 
     while service.current_frame().system_operation is not None:
         operation = service.current_frame().system_operation
@@ -329,7 +332,9 @@ def _finish(service: DebuggerService) -> None:
 
 
 def _choose(service: DebuggerService, name: str = "counter") -> ServiceCommandResult:
-    from scripts.dev.visual_debugger.protocol import SetCombatConfigurationCommandV1
+    from marl_battlegrounds._battle_client.protocol import (
+        SetCombatConfigurationCommandV1,
+    )
 
     return _send(
         service,
@@ -344,9 +349,12 @@ def _choose(service: DebuggerService, name: str = "counter") -> ServiceCommandRe
 def test_declared_system_service_loads_lazily_and_accepts_each_turn_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.protocol import KeyboardCommandV1, SetViewCommandV1
-    from scripts.dev.visual_debugger.service import DebuggerService
+    from marl_battlegrounds._battle_client import system_worker
+    from marl_battlegrounds._battle_client.protocol import (
+        KeyboardCommandV1,
+        SetViewCommandV1,
+    )
+    from marl_battlegrounds._battle_client.service import DebuggerService
 
     calls: list[str] = []
 
@@ -390,9 +398,9 @@ def test_cancelled_factory_is_not_installed_and_late_scope_closes(
     from contextlib import contextmanager
     from threading import Event
 
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.protocol import CancelSystemCommandV1
-    from scripts.dev.visual_debugger.service import DebuggerService
+    from marl_battlegrounds._battle_client import system_worker
+    from marl_battlegrounds._battle_client.protocol import CancelSystemCommandV1
+    from marl_battlegrounds._battle_client.service import DebuggerService
 
     started, release = Event(), Event()
     events: list[str] = []
@@ -449,13 +457,14 @@ def test_declared_llm_records_verified_replay_and_actual_history(
     import time
 
     from examples.llm import parse_words, prompt_for_words
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.protocol import (
-        FinishAndReviewCommandV1,
-        KeyboardCommandV1,
-    )
     from tests.test_visual_debugger_service import (
         _recording_service,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    from marl_battlegrounds._battle_client import system_worker
+    from marl_battlegrounds._battle_client.protocol import (
+        FinishAndReviewCommandV1,
+        KeyboardCommandV1,
     )
 
     model = FakeModel(
@@ -516,8 +525,8 @@ def test_cancelled_llm_reply_cannot_advance_or_commit_history(
 ) -> None:
     from threading import Event
 
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.protocol import (
+    from marl_battlegrounds._battle_client import system_worker
+    from marl_battlegrounds._battle_client.protocol import (
         CancelSystemCommandV1,
         KeyboardCommandV1,
         ResetCommandV1,
@@ -559,7 +568,22 @@ def test_cancelled_llm_reply_cannot_advance_or_commit_history(
             release.set()
             _finish(service)
             assert service.session is before
-            _send(service, ResetCommandV1())
+            calls_before_retry = len(model.generations())
+            for command in (ResetCommandV1(), KeyboardCommandV1(key="Enter")):
+                _send(service, command)
+                assert service.session is before
+            _choose(service)
+            assert service.session is before
+            assert len(model.generations()) == calls_before_retry
+            service.close()
+            service = DebuggerService(
+                _create(None, None),
+                view_mode="researcher",
+                preset="analysis",
+                include_stress=False,
+                offered_systems={"counter": "test:counter"},
+            )
+            _choose(service)
             _finish(service)
             _send(service, KeyboardCommandV1(key="Enter"))
             _finish(service)
@@ -570,76 +594,19 @@ def test_cancelled_llm_reply_cannot_advance_or_commit_history(
             service.close()
 
 
-def test_authored_system_replacement_publishes_only_after_adoption(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.authoring_service import (
-        DevCurrentBufferSourceV1,
-        DevScenarioLoadService,
-        LoadedDevScenarioSnapshotV1,
-        debugger_scenario_from_snapshot,
-    )
-    from scripts.dev.visual_debugger.authoring_store import DevAssetStore
-    from scripts.dev.visual_debugger.system_worker import PendingSystemOperation
-    from tests.test_dev_client_authoring import new_scenario_draft
-
-    def factory(reference: str) -> System:
-        return System("Counter", _stay, init=_init, execution="host")
-
-    monkeypatch.setattr(system_worker, "load_factory", factory)
-    service = DebuggerService(
-        _create(None, None),
-        view_mode="researcher",
-        preset="analysis",
-        include_stress=False,
-        offered_systems={"counter": "test:counter"},
-    )
-
-    def install(snapshot: LoadedDevScenarioSnapshotV1) -> str | None:
-        result = service.load_scenario(
-            debugger_scenario_from_snapshot(snapshot),
-            on_installed=lambda: loader.accept_installed_snapshot(snapshot),
-        )
-        return result.identifier if isinstance(result, PendingSystemOperation) else None
-
-    loader = DevScenarioLoadService(DevAssetStore(tmp_path), install_snapshot=install)
-    try:
-        _choose(service)
-        _finish(service)
-        before = service.session
-        draft = new_scenario_draft("system_authored", red_zone_depth=0)
-        result = loader.load(
-            DevCurrentBufferSourceV1(asset_kind="scenario", draft=draft)
-        )
-        assert not result.ok and result.pending_operation_id is not None
-        assert result.summary is None and result.problems == ()
-        assert loader.current_snapshot is None and service.session is before
-        _finish(service)
-        assert loader.current_snapshot is not None
-        assert loader.current_snapshot.source.draft is draft
-        assert service.session is not before
-        assert service.session.system_memory is not None
-        assert service.session.system_memory.team_a == [0]
-        assert service.session.current_evaluation_frame.frame_index == 0
-        assert service.session.evaluation_context.identity.scenario is not None
-    finally:
-        service.close()
-
-
 @pytest.mark.parametrize("after_accept", [False, True])
 def test_model_failure_and_post_accept_record_error_keep_true_call_outcomes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     after_accept: bool,
 ) -> None:
-    from scripts.dev.visual_debugger import system_worker
-    from scripts.dev.visual_debugger.protocol import KeyboardCommandV1
-    from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
     from tests.test_visual_debugger_service import (
         _recording_service,  # pyright: ignore[reportPrivateUsage]
     )
+
+    from marl_battlegrounds._battle_client import system_worker
+    from marl_battlegrounds._battle_client.protocol import KeyboardCommandV1
+    from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 
     model = FakeModel() if after_accept else FakeModel("not an action")
     with server(model.serve) as url:

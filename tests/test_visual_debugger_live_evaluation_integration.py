@@ -13,25 +13,28 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import pytest
-import scripts.dev.visual_debugger.control as control_module
-import scripts.dev.visual_debugger.service as service_module
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.evaluation_bridge import (
+from scripts.dev.visual_debugger.scenarios import get_scenario
+
+import marl_battlegrounds._battle_client.control as control_module
+import marl_battlegrounds._battle_client.service as service_module
+import marl_battlegrounds.evaluation.capture as capture_module
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.evaluation_bridge import (
     DebuggerEvaluationLaunchSpecificationV1,
     build_debugger_evaluation_launch_specification_v1,
 )
-from scripts.dev.visual_debugger.input import InputDispatchResult, dispatch_command
-from scripts.dev.visual_debugger.model import DebuggerSession
-from scripts.dev.visual_debugger.protocol import (
+from marl_battlegrounds._battle_client.input import (
+    InputDispatchResult,
+    dispatch_command,
+)
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.protocol import (
     CommandRequestV1,
     KeyboardCommandV1,
     ResetCommandV1,
     SetPresetCommandV1,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService
-
-import marl_battlegrounds.evaluation.capture as capture_module
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     EvaluationEpisodeContextV4,

@@ -55,24 +55,24 @@ from dataclasses import replace
 from functools import cache
 from itertools import pairwise
 from pathlib import Path
-from types import SimpleNamespace
 from typing import NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import scripts.dev.visual_debugger.control as control
-import scripts.dev.visual_debugger.evaluation_bridge as evaluation_bridge
 from pydantic import ValidationError
-from scripts.dev.debug_renderer import (
-    _recording_policy_execution_included,  # pyright: ignore[reportPrivateUsage]
-)
-from scripts.dev.visual_debugger.evaluation_bridge import (
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.scenario_controller_fixtures import load_scenario_1
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control
+import marl_battlegrounds._battle_client.evaluation_bridge as evaluation_bridge
+from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_context_v1,
     build_debugger_evaluation_launch_specification_v1,
 )
-from scripts.dev.visual_debugger.model import (
+from marl_battlegrounds._battle_client.model import (
     DebuggerScenario,
     DebuggerScenarioProvenance,
     DebuggerSession,
@@ -80,20 +80,16 @@ from scripts.dev.visual_debugger.model import (
     TeamController,
     team_controller_action_source,
 )
-from scripts.dev.visual_debugger.protocol import (
+from marl_battlegrounds._battle_client.protocol import (
     CombatConfigurationV1,
     CommandRequestV1,
     SetCombatConfigurationCommandV1,
 )
-from scripts.dev.visual_debugger.recording import (
+from marl_battlegrounds._battle_client.recording import (
     build_debugger_recording_specification_v1,
     recording_policy_execution_included,
 )
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.scenario_controller_fixtures import load_scenario_1
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_STUN_HUNTER_TRAP_DURATION,
     PRIEST_CLASS_ID,
@@ -1158,8 +1154,8 @@ def test_launcher_recording_metadata_accepts_gamma_on_either_team(
     other: TeamController,
 ) -> None:
     for team_a, team_b in (("tdm_gamma", other), (other, "tdm_gamma")):
-        session = SimpleNamespace(team_a_controller=team_a, team_b_controller=team_b)
-        assert _recording_policy_execution_included(session) is True
+        context = _context(team_a=team_a, team_b=team_b)
+        assert recording_policy_execution_included(context) is True
 
 
 def test_match_summary_names_gamma_team_b() -> None:

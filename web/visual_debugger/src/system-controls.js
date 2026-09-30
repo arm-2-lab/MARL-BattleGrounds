@@ -35,9 +35,12 @@ export function systemTransportKeys(keys, frame) {
   normalizeSystemControls(frame);
   return [
     ...keys,
-    ...["system_choices", "system_operation"].filter((key) =>
-      Object.hasOwn(frame, key),
-    ),
+    ...[
+      "system_choices",
+      "system_operation",
+      "run_state",
+      "fresh_launch_required",
+    ].filter((key) => Object.hasOwn(frame, key)),
   ].sort();
 }
 
@@ -50,6 +53,18 @@ export function systemTransportKeys(keys, frame) {
 export function normalizeSystemControls(frame) {
   /** @type {Record<string, any>} */
   const result = {};
+  if (Object.hasOwn(frame, "run_state")) {
+    if (!["paused", "running"].includes(frame.run_state)) {
+      throw new TypeError("Run state must be paused or running.");
+    }
+  }
+  result.run_state = frame.run_state ?? "paused";
+  if (
+    Object.hasOwn(frame, "fresh_launch_required") &&
+    typeof frame.fresh_launch_required !== "boolean"
+  )
+    throw new TypeError("Fresh launch state must be a boolean.");
+  result.fresh_launch_required = frame.fresh_launch_required ?? false;
   if (Object.hasOwn(frame, "system_choices")) {
     if (!Array.isArray(frame.system_choices))
       throw new TypeError("System choices must be a list.");

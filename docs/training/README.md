@@ -2820,7 +2820,7 @@ Use `result.final_checkpoint`, `result.final_actor` or the path in
 `latest_checkpoint.json`; the readable filename is not the checkpoint ID.
 Old hash-only folders still load without renaming them.
 
-The DevClient and Replay Viewer show plain-English actor names, including the
+BattleClient and Replay Viewer show plain-English actor names, including the
 method, saved step and run. Exact identities remain in saved metadata. Two
 artifacts may have the same readable name without becoming the same artifact.
 Writers preserve different saved work when names collide. They reuse immutable

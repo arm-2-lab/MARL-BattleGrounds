@@ -15,7 +15,6 @@ import {
   presentationRequiresSubmissionSettle,
   recordingCommandDecision,
   recordingReplacementCommand,
-  recordingReviewHandoffRequired,
   recordingSaveAsCommand,
   targetSelectionCommand,
 } from "../src/controls.js";
@@ -283,12 +282,16 @@ function recordingFrame({ lifecycle = "recording", captured = 1 } = {}) {
       expected_transition_count: 5,
       completion_state: finalized ? "partial" : null,
       completion_reason: finalized ? "user_finish_and_review" : null,
-      restart_fenced: captured > 0 || lifecycle !== "recording",
+      restart_fenced:
+        !["saved", "reviewing"].includes(lifecycle) &&
+        (captured > 0 || lifecycle !== "recording"),
       finish_available: lifecycle === "recording",
       review_available: lifecycle === "saved",
       retry_available: persistenceFailed,
       save_as_available: persistenceFailed,
-      discard_available: lifecycle === "recording" && captured > 0,
+      discard_available:
+        (lifecycle === "recording" && captured > 0) ||
+        ["sealed", "finalized_unsaved", "persistence_failed"].includes(lifecycle),
       persistence_error_code: persistenceFailed ? "publication_failed" : null,
     },
   };
@@ -523,12 +526,22 @@ test("closed recording lifecycles fence scientific controls but retain presentat
   for (const command of [
     keyboardCommand("w"),
     { command_type: "battlefield_pointer", world_x: 1, world_y: 2 },
-    { command_type: "roster_selection", role: "control", global_slot: 0 },
-    { command_type: "reset" },
   ]) {
     assert.equal(recordingCommandDecision(failed, command).action, "block");
   }
+  assert.equal(
+    recordingCommandDecision(failed, { command_type: "reset" }).action,
+    "confirm",
+  );
+  assert.equal(
+    recordingCommandDecision(recordingFrame({ lifecycle: "saved" }), {
+      command_type: "reset",
+    }).action,
+    "allow",
+  );
   for (const command of [
+    { command_type: "roster_selection", role: "control", global_slot: 0 },
+    { command_type: "save_and_replace", replacement: { command_type: "reset" } },
     { command_type: "set_view", view_mode: "pov" },
     { command_type: "set_preset", preset: "analysis" },
     keyboardCommand("g"),
@@ -557,7 +570,7 @@ test("Save As emits only the protocol basename and rejects path-shaped input", (
   }
 });
 
-test("only an accepted Exit schedules shutdown and only reviewing live state requests handoff", () => {
+test("only an accepted Exit schedules shutdown", () => {
   const exit = { command_type: "exit" };
   assert.equal(
     commandResponseSchedulesShutdown(exit, { result: "shutdown_scheduled" }),
@@ -573,22 +586,36 @@ test("only an accepted Exit schedules shutdown and only reviewing live state req
     ),
     false,
   );
+});
 
+test("recording waits for accepted evidence but allows failure recovery and Exit", () => {
+  for (const state of ["loading", "thinking", "finishing", "cancelling"]) {
+    const frame = {
+      ...recordingFrame(),
+      system_operation: { operation_id: "pending", state },
+    };
+    for (const command_type of [
+      "finish_and_review",
+      "review_replay",
+      "retry_save",
+      "save_as",
+      "save_and_replace",
+      "confirm_discard_and_replace",
+    ]) {
+      assert.equal(recordingCommandDecision(frame, { command_type }).action, "block");
+    }
+    assert.equal(
+      recordingCommandDecision(frame, { command_type: "exit" }).action,
+      "allow",
+    );
+  }
+  const failed = {
+    ...recordingFrame(),
+    fresh_launch_required: true,
+    system_operation: { operation_id: "failed", state: "failed" },
+  };
   assert.equal(
-    recordingReviewHandoffRequired({
-      recording: { lifecycle: "reviewing" },
-    }),
-    true,
-  );
-  assert.equal(
-    recordingReviewHandoffRequired({
-      viewer_mode: "replay",
-      recording: { lifecycle: "reviewing" },
-    }),
-    false,
-  );
-  assert.equal(
-    recordingReviewHandoffRequired({ recording: { lifecycle: "saved" } }),
-    false,
+    recordingCommandDecision(failed, { command_type: "finish_and_review" }).action,
+    "allow",
   );
 });

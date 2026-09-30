@@ -54,6 +54,9 @@ dev = [
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["/.local/dev_client/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/marl_battlegrounds"]
 
@@ -110,7 +113,6 @@ include = [
   "src",
   "tests",
   "scripts/dev/visual_debugger",
-  "scripts/dev/debug_renderer.py",
   "scripts/dev/replay_viewer.py",
 ]
 exclude = [

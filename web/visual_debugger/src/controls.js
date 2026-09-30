@@ -41,6 +41,7 @@ const RECORDING_LIFECYCLE_COMMANDS = new Set([
   "retry_save",
   "save_as",
   "confirm_discard_and_replace",
+  "save_and_replace",
   "exit",
 ]);
 
@@ -240,7 +241,9 @@ export function recordingReplacementCommand(frame, command) {
 /**
  * Return a frozen allow, block or confirm decision for command in frame.
  *
- * Missing recording state and recording-lifecycle commands are allowed. An
+ * Missing recording state is allowed. Save/review waits for pending method work;
+ * a failed method still permits saving its last accepted game. Exit remains
+ * available for cancellation and graceful closeout. An
  * episode replacement asks for confirmation when discard_available is true,
  * or blocks when restart_fenced is true. Outside active recording, block
  * other scientific commands while allowing the declared display-only ones.
@@ -264,6 +267,16 @@ export function recordingCommandDecision(frame, command) {
     return Object.freeze({ action: "allow", command });
   }
   if (RECORDING_LIFECYCLE_COMMANDS.has(String(command.command_type))) {
+    if (
+      command.command_type !== "exit" &&
+      frame.system_operation &&
+      !(frame.fresh_launch_required && frame.system_operation.state === "failed")
+    ) {
+      return Object.freeze({
+        action: "block",
+        notice: "Wait for the current turn and its recording to finish.",
+      });
+    }
     return Object.freeze({ action: "allow", command });
   }
   const replacement = recordingReplacementCommand(frame, command);
@@ -272,15 +285,13 @@ export function recordingCommandDecision(frame, command) {
       return Object.freeze({
         action: "confirm",
         replacement,
-        notice:
-          "Replacing this episode discards the captured in-memory prefix. Confirm the exact replacement to continue.",
+        notice: "Choose Save, Discard or Cancel before replacing this recorded game.",
       });
     }
     if (status.restart_fenced === true) {
       return Object.freeze({
         action: "block",
-        notice:
-          "Episode replacement is fenced after recording closeout. Review or recover the replay first.",
+        notice: "Save or discard this recording before starting another match.",
       });
     }
     return Object.freeze({ action: "allow", command });
@@ -289,6 +300,7 @@ export function recordingCommandDecision(frame, command) {
   const presentationOnly =
     command.command_type === "set_view" ||
     command.command_type === "set_preset" ||
+    (command.command_type === "roster_selection" && command.role === "control") ||
     (command.command_type === "keyboard" &&
       typeof command.key === "string" &&
       RECORDING_PRESENTATION_KEYS.has(command.key.toLowerCase()));
@@ -337,27 +349,6 @@ export function commandResponseSchedulesShutdown(command, payload) {
   }
   const response = /** @type {Record<string, unknown>} */ (payload);
   return command.command_type === "exit" && response.result === "shutdown_scheduled";
-}
-
-/**
- * Return whether frame is still a live view whose recording lifecycle says
- * reviewing. Nonobjects, replay views and missing/other recording states return
- * false. The caller performs the handoff; this check changes no state.
- *
- * @param {unknown} frame
- */
-export function recordingReviewHandoffRequired(frame) {
-  if (typeof frame !== "object" || frame === null || Array.isArray(frame)) {
-    return false;
-  }
-  const candidate = /** @type {Record<string, any>} */ (frame);
-  return (
-    candidate.viewer_mode !== "replay" &&
-    typeof candidate.recording === "object" &&
-    candidate.recording !== null &&
-    !Array.isArray(candidate.recording) &&
-    candidate.recording.lifecycle === "reviewing"
-  );
 }
 
 /**

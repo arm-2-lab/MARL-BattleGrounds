@@ -15,6 +15,11 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+from marl_battlegrounds._battle_client.model import (
+    ActorCommand,
+    DebuggerScenario,
+    ScenarioFrame,
+)
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
     resolve_agent_profile,
@@ -51,11 +56,6 @@ from marl_battlegrounds.core.types import (
     WARRIOR_CLASS_ID,
     EnvConfig,
     EnvState,
-)
-from scripts.dev.visual_debugger.model import (
-    ActorCommand,
-    DebuggerScenario,
-    ScenarioFrame,
 )
 from scripts.dev.visual_debugger.scenario_catalog import SCENARIO_CATALOG_BY_NAME
 from scripts.dev.visual_debugger.scenario_catalog import (

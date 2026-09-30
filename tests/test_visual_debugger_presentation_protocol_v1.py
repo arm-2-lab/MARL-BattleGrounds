@@ -11,19 +11,6 @@ from typing import Literal, TypeGuard, cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
-from scripts.dev.visual_debugger.control import (
-    create_session,
-    select_controlled_actor,
-    submit_next_script_frame,
-)
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    build_debugger_evaluation_launch_specification_v1,
-)
-from scripts.dev.visual_debugger.frame import build_debugger_frame
-from scripts.dev.visual_debugger.live_presentation import (
-    build_live_oracle_authorized_presentation_v1,
-    build_live_researcher_space_v1,
-)
 from scripts.dev.visual_debugger.local_oracle_corpse_overlay import (
     build_local_oracle_corpse_overlay_v1,
 )
@@ -80,7 +67,6 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     canonical_authorized_endpoint_digest_sha256,
     seal_local_oracle_corpse_overlay_v1,
 )
-from scripts.dev.visual_debugger.protocol import ResearcherLiveDebuggerFrameV2
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.evaluation_fixtures import CapturedEvaluationTrajectory
 from tests.test_rendering_authorized_inspection import (
@@ -97,6 +83,20 @@ from tests.test_rendering_authorized_inspection import (
 from tests.test_visual_debugger_authorized_presentation import _build_raw_frames
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    select_controlled_actor,
+    submit_next_script_frame,
+)
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_launch_specification_v1,
+)
+from marl_battlegrounds._battle_client.frame import build_debugger_frame
+from marl_battlegrounds._battle_client.live_presentation import (
+    build_live_oracle_authorized_presentation_v1,
+    build_live_researcher_space_v1,
+)
+from marl_battlegrounds._battle_client.protocol import ResearcherLiveDebuggerFrameV2
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
@@ -1703,6 +1703,18 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
     # Additive researcher HUD metadata remains absent in historical presentations.
     # Only these named compatibility fields may omit a recursive requirement.
     optional_fields = {
+        "root.$defs.LiveOracleAuthorizedPresentationFrameV1": {
+            "run_state",
+            "fresh_launch_required",
+        },
+        "root.$defs.LiveNoSharedObsAuthorizedPresentationFrameV1": {
+            "run_state",
+            "fresh_launch_required",
+        },
+        "root.$defs.LiveSharedObsAuthorizedPresentationFrameV1": {
+            "run_state",
+            "fresh_launch_required",
+        },
         "root.$defs.MatchSummaryV1": {
             "deaths",
             "map",
