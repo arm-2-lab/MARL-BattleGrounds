@@ -11,6 +11,7 @@ import copy
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -172,3 +173,83 @@ def test_plain_request_keeps_the_original_noncustom_task(tmp_path: Path) -> None
         request["expected_task"]["schema_version"]
         == item["records"][0]["schema_version"]
     )
+
+
+def test_validation_maps_default_checks_and_old_saved_configs() -> None:
+    from marl_battlegrounds.training.config import (
+        TrainConfig,
+        config_from_dict,
+        config_to_dict,
+    )
+    from marl_battlegrounds.training.runner import _saved_config
+
+    default = TrainConfig()
+    assert default.validation_maps is None
+    assert validation.VALIDATION_MAPS == (42, 43, 44, 45, 46)
+    assert "validation_maps" not in config_to_dict(default)
+    chosen = TrainConfig(validation_maps=[46, 42, 44, 43])
+    assert chosen.validation_maps == (42, 43, 44, 46)
+    assert config_to_dict(chosen)["validation_maps"] == [42, 43, 44, 46]
+    assert config_from_dict(config_to_dict(chosen)) == chosen
+    for bad in ([], [42, 42], [41], [47], [True], [42.0], "42", {42}, (45, 45)):
+        with pytest.raises(ValueError, match="validation_maps"):
+            TrainConfig(validation_maps=bad)  # pyright: ignore[reportArgumentType]
+    # Saved configs from before the setting have no key and read as the default.
+    fixture = Path(__file__).parent / "fixtures/training_config_defaults.json"
+    for saved in json.loads(fixture.read_text()).values():
+        assert "validation_maps" not in saved
+        restored = config_from_dict(saved)
+        assert restored.validation_maps is None
+        assert config_to_dict(restored) == {**saved, "retain_all_actors": False}
+        old_run = _saved_config({"metadata": {"config": dict(saved)}})
+        assert config_to_dict(old_run) == config_to_dict(restored)
+
+
+def test_four_validation_maps_are_saved_and_used_by_every_validation_game(
+    tmp_path: Path,
+) -> None:
+    from marl_battlegrounds.baselines.ppo import PPOConfig
+    from marl_battlegrounds.training import runner
+
+    maps = [42, 43, 44, 46]
+    config = runner.TrainConfig(
+        method="ff_ippo",
+        # Eight lanes play each validation pass's eight games in one batch.
+        num_envs=8,
+        total_env_steps=16,
+        keep_past=0,
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        curriculum=[{"share": 1.0, "maps": [0], "team_size": 1}],
+        validation_opponents=("random",),
+        validation_maps=(46, 42, 43, 44),
+        validation_fractions=(1.0,),
+        routine_seed_pairs=1,
+        confirmation_seed_pairs=1,
+        metrics="none",
+        verbose=False,
+    )
+    result = runner.train(config, output_dir=tmp_path / "run")
+    details = json.loads((result.run_dir / "run_details.json").read_text())
+    assert details["config"]["validation_maps"] == maps
+    assert details["validation_deployment"]["maps"] == maps
+    assert details["validation_declaration"]["deployment"]["maps"] == maps
+    records = json.loads((result.run_dir / "validation_results.json").read_text())
+    assert [row["purpose"] for row in records] == [
+        "routine",
+        "routine",
+        "confirmation",
+    ]
+    for row in records:
+        assert row["maps"] == maps
+        assert sorted(cell["map_id"] for cell in row["cells"]) == maps
+        assert row["games"] == 8
+        assert validation.validation_conditions(row)["maps"] == maps
+    selected = json.loads((result.run_dir / "selection.json").read_text())
+    assert selected["purpose"] == "confirmation" and selected["maps"] == maps
+    # A resume keeps the saved maps; a resume config naming other maps fails.
+    resumed = runner.train(resume_from=result.final_checkpoint)
+    assert resumed.selected_actor == result.selected_actor
+    with pytest.raises(ValueError, match="Resume config differs"):
+        runner.train(
+            replace(config, validation_maps=None), resume_from=result.final_checkpoint
+        )

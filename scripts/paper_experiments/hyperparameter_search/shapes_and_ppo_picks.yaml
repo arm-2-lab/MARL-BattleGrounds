@@ -1,0 +1,80 @@
+# Recipe picks for study 1 (shapes_and_ppo.yaml), declared before launch.
+#
+# prepare.py protocol=declared_study recipe_selection=<this file> copies this
+# list into protocol/grouping.yaml; training.analyze then writes each pick as
+# a saved, repeatable record. Groups are the declaration's case IDs; each
+# group's units are its three search seeds. The measure is point margin.
+#
+# Two rules:
+#   Shapes   The highest mean point margin wins. tie_order breaks exact ties.
+#   Settings A searched setting replaces its base only if its mean beats the
+#            base by more than min_margin_gain (2 points) and it beats the
+#            base on at least min_units_won (2) of the 3 seeds.
+#
+# The QMIX learning-rate pick applies only if b768-t32 wins the QMIX shape
+# pick; otherwise study 2 measures the learning rate at the chosen shape.
+recipe_selection:
+  - name: PQN-VDN Shape
+    groups: &pqn_shapes [pqn_vdn-b768-t32, pqn_vdn-b768-t64, pqn_vdn-b768-t128, pqn_vdn-b512-t128]
+    direction: maximize
+    tie_order: *pqn_shapes
+  - name: QMIX Shape
+    groups: &qmix_shapes [qmix-b768-t32, qmix-b768-t128]
+    direction: maximize
+    tie_order: *qmix_shapes
+  - name: QMIX Learning Rate 1e-4 At b768-t32
+    groups: &qmix_lr [qmix-b768-t32, qmix-b768-t32-lr-1e-4]
+    direction: maximize
+    tie_order: *qmix_lr
+    base: qmix-b768-t32
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Recurrent MAPPO Critic Learning Rate 1e-3
+    groups: &mappo_critic [mappo-reference, mappo-critic-lr-1e-3]
+    direction: maximize
+    tie_order: *mappo_critic
+    base: mappo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Recurrent IPPO Actor Learning Rate 3e-4
+    groups: &ippo_actor [ippo-reference, ippo-actor-lr-3e-4]
+    direction: maximize
+    tie_order: *ippo_actor
+    base: ippo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Recurrent IPPO Critic Learning Rate 1e-3
+    groups: &ippo_critic [ippo-reference, ippo-critic-lr-1e-3]
+    direction: maximize
+    tie_order: *ippo_critic
+    base: ippo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Feedforward MAPPO Actor Learning Rate 3e-4
+    groups: &ff_mappo_actor [ff_mappo-reference, ff_mappo-actor-lr-3e-4]
+    direction: maximize
+    tie_order: *ff_mappo_actor
+    base: ff_mappo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Feedforward MAPPO Critic Learning Rate 1e-3
+    groups: &ff_mappo_critic [ff_mappo-reference, ff_mappo-critic-lr-1e-3]
+    direction: maximize
+    tie_order: *ff_mappo_critic
+    base: ff_mappo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Feedforward IPPO Actor Learning Rate 3e-4
+    groups: &ff_ippo_actor [ff_ippo-reference, ff_ippo-actor-lr-3e-4]
+    direction: maximize
+    tie_order: *ff_ippo_actor
+    base: ff_ippo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: Feedforward IPPO Critic Learning Rate 1e-3
+    groups: &ff_ippo_critic [ff_ippo-reference, ff_ippo-critic-lr-1e-3]
+    direction: maximize
+    tie_order: *ff_ippo_critic
+    base: ff_ippo-reference
+    min_margin_gain: 2.0
+    min_units_won: 2

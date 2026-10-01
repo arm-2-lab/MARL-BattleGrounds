@@ -437,28 +437,48 @@ def resource_environment(
     return environment
 
 
-def check_resource_devices(resources: Record | None) -> None:
-    """Refuse unavailable declared GPU UUIDs and unsafe cache outputs before work.
+def missing_resource_devices(resources: Record | None) -> list[str]:
+    """Check cache outputs and return the declared GPU UUIDs that are not present.
 
-    resources is a checked declaration or None. nvidia-smi reads available UUIDs
-    without allocating a device. CPU-only work runs no device query. Cache paths
-    obey the shared source-preservation rule; no files are created. Missing GPUs,
-    command failures or forbidden cache destinations raise ValueError/OSError.
-    Actual JAX backend initialization remains the worker's responsibility.
+    Parameters
+    ----------
+    resources : dict or None
+        A declaration already checked by resource_settings, or None. None and
+        CPU-only declarations run no device query and give an empty list.
+
+    Returns
+    -------
+    list of str
+        Declared GPU UUIDs that ``nvidia-smi --query-gpu=uuid`` does not list,
+        in declared order. An empty list means every declared GPU is present.
+
+    Raises
+    ------
+    ValueError
+        The declared compilation cache sits in a forbidden output location
+        (the shared source-preservation rule).
+    OSError, subprocess.SubprocessError
+        nvidia-smi is missing, fails or takes longer than 10 seconds.
+
+    Notes
+    -----
+    nvidia-smi only lists UUIDs; it allocates no device memory. No file is
+    created. Actual JAX backend start remains the worker's responsibility.
+    The study owner pauses missing GPUs; check_resource_devices refuses them.
     """
     if resources is None:
-        return
+        return []
     if cache := resources.get("compilation_cache"):
         from marl_battlegrounds.evaluation.revision import (
             _check_output_path,  # pyright: ignore[reportPrivateUsage]
         )
 
         _check_output_path(Path(cache))
-    requested = {
+    requested = [
         row["device"] for row in resources["devices"] if row["device"] != "cpu"
-    }
+    ]
     if not requested:
-        return
+        return []
     completed = subprocess.run(
         ["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader,nounits"],
         timeout=10,
@@ -467,7 +487,20 @@ def check_resource_devices(resources: Record | None) -> None:
         check=True,
         stdin=subprocess.DEVNULL,
     )
-    missing = requested - {line.strip() for line in completed.stdout.splitlines()}
+    present = {line.strip() for line in completed.stdout.splitlines()}
+    return [device for device in requested if device not in present]
+
+
+def check_resource_devices(resources: Record | None) -> None:
+    """Refuse unavailable declared GPU UUIDs and unsafe cache outputs before work.
+
+    resources is a checked declaration or None. missing_resource_devices does
+    the cache check and the nvidia-smi query; CPU-only work runs no query. Any
+    missing GPU, command failure or forbidden cache destination raises
+    ValueError/OSError. Single Hydra runs use this strict check; declared
+    studies instead pause missing GPUs and continue on the others.
+    """
+    missing = missing_resource_devices(resources)
     if missing:
         raise ValueError(f"Declared GPU devices are unavailable: {sorted(missing)}")
 

@@ -1065,11 +1065,23 @@ def _absent_counts(bank: int, opponent_rows: int) -> QMIXSampledCounts:
 
 
 def _absent_metrics(epochs: int) -> QMIXMetrics:
-    """Return zero (epochs,) metrics for blocks without optimizer steps."""
+    """Return zero (epochs,) metrics for blocks without optimizer steps.
+
+    Losses, means and grad_norm are float32 zeros; counts are int32 zeros and
+    finite is False. The host log ignores these values because the block's
+    performed flag is False.
+    """
     floats = jnp.zeros(epochs, jnp.float32)
     counts = jnp.zeros(epochs, jnp.int32)
     return QMIXMetrics(
-        floats, floats, floats, counts, counts, counts, jnp.zeros(epochs, jnp.bool_)
+        floats,
+        floats,
+        floats,
+        counts,
+        counts,
+        counts,
+        jnp.zeros(epochs, jnp.bool_),
+        floats,
     )
 
 

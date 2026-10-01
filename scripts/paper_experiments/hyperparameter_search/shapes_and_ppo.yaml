@@ -1,0 +1,299 @@
+# Study 1 of the six-method hyperparameter search: QMIX and PQN-VDN batch
+# sizes and rollout lengths, and a few settings for the four PPO methods.
+#
+# This is a plain study declaration for training.run_study. Do not run it
+# directly: opponents and the 250M validation model are named here by their
+# public names. Prepare it first; preparation checks the opponent bundle and
+# writes protocol/study.yaml with each name bound to its checked model folder:
+#
+#   python scripts/paper_experiments/prepare.py protocol=declared_study \
+#     declaration=scripts/paper_experiments/hyperparameter_search/shapes_and_ppo.yaml \
+#     opponent_bundle=/path/opponents output_dir=/path/shapes-and-ppo
+#
+# 18 cases x 3 search seeds = 54 runs. Cases run in this order, longest first
+# (PQN-VDN, then QMIX, then PPO), so the two GPUs finish at about the same time.
+# Each case ID starts with its method. YAML anchors (&name) and merge keys
+# (<<: *name) keep each shared base written once; every value is still a
+# plain setting of the public training API.
+#
+# Fair shape rules (B = num_envs, T = rollout_length):
+#   QMIX     epochs = B x T / 512, buffer_size = 132,096 / B, update_period 256.
+#   PQN-VDN  num_minibatches = B x T / 8,192, epochs 4.
+schema_version: 1
+name: Hyperparameter Search Shapes And PPO
+failure_policy: continue
+resources:
+  devices:
+    - device: GPU-6b11a0c4-14e8-6782-8932-1df56d599796
+      max_workers: 1
+    - device: GPU-8dcabaa4-3802-4240-98e3-6ddebbc6239d
+      max_workers: 1
+cases:
+  # PQN-VDN shapes.
+  - id: pqn_vdn-b768-t32
+    seeds: &seeds [12259871, 20261001, 20261002]
+    runtime: &runtime
+      # Same order as opponents.yaml; preparation refuses another order.
+      validation_opponents:
+        - recurrent-mappo-combat-support-pooled-step-250675200
+        - tdm-alpha
+        - tdm-beta
+        - tdm-gamma
+    config:
+      <<: &common
+        total_env_steps: 40108032
+        curriculum: false
+        score_threshold_curriculum: false
+        red_zone_depth: 5.0
+        shaping: false
+        opponents:
+          self: 0.6
+          past: 0.2
+          recurrent-mappo-combat-support-low-amounts-step-30081024: 0.025
+          recurrent-mappo-combat-support-step-35094528: 0.025
+          recurrent-mappo-tactical-support-step-40108032: 0.025
+          recurrent-mappo-tactical-support-high-amounts-step-25067520: 0.025
+          recurrent-mappo-tactical-support-zero-sum-step-35094528: 0.025
+          recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032: 0.025
+          tdm-alpha: 0.025
+          tdm-beta: 0.025
+        keep_past: 12
+        past_capture_interval: 1376256
+        validation_maps: [42, 43, 44, 46]
+        validation_fractions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        routine_seed_pairs: 4
+        confirmation_seed_pairs: 8
+        metrics: priority
+        recording: false
+        retain_all_actors: true
+      method: pqn_vdn
+      reward: &team_reward marl_battlegrounds.training.reward_recipes:combat_support_team_reward
+      checkpoint_interval_updates: &q_saves 1600
+      num_envs: 768
+      pqn: &pqn_base
+        rollout_length: 32
+        memory_window: 4
+        epochs: 4
+        num_minibatches: 3
+        q_lr: 0.00025
+        lr_linear_decay: true
+        max_grad_norm: 1.0
+        gamma: 0.99
+        td_lambda: 0.85
+        eps_start: 1.0
+        eps_finish: 0.01
+        eps_decay_fraction: 0.05
+        input_scale: 1.0
+        spawn_frame: left
+        parameter_sharing: all
+        reward_scale: 1.0
+        normalization: batch_norm
+  - id: pqn_vdn-b768-t64
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 768
+      pqn: {<<: *pqn_base, rollout_length: 64, num_minibatches: 6}
+  - id: pqn_vdn-b768-t128
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 768
+      pqn: {<<: *pqn_base, rollout_length: 128, num_minibatches: 12}
+  - id: pqn_vdn-b512-t128
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 512
+      pqn: {<<: *pqn_base, rollout_length: 128, num_minibatches: 8}
+  # QMIX shapes, and its learning rate at the first shape.
+  - id: qmix-b768-t32
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 768
+      qmix: &qmix_base
+        rollout_length: 32
+        epochs: 48
+        buffer_size: 172
+        min_buffer_size: 32
+        sample_sequence_length: 20
+        sample_batch_size: 128
+        q_lr: 0.00003
+        hard_update: true
+        update_period: 256
+        tau: 0.01
+        gamma: 0.99
+        eps_min: 0.05
+        eps_decay: 2000000
+        input_scale: 0.01
+        spawn_frame: left
+        parameter_sharing: all
+        reward_scale: 1.0
+  - id: qmix-b768-t128
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 768
+      qmix: {<<: *qmix_base, rollout_length: 128, epochs: 192}
+  - id: qmix-b768-t32-lr-1e-4
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      reward: *team_reward
+      checkpoint_interval_updates: *q_saves
+      num_envs: 768
+      qmix: {<<: *qmix_base, q_lr: 0.0001}
+  # Recurrent MAPPO: the reference is the exact pooled 250M learner.
+  - id: mappo-reference
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: mappo
+      reward: &agent_reward marl_battlegrounds.training.reward_recipes:combat_support_reward
+      checkpoint_interval_updates: &ppo_saves 25
+      num_envs: 512
+      ppo: &ppo_base
+        actor_lr: 0.0001
+        critic_lr: 0.00025
+        rollout_length: 32
+        epochs: 4
+        minibatches: 2
+        groups: 2
+        gamma: 0.999
+        gae_lambda: 0.95
+        clip_epsilon: 0.2
+        entropy_coefficient: 0.01
+        value_coefficient: 0.5
+        max_grad_norm: 0.5
+        adam_epsilon: 0.00001
+        input_scale: 0.01
+        spawn_frame: left
+        value_normalization: true
+        parameter_sharing: all
+  - id: mappo-critic-lr-1e-3
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: mappo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, critic_lr: 0.001}
+  # Recurrent IPPO.
+  - id: ippo-reference
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: *ppo_base
+  - id: ippo-actor-lr-3e-4
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, actor_lr: 0.0003}
+  - id: ippo-critic-lr-1e-3
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, critic_lr: 0.001}
+  # Feedforward MAPPO.
+  - id: ff_mappo-reference
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_mappo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: *ppo_base
+  - id: ff_mappo-actor-lr-3e-4
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_mappo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, actor_lr: 0.0003}
+  - id: ff_mappo-critic-lr-1e-3
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_mappo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, critic_lr: 0.001}
+  # Feedforward IPPO.
+  - id: ff_ippo-reference
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: *ppo_base
+  - id: ff_ippo-actor-lr-3e-4
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, actor_lr: 0.0003}
+  - id: ff_ippo-critic-lr-1e-3
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: ff_ippo
+      reward: *agent_reward
+      checkpoint_interval_updates: *ppo_saves
+      num_envs: 512
+      ppo: {<<: *ppo_base, critic_lr: 0.001}

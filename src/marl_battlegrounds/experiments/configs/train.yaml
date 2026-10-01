@@ -48,6 +48,7 @@ validation_fractions:
 - 1.0
 routine_seed_pairs: 10
 confirmation_seed_pairs: 50
+validation_maps: null
 checkpoint_interval_updates: null
 checkpoint_env_steps: []
 random_diagnostic_seed_pairs: null

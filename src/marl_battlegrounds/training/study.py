@@ -3,8 +3,10 @@
 This module owns finite study declarations, ordered cases and saved reports.
 The trainer still owns learning, validation, selection and checkpoint recovery.
 Without declared resources, one worker inherits the caller's environment.
-Explicit resources admit bounded workers through the same case owner. Import,
-status and stop use no numerical backend. Workers preserve Python import paths.
+Explicit resources admit bounded workers through the same case owner. A
+declared GPU missing at start is paused while the other devices keep working.
+Import, status, the progress view (study_status with progress=True) and stop
+use no numerical backend and query no GPU. Workers preserve Python import paths.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import json
 import math
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -1284,9 +1287,10 @@ def _pause_failed_gpu(
     timed-out and interrupted attempts never pause. A case that fails after
     saving a checkpoint does not pause its GPU; if the device is lost, the
     next case fails early and pauses it then. The pause lasts for this
-    controller only: start or resume begins with no paused GPU, and the failed
-    case is retried by the ordinary resume rules. Host-only; no process or
-    device is touched.
+    controller only: start or resume clears it (and pauses only GPUs missing
+    at that start), and the failed case is retried by the ordinary resume
+    rules. The record's reason is "failed before its first checkpoint".
+    Host-only; no process or device is touched.
     """
     device = _slot_gpu(resources)
     if (
@@ -1303,11 +1307,55 @@ def _pause_failed_gpu(
         return
     attempt["device_paused"] = True
     state.setdefault("paused_devices", {})[device] = {
+        "reason": "failed before its first checkpoint",
         "case_id": job["id"],
         "attempt": attempt["number"],
         "error": attempt.get("error"),
         "paused_at": utc_now(),
     }
+
+
+def _missing_gpus(declared: Record) -> list[str]:
+    """Return declared GPUs that are missing now, refusing only if none is left.
+
+    Parameters
+    ----------
+    declared : dict
+        The saved study declaration. Without resources, or with CPU entries
+        only, no device query runs and the result is empty.
+
+    Returns
+    -------
+    list of str
+        Declared GPU UUIDs that nvidia-smi does not list, in declared order.
+        The caller pauses them (reason "missing at start") and keeps working
+        on the remaining devices.
+
+    Raises
+    ------
+    ValueError
+        Every declared device is a GPU and every one is missing, so no case
+        could start. A forbidden compilation cache path also raises here.
+    OSError, subprocess.SubprocessError
+        nvidia-smi is missing, fails or times out (see
+        _launch.missing_resource_devices).
+
+    Notes
+    -----
+    Host-only: reads the GPU list, starts no backend and changes no file.
+    """
+    resources = declared.get("resources")
+    missing = _launch.missing_resource_devices(resources)
+    if (
+        resources is not None
+        and missing
+        and all(row["device"] in missing for row in resources["devices"])
+    ):
+        raise ValueError(
+            f"Declared GPU devices are unavailable: {sorted(missing)}; "
+            "no declared device is left to run cases"
+        )
+    return missing
 
 
 def _cases_complete(declared: Record, state: Record) -> bool:
@@ -1319,7 +1367,13 @@ def _cases_complete(declared: Record, state: Record) -> bool:
 
 
 def _run_cases(
-    root: Path, declared: Record, state: Record, clock: Record, *, resume: bool
+    root: Path,
+    declared: Record,
+    state: Record,
+    clock: Record,
+    *,
+    resume: bool,
+    missing: Sequence[str] = (),
 ) -> None:
     """Admit ordered cases through existing supervisors and finish every attempt.
 
@@ -1331,10 +1385,21 @@ def _run_cases(
     A GPU whose case fails before saving a checkpoint is paused for the rest of
     this controller (see _pause_failed_gpu); the other slots keep admitting
     cases, and when every slot is paused admission stops with status
-    "incomplete". Each start or resume begins with no paused GPU.
+    "incomplete". Each start or resume clears earlier pauses, then pauses
+    every GPU UUID in missing (from _missing_gpus) with reason "missing at
+    start", so its slots get no case while the other devices keep working.
     """
     slots = _resource_slots(declared)
-    state["paused_devices"] = {}
+    state["paused_devices"] = {
+        device: {
+            "reason": "missing at start",
+            "case_id": None,
+            "attempt": None,
+            "error": "nvidia-smi does not list this declared GPU",
+            "paused_at": utc_now(),
+        }
+        for device in missing
+    }
     jobs = iter(_jobs(declared))
     active: dict[int, tuple[Record, Path, Record]] = {}
     exhausted = False
@@ -1560,8 +1625,8 @@ def _execute(root: Path, *, resume: bool, handoff: bool = False) -> Record:
             if _cases_complete(declared, state):
                 state["status"] = "complete"
             else:
-                _launch.check_resource_devices(declared.get("resources"))
-                _run_cases(root, declared, state, clock, resume=resume)
+                missing = _missing_gpus(declared)
+                _run_cases(root, declared, state, clock, resume=resume, missing=missing)
             available = [
                 root / "cases" / job["id"] / "run"
                 for job in _jobs(declared)
@@ -1678,6 +1743,10 @@ def run_study(
         Under either policy, a GPU whose case fails before saving a checkpoint
         gets no new case for the rest of this command (recorded in the report's
         paused_devices); other GPUs continue, and a resume clears the pause.
+        A declared GPU that nvidia-smi does not list when the command starts
+        is paused the same way, with reason "missing at start", and the other
+        devices run the cases; each start or resume checks again. The command
+        refuses only when every declared device is a missing GPU.
         Optional duration_seconds on the study and cases limits wall-clock
         work from their first launches, including downtime. finalist_of links
         a separate declaration to an existing discovery study. File-relative
@@ -1717,7 +1786,8 @@ def run_study(
     Raises
     ------
     ValueError, TypeError
-        Declaration, output, saved clock or checkpoint settings are invalid.
+        Declaration, output, saved clock or checkpoint settings are invalid,
+        or no declared device is present (every declared GPU is missing).
     RuntimeError
         A live study or worker already owns this output.
     OSError
@@ -1755,7 +1825,10 @@ def start_study(
     keeps them. stdin is closed and output appends to logs/study.log. The child
     inherits Python paths, device visibility and runtime settings. A pipe gate
     prevents work before its process identity is saved. Duplicate live owners
-    raise RuntimeError. Declaration, file and process errors propagate.
+    raise RuntimeError. When unfinished cases remain and every declared device
+    is a missing GPU, ValueError is raised before any process starts; if only
+    some GPUs are missing, the child pauses them and runs on the others.
+    Declaration, file and process errors propagate.
     """
     root, declared, resume = _prepare(config, output_dir, resume_from)
     with _launch.launch_lock(root):
@@ -1765,7 +1838,7 @@ def start_study(
         if resume:
             _reconcile_completed_attempts(root, declared, state)
         if not _cases_complete(declared, state):
-            _launch.check_resource_devices(declared.get("resources"))
+            _missing_gpus(declared)
         _clock(root, declared, create=not resume or not (root / "study.json").exists())
         command = _command("_control", str(root), *(["--resume"] if resume else []))
         return _launch.spawn_detached(
@@ -1776,18 +1849,661 @@ def start_study(
         )
 
 
-def study_status(output_dir: str | Path) -> Record:
+_PROGRESS_LEGEND = (
+    "Table 1 comes from the routine validation checks saved in each run's",
+    "validation_results.json, with our learned team as Team A, plus status.json:",
+    "  Seed: the case's training seed. State: the case state; a running case",
+    "    also shows the run's phase.",
+    "  Done: training steps finished out of the run's total.",
+    "  Steps/s: recent training speed (transitions per second). Spent: run time",
+    "    so far, without gaps between attempts. Left: remaining steps divided by",
+    "    Steps/s (running cases only); it leaves out later validation and saving.",
+    "  GPU: the last six characters of the case's GPU UUID (resources.json);",
+    "    cpu for a CPU worker.",
+    "  Check: training step of the latest finished routine check.",
+    "  vs NAME: wins-draws-losses against that validation opponent, all maps,",
+    "    and the average game score (win 1, draw 0.5, loss 0).",
+    "  Points: our average points and theirs per game (a Red Zone kill is",
+    "    worth 2). Margin: ours minus theirs, equal weight for every map and",
+    "    opponent; the main measure.",
+    "  K/D: our kills and our deaths per game.",
+    "  RZ K: our Red Zone kills per game (our points minus our kills).",
+    "  Home D: our deaths inside our own Red Zone per game (their points minus",
+    "    their kills) and their share of all our deaths. A high share is the",
+    "    turtling sign.",
+    "  Best: the routine check with the highest point margin so far, and that",
+    "    margin.",
+    "Table 2 comes from the run's own training games (all training opponents),",
+    "Team A, from collected_reward_components and opponent_results in",
+    "training_updates.jsonl. A window is 25 saved update rows (25 collection",
+    "rounds, about 25 learner updates). Per game unless stated:",
+    "  Games: training games that ended in the window. Len: ticks per game.",
+    "  Pts: our points and theirs per game.",
+    "  K/D: kills are not saved for training games, so K is always '-'; D is",
+    "    our deaths per game. Kill credits per kill cannot be worked out either,",
+    "    because several teammates can share one kill.",
+    "  Home D: our deaths inside our own Red Zone, and their share of our deaths.",
+    "  Kill Cr: kill credits (one for each credited teammate per enemy death).",
+    "  RZ Cr: the extra credits for enemies killed in their own Red Zone.",
+    "  Dmg: capped damage our agents dealt (HP). Heal: the Priest's effective",
+    "    healing (HP). Range: ticks x living Priest/ally pairs within heal range.",
+    "  Own zone: share of our agent ticks spent inside our own Red Zone.",
+    "  Shaping: combat/support reward each learner agent got per game.",
+    "  Counts are exact for the built-in combat_support_reward and",
+    "  combat_support_team_reward; another reward shows '-'.",
+    "Table 3 sums the whole run so far: for each training opponent group",
+    "(current weights, past copies, the pinned opponent, each named model Mn and",
+    "the scripted bots), our wins-draws-losses in finished training games and,",
+    "in brackets, the group's share of our training ticks in those games.",
+    "'-' means the saved files do not hold that value yet (or at all).",
+)
+
+
+def _text_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+    """Render a plain left-aligned text table with a dashed rule under the headers.
+
+    Parameters
+    ----------
+    headers : sequence of str
+        Column titles.
+    rows : sequence of sequences of str
+        Cells in header order. Every row must have one cell per header.
+
+    Returns
+    -------
+    str
+        Lines joined by newlines; each column is as wide as its widest cell.
+    """
+    widths = [
+        max(len(str(value)) for value in column)
+        for column in zip(headers, *rows, strict=True)
+    ]
+    lines = [
+        "  ".join(
+            str(value).ljust(width) for value, width in zip(row, widths, strict=True)
+        )
+        for row in (headers, ["-" * width for width in widths], *rows)
+    ]
+    return "\n".join(line.rstrip() for line in lines)
+
+
+def _duration_text(seconds: object) -> str:
+    """Format seconds as "45s", "12m" or "3h 05m"; "-" when not a number."""
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        return "-"
+    if not math.isfinite(seconds) or seconds < 0:
+        return "-"
+    minutes = int(seconds // 60)
+    if minutes == 0:
+        return f"{int(seconds)}s"
+    if minutes < 60:
+        return f"{minutes}m"
+    return f"{minutes // 60}h {minutes % 60:02d}m"
+
+
+def _tail_lines(path: Path, count: int) -> list[str]:
+    """Return the last nonblank lines of a text log, reading at most 16 KiB.
+
+    Parameters
+    ----------
+    path : Path
+        A log file such as cases/<id>/process.log. A missing file gives [].
+    count : int
+        How many lines to keep, at most.
+
+    Returns
+    -------
+    list of str
+        Lines without newline characters, oldest first. A first line cut in
+        the middle by the 16 KiB read is dropped.
+    """
+    size = 16_384
+    try:
+        with path.open("rb") as stream:
+            end = stream.seek(0, 2)
+            stream.seek(max(0, end - size))
+            lines = stream.read().decode(errors="replace").splitlines()
+    except FileNotFoundError:
+        return []
+    if end > size:
+        lines = lines[1:]
+    return [line for line in lines if line.strip()][-count:]
+
+
+def _live_processes(root: Path) -> list[Record]:
+    """Describe every live process this study owns, with the command to stop it.
+
+    Parameters
+    ----------
+    root : Path
+        The study folder.
+
+    Returns
+    -------
+    list of dict
+        One record per live process record (controller, case or analysis):
+        ``owner`` (plain words), ``record`` (process.json path),
+        ``supervisor_pid`` and ``trainer_pid`` (int when that exact process
+        is still alive, else None), ``worker_pids`` (live members of the
+        trainer's private process group), ``leftover`` (True when workers
+        remain with no live supervisor or trainer) and ``stop_command`` (the
+        exact shell command a person can run).
+
+    Notes
+    -----
+    Uses the launcher's liveness checks (_launch.live_process_records and
+    _alive), which read files and /proc only. Nothing is signaled here, and a
+    leaderless worker group is never stopped automatically: its PIDs could
+    have been reused, so the person checks them with ps before running kill.
+    """
+    result: list[Record] = []
+    for path in _launch.live_process_records(_process_paths(root)):
+        record = _read(path)
+        identities: dict[str, int | None] = {}
+        for name in ("process", "trainer"):
+            identity = record.get(name)
+            identities[name] = (
+                int(cast(Record, identity)["pid"])
+                if isinstance(identity, dict)
+                and _launch._alive({name: cast(Record, identity)})
+                else None
+            )
+        group = record.get("trainer_group")
+        workers = (
+            sorted(_launch._group_members(int(cast(Record, group)["pid"])))
+            if isinstance(group, dict)
+            and _launch._alive({"trainer_group": cast(Record, group)})
+            else []
+        )
+        owner = (
+            "study controller"
+            if path == root / "process.json"
+            else "analysis"
+            if path.parent.name == "analysis_job"
+            else f"case {path.parent.name}"
+        )
+        pids = sorted(
+            {pid for pid in (identities["trainer"], *workers) if pid is not None}
+        )
+        listed = " ".join(map(str, pids))
+        result.append(
+            {
+                "owner": owner,
+                "record": str(path),
+                "supervisor_pid": identities["process"],
+                "trainer_pid": identities["trainer"],
+                "worker_pids": workers,
+                "leftover": identities["process"] is None
+                and identities["trainer"] is None
+                and bool(workers),
+                "stop_command": (
+                    "python -m marl_battlegrounds study stop " + shlex.quote(str(root))
+                )
+                if identities["process"] is not None
+                else f"ps -o pid,args -p {','.join(map(str, pids))} && "
+                f"kill -TERM {listed}",
+            }
+        )
+    return result
+
+
+def _seed_text(job: Record) -> str:
+    """Return a case's training seed, or its continuation branch seed, or "-"."""
+    seed = job.get("config", {}).get("seed", job.get("changes", {}).get("seed"))
+    return "-" if seed is None else str(seed)
+
+
+def _case_gpu(directory: Path, row: Record) -> str:
+    """Return the last six characters of a case's GPU UUID, "cpu" or "-".
+
+    Reads the worker's resources.json first, then the study's latest attempt
+    record. Inherited (undeclared) resources and unstarted cases give "-".
+    """
+    requested = _optional(directory / "resources.json").get("requested")
+    if not isinstance(requested, dict):
+        attempts = cast(list[Record], row.get("attempts") or [{}])
+        requested = cast(object, attempts[-1].get("resources"))
+    device = (
+        cast(Record, requested).get("device", {}).get("device")
+        if isinstance(requested, dict)
+        else None
+    )
+    if not isinstance(device, str):
+        return "-"
+    return device if device == "cpu" else device[-6:]
+
+
+def _per_game(value: object, games: int, digits: int, *, sign: bool = False) -> str:
+    """Format a window total per game; "-" without games or a known total."""
+    if not games or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "-"
+    return f"{value / games:{'+' if sign else ''}.{digits}f}"
+
+
+def _window_cells(window: Record) -> list[str]:
+    """Turn one training window record into the Table 2 cells after Window.
+
+    Parameters
+    ----------
+    window : dict
+        One entry of a run's progress ``windows`` (analysis._update_progress).
+
+    Returns
+    -------
+    list of str
+        Games, Len, Pts, K/D, Home D, Kill Cr, RZ Cr, Dmg, Heal, Range,
+        Own zone and Shaping, per game where the legend says so; "-" where
+        the window has no games or the value is unknown.
+    """
+    games = int(window.get("games") or 0)
+    counts = cast(Record, window.get("counts") or {})
+    deaths = counts.get("own_team_deaths")
+    home = counts.get("own_red_zone_deaths")
+    zone = counts.get("own_zone_ticks")
+    agents = int(window.get("agent_transitions") or 0)
+    return [
+        str(games),
+        _per_game(window.get("length_sum"), games, 0),
+        f"{_per_game(window.get('points_for'), games, 1)}-"
+        f"{_per_game(window.get('points_against'), games, 1)}"
+        if games
+        else "-",
+        f"-/{_per_game(deaths, games, 1)}" if games and deaths is not None else "-",
+        f"{_per_game(home, games, 2)} ({100 * home / deaths:.0f}%)"
+        if games and home is not None and deaths
+        else _per_game(home, games, 2),
+        _per_game(counts.get("enemy_death_credit"), games, 1),
+        _per_game(counts.get("enemy_red_zone_death_credit"), games, 2),
+        _per_game(counts.get("enemy_damage_hp"), games, 0),
+        _per_game(counts.get("priest_effective_healing_hp"), games, 0),
+        _per_game(counts.get("priest_heal_range_pairs"), games, 0),
+        f"{100 * zone / agents:.1f}%" if zone is not None and agents else "-",
+        _per_game(window.get("shaping"), games, 2, sign=True),
+    ]
+
+
+def _check_cells(check: Record | None, opponents: Sequence[str]) -> list[str]:
+    """Turn one routine check into Table 1 cells from Check to Home D.
+
+    Parameters
+    ----------
+    check : dict or None
+        One entry of a run's progress ``checks`` (analysis._progress_checks),
+        or None before the first finished check.
+    opponents : sequence of str
+        Validation opponent names in column order.
+
+    Returns
+    -------
+    list of str
+        Check, one "W-D-L (score)" cell per opponent, Points, Margin, K/D,
+        RZ K and Home D; "-" for values the check cannot give.
+    """
+    if check is None:
+        return ["-"] * (len(opponents) + 6)
+    by_name = {entry["name"]: entry for entry in check["opponents"]}
+    cells = [f"{int(check['env_steps'] or 0) / 1e6:.1f}M"]
+    for name in opponents:
+        entry = by_name.get(name)
+        cells.append(
+            "-"
+            if not entry or not entry["games"]
+            else f"{entry['wins']}-{entry['draws']}-{entry['losses']} "
+            f"({entry['score']:.2f})"
+        )
+    points_for, points_against = check["points_for"], check["points_against"]
+    kills_for, kills_against = check["kills_for"], check["kills_against"]
+    home = check["home_deaths"]
+    cells += [
+        "-"
+        if points_for is None or points_against is None
+        else f"{points_for:.1f}-{points_against:.1f}",
+        "-" if check["margin"] is None else f"{check['margin']:+.1f}",
+        "-"
+        if kills_for is None or kills_against is None
+        else f"{kills_for:.1f}/{kills_against:.1f}",
+        "-" if check["red_zone_kills"] is None else f"{check['red_zone_kills']:.2f}",
+        "-"
+        if home is None or kills_against is None
+        else f"{home:.1f} ({100 * home / kills_against:.0f}%)"
+        if kills_against
+        else f"{home:.1f}",
+    ]
+    return cells
+
+
+def _best_text(checks: Sequence[Record]) -> str:
+    """Format the routine check with the highest point margin, earliest on ties."""
+    scored = [check for check in checks if check["margin"] is not None]
+    if not scored:
+        return "-"
+    best = max(scored, key=lambda check: (check["margin"], -int(check["env_steps"])))
+    return f"{int(best['env_steps']) / 1e6:.1f}M: {best['margin']:+.1f}"
+
+
+def _group_cells(groups: Sequence[Record], columns: Sequence[str]) -> list[str]:
+    """Format Table 3 cells "W-D-L (share%)" for one run in column order.
+
+    The share is the group's part of our training ticks in finished games,
+    or of finished games when any length is unknown. "-" marks a group with
+    no finished game.
+    """
+    by_group = {group["group"]: group for group in groups}
+    lengths = [group["length_sum"] for group in groups]
+    use_ticks = all(length is not None for length in lengths)
+    total = sum(
+        (group["length_sum"] if use_ticks else group["games"]) for group in groups
+    )
+    cells: list[str] = []
+    for column in columns:
+        group = by_group.get(column)
+        if group is None or not group["games"]:
+            cells.append("-")
+            continue
+        part = group["length_sum"] if use_ticks else group["games"]
+        share = f" ({100 * part / total:.0f}%)" if total else ""
+        cells.append(f"{group['wins']}-{group['draws']}-{group['losses']}{share}")
+    return cells
+
+
+def _progress_text(
+    root: Path,
+    declared: Record,
+    state: Record,
+    runs: Sequence[Mapping[str, Any]],
+    live: Sequence[Record],
+    *,
+    summary: bool,
+    shaping: bool,
+) -> str:
+    """Build the study progress view: header, three tables, legend and logs.
+
+    Parameters
+    ----------
+    root : Path
+        The study folder.
+    declared, state : dict
+        The saved declaration.json and study.json (empty before a start).
+    runs : sequence of mappings
+        analysis.list_runs(root, progress=True) rows.
+    live : sequence of dict
+        _live_processes(root) records.
+    summary : bool
+        Add the point margin at every routine check, one row per case.
+    shaping : bool
+        Show every training window in Table 2, not only the first and latest.
+
+    Returns
+    -------
+    str
+        The complete text view, lines joined by newlines.
+    """
+    from datetime import datetime
+
+    jobs = _jobs(declared)
+    cases = cast(Record, state.get("cases") or {})
+    by_run = {str(row["run_dir"]): row for row in runs}
+    live_cases = {
+        str(Path(entry["record"]).parent.name)
+        for entry in live
+        if entry["owner"].startswith("case ")
+    }
+    counts: dict[str, int] = {}
+    for job in jobs:
+        status = cases.get(job["id"], {}).get("status", "pending")
+        counts[status] = counts.get(status, 0) + 1
+    clock = datetime.now().astimezone().strftime("%-I:%M:%S %p %Z")
+    lines = [
+        f"Study {declared.get('name') or root.name} | {clock} | "
+        f"Status: {state.get('status', 'not started')}",
+        "Cases: " + ", ".join(f"{n} {name}" for name, n in sorted(counts.items())),
+    ]
+    for device, reason in cast(Record, state.get("paused_devices") or {}).items():
+        why = reason.get("reason") or "failed before its first checkpoint"
+        after = f" after case {reason['case_id']}" if reason.get("case_id") else ""
+        lines.append(f"Paused GPU: {device} ({why}{after})")
+    opponents: list[str] = []
+    named: list[str] = []
+    table_one: list[list[str]] = []
+    curves: list[tuple[str, list[Record]]] = []
+    windows_rows: list[list[str]] = []
+    group_rows: list[tuple[str, list[Record]]] = []
+    for job in jobs:
+        run = by_run.get(str(root / "cases" / job["id"] / "run"), {})
+        progress = cast(Record, run.get("progress") or {})
+        for check in progress.get("checks", []):
+            for entry in check["opponents"]:
+                if entry["name"] not in opponents:
+                    opponents.append(entry["name"])
+        for group in progress.get("opponent_groups", []):
+            if group["group"] not in (
+                "current",
+                "past",
+                "pinned",
+                "bots",
+                *named,
+            ):
+                named.append(group["group"])
+    for job in jobs:
+        row = cast(Record, cases.get(job["id"]) or {})
+        run = by_run.get(str(root / "cases" / job["id"] / "run"), {})
+        progress = cast(Record, run.get("progress") or {})
+        checks = cast(list[Record], progress.get("checks", []))
+        status = row.get("status", "pending")
+        running = status == "running"
+        steps, total = run.get("env_steps"), progress.get("total_env_steps")
+        speed = progress.get("steps_per_second")
+        table_one.append(
+            [
+                job["id"],
+                _seed_text(job),
+                f"running: {progress['phase']}"
+                if running and progress.get("phase")
+                else status,
+                f"{100 * steps / total:.1f}%"
+                if isinstance(steps, int) and isinstance(total, int) and total
+                else "-",
+                f"{speed:,.0f}" if isinstance(speed, (int, float)) else "-",
+                _case_gpu(root / "cases" / job["id"], row),
+                _duration_text(progress.get("elapsed_seconds")),
+                _duration_text(progress.get("seconds_left")) if running else "-",
+                *_check_cells(checks[-1] if checks else None, opponents),
+                _best_text(checks),
+            ]
+        )
+        curves.append((job["id"], checks))
+        windows = cast(list[Record], progress.get("windows", []))
+        shown = list(enumerate(windows))
+        if not shaping and len(windows) > 2:
+            shown = [shown[0], shown[-1]]
+        for index, window in shown:
+            at = f"to {int(window['env_steps'] or 0) / 1e6:.1f}M"
+            label = (
+                f"{index + 1}, {at}"
+                if shaping
+                else f"first, {at}"
+                if index == 0
+                else f"latest, {at}"
+            )
+            windows_rows.append([job["id"], label, *_window_cells(window)])
+        if not windows:
+            windows_rows.append([job["id"], "-", *(["-"] * 12)])
+        group_rows.append((job["id"], progress.get("opponent_groups", [])))
+    lines += [
+        "",
+        "Table 1. Validation, latest finished routine check (all validation maps):",
+        _text_table(
+            [
+                "Case",
+                "Seed",
+                "State",
+                "Done",
+                "Steps/s",
+                "GPU",
+                "Spent",
+                "Left",
+                "Check",
+                *(f"vs {name}" for name in opponents),
+                "Points",
+                "Margin",
+                "K/D",
+                "RZ K",
+                "Home D",
+                "Best",
+            ],
+            table_one,
+        ),
+    ]
+    if summary:
+        steps_seen = sorted(
+            {int(check["env_steps"]) for _, checks in curves for check in checks}
+        )
+        margin_rows: list[list[str]] = []
+        for case, checks in curves:
+            by_step = {int(check["env_steps"]): check["margin"] for check in checks}
+            margin_rows.append(
+                [
+                    case,
+                    *(
+                        "-" if by_step.get(step) is None else f"{by_step[step]:+.1f}"
+                        for step in steps_seen
+                    ),
+                ]
+            )
+        lines += [
+            "",
+            "Point margin at every routine check (learning curve):",
+            _text_table(
+                ["Case", *(f"{step / 1e6:.1f}M" for step in steps_seen)], margin_rows
+            ),
+        ]
+    lines += [
+        "",
+        "Table 2. Training games (all opponents), Team A, per game unless stated"
+        + (", every window:" if shaping else ", first and latest window:"),
+        _text_table(
+            [
+                "Case",
+                "Window",
+                "Games",
+                "Len",
+                "Pts",
+                "K/D",
+                "Home D",
+                "Kill Cr",
+                "RZ Cr",
+                "Dmg",
+                "Heal",
+                "Range",
+                "Own zone",
+                "Shaping",
+            ],
+            windows_rows,
+        ),
+    ]
+    columns = ["current", "past"]
+    if any(group["group"] == "pinned" for _, groups in group_rows for group in groups):
+        columns.append("pinned")
+    columns += [*named, "bots"]
+    titles = {"current": "Current", "past": "Past copies", "pinned": "Pinned"}
+    titles |= {name: f"M{index + 1}" for index, name in enumerate(named)}
+    titles["bots"] = "Bots"
+    lines += [
+        "",
+        "Table 3. Training results by opponent group, whole run so far: "
+        "W-D-L (share of training ticks):",
+        _text_table(
+            ["Case", *(titles[column] for column in columns)],
+            [[case, *_group_cells(groups, columns)] for case, groups in group_rows],
+        ),
+    ]
+    lines += [f"  M{index + 1} = {name}" for index, name in enumerate(named)]
+    for case, groups in group_rows:
+        start = max((int(group["start_env_steps"]) for group in groups), default=0)
+        if start:
+            lines.append(f"  {case}: counts start at step {start:,} (continued run)")
+    lines += ["", "What the columns mean:", *(f"  {line}" for line in _PROGRESS_LEGEND)]
+    if live:
+        lines += ["", "Live processes (nothing here is stopped automatically):"]
+        for entry in live:
+            pids = ", ".join(
+                f"{name} {entry[key]}"
+                for name, key in (
+                    ("supervisor", "supervisor_pid"),
+                    ("trainer", "trainer_pid"),
+                )
+                if entry[key] is not None
+            )
+            workers = " ".join(map(str, entry["worker_pids"]))
+            lines.append(
+                f"  {entry['owner']}: {pids or 'no supervisor or trainer'}"
+                + (f"; workers {workers}" if workers else "")
+                + ("; LEFTOVER workers with no supervisor" if entry["leftover"] else "")
+            )
+            lines.append(f"    Stop: {entry['stop_command']}")
+    for job in jobs:
+        if job["id"] not in live_cases:
+            continue
+        tail = _tail_lines(root / "cases" / job["id"] / "process.log", 5)
+        lines += ["", f"== {job['id']} (live log) ==", *tail]
+    return "\n".join(lines)
+
+
+def study_status(
+    output_dir: str | Path,
+    *,
+    progress: bool = False,
+    summary: bool = False,
+    shaping: bool = False,
+) -> Record:
     """Read study state and exact live owners without JAX or file changes.
 
-    output_dir is an existing study folder. Returns saved declaration identity,
-    clock, study state, report and live process-record paths. Missing results
-    remain empty; missing or malformed declarations raise ValueError/OSError.
-    It does not recover, restart or otherwise mutate an interrupted run.
+    Parameters
+    ----------
+    output_dir : str or Path
+        An existing study folder.
+    progress : bool, default=False
+        Also build the progress view (the ``progress``, ``runs`` and
+        ``live_processes`` keys). summary or shaping turn it on too.
+    summary : bool, default=False
+        Add the point margin at every routine check, one row per case, as a
+        learning-curve table in the view.
+    shaping : bool, default=False
+        Show every training window in the view's Table 2, from start to
+        finish, instead of only the first and latest.
+
+    Returns
+    -------
+    dict
+        Always: ``study_dir``, ``declaration_sha256``, ``clock``, ``study``
+        (study.json), ``report`` (report.json) and ``owned_live_records``
+        (live process-record paths). Missing results stay empty. With the
+        view also: ``runs`` (analysis.list_runs(output_dir, progress=True)
+        rows), ``live_processes`` (each live process with its PIDs and the
+        exact stop command; leaderless workers are marked ``leftover``) and
+        ``progress`` (the text view: one row per case with speed, time left,
+        validation results, point margin and best check; the first and latest
+        training windows with every combat/support reward part per game;
+        training results by opponent group; a legend; and the last five lines
+        of each live case's process.log).
+
+    Raises
+    ------
+    ValueError, OSError
+        The declaration is missing or malformed, or a saved file is malformed.
+
+    Notes
+    -----
+    Reads files and /proc only. It never imports JAX, never queries a GPU
+    (no nvidia-smi), never signals a process and never recovers, restarts or
+    otherwise changes a run. Call it again to refresh; unchanged update logs
+    are not parsed again in the same process.
     """
     root = Path(output_dir).expanduser().resolve()
-    return {
+    declared = _read(root / _DECLARATION)
+    result: Record = {
         "study_dir": str(root),
-        "declaration_sha256": _digest(_read(root / _DECLARATION)),
+        "declaration_sha256": _digest(declared),
         "clock": _optional(root / "launch_time.json"),
         "study": _optional(root / "study.json"),
         "report": _optional(root / "report.json"),
@@ -1795,6 +2511,25 @@ def study_status(output_dir: str | Path) -> Record:
             str(path) for path in _launch.live_process_records(_process_paths(root))
         ],
     }
+    if progress or summary or shaping:
+        from marl_battlegrounds.training.analysis import list_runs
+
+        runs = list(list_runs(root, progress=True))
+        live = _live_processes(root)
+        result.update(
+            runs=runs,
+            live_processes=live,
+            progress=_progress_text(
+                root,
+                declared,
+                result["study"],
+                runs,
+                live,
+                summary=summary,
+                shaping=shaping,
+            ),
+        )
+    return result
 
 
 def stop_study(output_dir: str | Path) -> Record:

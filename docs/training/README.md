@@ -999,6 +999,12 @@ five slots; smaller rosters, frozen partners and custom feedback are BG changes.
 only, for example 10.0 to make small per-step rewards stand out against early
 Q-value noise. Replay, logged rewards and results stay in game units; mean Q
 and target values in the training log are in scaled units.
+Each QMIX row in `training_updates.jsonl` also logs `grad_norm_mean`,
+`grad_norm_max` and `grad_norm_nonfinite`: the mean and largest global gradient
+norm over the block's optimizer steps, and how many steps had a norm that
+overflowed to infinity or NaN. QMIX does not clip, so these are raw norms. A
+warm-up block logs `null`, `null` and `0`; an overflowed norm is counted, never
+written as infinity, and the run continues.
 Because of the average, give QMIX the team form of a per-agent reward, such
 as `combat_support_team_reward` (see the combat and support reward above).
 
@@ -1165,7 +1171,9 @@ is no mixer, critic, physical state, target network or replay.
 with the run and every exported actor, which is always rebuilt with it.
 `pqn.reward_scale` (default 1.0) multiplies the team reward inside the lambda
 returns only, like the donor's `REW_SCALE`; logged rewards and results stay in
-game units. The team reward is the average over Team A slots, so give PQN-VDN
+game units. PQN-VDN rows log the same `grad_norm_mean`, `grad_norm_max` and
+`grad_norm_nonfinite` as QMIX, measured before `max_grad_norm` clipping, over
+the minibatch steps that ran (`null`, `null` and `0` for an initial chunk). The team reward is the average over Team A slots, so give PQN-VDN
 the team form of a per-agent reward, such as `combat_support_team_reward`. Loaded and exported PQN-VDN Systems play greedily: epsilon 0 and, among equal best values,
 the first legal action in the network's own order (mirrored for left-frame
 games). Details and the donor are in the
@@ -1276,7 +1284,7 @@ checkpoint.
 
 **Reports and tournaments.** A report with a PQN-VDN run adds `pqn_curves.png`
 and `pqn_curves.svg` (loss, used TD pairs per transition, the share of used
-pairs that start on kept rows, and exploration), and the summary names the
+pairs that start on kept rows, exploration, and gradient norms), and the summary names the
 optimizer steps, learning blocks, used pairs and the initial transitions never
 learned. A loaded PQN-VDN actor is an ordinary `System`, so evaluation and
 tournaments use it unchanged, as shown for QMIX above. Repeated greedy games
@@ -1768,8 +1776,12 @@ execution settings. Actor-only loading supports independent deployment.
 Automatic reports include `run_summary.md`, `learning_curve.csv`,
 `learning_curves.png`, `learning_curves.svg` and validation cell results; a
 report with a QMIX run adds `qmix_curves.png` and `qmix_curves.svg` (loss,
-replay rows, used TD pairs per transition and exploration rate), and one with a
-PQN-VDN run adds `pqn_curves.png` and `pqn_curves.svg`. Analysis
+replay rows, used TD pairs per transition, exploration rate and gradient norms),
+and one with a PQN-VDN run adds `pqn_curves.png` and `pqn_curves.svg`. The
+gradient-norm panel draws each update's `grad_norm_mean` (solid) and
+`grad_norm_max` (dashed) on a log scale and marks with a red dotted line every
+update where `grad_norm_nonfinite` is above zero. A missing norm is a gap, not
+zero. Runs saved before these columns existed show a short note. Analysis
 reads saved evidence without changing original scores or checkpoints. Interrupted
 final validation, selection, export and reporting can resume after training has
 used its exact budget, without collecting another transition.
@@ -1834,6 +1846,17 @@ config = training.TrainConfig(
 result = training.train(config, output_dir="artifacts/alpha-validation")
 print(result.selected_actor)
 ```
+
+`validation_maps` chooses which held-out validation maps these games use. The
+default, `None`, plays all five maps, 42 through 46. A list such as
+`validation_maps=(42, 43, 44, 46)` must hold distinct maps from those five.
+Routine checks, confirmation games, optional Random diagnostics and checkpoint
+selection then all use exactly those maps, and every saved result names them, so
+selection never mixes results from different map sets. The run saves the choice
+in its config. A resume or `extend_training` child keeps it; a resume config
+that names other maps is refused. Runs saved before the setting existed read as
+`None` and resume unchanged. Custom maps need a panel made with `opponents=`
+(or `validation_opponents`), and the optional slot diagnostic needs the default.
 
 A reference may also be an absolute actor export or complete learner checkpoint
 path, or an installed
@@ -2192,6 +2215,13 @@ Use the actual panel digest, opponents, depth and all planned runs. Then call
 `training.analyze(["RUN_SEED_1", "RUN_SEED_2"], output_dir="REPORT", grouping="groups.json")`,
 or add `--grouping groups.json` to `analyze-training`. The report adds
 `training_variation.json`, `training_variation.csv` and a separate summary.
+It also adds recipe learning curves: `recipe_curves.png`, `recipe_curves.svg`
+and `recipe_curves.csv`. They show each group's point margin at every saved
+routine validation step, step 0 included: one thin line per run and one thick
+mean line per group, with one panel per method. The margin uses only the
+grouping's maps and opponents; see [Saved Study Data](study_data.md). When no
+saved result has points in every declared cell, the curves are skipped and the
+summary says so.
 It resamples whole run vectors, keeping a run's map/opponent scores together.
 The interval has a declared 95% confidence level. It is unavailable when runs or
 cells are missing, there are too few independent runs, or independence is unknown.

@@ -199,6 +199,52 @@ For detached operation or explicit cases with different per-case deadlines, use
 `training.start_study(...)` and the existing study declaration. A retry keeps the
 same case and seed. Repeating a sweep command into its old folder is not resume.
 
+### Watch A Running Study
+
+`study status --progress` prints a plain-text view of a running or finished
+study. It only reads saved files and `/proc`, starts no numerical backend and
+never signals a process.
+
+```bash
+python -m marl_battlegrounds study status /scratch/demo/study --progress
+python -m marl_battlegrounds study status /scratch/demo/study --progress --follow
+python -m marl_battlegrounds study status /scratch/demo/study --progress --summary --shaping
+```
+
+- **Table 1, Validation:** one row per run with its progress, speed, GPU, time
+  spent and left, and the latest routine check (points, point margin, kills
+  and deaths, Red Zone kills, home deaths and the best check so far).
+  `--summary` adds the point margin at every routine check, the run's
+  learning curve.
+- **Table 2, Training Games:** Team A's per-game results with each reward
+  part, in the first and the latest windows of 25 update rows, so the effect
+  of the reward from the start to the end of training stays visible.
+  `--shaping` shows every window. Kills in training games are not saved, so
+  K/D shows only deaths there.
+- **Table 3, Opponent Groups:** training results grouped as Current, Past
+  copies, fixed models and bots, with each group's share of training ticks in
+  finished games.
+
+`--follow` refreshes the view until Ctrl+C, which stops only the viewer. Missing
+values print as "-". The Exit Code column shows each case's latest attempt.
+
+### Launch A Long Study From A Frozen Copy
+
+A study's workers refuse a source tree that changed after launch. To keep
+editing the main checkout during a long study, launch it from a git worktree of
+the exact commit with its own environment:
+
+```bash
+git worktree add /scratch/frozen-study <commit>
+cd /scratch/frozen-study
+uv sync --locked --extra cuda13 --extra training --extra hydra --extra viz
+XLA_PYTHON_CLIENT_PREALLOCATE=false .venv/bin/python -m marl_battlegrounds \
+  study start --config /path/study.yaml --output-dir /path/study
+```
+
+Resume and status commands run from the same worktree. Remove the worktree only
+after the study and its analysis are finished.
+
 ## Choose Devices And Worker Limits
 
 Leave `resources=inherit` to keep the calling process's device and allocator
@@ -232,7 +278,11 @@ Measure peak memory and useful throughput before choosing search concurrency.
 The `platform` allocator cannot be combined with a declared memory fraction.
 
 Resource controls reach workers before JAX and user factories load. CPU means
-CPU; a missing declared GPU raises an error instead of falling back silently.
+CPU, and a declared GPU never falls back to CPU silently. A single run refuses
+a missing declared GPU. A study pauses a GPU that is missing when it starts or
+resumes (reason "missing at start"), keeps working on the other declared
+devices, and refuses only when no declared device is left. A failed GPU query
+still refuses the study.
 A GPU worker also gets `XLA_PYTHON_CLIENT_PREALLOCATE=false` unless you set that
 flag yourself, so it takes memory as it needs it instead of JAX's default 75% up
 front, and its recorded memory is its real use. A declared fraction still caps

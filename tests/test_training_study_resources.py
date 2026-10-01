@@ -11,6 +11,10 @@ declared GPUs (probes only pretend to be GPU workers; no GPU is touched), a GPU
 whose case fails before any checkpoint is paused and recorded while the other
 GPU finishes every remaining case; when every GPU is paused the study stops
 with the rest pending instead of failing them; each resume clears the pauses.
+A declared GPU that is missing when a study starts or resumes is paused with
+reason "missing at start" while the other GPU (or a CPU slot) finishes every
+case; only a study whose every declared device is a missing GPU is refused,
+before any process starts. The device query reports missing UUIDs in order.
 """
 
 from __future__ import annotations
@@ -257,8 +261,9 @@ def test_failed_worker_keeps_all_declared_cases(
     assert len(repaired["cases"][0]["attempts"]) == 2
 
 
-def _no_device_query(resources: object) -> None:
+def _no_device_query(resources: object) -> list[str]:
     del resources
+    return []
 
 
 def test_gpu_workers_default_to_no_memory_preallocation(
@@ -279,7 +284,7 @@ def test_failed_gpu_is_paused_while_the_other_gpu_finishes_and_resume_clears_it(
 ) -> None:
     declared = _resource_study(tmp_path, monkeypatch, "continue")
     declared["resources"] = {"devices": [{"device": _GPU}, {"device": _OTHER_GPU}]}
-    monkeypatch.setattr(study._launch, "check_resource_devices", _no_device_query)
+    monkeypatch.setattr(study._launch, "missing_resource_devices", _no_device_query)
     monkeypatch.setenv("RESOURCE_PROBE_GPU", "1")
     root = tmp_path / "study"
     # Both GPUs fail before a checkpoint: admission stops, nothing else fails.
@@ -332,6 +337,12 @@ def test_declared_gpu_availability_is_checked_without_backend(
     with pytest.raises(ValueError, match="unavailable"):
         _launch.check_resource_devices(resources)
     _launch.check_resource_devices({"devices": [{"device": "cpu", "max_workers": 1}]})
+    both = _launch.resource_settings(
+        {"devices": [{"device": _OTHER_GPU}, {"device": "cpu"}, {"device": _GPU}]},
+        base_dir=tmp_path,
+    )
+    assert _launch.missing_resource_devices(both) == [_OTHER_GPU, _GPU]
+    assert _launch.missing_resource_devices(None) == []
 
 
 def test_concurrent_stop_and_deadline_keep_pending_cases(
@@ -570,10 +581,10 @@ def test_completed_worker_is_reconciled_after_controller_loss(
     expired = time.time() + 1000
     monkeypatch.setattr(study.time, "time", lambda: expired)
 
-    def no_device_check(resources: object) -> None:
+    def no_device_check(resources: object) -> list[str]:
         raise AssertionError("A completed study needs no device")
 
-    monkeypatch.setattr(_launch, "check_resource_devices", no_device_check)
+    monkeypatch.setattr(_launch, "missing_resource_devices", no_device_check)
     if detached:
         process = study.start_study(resume_from=root)
         try:
@@ -603,10 +614,10 @@ def test_missing_device_fails_before_detached_spawn_and_records_controller_error
     declared = _resource_study(tmp_path, monkeypatch, "stop")
     declared["resources"] = {"devices": [{"device": _GPU}]}
 
-    def unavailable(resources: object) -> None:
-        raise ValueError("Declared GPU devices are unavailable")
+    def unavailable(resources: object) -> list[str]:
+        return [_GPU]
 
-    monkeypatch.setattr(_launch, "check_resource_devices", unavailable)
+    monkeypatch.setattr(_launch, "missing_resource_devices", unavailable)
     detached = tmp_path / "detached"
     with pytest.raises(ValueError, match="unavailable"):
         study.start_study(declared, output_dir=detached)
@@ -619,3 +630,71 @@ def test_missing_device_fails_before_detached_spawn_and_records_controller_error
     assert "unavailable" in status["study"]["error"]
     assert not status["owned_live_records"]
     assert all(row["status"] == "pending" for row in status["report"]["cases"])
+
+
+def test_missing_gpu_at_resume_is_paused_while_the_other_gpu_finishes(
+    host_only: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declared = _resource_study(tmp_path, monkeypatch, "continue")
+    declared["resources"] = {"devices": [{"device": _GPU}, {"device": _OTHER_GPU}]}
+    monkeypatch.setattr(study._launch, "missing_resource_devices", _no_device_query)
+    monkeypatch.setenv("RESOURCE_PROBE_GPU", "1")
+    monkeypatch.setenv("RESOURCE_PROBE_FAIL", "all")
+    root = tmp_path / "study"
+    first = study.run_study(declared, output_dir=root)
+    assert first["status"] == "incomplete"
+    assert set(first["paused_devices"]) == {_GPU, _OTHER_GPU}
+    monkeypatch.delenv("RESOURCE_PROBE_FAIL")
+
+    def first_gpu_missing(resources: object) -> list[str]:
+        return [_GPU]
+
+    monkeypatch.setattr(study._launch, "missing_resource_devices", first_gpu_missing)
+    resumed = study.run_study(resume_from=root)
+    assert resumed["status"] == "complete"
+    paused = resumed["paused_devices"]
+    assert list(paused) == [_GPU]
+    assert paused[_GPU]["reason"] == "missing at start"
+    assert paused[_GPU]["case_id"] is None
+    assert all(row["status"] == "complete" for row in resumed["cases"])
+    assert all(
+        row["attempts"][-1]["resources"]["device"]["device"] == _OTHER_GPU
+        for row in resumed["cases"]
+    )
+    assert not _launch.live_process_records(study._process_paths(root))
+
+
+def test_all_missing_gpus_refuse_but_a_cpu_slot_keeps_working(
+    host_only: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declared = _resource_study(tmp_path, monkeypatch, "continue")
+    declared["resources"] = {"devices": [{"device": _GPU}, {"device": _OTHER_GPU}]}
+
+    def every_gpu_missing(resources: object) -> list[str]:
+        return [_GPU, _OTHER_GPU]
+
+    monkeypatch.setattr(study._launch, "missing_resource_devices", every_gpu_missing)
+    detached = tmp_path / "detached"
+    with pytest.raises(ValueError, match="no declared device is left"):
+        study.start_study(declared, output_dir=detached)
+    assert not (detached / "process.json").exists()
+    foreground = tmp_path / "foreground"
+    with pytest.raises(ValueError, match="no declared device is left"):
+        study.run_study(declared, output_dir=foreground)
+    status = study.study_status(foreground)
+    assert all(row["status"] == "pending" for row in status["report"]["cases"])
+    declared["resources"] = {
+        "devices": [{"device": "cpu", "max_workers": 2}, {"device": _GPU}]
+    }
+
+    def first_gpu_missing(resources: object) -> list[str]:
+        return [_GPU]
+
+    monkeypatch.setattr(study._launch, "missing_resource_devices", first_gpu_missing)
+    mixed = study.run_study(declared, output_dir=tmp_path / "mixed")
+    assert mixed["status"] == "complete"
+    assert list(mixed["paused_devices"]) == [_GPU]
+    assert all(
+        row["attempts"][-1]["resources"]["device"]["device"] == "cpu"
+        for row in mixed["cases"]
+    )

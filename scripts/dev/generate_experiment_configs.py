@@ -316,6 +316,9 @@ def presets() -> dict[str, dict[str, Any]]:
     result["prepare.yaml"] = {
         "protocol": "analysis_software_check",
         "opponent_bundle": None,
+        "declaration": None,
+        "expected_opponents": None,
+        "recipe_selection": None,
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }

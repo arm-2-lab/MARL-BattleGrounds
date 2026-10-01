@@ -180,10 +180,11 @@ class QMIXTrainState(NamedTuple):
     online_mixer, target_mixer : PyTree
         Flax variables of the online and target mixers.
     opt_state : PyTree
-        With shared parameters, one clip-then-Adam state over
+        With shared parameters, one Adam state over
         ``(online_q, online_mixer)``. Class and slot sharing use a tuple of five
         independent Q optimizer states and one mixer optimizer state. Each has
-        its own clipping and complete Adam history, including counts.
+        its own complete Adam history, including counts. QMIX does not clip
+        gradients.
     optimizer_steps : Array
         Int32 0-d count of successful optimizer steps before this state.
 
@@ -283,11 +284,20 @@ class QMIXMetrics(NamedTuple):
         Int32 count of configured actors on the left rows of those pairs.
     finite : Array
         Bool. True when the loss, gradients and candidate state are finite.
+    grad_norm : Array
+        Float32 global L2 norm of this step's gradients over the Q-network and
+        mixer parameters (``optax.tree.norm``, the same value as the older
+        ``optax.global_norm``). QMIX does not clip, so this is the raw norm the
+        optimizer received. It is 0 when no pair was eligible. It can be
+        +inf when the squared gradients overflow float32 even though every
+        gradient is finite; ``finite`` does not look at it, so such a step
+        still counts as finite.
 
     Notes
     -----
     Counts describe what this step used. Repeated draws of the same stored rows
-    count again; they are not new experience.
+    count again; they are not new experience. grad_norm is the last field so
+    existing positional constructors only append one value.
     """
 
     loss: Array
@@ -297,6 +307,7 @@ class QMIXMetrics(NamedTuple):
     used_td_pairs: Array
     used_agent_utilities: Array
     finite: Array
+    grad_norm: Array
 
 
 class QMIXScannedGRU(nn.Module):
@@ -568,7 +579,8 @@ def initialize_qmix(
         online and target start equal. The learner derives it with
         ``fold_in(root, QMIX_MODEL_INITIALIZATION_TAG)``.
     config : QMIXConfig, default=DEFAULT_QMIX_CONFIG
-        Settings for input_scale, parameter_sharing, q_lr, clipping and Adam.
+        Settings for input_scale, parameter_sharing, q_lr and Adam (QMIX does
+        not clip gradients).
 
     Returns
     -------
@@ -1326,12 +1338,13 @@ def update_qmix(
     ``reward + (1 - ended) * gamma * next_value`` and receives no gradient. The
     loss averages the squared team error over eligible pairs only. With
     learner_active, only owned slots supply current and successor utilities.
-    Shared Adam steps once over online Q and mixer. Class and slot modes clip
-    and update each actor group and the mixer separately, using the same joint
-    loss. A group with no eligible left-row utility keeps its parameters,
-    complete optimizer state and target exactly. A hard copy uses the run-wide
-    step count before
-    the step (copies at 0, 200, 400, ...); the soft rule blends with tau after
+    Shared Adam steps once over online Q and mixer. Class and slot modes
+    update each actor group and the mixer separately, using the same joint
+    loss. No mode clips gradients; metrics.grad_norm is the raw global norm of
+    the joint gradients, computed inside this compiled step. A group with no
+    eligible left-row utility keeps its parameters, complete optimizer state
+    and target exactly. A hard copy uses the run-wide step count before the
+    step (copies at 0, 200, 400, ...); the soft rule blends with tau after
     every step. Pure JAX; wrap in jit with a fixed config.
     """
     m, _ = _check_batch(batch)
@@ -1486,5 +1499,6 @@ def update_qmix(
         count,
         jnp.sum(active[:, :-1] & pair[..., None], dtype=jnp.int32),
         _finite((loss, mean_q, mean_target, grads, candidate)),
+        optax.tree.norm(grads),
     )
     return candidate, metrics

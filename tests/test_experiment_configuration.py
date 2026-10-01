@@ -1,7 +1,8 @@
 """Check packaged settings and previews against the existing public config API.
 
-Cover all original fields (plus actor retention, the Q methods' reward_scale
-and PQN normalization), six method groups, complete pool replacement, ordinary
+Cover all original fields (plus actor retention, the Q methods' reward_scale,
+PQN normalization and validation_maps, whose default is left out of saved
+configs), six method groups, complete pool replacement, ordinary
 Hydra overrides and rejection paths. Subprocess probes forbid numerical imports,
 factory calls and workers. These are software checks, not learning experiments.
 """
@@ -69,15 +70,23 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
     elif field in ("qmix", "pqn"):
         selected = composed(f"method={'qmix' if field == 'qmix' else 'pqn_vdn'}")
         assert field in selected
+    elif field == "validation_maps":
+        # The default (all five maps) is left out of saved configs.
+        assert cfg[field] is None and resolved.validation_maps is None
+        assert field not in effective
+        chosen = resolve_training_config(
+            composed("validation_maps=[46,42,43,44]"), base_dir=tmp_path
+        )
+        assert config_to_dict(chosen)["validation_maps"] == [42, 43, 44, 46]
     else:
         assert field in cfg
         assert field in effective
 
 
 def test_original_census_and_generated_presets_do_not_drift() -> None:
-    # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale and
-    # PQN normalization.
-    assert len(FIELDS) == 92
+    # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale,
+    # PQN normalization and the validation map choice.
+    assert len(FIELDS) == 93
     result = subprocess.run(
         [
             sys.executable,

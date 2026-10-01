@@ -474,14 +474,52 @@ def _validation_setup(
     bindings: Mapping[str, Any] | None,
     saved: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, str]]:
-    """Freeze the deployed validation team and its fixed final-stage rosters.
+    """Freeze the deployed validation team, its maps and final-stage rosters.
 
+    Parameters
+    ----------
+    config : TrainConfig
+        The run's settings. config.validation_maps chooses the validation maps;
+        None keeps all five held-out maps (42 through 46).
+    collection : TrainingCollection
+        The prepared training collection. Its partners, learner slots and last
+        curriculum stage decide the deployed team and rosters.
+    bindings : mapping or None
+        Live validation partners from train(validation_partners=...). None
+        adds none.
+    saved : dict or None, default=None
+        The resumed checkpoint's description. When given, its saved partner
+        references are rebound and its saved deployment must equal the new one.
+
+    Returns
+    -------
+    tuple[dict, dict or None, dict]
+        ``(options, declaration, references)``. options holds the keyword
+        arguments every validation call receives (partners, learner_slots,
+        partner_labels, maps and rosters when they differ from the default).
+        declaration is the JSON deployment saved with the run, or None when
+        every condition is the default; a chosen validation_maps adds
+        ``"maps"`` as a sorted list. references maps each extra partner name to
+        its reload reference.
+
+    Raises
+    ------
+    ValueError
+        Partner names overlap, labels name an unknown partner, partners lack
+        learner_slots, the saved deployment differs (a resume that would play
+        other partners, rosters or maps), or slot_diagnostic is used with a
+        custom deployment.
+
+    Notes
+    -----
     Every declared training partner contributes one familiar row. Additional
     partners keep their declared label, default unknown. Names must be distinct;
     no member replaces another because their display names happen to match.
     References reload through the ordinary loader; live-only extra members need
     rebinding on resume. The saved declaration is checked before recovery writes.
-    Validation keeps its existing development maps and native scoring rules.
+    Default maps leave the declaration unchanged, so runs without
+    validation_maps keep their historical task identities. Native scoring
+    rules are unchanged. Host-only; extra partner references may be loaded.
     """
     from marl_battlegrounds._method_loading import load_method
     from marl_battlegrounds.tasks import canonical_tournament_rosters
@@ -548,6 +586,11 @@ def _validation_setup(
         if roster != canonical:
             options[key] = roster
             deployment[key] = list(roster)
+    if config.validation_maps is not None:
+        # The shared deployment owner carries custom maps into every task,
+        # saved record and selection condition.
+        options["maps"] = config.validation_maps
+        deployment["maps"] = list(config.validation_maps)
     declaration = deployment or None
     if (
         saved is not None
@@ -558,7 +601,10 @@ def _validation_setup(
             "rebind its original partners"
         )
     if config.slot_diagnostic and declaration is not None:
-        raise ValueError("slot_diagnostic requires its canonical full-learner roster")
+        raise ValueError(
+            "slot_diagnostic requires its canonical full-learner roster "
+            "and all five validation maps"
+        )
     return options, declaration, references
 
 
@@ -3090,6 +3136,58 @@ def _rejected_block_facts(result: Any) -> dict[str, object]:  # noqa: ANN401
     return facts
 
 
+def _gradient_norm_summary(
+    norms: object, performed: object
+) -> dict[str, float | int | None]:
+    """Summarize one block's gradient norms for a QMIX or PQN-VDN log row.
+
+    Parameters
+    ----------
+    norms : array-like
+        Host copy of the block's per-step global gradient norms, float32, with
+        shape (epochs,) for QMIX or (epochs, minibatches) for PQN-VDN. Values
+        may be +inf or NaN when the squared gradients overflowed float32.
+    performed : array-like or bool
+        True where an optimizer step actually ran, with the same shape as
+        norms or a scalar that broadcasts to it. Steps that did not run (no
+        eligible pair, or a block without learning) are left out, because
+        their stored norm is a placeholder 0.
+
+    Returns
+    -------
+    dict
+        Three JSON-safe keys:
+        ``grad_norm_mean`` is the mean of the finite norms of the steps that
+        ran, as a Python float; ``grad_norm_max`` is their maximum; both are
+        None when no such finite norm exists (for example a warm-up block or
+        an initial chunk). ``grad_norm_nonfinite`` is the int count of steps
+        that ran with a +inf, -inf or NaN norm; it is 0 when every norm is
+        finite or no step ran.
+
+    Raises
+    ------
+    ValueError
+        performed cannot broadcast to the shape of norms.
+
+    Notes
+    -----
+    Host-only and pure; reads values that the block result already copied to
+    the host, so it adds no device work. The values are never inf or NaN, so
+    the row passes the shared JSON writer, which refuses them.
+    """
+    import numpy as np
+
+    values = np.asarray(norms, dtype=np.float64)
+    ran = np.broadcast_to(np.asarray(performed, dtype=np.bool_), values.shape)
+    used = values[ran]
+    finite = used[np.isfinite(used)]
+    return {
+        "grad_norm_mean": float(np.mean(finite)) if finite.size else None,
+        "grad_norm_max": float(np.max(finite)) if finite.size else None,
+        "grad_norm_nonfinite": int(used.size - finite.size),
+    }
+
+
 def _checked_export_provenance(
     saved: dict[str, Any], requested: dict[str, object]
 ) -> dict[str, Any]:
@@ -4856,7 +4954,10 @@ class _Run:
         game, at most buffer_size), td_pairs_per_transition (used TD pairs per
         real transition; repeats count again), loss, mean_q and mean_target
         (averages over the block's optimizer steps; None for a warmup block),
-        epsilon (the clock's rate after the block, a float64 host value) and
+        grad_norm_mean, grad_norm_max and grad_norm_nonfinite (the raw,
+        unclipped global gradient norms of the steps that ran, summarized by
+        _gradient_norm_summary: None, None and 0 for a warmup block), epsilon
+        (the clock's rate after the block, a float64 host value) and
         learning_rate. No PPO loss or sample keys appear. Reads host values
         only; no device work.
         """
@@ -4905,6 +5006,11 @@ class _Run:
             "loss": mean(metrics.loss),
             "mean_q": mean(metrics.mean_q),
             "mean_target": mean(metrics.mean_target),
+            # A step with no eligible TD pair applies no update; leave it out.
+            **_gradient_norm_summary(
+                metrics.grad_norm,
+                learned & (np.asarray(metrics.used_td_pairs) > 0),
+            ),
             "epsilon": self.continuation.exploration.at(self.host["env_steps"])
             if self.continuation is not None
             and self.continuation.exploration is not None
@@ -4969,7 +5075,10 @@ class _Run:
             totals and used_exposure (cumulative, like the other counts),
             task and shaping reward means, and loss, mean_q and mean_target
             (averages over the block's minibatch steps; None for an initial
-            chunk). epsilon is the rate current actors hold at this boundary
+            chunk). grad_norm_mean, grad_norm_max and grad_norm_nonfinite
+            summarize the global gradient norms measured before clipping on
+            the steps that ran (_gradient_norm_summary; None, None and 0 for
+            an initial chunk). epsilon is the rate current actors hold at this boundary
             (1.0 before W, then the block clock's value, a float64 host
             value); learning_rate is the scheduled rate of the block's last
             applied step (None for an initial chunk). No PPO or QMIX-only keys.
@@ -5032,6 +5141,9 @@ class _Run:
             "loss": mean(metrics.loss),
             "mean_q": mean(metrics.mean_q),
             "mean_target": mean(metrics.mean_target),
+            **_gradient_norm_summary(
+                metrics.grad_norm, learned & np.asarray(metrics.performed)
+            ),
             "epsilon": 1.0
             if rounds < self.pqn.initial_rounds
             else self.continuation.exploration.at(self.host["learning_blocks"])

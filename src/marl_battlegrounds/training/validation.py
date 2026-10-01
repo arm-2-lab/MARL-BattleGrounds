@@ -49,6 +49,9 @@ from marl_battlegrounds.training.analysis import (
     summarize_validation,
 )
 from marl_battlegrounds.training.config import (
+    VALIDATION_MAPS as VALIDATION_MAPS,
+)
+from marl_battlegrounds.training.config import (
     _collection_boundary as _collection_boundary,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -59,7 +62,6 @@ if TYPE_CHECKING:
 
 Record = dict[str, Any]
 EventCallback = Callable[[Record], None]
-VALIDATION_MAPS = (42, 43, 44, 45, 46)
 _ROOTS = {
     "routine": 19_043_002,
     "initialization": 19_043_002,

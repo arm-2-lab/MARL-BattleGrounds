@@ -21,7 +21,10 @@ alive once training moves on, fresh or resumed; and curriculum, reward
 shaping and both together reach the collection and complete, with each
 block's logged task and shaping means equal to its rollout's, and with two
 optimizer steps per block the saves follow multiples of the interval crossed
-mid-block. Saved results carry method and optimizer counts. These CPU cases
+mid-block. Saved results carry method and optimizer counts. The log rows'
+gradient-norm summary (shared with PQN-VDN) averages and maxes only finite
+norms of steps that ran, counts steps that ran with an inf or NaN norm, and
+gives None, None and 0 when no step ran. These CPU cases
 establish workflow correctness, not learning or GPU speed.
 """
 
@@ -486,3 +489,23 @@ def test_curriculum_and_shaping_treatments_complete(
             assert row["shaping_mean"] == 0
     exposure = json.loads((result.run_dir / "exposure.json").read_text())
     assert exposure["sampled_exposure"]["used_td_pairs"] == 5 * epochs * 4 * 19
+
+
+def test_gradient_norm_summary_uses_only_steps_that_ran() -> None:
+    from marl_battlegrounds.training.runner import _gradient_norm_summary
+
+    norms = np.array([[1.0, 3.0], [np.inf, 0.0], [np.nan, 5.0]], np.float32)
+    ran = np.array([[True, True], [True, False], [True, True]])
+    assert _gradient_norm_summary(norms, ran) == {
+        "grad_norm_mean": 3.0,
+        "grad_norm_max": 5.0,
+        "grad_norm_nonfinite": 2,
+    }
+    assert _gradient_norm_summary(np.zeros(4, np.float32), False) == {
+        "grad_norm_mean": None,
+        "grad_norm_max": None,
+        "grad_norm_nonfinite": 0,
+    }
+    json.dumps(_gradient_norm_summary(norms, True))
+    with pytest.raises(ValueError):
+        _gradient_norm_summary(norms, np.ones(4, bool))

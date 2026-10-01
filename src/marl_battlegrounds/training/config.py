@@ -48,6 +48,11 @@ from marl_battlegrounds.evaluation.models import (
 
 _FLOAT32_MAX = float.fromhex("0x1.fffffep+127")
 
+# The five held-out validation maps, in ID order. This module owns the list so
+# TrainConfig can check validation_maps without importing the validator;
+# training.validation re-exports it as VALIDATION_MAPS.
+VALIDATION_MAPS = (42, 43, 44, 45, 46)
+
 
 def _validate_shaping_scalars(
     *, discount: object, coefficient: object = 0.01, mode: str = "potential"
@@ -290,6 +295,20 @@ default="mappo"
         Initialization is diagnostic only. The final fraction must be one.
     routine_seed_pairs, confirmation_seed_pairs : int, default=10, 50
         Independent seed pairs per validation map and opponent.
+    validation_maps : tuple[int, ...] or None, default=None
+        The held-out validation maps that this run's validation games use.
+        None means all five maps, 42 through 46 (``validation.VALIDATION_MAPS``).
+        A given value must be a nonempty list or tuple of distinct Python
+        integers from those five maps, for example ``(42, 43, 44, 46)``; it is
+        stored sorted, so ``[46, 42]`` becomes ``(42, 46)``. Routine checks,
+        confirmation games, optional Random diagnostics and checkpoint
+        selection all use exactly these maps, and every saved validation
+        record names them. A run that sets it saves it in its config; None is
+        left out of the saved config, so runs without it keep their old saved
+        bytes. A resume or ``extend_training`` child keeps the saved maps; a
+        resume config that names other maps is refused. Custom maps need a
+        panel made with ``opponents=`` (or ``validation_opponents``); a
+        historical two-actor panel refuses them.
     checkpoint_interval_updates : int or None, default=None
         Recovery-save interval in completed updates: PPO updates for PPO,
         optimizer steps for QMIX and PQN-VDN. A save happens whenever
@@ -312,8 +331,9 @@ default="mappo"
         boundary at 32 games with the defaults and 8,192 is refused).
     random_diagnostic_seed_pairs : int or None, default=None
         Enable fixed Random diagnostics at initialization, checkpoint_env_steps
-        and the final budget. The positive count is paired seeds per each of
-        five validation maps; four gives 40 games. No panel is required and no
+        and the final budget. The positive count is paired seeds per
+        validation map (the five default maps, or validation_maps); four pairs
+        on five maps give 40 games. No panel is required and no
         actor is selected from these results. None skips this optional work.
     random_initialization_result : str or None, default=None
         Original runner result copied to a JSON file for initialization reuse.
@@ -321,7 +341,8 @@ default="mappo"
         evidence must match before output or recovery changes. Original evidence
         paths must remain available; later captures still run their own games.
     slot_diagnostic : bool, default=False
-        Run the declared diagnostic after final training. Requires a frozen panel.
+        Run the declared diagnostic after final training. Requires a frozen
+        panel, the canonical full-learner roster and validation_maps=None.
     purpose : {"development", "demonstration"}, default="development"
         Demonstration requires frozen validation and final selection.
     verbose : bool, default=True
@@ -371,6 +392,7 @@ default="mappo"
     validation_fractions: tuple[float, ...] = tuple(i / 10 for i in range(1, 11))
     routine_seed_pairs: int = 10
     confirmation_seed_pairs: int = 50
+    validation_maps: tuple[int, ...] | None = None
     checkpoint_interval_updates: int | None = None
     checkpoint_env_steps: tuple[int, ...] = ()
     random_diagnostic_seed_pairs: int | None = None
@@ -674,6 +696,10 @@ default="mappo"
             ):
                 raise ValueError("validation_fractions must increase within (0, 1]")
             previous = fraction
+        if self.validation_maps is not None:
+            object.__setattr__(
+                self, "validation_maps", _checked_validation_maps(self.validation_maps)
+            )
         if not isinstance(cast(object, self.checkpoint_env_steps), tuple):
             raise TypeError("checkpoint_env_steps must be a tuple")
 
@@ -696,6 +722,49 @@ default="mappo"
                     "checkpoint_env_steps must increase at complete update boundaries"
                 )
             previous_step = step
+
+
+def _checked_validation_maps(value: object) -> tuple[int, ...]:
+    """Check one validation map choice and return it as a sorted tuple.
+
+    Parameters
+    ----------
+    value : object
+        The declared validation_maps: a list or tuple of map IDs. A string,
+        mapping, set or other value is refused.
+
+    Returns
+    -------
+    tuple[int, ...]
+        The same distinct map IDs in increasing order, for example
+        ``(42, 43, 44, 46)``.
+
+    Raises
+    ------
+    ValueError
+        value is not a list or tuple; it is empty; an entry is not a Python
+        integer (True and False are refused); an entry is not one of the five
+        held-out maps in VALIDATION_MAPS; or an ID repeats.
+
+    Notes
+    -----
+    Host-only; reads no files and does not change value.
+    """
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(
+            "validation_maps must be a list or tuple of validation map IDs or None"
+        )
+    maps = cast(Sequence[object], value)
+    if not maps:
+        raise ValueError("validation_maps must name at least one map")
+    if any(type(item) is not int or item not in VALIDATION_MAPS for item in maps):
+        raise ValueError(
+            "validation_maps may only name the held-out validation maps "
+            f"{', '.join(map(str, VALIDATION_MAPS))}"
+        )
+    if len(set(maps)) != len(maps):
+        raise ValueError("validation_maps must not repeat a map")
+    return tuple(sorted(cast(Sequence[int], maps)))
 
 
 def config_to_dict(config: TrainConfig) -> dict[str, Any]:
@@ -723,6 +792,9 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
         number such as 5.0 (map units; 0.0 means the Red Zone rule is off), so
         every new saved config states its scoring rule. The schema version
         stays 1 (a config saved before the rule lacks the key).
+        validation_maps is written as a sorted list only when it is set;
+        None (all five validation maps) is left out, so default runs keep
+        the exact bytes they had before the setting existed.
 
     Notes
     -----
@@ -731,6 +803,10 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
     them to check a resume config. config_from_dict reads it back.
     """
     data = json.loads(json.dumps(asdict(config)))
+    if data["validation_maps"] is None:
+        # Older runs never saved this key; leaving the default out keeps
+        # their saved configs and every comparison with them unchanged.
+        del data["validation_maps"]
     kept = method_settings_field(config.method)
     for name in ("ppo", "qmix", "pqn"):
         if name != kept:
@@ -752,13 +828,16 @@ def config_from_dict(value: dict[str, Any]) -> TrainConfig:
         may contain only its own method's block: a QMIX config no ppo or pqn,
         a PQN-VDN config no ppo or qmix, a PPO config no qmix or pqn (method
         defaults to "mappo"). red_zone_depth is the Red Zone depth in map
-        units; 0.0 turns the rule off.
+        units; 0.0 turns the rule off. An omitted validation_maps means None,
+        all five validation maps, which is also how every config saved before
+        the setting existed reads.
 
     Returns
     -------
     TrainConfig
         The validated config. Lists for validation fractions, extra save points
-        (checkpoint_env_steps) and validation_opponents become tuples. A JSON
+        (checkpoint_env_steps), validation_opponents and validation_maps
+        become tuples. A JSON
         integer red_zone_depth (not true or false) becomes the equal float, so
         6 reads as 6.0; an omitted depth takes the TrainConfig default
         (DEFAULT_TDM_RED_ZONE_DEPTH, 5.0).
@@ -771,9 +850,10 @@ def config_from_dict(value: dict[str, Any]) -> TrainConfig:
         large to become a float ("red_zone_depth must be finite"); or
         TrainConfig or a settings object rejects a value.
     TypeError
-        ppo, qmix or pqn is not a JSON object; one of the three list settings
-        is not a JSON array; a settings object gets an unknown key; or
-        TrainConfig or a settings object rejects a value's type.
+        ppo, qmix or pqn is not a JSON object; one of the list settings
+        (validation_fractions, checkpoint_env_steps, history_capture_env_steps
+        or validation_opponents) is not a JSON array; a settings object gets an
+        unknown key; or TrainConfig or a settings object rejects a value's type.
 
     Notes
     -----

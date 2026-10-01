@@ -120,7 +120,38 @@ Grouping schema 1 keeps its original defaults and results. Schema 2 adds:
 - `cell_weights`: one nonnegative finite weight per declared map/opponent cell.
   They are normalized once. Zero-weight cells still need complete evidence.
 - `recipe_selection`: named comparisons, candidate groups, maximize/minimize,
-  and an exact complete `tie_order`.
+  and an exact complete `tie_order`. Without more keys the winner is the group
+  with the best mean.
+- An optional base rule on one `recipe_selection` entry, set with all three of
+  `base` (one of its groups), `min_margin_gain` (a number of at least 0, in the
+  measure's units) and `min_units_won` (an integer of at least 0). Every other
+  group is a challenger. A challenger passes only when its mean beats the base
+  mean by **more than** `min_margin_gain` and it beats the base on at least
+  `min_units_won` paired units. Units pair by their `unit` name, so declare the
+  same unit names (seeds) in both groups. "Beats" follows `direction`.
+
+For example, this entry keeps the base unless a change gains more than 2
+points and wins on at least 2 of 3 seeds:
+
+```yaml
+recipe_selection:
+  - name: qmix-learning-rate
+    groups: [qmix-b768-t32, qmix-lr-1e-4]
+    direction: maximize
+    tie_order: [qmix-b768-t32, qmix-lr-1e-4]
+    base: qmix-b768-t32
+    min_margin_gain: 2.0
+    min_units_won: 2
+```
+
+A gain of exactly 2.0 does not pass. `recipe_selection.json` then records, for
+each challenger, `mean_gain`, `units_won`, `paired_units`, each unit's two
+values and `passed` (true or false). `passed_challengers` lists every passing
+group in tie order. The `winner` is the base when nothing passes; otherwise it
+is the passing challenger with the best mean. Declare one entry per searched
+setting to test each change on its own; to build a combined recipe, take every
+group in `passed_challengers`. Missing evidence leaves `passed` and the winner
+null. Entries without a base rule keep their earlier record unchanged.
 
 A unit is one independent training family. Average complete vectors equally
 across units, then apply cell weights. More games or a lucky checkpoint do not
@@ -129,6 +160,27 @@ or unknown seed/lineage block a recipe decision. Available descriptive values
 remain visible. One unit can demonstrate software selection but cannot provide
 a training-seed confidence interval. Checked old games can supply omitted
 native-point means; present conflicting values are rejected.
+
+### Recipe Learning Curves
+
+Any grouping also makes `analyze` write `recipe_curves.png`,
+`recipe_curves.svg` and `recipe_curves.csv` in the report folder. The figure
+shows each group's (recipe's) point margin at every saved routine validation
+step, step 0 included. Each run (seed) is a thin line. Each recipe's mean is a
+thick line in the same color. The x-axis is environment steps. A grouping that
+mixes methods gets one panel per method, read from each run's saved config.
+
+The CSV has one row per run and validation step, with the columns `group`,
+`unit`, `run_dir`, `method`, `env_steps`, `point_margin` and `cells_used`.
+`point_margin` is our points minus the opponent's per game. It uses only the
+grouping's maps and opponents, with the grouping's cell weights (equal by
+default, the same rule checkpoint selection uses). Results from another panel
+or Red Zone depth are left out. If a step lacks points in any declared cell,
+`point_margin` is empty and `cells_used` says how many cells had points. The
+mean line is drawn only at steps where every seed of that recipe with saved
+margins has one, so an unfinished seed shortens the line instead of moving it. When no saved
+result has a margin, the three files are skipped (old copies are removed) and
+`run_summary.md` says why.
 
 For fixed actors, `results.point_margin_summary()` reads native game points.
 `by="map"` gives map rows. Its 95% percentile intervals draw complete exchanged

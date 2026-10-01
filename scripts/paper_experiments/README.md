@@ -211,6 +211,51 @@ rescue, focus fire, control, agent and source-to-recipient views. It reads saved
 results, explains missing values and units, and links exact selected replays.
 It starts no experiment when opened or executed.
 
+## Run The Six-Method Hyperparameter Search
+
+The search's design, rules and results are in
+[the hyperparameter search record](../../docs/training/hyperparameter_search.md).
+Its committed inputs are in `hyperparameter_search/`:
+
+| File | What It Holds |
+|---|---|
+| `opponents.yaml` | The expected identity and role of each fixed opponent |
+| `shapes_and_ppo.yaml` | Study 1: 18 cases, three search seeds each, 54 runs |
+| `shapes_and_ppo_picks.yaml` | Study 1's recipe picks, declared before launch |
+
+Preparation checks every member of the local opponent bundle against
+`opponents.yaml` and binds the study's opponent names to their checked
+folders. It writes `protocol/` and starts no game:
+
+```bash
+JAX_PLATFORMS=cpu python scripts/paper_experiments/prepare.py \
+  protocol=declared_study \
+  declaration=scripts/paper_experiments/hyperparameter_search/shapes_and_ppo.yaml \
+  recipe_selection=scripts/paper_experiments/hyperparameter_search/shapes_and_ppo_picks.yaml \
+  opponent_bundle=/data/hyperparameter-search/opponents \
+  output_dir=/data/hyperparameter-search/shapes-and-ppo
+```
+
+Start the study in the background, watch it, and analyze it when it finishes.
+Train into `study/` beside `protocol/`, so the grouping's run folders match.
+Launch a long study from a frozen worktree, as
+[the Hydra guide](../../docs/training/hydra.md) explains:
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
+  --config /data/hyperparameter-search/shapes-and-ppo/protocol/study.yaml \
+  --output-dir /data/hyperparameter-search/shapes-and-ppo/study
+python -m marl_battlegrounds study status \
+  /data/hyperparameter-search/shapes-and-ppo/study --progress --follow
+python scripts/paper_experiments/analyze.py \
+  study_dirs=[/data/hyperparameter-search/shapes-and-ppo/study] \
+  grouping=/data/hyperparameter-search/shapes-and-ppo/protocol/grouping.yaml \
+  output_dir=/data/hyperparameter-search/shapes-and-ppo/analysis
+```
+
+The analysis writes each recipe pick to `recipe_selection.json` and the
+recipe learning curves to `recipe_curves.png`, `.svg` and `.csv`.
+
 ## Paths And Portable Files
 
 Every stage exposes its destination. Command-line paths use the launch directory;
