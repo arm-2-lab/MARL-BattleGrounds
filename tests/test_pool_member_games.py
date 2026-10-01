@@ -1,16 +1,21 @@
 """Check that pool members which act game by game run only on their own games.
 
-A pool gives each game to one member. JAX Policy adapters and System apply
-hooks declared lane-independent run through the compact route: their games are
-gathered in fixed-size groups, applied and written back. On CPU the compact
-route must give exactly the full-batch route's owned actions, policy IDs and
-next memory, with several groups, a single group and no games at all. Learner
-outputs keep their full-batch shapes. A pooled Policy is traced once, without
-per-slot copies. Only Policies and declared, reset-free, leading-B members are
-row-safe, and the built-in PPO, QMIX and PQN actor factories declare their hooks.
+A pool gives each game to one member. When the pool controls whole teams and
+learner outputs are dropped, JAX Policy adapters and System apply hooks
+declared lane-independent take the compact route: their games are gathered
+into groups of ceil(B / 16) (padding rows are never written back), run and
+written back, and no games means no call. On CPU the compact route must give
+exactly the full-batch route's owned actions, policy IDs and next memory with
+one partly filled group, one full group, several groups, every game and no
+games. A real pool takes the compact route and compiles a Policy member once;
+the same pool inside a team, or with learner outputs kept, keeps the per-slot
+route. Only Policies and declared,
+reset-free, leading-B members are row-safe; a wrapper that copies the marker
+is not. The built-in PPO, QMIX and PQN actor factories declare their hooks.
 """
 
 # pyright: reportPrivateUsage=false
+import functools
 from typing import Any, cast
 
 import jax
@@ -34,8 +39,10 @@ from marl_battlegrounds.evaluation.policy_execution import (
     _declare_lane_independent,
     _execution,
     _initial_memory,
+    _jax_apply,
     _row_safe,
     _slot_keys,
+    policy,
     shared_policy,
     system_inputs,
 )
@@ -97,7 +104,7 @@ def _lane_member(reset: bool = False) -> System:
 
 
 def _both_routes(
-    member: System, size: int, owned_games: np.ndarray, *, keep: bool
+    member: System, size: int, owned_games: np.ndarray
 ) -> tuple[SystemOutput, SystemOutput, SystemInput]:
     inputs = _inputs(size)
     execution = _execution(member)
@@ -123,31 +130,41 @@ def _both_routes(
         _slot_keys(keys),
     )
     full = cast(
-        SystemOutput, _composed_jax_apply(*arguments, keep_learning_outputs=keep)
+        SystemOutput, _composed_jax_apply(*arguments, keep_learning_outputs=False)
     )
-    compact = cast(
-        SystemOutput, _compact_jax_apply(*arguments, keep_learning_outputs=keep)
-    )
+    compact = cast(SystemOutput, _compact_jax_apply(*arguments))
     return full, compact, child
+
+
+def _games(size: int, owned: tuple[int, ...]) -> np.ndarray:
+    games = np.zeros(size, np.bool_)
+    games[list(owned)] = True
+    return games
 
 
 @pytest.mark.parametrize("member", ("policy", "lane"))
 @pytest.mark.parametrize(
-    "owned_games",
+    "size,owned",
     (
-        [True, False, True, True, False, True, True, False],
-        [False, False, False, True, False, False, False, False],
-        [False] * 8,
+        (48, (3, 17)),
+        (48, (0, 20, 47)),
+        (48, (1, 2, 3, 4, 5, 40)),
+        (8, tuple(range(8))),
+        (8, ()),
     ),
-    ids=("several-groups", "one-group", "no-games"),
+    ids=(
+        "one-group-with-padding",
+        "one-full-group",
+        "several-groups",
+        "every-game",
+        "no-games",
+    ),
 )
 def test_compact_route_matches_full_batch_route(
-    member: str, owned_games: list[bool]
+    member: str, size: int, owned: tuple[int, ...]
 ) -> None:
     method = _policy_member() if member == "policy" else _lane_member()
-    full, compact, child = _both_routes(
-        method, 8, np.asarray(owned_games), keep=member == "lane"
-    )
+    full, compact, child = _both_routes(method, size, _games(size, owned))
     retained = np.asarray(cast(Array, child.controlled_mask) & child.valid[:, None])
     for full_head, compact_head in zip(full.actions, compact.actions, strict=True):
         np.testing.assert_array_equal(
@@ -163,43 +180,47 @@ def test_compact_route_matches_full_batch_route(
         strict=True,
     ):
         np.testing.assert_array_equal(np.asarray(compact_leaf), np.asarray(full_leaf))
-    if member == "lane":
-        games = np.asarray(child.valid)
-        np.testing.assert_array_equal(
-            np.asarray(compact.learning_outputs["value"])[games],
-            np.asarray(full.learning_outputs["value"])[games],
-        )
-        assert not np.any(np.asarray(compact.learning_outputs["value"])[~games])
-    else:
-        assert compact.learning_outputs == full.learning_outputs == ()
+    assert compact.learning_outputs == full.learning_outputs == ()
 
 
-def test_pooled_policy_is_traced_once_without_slot_copies() -> None:
+def _policy_traces(*, inside_team: bool, keep: bool) -> int:
     traces: list[int] = []
     member = _policy_member(traces)
-    inputs = _inputs(4)
-    execution = _execution(member)
-    template = _adapter_template(member)
-    keys = jax.random.split(jax.random.key(8), 4)
-    memory = _initial_memory(execution, member.variables, template, inputs, keys)
+    mixture = marl_bgs.pool({member: 1.0, shared_policy(policy("random")): 1.0})
+    system = (
+        marl_bgs.team(mixture, "random", slots=[[0, 1, 2], [3, 4]])
+        if inside_team
+        else mixture
+    )
+    inputs = _inputs(48)
+    keys = jax.random.split(jax.random.key(12), 48)
+    execution = _execution(system)
+    template = _adapter_template(system)
+    memory = _initial_memory(execution, system.variables, template, inputs, keys)
 
     def trace() -> SystemOutput:
-        return cast(
-            SystemOutput,
-            _compact_jax_apply(
-                execution,
-                member.variables,
-                template,
-                memory,
-                inputs,
-                keys,
-                _slot_keys(keys),
-                keep_learning_outputs=False,
-            ),
+        return _jax_apply(
+            execution,
+            system.variables,
+            template,
+            memory,
+            inputs,
+            keys,
+            keys,
+            jnp.zeros(48, jnp.bool_),
+            keep_learning_outputs=keep,
         )
 
     jax.make_jaxpr(trace)()
-    assert len(traces) == 1
+    return len(traces)
+
+
+def test_whole_team_pool_with_dropped_outputs_takes_the_compact_route() -> None:
+    # One whole-team copy in the group loop; the per-slot route traces a
+    # whole-team copy and five column copies.
+    assert _policy_traces(inside_team=False, keep=False) == 1
+    assert _policy_traces(inside_team=True, keep=False) >= 6
+    assert _policy_traces(inside_team=False, keep=True) >= 6
 
 
 def test_only_policies_and_declared_leading_batch_members_are_row_safe() -> None:
@@ -229,6 +250,23 @@ def test_only_policies_and_declared_leading_batch_members_are_row_safe() -> None
     assert not row_safe(shared_policy(host), memory=())
 
 
+def test_wrappers_that_copy_the_marker_keep_the_full_batch() -> None:
+    base = make_ppo_system({}, method="mappo")
+    memory = jnp.zeros((4, 5, 128), jnp.float32)
+
+    @functools.wraps(base.apply)
+    def wrapped(
+        variables: Tree, memory: Tree, inputs: SystemInput, keys: Array
+    ) -> SystemOutput:
+        return base.apply(variables, memory, inputs, keys)
+
+    assert getattr(wrapped, "_marl_lane_independent", None) is base.apply
+    assert _row_safe(_execution(base), memory, 4)
+    for apply in (wrapped, jax.jit(base.apply)):
+        method = System("Wrapped", apply, init=base.init)
+        assert not _row_safe(_execution(method), memory, 4)
+
+
 def test_built_in_actor_factories_declare_lane_independent_hooks() -> None:
     systems = (
         make_ppo_system({}, method="mappo"),
@@ -238,4 +276,4 @@ def test_built_in_actor_factories_declare_lane_independent_hooks() -> None:
         make_pqn_system({}),  # pyright: ignore[reportArgumentType]
     )
     for system in systems:
-        assert getattr(system.apply, "_marl_lane_independent", False)
+        assert getattr(system.apply, "_marl_lane_independent", None) is system.apply

@@ -1,8 +1,11 @@
 """Provide reusable training feedback above the unchanged simulator.
 
 combat_support_reward adds an explicit combat/support objective to native task
-reward. It uses compact producing facts, never full metrics or replay capture.
-Its coefficients are fixed here so the saved source identity binds their values.
+reward, one amount per agent, for learners that train each agent on its own
+reward (the PPO family). combat_support_team_reward gives the same terms as one
+shared team amount, for learners that train on one team reward (QMIX, PQN-VDN).
+Both use compact producing facts, never full metrics or replay capture. Their
+coefficients are fixed here so the saved source identity binds their values.
 """
 
 # The observed-combat helper is shared with metrics; Core is only read.
@@ -26,6 +29,11 @@ _DAMAGE = 0.001
 _PRIEST_HEAL = 0.001
 _HEAL_RANGE = 0.001
 _ZONE_TICK = 0.002
+# Parts combat_support_reward already gives every recipient in equal amounts.
+# The other five parts belong to the agent who earned them.
+_SHARED_PARTS = frozenset(
+    ("own_team_deaths", "own_red_zone_deaths", "priest_heal_range_pairs")
+)
 
 
 def combat_support_reward(
@@ -79,6 +87,13 @@ def combat_support_reward(
     Native rewards remain separate. Disable built-in shaping when using this
     recipe alone. Pure JAX code computes observed combat once, with no extra
     simulator step, rescue calculation, host callback or metric/replay output.
+    QMIX and PQN-VDN average the Team A rewards into one team reward, which
+    would divide every own-agent part by the number of players; give those
+    learners combat_support_team_reward instead.
+
+    See Also
+    --------
+    combat_support_team_reward : The same terms as one shared team amount.
     """
     del progress
     active = config.agent_profile.active_mask
@@ -143,3 +158,77 @@ def combat_support_reward(
     return RewardOutput(
         slots(team + individual), {k: slots(v) for k, v in parts.items()}
     )
+
+
+def combat_support_team_reward(
+    before: EnvState,
+    facts: TrainingFacts,
+    after: EnvState,
+    progress: Array,
+    *,
+    config: EnvConfig,
+) -> RewardOutput:
+    """Give Team A the combat/support terms as one shared team amount.
+
+    Use this form for learners that train on one team reward, such as QMIX and
+    PQN-VDN. Each event pays the team what combat_support_reward pays the agent
+    it happens to. Example, 5v5: our Mage's kill credit pays the team +0.05 (the
+    Mage's own amount), and a teammate's death costs the team -0.05 (every
+    agent's amount), so kills and deaths keep the same balance as in PPO.
+
+    Parameters
+    ----------
+    before, facts, after, progress, config
+        The same inputs, meanings and requirements as combat_support_reward.
+        config is required and keyword-only. progress is not used.
+
+    Returns
+    -------
+    RewardOutput
+        Float32 (10,) adjustments and the same eight named parts. Every
+        configured Team A recipient gets one equal amount: the three shared
+        parts once (own_team_deaths, own_red_zone_deaths and
+        priest_heal_range_pairs, which every agent already gets in equal
+        amounts), plus the Team A total of each of the five own-agent parts
+        (enemy_death_credit, enemy_red_zone_death_credit, enemy_damage_hp,
+        priest_effective_healing_hp and own_zone_ticks). Each named part holds
+        that per-recipient amount, so the parts still sum to adjustments. Team
+        B, unconfigured slots and padding rows (has_transition False) are zero.
+
+    Notes
+    -----
+    QMIX and PQN-VDN average the Team A slot rewards into one team reward
+    (baselines.qmix.team_task_reward). With combat_support_reward that average
+    divides each own-agent part by the number of configured players: in 5v5 a
+    kill credit pays the team only +0.01 while a teammate's death still costs
+    -0.05. With this form every slot holds the same amount, so the average is
+    exactly the shared parts plus the Team A total of the own-agent parts. The
+    native win reward, the same for every slot, still counts once.
+
+    One difference from the PPO family remains by design: a team reward also
+    pays every agent's value for a teammate's own events, such as the Mage's
+    damage. Team totals include every configured Team A slot, including slots a
+    fixed partner controls; learners still learn only from their own slots.
+
+    Pure JAX: calls combat_support_reward once and adds one five-slot sum per
+    own-agent part, with the same jit and vmap use. The coefficients and term
+    definitions are combat_support_reward's.
+
+    See Also
+    --------
+    combat_support_reward : The per-agent form for the PPO family.
+    """
+    output = combat_support_reward(before, facts, after, progress, config=config)
+    recipients = jnp.concatenate(
+        (
+            config.agent_profile.active_mask[:5] & facts.has_transition,
+            jnp.zeros(5, jnp.bool_),
+        )
+    )
+    parts = {
+        name: value
+        if name in _SHARED_PARTS
+        else jnp.where(recipients, value[:5].sum(), jnp.float32(0))
+        for name, value in output.components.items()
+    }
+    return RewardOutput(jnp.stack(tuple(parts.values())).sum(0), parts)

@@ -738,6 +738,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"Study: {result['study_dir']}")
                 state: dict[str, Any] = result.get("study") or {}
                 print(f"Status: {state.get('status', 'Not Started')}")
+                paused: dict[str, Any] = state.get("paused_devices") or {}
+                for device, reason in paused.items():
+                    print(
+                        f"Paused GPU: {device} after {reason.get('case_id')} "
+                        f"failed before its first checkpoint ({reason.get('error')})"
+                    )
                 report: dict[str, Any] = result.get("report") or {}
                 rows: list[dict[str, Any]] | None = report.get("cases")
                 if rows is None:

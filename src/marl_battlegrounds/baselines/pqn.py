@@ -18,13 +18,14 @@
 
 This module adapts JaxMARL's recurrent PQN-VDN (``pqn_vdn_rnn.py``) at
 revision ``976aeb152cb184a5095021968bba94da96eb6394``. It re-exports
-settings and budget guards from baselines.config and owns
-the local Q-networks with input and hidden
-BatchNorm, the epsilon-greedy actor System, the exploration and learning-rate
-schedules, network initialization and one optimizer step on one expanded
-minibatch of recent game sequences. It owns no collection loop, recent-data
-storage, checkpoint, curriculum or training run; ``training.pqn_learner``
-joins these pieces to the shared collection owner.
+settings and budget guards from baselines.config and owns the local
+Q-networks with input BatchNorm and hidden BatchNorm or LayerNorm (the
+donor's ``NORM_TYPE`` switch), the epsilon-greedy actor System, the
+exploration and learning-rate schedules, network initialization and one
+optimizer step on one expanded minibatch of recent game sequences. It owns
+no collection loop, recent-data storage, checkpoint, curriculum or training
+run; ``training.pqn_learner`` joins these pieces to the shared collection
+owner.
 
 Actors read only their permitted SharedObs input and their own memory. The
 team value is the plain sum of the local utilities (VDN): there is no mixer,
@@ -40,7 +41,7 @@ mapped axis.
 Host-only: the setting and batch checks, the float64 host twins of the
 schedules, the System factory and the running-variance check used by saving,
 exporting and loading. The default settings are the donor's SMAX values
-(without its reward multiplier), not settings qualified for learning in
+(reward scale 1.0 rather than its 10), not settings qualified for learning in
 MARL-BGs.
 """
 
@@ -65,6 +66,9 @@ from marl_battlegrounds.baselines.config import (
     PQN_NORMALIZATION_SCHEMA_VERSION as PQN_NORMALIZATION_SCHEMA_VERSION,
 )
 from marl_battlegrounds.baselines.config import (
+    PQN_NORMALIZATIONS as PQN_NORMALIZATIONS,
+)
+from marl_battlegrounds.baselines.config import (
     PQN_RECENT_WINDOW_SCHEMA_VERSION as PQN_RECENT_WINDOW_SCHEMA_VERSION,
 )
 from marl_battlegrounds.baselines.config import PQN_TIE_RULE as PQN_TIE_RULE
@@ -73,6 +77,9 @@ from marl_battlegrounds.baselines.config import (
 )
 from marl_battlegrounds.baselines.config import (
     _fraction as _fraction,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _pqn_normalization,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.baselines.config import (
     pqn_planned_learning_blocks as pqn_planned_learning_blocks,
@@ -147,6 +154,7 @@ PQN_HIDDEN_SIZE = 512
 """Width of both hidden Dense layers and of each actor's recurrent memory."""
 _BATCH_NORM_MOMENTUM = 0.99
 _BATCH_NORM_EPSILON = 1e-5
+_LAYER_NORM_EPSILON = 1e-6
 _LEARNING_RATE_END = 1e-10
 
 
@@ -277,11 +285,13 @@ class PQNInferenceVariables(NamedTuple):
     ----------
     params : PyTree
         Raw Flax ``params`` subtree of the Q-network, including the BatchNorm
-        scale and bias leaves. These receive gradients.
+        and LayerNorm scale and bias leaves. These receive gradients.
     batch_stats : PyTree
-        Raw Flax ``batch_stats`` subtree: running mean and variance of the
-        three BatchNorm layers (input 5165, two hidden 512). They move only in
-        training minibatches, never during action selection.
+        Raw Flax ``batch_stats`` subtree: running mean and variance of every
+        BatchNorm layer. With normalization "batch_norm" these are three
+        layers (input 5165, two hidden 512); with "layer_norm" only the input
+        layer (LayerNorm keeps no statistics). They move only in training
+        minibatches, never during action selection.
 
     Notes
     -----
@@ -512,18 +522,25 @@ class PQNScannedRNN(nn.Module):
 class PQNNetwork(nn.Module):
     """Map permitted actor features and memory to 198 action values per actor.
 
-    The layers are the donor's SMAX configuration: input BatchNorm; Dense 512,
-    BatchNorm, ReLU; Dense 512, BatchNorm, ReLU; a 512-wide GRU; Dense 198.
+    The layers follow the donor: input BatchNorm; Dense 512, normalization,
+    ReLU; Dense 512, normalization, ReLU; a 512-wide GRU; Dense 198.
     Flax's default initializers are kept (LeCun-normal Dense and GRU input
-    kernels, orthogonal recurrent kernels, zero biases, BatchNorm scale 1 and
-    bias 0, running mean 0 and variance 1). Parameters and statistics are
+    kernels, orthogonal recurrent kernels, zero biases, normalization scale 1
+    and bias 0, running mean 0 and variance 1). Parameters and statistics are
     shared by all actors and teammates; memory stays separate per actor.
 
     input_scale is a fixed positive finite multiplier applied to every feature
-    before the input BatchNorm; it changes no parameter shape.
+    before the input BatchNorm; it changes no parameter shape. normalization
+    picks the two hidden normalizations, as the donor's ``NORM_TYPE`` does:
+    "batch_norm" (the donor's SMAX choice; parameters ``BatchNorm_1`` and
+    ``BatchNorm_2`` with running statistics) or "layer_norm" (parameters
+    ``LayerNorm_0`` and ``LayerNorm_1``, epsilon 1e-6, no statistics: each
+    actor row is normalized over its own 512 values). The input BatchNorm is
+    ``BatchNorm_0`` in both cases.
     """
 
     input_scale: float = 1.0
+    normalization: str = "batch_norm"
 
     @nn.compact
     def __call__(
@@ -581,7 +598,8 @@ class PQNNetwork(nn.Module):
         Raises
         ------
         ValueError
-            input_scale is not a finite positive real number.
+            input_scale is not a finite positive real number, or
+            normalization is not "batch_norm" or "layer_norm".
 
         Notes
         -----
@@ -597,6 +615,7 @@ class PQNNetwork(nn.Module):
         rows, games = valid.shape
         actors = games * TEAM_SLOTS
         scale = _input_scale(self.input_scale)
+        layer_norm = _pqn_normalization(self.normalization) == "layer_norm"
         if scale != 1.0:
             features = features * scale
         row = valid[..., None] & active
@@ -653,13 +672,30 @@ class PQNNetwork(nn.Module):
                     + params[name]["bias"][groups]
                 )
 
+            def layer_normalize_group(value: Array, index: int) -> Array:
+                """Normalize each row over its own values with its group's scale."""
+                name = f"LayerNorm_{index}"
+                mean = jnp.mean(value, axis=-1, keepdims=True)
+                # Flax's fast variance: E[x^2] - E[x]^2, clipped at zero.
+                variance = jnp.maximum(
+                    jnp.mean(value * value, axis=-1, keepdims=True) - mean * mean,
+                    0.0,
+                )
+                normalized = (value - mean) * jax.lax.rsqrt(
+                    variance + _LAYER_NORM_EPSILON
+                )
+                return (
+                    normalized * params[name]["scale"][groups]
+                    + params[name]["bias"][groups]
+                )
+
             x = normalize_group(x, 0)
             for index in range(2):
+                hidden = _group_dense(x, params[f"Dense_{index}"], groups, sizes)
                 x = nn.relu(
-                    normalize_group(
-                        _group_dense(x, params[f"Dense_{index}"], groups, sizes),
-                        index + 1,
-                    )
+                    layer_normalize_group(hidden, index)
+                    if layer_norm
+                    else normalize_group(hidden, index + 1)
                 )
             embedding = _restore_group_rows(x, order, features.shape[:-1])
             starts = jnp.broadcast_to(episode_start[..., None], actor_group.shape)
@@ -690,7 +726,12 @@ class PQNNetwork(nn.Module):
 
         x = normalize(x)
         for _ in range(2):
-            x = nn.relu(normalize(nn.Dense(PQN_HIDDEN_SIZE)(x)))
+            hidden = nn.Dense(PQN_HIDDEN_SIZE)(x)
+            x = nn.relu(
+                nn.LayerNorm(epsilon=_LAYER_NORM_EPSILON)(hidden)
+                if layer_norm
+                else normalize(hidden)
+            )
 
         def per_actor(flags: Array) -> Array:
             """Broadcast (rows,games) flags to (rows,games*5) actor rows."""
@@ -773,11 +814,15 @@ def _network_variables(
     *,
     features: int = ACTOR_FEATURE_SIZE,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> PQNInferenceVariables:
     """Initialize the Q-network from one key with train=False.
 
     parameter_sharing selects one shared network or five independently keyed
     groups, adding one leading axis to parameters and statistics.
+    normalization ("batch_norm" or "layer_norm") picks the hidden layers'
+    normalization and so the parameter and statistic layout; the Dense, GRU
+    and input BatchNorm values from one key are the same for both.
     key is a typed Threefry key and input_scale the network's finite positive
     feature multiplier (it changes no parameter shape or value). features is
     the input width, ACTOR_FEATURE_SIZE (5,165) by default; the donor
@@ -790,10 +835,13 @@ def _network_variables(
     if _parameter_sharing(parameter_sharing) != "all":
         return jax.vmap(
             functools.partial(
-                _network_variables, input_scale=input_scale, features=features
+                _network_variables,
+                input_scale=input_scale,
+                features=features,
+                normalization=normalization,
             )
         )(jax.random.split(key, 5))
-    variables = PQNNetwork(input_scale=input_scale).init(
+    variables = PQNNetwork(input_scale=input_scale, normalization=normalization).init(
         key,
         jnp.zeros((1, TEAM_SLOTS, PQN_HIDDEN_SIZE), jnp.float32),
         jnp.zeros((1, 1, TEAM_SLOTS, features), jnp.float32),
@@ -887,8 +935,8 @@ def initialize_pqn(
         One typed Threefry key (``jax.random.key(seed)``). The learner derives
         it with ``fold_in(root, PQN_MODEL_INITIALIZATION_TAG)``.
     pqn : PQNConfig, default=DEFAULT_PQN_CONFIG
-        Settings; input_scale, parameter_sharing, q_lr, lr_linear_decay,
-        max_grad_norm, epochs and num_minibatches matter here.
+        Settings; input_scale, parameter_sharing, normalization, q_lr,
+        lr_linear_decay, max_grad_norm, epochs and num_minibatches matter here.
     planned_learning_blocks : int
         Plain positive N for the learning-rate schedule.
 
@@ -909,12 +957,16 @@ def initialize_pqn(
     -----
     Allocates 4,596,512 float32 parameters (18,386,048 bytes), 12,378 float32
     statistics (49,512 bytes) and two moment trees (36,772,096 bytes) plus
-    counters in shared mode. Class and slot modes use five copies of these
-    arrays. Works under ``jax.eval_shape``.
+    counters in shared mode with "batch_norm". "layer_norm" has the same
+    parameter count and only the input layer's 10,330 statistics. Class and
+    slot modes use five copies of these arrays. Works under ``jax.eval_shape``.
     """
     _check_typed_key(key)
     network = _network_variables(
-        key, pqn.input_scale, parameter_sharing=pqn.parameter_sharing
+        key,
+        pqn.input_scale,
+        parameter_sharing=pqn.parameter_sharing,
+        normalization=pqn.normalization,
     )
     optimizer = pqn_optimizer(pqn, planned_learning_blocks)
     return PQNTrainState(
@@ -926,11 +978,16 @@ def initialize_pqn(
     )
 
 
-def pqn_actor_template(*, parameter_sharing: str = "all") -> PQNInferenceVariables:
+def pqn_actor_template(
+    *, parameter_sharing: str = "all", normalization: str = "batch_norm"
+) -> PQNInferenceVariables:
     """Return the Q-network's parameter and statistic shapes without allocating.
 
     parameter_sharing is all (the unchanged default), class or none. The latter
     two add a leading group axis of five to every parameter/statistic leaf.
+    normalization is "batch_norm" (the unchanged default) or "layer_norm",
+    which has LayerNorm parameters and no hidden-layer statistics. Raises
+    ValueError for an unknown value of either.
 
     Returns
     -------
@@ -943,7 +1000,10 @@ def pqn_actor_template(*, parameter_sharing: str = "all") -> PQNInferenceVariabl
         PQNInferenceVariables,
         jax.eval_shape(
             functools.partial(
-                _network_variables, input_scale=1.0, parameter_sharing=parameter_sharing
+                _network_variables,
+                input_scale=1.0,
+                parameter_sharing=parameter_sharing,
+                normalization=_pqn_normalization(normalization),
             ),
             jax.random.key(0),
         ),
@@ -968,6 +1028,7 @@ def _apply_pqn_actor(
     *,
     input_scale: float = 1.0,
     spawn_frame_index: int = 0,
+    normalization_index: int = 0,
 ) -> SystemOutput:
     """Choose one epsilon-greedy action per actor from permitted inputs.
 
@@ -989,6 +1050,9 @@ def _apply_pqn_actor(
     spawn_frame_index : int, default=0
         Index into SPAWN_FRAMES (0 world, 1 left), bound by the factory. A
         number, because M8 records numerical keyword defaults in identity.
+    normalization_index : int, default=0
+        Index into PQN_NORMALIZATIONS (0 "batch_norm", 1 "layer_norm"): the
+        hidden-layer normalization the weights were trained with.
 
     Returns
     -------
@@ -1020,7 +1084,10 @@ def _apply_pqn_actor(
     features = encode_actor_inputs(actors)
     next_memory, values = cast(
         tuple[Array, Array],
-        PQNNetwork(input_scale=input_scale).apply(
+        PQNNetwork(
+            input_scale=input_scale,
+            normalization=PQN_NORMALIZATIONS[normalization_index],
+        ).apply(
             _flax_variables(variables.network),
             memory,
             features[None],
@@ -1194,6 +1261,134 @@ def _grouped_pqn_actor_apply(
     return apply
 
 
+def _apply_grouped_pqn_actor(
+    variables: PQNActorVariables,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    parameter_sharing_index: int,
+    normalization_index: int,
+) -> SystemOutput:
+    """Choose grouped epsilon-greedy actions from one same-epoch actor call.
+
+    Arguments and outputs follow _apply_pqn_actor, with variables carrying a
+    leading group axis of five. parameter_sharing_index indexes the sharing
+    modes ("all", "class", "none"); normalization_index indexes
+    PQN_NORMALIZATIONS. Used by the LayerNorm grouped hook. The BatchNorm
+    grouped hook keeps its own unchanged copy of these lines so the recorded
+    identity of actors saved before LayerNorm existed stays the same. Pure JAX.
+    """
+    features, mask, groups, flag = _grouped_actor_inputs(
+        inputs, _PARAMETER_SHARING[parameter_sharing_index], spawn_frame_index
+    )
+    next_memory, values = cast(
+        tuple[Array, Array],
+        PQNNetwork(
+            input_scale=input_scale,
+            normalization=PQN_NORMALIZATIONS[normalization_index],
+        ).apply(
+            _flax_variables(variables.network),
+            memory,
+            features[None],
+            inputs.episode_start[None],
+            inputs.valid[None],
+            inputs.active_mask[None],
+            actor_group=groups[None],
+            train=False,
+        ),
+    )
+    actor_keys = jax.vmap(functools.partial(jax.random.split, num=TEAM_SLOTS))(keys)
+    indices = _explore(
+        greedy_actions(values[0], mask), mask, actor_keys, variables.epsilon
+    )
+    if flag is not None:
+        indices = mirror_action_indices(indices, flag)
+    return SystemOutput(
+        decode_actions(indices),
+        next_memory,
+        learning_outputs=PQNLearningOutputs(memory),
+    )
+
+
+@functools.lru_cache(maxsize=16)
+def _layer_norm_pqn_actor_apply(
+    scale: float, spawn_frame: str
+) -> Callable[[PQNActorVariables, Array, SystemInput, Array], SystemOutput]:
+    """Return the cached apply hook for a shared LayerNorm PQN-VDN actor.
+
+    scale and spawn_frame are already checked host values. Like
+    _pqn_actor_apply, the hook captures no weights or live inputs, and its
+    numerical keyword defaults (scale, frame and normalization_index 1, which
+    means "layer_norm") are part of System identity. The BatchNorm hooks stay
+    separate and unchanged, so actors saved before this option keep their
+    identity.
+    """
+    frame_index = SPAWN_FRAMES.index(spawn_frame)
+
+    def apply(
+        variables: PQNActorVariables,
+        memory: Array,
+        inputs: SystemInput,
+        keys: Array,
+        *,
+        input_scale: float = scale,
+        spawn_frame_index: int = frame_index,
+        normalization_index: int = PQN_NORMALIZATIONS.index("layer_norm"),
+    ) -> SystemOutput:
+        """Apply a LayerNorm PQN-VDN actor; see _apply_pqn_actor."""
+        return _apply_pqn_actor(
+            variables,
+            memory,
+            inputs,
+            keys,
+            input_scale=input_scale,
+            spawn_frame_index=spawn_frame_index,
+            normalization_index=normalization_index,
+        )
+
+    return apply
+
+
+@functools.lru_cache(maxsize=32)
+def _grouped_layer_norm_pqn_actor_apply(
+    scale: float, frame: str, sharing: str
+) -> Callable[[PQNActorVariables, Array, SystemInput, Array], SystemOutput]:
+    """Return the cached apply hook for a grouped LayerNorm PQN-VDN actor.
+
+    Checked scale/frame/sharing and normalization_index 1 ("layer_norm")
+    become numeric keyword defaults in the hook's recorded identity.
+    Parameters and per-actor memory remain dynamic inputs.
+    """
+
+    def apply(
+        variables: PQNActorVariables,
+        memory: Array,
+        inputs: SystemInput,
+        keys: Array,
+        *,
+        input_scale: float = scale,
+        spawn_frame_index: int = SPAWN_FRAMES.index(frame),
+        parameter_sharing_index: int = _PARAMETER_SHARING.index(sharing),
+        normalization_index: int = PQN_NORMALIZATIONS.index("layer_norm"),
+    ) -> SystemOutput:
+        """Apply a grouped LayerNorm actor; see _apply_grouped_pqn_actor."""
+        return _apply_grouped_pqn_actor(
+            variables,
+            memory,
+            inputs,
+            keys,
+            input_scale=input_scale,
+            spawn_frame_index=spawn_frame_index,
+            parameter_sharing_index=parameter_sharing_index,
+            normalization_index=normalization_index,
+        )
+
+    return apply
+
+
 def make_pqn_system(
     network: PQNInferenceVariables,
     *,
@@ -1204,6 +1399,7 @@ def make_pqn_system(
     checkpoint: str | None = None,
     actor_input_schema: int = ACTOR_INPUT_SCHEMA_VERSION,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> System:
     """Wrap PQN network variables as an M8 JAX System with epsilon-greedy actions.
 
@@ -1225,6 +1421,12 @@ def make_pqn_system(
         Actor weight ownership used during training. Grouped variables carry
         five groups; memory stays per physical actor. Historical schema 1
         supports all only. The mode is part of the System identity.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        Hidden-layer normalization used to train these weights
+        (``PQNConfig.normalization``). It must match the network's layout;
+        the network fails when called otherwise. "layer_norm" needs the
+        current actor input schema. It is part of the System identity;
+        "batch_norm" keeps the identity actors had before this option.
     name : str, default="PQN-VDN"
         Nonempty display name; it proves nothing about training.
     checkpoint : str or None, default=None
@@ -1244,14 +1446,16 @@ def make_pqn_system(
         variables and float32 (B,5,512) per-actor memory. Memory resets only at
         episode starts; death and respawn keep it. Each decision also returns
         ``PQNLearningOutputs`` with the memory it received. The apply hook is
-        declared lane-independent (BatchNorm uses running statistics here), so
-        a pool runs this actor only on its own games.
+        declared lane-independent (BatchNorm uses running statistics here and
+        LayerNorm reads one actor row at a time), so a pool runs this actor
+        only on its own games.
 
     Raises
     ------
     ValueError
-        epsilon, input_scale, spawn_frame, actor_input_schema or name is
-        invalid.
+        epsilon, input_scale, spawn_frame, actor_input_schema, normalization
+        or name is invalid, or a grouped or LayerNorm actor names historical
+        actor input schema 1.
 
     Notes
     -----
@@ -1270,11 +1474,22 @@ def make_pqn_system(
     sharing = _parameter_sharing(parameter_sharing)
     if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
         raise ValueError("Grouped actors require the current actor input schema")
-    apply = _declare_lane_independent(
-        hook(scale, frame)
-        if sharing == "all"
-        else _grouped_pqn_actor_apply(scale, frame, sharing)
-    )
+    layer_norm = _pqn_normalization(normalization) == "layer_norm"
+    if layer_norm and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
+        raise ValueError("LayerNorm actors require the current actor input schema")
+    if layer_norm:
+        selected = (
+            _layer_norm_pqn_actor_apply(scale, frame)
+            if sharing == "all"
+            else _grouped_layer_norm_pqn_actor_apply(scale, frame, sharing)
+        )
+    else:
+        selected = (
+            hook(scale, frame)
+            if sharing == "all"
+            else _grouped_pqn_actor_apply(scale, frame, sharing)
+        )
+    apply = _declare_lane_independent(selected)
     return System(
         name,
         apply,
@@ -1397,7 +1612,10 @@ def _minibatch_loss(
 
     params and batch_stats are the Flax subtrees before the step; batch is one
     checked PQNBatch with at least one eligible pair (the caller guarantees
-    it); pqn supplies gamma, td_lambda and input_scale. Returns
+    it); pqn supplies gamma, td_lambda, input_scale, normalization and
+    reward_scale, which multiplies the true-unit batch rewards before the
+    lambda-return targets (so mean_q and mean_target are in scaled units).
+    Returns
     ``(loss, (new_batch_stats, mean_q, mean_target))``: the mean squared team
     TD error over eligible pairs, the statistics after this training forward,
     and the mean VDN value and mean target over those pairs. Padding is
@@ -1431,9 +1649,12 @@ def _minibatch_loss(
     mask = jnp.where(live[..., None], batch.action_mask, neutral)
     actions = jnp.where(live, batch.actions, 0)
     rewards = jnp.where(valid, batch.rewards, 0.0)
+    if pqn.reward_scale != 1.0:
+        # The scale is static, so the default keeps the unscaled program.
+        rewards = rewards * jnp.float32(pqn.reward_scale)
     (_, values), updates = cast(
         tuple[tuple[Array, Array], dict[str, Tree]],
-        PQNNetwork(input_scale=pqn.input_scale).apply(
+        PQNNetwork(input_scale=pqn.input_scale, normalization=pqn.normalization).apply(
             {"params": params, "batch_stats": batch_stats},
             batch.initial_memory
             if batch.learner_active is None
@@ -1487,7 +1708,9 @@ def update_pqn(
     batch : PQNBatch
         C time rows of D whole game sequences in the network frame.
     pqn : PQNConfig
-        Static settings: gamma, td_lambda, input_scale and the optimizer.
+        Static settings: gamma, td_lambda, input_scale, normalization,
+        reward_scale (applied to batch.rewards before the targets) and the
+        optimizer.
     planned_learning_blocks : int
         Static positive N that fixes the learning-rate schedule.
 

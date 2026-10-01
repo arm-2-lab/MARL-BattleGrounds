@@ -2,7 +2,9 @@
 
 Real trainer configs cover six methods and eighteen plain/treatment settings.
 Small fake workers cover fixed case order, ordinary trainer dispatch, visible
-failures, immutable clocks, explicit recovery, linked continuation identities,
+failures, immutable clocks, explicit recovery (an unwritten case restarts when
+its run folder is missing, empty or holds only the trainer's lock file), linked
+continuation identities,
 backend-free status, duplicate owners and detached launch parity. They prove
 host orchestration, not learner correctness, learning or device throughput.
 Runtime bindings cover every input role, retain aliases and zero-weight members,
@@ -330,7 +332,7 @@ def test_explicit_resume_uses_saved_checkpoint_without_replacement_seed(
     assert [row["exit_code"] for row in result["cases"][0]["attempts"]] == [1, 0]
 
 
-@pytest.mark.parametrize("run_folder", ["missing", "empty"])
+@pytest.mark.parametrize("run_folder", ["missing", "empty", "lock-only"])
 def test_explicit_resume_restarts_only_an_unwritten_case_with_original_deadlines(
     host_only: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -349,8 +351,10 @@ def test_explicit_resume_restarts_only_an_unwritten_case_with_original_deadlines
     def before_training(directory: Path, command: list[str], **kwargs: object) -> int:
         if not failed:
             failed.append(study._read(directory / "request.json"))
-            if run_folder == "empty":
+            if run_folder != "missing":
                 (directory / "run").mkdir()
+            if run_folder == "lock-only":
+                (directory / "run" / ".training.lock").touch()
             return 1
         return finish(directory, command, **kwargs)
 

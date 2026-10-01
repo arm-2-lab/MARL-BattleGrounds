@@ -1064,7 +1064,8 @@ def make_opponent_system(
         template), and the memory is (network memory, pinned memory).
         All-current batches call the base actor once on the full batch. Mixed
         batches also call it once on the full batch with current weights, with
-        frozen-copy lanes (past copies and the permanent pin) marked invalid;
+        frozen-copy lanes (past copies and the permanent pin) marked invalid,
+        unless no valid lane uses current weights;
         then only those lanes are gathered, in groups of ceil(B / 4), mapped as
         independent length-one calls with their own weights and written back.
         So per-lane weight copies cover only frozen-copy lanes, not all B.
@@ -1203,13 +1204,33 @@ def make_opponent_system(
         def mixed(_: None) -> SystemOutput:
             """Apply current weights once, then each frozen copy on its own lanes."""
             frozen = history.lane_snapshot != -1
-            # Current-weight lanes share one full-batch call. Frozen lanes are
-            # marked invalid there and replaced below.
-            shared = normalized(
-                history.current_variables,
-                memory,
-                inputs._replace(valid=inputs.valid & ~frozen),
-                keys,
+            live = inputs.valid & ~frozen
+
+            def shared_call(_: None) -> SystemOutput:
+                """Run current weights once; frozen lanes are invalid here."""
+                output = normalized(
+                    history.current_variables,
+                    memory,
+                    inputs._replace(valid=live),
+                    keys,
+                )
+                return SystemOutput(
+                    ActorAction(
+                        *(jnp.asarray(head, jnp.int32) for head in output.actions)
+                    ),
+                    output.next_memory,
+                )
+
+            def no_shared_call(_: None) -> SystemOutput:
+                """Skip the call when no live lane uses current weights."""
+                zero = jnp.zeros((size, 5), jnp.int32)
+                return SystemOutput(ActorAction(zero, zero, zero), memory)
+
+            # Frozen lanes are replaced below; other lanes outside live are
+            # invalid, so M8 keeps their memory either way.
+            shared = cast(
+                SystemOutput,
+                jax.lax.cond(jnp.any(live), shared_call, no_shared_call, None),
             )
             capacity = _frozen_lane_capacity(size)
             groups = -(-size // capacity)

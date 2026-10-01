@@ -237,15 +237,73 @@ def preserve_log_suffix(
         temporary.unlink(missing_ok=True)
 
 
+RUN_LOCK_FILE = ".training.lock"
+"""Name of the empty file inside a run folder that run_lock locks."""
+
+
+def unused_run_folder(path: Path) -> bool:
+    """Say whether a run folder is missing or holds nothing but its lock file.
+
+    Parameters
+    ----------
+    path : Path
+        Folder that a new, restarted or grouped run would use.
+
+    Returns
+    -------
+    bool
+        True when path does not exist, or is a folder whose only entry is a
+        plain ``.training.lock`` file, left by a call that took the run lock
+        and stopped before it saved anything. False for a file, or for a
+        folder holding any other entry, including a folder or link named
+        ``.training.lock``.
+
+    Notes
+    -----
+    This is the one rule for "new or empty" run folders, shared by the
+    trainer, the study runner, the launch package and grouped analysis. It
+    reads folder entries only and writes nothing. It does not decide who may
+    write: a caller that starts a run must check again after taking the run
+    lock, because another call may save files in between.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> folder = Path(tempfile.mkdtemp())
+    >>> unused_run_folder(folder / "missing"), unused_run_folder(folder)
+    (True, True)
+    >>> (folder / RUN_LOCK_FILE).touch()
+    >>> unused_run_folder(folder)
+    True
+    >>> _ = (folder / "run_details.json").write_text("{}")
+    >>> unused_run_folder(folder)
+    False
+    """
+    if not path.exists():
+        return True
+    return path.is_dir() and all(
+        entry.name == RUN_LOCK_FILE and entry.is_file() and not entry.is_symlink()
+        for entry in path.iterdir()
+    )
+
+
 @contextmanager
 def run_lock(run_dir: Path) -> Generator[None]:
     """Hold an exclusive nonblocking local-process lock until context exit.
 
-    run_dir must exist. A second writer raises RuntimeError before changing run
+    run_dir must exist. The lock is taken on run_dir/.training.lock
+    (RUN_LOCK_FILE), which this creates empty when missing and never writes
+    or deletes. A second writer raises RuntimeError before changing run
     records. The persistent lock file is harmless after exit or a process crash;
     kernel ownership, not a stale PID, decides whether another run may start.
+    Never delete the file while a writer may run: a new file would let two
+    writers hold separate locks.
+
+    The lock stops a second writer only while the first one holds it. It does
+    not check what run_dir contains. A caller that starts a new run in run_dir
+    must check the folder again after taking the lock, as the trainer does.
     """
-    with (run_dir / ".training.lock").open("a+b") as stream:
+    with (run_dir / RUN_LOCK_FILE).open("a+b") as stream:
         try:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:

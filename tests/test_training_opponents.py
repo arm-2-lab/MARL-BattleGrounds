@@ -5,7 +5,8 @@ the separate permanent pin, rolling-copy retirement and stable capture IDs,
 actual capture spacing, dynamic copy weights, zero-capacity play, immutable
 complete actor variables, one full-batch call for current-weight lanes with
 length-one calls only for frozen-copy lanes (past copies and the permanent
-pin, through vmap or lax.map), shared result normalization,
+pin, through vmap or lax.map, including a partly filled last group), no
+current-weight call when every lane is frozen, shared result normalization,
 selected memory resets,
 stochastic initialization limits and untrained MAPPO on public inputs. These
 tests do not train a learner or establish GPU cost or learned competence.
@@ -652,6 +653,60 @@ def test_all_current_executes_one_full_batch_call_and_mixed_executes_assigned_la
     jax.effects_barrier()
     # Current-weight lanes share one full-batch call; frozen lanes run alone.
     assert calls == [4, 1, 1, 1]
+    calls.clear()
+    history = history._replace(lane_snapshot=jnp.asarray((0, 2, 1, 0), jnp.int32))
+    jax.block_until_ready(run(history, memory, inputs, keys))
+    jax.effects_barrier()
+    # With every lane frozen, the unused current-weight call is skipped.
+    assert calls == [1, 1, 1, 1]
+
+
+def test_partly_filled_frozen_group_writes_back_only_real_lanes() -> None:
+    env = make(
+        "tdm",
+        env_config=evaluation_env_config(team_sizes=(2, 2), max_steps=20),
+        num_envs=12,
+        metrics="none",
+    )
+    observations, state = env.reset(jax.random.key(41))
+    inputs = env.policy_inputs(observations, state, team=1)
+    keys = jax.random.split(jax.random.key(504), 12)
+    # Groups hold ceil(12 / 4) = 3 lanes, so four frozen lanes leave the second
+    # group with two padding rows that must never be written back.
+    assignment = (-1, 0, -1, -1, 2, -1, -2, -1, -1, 1, -1, -1)
+    wrapped = make_opponent_system(_actor())
+    history = init_opponent_history(
+        _variables(), num_envs=12, pin_first_update=True
+    )._replace(
+        count=jnp.int32(3),
+        eligible=jnp.arange(21) < 3,
+        captured_ids=jnp.where(jnp.arange(21) < 3, jnp.arange(21), -1).astype(
+            jnp.int32
+        ),
+        next_capture_id=jnp.int32(3),
+        pinned_variables=_variables(99, 7),
+        pinned_update=jnp.int32(1),
+        historical_variables={
+            "weight": jnp.arange(21, dtype=jnp.int32),
+            "inference": jnp.arange(21, dtype=jnp.int32) + 5,
+        },
+        lane_snapshot=jnp.asarray(assignment, jnp.int32),
+    )
+    memory = jnp.arange(60, dtype=jnp.int32).reshape(12, 5)
+    actual = _jit(wrapped.apply)(history, memory, inputs, keys)
+    for lane, slot in enumerate(assignment):
+        variables = (
+            history.current_variables
+            if slot == -1
+            else history.pinned_variables
+            if slot == -2
+            else _stored(history.historical_variables, slot)
+        )
+        expected = _apply(
+            variables, _row(memory, lane), _row(inputs, lane), keys[lane : lane + 1]
+        )
+        _tree_equal(_row(actual.actions, lane), expected.actions)
+        _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
 
 
 def test_public_death_and_respawn_keep_frozen_assignment_and_recurrent_memory() -> None:

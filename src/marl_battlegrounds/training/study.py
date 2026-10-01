@@ -34,6 +34,7 @@ from marl_battlegrounds.training._run_io import (
     atomic_json,
     process_identity,
     study_attempt_scope,
+    unused_run_folder,
     utc_now,
 )
 
@@ -960,6 +961,7 @@ def _report(root: Path, declared: Record, state: Record) -> Record:
         "declaration_sha256": _digest(declared),
         "status": state["status"],
         "cases": rows,
+        "paused_devices": state.get("paused_devices", {}),
         "analysis": state.get("analysis", {}),
         "updated_at": utc_now(),
         "qualification": "Execution records only; no claim of learned competence",
@@ -1074,11 +1076,7 @@ def _case_attempt(
     previous = bool(row["attempts"]) or run.exists()
     try:
         checkpoint = _latest(run) if previous else None
-        restart_empty = (
-            resume
-            and checkpoint is None
-            and (not run.exists() or (run.is_dir() and not any(run.iterdir())))
-        )
+        restart_empty = resume and checkpoint is None and unused_run_folder(run)
     except (ValueError, OSError) as error:
         row.update(status="failed", error=str(error))
         if declared["failure_policy"] == "stop":
@@ -1247,6 +1245,71 @@ def _resource_slots(declared: Record) -> list[Record | None]:
     ]
 
 
+def _slot_gpu(resources: Record | None) -> str | None:
+    """Return the GPU UUID of one expanded worker slot, or None for CPU/inherited."""
+    if resources is None:
+        return None
+    device = cast(str, resources["device"]["device"])
+    return None if device == "cpu" else device
+
+
+def _pause_failed_gpu(
+    state: Record, resources: Record | None, job: Record, attempt: Record
+) -> None:
+    """Stop admitting cases to a GPU whose case failed before any new checkpoint.
+
+    Parameters
+    ----------
+    state : dict
+        The controller's live study.json state. A pause is written to
+        ``state["paused_devices"][uuid]`` with the case ID, attempt number,
+        error and time; the attempt also gets ``device_paused`` True.
+    resources : dict or None
+        The finished case's expanded worker slot. CPU and inherited slots are
+        never paused.
+    job : dict
+        The finished case's declared job.
+    attempt : dict
+        The finished attempt record after ``_finish_case``. Its
+        ``checkpoint_before`` (the run's latest checkpoint at admission) and
+        exactly bound ``run_status`` show whether this attempt saved a new
+        checkpoint.
+
+    Notes
+    -----
+    A failed GPU case that saved no checkpoint of its own most often means the
+    device itself cannot start or keep work: a lost external card fails every
+    later case within seconds and would otherwise take the whole queue. The
+    pause keeps the remaining cases for healthy GPUs. Completed, stopped,
+    timed-out and interrupted attempts never pause. A case that fails after
+    saving a checkpoint does not pause its GPU; if the device is lost, the
+    next case fails early and pauses it then. The pause lasts for this
+    controller only: start or resume begins with no paused GPU, and the failed
+    case is retried by the ordinary resume rules. Host-only; no process or
+    device is touched.
+    """
+    device = _slot_gpu(resources)
+    if (
+        device is None
+        or device in state.get("paused_devices", {})
+        or state["cases"][job["id"]]["status"] != "failed"
+        or attempt.get("stop_requested")
+        or attempt.get("interrupted")
+    ):
+        return
+    status = cast(Record, attempt.get("run_status") or {})
+    saved = status.get("latest_checkpoint")
+    if saved is not None and saved != attempt.get("checkpoint_before"):
+        return
+    attempt["device_paused"] = True
+    state.setdefault("paused_devices", {})[device] = {
+        "case_id": job["id"],
+        "attempt": attempt["number"],
+        "error": attempt.get("error"),
+        "paused_at": utc_now(),
+    }
+
+
 def _cases_complete(declared: Record, state: Record) -> bool:
     """Check whether every declared case has a durable successful completion."""
     return all(
@@ -1265,8 +1328,13 @@ def _run_cases(
     and completion owners. The controller polls small process records, never
     model data. A failure under stop policy stops admission and requests bounded
     shutdown of active siblings. Signals do the same. Never retry automatically.
+    A GPU whose case fails before saving a checkpoint is paused for the rest of
+    this controller (see _pause_failed_gpu); the other slots keep admitting
+    cases, and when every slot is paused admission stops with status
+    "incomplete". Each start or resume begins with no paused GPU.
     """
     slots = _resource_slots(declared)
+    state["paused_devices"] = {}
     jobs = iter(_jobs(declared))
     active: dict[int, tuple[Record, Path, Record]] = {}
     exhausted = False
@@ -1309,6 +1377,8 @@ def _run_cases(
                     _finish_case(root, declared, state, job, directory, attempt, code)
                     or stop
                 )
+                _pause_failed_gpu(state, slots[slot], job, attempt)
+                atomic_json(root / "study.json", state)
                 if (
                     attempt.get("stop_requested")
                     and state["cases"][job["id"]]["status"] != "complete"
@@ -1333,7 +1403,11 @@ def _run_cases(
                 atomic_json(root / "study.json", state)
             else:
                 for slot, resources in enumerate(slots):
-                    if slot in active or exhausted:
+                    if (
+                        slot in active
+                        or exhausted
+                        or _slot_gpu(resources) in state["paused_devices"]
+                    ):
                         continue
                     try:
                         job = next(jobs)
@@ -1349,6 +1423,10 @@ def _run_cases(
                             break
                         continue
                     directory, attempt, stop_at = prepared
+                    if resources is not None:
+                        attempt["checkpoint_before"] = _optional(
+                            directory / "run/status.json"
+                        ).get("latest_checkpoint")
                     try:
                         if resources is None:
                             attempt["request_sha256"] = _digest(
@@ -1393,8 +1471,22 @@ def _run_cases(
                     stop = _finish_case(
                         root, declared, state, job, directory, attempt, code
                     )
+                    _pause_failed_gpu(state, resources, job, attempt)
                     if stop:
                         break
+                if (
+                    not active
+                    and not exhausted
+                    and not stop
+                    and all(
+                        _slot_gpu(resources) in state["paused_devices"]
+                        for resources in slots
+                    )
+                ):
+                    # Every GPU is paused: leave the rest pending for a resume.
+                    state["status"] = "incomplete"
+                    stop = True
+                    atomic_json(root / "study.json", state)
             if active:
                 time.sleep(0.05)
         if state["status"] == "running":
@@ -1583,6 +1675,9 @@ def run_study(
         A continuation instead has checkpoint, additional_env_steps and optional
         changes. Defaults are frozen before work. failure_policy defaults to
         "stop"; "continue" leaves failed cases visible and moves to the next.
+        Under either policy, a GPU whose case fails before saving a checkpoint
+        gets no new case for the rest of this command (recorded in the report's
+        paused_devices); other GPUs continue, and a resume clears the pause.
         Optional duration_seconds on the study and cases limits wall-clock
         work from their first launches, including downtime. finalist_of links
         a separate declaration to an existing discovery study. File-relative
@@ -1605,9 +1700,10 @@ def run_study(
         Existing study folder. Reuses its declaration and original deadlines.
         A supplied config must resolve to the same declaration. Only explicit
         resume may recover an unfinished case from its latest saved full
-        checkpoint. If no checkpoint exists and the case's run folder is missing
-        or empty, explicit resume may start that same case again. A nonempty run
-        without a checkpoint is refused. Attempts, seeds and deadlines are kept;
+        checkpoint. If no checkpoint exists and the case's run folder is missing,
+        empty or holds only the trainer's ``.training.lock``, explicit resume may
+        start that same case again. Any other run without a checkpoint is
+        refused. Attempts, seeds and deadlines are kept;
         a restart never adds time or removes partial work.
 
     Returns

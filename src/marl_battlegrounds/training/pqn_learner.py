@@ -779,6 +779,7 @@ def init_pqn_learner(
         input_scale=pqn.input_scale,
         spawn_frame=pqn.spawn_frame,
         parameter_sharing=pqn.parameter_sharing,
+        normalization=pqn.normalization,
     )
     collection, carry = init_training_collection(
         actor,

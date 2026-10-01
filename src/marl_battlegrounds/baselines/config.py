@@ -41,15 +41,19 @@
 # Copyright 2023 The JaxMARL Authors. All rights reserved.
 """Define baseline settings without importing numerical or training libraries.
 
-PPOConfig, QMIXConfig and PQNConfig keep the baseline defaults and validation.
+PPOConfig, QMIXConfig and PQNConfig keep the baseline defaults and validation;
+saved_settings gives the one JSON form that runs save for each of them, and
+with_later_settings reads older saved blocks that predate a setting.
 The numerical modules re-export these exact objects for existing callers.
 Batch and budget checks run on the host and allocate no model or device arrays.
 """
 
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
 from numbers import Real
 from typing import Literal, cast
 
@@ -63,6 +67,9 @@ _METHODS = {
 }
 
 _PARAMETER_SHARING = ("all", "class", "none")
+
+PQN_NORMALIZATIONS = ("batch_norm", "layer_norm")
+"""PQN hidden-layer normalization choices, matching the donor's NORM_TYPE names."""
 
 TEAM_SLOTS = 5
 """Team A actor slots mixed into one team value; smaller rosters pad inactive."""
@@ -178,6 +185,17 @@ def _positive(value: object, name: str) -> float:
     if not math.isfinite(number) or number <= 0:
         raise ValueError(f"{name} must be a finite positive real number.")
     return number
+
+
+def _pqn_normalization(value: object) -> str:
+    """Check one PQN hidden-layer normalization name and return it.
+
+    value must be the string "batch_norm" or "layer_norm"; anything else,
+    including other types, raises ValueError. Host-only, no device work.
+    """
+    if not isinstance(value, str) or value not in PQN_NORMALIZATIONS:
+        raise ValueError("normalization must be batch_norm or layer_norm")
+    return value
 
 
 def validate_qmix_batch_size(num_envs: int, config: QMIXConfig) -> None:
@@ -485,7 +503,13 @@ class QMIXConfig:
         transitions, not a rate.
     input_scale : float, default=1.0
         Positive finite multiplier applied to every actor feature before the
-        first Dense layer. The mixer's physical state is never scaled.
+        first Dense layer. The default 1.0 keeps the donor's calculation and
+        old models. The donor's inputs are about unit size, but ours reach
+        about 300: at 1.0 the first layer starts with activations about 14
+        times the intended size, which pushes the GRU's gates to their limits.
+        0.01, the value the PPO baselines use, starts them near 0.14. There is
+        no input normalization to absorb the scale. The mixer's physical state
+        is never scaled; the mixer applies its own LayerNorm to it.
     spawn_frame : str, default="left"
         Network frame for actor features, masks and actions: "left" reflects
         every game to look like a start from the left bank, "world" keeps raw
@@ -495,6 +519,15 @@ class QMIXConfig:
         Share actor weights across everyone, within each class, or not between
         physical slots. Grouped modes have five parameter groups. Memory stays
         separate per physical actor. Class changes at resets select new weights.
+    reward_scale : float, default=1.0
+        Positive finite multiplier the learner applies to every team reward
+        (task, custom and shaping parts together) before its TD targets. For
+        example 10.0 makes a kill worth ten times as much to the Q-values.
+        Only the learner's own targets change: logged rewards, game results
+        and validation stay in true game units, while mean Q and target
+        values in the training log are in scaled units. A constant positive
+        scale does not change which actions are best. The default 1.0 leaves
+        the update unchanged, and a saved run without this field used 1.0.
 
     Raises
     ------
@@ -528,6 +561,7 @@ class QMIXConfig:
     input_scale: float = 1.0
     spawn_frame: str = "left"
     parameter_sharing: str = "all"
+    reward_scale: float = 1.0
 
     def __post_init__(self) -> None:
         """Reject invalid settings on the host before any array is created."""
@@ -551,6 +585,7 @@ class QMIXConfig:
         if self.rollout_length > self.buffer_size:
             raise ValueError("QMIX needs rollout_length <= buffer_size")
         _positive(self.q_lr, "q_lr")
+        _positive(self.reward_scale, "reward_scale")
         _input_scale(self.input_scale)
         _spawn_frame(self.spawn_frame)
         _parameter_sharing(self.parameter_sharing)
@@ -622,21 +657,42 @@ class PQNConfig:
         Share actor weights across everyone, within each class, or not between
         physical slots. Grouped modes have five parameter groups. Memory stays
         separate per physical actor. Class changes at resets select new weights.
+    reward_scale : float, default=1.0
+        Positive finite multiplier the learner applies to every team reward
+        (task, custom and shaping parts together) before its lambda-return
+        targets, like the donor's ``REW_SCALE``. For example 10.0 makes a kill
+        worth ten times as much to the Q-values. Only the learner's own
+        targets change: logged rewards, game results and validation stay in
+        true game units, while mean Q values in the training log are in scaled
+        units. A constant positive scale does not change which actions are
+        best. The default 1.0 leaves the update unchanged, and a saved run
+        without this field used 1.0.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        Normalization after each of the two hidden Dense layers, like the
+        donor's ``NORM_TYPE``. "batch_norm" is the donor's SMAX choice and
+        keeps running statistics for those layers. "layer_norm" normalizes
+        each actor's row on its own (no running statistics), which the PQN
+        paper reports as the more stable choice. The input BatchNorm stays in
+        both cases, as with the donor's ``NORM_INPUT``. The choice changes the
+        saved weight layout, so an actor is always rebuilt with the
+        normalization it was trained with. A saved run or actor without this
+        field used "batch_norm".
 
     Raises
     ------
     ValueError
         A count is not a plain integer in range, a float is nonfinite, Boolean
-        or outside its range, lr_linear_decay is not a bool, the spawn frame is
-        unknown, memory_window exceeds rollout_length, eps_finish exceeds
-        eps_start, or H + T exceeds int32.
+        or outside its range, lr_linear_decay is not a bool, the spawn frame or
+        normalization is unknown, memory_window exceeds rollout_length,
+        eps_finish exceeds eps_start, or H + T exceeds int32.
 
     Notes
     -----
-    The architecture (input BatchNorm; two Dense 512, BatchNorm, ReLU layers;
-    GRU 512; Dense 198), the BatchNorm constants (momentum 0.99, epsilon 1e-5),
-    RAdam's own defaults and the 1e-10 schedule end are fixed contracts, not
-    settings. There is no reward multiplier, target network, replay or value
+    The architecture (input BatchNorm; two Dense 512, normalization, ReLU
+    layers; GRU 512; Dense 198), the BatchNorm constants (momentum 0.99,
+    epsilon 1e-5), Flax's LayerNorm defaults (epsilon 1e-6, learned scale and
+    bias), RAdam's own defaults and the 1e-10 schedule end are fixed
+    contracts, not settings. There is no target network, replay or value
     normalization. The record is immutable host setup; capture one instance in
     compiled code.
     """
@@ -656,6 +712,8 @@ class PQNConfig:
     input_scale: float = 1.0
     spawn_frame: str = "left"
     parameter_sharing: str = "all"
+    reward_scale: float = 1.0
+    normalization: str = "batch_norm"
 
     def __post_init__(self) -> None:
         """Reject invalid settings on the host before any array is created."""
@@ -667,6 +725,8 @@ class PQNConfig:
             raise ValueError("PQN's initial rounds would overflow int32")
         _positive(self.q_lr, "q_lr")
         _positive(self.max_grad_norm, "max_grad_norm")
+        _positive(self.reward_scale, "reward_scale")
+        _pqn_normalization(self.normalization)
         if type(self.lr_linear_decay) is not bool:
             raise ValueError("lr_linear_decay must be a Python bool")
         for name in ("gamma", "td_lambda", "eps_start", "eps_finish"):
@@ -684,13 +744,83 @@ class PQNConfig:
         return self.memory_window + self.rollout_length
 
 
+_LATER_SETTING_DEFAULTS: dict[type, dict[str, object]] = {
+    QMIXConfig: {"reward_scale": 1.0},
+    PQNConfig: {"reward_scale": 1.0, "normalization": "batch_norm"},
+}
+"""Settings added after runs were first saved, with the value those runs used."""
+
+
+def saved_settings(settings: PPOConfig | QMIXConfig | PQNConfig) -> dict[str, object]:
+    """Return one settings record as the JSON object that runs save.
+
+    Parameters
+    ----------
+    settings : PPOConfig, QMIXConfig or PQNConfig
+        A validated settings record.
+
+    Returns
+    -------
+    dict[str, object]
+        A new JSON-ready dictionary of every field in field order (after a
+        JSON round trip). Settings added after runs were first saved
+        (QMIX and PQN ``reward_scale``; PQN ``normalization``) are left out
+        while they hold the value older runs used (1.0 and "batch_norm"). So
+        a run that does not use them saves the same bytes as before they
+        existed, and an older saved block compares equal to the record it
+        reads back as.
+
+    Notes
+    -----
+    Host-only; settings is not changed. ``training.config.config_to_dict``
+    uses this rule. Reading a saved block back through the settings class
+    fills a missing field with its default, which is the same value; the
+    checkpoint settings checks fill it with ``with_later_settings``.
+    """
+    data = cast(dict[str, object], json.loads(json.dumps(asdict(settings))))
+    for name, value in _LATER_SETTING_DEFAULTS.get(type(settings), {}).items():
+        if data[name] == value:
+            del data[name]
+    return data
+
+
+def with_later_settings(
+    record: type[PPOConfig | QMIXConfig | PQNConfig], block: Mapping[str, object]
+) -> dict[str, object]:
+    """Return a saved settings block with later-added settings filled in.
+
+    Parameters
+    ----------
+    record : type
+        PPOConfig, QMIXConfig or PQNConfig, the class the block belongs to.
+    block : Mapping[str, object]
+        One saved JSON settings object, such as a run config's "pqn" block.
+
+    Returns
+    -------
+    dict[str, object]
+        A new dictionary: the block with each setting added after runs were
+        first saved (QMIX and PQN ``reward_scale``; PQN ``normalization``) set
+        to the value older runs used, when the block omits it. A block that
+        states a value keeps it. So a block written before the setting
+        existed, one written by ``saved_settings`` and one stating the old
+        default explicitly all compare equal to the full JSON form of the same
+        settings record.
+
+    Notes
+    -----
+    Host-only; block is not changed and nothing is validated here.
+    """
+    return {**_LATER_SETTING_DEFAULTS.get(record, {}), **block}
+
+
 DEFAULT_PPO_CONFIG = PPOConfig()
 
 DEFAULT_QMIX_CONFIG = QMIXConfig()
 """The donor's recurrent QMIX settings with the BG left spawn frame."""
 
 DEFAULT_PQN_CONFIG = PQNConfig()
-"""The donor's SMAX PQN-VDN settings without its reward multiplier, left frame."""
+"""The donor's SMAX PQN-VDN settings with reward scale 1.0 (not its 10), left frame."""
 
 # Host-readable format versions shared by model code and saved descriptions.
 ACTION_SCHEMA_VERSION = 1

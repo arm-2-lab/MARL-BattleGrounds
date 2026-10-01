@@ -876,10 +876,12 @@ def _worker(
 ) -> None:
     """Call the public trainer, then record calibration-only timing evidence.
 
-    Configuration is already frozen in job/config.json. Calibration never
-    becomes a scientific prefix. A single calibration actor may time 40 Random
-    games under the config's red_zone_depth; these are engineering games and
-    are excluded from the study results.
+    Configuration is already frozen in job/config.json. A fresh job trains
+    into job/run; resume=True passes only resume_from (job/run's latest saved
+    checkpoint), because train refuses output_dir and resume_from together.
+    Calibration never becomes a scientific prefix. A single calibration actor
+    may time 40 Random games under the config's red_zone_depth; these are
+    engineering games and are excluded from the study results.
     """
     import jax
 
@@ -895,7 +897,7 @@ def _worker(
     config = read_config(job / "config.json")
     result = train(
         None if resume else config,
-        output_dir=job / "run",
+        output_dir=None if resume else job / "run",
         resume_from=_launch._checkpoint(job, None) if resume else None,
     )
     if mode != "calibration":

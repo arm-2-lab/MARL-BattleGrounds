@@ -1192,14 +1192,26 @@ class _Composition:
         *,
         actor_keys: Array | None = None,
         keep_learning_outputs: bool = True,
+        owns_whole_team: bool = True,
     ) -> SystemOutput:
         """Reuse child execution and combine only each child's owned actions.
 
-        In a pool, a JAX member that _row_safe accepts runs through
-        _compact_jax_apply on its own games only; other members get the full
-        batch through _composed_jax_apply. Either way each member keeps its
-        own keys, memory layout and output shapes, and only its owned slots in
-        valid games are merged into the team result.
+        Each member takes one of three routes. A host member goes through
+        _host_apply. A JAX member of a pool goes through _compact_jax_apply
+        when three static facts hold: _row_safe accepts it, learner outputs
+        are dropped (keep_learning_outputs False) and the caller gives this
+        pool whole teams (owns_whole_team True). That route runs the member
+        on its own games only. Every other JAX member gets the full batch
+        through _composed_jax_apply, which skips unowned Policy columns.
+        Each member keeps its own keys, memory layout and output shapes, and
+        only its owned slots in valid games are merged into the team result.
+
+        owns_whole_team is a static speed hint, never a correctness rule: True
+        says each game's incoming controlled slots are the whole active team,
+        as for apply_systems, evaluation and training opponents. A team
+        passes False to its members, because a team splits slots between
+        them; a pool passes its own value on, because a pool member owns
+        what the pool owns in its games.
         """
         if actor_keys is None:
             actor_keys = _slot_keys(keys)
@@ -1219,8 +1231,11 @@ class _Composition:
                 execution, child.active_mask, controlled=owned, valid=child.valid
             )
             child_keys = _member_keys(keys, index)
-            if self.pooled and _row_safe(
-                execution, memory.members[index], inputs.valid.shape[0]
+            whole_teams = self.pooled and owns_whole_team
+            if (
+                whole_teams
+                and not keep_learning_outputs
+                and _row_safe(execution, memory.members[index], inputs.valid.shape[0])
             ):
                 output = cast(
                     SystemOutput,
@@ -1232,7 +1247,6 @@ class _Composition:
                         child,
                         child_keys,
                         actor_keys,
-                        keep_learning_outputs=keep_learning_outputs,
                     ),
                 )
             elif execution.execution == "host":
@@ -1247,6 +1261,7 @@ class _Composition:
                     jnp.zeros_like(inputs.valid),
                     actor_keys=actor_keys,
                     keep_learning_outputs=keep_learning_outputs,
+                    owns_whole_team=whole_teams,
                 )
             else:
                 output = cast(
@@ -1260,6 +1275,7 @@ class _Composition:
                         child_keys,
                         actor_keys,
                         keep_learning_outputs=keep_learning_outputs,
+                        owns_whole_team=whole_teams,
                     ),
                 )
             retained = owned & inputs.valid[:, None]
@@ -1313,11 +1329,15 @@ def _declare_lane_independent[Apply: SystemApply](  # pyright: ignore[reportUnus
     Notes
     -----
     Host-only and idempotent. Only built-in learner actor factories use it.
-    Pools then run a marked member on its own games alone (see
-    _compact_jax_apply). An unmarked generic System keeps the full batch,
-    because the System contract lets a method look across games.
+    The marker stores the hook itself, and _row_safe accepts it only on that
+    same object. A wrapper made with functools.wraps or jax.jit copies the
+    attribute but is a different object, so it keeps the full batch. Pools
+    may then run a marked member on its own games alone (see
+    _compact_jax_apply); its learner outputs are never kept on that route.
+    An unmarked generic System keeps the full batch, because the System
+    contract lets a method look across games.
     """
-    setattr(apply, _LANE_INDEPENDENT, True)
+    setattr(apply, _LANE_INDEPENDENT, apply)
     return apply
 
 
@@ -1337,16 +1357,18 @@ def _row_safe(execution: _SystemExecution, memory: PolicyTree, size: int) -> boo
     -------
     bool
         True for JAX Policy adapters, which act per actor by contract, and for
-        generic JAX members whose apply hook is declared lane-independent,
-        that have no custom reset hook and whose memory leaves all lead with
-        B. False for host members, nested compositions and all other Systems.
+        generic JAX members whose own apply hook was declared lane-independent
+        (not a wrapper that copied the marker), that have no custom reset hook
+        and whose memory leaves all lead with B. False for host members,
+        nested compositions and all other Systems.
     """
     if execution.execution != "jax":
         return False
     if execution.policies:
         return True
-    if execution.reset is not None or not getattr(
-        execution.apply, _LANE_INDEPENDENT, False
+    if (
+        execution.reset is not None
+        or getattr(execution.apply, _LANE_INDEPENDENT, None) is not execution.apply
     ):
         return False
     return all(
@@ -1421,14 +1443,14 @@ def _pool_chunk_capacity(size: int) -> int:
     -------
     int
         ceil(size / 16), at least 1: 48 games at B=768, 32 at B=512 and 64
-        at B=1024. A member with more games runs several such groups in one
-        compiled loop, so a pool member with a small share pays for about its
-        own games, and one with a large share pays a small fixed cost per group.
+        at B=1024. A pool member with a small share makes one call on that
+        many rows; one with more games runs several such groups in one
+        compiled loop.
     """
     return max(1, -(-size // 16))
 
 
-@partial(jax.jit, static_argnums=0, static_argnames=("keep_learning_outputs",))
+@partial(jax.jit, static_argnums=0)
 def _compact_jax_apply(
     execution: _SystemExecution,
     variables: PolicyTree,
@@ -1437,8 +1459,6 @@ def _compact_jax_apply(
     inputs: SystemInput,
     keys: Array,
     actor_keys: Array,
-    *,
-    keep_learning_outputs: bool,
 ) -> SystemOutput:
     """Run a row-safe pool member only on its own games, in fixed-size groups.
 
@@ -1455,27 +1475,31 @@ def _compact_jax_apply(
         The member's (B,) game keys, already folded for its member index.
     actor_keys : Array
         (B, 5) typed or (B, 5, 2) legacy physical-slot keys shared by members.
-    keep_learning_outputs : bool
-        Static. False drops learner values inside the compiled call.
 
     Returns
     -------
     SystemOutput
-        Full-batch actions and policy IDs: the member's results on its games,
-        zero actions and ID -1 elsewhere. Next memory equals the input memory
-        except on the member's games. Learning outputs keep their (B, ...)
-        shapes with zeros outside the member's games.
+        Full-batch int32 actions and policy IDs: the member's results on its
+        games, zero actions and ID -1 elsewhere. Next memory equals the input
+        memory except on the member's games. Learner outputs are always ();
+        callers use this route only when learner outputs are dropped.
 
     Notes
     -----
     The member's valid games are gathered in game order into groups of
-    _pool_chunk_capacity(B) rows. Each group calls the shared _jax_apply with
-    that group's inputs, memory rows, game keys and slot keys, then writes
-    its rows back. One compiled loop body serves every group, and a member
-    with no games runs no group. Policy adapters use their whole-team route,
-    which keeps unowned slots' memory, so no per-slot copies are compiled.
-    A game's result equals its row in the full-batch call up to rounding of
-    batched arithmetic. No host transfer or callback is added.
+    _pool_chunk_capacity(B) rows; padding rows read game B - 1, are marked
+    invalid and are never written back. Each group calls the shared
+    _jax_apply with that group's inputs, memory rows, game keys and slot keys,
+    then writes its rows back. One compiled loop body serves every group, so
+    the member is compiled once; a member with no games runs no group. The
+    loop's length depends on the game count, so it does not support
+    reverse-mode gradients, which is why callers use it only with dropped
+    learner outputs. A member that owns most games runs up to 16 groups one
+    after another, a small extra cost for cheap members. Policy adapters use
+    their whole-team route, which callers guarantee by using this route only
+    for pools that control whole teams. A game's result equals its row in
+    the full-batch call up to rounding of batched arithmetic. No host
+    transfer or callback is added.
     """
     size = inputs.valid.shape[0]
     capacity = _pool_chunk_capacity(size)
@@ -1499,24 +1523,13 @@ def _compact_jax_apply(
             row_keys,
             no_reset,
             actor_keys=_gather_rows(actor_keys, index, size),
-            keep_learning_outputs=keep_learning_outputs,
+            keep_learning_outputs=False,
         )
 
-    def full(leaf: jax.ShapeDtypeStruct) -> Array:
-        """Allocate one full-batch learner output filled with zeros."""
-        return jnp.zeros((size, *leaf.shape[1:]), leaf.dtype)
-
-    # Dropped learner values need no extra shape-only trace of the member.
-    learning: PolicyTree = (
-        jax.tree.map(full, jax.eval_shape(call, order[:capacity]).learning_outputs)
-        if keep_learning_outputs
-        else ()
-    )
     zero = jnp.zeros((size, 5), jnp.int32)
     start = SystemOutput(
         ActorAction(zero, zero, zero),
         memory,
-        learning_outputs=learning,
         policy_ids=jnp.full((size, 5), -1, jnp.int32),
     )
 
@@ -1524,6 +1537,11 @@ def _compact_jax_apply(
         """Run one group and write its rows into the full-batch result."""
         index = jax.lax.dynamic_slice_in_dim(order, number * capacity, capacity)
         output = call(index)
+        reported = (
+            jnp.full((capacity, 5), -1, jnp.int32)
+            if output.policy_ids is None
+            else jnp.asarray(output.policy_ids, jnp.int32)
+        )
         return SystemOutput(
             ActorAction(
                 *(
@@ -1532,12 +1550,7 @@ def _compact_jax_apply(
                 )
             ),
             _scatter_rows(done.next_memory, output.next_memory, index),
-            learning_outputs=_scatter_rows(
-                done.learning_outputs, output.learning_outputs, index
-            ),
-            policy_ids=_scatter_rows(
-                done.policy_ids, jnp.asarray(output.policy_ids, jnp.int32), index
-            ),
+            policy_ids=_scatter_rows(done.policy_ids, reported, index),
         )
 
     return cast(
@@ -1546,7 +1559,11 @@ def _compact_jax_apply(
     )
 
 
-@partial(jax.jit, static_argnums=0, static_argnames=("keep_learning_outputs",))
+@partial(
+    jax.jit,
+    static_argnums=0,
+    static_argnames=("keep_learning_outputs", "owns_whole_team"),
+)
 def _composed_jax_apply(
     execution: _SystemExecution,
     variables: PolicyTree,
@@ -1557,6 +1574,7 @@ def _composed_jax_apply(
     actor_keys: Array,
     *,
     keep_learning_outputs: bool,
+    owns_whole_team: bool = True,
 ) -> SystemOutput:
     """Skip unassigned JAX members while retaining a fixed learner-output shape.
 
@@ -1565,6 +1583,8 @@ def _composed_jax_apply(
     branch returns () and no extra shape-only trace runs. It does not call
     host providers or execute numerical action work. This same compiled
     boundary keeps JAX members batched inside mixed host compositions.
+    owns_whole_team is the static hint passed on to a nested composition's
+    run (see _Composition.run); it does not change this member's own route.
     """
 
     def apply(_: None) -> SystemOutput:
@@ -1581,6 +1601,7 @@ def _composed_jax_apply(
             actor_keys=actor_keys,
             keep_learning_outputs=keep_learning_outputs,
             sparse_policies=True,
+            owns_whole_team=owns_whole_team,
         )
 
     # Dropped learner values need no extra shape-only trace of the member.
@@ -1830,11 +1851,14 @@ def pool[Member: System | Policy | str](
     Sampling uses the POOL initialization-key domain. A singleton preserves its
     member's keys. Generic member key tags and information rights follow team.
     Resources use each member's existing scope and memory reset hook. Members
-    with no assigned valid games do no action/provider work. JAX Policy members
-    and built-in learner actors run only on the games assigned to them, so a
-    member with a small share costs about its share of the batch. A mixture evaluation
-    does not promise paired member draws across spawn ends: evaluate each fixed
-    member separately when paired per-member results are needed.
+    with no assigned valid games do no action/provider work. When the pool
+    controls whole teams and learner outputs are dropped (training opponents
+    and evaluate do both), JAX Policy members and built-in learner actors run
+    on their own games only, in groups of ceil(B / 16), so a small share costs
+    about its share of the batch. Pools inside a team, such as fixed partners,
+    keep the full-batch route, which skips unowned Policy slots. A mixture
+    evaluation does not promise paired member draws across spawn ends: evaluate
+    each fixed member separately when paired per-member results are needed.
 
     Raises
     ------
@@ -2626,6 +2650,7 @@ def _jax_apply(
     actor_keys: Array | None = None,
     keep_learning_outputs: bool = True,
     sparse_policies: bool = False,
+    owns_whole_team: bool = True,
 ) -> SystemOutput:
     """Apply one numerical team, with selected reset and no host callbacks.
 
@@ -2635,6 +2660,9 @@ def _jax_apply(
     keep_learning_outputs flag defaults to True; False drops unused learner
     values inside the compiled call, without another method invocation.
     sparse_policies enables known-column skipping for composed Policy members.
+    owns_whole_team, default True, is the static hint passed to a
+    composition's run: True when each game's incoming controlled slots are
+    the whole active team. It only chooses faster routes, never results.
     """
     memory = _reset_for_decision(
         execution, variables, template, memory, inputs, init_keys, reset_mask
@@ -2657,6 +2685,7 @@ def _jax_apply(
             keys,
             actor_keys=actor_keys,
             keep_learning_outputs=keep_learning_outputs,
+            owns_whole_team=owns_whole_team,
         )
         if (owner := _composition(execution)) is not None
         else execution.apply(variables, memory, inputs, keys)
@@ -2776,13 +2805,16 @@ def _host_apply(
     *,
     actor_keys: Array | None = None,
     keep_learning_outputs: bool = True,
+    owns_whole_team: bool = True,
 ) -> SystemOutput:
     """Transfer only the host team's inputs and keep its full lane order.
 
     Optional actor_keys supplies exact legacy adapter draws without changing key
     representation. keep_learning_outputs=False releases unused host learner
     values after the one method call; it never converts or serializes them.
-    The remaining arguments follow the shared numerical team's call contract.
+    owns_whole_team is the static hint passed to a composition's run (see
+    _Composition.run). The remaining arguments follow the shared numerical
+    team's call contract.
     """
     if _composition(execution) is None:
         inputs, selected = jax.device_get((inputs, reset_mask))
@@ -2811,6 +2843,7 @@ def _host_apply(
             keys,
             actor_keys=actor_keys,
             keep_learning_outputs=keep_learning_outputs,
+            owns_whole_team=owns_whole_team,
         )
         if (owner := _composition(execution)) is not None
         else execution.apply(variables, memory, inputs, keys)

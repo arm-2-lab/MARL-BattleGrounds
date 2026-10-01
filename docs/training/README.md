@@ -421,6 +421,29 @@ same step. Excess healing earns no healing amount. Heal range can pay even when
 no heal occurs. These choices define this reward; a larger shaped return alone
 does not establish better play. Disable built-in shaping to use this recipe alone.
 
+**Use the team form for QMIX and PQN-VDN.** These two methods learn one team
+value from one team reward. They make it by averaging the Team A slot rewards,
+so an amount paid to one agent is divided by the team size: in 5v5 a kill credit
+would pay the team +0.01 while a teammate's death still costs -0.05. Use
+`reward=marl_battlegrounds.training.reward_recipes:combat_support_team_reward`
+with them. It gives every Team A slot the same amount: the three shared parts
+once plus the team total of the five own-agent parts. After the average, each
+event pays the team what `combat_support_reward` pays the agent it happens to:
+
+| Event In 5v5 | Each PPO Agent | Team Average, Per-Agent Form | Team Average, Team Form |
+| --- | --- | --- | --- |
+| A teammate dies | -0.05 to every agent | -0.05 | -0.05 |
+| Our Mage gets kill credit | +0.05 to the Mage | +0.01 | +0.05 |
+| Our Mage damages 100 enemy health | +0.10 to the Mage | +0.02 | +0.10 |
+| One agent stands in its own zone for one tick | -0.002 to that agent | -0.0004 | -0.002 |
+| One Priest/ally pair is in heal range for one tick | +0.001 to every agent | +0.001 | +0.001 |
+
+The native win reward still counts once. One difference stays by design: with
+one team reward, every agent's value also gains from a teammate's own events.
+The team totals include every configured Team A slot, including slots a fixed
+partner controls. The named parts keep their names and hold the amount each
+slot receives, so they still sum to the adjustment.
+
 Custom callbacks keep their four positional arguments:
 `reward(before, facts, after, progress)`. A callback may also declare keyword-only
 `config` to receive the producing game's configuration. This is privileged
@@ -972,6 +995,19 @@ reward plus custom adjustments, averaged over active learner-owned Team A slots,
 plus enabled team shaping once. With no partners or custom reward, this is the
 mean task reward over the configured Team A slots. The donor averages over all
 five slots; smaller rosters, frozen partners and custom feedback are BG changes.
+`qmix.reward_scale` (default 1.0) multiplies this reward inside the TD target
+only, for example 10.0 to make small per-step rewards stand out against early
+Q-value noise. Replay, logged rewards and results stay in game units; mean Q
+and target values in the training log are in scaled units.
+Because of the average, give QMIX the team form of a per-agent reward, such
+as `combat_support_team_reward` (see the combat and support reward above).
+
+**Input scale.** Actor features reach about 300, and QMIX's Q-network has no
+input normalization. With the default `qmix.input_scale=1.0` the first layer
+starts with activations about 14 times the intended size, which pushes the
+GRU's gates to their limits. `QMIXConfig(input_scale=0.01)`, the value the PPO
+baselines use, starts them near 0.14. The default stays 1.0 so the donor's
+calculation and old models are unchanged. The mixer normalizes its own state.
 
 **Model and actors.** One shared local Q-network (256 wide, with a 256-wide
 GRU) turns each actor's permitted inputs and own memory into 198 action
@@ -1123,14 +1159,20 @@ C-RS). Shaping uses `pqn.gamma`.
 inputs and own 512-wide memory into 198 action values: BatchNorm on the input,
 two blocks of Dense 512, BatchNorm and ReLU, a GRU and a Dense head, 4,596,512
 parameters. The team value is the sum of the active actors' values (VDN); there
-is no mixer, critic, physical state, target network or replay. Loaded and
-exported PQN-VDN Systems play greedily: epsilon 0 and, among equal best values,
+is no mixer, critic, physical state, target network or replay.
+`pqn.normalization="layer_norm"` swaps the two hidden BatchNorms for LayerNorms
+(the donor's other `NORM_TYPE`); the input BatchNorm stays. The choice is saved
+with the run and every exported actor, which is always rebuilt with it.
+`pqn.reward_scale` (default 1.0) multiplies the team reward inside the lambda
+returns only, like the donor's `REW_SCALE`; logged rewards and results stay in
+game units. The team reward is the average over Team A slots, so give PQN-VDN
+the team form of a per-agent reward, such as `combat_support_team_reward`. Loaded and exported PQN-VDN Systems play greedily: epsilon 0 and, among equal best values,
 the first legal action in the network's own order (mirrored for left-frame
 games). Details and the donor are in the
 [source ledger](source_reuse.md#recurrent-pqn-vdn).
 
-**Normalization.** BatchNorm normalizes with the statistics of each training
-minibatch, counting only real rows and configured slots (padding and empty
+**Normalization.** With the default `"batch_norm"`, BatchNorm normalizes with
+the statistics of each training minibatch, counting only real rows and configured slots (padding and empty
 roster slots are left out), and keeps running statistics. Choosing an action
 always uses the saved running statistics and never changes them, so every game
 is played by the same fixed function. The statistics are part of the actor:
@@ -1141,6 +1183,9 @@ cancels; it is kept for identity and compatibility, not as a setting to tune.
 At the default 32 games and 16 minibatches each minibatch holds two whole
 games, so statistics come from small batches; see the
 [source ledger](source_reuse.md#deliberate-pqn-vdn-adaptations).
+With `"layer_norm"`, only the input BatchNorm keeps running statistics; each
+hidden LayerNorm normalizes one actor's row on its own, so it uses no batch
+statistics at all.
 
 **Initial random experience.** A run first collects W = `memory_window` +
 `rollout_length` rounds (132 by default) with exploration rate 1, which is a
@@ -1419,10 +1464,23 @@ and `curriculum=True`, `shaping=True`, or both in the same config. Set
 `validation_opponents=None` for those small wiring checks. A short check
 does not prove that every curriculum stage received useful experience.
 
-A new run requires a new or empty exact output directory. Resume requires the
-path of a complete learner checkpoint, not an actor export or run directory:
+A new run requires a new or empty exact output directory. A folder holding only
+`.training.lock`, left by a call that stopped before saving anything, counts as
+empty. If two calls are given the same new folder, only one writes there: the
+trainer checks the folder again after it takes the run lock, and the other call
+stops with an error without changing the first run. The same holds for
+`extend_training` child folders.
+
+Resume takes a saved run folder or the exact folder of a complete learner
+checkpoint; an actor export cannot resume. A run folder follows only its
+`latest_checkpoint.json` pointer. The trainer reads that pointer again after it
+takes the run lock: if another call trained the run further in the meantime,
+this call stops with an error instead of rolling the run back. An exact
+checkpoint folder is resumed as named, even an older one:
 
 ```python
+resumed = training.train(resume_from="RUN")  # its newest checkpoint
+# Or name one exact checkpoint folder:
 resumed = training.train(resume_from="RUN/checkpoints/SAVED_CHECKPOINT")
 ```
 
@@ -2953,9 +3011,9 @@ unfinished work from that case's complete saved checkpoint. The saved seed and
 config must still match; an extension must match its declared parent, added
 budget and changes. A checkpoint that changes those settings or points outside
 the case's run folder is refused. Explicit resume may start the same case again
-only when no checkpoint exists and its run folder is missing or empty. It keeps
-the saved config, seed, attempt history and original deadlines. A nonempty run
-without a complete checkpoint is refused; preserve its partial work and restore
+only when no checkpoint exists and its run folder is missing, empty or holds only
+the trainer's `.training.lock`. It keeps the saved config, seed, attempt history
+and original deadlines. Any other run without a complete checkpoint is refused; preserve its partial work and restore
 a complete checkpoint, or declare a new study in another output folder.
 
 The saved `failure_policy` defaults to `stop`. Set it to `continue` in the original

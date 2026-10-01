@@ -51,8 +51,9 @@ paths = training.load_study_data("reports/analysis-data")
 
 Only include readable run folders in the plotting call. The export still lists
 all declared cases, including jobs that never started. With an explicit grouping,
-an absent or empty run folder remains an unavailable member of the comparison.
-Nonempty damaged run folders still fail clearly. Neither API guesses
+an absent or empty run folder (one holding only the trainer's `.training.lock`
+counts as empty) remains an unavailable member of the comparison. Other damaged
+run folders still fail clearly. Neither API guesses
 which external decisions or evaluation folders belong to your study.
 
 ## Read The Tables

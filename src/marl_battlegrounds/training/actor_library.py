@@ -49,6 +49,12 @@ def _actor_facts(details: Record) -> Record:
         "input_scale": checkpoints._actor_input_scale(details),  # pyright: ignore[reportPrivateUsage]
         "spawn_frame": checkpoints._actor_spawn_frame(details),  # pyright: ignore[reportPrivateUsage]
         "parameter_sharing": checkpoints._actor_parameter_sharing(details),  # pyright: ignore[reportPrivateUsage]
+        # Only a PQN-VDN LayerNorm actor adds this fact; older facts stay equal.
+        **(
+            {}
+            if checkpoints._actor_normalization(details) == "batch_norm"  # pyright: ignore[reportPrivateUsage]
+            else {"normalization": checkpoints._actor_normalization(details)}  # pyright: ignore[reportPrivateUsage]
+        ),
     }
 
 

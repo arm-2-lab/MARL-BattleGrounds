@@ -4,9 +4,8 @@ run_config_check remembers a passed check by its check function and the
 config's exact tree, leaf types, dtypes, shapes, weak types and bytes. The
 same config is checked once; a changed byte or another check function runs the
 real check again. A failure is never remembered and re-raises every time.
-Traced configs and non-config values always reach the check. Restore-style
-content preparation keeps its binding digest while reusing passed checks, and
-the real Core validator still rejects a changed invalid config.
+Traced configs and non-config values always reach the check, and the real
+Core validator still rejects a changed invalid config.
 """
 
 # pyright: reportPrivateUsage=false

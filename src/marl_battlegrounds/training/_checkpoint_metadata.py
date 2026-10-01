@@ -30,6 +30,7 @@ from marl_battlegrounds.baselines.config import (
     TRAINING_STATE_SCHEMA_VERSION,
     PPOConfig,
     _parameter_sharing,
+    _pqn_normalization,
     validate_ppo_method,
 )
 from marl_battlegrounds.baselines.methods import (
@@ -393,6 +394,25 @@ def _actor_parameter_sharing(details: dict[str, Any]) -> str:
     return _parameter_sharing(value)
 
 
+def _actor_normalization(details: dict[str, Any]) -> str:
+    """Read a saved PQN-VDN hidden-layer normalization; absence is "batch_norm".
+
+    details is a checked actor or learner description. Actor exports carry an
+    explicit "normalization" key only for "layer_norm"; learner checkpoints
+    read their config's "pqn" block. Every saved model without the key (all
+    PPO and QMIX models and PQN-VDN models from before the option) used the
+    original layout, "batch_norm". Raises ValueError for an unknown value.
+    """
+    value = (
+        details.get("normalization", "batch_norm")
+        if details["kind"] == "actor"
+        else _settings_block(details["metadata"]["config"]).get(
+            "normalization", "batch_norm"
+        )
+    )
+    return _pqn_normalization(value)
+
+
 def _directory(path: Path) -> Path:
     """Reject symbolic links along an existing directory's complete path."""
     absolute = path.absolute()
@@ -535,9 +555,13 @@ def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
         required |= {key for key in ("input_scale", "spawn_frame") if key in details}
     if details["kind"] == "actor" and "parameter_sharing" in details:
         required.add("parameter_sharing")
+    if details["kind"] == "actor" and "normalization" in details:
+        required.add("normalization")
     if set(details) != required:
         raise ValueError("Checkpoint description fields differ from its schema")
     _actor_parameter_sharing(details)
+    if _actor_normalization(details) != "batch_norm" and method != "pqn_vdn":
+        raise ValueError("Only PQN-VDN models have a normalization choice")
     if method in ("qmix", "pqn_vdn") and details["kind"] == "actor":
         steps = _object(details["metadata"], "Actor provenance").get("optimizer_steps")
         if (
@@ -816,6 +840,7 @@ def _check_actor_origin(actor: dict[str, Any], learner: dict[str, Any]) -> None:
         or actor["metadata"].get("checkpoint_id") != learner["checkpoint_id"]
         or any(actual.get(key) != expected.get(key) for key in keys)
         or _actor_parameter_sharing(actor) != _actor_parameter_sharing(learner)
+        or _actor_normalization(actor) != _actor_normalization(learner)
     ):
         raise ValueError("Saved actor differs from its originating checkpoint")
 
@@ -835,13 +860,20 @@ def _inference_digest(details: dict[str, Any]) -> str:
     identity for the same Q-network. PQN-VDN uses a version-1
     pqn_vdn_inference envelope with the same greedy fields; its actor_digest
     covers the parameters and the BatchNorm statistics, so a statistics-only
-    change is a different System. A synthetic historical MAPPO identity may
-    omit schemas; saved artifacts cannot omit it.
+    change is a different System. A PQN-VDN "layer_norm" model also binds
+    "normalization": "layer_norm" in its envelope; "batch_norm" adds no key,
+    so every earlier identity is unchanged. A synthetic historical MAPPO
+    identity may omit schemas; saved artifacts cannot omit it.
     """
     scale = _actor_input_scale(details)
     frame = _actor_spawn_frame(details)
     method = _schema_method(details.get("schemas", _SCHEMAS))
     sharing = _actor_parameter_sharing(details)
+    normalization = (
+        {}
+        if _actor_normalization(details) == "batch_norm"
+        else {"normalization": _actor_normalization(details)}
+    )
     if sharing != "all":
         return sha256(
             _json_bytes(
@@ -858,6 +890,7 @@ def _inference_digest(details: dict[str, Any]) -> str:
                         if is_ppo_method(method)
                         else {"epsilon": 0.0, "tie_rule": QMIX_TIE_RULE}
                     ),
+                    **normalization,
                 }
             )
         ).hexdigest()
@@ -874,6 +907,7 @@ def _inference_digest(details: dict[str, Any]) -> str:
                     "spawn_frame": frame,
                     "epsilon": details["epsilon"] if exported else 0.0,
                     "tie_rule": details["tie_rule"] if exported else PQN_TIE_RULE,
+                    **normalization,
                 }
             )
         ).hexdigest()

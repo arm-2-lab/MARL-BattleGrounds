@@ -25,7 +25,8 @@ dictionary
 only actor_input and training_state go from 1 to 2, and the frozen
 pre-Red-Zone dictionary equals the recorded one. The schema-1 actor template
 equals the old actor layout exactly. Historical method settings gain only
-explicit parameter_sharing="all". The default ``config_to_dict`` equals the
+explicit parameter_sharing="all" (and QMIX reward_scale=1.0, which saved
+configs leave out at that value). The default ``config_to_dict`` equals the
 recorded one plus the explicitly listed history/partner defaults,
 retain_all_actors=False and "red_zone_depth": 5.0, placed right after
 score_threshold_curriculum. Older settings remain exact. The original fixture
@@ -259,6 +260,7 @@ def test_the_capture_settings_are_the_recorded_ones() -> None:
     assert asdict(QMIXConfig(**settings["qmix"])) == {
         **settings["qmix"],
         "parameter_sharing": "all",
+        "reward_scale": 1.0,
     }
 
 

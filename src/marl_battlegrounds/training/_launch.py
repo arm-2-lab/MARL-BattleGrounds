@@ -37,6 +37,7 @@ from marl_battlegrounds.training._run_io import (
     atomic_json,
     process_identity,
     progress_text,
+    unused_run_folder,
     utc_now,
 )
 
@@ -399,8 +400,12 @@ def resource_environment(
     device is one checked resource entry, or None to inherit device and allocator
     settings. A CPU entry sets JAX_PLATFORMS=cpu and hides CUDA devices. A GPU
     entry selects its UUID and sets JAX_PLATFORMS=cuda,cpu: CUDA stays required
-    and is the default, while CPU is available for checkpoint checks. Optional
-    memory_fraction replaces JAX's allocator fraction; other inherited flags,
+    and is the default, while CPU is available for checkpoint checks. A GPU
+    entry also sets XLA_PYTHON_CLIENT_PREALLOCATE=false unless the caller set
+    that flag, so a worker takes GPU memory as it needs it instead of JAX's
+    default 75% up front, and its recorded memory is real use. Optional
+    memory_fraction replaces JAX's allocator fraction, which still caps the
+    allocator without preallocation; other inherited flags,
     Python paths and provider settings stay unchanged. compilation_cache, when
     set, selects an enabled persistent JAX cache that also keeps programs that
     compile in under a second (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0).
@@ -412,6 +417,8 @@ def resource_environment(
         cpu = device["device"] == "cpu"
         environment["CUDA_VISIBLE_DEVICES"] = "" if cpu else device["device"]
         environment["JAX_PLATFORMS"] = "cpu" if cpu else "cuda,cpu"
+        if not cpu:
+            environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
         if "memory_fraction" in device:
             if environment.get("XLA_PYTHON_CLIENT_ALLOCATOR") == "platform":
                 raise ValueError(
@@ -482,6 +489,7 @@ def resource_facts(environment: Mapping[str, str]) -> Record:
             "XLA_PYTHON_CLIENT_ALLOCATOR",
             "JAX_COMPILATION_CACHE_DIR",
             "JAX_ENABLE_COMPILATION_CACHE",
+            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
         )
     }
 
@@ -1244,7 +1252,9 @@ def start(
 
     Validates the package first, then serializes starts using a local file lock.
     A live matching supervisor, trainer or leftover worker blocks either start.
-    An existing run requires resume. stdin is closed; stdout/stderr append to
+    An existing run requires resume; a run folder holding only the trainer's
+    ``.training.lock`` is not a run yet, so a fresh start may use it.
+    stdin is closed; stdout/stderr append to
     logs/process.log. Returns
     exact process identity, command and mode after recording them durably.
     This function is only called by the user's launch/resume command.
@@ -1258,7 +1268,7 @@ def start(
         status_path = root / "process.json"
         if status_path.exists() and _alive(_read(status_path)):
             raise RuntimeError("This package already has an active training process")
-        if not resume and (root / "run").exists() and any((root / "run").iterdir()):
+        if not resume and not unused_run_folder(root / "run"):
             raise ValueError("This package has a run already; use its resume command")
         selected = _checkpoint(root, checkpoint) if resume else None
         python = root / ".venv" / "bin" / "python"

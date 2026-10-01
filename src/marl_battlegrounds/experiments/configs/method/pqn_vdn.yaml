@@ -17,3 +17,5 @@ pqn:
   input_scale: 1.0
   spawn_frame: left
   parameter_sharing: all
+  reward_scale: 1.0
+  normalization: batch_norm

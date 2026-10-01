@@ -28,7 +28,11 @@ epochs of 2 minibatches, H2/T2 windows, 8 clipped RAdam steps that cross
 RAdam's rectification point) run through the learner's epoch loop with the
 donor's permutations: per-step losses, and parameters, statistics and
 optimizer state after each block against the isolated oracle's fingerprints
-and the same-stack donor leaf by leaf. Float comparisons start at 2e-6 absolute
+and the same-stack donor leaf by leaf. The LayerNorm choice
+(``normalization="layer_norm"``, the donor's ``NORM_TYPE: layer_norm`` with
+its input BatchNorm) initializes exactly like the same-stack donor network and
+gives the same inference and training values, memory and input statistics.
+Float comparisons start at 2e-6 absolute
 and relative; fingerprint sums use a bound scaled by each leaf's norm because
 the donor flattens actors agent-major while BG flattens game-major, which
 changes float reduction order only. These checks prove numerical agreement,
@@ -66,7 +70,9 @@ from tests.pqn_donor_reference import (
     UPDATE_CASE,
     UPDATE_SEED,
     bg_layout,
+    build_pqn_namespace,
     build_same_stack_pqn_reference,
+    case_overrides,
     donor_config,
     donor_learn,
     fingerprint,
@@ -297,7 +303,11 @@ def test_initialization_matches_the_same_stack_donor_exactly(
 
 
 def _bg_forward(
-    network: pqn.PQNInferenceVariables, inputs: dict[str, NDArray[Any]], *, train: bool
+    network: pqn.PQNInferenceVariables,
+    inputs: dict[str, NDArray[Any]],
+    *,
+    train: bool,
+    normalization: str = "batch_norm",
 ) -> tuple[Array, Array, Tree]:
     rows, games = FORWARD_ROWS, FORWARD_ENVS
     obs = inputs["obs"].reshape(rows, AGENTS, games, -1).transpose(0, 2, 1, 3)
@@ -314,19 +324,62 @@ def _bg_forward(
     if train:
         (memory, values), updates = cast(
             tuple[tuple[Array, Array], dict[str, Tree]],
-            pqn.PQNNetwork().apply(
+            pqn.PQNNetwork(normalization=normalization).apply(
                 variables, *arguments, train=True, mutable=["batch_stats"]
             ),
         )
         stats: Tree = updates["batch_stats"]
     else:
         memory, values = cast(
-            tuple[Array, Array], pqn.PQNNetwork().apply(variables, *arguments)
+            tuple[Array, Array],
+            pqn.PQNNetwork(normalization=normalization).apply(variables, *arguments),
         )
         stats = None
     donor_values = values.transpose(0, 2, 1, 3).reshape(rows, AGENTS * games, ACTIONS)
     donor_memory = memory.transpose(1, 0, 2).reshape(AGENTS * games, HIDDEN)
     return donor_values, donor_memory, stats
+
+
+def test_layer_norm_network_matches_the_donor_layer_norm_network(
+    record_property: RecordProperty,
+) -> None:
+    ns = build_pqn_namespace(
+        {**case_overrides(GRADIENT_CASE), "NORM_TYPE": "layer_norm"}
+    )
+    donor = ns["create_agent"](jax.random.key(INIT_SEED))
+    bg = pqn._network_variables(
+        jax.random.key(INIT_SEED), 1.0, features=FEATURES, normalization="layer_norm"
+    )
+    donor_variables = {"params": donor.params, "batch_stats": donor.batch_stats}
+    _compare(
+        {"batch_stats": bg.batch_stats, "params": bg.params},
+        donor_variables,
+        exact=True,
+    )
+    inputs = forward_inputs(FORWARD_SEED)
+    arguments = (
+        jnp.asarray(inputs["hidden"]),
+        jnp.asarray(inputs["obs"]),
+        jnp.asarray(inputs["dones"]),
+    )
+    error = 0.0
+    for train in (False, True):
+        values, memory, stats = _bg_forward(
+            bg, inputs, train=train, normalization="layer_norm"
+        )
+        if train:
+            (donor_memory, donor_values), updates = ns["network"].apply(
+                donor_variables, *arguments, True, mutable=["batch_stats"]
+            )
+            error = max(error, _compare(stats, updates["batch_stats"]))
+        else:
+            donor_memory, donor_values = ns["network"].apply(
+                donor_variables, *arguments, False
+            )
+        error = max(
+            error, _compare(values, donor_values), _compare(memory, donor_memory)
+        )
+    record_property("maximum_absolute_error", error)
 
 
 @pytest.mark.parametrize("train", (False, True))

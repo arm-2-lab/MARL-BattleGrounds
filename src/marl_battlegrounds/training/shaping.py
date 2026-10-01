@@ -135,7 +135,7 @@ def resolve_reward(
     Notes
     -----
     Host setup only. Source hashing binds declared wrapped callable files and
-    the built-in recipe's shared combat helper. Other imported or hidden state
+    the built-in recipes' shared combat helper. Other imported or hidden state
     remains unknown unless separately declared. No callback, numerical
     transition or output write occurs. Reuse the returned callable during the
     run. A source hash covers constants written in that module, but does not
@@ -183,11 +183,11 @@ def resolve_reward(
         identity["wrapped_callables"] = _reference_identity(reference).get(
             "wrapped_callables", []
         )
-    if (
-        getattr(reward, "__module__", None)
-        == "marl_battlegrounds.training.reward_recipes"
-        and getattr(reward, "__name__", None) == "combat_support_reward"
-    ):
+    if getattr(
+        reward, "__module__", None
+    ) == "marl_battlegrounds.training.reward_recipes" and getattr(
+        reward, "__name__", None
+    ) in ("combat_support_reward", "combat_support_team_reward"):
         from marl_battlegrounds.evaluation import combat_metrics
 
         identity["combat_source_digest"] = sha256(

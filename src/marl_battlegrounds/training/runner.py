@@ -6,6 +6,8 @@ learner, checkpoint and evaluation authorities; numerical work stays outside
 host logging and file handling. CLI commands use these same public functions.
 All methods share the run layout, validation, selection and reports; the
 saved method chooses the learner, its settings block and its host counts.
+A new or child run saves its records only after it holds its folder's run lock
+and finds the folder still empty apart from the lock file.
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from marl_battlegrounds.training._run_io import (
     restore_log_cursor,
     run_lock,
     study_attempt_binding,
+    unused_run_folder,
     utc_now,
     validate_host_state,
     validate_log_cursor,
@@ -583,6 +586,43 @@ def _check_panel_purpose(config: TrainConfig, panel: FrozenPanel | None) -> None
         raise ValueError("Demonstration requires a qualified frozen validation panel")
 
 
+def _require_new_output(root: Path, *, locked: bool = False) -> None:
+    """Refuse a new or child run folder that holds anything but its lock file.
+
+    Parameters
+    ----------
+    root : Path
+        Resolved output folder of a new run or a child run.
+    locked : bool, default=False
+        True when the caller already holds root's run lock. The rule is the
+        same; only the error message changes, to say that the files appeared
+        while this call was setting up.
+
+    Raises
+    ------
+    ValueError
+        root is not a folder, or it holds any entry other than a plain
+        ``.training.lock`` file (a folder or link with that name is refused).
+
+    Notes
+    -----
+    The rule itself is _run_io.unused_run_folder: a missing folder, or one
+    holding only the lock file left by a call that stopped before it saved
+    anything, passes. _train calls this once before setup, so a used folder
+    fails fast, and again while it holds the run lock, before its first
+    write, so a call that waited in setup never writes into a run that
+    another call saved meanwhile. This reads folder entries only and writes
+    nothing.
+    """
+    if not unused_run_folder(root):
+        raise ValueError(
+            "output_dir must be new or empty, but files appeared there while "
+            "this call was setting up, for example from another training call"
+            if locked
+            else "output_dir must be new or empty"
+        )
+
+
 @contextmanager
 def _checkpoint_memory_scope() -> Generator[None]:
     """Collect unused saved-array cycles before setup and after a training call.
@@ -620,11 +660,23 @@ def train(
     output_dir : str or Path or None, default=None
         Exact new or empty run directory. Required for new runs and mutually
         exclusive with resume_from. No generated parent run name is inserted.
+        A folder holding only the lock file ``.training.lock``, left by a call
+        that stopped before saving anything, counts as empty. train checks the
+        folder before setup and again after it takes the run lock, before its
+        first write. So when two calls get the same new folder, the one that
+        takes the lock first owns it. The other raises RuntimeError while the
+        owner still runs, or ValueError once the owner has saved files; if the
+        owner stopped before saving anything, the other uses the folder as
+        empty. Neither call becomes a resume.
         Inside this source checkout the folder must be ignored by Git; package
         source folders are refused so output cannot change source identity.
     resume_from : str or Path or None, default=None
         Saved run folder or exact complete learner checkpoint directory. A run
-        folder follows only its checked latest_checkpoint.json pointer. Discover
+        folder follows only its checked latest_checkpoint.json pointer. The
+        pointer is read again after the run lock is taken: if another call
+        saved a newer checkpoint meanwhile, this call raises ValueError before
+        changing any file, so a delayed resume never rolls the run back. An
+        exact checkpoint folder is resumed as named, even an older one. Discover
         the containing run, verify scientific/source/content facts, execution
         identity and numerical state before writer rewind. The saved compiler policy,
         backend, device kind, runtime and numerical settings must match.
@@ -706,7 +758,10 @@ def train(
         Report dependencies are missing or cannot import. Install the training
         extra. This check runs before learner setup or changes to run files.
     ValueError, TypeError
-        Settings, content, checkpoint or saved results are invalid/incompatible.
+        Settings, content, checkpoint or saved results are invalid/incompatible,
+        or a new run's output_dir holds files, before setup or when checked
+        again under the run lock, or a resumed run folder's latest checkpoint
+        changed while this call was setting up.
     RuntimeError
         Another writer owns the run or numerical execution fails.
     OSError
@@ -722,7 +777,8 @@ def train(
     plays under the run's red_zone_depth. Setup prepares the training content
     once (checking the depth against every map width) before a new
     validation panel is published, and passes it to the learner; a ranked
-    panel whose recorded depth differs from the run's is refused.
+    panel whose recorded depth differs from the run's is refused. A new panel
+    is published only after the run folder is locked and checked again.
     Unused Python cycles holding saved arrays are collected before setup,
     after saved states are replaced, and when this call exits. This host work
     does not change learner calculations. Arrays held by the caller or a kept
@@ -773,7 +829,10 @@ def extend_training(
         restart the parent's curriculum or stretch its learning-rate decay.
     output_dir : str or Path
         Exact new or empty child folder outside the parent run. The parent is
-        read only. The child can later use ordinary exact-config resume.
+        read only. The child can later use ordinary exact-config resume. As in
+        train, a lone ``.training.lock`` counts as empty, and the folder is
+        checked again under the run lock before the child's first write, so
+        two calls given the same child folder never both write there.
     changes : mapping or None, default=None
         Optional future validation, learning-rate, exploration, seed, curriculum,
         opponent/partner selection, history, actor retention and reward declarations.
@@ -859,10 +918,13 @@ def extend_training(
         extra. This check runs before learner setup or changes to run files.
     ValueError, TypeError
         The budget, declaration, full checkpoint or source transition is not
-        supported. Actor loading remains independent of this training rule.
+        supported, or output_dir holds files, before setup or when checked
+        again under the run lock. Actor loading remains independent of this
+        training rule.
     RuntimeError, OSError
-        A lock, numerical operation or file operation fails. Complete saved
-        child boundaries remain available for explicit resume.
+        Another writer holds the child folder's lock, or a numerical operation
+        or file operation fails. Complete saved child boundaries remain
+        available for explicit resume.
 
     Notes
     -----
@@ -1118,6 +1180,14 @@ def _train(
     added budget and future-only changes; it never relaxes ordinary resume.
     Runtime records include setup_stage_seconds: host wall times for named setup
     owners. They add no device synchronization and are not isolated kernel costs.
+
+    A new or child run checks output_dir with _require_new_output before setup
+    and again after taking the run lock, before its first write (a new
+    validation panel included). A call that waited in setup therefore never
+    writes into, or resumes, a run that another call saved meanwhile. Ordinary
+    resume skips both checks. It locks the existing run and resolves
+    resume_from again before its first write; a run folder whose latest
+    checkpoint changed in between raises ValueError instead of rolling back.
     """
     if on_update is not None and not callable(on_update):
         raise TypeError("on_update must be callable or None")
@@ -1211,16 +1281,14 @@ def _train(
         if not isinstance(config, TrainConfig):
             raise TypeError("A new run requires TrainConfig")
         root = Path(str(output_dir)).resolve()
-        if root.exists() and (not root.is_dir() or any(root.iterdir())):
-            raise ValueError("output_dir must be new or empty")
+        _require_new_output(root)
     assert config is not None
     parent_root = root
     if extension is not None:
         root = Path(str(output_dir)).resolve()
         if root == parent_root or parent_root in root.parents:
             raise ValueError("Child output_dir must be outside the parent training run")
-        if root.exists() and (not root.is_dir() or any(root.iterdir())):
-            raise ValueError("output_dir must be new or empty")
+        _require_new_output(root)
         if extension["additional_env_steps"] % config.num_envs:
             raise ValueError("additional_env_steps must divide by num_envs exactly")
     if (
@@ -1326,6 +1394,9 @@ def _train(
             input_scale=settings.input_scale,
             spawn_frame=settings.spawn_frame,
             parameter_sharing=settings.parameter_sharing,
+            normalization="batch_norm"
+            if config.pqn is None
+            else config.pqn.normalization,
         )
         variables = initial_system.variables
         initial_actor = (
@@ -1729,9 +1800,6 @@ def _train(
             collection = checkpoints._check_collection_compatibility(  # pyright: ignore[reportPrivateUsage]
                 saved, collection
             )
-        if new_panel_content is not None:
-            assert panel is not None
-            validation._publish_system_panel(panel, new_panel_content)  # pyright: ignore[reportPrivateUsage]
         from marl_battlegrounds._method_loading import (
             _release_setup_inputs,  # pyright: ignore[reportPrivateUsage]
         )
@@ -1744,6 +1812,29 @@ def _train(
         # A child recording is fully checked before even its folder is created.
         root.mkdir(parents=True, exist_ok=True)
         stack.enter_context(run_lock(root))
+        if saved is None or extension is not None:
+            # The first check ran before setup. Another call may have saved a
+            # run here since then, so check again before this call's first write.
+            _require_new_output(root, locked=True)
+        else:
+            # A run folder named its latest checkpoint before setup. Another
+            # call may have trained the run further since then; resuming the
+            # older checkpoint now would roll the run back.
+            from marl_battlegrounds.training._checkpoint_metadata import (
+                read_resume_checkpoint,
+            )
+
+            assert resume_from is not None and checkpoint is not None
+            if read_resume_checkpoint(resume_from)[0] != checkpoint:
+                raise ValueError(
+                    "resume_from now names a newer checkpoint: another call "
+                    "trained this run while this call was setting up. Resume "
+                    "again to continue from the newest checkpoint."
+                )
+        if new_panel_content is not None:
+            # Publish under the lock, so a refused call writes no panel.
+            assert panel is not None
+            validation._publish_system_panel(panel, new_panel_content)  # pyright: ignore[reportPrivateUsage]
         if extension_state is not None:
             parent_restore, declarations = extension_state
             owner = _start_extension(
@@ -2595,9 +2686,11 @@ def _start_extension(
     """Publish one checked child setup and enter the shared execution owner.
 
     All declarations, parent numerical state and recording were checked before
-    creating root. prepared_recording owns checked unfinished replay streams;
-    stack owns it and any child recording writer. This never opens the parent
-    writer for mutation or copies its completed replay/log history.
+    creating root. The caller holds root's run lock and has checked that root
+    holds nothing but its lock file. prepared_recording owns checked unfinished
+    replay streams; stack owns it and any child recording writer. This never
+    opens the parent writer for mutation or copies its completed replay/log
+    history.
     """
     from copy import deepcopy
 
@@ -3970,6 +4063,7 @@ class _Run:
             spawn_frame=settings.spawn_frame,
             method=self.config.method,
             parameter_sharing=settings.parameter_sharing,
+            normalization="batch_norm" if self.pqn is None else self.pqn.normalization,
             metadata=provenance,
         )
         self.host["actors"][self.checkpoint_id] = str(destination)
@@ -4073,6 +4167,7 @@ class _Run:
             metadata=provenance,
             method=self.config.method,
             parameter_sharing=settings.parameter_sharing,
+            normalization="batch_norm" if self.pqn is None else self.pqn.normalization,
             input_scale=settings.input_scale,
             spawn_frame=settings.spawn_frame,
         )

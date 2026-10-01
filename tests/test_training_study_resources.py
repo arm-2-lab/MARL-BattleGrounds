@@ -4,8 +4,13 @@ Host validation rejects invalid capacity and environment settings. Real short
 subprocesses check concurrent admission, failure, bounded stop and explicit
 recovery without models or GPU allocation. Their timings measure orchestration,
 not learner throughput. Fresh-process probes check settings before JAX import.
-GPU settings keep CUDA first and required and permit CPU checkpoint checks.
-A declared compilation cache also keeps programs that compile in under a second.
+GPU settings keep CUDA first and required, permit CPU checkpoint checks and
+turn off JAX's memory preallocation unless the caller set that flag. A declared
+compilation cache also keeps programs that compile in under a second. With two
+declared GPUs (probes only pretend to be GPU workers; no GPU is touched), a GPU
+whose case fails before any checkpoint is paused and recorded while the other
+GPU finishes every remaining case; when every GPU is paused the study stops
+with the rest pending instead of failing them; each resume clears the pauses.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from tests.test_training_study import host_only as host_only
 from marl_battlegrounds.training import _launch, study
 
 _GPU = "GPU-6b11a0c4-14e8-6782-8932-1df56d599796"
+_OTHER_GPU = "GPU-8dcabaa4-3802-4240-98e3-6ddebbc6239d"
 
 
 @pytest.mark.parametrize(
@@ -108,14 +114,17 @@ request = study._read(directory / "request.json")
 assert "jax" not in sys.modules
 resources = study._worker_resources(root, request)
 assert "jax" not in sys.modules
-assert os.environ["JAX_PLATFORMS"] == "cpu"
-assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+gpu = os.environ.get("RESOURCE_PROBE_GPU") == "1"
+assert os.environ["JAX_PLATFORMS"] == ("cuda,cpu" if gpu else "cpu")
+assert (os.environ["CUDA_VISIBLE_DEVICES"] != "") == gpu
 import researcher_module
 assert researcher_module.VALUE == 23
 atomic_json(directory / "resources.json", resources)
 atomic_json(directory / "probe-start.json", {"at": time.time()})
 seed = request["job"]["config"]["seed"]
-fail = os.environ.get("RESOURCE_PROBE_FAIL") == str(seed)
+device = os.environ["CUDA_VISIBLE_DEVICES"]
+failing = os.environ.get("RESOURCE_PROBE_FAIL")
+fail = failing is not None and failing in (str(seed), device, "all")
 if os.environ.get("RESOURCE_PROBE_KILL") == str(seed):
     os.kill(os.getpid(), signal.SIGKILL)
 time.sleep(0.15 if fail else float(os.environ.get("RESOURCE_PROBE_DELAY", "0.6")))
@@ -246,6 +255,63 @@ def test_failed_worker_keeps_all_declared_cases(
     repaired = study.run_study(resume_from=root)
     assert repaired["status"] == "complete"
     assert len(repaired["cases"][0]["attempts"]) == 2
+
+
+def _no_device_query(resources: object) -> None:
+    del resources
+
+
+def test_gpu_workers_default_to_no_memory_preallocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("XLA_PYTHON_CLIENT_PREALLOCATE", raising=False)
+    gpu = {"device": _GPU, "max_workers": 1}
+    assert _launch.resource_environment(gpu)["XLA_PYTHON_CLIENT_PREALLOCATE"] == "false"
+    cpu = _launch.resource_environment({"device": "cpu", "max_workers": 1})
+    assert "XLA_PYTHON_CLIENT_PREALLOCATE" not in cpu
+    # An explicit caller choice wins over the default.
+    monkeypatch.setenv("XLA_PYTHON_CLIENT_PREALLOCATE", "true")
+    assert _launch.resource_environment(gpu)["XLA_PYTHON_CLIENT_PREALLOCATE"] == "true"
+
+
+def test_failed_gpu_is_paused_while_the_other_gpu_finishes_and_resume_clears_it(
+    host_only: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declared = _resource_study(tmp_path, monkeypatch, "continue")
+    declared["resources"] = {"devices": [{"device": _GPU}, {"device": _OTHER_GPU}]}
+    monkeypatch.setattr(study._launch, "check_resource_devices", _no_device_query)
+    monkeypatch.setenv("RESOURCE_PROBE_GPU", "1")
+    root = tmp_path / "study"
+    # Both GPUs fail before a checkpoint: admission stops, nothing else fails.
+    monkeypatch.setenv("RESOURCE_PROBE_FAIL", "all")
+    report = study.run_study(declared, output_dir=root)
+    assert report["status"] == "incomplete"
+    assert set(report["paused_devices"]) == {_GPU, _OTHER_GPU}
+    assert [row["status"] for row in report["cases"]] == [
+        "failed",
+        "failed",
+        "pending",
+        "pending",
+    ]
+    assert all(row["attempts"][0]["device_paused"] for row in report["cases"][:2])
+    # Resume clears the pauses; only the first GPU fails now.
+    monkeypatch.setenv("RESOURCE_PROBE_FAIL", _GPU)
+    resumed = study.run_study(resume_from=root)
+    paused = resumed["paused_devices"]
+    assert list(paused) == [_GPU]
+    assert paused[_GPU]["case_id"] == "recipe--seed-1"
+    assert paused[_GPU]["error"] == "Injected worker failure"
+    rows = resumed["cases"]
+    assert [row["status"] for row in rows] == ["failed"] + ["complete"] * 3
+    assert all(
+        row["attempts"][-1]["resources"]["device"]["device"] == _OTHER_GPU
+        for row in rows[1:]
+    )
+    monkeypatch.delenv("RESOURCE_PROBE_FAIL")
+    repaired = study.run_study(resume_from=root)
+    assert repaired["status"] == "complete" and repaired["paused_devices"] == {}
+    assert len(repaired["cases"][0]["attempts"]) == 3
+    assert not study._launch.live_process_records(study._process_paths(root))
 
 
 def test_declared_gpu_availability_is_checked_without_backend(

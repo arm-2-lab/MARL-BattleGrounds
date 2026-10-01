@@ -85,7 +85,9 @@ input checks that execution still must perform.
 
 The six methods are recurrent MAPPO, feedforward MAPPO, recurrent IPPO,
 feedforward IPPO, QMIX and recurrent PQN-VDN. The software declaration uses the
-shared combat/support reward, 60% current self-play, 20% own history and 20%
+shared combat/support reward (its team form `combat_support_team_reward` for
+QMIX and PQN-VDN, which learn from one team reward), 60% current self-play, 20%
+own history and 20%
 uniform sampling across eight selected models plus `tdm-alpha`, `tdm-beta` and
 `tdm-gamma`. Empty history falls back to current self-play. These shares describe
 new game starts; saved exposure records show actual collected transitions.

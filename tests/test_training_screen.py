@@ -3,6 +3,8 @@
 The fixtures cover all twelve B/T shapes, exact even update budgets and shared
 capture points, invalid measurements, frozen package checks, read-only status,
 and failure/stop boundaries. Mock jobs never call a policy, evaluator or GPU.
+The worker gives train exactly one destination: job/run for a fresh job, and
+only the saved checkpoint for a resumed one.
 The separate launcher tests own real process-group shutdown and source copies.
 The declaration pins Red Zone depth 0.0 for its base and every calibration
 job's config, and the frozen package's content identity is prepared at that
@@ -776,4 +778,42 @@ def test_stop_request_and_orphan_notice_remain_visible() -> None:
     assert "Stop Requested; Waiting" in text
     assert "manual cleanup" in screen.screen_status_text(
         {"status": "orphaned_workers", "stop_notice": "manual cleanup required"}
+    )
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_worker_gives_train_exactly_one_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resume: bool
+) -> None:
+    import jax
+
+    from marl_battlegrounds.training import config as config_module
+    from marl_battlegrounds.training import runner
+
+    job = tmp_path / "job"
+    saved = job / "run" / "checkpoints" / "saved"
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def train(config: object, **kwargs: object) -> None:
+        calls.append((config, kwargs))
+
+    def devices(*_args: object) -> list[object]:
+        return [object()]
+
+    def read_config(_path: Path) -> str:
+        return "config"
+
+    def checkpoint(_job: Path, _chosen: object) -> Path:
+        return saved
+
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "devices", devices)
+    monkeypatch.setattr(config_module, "read_config", read_config)
+    monkeypatch.setattr(screen._launch, "_checkpoint", checkpoint)
+    monkeypatch.setattr(runner, "train", train)
+    screen._worker(tmp_path, job, mode="job", resume=resume, measure_validation=False)
+    assert calls == (
+        [(None, {"output_dir": None, "resume_from": saved})]
+        if resume
+        else [("config", {"output_dir": job / "run", "resume_from": None})]
     )

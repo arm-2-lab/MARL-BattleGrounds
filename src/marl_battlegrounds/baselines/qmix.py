@@ -883,6 +883,13 @@ def team_task_reward(task_rewards: Array, active: Array) -> Array:
         Float32 (...) team task reward: the sum over active slots divided by
         ``max(active count, 1)``. A 1v1 win and a 5v5 win give the same value.
         Rows with no active slot give 0.
+
+    Notes
+    -----
+    QMIX and PQN-VDN pass the native reward plus any custom per-slot reward
+    here. An amount paid to only one slot is therefore divided by the active
+    count. The built-in combat_support_team_reward avoids this by giving every
+    slot the same team amount, so the average keeps each event's full price.
     """
     count = jnp.sum(active, axis=-1).astype(jnp.float32)
     total = jnp.sum(jnp.where(active, task_rewards, 0.0), axis=-1)
@@ -1291,7 +1298,10 @@ def update_qmix(
     batch : QMIXBatch
         One sample of M sequences, S rows each, in the network frame.
     config : QMIXConfig, default=DEFAULT_QMIX_CONFIG
-        Static settings: gamma, q_lr, the target rule and input_scale.
+        Static settings: gamma, q_lr, the target rule, input_scale and
+        reward_scale. batch.rewards are in true game units; reward_scale
+        multiplies them here, before the TD targets, so mean_q and
+        mean_target in the metrics are in scaled units.
 
     Returns
     -------
@@ -1346,6 +1356,9 @@ def update_qmix(
     mask = jnp.where(valid[..., None, None], batch.action_mask, neutral)
     actions = jnp.where(valid[..., None], batch.actions, 0)
     rewards = jnp.where(valid, batch.rewards, 0.0)
+    if config.reward_scale != 1.0:
+        # The scale is static, so the default keeps the unscaled program.
+        rewards = rewards * jnp.float32(config.reward_scale)
     ended = valid & batch.ended
     starts = valid & batch.episode_start
     active = valid[..., None] & owned

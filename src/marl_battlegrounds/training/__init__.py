@@ -105,6 +105,9 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.reward_recipes import (
         combat_support_reward as combat_support_reward,
     )
+    from marl_battlegrounds.training.reward_recipes import (
+        combat_support_team_reward as combat_support_team_reward,
+    )
     from marl_battlegrounds.training.runner import TrainResult as TrainResult
     from marl_battlegrounds.training.runner import extend_training as extend_training
     from marl_battlegrounds.training.runner import load_run as load_run
@@ -144,6 +147,7 @@ _OWNERS = {
     "load_run": "runner",
     "RewardOutput": "shaping",
     "combat_support_reward": "reward_recipes",
+    "combat_support_team_reward": "reward_recipes",
     "TrainConfig": "config",
     "make_wandb_callback": "callbacks",
     "TrainResult": "runner",
@@ -215,6 +219,7 @@ __all__ = [
     "collect_actors",
     "collect_training_rollout",
     "combat_support_reward",
+    "combat_support_team_reward",
     "create_panel",
     "export_actor",
     "export_study_data",

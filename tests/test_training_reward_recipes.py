@@ -1,9 +1,14 @@
-"""Check the public combat/support recipe against independent raw-fact arithmetic.
+"""Check the public combat/support recipes against independent raw-fact arithmetic.
 
 Scenes use public reset/step and ordinary actions. The oracle uses NumPy and the
 historical fixed coefficients, not the new combat helper. It checks effective
 healing, overkill caps, one-hop Priest credit, deaths and successor range/zone
-ownership. These authored transitions prove software meaning, not learning.
+ownership. Every scene also checks the team form: each configured Team A slot
+gets the three shared parts once plus the Team A total of the five own-agent
+parts, and the QMIX/PQN-VDN team average of that form keeps each event's
+per-agent price (+0.05 kill credit, -0.05 teammate death, own-zone ticks per
+player). Both recipes' saved identities bind the shared combat helper.
+These authored transitions prove software meaning, not learning.
 """
 
 # Tests inspect the compact numerical contract without exposing it to actors.
@@ -18,6 +23,7 @@ import pytest
 from jax import Array
 from tests.evaluation_fixtures import evaluation_env_config, neutral_action
 
+from marl_battlegrounds.baselines.qmix import team_task_reward
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.config import resolve_agent_profile
 from marl_battlegrounds.core.env import initialize_scenario_state
@@ -28,7 +34,11 @@ from marl_battlegrounds.environment import (
     TrainingFacts,
     make,
 )
-from marl_battlegrounds.training import RewardOutput, combat_support_reward
+from marl_battlegrounds.training import (
+    RewardOutput,
+    combat_support_reward,
+    combat_support_team_reward,
+)
 from marl_battlegrounds.training.shaping import reward_adjustments
 
 
@@ -244,6 +254,26 @@ def _check(
         rtol=1e-5,
         atol=1e-7,
     )
+    team = combat_support_team_reward(
+        before.core_state, facts, after.core_state, jnp.int32(0), config=before.config
+    )
+    recipients = np.asarray(before.config.agent_profile.active_mask[:5]) & bool(
+        facts.has_transition
+    )
+    shared = ("own_team_deaths", "own_red_zone_deaths", "priest_heal_range_pairs")
+    assert team.components.keys() == expected.keys()
+    for name, value in expected.items():
+        wanted = value.copy()
+        if name not in shared:
+            wanted[:5] = np.where(recipients, value[:5].sum(), 0)
+        np.testing.assert_allclose(team.components[name], wanted, rtol=1e-5, atol=1e-7)
+    per_slot = sum(expected[name][:5] for name in shared) + np.where(
+        recipients,
+        sum(expected[name][:5].sum() for name in expected if name not in shared),
+        0,
+    )
+    np.testing.assert_allclose(team.adjustments[:5], per_slot, rtol=1e-5, atol=1e-7)
+    np.testing.assert_array_equal(team.adjustments[5:], 0)
     assert info.priority is None
     return after, facts, actual
 
@@ -422,3 +452,57 @@ def test_deaths_and_due_respawns_keep_historical_before_after_meaning(
         np.testing.assert_allclose(actual.components["own_red_zone_deaths"][:5], -0.1)
         assert actual.components["enemy_death_credit"][0] > 0
         assert actual.components["own_zone_ticks"][0] == 0
+
+
+def test_team_average_keeps_each_event_at_its_per_agent_price() -> None:
+    def arrange(state: EnvState) -> EnvState:
+        return state._replace(current_health=state.current_health.at[0].set(1))
+
+    env, before = _start(depth=7.0, arrange=arrange)
+    after, facts, actual = _check(env, before, _actions((0, 5), (5, 0)))
+    assert not after.core_state.alive_mask[0] and not after.core_state.alive_mask[5]
+    team = combat_support_team_reward(
+        before.core_state, facts, after.core_state, jnp.int32(0), config=before.config
+    )
+    active = before.config.agent_profile.active_mask[:5]
+    parts = {name: np.asarray(value[:5]) for name, value in actual.components.items()}
+    shared = (
+        parts["own_team_deaths"][0]
+        + parts["own_red_zone_deaths"][0]
+        + parts["priest_heal_range_pairs"][0]
+    )
+    own = sum(
+        parts[name].sum()
+        for name in (
+            "enemy_death_credit",
+            "enemy_red_zone_death_credit",
+            "enemy_damage_hp",
+            "priest_effective_healing_hp",
+            "own_zone_ticks",
+        )
+    )
+    assert parts["own_team_deaths"][0] == pytest.approx(-0.05)
+    assert parts["enemy_death_credit"][0] == pytest.approx(0.05)
+    assert parts["own_zone_ticks"].sum() < 0
+    averaged = float(team_task_reward(team.adjustments[:5], active))
+    assert averaged == pytest.approx(shared + own, rel=1e-5)
+    assert float(team.components["enemy_death_credit"][1]) == pytest.approx(
+        parts["enemy_death_credit"].sum()
+    )
+    diluted = float(team_task_reward(actual.adjustments[:5], active))
+    assert diluted == pytest.approx(shared + own / 5, rel=1e-5)
+
+
+@pytest.mark.parametrize(
+    "name", ["combat_support_reward", "combat_support_team_reward"]
+)
+def test_both_recipe_identities_bind_the_shared_combat_helper(name: str) -> None:
+    from marl_battlegrounds.training.shaping import resolve_reward
+
+    reward, identity = resolve_reward(
+        f"marl_battlegrounds.training.reward_recipes:{name}"
+    )
+    assert reward is not None and identity is not None
+    assert identity["reference"].endswith(name)
+    assert isinstance(identity["combat_source_digest"], str)
+    assert identity["call_contract"] == "producing_config_keyword_v1"

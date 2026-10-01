@@ -52,7 +52,9 @@ Recurrent QMIX (`TrainConfig(method="qmix")`) uses the donor's starting
 settings: 1,000 replay rows per game, learning from 32 rows, sequences of 20,
 batches of 128, 4 epochs, Adam learning rate 0.00003, hard target copies every
 200 optimizer steps, and exploration falling to 0.05 over 100,000 real
-transitions. No QMIX setting has been tuned for MARL-BGs. See the
+transitions. `reward_scale` (default 1.0) multiplies the team reward inside
+the learner's TD targets only; logged rewards and results stay in game units.
+No QMIX setting has been tuned for MARL-BGs. See the
 [training guide](README.md#recurrent-qmix) for the workflow, counts and costs,
 and the [source ledger](source_reuse.md#recurrent-qmix) for the donor match.
 Tiny integration runs check software only; they establish no learning, sample
@@ -65,7 +67,10 @@ starting settings: blocks of 128 rounds, a memory window of 4 kept rows, 4
 epochs of 16 minibatches, RAdam learning rate 0.00025 falling linearly to
 1e-10, gradient clipping at 1.0, gamma 0.99 and lambda 0.85, and exploration
 falling from 1 to 0.01 over the first tenth of the learning blocks. The donor's
-128 games and its SMAX reward multiplier of 10 are not copied. No PQN-VDN
+128 games are not copied, and its SMAX reward multiplier of 10 is not the
+default: `reward_scale` stays 1.0 unless a run sets it. `normalization`
+chooses the donor's hidden-layer BatchNorm (the default) or its LayerNorm
+option (`"layer_norm"`), which the PQN paper reports as more stable. No PQN-VDN
 setting has been tuned for MARL-BGs. The first 132 rounds of every run are
 random initial collection, counted in the budget. See the
 [training guide](README.md#recurrent-pqn-vdn) for the workflow, counts and
@@ -941,13 +946,18 @@ A training pool gives each new game one member. A member that acts game by
 game now runs only on the games it owns. That covers JAX Policy adapters such
 as tdm-alpha and the built-in PPO, QMIX and PQN-VDN actors. Their games are
 gathered in groups of ceil(B / 16), 48 at B768. Each group runs, and its rows
-are written back into the member's unchanged memory. Policy members use their
-whole-team route, so each scripted bot is compiled once, not six times. Other
-Systems keep the full batch, because a System may look across games.
+are written back into the member's unchanged memory; a member with no games
+is not called. Policy members use their whole-team route, so each scripted bot
+is compiled once, not six times. This route applies when the pool controls
+whole teams and learner outputs are dropped, as for training opponents and
+`evaluate()`. Pools inside a team, such as fixed partners, keep the earlier
+route, which skips unowned Policy slots. Other Systems keep the full batch,
+because a System may look across games. A cheap member that owns most of a
+pool's games runs a few groups one after another, a small extra cost.
 
 The learner's own past copies follow the same rule. Current weights run once
-on the full batch. Per-game weight copies are made only for games against a
-past copy or the permanent pin. Before, every game got its own copy on every
+on the full batch, or not at all when no live game uses them. Per-game weight
+copies are made only for games against a past copy or the permanent pin. Before, every game got its own copy on every
 tick once the first past copy existed. Setup also remembers Core config checks
 that passed, keyed by the exact config bytes, so restore does not repeat them.
 A failed check is never remembered. There is no new setting.
@@ -1017,7 +1027,8 @@ PPO retains individual reward adjustments. QMIX and PQN use one team objective:
 the native team reward plus the mean custom adjustment over learner-owned active
 slots, plus enabled team shaping. Frozen partners supply actions, not trainable
 utilities. This supports mixed teams without claiming independent per-agent
-objectives for a team-reward method.
+objectives for a team-reward method. Because of that mean, give QMIX and PQN
+the team form of a per-agent reward, such as `combat_support_team_reward`.
 
 Set `parameter_sharing="all"`, `"class"` or `"none"` in the method's normal config.
 The default shares actor weights across the team. Class mode shares by class;

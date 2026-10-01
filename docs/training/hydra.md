@@ -233,8 +233,15 @@ The `platform` allocator cannot be combined with a declared memory fraction.
 
 Resource controls reach workers before JAX and user factories load. CPU means
 CPU; a missing declared GPU raises an error instead of falling back silently.
+A GPU worker also gets `XLA_PYTHON_CLIENT_PREALLOCATE=false` unless you set that
+flag yourself, so it takes memory as it needs it instead of JAX's default 75% up
+front, and its recorded memory is its real use. A declared fraction still caps
+its allocator.
 Python import paths and unrelated environment settings are preserved. A cache
 path is optional and resolves from the launch directory (or study file's folder).
+A declared cache keeps every compiled program, including the many small setup
+programs that compile in under a second, so a later worker with the same
+settings reuses them. The cache folder therefore grows with each new shape.
 Preview shows applied settings without opening a backend or checking GPU access.
 An already imported JAX backend cannot be moved: use a fresh launcher process.
 Direct Python `train()` keeps its existing environment behavior.
@@ -245,6 +252,14 @@ existing execution identity records the actual backend and device kind. Failed
 workers remain in the study report; settings are not measured memory claims.
 With `failure_policy: stop`, a failure stops admission and asks active siblings
 to stop within the existing grace period. `continue` lets other cases continue.
+When a case fails on a GPU before saving any checkpoint of its own, that GPU
+gets no new cases for the rest of the command, because a lost or broken card
+would otherwise fail every remaining case within seconds. The other GPUs keep
+working. `study status` and `report.json` show each paused GPU under
+`paused_devices` with the case and error that paused it. If every GPU is paused,
+the study stops with the remaining cases pending, not failed. Resume starts
+with no paused GPU and retries the failed case under the usual rules; check or
+fix the card first. CPU slots are never paused.
 Stopping and resuming preserve original deadlines, seeds and attempt records.
 Completed cases do not run again. Explicit recovery creates another attempt of
 the same case; it does not create another independent training seed.

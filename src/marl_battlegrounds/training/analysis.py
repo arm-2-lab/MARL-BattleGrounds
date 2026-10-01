@@ -3387,13 +3387,17 @@ def _export_update_rows(
 
 
 def _unstarted_run(path: Path) -> bool:
-    """Recognize an absent or genuinely empty pre-admission run directory.
+    """Recognize an absent or empty pre-admission run directory.
 
-    Only explicit grouping callers use this unavailable-case rule. A nonempty
-    directory with missing run details remains damaged evidence, not an omitted
-    run. File, permission and malformed-metadata errors are never suppressed.
+    Only explicit grouping callers use this unavailable-case rule. Empty
+    includes a folder holding only the trainer's ``.training.lock``, the shared
+    _run_io.unused_run_folder rule. Any other directory with missing run
+    details remains damaged evidence, not an omitted run. File, permission
+    and malformed-metadata errors are never suppressed.
     """
-    return not path.exists() or (path.is_dir() and not any(path.iterdir()))
+    from marl_battlegrounds.training._run_io import unused_run_folder
+
+    return unused_run_folder(path)
 
 
 def _checked_recipe_report(

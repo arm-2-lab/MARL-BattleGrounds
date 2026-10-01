@@ -1,6 +1,7 @@
 """Check packaged settings and previews against the existing public config API.
 
-Cover all original fields, six method groups, complete pool replacement, ordinary
+Cover all original fields (plus actor retention, the Q methods' reward_scale
+and PQN normalization), six method groups, complete pool replacement, ordinary
 Hydra overrides and rejection paths. Subprocess probes forbid numerical imports,
 factory calls and workers. These are software checks, not learning experiments.
 """
@@ -58,10 +59,13 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
     }
     method, block = blocks.get(record, ("mappo", None))
     cfg = composed(f"method={method}")
-    effective = config_to_dict(resolve_training_config(cfg, base_dir=tmp_path))
+    resolved = resolve_training_config(cfg, base_dir=tmp_path)
+    effective = config_to_dict(resolved)
     if block:
         assert field in cfg[block]
-        assert cfg[block][field] == effective[block][field]
+        # Saved configs leave later Q settings out at their old value, so read
+        # the resolved settings record rather than the saved dictionary.
+        assert cfg[block][field] == getattr(getattr(resolved, block), field)
     elif field in ("qmix", "pqn"):
         selected = composed(f"method={'qmix' if field == 'qmix' else 'pqn_vdn'}")
         assert field in selected
@@ -71,7 +75,9 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
 
 
 def test_original_census_and_generated_presets_do_not_drift() -> None:
-    assert len(FIELDS) == 89  # Original 88 fields plus opt-in actor retention.
+    # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale and
+    # PQN normalization.
+    assert len(FIELDS) == 92
     result = subprocess.run(
         [
             sys.executable,

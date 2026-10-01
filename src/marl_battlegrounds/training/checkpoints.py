@@ -49,6 +49,8 @@ from marl_battlegrounds.baselines.config import (
     PPOConfig,
     PQNConfig,
     QMIXConfig,
+    _pqn_normalization,  # pyright: ignore[reportPrivateUsage]
+    with_later_settings,
 )
 from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_SIZE,
@@ -103,6 +105,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
 from marl_battlegrounds.training._checkpoint_metadata import _SCHEMAS as _SCHEMAS
 from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_input_scale as _actor_input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_normalization as _actor_normalization,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_parameter_sharing as _actor_parameter_sharing,
@@ -209,12 +214,15 @@ def _check_qmix_settings(config: object, settings: QMIXConfig) -> None:
 
     config is the saved JSON learner config; settings is the QMIXConfig the
     caller will save or continue with. Compares every field (for example
-    gamma, q_lr, tau, the target rule, T, C, S, M and the exploration clock)
-    after the same JSON round trip that config_to_dict applies. Raises
-    ValueError on any difference. Reads no arrays and writes nothing.
+    gamma, q_lr, tau, the target rule, T, C, S, M, the exploration clock and
+    reward_scale) after the same JSON round trip that config_to_dict applies.
+    ``with_later_settings`` first fills a setting the block omits because it
+    was saved before that setting existed, so an old block matches
+    reward_scale 1.0. Raises ValueError on any difference. Reads no arrays and
+    writes nothing.
     """
     expected = json.loads(json.dumps(asdict(settings)))
-    if _settings_block(config) != expected:
+    if with_later_settings(QMIXConfig, _settings_block(config)) != expected:
         raise ValueError("Checkpoint config QMIX settings differ from the given ones")
 
 
@@ -223,13 +231,15 @@ def _check_pqn_settings(config: object, settings: PQNConfig) -> None:
 
     config is the saved JSON learner config; settings is the PQNConfig the
     caller will save or continue with. Compares every field (T, H, epochs,
-    minibatches, rates, schedules, gamma, lambda, input_scale and
-    spawn_frame) after the same JSON round trip that config_to_dict applies,
-    so a missing or partial "pqn" block fails. Raises ValueError. Reads no
-    arrays and writes nothing.
+    minibatches, rates, schedules, gamma, lambda, input_scale, spawn_frame,
+    reward_scale and normalization) after the same JSON round trip that
+    config_to_dict applies, so a missing or partial "pqn" block fails.
+    ``with_later_settings`` first fills only the settings added later, so a
+    block saved before reward_scale and normalization existed matches 1.0
+    and "batch_norm". Raises ValueError. Reads no arrays and writes nothing.
     """
     expected = json.loads(json.dumps(asdict(settings)))
-    if _settings_block(config) != expected:
+    if with_later_settings(PQNConfig, _settings_block(config)) != expected:
         raise ValueError("Checkpoint config PQN settings differ from the given ones")
 
 
@@ -1662,6 +1672,7 @@ def _actor_template(
     method: str = "mappo",
     actor_input_schema: int = ACTOR_INPUT_SCHEMA_VERSION,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> Tree:
     """Cache actor shapes/dtypes for one checked method and actor input schema.
 
@@ -1673,6 +1684,11 @@ def _actor_template(
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         2 for the current 5,165-feature actors, or 1 for actors saved before
         Red Zone (5,164 features).
+    parameter_sharing : {"all", "class", "none"}, default="all"
+        Actor weight ownership; grouped modes add a leading axis of five.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        PQN-VDN hidden-layer normalization, which changes its parameter and
+        statistic layout. Other methods accept only "batch_norm".
 
     Returns
     -------
@@ -1692,8 +1708,9 @@ def _actor_template(
     Raises
     ------
     ValueError
-        The method is unknown, or actor_input_schema is not the int 1 or 2.
-        Raised before tracing.
+        The method is unknown, actor_input_schema is not the int 1 or 2, the
+        sharing or normalization value is unknown, or a non-PQN method names
+        "layer_norm". Raised before tracing.
 
     Notes
     -----
@@ -1708,10 +1725,14 @@ def _actor_template(
         or actor_input_schema not in ACTOR_FEATURE_SIZES
     ):
         raise ValueError("actor_input_schema must be 1 or 2.")
+    if _pqn_normalization(normalization) != "batch_norm" and method != "pqn_vdn":
+        raise ValueError("Only PQN-VDN models have a normalization choice")
     if method == "qmix":
         template = qmix_actor_template(QMIXConfig(parameter_sharing=sharing))
     elif method == "pqn_vdn":
-        template = _pqn_actor_item(pqn_actor_template(parameter_sharing=sharing))
+        template = _pqn_actor_item(
+            pqn_actor_template(parameter_sharing=sharing, normalization=normalization)
+        )
     else:
         template = jax.eval_shape(
             partial(
@@ -1801,6 +1822,7 @@ def export_system(
     spawn_frame: str,
     method: str = "mappo",
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> Path:
     """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
 
@@ -1841,6 +1863,14 @@ default="mappo"
         methods interchangeable; an existing different-method path is rejected.
         QMIX and PQN-VDN exports also record epsilon 0.0 and tie_rule
         "first_legal_maximum": loading one gives the greedy System.
+    parameter_sharing : {"all", "class", "none"}, default="all"
+        Actor weight ownership used in training. Only grouped modes write a
+        "parameter_sharing" key.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        PQN-VDN hidden-layer normalization used in training
+        (``PQNConfig.normalization``). Only "layer_norm" writes a
+        "normalization" key, so BatchNorm exports keep their historical
+        description bytes. Other methods accept only "batch_norm".
 
     Returns
     -------
@@ -1874,6 +1904,9 @@ default="mappo"
     """
     method = validate_training_method(method)
     sharing = _parameter_sharing(parameter_sharing)
+    normalization = _pqn_normalization(normalization)
+    if normalization != "batch_norm" and method != "pqn_vdn":
+        raise ValueError("Only PQN-VDN models have a normalization choice")
     if method == "pqn_vdn":
         if not isinstance(cast(object, actor_variables), PQNInferenceVariables):
             raise TypeError("A PQN-VDN export takes PQNInferenceVariables")
@@ -1882,13 +1915,17 @@ default="mappo"
     spawn_frame = _spawn_frame(spawn_frame)
     context = _check_actor_provenance(metadata, method)
     layout = _layout(actor_variables)
-    if layout == _layout(_actor_template(method, 1, sharing)):
+    if normalization == "batch_norm" and layout == _layout(
+        _actor_template(method, 1, sharing)
+    ):
         raise ValueError(
             "These weights use historical actor input schema 1 (5,164 features). "
             "Export writes current actors only; keep the original artifact, "
             "which load_system reads directly."
         )
-    if layout != _layout(_actor_template(method, parameter_sharing=sharing)):
+    if layout != _layout(
+        _actor_template(method, parameter_sharing=sharing, normalization=normalization)
+    ):
         raise ValueError("Actor variables differ from the selected model schema")
     if not all(
         bool(jnp.all(jnp.isfinite(value))) for value in jax.tree.leaves(actor_variables)
@@ -1910,6 +1947,7 @@ default="mappo"
             and _actor_input_scale(saved) == input_scale
             and _actor_spawn_frame(saved) == spawn_frame
             and _actor_parameter_sharing(saved) == sharing
+            and _actor_normalization(saved) == normalization
             and saved["metadata"] == context
         ):
             return target
@@ -1930,6 +1968,8 @@ default="mappo"
         }
         if sharing != "all":
             details["parameter_sharing"] = sharing
+        if normalization != "batch_norm":
+            details["normalization"] = normalization
         if method in ("qmix", "pqn_vdn"):
             details["epsilon"] = 0.0
             details["tie_rule"] = QMIX_TIE_RULE
@@ -2046,6 +2086,8 @@ def export_actor(
         frame = _actor_spawn_frame(details)
         if sharing != "all":
             actor["parameter_sharing"] = sharing
+        if _actor_normalization(details) != "batch_norm":
+            actor["normalization"] = _actor_normalization(details)
         if method in ("qmix", "pqn_vdn"):
             actor.update(epsilon=0.0, tie_rule=QMIX_TIE_RULE)
         if frame != "world" or method == "pqn_vdn":
@@ -2182,8 +2224,11 @@ def load_system(checkpoint: str | Path) -> System:
     qmix or pqn input_scale;
     actor exports use their explicit saved scale. The saved spawn frame is
     restored the same way and is never inferred from a model's results; a
-    missing frame means "world". Neither route rewrites weights. The saved
-    actor input schema picks the template and the System route: an artifact
+    missing frame means "world". A PQN-VDN model is rebuilt with its saved
+    hidden normalization (an export's "normalization" key or its learner
+    config's ``pqn.normalization``); a missing value means "batch_norm".
+    Neither route rewrites weights. The saved actor input schema picks the
+    template and the System route: an artifact
     saved before Red Zone (schema 1, 5,164 features) is restored with the
     schema-1 template and built with actor_input_schema=1, so it plays
     through the schema-1 hooks exactly as before. Its checkpoint label (the
@@ -2195,7 +2240,8 @@ def load_system(checkpoint: str | Path) -> System:
     method = _schema_method(details["schemas"])
     schema = cast(int, details["schemas"]["actor_input"])
     sharing = _actor_parameter_sharing(details)
-    template = _actor_template(method, schema, sharing)
+    normalization = _actor_normalization(details)
+    template = _actor_template(method, schema, sharing, normalization)
     if details["actor_layout"] != _layout(template):
         raise ValueError("Actor artifact schema differs from the installed model")
     actor = _restore_arrays(root / "actor", template, None)
@@ -2229,6 +2275,7 @@ def load_system(checkpoint: str | Path) -> System:
             spawn_frame=_actor_spawn_frame(details),
             actor_input_schema=schema,
             parameter_sharing=sharing,
+            normalization=normalization,
         )
     return make_ppo_system(
         actor,
@@ -2270,12 +2317,14 @@ def load_initial_actor(
     input_scale: float,
     spawn_frame: str,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> tuple[System, dict[str, Any]]:
     """Load compatible built-in weights before a new training run opens files.
 
     ``path`` names an actor export or full learner checkpoint. Only its actor
-    is imported. The method, current actor schema, input scale and spawn frame
-    must match; load_system checks layout, dtypes, payload hashes and values.
+    is imported. The method, current actor schema, input scale, spawn frame,
+    parameter sharing and (for PQN-VDN) hidden normalization must match;
+    load_system checks layout, dtypes, payload hashes and values.
     Return that System and its verified description for provenance. This is a
     warm start with fresh learner state, not a continuation. Trainer setup reuses
     the same loaded artifact across roles; ordinary calls load independently.
@@ -2292,6 +2341,8 @@ def load_initial_actor(
         raise ValueError("Initial actor spawn_frame differs from the new learner")
     if _actor_parameter_sharing(details) != _parameter_sharing(parameter_sharing):
         raise ValueError("Initial actor parameter_sharing differs from the new learner")
+    if _actor_normalization(details) != _pqn_normalization(normalization):
+        raise ValueError("Initial actor normalization differs from the new learner")
     from marl_battlegrounds._method_loading import load_method
 
     # Training setup may already hold this same checked actor as a pool member.
