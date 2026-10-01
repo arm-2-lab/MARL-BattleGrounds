@@ -65,6 +65,7 @@ _METHODS = {
 _PARAMETER_SHARING = ("all", "class", "none")
 
 TEAM_SLOTS = 5
+"""Team A actor slots mixed into one team value; smaller rosters pad inactive."""
 
 _INT32_MAX = 2**31 - 1
 
@@ -686,8 +687,10 @@ class PQNConfig:
 DEFAULT_PPO_CONFIG = PPOConfig()
 
 DEFAULT_QMIX_CONFIG = QMIXConfig()
+"""The donor's recurrent QMIX settings with the BG left spawn frame."""
 
 DEFAULT_PQN_CONFIG = PQNConfig()
+"""The donor's SMAX PQN-VDN settings without its reward multiplier, left frame."""
 
 # Host-readable format versions shared by model code and saved descriptions.
 ACTION_SCHEMA_VERSION = 1

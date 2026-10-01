@@ -135,6 +135,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
+    _declare_lane_independent,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.policies.input import mirror_team_view
 
@@ -1242,7 +1243,9 @@ def make_pqn_system(
         Stable apply/init hooks with ``PQNActorVariables(network, epsilon)`` as
         variables and float32 (B,5,512) per-actor memory. Memory resets only at
         episode starts; death and respawn keep it. Each decision also returns
-        ``PQNLearningOutputs`` with the memory it received.
+        ``PQNLearningOutputs`` with the memory it received. The apply hook is
+        declared lane-independent (BatchNorm uses running statistics here), so
+        a pool runs this actor only on its own games.
 
     Raises
     ------
@@ -1267,7 +1270,7 @@ def make_pqn_system(
     sharing = _parameter_sharing(parameter_sharing)
     if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
         raise ValueError("Grouped actors require the current actor input schema")
-    apply = (
+    apply = _declare_lane_independent(
         hook(scale, frame)
         if sharing == "all"
         else _grouped_pqn_actor_apply(scale, frame, sharing)

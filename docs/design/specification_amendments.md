@@ -2740,6 +2740,11 @@ by total tournament deaths, with no-death results displayed as unavailable.
 Retain raw totals internally; do not average per-match ratios or use K/D as an
 additional rating input. This narrow team-level display supersedes earlier
 broad K/D rejection; individual killer attribution and agent K/D remain rejected.
+Each row also shows a named tier and division (Iron to Grandmaster) taken from
+its Elo. The tier is display only and never changes rank or rating. The tier
+table and its rules live in
+[Leaderboard tiers](../evaluation/protocol.md#leaderboard-tiers); it is
+accepted design, not yet built.
 TDM team totals use authoritative score increments
 or recorded death counts, respecting any nonzero initial score. Selected
 manuscript analyses remain a separate reporting surface.

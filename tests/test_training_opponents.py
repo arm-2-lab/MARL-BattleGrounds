@@ -3,7 +3,10 @@
 CPU proofs cover independent opponent streams, the 80/20 reset distribution,
 the separate permanent pin, rolling-copy retirement and stable capture IDs,
 actual capture spacing, dynamic copy weights, zero-capacity play, immutable
-complete actor variables, shared result normalization, selected memory resets,
+complete actor variables, one full-batch call for current-weight lanes with
+length-one calls only for frozen-copy lanes (past copies and the permanent
+pin, through vmap or lax.map), shared result normalization,
+selected memory resets,
 stochastic initialization limits and untrained MAPPO on public inputs. These
 tests do not train a learner or establish GPU cost or learned competence.
 """
@@ -512,6 +515,34 @@ def test_wrapper_forms_match_independent_selected_application_and_initialization
         _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
 
 
+@pytest.mark.parametrize("vectorize_lanes", [True, False])
+def test_frozen_lanes_and_permanent_pin_use_their_own_weights_in_groups(
+    public_setup: tuple[Environment, Observations, EnvironmentState],
+    vectorize_lanes: bool,
+) -> None:
+    env, observations, state = public_setup
+    inputs = env.policy_inputs(observations, state, team=1)
+    keys = jax.random.split(jax.random.key(503), 4)
+    assignment = (-2, 1, -1, 0)
+    wrapped = make_opponent_system(_actor(), vectorize_lanes=vectorize_lanes)
+    history = _bank(pin=True)._replace(lane_snapshot=jnp.asarray(assignment, jnp.int32))
+    memory = jnp.arange(20, dtype=jnp.int32).reshape(4, 5)
+    actual = _jit(wrapped.apply)(history, memory, inputs, keys)
+    for lane, slot in enumerate(assignment):
+        variables = (
+            history.current_variables
+            if slot == -1
+            else history.pinned_variables
+            if slot == -2
+            else _stored(history.historical_variables, slot)
+        )
+        expected = _apply(
+            variables, _row(memory, lane), _row(inputs, lane), keys[lane : lane + 1]
+        )
+        _tree_equal(_row(actual.actions, lane), expected.actions)
+        _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
+
+
 def test_current_refresh_preserves_frozen_inference_state_and_continuing_memory(
     public_setup: tuple[Environment, Observations, EnvironmentState],
 ) -> None:
@@ -619,7 +650,8 @@ def test_all_current_executes_one_full_batch_call_and_mixed_executes_assigned_la
     history = history._replace(lane_snapshot=jnp.asarray((0, -1, 1, 2), jnp.int32))
     jax.block_until_ready(run(history, memory, inputs, keys))
     jax.effects_barrier()
-    assert calls == [1, 1, 1, 1]
+    # Current-weight lanes share one full-batch call; frozen lanes run alone.
+    assert calls == [4, 1, 1, 1]
 
 
 def test_public_death_and_respawn_keep_frozen_assignment_and_recurrent_memory() -> None:

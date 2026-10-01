@@ -127,6 +127,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
+    _declare_lane_independent,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.policies.input import mirror_team_view
 
@@ -1180,7 +1181,8 @@ def make_qmix_system(
     System
         Stable apply/init hooks with ``QMIXActorVariables(params, epsilon)`` as
         variables and float32 (B,5,256) per-actor memory. Memory resets only at
-        episode starts; death and respawn keep it.
+        episode starts; death and respawn keep it. The apply hook is declared
+        lane-independent, so a pool runs this actor only on its own games.
 
     Raises
     ------
@@ -1204,7 +1206,7 @@ def make_qmix_system(
     sharing = _parameter_sharing(parameter_sharing)
     if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
         raise ValueError("Grouped actors require the current actor input schema")
-    apply = (
+    apply = _declare_lane_independent(
         hook(scale, frame)
         if sharing == "all"
         else _grouped_qmix_actor_apply(scale, frame, sharing)

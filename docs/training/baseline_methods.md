@@ -935,6 +935,53 @@ speedup; final calibration must price the actual source. Raw results, source
 identities, the explicit paired engineering state transfer and limits are in
 `qualification/adaptive-capacity-report.md` under the study artifact root.
 
+## Opponent Pool And Past-Copy Speed
+
+A training pool gives each new game one member. A member that acts game by
+game now runs only on the games it owns. That covers JAX Policy adapters such
+as tdm-alpha and the built-in PPO, QMIX and PQN-VDN actors. Their games are
+gathered in groups of ceil(B / 16), 48 at B768. Each group runs, and its rows
+are written back into the member's unchanged memory. Policy members use their
+whole-team route, so each scripted bot is compiled once, not six times. Other
+Systems keep the full batch, because a System may look across games.
+
+The learner's own past copies follow the same rule. Current weights run once
+on the full batch. Per-game weight copies are made only for games against a
+past copy or the permanent pin. Before, every game got its own copy on every
+tick once the first past copy existed. Setup also remembers Core config checks
+that passed, keyed by the exact config bytes, so restore does not repeat them.
+A failed check is never remembered. There is no new setting.
+
+Measured on 30 September and 1 October 2026 on one RTX 5090. QMIX and PQN-VDN
+used B768/T32; the four PPO methods used B512/T32. The recipe was the
+60/20/20 pool with eight saved recurrent MAPPO actors and tdm-alpha, tdm-beta
+and tdm-gamma. Each run was a fresh 50-block `train()` call with a past copy
+every 300 rounds and no compile cache. The host was quiet except where noted.
+
+| Run | Setup | Rollout Compile | Warm Block After Past Copies | Transitions Per Second | Peak GPU Memory |
+|---|---:|---:|---:|---:|---:|
+| QMIX, before | 65.9 s | 109.9 s | 2.998 s | 8,197 | 12.10 GB |
+| QMIX, after | 29.9 s | 51.5 s | 1.866 s | 13,169 | 12.14 GB |
+| PQN-VDN, before | 67.6 s | 109.7 + 105.7 s | 4.020 s | 6,114 | 11.56 GB |
+| PQN-VDN, after | 28.1 s | 41.7 + 35.8 s | 2.549 s | 9,641 | 5.40 GB |
+| Recurrent MAPPO, before | 157.8 s (busy host) | 151.9 s | 1.434 s | 11,422 | 3.22 GB |
+| Recurrent MAPPO, after | 30.7 s | 44.4 s | 0.828 s | 19,799 | 3.22 GB |
+| Recurrent IPPO, before | 75.7 s | 117.0 s | 1.510 s | 10,851 | 3.01 GB |
+| Recurrent IPPO, after | 29.4 s | 37.5 s | 0.914 s | 17,917 | 3.01 GB |
+| Feedforward MAPPO, before | 66.1 s | 107.6 s | 1.346 s | 12,170 | 3.08 GB |
+| Feedforward MAPPO, after | 24.8 s | 36.6 s | 0.757 s | 21,634 | 2.80 GB |
+| Feedforward IPPO, before | 61.9 s | 107.0 s | 1.539 s | 10,646 | 3.00 GB |
+| Feedforward IPPO, after | 26.7 s | 36.7 s | 0.864 s | 18,959 | 2.76 GB |
+
+PQN-VDN compiles two rollout shapes: its first memory-window chunk and its
+ordinary block. With the same inputs, keys and memory, all 11 pool members
+chose the same actions through the old and new routes. Bot memory matched
+exactly. Recurrent MAPPO memory differed by at most 0.00017, which is float
+rounding from a smaller matrix batch. Whole training runs therefore follow
+the same rules but are not bit-identical to runs on the old code. These are
+cost measurements, not learning results. A busy host still slows startup and
+warmed blocks, because the host drives each compiled loop step.
+
 ## Start A New Learner From Saved Actor Weights
 
 Set `TrainConfig(initial_actor="run/actors/saved_actor", ...)` to start a fresh

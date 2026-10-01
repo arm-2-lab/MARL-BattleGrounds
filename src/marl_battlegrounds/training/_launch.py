@@ -402,7 +402,9 @@ def resource_environment(
     and is the default, while CPU is available for checkpoint checks. Optional
     memory_fraction replaces JAX's allocator fraction; other inherited flags,
     Python paths and provider settings stay unchanged. compilation_cache, when
-    set, selects an enabled persistent JAX cache. No directory or backend opens.
+    set, selects an enabled persistent JAX cache that also keeps programs that
+    compile in under a second (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0).
+    No directory or backend opens.
     Call before importing numerical modules. Return a new complete environment.
     """
     environment = dict(os.environ)
@@ -422,6 +424,9 @@ def resource_environment(
     if compilation_cache is not None:
         environment["JAX_COMPILATION_CACHE_DIR"] = compilation_cache
         environment["JAX_ENABLE_COMPILATION_CACHE"] = "true"
+        # Keep the hundreds of small setup programs too; each is under the
+        # default 1 s threshold, and together they cost 10-12 s per start.
+        environment["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] = "0"
     return environment
 
 
@@ -501,8 +506,10 @@ def _environment(
         Optional JAX allocator fraction in (0, 1]. None leaves JAX's default.
         Preallocation remains off. This is a pool limit, not a memory forecast.
     compilation_cache : Path or None, optional
-        Absolute directory for JAX's persistent compilation cache. None drops
-        inherited cache settings. This helper does not create the directory.
+        Absolute directory for JAX's persistent compilation cache. The cache
+        also keeps programs that compile in under a second
+        (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0). None drops inherited
+        cache settings. This helper does not create the directory.
 
     Returns
     -------
@@ -545,6 +552,7 @@ def _environment(
     if compilation_cache is not None:
         env["JAX_COMPILATION_CACHE_DIR"] = str(compilation_cache)
         env["JAX_ENABLE_COMPILATION_CACHE"] = "true"
+        env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] = "0"
     return env
 
 

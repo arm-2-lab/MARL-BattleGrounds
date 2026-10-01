@@ -5,6 +5,7 @@ subprocesses check concurrent admission, failure, bounded stop and explicit
 recovery without models or GPU allocation. Their timings measure orchestration,
 not learner throughput. Fresh-process probes check settings before JAX import.
 GPU settings keep CUDA first and required and permit CPU checkpoint checks.
+A declared compilation cache also keeps programs that compile in under a second.
 """
 
 from __future__ import annotations
@@ -78,6 +79,7 @@ def test_resource_environment_preserves_researcher_imports(
     assert os.environ["JAX_PLATFORMS"] == inherited_platforms
     assert env["XLA_PYTHON_CLIENT_MEM_FRACTION"] == "0.4"
     assert env["JAX_COMPILATION_CACHE_DIR"] == str(tmp_path / "cache")
+    assert env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] == "0"
     assert not (tmp_path / "cache").exists()
     assert _launch.resource_environment(None) == dict(os.environ)
     cpu = _launch.resource_environment({"device": "cpu", "max_workers": 1})

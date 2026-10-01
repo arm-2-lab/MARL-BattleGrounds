@@ -1047,7 +1047,12 @@ class _Composition:
     Only callables and component offsets are static. Numerical parameters,
     selectors, shares, templates, choices and memories remain explicit values.
     A host composition transfers only each host child's permitted inputs; JAX
-    children keep a compiled batched path. No member memory is sliced or packed.
+    children keep a compiled batched path. In a pool, a JAX member that acts
+    game by game (a Policy adapter or a built-in actor declared
+    lane-independent) runs only on its own games: _compact_jax_apply gathers
+    their rows, applies the member and writes the rows back into the member's
+    unchanged memory layout. Other members get the full batch with their
+    games marked valid. Member memory is never repacked between calls.
     """
 
     members: tuple[_SystemExecution, ...]
@@ -1188,7 +1193,14 @@ class _Composition:
         actor_keys: Array | None = None,
         keep_learning_outputs: bool = True,
     ) -> SystemOutput:
-        """Reuse child execution and combine only each child's owned actions."""
+        """Reuse child execution and combine only each child's owned actions.
+
+        In a pool, a JAX member that _row_safe accepts runs through
+        _compact_jax_apply on its own games only; other members get the full
+        batch through _composed_jax_apply. Either way each member keeps its
+        own keys, memory layout and output shapes, and only its owned slots in
+        valid games are merged into the team result.
+        """
         if actor_keys is None:
             actor_keys = _slot_keys(keys)
         actions = ActorAction(
@@ -1207,7 +1219,23 @@ class _Composition:
                 execution, child.active_mask, controlled=owned, valid=child.valid
             )
             child_keys = _member_keys(keys, index)
-            if execution.execution == "host":
+            if self.pooled and _row_safe(
+                execution, memory.members[index], inputs.valid.shape[0]
+            ):
+                output = cast(
+                    SystemOutput,
+                    _compact_jax_apply(
+                        execution,
+                        variables.members[index],
+                        variables.templates[index],
+                        memory.members[index],
+                        child,
+                        child_keys,
+                        actor_keys,
+                        keep_learning_outputs=keep_learning_outputs,
+                    ),
+                )
+            elif execution.execution == "host":
                 output = _host_apply(
                     execution,
                     variables.members[index],
@@ -1258,6 +1286,266 @@ class _Composition:
         )
 
 
+_LANE_INDEPENDENT = "_marl_lane_independent"
+
+
+def _declare_lane_independent[Apply: SystemApply](  # pyright: ignore[reportUnusedFunction]
+    apply: Apply,
+) -> Apply:
+    """Mark a built-in System apply hook whose games never affect each other.
+
+    Parameters
+    ----------
+    apply : SystemApply
+        A System apply hook with no reset hook, whose memory leaves all lead
+        with the game axis B, and whose result for one game depends only on
+        that game's inputs, memory row and key row. Running it on any subset
+        of games must give each game the same actions and next memory as the
+        full batch, up to floating-point rounding of batched arithmetic.
+
+    Returns
+    -------
+    SystemApply
+        The same function object, now carrying the marker. Recorded method
+        identity reads code, closure and defaults, not function attributes,
+        so saved identities do not change.
+
+    Notes
+    -----
+    Host-only and idempotent. Only built-in learner actor factories use it.
+    Pools then run a marked member on its own games alone (see
+    _compact_jax_apply). An unmarked generic System keeps the full batch,
+    because the System contract lets a method look across games.
+    """
+    setattr(apply, _LANE_INDEPENDENT, True)
+    return apply
+
+
+def _row_safe(execution: _SystemExecution, memory: PolicyTree, size: int) -> bool:
+    """Say whether one JAX pool member may run on a subset of its games.
+
+    Parameters
+    ----------
+    execution : _SystemExecution
+        Static call structure of the member.
+    memory : PolicyTree
+        The member's current memory tree, concrete or traced.
+    size : int
+        Static number of games B.
+
+    Returns
+    -------
+    bool
+        True for JAX Policy adapters, which act per actor by contract, and for
+        generic JAX members whose apply hook is declared lane-independent,
+        that have no custom reset hook and whose memory leaves all lead with
+        B. False for host members, nested compositions and all other Systems.
+    """
+    if execution.execution != "jax":
+        return False
+    if execution.policies:
+        return True
+    if execution.reset is not None or not getattr(
+        execution.apply, _LANE_INDEPENDENT, False
+    ):
+        return False
+    return all(
+        tuple(getattr(leaf, "shape", ()))[:1] == (size,)
+        for leaf in jax.tree.leaves(memory)
+    )
+
+
+def _gather_rows(tree: PolicyTree, index: Array, size: int) -> PolicyTree:
+    """Take the game rows named by index from every leading-B leaf of a tree.
+
+    Parameters
+    ----------
+    tree : PolicyTree
+        Pytree whose leaves all have leading axis B; typed key arrays and None
+        subtrees work too.
+    index : Array
+        Int32 (C,) game numbers. Entries equal to size mark unused slots.
+    size : int
+        Static B.
+
+    Returns
+    -------
+    PolicyTree
+        The same tree with leading axis C. Unused slots read game B - 1; the
+        caller marks them invalid. Pure; no host transfer.
+    """
+    safe = jnp.minimum(index, size - 1)
+
+    def take(leaf: Array) -> Array:
+        """Read the selected rows of one leaf."""
+        return leaf[safe]
+
+    return jax.tree.map(take, tree)
+
+
+def _scatter_rows(full: PolicyTree, part: PolicyTree, index: Array) -> PolicyTree:
+    """Write the rows of part back into full at index; unused slots are dropped.
+
+    Parameters
+    ----------
+    full : PolicyTree
+        Pytree with leading-B leaves.
+    part : PolicyTree
+        The same tree structure with leading-C leaves of matching dtypes.
+    index : Array
+        Int32 (C,) target games; entries equal to B are out of range.
+
+    Returns
+    -------
+    PolicyTree
+        full with the indexed rows replaced. Out-of-range entries are dropped,
+        so padding never overwrites a real game. Pure.
+    """
+
+    def put(whole: Array, rows: Array) -> Array:
+        """Place one leaf's rows."""
+        return whole.at[index].set(rows, mode="drop")
+
+    return jax.tree.map(put, full, part)
+
+
+def _pool_chunk_capacity(size: int) -> int:
+    """Return how many games one compact pool-member call holds.
+
+    Parameters
+    ----------
+    size : int
+        Static number of games B, positive.
+
+    Returns
+    -------
+    int
+        ceil(size / 16), at least 1: 48 games at B=768, 32 at B=512 and 64
+        at B=1024. A member with more games runs several such groups in one
+        compiled loop, so a pool member with a small share pays for about its
+        own games, and one with a large share pays a small fixed cost per group.
+    """
+    return max(1, -(-size // 16))
+
+
+@partial(jax.jit, static_argnums=0, static_argnames=("keep_learning_outputs",))
+def _compact_jax_apply(
+    execution: _SystemExecution,
+    variables: PolicyTree,
+    template: PolicyTree,
+    memory: PolicyTree,
+    inputs: SystemInput,
+    keys: Array,
+    actor_keys: Array,
+    *,
+    keep_learning_outputs: bool,
+) -> SystemOutput:
+    """Run a row-safe pool member only on its own games, in fixed-size groups.
+
+    Parameters
+    ----------
+    execution : _SystemExecution
+        Static call structure; _row_safe must be True for it.
+    variables, template, memory : PolicyTree
+        The member's parameters, adapter template and full (B, ...) memory.
+    inputs : SystemInput
+        Full-batch inputs whose valid marks the member's own games and whose
+        controlled_mask marks its owned slots.
+    keys : Array
+        The member's (B,) game keys, already folded for its member index.
+    actor_keys : Array
+        (B, 5) typed or (B, 5, 2) legacy physical-slot keys shared by members.
+    keep_learning_outputs : bool
+        Static. False drops learner values inside the compiled call.
+
+    Returns
+    -------
+    SystemOutput
+        Full-batch actions and policy IDs: the member's results on its games,
+        zero actions and ID -1 elsewhere. Next memory equals the input memory
+        except on the member's games. Learning outputs keep their (B, ...)
+        shapes with zeros outside the member's games.
+
+    Notes
+    -----
+    The member's valid games are gathered in game order into groups of
+    _pool_chunk_capacity(B) rows. Each group calls the shared _jax_apply with
+    that group's inputs, memory rows, game keys and slot keys, then writes
+    its rows back. One compiled loop body serves every group, and a member
+    with no games runs no group. Policy adapters use their whole-team route,
+    which keeps unowned slots' memory, so no per-slot copies are compiled.
+    A game's result equals its row in the full-batch call up to rounding of
+    batched arithmetic. No host transfer or callback is added.
+    """
+    size = inputs.valid.shape[0]
+    capacity = _pool_chunk_capacity(size)
+    groups = -(-size // capacity)
+    order = jnp.nonzero(inputs.valid, size=groups * capacity, fill_value=size)[0]
+    count = jnp.sum(inputs.valid, dtype=jnp.int32)
+    no_reset = jnp.zeros((capacity,), jnp.bool_)
+
+    def call(index: Array) -> SystemOutput:
+        """Apply the member to one group of gathered games."""
+        rows = cast(SystemInput, _gather_rows(inputs, index, size))
+        rows = rows._replace(valid=rows.valid & (index < size))
+        row_keys = _gather_rows(keys, index, size)
+        return _jax_apply(
+            execution,
+            variables,
+            template,
+            _gather_rows(memory, index, size),
+            rows,
+            row_keys,
+            row_keys,
+            no_reset,
+            actor_keys=_gather_rows(actor_keys, index, size),
+            keep_learning_outputs=keep_learning_outputs,
+        )
+
+    def full(leaf: jax.ShapeDtypeStruct) -> Array:
+        """Allocate one full-batch learner output filled with zeros."""
+        return jnp.zeros((size, *leaf.shape[1:]), leaf.dtype)
+
+    # Dropped learner values need no extra shape-only trace of the member.
+    learning: PolicyTree = (
+        jax.tree.map(full, jax.eval_shape(call, order[:capacity]).learning_outputs)
+        if keep_learning_outputs
+        else ()
+    )
+    zero = jnp.zeros((size, 5), jnp.int32)
+    start = SystemOutput(
+        ActorAction(zero, zero, zero),
+        memory,
+        learning_outputs=learning,
+        policy_ids=jnp.full((size, 5), -1, jnp.int32),
+    )
+
+    def group(number: Array, done: SystemOutput) -> SystemOutput:
+        """Run one group and write its rows into the full-batch result."""
+        index = jax.lax.dynamic_slice_in_dim(order, number * capacity, capacity)
+        output = call(index)
+        return SystemOutput(
+            ActorAction(
+                *(
+                    _scatter_rows(old, jnp.asarray(new, jnp.int32), index)
+                    for old, new in zip(done.actions, output.actions, strict=True)
+                )
+            ),
+            _scatter_rows(done.next_memory, output.next_memory, index),
+            learning_outputs=_scatter_rows(
+                done.learning_outputs, output.learning_outputs, index
+            ),
+            policy_ids=_scatter_rows(
+                done.policy_ids, jnp.asarray(output.policy_ids, jnp.int32), index
+            ),
+        )
+
+    return cast(
+        SystemOutput,
+        jax.lax.fori_loop(0, -(-count // capacity), group, start),
+    )
+
+
 @partial(jax.jit, static_argnums=0, static_argnames=("keep_learning_outputs",))
 def _composed_jax_apply(
     execution: _SystemExecution,
@@ -1272,8 +1560,10 @@ def _composed_jax_apply(
 ) -> SystemOutput:
     """Skip unassigned JAX members while retaining a fixed learner-output shape.
 
-    Shape tracing happens only when compiling a new member structure. It does
-    not call host providers or execute numerical action work. This same compiled
+    Shape tracing happens only when compiling a new member structure and only
+    when learner values are kept; with keep_learning_outputs False the skipped
+    branch returns () and no extra shape-only trace runs. It does not call
+    host providers or execute numerical action work. This same compiled
     boundary keeps JAX members batched inside mixed host compositions.
     """
 
@@ -1293,7 +1583,8 @@ def _composed_jax_apply(
             sparse_policies=True,
         )
 
-    shape = jax.eval_shape(apply, None)
+    # Dropped learner values need no extra shape-only trace of the member.
+    shape = jax.eval_shape(apply, None) if keep_learning_outputs else None
 
     def skip(_: None) -> SystemOutput:
         """Keep memory and replace unused learner arrays with fixed-shape zeros."""
@@ -1303,7 +1594,7 @@ def _composed_jax_apply(
             """Allocate only the fixed learner output needed by the skipped branch."""
             return jnp.zeros(leaf.shape, leaf.dtype)
 
-        learning = jax.tree.map(zero, shape.learning_outputs)
+        learning = () if shape is None else jax.tree.map(zero, shape.learning_outputs)
         return SystemOutput(
             padding.actions,
             memory,
@@ -1539,7 +1830,9 @@ def pool[Member: System | Policy | str](
     Sampling uses the POOL initialization-key domain. A singleton preserves its
     member's keys. Generic member key tags and information rights follow team.
     Resources use each member's existing scope and memory reset hook. Members
-    with no assigned valid games do no action/provider work. A mixture evaluation
+    with no assigned valid games do no action/provider work. JAX Policy members
+    and built-in learner actors run only on the games assigned to them, so a
+    member with a small share costs about its share of the batch. A mixture evaluation
     does not promise paired member draws across spawn ends: evaluate each fixed
     member separately when paired per-member results are needed.
 

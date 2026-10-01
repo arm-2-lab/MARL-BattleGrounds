@@ -25,6 +25,7 @@ import numpy as np
 from jax import Array
 from jax.core import Tracer
 
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._task_settings import (
     DEFAULT_TDM_RED_ZONE_DEPTH as DEFAULT_TDM_RED_ZONE_DEPTH,
 )
@@ -250,9 +251,11 @@ def _validate_config_choices(
     -----
     Tracer inputs are skipped: compiled callers must select from a pool validated
     during setup. Concrete inputs are copied to the host once, and identical rows
-    are checked once. Validation prefers CPU vectors for Core's host checks; a
-    CUDA-only installation uses its available device. No new physical validator
-    or per-step host callback is introduced.
+    are checked once. A Core check that already passed for byte-identical values
+    earlier in this process is not repeated (marl_battlegrounds._config_checks);
+    a failure is never remembered. Validation prefers CPU vectors for Core's host
+    checks; a CUDA-only installation uses its available device. No new physical
+    validator or per-step host callback is introduced.
     """
     if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(env_config)):
         return
@@ -299,10 +302,10 @@ def _validate_config_choices(
         # Its validation stays in setup rather than tracing Core's host checks.
         with jax.ensure_compile_time_eval(), jax.default_device(validation_device):
             source = jax.tree.map(validation_value, source)
-            validate_env_config(source)
+            run_config_check(validate_env_config, source)
             if both_spawn_choices:
                 try:
-                    validate_env_config(_swap_spawn_banks(source))
+                    run_config_check(validate_env_config, _swap_spawn_banks(source))
                 except (TypeError, ValueError) as error:
                     raise type(error)(
                         f"swapped spawn locations in source {index}: {error}"
@@ -720,7 +723,7 @@ def _make_config(
         spawn_shield_movement_speed=shield_speed,
         team_respawn_wave_period_step_count=jnp.asarray(wave_periods, dtype=jnp.int32),
     )
-    validate_product_env_config(config)
+    run_config_check(validate_product_env_config, config)
     return config
 
 

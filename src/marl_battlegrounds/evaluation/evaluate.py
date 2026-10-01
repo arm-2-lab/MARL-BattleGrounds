@@ -25,6 +25,7 @@ import numpy as np
 from jax import Array
 from numpy.typing import NDArray
 
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.config import (
@@ -1005,7 +1006,10 @@ def _run_evaluation(
     _verify_only : bool, default=False
         Private read-only check of an existing saved pass. True returns empty
         result rows after the writer's shared identity/start checks, before any
-        writer creation, method initialization or environment execution.
+        writer creation, method initialization or environment execution. The
+        check keeps the saved pass's recorded code_revision (or its absence),
+        so games saved by older source still verify; ordinary writer recovery
+        still checks the current source identity.
 
     Returns
     -------
@@ -1083,7 +1087,7 @@ def _run_evaluation(
                 validate_scenario_initial_state(spec.env_config, spec.initial_state)
                 validated_starts.add(start_identity)
         if id(spec.env_config) not in validated:
-            validate_env_config(spec.env_config)
+            run_config_check(validate_env_config, spec.env_config)
             if int(spec.env_config.task_mode) != 1:
                 raise ValueError("evaluate currently supports TDM configurations")
             validated.add(id(spec.env_config))
@@ -1203,6 +1207,16 @@ def _run_evaluation(
             if "method_sampling" in previous_details:
                 metadata["method_sampling"] = previous_details["method_sampling"]
         metadata.update(capture_recording_provenance(num_envs=batch_size))
+        if _verify_only and saved_sampling_pass is not None:
+            # Old games keep their original source evidence during inspection.
+            # Ordinary writer recovery still checks the current source identity.
+            saved_details = cast(
+                Mapping[str, object], saved_sampling_pass[1]["details"]
+            )
+            if "code_revision" in saved_details:
+                metadata["code_revision"] = saved_details["code_revision"]
+            else:
+                metadata.pop("code_revision", None)
         if device is not None:
             runtime = cast(dict[str, object], metadata["runtime_provenance"])
             metadata["runtime_provenance"] = {

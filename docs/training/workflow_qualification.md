@@ -61,6 +61,11 @@ startup and compilation; dividing its total time by transitions would misstate
 normal training speed. These measurements do not establish safe multi-worker
 concurrency or an optimal batch size.
 
+These times describe the source checked on 29–30 September. The later opponent
+pool and past-copy speed fix cut setup, compilation and warmed block time for
+this pool; its measurements are in
+[Opponent Pool And Past-Copy Speed](baseline_methods.md#opponent-pool-and-past-copy-speed).
+
 A later checkpoint-memory repair was checked separately on QMIX with 512
 environments and 32-step rollouts. The run reached 6,209,536 transitions before
 its planned diagnostic stop. Stable live JAX memory was about 3.94 GiB; the

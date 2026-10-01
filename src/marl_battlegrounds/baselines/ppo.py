@@ -134,6 +134,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
+    _declare_lane_independent,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.policies.input import (
     ActorInput,
@@ -1506,6 +1507,8 @@ def make_recurrent_mappo_system(
     System
         Existing M8 JAX System with stable actor/init callables and the supplied
         weights. Arrays are retained by reference. No action is chosen here.
+        The apply hook is declared lane-independent, so a pool runs this actor
+        only on the games assigned to it.
 
     Raises
     ------
@@ -1542,7 +1545,7 @@ def make_recurrent_mappo_system(
         apply = _scaled_actor_apply(scale, frame)
     return System(
         name,
-        apply,
+        _declare_lane_independent(apply),
         variables=actor_params,
         init=_initial_actor_memory,
         checkpoint=checkpoint,
@@ -1737,6 +1740,8 @@ def make_ppo_system(
     -------
     System
         Actor-only descriptor retaining the supplied variables and stable hooks.
+        The apply hook is declared lane-independent, so a pool runs this actor
+        only on the games assigned to it.
 
     Raises
     ------
@@ -1771,7 +1776,7 @@ def make_ppo_system(
     )
     if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
         raise ValueError("Grouped actors require the current actor input schema")
-    apply = (
+    apply = _declare_lane_independent(
         hook(scale, frame)
         if sharing == "all"
         else _grouped_ppo_actor_apply(scale, frame, sharing, False)
