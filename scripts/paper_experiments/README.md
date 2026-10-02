@@ -222,6 +222,8 @@ Its committed inputs are in `hyperparameter_search/`:
 | `opponents.yaml` | The expected identity and role of each fixed opponent |
 | `shapes_and_ppo.yaml` | Study 1: 18 cases, three search seeds each, 54 runs |
 | `shapes_and_ppo_picks.yaml` | Study 1's recipe picks, declared before launch |
+| `q_settings.yaml` | Study 2: 10 cases of one Q-method change each, 30 runs |
+| `q_settings_picks.yaml` | Study 2's recipe picks, including the engagement floor |
 
 Preparation checks every member of the local opponent bundle against
 `opponents.yaml` and binds the study's opponent names to their checked

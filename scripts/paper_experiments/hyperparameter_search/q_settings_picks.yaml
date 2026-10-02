@@ -1,0 +1,89 @@
+# Recipe picks for study 2 (q_settings.yaml), declared before launch.
+#
+# Each change is compared with its base's study 1 runs on the same three
+# seeds (groups qmix-b768-t32-lr-1e-4 and pqn_vdn-b768-t128 come from
+# shapes_and_ppo). The analysis therefore reads both studies' run folders, with
+# one grouping file that lists the base runs and these runs.
+#
+# A change replaces its base only if all three hold:
+#   1. Its mean point margin beats the base by more than 2 points.
+#   2. It beats the base on at least 2 of the 3 seeds.
+#   3. Engagement floor: it averages at least 2 kills per game against each
+#      of tdm-alpha, tdm-beta and tdm-gamma in its confirmation games. A
+#      recipe that avoids fights cannot win a pick, however good its margin.
+# Rules 1 and 2 are checked by training.analyze (min_margin_gain,
+# min_units_won). Rule 3 is applied to the saved confirmation results when the
+# picks are reported, and the report names every recipe it blocks.
+# If several changes pass for one method, the one with the highest mean margin
+# is kept, so the final recipe always has trained runs to continue to 250M.
+recipe_selection:
+  - name: PQN-VDN Exploration Over 20% Of The Run
+    groups: &pqn_explore [pqn_vdn-b768-t128, pqn_vdn-b768-t128-explore-20pct]
+    direction: maximize
+    tie_order: *pqn_explore
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: PQN-VDN Reward Scale 10
+    groups: &pqn_reward [pqn_vdn-b768-t128, pqn_vdn-b768-t128-reward-x10]
+    direction: maximize
+    tie_order: *pqn_reward
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: PQN-VDN LayerNorm
+    groups: &pqn_layer [pqn_vdn-b768-t128, pqn_vdn-b768-t128-layer-norm]
+    direction: maximize
+    tie_order: *pqn_layer
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: PQN-VDN Learning Rate 1e-4
+    groups: &pqn_lr [pqn_vdn-b768-t128, pqn_vdn-b768-t128-lr-1e-4]
+    direction: maximize
+    tie_order: *pqn_lr
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: PQN-VDN Gamma 0.995
+    groups: &pqn_gamma [pqn_vdn-b768-t128, pqn_vdn-b768-t128-gamma-0995]
+    direction: maximize
+    tie_order: *pqn_gamma
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: PQN-VDN Lambda 0.95
+    groups: &pqn_lambda [pqn_vdn-b768-t128, pqn_vdn-b768-t128-lambda-095]
+    direction: maximize
+    tie_order: *pqn_lambda
+    base: pqn_vdn-b768-t128
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: QMIX Twice The Training Per New Step
+    groups: &qmix_reuse [qmix-b768-t32-lr-1e-4, qmix-b768-t32-lr-1e-4-reuse-x2]
+    direction: maximize
+    tie_order: *qmix_reuse
+    base: qmix-b768-t32-lr-1e-4
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: QMIX Gamma 0.995
+    groups: &qmix_gamma [qmix-b768-t32-lr-1e-4, qmix-b768-t32-lr-1e-4-gamma-0995]
+    direction: maximize
+    tie_order: *qmix_gamma
+    base: qmix-b768-t32-lr-1e-4
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: QMIX Reward Scale 10
+    groups: &qmix_reward [qmix-b768-t32-lr-1e-4, qmix-b768-t32-lr-1e-4-reward-x10]
+    direction: maximize
+    tie_order: *qmix_reward
+    base: qmix-b768-t32-lr-1e-4
+    min_margin_gain: 2.0
+    min_units_won: 2
+  - name: QMIX Faster Target Copies
+    groups: &qmix_target [qmix-b768-t32-lr-1e-4, qmix-b768-t32-lr-1e-4-target-faster]
+    direction: maximize
+    tie_order: *qmix_target
+    base: qmix-b768-t32-lr-1e-4
+    min_margin_gain: 2.0
+    min_units_won: 2

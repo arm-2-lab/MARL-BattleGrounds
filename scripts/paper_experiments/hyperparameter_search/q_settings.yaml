@@ -1,0 +1,174 @@
+# Study 2 of the six-method hyperparameter search: one-at-a-time setting
+# changes for QMIX and PQN-VDN, each around the base chosen after study 1.
+#
+# Bases (study 1 runs on the same three seeds, not rerun here):
+#   QMIX     qmix-b768-t32-lr-1e-4: B768, T32, q_lr 0.0001. Chosen over the
+#            declared B768 T32 pick because it learned to fight fastest (7.2
+#            kills per game at 40M against 5.4) with the best margin.
+#   PQN-VDN  pqn_vdn-b768-t128: B768, T128. Chosen over the declared B768 T32
+#            pick, which won by avoiding fights (0 kills against the bots).
+#
+# Prepare it like study 1; preparation checks the opponent bundle and binds
+# the opponent names:
+#
+#   python scripts/paper_experiments/prepare.py protocol=declared_study \
+#     declaration=scripts/paper_experiments/hyperparameter_search/q_settings.yaml \
+#     opponent_bundle=/path/opponents output_dir=/path/q-settings
+#
+# 10 cases x 3 search seeds = 30 runs, PQN-VDN first (longest), then QMIX.
+# Every other setting equals study 1 (shapes_and_ppo.yaml). Picks are declared
+# in q_settings_picks.yaml.
+schema_version: 1
+name: Hyperparameter Search Q Settings
+failure_policy: continue
+resources:
+  devices:
+    - device: GPU-6b11a0c4-14e8-6782-8932-1df56d599796
+      max_workers: 1
+    - device: GPU-8dcabaa4-3802-4240-98e3-6ddebbc6239d
+      max_workers: 1
+cases:
+  # PQN-VDN changes around B768, T128.
+  - id: pqn_vdn-b768-t128-explore-20pct
+    seeds: &seeds [12259871, 20261001, 20261002]
+    runtime: &runtime
+      # Same order as opponents.yaml; preparation refuses another order.
+      validation_opponents:
+        - recurrent-mappo-combat-support-pooled-step-250675200
+        - tdm-alpha
+        - tdm-beta
+        - tdm-gamma
+    config:
+      <<: &common
+        total_env_steps: 40108032
+        curriculum: false
+        score_threshold_curriculum: false
+        red_zone_depth: 5.0
+        shaping: false
+        opponents:
+          self: 0.6
+          past: 0.2
+          recurrent-mappo-combat-support-low-amounts-step-30081024: 0.025
+          recurrent-mappo-combat-support-step-35094528: 0.025
+          recurrent-mappo-tactical-support-step-40108032: 0.025
+          recurrent-mappo-tactical-support-high-amounts-step-25067520: 0.025
+          recurrent-mappo-tactical-support-zero-sum-step-35094528: 0.025
+          recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032: 0.025
+          tdm-alpha: 0.025
+          tdm-beta: 0.025
+        keep_past: 12
+        past_capture_interval: 1376256
+        validation_maps: [42, 43, 44, 46]
+        validation_fractions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        routine_seed_pairs: 4
+        confirmation_seed_pairs: 8
+        metrics: priority
+        recording: false
+        retain_all_actors: true
+        reward: marl_battlegrounds.training.reward_recipes:combat_support_team_reward
+        checkpoint_interval_updates: 1600
+        num_envs: 768
+      method: pqn_vdn
+      # Exploration falls from 1.0 to 0.01 over 20% of the run instead of 5%.
+      pqn: &pqn_base
+        rollout_length: 128
+        memory_window: 4
+        epochs: 4
+        num_minibatches: 12
+        q_lr: 0.00025
+        lr_linear_decay: true
+        max_grad_norm: 1.0
+        gamma: 0.99
+        td_lambda: 0.85
+        eps_start: 1.0
+        eps_finish: 0.01
+        eps_decay_fraction: 0.2
+        input_scale: 1.0
+        spawn_frame: left
+        parameter_sharing: all
+        reward_scale: 1.0
+        normalization: batch_norm
+  - id: pqn_vdn-b768-t128-reward-x10
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      pqn: {<<: *pqn_base, eps_decay_fraction: 0.05, reward_scale: 10.0}
+  - id: pqn_vdn-b768-t128-layer-norm
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      pqn: {<<: *pqn_base, eps_decay_fraction: 0.05, normalization: layer_norm}
+  - id: pqn_vdn-b768-t128-lr-1e-4
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      pqn: {<<: *pqn_base, eps_decay_fraction: 0.05, q_lr: 0.0001}
+  - id: pqn_vdn-b768-t128-gamma-0995
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      pqn: {<<: *pqn_base, eps_decay_fraction: 0.05, gamma: 0.995}
+  - id: pqn_vdn-b768-t128-lambda-095
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: pqn_vdn
+      pqn: {<<: *pqn_base, eps_decay_fraction: 0.05, td_lambda: 0.95}
+  # QMIX changes around B768, T32, q_lr 0.0001.
+  - id: qmix-b768-t32-lr-1e-4-reuse-x2
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      # Twice the epochs (9.5 training pairs per new step) with update_period
+      # doubled, so a target copy still comes every 131,072 new steps.
+      qmix: &qmix_base
+        rollout_length: 32
+        epochs: 96
+        buffer_size: 172
+        min_buffer_size: 32
+        sample_sequence_length: 20
+        sample_batch_size: 128
+        q_lr: 0.0001
+        hard_update: true
+        update_period: 512
+        tau: 0.01
+        gamma: 0.99
+        eps_min: 0.05
+        eps_decay: 2000000
+        input_scale: 0.01
+        spawn_frame: left
+        parameter_sharing: all
+        reward_scale: 1.0
+  - id: qmix-b768-t32-lr-1e-4-gamma-0995
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      qmix: {<<: *qmix_base, epochs: 48, update_period: 256, gamma: 0.995}
+  - id: qmix-b768-t32-lr-1e-4-reward-x10
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      qmix: {<<: *qmix_base, epochs: 48, update_period: 256, reward_scale: 10.0}
+  - id: qmix-b768-t32-lr-1e-4-target-faster
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      method: qmix
+      # A target copy every 65,536 new steps instead of 131,072.
+      qmix: {<<: *qmix_base, epochs: 48, update_period: 128}
