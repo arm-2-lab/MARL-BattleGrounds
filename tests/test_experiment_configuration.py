@@ -1,5 +1,9 @@
 """Check packaged settings and previews against the existing public config API.
 
+The default recipe applies the settings of each method's strongest run, the
+one continued to 250M (study 3 of the six-method hyperparameter search), over
+the API defaults; the expected values below are those runs' saved settings,
+written out independently of the generator.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
 PQN normalization and validation_maps, whose default is left out of saved
 configs), six method groups, complete pool replacement, ordinary
@@ -40,15 +44,64 @@ def composed(*overrides: str) -> DictConfig:
         return compose(config_name="train", overrides=list(overrides))
 
 
+PPO_SELECTED = {
+    "actor_lr": 0.0001,
+    "critic_lr": 0.00025,
+    "rollout_length": 32,
+    "gamma": 0.999,
+    "input_scale": 0.01,
+}
+# Method -> (games, learner settings that differ from the API defaults).
+SELECTED: dict[str, tuple[int, dict[str, Any]]] = {
+    "mappo": (512, PPO_SELECTED),
+    "ippo": (512, PPO_SELECTED),
+    "ff_mappo": (512, {**PPO_SELECTED, "actor_lr": 0.0003}),
+    "ff_ippo": (512, PPO_SELECTED),
+    "qmix": (
+        768,
+        {
+            "rollout_length": 32,
+            "buffer_size": 172,
+            "epochs": 48,
+            "q_lr": 0.0001,
+            "hard_update": True,
+            "update_period": 128,
+            "eps_decay": 2000000,
+            "input_scale": 0.01,
+        },
+    ),
+    "pqn_vdn": (
+        768,
+        {"num_minibatches": 12, "eps_decay_fraction": 0.05, "reward_scale": 10.0},
+    ),
+}
+REWARD = {
+    "ppo": "marl_battlegrounds.training.reward_recipes:combat_support_reward",
+    "qmix": "marl_battlegrounds.training.reward_recipes:combat_support_team_reward",
+    "pqn": "marl_battlegrounds.training.reward_recipes:combat_support_team_reward",
+}
+
+
 @pytest.mark.parametrize("method", TRAINING_METHODS)
-def test_default_recipe_matches_original_api_defaults(
+def test_default_recipe_is_the_selected_search_recipe(
     method: str, tmp_path: Path
 ) -> None:
-    actual = resolve_training_config(composed(f"method={method}"), base_dir=tmp_path)
-    expected = json.loads(
-        (ROOT / "tests/fixtures/training_config_defaults.json").read_text()
+    actual = config_to_dict(
+        resolve_training_config(composed(f"method={method}"), base_dir=tmp_path)
     )
-    assert config_to_dict(actual) == {**expected[method], "retain_all_actors": False}
+    defaults: dict[str, Any] = json.loads(
+        (ROOT / "tests/fixtures/training_config_defaults.json").read_text()
+    )[method]
+    block = method_settings_field(method)
+    games, settings = SELECTED[method]
+    assert actual == {
+        **defaults,
+        "retain_all_actors": False,
+        "num_envs": games,
+        "total_env_steps": 40108032,
+        "reward": REWARD[block],
+        block: {**defaults[block], **settings},
+    }
 
 
 @pytest.mark.parametrize(("record", "field"), FIELDS)

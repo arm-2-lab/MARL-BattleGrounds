@@ -4,6 +4,9 @@ Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or
 add ``--check`` to reject drift without writing. Requires the hydra extra.
 Only packaged YAML changes. This tool starts no numerical backend or training;
 software_check values exercise wiring and are not paper hyperparameters.
+The default recipe holds the settings of each method's strongest run, the one
+continued to 250M (study 3 of the six-method hyperparameter search;
+SELECTED_RECIPES). The dataclass defaults are unchanged.
 """
 
 from __future__ import annotations
@@ -25,6 +28,100 @@ from marl_battlegrounds.training.config import TrainConfig
 ROOT = (
     Path(__file__).resolve().parents[2] / "src/marl_battlegrounds/experiments/configs"
 )
+_PPO_SELECTED = {
+    "actor_lr": 0.0001,
+    "critic_lr": 0.00025,
+    "rollout_length": 32,
+    "epochs": 4,
+    "minibatches": 2,
+    "groups": 2,
+    "gamma": 0.999,
+    "gae_lambda": 0.95,
+    "clip_epsilon": 0.2,
+    "entropy_coefficient": 0.01,
+    "value_coefficient": 0.5,
+    "max_grad_norm": 0.5,
+    "adam_epsilon": 1e-05,
+    "input_scale": 0.01,
+    "value_normalization": True,
+}
+_PER_AGENT_REWARD = "marl_battlegrounds.training.reward_recipes:combat_support_reward"
+_TEAM_REWARD = "marl_battlegrounds.training.reward_recipes:combat_support_team_reward"
+# The settings of each method's strongest run, the one continued to 250M
+# (study 3, docs/training/hyperparameter_search.md). For QMIX and feedforward
+# MAPPO that run comes from outside the method's final recipe. recipe=default
+# applies them over the dataclass defaults; every value is that run's saved
+# one, including the search's 40,108,032-transition budget.
+SELECTED_RECIPES: dict[str, dict[str, Any]] = {
+    "mappo": {
+        "num_envs": 512,
+        "total_env_steps": 40108032,
+        "reward": _PER_AGENT_REWARD,
+        "ppo": _PPO_SELECTED,
+    },
+    "ippo": {
+        "num_envs": 512,
+        "total_env_steps": 40108032,
+        "reward": _PER_AGENT_REWARD,
+        "ppo": _PPO_SELECTED,
+    },
+    "ff_mappo": {
+        "num_envs": 512,
+        "total_env_steps": 40108032,
+        "reward": _PER_AGENT_REWARD,
+        "ppo": {**_PPO_SELECTED, "actor_lr": 0.0003},
+    },
+    "ff_ippo": {
+        "num_envs": 512,
+        "total_env_steps": 40108032,
+        "reward": _PER_AGENT_REWARD,
+        "ppo": _PPO_SELECTED,
+    },
+    "qmix": {
+        "num_envs": 768,
+        "total_env_steps": 40108032,
+        "reward": _TEAM_REWARD,
+        "qmix": {
+            "rollout_length": 32,
+            "buffer_size": 172,
+            "min_buffer_size": 32,
+            "sample_sequence_length": 20,
+            "sample_batch_size": 128,
+            "epochs": 48,
+            "q_lr": 0.0001,
+            "hard_update": True,
+            "update_period": 128,
+            "tau": 0.01,
+            "gamma": 0.99,
+            "eps_min": 0.05,
+            "eps_decay": 2000000,
+            "input_scale": 0.01,
+            "reward_scale": 1.0,
+        },
+    },
+    "pqn_vdn": {
+        "num_envs": 768,
+        "total_env_steps": 40108032,
+        "reward": _TEAM_REWARD,
+        "pqn": {
+            "rollout_length": 128,
+            "memory_window": 4,
+            "epochs": 4,
+            "num_minibatches": 12,
+            "q_lr": 0.00025,
+            "lr_linear_decay": True,
+            "max_grad_norm": 1.0,
+            "gamma": 0.99,
+            "td_lambda": 0.85,
+            "eps_start": 1.0,
+            "eps_finish": 0.01,
+            "eps_decay_fraction": 0.05,
+            "input_scale": 1.0,
+            "reward_scale": 10.0,
+            "normalization": "batch_norm",
+        },
+    },
+}
 
 
 def _defaults(record: type[Any]) -> dict[str, Any]:
@@ -368,7 +465,9 @@ def presets() -> dict[str, dict[str, Any]]:
             "method": method,
             field: _defaults(settings[field]),
         }
-        result[f"recipe_settings/default_{method}.yaml"] = {}
+        result[f"recipe_settings/default_{method}.yaml"] = deepcopy(
+            SELECTED_RECIPES[method]
+        )
         software: dict[str, Any] = {
             "seed": 710,
             "num_envs": 32,

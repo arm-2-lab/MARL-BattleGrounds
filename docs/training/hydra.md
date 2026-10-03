@@ -69,13 +69,34 @@ Choose one method group: `mappo`, `ff_mappo`, `ippo`, `ff_ippo`, `qmix` or
 `pqn_vdn`. The four PPO methods use `ppo.*`; QMIX uses `qmix.*`; PQN-VDN uses
 `pqn.*`. Switching the method replaces the learner settings. Supplying a block
 for another method is an error. All training fields keep their Python API names.
-The generated YAML follows the API defaults, including method-dependent save
+The method YAML follows the API defaults, including method-dependent save
 cadence. See `TrainConfig` and the learner config docstrings for field meanings.
 
-`recipe=default` uses those defaults. `recipe=software_check` provides small
-settings for checking the software: 32 environments and 20,480 transitions. It is
-**not a paper experiment or a claim about learning quality**. Its task wiring is
-extended as the shared experiment tools become available.
+`recipe=default`, used when no recipe is named, applies the settings of each
+method's strongest run, the one continued to 250M (study 3 of the
+[six-method hyperparameter search](hyperparameter_search.md#decisions-during-the-search)):
+its learner settings, number of games, reward and the search's budget of
+40,108,032 transitions. For QMIX and feedforward MAPPO that run comes from
+outside the method's final recipe. Everything else keeps the API default.
+
+| Method | Games | Reward | Settings that differ from the API defaults |
+| --- | ---: | --- | --- |
+| `mappo`, `ippo`, `ff_ippo` | 512 | `combat_support_reward` | `actor_lr=0.0001`, `critic_lr=0.00025`, `rollout_length=32`, `gamma=0.999`, `input_scale=0.01` |
+| `ff_mappo` | 512 | `combat_support_reward` | As above with `actor_lr=0.0003` |
+| `qmix` | 768 | `combat_support_team_reward` | `rollout_length=32`, `buffer_size=172`, `epochs=48`, `q_lr=0.0001`, `update_period=128`, `eps_decay=2000000`, `input_scale=0.01` |
+| `pqn_vdn` | 768 | `combat_support_team_reward` | `num_minibatches=12`, `eps_decay_fraction=0.05`, `reward_scale=10` |
+
+The search also trained against a pool of six fixed recurrent MAPPO models and
+validated against the pooled 250M model on maps 42, 43, 44 and 46. Those models
+are not packaged, so the default recipe keeps the API's opponent and validation
+defaults; set `opponents` and `validation_opponents` to reproduce the search.
+Direct Python calls (`TrainConfig`, `PPOConfig`, `QMIXConfig`, `PQNConfig`)
+keep the API defaults.
+
+`recipe=software_check` provides small settings for checking the software: 32
+environments and 20,480 transitions. It is **not a paper experiment or a claim
+about learning quality**. Its task wiring is extended as the shared experiment
+tools become available.
 
 Use ordinary Hydra syntax for scalars, lists, mappings, nulls and interpolation:
 
