@@ -3,6 +3,10 @@
 Root imports stay lazy and expose a callable in either import order. Invalid
 launch options fail before setup or serving. Browser assets remain alive for the
 server lifetime, cleanup runs on errors, and recordings keep installed identity.
+The public call opens in Agent POV and has no view argument; the private
+_launch_setup takes view_mode (default Agent POV) so the browser test harness
+and the DevClient can keep Oracle View. Every launch compiles the first turn on
+its own session exactly once, before the service is built and the page served.
 """
 
 from __future__ import annotations
@@ -190,6 +194,8 @@ def test_valid_launch_options_reach_one_prepared_launch(
     assert serve_calls[0]["port"] == port
     assert serve_calls[0]["open_browser"] is False
     assert serve_calls[0]["capture_replay"] is False
+    # The public call never chooses a view: _launch_setup's Agent POV default holds.
+    assert "view_mode" not in serve_calls[0]
     output = serve_calls[0]["output_dir"]
     assert isinstance(output, (str, Path))
     assert Path(output).resolve() == (tmp_path / "records").resolve()
@@ -231,11 +237,19 @@ def _stub_launch_session(
     def forbidden_recording(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("Disabled recording must skip recording setup.")
 
+    def warm(received: object) -> bool:
+        # The launch compiles the first turn on its own session, once, before
+        # the service exists, so the page opens with nothing left to compile.
+        assert received is session
+        events.append("warm")
+        return True
+
     monkeypatch.setattr(launch, "discover_code_revision_v2", lambda: revision)
     monkeypatch.setattr(
         launch, "build_debugger_evaluation_launch_specification_v1", build_specification
     )
     monkeypatch.setattr(launch, "create_session", create_session)
+    monkeypatch.setattr(launch, "warm_compiled_turn", warm)
     monkeypatch.setattr(launch, "DebuggerService", Service)
     monkeypatch.setattr(launch, "capture_runtime_provenance", forbidden_recording)
     monkeypatch.setattr(launch, "preflight_replay_destination", forbidden_recording)
@@ -319,7 +333,64 @@ def test_packaged_assets_live_until_server_exit_and_cleanup_always_runs(
         assert error.value is failure
     assert not active
     assert not output.exists()
-    assert events == ["service", "resource", "serve", "release", "close"]
+    assert events == [
+        "warm",
+        "service",
+        "resource",
+        "serve",
+        "release",
+        "close",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("view_mode", "expected"),
+    ((None, "pov"), ("pov", "pov"), ("researcher", "researcher")),
+)
+def test_launch_opens_in_agent_pov_unless_a_private_caller_keeps_oracle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    view_mode: str | None,
+    expected: str,
+) -> None:
+    launch = importlib.import_module("marl_battlegrounds._battle_client.launch")
+    setup, events = _stub_launch_session(monkeypatch)
+    stub = launch.DebuggerService
+    views: list[object] = []
+
+    def capture(received: object, **kwargs: object) -> object:
+        views.append(kwargs["view_mode"])
+        return stub(received, **kwargs)
+
+    monkeypatch.setattr(launch, "DebuggerService", capture)
+
+    def serve(*_args: object, **_kwargs: object) -> int:
+        return 5
+
+    monkeypatch.setattr(launch, "serve_browser_debugger", serve)
+    call: Callable[..., int] = launch._launch_setup
+    extra = {} if view_mode is None else {"view_mode": view_mode}
+    assert (
+        call(
+            setup,
+            port=0,
+            open_browser=False,
+            output_dir=tmp_path,
+            capture_replay=False,
+            asset_root=tmp_path,
+            **extra,
+        )
+        == 5
+    )
+    assert views == [expected]
+    assert events == ["warm", "service", "close"]
+    assert inspect.signature(launch._launch_setup).parameters["view_mode"].default == (
+        "pov"
+    )
+    assert "view_mode" not in inspect.signature(launch.battle_client).parameters
+    documentation = inspect.getdoc(launch.battle_client) or ""
+    assert "opens in Agent POV" in documentation
+    assert "Open Replay always" in documentation
 
 
 @pytest.mark.parametrize("failure_at", ["files", "as_file", "enter"])
@@ -357,7 +428,7 @@ def test_asset_resolution_errors_close_the_created_service(
             setup, port=0, open_browser=False, output_dir=tmp_path, capture_replay=False
         )
     assert error.value is failure
-    assert events == ["service", "close"]
+    assert events == ["warm", "service", "close"]
 
 
 def test_missing_packaged_assets_never_use_checkout_assets(
@@ -388,7 +459,7 @@ def test_missing_packaged_assets_never_use_checkout_assets(
             setup, port=0, open_browser=False, output_dir=tmp_path, capture_replay=False
         )
     assert checked_roots == [package / "web"]
-    assert events == ["service", "close"]
+    assert events == ["warm", "service", "close"]
 
 
 def test_explicit_internal_asset_root_skips_package_lookup(
@@ -418,13 +489,17 @@ def test_explicit_internal_asset_root_skips_package_lookup(
         )
         == 7
     )
-    assert events == ["service", "close"]
+    assert events == ["warm", "service", "close"]
 
 
 def test_default_capture_saves_frame_zero_with_installed_v2_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     launch = importlib.import_module("marl_battlegrounds._battle_client.launch")
+    from marl_battlegrounds._battle_client.protocol import (
+        CommandRequestV1,
+        KeyboardCommandV1,
+    )
     from marl_battlegrounds._battle_client.service import DebuggerService
     from marl_battlegrounds.evaluation.models import CodeRevisionV2
     from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
@@ -486,6 +561,15 @@ def test_default_capture_saves_frame_zero_with_installed_v2_identity(
         output = tmp_path / "recordings"
         assert output.is_dir()
         assert not list(output.glob("*.marlbg-replay.json"))
+        # A closeout with no played tick saves nothing, so one tick is played.
+        service.apply_command(
+            CommandRequestV1(
+                client_id="launch-test",
+                command_id="one-turn",
+                base_revision=service.revision,
+                command=KeyboardCommandV1(key="Enter"),
+            )
+        )
         assert service.close_recording_for_keyboard_interrupt().saved
         return 19
 
@@ -516,8 +600,8 @@ def test_default_capture_saves_frame_zero_with_installed_v2_identity(
     assert replay.header.context.code_revision.source_tree_digest is None
     assert replay.header.context.code_revision.is_dirty is None
     assert replay.header.runtime_provenance == runtime
-    assert len(replay.frames) == 1
-    assert len(replay.transitions) == 0
+    assert len(replay.frames) == 2
+    assert len(replay.transitions) == 1
 
 
 @pytest.mark.parametrize("raises_error", [False, True])

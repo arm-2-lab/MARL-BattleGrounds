@@ -1,0 +1,180 @@
+/*
+ * Styles for the Champion's Hotbar look (src/looks/hotbar.js): the silver plan
+ * marks of live play. styles.css imports this file. Flat strokes and fills
+ * only (export-safe); every mark ignores the pointer so clicks reach bodies.
+ * Numbers and colors are the approved vision page's own (vision_template.html,
+ * renderArena): Moon Silver #C9D4E8 and Ink #0A0D14 come from the live page's
+ * vision tokens (--moon, --ink and the class colors on .bc), with the shared
+ * palette as a fallback outside it.
+ * - Command Ring: 2 px at 90% over a 6% silver disc; a fallen champion's ring
+ *   is 1 px at 45% with no disc.
+ * - Order Studs: No Combat silver dots at 90%; Basic class-color dots and
+ *   Ultimate class-color diamonds with a 1 px Ink edge under the fill
+ *   (paint-order stroke); the Mage's Burst a hollow 1.6 px class-color
+ *   diamond; a refused order hollow gray. Watch Only (away) studs are drawn
+ *   at 65% of those (No Combat dots 58.5%).
+ * - Reach Marks: 1.25 px, dashes 2 3, 60%.
+ * - Order Thread: a dark underlay 3 px wider at 35%, then the silver line
+ *   (Basic 1.5 px, dashes 5 4, 75%; Ultimate 2.5 px, dashes 6 4, 85%).
+ * - Step Ghost: a 10% silver disc, a 4 px Ink ring at 35% and a dotted 2 px
+ *   silver ring (dashes 2 3.4, round caps).
+ * - Look Ring (a policy's champion in focus): a 7% silver disc with a 1 px
+ *   silver edge at 55%.
+ * Every stroke width and dash length above is the vision's size on its own
+ * drawing (50 px per world unit). Each one is multiplied by `--mark-scale`,
+ * which `scene.js` sets on the live battlefield (`hotbar.markScale`: the
+ * field's pixels per world unit over 50), so lines grow and shrink with the
+ * field as the vision's do. Without the variable the scale is 1.
+ */
+.hotbar-ring,
+.hotbar-studs,
+.hotbar-thread,
+.hotbar-thread-ink,
+.hotbar-reach,
+.hotbar-ghost,
+.hotbar-ghost-ink,
+.hotbar-ghost-disc {
+  pointer-events: none;
+}
+
+/* Element opacity 0.9 for the ring; the disc's 6% is 0.0667 of that. */
+.hotbar-ring {
+  opacity: 0.9;
+  fill: var(--moon, var(--moon-silver));
+  fill-opacity: 0.0667;
+  stroke: var(--moon, var(--moon-silver));
+  stroke-width: calc(2px * var(--mark-scale, 1));
+}
+
+.hotbar-ring--fallen {
+  opacity: 0.45;
+  fill: none;
+  stroke-width: calc(1px * var(--mark-scale, 1));
+}
+
+/* Watch Only: your Manual champion while you look at another champion. The
+   vision keeps its ring at 45% with no fill and its studs at 65%. */
+.hotbar-ring--away {
+  opacity: 0.45;
+  fill-opacity: 0;
+}
+
+.hotbar-studs--away {
+  opacity: 0.65;
+}
+
+.hotbar-studs {
+  stroke: var(--ink);
+  stroke-width: calc(1px * var(--mark-scale, 1));
+  paint-order: stroke;
+}
+
+.hotbar-studs--mage {
+  fill: var(--mage, var(--class-mage));
+}
+.hotbar-studs--warrior {
+  fill: var(--warrior, var(--class-warrior));
+}
+.hotbar-studs--hunter {
+  fill: var(--hunter, var(--class-hunter));
+}
+.hotbar-studs--rogue {
+  fill: var(--rogue, var(--class-rogue));
+}
+.hotbar-studs--priest {
+  fill: var(--priest, var(--class-priest));
+}
+
+/* The plain and warning styles come after the class colors so they win. */
+.hotbar-studs--no-combat {
+  opacity: 0.9;
+  fill: var(--moon, var(--moon-silver));
+  stroke: none;
+}
+
+/* Watch Only No Combat studs: the vision draws the 90% dots inside a 65%
+   group, so they show at 0.9 x 0.65 = 0.585. Without this rule the 90% above
+   would replace the 65% of .hotbar-studs--away. */
+.hotbar-studs--no-combat.hotbar-studs--away {
+  opacity: 0.585;
+}
+
+.hotbar-studs--burst {
+  fill: none;
+  stroke: var(--mage, var(--class-mage));
+  stroke-width: calc(1.6px * var(--mark-scale, 1));
+}
+
+.hotbar-studs--refused {
+  fill: none;
+  stroke: var(--ash);
+  stroke-width: calc(1.25px * var(--mark-scale, 1));
+}
+
+.hotbar-reach {
+  opacity: 0.6;
+  fill: none;
+  stroke: var(--moon, var(--moon-silver));
+  stroke-width: calc(1.25px * var(--mark-scale, 1));
+  stroke-dasharray: calc(2px * var(--mark-scale, 1)) calc(3px * var(--mark-scale, 1));
+}
+
+.hotbar-thread-ink {
+  opacity: 0.35;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: calc(4.5px * var(--mark-scale, 1));
+  stroke-linecap: round;
+}
+
+.hotbar-thread-ink--ultimate {
+  stroke-width: calc(5.5px * var(--mark-scale, 1));
+}
+
+.hotbar-thread {
+  opacity: 0.75;
+  fill: none;
+  stroke: var(--moon, var(--moon-silver));
+  stroke-width: calc(1.5px * var(--mark-scale, 1));
+  stroke-dasharray: calc(5px * var(--mark-scale, 1)) calc(4px * var(--mark-scale, 1));
+  stroke-linecap: round;
+}
+
+.hotbar-thread--ultimate {
+  opacity: 0.85;
+  stroke-width: calc(2.5px * var(--mark-scale, 1));
+  stroke-dasharray: calc(6px * var(--mark-scale, 1)) calc(4px * var(--mark-scale, 1));
+}
+
+.hotbar-ghost-disc {
+  opacity: 0.1;
+  fill: var(--moon, var(--moon-silver));
+  stroke: none;
+}
+
+.hotbar-ghost-ink {
+  opacity: 0.35;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: calc(4px * var(--mark-scale, 1));
+}
+
+.hotbar-ghost {
+  fill: none;
+  stroke: var(--moon, var(--moon-silver));
+  stroke-width: calc(2px * var(--mark-scale, 1));
+  stroke-dasharray: calc(2px * var(--mark-scale, 1)) calc(3.4px * var(--mark-scale, 1));
+  stroke-linecap: round;
+}
+
+/* Look Ring: a policy's champion in focus (7% disc, 1 px edge at 55%). */
+/* svg circle.…: wins over champion-frame.css's `svg .selection-moonlight`
+   (a flat disc with no stroke), whose class the Look Ring also carries. */
+svg circle.hotbar-look {
+  pointer-events: none;
+  fill: var(--moon, var(--moon-silver));
+  fill-opacity: 0.07;
+  stroke: var(--moon, var(--moon-silver));
+  stroke-width: calc(1px * var(--mark-scale, 1));
+  stroke-opacity: 0.55;
+}

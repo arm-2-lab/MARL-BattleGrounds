@@ -1,0 +1,32 @@
+/*
+ * Styles for the Atmosphere look (src/looks/atmosphere.js): Moonlit Night's Moon
+ * Motes, Last Watch Veil and Death Dimming. styles.css imports this file at its
+ * top. The two tokens below are new (design store skins/atmosphere-and-weather.js);
+ * the dim uses the shared Ink token. Opacities are written by the look as
+ * attributes; no rule here animates anything.
+ */
+:root {
+  --moon-mote-dot: #d7d9de;
+  --last-watch-grey: #8e939b;
+}
+
+.moon-motes,
+.last-watch-veil,
+.death-dim {
+  pointer-events: none;
+}
+
+.moon-mote {
+  fill: var(--moon-mote-dot);
+  stroke: none;
+}
+
+.last-watch-veil {
+  fill: var(--last-watch-grey);
+  stroke: none;
+}
+
+.death-dim {
+  fill: var(--ink);
+  stroke: none;
+}

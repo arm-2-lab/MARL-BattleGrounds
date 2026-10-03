@@ -1165,6 +1165,9 @@ drop a tier. That movement is intended: it shows who now leads.
 | Bronze | 800-999 | 201-400 below | 9.1-24.0% |
 | Iron | Below 800 | More than 400 below | Under 9.1% |
 
+- **Edges.** The fitted Elo is not a whole number. The leaderboard decides the
+  tier from the Elo it displays, rounded to a whole number, so a row never shows
+  an Elo outside its tier. Each lower edge belongs to its tier: 1,200 is Gold.
 - **Divisions.** Each tier from Iron to Master splits into five divisions of
   40 Elo, numbered 5 (lowest) to 1 (highest). Example: Silver 5 is 1,000-1,039
   and Silver 1 is 1,160-1,199. Grandmaster has no divisions. Iron counts down
@@ -1185,9 +1188,10 @@ drop a tier. That movement is intended: it shows who now leads.
   division or tier, it also gives the Elo gain with its interval.
 - **Fixed games per pair.** The fit's small penalty pulls extreme ratings
   toward the average, so the highest reachable Elo depends on games per pair and
-  field size. In a field of 10 with every other entrant equal, a policy that
-  wins every game rates about 1,941 at 10 games per pair, 2,245 at 100 and
-  2,340 at 200. At 10 games per pair, Grandmaster is out of reach. The official
+  field size. In a field of 10 where the other nine are equal and split their
+  games with each other without draws, a policy that wins every game rates
+  about 1,941 at 10 games per pair, 2,245 at 100 and 2,340 at 200. In that
+  field, Grandmaster is out of reach at 10 games per pair. The official
   leaderboard therefore uses one fixed games-per-pair setting; if it changes,
   check the top lines again.
 

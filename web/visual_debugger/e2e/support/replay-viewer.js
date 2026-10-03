@@ -350,7 +350,7 @@ export function currentReplayTimeline(page) {
  * @param {number} frameIndex */
 export async function expectReplayFrameIndex(page, frameIndex) {
   const expected = String(frameIndex);
-  await page.locator("#replay-frame-slider").waitFor({ state: "visible" });
+  await page.locator("#replay-frame-slider").waitFor({ state: "attached" });
   await page.waitForFunction(
     ([selector, value]) => {
       const slider = document.querySelector(selector);

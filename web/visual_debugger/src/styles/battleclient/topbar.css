@@ -1,0 +1,387 @@
+/*
+ * BattleClient top bar (.bc-top, the shared header in live play), ported from
+ * the approved vision page: brand lockup (emblem, "MARL-BGs", product name),
+ * the place line, the View switch, the Connected and Recording pills, then
+ * the Visual Key, Visual Filters, How To Play and Exit buttons.
+ *
+ * The header markup is shared with the Replay Viewer, so this file only
+ * restyles it in live play: the rune wordmark, divider and long name give way
+ * to the vision's plain "MARL-BGs" (.bname), and the h1 product name becomes
+ * the gray .bprod. Order comes from flex `order`, matching the shared scheme
+ * the private DevClient relies on (View switch 1, status pills 2, Details 3,
+ * toolbar actions 4; the DevClient adds a second line at 5 to 7). Inside the
+ * toolbar the buttons are reordered to the vision's order without moving the
+ * Replay Viewer's own order. The Details button, the screen-reader audience
+ * pill and the Frame Explanation button are not shown in live play (the
+ * vision has none; F opens Frame Explanation).
+ *
+ * One row: the bar never wraps in live play, so no message or long place
+ * line can push the buttons onto a second row and move the page down. When
+ * the bar runs short, things give way in this order: the place line's
+ * " · Team Deathmatch" (cut with "…"), then the brand's product name. The
+ * map name ("Teutoburg Forest · Map 47"), "MARL-BGs", the pills and the
+ * buttons never shrink, so the full map name shows at every supported size
+ * (1366 x 768 and up) and in every phase (owner, 3 Oct 2026). At game over
+ * src/shell.js writes the short "Game Over" in the terminal pill for the
+ * same reason. The private DevClient turns wrapping back on for its own
+ * second line (its setup bar). The old #notice pill is not shown in live
+ * play: the vision has no notice, and src/main.js setNotice also sends each
+ * notice to the deck's status line (#msg).
+ *
+ * The emblem is the 64 px PNG shown at 26 px (src/shell.js drops the WebP
+ * choice in live play). Brand Lockup off leaves only the client name in plain
+ * text. The V camera tip is not in the bar (overlays.css places it over the
+ * status line's message).
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+html[data-product-kind="combat_debugger"] .bc .bc-top {
+  position: relative;
+  z-index: 30;
+  top: auto;
+  grid-area: top;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 48px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--ink);
+}
+
+/* Brand lockup: emblem, the everyday name "MARL-BGs", a thin divider, the
+   product name in gray. A grid of three columns, so only the product name's
+   column (minmax(0, auto)) can give way: when the bar runs short after the
+   place line's "Team Deathmatch" is gone, the product name ends in "…";
+   the emblem and "MARL-BGs" never shrink. At full width it lays out exactly
+   as the vision's flex row (8 px gaps, centered). */
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand {
+  display: grid;
+  flex: 0 1 auto;
+  grid-template-columns: auto auto minmax(0, auto);
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+  overflow: visible;
+  min-width: auto;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* The plain name is for live play only; the Replay Viewer keeps its rune
+   wordmark. */
+html:not([data-product-kind="combat_debugger"]) .brand .bname {
+  display: none;
+}
+
+/* The emblem's <picture> takes no box of its own. In live play src/shell.js
+   (applyProductHeader) removes its WebP choice, so the <img> shows the 64 px
+   PNG, the same picture the vision draws; CSS cannot change which source a
+   <picture> picks. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand picture {
+  display: contents;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand .logo {
+  display: inline-block;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bname {
+  color: var(--moon);
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand__wordmark,
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand__divider,
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand__plain {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bprod {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  padding-left: 9px;
+  border-left: 1px solid var(--edge2);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Brand Lockup off (src/shell.js writes data-brand-lockup="off" on the bar):
+   only the client name, in plain text, with no emblem, "MARL-BGs" or divider. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top[data-brand-lockup="off"]
+  .brand
+  :is(.logo, .bname) {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top[data-brand-lockup="off"] .brand {
+  grid-template-columns: minmax(0, auto);
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top[data-brand-lockup="off"]
+  .brand
+  .bprod {
+  padding-left: 0;
+  border-left: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* The place line: "Teutoburg Forest · Map 47 · Team Deathmatch", written by
+   src/shell.js as two spans. span.where__name ("Teutoburg Forest · Map 47")
+   never shrinks: the full map name shows at every supported size (1366 x 768
+   and up) and in every phase, game over included (owner, 3 Oct 2026).
+   span.where__more (" · Team Deathmatch") gives way first; once it is cut,
+   src/shell.js marks it data-cut and it hides whole (no cut "Team Deathm…").
+   The grid's second column is minmax(0, auto), so the line's smallest width
+   is the map name alone; its huge flex shrink factor makes it give way
+   before anything else in the bar, then the brand's product name. The
+   shared shell.css rules for .match-place (overflow, max width, the
+   Replay Viewer's shrink order) are undone here. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .where {
+  display: grid;
+  flex: 0 1000000 auto;
+  grid-template-columns: auto minmax(0, auto);
+  min-width: auto;
+  max-width: none;
+  margin: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--edge);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+/* display: grid above would beat the hidden attribute's own display: none. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .where[hidden] {
+  display: none;
+}
+
+/* The part that may give way. white-space: pre keeps its leading space,
+   which a grid item would otherwise drop. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .where__more {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+/* A cut second part hides whole; visibility keeps its box, so src/shell.js
+   can measure it again when the bar grows. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .where__more[data-cut] {
+  visibility: hidden;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .where b {
+  color: var(--text);
+}
+
+/* View switch: Agent POV and Oracle View as one segmented control. Its left
+   margin is the vision's spacer, so everything after it sits on the right. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .view-switch {
+  display: flex;
+  flex: none;
+  order: 1;
+  margin-left: auto;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg button {
+  min-height: 0;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg button + button {
+  border-left: 1px solid var(--edge);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg button:hover:not(:disabled) {
+  color: var(--text);
+  background: transparent;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--raise);
+  box-shadow: inset 0 -2px 0 var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .seg button:disabled {
+  cursor: default;
+}
+
+/* Status pills: Connected, then Recording. */
+html[data-product-kind="combat_debugger"] .bc .bc-top .header-status {
+  gap: 10px;
+  margin-left: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top .toolbar-actions {
+  gap: 10px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #visual-key-button {
+  order: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #visual-filters-button {
+  order: 2;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #help-button {
+  order: 3;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #exit-button {
+  order: 4;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #reconnect-button {
+  order: 5;
+}
+
+/* The Visual Filters button shows only while its drawer holds the Visual
+   Filters card. A client that moves the card elsewhere (into the DevClient's
+   Developer drawer) loses the button with it. */
+html[data-product-kind="combat_debugger"]
+  .bc:not(:has(#visual-filters-drawer > #visual-filters))
+  #visual-filters-button {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #notice,
+html[data-product-kind="combat_debugger"] .bc .bc-top #audience-badge,
+html[data-product-kind="combat_debugger"] .bc .bc-top .session-details-button,
+html[data-product-kind="combat_debugger"] .bc .bc-top #frame-explanation-button {
+  display: none;
+}
+
+/* The Connected and Recording pills keep the vision's plain pill in every
+   state (the shared shell gives them dashed and tinted variants). A saved
+   recording shows a hollow dot; an offline page and a failed save use Alert. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  :is(#connection-status, #recording-badge) {
+  min-height: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  color: var(--text);
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #recording-badge {
+  cursor: pointer;
+}
+
+/* The Recording pill draws its dot with its own <i>, as the vision does, so the
+   shared shell's ::before dot (shell.css) must not draw a second one. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-badge:has(> i)::before {
+  content: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-top #recording-badge:hover {
+  border-color: var(--edge2);
+  background: var(--raise);
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  :is(#connection-status, #recording-badge:not(:has(> i)))::before {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: var(--moon);
+  font-weight: 400;
+  content: "";
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-badge:is([data-lifecycle="saved"], [data-lifecycle="reviewing"])
+  > i,
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-badge:not(:has(> i)):is(
+    [data-lifecycle="saved"],
+    [data-lifecycle="reviewing"]
+  )::before {
+  border: 1.5px solid var(--moon);
+  background: transparent;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  :is(
+    #connection-status[data-state="offline"],
+    #recording-badge[data-lifecycle="persistence_failed"]
+  ) {
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-badge[data-lifecycle="persistence_failed"]
+  > i,
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  :is(
+    #connection-status[data-state="offline"],
+    #recording-badge:not(:has(> i))[data-lifecycle="persistence_failed"]
+  )::before {
+  background: var(--alert);
+}

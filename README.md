@@ -230,8 +230,9 @@ objects use the same launch. Teams can independently contain one to five agents.
 Fixed packaged scenarios accept Team A controllers only; their opponent and
 starting state stay fixed.
 
-Stage Manual actions and Submit one joint turn, or use Run/Pause when every
-configured slot has a policy. Inspect Oracle or authorized Agent POV, save a
+Plan Manual actions in the Tactics Turn deck and press Lock In Turn, or use
+Run/Pause when every configured slot has a policy. The page opens in Agent POV,
+which shows only what the viewing team sees; Oracle View shows everything. Save a
 replay, open the separate Viewer and restart. Browser views never expand a
 loaded method's information rights. Recording starts at frame zero by default
 and saves under `./recordings/` in your launch directory.
@@ -259,15 +260,16 @@ The Viewer validates saved evidence before serving it. A scripted-demo request
 first materializes its replay in a separate preparation step. The read-only
 Viewer then navigates exact frames, plays recorded transitions and provides
 participant/score summaries, configurable effects and provenance-bearing PNG
-exports. It cannot submit simulator actions.
+exports. It cannot submit simulator actions. It opens in Oracle View at 1x speed;
+press ? in the page for its keys.
 
-Open **TDM Evaluation Metrics** for **Up to Current Tick** or **Entire Episode**.
+Open the **Metrics** tab and choose **Up To Tick N** or **Whole Game**.
 **Download Metrics CSV** exports the selected boundary through the same scalar
 metric authority as evaluation. Current replay files need no metric sidecar;
 historical files keep their readers. Metrics are computed on request. A visual
 POV changes the battlefield view, not the researcher-level metric ownership.
 
-See the [Viewer guide](docs/dev/replay_viewer.md) for transport, keyboard controls,
+See the [Viewer guide](docs/dev/replay_viewer.md) for transport, cameras,
 audience limits, exports and recovery. The
 [migration guide](docs/dev/visual_debugger.md) explains the former combined tool.
 Both clients use local HTML, CSS, SVG and JavaScript served by Python. Researchers

@@ -1,0 +1,188 @@
+/*
+ * BattleClient arena box (#arena), ported from the approved vision page: a
+ * bordered box in the Surround color that holds the battlefield SVG, the
+ * view tag (#pov-tag; its spot on the frame under the floor is set in
+ * overlays.css) and the How To Play overlay (#htp, styled in overlays.css).
+ *
+ * Size: as in the vision, the arena's height follows the stage's width, so
+ * the battlefield fills the arena's full width (1074 x 553.6 px inside a
+ * 1076 x 555.6 px box at 1440 px wide, when the window is at least 986 px
+ * tall). Only the one-window rule in layout.css (#bc is one window tall, so
+ * the deck, Lock In and the status line stay on screen) makes it shorter,
+ * for example about 86 px shorter at 1440 x 900; it is never less than
+ * 120 px (the renderer needs room for its 24 px padding). The
+ * deck and the status line never shrink. The battlefield keeps the vision's
+ * shape: width over height is --battlefield-aspect (default 1032 / 532,
+ * about 1.93985, the vision's map 47 field drawing, so the arena is exactly
+ * as tall as the vision's at every width). Inside the box,
+ * #battlefield-shell (the shared export backdrop and the size the renderer
+ * reads) is as large as that shape allows and sits in the middle; any spare
+ * room shows the Surround color. Its width allows 0.5 px over the exact
+ * shape, so layout rounding (1/64 px steps) never makes an unsqueezed field
+ * a hair narrower than the arena (1073.97 instead of 1074 px, which moved
+ * every pixel of the field off the vision's). The renderer reads the SVG's own size each time it draws, so this only
+ * sets the box; it never draws on the field. The shell drops its own border
+ * (the arena box has the one border); its backdrop stays with its one owner
+ * in styles.css.
+ *
+ * Keys On: the vision rings the arena in Moon Silver while the field has the
+ * keys (.arena.keys-on, set by the code that owns Keys On).
+ *
+ * Arena marks drawn by shared looks take the vision's paint here, in live
+ * play only: the reach rings (G) round the focused champion (Basic dashed
+ * 4 4 at 45% with flat dash ends, Ultimate dotted 1 5 at 60% with round
+ * ends, both 1 px Moon Silver), the target's corner brackets (a 4 px Ink
+ * keyline at 50% under 2 px Moon Silver), the Agent POV Night Veil's Reach
+ * Edges (1 px Moon Silver, a teammate's dashed 4 4) and Lift (#CFDAF2), and
+ * no older controlled halo (the hotbar's Command Ring says whose hands).
+ * Those widths and dashes are the vision's drawing sizes times the
+ * battlefield's --mark-scale (set by scene.js), so they grow with the field
+ * as the vision's do. The hotbar's own marks are styled in styles/hotbar.css.
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+/* Outside live play the arena box adds no box, so the Replay Viewer's arena
+   column is unchanged. */
+html:not([data-product-kind="combat_debugger"]) #arena {
+  display: contents;
+}
+
+html[data-product-kind="combat_debugger"] .bc #arena {
+  --battlefield-aspect: calc(1032 / 532);
+
+  position: relative;
+  display: grid;
+  flex: 0 1 auto;
+  place-items: center;
+  height: calc((100cqw - 2px) / var(--battlefield-aspect) + 2px);
+  min-height: 120px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--surround);
+  container-type: size;
+}
+
+html[data-product-kind="combat_debugger"] .bc #arena.keys-on {
+  outline: 2px solid var(--moon);
+  outline-offset: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc #arena > #battlefield-shell {
+  position: relative;
+  display: block;
+  width: min(100cqw, 100cqh * var(--battlefield-aspect) + 0.5px);
+  height: auto;
+  aspect-ratio: var(--battlefield-aspect);
+  overflow: hidden;
+  border: 0;
+  border-radius: 7px;
+}
+
+html[data-product-kind="combat_debugger"] .bc #battlefield {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 8px;
+  cursor: crosshair;
+}
+
+html[data-product-kind="combat_debugger"] .bc #battlefield:focus {
+  outline: none;
+}
+
+/* The view tag's look ("Agent POV · …" or "Oracle View · …"); overlays.css
+   places it. */
+html[data-product-kind="combat_debugger"] .bc .povtag {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  overflow: hidden;
+  padding: 2px 9px 2px 7px;
+  border: 1px solid var(--edge2);
+  border-radius: 999px;
+  color: var(--moon);
+  background: rgb(10 13 20 / 82%);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .povtag svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .povtag span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Reach rings (G) as the vision draws them; on by default in live play.
+   Widths and dashes grow with the field through --mark-scale (scene.js). */
+html[data-product-kind="combat_debugger"] .bc #battlefield .range-ring[data-kind] {
+  fill: none;
+  stroke: var(--moon);
+  stroke-width: calc(1px * var(--mark-scale, 1));
+  stroke-opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  #battlefield
+  .range-ring[data-kind="basic"] {
+  opacity: 0.45;
+  stroke-dasharray: calc(4px * var(--mark-scale, 1)) calc(4px * var(--mark-scale, 1));
+  /* The vision's Basic ring has flat dash ends (only the Ultimate's are round). */
+  stroke-linecap: butt;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  #battlefield
+  .range-ring[data-kind="ultimate"] {
+  opacity: 0.6;
+  stroke-dasharray: calc(1px * var(--mark-scale, 1)) calc(5px * var(--mark-scale, 1));
+  stroke-linecap: round;
+}
+
+/* The target's corner brackets: 2 px Moon Silver over a 4 px Ink keyline at
+   50%, grown with the field through --mark-scale. */
+html[data-product-kind="combat_debugger"] .bc #battlefield .selected-reticle {
+  stroke: var(--moon);
+  stroke-width: calc(2px * var(--mark-scale, 1));
+}
+
+html[data-product-kind="combat_debugger"] .bc #battlefield .selected-reticle-keyline {
+  stroke-opacity: 0.5;
+  stroke-width: calc(4px * var(--mark-scale, 1));
+}
+
+/* The Agent POV Night Veil's lines and Lift in the vision's colors, 1 px
+   (dashes 4 4 for a teammate's edge) grown with the field (--mark-scale). */
+html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-own,
+html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-allied {
+  stroke: var(--moon);
+  stroke-width: calc(1px * var(--mark-scale, 1));
+}
+
+html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-allied {
+  stroke-dasharray: calc(4px * var(--mark-scale, 1)) calc(4px * var(--mark-scale, 1));
+}
+
+html[data-product-kind="combat_debugger"] .bc #battlefield .fog-lift-path {
+  fill: #cfdaf2;
+}
+
+/* The hotbar's Command Ring says "whose hands" in live play, so the older
+   controlled halo from the selection marks is not drawn here. */
+html[data-product-kind="combat_debugger"] .bc #battlefield .controlled-halo {
+  display: none;
+}

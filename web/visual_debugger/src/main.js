@@ -1,10 +1,74 @@
 /**
- * @file Start the Combat Debugger or Replay Viewer page and connect its controls.
- * The launcher supplies product identity and a capability token. This module binds
- * the required HTML elements, installs page-lifetime listeners, and loads a matched
- * transport frame and authorized presentation. It paints only installed authority,
- * serializes commands, and manages local focus, filters, replay playback, and
- * downloads. Open the launcher URL; this module is not a standalone Node program.
+ * @file Start the BattleClient (also the DevClient combat screen) or the Replay
+ * Viewer page and connect its controls. The launcher supplies product identity
+ * and a capability token. This module binds the required HTML elements, owns
+ * the page state, installs page-lifetime listeners, and loads a matched
+ * transport frame and authorized presentation. It paints only installed
+ * authority, serializes commands, and manages local focus, filters, replay
+ * playback, and downloads.
+ *
+ * Three page parts live in their own modules. Each gets this module's elements,
+ * state and helpers once at startup and never assigns page state: shell.js (the
+ * header, session toolbar and Help key lists), tactics-turn.js (the live command
+ * deck) and filter-controls.js (the Visual Filters panel with its presets).
+ *
+ * It mounts the V5 chrome parts once at startup: the HUD (looks/hud.js; party
+ * frames in the BattleClient and DevClient, the Team Rosters strip in the Replay
+ * Viewer), the camera switch (looks/camera.js), the Visual Key dialog, Frame
+ * Explanation (F), the Palette choice, and in the Replay Viewer the five-tab
+ * rail (ledger.js), the Saga Chronicle (chronicle.js) and Tab agent stepping
+ * (replay-recipient-rotation.js). It hands the choreographer a page surface that
+ * adds the HUD and panel beat-hold roots, and draws the Replay Viewer's Champion
+ * Frame after each tick settles. After each tick it redraws the match moment
+ * cards (looks/heralds.js) in the herald layer: the Lineup card on tick 0, the
+ * Verdict card on the final tick (the Replay Viewer's last tick, or game over
+ * in the BattleClient and DevClient), else the Match Point or Ticks Left state
+ * chip. Routine loads and frame updates make no top-bar notice
+ * (clearNotice); warnings, errors and asked-for results do (setNotice).
+ *
+ * Run in Policies Only is paced by this page (toggleLiveRun): it sends Play
+ * One Turn, waits for the next tick and its choreography, then sends the
+ * next, so every tick glides to its end; the server's run_state stays
+ * "paused". Those turns leave the status line alone, so "Running." stays
+ * there until Pause. While Run is active a Space, Enter or N from the player
+ * is ignored (pageRunOwnsLockIn), as on the vision page. N is one tick: the
+ * battlefield forwards it and the page treats it as a Lock In key, like Space
+ * (isLockInKeyName): as Manual it locks in, in Policies Only Python plays one
+ * turn, and in scripted inspection it advances the next frame (the Lock In
+ * button sends N there too). Order edits made while an earlier order is out
+ * are queued in order (retainFencedCommand) and sent after it, still as
+ * battlefield input.
+ * A view switch (Agent POV <-> Oracle View) shows the tick already played at
+ * its end instead of replaying it (settleLiveAudienceSwitch), so orders stay
+ * open right after the switch.
+ *
+ * This module also owns: the display-switch state and the preset in use (every
+ * client starts at Default Configuration); the camera on screen and its one
+ * entry point, setCameraFrame (Whole Map until the camera look sets another
+ * frame); the page's own local key jobs of the one command set (Help on ? and
+ * Ranges on G in the Replay Viewer; V, B and F belong to the camera and Frame
+ * Explanation owners); and turning a one-tick replay move into one replay_step
+ * glide request for the choreographer.
+ *
+ * In the BattleClient and DevClient it also owns the live controls' behavior:
+ * How To Play over the arena (#htp: ?, the How To Play button, Close and Full
+ * Guide); the status line's message (#msg) in the vision page's words for the
+ * player's own commands (ownOrderFacts, laneRefusal, acceptedCommandSentence,
+ * hostNoticeSentence; the words come from statusSentence in controls.js);
+ * Tab, Shift+Tab, ‹ Prev and Next ›, which give the orders only to your
+ * champions that can take orders (ownChampionTabStep);
+ * the Keys chip and the arena's keys-on frame (a top-bar button press or a
+ * view switch keeps keys on, and a click on the arena never pins a card);
+ * R and G while orders are closed
+ * (game over, after a save); the Recording pill, popover and seal
+ * (recordingWords); Finish And Save from the status line, the popover and the
+ * Stopped overlay; Back To Your champion (Watch Only); the Restart dialog's
+ * Save focus and Cancel sentence; and the closed page after Exit. Agent POV: the renderer and the
+ * choreographer receive the whole installed frame, and each must read only the
+ * audience's own scene and events for anything drawn on or over the arena; the
+ * camera frame passed to setCameraFrame must come from that same scene.
+ *
+ * Open the launcher URL; this module is not a standalone Node program.
  */
 
 import {
@@ -21,6 +85,7 @@ import {
   getReplayMetricCatalog,
   getReplayMetrics,
   getReplayTimeline,
+  getReplayTimelineMarks,
   postCommand,
   postReplayCommand,
 } from "./api.js";
@@ -29,10 +94,12 @@ import {
   authorizedOracleCommandSlotForPublicAgentId,
   authorizedPresentationAgentDisplayId,
   authorizedPresentationAudience,
-  authorizedPresentationController,
+  authorizedPresentationEpisodeLimit,
+  authorizedPresentationFrameExplanationInput,
+  authorizedPresentationHasResearcherSpace,
   authorizedPresentationIdentityRows,
+  authorizedPresentationIncomingRows,
   authorizedPresentationInspectionState,
-  authorizedPresentationLatestTransitionId,
   authorizedPresentationPreferenceKey,
   authorizedPresentationResearcherInspectionState,
   authorizedPresentationResearcherSceneView,
@@ -48,18 +115,52 @@ import {
 } from "./authorized-presentation-normalizer.js";
 import { CombatChoreographer, ConsumedTransitionLedger } from "./choreography.js";
 import { SvgChoreographyPainter } from "./choreography-painter.js";
-import { isSubmissionCommand } from "./choreography-plan.js";
+import { beatView, isSubmissionCommand } from "./choreography-plan.js";
+import { chronicleBeatsFromSchedule, createChronicle } from "./chronicle.js";
+import { classNamesV1 } from "./class-documentation.js";
+import { registerLocalCommandHandler } from "./command-set.js";
 import {
+  audienceSwitchKeepsTick,
   bindBattlefieldControls,
   commandResponseSchedulesShutdown,
   keyboardCommand,
+  nextOrderSlot,
   presentationRequiresSubmissionSettle,
   recordingCommandDecision,
   recordingSaveAsCommand,
-  targetSelectionCommand,
+  statusSentence,
 } from "./controls.js";
-import { explainAgent, explainLegality, explainTechnicalFact } from "./explanations.js";
-import { matchSummaryView, renderMatchSummary } from "./match-summary.js";
+import { explainAgent, explainTechnicalFact } from "./explanations.js";
+import {
+  createFilterControls,
+  installVisualFilterControls,
+  VISUAL_FILTER_CONTROL_HELP,
+} from "./filter-controls.js";
+import { setIconStyleDefaults } from "./icons.js";
+import { createViewportTransform } from "./layout.js";
+import { mountLedgerRail } from "./ledger.js";
+import { createCameraSwitch, killCamKeyframes } from "./looks/camera.js";
+import { championFrameView, renderChampionFrame } from "./looks/champion-frame.js";
+import {
+  createFrameExplanation,
+  tooltip as frameExplanationTooltip,
+} from "./looks/frame-explanation.js";
+import * as heralds from "./looks/heralds.js";
+import * as requiems from "./looks/requiems.js";
+import { createHud } from "./looks/hud.js";
+import { createVisualKey } from "./looks/visual-key.js";
+import {
+  collapsedControllerLine,
+  controllerLineParts,
+  rosterTeam,
+} from "./controller-names.js";
+import {
+  controllerRosterFromFrame,
+  hudSourcesFromFrame,
+  matchSummaryView,
+  renderMatchSummary,
+  waveChipTeams,
+} from "./match-summary.js";
 import {
   buildMetricSearchIndex,
   renderMetricDefinition,
@@ -68,10 +169,13 @@ import {
   renderMetricSearchResults,
   searchMeasurements,
 } from "./metrics-panel.js";
+import { createPaletteControl } from "./palette.js";
 import {
   authorizedInspectorView,
   DebuggerPanels,
+  describeRecordedAction,
   disclosurePanelInitiallyOpen,
+  fullRecordLabel,
 } from "./panels.js";
 import {
   pendingPresentationSurfaceView,
@@ -88,24 +192,42 @@ import {
   validateReplayCommandOutcome,
 } from "./replay-controls.js";
 import { captureReplayBattlefieldPngV1 } from "./replay-export.js";
-import { isReplayAgentRecipientRotation } from "./replay-recipient-rotation.js";
+import {
+  bindReplayAgentStepping,
+  isReplayAgentRecipientRotation,
+} from "./replay-recipient-rotation.js";
 import { BattlefieldRenderer } from "./scene.js";
+import {
+  applyProductHeader,
+  championCardFacts,
+  createShell,
+  renderCommandHelpLists,
+} from "./shell.js";
 import {
   requiresSharedObs as isReactiveController,
   isSystemController,
   isTeamController,
 } from "./system-controls.js";
 import {
+  closedSentence,
+  commandPreparesDeferredSubmit,
+  commandRole,
+  createTacticsTurn,
+  isDeferredDraftKey,
+  isFreshDeferredDraft,
+  recordingWords,
+} from "./tactics-turn.js";
+import {
+  createChampionCardDescriptor,
   createSemanticDescriptor,
   createTooltipController,
+  registerSymbolOwner,
   registerTooltipOwner,
 } from "./tooltip.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   isVisualFilterEnabled,
   reduceVisualFilterState,
-  setVisualFilterEnabled,
-  VISUAL_FILTER_REGISTRY,
 } from "./visual-filters.js";
 
 /**
@@ -200,6 +322,24 @@ const elements = {
   replayClearReferenceButton: requiredElement("replay-clear-reference-button"),
   reconnectButton: requiredElement("reconnect-button"),
   helpButton: requiredElement("help-button"),
+  // How To Play over the arena (BattleClient and DevClient); the Replay
+  // Viewer keeps the Help dialog (#help-dialog).
+  howToPlay: requiredElement("htp"),
+  howToPlayCloseButton: requiredElement("help-close-button"),
+  howToPlayFullButton: requiredElement("htp-full"),
+  railFullGuideButton: requiredElement("full-guide"),
+  recordingPillText: requiredElement("rec-pill-text"),
+  recordingPopover: requiredElement("rec-pop"),
+  recordingPopState: requiredElement("pop-state"),
+  recordingPopFinishButton: requiredElement("pop-finish"),
+  recordingSeal: requiredElement("rec-seal"),
+  recordingSealText: requiredElement("rec-seal-text"),
+  stoppedSaveButton: requiredElement("stopped-save"),
+  watchOnlyBackButton: requiredElement("wo-back"),
+  statusMessage: requiredElement("msg"),
+  keysChip: requiredElement("keys-chip"),
+  keysText: requiredElement("keys-text"),
+  arena: requiredElement("arena"),
   exitButton: requiredElement("exit-button"),
   resetButton: requiredElement("reset-button"),
   liveRangesButton: requiredElement("live-ranges-button"),
@@ -221,10 +361,25 @@ const elements = {
   visualFilters: requiredElement("visual-filters"),
   visualFilterOptions: requiredElement("visual-filter-options"),
   visualFilterCount: requiredElement("visual-filter-count"),
+  visualFilterPresets: requiredElement("visual-filter-presets"),
+  visualFilterPresetStatus: requiredElement("visual-filter-preset-status"),
+  resetVisualFiltersButton: requiredElement("reset-visual-filters-button"),
   enableAllVisualFiltersButton: requiredElement("enable-all-visual-filters-button"),
   disableAllVisualFiltersButton: requiredElement("disable-all-visual-filters-button"),
   defaultVisualFiltersButton: requiredElement("default-visual-filters-button"),
-  visualKey: requiredElement("visual-key"),
+  partyFrames: requiredElement("party-frames"),
+  teamRosters: requiredElement("team-rosters"),
+  fallenFeed: requiredElement("fallen-feed"),
+  championFrame: requiredElement("champion-frame"),
+  chronicle: requiredElement("chronicle"),
+  replayCameraSwitch: requiredElement("replay-camera-switch"),
+  liveCameraSwitch: requiredElement("live-camera-switch"),
+  visualKeyButton: requiredElement("visual-key-button"),
+  frameExplanationButton: requiredElement("frame-explanation-button"),
+  replayRailFrame: requiredElement("replay-rail-frame"),
+  replayRailActions: requiredElement("replay-rail-actions"),
+  thisTurn: requiredElement("this-turn"),
+  visualFiltersBody: requiredElement("visual-filters-body"),
   selectionCard: requiredElement("selection-card"),
   selectionHeading: requiredElement("selection-heading"),
   pendingHeading: requiredElement("pending-heading"),
@@ -262,189 +417,100 @@ const elements = {
 };
 
 /**
- * Short help for every Visual Filters option, keyed by filter ID.
- * title and text fill the option's hover and focus tooltip (through CONTROL_HELP).
- * text also fills a hidden element with ID id, which the checkbox lists after
- * visual-filters-help in its aria-describedby, so screen readers read both.
- * Each ID must be unique in the page.
- */
-const VISUAL_FILTER_OPTION_HELP = Object.freeze({
-  aura_fields: Object.freeze({
-    id: "visual-filter-aura-fields-help",
-    title: "Aura Fields",
-    text: "Show the areas around Mages and Warriors where their auras help teammates.",
-  }),
-  aura_modifier_badges: Object.freeze({
-    id: "visual-filter-aura-modifier-badges-help",
-    title: "Aura Modifier Badges",
-    text: "Show badges for the extra damage or damage protection an agent gets from auras.",
-  }),
-  duration_status_badges: Object.freeze({
-    id: "visual-filter-duration-status-badges-help",
-    title: "Duration Status Badges",
-    text:
-      "Show badges for active effects, such as slows and stuns. Show their remaining " +
-      "ticks when known, including the In Combat countdown.",
-  }),
-  spawn_shield: Object.freeze({
-    id: "visual-filter-spawn-shield-help",
-    title: "Spawn Shield",
-    text: "Show the shield around an agent while it is protected after spawning.",
-  }),
-  target_selection_visuals: Object.freeze({
-    id: "visual-filter-target-selection-visuals-help",
-    title: "Target Selection Visuals",
-    text: "Mark the selected target and show whether the chosen ability can target it.",
-  }),
-  basic_ability_effects: Object.freeze({
-    id: "visual-filter-basic-ability-effects-help",
-    title: "Basic Ability Effects",
-    text: "Show effects when agents use Basic abilities, including attack and healing effects.",
-  }),
-  ultimate_ability_effects: Object.freeze({
-    id: "visual-filter-ultimate-ability-effects-help",
-    title: "Ultimate Ability Effects",
-    text: "Show effects when agents use Ultimate abilities, including their paths and impacts.",
-  }),
-  regeneration_effects: Object.freeze({
-    id: "visual-filter-regeneration-effects-help",
-    title: "Regeneration Effects",
-    text: "Show the recovery effect when an agent regains health outside combat.",
-  }),
-  cooldown_effects: Object.freeze({
-    id: "visual-filter-cooldown-effects-help",
-    title: "Cooldown Effects",
-    text:
-      "Show how many ticks remain before an agent can use its Ultimate again. " +
-      "Show a signal when it is ready.",
-  }),
-  status_application: Object.freeze({
-    id: "visual-filter-status-application-help",
-    title: "Status Application",
-    text: "Show a short effect when an agent gets a slow, stun or other status, or that status is applied again.",
-  }),
-  natural_status_expiry: Object.freeze({
-    id: "visual-filter-natural-status-expiry-help",
-    title: "Natural Status Expiry",
-    text: "Show a short effect when a timed status ends on its own, including when an agent leaves combat.",
-  }),
-  freezing_trap_break: Object.freeze({
-    id: "visual-filter-freezing-trap-break-help",
-    title: "Freezing Trap Break",
-    text: "Show a shattering effect when damage breaks a Hunter's Freezing Trap.",
-  }),
-  status_clear_on_death: Object.freeze({
-    id: "visual-filter-status-clear-on-death-help",
-    title: "Status Clear on Death",
-    text: "Show a short effect when an agent's death removes its active statuses.",
-  }),
-  death_effects: Object.freeze({
-    id: "visual-filter-death-effects-help",
-    title: "Death Effects",
-    text: "Show a ring around an agent when it dies.",
-  }),
-  respawn_wave: Object.freeze({
-    id: "visual-filter-respawn-wave-help",
-    title: "Respawn Wave",
-    text: "Show a team message when it is time for its dead agents to return.",
-  }),
-  resurrection_effects: Object.freeze({
-    id: "visual-filter-resurrection-effects-help",
-    title: "Resurrection Effects",
-    text: "Show a ring around an agent when it returns at its spawn pad.",
-  }),
-  spawn_shield_expiry: Object.freeze({
-    id: "visual-filter-spawn-shield-expiry-help",
-    title: "Spawn-Shield Expiry",
-    text: "Show a short effect when an agent's spawn protection ends.",
-  }),
-  scrolling_battle_text: Object.freeze({
-    id: "visual-filter-scrolling-battle-text-help",
-    title: "Scrolling Battle Text",
-    text: "Show health-change numbers beside agents, including health regained outside combat. Combat numbers show the final health change after damage and healing are combined.",
-  }),
-  death_announcer: Object.freeze({
-    id: "visual-filter-death-announcer-help",
-    title: "Death Announcer",
-    text:
-      "Show which team got a kill and which agents died. Each victim's info box " +
-      "lists who helped with the kill, when those details were recorded.",
-  }),
-  red_zone_floors: Object.freeze({
-    id: "visual-filter-red-zone-floors-help",
-    title: "Red Zone Floors",
-    text:
-      "Tint each team's Red Zone floor deep red. When an agent dies inside its own " +
-      "team's Red Zone, the enemy team gets 2 points.",
-  }),
-});
-
-/**
- * Build the page checkboxes from the shared visual-filter registry and defaults.
- * Replace the container so browser form restoration cannot override a fresh
- * page load. Each option label carries data-visual-filter-option with its filter
- * ID; an option listed in VISUAL_FILTER_OPTION_HELP also gets its hidden help
- * element (after the label, so it never joins the checkbox's name) and that
- * element's ID in aria-describedby. Throw TypeError for duplicate IDs or
- * disagreement between registry and default values; this changes only the DOM.
- */
-function installVisualFilterControls() {
-  const registeredIds = VISUAL_FILTER_REGISTRY.map(({ id }) => id);
-  if (new Set(registeredIds).size !== registeredIds.length) {
-    throw new TypeError("Visual Filters requires unique registry entries.");
-  }
-  const fragment = document.createDocumentFragment();
-  for (const { id, label, defaultEnabled } of VISUAL_FILTER_REGISTRY) {
-    const enabled = isVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, id);
-    if (enabled !== defaultEnabled) {
-      throw new TypeError(`Visual filter ${id} disagrees with the default state.`);
-    }
-    const option = document.createElement("label");
-    option.className = "visual-filters__option";
-    option.dataset.visualFilterOption = id;
-    const help = Object.hasOwn(VISUAL_FILTER_OPTION_HELP, id)
-      ? VISUAL_FILTER_OPTION_HELP[
-          /** @type {keyof typeof VISUAL_FILTER_OPTION_HELP} */ (id)
-        ]
-      : null;
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.id = `visual-filter-${id.replaceAll("_", "-")}`;
-    input.value = id;
-    input.dataset.visualFilterId = id;
-    input.setAttribute("autocomplete", "off");
-    input.setAttribute(
-      "aria-describedby",
-      help ? `visual-filters-help ${help.id}` : "visual-filters-help",
-    );
-    input.defaultChecked = enabled;
-    input.checked = enabled;
-    const text = document.createElement("span");
-    text.textContent = label;
-    option.append(input, text);
-    fragment.append(option);
-    if (help) {
-      const description = document.createElement("span");
-      description.id = help.id;
-      description.className = "sr-only";
-      description.textContent = help.text;
-      fragment.append(description);
-    }
-  }
-  elements.visualFilterOptions.replaceChildren(fragment);
-}
-
-/**
  * Page-lifetime presentation state. It is replaced atomically, never stored,
  * and deliberately survives transport, authority, audience, and episode
- * changes until the document itself reloads.
+ * changes until the document itself reloads. Every client starts with the
+ * same shipped switch state (DEFAULT_VISUAL_FILTER_STATE) and Default
+ * Configuration as the preset in use. visualFilterPresetId is the preset the
+ * viewer last picked ("default", "broadcast", "researcher", "manuscript" or
+ * "minimal"); hand changes are counted against it.
  */
 let visualFilterState = DEFAULT_VISUAL_FILTER_STATE;
+/** @type {string} */
+let visualFilterPresetId = "default";
 let agentLocalRangesVisible = false;
+
+/**
+ * The public ID of the last Manual champion the player gave orders to, or null
+ * before any. Back To Your <Class> (Watch Only) returns there. Only the
+ * player's own champions are stored, so it never names a hidden champion.
+ *
+ * @type {string | null}
+ */
+let lastManualPublicId = null;
 let agentLocalRangesInitialized = false;
 let confirmedResearcherRangesVisible = false;
-let visualFilterProductDefaultsApplied = false;
-installVisualFilterControls();
+
+/**
+ * One camera frame other than Whole Map: camera "everyone_in_view" or
+ * "battle_cam", and the world rectangle it fits on screen, in world units with
+ * y counting up (it may reach past the map edge for a margin).
+ *
+ * @typedef {Readonly<{
+ *   camera: "everyone_in_view" | "battle_cam",
+ *   minX: number,
+ *   minY: number,
+ *   maxX: number,
+ *   maxY: number,
+ * }>} PageCameraFrame
+ */
+
+/**
+ * The camera on screen: null for Whole Map (the default in every client), or
+ * one PageCameraFrame. setCameraFrame is the only writer. Page-lifetime memory
+ * only.
+ *
+ * @type {PageCameraFrame | null}
+ */
+let cameraFrame = null;
+
+/**
+ * The page's own SVG group of match moment cards (the Lineup card, the Verdict
+ * card or the state chip) in the renderer's herald layer, or null when none is
+ * drawn. Only renderMatchMomentCards replaces it.
+ *
+ * @type {SVGGElement | null}
+ */
+let matchMomentCardsGroup = null;
+
+/**
+ * The Verdict card's working Match Summary and Show Arena buttons, laid over
+ * the arena in the battlefield shell (heralds.buildVerdictActions), or null.
+ * Only renderMatchMomentCards replaces it.
+ *
+ * @type {HTMLElement | null}
+ */
+let verdictActions = null;
+
+/**
+ * True once the player pressed the Verdict card's Show Arena: the Verdict
+ * stays tucked into its band plate for the rest of this page session.
+ */
+let verdictTucked = false;
+
+/**
+ * The open Match Summary sheet (heralds.buildMatchSummarySheet) below the
+ * arena, or null: in the BattleClient and DevClient it takes the deck's place
+ * (the deck is inert at game over); in the Replay Viewer it covers the
+ * timeline dock under the arena. Opened by the Verdict card's Match
+ * Summary button; closed by its Close button, a view switch (each view has its
+ * own Honors) or when the Verdict leaves.
+ *
+ * @type {HTMLElement | null}
+ */
+let matchSummarySheet = null;
+
+/**
+ * What the Fallen panel remembers between paints (requiems.fallenFeedHistory):
+ * the falls of the last 8 ticks of the audience shown last, or null.
+ * installJoinedAuthority sets it to null whenever the installed view kind or
+ * Agent POV recipient changes, even if no plan of the other view was painted
+ * in between, so a quick Oracle -> POV -> Oracle round trip equals a fresh
+ * page.
+ *
+ * @type {import("./looks/requiems.js").FallenFeedMemory | null}
+ */
+let fallenFeedMemory = null;
 
 /**
  * @type {{
@@ -458,8 +524,10 @@ installVisualFilterControls();
  *   offline: boolean,
  *   resyncRequired: boolean,
  *   shuttingDown: boolean,
+ *   exitRecording: Record<string, any> | null,
  *   notice: string | null,
  *   noticeLevel: string,
+ *   pageRun: boolean,
  * }}
  */
 const state = {
@@ -473,21 +541,47 @@ const state = {
   offline: false,
   resyncRequired: false,
   shuttingDown: false,
+  // The recording status that came with the accepted Exit answer, or null
+  // (no Exit yet, or the match records nothing). It is newer than the
+  // installed frame's when that answer's frame could not be installed (the
+  // read raced the server's shutdown), so the Recording pill, popover and
+  // seal paint it once shuttingDown is true. Set only by dispatchCommand's
+  // Exit paths; never cleared, because a page that accepted Exit stops
+  // reading.
+  exitRecording: null,
   notice: null,
   noticeLevel: "info",
+  // True while the page's own Run plays turn after turn (toggleLiveRun).
+  pageRun: false,
 };
 
 /**
- * One live request may retain one fresh draft intent and one following Enter
- * while a coherent response is installed. This is page-local latency state,
- * not simulator, action, or replay state.
+ * The most order keys (steps, 0, 1, 2) one live request keeps while it is
+ * out; a further key is dropped. Four covers a step, an action, a target
+ * and a change of mind pressed during one round trip.
+ */
+const MAX_DEFERRED_DRAFTS = 4;
+
+/**
+ * One live request may retain up to MAX_DEFERRED_DRAFTS fresh draft intents
+ * and focus changes (retainFocusChange keeps at most one), oldest first, and
+ * one following Lock In key (Enter, Space or N) while a coherent response is
+ * installed; they are sent in that order afterwards. This is page-local
+ * latency state, not simulator, action, or replay state.
+ *
+ * keepsTarget is true when the request cannot change the staged target (a
+ * step, 0, 1 or 2 key), so a 1 or 2 pressed meanwhile can be refused at once;
+ * lateRefusal keeps that refusal so it is shown again after the request's
+ * own sentence (the keys were pressed in that order).
  *
  * @type {{
  *   allowsDeferredSubmit: boolean,
- *   deferredDraft: Readonly<Record<string, unknown>> | null,
+ *   deferredDrafts: Array<Readonly<Record<string, unknown>>>,
  *   deferredSubmit: Readonly<Record<string, unknown>> | null,
  *   releaseFocusAfterSettlement: boolean,
  *   recordingPreparation: "metrics" | "possible" | null,
+ *   keepsTarget: boolean,
+ *   lateRefusal: string | null,
  * } | null}
  */
 let activeLiveCommandTransaction = null;
@@ -495,7 +589,8 @@ let activeLiveCommandTransaction = null;
 /**
  * One page-local read-only artifact transaction. It is an async ownership
  * fence, not replay transport state, and is invalidated synchronously whenever
- * installed presentation authority is cleared.
+ * installed presentation authority is cleared or the camera frame changes.
+ * cameraFrame is the camera on screen when it began (null for Whole Map).
  *
  * @type {Readonly<{
  *   kind: "export_png" | "download_metrics" | "download_episode_details",
@@ -506,6 +601,7 @@ let activeLiveCommandTransaction = null;
  *   localInspectedPresentationKey: string | null,
  *   showRanges: boolean,
  *   visualFilters: typeof visualFilterState,
+ *   cameraFrame: PageCameraFrame | null,
  * }> | null}
  */
 let replayArtifactActionTransaction = null;
@@ -569,6 +665,9 @@ let pendingReplayRecipientActivation = null;
 let presentationPreferenceGeneration = 0;
 let presentationPreferenceNeedsContentRender = false;
 let consumedReplayRestartGeneration = -1;
+// The last replay intent generation whose one-tick step glide was handed to the
+// choreographer; each step glides once (installedChoreographyControl).
+let consumedReplayStepGeneration = -1;
 let suppressPlaybackStateRender = false;
 /** @type {number | null} */
 let pendingPresentationPreferenceRestoreFrame = null;
@@ -580,12 +679,8 @@ let workspaceMinimumHeightBeforeAuthorityInstall = null;
 /** @type {WeakMap<HTMLDetailsElement, Readonly<{open: boolean}>>} */
 const expectedDisclosureToggles = new WeakMap();
 
-const PRODUCT_TITLES = Object.freeze({
-  combat_debugger: "MARL-BattleGrounds BattleClient",
-  replay_viewer: "MARL-BattleGrounds Replay Viewer",
-});
 const REPLAY_SAVE_MESSAGE = "Saving replay. Longer recordings can take longer.";
-const METRIC_PREPARATION_MESSAGE = "Preparing metrics. Longer replays can take longer.";
+const METRIC_PREPARATION_MESSAGE = "Preparing Metrics · Longer Games Take Longer.";
 
 const SCRIPTED_INSPECTION_RECORDING_COMMANDS = new Set([
   "finish_and_review",
@@ -613,7 +708,12 @@ let startupProductIdentityError = null;
  * Accept schema version 1, a known product and an
  * optional boolean initial range choice.
  * Throw TypeError for invalid input. Update page labels and product state, and
- * apply initial range/filter defaults only on their first installation.
+ * apply the initial range choice only on its first installation. The display
+ * switches need no product default: every client starts at
+ * DEFAULT_VISUAL_FILTER_STATE (Target Selection Visuals is on everywhere).
+ * Side effects: applyProductHeader (shell.js) writes the tab title, #app-title
+ * and #help-heading, and `<html data-product-kind>` gets the product. The
+ * private DevClient retitles the page after this runs.
  *
  * @param {unknown} rawIdentity
  * @returns {Readonly<{schema_version: 1, product_kind: "combat_debugger" | "replay_viewer"}>}
@@ -649,24 +749,7 @@ function applyBootstrap(rawIdentity) {
     schema_version: 1,
     product_kind: rawIdentity.product_kind,
   });
-  if (!visualFilterProductDefaultsApplied) {
-    visualFilterState =
-      productIdentity.product_kind === "replay_viewer"
-        ? setVisualFilterEnabled(
-            DEFAULT_VISUAL_FILTER_STATE,
-            "target_selection_visuals",
-            false,
-          )
-        : DEFAULT_VISUAL_FILTER_STATE;
-    visualFilterProductDefaultsApplied = true;
-  }
-  const title = PRODUCT_TITLES[productIdentity.product_kind];
-  document.title = title;
-  elements.appTitle.textContent = title;
-  elements.helpHeading.textContent =
-    productIdentity.product_kind === "replay_viewer"
-      ? "Replay Viewer help"
-      : "BattleClient help";
+  applyProductHeader(elements, productIdentity.product_kind);
   document.documentElement.dataset.productKind = productIdentity.product_kind;
   return productIdentity;
 }
@@ -700,16 +783,116 @@ try {
     error instanceof Error ? error.message : "Product bootstrap is invalid.";
 }
 
+// Page parts with their own modules. They are created here, after the page
+// state exists and before the choreographer or the replay controller can ask
+// for a repaint. Each part captures the elements, the state object and the
+// helper functions below; function declarations are hoisted, so passing them
+// now is safe. The deck needs renderConnection from the shell and the shell
+// needs renderCommandAvailability from the deck, so the deck gets a small
+// wrapper that looks renderConnection up when it runs.
+const {
+  policyControllerBlocksActionEdit,
+  renderCommandAvailability,
+  renderSystemOperation,
+  bindCommandDeck,
+  showStatusMessage,
+} = createTacticsTurn({
+  elements,
+  state,
+  isReplayMode,
+  isTerminal,
+  isRecord,
+  asArray,
+  agentIdentity,
+  installedAuthorityIsCoherent,
+  liveScriptedInspectionOnly,
+  recordingScientificControlsFenced,
+  modeAvailability,
+  authorizedResearcherAgentForPresentationKey,
+  clearPresentationTooltipOwner,
+  dispatchCommand,
+  dispatchCommandFromDraftControl,
+  scheduleLivePoll,
+  setNotice,
+  toggleLiveRun,
+  renderConnection: () => renderConnection(),
+  classGuideEnabled: () => isVisualFilterEnabled(visualFilterState, "class_guide"),
+  visualFilters: () => visualFilterState,
+});
+
+const {
+  renderConnection,
+  applyBattlefieldBoundaryCopy,
+  renderSessionToolbar,
+  refreshHoverCard,
+} = createShell({
+  elements,
+  state,
+  getProductIdentity: () => productIdentity,
+  getActiveLiveCommandTransaction: () => activeLiveCommandTransaction,
+  isReplayMode,
+  isTerminal,
+  isRecord,
+  asArray,
+  installedPresentationAuthority,
+  installedPresentationRangesVisible,
+  liveScriptedInspectionOnly,
+  liveBattlefieldCommandsInteractive,
+  scriptedBattlefieldLocallyActionable,
+  liveAgentCloseoutInspectionActionable,
+  installedLiveScientificInspectionAvailable,
+  recordingScientificControlsFenced,
+  recordingRestartControlsBlocked,
+  applyAuthorizedInspectorChrome,
+  renderInstalledMatch,
+  renderPendingPresentationChrome,
+  renderRecordingControls,
+  renderReplayMetadata,
+  renderCommandAvailability,
+  registerAuthorityAwareUtilityHelp,
+  getVisualFilterState: () => visualFilterState,
+  activateReplayPovAgent: (command) => dispatchPanelCommand(command),
+});
+
+// The Visual Filters panel lists only the switches of this client, so it is
+// built once the product identity is known (none when startup was refused).
+// The Help dialog's key lists come from the one command set. Panel Tokens
+// changes only the docked Roster, Agent and Actions panels: the DevClient
+// shows them in its Developer drawer (unhidden before this module loads), the
+// BattleClient has none, so its drawer leaves that switch out.
+const liveDockedPanelsShown =
+  document.getElementById("developer-drawer")?.hidden === false;
+const visualFilterSwitches = installVisualFilterControls(
+  elements,
+  installedProductKind(),
+  {
+    omit:
+      installedProductKind() === "combat_debugger" && !liveDockedPanelsShown
+        ? ["panel_tokens"]
+        : [],
+  },
+);
+renderCommandHelpLists(document);
+
+const { renderVisualFilterControls, bindFilterControls } = createFilterControls({
+  elements,
+  state,
+  switches: visualFilterSwitches,
+  installedPresentationRangesVisible,
+  applyVisualFilterAction,
+  setActiveRangesVisible,
+});
+
 const CONTROL_HELP = Object.freeze([
   [
     "#metric-scope",
     "Evaluation Metric Scope",
-    "Up to Current Tick includes only captured transitions through this tick. Entire Episode includes the entire captured replay.",
+    "Up to Current Tick counts only the ticks up to this one. Entire Episode counts the whole saved game.",
   ],
   [
     "#metric-selection",
     "Evaluation Topic",
-    "Choose a topic, then its Totals or By Recipient view when available. Metrics are researcher information and do not enter agent observations.",
+    "Choose a topic, then its Totals or By Recipient view when there is one. Metrics are for researchers; the agents never see them.",
   ],
   [
     "#replay-episode-details-button",
@@ -719,56 +902,48 @@ const CONTROL_HELP = Object.freeze([
   [
     "#replay-timeline",
     "Replay Timeline",
-    "Use the read-only transport and presentation controls to inspect recorded frames.",
+    "Move through the saved game. The replay never changes.",
     "composite",
   ],
   [
     "#view-select",
     "Audience View",
-    "Switch between Oracle View and recipient-authorized views.",
+    "Switch between Oracle View (everything) and Agent POV (only what one team saw).",
   ],
+  ["#reconnect-button", "Reconnect", "Load the newest game state again."],
+  ["#help-button", "How To Play", "Open the guide to the keys and controls."],
   [
-    "#reconnect-button",
-    "Reconnect",
-    "Fetch and atomically install the latest authoritative frame.",
+    "#help-close-button",
+    "Close How To Play",
+    "Close the guide to the keys and controls.",
   ],
-  ["#help-button", "Help", "Open the keyboard, recording, and replay controls guide."],
-  ["#help-close-button", "Close Help", "Close the product help dialog."],
-  ["#exit-button", "Exit", "Ask the local Python service to close safely."],
+  ["#exit-button", "Exit", "Close the client and stop its server safely."],
   [
     "#recording-finish-button",
     "Finish And Save",
-    "Save this game and keep it open for inspection. Restart begins another match.",
+    "Save this game and keep it on screen to look over. Restart begins another match.",
   ],
   [
     "#recording-review-button",
     "Open Replay",
     "Open the saved game in a separate Replay Viewer tab.",
   ],
-  [
-    "#recording-retry-button",
-    "Retry Save",
-    "Retry publishing the same immutable replay bytes.",
-  ],
+  ["#recording-retry-button", "Retry Save", "Try saving the same replay again."],
   [
     "#recording-save-as-input",
     "Save As File Name",
-    "Enter a basename only; paths and overwrites are rejected.",
+    "Type a file name only, no folder. An existing file is never replaced.",
   ],
   [
     "#recording-save-as-button",
     "Save As",
-    "Publish the same immutable replay bytes under the entered basename.",
+    "Save the same replay under the name you typed.",
   ],
-  [
-    "#recording-discard-cancel-button",
-    "Cancel",
-    "Cancel replacement and preserve the captured prefix.",
-  ],
+  ["#recording-discard-cancel-button", "Cancel", "Keep this game and do not restart."],
   [
     "#recording-discard-confirm-button",
     "Discard",
-    "Confirm permanent loss of the unpublished prefix and start its named replacement.",
+    "Throw away the unsaved game and start the new one.",
   ],
   [
     "#recording-save-replace-button",
@@ -780,52 +955,28 @@ const CONTROL_HELP = Object.freeze([
     "Open Saved Replay In New Tab",
     "Open the separate local Replay Viewer.",
   ],
-  ["#replay-first-button", "Start Replay Tick", "Seek to settled replay tick zero."],
-  [
-    "#replay-back-ten-button",
-    "Back Ten Ticks",
-    "Seek ten ticks backward with one clamped request.",
-  ],
-  [
-    "#replay-previous-button",
-    "Previous Replay Frame",
-    "Seek one captured frame backward.",
-  ],
-  [
-    "#replay-play-pause-button",
-    "Replay Playback",
-    "Start or pause serialized read-only autoplay.",
-  ],
-  [
-    "#replay-next-button",
-    "Next Replay Frame",
-    "Advance exactly one captured replay frame.",
-  ],
-  [
-    "#replay-forward-ten-button",
-    "Forward Ten Ticks",
-    "Seek ten ticks forward with one clamped request.",
-  ],
-  ["#replay-last-button", "End Replay Tick", "Seek to the end of the captured prefix."],
+  ["#replay-first-button", "Start Replay Tick", "Go to tick 0."],
+  ["#replay-back-ten-button", "Back Ten Ticks", "Go back 10 ticks."],
+  ["#replay-previous-button", "Previous Replay Frame", "Go back one tick."],
+  ["#replay-play-pause-button", "Replay Playback", "Play or pause the replay."],
+  ["#replay-next-button", "Next Replay Frame", "Go forward one tick."],
+  ["#replay-forward-ten-button", "Forward Ten Ticks", "Go forward 10 ticks."],
+  ["#replay-last-button", "End Replay Tick", "Go to the last tick."],
   [
     "#replay-frame-slider",
     "Replay Tick",
-    "Preview locally without a request, then commit one exact captured-tick seek.",
+    "Drag to pick a tick; the replay jumps there when you let go.",
   ],
   [
     "#replay-playback-rate",
     "Replay Playback Speed",
-    "Scale the complete replay presentation clock without changing artifact authority.",
+    "Change how fast the replay plays. The saved game does not change.",
   ],
-  [
-    "#command-target-select",
-    "Selected Target",
-    "Stage an authorized target for the controlled actor.",
-  ],
+  ["#command-target-select", "Selected Target", "Pick a target for your champion."],
   [
     "#submit-turn-button",
-    "Apply Authorized Action",
-    "Submit all Manual and policy actions for one turn, or advance one scripted turn. Inspecting a policy does not give you control of it.",
+    "Lock In Turn",
+    "Send your orders; policies then choose and everyone acts at once. In a scripted scene it plays the next scripted tick. Looking at a policy's champion does not give you control of it.",
   ],
   [
     "#live-run-button",
@@ -834,52 +985,16 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#reset-button",
-    "Reset",
-    "Start a deterministic fresh episode; recorded prefixes require confirmation.",
+    "Restart",
+    "Start a new match. If this game is not saved, you choose Save, Discard or Cancel first.",
   ],
-  [
-    "#visual-key > summary",
-    "Visual Key",
-    "Explain the non-color visual grammar used on the battlefield.",
-  ],
-  [
-    "#visual-filters > summary",
-    "Visual Filters",
-    "Show or hide individual battlefield presentation layers without changing scientific authority.",
-  ],
-  [
-    "#enable-all-visual-filters-button",
-    "Enable All",
-    "Turn on all local visual filters and the active Ranges overlay.",
-  ],
-  [
-    "#disable-all-visual-filters-button",
-    "Disable All",
-    "Turn off all local visual filters and the active Ranges overlay.",
-  ],
-  [
-    "#default-visual-filters-button",
-    "Default Configuration",
-    "Restore the eleven default effects, including Cooldown Effects, Death Announcer and Red Zone Floors, and turn off Ranges.",
-  ],
-  ...Object.entries(VISUAL_FILTER_OPTION_HELP).map(
-    ([id, help]) =>
-      /** @type {[string, string, string]} */ ([
-        `[data-visual-filter-option='${id}']`,
-        help.title,
-        help.text,
-      ]),
-  ),
+  ...VISUAL_FILTER_CONTROL_HELP,
   [
     ".diagnostics > summary",
     "Technical Frame",
-    "Inspect authorized wire and diagnostic details.",
+    "See the raw data this frame was drawn from, for developers.",
   ],
-  [
-    "[data-key='Escape']",
-    "Clear Target",
-    "Clear the selected target and leave battlefield command focus.",
-  ],
+  ["[data-key='Escape']", "Clear Target", "Clear the target and turn keys off."],
 ]);
 
 const battlefieldRenderer = new BattlefieldRenderer({
@@ -951,18 +1066,6 @@ const replayTimelineElements = {
     installedPresentationAuthority() === null
       ? null
       : replayTimelineSimulatorStep(state.timeline, frameIndex),
-  /**
-   * Return the incoming transition ID for the currently installed frame only.
-   * The numeric frameIndex must match the installed cursor. Return null for another
-   * frame, missing authority, or a frame with no authorized incoming transition.
-   */
-  incomingTransitionForFrameIndex: (/** @type {number} */ frameIndex) => {
-    const installed = installedPresentationAuthority();
-    if (installed === null || installed.transport.cursor?.frame_index !== frameIndex) {
-      return null;
-    }
-    return authorizedIncomingTransitionId(installed.presentation);
-  },
 };
 
 /**
@@ -983,8 +1086,18 @@ function replayTimelineRenderState(playback) {
   });
 }
 
+/**
+ * The Replay Viewer's Saga Chronicle (fight chapters and bookmarks under the
+ * arena), or null in the BattleClient and DevClient. Created after the playback
+ * controller it drives; its update runs on every playback state change.
+ *
+ * @type {ReturnType<typeof createChronicle> | null}
+ */
+let chronicle = null;
+
 const replayPlayback = new ReplayPlaybackController({
-  playbackRate: isReplayMode() ? 0.5 : 1,
+  // 1x everywhere: with the beat clock a quiet replay tick already lasts 1.7 s.
+  playbackRate: 1,
   request: sendReplayTransportCommand,
   /**
    * Return a promise that resolves without a value when choreography settles.
@@ -1010,6 +1123,7 @@ const replayPlayback = new ReplayPlaybackController({
       invalidateReplayArtifactAction();
     }
     choreographer.setPlaybackRate(playback.playbackRate);
+    updateChronicle(playback);
     const timeline =
       installedPresentationAuthority() === null
         ? pendingPresentationSurfaceView(playback).replay.timeline
@@ -1045,6 +1159,7 @@ const replayPlayback = new ReplayPlaybackController({
 });
 
 const panels = new DebuggerPanels({
+  actionsPanel: isReplayMode() ? elements.replayRailActions : null,
   roster: elements.roster,
   rosterCount: elements.rosterCount,
   selectionCard: elements.selectionCard,
@@ -1063,7 +1178,133 @@ const tooltipController = createTooltipController({
   tooltip: elements.visualTooltip,
   title: elements.visualTooltipTitle,
   details: elements.visualTooltipDetails,
+  // The Champion Card's box (owner, 2 October 2026): the Replay Viewer's
+  // field (its #arena adds no box there), live play's #arena. The card stays
+  // inside it; only a Hold Shift card that would shrink below 85% there grows
+  // past it.
+  championCardBox: () => (isReplayMode() ? elements.battlefieldShell : elements.arena),
 });
+tooltipController.setSymbolTipsEnabled(visualFilterState.symbol_explanations !== false);
+
+// V5 chrome parts, mounted once the product is known. Each reads only the
+// shown audience's data for anything drawn on or over the arena.
+const replayProductPage = isReplayMode();
+
+/** The HUD: party frames (and the score strip's Tab stop) for every client. */
+const hud = createHud({
+  frames: replayProductPage ? elements.teamRosters : elements.partyFrames,
+  extraRoots: [elements.matchScoreboard],
+  onSelect: (publicAgentId) => selectAgentFromHud(publicAgentId),
+  onRefuse: (sentence) => setNotice(sentence),
+  // Live play: a scorebug portrait's screen-reader copy of the Champion Card
+  // comes from the visible hover card's own facts, so both read the same.
+  cardFacts: replayProductPage
+    ? null
+    : (subject) => {
+        const installed = installedPresentationAuthority();
+        return championCardFacts({
+          presentation: installed?.presentation ?? null,
+          combatConfiguration: installed?.transport?.combat_configuration,
+          subject,
+        });
+      },
+});
+
+/** The Replay Viewer's five-tab rail (Agent, Metrics, Actions, Visuals, Frame). */
+const ledgerRail = replayProductPage ? mountLedgerRail(document) : null;
+
+/** The camera switch: Replay Viewer transport slot, or the field corner live. */
+const cameraSwitch =
+  productIdentity === null
+    ? null
+    : createCameraSwitch({
+        slot: replayProductPage
+          ? elements.replayCameraSwitch
+          : elements.liveCameraSwitch,
+        product: replayProductPage ? "replay_viewer" : "combat_debugger",
+        getFilters: () => visualFilterState,
+        reducedMotion: () => choreographer.snapshot().motionMode !== "normal",
+        applyFrame: (frame, { ease }) => applyCameraFrameWithEase(frame, ease),
+      });
+
+// The Visual Key dialog, opened by the button beside Help. Its numbers come
+// from the shown audience's arena scene only, never researcher_space.
+if (productIdentity !== null) {
+  createVisualKey({
+    button: elements.visualKeyButton,
+    product: replayProductPage ? "replay_viewer" : "combat_debugger",
+    getCatalogue: () => {
+      const scene = installedAuthorizedPresentationSceneView(state.presentation);
+      return {
+        classMechanics: asArray(scene?.class_mechanics),
+        spawnShieldMechanics: scene?.spawn_shield_mechanics ?? null,
+        redZone: isRecord(scene?.map) ? (scene.map.red_zone ?? null) : null,
+        respawnWaves: asArray(scene?.respawn_waves),
+      };
+    },
+  });
+}
+
+/** Where the Frame Explanation list goes: the Frame tab, or under Your Turn live. */
+const frameExplanationList = document.createElement("section");
+frameExplanationList.id = "frame-explanation-list";
+frameExplanationList.className = "frame-explanation-list";
+frameExplanationList.setAttribute("aria-label", "Frame Explanation");
+frameExplanationList.hidden = true;
+if (replayProductPage) {
+  elements.replayRailFrame.prepend(frameExplanationList);
+} else {
+  elements.thisTurn.after(frameExplanationList);
+}
+
+/** Frame Explanation (F): numbered marks and a list for the shown tick. */
+const frameExplanation =
+  productIdentity === null
+    ? null
+    : createFrameExplanation({
+        product: replayProductPage ? "replay_viewer" : "combat_debugger",
+        getTickInput: () =>
+          authorizedPresentationFrameExplanationInput(
+            installedPresentationAuthority()?.presentation ?? null,
+          ),
+        getTransform: () => battlefieldRenderer.transform,
+        getLayer: () => battlefieldRenderer.layers.explain,
+        listHost: frameExplanationList,
+        button: elements.frameExplanationButton,
+        isPaused: () => !replayPlayback.snapshot().playing,
+        pause: () => replayPlayback.pause("frame_explanation"),
+        canExplain: () => installedPresentationAuthority() !== null && !state.busy,
+        onOpenChange: (open) => {
+          if (open && ledgerRail !== null) ledgerRail.selectTab("frame");
+        },
+        registerSymbolTip: (node, record) => {
+          const descriptor = frameExplanationTooltip(record);
+          if (descriptor) {
+            registerSymbolOwner(node, descriptor, `frame-explanation:${record.n}`);
+          }
+        },
+      });
+
+/** The High Contrast palette choice, at the top of the Visuals panel. */
+const paletteControl = createPaletteControl({ container: elements.visualFiltersBody });
+elements.visualFiltersBody.prepend(paletteControl.element);
+
+if (replayProductPage) {
+  chronicle = createChronicle(elements.chronicle, {
+    controller: replayPlayback,
+    loadMarks: () => getReplayTimelineMarks(state.token),
+    tickForFrameIndex: replayTimelineElements.tickForFrameIndex,
+  });
+  bindReplayAgentStepping({
+    getPresentation: () => state.presentation,
+    getCurrentPublicAgentId: () => activatedAgentPublicId ?? null,
+    isFieldTarget: (target) =>
+      target instanceof Node && elements.battlefieldShell.contains(target),
+    onCommand: (command) => {
+      void dispatchPanelCommand(command);
+    },
+  });
+}
 
 /** @type {string | null} */
 let activatedAgentPublicId = null;
@@ -1123,7 +1364,7 @@ function renderPendingPresentationChrome() {
 
   elements.recordingPanel.toggleAttribute("hidden", pending.recording.hidden);
   elements.recordingBadge.toggleAttribute("hidden", pending.recording.hidden);
-  elements.recordingBadge.textContent = pending.recording.badgeText;
+  elements.recordingPillText.textContent = pending.recording.badgeText;
   delete elements.recordingBadge.dataset.lifecycle;
   delete document.documentElement.dataset.recordingLifecycle;
   elements.recordingLifecycle.textContent = pending.recording.lifecycle;
@@ -1164,6 +1405,8 @@ function renderPendingPresentationChrome() {
  */
 function clearPresentationAuthority(reason) {
   renderInstalledMatch(null);
+  renderMatchMomentCards(null);
+  renderFallenFeed(null);
   elements.metricProgress.hidden = true;
   elements.metricRows.setAttribute("aria-busy", "false");
   elements.recordingMetricsProgress.hidden = true;
@@ -1194,7 +1437,7 @@ function clearPresentationAuthority(reason) {
   elements.pendingScope.textContent = "Waiting for authorized action details.";
   elements.stepValue.textContent = "—";
   elements.transitionValue.textContent = "—";
-  elements.audienceBadge.textContent = "View unavailable";
+  elements.audienceBadge.textContent = "View Unavailable";
   elements.audienceBadge.dataset.audience = "unavailable";
   document.documentElement.dataset.audience = "unavailable";
   renderPendingPresentationChrome();
@@ -1300,10 +1543,30 @@ function releaseWorkspaceHeightAfterAuthorityInstall() {
 }
 
 /**
+ * Name who a presentation is shown to: its presentation kind (Oracle or an
+ * Agent POV kind, live or replay) and, in Agent POV, the recipient's public
+ * ID. Two frames of the same view and recipient give the same key; a view
+ * switch or a new POV agent gives a different one. Returns "" for anything
+ * that is not an object (no presentation installed yet). Pure.
+ *
+ * @param {unknown} presentation The installed presentation, or null.
+ * @returns {string}
+ */
+function viewAudienceKey(presentation) {
+  if (!isRecord(presentation)) return "";
+  return `${String(presentation.presentation_kind)}:${String(
+    presentation.authority?.recipient_public_agent_id ?? "",
+  )}`;
+}
+
+/**
  * Install a validated transport/presentation pair and its replay timeline.
  * Require the trusted join marker, matching product, and a usable preference key;
  * throw on an invalid pair before treating it as authority. Reconcile local
  * preferences, publish confirmed combat settings, and request a content repaint.
+ * A change of view kind or Agent POV recipient (viewAudienceKey) also clears
+ * the Fallen panel's memory (fallenFeedMemory), so the panel after any view
+ * change equals a freshly loaded page.
  *
  * @param {Readonly<Record<string, any>>} joined
  */
@@ -1337,6 +1600,9 @@ function installJoinedAuthority(joined) {
   ) {
     agentLocalRangesVisible = joined.transport.show_ranges;
     agentLocalRangesInitialized = true;
+  }
+  if (viewAudienceKey(state.presentation) !== viewAudienceKey(joined.presentation)) {
+    fallenFeedMemory = null;
   }
   state.authority = joined;
   state.frame = joined.transport;
@@ -1467,6 +1733,10 @@ function registerControlHelpOwner(control, selector, title, summary, kind = "con
  * Refresh utility help for the currently installed product and audience.
  * Explain range, selection, and Tab behavior using the same authority and
  * availability checks as their controls, including page-local Agent POV choices.
+ * With Manual champions, Next and Previous Actor say they move the orders to
+ * your next champion that can take orders (ownChampionTabStep). In Policies
+ * Only they say they look at the next champion: in Agent POV one the team can
+ * see (Python skips unseen champions there).
  */
 function registerAuthorityAwareUtilityHelp() {
   const presentation = state.presentation;
@@ -1480,41 +1750,49 @@ function registerAuthorityAwareUtilityHelp() {
     "#live-ranges-button",
     "Ranges",
     agentPov
-      ? "Show or hide fog-authorized range overlays for the current Agent POV. This sends no command."
+      ? "Show or hide the reach rings your team may see. Nothing is sent to the game."
       : researcher
-        ? "Toggle server-authored Oracle View range presentation."
-        : "Range presentation is unavailable until one coherent authorized live frame is installed.",
+        ? "Show or hide the reach rings."
+        : "Reach rings are not ready until the game's first frame has loaded.",
   );
   registerControlHelpOwner(
     elements.replayRangesButton,
     "#replay-ranges-button",
     "Replay Ranges",
     agentPov
-      ? "Show or hide locally authorized inspected-agent range overlays. This sends no replay command and does not switch Agent POV."
+      ? "Show or hide the reach rings of the champion you look at. The replay and the view do not change."
       : researcher
-        ? "Toggle recorded Oracle View range presentation."
-        : "Replay range presentation is unavailable until one coherent authorized frame is installed.",
+        ? "Show or hide the reach rings in this replay."
+        : "Reach rings are not ready until the replay's first frame has loaded.",
   );
   registerControlHelpOwner(
     elements.replayClearReferenceButton,
     "#replay-clear-reference-button",
     "Clear Selection",
     agentPov
-      ? "Clear the local inspected-agent highlight, details, and ranges. This sends no replay command and does not switch Agent POV."
+      ? "Stop looking at the selected champion. The replay and the view do not change."
       : researcher
-        ? "Clear the selected Oracle View agent and its inspection highlight."
-        : "Selection cannot be cleared until one coherent authorized replay frame is installed.",
+        ? "Stop looking at the selected champion."
+        : "Nothing is selected until the replay's first frame has loaded.",
   );
-  for (const [selector, title, oracleSummary] of [
+  // With Manual champions, Tab and these buttons move the orders only between
+  // your champions that can take orders (ownChampionTabStep).
+  const ownChampionsOnly =
+    installed &&
+    !isReplayMode() &&
+    asArray(state.frame?.combat_configuration?.manual_slots).length > 0;
+  for (const [selector, title, oracleSummary, ownSummary] of [
     [
       "[data-key='Tab']:not([data-shift])",
       "Next Actor",
       "Move Oracle View control to the next active actor.",
+      "Give the orders to your next champion that can take orders. A policy's champion is skipped; click it to look at it. Staged orders are kept.",
     ],
     [
       "[data-key='Tab'][data-shift='true']",
       "Previous Actor",
       "Move Oracle View control to the previous active actor.",
+      "Give the orders to your previous champion that can take orders. A policy's champion is skipped; click it to look at it. Staged orders are kept.",
     ],
   ]) {
     for (const control of document.querySelectorAll(selector)) {
@@ -1526,15 +1804,17 @@ function registerAuthorityAwareUtilityHelp() {
         control,
         selector,
         title,
-        agentActorCyclingAvailable
-          ? `${oracleSummary.replace("Oracle View", "Agent POV")} Staged drafts are preserved.`
-          : agentPov
-            ? "Actor cycling is unavailable in the current Agent POV state. Tab and Shift+Tab retain native browser focus navigation."
-            : oracleActorCyclingAvailable
-              ? oracleSummary
-              : researcher
-                ? "Actor cycling is unavailable in the current Oracle View state. Tab and Shift+Tab retain native browser focus navigation."
-                : "Actor cycling is unavailable until one coherent authorized live frame is installed.",
+        ownChampionsOnly && (oracleActorCyclingAvailable || agentActorCyclingAvailable)
+          ? ownSummary
+          : agentActorCyclingAvailable
+            ? `${oracleSummary.replace("Oracle View", "Agent POV").replace("active actor", "champion your team can see")} Staged drafts are preserved.`
+            : agentPov
+              ? "Actor cycling is unavailable in the current Agent POV state. Tab and Shift+Tab retain native browser focus navigation."
+              : oracleActorCyclingAvailable
+                ? oracleSummary
+                : researcher
+                  ? "Actor cycling is unavailable in the current Oracle View state. Tab and Shift+Tab retain native browser focus navigation."
+                  : "Actor cycling is unavailable until one coherent authorized live frame is installed.",
       );
     }
   }
@@ -1962,6 +2242,11 @@ function capturePresentationPreference(preference, presentation) {
  * Save preferences before removing the current authorized content.
  * If focus belongs to that content, move it to Help and retain a restore anchor
  * only for a recognized primary agent action. Do nothing without matching authority.
+ * Focus on the battlefield element itself stays there: the clear empties the
+ * battlefield but keeps the element, so keys stay on across a view switch
+ * (Agent POV <-> Oracle View), as the owner asked on 3 October 2026. Only
+ * focus on something inside it (a body, a mark) or in a disclosure panel,
+ * which the clear removes, moves to Help.
  */
 function savePresentationPreferenceBeforeClear() {
   const presentation = state.presentation;
@@ -1973,6 +2258,7 @@ function savePresentationPreferenceBeforeClear() {
   const active = document.activeElement;
   const presentationOwnedFocus =
     active instanceof Element &&
+    active !== elements.battlefield &&
     (elements.battlefield.contains(active) ||
       scientificDisclosures.some(({ panel }) => panel.contains(active)));
   if (!presentationOwnedFocus) {
@@ -2199,6 +2485,17 @@ function isReplayMode() {
 }
 
 /**
+ * Return the installed launcher product: "combat_debugger" (the BattleClient
+ * and the DevClient combat screen) or "replay_viewer", or null when startup
+ * refused the bootstrap. Reads the product identity only; pure.
+ *
+ * @returns {"combat_debugger" | "replay_viewer" | null}
+ */
+function installedProductKind() {
+  return productIdentity?.product_kind ?? null;
+}
+
+/**
  * Return the display label for a controller value.
  * Known reactive and random controllers have explicit names; other values use
  * Manual. This label helper does not validate the requested configuration.
@@ -2322,58 +2619,481 @@ function requestedCombatConfigurationCommand(value) {
 }
 
 /**
- * Paint checkbox and bulk-toggle state from one local filter snapshot.
- * Include the active range choice in the enabled count. Throw TypeError if the
- * DOM checkbox count differs from the shared registry; do not change the snapshot.
+ * Apply a local display-switch action and return whether anything changed.
  *
- * @param {typeof visualFilterState} snapshot
- */
-function renderVisualFilterControls(snapshot) {
-  const inputs = /** @type {NodeListOf<HTMLInputElement>} */ (
-    elements.visualFilterOptions.querySelectorAll(
-      'input[type="checkbox"][data-visual-filter-id]',
-    )
-  );
-  if (inputs.length !== VISUAL_FILTER_REGISTRY.length) {
-    throw new TypeError(
-      `Visual Filters requires exactly ${VISUAL_FILTER_REGISTRY.length} checkboxes.`,
-    );
-  }
-  let enabledCount = 0;
-  for (const input of inputs) {
-    const enabled = isVisualFilterEnabled(snapshot, input.dataset.visualFilterId);
-    input.checked = enabled;
-    enabledCount += enabled ? 1 : 0;
-  }
-  const rangesEnabled = installedPresentationRangesVisible(state.presentation);
-  const visibleControlCount = VISUAL_FILTER_REGISTRY.length + 1;
-  const enabledControlCount = enabledCount + (rangesEnabled ? 1 : 0);
-  elements.visualFilterCount.textContent = `${enabledControlCount} enabled`;
-  elements.enableAllVisualFiltersButton.disabled =
-    enabledControlCount === visibleControlCount;
-  elements.disableAllVisualFiltersButton.disabled = enabledControlCount === 0;
-}
-
-/**
- * Apply a local filter action and return whether its snapshot changed.
- * On change, invalidate downloads, replace the whole snapshot, pause replay, and
- * repaint. An unchanged reducer result returns false without these side effects.
+ * action is one reduceVisualFilterState action: {type: "set", filterId,
+ * enabled}, {type: "enable_all"}, {type: "disable_all"}, {type: "apply_preset",
+ * presetId} or {type: "restore_defaults"} (Reset To Default Configuration).
+ * apply_preset makes presetId the preset in use and restore_defaults makes it
+ * "default"; the other actions keep the preset in use, so their changes count
+ * as hand changes. When the switch state changes: invalidate downloads, replace
+ * the whole snapshot, set the page-wide icon styles from Lore Emblems and Status
+ * Icons From Marks (setIconStyleDefaults), pause replay and repaint the page. When only the preset
+ * in use changes (the switches already matched it): repaint the filter panel
+ * only. Neither touches the View, Ranges, layout or motion.
  *
  * @param {unknown} action
- * @returns {boolean} Whether the local snapshot changed.
+ * @returns {boolean} Whether the switch state or the preset in use changed.
+ * @throws {TypeError | RangeError} From reduceVisualFilterState for a malformed
+ *   action, an unknown switch or an unknown preset; nothing changes then.
  */
 function applyVisualFilterAction(action) {
   const next = reduceVisualFilterState(visualFilterState, action);
+  const record = isRecord(action) ? action : {};
+  const nextPresetId =
+    record.type === "apply_preset"
+      ? String(record.presetId)
+      : record.type === "restore_defaults"
+        ? "default"
+        : visualFilterPresetId;
+  const presetChanged = nextPresetId !== visualFilterPresetId;
+  visualFilterPresetId = nextPresetId;
   if (next === visualFilterState) {
-    return false;
+    if (presetChanged) {
+      renderVisualFilterControls(visualFilterState, visualFilterPresetId);
+    }
+    return presetChanged;
   }
   invalidateReplayArtifactAction();
   visualFilterState = next;
+  tooltipController.setSymbolTipsEnabled(next.symbol_explanations !== false);
+  // Lore Emblems and Status Icons From Marks pick the icon style everywhere
+  // (bodies, deck, scorebug, rail, cards); the repaint below redraws them.
+  setIconStyleDefaults({
+    classEmblems: next.lore_emblems === false ? "outline" : "sigil",
+    statusIcons: next.status_marks_icons === false ? "outline" : "sigil",
+  });
   if (isReplayMode()) {
     replayPlayback.pause("visual_filter_changed");
   }
   render();
   return true;
+}
+
+/**
+ * Set the camera on screen. This is the one camera entry point; the camera
+ * look (Whole Map, Everyone In View, Battle Cam) calls it.
+ *
+ * frame is null for Whole Map, or {camera, minX, minY, maxX, maxY}: camera is
+ * "whole_map", "everyone_in_view" or "battle_cam", and the rectangle is the
+ * world area to fit on screen, in world units with y counting up (it may reach
+ * past the map edge for a margin). "whole_map" is stored as null whatever its
+ * rectangle. The frame is fixed until the next call: the caller computes a new
+ * one per tick. The caller must build it only from the current audience's own
+ * scene (in Agent POV, only bodies the team sees).
+ *
+ * When the frame changes: invalidate a pending PNG export (the picture moved)
+ * and repaint the page, so the renderer, the choreography surface and the next
+ * export all use the new frame. There is no ease here; the camera look owns any
+ * temporary ease (choreographer.easeCamera). No request is sent.
+ *
+ * @param {unknown} frame The new camera frame, or null for Whole Map.
+ * @returns {boolean} Whether the camera frame changed.
+ * @throws {TypeError} For a frame that is not null or an exact record with a
+ *   known camera and finite numbers.
+ * @throws {RangeError} For a rectangle without positive width and height.
+ */
+function setCameraFrame(frame) {
+  /** @type {PageCameraFrame | null} */
+  let next = null;
+  if (frame !== null) {
+    if (!isRecord(frame)) {
+      throw new TypeError("A camera frame must be null or a record.");
+    }
+    const keys = Object.keys(frame).sort().join(",");
+    if (keys !== "camera,maxX,maxY,minX,minY") {
+      throw new TypeError("A camera frame has exactly camera, minX, minY, maxX, maxY.");
+    }
+    const { camera, minX, minY, maxX, maxY } = frame;
+    if (
+      camera !== "whole_map" &&
+      camera !== "everyone_in_view" &&
+      camera !== "battle_cam"
+    ) {
+      throw new TypeError(`Unknown camera ${String(camera)}.`);
+    }
+    for (const value of [minX, minY, maxX, maxY]) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new TypeError("Camera frame bounds must be finite numbers.");
+      }
+    }
+    if (!(maxX > minX) || !(maxY > minY)) {
+      throw new RangeError("A camera frame needs a positive width and height.");
+    }
+    next =
+      camera === "whole_map" ? null : Object.freeze({ camera, minX, minY, maxX, maxY });
+  }
+  const same =
+    next === cameraFrame ||
+    (next !== null &&
+      cameraFrame !== null &&
+      next.camera === cameraFrame.camera &&
+      next.minX === cameraFrame.minX &&
+      next.minY === cameraFrame.minY &&
+      next.maxX === cameraFrame.maxX &&
+      next.maxY === cameraFrame.maxY);
+  if (same) {
+    return false;
+  }
+  invalidateReplayArtifactAction();
+  cameraFrame = next;
+  render();
+  return true;
+}
+
+/**
+ * True while render() runs. A camera change asked for during a render (the
+ * camera switch's update) waits for that render to finish, so the page never
+ * paints inside its own paint.
+ */
+let renderInProgress = false;
+
+/**
+ * Apply a camera frame chosen by the camera switch, with or without an ease.
+ *
+ * frame is null for Whole Map or a camera frame for setCameraFrame; ease true
+ * eases the picture over 520 ms (choreographer.easeCamera) after the repaint,
+ * false cuts (reduced motion, a view or recipient change, paused). During a
+ * render the change is queued to a microtask. Side effects: setCameraFrame (a
+ * repaint) and one camera ease animation. Errors from a bad frame propagate.
+ * Agent POV: the switch builds the frame only from the audience's own scene.
+ *
+ * @param {unknown} frame
+ * @param {boolean} ease
+ */
+function applyCameraFrameWithEase(frame, ease) {
+  if (renderInProgress) {
+    queueMicrotask(() => applyCameraFrameWithEase(frame, ease));
+    return;
+  }
+  const before = battlefieldRenderer.transform;
+  if (!setCameraFrame(frame)) return;
+  choreographer.easeCamera(
+    battlefieldRenderer.cameraGroup,
+    before,
+    battlefieldRenderer.transform,
+    { instant: !ease },
+  );
+}
+
+/** The audience and recipient of the last camera update ("" before the first). */
+let lastCameraAudienceKey = "";
+
+/**
+ * Tell the camera switch about the tick just presented, and lean for Kill Cam.
+ *
+ * presentationFrame is the installed presentation; renderPolicy is the request
+ * the choreographer got. The switch reads the choreography plan's camera and
+ * beats (built from this audience's own events), the audience's arena scene
+ * and the world size; the reason is "view" or "recipient" when the audience
+ * changed, "step" for a one-tick replay step, "play" for a played tick and
+ * "seek" otherwise. A Kill Cam record on a played tick starts the lean through
+ * choreographer.leanCamera. Never reads researcher_space or the match summary.
+ * Side effects: camera switch DOM, possibly a queued camera change and one lean
+ * animation.
+ *
+ * @param {unknown} presentationFrame
+ * @param {string} renderPolicy
+ */
+function updateCameraForTick(presentationFrame, renderPolicy) {
+  const transform = battlefieldRenderer.transform;
+  if (
+    cameraSwitch === null ||
+    transform === null ||
+    !isAuthorizedPresentationFrame(presentationFrame)
+  ) {
+    return;
+  }
+  const audience = String(authorizedPresentationAudience(presentationFrame));
+  const audienceKey = `${audience}:${String(
+    presentationFrame.authority?.recipient_public_agent_id ?? "",
+  )}`;
+  const reason =
+    lastCameraAudienceKey !== "" && audienceKey !== lastCameraAudienceKey
+      ? lastCameraAudienceKey.startsWith(`${audience}:`)
+        ? "recipient"
+        : "view"
+      : renderPolicy === "replay_step"
+        ? "step"
+        : renderPolicy === "replay_animated" || renderPolicy === "live_once"
+          ? "play"
+          : "seek";
+  lastCameraAudienceKey = audienceKey;
+  const plan = choreographer.plan;
+  const playback = replayPlayback.snapshot();
+  const records = cameraSwitch.update({
+    camera: plan?.camera ?? null,
+    beats: plan?.beats ?? null,
+    scene: authorizedPresentationSceneView(presentationFrame),
+    worldWidth: transform.worldWidth,
+    worldHeight: transform.worldHeight,
+    transform,
+    reason,
+    playing: isReplayMode() ? playback.playing : renderPolicy === "live_once",
+    chosenRate: playback.playbackRate,
+  });
+  const kill = records.find((record) => record.kind === "kill-cam");
+  const tickMs = Number(plan?.beats?.tickMs);
+  if (kill === undefined || reason !== "play" || !(tickMs > 0)) return;
+  /**
+   * Build the viewport transform of one camera frame at today's viewport size.
+   *
+   * @param {unknown} frame
+   */
+  const frameTransform = (frame) =>
+    createViewportTransform({
+      worldWidth: transform.worldWidth,
+      worldHeight: transform.worldHeight,
+      viewportWidth: transform.viewportBounds.width,
+      viewportHeight: transform.viewportBounds.height,
+      padding: 24,
+      cameraFrame: /** @type {any} */ (frame),
+    });
+  choreographer.leanCamera(
+    battlefieldRenderer.cameraGroup,
+    killCamKeyframes(
+      /** @type {any} */ (kill),
+      transform,
+      frameTransform(kill.frame),
+      frameTransform(kill.creepFrame),
+      tickMs,
+    ),
+  );
+}
+
+/**
+ * Update the Saga Chronicle from one playback snapshot (Replay Viewer only).
+ *
+ * playback is the ReplayPlaybackController snapshot. The audience is Oracle View
+ * or Agent POV with the current recipient; the replay key is the installed
+ * replay's canonical digest. Does nothing in the BattleClient or DevClient.
+ * Side effects: Chronicle DOM and, on an audience or replay change, one
+ * timeline-marks GET (made by the Chronicle).
+ *
+ * @param {ReturnType<ReplayPlaybackController["snapshot"]>} playback
+ */
+function updateChronicle(playback) {
+  if (chronicle === null) return;
+  const installed = installedPresentationAuthority();
+  const presentation = installed?.presentation ?? null;
+  const transport = installed?.transport ?? null;
+  const summary =
+    transport?.artifact_facts?.artifact_summary ?? transport?.artifact_summary;
+  chronicle.update({
+    playback,
+    audience:
+      authorizedPresentationAudience(presentation) === "agent_pov"
+        ? {
+            kind: "agent_pov",
+            recipientPublicAgentId:
+              presentation?.authority?.recipient_public_agent_id ?? null,
+          }
+        : { kind: "oracle" },
+    filters: visualFilterState,
+    replayKey: summary?.replay_reference?.canonical_digest_sha256 ?? null,
+    visible: true,
+  });
+}
+
+/**
+ * Select a champion from its HUD frame, as a click on its Roster row does.
+ *
+ * publicAgentId names a champion drawn in the shown audience's arena scene,
+ * or (live play) your own Manual champion that this view cannot see, for
+ * example yours on the other team in One On Each Team (other unseen frames
+ * never call this). A drawn champion: find its presentation key in that scene
+ * and route activate_authorized_agent through dispatchPanelCommand. Your
+ * unseen Manual champion: send roster_selection (role "control") for its
+ * command slot, as Back To Your Champion does; the host then shows its view.
+ * Any other champion not in the scene does nothing. Side effects: the same as
+ * a Roster click.
+ *
+ * @param {string} publicAgentId
+ */
+function selectAgentFromHud(publicAgentId) {
+  const scene = installedAuthorizedPresentationSceneView(state.presentation);
+  const agent = asArray(scene?.agents).find(
+    (candidate) => isRecord(candidate) && candidate.public_agent_id === publicAgentId,
+  );
+  if (!isReplayMode() && !isRecord(agent)) {
+    const row = authorizedPresentationIdentityRows(state.presentation).find(
+      (identity) => identity.public_agent_id === publicAgentId,
+    );
+    const slot = row?.command_global_slot;
+    const manual = asArray(state.frame?.combat_configuration?.manual_slots);
+    if (Number.isInteger(slot) && manual.includes(slot)) {
+      void dispatchCommand(
+        { command_type: "roster_selection", role: "control", global_slot: slot },
+        { source: "control" },
+      );
+    }
+    return;
+  }
+  if (!isRecord(agent) || typeof agent.presentation_key !== "string") return;
+  void dispatchPanelCommand({
+    command_type: "activate_authorized_agent",
+    presentation_key: agent.presentation_key,
+  });
+}
+
+/**
+ * Draw the Replay Viewer's Champion Frame for the selected champion.
+ *
+ * presentation is the installed presentation. Only in the Replay Viewer and only
+ * while the selected_agent_frame switch is on; otherwise the slot is hidden. The
+ * frame reads the researcher scene for docked facts (a docked researcher panel,
+ * labelled Full Record in Agent POV) and the incoming rows of the shown
+ * audience. It is drawn after the choreographer settles, so a life or fall never
+ * shows before its beat. Side effects: DOM inside #champion-frame.
+ *
+ * @param {unknown} presentation
+ */
+function renderChampionFrameForPage(presentation) {
+  const slot = elements.championFrame;
+  if (
+    !isReplayMode() ||
+    visualFilterState.selected_agent_frame === false ||
+    !isAuthorizedPresentationFrame(presentation)
+  ) {
+    slot.hidden = true;
+    return;
+  }
+  const pov = authorizedPresentationAudience(presentation) === "agent_pov";
+  const upcoming = authorizedPresentationHasResearcherSpace(presentation)
+    ? presentation.researcher_space?.upcoming_transition
+    : presentation.upcoming_transition;
+  const selectedKey =
+    installedAuthorizedPresentationSceneView(presentation)?.selection
+      ?.inspection_owner_presentation_key;
+  const researcherAgents = asArray(
+    authorizedPresentationResearcherSceneView(presentation)?.agents,
+  );
+  const selected = researcherAgents.find(
+    (agent) => isRecord(agent) && agent.presentation_key === selectedKey,
+  );
+  renderChampionFrame(
+    slot,
+    championFrameView({
+      selectedPublicAgentId: isRecord(selected)
+        ? String(selected.public_agent_id)
+        : (activatedAgentPublicId ?? null),
+      agents: researcherAgents,
+      chip: fullRecordLabel(presentation),
+      audience: pov ? "agent_pov" : "researcher",
+      incomingRows: authorizedPresentationIncomingRows(presentation),
+      hasIncomingTick: isRecord(
+        pov ? presentation.visual_events : presentation.latest_events,
+      ),
+      povSceneAgentIds: pov
+        ? asArray(authorizedPresentationSceneView(presentation)?.agents).map(
+            (agent) => agent.public_agent_id,
+          )
+        : null,
+      replay: presentation.viewer_mode === "replay",
+      upcomingActionRows:
+        isRecord(upcoming) && Array.isArray(upcoming.action_rows)
+          ? upcoming.action_rows
+          : null,
+      describeAction: describeRecordedAction,
+    }),
+  );
+  slot.hidden = false;
+}
+
+/**
+ * Return the choreography surface for this page: the renderer's surface plus
+ * the HUD and panel roots whose beat-held nodes the choreographer also times
+ * (the score strip, the live scorebug #scorebug in the BattleClient and
+ * DevClient, so its score and portraits change at the Fall and Return beats
+ * and not when the frame installs, the party frames or Team Rosters, the
+ * Roster, the selection card, the Fallen panel and the Replay Viewer's
+ * Actions tab), and the
+ * beforeBeatHolds hook that redraws the Fallen panel from each plan before the
+ * holds are collected. Null before a scene exists. Pure apart from returning
+ * that hook.
+ */
+function pageChoreographySurface() {
+  const surface = battlefieldRenderer.choreographySurface();
+  if (surface === null) return null;
+  return Object.freeze({
+    ...surface,
+    beatHoldRoots: Object.freeze([
+      elements.matchScoreboard,
+      ...(isReplayMode()
+        ? []
+        : [document.getElementById("scorebug")].filter((root) => root !== null)),
+      isReplayMode() ? elements.teamRosters : elements.partyFrames,
+      elements.roster,
+      elements.selectionCard,
+      elements.fallenFeed,
+      ...(isReplayMode() ? [elements.replayRailActions] : []),
+    ]),
+    beforeBeatHolds: renderFallenFeed,
+  });
+}
+
+/**
+ * Redraw the Fallen panel (#fallen-feed, the top of the side rail) for one
+ * choreography plan.
+ *
+ * plan is the plan about to be shown (the choreographer passes it through the
+ * surface's beforeBeatHolds hook), or null to clear the panel. The falls are
+ * carried from tick to tick by requiems.fallenFeedHistory (the last 8 ticks of
+ * the same audience; a seek, view or recipient change starts again), and the
+ * panel shows only while the Fallen Feed switch (death_announcer) is on and the
+ * plan has a tick. Shown IDs come from authorizedPresentationAgentDisplayId on
+ * the installed presentation.
+ *
+ * Side effects: updates fallenFeedMemory, replaces the slot's children with
+ * requiems.buildFallenFeed (which registers row tooltips) and sets its hidden
+ * flag. This tick's rows carry the Fall beat hold, so the choreographer fades
+ * them in at that champion's Fall beat. No timers or storage.
+ *
+ * Agent POV: the plan's fallen_feed_row rows hold only the falls the team saw
+ * and only the attackers it saw; nothing else is read, so the panel never names
+ * an unseen champion. Oracle -> POV -> Oracle gives a fresh panel.
+ *
+ * @param {Record<string, any> | null} plan
+ * @returns {void}
+ */
+function renderFallenFeed(plan) {
+  const slot = elements.fallenFeed;
+  const history = requiems.fallenFeedHistory(fallenFeedMemory, plan);
+  fallenFeedMemory = history.memory;
+  if (
+    history.tick === null ||
+    !isVisualFilterEnabled(visualFilterState, "death_announcer")
+  ) {
+    slot.replaceChildren();
+    slot.hidden = true;
+    return;
+  }
+  const presentation = installedPresentationAuthority()?.presentation ?? null;
+  const records = requiems.fallenFeedRecords({
+    tick: history.tick,
+    rows: history.rows,
+    displayIdOf: (publicAgentId) =>
+      authorizedPresentationAgentDisplayId(presentation, publicAgentId),
+  });
+  slot.replaceChildren(requiems.buildFallenFeed(document, records));
+  slot.hidden = false;
+}
+
+/**
+ * Return the world rectangle the renderer fits on screen, or null for Whole
+ * Map. Reads the camera state only.
+ *
+ * @returns {Readonly<{minX: number, minY: number, maxX: number, maxY: number}> | null}
+ */
+function cameraRenderFrame() {
+  return cameraFrame === null
+    ? null
+    : Object.freeze({
+        minX: cameraFrame.minX,
+        minY: cameraFrame.minY,
+        maxX: cameraFrame.maxX,
+        maxY: cameraFrame.maxY,
+      });
 }
 
 /**
@@ -2421,28 +3141,28 @@ function setActiveRangesVisible(visible) {
 }
 
 /**
- * Enable or disable every local filter, then request the same range visibility.
- * The range change keeps its normal local or server-confirmed authority path;
- * the two calls may repaint or send a request through their existing handlers.
- *
- * @param {boolean} enabled
- */
-function applyAllVisualControls(enabled) {
-  applyVisualFilterAction({ type: enabled ? "enable_all" : "disable_all" });
-  setActiveRangesVisible(enabled);
-}
-
-/**
  * Choose animation policy from the matched installed transport and playback state.
  * Live uses live_once; replay uses the current cursor intent or replay_static.
  * Return a frozen policy carrying the supplied filters. consumeAnimatedRestart
- * defaults to false; when true, consume each requested animated restart once.
+ * defaults to false; when true, consume each requested animated restart once,
+ * and turn a one-tick step into the choreographer's "replay_step" request once
+ * per intent generation.
+ *
+ * replay_step: when the current replay intent is the paused still
+ * (replay_static) and carries stepGlide "forward" or "backward" (the playback
+ * controller sets it only when a one-tick move landed exactly one frame away),
+ * the first consuming call for that intent generation returns "replay_step", so
+ * the choreographer glides each body from where the previous frame showed it.
+ * Every later call returns replay_static (the settled still). The renderer and
+ * the PNG export still see replay_static: render() maps replay_step to
+ * replay_static for the battlefield, and the export reads the controller's
+ * intent, never this request.
  *
  * @param {unknown} presentation
  * @param {typeof visualFilterState} visualFilters
  * @param {{consumeAnimatedRestart?: boolean}} [options]
  * @returns {Readonly<{
- *   renderPolicy: "live_once" | "replay_animated" | "replay_static",
+ *   renderPolicy: "live_once" | "replay_animated" | "replay_static" | "replay_step",
  *   visualFilters: typeof visualFilterState,
  *   restartAnimated?: true,
  * }>}
@@ -2484,8 +3204,17 @@ function installedChoreographyControl(
   if (restartAnimated) {
     consumedReplayRestartGeneration = intent.generation;
   }
+  const stepGlide =
+    consumeAnimatedRestart &&
+    currentIntent &&
+    renderPolicy === "replay_static" &&
+    (intent.stepGlide === "forward" || intent.stepGlide === "backward") &&
+    intent.generation > consumedReplayStepGeneration;
+  if (stepGlide) {
+    consumedReplayStepGeneration = intent.generation;
+  }
   return Object.freeze({
-    renderPolicy,
+    renderPolicy: stepGlide ? "replay_step" : renderPolicy,
     visualFilters,
     ...(restartAnimated ? { restartAnimated: true } : {}),
   });
@@ -2839,7 +3568,8 @@ function renderReplayArtifactActions(installed) {
  * Start one allowed PNG, metric, or episode-details download transaction.
  * Return null if another action is pending or the current surface is unavailable.
  * Otherwise freeze the exact authority, playback generation, local selection,
- * ranges, and filters, store the transaction, and repaint its controls.
+ * ranges, filters and camera frame, store the transaction, and repaint its
+ * controls.
  *
  * @param {"export_png" | "download_metrics" | "download_episode_details"} kind
  */
@@ -2874,6 +3604,7 @@ function beginReplayArtifactAction(kind) {
     localInspectedPresentationKey,
     showRanges: installedPresentationRangesVisible(installed.presentation),
     visualFilters: visualFilterState,
+    cameraFrame,
   });
   replayArtifactActionTransaction = transaction;
   renderReplayArtifactActions(installed);
@@ -2883,7 +3614,8 @@ function beginReplayArtifactAction(kind) {
 /**
  * Return whether a captured download transaction still owns the current UI state.
  * Require the same authority objects, playback generation, and download capability.
- * PNG also requires unchanged filters, range choice, and local selection.
+ * PNG also requires unchanged filters, range choice, local selection and camera
+ * frame.
  *
  * @param {NonNullable<typeof replayArtifactActionTransaction>} transaction
  */
@@ -2917,7 +3649,8 @@ function replayArtifactActionIsCurrent(transaction) {
       (installedLocalInspectedPresentationKey(installed.presentation) ?? null) ===
         transaction.localInspectedPresentationKey &&
       installedPresentationRangesVisible(installed.presentation) ===
-        transaction.showRanges
+        transaction.showRanges &&
+      cameraFrame === transaction.cameraFrame
     );
   }
   return true;
@@ -3011,9 +3744,13 @@ function replayMetricDownloadError(error) {
 
 /**
  * Capture and download the current settled replay battlefield as a PNG.
- * Return without work when unavailable. Check transaction identity after capture
- * and validate its artifact type; ignore stale results, display current failures,
- * and always release this transaction. No simulator command is sent.
+ * Return without work when unavailable. First wait until the choreographer has
+ * settled (a one-tick step glide or a camera ease moves computed transforms for
+ * up to about half a second, and the export copies computed styles). The
+ * capture records the camera on screen (the transaction's cameraFrame; Whole
+ * Map when null) in provenance version 3. Check transaction identity after
+ * capture and validate its artifact type; ignore stale results, display current
+ * failures, and always release this transaction. No simulator command is sent.
  */
 async function exportReplayBattlefieldPng() {
   const transaction = beginReplayArtifactAction("export_png");
@@ -3021,6 +3758,7 @@ async function exportReplayBattlefieldPng() {
     return;
   }
   try {
+    await choreographer.whenSettled();
     const playback = replayPlayback.snapshot();
     const artifact = await captureReplayBattlefieldPngV1({
       battlefield: elements.battlefield,
@@ -3036,6 +3774,7 @@ async function exportReplayBattlefieldPng() {
       showRanges: transaction.showRanges,
       localInspectedPresentationKey: transaction.localInspectedPresentationKey,
       visualFilters: transaction.visualFilters,
+      cameraFrame: transaction.cameraFrame,
     });
     if (!replayArtifactActionIsCurrent(transaction)) {
       return;
@@ -3384,7 +4123,11 @@ function renderReplayMetrics() {
       );
       replayMetricRenderKey = renderKey;
     }
-    elements.metricStatus.textContent = `${summary.scope === "final" ? "Entire Episode" : "Up to Current Tick"} · tick ${summary.simulator_step_count}`;
+    // The Scope switch already names the scope; the line gives the tick only.
+    elements.metricStatus.textContent =
+      summary.scope === "final"
+        ? `Whole Game · Tick ${summary.simulator_step_count}`
+        : `Up To Tick ${summary.simulator_step_count}`;
     focusReplayMeasurement();
     return;
   }
@@ -3396,7 +4139,7 @@ function renderReplayMetrics() {
   }
   elements.metricProgress.hidden = false;
   elements.metricRows.setAttribute("aria-busy", "true");
-  elements.metricStatus.textContent = `${METRIC_PREPARATION_MESSAGE} Playback and POV controls remain available.`;
+  elements.metricStatus.textContent = `${METRIC_PREPARATION_MESSAGE} Playback And POV Still Work.`;
   if (replayMetricRequest !== null) return;
   replayMetricRequest = context.key;
   void getReplayMetrics(state.token, context.frameIndex, context.scope)
@@ -3422,7 +4165,37 @@ function renderReplayMetrics() {
       if (generation !== replayMetricGeneration) return;
       replayMetricRequest = null;
       renderReplayMetrics();
+      refreshLedgerRail(installedPresentationAuthority()?.presentation ?? null);
     });
+}
+
+/**
+ * Refresh the Replay Viewer rail (ledger.js) for the installed presentation:
+ * its Full Record chips, Scope tick and the Match Summary at the head of the
+ * Metrics tab.
+ *
+ * presentation is the installed presentation, or null. The Match Summary gets
+ * the last metric summary only when it belongs to the current metric context
+ * (same replay, scope and frame), else null (scores only, while it loads). The
+ * Match Summary switch (ledger_summary) off hides the summary. Does nothing
+ * outside the Replay Viewer. Side effects: the rail's DOM (see
+ * ledger.mountLedgerRail's update). The rail is a docked researcher panel; it
+ * draws nothing on or over the arena.
+ *
+ * @param {unknown} presentation
+ * @returns {void}
+ */
+function refreshLedgerRail(presentation) {
+  if (ledgerRail === null) return;
+  const metricKey = replayMetricContext()?.key ?? null;
+  ledgerRail.update({
+    presentation,
+    metricSummary:
+      replayMetricSummary !== null && replayMetricSummary.key === metricKey
+        ? replayMetricSummary.summary
+        : null,
+    summaryEnabled: isVisualFilterEnabled(visualFilterState, "ledger_summary"),
+  });
 }
 
 /**
@@ -3471,30 +4244,6 @@ function allowedDuringLiveScriptedInspection(command) {
 }
 
 /**
- * Return the incoming transition ID from the trusted presentation event branch.
- * Use the researcher or recipient-scoped field for its audience; return null for
- * untrusted input, frame zero without events, or a missing/empty string.
- *
- * @param {unknown} presentation
- * @returns {string | null}
- */
-function authorizedIncomingTransitionId(presentation) {
-  if (
-    !isAuthorizedPresentationFrame(presentation) ||
-    !isRecord(presentation.latest_events)
-  ) {
-    return null;
-  }
-  const incomingTransitionId =
-    authorizedPresentationAudience(presentation) === "researcher"
-      ? presentation.latest_events.incoming_transition_id
-      : presentation.latest_events.incoming_recipient_transition_id;
-  return typeof incomingTransitionId === "string" && incomingTransitionId.length > 0
-    ? incomingTransitionId
-    : null;
-}
-
-/**
  * Return recording metadata from the installed coherent transport, or null.
  * A stale or unjoined raw frame cannot control recording UI availability.
  */
@@ -3524,29 +4273,6 @@ function recordingRestartControlsBlocked() {
     recording.discard_available !== true
   );
 }
-
-const SCRIPTED_BATTLEFIELD_LABEL =
-  "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.";
-const SCRIPTED_BATTLEFIELD_INSTRUCTIONS =
-  "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step.";
-const FENCED_LIVE_BATTLEFIELD_LABEL =
-  "Read-only live battlefield. Simulator and actor activation controls are unavailable.";
-const FENCED_LIVE_BATTLEFIELD_INSTRUCTIONS =
-  "Live battlefield interaction is unavailable while authority is pending, offline, resynchronizing, shutting down, or terminal.";
-const READ_ONLY_LIVE_SCIENTIFIC_LABEL =
-  "Read-only live battlefield. Select an agent to inspect it; new actions are unavailable.";
-const READ_ONLY_LIVE_SCIENTIFIC_INSTRUCTIONS =
-  "Inspect the accepted game. Select an agent to see its facts. This view does not submit actions; Restart starts another match when available.";
-const AGENT_CLOSEOUT_BATTLEFIELD_LABEL =
-  "Agent POV recording closeout battlefield. Authorized bodies can be inspected; simulator controls are unavailable.";
-const AGENT_CLOSEOUT_BATTLEFIELD_INSTRUCTIONS =
-  "Inspect visible bodies here, or choose an agent in the roster to inspect its view. This recording cannot accept another turn.";
-const TERMINAL_REPLAY_BATTLEFIELD_LABEL =
-  "Read-only terminal replay battlefield snapshot.";
-const TERMINAL_REPLAY_BATTLEFIELD_INSTRUCTIONS =
-  "This replay frame is terminal. Activate an agent to inspect current facts, or use the timeline to review another frame.";
-const TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS =
-  "This replay frame is terminal. Activate a visible body or choose any agent in the roster to switch the fog-of-war recipient; use the timeline to review another frame.";
 
 /**
  * Return whether the live battlefield may submit manual commands now.
@@ -3618,120 +4344,6 @@ function installedLiveScientificInspectionAvailable() {
     isAuthorizedPresentationFrame(state.presentation) &&
     installedAuthorityIsCoherent()
   );
-}
-
-/**
- * Set battlefield accessibility role, focusability, and instructions for current authority.
- * Distinguish replay, editable live, scripted inspection, Agent closeout inspection,
- * and unavailable surfaces using the same interaction gates as the controls.
- */
-function applyBattlefieldBoundaryCopy() {
-  const installed = installedPresentationAuthority();
-  const replay = isReplayMode();
-  const terminal = installed !== null && isTerminal(installed.transport);
-  const scientificFenced = recordingScientificControlsFenced();
-  const audience = authorizedPresentationAudience(installed?.presentation);
-  const scriptedInspection = scriptedBattlefieldLocallyActionable();
-  const agentCloseoutInspection = liveAgentCloseoutInspectionActionable();
-  const liveInteractive = liveBattlefieldCommandsInteractive();
-  if (installed === null) {
-    elements.battlefield.setAttribute("role", "img");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute("aria-label", FENCED_LIVE_BATTLEFIELD_LABEL);
-    elements.battlefieldInstructions.textContent = FENCED_LIVE_BATTLEFIELD_INSTRUCTIONS;
-  } else if (scriptedInspection && !scientificFenced) {
-    elements.battlefield.setAttribute("role", "group");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute("aria-label", SCRIPTED_BATTLEFIELD_LABEL);
-    elements.battlefieldInstructions.textContent = SCRIPTED_BATTLEFIELD_INSTRUCTIONS;
-  } else if (agentCloseoutInspection) {
-    elements.battlefield.setAttribute("role", "group");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute("aria-label", AGENT_CLOSEOUT_BATTLEFIELD_LABEL);
-    elements.battlefieldInstructions.textContent =
-      AGENT_CLOSEOUT_BATTLEFIELD_INSTRUCTIONS;
-  } else if (replay) {
-    elements.battlefield.setAttribute("role", "group");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute(
-      "aria-label",
-      terminal
-        ? TERMINAL_REPLAY_BATTLEFIELD_LABEL
-        : "Read-only replay battlefield snapshot. Authorized agents can be inspected.",
-    );
-    elements.battlefieldInstructions.textContent = terminal
-      ? audience === "agent_pov"
-        ? TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS
-        : TERMINAL_REPLAY_BATTLEFIELD_INSTRUCTIONS
-      : audience === "agent_pov"
-        ? "Replay Agent POV is read-only. Activate a visible body or choose any agent in the roster to switch to that agent's fog-of-war view at the same replay tick."
-        : "Replay is read-only. Upcoming Transition shows the authorized recorded joint action out of this frame; activate an agent to inspect current facts, or use the timeline to change frames.";
-  } else if (liveInteractive) {
-    elements.battlefield.setAttribute("role", "application");
-    elements.battlefield.tabIndex = 0;
-    elements.battlefield.setAttribute(
-      "aria-label",
-      "Interactive battlefield. Press Help for keyboard controls.",
-    );
-    elements.battlefieldInstructions.textContent =
-      audience === "agent_pov"
-        ? "Live Agent POV is interactive. Activate a visible authorized actor or choose any active actor in Roster to control it and switch POV; Shift-click selects a visible authorized target; Escape clears the target and leaves battlefield focus."
-        : "Live Oracle View is interactive. Activate an authorized actor to control it; Shift-click selects an authorized target; Escape clears the target and leaves battlefield focus. Battlefield keyboard commands apply only while this surface has focus.";
-  } else if (installedLiveScientificInspectionAvailable()) {
-    elements.battlefield.setAttribute("role", "group");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute("aria-label", READ_ONLY_LIVE_SCIENTIFIC_LABEL);
-    elements.battlefieldInstructions.textContent =
-      READ_ONLY_LIVE_SCIENTIFIC_INSTRUCTIONS;
-  } else {
-    elements.battlefield.setAttribute("role", "img");
-    elements.battlefield.tabIndex = -1;
-    elements.battlefield.setAttribute(
-      "aria-label",
-      scientificFenced
-        ? "Read-only recording closeout battlefield snapshot."
-        : FENCED_LIVE_BATTLEFIELD_LABEL,
-    );
-    elements.battlefieldInstructions.textContent = scientificFenced
-      ? "Recording closeout has fenced simulator and pending-action controls. Presentation, recovery, review, and Exit controls remain available."
-      : FENCED_LIVE_BATTLEFIELD_INSTRUCTIONS;
-  }
-}
-
-/**
- * Show product-specific page sections and audience-specific live help.
- * Update the root viewer-mode marker, timeline visibility, battlefield instructions,
- * and inspector heading from installed product and presentation state.
- */
-function renderViewerBoundary() {
-  const replay = isReplayMode();
-  document.documentElement.dataset.viewerMode = replay ? "replay" : "live";
-  for (const element of elements.liveOnly) {
-    element.toggleAttribute("hidden", replay);
-  }
-  for (const element of elements.replayOnly) {
-    element.toggleAttribute("hidden", !replay);
-  }
-  const inspectionState = authorizedPresentationInspectionState(state.presentation);
-  const audience = authorizedPresentationAudience(state.presentation);
-  const liveHelpMode = !isAuthorizedPresentationFrame(state.presentation)
-    ? "unavailable"
-    : inspectionState.state_kind === "live_scripted"
-      ? "scripted"
-      : audience === "researcher"
-        ? "oracle"
-        : audience === "agent_pov"
-          ? "agent"
-          : "unavailable";
-  for (const element of elements.liveHelpModes) {
-    element.toggleAttribute(
-      "hidden",
-      replay || element.dataset.liveHelpMode !== liveHelpMode,
-    );
-  }
-  elements.replayTimeline.toggleAttribute("hidden", !replay);
-  applyBattlefieldBoundaryCopy();
-  applyAuthorizedInspectorChrome();
 }
 
 /**
@@ -3850,7 +4462,19 @@ const recordingPersistenceLabels = Object.freeze({
  * Paint live recording lifecycle, persistence facts, actions, and progress hints.
  * Use the supplied installed pair and recording metadata; hide replay/unavailable
  * recording surfaces and close obsolete discard dialogs. Progress text describes
- * current request state, not a fabricated percentage.
+ * current request state, not a fabricated percentage. Writes the Recording
+ * pill (#rec-pill-text) and the popover's state line (#pop-state) through
+ * recordingWords (tactics-turn.js, the one owner of these words; the deck's
+ * renderSeal paints the status line's seal from the same words and the same
+ * status), with the `saved` class once saved. Finish And Save (status line,
+ * popover, Stopped overlay) and Retry Save show only when they work; Open
+ * Replay stays visible and is disabled until a save exists; after an
+ * accepted Exit, Finish And Save and Retry Save are hidden. While the server
+ * saves a finished game in the background (lifecycle "sealed"), the words
+ * read "Saving Replay…" and the popover note says Open Replay works once it
+ * says Saved. After an accepted Exit, the Exit answer's own recording status
+ * (state.exitRecording) is painted instead of the installed one, in its
+ * closed form (a game closed before its first tick reads "No Replay").
  *
  * @param {ReturnType<typeof installedPresentationAuthority>} installed
  */
@@ -3858,9 +4482,23 @@ function renderRecordingControls(installed) {
   elements.recordingMetricsProgress.hidden = true;
   elements.recordingMetricsHelp.hidden = true;
   if (installed === null) {
+    // An Exit answer whose frame raced the shutdown may leave no installed
+    // pair: its own recording words still replace "Saving Replay…".
+    if (state.shuttingDown && state.exitRecording !== null) {
+      const words = recordingWords(state.exitRecording, 0, null, true);
+      elements.recordingPillText.textContent = words.pill;
+      elements.recordingPopState.textContent = words.popover;
+      elements.recordingBadge.classList.toggle(
+        "saved",
+        ["saved", "reviewing"].includes(String(state.exitRecording.lifecycle)),
+      );
+    }
     return;
   }
-  const recording = recordingStatus();
+  const recording =
+    state.shuttingDown && state.exitRecording !== null
+      ? state.exitRecording
+      : recordingStatus();
   elements.recordingReplayLink.hidden =
     openedReplayEpisodeId !== installed.transport.episode_id ||
     !elements.recordingReplayLink.hasAttribute("href");
@@ -3878,10 +4516,16 @@ function renderRecordingControls(installed) {
 
   document.documentElement.dataset.recordingLifecycle = recording.lifecycle;
   elements.recordingBadge.dataset.lifecycle = recording.lifecycle;
-  elements.recordingBadge.textContent =
-    recording.lifecycle === "recording"
-      ? `Recording ${recording.captured_transition_count} / ${recording.expected_transition_count}`
-      : `Recording · ${humanize(recording.lifecycle)}`;
+  const words = recordingWords(
+    recording,
+    integer(installed.transport.simulator_step_count, 0),
+    authorizedPresentationEpisodeLimit(installed.presentation),
+    state.shuttingDown,
+  );
+  elements.recordingPillText.textContent = words.pill;
+  elements.recordingPopState.textContent = words.popover;
+  const saved = recording.lifecycle === "saved" || recording.lifecycle === "reviewing";
+  elements.recordingBadge.classList.toggle("saved", saved);
   elements.recordingLifecycle.textContent = humanize(recording.lifecycle);
   elements.recordingProgress.textContent = `${recording.captured_transition_count} / ${recording.expected_transition_count} transitions`;
   elements.recordingCompletion.textContent =
@@ -3910,11 +4554,20 @@ function renderRecordingControls(installed) {
     }).action === "block";
   const actionAvailability = [
     [elements.recordingFinishButton, recording.finish_available === true],
+    [elements.recordingPopFinishButton, recording.finish_available === true],
+    [elements.stoppedSaveButton, recording.finish_available === true],
     [elements.recordingReviewButton, recording.review_available === true],
     [elements.recordingRetryButton, recording.retry_available === true],
   ];
   for (const [element, available] of actionAvailability) {
-    element.toggleAttribute("hidden", !available);
+    // Open Replay stays in the Recording popover, disabled until a save
+    // exists, as on the vision page; the others show only when they work,
+    // so none shows once Exit was accepted.
+    if (element !== elements.recordingReviewButton) {
+      element.toggleAttribute("hidden", !available || state.shuttingDown);
+    } else {
+      element.hidden = false;
+    }
     element.disabled = interactionDisabled || !available;
   }
   const saveAsAvailable = recording.save_as_available === true;
@@ -3933,7 +4586,10 @@ function renderRecordingControls(installed) {
             ? "Replay saved. Inspect this game, open it in a separate Viewer, or Restart to play again."
             : recording.lifecycle === "reviewing"
               ? "Replay saved. Open Replay uses a separate Viewer."
-              : "This recording has ended. Save or discard it before starting another match.";
+              : recording.lifecycle === "sealed" ||
+                  recording.lifecycle === "finalized_unsaved"
+                ? "The game is over. Saving the replay now; Open Replay works once it says Saved."
+                : "This recording has ended. Save or discard it before starting another match.";
   const preparation =
     state.busy && !state.offline && !state.resyncRequired
       ? activeLiveCommandTransaction?.recordingPreparation
@@ -4020,142 +4676,84 @@ function isTerminal(frame) {
   return Boolean(record.terminated || record.truncated);
 }
 
-const DRAFT_KEYS = new Set([
-  "w",
-  "a",
-  "s",
-  "d",
-  "q",
-  "e",
-  "z",
-  "c",
-  "x",
-  "arrowup",
-  "arrowdown",
-  "arrowleft",
-  "arrowright",
-  "0",
-  "1",
-  "2",
-]);
-
-const DEFERRED_SUBMIT_PREPARATION_COMMAND_TYPES = new Set([
-  "battlefield_pointer",
-  "roster_selection",
-]);
-
 /**
- * Read the selected actor's actual slot owner from the paired accepted frame.
- * Return null for Manual or unavailable ownership. A System team may contain
- * Manual slots; its whole-team runtime name does not grant or remove control.
- */
-function policyControlledActor() {
-  const inspection = authorizedPresentationResearcherInspectionState(
-    state.presentation,
-  ).inspection;
-  if (!isRecord(inspection)) return null;
-  const controller = authorizedPresentationController(
-    state.presentation,
-    state.frame?.combat_configuration,
-    inspection.actor_public_agent_id,
-  );
-  if (controller === null || controller.manual) return null;
-  return Object.freeze({ label: controller.label });
-}
-
-/**
- * Return whether a command would edit an automatically controlled actor action.
- * Block battlefield pointers, target selection, draft keys, and Escape while such
- * an actor is selected. Other commands keep their normal availability checks.
+ * Return whether a KeyboardEvent key value names a Lock In key: Enter (any
+ * case), Space (" ") or N (any case). N is one tick: in interactive play
+ * Python treats it as Space (Manual: Lock In; Policies Only: play one turn),
+ * so the page queues, ignores and refuses it exactly as it does Space. Pure.
  *
- * @param {Record<string, unknown>} command
+ * @param {unknown} key The command's key value; a non-string returns false.
+ * @returns {boolean} True for "Enter", " " or "n" in any letter case.
  */
-function policyControllerBlocksActionEdit(command) {
-  if (policyControlledActor() === null) {
+function isLockInKeyName(key) {
+  if (typeof key !== "string") {
     return false;
   }
-  if (command.command_type === "battlefield_pointer") {
-    return true;
-  }
-  if (command.command_type === "roster_selection" && command.role === "target") {
-    return true;
-  }
-  if (command.command_type !== "keyboard" || typeof command.key !== "string") {
-    return false;
-  }
-  const key = command.key.toLowerCase();
-  return DRAFT_KEYS.has(key) || key === "escape";
+  const lower = key.toLowerCase();
+  return lower === "enter" || key === " " || lower === "n";
 }
 
 /**
- * Return whether a command can stage a draft before a later Enter.
- * Recognize the preparation command set plus draft, Tab, and Escape keys; this
- * does not check freshness, modifiers, or current command availability.
- *
- * @param {Record<string, unknown>} command
- */
-function commandPreparesDeferredSubmit(command) {
-  if (DEFERRED_SUBMIT_PREPARATION_COMMAND_TYPES.has(String(command.command_type))) {
-    return true;
-  }
-  if (command.command_type !== "keyboard" || typeof command.key !== "string") {
-    return false;
-  }
-  const key = command.key.toLowerCase();
-  return DRAFT_KEYS.has(key) || key === "tab" || key === "escape";
-}
-
-/**
- * Return whether a keyboard command belongs to the draft-preparation key group.
- * Other command types and non-string keys return false.
- *
- * @param {Record<string, unknown>} command
- */
-function isDeferredDraftKey(command) {
-  return (
-    command.command_type === "keyboard" &&
-    typeof command.key === "string" &&
-    commandPreparesDeferredSubmit(command)
-  );
-}
-
-/**
- * Return whether a draft-preparation key can be retained during a pending request.
- * Require explicit false Ctrl/Alt/Meta/repeat flags; Shift is allowed only for Tab.
- *
- * @param {Record<string, unknown>} command
- */
-function isFreshDeferredDraft(command) {
-  if (!isDeferredDraftKey(command)) {
-    return false;
-  }
-  const key = String(command.key).toLowerCase();
-  return (
-    command.ctrl_key === false &&
-    command.alt_key === false &&
-    command.meta_key === false &&
-    command.repeat === false &&
-    (command.shift_key === false || key === "tab")
-  );
-}
-
-/**
- * Return whether a command is a fresh Enter with every modifier and repeat false.
- * Only the keyboard command with a string Enter key qualifies.
+ * Return whether a command is a fresh Lock In key (Enter, Space or N, see
+ * isLockInKeyName) with every modifier and repeat false. Only a keyboard
+ * command with one of those string keys qualifies. Space and N are Lock In
+ * too (Policies Only: play one turn), so one pressed while an order is still
+ * being applied is kept, not lost.
  *
  * @param {Record<string, unknown>} command
  */
 function isFreshUnmodifiedEnter(command) {
   return (
     command.command_type === "keyboard" &&
-    typeof command.key === "string" &&
-    command.key.toLowerCase() === "enter" &&
+    isLockInKeyName(command.key) &&
     command.shift_key === false &&
     command.ctrl_key === false &&
     command.alt_key === false &&
     command.meta_key === false &&
     command.repeat === false
   );
+}
+
+/**
+ * Keep a focus change (a portrait, roster or rail click that picks which
+ * champion the deck shows: roster_selection with role "control") made while
+ * one live request is out, so the click is not lost. It joins that request's
+ * queue (deferredDrafts) and is sent after it, like a queued order key; a
+ * later focus change replaces an earlier queued one (the last click wins).
+ * Returns false, and keeps nothing, in the Replay Viewer, for any other
+ * command, when no live request owns the page, when the page must resync or
+ * is offline, when a Lock In is already queued (it must stay last) or when the
+ * queue is full (MAX_DEFERRED_DRAFTS); the caller then refuses as before.
+ * Changes only the active request's queue; sends nothing. Agent POV: the
+ * queued command is the same one the click would have sent, and the host
+ * still decides which champions the POV team may focus.
+ *
+ * @param {Readonly<Record<string, unknown>>} command A command about to be sent.
+ * @returns {boolean} True when the focus change was queued.
+ */
+function retainFocusChange(command) {
+  const transaction = activeLiveCommandTransaction;
+  if (
+    isReplayMode() ||
+    transaction === null ||
+    state.resyncRequired ||
+    state.offline ||
+    command.command_type !== "roster_selection" ||
+    command.role !== "control" ||
+    transaction.deferredSubmit !== null
+  ) {
+    return false;
+  }
+  const kept = transaction.deferredDrafts.filter(
+    (queued) =>
+      !(queued.command_type === "roster_selection" && queued.role === "control"),
+  );
+  if (kept.length >= MAX_DEFERRED_DRAFTS) {
+    return false;
+  }
+  kept.push(Object.freeze({ ...command }));
+  transaction.deferredDrafts.splice(0, transaction.deferredDrafts.length, ...kept);
+  return true;
 }
 
 /**
@@ -4174,10 +4772,15 @@ function isEscapeKeyboardCommand(command) {
 }
 
 /**
- * Consume eligible live keyboard input while one request owns the battlefield.
- * Retain at most one fresh draft and a following Enter for ordered dispatch after
- * a coherent successor. Escape also saves focus-release intent. Return whether
- * the input was consumed; replay and other unavailable states keep native behavior.
+ * Consume eligible live input while one request owns the battlefield.
+ * Retain up to MAX_DEFERRED_DRAFTS order edits (fresh draft keys, a Shift +
+ * click target pick or a right click that clears the target) and fresh
+ * unmodified G presses (Ranges; in Agent POV G then toggles the page's own
+ * reach rings, in Oracle View it goes to Python), oldest first, and a
+ * following Lock In key (Enter, Space or N: isLockInKeyName) for ordered
+ * dispatch after a coherent successor.
+ * Escape also saves focus-release intent. Return whether the input was
+ * consumed; replay and other unavailable states keep native behavior.
  *
  * @param {Record<string, unknown>} command
  */
@@ -4196,13 +4799,46 @@ function retainFencedCommand(command) {
   if (isEscapeKeyboardCommand(command)) {
     transaction.releaseFocusAfterSettlement = true;
   }
-  if (isDeferredDraftKey(command)) {
+  // A refused 1 or 2 needs no server: when the order being applied cannot
+  // change the target, refuse it now in the vision's words.
+  if (transaction.keepsTarget) {
+    const refusal = laneRefusal(
+      command,
+      ownOrderFacts(state.presentation, state.frame),
+    );
+    if (refusal !== null) {
+      setNotice(refusal.sentence, "warning");
+      shakeSlot(
+        refusal.lane === "basic" ? elements.basicButton : elements.ultimateButton,
+      );
+      transaction.lateRefusal = refusal.sentence;
+      return true;
+    }
+  }
+  const targetEdit =
+    command.command_type === "battlefield_pointer" &&
+    (command.button === "secondary" || command.shift_key === true);
+  // G only changes what the human sees. Pressed while a request is out (for
+  // example right after the click that turns keys on), it waits its turn
+  // instead of being dropped without a word.
+  const rangesKey =
+    command.command_type === "keyboard" &&
+    typeof command.key === "string" &&
+    command.key.toLowerCase() === "g" &&
+    command.shift_key === false &&
+    command.ctrl_key === false &&
+    command.alt_key === false &&
+    command.meta_key === false &&
+    command.repeat === false;
+  if (isDeferredDraftKey(command) || targetEdit || rangesKey) {
     if (
-      transaction.deferredDraft === null &&
+      transaction.deferredDrafts.length < MAX_DEFERRED_DRAFTS &&
       transaction.deferredSubmit === null &&
-      isFreshDeferredDraft(command)
+      (targetEdit || rangesKey || isFreshDeferredDraft(command))
     ) {
-      transaction.deferredDraft = Object.freeze({ ...command });
+      // A queued pick changes the target, so a later 1 or 2 is judged after it.
+      if (targetEdit) transaction.keepsTarget = false;
+      transaction.deferredDrafts.push(Object.freeze({ ...command }));
       setNotice(
         "Input queued; waiting for the current battlefield update first…",
         "info",
@@ -4211,16 +4847,12 @@ function retainFencedCommand(command) {
     }
     return true;
   }
-  if (
-    command.command_type !== "keyboard" ||
-    typeof command.key !== "string" ||
-    command.key.toLowerCase() !== "enter"
-  ) {
+  if (command.command_type !== "keyboard" || !isLockInKeyName(command.key)) {
     return false;
   }
   if (
     transaction.deferredSubmit === null &&
-    (transaction.allowsDeferredSubmit || transaction.deferredDraft !== null) &&
+    (transaction.allowsDeferredSubmit || transaction.deferredDrafts.length > 0) &&
     isFreshUnmodifiedEnter(command)
   ) {
     transaction.deferredSubmit = Object.freeze({ ...command });
@@ -4231,27 +4863,6 @@ function retainFencedCommand(command) {
     renderConnection();
   }
   return true;
-}
-
-/**
- * Classify keyboard commands as draft, interactive-submit, or null.
- * Recognize draft keys and Enter/Return/Space aliases without deciding legality.
- *
- * @param {Record<string, unknown>} command
- * @returns {"draft" | "interactive-submit" | null}
- */
-function commandRole(command) {
-  if (command.command_type !== "keyboard" || typeof command.key !== "string") {
-    return null;
-  }
-  const key = command.key.toLowerCase();
-  if (DRAFT_KEYS.has(key)) {
-    return "draft";
-  }
-  if (key === "enter" || key === "return" || key === " " || key === "spacebar") {
-    return "interactive-submit";
-  }
-  return null;
 }
 
 /**
@@ -4306,6 +4917,10 @@ function currentRevision() {
 /**
  * Store a notice message and level for the next connection render.
  * The level defaults to info; this helper does not repaint or send a request.
+ * In the BattleClient and DevClient the status line's message (#msg, through
+ * paintStatusLine) also shows it ("warning" and "error" keep their level and
+ * look refused, anything else shows as info). Side effects: page state and
+ * that status line.
  *
  * @param {string} message
  * @param {string} level
@@ -4313,6 +4928,409 @@ function currentRevision() {
 function setNotice(message, level = "info") {
   state.notice = message;
   state.noticeLevel = level;
+  if (!isReplayMode() && typeof message === "string") {
+    // The live deck's status line repeats the latest notice in plain words.
+    paintStatusLine(message, level === "error" || level === "warning" ? level : "info");
+  }
+}
+
+/**
+ * Write one message into the status line's message (#msg, under the deck), as
+ * the vision page does: the text, `data-level` ("info", "warning" or "error")
+ * and the `refuse` class for a warning or error (a refusal or a problem). Also
+ * hands the same message to the deck (showStatusMessage), which keeps it for
+ * its own repaint. BattleClient and DevClient only; the caller checks that.
+ *
+ * @param {string} text The message; "" empties the line.
+ * @param {"info" | "warning" | "error"} level How the line is styled.
+ * @returns {void}
+ */
+function paintStatusLine(text, level) {
+  elements.statusMessage.textContent = text;
+  elements.statusMessage.dataset.level = level;
+  elements.statusMessage.classList.toggle("refuse", level !== "info");
+  showStatusMessage(text, level);
+}
+
+/**
+ * Clear the top-bar notice after routine work: a load, a frame update or a
+ * request still waiting for its answer. Routine work makes no top-bar notice;
+ * the top bar keeps only the connection status and the Recording pill. Warnings,
+ * errors and results the user asked for still go through setNotice.
+ *
+ * In the BattleClient and DevClient the status line's message (#msg, through
+ * paintStatusLine) shows statusText at info level (an empty string clears
+ * that line). The Replay Viewer has no deck, so statusText is not shown there.
+ * This helper does not repaint or send a request. Side effects: page state and
+ * that status line.
+ *
+ * @param {string} [statusText] Plain words for the deck status line. Defaults
+ *   to "" (an empty line).
+ * @returns {void}
+ */
+function clearNotice(statusText = "") {
+  state.notice = null;
+  state.noticeLevel = "info";
+  if (!isReplayMode()) {
+    paintStatusLine(statusText, "info");
+  }
+}
+
+/**
+ * @typedef {Readonly<{
+ *   mode: "one" | "each" | "watch",
+ *   audience: string | null,
+ *   viewers: string,
+ *   actorId: string | null,
+ *   actorName: string | null,
+ *   actorClass: string | null,
+ *   actorManual: boolean,
+ *   actorController: string,
+ *   editable: boolean,
+ *   basicName: string,
+ *   ultimateName: string,
+ *   isMage: boolean,
+ *   cooldown: number,
+ *   move: number | null,
+ *   lane: string | null,
+ *   targetAction: number,
+ *   targetName: string | null,
+ *   pairs: ReadonlyArray<ReadonlyArray<boolean>>,
+ *   unseenEnemies: number,
+ *   showRanges: boolean,
+ * }>} OwnOrderFacts
+ */
+
+/**
+ * Read the facts the status line needs about the champion in focus and its
+ * staged order, from one installed live presentation and its transport frame.
+ *
+ * Agent POV: everything comes from the audience's own arena scene (champion
+ * names, classes, cooldown) and the audience's own live inspection (the
+ * focused champion's draft and decision mask), never from researcher_space or
+ * match_summary. The controller labels and Manual slots come from the match
+ * setup (combat_configuration), which every audience already sees in the
+ * scorebug. A champion the scene does not draw is never named; its name is
+ * null.
+ *
+ * @param {unknown} presentation The installed authorized presentation.
+ * @param {Record<string, any> | null} frame The installed transport frame.
+ * @returns {OwnOrderFacts | null} The facts, or null outside live play or
+ *   without an authorized presentation.
+ */
+function ownOrderFacts(presentation, frame) {
+  if (isReplayMode() || !isAuthorizedPresentationFrame(presentation) || !frame) {
+    return null;
+  }
+  const config = isRecord(frame.combat_configuration) ? frame.combat_configuration : {};
+  const labels = asArray(config.slot_labels).map((label) => String(label));
+  const manualSlots = asArray(config.manual_slots).filter((slot) =>
+    Number.isInteger(slot),
+  );
+  const perTeam = labels.length > 0 ? labels.length / 2 : 5;
+  const manualTeams = new Set(manualSlots.map((slot) => (slot < perTeam ? 1 : 2)));
+  const mode =
+    manualSlots.length === 0 ? "watch" : manualTeams.size > 1 ? "each" : "one";
+  const scene = authorizedPresentationSceneView(presentation);
+  const agents = asArray(scene?.agents).filter(isRecord);
+  /** @param {unknown} id */
+  const agentFor = (id) =>
+    agents.find((agent) => String(agent.public_agent_id) === String(id)) ?? null;
+  /** @param {Record<string, any> | null} agent */
+  const nameOf = (agent) => {
+    if (agent === null) return null;
+    const id = String(agent.public_agent_id);
+    const shown = authorizedPresentationAgentDisplayId(presentation, id) ?? id;
+    return `${String(agent.class_name ?? "Champion")} (ID ${shown})`;
+  };
+  const inspectionState = authorizedPresentationInspectionState(presentation);
+  const inspection = inspectionState.inspection;
+  const actorId =
+    isRecord(inspection) && inspection.actor_public_agent_id !== undefined
+      ? String(inspection.actor_public_agent_id)
+      : null;
+  const actor = actorId === null ? null : agentFor(actorId);
+  const actorSlot = actorId === null ? Number.NaN : Number(actorId);
+  const editable = inspectionState.state_kind === "live_editable";
+  const draft =
+    editable && isRecord(inspection?.draft_action) ? inspection.draft_action : null;
+  const mask = isRecord(inspection?.decision_mask) ? inspection.decision_mask : null;
+  const targetAction = draft !== null ? integer(draft.target_action, 0) : 0;
+  const targetRow =
+    mask === null
+      ? null
+      : (asArray(mask.target_actions).find(
+          (row) => isRecord(row) && Number(row.target_action) === targetAction,
+        ) ?? null);
+  const names = classNamesV1(actor?.class_id);
+  const audience = authorizedPresentationAudience(presentation);
+  const ownTeam = Number(actor?.team_id ?? (manualSlots[0] < perTeam ? 1 : 2));
+  const enemyShown = agents.filter((agent) => Number(agent.team_id) !== ownTeam).length;
+  return Object.freeze({
+    mode,
+    audience,
+    viewers: mode === "watch" ? `Team ${ownTeam === 2 ? "B" : "A"}` : "your team",
+    actorId,
+    actorName: nameOf(actor),
+    actorClass: actor === null ? null : String(actor.class_name ?? "Champion"),
+    actorManual: manualSlots.includes(actorSlot),
+    actorController: manualSlots.includes(actorSlot)
+      ? "You"
+      : (labels[actorSlot] ?? "a policy"),
+    editable,
+    basicName: names?.basicName ?? "Basic",
+    ultimateName: names?.ultimateName ?? "Ultimate",
+    isMage: names?.className === "Mage",
+    cooldown: integer(actor?.ultimate_cooldown_remaining, 0),
+    move: draft === null ? null : integer(draft.move_action, 0),
+    lane: draft === null ? null : String(draft.armed_lane ?? "none"),
+    targetAction,
+    targetName:
+      targetAction > 0 && isRecord(targetRow)
+        ? nameOf(agentFor(targetRow.target_public_agent_id))
+        : null,
+    pairs: asArray(mask?.target_use_ultimate_joint_mask).map((pair) =>
+      asArray(pair).map((value) => value === true),
+    ),
+    unseenEnemies: audience === "agent_pov" ? Math.max(0, perTeam - enemyShown) : 0,
+    showRanges:
+      audience === "agent_pov" ? agentLocalRangesVisible : frame.show_ranges === true,
+  });
+}
+
+/**
+ * Decide, before sending, whether the page refuses a 1 or 2 press (or a
+ * Basic or Ultimate slot click) for the champion in focus, in the vision's
+ * words. Mirrors Python's own check of the staged order against the decision
+ * mask, so a refusal never blocks an order Python would accept.
+ *
+ * @param {Record<string, unknown>} command The command about to be sent.
+ * @param {OwnOrderFacts | null} facts The facts before sending.
+ * @returns {{sentence: string, lane: "basic" | "ultimate"} | null} The
+ *   refusal, or null when the page lets the command go to Python.
+ */
+function laneRefusal(command, facts) {
+  if (
+    facts === null ||
+    !facts.editable ||
+    command.command_type !== "keyboard" ||
+    (command.key !== "1" && command.key !== "2")
+  ) {
+    return null;
+  }
+  const pair = facts.pairs[facts.targetAction] ?? [];
+  if (command.key === "1") {
+    if (facts.targetAction === 0) {
+      return {
+        sentence: statusSentence({ kind: "needs_target", ability: facts.basicName }),
+        lane: "basic",
+      };
+    }
+    return pair[0] === true
+      ? null
+      : {
+          sentence: statusSentence({
+            kind: "not_allowed",
+            ability: facts.basicName,
+            onTarget: true,
+            readyIn: 0,
+          }),
+          lane: "basic",
+        };
+  }
+  if (facts.isMage) {
+    return (facts.pairs[0] ?? [])[1] === true
+      ? null
+      : {
+          sentence: statusSentence({
+            kind: "not_allowed",
+            ability: facts.ultimateName,
+            onTarget: false,
+            readyIn: facts.cooldown,
+          }),
+          lane: "ultimate",
+        };
+  }
+  if (facts.targetAction === 0) {
+    return {
+      sentence: statusSentence({ kind: "needs_target", ability: facts.ultimateName }),
+      lane: "ultimate",
+    };
+  }
+  return pair[1] === true
+    ? null
+    : {
+        sentence: statusSentence({
+          kind: "not_allowed",
+          ability: facts.ultimateName,
+          onTarget: true,
+          readyIn: facts.cooldown,
+        }),
+        lane: "ultimate",
+      };
+}
+
+/**
+ * Say three host notices in the vision page's words; every other notice is
+ * shown as the host wrote it. Python's "The Systems are choosing this turn."
+ * (its answer to Lock In and Play One Turn) keeps the page's own Lock In
+ * sentence: "Orders sent. The policies choose next.", or "Playing one turn."
+ * in Policies Only. Python's "This actor is controlled by a policy.
+ * Select a Manual actor to edit actions." becomes "This champion is played by
+ * a policy. You can look, not command. Pick one of yours to give orders."
+ * ("Nobody is yours this game. You can look, not command." in Policies Only),
+ * and its Agent POV focus notice "Looking at Hunter · ID 2 of Team A, played
+ * by a policy. ..." becomes "Looking at the Hunter (ID 2), played by
+ * <controller>." The controller is the slot's label from the match setup
+ * (combat_configuration.slot_labels), which every audience sees; the class and
+ * ID come from the host's own sentence, which names only a champion the
+ * audience may focus.
+ *
+ * @param {string | null} notice The host's notice, or null.
+ * @param {OwnOrderFacts | null} facts Facts after the command.
+ * @returns {string | null} The vision sentence, or null to keep the notice.
+ */
+function hostNoticeSentence(notice, facts) {
+  if (typeof notice !== "string") return null;
+  if (notice === "The Systems are choosing this turn.") {
+    return statusSentence({ kind: "lock_in", watch: facts?.mode === "watch" });
+  }
+  if (notice.startsWith("This actor is controlled by a policy.")) {
+    return statusSentence({ kind: "policy_champion", watch: facts?.mode === "watch" });
+  }
+  const look = /^Looking at (\w+) · ID (\d+) of Team [AB], played by a policy\./u.exec(
+    notice,
+  );
+  if (look !== null) {
+    const labels = asArray(state.frame?.combat_configuration?.slot_labels);
+    return statusSentence({
+      kind: "look",
+      target: `${look[1]} (ID ${look[2]})`,
+      controller: String(labels[Number(look[2])] ?? "a policy"),
+    });
+  }
+  return null;
+}
+
+/**
+ * Restart the shake animation on a refused action slot, as the vision does.
+ * Side effects: toggles the `shake` class on the slot button only.
+ *
+ * @param {HTMLElement} button The Basic or Ultimate slot button.
+ * @returns {void}
+ */
+function shakeSlot(button) {
+  button.classList.remove("shake");
+  void button.offsetWidth;
+  button.classList.add("shake");
+}
+
+/**
+ * Return the status sentence for one accepted own command, comparing the
+ * facts before and after it. Returns null when no vision sentence applies
+ * (the caller then keeps Python's notice or the routine empty line).
+ *
+ * @param {Record<string, unknown>} command The command Python accepted.
+ * @param {OwnOrderFacts | null} before Facts before sending.
+ * @param {OwnOrderFacts | null} after Facts after the successor installed.
+ * @param {"field" | "control" | "page"} source "field" for a key or click on
+ *   the battlefield (Esc then also turns keys off), "control" for a deck or
+ *   rail button, "page" for anything else.
+ * @returns {string | null}
+ */
+function acceptedCommandSentence(command, before, after, source) {
+  if (after === null) return null;
+  const type = command.command_type;
+  const key = typeof command.key === "string" ? command.key.toLowerCase() : "";
+  if (type === "set_view") {
+    return statusSentence({
+      kind: "view",
+      view: after.audience === "agent_pov" ? "pov" : "oracle",
+      unseen: after.unseenEnemies,
+      viewers: after.viewers,
+      watch: after.mode === "watch",
+    });
+  }
+  if (isSubmissionCommand(command)) {
+    return statusSentence({ kind: "lock_in", watch: after.mode === "watch" });
+  }
+  if (type === "keyboard" && key === "g") {
+    return statusSentence({ kind: "ranges", shown: after.showRanges });
+  }
+  if (type === "run") return statusSentence({ kind: "running" });
+  if (type === "pause") {
+    // A pause between turns takes effect at once; during a turn it waits.
+    return statusSentence({
+      kind:
+        state.frame?.run_state === "paused" && !state.pageRun ? "paused" : "pausing",
+    });
+  }
+  if (type === "cancel_system") return statusSentence({ kind: "work_cancelled" });
+  if (
+    type === "roster_selection" &&
+    command.role === "control" &&
+    asArray(state.frame?.combat_configuration?.manual_slots).includes(
+      command.global_slot,
+    )
+  ) {
+    // Back to (or on to) one of your own champions; Agent POV follows it.
+    return statusSentence({
+      kind: "focus_own",
+      className: after.actorClass ?? "champion",
+    });
+  }
+  if (before !== null && before.actorId !== after.actorId && after.actorId !== null) {
+    return after.actorManual
+      ? statusSentence({ kind: "focus_own", className: after.actorClass ?? "champion" })
+      : after.actorName === null
+        ? null
+        : statusSentence({
+            kind: "look",
+            target: after.actorName,
+            controller: after.actorController,
+          });
+  }
+  if (!after.editable) return null;
+  if (type === "keyboard" && "wasdqezcx".includes(key) && key.length === 1) {
+    return statusSentence({ kind: "step", move: after.move ?? 0 });
+  }
+  if (type === "keyboard" && key === "0") {
+    return statusSentence({ kind: "no_combat" });
+  }
+  if (type === "keyboard" && (key === "1" || key === "2")) {
+    if (key === "2" && after.isMage) return statusSentence({ kind: "burst_armed" });
+    return statusSentence({
+      kind: "armed",
+      ability: key === "1" ? after.basicName : after.ultimateName,
+      target: after.targetName,
+    });
+  }
+  if (
+    (type === "keyboard" && key === "escape") ||
+    (type === "battlefield_pointer" && command.button === "secondary")
+  ) {
+    return statusSentence({
+      kind: "cleared",
+      keysOff: type === "keyboard" && source === "field",
+    });
+  }
+  if (
+    before !== null &&
+    after.targetAction > 0 &&
+    after.targetAction !== before.targetAction &&
+    after.targetName !== null
+  ) {
+    const pair = after.pairs[after.targetAction] ?? [];
+    return statusSentence({
+      kind: "target",
+      target: after.targetName,
+      basic: after.basicName,
+      ultimate: after.ultimateName,
+      auto: after.lane === "basic",
+      ultimateAllowed: !after.isMage && pair[1] === true,
+    });
+  }
+  return null;
 }
 
 /**
@@ -4345,174 +5363,21 @@ function humanize(value) {
 }
 
 /**
- * Map internal audience names to Oracle View or Agent POV.
- * Unknown values return View unavailable; protocol discriminators remain unchanged.
- *
- * @param {unknown} value
- */
-function publicAudienceLabel(value) {
-  if (value === "researcher") {
-    return "Oracle View";
-  }
-  if (value === "actor_pov" || value === "agent_pov" || value === "pov") {
-    return "Agent POV";
-  }
-  return "View unavailable";
-}
-
-/**
- * Paint connection status, pending-input status, notice text, and battlefield busy state.
- * Read page state only; rendering a status does not reconnect or retry a command.
- */
-function renderConnection() {
-  let label = "Online";
-  let status = "online";
-  if (state.shuttingDown) {
-    label = "Shutting down";
-    status = "busy";
-  } else if (state.busy) {
-    label = activeLiveCommandTransaction?.deferredSubmit
-      ? "Submit queued"
-      : activeLiveCommandTransaction?.deferredDraft
-        ? "Input queued"
-        : "Command in flight";
-    status = "busy";
-  } else if (state.resyncRequired) {
-    label = "Resync required";
-    status = "offline";
-  } else if (state.offline) {
-    label = "Offline";
-    status = "offline";
-  } else if (!state.frame) {
-    label = "Connecting";
-    status = "loading";
-  }
-  elements.connectionStatus.textContent = label;
-  elements.connectionStatus.dataset.state = status;
-
-  elements.notice.hidden = !state.notice;
-  elements.notice.textContent = state.notice ?? "";
-  elements.notice.dataset.level = state.noticeLevel;
-  elements.battlefieldShell.setAttribute("aria-busy", String(state.busy));
-}
-
-/**
- * Paint match, episode, view, recording, and command toolbar controls.
- * The optional installed pair defaults to the currently resolved authority. Missing
- * authority clears scientific chrome; all controls respect busy, connection,
- * terminal, recording, and audience gates.
- *
- * @param {ReturnType<typeof installedPresentationAuthority>} [installed]
- */
-function renderSessionToolbar(installed = installedPresentationAuthority()) {
-  const frame = installed?.transport ?? null;
-  const presentation = installed?.presentation ?? null;
-  renderInstalledMatch(presentation);
-  renderViewerBoundary();
-  if (installed === null) {
-    renderPendingPresentationChrome();
-  }
-  const replay = isReplayMode();
-  const disabled =
-    state.busy || !frame || state.shuttingDown || state.resyncRequired || state.offline;
-  const restartControlsBlocked = recordingRestartControlsBlocked();
-
-  elements.stepValue.textContent = presentation
-    ? String(presentation.simulator_step_count ?? "—")
-    : "—";
-  const incomingTransition = authorizedPresentationLatestTransitionId(presentation);
-  elements.transitionValue.textContent = incomingTransition
-    ? String(incomingTransition)
-    : "—";
-
-  const audience = authorizedPresentationAudience(presentation) ?? "unavailable";
-  elements.audienceBadge.textContent = publicAudienceLabel(audience);
-  elements.audienceBadge.dataset.audience = audience;
-  document.documentElement.dataset.audience = elements.audienceBadge.dataset.audience;
-  document.documentElement.dataset.preset = "analysis";
-
-  const terminal = frame !== null && isTerminal(frame);
-  elements.terminalBadge.hidden = !terminal;
-  if (terminal && replay) {
-    const completion = isRecord(frame?.completion) ? frame.completion : {};
-    const bases = asArray(completion.completion_bases);
-    elements.terminalBadge.textContent =
-      completion.completion_state !== "complete"
-        ? "End of captured prefix"
-        : bases.includes("task_terminal") && bases.includes("declared_horizon")
-          ? "Task terminal · declared horizon"
-          : bases.includes("task_terminal")
-            ? "Task terminal"
-            : bases.includes("declared_horizon")
-              ? "Declared horizon"
-              : "Complete replay";
-  } else {
-    elements.terminalBadge.textContent = terminal
-      ? "Terminal · submissions blocked by Python"
-      : "Terminal";
-  }
-
-  const retainedAuthority =
-    document.documentElement.dataset.presentationAuthority === "retained";
-  const retainedState = state.shuttingDown
-    ? "session shutting down"
-    : state.busy
-      ? "update pending"
-      : "reconnect required";
-  elements.scenarioDescription.textContent = presentation
-    ? retainedAuthority
-      ? replay
-        ? `Last confirmed ${publicAudienceLabel(authorizedPresentationAudience(presentation))} recorded frame ${frame?.cursor?.frame_index ?? "—"} of ${frame?.cursor?.final_frame_index ?? "—"} · ${retainedState}`
-        : `Last confirmed ${publicAudienceLabel(authorizedPresentationAudience(presentation))} battlefield · ${retainedState}`
-      : replay
-        ? `${publicAudienceLabel(authorizedPresentationAudience(presentation))} · recorded frame ${frame?.cursor?.frame_index ?? "—"} of ${frame?.cursor?.final_frame_index ?? "—"}`
-        : `${publicAudienceLabel(authorizedPresentationAudience(presentation))} · authorized live presentation`
-    : "Waiting for an authorized presentation.";
-
-  const viewMode = frame?.view_mode === "agent_pov" ? "pov" : frame?.view_mode;
-  if (typeof viewMode === "string") {
-    elements.viewSelect.value = viewMode;
-  } else {
-    elements.viewSelect.value = "";
-  }
-  elements.viewSelect.disabled = disabled;
-  elements.reconnectButton.disabled =
-    state.busy || state.shuttingDown || productIdentity === null;
-  elements.exitButton.disabled = disabled;
-  elements.exitButton.textContent =
-    productIdentity?.product_kind === "replay_viewer"
-      ? "Exit replay viewer"
-      : productIdentity?.product_kind === "combat_debugger"
-        ? "Exit combat debugger"
-        : "Exit";
-  elements.resetButton.disabled =
-    disabled ||
-    Boolean(frame?.fresh_launch_required) ||
-    restartControlsBlocked ||
-    liveScriptedInspectionOnly();
-  const authorizedLive =
-    !replay &&
-    (authorizedPresentationAudience(presentation) === "researcher" ||
-      authorizedPresentationAudience(presentation) === "agent_pov");
-  elements.liveRangesButton.hidden = !authorizedLive;
-  elements.liveRangesButton.setAttribute(
-    "aria-pressed",
-    String(authorizedLive && installedPresentationRangesVisible(presentation)),
-  );
-  elements.liveRangesButton.disabled = disabled || !authorizedLive;
-  renderRecordingControls(installed);
-  renderReplayMetadata(installed);
-  renderCommandAvailability();
-  registerAuthorityAwareUtilityHelp();
-}
-
-/**
- * Render match title, team summaries, and task selection from a presentation.
- * Delegate to the shared match-summary renderer with this page DOM targets.
+ * Render match title, team summaries, and task selection from a presentation,
+ * then the HUD's party frames.
+ * Delegate to the shared match-summary renderer with this page DOM targets and
+ * the current switch state, beatView("end") result (scores wait for the Fall
+ * beat through beat holds), the scene's public wave clock (wave pips) and
+ * waveChipTeams (the Wave Chip waits for its Return beat; the scorebug is one
+ * of the choreographer's beatHoldRoots), then hud.render with hudSourcesFromFrame (the HUD's
+ * one frame reader; Agent POV: unseen champions read "Unseen"). Both run before
+ * the choreographer plans the tick, so its beat holds find their nodes.
  *
  * @param {unknown} presentation
  */
 function renderInstalledMatch(presentation) {
+  const beat = beatView(presentation, "end", { visualFilters: visualFilterState });
+  const hudSources = hudSourcesFromFrame(presentation);
   renderMatchSummary(
     {
       root: elements.matchScoreboard,
@@ -4520,396 +5385,346 @@ function renderInstalledMatch(presentation) {
       teams: [elements.matchTeamA, elements.matchTeamB],
     },
     presentation,
-  );
-}
-
-/**
- * Mark a draft button selected or unselected in aria-pressed and its dataset.
- * This changes presentation state only, not the pending simulator action.
- *
- * @param {HTMLButtonElement} button
- * @param {boolean} selected
- */
-function setDraftSelection(button, selected) {
-  button.setAttribute("aria-pressed", String(selected));
-  button.dataset.selected = String(selected);
-}
-
-/**
- * Paint an action choice availability while keeping its explanation focusable.
- * Set aria-disabled and attach the supplied descriptor, or build a legality tooltip
- * from explanation when descriptor is null (the default). Python still checks
- * the exact action mask before accepting an edit.
- *
- * @param {HTMLButtonElement} button
- * @param {boolean} available
- * @param {string} explanation
- * @param {unknown} [descriptor]
- */
-function setAuthoritativeAvailability(
-  button,
-  available,
-  explanation,
-  descriptor = null,
-) {
-  button.setAttribute("aria-disabled", String(!available));
-  button.dataset.authoritativeAvailable = String(available);
-  button.dataset.tooltipKind = "legality";
-  button.dataset.tooltipText = explanation;
-  registerTooltipOwner(
-    button,
-    descriptor ?? {
-      kind: "legality",
-      id: `command:${button.id || button.dataset.key || "choice"}`,
-      title:
-        button.getAttribute("aria-label") ??
-        button.textContent?.trim() ??
-        "Pending choice",
-      tone: available ? "positive" : "warning",
-      accent: "none",
-      summary: explanation,
-      rows: [
-        {
-          label: "Status",
-          value: available ? "True" : "False",
-          metadata: { compact: true, full: true },
-        },
-      ],
-      sections: [],
-      metadata: { compact: true, full: true },
-      anchor: "element",
+    {
+      filters: visualFilterState,
+      beat,
+      waves: hudSources?.waves ?? null,
+      waveChips: waveChipTeams(presentation, beat, visualFilterState),
     },
   );
+  // The HUD is drawn before the choreographer plans the tick, so its beat holds
+  // find the "before" nodes. Falls name no killer here (the plan is not built
+  // yet); Oracle View falls back to the match summary's credited deaths.
+  hud.render(hudSources, {
+    filters: visualFilterState,
+    beat,
+    falls: [],
+  });
 }
 
 /**
- * Mark a command button unavailable and remove its old scientific tooltip.
- * Use this when no exact authorized owner exists; generic help must not preserve
- * or invent an owner-specific legality claim.
+ * Work out the match moment cards for one installed tick (looks/heralds.js
+ * records with part "lineup", "verdict" or "state"). Pure: no DOM, storage or
+ * timers.
  *
- * @param {HTMLButtonElement} button
- */
-function clearOwnerBoundLegalityAvailability(button) {
-  button.setAttribute("aria-disabled", "true");
-  button.dataset.authoritativeAvailable = "false";
-  clearPresentationTooltipOwner(button);
-}
-
-/**
- * Rebuild target options from the authorized editable decision mask and draft.
- * Resolve target identities through the researcher directory and command-slot
- * mapping. Show Basic/Ultimate pair availability and current choice; fall back
- * to No authorized targets when no option can be built.
+ * - Lineup card: on tick 0 in every product. Its medallions come only from the
+ *   audience's authorized arena scene (in Agent POV only the champions the team
+ *   sees), and its rules are the public First To and draw tick, plus the Red
+ *   Zone rule when the scene's map has a Red Zone.
+ * - Verdict card: on the final tick, in the Replay Viewer and at game over in
+ *   the BattleClient and DevClient (the herald look gives nothing for another
+ *   product). It carries the public scores, the
+ *   winner and why the match ended ("threshold" for a win, "tie" when both
+ *   teams reached First To with equal scores, else "horizon"), each team's
+ *   controller line from the one controller model (controllerRosterFromFrame:
+ *   the full line, and the short "You + 4 Policies" line for when it does not
+ *   fit), the team whose home end is on the left (its recorded spawn side) as
+ *   the left column, and the Honors of the frame's own `match_honors` host
+ *   fact (heralds.verdictHonours; in Agent POV the host keeps only the viewing
+ *   team's champions). options.tucked draws its band plate (Show Arena).
+ * - State chip: on any other tick of a Team Deathmatch still in play, and only
+ *   when this tick's choreography plan draws no herald plate. "Match Point ·
+ *   Needs N" when a team is 1 or 2 points short of First To (N is the smaller
+ *   gap), else "N Ticks Left" when 30 ticks or fewer remain.
  *
- * @param {Readonly<Record<string, any>>} presentation
- * @param {Readonly<Record<string, any>>} inspection
- */
-function renderCommandTargets(presentation, inspection) {
-  const mask = isRecord(inspection.decision_mask) ? inspection.decision_mask : {};
-  const action = isRecord(inspection.draft_action) ? inspection.draft_action : {};
-  const selectedTargetAction = Number(action.target_action);
-  const policy = !isRecord(inspection.draft_action);
-  elements.policyTargetMasks.hidden = !policy;
-  elements.policyTargetMaskRows.replaceChildren();
-  const fragment = document.createDocumentFragment();
-  if (!isRecord(inspection.draft_action)) {
-    const pending = document.createElement("option");
-    pending.value = "policy-pending";
-    pending.textContent = "Policy chooses its target on Submit";
-    pending.selected = true;
-    fragment.append(pending);
-  }
-  for (const target of asArray(mask.target_actions).filter(isRecord)) {
-    const targetAction = Number(target.target_action);
-    if (!Number.isInteger(targetAction)) {
-      continue;
-    }
-    const pairMask = asArray(mask.target_use_ultimate_joint_mask)[targetAction];
-    const option = document.createElement("option");
-    const basic = targetAction > 0 && asArray(pairMask)[0] === true ? "B ✓" : "B ×";
-    const ultimate = asArray(pairMask)[1] === true ? "U ✓" : "U ×";
-    if (target.target_kind === "no_target") {
-      option.value = "";
-      option.textContent = `${target.display_name ?? "No target"} · ${basic} · ${ultimate}`;
-    } else {
-      const commandSlot = authorizedOracleCommandSlotForPublicAgentId(
-        presentation,
-        target.target_public_agent_id,
-      );
-      if (!Number.isInteger(commandSlot)) {
-        continue;
-      }
-      option.value = String(commandSlot);
-      option.textContent = `${agentIdentity(target.target_public_agent_id)} · ${basic} · ${ultimate}`;
-    }
-    if (typeof target.target_presentation_key === "string") {
-      option.dataset.presentationKey = target.target_presentation_key;
-    }
-    option.selected = targetAction === selectedTargetAction;
-    if (policy) {
-      const row = document.createElement("li");
-      const targetLabel =
-        target.target_kind === "no_target"
-          ? String(target.display_name ?? "No target")
-          : agentIdentity(target.target_public_agent_id);
-      row.textContent = `${targetLabel}: ${targetAction === 0 ? "No Combat" : "Basic"} ${asArray(pairMask)[0] === true ? "Allowed" : "Not Allowed"}; Ultimate ${asArray(pairMask)[1] === true ? "Allowed" : "Not Allowed"}`;
-      elements.policyTargetMaskRows.append(row);
-    }
-    fragment.append(option);
-  }
-  if (fragment.childNodes.length === 0) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "No authorized targets";
-    fragment.append(option);
-  }
-  elements.commandTargetSelect.replaceChildren(fragment);
-}
-
-/**
- * Paint current masks and, only for Manual slots, the staged action.
- * A policy has no selected action until Submit. Match every fact to its actor.
- * Update movement, stance, ability, and target controls; clear owner-bound facts
- * where their exact authorized owner cannot be found.
+ * Agent POV: nothing here reads a champion the POV team cannot see. Champions
+ * come only from authorizedPresentationSceneView; the match facts are the
+ * public scoreboard facts both audiences already see beside the arena (map
+ * name, scores, First To, draw tick, tick and result, through matchSummaryView).
+ * Scores are the tick's end scores; the scorebug shows the same numbers once
+ * the tick's Fall beat lands.
  *
- * @param {Readonly<Record<string, any>>} presentation
+ * @param {unknown} presentation The installed authorized presentation, or
+ *   anything else (which gives no cards).
+ * @param {import("./looks/look-support.js").Rectangle} bounds
+ *   The arena's visible rectangle in CSS pixels (the choreography surface's
+ *   viewportBounds), used to place the cards.
+ * @param {unknown} plan This tick's choreography plan (choreographer.plan), or
+ *   null; only its herald_card rows are read, to keep the state chip off a
+ *   herald plate.
+ * @param {Readonly<Record<string, boolean>>} filters The page's switch state;
+ *   match_moments off draws nothing and moment_full_cards off draws the Lineup
+ *   and Verdict as one-line bands.
+ * @param {{combatConfiguration?: unknown, tucked?: boolean}} [options] Live
+ *   play's transport combat_configuration (its manual slots and slot labels
+ *   name the controllers; null in the Replay Viewer) and whether the player
+ *   tucked the Verdict with Show Arena. Default {}.
+ * @returns {ReadonlyArray<import("./looks/look-support.js").LookRecord>} The
+ *   records to draw, in order; empty when no card applies.
  */
-function renderDraftState(presentation) {
-  const inspectionState = authorizedPresentationResearcherInspectionState(presentation);
-  const inspection = isRecord(inspectionState.inspection)
-    ? inspectionState.inspection
-    : {};
-  const mask = isRecord(inspection.decision_mask) ? inspection.decision_mask : {};
-  const pending = isRecord(inspection.draft_action) ? inspection.draft_action : {};
-  const policyReadOnly = inspectionState.state_kind === "live_policy";
-  const controlledCandidate = authorizedResearcherAgentForPresentationKey(
-    presentation,
-    inspection.actor_presentation_key,
-  );
-  const controlledOwner =
-    controlledCandidate !== null &&
-    controlledCandidate.public_agent_id === inspection.actor_public_agent_id
-      ? controlledCandidate
-      : null;
-  const controlledPublicAgentId = controlledOwner?.public_agent_id;
-  const controlledIdentity =
-    typeof controlledPublicAgentId === "string"
-      ? agentIdentity(controlledPublicAgentId)
-      : null;
-  elements.commandControlledActor.textContent = controlledIdentity
-    ? `Actor · ${controlledIdentity}`
-    : "Actor · unavailable";
-  elements.commandControlledActor.setAttribute(
-    "aria-label",
-    controlledIdentity
-      ? `Controlled actor ${controlledIdentity}`
-      : "Controlled actor unavailable",
-  );
-  const controlledSlot =
-    controlledOwner === null
-      ? null
-      : authorizedOracleCommandSlotForPresentationKey(
-          presentation,
-          controlledOwner.presentation_key,
-        );
-  if (
-    authorizedPresentationAudience(presentation) === "researcher" &&
-    Number.isInteger(controlledSlot)
-  ) {
-    elements.commandControlledActor.dataset.controlledSlot = String(controlledSlot);
-  } else {
-    delete elements.commandControlledActor.dataset.controlledSlot;
+function matchMomentCardRecords(presentation, bounds, plan, filters, options = {}) {
+  if (!isAuthorizedPresentationFrame(presentation)) return [];
+  const audience = authorizedPresentationAudience(presentation);
+  const scene = authorizedPresentationSceneView(presentation);
+  const summary = matchSummaryView(presentation);
+  if (audience === null || scene === null || summary === null) return [];
+  const tick = summary.tick?.current ?? null;
+  const pointsToWin = Number.isInteger(summary.threshold) ? summary.threshold : null;
+  const tickLimit = summary.tick?.limit ?? null;
+  if (tick === 0) {
+    return heralds.records({
+      part: "lineup",
+      scene,
+      bounds,
+      filters,
+      mapTitle: summary.map ?? "",
+      mapLabel: summary.taskMode === 1 ? "Team Deathmatch" : "Combat Diagnostic",
+      pointsToWin,
+      tickLimit,
+      redZoneDoubles:
+        summary.taskMode === 1 &&
+        isRecord(scene.map) &&
+        scene.map.red_zone !== null &&
+        scene.map.red_zone !== undefined,
+    });
   }
-  const pendingMove = Number(pending.move_action);
-  const movementMask = asArray(mask.movement_action_mask);
-  const movementButtons = /** @type {NodeListOf<HTMLButtonElement>} */ (
-    elements.commandDeck?.querySelectorAll("button[data-move-action]") ?? []
-  );
-  for (const button of movementButtons) {
-    const moveAction = Number(button.dataset.moveAction);
-    const available = movementMask[moveAction];
-    setDraftSelection(button, moveAction === pendingMove);
-    setAuthoritativeAvailability(
-      button,
-      available === true,
-      available === true
-        ? `${button.getAttribute("aria-label") ?? "Movement"} is legal in the current authoritative movement mask.`
-        : `${button.getAttribute("aria-label") ?? "Movement"} is unavailable in the current authoritative movement mask.`,
+  const teams = /** @type {ReadonlyArray<Record<string, any>>} */ (summary.teams);
+  const scoreA = teams[0]?.scoreValue;
+  const scoreB = teams[1]?.scoreValue;
+  if (pointsToWin === null || !Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
+    return [];
+  }
+  const winnerIndex = teams.findIndex((team) => team.result === "VICTORY");
+  const finished = teams.some((team) => team.result !== null);
+  if (finished) {
+    const winnerTeamId = winnerIndex === 0 ? 1 : winnerIndex === 1 ? 2 : null;
+    const roster = controllerRosterFromFrame(
+      presentation,
+      options.combatConfiguration ?? null,
     );
+    /** @param {1 | 2} teamId */
+    const lineOf = (teamId) => {
+      const team = rosterTeam(roster, teamId);
+      return team === null || team.controllers.length === 0
+        ? { name: String(teams[teamId - 1]?.name ?? "") }
+        : {
+            name: controllerLineParts(team).join(" + "),
+            short: collapsedControllerLine(team),
+          };
+    };
+    const left = teams.find((team) => team.side === "left");
+    return heralds.records({
+      part: "verdict",
+      product: installedProductKind(),
+      audience,
+      bounds,
+      filters,
+      leftTeamId: left?.teamId === 2 ? 2 : 1,
+      tucked: options.tucked === true,
+      verdict: {
+        scores: { 1: scoreA, 2: scoreB },
+        winnerTeamId,
+        tick,
+        pointsToWin,
+        basis:
+          winnerTeamId !== null
+            ? "threshold"
+            : scoreA >= pointsToWin && scoreB >= pointsToWin
+              ? "tie"
+              : "horizon",
+        teams: { 1: lineOf(1), 2: lineOf(2) },
+        honours: heralds.verdictHonours(
+          isRecord(presentation) ? presentation.match_honors : null,
+        ),
+      },
+    });
   }
-
-  renderCommandTargets(presentation, inspection);
-  const targetAction = Number.isInteger(pending.target_action)
-    ? Number(pending.target_action)
-    : 0;
-  const pairMask = asArray(mask.target_use_ultimate_joint_mask)[targetAction];
-  const pairs = asArray(mask.target_use_ultimate_joint_mask);
-  const basicAvailable = policyReadOnly
-    ? pairs.some((pair, index) => index > 0 && asArray(pair)[0] === true)
-    : targetAction > 0 && asArray(pairMask)[0] === true;
-  const ultimateAvailable = policyReadOnly
-    ? pairs.some((pair) => asArray(pair)[1] === true)
-    : asArray(pairMask)[1] === true;
-  const noCombatSelected =
-    pending.armed_lane === "none" ||
-    (pending.armed_lane === "basic" && targetAction === 0);
-  setDraftSelection(elements.noCombatButton, noCombatSelected);
-  setDraftSelection(
-    elements.basicButton,
-    pending.armed_lane === "basic" && targetAction > 0,
+  const planRows =
+    isRecord(plan) && Array.isArray(plan.derivedEvents) ? plan.derivedEvents : [];
+  const heraldPlateShown = planRows.some(
+    (/** @type {unknown} */ row) =>
+      isRecord(row) &&
+      row.kind === "herald_card" &&
+      heralds.records({ event: row, bounds, filters }).length > 0,
   );
-  setDraftSelection(elements.ultimateButton, pending.armed_lane === "ultimate");
-  setAuthoritativeAvailability(
-    elements.noCombatButton,
-    true,
-    policyReadOnly
-      ? "The policy may choose no combat. It has not chosen an action yet."
-      : "No combat is always a valid staged choice; movement can still be submitted.",
-  );
-  const legality =
-    controlledOwner === null
-      ? null
-      : {
-          owner_presentation_key: controlledOwner.presentation_key,
-          owner_public_agent_id: controlledOwner.public_agent_id,
-          lane_0_available: basicAvailable,
-          lane_1_available: ultimateAvailable,
-          basic_available: basicAvailable,
-          ultimate_available: ultimateAvailable,
-        };
-  const basicLegality =
-    legality === null ? null : explainLegality(legality, 0, controlledOwner);
-  const ultimateLegality =
-    legality === null ? null : explainLegality(legality, 1, controlledOwner);
-  if (basicLegality === null) {
-    clearOwnerBoundLegalityAvailability(elements.basicButton);
-  } else {
-    setAuthoritativeAvailability(
-      elements.basicButton,
-      basicAvailable,
-      `Basic ability is ${basicAvailable ? "" : "not "}available this tick.`,
-      basicLegality,
-    );
+  if (heraldPlateShown) return [];
+  const short = [scoreA, scoreB]
+    .map((score, index) => ({ teamId: index + 1, needs: pointsToWin - score }))
+    .filter((team) => team.needs >= 1 && team.needs <= 2);
+  if (short.length > 0) {
+    return heralds.records({
+      part: "state",
+      bounds,
+      filters,
+      state: {
+        kind: "match_point",
+        teamIds: short.map((team) => team.teamId),
+        needs: Math.min(...short.map((team) => team.needs)),
+      },
+    });
   }
-  if (ultimateLegality === null) {
-    clearOwnerBoundLegalityAvailability(elements.ultimateButton);
-  } else {
-    setAuthoritativeAvailability(
-      elements.ultimateButton,
-      ultimateAvailable,
-      `Ultimate ability is ${ultimateAvailable ? "" : "not "}available this tick.`,
-      ultimateLegality,
-    );
+  if (Number.isInteger(tickLimit) && Number.isInteger(tick)) {
+    const left = Number(tickLimit) - Number(tick);
+    if (left >= 0 && left <= 30) {
+      return heralds.records({
+        part: "state",
+        bounds,
+        filters,
+        state: { kind: "ticks_left", left },
+      });
+    }
   }
+  return [];
 }
 
 /**
- * Apply current live/replay, authority, lifecycle, and controller gates to commands.
- * Paint a valid editable draft when available, otherwise clear its controls.
- * Automatic-controller action edits stay disabled while allowed submission and
- * inspection commands keep their own gates.
+ * Redraw the match moment cards (Lineup card, Verdict card or state chip) for
+ * the installed tick in the renderer's herald layer, above every body. Each call
+ * first removes the page's previous card group, so every render (and Oracle
+ * View to Agent POV to Oracle View) starts fresh. With no presentation, no scene
+ * on screen or no card to draw, only the removal happens.
+ *
+ * Side effects: replaces one `<g data-match-moment-cards>` child of the herald
+ * layer (export-safe SVG from heralds.build, pointer-events none so clicks reach
+ * the arena) and updates matchMomentCardsGroup. When the Verdict card (or its
+ * tucked band plate) is drawn, every painter herald card in the herald layer
+ * (a plate, its one-line band or a chip: `[data-herald-moments]`) gets
+ * `visibility="hidden"`, so it never shares the top slot with the Verdict;
+ * on any other tick that attribute is removed again. A state chip ("Match
+ * Point · Needs N", "N Ticks Left") is drawn only while the painter shows no
+ * herald card (a card held from the last tick included), as the store's
+ * state chip shows only when no card shows. The full Verdict also gets its two working
+ * buttons (heralds.buildVerdictActions) in the battlefield shell, replaced on
+ * every call (verdictActions): Show Arena tucks it (verdictTucked) and Match
+ * Summary opens the sheet (openMatchSummarySheet). A tick without a Verdict
+ * closes an open sheet. No timers or storage; the card holds its end state
+ * with no entry animation. Agent POV: see matchMomentCardRecords.
+ *
+ * @param {unknown} presentation The installed authorized presentation, or null
+ *   to clear.
+ * @returns {void}
  */
-function renderCommandAvailability() {
-  const presentation = state.presentation;
-  const inspectionState = authorizedPresentationResearcherInspectionState(presentation);
-  const editableDraft = inspectionState.state_kind === "live_editable";
-  const policyInspection = inspectionState.state_kind === "live_policy";
-  const scriptedAdvance = liveScriptedInspectionOnly();
-  const disabled =
-    state.busy ||
-    !state.frame ||
-    !isAuthorizedPresentationFrame(presentation) ||
-    !installedAuthorityIsCoherent() ||
-    state.shuttingDown ||
-    state.resyncRequired ||
-    state.offline;
-  const scientificFenced = recordingScientificControlsFenced();
-  elements.submitTurnButton.dataset.key = scriptedAdvance ? "n" : "Enter";
-  elements.submitTurnButton.textContent = scriptedAdvance
-    ? "Advance scripted frame"
-    : "Submit joint turn";
-  elements.commandCommitTitle.textContent = scriptedAdvance
-    ? "Advance the registered script"
-    : "Submit the staged joint turn";
-  elements.commandCommitSummary.textContent = scriptedAdvance
-    ? "One authoritative scripted transition"
-    : "One authoritative transition";
-  if (isReplayMode()) {
-    elements.commandTargetSelect.disabled = true;
-    if (elements.commandDeck) {
-      for (const button of elements.commandDeck.querySelectorAll("button")) {
-        /** @type {HTMLButtonElement} */ (button).disabled = true;
-      }
-    }
+function renderMatchMomentCards(presentation) {
+  matchMomentCardsGroup?.remove();
+  matchMomentCardsGroup = null;
+  verdictActions?.remove();
+  verdictActions = null;
+  if (presentation === null || presentation === undefined) {
+    closeMatchSummarySheet();
     return;
   }
-  elements.policyTargetMasks.hidden = !policyInspection;
-  if ((editableDraft || policyInspection) && presentation) {
-    renderDraftState(presentation);
-  } else {
-    for (const button of elements.commandDeck?.querySelectorAll(
-      "button[data-move-action], #no-combat-button, #basic-button, #ultimate-button",
-    ) ?? []) {
-      const actionButton = /** @type {HTMLButtonElement} */ (button);
-      setDraftSelection(actionButton, false);
-      clearOwnerBoundLegalityAvailability(actionButton);
-    }
-    elements.commandControlledActor.textContent = "Actor · unavailable";
-    delete elements.commandControlledActor.dataset.controlledSlot;
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "No authorized targets";
-    elements.commandTargetSelect.replaceChildren(option);
-  }
-  const policyControlled = policyControlledActor();
-  const policyControllerReadOnly = policyControlled !== null;
-  elements.commandDeck?.setAttribute(
-    "data-policy-controller-read-only",
-    String(policyControllerReadOnly),
+  const surface = battlefieldRenderer.choreographySurface();
+  if (surface === null) return;
+  const records = matchMomentCardRecords(
+    presentation,
+    surface.viewportBounds,
+    choreographer.plan,
+    visualFilterState,
+    {
+      combatConfiguration:
+        installedPresentationAuthority()?.transport?.combat_configuration ?? null,
+      tucked: verdictTucked,
+    },
   );
-  if (policyControlled !== null) {
-    const controllerLabel = policyControlled.label;
-    elements.commandControlledActor.textContent += ` · ${controllerLabel} (read-only)`;
-    elements.commandControlledActor.setAttribute(
-      "aria-label",
-      `${elements.commandControlledActor.textContent}. This policy chooses its own action.`,
-    );
+  // The Verdict card owns the top slot on the final tick: a herald card the
+  // painter drew this tick (a plate, its one-line band or a chip; each names
+  // its moments in data-herald-moments) is hidden, never stacked.
+  const verdictShown = records.some(
+    (row) => row.kind === "herald-verdict" || row.kind === "herald-verdict-plate",
+  );
+  if (!verdictShown) closeMatchSummarySheet();
+  const painterCards = [
+    ...surface.heraldLayer.querySelectorAll("[data-herald-moments]"),
+  ];
+  for (const card of painterCards) {
+    if (verdictShown) card.setAttribute("visibility", "hidden");
+    else card.removeAttribute("visibility");
   }
-  elements.commandTargetSelect.disabled =
-    disabled ||
-    !editableDraft ||
-    Boolean(state.frame?.system_operation) ||
-    Boolean(state.frame?.fresh_launch_required) ||
-    scientificFenced ||
-    isTerminal(state.frame) ||
-    policyControllerReadOnly;
-  if (elements.commandDeck) {
-    const buttons = /** @type {NodeListOf<HTMLButtonElement>} */ (
-      elements.commandDeck.querySelectorAll("button[data-key]")
-    );
-    for (const button of buttons) {
-      const command = keyboardCommand(button.dataset.key ?? "", {
-        shiftKey: button.dataset.shift === "true",
-      });
-      const mode = modeAvailability(command, state.frame);
-      const recordingDecision = recordingCommandDecision(state.frame ?? {}, command);
-      const enabledByInspection =
-        editableDraft ||
-        policyInspection ||
-        (scriptedAdvance && button === elements.submitTurnButton);
-      button.disabled =
-        disabled ||
-        Boolean(state.frame?.system_operation) ||
-        (state.frame?.run_state === "running" &&
-          button === elements.submitTurnButton) ||
-        scientificFenced ||
-        !enabledByInspection ||
-        policyControllerBlocksActionEdit(command) ||
-        (scriptedAdvance && isTerminal(state.frame)) ||
-        recordingDecision.action === "block" ||
-        !mode.allowed;
-    }
+  // The state chip shows only while no herald card shows (the store's state
+  // chip), so a card held through this tick keeps the top band to itself.
+  const chipOnly =
+    records.length > 0 && records.every((row) => row.kind === "herald-state");
+  if (records.length === 0 || (chipOnly && painterCards.length > 0)) return;
+  const doc = surface.ownerDocument;
+  const group = /** @type {SVGGElement} */ (
+    doc.createElementNS("http://www.w3.org/2000/svg", "g")
+  );
+  group.setAttribute(
+    "data-match-moment-cards",
+    records.map((row) => row.kind).join(" "),
+  );
+  group.setAttribute("pointer-events", "none");
+  group.append(...heralds.build(records, doc));
+  surface.heraldLayer.append(group);
+  matchMomentCardsGroup = group;
+  const full = records.find((row) => row.kind === "herald-verdict");
+  if (full !== undefined) {
+    verdictActions = heralds.buildVerdictActions(document, full, onVerdictAction);
+    elements.battlefieldShell.append(verdictActions);
   }
+}
+
+/**
+ * Do what a Verdict card button says. "show_arena" tucks the Verdict into its
+ * band plate for the rest of this page session (verdictTucked) and redraws
+ * the cards; "summary" opens the Match Summary sheet. Side effects: page
+ * state and DOM only.
+ *
+ * @param {"summary" | "show_arena"} id
+ * @returns {void}
+ */
+function onVerdictAction(id) {
+  if (id === "show_arena") {
+    verdictTucked = true;
+    renderMatchMomentCards(installedPresentationAuthority()?.presentation ?? null);
+    return;
+  }
+  openMatchSummarySheet();
+}
+
+/**
+ * Open the Match Summary sheet of the installed frame below the arena (never
+ * over it; see matchSummarySheet). Keyboard focus moves to its Close button,
+ * unless the arena holds keys (a mouse press with keys on keeps them on). The sheet reads only the frame's own `match_honors` host fact (in
+ * Agent POV, the viewing team's champions); shown IDs come from
+ * authorizedPresentationAgentDisplayId, and the team whose home end is on the
+ * left is listed first, as on the Verdict card. Replaces an open sheet. Side
+ * effects: DOM and focus only.
+ *
+ * @returns {void}
+ */
+function openMatchSummarySheet() {
+  closeMatchSummarySheet();
+  const presentation = installedPresentationAuthority()?.presentation ?? null;
+  const left = matchSummaryView(presentation)?.teams.find(
+    (/** @type {Record<string, any>} */ team) => team.side === "left",
+  );
+  const sheet = heralds.buildMatchSummarySheet(
+    document,
+    isRecord(presentation) ? presentation.match_honors : null,
+    {
+      displayIdOf: (publicAgentId) =>
+        authorizedPresentationAgentDisplayId(presentation, publicAgentId),
+      leftTeamId: left?.teamId === 2 ? 2 : 1,
+      onClose: closeMatchSummarySheet,
+    },
+  );
+  const home = isReplayMode()
+    ? document.getElementById("replay-timeline")
+    : elements.commandDeck;
+  if (home instanceof HTMLElement) home.append(sheet);
+  else elements.fallenFeed.before(sheet);
+  matchSummarySheet = sheet;
+  // A mouse press with keys on keeps them on (keepKeysOnForTopBarPress);
+  // otherwise (keyboard use) focus moves to the sheet's Close.
+  if (document.activeElement !== elements.battlefield) {
+    sheet.querySelector("button")?.focus();
+  }
+}
+
+/**
+ * Close the Match Summary sheet when one is open. When keyboard focus was
+ * inside the sheet (its Close was reached with the keyboard), focus goes back
+ * to the arena in live play, so keys are on again for R, ? and G; in the
+ * Replay Viewer it is left to the browser. Side effects: DOM and focus only.
+ *
+ * @returns {void}
+ */
+function closeMatchSummarySheet() {
+  const hadFocus = matchSummarySheet?.contains(document.activeElement) === true;
+  matchSummarySheet?.remove();
+  matchSummarySheet = null;
+  if (hadFocus && !isReplayMode()) elements.battlefield.focus({ preventScroll: true });
 }
 
 /**
@@ -4935,7 +5750,8 @@ function exposePresentationState(presentation) {
 /**
  * Label the selected Oracle replay agent as a reference rather than a live target.
  * Resolve the selected key from the installed authorized scene, update its SVG
- * accessible label, and attach a non-inspectable agent tooltip. Other views do nothing.
+ * accessible label, and attach its non-inspectable Champion Card
+ * (agentHoverDescriptor). Other views do nothing.
  */
 function applyReplayReferenceSemantics() {
   if (!isReplayMode()) {
@@ -4970,9 +5786,47 @@ function applyReplayReferenceSemantics() {
     "aria-label",
     ariaLabel.replace(/selected target/giu, "Reference"),
   );
-  registerTooltipOwner(reference, explainAgent(agent, { audience: "researcher" }), {
+  registerTooltipOwner(reference, agentHoverDescriptor(agent, "researcher"), {
     inspectable: false,
   });
+}
+
+/**
+ * Return the hover card descriptor of one arena body.
+ *
+ * In the Replay Viewer it is the Champion Card (tooltip.js
+ * createChampionCardDescriptor of shell.js championCardFacts, read from the
+ * installed presentation's own scene), the same card the HUD frames and live
+ * play show, in Oracle View and Agent POV alike. In live play it stays the
+ * older agent card (explanations.js explainAgent): its look is hidden there,
+ * because #hcard shows the Champion Card, and it keeps the body's accessible
+ * description. Reads `state.presentation`; pure otherwise.
+ *
+ * @param {Record<string, any>} agent The body's row in the installed scene.
+ * @param {string} audience "researcher" or "agent_pov".
+ * @returns {ReturnType<typeof explainAgent>}
+ */
+function agentHoverDescriptor(agent, audience) {
+  if (isReplayMode()) {
+    const facts = championCardFacts({
+      presentation: state.presentation,
+      combatConfiguration: null,
+      subject: {
+        presentationKey:
+          typeof agent.presentation_key === "string" ? agent.presentation_key : null,
+        slot: null,
+        publicAgentId: null,
+        classId: null,
+      },
+    });
+    if (facts !== null) {
+      return createChampionCardDescriptor(
+        facts,
+        `champion:body:${String(agent.public_agent_id)}`,
+      );
+    }
+  }
+  return explainAgent(agent, { audience });
 }
 
 /**
@@ -5121,9 +5975,10 @@ function authorizedAgentActivationFromTarget(target) {
 }
 
 /**
- * Assign each painted agent its current accessible action, focus state, and tooltip.
- * Use only the installed authorized scene and activation gate. Unavailable agents
- * remain images without keyboard activation; active agents become labeled buttons.
+ * Assign each painted agent its current accessible action, focus state, and tooltip
+ * (agentHoverDescriptor: the Champion Card in the Replay Viewer). Use only the
+ * installed authorized scene and activation gate. Unavailable agents remain
+ * images without keyboard activation; active agents become labeled buttons.
  */
 function installAuthorizedAgentActivation() {
   const presentation = state.presentation;
@@ -5154,17 +6009,14 @@ function installAuthorizedAgentActivation() {
       element.setAttribute(
         "aria-label",
         activation.effect === "live_control"
-          ? `${identity}. Control and inspect this authorized agent.`
+          ? `${identity}. Click to give it orders or look at it.`
           : activation.effect === "replay_pov_switch"
-            ? `${identity}. Switch replay Agent POV to this authorized agent.`
-            : `${identity}. Inspect this authorized agent.`,
+            ? `${identity}. Click to watch the replay from its team's Agent POV.`
+            : `${identity}. Click to look at it.`,
       );
     }
-    registerTooltipOwner(
-      element,
-      explainAgent(agent, { audience: audience ?? "agent_pov" }),
-      { inspectable: false },
-    );
+    const hover = agentHoverDescriptor(agent, audience ?? "agent_pov");
+    registerTooltipOwner(element, hover, { inspectable: false });
   }
 }
 
@@ -5242,8 +6094,24 @@ function pauseReplayAfterPresentationFailure(reason) {
 /** @type {number | null} */
 let livePollTimer = null;
 let livePollInFlight = false;
+/**
+ * Until this performance.now() time (ms), reads come at the fast 80 ms
+ * cadence: hurryLivePoll sets it for a short while after the page's own turn
+ * command, so the policies' answer shows soon after the server has it.
+ */
+let livePollFastUntil = 0;
 
-/** Schedule one conditional read. The server owns Run and every simulator turn. */
+/** How long (ms) after the page's own command the fast cadence lasts. */
+const LIVE_POLL_FAST_WINDOW_MS = 3000;
+
+/**
+ * Schedule one conditional read. The server owns every simulator turn. The
+ * read comes after 1000 ms when nothing is happening, 250 ms while the server
+ * runs or policy work is out, and 80 ms while the page's own Run waits for
+ * its turn (so the next tick follows the last glide closely) or for 3 s after
+ * the page's own command left work out (hurryLivePoll). Does nothing in the
+ * Replay Viewer, offline, during a resync or after Exit.
+ */
 function scheduleLivePoll() {
   if (
     isReplayMode() ||
@@ -5261,14 +6129,277 @@ function scheduleLivePoll() {
     () => {
       void pollLiveMatch();
     },
-    state.frame.run_state === "running" || state.frame.system_operation ? 250 : 1000,
+    state.pageRun || performance.now() < livePollFastUntil
+      ? 80
+      : state.frame.run_state === "running" || state.frame.system_operation
+        ? 250
+        : 1000,
   );
+}
+
+/**
+ * Read the match again soon after a command left work out on the server.
+ *
+ * A command can be answered while the policies still choose (the frame shows
+ * `system_operation`) or while the server runs. The idle read scheduled
+ * before the command would then wait up to 1000 ms, so "Policies Choosing"
+ * stayed on screen after the policies had already answered (measured 2 Oct
+ * 2026: up to 0.9 s after Play One Turn in Policies Only). This drops that
+ * idle timer and reads at the fast 80 ms cadence for the next 3 s
+ * (LIVE_POLL_FAST_WINDOW_MS; then scheduleLivePoll's 250 ms busy cadence),
+ * so the new tick shows within about 0.1 s of the server's answer. Does
+ * nothing in the Replay Viewer or when nothing is out on the server; while a
+ * read is out it only opens the fast window (that read reschedules itself
+ * when it ends).
+ *
+ * @returns {void} Changes only the live poll timer and its fast window.
+ */
+function hurryLivePoll() {
+  if (isReplayMode()) return;
+  if (!state.frame?.system_operation && state.frame?.run_state !== "running") return;
+  livePollFastUntil = performance.now() + LIVE_POLL_FAST_WINDOW_MS;
+  if (livePollInFlight) return;
+  if (livePollTimer !== null) window.clearTimeout(livePollTimer);
+  livePollTimer = null;
+  scheduleLivePoll();
+}
+
+/**
+ * Start or stop the page's own Run in Policies Only (the deck's Run and Pause
+ * button calls it; see tactics-turn.js).
+ *
+ * Run is paced by the page, not by the server: the page sends Play One Turn
+ * (the Enter key command, exactly what the Play One Turn button sends) once
+ * the current tick's bodies have landed, lets the policies choose while that
+ * tick's last beats play, holds the next tick back until the current one has
+ * settled (choreographer.whenSettled) and then shows it at once (see
+ * runLiveTurns). So every tick plays to its end and flows straight into the
+ * next; none is skipped or cut short, as could happen when the server ran on
+ * its own and the page showed only the newest tick at each poll, and no
+ * paused-looking still sits between ticks. The server's run_state stays
+ * "paused" throughout.
+ *
+ * Pause clears state.pageRun at once (the button reads Run again), but the
+ * tick on screen and a turn already out (Run sends the next turn once the
+ * bodies of the tick on screen have landed) still land and play to their end;
+ * only then does the loop stop and the status line say "Paused after the
+ * current turn.", as on the vision page. Run pressed again before that turn has landed keeps the same loop
+ * going; it never starts a second one, so no turn is sent twice. The loop
+ * also stops at game over, at a fresh-launch stop, when the page goes
+ * offline, needs a resync or shuts down, when a Manual slot appears, or when
+ * a turn does not advance the tick. Side effects: page state (pageRun),
+ * repaints and live commands through dispatchCommand. Live play only; does
+ * nothing in the Replay Viewer. Returns undefined.
+ */
+function toggleLiveRun() {
+  if (isReplayMode()) return;
+  if (state.pageRun) {
+    state.pageRun = false;
+    render();
+    return;
+  }
+  state.pageRun = true;
+  render();
+  if (!liveRunLoopActive) void runLiveTurns();
+}
+
+/**
+ * True while runLiveTurns is running (from its start until its last turn has
+ * landed and settled), even after Pause has cleared state.pageRun. toggleLiveRun
+ * reads it so a quick Pause then Run never starts a second loop.
+ */
+let liveRunLoopActive = false;
+
+/**
+ * Return whether the page's own Run owns Lock In right now, so a Space,
+ * Enter or N from the player must be ignored: true while runLiveTurns is
+ * active (from Run until its last turn has landed and settled, so also right
+ * after Pause) and the command is a keyboard command whose key is a Lock In
+ * key (isLockInKeyName: Enter or N in any case, or Space " "), with any
+ * modifiers. The vision page ignores Lock In while Run plays; without this
+ * check, a Space or N pressed during a glide (All Act) would cut the glide
+ * short and send a second turn. Pure; reads liveRunLoopActive and the
+ * command (and calls isLockInKeyName). Live play only (the loop never runs
+ * in the Replay Viewer).
+ *
+ * @param {Readonly<Record<string, unknown>>} command A command about to be sent.
+ * @returns {boolean}
+ */
+function pageRunOwnsLockIn(command) {
+  return (
+    liveRunLoopActive &&
+    command.command_type === "keyboard" &&
+    isLockInKeyName(command.key)
+  );
+}
+
+/**
+ * Return whether the page's own Run may send the next Play One Turn now: a
+ * live, non-terminal Policies Only frame with no stop, no connection trouble
+ * and no policy work already out. Pure.
+ *
+ * @param {{ignorePause?: boolean}} [options] ignorePause (default false) skips
+ *   the state.pageRun test. The loop uses it while it waits for a turn that is
+ *   already out: Pause stops after the current turn, so that wait goes on,
+ *   but game over, a stop or connection trouble still end it.
+ * @returns {boolean}
+ */
+function liveRunMayContinue({ ignorePause = false } = {}) {
+  const frame = state.frame;
+  return (
+    (ignorePause || state.pageRun) &&
+    !isReplayMode() &&
+    frame !== null &&
+    !isTerminal(frame) &&
+    !frame.fresh_launch_required &&
+    Array.isArray(frame.combat_configuration?.manual_slots) &&
+    frame.combat_configuration.manual_slots.length === 0 &&
+    !state.offline &&
+    !state.resyncRequired &&
+    !state.shuttingDown
+  );
+}
+
+/**
+ * How long the page's own Run waits, after sending Play One Turn, for the
+ * live poll to show the turn's policy work or its next tick before deciding
+ * the turn did not start (milliseconds). Above the 250 ms poll interval.
+ */
+const RUN_TURN_GRACE_MS = 1200;
+
+/**
+ * Wait about one animation frame (or 40 ms when the page is hidden). Resolves
+ * without a value; no other effect.
+ *
+ * @returns {Promise<void>}
+ */
+function nextRunBeat() {
+  return new Promise((resolve) => {
+    if (document.hidden) window.setTimeout(resolve, 40);
+    else window.requestAnimationFrame(() => resolve());
+  });
+}
+
+/**
+ * True while the page's own Run holds the next tick back: from the moment Run
+ * sends the next Play One Turn (while the current tick still plays) until the
+ * current tick's choreography settles. A live poll that reads a new snapshot
+ * while it is true waits for that settle before installing it
+ * (pollLiveMatch), so the next tick can never cut the current one short and
+ * starts in the same moment the current one ends. runLiveTurns clears it and
+ * polls at once when the tick settles (unless a poll is already waiting).
+ * Only runLiveTurns writes it.
+ */
+let liveRunHoldsNextTick = false;
+
+/**
+ * Wait, one animation frame at a time, until the current tick's bodies have
+ * landed (the choreographer releases submission, about 450 ms into a tick in
+ * normal motion; at once in reduced or off motion) or until Run may no longer
+ * continue. Resolves without a value; no other effect.
+ *
+ * @returns {Promise<void>}
+ */
+async function whenRunTickReleased() {
+  while (liveRunMayContinue() && choreographer.snapshot().submissionBlocked === true) {
+    await nextRunBeat();
+  }
+}
+
+/**
+ * The loop behind the page's own Run (see toggleLiveRun). One turn at a time,
+ * overlapped so the ticks flow into each other: wait until no request or
+ * policy work is out and the current tick's bodies have landed
+ * (whenRunTickReleased), send Play One Turn (quietly: the status line keeps
+ * "Running."; see dispatchCommand) without cutting the current tick short
+ * (keepPresentation), so the policies choose while its last beats play; hold
+ * the next tick back (liveRunHoldsNextTick) until the current tick's
+ * choreography settles, then poll at once, wait until the next tick is
+ * installed (this wait goes on after Pause, because Pause stops after the turn
+ * already out) and repeat. So every tick plays to its end and the next one
+ * starts straight away, with no still, paused-looking frame between them.
+ * Ends with state.pageRun false, liveRunLoopActive false,
+ * liveRunHoldsNextTick false and, when the player paused, the status line
+ * "Paused after the current turn.". Never throws; a failed command reports
+ * through dispatchCommand and stops the loop.
+ *
+ * @returns {Promise<void>}
+ */
+async function runLiveTurns() {
+  liveRunLoopActive = true;
+  try {
+    while (liveRunMayContinue()) {
+      if (state.busy || state.frame?.system_operation) {
+        await nextRunBeat();
+        continue;
+      }
+      await whenRunTickReleased();
+      if (!liveRunMayContinue()) {
+        // Paused (or the game ended) while this tick played: let it finish.
+        await choreographer.whenSettled();
+        break;
+      }
+      if (state.busy || state.frame?.system_operation) continue;
+      const tick = Number(state.frame?.simulator_step_count);
+      const episode = state.frame?.episode_id;
+      liveRunHoldsNextTick = true;
+      try {
+        await dispatchCommand(keyboardCommand("Enter"), {
+          source: "control",
+          quiet: true,
+          keepPresentation: true,
+        });
+        // The current tick plays to its end while the policies choose.
+        await choreographer.whenSettled();
+      } finally {
+        liveRunHoldsNextTick = false;
+      }
+      if (livePollTimer !== null) {
+        window.clearTimeout(livePollTimer);
+        livePollTimer = null;
+      }
+      if (!livePollInFlight) void pollLiveMatch();
+      // The policies choose on the server; the live poll installs the result.
+      // A short grace covers a frame that has not yet shown the policy work.
+      const heldUntil = performance.now();
+      while (
+        liveRunMayContinue({ ignorePause: true }) &&
+        state.frame?.episode_id === episode &&
+        Number(state.frame?.simulator_step_count) === tick &&
+        (state.busy ||
+          state.frame?.system_operation ||
+          performance.now() - heldUntil < RUN_TURN_GRACE_MS)
+      ) {
+        await nextRunBeat();
+      }
+      if (
+        state.frame?.episode_id !== episode ||
+        Number(state.frame?.simulator_step_count) === tick
+      ) {
+        // The turn did not advance (refused, cancelled or a new game).
+        break;
+      }
+      if (!state.pageRun) {
+        // Paused: the turn already out has landed; let it play to its end.
+        await choreographer.whenSettled();
+      }
+    }
+  } finally {
+    liveRunLoopActive = false;
+    liveRunHoldsNextTick = false;
+    const paused = !state.pageRun;
+    state.pageRun = false;
+    if (paused && !isReplayMode()) clearNotice(statusSentence({ kind: "paused" }));
+    render();
+  }
 }
 
 /**
  * Read a changed live snapshot without blocking a Pause click during network I/O.
  * Discard reads overtaken by a command or another installed frame. The existing
  * installation owner checks identity and disclosure before painting anything.
+ * While the page's own Run holds the next tick (liveRunHoldsNextTick), a new
+ * snapshot waits for the tick on screen to settle before it is installed.
  */
 async function pollLiveMatch() {
   livePollTimer = null;
@@ -5292,6 +6423,12 @@ async function pollLiveMatch() {
       state.token,
       `"${previousFrame.session_id}:${previousFrame.revision}"`,
     );
+    if (joined !== null && liveRunHoldsNextTick) {
+      // Run overlaps the policies' work with the tick on screen: the answer
+      // is read early but shown only when that tick has played to its end,
+      // in the same moment, so no settled still is painted between ticks.
+      await choreographer.whenSettled();
+    }
     if (
       joined === null ||
       state.busy ||
@@ -5308,7 +6445,16 @@ async function pollLiveMatch() {
           continuityResult: "stale_resync",
         }),
     });
-    if (outcome.status !== "superseded") render();
+    if (outcome.status !== "superseded") {
+      // Pause asked to stop after the current turn; say when it has stopped.
+      if (
+        previousFrame.run_state === "running" &&
+        state.frame?.run_state === "paused"
+      ) {
+        clearNotice(statusSentence({ kind: "paused" }));
+      }
+      render();
+    }
   } catch (error) {
     if (state.busy || state.frame !== previousFrame || state.shuttingDown) return;
     if (error instanceof ProductIdentityMismatchError) failClosedProductIdentity(error);
@@ -5328,80 +6474,91 @@ async function pollLiveMatch() {
   }
 }
 
-/** Show worker status and the shared Run/Pause state without starting another turn. */
-function renderSystemOperation() {
-  const button = document.getElementById("cancel-system-button");
-  const status = document.getElementById("system-operation-status");
-  const operation = isRecord(state.frame) ? state.frame.system_operation : null;
-  if (button instanceof HTMLButtonElement) {
-    button.hidden = !operation || isReplayMode();
-    button.disabled = state.busy || !["loading", "thinking"].includes(operation?.state);
-    button.onclick = () => {
-      if (operation)
-        void dispatchCommand({
-          command_type: "cancel_system",
-          operation_id: operation.operation_id,
-        });
-    };
-  }
-  if (status) {
-    /** @type {Record<string, string>} */
-    const labels = {
-      loading: "Loading",
-      thinking: "Choosing Actions",
-      finishing: "Finishing",
-      cancelling: "Cancelling",
-      failed: "Cleanup Failed",
-    };
-    status.textContent = operation ? `System: ${labels[operation.state]}` : "";
-  }
-  const manual = state.frame?.combat_configuration?.manual_slots;
-  const running = state.frame?.run_state === "running";
-  const scripted = liveScriptedInspectionOnly();
-  elements.liveRunButton.hidden =
-    isReplayMode() || scripted || !Array.isArray(manual) || manual.length !== 0;
-  elements.liveRunButton.textContent = running ? "Pause" : "Run";
-  elements.liveRunButton.disabled =
-    state.busy ||
-    state.offline ||
-    state.resyncRequired ||
-    state.shuttingDown ||
-    !installedAuthorityIsCoherent() ||
-    Boolean(state.frame?.fresh_launch_required) ||
-    (!running &&
-      (Boolean(operation) ||
-        isTerminal(state.frame) ||
-        recordingScientificControlsFenced()));
-  elements.liveRunStatus.textContent = state.frame?.fresh_launch_required
-    ? "Fresh Launch Required · Accepted Game Kept"
-    : scripted
-      ? "Scripted Playback"
-      : running
-        ? "Running"
-        : operation
-          ? "Paused · Finishing This Turn"
-          : "Paused";
-  elements.liveControlHelp.textContent = state.frame?.fresh_launch_required
-    ? "Start a fresh Python launch before playing again. You can still inspect and save the accepted game."
-    : Array.isArray(manual) && manual.length === 0
-      ? "Use Run to watch, Pause to stop after the current turn, or Submit for one turn. You can inspect every agent."
-      : "Choose a Manual agent, stage its movement and Basic or Ultimate action, then Submit. Changing focus keeps other drafts. Escape clears the target. Dead Manual slots still wait for Submit.";
-  const match = state.presentation?.match_summary;
-  const configuration = state.frame?.combat_configuration;
-  elements.liveMatchRules.textContent =
-    match && configuration
-      ? `Rules: Step Limit ${match.episode_limit ?? state.frame?.terminal?.declared_horizon ?? "—"} · Score Limit ${match.score_threshold} · Red Zone Depth ${configuration.red_zone_depth ?? "—"} · ${configuration.execution_information_mode === "shared_obs" ? "SharedObs" : "NoSharedObs"}`
-      : "";
-  scheduleLivePoll();
+/**
+ * The audience and tick of the last live choreography plan presented, kept
+ * across a cleared presentation (a view switch clears the installed
+ * presentation before the new view's frame arrives), or null before the
+ * first live plan. Only settleLiveAudienceSwitch reads and writes it.
+ *
+ * @type {{audienceKey: unknown, simulatorStep: unknown} | null}
+ */
+let lastLivePlanShown = null;
+
+/**
+ * Show a live tick at its end, without playing it again, when only the
+ * audience changed: Agent POV <-> Oracle View, or a new Agent POV team.
+ *
+ * Why: the choreographer keys a played tick by its transition id, and Agent
+ * POV and Oracle View carry different ids for the same tick. Without this, a
+ * view switch after a tick played would glide that tick again under the new
+ * view, and during that replay the deck counts the tick as All Act, so a step
+ * key or 0 1 2 pressed right after the switch was dropped without a word.
+ * A view change only changes what the human sees (owner's rule), so it must
+ * not replay motion or close orders.
+ *
+ * Call it right after choreographer.presentFrame with the plan it installed.
+ * It compares that plan with the last live plan presented (lastLivePlanShown)
+ * through audienceSwitchKeepsTick (controls.js: same session, same tick,
+ * different audience) and then calls choreographer.skip(): every glide and
+ * beat hold shows its END, submission gating is released and the deck
+ * repaints through onStateChange. Live play only; the Replay Viewer is left
+ * alone. A new tick, the first tick shown, a restart or a same-audience
+ * repaint plays as before. The plan is already built for the new audience, so
+ * nothing hidden from an Agent POV team is drawn. A switch made while the tick
+ * is still gliding also jumps to END. Side effects: may finish the
+ * choreographer's running animations; updates lastLivePlanShown. Returns
+ * undefined.
+ *
+ * @param {unknown} nextPlan The choreographer's plan after presentFrame, or null.
+ * @returns {void}
+ */
+function settleLiveAudienceSwitch(nextPlan) {
+  if (isReplayMode() || !isRecord(nextPlan)) return;
+  const shown = lastLivePlanShown;
+  lastLivePlanShown = {
+    audienceKey: nextPlan.audienceKey,
+    simulatorStep: nextPlan.simulatorStep,
+  };
+  if (audienceSwitchKeepsTick(shown, lastLivePlanShown)) choreographer.skip();
 }
 
 /**
  * Paint the complete page from one coherent installed transport/presentation pair.
  * Share a single visual-filter snapshot across scene and choreography, refresh
- * panels, metrics, controls, and tooltips, and preserve allowed focus/disclosure
+ * panels, metrics, controls, and tooltips (the tooltip controller and the live
+ * hover card, refreshHoverCard, both last), and preserve allowed focus/disclosure
  * choices. Presentation failures pause replay and clear choreography with a notice.
+ *
+ * The durable renderer always draws the END of the tick at the current camera
+ * frame (cameraRenderFrame; Whole Map when null) and records the installed
+ * policy: a one-tick replay_step request reaches the choreographer (which
+ * glides bodies and fades cues in over 320 ms, then settles) while the
+ * battlefield itself records replay_static. Beat timing (the Fall and Return
+ * beats, Longer Tick) comes from the choreography plan, which reads only this
+ * audience's own events and the switch snapshot passed here.
+ *
+ * After the choreographer presents the tick: a live tick that is only being
+ * re-shown to a new audience (a view switch) is settled at its END without
+ * replaying (settleLiveAudienceSwitch); the camera switch gets the tick
+ * (updateCameraForTick, which may lean for Kill Cam), the Saga Chronicle dims
+ * its marks until their beats, the rail's Full Record chips and the Chronicle
+ * update, Frame Explanation refreshes, and (Replay Viewer) the Champion Frame is
+ * drawn once the choreographer settles. While this runs, renderInProgress is
+ * true, so a camera change asked for during the paint waits for it to finish.
  */
 function render() {
+  renderInProgress = true;
+  try {
+    renderPage();
+  } finally {
+    renderInProgress = false;
+  }
+}
+
+/**
+ * Paint the page once (the body of render; see render for the contract).
+ */
+function renderPage() {
   renderSystemOperation();
   capturePresentationPreferenceBeforeRender();
   const installed = installedPresentationAuthority();
@@ -5413,7 +6570,7 @@ function render() {
     visualFilterSnapshot,
     { consumeAnimatedRestart: true },
   );
-  renderVisualFilterControls(visualFilterSnapshot);
+  renderVisualFilterControls(visualFilterSnapshot, visualFilterPresetId);
   renderConnection();
   renderSessionToolbar(installed);
   battlefieldRenderer.render(presentationFrame, {
@@ -5422,7 +6579,26 @@ function render() {
     localInspectedPresentationKey:
       installedLocalInspectedPresentationKey(presentationFrame),
     visualFilterState: visualFilterSnapshot,
-    renderPolicy: choreographyControl.renderPolicy,
+    renderPolicy:
+      choreographyControl.renderPolicy === "replay_step"
+        ? "replay_static"
+        : choreographyControl.renderPolicy,
+    cameraFrame: cameraRenderFrame(),
+    // Agent POV Watch Only: the champion looked at, when it is not yours.
+    focusedPublicAgentId: isReplayMode()
+      ? null
+      : (transportFrame?.focused_public_agent_id ?? null),
+    // Live only: the Manual slots, so the hotbar dims a Command Ring round
+    // every other Manual champion this audience's scene draws (One On Each
+    // Team). Agent POV still hides another team's staged order: the studs
+    // need a staged row, and Agent POV frames carry none.
+    manualSlots: isReplayMode()
+      ? null
+      : Array.isArray(transportFrame?.combat_configuration?.manual_slots)
+        ? transportFrame.combat_configuration.manual_slots.filter(
+            (/** @type {unknown} */ slot) => Number.isInteger(slot),
+          )
+        : null,
   });
   applyBattlefieldBoundaryCopy();
   installAuthorizedAgentActivation();
@@ -5430,9 +6606,23 @@ function render() {
   try {
     choreographer.presentFrame(
       presentationFrame,
-      battlefieldRenderer.choreographySurface(),
+      pageChoreographySurface(),
       choreographyControl,
     );
+    settleLiveAudienceSwitch(choreographer.plan);
+    updateCameraForTick(presentationFrame, choreographyControl.renderPolicy);
+    const plan = choreographer.plan;
+    if (
+      chronicle !== null &&
+      isRecord(plan) &&
+      isRecord(installed?.transport?.cursor)
+    ) {
+      chronicle.presentTick(
+        Number(installed.transport.cursor.frame_index),
+        chronicleBeatsFromSchedule(plan.beats),
+        replayPlayback.snapshot().playbackRate,
+      );
+    }
   } catch (error) {
     pauseReplayAfterPresentationFailure("presentation_error");
     choreographer.clear("presentation_error");
@@ -5444,10 +6634,24 @@ function render() {
     );
     renderConnection();
   }
+  renderMatchMomentCards(presentationFrame);
+  if (choreographer.plan === null) renderFallenFeed(null);
   renderReplayArtifactActions(installed);
   lastBattlefieldSizeKey = battlefieldSizeKey();
   renderReplayMetrics();
+  refreshLedgerRail(presentationFrame);
+  updateChronicle(replayPlayback.snapshot());
+  frameExplanation?.refresh();
+  if (isReplayMode()) {
+    const shown = presentationFrame;
+    void choreographer.whenSettled().then(() => {
+      if (installedPresentationAuthority()?.presentation === shown) {
+        renderChampionFrameForPage(shown);
+      }
+    });
+  }
   panels.render(presentationFrame, {
+    visualFilterState: visualFilterSnapshot,
     busy: state.busy,
     shuttingDown: state.shuttingDown,
     resyncRequired: state.resyncRequired,
@@ -5465,6 +6669,8 @@ function render() {
     combatConfiguration: transportFrame?.combat_configuration ?? null,
   });
   tooltipController.refresh();
+  // Live play's Champion Card (#hcard) follows the new frame too.
+  refreshHoverCard();
   restorePresentationPreferenceAfterRender();
 }
 
@@ -5478,9 +6684,11 @@ function battlefieldSizeKey() {
 
 /**
  * Coalesce resize notifications into one animation-frame repaint.
- * Skip unchanged rounded dimensions, repaint the scene, and reproject existing
- * choreography without advancing simulation. Refresh artifact controls/tooltips
- * and preserve local preferences; presentation failures pause replay.
+ * Skip unchanged rounded dimensions, repaint the scene at the current camera
+ * frame, and reproject existing choreography without advancing simulation (a
+ * step glide never restarts here). Refresh artifact controls/tooltips (and the
+ * live hover card) and preserve local preferences; presentation failures pause
+ * replay.
  */
 function scheduleBattlefieldResize() {
   if (pendingResizeFrame !== null) {
@@ -5506,7 +6714,11 @@ function scheduleBattlefieldResize() {
       localInspectedPresentationKey:
         installedLocalInspectedPresentationKey(presentationFrame),
       visualFilterState: visualFilterSnapshot,
-      renderPolicy: choreographyControl.renderPolicy,
+      renderPolicy:
+        choreographyControl.renderPolicy === "replay_step"
+          ? "replay_static"
+          : choreographyControl.renderPolicy,
+      cameraFrame: cameraRenderFrame(),
     });
     applyBattlefieldBoundaryCopy();
     installAuthorizedAgentActivation();
@@ -5514,9 +6726,10 @@ function scheduleBattlefieldResize() {
     try {
       choreographer.reproject(
         presentationFrame,
-        battlefieldRenderer.choreographySurface(),
+        pageChoreographySurface(),
         choreographyControl,
       );
+      frameExplanation?.refresh();
     } catch (error) {
       pauseReplayAfterPresentationFailure("resize_projection_error");
       choreographer.clear("resize_projection_error");
@@ -5528,8 +6741,10 @@ function scheduleBattlefieldResize() {
       );
       renderConnection();
     }
+    renderMatchMomentCards(presentationFrame);
     renderReplayArtifactActions(installedPresentationAuthority());
     tooltipController.refresh();
+    refreshHoverCard();
     restorePresentationPreferenceAfterRender();
   });
 }
@@ -5599,7 +6814,9 @@ function recordingReplacementIsCurrent(request) {
 
 /**
  * Show Save, Discard and Cancel for one exact, already selected replacement.
- * perform sends one revision-guarded request; Cancel sends no request.
+ * perform sends one revision-guarded request; Cancel sends no request (the
+ * dialog's close then says "Restart cancelled. The game goes on."). Save gets
+ * keyboard focus, as on the vision page.
  *
  * @param {NonNullable<typeof pendingRecordingReplacement>} request
  * @returns {boolean} Whether this request still owns the displayed match.
@@ -5612,7 +6829,8 @@ function showRecordingReplacementDialog(request) {
   elements.recordingDiscardIntent.textContent = request.label;
   if (!elements.recordingDiscardDialog.open)
     elements.recordingDiscardDialog.showModal();
-  elements.recordingDiscardCancelButton.focus({ preventScroll: true });
+  // Save is the first and suggested choice, as on the vision page.
+  elements.recordingSaveReplaceButton.focus({ preventScroll: true });
   return true;
 }
 
@@ -5697,7 +6915,7 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
   });
   invalidateReplayArtifactAction();
   state.busy = true;
-  setNotice("Waiting for the read-only replay response…", "info");
+  clearNotice();
   const previousAuthority = state.authority;
   const previousFrame = state.frame;
   const previousCursor = previousFrame.cursor;
@@ -5790,26 +7008,35 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
     const payload = commandOutcome.current?.payload;
     const stale = commandOutcome.current?.kind === "stale";
     const notice = extractNotice(payload);
-    setNotice(
-      stale
-        ? payload?.error_code === "command_id_conflict"
-          ? "The replay service rejected a command-ID conflict. Its coherent latest pair was installed; the command was not retried."
-          : "This replay tab was stale. Its coherent latest pair was installed; the command was not retried."
-        : installOutcome.resynchronized
-          ? "The command completed once, its mixed presentation candidate was discarded, and one fresh GET pair was installed."
-          : (notice ??
-            (payload?.result === "duplicate"
-              ? "Duplicate replay command recognized; it was not applied again."
-              : payload?.result === "no_op"
-                ? "Replay already matched that request."
-                : "Read-only replay frame updated.")),
-      stale ||
-        installOutcome.resynchronized ||
-        payload?.result === "duplicate" ||
-        payload?.result === "no_op"
-        ? "warning"
-        : "success",
-    );
+    // A plain frame update is routine and makes no notice.
+    const routineReplayUpdate =
+      !stale &&
+      !installOutcome.resynchronized &&
+      notice === null &&
+      payload?.result !== "duplicate" &&
+      payload?.result !== "no_op";
+    if (routineReplayUpdate) {
+      clearNotice();
+    } else {
+      setNotice(
+        stale
+          ? payload?.error_code === "command_id_conflict"
+            ? "The replay service rejected a command-ID conflict. Its coherent latest pair was installed; the command was not retried."
+            : "This replay tab was stale. Its coherent latest pair was installed; the command was not retried."
+          : installOutcome.resynchronized
+            ? "The command completed once, its mixed presentation candidate was discarded, and one fresh GET pair was installed."
+            : (notice ??
+              (payload?.result === "duplicate"
+                ? "Duplicate replay command recognized; it was not applied again."
+                : "Replay already matched that request.")),
+        stale ||
+          installOutcome.resynchronized ||
+          payload?.result === "duplicate" ||
+          payload?.result === "no_op"
+          ? "warning"
+          : "success",
+      );
+    }
     if (commandResponseSchedulesShutdown(request.command, payload)) {
       state.shuttingDown = true;
       setNotice("Exit accepted. The local replay viewer is shutting down.", "info");
@@ -6025,18 +7252,160 @@ function dispatchPanelCommand(command, { pointerOriginated = false } = {}) {
 }
 
 /**
+ * The commands the page has already sent a second time after a "stale"
+ * answer (resendsAfterStale), so one is never sent a third time.
+ *
+ * @type {WeakSet<Record<string, unknown>>}
+ */
+const resentAfterStale = new WeakSet();
+
+/**
+ * Return whether a live command keeps its meaning on a newer frame, so the
+ * page sends it once more after a "stale" answer: Exit, and Save And Replace
+ * (a restart pressed while the game-over save ran, or Save in the Restart
+ * dialog). The game-over save installs a new revision when it ends, so a
+ * command sent just before that moment arrives one revision late; every
+ * other command still stops at a stale answer, because its meaning depends
+ * on the frame the player saw. Pure.
+ *
+ * @param {Readonly<Record<string, unknown>>} command The live command sent.
+ * @returns {boolean}
+ */
+function resendsAfterStale(command) {
+  return command.command_type === "exit" || command.command_type === "save_and_replace";
+}
+
+/**
+ * Mark an accepted Exit (its answer scheduled the shutdown): the page stops
+ * reading (state.shuttingDown), keeps the answer's own recording status
+ * (state.exitRecording; null when the match records nothing) for the
+ * Recording pill, popover and seal, says the closed sentence for that save
+ * state (closedSentence in tactics-turn.js: saved, no tick played, or
+ * nothing recorded) and shows keys off, since no key works any more.
+ * Side effects: page state, the notice and the Keys chip.
+ *
+ * @param {unknown} payload The Exit command's answer (result
+ *   "shutdown_scheduled"), whose `frame.recording` is read when present.
+ * @returns {void}
+ */
+function acceptExit(payload) {
+  state.shuttingDown = true;
+  const answerFrame = isRecord(payload) ? payload.frame : null;
+  state.exitRecording =
+    isRecord(answerFrame) && isRecord(answerFrame.recording)
+      ? answerFrame.recording
+      : null;
+  setNotice(closedSentence(state.exitRecording), "info");
+  paintKeysState();
+}
+
+/**
  * Serialize one live command through authority, policy, terminal, and recording gates.
  * Optional deferredSubmit defaults to null and may retain one fresh Enter after
  * draft preparation. Send the POST once, install a coherent successor, and only
  * then dispatch retained input. Show handled failures, require resync when needed,
  * and open requested replays separately; normal completion resolves without a value.
  *
+ * Status line: the page writes the vision's sentence for the player's own
+ * commands (statusSentence in controls.js). A 1 or 2 that the decision mask
+ * refuses is refused here, before sending ("Charge needs a target first. Your
+ * order is unchanged.", or "... is not allowed on this target right now."),
+ * and its slot shakes; an edit of a policy's champion or after a stop gets the
+ * vision's refusal; Lock In shows "Orders sent. The policies choose next."
+ * (Policies Only: "Playing one turn.") while the turn is out; an accepted edit,
+ * view change, focus change or G shows what changed. When the command's own
+ * answer was overtaken (the policies finished the turn first, so one fresh
+ * read was installed instead), Lock In still says its sentence and any other
+ * command says "Your command was applied once. The game had moved on, so the
+ * page now shows the latest state." Python's "The Systems are choosing this
+ * turn." is said as the Lock In sentence (hostNoticeSentence). Other host
+ * notices still show as before. Agent POV: the facts come from ownOrderFacts.
+ *
+ * Tab and Shift+Tab (also sent by ‹ Prev and Next ›): with Manual champions,
+ * the key is first turned into a focus change (roster_selection, role
+ * "control") to your next champion that can take orders, worked out from the
+ * newest frame when the command is about to go out (ownChampionTabStep), and
+ * that command is sent instead with the same options. When nothing needs
+ * sending, the status line says "Giving orders to your <Class>." (the only
+ * one that can take orders) or "All your champions are fallen, so nobody can
+ * take orders until they return.", and inputs queued behind the Tab still go
+ * out in order. In Policies Only the key goes to Python unchanged.
+ *
+ * A restart (R) pressed while the game-over save runs ("Saving Replay…")
+ * opens no Save, Discard or Cancel dialog: recordingCommandDecision turns it
+ * into Save And Replace, which is sent instead with the same options, and the
+ * server starts the new match once the save has ended. Meanwhile the status
+ * line says "The replay is still saving. The new match starts once it is
+ * saved."
+ *
+ * Exit: pressed while the game-over save runs, the status line first says
+ * "The replay is still saving. The match closes once it is saved." (the
+ * server waits for the save). An accepted Exit (acceptExit) says the closed
+ * sentence for the replay's save state from the answer's own recording
+ * status ("The game so far is saved", "No tick was played, so no replay was
+ * saved", or nothing about a replay when the match records nothing) and
+ * turns keys off. Exit
+ * and Save And Replace that get a "stale" answer (the game-over save ended
+ * just before they arrived) are sent once more from the fresh frame
+ * (resendsAfterStale), with the same source and quiet options, and the
+ * stale answer itself writes no notice; any other stale command is not sent
+ * again.
+ *
  * @param {Record<string, unknown>} command
- * @param {{deferredSubmit?: Readonly<Record<string, unknown>> | null}} options
+ * @param {{
+ *   deferredDrafts?: ReadonlyArray<Readonly<Record<string, unknown>>>,
+ *   deferredSubmit?: Readonly<Record<string, unknown>> | null,
+ *   source?: "field" | "control" | "page",
+ *   quiet?: boolean,
+ *   keepPresentation?: boolean,
+ * }} options source (default "page") says where the input came from: "field"
+ *   for the focused battlefield (Esc then also says keys are off), "control"
+ *   for a deck or rail button. quiet (default false) leaves the status line
+ *   alone while the command is out and after it is accepted; the page's own
+ *   Run sets it so "Running." stays on the line from turn to turn, as on the
+ *   vision page. Refusals, stale or duplicate answers and failures still
+ *   write their sentence. While the page's own Run is active
+ *   (pageRunOwnsLockIn), a Space, Enter or N keyboard command that is not quiet
+ *   (a key, the Lock In button or a queued Lock In) is ignored without a
+ *   word and nothing is sent, as on the vision page; only Run's quiet turns
+ *   go out. A focus change (roster_selection, role "control") made while
+ *   an earlier request is out is queued behind it (retainFocusChange) instead
+ *   of being refused. deferredDrafts (default none) are order keys and focus
+ *   changes made while an earlier request was out, oldest first: they are
+ *   sent one after another after this command, each through its own fence
+ *   and with source "field", and a retained Lock In (deferredSubmit) goes
+ *   last. keepPresentation (default
+ *   false) lets a Lock In go out while the current tick still plays: the
+ *   tick is not cut to its end first, as a player's Lock In does. Only the
+ *   page's own Run sets it (Policies Only, no Manual drafts), so the policies
+ *   choose the next turn while this tick's last beats play; runLiveTurns then
+ *   holds the next tick until this one settles (liveRunHoldsNextTick).
+ *   When the answer leaves policy work out (or the server running), the next
+ *   live reads come every 80 ms for 3 s (hurryLivePoll), so the
+ *   new tick shows soon after the policies answer.
  */
-async function dispatchCommand(command, { deferredSubmit = null } = {}) {
+async function dispatchCommand(
+  command,
+  {
+    deferredDrafts = [],
+    deferredSubmit = null,
+    source = "page",
+    quiet = false,
+    keepPresentation = false,
+  } = {},
+) {
   if (isReplayMode()) {
     setNotice("Live debugger commands are unavailable in read-only replay.", "warning");
+    renderConnection();
+    return;
+  }
+  if (!quiet && pageRunOwnsLockIn(command)) {
+    // Only the page's own Run sends turns while it plays, as on the vision
+    // page: this Space or Enter is ignored, so no turn is sent twice and no
+    // glide is cut short.
+    return;
+  }
+  if (state.busy && !state.shuttingDown && retainFocusChange(command)) {
     renderConnection();
     return;
   }
@@ -6061,6 +7430,40 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
     renderConnection();
     return;
   }
+  // Tab, Shift+Tab, ‹ Prev and Next › visit only your champions that can take
+  // orders (owner's ruling, 3 October 2026): worked out here, at send time,
+  // from the newest frame, so a Tab queued behind an earlier order moves on
+  // from where that order left the focus.
+  const tabStep = ownChampionTabStep(command);
+  if (tabStep.kind === "send") {
+    return dispatchCommand(tabStep.command, {
+      deferredDrafts,
+      deferredSubmit,
+      source,
+      quiet,
+      keepPresentation,
+    });
+  }
+  if (tabStep.kind === "stay" || tabStep.kind === "none") {
+    clearNotice(
+      tabStep.kind === "stay"
+        ? statusSentence({ kind: "focus_own", className: tabStep.className })
+        : statusSentence({ kind: "nobody_ready" }),
+    );
+    renderConnection();
+    // Nothing was sent; inputs queued behind this Tab still go out in order.
+    if (deferredDrafts.length > 0) {
+      return dispatchCommand(deferredDrafts[0], {
+        deferredDrafts: deferredDrafts.slice(1),
+        deferredSubmit,
+        source: "field",
+      });
+    }
+    if (deferredSubmit !== null) {
+      return dispatchCommand(deferredSubmit, { source: "field" });
+    }
+    return;
+  }
   if (
     command.command_type === "keyboard" &&
     typeof command.key === "string" &&
@@ -6075,17 +7478,25 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
         command.repeat === false &&
         toggleAgentLocalRanges()
       ) {
+        clearNotice(statusSentence({ kind: "ranges", shown: agentLocalRangesVisible }));
         render();
       }
       return;
     }
   }
-  const policyControlled = policyControlledActor();
+  const beforeFacts = ownOrderFacts(state.presentation, state.frame);
   if (policyControllerBlocksActionEdit(command)) {
-    const controller = policyControlled?.label ?? "A policy";
+    const escapeOnly =
+      command.command_type === "keyboard" &&
+      String(command.key).toLowerCase() === "escape";
     setNotice(
-      `${controller} chooses this agent's action. Inspect it here, or choose a Manual agent to stage a draft.`,
-      "warning",
+      escapeOnly
+        ? statusSentence({ kind: "keys_off" })
+        : statusSentence({
+            kind: "policy_champion",
+            watch: beforeFacts?.mode === "watch",
+          }),
+      escapeOnly ? "info" : "warning",
     );
     renderConnection();
     renderCommandAvailability();
@@ -6103,11 +7514,22 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
   const mode = modeAvailability(command, state.frame);
   if (!mode.allowed) {
     setNotice(
-      mode.notice ?? "That command is unavailable in the current mode.",
+      state.frame?.fresh_launch_required && commandRole(command) !== null
+        ? statusSentence({ kind: "stopped" })
+        : (mode.notice ?? "That command is unavailable in the current mode."),
       "warning",
     );
     renderConnection();
     renderCommandAvailability();
+    return;
+  }
+  const refusal = laneRefusal(command, beforeFacts);
+  if (refusal !== null) {
+    setNotice(refusal.sentence, "warning");
+    shakeSlot(
+      refusal.lane === "basic" ? elements.basicButton : elements.ultimateButton,
+    );
+    renderConnection();
     return;
   }
   const recordingDecision = recordingCommandDecision(state.frame, command);
@@ -6128,7 +7550,32 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
     return;
   }
   if (
+    command.command_type === "exit" &&
+    ["sealed", "finalized_unsaved"].includes(String(recordingStatus()?.lifecycle))
+  ) {
+    // Exit waits for the game-over save: the line says why nothing happens yet.
+    clearNotice("The replay is still saving. The match closes once it is saved.");
+  }
+  if (
+    recordingDecision.action === "allow" &&
+    recordingDecision.command !== undefined &&
+    recordingDecision.command !== command
+  ) {
+    // A restart pressed while the game-over save runs goes out as Save And
+    // Replace (no dialog); it passes the same fences as any other command.
+    // The line says why nothing happens until the save ends.
+    clearNotice("The replay is still saving. The new match starts once it is saved.");
+    return dispatchCommand(recordingDecision.command, {
+      deferredDrafts,
+      deferredSubmit,
+      source,
+      quiet,
+      keepPresentation,
+    });
+  }
+  if (
     isSubmissionCommand(command) &&
+    !keepPresentation &&
     presentationRequiresSubmissionSettle(choreographer.snapshot())
   ) {
     // Submit owns this synchronous edge: settle the current (even paused)
@@ -6139,14 +7586,22 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
   const recordingLifecycle = recordingStatus()?.lifecycle;
   /** @type {{
    *   allowsDeferredSubmit: boolean,
-   *   deferredDraft: Readonly<Record<string, unknown>> | null,
+   *   deferredDrafts: Array<Readonly<Record<string, unknown>>>,
    *   deferredSubmit: Readonly<Record<string, unknown>> | null,
    *   releaseFocusAfterSettlement: boolean,
    *   recordingPreparation: "metrics" | "possible" | null,
+   *   keepsTarget: boolean,
+   *   lateRefusal: string | null,
    * }} */
   const liveCommandTransaction = {
+    lateRefusal: null,
+    keepsTarget:
+      command.command_type === "keyboard" &&
+      typeof command.key === "string" &&
+      command.key.length === 1 &&
+      "wasdqezcx012".includes(command.key.toLowerCase()),
     allowsDeferredSubmit: commandPreparesDeferredSubmit(command),
-    deferredDraft: null,
+    deferredDrafts: [...deferredDrafts],
     deferredSubmit:
       commandPreparesDeferredSubmit(command) &&
       deferredSubmit !== null &&
@@ -6174,11 +7629,25 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
           }
         }, 2000)
       : null;
-  setNotice("Waiting for the authoritative Python response…", "info");
-  /** @type {Readonly<Record<string, unknown>> | null} */
-  let deferredDraftToDispatch = null;
+  // A click on the arena that only turns keys on keeps the current message,
+  // and so does a turn sent by the page's own Run (quiet), which keeps
+  // "Running." on the line as the vision does.
+  const quietPointer =
+    quiet ||
+    (command.command_type === "battlefield_pointer" && command.button === "primary");
+  if (!quietPointer) {
+    clearNotice(
+      isSubmissionCommand(command)
+        ? statusSentence({ kind: "lock_in", watch: beforeFacts?.mode === "watch" })
+        : "Waiting for the game to answer…",
+    );
+  }
+  /** @type {Array<Readonly<Record<string, unknown>>>} */
+  let deferredDraftsToDispatch = [];
   /** @type {Readonly<Record<string, unknown>> | null} */
   let deferredSubmitToDispatch = null;
+  /** @type {Record<string, unknown> | null} */
+  let commandToResend = null;
   const previousAuthority = state.authority;
   const request = commandRequest(command);
   /** @type {{current: {kind: "success" | "stale", payload: any} | null}} */
@@ -6252,21 +7721,80 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
     const payload = commandOutcome.current?.payload;
     const stale = commandOutcome.current?.kind === "stale";
     const notice = extractNotice(payload);
-    setNotice(
-      stale
-        ? payload?.error_code === "command_id_conflict"
-          ? "The service rejected a command-ID conflict. Its coherent latest pair was installed; the command was not retried."
-          : "This tab was stale. Its coherent latest pair was installed; the command was not retried."
-        : installOutcome.resynchronized
-          ? "The command completed once, its mixed presentation candidate was discarded, and one fresh GET pair was installed."
-          : (notice ??
-            (payload?.result === "duplicate"
-              ? "Duplicate command recognized; it was not applied again."
-              : "Authoritative frame updated.")),
-      stale || installOutcome.resynchronized || payload?.result === "duplicate"
-        ? "warning"
-        : "success",
-    );
+    // A plain frame update (after Lock In, say) is routine and makes no notice.
+    const routineFrameUpdate =
+      !stale &&
+      !installOutcome.resynchronized &&
+      notice === null &&
+      payload?.result !== "duplicate";
+    const afterFacts = ownOrderFacts(state.presentation, state.frame);
+    if (afterFacts?.actorManual) lastManualPublicId = afterFacts.actorId;
+    // A host refusal or focus notice is said in the vision's words; an applied
+    // command (or a clear with nothing to clear) says what it did.
+    const clearsTarget =
+      (command.command_type === "keyboard" &&
+        String(command.key).toLowerCase() === "escape") ||
+      (command.command_type === "battlefield_pointer" &&
+        command.button === "secondary");
+    // A step or No Combat that was already staged changes nothing, but the
+    // vision still says what is staged ("Step: Stay.").
+    const restatesOrder =
+      (command.command_type === "keyboard" &&
+        typeof command.key === "string" &&
+        command.key.length === 1 &&
+        "wasdqezcx0".includes(command.key.toLowerCase())) ||
+      (command.command_type === "roster_selection" &&
+        command.role === "control" &&
+        asArray(state.frame?.combat_configuration?.manual_slots).includes(
+          command.global_slot,
+        ));
+    // A resynchronized answer is normal when the policies finish the turn
+    // before the page has read the command's own result (common in Agent
+    // POV): the command was applied once and the latest state is shown, so
+    // Lock In still says its own sentence.
+    const ownSentence = stale
+      ? null
+      : installOutcome.resynchronized
+        ? isSubmissionCommand(command)
+          ? statusSentence({ kind: "lock_in", watch: beforeFacts?.mode === "watch" })
+          : null
+        : (hostNoticeSentence(notice, afterFacts) ??
+          (payload?.result === "applied" ||
+          (payload?.result === "no_op" && (clearsTarget || restatesOrder))
+            ? acceptedCommandSentence(command, beforeFacts, afterFacts, source)
+            : null));
+    // Exit, and a restart pressed while the game-over save ran (Save And
+    // Replace), keep their meaning on a newer frame: when the save ended just
+    // before the command arrived, the server answers "stale", so the page
+    // sends the same command once more from the fresh frame, and says
+    // nothing about the stale answer.
+    if (stale && resendsAfterStale(command) && !resentAfterStale.has(command)) {
+      commandToResend = command;
+    }
+    if (liveCommandTransaction.lateRefusal !== null) {
+      setNotice(liveCommandTransaction.lateRefusal, "warning");
+    } else if (commandToResend !== null) {
+      // The same command goes out again at once; its answer says the rest.
+    } else if (quiet && !stale && payload?.result !== "duplicate") {
+      // The page's own Run: an accepted turn leaves the line as it is.
+    } else if (ownSentence !== null) {
+      clearNotice(ownSentence);
+    } else if (routineFrameUpdate) {
+      if (!quietPointer) clearNotice();
+    } else {
+      setNotice(
+        stale
+          ? payload?.error_code === "command_id_conflict"
+            ? "The service rejected a command-ID conflict. Its coherent latest pair was installed; the command was not retried."
+            : "This tab was stale. Its coherent latest pair was installed; the command was not retried."
+          : installOutcome.resynchronized
+            ? "Your command was applied once. The game had moved on, so the page now shows the latest state."
+            : (notice ?? "Duplicate command recognized; it was not applied again."),
+        stale || installOutcome.resynchronized || payload?.result === "duplicate"
+          ? "warning"
+          : "success",
+      );
+    }
     if (!stale && command.command_type === "review_replay") {
       const replayUrl = extractReplayUrl(payload);
       const replayFrame = payload?.frame;
@@ -6296,11 +7824,10 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
       }
     }
     if (commandResponseSchedulesShutdown(command, payload)) {
-      state.shuttingDown = true;
-      setNotice("Exit accepted. The local product server is shutting down.", "info");
+      acceptExit(payload);
     }
     if (
-      (liveCommandTransaction.deferredDraft !== null ||
+      (liveCommandTransaction.deferredDrafts.length > 0 ||
         liveCommandTransaction.deferredSubmit !== null) &&
       !stale &&
       !installOutcome.resynchronized &&
@@ -6312,7 +7839,7 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
       installedAuthorityIsCoherent() &&
       !isTerminal(state.frame)
     ) {
-      deferredDraftToDispatch = liveCommandTransaction.deferredDraft;
+      deferredDraftsToDispatch = [...liveCommandTransaction.deferredDrafts];
       deferredSubmitToDispatch = liveCommandTransaction.deferredSubmit;
     }
   } catch (error) {
@@ -6327,11 +7854,10 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
         clearPresentationAuthority("live_authorization_failure");
       }
       if (commandResponseSchedulesShutdown(command, payload)) {
-        state.shuttingDown = true;
-        setNotice(
-          "Exit was accepted, but no coherent successor presentation was installed while the local product server shuts down.",
-          "info",
-        );
+        // The answer's own recording status is newer than the installed
+        // frame's (Exit waited for the save): the pill, popover and seal show
+        // it, so they never stay on "Saving Replay…" after a save.
+        acceptExit(payload);
         return;
       }
       state.offline =
@@ -6354,18 +7880,41 @@ async function dispatchCommand(command, { deferredSubmit = null } = {}) {
       activeLiveCommandTransaction = null;
     }
     if (replayWindow !== null && !replayOpened) replayWindow.close();
-    render();
+    // A queued order goes out at once, so the page keeps its in-flight look
+    // instead of painting one idle frame (Lock In enabled, hover card gone)
+    // between the two requests; the last request in the chain repaints.
+    if (deferredDraftsToDispatch.length === 0 && deferredSubmitToDispatch === null) {
+      render();
+    }
+    // The policies' answer is read at the busy cadence, not after the idle
+    // second scheduled before this command.
+    hurryLivePoll();
     if (liveCommandTransaction.releaseFocusAfterSettlement) {
       releaseBattlefieldFocus();
     }
   }
-  if (deferredDraftToDispatch !== null) {
-    await dispatchCommand(deferredDraftToDispatch, {
+  if (commandToResend !== null) {
+    const again = { ...commandToResend };
+    resentAfterStale.add(again);
+    await dispatchCommand(again, { source, quiet });
+    return;
+  }
+  // Queued inputs (battlefield keys and clicks from retainFencedCommand, focus
+  // changes from retainFocusChange) keep the "field" source: a queued Esc
+  // still says keys are off.
+  if (deferredDraftsToDispatch.length > 0) {
+    await dispatchCommand(deferredDraftsToDispatch[0], {
+      deferredDrafts: deferredDraftsToDispatch.slice(1),
       deferredSubmit: deferredSubmitToDispatch,
+      source: "field",
     });
   } else if (deferredSubmitToDispatch !== null) {
-    await dispatchCommand(deferredSubmitToDispatch);
+    await dispatchCommand(deferredSubmitToDispatch, { source: "field" });
+  } else {
+    return;
   }
+  // A queued command the page refused before sending did not repaint.
+  if (!state.busy) render();
 }
 
 /** Fetch one coherent live snapshot, or the existing paired replay resources. */
@@ -6378,8 +7927,10 @@ function getCurrentAuthority() {
 /**
  * Load and install the current matched transport, presentation, and replay timeline.
  * Skip busy or shutting-down pages, preserve permitted old display while loading, and show
- * handled failures with resync required. A successful first replay load focuses
- * the timeline; this never retries a simulator command.
+ * handled failures with resync required. A successful plain load clears the
+ * top-bar notice (clearNotice); a load that had to discard a mixed pair says so.
+ * No load moves keyboard focus (replay keys listen on the whole document), so
+ * no help card opens at rest. This never retries a simulator command.
  */
 async function loadCurrentFrame() {
   if (productIdentity === null) {
@@ -6400,11 +7951,10 @@ async function loadCurrentFrame() {
   if (isReplayMode()) {
     replayPlayback.pause("reconnect");
   }
-  setNotice("Fetching the current transport and authorized presentation…", "info");
+  clearNotice("Loading the current match…");
   const previousFrame = state.frame;
   const previousAuthority = state.authority;
   const retainLastAuthorized = installedPresentationAuthority() !== null;
-  let focusReplayTimeline = false;
   try {
     const installPromise = presentationInstallation.installFromGet({
       reason: previousFrame === null ? "initial_authority" : "reconnect_authority",
@@ -6426,9 +7976,9 @@ async function loadCurrentFrame() {
       return;
     }
     const frame = outcome.joined.transport;
-    focusReplayTimeline =
+    const firstReplayLoad =
       frame.viewer_mode === "replay" && previousFrame?.viewer_mode !== "replay";
-    if (focusReplayTimeline) {
+    if (firstReplayLoad) {
       choreographer.clear("replay_handoff");
     }
     if (frame.viewer_mode === "replay") {
@@ -6437,14 +7987,21 @@ async function loadCurrentFrame() {
     }
     state.offline = false;
     state.resyncRequired = false;
-    setNotice(
-      outcome.resynchronized
-        ? "A mixed authority GET was discarded; one fresh pair was installed."
-        : focusReplayTimeline
-          ? "Read-only replay review is ready."
-          : "Connected to the local product service.",
-      "success",
-    );
+    // A plain load is routine: the connection status already says Online.
+    if (outcome.resynchronized) {
+      setNotice(
+        "A mixed authority GET was discarded; one fresh pair was installed.",
+        "success",
+      );
+    } else {
+      clearNotice();
+      // The first live load remembers the Manual champion in focus. The
+      // first sentence itself has one owner: the deck's startGreeting
+      // (tactics-turn.js), which counts the Manual champions on each team.
+      const facts =
+        previousFrame === null ? ownOrderFacts(state.presentation, state.frame) : null;
+      if (facts?.actorManual) lastManualPublicId = facts.actorId;
+    }
   } catch (error) {
     if (error instanceof ProductIdentityMismatchError) {
       failClosedProductIdentity(error);
@@ -6474,9 +8031,8 @@ async function loadCurrentFrame() {
     state.busy = false;
     render();
   }
-  if (focusReplayTimeline && !state.resyncRequired) {
-    elements.replayTimeline.focus({ preventScroll: true });
-  }
+  // The first replay load moves no focus: replay keys listen on the whole
+  // document, and a moved focus would open the timeline's help card at rest.
 }
 
 /**
@@ -6492,7 +8048,7 @@ async function loadCurrentFrame() {
  */
 function dispatchCommandFromDraftControl(command, { restoreFocusTo = null } = {}) {
   elements.battlefield.focus({ preventScroll: true });
-  const completion = dispatchCommand(command);
+  const completion = dispatchCommand(command, { source: "control" });
   if (restoreFocusTo === null) {
     void completion;
     return;
@@ -6507,6 +8063,146 @@ function dispatchCommandFromDraftControl(command, { restoreFocusTo = null } = {}
       restoreFocusTo.focus({ preventScroll: true });
     }
   });
+}
+
+/**
+ * Work out what Tab or Shift+Tab does in live play with Manual champions
+ * (owner's ruling, 3 October 2026): it gives the orders to your next (or
+ * previous) champion that can take orders, in slot order, and never to a
+ * policy's champion. The deck's ‹ Prev and Next › send the same key, so they
+ * follow the same rule. "Can take orders" means a Manual slot of the match
+ * setup (combat_configuration.manual_slots; with one Manual champion on each
+ * team, both) that the shown audience's scene does not draw as fallen
+ * (life_state other than "alive"). Your champion on the other team that this
+ * Agent POV cannot see counts as ready: the page has no fact about it, and
+ * after the switch its own view shows how it fares.
+ *
+ * The current champion is the one looked at (the transport frame's
+ * focused_public_agent_id, Agent POV Watch Only) or else the one the
+ * audience's inspection is about. Public IDs map to command slots through
+ * the identity rows, as a portrait click does. Nothing hidden from the POV
+ * team is read: only the match setup, the audience's own scene and
+ * inspection. The choice is plumbing for which champion you command; it is
+ * never a policy input.
+ *
+ * @param {Readonly<Record<string, unknown>>} command The command about to be
+ *   sent.
+ * @returns {{kind: "pass"}
+ *   | {kind: "send", command: Readonly<Record<string, unknown>>}
+ *   | {kind: "stay", className: string}
+ *   | {kind: "none"}} "pass" for any other command, or where Tab keeps
+ *   Python's own walk: the Replay Viewer, scripted inspection, and Policies
+ *   Only (no Manual slot; Tab then looks at every champion in sight).
+ *   "send": a roster_selection (role "control") for the next slot. "stay":
+ *   the champion in focus is the only one that can take orders (className
+ *   names it). "none": every Manual champion is fallen. Sends nothing itself.
+ */
+function ownChampionTabStep(command) {
+  if (
+    command.command_type !== "keyboard" ||
+    command.key !== "Tab" ||
+    command.ctrl_key === true ||
+    command.alt_key === true ||
+    command.meta_key === true ||
+    isReplayMode() ||
+    liveScriptedInspectionOnly() ||
+    !isAuthorizedPresentationFrame(state.presentation) ||
+    !isRecord(state.frame)
+  ) {
+    return { kind: "pass" };
+  }
+  const manualSlots = asArray(state.frame.combat_configuration?.manual_slots).filter(
+    (slot) => Number.isInteger(slot),
+  );
+  if (manualSlots.length === 0) return { kind: "pass" };
+  const rows = authorizedPresentationIdentityRows(state.presentation);
+  const agents = asArray(
+    authorizedPresentationSceneView(state.presentation)?.agents,
+  ).filter(isRecord);
+  /** @param {unknown} slot @returns {Record<string, any> | null} */
+  const sceneAgentOf = (slot) => {
+    const row = rows.find((identity) => identity.command_global_slot === slot);
+    return row === undefined
+      ? null
+      : (agents.find((agent) => agent.public_agent_id === row.public_agent_id) ?? null);
+  };
+  const fallenSlots = manualSlots.filter((slot) => {
+    const agent = sceneAgentOf(slot);
+    return agent !== null && agent.life_state !== "alive";
+  });
+  const inspection = authorizedPresentationInspectionState(
+    state.presentation,
+  ).inspection;
+  const focusId =
+    typeof state.frame.focused_public_agent_id === "string"
+      ? state.frame.focused_public_agent_id
+      : isRecord(inspection) && typeof inspection.actor_public_agent_id === "string"
+        ? inspection.actor_public_agent_id
+        : null;
+  const focusSlot =
+    focusId === null
+      ? null
+      : (rows.find((identity) => identity.public_agent_id === focusId)
+          ?.command_global_slot ?? null);
+  const currentSlot = Number.isInteger(focusSlot) ? Number(focusSlot) : null;
+  const next = nextOrderSlot({
+    manualSlots,
+    currentSlot,
+    fallenSlots,
+    direction: command.shift_key === true ? -1 : 1,
+  });
+  if (next === null) return { kind: "none" };
+  if (next === currentSlot) {
+    return {
+      kind: "stay",
+      className: String(sceneAgentOf(next)?.class_name ?? "champion"),
+    };
+  }
+  return {
+    kind: "send",
+    command: Object.freeze({
+      command_type: "roster_selection",
+      role: "control",
+      global_slot: next,
+    }),
+  };
+}
+
+/**
+ * Return whether a battlefield key still goes to Python while orders are
+ * closed: at game over, after Finish And Save, or in scripted inspection. Only
+ * R, G and, in scripted inspection only, N pass: R (Restart; it asks Save,
+ * Discard or Cancel first when play is unsaved, and
+ * restarts at once when the game is saved) and G (ranges; in Agent POV G stays
+ * page-local) pass. Requires an idle, connected page with coherent authority
+ * and no policy work running; plain keys only (no Ctrl, Alt or Meta; Shift+R
+ * is not Restart). The usual gates in dispatchCommand still apply. N (one
+ * tick) is a Lock In key, so like Space it does not pass while orders are
+ * closed, except in scripted inspection (liveScriptedInspectionOnly), where
+ * plain N is the next scripted frame, as the deck's button sends it.
+ *
+ * @param {Readonly<Record<string, unknown>>} command A keyboard command.
+ * @returns {boolean}
+ */
+function liveKeyAllowedWhileClosed(command) {
+  const key = typeof command.key === "string" ? command.key.toLowerCase() : "";
+  return (
+    !isReplayMode() &&
+    command.command_type === "keyboard" &&
+    (key === "g" ||
+      (key === "r" && command.shift_key !== true) ||
+      (key === "n" && command.shift_key !== true && liveScriptedInspectionOnly())) &&
+    command.ctrl_key !== true &&
+    command.alt_key !== true &&
+    command.meta_key !== true &&
+    isAuthorizedPresentationFrame(state.presentation) &&
+    installedAuthorityIsCoherent() &&
+    !state.frame?.system_operation &&
+    !state.busy &&
+    !state.shuttingDown &&
+    !state.resyncRequired &&
+    !state.offline
+  );
 }
 
 /**
@@ -6534,21 +8230,174 @@ bindBattlefieldControls({
    * Return the shared dispatch promise. That handler owns action authorization,
    * request fencing, server calls and error notices.
    */
-  onCommand: (command) => dispatchCommand(command),
+  onCommand: (command) => dispatchCommand(command, { source: "field" }),
   /**
-   * Open the existing keyboard-help dialog modally without a server request.
-   * Browser dialog errors propagate, including an incompatible nonmodal open state.
+   * Open or close How To Play (? on the battlefield) without a server request.
    */
-  onHelp: () => elements.helpDialog.showModal(),
+  onHelp: () => toggleHowToPlay(),
   isInteractive: liveBattlefieldCommandsInteractive,
   onFencedCommand: retainFencedCommand,
+  allowsWhileClosed: liveKeyAllowedWhileClosed,
   /**
    * Return whether live control owns Space while a command is fenced.
    * Replay mode leaves its Space handling to the replay keyboard controller.
    */
   ownsFencedSpaceDefault: () => !isReplayMode(),
+  /**
+   * Return whether the focused live battlefield runs local keys (V and F) for
+   * the BattleClient and DevClient. The Replay Viewer returns false: its one
+   * keyboard dispatcher (bindReplayTimelineControls) owns V, B and F there, so
+   * no job runs twice.
+   */
+  ownsLocalCommands: () => !isReplayMode(),
   onReleaseFocus: releaseBattlefieldFocus,
 });
+
+/**
+ * Show whether keys are on: they are on while the battlefield has keyboard
+ * focus (a click on the arena gives it; Esc and a click elsewhere take it,
+ * but a click on a top-bar button or a view switch keeps it).
+ * Writes the status line's Keys chip ("Keys On" or "Keys Off · Click The
+ * Arena", class `off`) and the `keys-on` class on #arena (its silver frame),
+ * as on the vision page. BattleClient and DevClient only; in the Replay Viewer
+ * the chip is not shown and #arena keeps no class.
+ *
+ * When keys turn on, a status line that still says they are off is made true
+ * again: "Keys are off until you click the arena again." empties, and
+ * "Target cleared. Keys are off until you click the arena again." becomes
+ * "Target cleared.". Any other message stays.
+ *
+ * Once Exit was accepted (state.shuttingDown) no key works any more, so the
+ * chip reads "Keys Off" (with no invitation to click the arena) and the
+ * arena loses its keys-on frame, wherever focus is.
+ *
+ * @returns {void}
+ */
+function paintKeysState() {
+  const on =
+    !isReplayMode() &&
+    !state.shuttingDown &&
+    document.activeElement === elements.battlefield;
+  elements.keysChip.classList.toggle("off", !on);
+  elements.keysText.textContent = on
+    ? "Keys On"
+    : state.shuttingDown
+      ? "Keys Off"
+      : "Keys Off · Click The Arena";
+  elements.arena.classList.toggle("keys-on", on);
+  if (!on) return;
+  const shown = elements.statusMessage.textContent ?? "";
+  if (shown === statusSentence({ kind: "keys_off" })) {
+    clearNotice();
+  } else if (shown === statusSentence({ kind: "cleared", keysOff: true })) {
+    clearNotice(statusSentence({ kind: "cleared", keysOff: false }));
+  }
+}
+
+elements.battlefield.addEventListener("focus", paintKeysState);
+elements.battlefield.addEventListener("blur", paintKeysState);
+
+/**
+ * The top-bar button whose mouse press last kept keys on, or null. Read and
+ * cleared by giveKeysBackAfterTopBarDialog.
+ *
+ * @type {Element | null}
+ */
+let topBarPressKeptKeys = null;
+
+/**
+ * The buttons whose mouse press keeps keys on (keepKeysOnForTopBarPress):
+ * every top-bar button, the Verdict card's two buttons and the Match Summary
+ * sheet's Close.
+ */
+const KEYS_KEPT_BUTTONS =
+  ".app-header button, .herald-verdict-actions__button, .match-summary-sheet__close";
+
+/**
+ * Keep keys on when a top-bar button is pressed with the mouse (owner, 3
+ * October 2026): Agent POV, Oracle View, the Recording pill, How To Play,
+ * Visual Key, Visual Filters and Exit, plus the game-over Verdict card's
+ * Match Summary and Show Arena buttons and the Match Summary sheet's Close
+ * (KEYS_KEPT_BUTTONS). While the battlefield has keyboard focus, the mouse
+ * press on one of these buttons does not move focus to that button (its
+ * default is prevented); the click still
+ * does the button's job, and the button is remembered (topBarPressKeptKeys)
+ * so a dialog it opens gives the keys back (giveKeysBackAfterTopBarDialog).
+ * A press with keys off forgets it. BattleClient and DevClient only; the
+ * Replay Viewer is left alone. Keyboard users still reach every button with
+ * the browser's own Tab order outside the battlefield.
+ *
+ * @param {MouseEvent} event A mousedown, seen in the capture phase.
+ * @returns {void}
+ */
+function keepKeysOnForTopBarPress(event) {
+  if (isReplayMode()) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target?.closest(KEYS_KEPT_BUTTONS) ?? null;
+  if (button === null) return;
+  if (document.activeElement !== elements.battlefield) {
+    topBarPressKeptKeys = null;
+    return;
+  }
+  event.preventDefault();
+  topBarPressKeptKeys = button;
+}
+
+/**
+ * Give keys back after a dialog opened from the top bar closes (owner, 3
+ * October 2026). A modal dialog such as the Visual Key takes focus while it is
+ * open, and on close it hands focus to its own top-bar button. When that
+ * button's press had kept keys on (topBarPressKeptKeys), focus goes back to the
+ * battlefield right after the dialog's own close work, so keys are on again;
+ * if the player moved focus somewhere else meanwhile, it stays there. Runs for
+ * a `close` event seen in the capture phase; it clears the remembered button.
+ * BattleClient and DevClient only.
+ *
+ * @param {Event} event A dialog's close event.
+ * @returns {void}
+ */
+function giveKeysBackAfterTopBarDialog(event) {
+  const button = topBarPressKeptKeys;
+  if (
+    isReplayMode() ||
+    button === null ||
+    !(event.target instanceof HTMLDialogElement)
+  ) {
+    return;
+  }
+  topBarPressKeptKeys = null;
+  window.setTimeout(() => {
+    const active = document.activeElement;
+    if (active === button || active === null || active === document.body) {
+      elements.battlefield.focus({ preventScroll: true });
+    }
+  }, 0);
+}
+
+document.addEventListener("mousedown", keepKeysOnForTopBarPress, true);
+document.addEventListener("close", giveKeysBackAfterTopBarDialog, true);
+
+/**
+ * Make a plain click on the arena only turn keys on, never pin a card
+ * (owner, 3 October 2026). The tooltip controller pins a symbol's card (a
+ * stone, a waystone, a mark) when it is clicked; in the BattleClient and
+ * DevClient a click on the arena is the click that gives keys, so a pin on a
+ * mark inside the battlefield is dropped right after the click, and the card
+ * then shows only while the pointer rests on its mark (hover), as before the
+ * click. Pins outside the battlefield and every Replay Viewer pin are kept.
+ * Uses only the controller's public pinnedOwner, hide and refresh.
+ *
+ * @returns {void}
+ */
+function unpinArenaCardAfterClick() {
+  if (isReplayMode()) return;
+  const pinned = tooltipController.pinnedOwner();
+  if (pinned === null || !elements.battlefield.contains(pinned)) return;
+  tooltipController.hide();
+  tooltipController.refresh();
+}
+
+elements.battlefield.addEventListener("click", unpinArenaCardAfterClick);
 
 elements.battlefield.addEventListener(
   "pointerdown",
@@ -6557,6 +8406,15 @@ elements.battlefield.addEventListener(
       const tooltipOwner = event.target.closest("[data-tooltip-owner]");
       const agent = event.target.closest(".agent[data-presentation-key]");
       if (tooltipOwner !== null && tooltipOwner !== agent) {
+        // A right click on a mark still clears the target (the battlefield
+        // controls send the secondary pointer). Any other click on a mark
+        // keeps its tooltip, sends nothing, and still turns keys on: the
+        // arena, not the mark, takes keyboard focus, as on the vision page.
+        if (event.button === 2) return;
+        if (!isReplayMode()) {
+          event.preventDefault();
+          elements.battlefield.focus({ preventScroll: true });
+        }
         event.stopImmediatePropagation();
         return;
       }
@@ -6575,6 +8433,7 @@ elements.battlefield.addEventListener(
       return;
     }
     if (activation === null) {
+      sayOwnChampionClicked(event.target);
       return;
     }
     event.preventDefault();
@@ -6584,6 +8443,34 @@ elements.battlefield.addEventListener(
   },
   true,
 );
+
+/**
+ * Say "Giving orders to your <Class>." when a plain click lands on your own
+ * champion that already has the orders (no focus change, so no command says
+ * it). Reads the clicked body's presentation key, the audience's own scene
+ * (your champion is always in it) and the Manual slots of the match setup.
+ * Does nothing for any other body or outside live play.
+ *
+ * @param {EventTarget | null} target The pointerdown target.
+ * @returns {void}
+ */
+function sayOwnChampionClicked(target) {
+  if (isReplayMode() || !(target instanceof Element)) return;
+  const key = target
+    .closest(".agent[data-presentation-key]")
+    ?.getAttribute("data-presentation-key");
+  if (typeof key !== "string") return;
+  const scene = authorizedPresentationSceneView(state.presentation);
+  const agent = asArray(scene?.agents).find(
+    (candidate) => isRecord(candidate) && candidate.presentation_key === key,
+  );
+  const manual = asArray(state.frame?.combat_configuration?.manual_slots);
+  if (isRecord(agent) && manual.includes(Number(agent.public_agent_id))) {
+    clearNotice(
+      statusSentence({ kind: "focus_own", className: String(agent.class_name) }),
+    );
+  }
+}
 
 elements.battlefield.addEventListener(
   "keydown",
@@ -6622,35 +8509,37 @@ elements.viewSelect.addEventListener("change", () => {
   }
 });
 
-elements.resetButton.addEventListener("click", () => {
-  dispatchCommand({ command_type: "reset" });
-});
+bindCommandDeck();
 
-/** @type {"pointer" | "keyboard" | null} */
-let commandTargetSelectionModality = null;
-elements.commandTargetSelect.addEventListener("pointerdown", () => {
-  commandTargetSelectionModality = "pointer";
-});
-elements.commandTargetSelect.addEventListener("pointercancel", () => {
-  commandTargetSelectionModality = null;
-});
-elements.commandTargetSelect.addEventListener("keydown", () => {
-  commandTargetSelectionModality = "keyboard";
-});
-elements.commandTargetSelect.addEventListener("change", () => {
-  const pointerOriginated = commandTargetSelectionModality === "pointer";
-  commandTargetSelectionModality = null;
-  const command = targetSelectionCommand(elements.commandTargetSelect.value);
-  if (!command) {
-    return;
+/**
+ * Finish And Save from the status line, the Recording popover or the Stopped
+ * overlay: close the popover, then send one finish_and_review. Python ends the
+ * game and writes the replay file; the pill and seal then read Saved.
+ */
+function finishAndSave() {
+  if (elements.recordingPopover.matches(":popover-open")) {
+    elements.recordingPopover.hidePopover();
   }
-  dispatchCommandFromDraftControl(command, {
-    restoreFocusTo: pointerOriginated ? null : elements.commandTargetSelect,
-  });
-});
-
-elements.recordingFinishButton.addEventListener("click", () => {
   void dispatchCommand({ command_type: "finish_and_review" });
+}
+
+for (const button of [
+  elements.recordingFinishButton,
+  elements.recordingPopFinishButton,
+  elements.stoppedSaveButton,
+]) {
+  button.addEventListener("click", finishAndSave);
+}
+
+// Watch Only: Back To Your <Class> gives the orders back to your champion (the
+// last Manual champion you ordered, else the first Manual slot). The own
+// champion is always in the audience's scene, so selectAgentFromHud finds it.
+elements.watchOnlyBackButton.addEventListener("click", () => {
+  const facts = ownOrderFacts(state.presentation, state.frame);
+  const manualSlots = asArray(state.frame?.combat_configuration?.manual_slots);
+  const own =
+    lastManualPublicId ?? (manualSlots.length > 0 ? String(manualSlots[0]) : null);
+  if (facts !== null && own !== null) selectAgentFromHud(own);
 });
 
 elements.recordingReviewButton.addEventListener("click", () => {
@@ -6693,10 +8582,17 @@ elements.recordingSaveAsInput.addEventListener(
 );
 
 elements.recordingDiscardDialog.addEventListener("close", () => {
+  // Cancel (or Esc) closes the dialog with no request: say so, as the vision does.
+  if (pendingRecordingReplacement !== null && !isReplayMode()) {
+    clearNotice(statusSentence({ kind: "restart_cancelled" }));
+  }
   pendingRecordingReplacement = null;
 });
 
 elements.recordingDiscardDialog.addEventListener("cancel", () => {
+  if (pendingRecordingReplacement !== null && !isReplayMode()) {
+    clearNotice(statusSentence({ kind: "restart_cancelled" }));
+  }
   pendingRecordingReplacement = null;
 });
 
@@ -6770,62 +8666,50 @@ if (!isReplayMode()) {
   });
 }
 
-elements.liveRunButton.addEventListener("click", () => {
-  if (elements.liveRunButton.disabled || isReplayMode() || !state.frame) return;
-  void dispatchCommand(
-    state.frame.run_state === "running"
-      ? {
-          command_type: "pause",
-          session_id: state.frame.session_id,
-          run_generation: state.frame.run_generation,
-        }
-      : { command_type: "run" },
-  );
-});
+/**
+ * Open or close How To Play. In the BattleClient and DevClient it is the
+ * overlay over the arena (#htp), as on the vision page; in the Replay Viewer it
+ * is the Help dialog. Works at any time, also at game over and while a command
+ * is out: it is page-local and sends nothing.
+ *
+ * @param {boolean} [open] true opens, false closes; leave it out to toggle.
+ * @returns {void}
+ */
+function toggleHowToPlay(open) {
+  if (isReplayMode()) {
+    if (open === false) elements.helpDialog.close();
+    else if (!elements.helpDialog.open) elements.helpDialog.showModal();
+    return;
+  }
+  elements.howToPlay.hidden = !(open ?? elements.howToPlay.hidden);
+}
 
-elements.helpButton.addEventListener("click", () => {
+elements.helpButton.addEventListener("click", () => toggleHowToPlay());
+elements.howToPlayCloseButton.addEventListener("click", () => toggleHowToPlay(false));
+elements.railFullGuideButton.addEventListener("click", () => toggleHowToPlay());
+// Read The Full Guide: the full key guide is the Help dialog with every key.
+elements.howToPlayFullButton.addEventListener("click", () => {
+  toggleHowToPlay(false);
   elements.helpDialog.showModal();
 });
 
+// Local jobs of the one command set that this page owns. The Replay Viewer's
+// single keyboard dispatcher (bindReplayTimelineControls) reaches them for ?
+// and G; the live battlefield opens Help on ? itself and forwards G to Python,
+// so these two run only in the Replay Viewer. Camera keys (V, B) and Frame
+// Explanation (F) are registered by their own owners.
+registerLocalCommandHandler("help", () => {
+  if (elements.helpDialog.open) {
+    return false;
+  }
+  elements.helpDialog.showModal();
+  return true;
+});
+registerLocalCommandHandler("ranges", () => toggleReplayRanges());
+
 bindReplayTimelineControls(replayTimelineElements, replayPlayback);
 
-/**
- * Apply a checkbox change from the visual-filter container to local filter state.
- * Ignore other event targets or inputs without a filter ID. The shared action
- * handler validates the ID, pauses replay on change, and repaints.
- *
- * @param {Event} event
- */
-const handleVisualFilterChange = (event) => {
-  const input = event.target;
-  if (
-    !(input instanceof HTMLInputElement) ||
-    input.type !== "checkbox" ||
-    !input.dataset.visualFilterId
-  ) {
-    return;
-  }
-  applyVisualFilterAction({
-    type: "set",
-    filterId: input.dataset.visualFilterId,
-    enabled: input.checked,
-  });
-};
-
-elements.visualFilterOptions.addEventListener("change", handleVisualFilterChange);
-
-elements.enableAllVisualFiltersButton.addEventListener("click", () => {
-  applyAllVisualControls(true);
-});
-
-elements.disableAllVisualFiltersButton.addEventListener("click", () => {
-  applyAllVisualControls(false);
-});
-
-elements.defaultVisualFiltersButton.addEventListener("click", () => {
-  applyVisualFilterAction({ type: "restore_defaults" });
-  setActiveRangesVisible(false);
-});
+bindFilterControls();
 
 elements.replayExportPngButton.addEventListener("click", () => {
   void exportReplayBattlefieldPng();
@@ -6940,27 +8824,44 @@ elements.metricSearchMore.addEventListener("click", () => {
   renderReplayMetricSearch();
 });
 
-elements.replayRangesButton.addEventListener("click", () => {
+/**
+ * Toggle Ranges in the Replay Viewer: the Ranges button and the G key.
+ *
+ * Agent POV flips the page-local range choice and repaints (no request, no
+ * Agent POV switch). Oracle View sends one set_ranges replay command with the
+ * opposite of the installed frame's choice. Does nothing outside the Replay
+ * Viewer, while the Ranges button is disabled, or without an Oracle View or
+ * Agent POV presentation.
+ *
+ * @returns {boolean} Whether a local change or one request started.
+ */
+function toggleReplayRanges() {
   if (!isReplayMode() || elements.replayRangesButton.disabled) {
-    return;
+    return false;
   }
   if (authorizedPresentationAudience(state.presentation) === "agent_pov") {
     if (toggleAgentLocalRanges()) {
       render();
+      return true;
     }
-    return;
+    return false;
   }
   if (authorizedPresentationAudience(state.presentation) !== "researcher") {
-    return;
+    return false;
   }
   const frame = state.frame;
   if (!frame) {
-    return;
+    return false;
   }
   void dispatchReplayCommand({
     command_type: "set_ranges",
     show_ranges: frame.show_ranges !== true,
   });
+  return true;
+}
+
+elements.replayRangesButton.addEventListener("click", () => {
+  toggleReplayRanges();
 });
 
 /**
@@ -7011,34 +8912,6 @@ elements.liveRangesButton.addEventListener("click", () => {
 document.addEventListener("visibilitychange", () => {
   replayPlayback.setHidden(document.hidden);
 });
-
-if (elements.commandDeck) {
-  const buttons = /** @type {NodeListOf<HTMLButtonElement>} */ (
-    elements.commandDeck.querySelectorAll("button[data-key]")
-  );
-  for (const button of buttons) {
-    button.addEventListener("click", (event) => {
-      if (button.getAttribute("aria-disabled") === "true") {
-        setNotice(
-          button.dataset.tooltipText ??
-            "That pending choice is unavailable in the current authoritative mask.",
-          "warning",
-        );
-        renderConnection();
-        return;
-      }
-      const restoreKeyboardFocus = event.detail === 0;
-      dispatchCommandFromDraftControl(
-        keyboardCommand(button.dataset.key ?? "", {
-          shiftKey: button.dataset.shift === "true",
-        }),
-        {
-          restoreFocusTo: restoreKeyboardFocus ? button : null,
-        },
-      );
-    });
-  }
-}
 
 const battlefieldResizeObserver = new ResizeObserver(scheduleBattlefieldResize);
 battlefieldResizeObserver.observe(elements.battlefieldShell);
@@ -7115,38 +8988,6 @@ for (const { panelId, panel, body } of scientificDisclosures) {
     }
   });
 }
-
-elements.visualFilters.addEventListener("toggle", () => {
-  if (elements.visualFilters.open) {
-    return;
-  }
-  const active = document.activeElement;
-  const summary = elements.visualFilters.querySelector(":scope > summary");
-  if (
-    active instanceof Element &&
-    active !== summary &&
-    elements.visualFilters.contains(active) &&
-    summary instanceof HTMLElement
-  ) {
-    summary.focus({ preventScroll: true });
-  }
-});
-
-elements.visualKey.addEventListener("toggle", () => {
-  if (elements.visualKey.open) {
-    return;
-  }
-  const active = document.activeElement;
-  const summary = elements.visualKey.querySelector(":scope > summary");
-  if (
-    active instanceof Element &&
-    active !== summary &&
-    elements.visualKey.contains(active) &&
-    summary instanceof HTMLElement
-  ) {
-    summary.focus({ preventScroll: true });
-  }
-});
 
 registerControlHelp();
 if (productIdentity === null) {

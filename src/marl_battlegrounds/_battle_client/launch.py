@@ -2,8 +2,17 @@
 
 The public call owns one local session until Exit or Ctrl-C. Task setup, method
 execution, recording, server transport and drawing retain their existing owners.
-Private integrations may explicitly supply public editable assets; the public
-call uses package resources only and never searches a checkout for missing files.
+Private integrations may explicitly supply public editable assets. The public
+call uses package resources; code running from a source checkout, which has no
+packaged page, uses that same checkout's page and never searches anywhere else.
+The public BattleClient opens in Agent POV; private callers (the browser test
+harness, the DevClient) pass ``view_mode="researcher"`` to ``_launch_setup`` to
+keep Oracle View. Every launch opens with the reach rings shown (the owner's
+1 October 2026 decision for the BattleClient and the DevClient; G hides them).
+Every launch compiles the first turn before the page opens, so no Lock In
+waits for compilation. A finished game saves its replay in the background, and
+a Replay Viewer opened with Open Replay keeps serving after Exit until its own
+Exit or Ctrl-C.
 """
 
 from __future__ import annotations
@@ -12,20 +21,26 @@ from collections.abc import Sequence
 from contextlib import ExitStack, nullcontext
 from importlib.resources import as_file, files
 from pathlib import Path
+from types import TracebackType
 from typing import cast
 from uuid import uuid4
 
-from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.control import (
+    create_session,
+    warm_compiled_turn,
+)
 from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_launch_specification_v1,
 )
 from marl_battlegrounds._battle_client.methods import resolve_controllers
 from marl_battlegrounds._battle_client.model import team_controller_action_source
+from marl_battlegrounds._battle_client.protocol import ViewMode
 from marl_battlegrounds._battle_client.recording import (
     build_debugger_recording_specification_v1,
     recording_policy_execution_included,
 )
 from marl_battlegrounds._battle_client.recording_coordinator import (
+    KeptReplayViewer,
     RecordingDebuggerCoordinator,
 )
 from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
@@ -44,6 +59,7 @@ from marl_battlegrounds.evaluation.replay_io import (
 from marl_battlegrounds.evaluation.revision import discover_code_revision_v2
 from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
 from marl_battlegrounds.tasks import AgentClassName
+from marl_battlegrounds.viewer.launch import checkout_browser_files
 from marl_battlegrounds.viewer.server import serve_browser_debugger
 
 
@@ -66,18 +82,49 @@ def _launch_setup(
     output_dir: Path,
     capture_replay: bool,
     asset_root: Path | None = None,
+    view_mode: ViewMode = "pov",
 ) -> int:
     """Serve prepared content while keeping its resources and recorder alive.
 
     setup contains validated scientific inputs. port and flags are checked by the
     caller. output_dir is an explicit destination, touched only when capture is
     enabled. asset_root is an explicit public frontend for internal source tools;
-    None uses installed resources. Return the existing server exit status. Setup,
-    resource and server errors propagate, and every created service is closed.
+    None uses installed resources, or the running checkout's own
+    web/visual_debugger when there are none (viewer.launch.checkout_browser_files).
+    view_mode is the starting view: "pov" (the default, Agent POV, what the
+    public BattleClient uses so a player sees only what the viewing team sees)
+    or "researcher" (Oracle View, for the browser test harness and the
+    DevClient). The player can switch views at any time. The session starts
+    with the reach rings shown (show_ranges True); G hides or shows them.
+    Before serving, it compiles the first turn once (control.warm_compiled_turn)
+    and prints one line saying so, so the first Lock In does not wait for JAX.
+    With capture on, a game that ends saves its replay in the background
+    (DebuggerService save_in_background), so game over shows at once, and a
+    Replay Viewer opened with Open Replay outlives Exit: after the live game,
+    its methods and its assets are released, this call keeps serving that
+    Viewer (KeptReplayViewer.serve_until_closed) until the Viewer's own Exit
+    or Ctrl-C. Return the existing server exit status. Setup, resource and
+    server errors propagate, every created service is closed, and a kept
+    Viewer is stopped when an error follows its release.
     """
     resolved = resolve_controllers(setup)
     controllers = resolved.controllers
+    exit_code = 0
+    kept_viewer: KeptReplayViewer | None = None
+
+    def stop_kept_viewer_on_error(
+        error_type: type[BaseException] | None,
+        _error: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> bool:
+        """Stop a released Viewer if the launch then fails; never hide the error."""
+        if error_type is not None and kept_viewer is not None:
+            kept_viewer.close()
+        return False
+
     with ExitStack() as lifetime:
+        # Pushed first, so it runs last: after every later cleanup step.
+        lifetime.push(stop_kept_viewer_on_error)
         for method in resolved.methods:
             if method.resource_scope is not None:
                 lifetime.enter_context(method.resource_scope(False))
@@ -93,7 +140,8 @@ def _launch_setup(
                 else "debug",
             ),
             controlled_global_slot=None,
-            show_ranges=False,
+            # Reach rings start shown; G toggles them (session.show_ranges).
+            show_ranges=True,
             verbose_logging=False,
             team_a_controller=controllers[0],
             team_b_controller=controllers[1],
@@ -103,6 +151,9 @@ def _launch_setup(
             manual_slots=resolved.manual_slots,
             slot_labels=resolved.slot_labels,
         )
+        # Compile the first turn before the page opens, so no Lock In waits.
+        print("BattleClient: preparing the first turn (compiling once)...", flush=True)
+        warm_compiled_turn(session)
         recorder = None
         if capture_replay:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -136,26 +187,32 @@ def _launch_setup(
             )
         service = DebuggerService(
             session,
-            view_mode="researcher",
+            view_mode=view_mode,
             preset="analysis",
             include_stress=False,
             recorder=recorder,
             system_worker=worker,
+            save_in_background=True,
         )
         try:
-            resources = (
-                nullcontext(asset_root)
-                if asset_root is not None
-                else as_file(files("marl_battlegrounds.viewer").joinpath("web"))
-            )
+            if asset_root is not None:
+                resources = nullcontext(asset_root)
+            else:
+                packaged = files("marl_battlegrounds.viewer").joinpath("web")
+                checkout = checkout_browser_files(packaged)
+                resources = (
+                    nullcontext(checkout) if checkout is not None else as_file(packaged)
+                )
             with resources as root:
                 coordinator = (
                     None
                     if recorder is None
-                    else RecordingDebuggerCoordinator(service, asset_root=root)
+                    else RecordingDebuggerCoordinator(
+                        service, asset_root=root, keep_viewer_after_exit=True
+                    )
                 )
                 try:
-                    return serve_browser_debugger(
+                    exit_code = serve_browser_debugger(
                         service,
                         asset_root=root,
                         port=port,
@@ -168,11 +225,17 @@ def _launch_setup(
                         if coordinator is None
                         else coordinator.graceful_close,
                     )
+                    if coordinator is not None:
+                        kept_viewer = coordinator.release_kept_viewer()
                 finally:
                     if coordinator is not None:
                         coordinator.close()
         finally:
+            # Waits for a background save, so the replay file exists first.
             service.close()
+    if kept_viewer is not None:
+        kept_viewer.serve_until_closed()
+    return exit_code
 
 
 def battle_client(
@@ -220,14 +283,20 @@ def battle_client(
         Replay folder, relative to the caller's working directory. Created only
         with capture enabled. Each launch gets a separate replay destination.
     capture_replay : bool, default=True
-        Capture from frame zero for later Save or Finish And Save. False skips
+        Capture from frame zero for later Save or Finish And Save. When a game
+        ends, its replay saves by itself in the background: game over shows at
+        once, the Recording pill reads "Saving Replay…" and then "Saved".
+        Exit or Ctrl-C before the first tick writes no replay. False skips
         recorder and output-file work.
 
     Returns
     -------
     int
         Server exit status. The call blocks until Exit or Ctrl-C; closing or
-        refreshing a tab does not silently destroy the session.
+        refreshing a tab does not silently destroy the session. If you opened
+        the saved replay with Open Replay, Exit closes only the game: the call
+        then prints the Replay Viewer's address and keeps serving it until you
+        press Exit in the Replay Viewer or Ctrl-C in the terminal.
 
     Raises
     ------
@@ -241,6 +310,28 @@ def battle_client(
 
     Notes
     -----
+    Speed: before the browser opens, the call compiles the first turn once and
+    prints "preparing the first turn (compiling once)". This takes a few seconds
+    (measured with 7b+pool against TDM-Beta: about 4 to 7 s on CPU and about
+    12 s on an RTX 5090). After that no Lock In compiles anything: every JAX
+    method (built-in names, saved checkpoints and your own JAX Systems) runs
+    as one compiled program per pair of methods, with weights, memory, inputs
+    and keys as ordinary values, so each later turn takes about 0.02 s plus
+    your method's own time. Restart reuses the compiled program. A method that
+    runs on the host (an LLM, for example) is never called during this
+    preparation; its outside effects and cost happen only on real turns, and
+    its JAX opponent is still compiled once.
+
+    The page opens in Agent POV: the arena and the BattleClient panels show only
+    what the viewing team sees, and unseen enemies read "Unseen". The viewing
+    team is the team of the Manual champion you last focused (inspecting a
+    policy champion or an enemy never changes it); in a game with no Manual
+    champion it follows the champion you look at. Oracle View, which shows
+    everything, is one switch away and is marked during play. Open Replay always
+    opens the Replay Viewer in Oracle View. Agent POV is a fairness aid for play,
+    not a security boundary: the browser still receives the global researcher
+    panels, which developer tools can read.
+
     Requires installed browser assets, no Node or Docker. Custom methods supply
     their own dependencies. Checkpoints use the training extra. A custom checkpoint
     format can be loaded by the researcher's Python code and passed as a System.

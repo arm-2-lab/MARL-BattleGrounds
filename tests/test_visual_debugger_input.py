@@ -1,4 +1,11 @@
-"""Check input handling and authorization independently of drawing."""
+"""Check input handling and authorization independently of drawing.
+
+W A S D Q E Z C step and X stays. Arrow keys never move a champion and V has
+no host job: both come back unhandled with the session unchanged, while every
+other key keeps its job. N is one tick: in interactive play it is Space (the
+same submission and tick), in scripted playback the next registered frame.
+Agent POV recipient rules live in test_battle_client_view_recipient.py.
+"""
 
 from dataclasses import replace
 from unittest.mock import Mock
@@ -41,6 +48,7 @@ from marl_battlegrounds._battle_client.protocol import (
     SetCombatConfigurationCommandV1,
     SetPresetCommandV1,
     SetViewCommandV1,
+    ViewMode,
 )
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.types import (
@@ -212,10 +220,10 @@ def test_combat_configuration_command_is_exact_no_op_or_fresh_episode() -> None:
         ("return", None, "enter"),
         ("Esc", None, "escape"),
         ("ArrowUp", None, "arrowup"),
-        ("up", None, "arrowup"),
+        ("up", None, "up"),
         ("ArrowDown", None, "arrowdown"),
-        ("left", None, "arrowleft"),
-        ("RIGHT", None, "arrowright"),
+        ("left", None, "left"),
+        ("RIGHT", None, "right"),
         ("X", None, "x"),
         ("0", None, "0"),
     ),
@@ -259,13 +267,9 @@ def test_shift_r_is_unrecognized_while_ordinary_r_still_resets() -> None:
     ("key", "expected_move"),
     (
         ("w", MOVE_NORTH),
-        ("ArrowUp", MOVE_NORTH),
         ("s", MOVE_SOUTH),
-        ("ArrowDown", MOVE_SOUTH),
         ("d", MOVE_EAST),
-        ("ArrowRight", MOVE_EAST),
         ("a", MOVE_WEST),
-        ("ArrowLeft", MOVE_WEST),
     ),
 )
 def test_keyboard_movement_edits_only_pending_input(
@@ -287,6 +291,28 @@ def test_keyboard_movement_edits_only_pending_input(
     assert result.session.state is session.state
     assert result.session.action_mask is session.action_mask
     assert result.session.key is session.key
+
+
+@pytest.mark.parametrize(
+    "key",
+    ("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "up", "left", "v", "V"),
+)
+@pytest.mark.parametrize("view_mode", ("researcher", "pov"))
+def test_arrow_keys_and_v_have_no_host_job(key: str, view_mode: ViewMode) -> None:
+    session = replace(_session(), verbose_logging=True)
+    result = dispatch_command(
+        session,
+        KeyboardCommandV1(key=key),
+        view_mode=view_mode,
+        preset="analysis",
+        include_stress=False,
+    )
+
+    assert not result.handled
+    assert not result.changed
+    assert result.session is session
+    assert result.session.verbose_logging is True
+    assert result.notice is None
 
 
 def test_stay_key_resets_only_the_controlled_actor_draft() -> None:
@@ -655,11 +681,18 @@ def test_scripted_view_switch_preserves_the_exact_inspection_session() -> None:
     assert exit_result.shutdown_requested
 
 
-def test_n_advances_only_scripted_playback() -> None:
+def test_n_is_one_tick_in_interactive_and_scripted_play() -> None:
     interactive = _session()
     interactive_result = dispatch_command(
         interactive,
         KeyboardCommandV1(key="n"),
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+    )
+    space_result = dispatch_command(
+        _session(),
+        KeyboardCommandV1(key=" "),
         view_mode="researcher",
         preset="analysis",
         include_stress=False,
@@ -673,9 +706,16 @@ def test_n_advances_only_scripted_playback() -> None:
         include_stress=False,
     )
 
-    assert not interactive_result.changed
-    assert interactive_result.session is interactive
-    assert interactive_result.notice == "N advances scripted playback only."
+    # Interactive N takes Space's own path: one tick, the same submission.
+    assert interactive_result.changed
+    assert interactive_result.transition_applied is not None
+    assert int(interactive_result.session.state.step_count) == 1
+    assert int(space_result.session.state.step_count) == 1
+    assert (
+        interactive_result.session.last_submission_kind
+        == space_result.session.last_submission_kind
+    )
+    assert interactive_result.notice == space_result.notice
     assert scripted_result.changed
     assert int(scripted_result.session.state.step_count) == 1
     assert scripted_result.transition_applied is not None

@@ -1,6 +1,14 @@
 /**
  * @file Check tooltip record validation, accessible rendering, field visibility and
- * interaction lifecycle.
+ * interaction lifecycle. Also checks the Symbol Tip contracts: the "symbol"
+ * descriptor kind built from the one symbol list (title, line, facts, note,
+ * class accent, unknown symbols refused), registerSymbolOwner (stable key,
+ * focusable owner), symbolHitRect (18 px export-safe hit box), heldSymbolValue
+ * (life and score held by the beat clock), the top-layer card (popover="manual",
+ * showPopover and hidePopover), click and tap pins (second tap or a tap elsewhere
+ * closes, Escape closes, Enter acts as a click), the symbol_explanations switch
+ * (setSymbolTipsEnabled) and a pin or focus that follows its symbol across a
+ * redraw.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -8,12 +16,18 @@ import test from "node:test";
 import {
   chooseTooltipCandidate,
   createSemanticDescriptor,
+  createSymbolDescriptor,
   createTooltipController,
+  heldSymbolValue,
   placeTooltip,
   projectSemanticDescriptor,
+  registerSymbolOwner,
   registerTooltipOwner,
   renderSemanticDescriptor,
+  SYMBOL_HIT_BOX_PX,
+  SYMBOL_TIP_KIND,
   semanticDescriptorText,
+  symbolHitRect,
 } from "../src/tooltip.js";
 
 /** @param {string} kind
@@ -1455,4 +1469,401 @@ test("removing the active owner hides the singleton through delegated observatio
     controller.destroy();
   }
   assert.equal(disconnected, true);
+});
+
+const OWNER_BOUNDS = Object.freeze({
+  left: 100,
+  top: 100,
+  right: 120,
+  bottom: 120,
+  width: 20,
+  height: 20,
+});
+
+/** @param {ReturnType<typeof controllerHarness>} harness */
+function symbolTipHarness(harness) {
+  /** @type {string[]} */
+  const popoverCalls = [];
+  let popoverOpen = false;
+  const tooltip = /** @type {any} */ (harness.tooltip.element);
+  tooltip.showPopover = () => {
+    popoverCalls.push("show");
+    popoverOpen = true;
+  };
+  tooltip.hidePopover = () => {
+    popoverCalls.push("hide");
+    popoverOpen = false;
+  };
+  tooltip.matches = (/** @type {string} */ selector) =>
+    selector === ":popover-open" && popoverOpen;
+  /** @type {Array<() => void>} */
+  const observers = [];
+  const view = /** @type {any} */ (harness.ownerDocument.defaultView);
+  view.MutationObserver = class {
+    /** @param {() => void} callback */
+    constructor(callback) {
+      observers.push(callback);
+    }
+    observe() {}
+    disconnect() {}
+  };
+  /** @type {Element[]} */
+  const page = [];
+  Object.assign(/** @type {any} */ (harness.root), {
+    /** @param {string} selector */
+    querySelectorAll(selector) {
+      assert.equal(selector, "[data-symbol-key]");
+      return page.filter((element) => element.getAttribute("data-symbol-key") !== null);
+    },
+  });
+  /** @param {string} name */
+  function owner(name) {
+    const element = /** @type {any} */ (
+      fakeElement(harness.ownerDocument, OWNER_BOUNDS, name).element
+    );
+    element.isConnected = true;
+    /** @type {unknown[]} */
+    element.focusCalls = [];
+    element.focus = (/** @type {unknown} */ options) =>
+      element.focusCalls.push(options);
+    page.push(element);
+    return /** @type {HTMLElement & {isConnected: boolean, focusCalls: unknown[]}} */ (
+      element
+    );
+  }
+  return {
+    owner,
+    page,
+    popoverCalls,
+    isPopoverOpen: () => popoverOpen,
+    runObservers: () => {
+      for (const callback of observers) callback();
+    },
+  };
+}
+
+/** @param {EventTarget} root
+ * @param {Element} target
+ * @param {string} [pointerType] */
+function dispatchClick(root, target, pointerType = "mouse") {
+  const event = new Event("click", { cancelable: true });
+  Object.defineProperties(event, {
+    target: { value: target },
+    pointerType: { value: pointerType },
+    clientX: { value: 110 },
+    clientY: { value: 110 },
+  });
+  root.dispatchEvent(event);
+}
+
+test("symbol descriptors read the one symbol list and refuse unknown symbols", () => {
+  const plain = createSymbolDescriptor({ symbol: "red_zone" });
+  assert.equal(plain.kind, SYMBOL_TIP_KIND);
+  assert.equal(plain.kind, "symbol");
+  assert.equal(plain.id, "symbol:red_zone");
+  assert.equal(plain.title, "Red Zone");
+  assert.match(plain.summary, /enemy|2 points|scores/u);
+  assert.deepEqual(plain.rows, []);
+  assert.equal(plain.accent, "none");
+  assert.equal(plain.anchor, "element");
+  assert.equal(Object.isFrozen(plain), true);
+
+  const line =
+    "Serrated Arrows (Slow) · x0.85 speed · 1 tick left · from Hunter ID 7's Serrated Arrows";
+  const status = createSymbolDescriptor({
+    symbol: "slow_snagged",
+    id: "status:7",
+    line,
+    facts: [{ label: "Ticks Left", value: "1" }],
+    note: "Your team saw this blow land.",
+  });
+  assert.equal(status.id, "status:7");
+  assert.equal(status.title, "Serrated Arrows (Slow)");
+  assert.equal(status.summary, line);
+  assert.deepEqual(
+    status.rows.map((row) => row.label),
+    ["Ticks Left", "What It Means", "Note"],
+  );
+  assert.equal(status.rows[2].value, "Your team saw this blow land.");
+
+  assert.equal(createSymbolDescriptor({ symbol: "class_hunter" }).accent, "hunter");
+  assert.equal(createSymbolDescriptor({ symbol: "basic_priest" }).accent, "priest");
+  assert.throws(() => createSymbolDescriptor({ symbol: "not_a_symbol" }), RangeError);
+  assert.throws(
+    () =>
+      createSymbolDescriptor({
+        symbol: "life_bar",
+        facts: [{ label: "", value: "1" }],
+      }),
+    TypeError,
+  );
+  assert.throws(() => createSymbolDescriptor(/** @type {any} */ (null)), TypeError);
+});
+
+test("symbol owners carry a stable key, become focusable and get a hit box", () => {
+  const { element } = fakeElement(/** @type {Document} */ ({}), OWNER_BOUNDS, "chip");
+  registerSymbolOwner(
+    element,
+    createSymbolDescriptor({ symbol: "life_bar" }),
+    "life:pov_1",
+  );
+  assert.equal(element.getAttribute("data-symbol-key"), "life:pov_1");
+  assert.equal(element.getAttribute("data-symbol"), "life_bar");
+  assert.equal(element.getAttribute("tabindex"), "0");
+  assert.equal(element.getAttribute("data-tooltip-owner"), "");
+  assert.ok(element.getAttribute("aria-description"));
+  assert.throws(
+    () =>
+      registerSymbolOwner(element, createSymbolDescriptor({ symbol: "life_bar" }), " "),
+    TypeError,
+  );
+
+  /** @type {Array<Record<string, string>>} */
+  const made = [];
+  const doc = /** @type {Document} */ (
+    /** @type {unknown} */ ({
+      /** @param {string} namespace @param {string} tag */
+      createElementNS(namespace, tag) {
+        assert.equal(namespace, "http://www.w3.org/2000/svg");
+        assert.equal(tag, "rect");
+        /** @type {Record<string, string>} */
+        const attributes = {};
+        made.push(attributes);
+        return {
+          /** @param {string} name @param {string} value */
+          setAttribute(name, value) {
+            attributes[name] = value;
+          },
+        };
+      },
+    })
+  );
+  symbolHitRect(doc, 50, 40, 6, 30);
+  assert.equal(SYMBOL_HIT_BOX_PX, 18);
+  assert.deepEqual(made[0], {
+    class: "symbol-hit-area",
+    x: String(50 - 9),
+    y: String(40 - 15),
+    width: "18",
+    height: "30",
+    fill: "#000",
+    "fill-opacity": "0",
+    "pointer-events": "all",
+  });
+  assert.throws(() => symbolHitRect(doc, Number.NaN, 0), TypeError);
+  assert.throws(() => symbolHitRect(doc, 0, 0, -1, 0), RangeError);
+});
+
+test("tips show the life and score the dramatic hold shows, not the END value", () => {
+  const beat = {
+    life: [{ presentationKey: "pov_a", shown: 42 }],
+    score: { shown: [3, 4] },
+  };
+  assert.equal(
+    heldSymbolValue({ symbolId: "life_bar", beat, presentationKey: "pov_a", value: 0 }),
+    42,
+  );
+  assert.equal(
+    heldSymbolValue({
+      symbolId: "life_bar",
+      beat,
+      presentationKey: "pov_b",
+      value: 77,
+    }),
+    77,
+  );
+  assert.deepEqual(heldSymbolValue({ symbolId: "score", beat, value: [5, 4] }), [3, 4]);
+  assert.equal(heldSymbolValue({ symbolId: "tick_clock", beat, value: 9 }), 9);
+  assert.equal(heldSymbolValue({ symbolId: "life_bar", beat: null, value: 5 }), 5);
+});
+
+test("the card opens in the top layer and closes out of it", () => {
+  const harness = controllerHarness();
+  const tips = symbolTipHarness(harness);
+  const controller = createTooltipController({
+    root: /** @type {HTMLElement} */ (/** @type {unknown} */ (harness.root)),
+    tooltip: harness.tooltip.element,
+    title: harness.title.element,
+    details: harness.details.element,
+  });
+  assert.equal(harness.tooltip.element.getAttribute("popover"), "manual");
+  const owner = tips.owner("life");
+  registerSymbolOwner(owner, createSymbolDescriptor({ symbol: "life_bar" }), "life:a");
+  harness.setHitElements([owner]);
+  dispatchPointerMove(harness.rootTarget, 110, 110);
+  assert.equal(harness.tooltip.element.hidden, false);
+  assert.equal(tips.isPopoverOpen(), true);
+  assert.equal(harness.title.element.textContent, "Life");
+  harness.setHitElements([]);
+  dispatchPointerMove(harness.rootTarget, 10, 10);
+  assert.equal(harness.tooltip.element.hidden, true);
+  assert.equal(tips.isPopoverOpen(), false);
+  assert.deepEqual(tips.popoverCalls, ["show", "hide"]);
+  controller.destroy();
+});
+
+test("a click pins a symbol card; a second click or a click elsewhere closes it", () => {
+  const harness = controllerHarness();
+  const tips = symbolTipHarness(harness);
+  const controller = createTooltipController({
+    root: /** @type {HTMLElement} */ (/** @type {unknown} */ (harness.root)),
+    tooltip: harness.tooltip.element,
+    title: harness.title.element,
+    details: harness.details.element,
+  });
+  const symbol = tips.owner("score");
+  registerSymbolOwner(symbol, createSymbolDescriptor({ symbol: "score" }), "score");
+  const other = tips.owner("pillar");
+  registerTooltipOwner(other, semanticDescriptor("obstacle", "pillar-1"));
+  const elsewhere = tips.owner("floor");
+
+  dispatchClick(harness.rootTarget, symbol);
+  assert.equal(controller.pinnedOwner(), symbol);
+  assert.equal(harness.title.element.textContent, "Score");
+  harness.setHitElements([other]);
+  dispatchPointerMove(harness.rootTarget, 300, 300);
+  assert.equal(harness.title.element.textContent, "Score", "a pin ignores hover");
+  dispatchClick(harness.rootTarget, symbol);
+  assert.equal(controller.pinnedOwner(), null, "the second tap closes it");
+  assert.equal(harness.tooltip.element.hidden, true);
+
+  dispatchClick(harness.rootTarget, symbol);
+  assert.equal(controller.pinnedOwner(), symbol);
+  dispatchClick(harness.rootTarget, elsewhere);
+  assert.equal(controller.pinnedOwner(), null, "a tap elsewhere closes it");
+
+  dispatchClick(harness.rootTarget, other, "mouse");
+  assert.equal(
+    controller.pinnedOwner(),
+    null,
+    "a mouse click on other kinds never pins",
+  );
+  dispatchClick(harness.rootTarget, other, "touch");
+  assert.equal(controller.pinnedOwner(), other, "a tap pins any owner");
+  dispatchAction(harness.rootTarget, "keydown", other, "Escape");
+  assert.equal(controller.pinnedOwner(), null, "Escape closes the pin");
+  assert.equal(harness.tooltip.element.hidden, true);
+
+  const enter = dispatchAction(harness.rootTarget, "keydown", symbol, "Enter");
+  assert.equal(controller.pinnedOwner(), symbol, "Enter acts as a click");
+  assert.equal(enter.defaultPrevented, true);
+  controller.hide();
+  assert.equal(controller.pinnedOwner(), null, "the public hide drops the pin");
+  controller.destroy();
+});
+
+test("the symbol_explanations switch turns symbol tips off and leaves other tips on", () => {
+  const harness = controllerHarness();
+  const tips = symbolTipHarness(harness);
+  const controller = createTooltipController({
+    root: /** @type {HTMLElement} */ (/** @type {unknown} */ (harness.root)),
+    tooltip: harness.tooltip.element,
+    title: harness.title.element,
+    details: harness.details.element,
+  });
+  const symbol = tips.owner("rune");
+  registerSymbolOwner(
+    symbol,
+    createSymbolDescriptor({ symbol: "rune_ring" }),
+    "rune:a",
+  );
+  const other = tips.owner("pillar");
+  registerTooltipOwner(other, semanticDescriptor("obstacle", "pillar-1"));
+
+  dispatchClick(harness.rootTarget, symbol);
+  assert.equal(controller.pinnedOwner(), symbol);
+  controller.setSymbolTipsEnabled(false);
+  assert.equal(controller.pinnedOwner(), null);
+  assert.equal(harness.tooltip.element.hidden, true);
+  harness.setHitElements([symbol]);
+  dispatchPointerMove(harness.rootTarget, 110, 110);
+  assert.equal(harness.tooltip.element.hidden, true, "no hover tip");
+  dispatchFocus(harness.rootTarget, "focusin", symbol);
+  assert.equal(harness.tooltip.element.hidden, true, "no focus tip");
+  dispatchClick(harness.rootTarget, symbol, "touch");
+  assert.equal(controller.pinnedOwner(), null, "no tap tip");
+  harness.setHitElements([other]);
+  dispatchPointerMove(harness.rootTarget, 110, 110);
+  assert.equal(harness.title.element.textContent, "pillar-1", "other tips still show");
+
+  controller.setSymbolTipsEnabled(true);
+  harness.setHitElements([symbol]);
+  dispatchPointerMove(harness.rootTarget, 110, 110);
+  assert.equal(harness.title.element.textContent, "Ultimate Charge");
+  controller.destroy();
+});
+
+test("a pin and keyboard focus follow their symbol to the redrawn node", async () => {
+  const harness = controllerHarness();
+  const tips = symbolTipHarness(harness);
+  const ownerDocument = /** @type {any} */ (harness.ownerDocument);
+  ownerDocument.body = { tagName: "BODY" };
+  ownerDocument.activeElement = ownerDocument.body;
+  const controller = createTooltipController({
+    root: /** @type {HTMLElement} */ (/** @type {unknown} */ (harness.root)),
+    tooltip: harness.tooltip.element,
+    title: harness.title.element,
+    details: harness.details.element,
+  });
+  const first = tips.owner("status-a");
+  registerSymbolOwner(
+    first,
+    createSymbolDescriptor({ symbol: "stun_sapped" }),
+    "stun:pov_1",
+  );
+  dispatchClick(harness.rootTarget, first);
+  assert.equal(controller.pinnedOwner(), first);
+
+  first.isConnected = false;
+  tips.page.splice(tips.page.indexOf(first), 1);
+  const second = tips.owner("status-b");
+  registerSymbolOwner(
+    second,
+    createSymbolDescriptor({ symbol: "stun_sapped" }),
+    "stun:pov_1",
+  );
+  tips.runObservers();
+  assert.equal(controller.pinnedOwner(), second, "the pin moves to the same key");
+  assert.equal(harness.tooltip.element.hidden, false);
+
+  second.isConnected = false;
+  tips.page.splice(tips.page.indexOf(second), 1);
+  tips.runObservers();
+  assert.equal(controller.pinnedOwner(), null, "no replacement: the card hides");
+  assert.equal(harness.tooltip.element.hidden, true);
+
+  const focused = tips.owner("life-a");
+  registerSymbolOwner(
+    focused,
+    createSymbolDescriptor({ symbol: "life_bar" }),
+    "life:pov_2",
+  );
+  dispatchFocus(harness.rootTarget, "focusin", focused);
+  dispatchFocus(harness.rootTarget, "focusout", focused, null);
+  focused.isConnected = false;
+  tips.page.splice(tips.page.indexOf(focused), 1);
+  await Promise.resolve();
+  const redrawn = tips.owner("life-b");
+  registerSymbolOwner(
+    redrawn,
+    createSymbolDescriptor({ symbol: "life_bar" }),
+    "life:pov_2",
+  );
+  tips.runObservers();
+  assert.deepEqual(redrawn.focusCalls, [{ preventScroll: true }]);
+
+  dispatchFocus(harness.rootTarget, "focusin", redrawn);
+  dispatchFocus(harness.rootTarget, "focusout", redrawn, null);
+  await Promise.resolve();
+  redrawn.isConnected = false;
+  tips.page.splice(tips.page.indexOf(redrawn), 1);
+  const later = tips.owner("life-c");
+  registerSymbolOwner(
+    later,
+    createSymbolDescriptor({ symbol: "life_bar" }),
+    "life:pov_2",
+  );
+  tips.runObservers();
+  assert.deepEqual(later.focusCalls, [], "a real blur does not pull focus back");
+  controller.destroy();
 });

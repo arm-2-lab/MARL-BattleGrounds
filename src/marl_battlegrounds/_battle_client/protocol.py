@@ -1241,6 +1241,13 @@ class _LiveDebuggerEnvelopeV2(_ProtocolModel):
     system_operation: SystemOperationV1 | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # Agent POV only: the public ID of the champion the player looks at when
+    # it is not the POV recipient (a policy's champion, or an enemy the team
+    # sees now). Absent (None) otherwise. Display plumbing for Watch Only;
+    # never a policy input.
+    focused_public_agent_id: _CanonicalScientificId | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def _validate_common_epoch(self) -> Self:

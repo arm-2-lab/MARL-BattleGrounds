@@ -7,15 +7,42 @@ while an ID remains cached. Optional recording captures accepted transitions,
 saves through the recorder, and hands verified output to the replay service.
 The HTTP server owns transport and authentication. Callers may supply a scenario
 catalog; otherwise each frame lists only the current scenario.
+
+Agent POV recipient: the service keeps whose eyes Agent POV shows separately
+from the focused champion (``control.agent_pov_recipient_slot``): the last
+Manual champion you focused, or in Policies Only the champion you look at. It
+is recomputed for every candidate session and committed with it, so an Agent
+POV frame always describes the recipient while Oracle View describes the focus.
+Open Replay always opens the child Replay Viewer in Oracle View.
+
+Honors: the presentation builder keeps each committed game's per-transition
+totals (``viewer.match_summary.match_transition_totals_v1``, from the Oracle
+match summary it builds anyway) by frame index, and on the completion frame
+adds them up into each view's ``match_honors`` (Oracle View every champion,
+Agent POV the recipient's own team). A game whose history has a gap (a frame
+never built) gets no Honors rather than wrong ones.
+
+Background save (``save_in_background=True``, what the BattleClient uses): when
+the game ends, the service installs the game-over frame at once with recording
+lifecycle "sealed" (the page says "Saving Replay…") and saves the replay on its
+own thread, outside the service lock. When the save ends, that thread installs
+one new revision whose recording says "saved" (or "persistence_failed"). Any
+command that needs the recording (Exit, Restart, Open Replay, Retry Save, Save
+As, Ctrl-C closeout, ``close``) first waits for the save; view, preset, focus
+and the G, V, P and ? keys do not wait. Without the flag every save runs inside
+the command that ends the game, as before.
+
+Exit, Ctrl-C and Restart before the first tick write no replay file: a game
+with no played tick has nothing to watch.
 """
 
 import logging
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from secrets import token_urlsafe
-from threading import RLock
+from threading import Event, RLock, Thread
 from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict
@@ -23,6 +50,7 @@ from pydantic import BaseModel, ConfigDict
 from marl_battlegrounds._battle_client.control import (
     DebuggerTransitionFailureStageV1,
     DebuggerTransitionFailureV1,
+    agent_pov_recipient_slot,
     reset_session,
     set_combat_configuration,
     switch_scenario,
@@ -33,6 +61,7 @@ from marl_battlegrounds._battle_client.frame import (
 )
 from marl_battlegrounds._battle_client.input import (
     InputDispatchResult,
+    _agent_pov_focusable_slots,  # pyright: ignore[reportPrivateUsage]
     dispatch_command,
     normalize_key,
     recording_restart_intent_v1,
@@ -97,6 +126,13 @@ from marl_battlegrounds.evaluation.replay_io import LoadedReplay
 from marl_battlegrounds.rendering.evaluation_adapter import (
     build_visual_event_batch_v2,
 )
+from marl_battlegrounds.viewer.match_summary import (
+    MatchHonorsV1,
+    MatchSummaryV1,
+    MatchTotalsV1,
+    match_honors_v1,
+    match_transition_totals_v1,
+)
 from marl_battlegrounds.viewer.no_shared_visual import (
     build_live_no_shared_obs_visual_adjacent_slice_v1,
     build_live_no_shared_obs_visual_current_slice_v1,
@@ -106,6 +142,10 @@ from marl_battlegrounds.viewer.presentation_protocol import (
     PresentationResourceResultV1,
 )
 from marl_battlegrounds.viewer.replay_service import ReplayViewerService
+
+# How many recent presentations a service keeps for reuse: the commit build, the
+# page's request and the live snapshot share one; a view switch adds another.
+_REMEMBERED_PRESENTATIONS = 4
 
 
 class LiveSnapshotV1(BaseModel):
@@ -220,6 +260,37 @@ class _FailureCloseoutCandidates:
     ]
 
 
+@dataclass(slots=True)
+class _BackgroundSave:
+    """One game-over replay save that runs on its own thread.
+
+    Attributes
+    ----------
+    recorder : DebuggerReplayRecorder
+        The sealed recorder being saved. While the save runs, only its thread
+        touches it; the service reads ``status`` instead.
+    close_cause : {'endpoint', 'truncation'}
+        Why capture ended, passed to ``finalize_and_save``.
+    status : RecordingStatusV1
+        The frozen "sealed" status every frame shows while the save runs.
+    done : threading.Event
+        Set by the save thread when ``finalize_and_save`` returns or raises,
+        before that thread asks for the service lock.
+    error : BaseException or None
+        An unexpected exception from ``finalize_and_save``; None after an
+        ordinary saved or failed result (the recorder holds that result).
+    thread : threading.Thread or None
+        The save thread, set once it is created.
+    """
+
+    recorder: DebuggerReplayRecorder
+    close_cause: Literal["endpoint", "truncation"]
+    status: RecordingStatusV1
+    done: Event = field(default_factory=Event)
+    error: BaseException | None = None
+    thread: Thread | None = None
+
+
 class DebuggerService:
     """Serialize commands around one immutable debugger session."""
 
@@ -235,6 +306,7 @@ class DebuggerService:
         offered_systems: Mapping[str, str] | None = None,
         scenario_catalog: Sequence[DebuggerScenario] | None = None,
         system_worker: SystemWorker | None = None,
+        save_in_background: bool = False,
     ) -> None:
         """Build the live service around an existing immutable session.
 
@@ -243,7 +315,9 @@ class DebuggerService:
         session : DebuggerSession
             Current live episode and matching captured frame.
         view_mode : ViewMode
-            Researcher or actor view passed to the frame builder.
+            Starting view: "researcher" (Oracle View) or "pov" (Agent POV). Agent
+            POV frames describe the recipient chosen by
+            control.agent_pov_recipient_slot, not necessarily the focus.
         preset : Preset or {'technical', 'debug'}
             Accepted compatibility preset. All accepted values start in analysis mode.
         include_stress : bool
@@ -266,19 +340,35 @@ class DebuggerService:
         offered_systems : mapping of str to str, optional
             Launcher names mapped to trusted module:function factories. Only a
             selected name loads. Browser input cannot supply a factory or URL.
+        save_in_background : bool, default=False
+            True saves the replay of a game that ends (score limit or tick
+            limit) on a separate thread: the command that ends the game returns
+            at once with recording lifecycle "sealed", and a later revision
+            shows "saved" or "persistence_failed". Use it for interactive
+            launchers (the BattleClient). False keeps the save inside that
+            command, so a scripted caller sees "saved" as soon as the command
+            returns. Finish And Save, Exit, Retry Save, Save As, failure
+            closeouts and Ctrl-C always save inside their own call. Ignored
+            without a recorder.
 
         Raises
         ------
         TypeError
-            The recorder has an unsupported exact type.
+            The recorder has an unsupported exact type, or save_in_background is
+            not a bool.
         ValueError
             Scenario access, preset, capture profile, or recorder identity is invalid.
 
         Notes
         -----
         Construction builds the initial host frame and lock. It does not advance the
-        simulator or publish a replay file.
+        simulator or publish a replay file. The first Agent POV recipient is the
+        focus when it is Manual or nobody is Manual, else the lowest Manual slot.
+        A background save thread is not a daemon: ``close`` waits for it, so the
+        replay is written before a launcher returns.
         """
+        if type(save_in_background) is not bool:
+            raise TypeError("save_in_background must be a bool.")
         if session.scenario.audience == "stress" and not include_stress:
             msg = (
                 f"stress scenario {session.scenario_name!r} requires "
@@ -302,6 +392,14 @@ class DebuggerService:
         self._shutting_down = False
         self._faulted = False
         self._lock = RLock()
+        # Newest presentations with their exact inputs (_remembered_presentation).
+        self._presentations: list[
+            tuple[tuple[object, ...], PresentationResourceResultV1]
+        ] = []
+        # Honors history (_match_honors): the game it belongs to (episode ID,
+        # run generation) and each built frame's transition totals by index.
+        self._honors_game: tuple[str, int] | None = None
+        self._honors_totals: dict[int, MatchTotalsV1] = {}
         self._command_records: OrderedDict[
             tuple[str, str],
             _CommandRecord,
@@ -313,6 +411,9 @@ class DebuggerService:
         self._replay_handoff_cache: tuple[LoadedReplay, ReplayViewerService] | None = (
             None
         )
+        self._save_in_background = save_in_background
+        # The running game-over save, or None (see _start_background_save).
+        self._background_save: _BackgroundSave | None = None
         self._offered_systems = dict(offered_systems or {})
         if any(
             not is_system_controller(f"system:{name}") or not reference.strip()
@@ -338,6 +439,7 @@ class DebuggerService:
         )
         self._system_confirmed_discard = False
         self._system_failed = False
+        self._pov_global_slot: int = agent_pov_recipient_slot(session, None)
         self._frame: LiveDebuggerFrame = self._build_frame()
 
     @staticmethod
@@ -476,6 +578,7 @@ class DebuggerService:
 
             if candidate_session.run_generation != self._session.run_generation:
                 self._running = False
+            self._pov_global_slot = self._recipient_for(candidate_session)
             self._session = candidate_session
             self._revision = candidate_revision
             self._frame = candidate_frame
@@ -520,9 +623,13 @@ class DebuggerService:
 
     @property
     def recording_status(self) -> RecordingStatusV1 | None:
-        """Return the path-free recorder status without exposing its mutator."""
+        """Return the path-free recorder status without exposing its mutator.
+
+        While a background save runs this is its frozen "sealed" status, the
+        same status every frame shows (see _current_recording_status).
+        """
         with self._lock:
-            return None if self._recorder is None else self._recorder.status
+            return self._current_recording_status()
 
     def close_recording_for_keyboard_interrupt(self) -> RecordingCloseResult:
         """Try to save active capture before the hosting process exits.
@@ -531,22 +638,36 @@ class DebuggerService:
         -------
         RecordingCloseResult
             Whether capture is safe to leave and a host-facing status message.
-            No active capture and an already saved replay both count as success.
+            No active capture, an already saved replay and a recording with no
+            played tick all count as success.
 
         Notes
         -----
-        The service lock covers response preparation and saving. A failed initial
-        save is retried; a failed retry tries a deterministic recovery sibling.
-        The revision and displayed recording status reflect the final result.
-        A verified save queues its exact episode's worker evidence before cleanup.
-        Unexpected invariant or response-validation failures still propagate.
+        The service lock covers response preparation and saving. A running
+        background save is waited for first and then counts as the save. A
+        recording that is still open with zero captured ticks (Ctrl-C right
+        after start) writes no file: an empty replay holds nothing to watch, as
+        Restart already treats it. A failed initial save is retried; a failed
+        retry tries a deterministic recovery sibling. The revision and displayed
+        recording status reflect the final result. A verified save queues its
+        exact episode's worker evidence before cleanup. Unexpected invariant or
+        response-validation failures still propagate.
         """
         with self._lock:
+            self._await_background_save()
             recorder = self._recorder
             if recorder is None or recorder.lifecycle == "discarded":
                 return RecordingCloseResult(
                     saved=True,
                     message="No replay recording was active.",
+                )
+            if (
+                recorder.lifecycle == "recording"
+                and recorder.validated_transition_count == 0
+            ):
+                return RecordingCloseResult(
+                    saved=True,
+                    message="No tick was played, so no replay was saved.",
                 )
             if recorder.lifecycle in ("saved", "reviewing"):
                 saved = recorder.saved_bundle
@@ -740,6 +861,26 @@ class DebuggerService:
                 view_mode=self._view_mode,
             )
 
+    def _recipient_for(self, session: DebuggerSession) -> int:
+        """Return the Agent POV recipient for a candidate or committed session.
+
+        Applies control.agent_pov_recipient_slot with the committed recipient as
+        the previous one. Pure: building frames and committing a candidate both
+        call it with the same inputs, so they agree. No I/O or simulator work.
+        """
+        return agent_pov_recipient_slot(session, self._pov_global_slot)
+
+    @property
+    def pov_global_slot(self) -> int:
+        """Return the committed Agent POV recipient, a global slot 0-9.
+
+        This is whose eyes Agent POV shows (see control.agent_pov_recipient_slot);
+        it may differ from session.controlled_global_slot, the focus. Read under
+        the service lock; it changes only when a session is committed.
+        """
+        with self._lock:
+            return self._pov_global_slot
+
     def _build_authorized_presentation(
         self,
         *,
@@ -747,7 +888,35 @@ class DebuggerService:
         raw_frame: LiveDebuggerFrame,
         view_mode: ViewMode,
     ) -> PresentationResourceResultV1:
-        """Build and strictly validate one parameterized live presentation."""
+        """Build and strictly validate one parameterized live presentation.
+
+        session is the committed or candidate session, raw_frame its matching
+        transport frame and view_mode the audience. Oracle View describes the
+        focus. Agent POV describes the recipient from _recipient_for: its sight,
+        draft and the researcher space's selected agent are all the recipient's,
+        so a focused policy champion never changes what Agent POV shows. Every
+        audience's match summary gets the session's scores_ten_ticks_ago (the
+        Momentum switch's public score history). The frame's champion_streaks
+        is this audience's own row of session.champion_takedowns, and its
+        match_moments is the same audience's row of session.match_moments
+        (the Herald Cards history): Oracle View's, or the recipient's Agent
+        POV row (never another view's). On the
+        completion frame its match_honors is this audience's Honors
+        (_match_honors: Oracle View every champion, Agent POV the recipient's
+        own team); the Oracle frame is then built a second time with them,
+        once per game. Raises RuntimeError when raw_frame does not match the
+        audience and ValueError when a presentation contract fails. No
+        simulator step or file write.
+
+        A commit builds the candidate's presentation to prove it can be shown;
+        the page's request and the live snapshot then ask for the same one. A
+        build is therefore remembered (_remembered_presentation) and reused when
+        every input is the same: the same session and raw frame objects (both
+        frozen), the same audience and, in Agent POV, the same recipient and an
+        equal researcher-space frame, rebuilt here because it carries live
+        worker status. Any difference builds afresh, so a reused result always
+        equals a fresh build.
+        """
         context = session.evaluation_context
         current = session.current_evaluation_frame
         incoming = session.incoming_evaluation_view
@@ -756,12 +925,31 @@ class DebuggerService:
                 raise RuntimeError(
                     "researcher live service lacks its committed Oracle frame."
                 )
+            key: tuple[object, ...] = ("researcher", session, raw_frame)
+            remembered = self._remembered_presentation(key)
+            if remembered is not None:
+                return remembered
             presentation = build_live_oracle_authorized_presentation_v1(
                 context,
                 current,
                 incoming,
                 raw_frame,
+                scores_ten_ticks_ago=session.scores_ten_ticks_ago,
+                champion_streaks=session.champion_takedowns.streaks(context, None),
+                match_moments=session.match_moments.facts(context, None),
             )
+            honors = self._match_honors(session, presentation.match_summary, None)
+            if honors is not None:
+                presentation = build_live_oracle_authorized_presentation_v1(
+                    context,
+                    current,
+                    incoming,
+                    raw_frame,
+                    scores_ten_ticks_ago=session.scores_ten_ticks_ago,
+                    champion_streaks=session.champion_takedowns.streaks(context, None),
+                    match_honors=honors,
+                    match_moments=session.match_moments.facts(context, None),
+                )
         else:
             if type(raw_frame) not in (
                 ActorPovLiveDebuggerFrameV2,
@@ -775,7 +963,11 @@ class DebuggerService:
                 raise RuntimeError(
                     "POV live service lacks its committed recipient frame."
                 )
-            recipient = session.controlled_global_slot
+            source_session = session
+            recipient = self._recipient_for(session)
+            if recipient != session.controlled_global_slot:
+                # Agent POV panels and joins describe the recipient, never the focus.
+                session = replace(session, controlled_global_slot=recipient)
             oracle_raw_frame = self._build_frame(
                 session=session,
                 revision=raw_frame.revision,
@@ -787,13 +979,26 @@ class DebuggerService:
                 raise RuntimeError(
                     "POV live service cannot build its researcher-space epoch."
                 )
+            key = ("pov", source_session, raw_frame, recipient, oracle_raw_frame)
+            remembered = self._remembered_presentation(key)
+            if remembered is not None:
+                return remembered
             oracle_presentation = build_live_oracle_authorized_presentation_v1(
                 context,
                 current,
                 incoming,
                 oracle_raw_frame,
+                scores_ten_ticks_ago=session.scores_ten_ticks_ago,
             )
             researcher_space = build_live_researcher_space_v1(oracle_presentation)
+            honors = self._match_honors(
+                session,
+                oracle_presentation.match_summary,
+                cast(
+                    "Literal[1, 2]",
+                    context.roster[recipient].configured_team_id,
+                ),
+            )
             if type(raw_frame) is SharedObsAgentPovLiveDebuggerFrameV2:
                 presentation = build_live_shared_obs_authorized_presentation_v1(
                     context,
@@ -803,6 +1008,12 @@ class DebuggerService:
                     authorized_recipient_global_slot=recipient,
                     pending_action=session.pending_actions[recipient],
                     researcher_space=researcher_space,
+                    scores_ten_ticks_ago=session.scores_ten_ticks_ago,
+                    champion_streaks=session.champion_takedowns.streaks(
+                        context, recipient
+                    ),
+                    match_honors=honors,
+                    match_moments=session.match_moments.facts(context, recipient),
                 )
             else:
                 if type(raw_frame) is not ActorPovLiveDebuggerFrameV2:
@@ -837,11 +1048,102 @@ class DebuggerService:
                         else build_visual_event_batch_v2(incoming)
                     ),
                     researcher_space=researcher_space,
+                    scores_ten_ticks_ago=session.scores_ten_ticks_ago,
+                    champion_streaks=session.champion_takedowns.streaks(
+                        context, recipient
+                    ),
+                    match_honors=honors,
+                    match_moments=session.match_moments.facts(context, recipient),
                 )
-        return PresentationResourceResultV1(
+        result = PresentationResourceResultV1(
             outcome="response",
             payload=presentation,
         )
+        with self._lock:
+            self._presentations.append((key, result))
+            del self._presentations[:-_REMEMBERED_PRESENTATIONS]
+        return result
+
+    def _match_honors(
+        self,
+        session: DebuggerSession,
+        summary: MatchSummaryV1 | None,
+        team_id: Literal[1, 2] | None,
+    ) -> MatchHonorsV1 | None:
+        """Record this frame's transition totals and, at game end, give Honors.
+
+        Parameters
+        ----------
+        session : DebuggerSession
+            The committed or candidate session being shown.
+        summary : MatchSummaryV1 or None
+            The Oracle match summary of the session's current frame (built with
+            its transition start frame), or None (no summary: no Honors).
+        team_id : {1, 2} or None
+            None for Oracle View; the Agent POV recipient's team otherwise.
+
+        Returns
+        -------
+        MatchHonorsV1 or None
+            On the completion frame of a Team Deathmatch game whose frames 1
+            to the last were all built, this view's Honors
+            (viewer.match_summary.match_honors_v1 over every frame's totals);
+            otherwise None.
+
+        Notes
+        -----
+        Side effect: under the service lock, stores the totals of the frame's
+        incoming transition by frame index for its game (episode ID and run
+        generation; a new game or restart clears the store). A later build of
+        the same frame replaces its entry, so a rejected candidate never
+        counts twice. Host work on the transition's own events only; no JAX
+        (the summary already holds the kill credit), file or simulator work.
+        """
+        if summary is None or summary.task_mode != 1:
+            return None
+        current = session.current_evaluation_frame
+        incoming = session.incoming_evaluation_view
+        game = (current.episode_id, session.run_generation)
+        with self._lock:
+            if self._honors_game != game:
+                self._honors_game = game
+                self._honors_totals = {}
+            if incoming is not None and current.frame_index > 0:
+                self._honors_totals[current.frame_index] = match_transition_totals_v1(
+                    session.evaluation_context, summary, incoming.transition.events
+                )
+            if summary.outcome in ("in_progress", "not_applicable"):
+                return None
+            totals = MatchTotalsV1()
+            for index in range(1, current.frame_index + 1):
+                step = self._honors_totals.get(index)
+                if step is None:
+                    return None
+                totals = totals.plus(step)
+        return match_honors_v1(session.evaluation_context, totals, team_id=team_id)
+
+    def _remembered_presentation(
+        self, key: tuple[object, ...]
+    ) -> PresentationResourceResultV1 | None:
+        """Return a presentation already built from exactly these inputs, if any.
+
+        key is (audience, session, raw frame) for Oracle View and (audience,
+        source session, raw frame, recipient, researcher-space frame) for Agent
+        POV. Sessions and raw frames match only as the same objects; the
+        recipient and researcher-space frame match by value. The newest
+        _REMEMBERED_PRESENTATIONS builds are kept, holding their inputs so no
+        object identity is reused while remembered. Thread safe; no I/O.
+        """
+        with self._lock:
+            for remembered_key, result in reversed(self._presentations):
+                if len(remembered_key) == len(key) and all(
+                    (left is right) if index in (1, 2) else (left == right)
+                    for index, (left, right) in enumerate(
+                        zip(remembered_key, key, strict=True)
+                    )
+                ):
+                    return result
+        return None
 
     def _recording_no_op(
         self,
@@ -868,9 +1170,12 @@ class DebuggerService:
     def _build_replay_handoff(self) -> ReplayViewerService:
         """Reuse one healthy Viewer for the exact verified bundle, or build it once.
 
-        A new Viewer starts at frame zero with the live view choices. Reopening a
-        healthy Viewer preserves its cursor and avoids hashing the replay again.
-        Recorder replacement drops this cache; the coordinator owns its server.
+        A new Viewer starts at frame zero in Oracle View, whatever the live view,
+        with the focused champion as its reference and selection and the Agent
+        POV recipient as the champion its own Agent POV switch would show.
+        Reopening a healthy Viewer preserves its cursor and avoids hashing the
+        replay again. Recorder replacement drops this cache; the coordinator owns
+        its server.
         """
         recorder = self._recorder
         if recorder is None or recorder.verified_loaded_bundle is None:
@@ -883,26 +1188,22 @@ class DebuggerService:
             and not cached[1].faulted
         ):
             return cached[1]
-        reference_global_slot: int | None = None
-        selected_global_slot: int | None = None
-        armed_lane: Literal[0, 1] | None = None
-        if self._view_mode == "researcher":
-            reference_global_slot = self._session.controlled_global_slot
-            pending = self._session.pending_actions[reference_global_slot]
-            selected_global_slot = (
-                reference_global_slot
-                if pending.selected_global_target_slot is None
-                else pending.selected_global_target_slot
-            )
-            armed_lane = pending.armed_lane
+        reference_global_slot = self._session.controlled_global_slot
+        pending = self._session.pending_actions[reference_global_slot]
+        selected_global_slot = (
+            reference_global_slot
+            if pending.selected_global_target_slot is None
+            else pending.selected_global_target_slot
+        )
+        armed_lane: Literal[0, 1] | None = pending.armed_lane
         viewer = ReplayViewerService(
             recorder.verified_loaded_bundle,
             initial_frame_index=0,
-            view_mode=self._view_mode,
+            view_mode="researcher",
             reference_global_slot=reference_global_slot,
             selected_global_slot=selected_global_slot,
             armed_lane=armed_lane,
-            pov_global_slot=self._session.controlled_global_slot,
+            pov_global_slot=self._pov_global_slot,
             preset=self._preset,
             show_ranges=self._session.show_ranges,
             verbose=False,
@@ -1007,6 +1308,13 @@ class DebuggerService:
         Return None when ordinary command dispatch should continue. Build response
         candidates before recorder mutations and retain a saved fallback if review
         construction fails.
+
+        Exit while the recording is still open saves the game so far, then
+        schedules shutdown. Exit before the first tick (the recording is open
+        with zero captured ticks) writes no replay file: it schedules shutdown
+        at once with the notice "No tick was played, so no replay was saved."
+        and the unchanged recording status, the same rule as Ctrl-C
+        (close_recording_for_keyboard_interrupt) and Restart.
         """
         recorder = self._recorder
         if recorder is None:
@@ -1049,7 +1357,7 @@ class DebuggerService:
                 fingerprint=fingerprint,
                 recording_status=recorder.status,
                 result="applied",
-                notice="Opening the saved replay in a separate Viewer.",
+                notice="The saved replay is open in a separate Replay Viewer.",
                 changed=False,
             )
             saved_fallback = self._prepare_recording_response(
@@ -1116,6 +1424,22 @@ class DebuggerService:
                 failures=failures,
             )
         if isinstance(command, ExitCommandV1):
+            if (
+                recorder.lifecycle == "recording"
+                and recorder.validated_transition_count == 0
+            ):
+                # No tick was played: an empty replay holds nothing to watch,
+                # so Exit closes without a file, as Ctrl-C and Restart do.
+                closing = self._prepare_recording_response(
+                    command_key=command_key,
+                    fingerprint=fingerprint,
+                    recording_status=recorder.status,
+                    result="shutdown_scheduled",
+                    notice="No tick was played, so no replay was saved.",
+                    changed=False,
+                    shutdown_requested=True,
+                )
+                return self._commit_recording_response(closing)
             if recorder.lifecycle == "recording":
                 success, failures = self._prepare_publication_responses(
                     command_key=command_key,
@@ -1654,7 +1978,12 @@ class DebuggerService:
         ID is rejected. Stale revisions, shutdown, and fault state reject new work.
         Step and reset commands may execute JAX work; recording commands may write
         files. Candidate response validation precedes installation. Unexpected
-        internal failures can fence further commands and propagate.
+        internal failures can fence further commands and propagate. With
+        save_in_background, the step that ends the game returns before its replay
+        is saved (recording lifecycle "sealed"); a later command that reads or
+        replaces the recording (_command_needs_saved_recording) first waits for
+        that save and then continues from its result, and a Discard chosen during
+        the save restarts without discarding, because the replay was saved.
         """
         command_key = (request.client_id, request.command_id)
         fingerprint = request.model_dump_json()
@@ -1771,6 +2100,35 @@ class DebuggerService:
                 self._running = False
             if isinstance(command, (FinishSystemCommandV1, CancelSystemCommandV1)):
                 return self._finish_system_command(command, command_key, fingerprint)
+            # A command that reads or replaces the recording waits for a running
+            # game-over save, then goes on from the "saved" (or failed) state.
+            # It passed the revision check above, so the save's own revision
+            # does not make it stale.
+            waited_for_save = False
+            if self._background_save is not None and (
+                self._command_needs_saved_recording(command)
+            ):
+                self._await_background_save()
+                waited_for_save = True
+                if self._faulted:
+                    self._remember_command(
+                        command_key,
+                        _CommandRecord(
+                            fingerprint=fingerprint,
+                            shutdown_requested=False,
+                        ),
+                    )
+                    return ServiceCommandResult(
+                        outcome="service_faulted",
+                        payload=ApiErrorV2(
+                            error_code="internal_error",
+                            message=(
+                                "The replay save failed unexpectedly; restart the "
+                                "BattleClient before sending another command."
+                            ),
+                            latest_frame=self._frame,
+                        ),
+                    )
             effective = (
                 command.replacement
                 if isinstance(
@@ -1876,6 +2234,11 @@ class DebuggerService:
                 save_requested = isinstance(command, SaveAndReplaceCommandV1)
                 confirmed_discard = isinstance(
                     command, ConfirmDiscardAndReplaceCommandV1
+                ) and not (
+                    # Discard chosen while the game-over save ran: the save won,
+                    # so the replay stays saved and the restart simply goes on.
+                    waited_for_save
+                    and self._recorder.lifecycle in ("saved", "reviewing")
                 )
                 if isinstance(
                     command,
@@ -1965,6 +2328,7 @@ class DebuggerService:
                     view_mode=self._view_mode,
                     preset=self._preset,
                     include_stress=self._include_stress,
+                    pov_global_slot=self._pov_global_slot,
                 )
             except DebuggerTransitionFailureV1 as error:
                 recorder = self._recorder
@@ -2206,9 +2570,12 @@ class DebuggerService:
 
         Arbitrary Python factories can delay thread exit. The worker retains
         cleanup futures so host tools can inspect failures; supplied Systems are
-        caller-owned and are not closed here.
+        caller-owned and are not closed here. A running background save is
+        waited for first, so its replay file and its saved-replay evidence are
+        written before the worker closes.
         """
         with self._lock:
+            self._await_background_save()
             self._running = False
             self._refresh_system_status(advance_revision=True)
             worker = self._system_worker
@@ -2283,6 +2650,8 @@ class DebuggerService:
     ) -> ServiceCommandResult | None:
         """Submit selected setup or one joint turn; leave ordinary dispatch unchanged.
 
+        A joint turn starts from an unmodified, non-repeated Space, Enter or N
+        in interactive play (N is one tick, the same submission as Space).
         Called after recording replacement checks. The captured session and draft
         belong to this operation until an explicit completion command accepts it.
         No model call, factory or initialization runs under the service lock.
@@ -2437,8 +2806,10 @@ class DebuggerService:
                 or command.meta_key
                 or command.repeat
             )
+            # N is one tick: in interactive play it submits the turn as Space
+            # and Enter do (scripted N stays the next registered frame).
             and normalize_key(command.key, shift_key=command.shift_key)
-            in ("space", "enter")
+            in ("space", "enter", "n")
             and session.scenario.mode == "interactive"
         )
         if (
@@ -2469,6 +2840,7 @@ class DebuggerService:
                     + "The accepted replay can still be saved.",
                 )
             view, preset = self._view_mode, self._preset
+            recipient = self._pov_global_slot
             worker.decide(
                 session,
                 lambda: dispatch_command(
@@ -2477,6 +2849,7 @@ class DebuggerService:
                     view_mode=view,
                     preset=preset,
                     include_stress=self._include_stress,
+                    pov_global_slot=recipient,
                 ),
             )
             return self._system_response(
@@ -2670,6 +3043,10 @@ class DebuggerService:
         permits the already approved replacement of an accepted recording prefix.
         Validate frames before installation; recorder acceptance remains the owner
         of saved progress, including processing errors after append succeeds.
+        A transition that seals the recording (game over) saves here and returns
+        the saved or failed response; with save_in_background it instead commits
+        the game-over frame (lifecycle "sealed"), starts _start_background_save
+        and returns at once.
         """
         candidate_session = dispatched.session
         candidate_view_mode = dispatched.view_mode
@@ -2872,9 +3249,7 @@ class DebuggerService:
         endpoint_candidates: _EndpointResponseCandidates | None = None
         validation_failure_candidates: _FailureCloseoutCandidates | None = None
         processing_failure_candidates: _FailureCloseoutCandidates | None = None
-        candidate_recording_status = (
-            None if self._recorder is None else self._recorder.status
-        )
+        candidate_recording_status = self._current_recording_status()
         candidate_frame = self._frame
         if dispatched.changed:
             try:
@@ -2926,6 +3301,9 @@ class DebuggerService:
                     and dispatched.transition_applied is not None
                     and candidate_recording_status is not None
                     and candidate_recording_status.lifecycle == "sealed"
+                    # A background save shows its result in a later revision,
+                    # so it needs no prebuilt saved or failed responses.
+                    and not self._save_in_background
                 ):
                     endpoint_candidates = self._prepare_endpoint_responses(
                         command_key=command_key,
@@ -3063,6 +3441,7 @@ class DebuggerService:
                     ) from error
                 if candidate_session.run_generation != self._session.run_generation:
                     self._running = False
+                self._pov_global_slot = self._recipient_for(candidate_session)
                 self._session = candidate_session
                 self._adopt_system_operation(system_operation, candidate_session)
                 self._view_mode = candidate_view_mode
@@ -3071,6 +3450,9 @@ class DebuggerService:
                 self._frame = candidate_frame
                 self._command_records = candidate_command_records
                 if recorder.lifecycle == "sealed":
+                    if self._save_in_background:
+                        self._start_background_save(candidate_frame.recording)
+                        return candidate_result
                     if endpoint_candidates is None:
                         raise AssertionError(
                             "sealed processing failure lacks endpoint candidates."
@@ -3098,6 +3480,7 @@ class DebuggerService:
 
         if candidate_session.run_generation != self._session.run_generation:
             self._running = False
+        self._pov_global_slot = self._recipient_for(candidate_session)
         self._session = candidate_session
         self._adopt_system_operation(system_operation, candidate_session)
         self._view_mode = candidate_view_mode
@@ -3115,7 +3498,191 @@ class DebuggerService:
             return self._finalize_endpoint_after_transition(
                 candidates=endpoint_candidates,
             )
+        if (
+            self._save_in_background
+            and dispatched.transition_applied is not None
+            and self._recorder is not None
+            and self._recorder.lifecycle == "sealed"
+        ):
+            # Game over is already installed; the save runs on its own thread.
+            self._start_background_save(candidate_frame.recording)
         return candidate_result
+
+    def _command_needs_saved_recording(self, command: object) -> bool:
+        """Say whether a command must wait for a running background save.
+
+        command is the request's command, possibly a replacement wrapper.
+        Return True for the recording commands (Finish And Save, Open Replay,
+        Retry Save, Save As, Exit), the replacement wrappers (Save And Replace,
+        Confirm Discard And Replace), scenario switches and every command that
+        would restart the match (input.recording_restart_intent_v1, for example
+        R or a changed combat setup). Views, presets, focus, Run, Pause, System
+        polls and the other keys never change the recorder, so they return
+        False and stay responsive while the replay saves. Pure; no I/O.
+        """
+        if isinstance(
+            command,
+            (
+                FinishAndReviewCommandV1,
+                ReviewReplayCommandV1,
+                RetrySaveCommandV1,
+                SaveAsCommandV1,
+                ExitCommandV1,
+                ConfirmDiscardAndReplaceCommandV1,
+                SaveAndReplaceCommandV1,
+                ScenarioSwitchCommandV1,
+            ),
+        ):
+            return True
+        return (
+            recording_restart_intent_v1(
+                self._session,
+                cast("DebuggerCommandV1", command),
+                view_mode=self._view_mode,
+                include_stress=self._include_stress,
+            )
+            is not None
+        )
+
+    def _current_recording_status(self) -> RecordingStatusV1 | None:
+        """Return the recording status that frames show now.
+
+        The caller holds the service lock. Return None without a recorder.
+        While a background save runs, return its frozen "sealed" status and
+        never read the recorder, which the save thread is changing.
+        """
+        if self._recorder is None:
+            return None
+        pending = self._background_save
+        if pending is not None:
+            return pending.status
+        return self._recorder.status
+
+    def _start_background_save(self, status: RecordingStatusV1 | None) -> None:
+        """Save the sealed recorder on its own thread; game over is already shown.
+
+        status is the "sealed" recording status of the frame just committed;
+        every frame shows it until the save ends. The caller holds the service
+        lock and has committed the game-over transition. The new thread
+        ("marl-replay-save", not a daemon) runs only
+        recorder.finalize_and_save, without the service lock, then installs the
+        result through _adopt_background_save. If the thread cannot start, the
+        save runs here instead, so it is never lost.
+
+        Raises
+        ------
+        AssertionError
+            No sealed recorder, a save already running, a missing status or an
+            invalid close cause (all internal invariants).
+        """
+        recorder = self._recorder
+        if (
+            recorder is None
+            or recorder.lifecycle != "sealed"
+            or status is None
+            or status.lifecycle != "sealed"
+            or self._background_save is not None
+        ):
+            raise AssertionError("a background save needs one sealed recorder.")
+        close_cause = recorder.close_cause
+        if close_cause not in ("endpoint", "truncation"):
+            raise AssertionError("sealed recorder has an invalid close cause.")
+        job = _BackgroundSave(recorder=recorder, close_cause=close_cause, status=status)
+        self._background_save = job
+        job.thread = Thread(
+            target=self._run_background_save,
+            args=(job,),
+            name="marl-replay-save",
+        )
+        try:
+            job.thread.start()
+        except RuntimeError:
+            logging.getLogger(__name__).exception(
+                "Replay save thread did not start; saving now instead"
+            )
+            self._run_background_save(job)
+
+    def _run_background_save(self, job: _BackgroundSave) -> None:
+        """Run one save, mark it done, then install it under the service lock.
+
+        job is the save that _start_background_save created. An ordinary saved
+        or failed result stays on the recorder; any other exception is kept in
+        job.error for _adopt_background_save to log. job.done is set before the
+        service lock is requested, so a command that holds the lock and waits
+        for the save (_await_background_save) cannot deadlock with this thread.
+        Writes the replay file (and its reload check) through the recorder.
+        """
+        try:
+            job.recorder.finalize_and_save(job.close_cause)
+        except Exception as error:  # Logged by _adopt_background_save.
+            job.error = error
+        finally:
+            job.done.set()
+            with self._lock:
+                self._adopt_background_save(job)
+
+    def _adopt_background_save(self, job: _BackgroundSave) -> None:
+        """Install a finished background save once; later calls do nothing.
+
+        The caller holds the service lock, and job.done is set. Build and check
+        the frame with the recorder's real status ("saved" or
+        "persistence_failed"), then commit it as one new revision, so the
+        page's next read shows Saved, and queue the saved-replay evidence for
+        the System worker. An unexpected save exception, a recorder in any other
+        state, or a frame that cannot be built marks the service faulted and is
+        logged; the game-over frame then stays installed.
+
+        Raises
+        ------
+        AssertionError
+            The recorder was replaced while its save ran (an internal invariant:
+            every replacement waits for the save first).
+        """
+        if self._background_save is not job:
+            return
+        self._background_save = None
+        recorder = job.recorder
+        if self._recorder is not recorder:
+            raise AssertionError("the recorder changed during its background save.")
+        log = logging.getLogger(__name__)
+        if job.error is not None or recorder.lifecycle not in (
+            "saved",
+            "persistence_failed",
+        ):
+            self._faulted = True
+            log.error("The background replay save failed", exc_info=job.error)
+            return
+        revision = self._revision + 1
+        try:
+            frame = self._build_frame(revision=revision)
+            self._build_authorized_presentation(
+                session=self._session,
+                raw_frame=frame,
+                view_mode=self._view_mode,
+            )
+        except Exception:
+            self._faulted = True
+            log.exception("The saved replay's status could not be shown")
+            return
+        self._revision = revision
+        self._frame = frame
+        self._acknowledge_saved_system_prefix()
+
+    def _await_background_save(self) -> None:
+        """Wait for a running background save and install its result.
+
+        The caller holds the service lock. The save thread sets job.done before
+        it asks for this lock, so waiting here cannot deadlock; this call then
+        installs the result itself and the thread's own install does nothing.
+        Does nothing when no save runs. Blocks for the rest of the save (a
+        300-tick game, 23.7 MB, took about 13 s on a busy CPU, measured 3 Oct
+        2026).
+        """
+        job = self._background_save
+        if job is None:
+            return
+        job.done.wait()
+        self._adopt_background_save(job)
 
     def _system_operation_status(self) -> SystemOperationV1 | None:
         """Read bounded worker state without polling or changing the game."""
@@ -3157,12 +3724,22 @@ class DebuggerService:
     ) -> LiveDebuggerFrame:
         """Build a candidate frame, using committed values wherever overrides are
         None.
+
+        Agent POV frames are built for _recipient_for(session), the candidate's
+        recipient; researcher frames for the focus. An Agent POV frame whose
+        focus is not the recipient (you look at a policy's champion, or at an
+        enemy your team sees now) also carries focused_public_agent_id, the
+        focused champion's public ID (see _pov_focused_public_agent_id), so the
+        page can show Watch Only. Otherwise that field is absent. With no
+        recording_status override, the frame shows _current_recording_status
+        (the frozen "sealed" status while a background save runs).
         """
         resolved_recording_status = recording_status
-        if resolved_recording_status is None and self._recorder is not None:
-            resolved_recording_status = self._recorder.status
+        if resolved_recording_status is None:
+            resolved_recording_status = self._current_recording_status()
+        resolved_session = self._session if session is None else session
         frame = build_debugger_frame(
-            self._session if session is None else session,
+            resolved_session,
             session_id=self._session_id,
             revision=self._revision if revision is None else revision,
             view_mode=self._view_mode if view_mode is None else view_mode,
@@ -3170,6 +3747,7 @@ class DebuggerService:
             include_stress=self._include_stress,
             recording_status=resolved_recording_status,
             scenario_catalog=self._scenario_catalog,
+            pov_global_slot=self._recipient_for(resolved_session),
         )
         status = self._system_operation_status()
         return frame.model_copy(
@@ -3178,8 +3756,35 @@ class DebuggerService:
                 "system_operation": status,
                 "run_state": self._run_state_for(frame),
                 "fresh_launch_required": self._requires_fresh_launch(),
+                "focused_public_agent_id": (
+                    self._pov_focused_public_agent_id(resolved_session)
+                    if frame.view_mode == "pov"
+                    else None
+                ),
             }
         )
+
+    def _pov_focused_public_agent_id(self, session: DebuggerSession) -> str | None:
+        """Return the Agent POV focus's public ID when it is not the recipient.
+
+        session is the candidate or committed session. Agent POV shows the
+        recipient's eyes (_recipient_for); session.controlled_global_slot is the
+        focus, the champion the player looks at. When the two differ and the
+        focus is one Agent POV may focus now (_agent_pov_focusable_slots: a
+        Manual champion, one on the recipient's team, or one the recipient's
+        team sees now), return the focus's public ID, for example "agent_2".
+        Return None when the focus is the recipient or may not be focused now,
+        so an unseen champion is never named. The page reads it only to show
+        Watch Only and to refuse edits; policies never see it.
+        Pure apart from the authorized-scene read; no simulator step or I/O.
+        """
+        focus = session.controlled_global_slot
+        recipient = self._recipient_for(session)
+        if focus == recipient:
+            return None
+        if focus not in _agent_pov_focusable_slots(session, recipient):
+            return None
+        return session.evaluation_context.roster[focus].public_agent_id
 
     def _remember_command(
         self,

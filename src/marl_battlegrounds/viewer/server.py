@@ -1,11 +1,13 @@
 """Serve the local BattleClient and Replay Viewer through checked HTTP routes.
 
 ``create_server`` binds to 127.0.0.1 after loading an explicit browser asset
-list. ``serve_browser_debugger`` also prints the launch URL, optionally opens
-a browser, and handles shutdown. API calls require the launch token and the
-expected local origin. The coordinator owns service calls; this module does
-not import or advance the simulator. Responses disable caching, request logs
-are suppressed, and command bodies are limited to 64 KiB.
+list: a fixed set of required files, the look stylesheets that styles.css
+imports, and every script, stylesheet, font and image of a served type under
+src/ and assets/. ``serve_browser_debugger`` also prints the launch URL,
+optionally opens a browser, and handles shutdown. API calls require the launch
+token and the expected local origin. The coordinator owns service calls; this
+module does not import or advance the simulator. Responses disable caching,
+request logs are suppressed, and command bodies are limited to 64 KiB.
 """
 
 from __future__ import annotations
@@ -34,6 +36,13 @@ _MAX_COMMAND_BODY_BYTES = 64 * 1024
 _CLIENT_SOCKET_TIMEOUT_SECONDS = 2.0
 _METRIC_REPORT_ROUTE = "/api/replay/metric-report"
 _METRIC_CATALOG_ROUTE = "/api/replay/metrics/catalog.json"
+_TIMELINE_MARKS_ROUTE = "/api/replay/timeline-marks"
+"""GET route for the Saga Chronicle marks of the current replay audience.
+
+Answers 200 with the JSON bytes from HttpCoordinatorBinding.timeline_marks
+(one ReplayTimelineMarksV1: Oracle View marks, or the current Agent POV
+recipient's marks). Needs the launch token like every API route; replay mode
+only."""
 _METRIC_ANALYSIS_ROUTE = re.compile(
     r"/api/replay/metrics/([0-9]{1,9})/(cursor|final)\.(json|csv)"
 )
@@ -57,17 +66,30 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
+# File suffix to the exact Content-Type sent for it. Only these types are
+# served; with "nosniff" the browser trusts this type and never guesses.
 _CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
+    ".png": "image/png",
     ".svg": "image/svg+xml",
     ".txt": "text/plain; charset=utf-8",
+    ".webp": "image/webp",
     ".woff2": "font/woff2",
 }
+# The main stylesheet; its @import lines are the one list of look stylesheets.
+_MAIN_STYLESHEET_PATH = "styles.css"
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_CSS_IMPORT_KEYWORD = re.compile(r"@import\b", re.IGNORECASE)
+# The one accepted import form: @import url("/src/<folders>/<name>.css"); with
+# lowercase letters, digits and hyphens only. Group 1 is the root-relative path.
+_CSS_LOOK_STYLESHEET_IMPORT = re.compile(
+    r'@import\s+url\("/(src/(?:[a-z0-9-]+/)*[a-z0-9-]+\.css)"\)\s*;'
+)
 _REQUIRED_RUNTIME_ASSET_PATHS = (
     "index.html",
-    "styles.css",
+    _MAIN_STYLESHEET_PATH,
     "src/api.js",
     "src/authorized-presentation-adapter.js",
     "src/authorized-presentation-normalizer.js",
@@ -75,27 +97,44 @@ _REQUIRED_RUNTIME_ASSET_PATHS = (
     "src/choreography-painter.js",
     "src/choreography-plan.js",
     "src/choreography.js",
+    "src/chronicle.js",
+    "src/command-set.js",
     "src/controls.js",
     "src/system-controls.js",
     "src/display.js",
     "src/explanations.js",
+    "src/filter-controls.js",
     "src/frame-normalizer.js",
     "src/icons.js",
     "src/layout.js",
+    "src/ledger.js",
+    "src/looks/camera.js",
+    "src/looks/champion-frame.js",
+    "src/looks/frame-explanation.js",
+    "src/looks/hud.js",
+    "src/looks/visual-key.js",
     "src/main.js",
     "src/match-summary.js",
     "src/metrics-panel.js",
+    "src/palette.js",
     "src/panels.js",
     "src/presentation-install.js",
     "src/replay-controls.js",
     "src/replay-export.js",
     "src/replay-frame-normalizer.js",
+    "src/replay-recipient-rotation.js",
     "src/routes.js",
     "src/scene.js",
+    "src/shell.js",
+    "src/tactics-turn.js",
     "src/tooltip.js",
     "src/vocabulary.js",
     "assets/fonts/AtkinsonHyperlegible-Regular.woff2",
     "assets/fonts/AtkinsonHyperlegible-Bold.woff2",
+    "assets/brand/marl-bgs-emblem-32.webp",
+    "assets/brand/marl-bgs-emblem-64.png",
+    "assets/brand/marl-bgs-emblem-64.webp",
+    "assets/brand/marl-bgs-emblem-128.webp",
 )
 
 type DebuggerServerMode = Literal["live", "replay"]
@@ -324,6 +363,10 @@ class HttpCoordinatorBinding:
     metric_analysis: Callable[[int, str, str], tuple[bytes, str | None]] | None = None
     metric_catalog: Callable[[], bytes] | None = None
     episode_details: Callable[[], tuple[bytes, str]] | None = None
+    timeline_marks: Callable[[], bytes] | None = None
+    """Replay only: return the current audience's timeline-marks JSON bytes for
+    /api/replay/timeline-marks. None (the default) leaves that route answering
+    404 Not Found, as before the route existed."""
     result_status: Callable[[HttpCommandResult], HTTPStatus] = _default_result_status
     initial_show_ranges: bool | None = None
 
@@ -387,6 +430,10 @@ class HttpCoordinatorBinding:
             self.mode != "replay" or not callable(self.episode_details)
         ):
             raise ValueError("episode details require a callable replay operation")
+        if self.timeline_marks is not None and (
+            self.mode != "replay" or not callable(self.timeline_marks)
+        ):
+            raise ValueError("timeline marks require a callable replay operation")
         if self.mode == "replay" and not callable(self.current_metric_report):
             raise ValueError("replay debugger mode requires a metric-report operation.")
 
@@ -670,14 +717,71 @@ class StaticAsset:
     content_type: str
 
 
+def _imported_stylesheet_paths(stylesheet: bytes) -> tuple[str, ...]:
+    """List the look stylesheets that the main stylesheet imports.
+
+    The main stylesheet (``styles.css``) is the one list of look stylesheets.
+    Each must be imported in exactly this form::
+
+        @import url("/src/styles/hud.css");
+
+    Parameters
+    ----------
+    stylesheet : bytes
+        The UTF-8 text of ``styles.css``, already loaded by the caller.
+        Comments are ignored, so an ``@import`` written inside a comment is
+        not an import.
+
+    Returns
+    -------
+    tuple of str
+        Paths relative to the browser root, such as ``"src/styles/hud.css"``,
+        in import order with repeats removed. An empty tuple means the
+        stylesheet imports nothing.
+
+    Raises
+    ------
+    ValueError
+        The bytes are not UTF-8, or an ``@import`` rule uses any other form:
+        a relative or outside address, single quotes, a media list, a layer,
+        a path with characters other than lowercase letters, digits, hyphens
+        and slashes, or a file outside ``src/``.
+
+    Notes
+    -----
+    This reads text only. It does not touch the file system or check that the
+    imported files exist; ``build_static_manifest`` does that. It also does
+    not check placement: browsers ignore an ``@import`` written after other
+    rules, so keep the imports at the top of ``styles.css``.
+    """
+    try:
+        text = _CSS_COMMENT.sub("", stylesheet.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{_MAIN_STYLESHEET_PATH} is not UTF-8 text.") from exc
+    paths: list[str] = []
+    for keyword in _CSS_IMPORT_KEYWORD.finditer(text):
+        match = _CSS_LOOK_STYLESHEET_IMPORT.match(text, keyword.start())
+        if match is None:
+            rule = text[keyword.start() : keyword.start() + 80].split(";", 1)[0]
+            raise ValueError(
+                f"unsupported stylesheet import in {_MAIN_STYLESHEET_PATH}: "
+                f'{rule.strip()!r}; write @import url("/src/<folder>/<name>.css");'
+            )
+        paths.append(match.group(1))
+    return tuple(dict.fromkeys(paths))
+
+
 def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     """Read the allowed browser files before starting the server.
 
     Parameters
     ----------
     asset_root : pathlib.Path
-        Existing browser root containing required runtime files. JavaScript in
-        src and supported assets beneath assets are also included.
+        Existing browser root containing the required runtime files. Every
+        JavaScript and CSS file under ``src/`` and every file of a served type
+        under ``assets/`` (fonts, licence text, PNG and WebP images) is also
+        included. Files of other types under ``assets/``, such as Markdown
+        notes, are left out without an error.
 
     Returns
     -------
@@ -690,12 +794,23 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     OSError
         The root cannot be resolved.
     ValueError
-        An asset is missing, unreadable, unsupported, a symlink, or outside the root.
+        A required asset is missing, unreadable, of an unsupported type, a
+        symlink or outside the root. Required assets are the fixed runtime
+        list (core modules, fonts, brand emblem images) plus every look
+        stylesheet that ``styles.css`` imports. Also raised when
+        ``styles.css`` is not UTF-8 or writes an ``@import`` in any form
+        other than ``@import url("/src/<folder>/<name>.css");``.
 
     Notes
     -----
     All selected files are read into host memory once. Asset contents are not
     executed by this function.
+
+    Imported look stylesheets are required on purpose. A browser silently
+    skips a stylesheet it cannot load, so a missing one would quietly drop part
+    of the look; refusing to start makes the fault visible at launch instead.
+    The list lives only in ``styles.css``: adding an import there makes the
+    new file required here with no change to this module.
     """
     root = asset_root.resolve(strict=True)
     required = tuple(root / relative for relative in _REQUIRED_RUNTIME_ASSET_PATHS)
@@ -703,6 +818,7 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     source_root = root / "src"
     if source_root.is_dir():
         candidates.extend(sorted(source_root.rglob("*.js")))
+        candidates.extend(sorted(source_root.rglob("*.css")))
     bundled_root = root / "assets"
     if bundled_root.is_dir():
         candidates.extend(
@@ -735,6 +851,11 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
         route = f"/{relative.as_posix()}"
         manifest[route] = StaticAsset(body, content_type)
 
+    for imported in _imported_stylesheet_paths(
+        manifest[f"/{_MAIN_STYLESHEET_PATH}"].body
+    ):
+        if f"/{imported}" not in manifest:
+            raise ValueError(f"required browser asset is missing: {root / imported}")
     manifest["/"] = manifest["/index.html"]
     return manifest
 
@@ -1090,6 +1211,23 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     response_headers=(
                         ("Content-Disposition", f'attachment; filename="{filename}"'),
                     ),
+                )
+            except BrokenPipeError, ConnectionError, TimeoutError:
+                self.close_connection = True
+            except Exception:
+                self._send_internal_error(coordinator)
+            return
+        if route == _TIMELINE_MARKS_ROUTE and coordinator.timeline_marks is not None:
+            if not self._authenticated(coordinator):
+                return
+            try:
+                payload = coordinator.timeline_marks()
+                if type(payload) is not bytes:
+                    raise TypeError("timeline marks must return bytes")
+                self._send_bytes(
+                    HTTPStatus.OK,
+                    payload,
+                    content_type=_METRIC_REPORT_CONTENT_TYPE,
                 )
             except BrokenPipeError, ConnectionError, TimeoutError:
                 self.close_connection = True
@@ -1774,8 +1912,10 @@ def serve_debugger_server(
     Notes
     -----
     Blocks until Exit or Ctrl-C. Browser-open failures print the usable URL.
-    The shared server owns the socket and request loop; callers may supply a
-    prepared handler without copying this lifetime code.
+    Every line printed to standard output is flushed at once, so a launcher
+    reading through a pipe sees the URL line immediately. The shared server
+    owns the socket and request loop; callers may supply a prepared handler
+    without copying this lifetime code.
     """
     if caller_drain is None:
         pump = getattr(server.coordinator_snapshot().service, "pump", None)
@@ -1787,7 +1927,9 @@ def serve_debugger_server(
         startup_title = (
             product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
         )
-        print(f"{startup_title}: {url}")
+        # Flush at once: a launcher that reads this through a pipe (output not
+        # a terminal) must see the URL now, not when the buffer fills.
+        print(f"{startup_title}: {url}", flush=True)
         if open_browser:
             try:
                 opened = webbrowser.open(url)
@@ -1831,7 +1973,7 @@ def serve_debugger_server(
                 product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
             )
             if graceful_close is None:
-                print(f"{active_title} stopped.")
+                print(f"{active_title} stopped.", flush=True)
             else:
                 try:
                     close_result = server.run_graceful_close(graceful_close)
@@ -1850,6 +1992,7 @@ def serve_debugger_server(
                                 if close_result.exit_code == 0
                                 else sys.stderr
                             ),
+                            flush=True,
                         )
                     exit_code = close_result.exit_code
         finally:

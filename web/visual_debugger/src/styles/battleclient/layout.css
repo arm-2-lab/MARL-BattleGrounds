@@ -1,0 +1,140 @@
+/*
+ * BattleClient layout: the #bc grid of the live combat screen (the
+ * BattleClient and the DevClient combat screen), ported from the approved
+ * vision page. Four areas: the top bar across the top, the scorebug under
+ * it, then the stage (arena, deck, status line) beside a 340 px rail that
+ * scrolls on its own.
+ *
+ * Height: as in the vision, #bc is as tall as its content, but never
+ * taller than the window. When the content would be taller, the stage row
+ * takes what the top bar and the scorebug leave, the deck and the status
+ * line keep their size, and only the arena gets shorter (arena.css). So the
+ * arena, the deck, Lock In and the status line are always on one screen
+ * (owner, 2 Oct: at 1280 x 720, 1280 x 800, 1366 x 768, 1440 x 900,
+ * 1536 x 864 and 1920 x 1080, in every "Who Plays" mode and in the
+ * DevClient below its setup line; only heights may differ from the vision
+ * for this, never widths, order or styles). The status line must stay on
+ * screen because refusals and host messages appear only there: a refusal
+ * below the window's edge would
+ * look like a dead button. In a window at least as tall as the vision's
+ * content for the same state (about 986 px at 1440 px wide and 1233 px at
+ * 1920 px wide with the Lock In deck, about 54 px less with the Policies
+ * Only deck, more when the deck holds extra rows), nothing shrinks and
+ * every region sits exactly where the vision puts it, rail included; in
+ * shorter windows the smaller arena is the one difference, and a taller
+ * deck (for example three Allowed Now rows instead of one) makes the arena
+ * that much shorter (about 16 px for two extra rows). The policies-only
+ * deck is the vision's 150 px minimum, so its arena is taller. The top bar
+ * and the scorebug rows are max-content, so they always keep their full height
+ * (48 px and about 84 px; the DevClient's top bar is about 113 px with its
+ * setup line). The stage row never gets less than 420 px (a 120 px arena,
+ * the deck and the status line). So in a window shorter than those three
+ * together (below about 552 px in the BattleClient and 614 px in the
+ * DevClient) the page scrolls; it never squeezes the arena to nothing,
+ * which the renderer cannot draw, and the top bar never runs over the
+ * scorebug. (With auto rows the grid shrank the top bar to its 48 px
+ * min-height there, and the DevClient's setup line covered the scorebug.)
+ *
+ * Laptops (planner default, desktop and laptop widths only): below 1380 px
+ * the two columns stay side by side with a narrower rail (300 px, then
+ * 290 px below 1300 px), so the arena, the deck and Lock In fit one screen
+ * down to 1280 x 720. The vision's one-column stack and phone rules are not
+ * ported.
+ *
+ * --rail-w: the rail column's width (340, 300 or 290 px), set on #bc and
+ * owned here. Other parts that must line up with the rail read it, for
+ * example the Visual Filters drawer in overlays.css, which sits over the
+ * rail's cards (below the scorebug) and never covers the scorebug, the deck
+ * or the status line.
+ *
+ * Old live regions the vision does not have stay in the page only because
+ * src/main.js still finds them by ID; they are never shown in live play:
+ * the old match strip and party frames, the Team Rosters strip, the
+ * Battlefield instructions row, the corner camera switch and the old Your
+ * Turn and How To Play slots.
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+html[data-product-kind="combat_debugger"] .bc {
+  --rail-w: 340px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  grid-template-rows: max-content max-content minmax(420px, 1fr);
+  grid-template-areas:
+    "top top"
+    "score score"
+    "stage rail";
+  max-height: 100dvh;
+}
+
+/* The arena column and the rail are grid items of #bc. */
+html[data-product-kind="combat_debugger"] .bc #workspace {
+  display: contents;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-stage {
+  grid-area: stage;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  container: stage / inline-size;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-stage
+  > :is(#command-deck, #status-line) {
+  flex: none;
+}
+
+/* The rail is as tall as the stage row and adds nothing to its height
+   (height 0, min-height 100%, the vision's own rule), so a long rail scrolls
+   on its own instead of making the page taller. */
+html[data-product-kind="combat_debugger"] .bc .bc-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  align-content: normal;
+  gap: 10px;
+  min-width: 0;
+  height: 0;
+  min-height: 100%;
+  padding: 12px 12px 12px 10px;
+  overflow-y: auto;
+  scrollbar-color: #34425f transparent;
+  scrollbar-width: thin;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-rail > * {
+  flex: none;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  :is(
+    #match-scoreboard,
+    #party-frames,
+    #team-rosters,
+    .battlefield-support,
+    #live-camera-switch,
+    #this-turn,
+    #how-to-play
+  ) {
+  display: none;
+}
+
+@media (max-width: 1379px) {
+  html[data-product-kind="combat_debugger"] .bc {
+    --rail-w: 300px;
+  }
+}
+
+@media (max-width: 1299px) {
+  html[data-product-kind="combat_debugger"] .bc {
+    --rail-w: 290px;
+  }
+}

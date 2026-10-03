@@ -10,6 +10,18 @@ action axes. Digest helpers validate and hash their content. These are host
 model and serialization operations; they run no simulator, write no files,
 and grant no policy access to researcher-only panels. Local corpse overlays
 are paint-only data whose source authority the service must verify.
+
+Every frame may carry ``champion_streaks``, the Champion Streaks host fact
+for that frame's own view (see viewer.champion_streaks); its check requires
+each named champion to be one the view's own incoming events saw at the
+start of the tick. A completion frame may carry ``match_honors``, the
+game-over Honors and Match Summary rows of that frame's own view (see
+viewer.match_summary.match_honors_v1); in Agent POV its check requires the
+viewing team's own champions only, the recipient among them. Every frame
+may carry ``match_moments``, the Herald Cards' history facts for that
+frame's own view (see viewer.match_moments); its check requires each
+rescued champion to be one the view's own incoming events saw at both ends
+of the tick.
 """
 
 from __future__ import annotations
@@ -105,7 +117,9 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     oracle_presentation_key_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2
-from marl_battlegrounds.viewer.match_summary import MatchSummaryV1
+from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
+from marl_battlegrounds.viewer.match_summary import MatchHonorsV1, MatchSummaryV1
 
 PRESENTATION_PROTOCOL_SCHEMA_VERSION = 1
 PRESENTATION_TECHNICAL_DIGEST_PREFIX_LENGTH_V1 = 12
@@ -117,6 +131,8 @@ _OpaqueId = Annotated[
     str,
     StringConstraints(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
 ]
+# Built once, like _AUTHORIZED_PRESENTATION_FRAME_ADAPTER below.
+_OPAQUE_ID_ADAPTER: TypeAdapter[str] = TypeAdapter(_OpaqueId)
 _ScientificId = Annotated[
     str,
     StringConstraints(
@@ -1976,10 +1992,7 @@ def build_oracle_authorized_current_endpoint_v1(
     evaluation_context_type(context)
     if type(source_scene) is not BattlefieldSceneV2:
         raise TypeError("source_scene must use the exact BattlefieldSceneV2 root.")
-    session = cast(
-        str,
-        TypeAdapter(_OpaqueId).validate_python(authority_session_id),
-    )
+    session = _OPAQUE_ID_ADAPTER.validate_python(authority_session_id)
     scene = build_oracle_authorized_scene_v1(
         context,
         source_scene,
@@ -2932,6 +2945,7 @@ _KEY_PUBLIC_FIELD_BY_KEY_FIELD = {
 _WIRE_MODEL_MODULE_NAMES = (
     __name__,
     "marl_battlegrounds.viewer.match_summary",
+    "marl_battlegrounds.viewer.match_moments",
     "marl_battlegrounds.evaluation.pov",
     "marl_battlegrounds.rendering.authorized_incoming",
     "marl_battlegrounds.rendering.authorized_inspection",
@@ -4351,15 +4365,120 @@ class LiveSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
 
 
 class _MatchPresentationProtocolModel(_PresentationProtocolModel):
-    """Additive match facts tied to the surrounding presentation source epoch."""
+    """Additive match facts tied to the surrounding presentation source epoch.
+
+    Attributes
+    ----------
+    match_summary : MatchSummaryV1 or None
+        Global researcher match facts for this frame (see MatchSummaryV1);
+        in Agent POV only docked researcher panels may read it.
+    champion_streaks : tuple of ChampionStreakV1 or None
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick, in this frame's own view, for the
+        Champion Streaks switch (see
+        viewer.champion_streaks). Oracle View counts every recorded fall; an
+        Agent POV frame counts only what its recipient's team saw, so each
+        named champion is one this frame's visual events saw at the start of
+        the tick. Empty on most ticks and on frame zero. None (the default)
+        for producers that do not count streaks; browsers then show none.
+    match_honors : MatchHonorsV1 or None
+        The game-over Honors and Match Summary rows of this frame's own view
+        (viewer.match_summary.match_honors_v1), sent only on the completion
+        frame. Oracle View lists every champion (team_id None); an Agent POV
+        frame lists only the viewing team's own champions, the recipient
+        among them. None (the default) before the game ends, and when the
+        host has no complete history; browsers then show no Honors.
+    match_moments : MatchMomentFactsV1 or None
+        The Herald Cards' history facts for this frame's own view
+        (viewer.match_moments): whether the match began fresh, the largest
+        earlier lead, the unanswered runs reached on this tick and the
+        rescues. Oracle View reads every recorded fact; an Agent POV frame
+        names only rescues its recipient's team saw whole, so each rescued
+        champion is one this frame's visual events saw at both ends of the
+        tick. None (the default) for producers that do not count them;
+        browsers then show no First Blood, Comeback, run or Rescue card.
+    """
 
     match_summary: MatchSummaryV1 | None
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None
+    match_honors: MatchHonorsV1 | None = None
+    match_moments: MatchMomentFactsV1 | None = None
 
     @model_validator(mode="after")
     def _validate_match_source(self) -> Self:
         """Require optional match facts to share the surrounding source episode and
-        step.
+        step, every champion streak to name a champion this view's own
+        incoming events saw at the start of the tick (Agent POV: visual_events;
+        Oracle View: latest_events), each once, and Honors to suit the view:
+        Oracle View lists every champion (team_id None); Agent POV lists only
+        one team (team_id set) with the recipient among its champions. Every
+        rescue in match_moments must name, once, a champion this view's own
+        incoming events saw at both ends of the tick (a trajectory with a
+        start and a successor anchor).
         """
+        moments = self.match_moments
+        if moments is not None and moments.rescues:
+            pov = "visual_events" in type(self).model_fields
+            seen = cast(
+                ReplayIncomingSummaryV1 | AgentPovVisualIncomingSummaryV1 | None,
+                self.__dict__["visual_events" if pov else "latest_events"],
+            )
+            seen_both_ends: set[str] = (
+                set()
+                if seen is None
+                else {
+                    row.agent_public_agent_id
+                    for row in seen.agent_phase_trajectories
+                    if row.transition_start is not None and row.successor is not None
+                }
+            )
+            if not {row.public_agent_id for row in moments.rescues} <= seen_both_ends:
+                raise ValueError(
+                    "match moment rescues must name champions this view saw at "
+                    "both ends of the tick"
+                )
+        honors = self.match_honors
+        if honors is not None:
+            agent_pov = "visual_events" in type(self).model_fields
+            if not agent_pov and honors.team_id is not None:
+                raise ValueError("Oracle View honors must count every champion")
+            if agent_pov:
+                pov_source = cast(
+                    LiveNoSharedObsPresentationSourceIdentityV1
+                    | LiveSharedObsPresentationSourceIdentityV1
+                    | ReplayNoSharedObsPresentationSourceIdentityV1
+                    | ReplaySharedObsPresentationSourceIdentityV1,
+                    self.__dict__["source"],
+                )
+                recipient = pov_source.source_recipient_public_agent_id
+                if honors.team_id is None or recipient not in {
+                    row.public_agent_id for row in honors.champions
+                }:
+                    raise ValueError(
+                        "Agent POV honors must count only the recipient's own team"
+                    )
+        streaks = self.champion_streaks
+        if streaks is not None:
+            agent_pov = "visual_events" in type(self).model_fields
+            incoming = cast(
+                ReplayIncomingSummaryV1 | AgentPovVisualIncomingSummaryV1 | None,
+                self.__dict__["visual_events" if agent_pov else "latest_events"],
+            )
+            seen_at_start: set[str] = (
+                set()
+                if incoming is None
+                else {
+                    row.agent_public_agent_id
+                    for row in incoming.agent_phase_trajectories
+                    if row.transition_start is not None
+                }
+            )
+            names = [row.public_agent_id for row in streaks]
+            if len(set(names)) != len(names) or not set(names) <= seen_at_start:
+                raise ValueError(
+                    "champion streaks must name, once each, champions this view "
+                    "saw at the start of the tick"
+                )
         if self.match_summary is not None:
             source = cast(
                 LiveOraclePresentationSourceIdentityV1

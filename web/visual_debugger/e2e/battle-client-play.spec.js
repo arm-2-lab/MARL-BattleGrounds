@@ -1,11 +1,19 @@
 /**
  * @file Prove mixed-controller ownership and server-owned Run/Pause in Chromium.
  * The slow host fixture chooses neutral actions. This checks interaction and
- * session lifetime, not learned team behavior.
+ * session lifetime, not learned team behavior. The deck names a champion
+ * "<Class> · ID N", adds " · Watch Only · <policy>" for a policy champion, and in
+ * Agent POV names the last Manual champion focused. Finish And Save is reached
+ * through the Recording popover.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { startDebugger, stopDebugger } from "./support/live-debugger.js";
+import {
+  closeRecordingPanel,
+  openRecordingPanel,
+  startDebugger,
+  stopDebugger,
+} from "./support/live-debugger.js";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let server = null;
@@ -35,14 +43,15 @@ async function launch(page, fixture) {
   const started = await startDebugger({ extraArgs: ["--controller-fixture", fixture] });
   server = started.process;
   await page.goto(started.url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   return started.url;
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {string} id
+ * @param {{public_agent_id: string, class_name: string}} row
  * @param {boolean} manual */
-async function inspect(page, id, manual) {
+async function inspect(page, row, manual) {
+  const id = row.public_agent_id;
   await page
     .getByRole("button", {
       name: `${manual ? "Control and inspect" : "Inspect"} Agent ID ${id}`,
@@ -50,7 +59,7 @@ async function inspect(page, id, manual) {
     })
     .click();
   await expect(page.locator("#command-controlled-actor")).toContainText(
-    `Agent ID ${id}`,
+    new RegExp(`^${row.class_name} · ID ${id}(?: ·|$)`, "u"),
   );
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
@@ -79,7 +88,7 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
   await expect(page.locator("#live-run-button")).toBeHidden();
   await expect(page.locator("#live-match-rules")).toContainText("Step Limit 8");
   await expect(page.locator("#roster .roster-controller")).toHaveCount(10);
-  await inspect(page, first.public_agent_id, true);
+  await inspect(page, first, true);
   await page
     .locator(
       '#command-deck button[data-move-action][aria-disabled="false"]:not([aria-pressed="true"])',
@@ -91,7 +100,7 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
     "installed",
   );
   const firstDrafts = (await snapshot(page)).frame.hud.pending_actions;
-  await inspect(page, second.public_agent_id, true);
+  await inspect(page, second, true);
   await page.locator("#battlefield").focus();
   await page.keyboard.press("d");
   await expect(page.locator("html")).toHaveAttribute(
@@ -101,7 +110,7 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
   const secondDrafts = (await snapshot(page)).frame.hud.pending_actions;
   expect(secondDrafts[0]).toEqual(firstDrafts[0]);
   expect(secondDrafts[1]).not.toEqual(firstDrafts[1]);
-  await inspect(page, policy.public_agent_id, false);
+  await inspect(page, policy, false);
   await expect(page.locator("#command-deck")).toHaveAttribute(
     "data-policy-controller-read-only",
     "true",
@@ -155,12 +164,18 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
     ),
   );
   await page.locator("#view-select").selectOption("pov");
-  await expect(page.locator("#command-controlled-actor")).toContainText("read-only");
+  // Agent POV shows the last Manual champion focused (second), never the
+  // focused policy champion, so its deck names that Manual champion.
+  await expect(page.locator("#command-controlled-actor")).toHaveText(
+    `${second.class_name} · ID ${second.public_agent_id}`,
+  );
   await page.locator("#view-select").selectOption("researcher");
-  await inspect(page, second.public_agent_id, true);
+  await inspect(page, second, true);
   await page.locator("#command-target-select").focus();
   const beforeInput = (await snapshot(page)).frame.revision;
-  await page.keyboard.press("w");
+  // "d" is a movement key that starts no option (a native select jumps to the
+  // first option starting with the typed letter, such as "Warrior · ID 6").
+  await page.keyboard.press("d");
   expect((await snapshot(page)).frame.revision).toBe(beforeInput);
   await page.locator("#battlefield").focus();
   await page.keyboard.press("Escape");
@@ -190,7 +205,7 @@ test("Run survives refresh and closing a tab; Pause fences the next turn", async
   await expect(page.locator("#live-run-status")).toHaveText("Paused");
   const other = await context.newPage();
   await other.goto(url);
-  await expect(other.locator("#connection-status")).toHaveText("Online");
+  await expect(other.locator("#connection-status")).toHaveText("Connected");
   await page.locator("#live-run-button").click();
   await expect(page.locator("#live-run-button")).toHaveText("Pause");
   await page.reload();
@@ -224,7 +239,7 @@ test("Fixed scenarios keep dead Manual slots and the packaged clock", async ({
   await expect(page.locator("#step-value")).toHaveText("295");
   await expect(page.locator("#live-run-button")).toBeHidden();
   await expect(page.locator("#live-control-help")).toContainText(
-    "Dead Manual slots still wait for Submit",
+    "A fallen champion you play still waits for Lock In.",
   );
   await expect(page.locator("#submit-turn-button")).toBeEnabled();
 });
@@ -248,7 +263,7 @@ test("Finish And Save waits for the accepted turn's evidence to settle", async (
     });
     server = started.process;
     await page.goto(started.url);
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
     await page.locator("#submit-turn-button").click();
     await expect(page.locator("#step-value")).toHaveText("1");
     const accepted = await snapshot(page);
@@ -262,7 +277,9 @@ test("Finish And Save waits for the accepted turn's evidence to settle", async (
         reply.request().method() === "POST" &&
         new URL(reply.url()).pathname === "/api/command",
     );
+    await openRecordingPanel(page);
     await page.locator("#recording-finish-button").click();
+    await closeRecordingPanel(page);
     expect((await response).status()).toBe(200);
     await expect(page.locator("html")).toHaveAttribute(
       "data-recording-lifecycle",

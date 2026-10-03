@@ -1,12 +1,21 @@
 /**
  * @file Check keyboard and pointer command routing, native browser shortcuts and
- * submission state labels. Recording restarts accept the BETA (scenario_5)
- * and GAMMA (tdm_gamma) controllers for either team, and reject them under
- * NoSharedObs whichever team uses them.
+ * submission state labels. Live keys follow the one command set: the arrows,
+ * V, B and F are never forwarded to Python, while N (one tick) is, in either
+ * letter case; V and F run their registered local
+ * handlers on the focused battlefield (even while commands are fenced) and stop
+ * the event; B and unregistered local keys do nothing; ownsLocalCommands false
+ * leaves V, B and F to the Replay Viewer. A right click on the battlefield
+ * sends the secondary pointer (Python clears the target) and keeps the browser
+ * menu closed while orders are open; while they are closed it stays native and
+ * sends nothing. Recording restarts accept the BETA
+ * (scenario_5) and GAMMA (tdm_gamma) controllers for either team, and reject
+ * them under NoSharedObs whichever team uses them.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { registerLocalCommandHandler } from "../src/command-set.js";
 import {
   bindBattlefieldControls,
   commandResponseSchedulesShutdown,
@@ -116,8 +125,129 @@ test("debugger key capture leaves modified browser shortcuts native", () => {
   assert.equal(isDebuggerKey({ key: "w", metaKey: true }), false);
   assert.equal(isDebuggerKey({ key: "ArrowLeft", altKey: true }), false);
   assert.equal(isDebuggerKey({ key: "F5" }), false);
-  for (const retiredKey of ["n", "N", "[", "]", "p", "P"]) {
+  for (const retiredKey of ["[", "]", "p", "P"]) {
     assert.equal(isDebuggerKey({ key: retiredKey }), false);
+  }
+  // N is one tick: forwarded like Space, in either letter case.
+  assert.equal(isDebuggerKey({ key: "n" }), true);
+  assert.equal(isDebuggerKey({ key: "N", shiftKey: true }), true);
+  assert.equal(isDebuggerKey({ key: "n", ctrlKey: true }), false);
+  for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+    assert.equal(isDebuggerKey({ key }), false, key);
+    assert.equal(isDebuggerKey({ key, shiftKey: true }), false, key);
+  }
+  for (const key of ["v", "V", "b", "B", "f", "F"]) {
+    assert.equal(isDebuggerKey({ key }), false, key);
+  }
+  for (const key of ["w", "a", "s", "d", "q", "e", "z", "c", "x", "0", "1", "2"]) {
+    assert.equal(isDebuggerKey({ key }), true, key);
+  }
+  for (const key of [" ", "Enter", "r", "g", "?", "Tab", "Escape"]) {
+    assert.equal(isDebuggerKey({ key }), true, key);
+  }
+});
+
+test("V and F reach their local handlers on the live battlefield and never Python", () => {
+  const battlefield = new EventTarget();
+  let interactive = true;
+  let ownsLocal = true;
+  /** @type {Record<string, unknown>[]} */
+  const commands = [];
+  /** @type {Record<string, unknown>[]} */
+  const fencedCommands = [];
+  /** @type {any[]} */
+  const calls = [];
+  let helpCount = 0;
+  bindBattlefieldControls({
+    battlefield: /** @type {any} */ (battlefield),
+    toWorldPoint: () => null,
+    onCommand: (command) => {
+      commands.push(command);
+    },
+    onHelp: () => {
+      helpCount += 1;
+    },
+    onReleaseFocus: () => {},
+    isInteractive: () => interactive,
+    onFencedCommand: (command) => {
+      fencedCommands.push(command);
+      return true;
+    },
+    ownsLocalCommands: () => ownsLocal,
+  });
+
+  // No handler registered yet: V does nothing and stays native.
+  const early = cancelableKeydown("v");
+  battlefield.dispatchEvent(early);
+  assert.equal(early.defaultPrevented, false);
+
+  const removeCamera = registerLocalCommandHandler(
+    "camera_everyone_in_view",
+    (/** @type {any} */ call) => {
+      calls.push(call);
+    },
+  );
+  const removeExplain = registerLocalCommandHandler(
+    "frame_explanation",
+    (/** @type {any} */ call) => {
+      calls.push(call);
+    },
+  );
+  try {
+    let propagated = 0;
+    const view = cancelableKeydown("v");
+    view.stopPropagation = () => {
+      propagated += 1;
+    };
+    battlefield.dispatchEvent(view);
+    assert.equal(view.defaultPrevented, true);
+    assert.equal(propagated, 1);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].product, "combat_debugger");
+    assert.equal(calls[0].job, "everyone_in_view");
+    assert.deepEqual(calls[0].context, { interactive: true });
+
+    const explain = cancelableKeydown("F");
+    battlefield.dispatchEvent(explain);
+    assert.equal(explain.defaultPrevented, true);
+    assert.equal(calls[1].job, "frame_explanation");
+
+    // B has no live job, and the arrows are not live keys.
+    for (const key of ["b", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+      const event = cancelableKeydown(key);
+      battlefield.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, false, key);
+    }
+
+    // While commands are fenced, V still runs locally and is never fenced.
+    interactive = false;
+    const fencedView = cancelableKeydown("v");
+    battlefield.dispatchEvent(fencedView);
+    assert.equal(fencedView.defaultPrevented, true);
+    assert.deepEqual(calls[2].context, { interactive: false });
+    assert.deepEqual(fencedCommands, []);
+
+    // With Ctrl held, V stays a browser shortcut.
+    interactive = true;
+    const paste = cancelableKeydown("v", { ctrlKey: true });
+    battlefield.dispatchEvent(paste);
+    assert.equal(paste.defaultPrevented, false);
+
+    // In the Replay Viewer the replay key handler owns V, B and F.
+    ownsLocal = false;
+    const replayView = cancelableKeydown("v");
+    battlefield.dispatchEvent(replayView);
+    assert.equal(replayView.defaultPrevented, false);
+    assert.equal(calls.length, 3);
+
+    // ? still opens How To Play through onHelp, not a local handler.
+    ownsLocal = true;
+    battlefield.dispatchEvent(cancelableKeydown("?"));
+    assert.equal(helpCount, 1);
+    assert.deepEqual(commands, []);
+  } finally {
+    removeCamera();
+    removeExplain();
   }
 });
 
@@ -208,18 +338,35 @@ test("battlefield-owned commands and accepted fenced input never become browser 
   assert.deepEqual(commands, [keyboardCommand(" ")]);
 });
 
-test("secondary pointer and context-menu events remain native and command-silent", () => {
-  const battlefield = new EventTarget();
-  let projectionCalls = 0;
+test("a right click sends the secondary pointer and keeps the browser menu closed", () => {
+  const battlefield = /** @type {any} */ (new EventTarget());
+  let focused = 0;
+  battlefield.focus = () => {
+    focused += 1;
+  };
+  battlefield.getScreenCTM = () => ({ inverse: () => ({}) });
+  const savedPoint = Reflect.get(globalThis, "DOMPoint");
+  Reflect.set(
+    globalThis,
+    "DOMPoint",
+    class {
+      /** @param {number} x @param {number} y */
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+      }
+      matrixTransform() {
+        return { x: this.x, y: this.y };
+      }
+    },
+  );
+  let interactive = true;
   let pointerCalls = 0;
   /** @type {Record<string, unknown>[]} */
   const commands = [];
   bindBattlefieldControls({
-    battlefield: /** @type {any} */ (battlefield),
-    toWorldPoint: () => {
-      projectionCalls += 1;
-      return { world_x: 1, world_y: 2 };
-    },
+    battlefield,
+    toWorldPoint: (point) => ({ world_x: point.x / 10, world_y: point.y / 10 }),
     onCommand: (command) => {
       commands.push(command);
     },
@@ -228,17 +375,47 @@ test("secondary pointer and context-menu events remain native and command-silent
     },
     onHelp: () => {},
     onReleaseFocus: () => {},
+    isInteractive: () => interactive,
   });
-
-  const pointerdown = cancelablePointerEvent("pointerdown");
-  const contextmenu = cancelablePointerEvent("contextmenu");
-  assert.equal(battlefield.dispatchEvent(pointerdown), true);
-  assert.equal(battlefield.dispatchEvent(contextmenu), true);
-  assert.equal(pointerdown.defaultPrevented, false);
-  assert.equal(contextmenu.defaultPrevented, false);
-  assert.equal(projectionCalls, 0);
-  assert.equal(pointerCalls, 0);
-  assert.deepEqual(commands, []);
+  try {
+    const pointerdown = cancelablePointerEvent("pointerdown");
+    const contextmenu = cancelablePointerEvent("contextmenu");
+    battlefield.dispatchEvent(pointerdown);
+    battlefield.dispatchEvent(contextmenu);
+    assert.equal(pointerdown.defaultPrevented, true);
+    assert.equal(contextmenu.defaultPrevented, true);
+    assert.equal(focused, 1);
+    assert.equal(pointerCalls, 1);
+    assert.deepEqual(commands, [
+      {
+        command_type: "battlefield_pointer",
+        world_x: 1,
+        world_y: 2,
+        button: "secondary",
+        shift_key: false,
+        ctrl_key: false,
+        alt_key: false,
+        meta_key: false,
+      },
+    ]);
+    // While orders are closed the right click stays native and sends nothing.
+    interactive = false;
+    const closedDown = cancelablePointerEvent("pointerdown");
+    const closedMenu = cancelablePointerEvent("contextmenu");
+    battlefield.dispatchEvent(closedDown);
+    battlefield.dispatchEvent(closedMenu);
+    assert.equal(closedDown.defaultPrevented, false);
+    assert.equal(closedMenu.defaultPrevented, false);
+    assert.equal(commands.length, 1);
+    // A middle click does nothing at any time.
+    interactive = true;
+    const middle = cancelablePointerEvent("pointerdown", 1);
+    battlefield.dispatchEvent(middle);
+    assert.equal(middle.defaultPrevented, false);
+    assert.equal(commands.length, 1);
+  } finally {
+    Reflect.set(globalThis, "DOMPoint", savedPoint);
+  }
 });
 
 test("target selection uses the same researcher-space command in both live audiences", () => {

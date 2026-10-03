@@ -183,7 +183,7 @@ async function activateAndWaitForJoinedLiveAuthority(page, activate) {
     "data-presentation-authority",
     "installed",
   );
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -216,7 +216,7 @@ export async function loadLiveVisualCase(
   await installWaapiAutopause(page);
   const commandPosts = trackCommandPosts(page);
   await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
 
   await activateAndWaitForJoinedLiveAuthority(page, async () => {
     if ((await page.locator("#scenario-select").inputValue()) === scenario) {
@@ -291,7 +291,7 @@ export async function installSyntheticVisualCase(
     await route.abort("blockedbyclient");
   });
   await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   return commandPosts;
 }
 

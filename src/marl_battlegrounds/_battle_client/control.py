@@ -1,7 +1,9 @@
 """Apply debugger drafts and scripted commands through the shared simulator boundary.
 
 The input layer calls these helpers to build immutable ``DebuggerSession`` values.
-Draft/selection helpers change host controls only. Submission builds both teams'
+Draft/selection helpers change host controls only. ``agent_pov_recipient_slot``
+is the one owner of whose eyes Agent POV shows (the last Manual champion you
+focused, or in Policies Only the champion you look at). Submission builds both teams'
 actions before one Core step, then captures its matching state, observation, mask
 and transition record. Reset helpers create a new recorded episode. Random keys
 remain explicit in the session; this module does not write replay files or serve
@@ -18,11 +20,30 @@ its own. NoSharedObs Random still runs uncompiled through
 replaced executor or step (for example a test spy) is called as given,
 uncompiled.
 
+Loaded Systems (saved checkpoints, the built-in names and your own JAX
+methods) run through the same compiled pair program that evaluation uses, when
+both teams' methods run in JAX. Uncompiled, JAX rebuilt and recompiled the
+whole model on every turn (about 3 to 4 s per warm turn on CPU with 7b+pool).
+Weights, memory, inputs and keys stay dynamic, so later turns and Restart reuse
+the program. A pair with a host method (for example an LLM) runs uncompiled, as
+evaluation does; its JAX opponent stays compiled inside that shared route.
+
+``warm_compiled_turn`` runs one Submit and throws it away, so the launchers and
+a DevClient setup change compile before anyone presses Lock In.
+
+Every compiled call passes its inputs through ``_committed`` first. JAX keys
+a compiled program on whether each input array is committed to a device; the
+first frame's arrays are not, later frames' arrays are, so without it every
+program compiled a second time on the second turn.
+
 Compile cost: the first Submit in a DevClient session (the first in this
 Python process) compiles for several seconds, about 6 s on CPU. The first
 Submit after switching to a controller pair not yet used in this process
 compiles the executor again, about 3 s. After that a Submit takes about
-0.03 s. These historical CPU times are examples, not guarantees. The old
+0.03 s. With 7b+pool against TDM-Beta (1 Oct 2026): the first Lock In about
+4 to 7 s on CPU and 12.5 s on the RTX 5090, every later one 0.02 s, where the
+uncompiled route took 3 to 5 s on CPU and 5 to 7 s on the GPU per turn. These
+CPU and GPU times are examples, not guarantees. The old
 built-in command route holds the service lock during execution. Queued System
 callbacks run outside HTTP, router and service locks; adoption briefly locks
 the accepted state. The public launcher drains its queue on the caller thread.
@@ -42,6 +63,9 @@ from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_context_v1,
     build_debugger_evaluation_launch_specification_v1,
     debugger_action_source_kind_v1,
+)
+from marl_battlegrounds._battle_client.live_presentation import (
+    advance_live_match_history_v1,
 )
 from marl_battlegrounds._battle_client.model import (
     SCENARIO_OPPONENT_ERROR,
@@ -102,13 +126,13 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemState,
     apply_policies,
-    apply_systems,
     init_systems,
     policy,
     shared_policy,
 )
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
+    team_controller_names,
 )
 from marl_battlegrounds.evaluation.system_evaluation import freeze_evaluation_method
 from marl_battlegrounds.policies.actor import (
@@ -127,6 +151,8 @@ from marl_battlegrounds.rendering.evaluation_adapter import (
     advance_status_source_evidence_v2,
     initialize_status_source_evidence_v2,
 )
+from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
+from marl_battlegrounds.viewer.match_moments import MatchMomentHistoryV1
 
 # Compiled forms of the real policy executor and Core step. Controller callables
 # are static (the registered adapters are stable objects), so each Team A/Team B
@@ -144,6 +170,59 @@ _COMPILED_STEP = cast(
     Callable[..., tuple[EnvState, Observation, Reward, DoneFlags, ActionMask, Info]],
     jax.jit(core_env.step),
 )
+# The shared System pair authority, compiled the way evaluation compiles it:
+# the two call-structure descriptors are static, everything numerical is dynamic.
+_COMPILED_SYSTEM_PAIR = cast(
+    Callable[..., tuple[Action, SystemState, tuple[PolicyTree, PolicyTree]]],
+    jax.jit(
+        policy_execution._apply_system_pair,  # pyright: ignore[reportPrivateUsage]
+        static_argnums=(0, 1),
+        static_argnames=("keep_learning_outputs",),
+    ),
+)
+
+
+def _committed[T](tree: T) -> T:
+    """Commit every JAX array in tree to its device so a program compiles once.
+
+    A compiled program's cache key includes whether each input array is
+    committed to a device. Arrays made outside a compiled call (the first frame,
+    fresh memory) are uncommitted; a compiled call's outputs are committed when
+    any input was (weights loaded from a checkpoint are). Without this step
+    every compiled program here compiled twice: once on the first turn and
+    again on the second. Only the real compiled programs' inputs pass through
+    it; a replaced executor or step (a test spy) receives its inputs unchanged.
+
+    Parameters
+    ----------
+    tree : T
+        A pytree of compiled-call inputs that this client or a JAX method owns.
+        Never pass a host method's variables or memory: a host method receives
+        its own objects exactly as given. Uncommitted JAX arrays (including
+        typed keys) are committed on the device they are already on. Committed
+        arrays, NumPy arrays, Python scalars, None and other leaves pass through
+        as the same objects, so weak types and static values keep their meaning.
+
+    Returns
+    -------
+    T
+        ``tree`` itself when nothing needed committing (the usual case after the
+        first turn), otherwise the same structure with committed arrays. Values,
+        dtypes and shapes never change; no array is copied to another device.
+    """
+    if not any(
+        isinstance(leaf, jax.Array) and not leaf.committed
+        for leaf in jax.tree.leaves(tree)
+    ):
+        return tree
+
+    def commit(leaf: object) -> object:
+        """Commit one uncommitted JAX array where it is; keep anything else."""
+        if isinstance(leaf, jax.Array) and not leaf.committed:
+            return jax.device_put(leaf, leaf.sharding)
+        return leaf
+
+    return cast(T, jax.tree.map(commit, tree))
 
 
 type DebuggerTransitionFailureStageV1 = Literal[
@@ -603,6 +682,54 @@ def _prepare_session_systems(
     return methods[0], methods[1]
 
 
+def _system_slot_names(
+    controllers: tuple[TeamController, TeamController],
+    systems: tuple[System, System] | None,
+    config: EnvConfig,
+) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None]:
+    """Name each champion of a System-alias team from its loaded System.
+
+    A team chosen by alias (``system:counter``) would otherwise be labeled,
+    and recorded in replays, by that alias. This helper gives
+    ``normalize_slot_ownership`` the real names instead.
+
+    Parameters
+    ----------
+    controllers : tuple of two TeamController
+        Team A and Team B controller kinds or System aliases.
+    systems : tuple of two System, or None
+        The session's prepared Team A/B methods (``_prepare_session_systems``),
+        or None when neither team uses a System alias.
+    config : EnvConfig
+        The match configuration; only its ten class IDs are read.
+
+    Returns
+    -------
+    tuple of two (tuple of five str or None)
+        In Team A/B order: a System-alias team's five names in team-local slot
+        order, from ``team_controller_names``, so a ``team(...)`` names each
+        champion by its member. None for a built-in or Manual team, and for
+        both teams when ``systems`` is None.
+
+    Notes
+    -----
+    Host-only setup work, run once per new session or changed setup. It reads
+    names and a team's small slot table; it never calls a method.
+    """
+    if systems is None:
+        return None, None
+    class_ids = [int(value) for value in jax.device_get(config.agent_profile.class_ids)]
+    first, second = (
+        team_controller_names(system, class_ids[team * 5 : team * 5 + 5])
+        if is_system_controller(controller)
+        else None
+        for team, (controller, system) in enumerate(
+            zip(controllers, systems, strict=True)
+        )
+    )
+    return first, second
+
+
 def _session_system_registrations(
     methods: tuple[System, System] | None,
 ) -> tuple[tuple[str, dict[str, object]], tuple[str, dict[str, object]]] | None:
@@ -681,9 +808,30 @@ def _initial_system_state(
 def _build_system_joint_action(session: DebuggerSession) -> tuple[Action, SystemState]:
     """Choose one complete joint action and stage memory without changing the game.
 
-    No method receives Manual drafts. Public apply_systems filters each actor's
-    information and keeps the existing whole-System batch.
+    No method receives Manual drafts. The shared System pair authority (the one
+    behind public apply_systems) filters each actor's information and keeps the
+    existing whole-System batch. When both methods run in JAX it runs as the
+    compiled pair program (see the module description); otherwise uncompiled.
     Memory is adopted only after submit_joint_action packages its successor.
+
+    Parameters
+    ----------
+    session : DebuggerSession
+        Session with loaded systems, their wrapped environment state and memory.
+        Fixed scenarios use the evaluator's exact scheduled keys; other games
+        fold the focal policy seed with the current frame index.
+
+    Returns
+    -------
+    tuple[Action, SystemState]
+        Both teams' joint action and the proposed successor memory. The game
+        itself does not change.
+
+    Raises
+    ------
+    ValueError
+        The session has no systems, environment state or memory, or a method
+        returns an invalid action or memory layout (from the pair authority).
     """
     methods, wrapped, memory = (
         session.systems,
@@ -692,6 +840,30 @@ def _build_system_joint_action(session: DebuggerSession) -> tuple[Action, System
     )
     if methods is None or wrapped is None or memory is None:
         raise ValueError("System state is missing")
+    execution_a = policy_execution._execution(methods[0])  # pyright: ignore[reportPrivateUsage]
+    execution_b = policy_execution._execution(methods[1])  # pyright: ignore[reportPrivateUsage]
+    host_a, host_b = execution_a.execution == "host", execution_b.execution == "host"
+    apply_pair = (
+        policy_execution._apply_system_pair  # pyright: ignore[reportPrivateUsage]
+        if host_a or host_b
+        else _COMPILED_SYSTEM_PAIR
+    )
+    # Commit what this client and the JAX methods own. A host method receives
+    # its own variables and memory exactly as given (the same objects).
+    observations, wrapped = _committed(
+        (Observations(wrapped.observation, wrapped.source_availability), wrapped)
+    )
+    variables_a = methods[0].variables if host_a else _committed(methods[0].variables)
+    variables_b = methods[1].variables if host_b else _committed(methods[1].variables)
+    memory = memory._replace(
+        team_a=memory.team_a if host_a else _committed(memory.team_a),
+        team_b=memory.team_b if host_b else _committed(memory.team_b),
+        episode_id=_committed(memory.episode_id),
+        reset_generation=_committed(memory.reset_generation),
+        init_key=_committed(memory.init_key),
+        policy_trace=_committed(memory.policy_trace),
+        adapter_templates=_committed(memory.adapter_templates),
+    )
     if session.scenario.scenario_specification is not None:
         from marl_battlegrounds.evaluation.evaluate import (
             _actor_keys,  # pyright: ignore[reportPrivateUsage]
@@ -699,16 +871,22 @@ def _build_system_joint_action(session: DebuggerSession) -> tuple[Action, System
         )
 
         seed_ids, local_steps = _fixed_key_coordinates(session)
-        action, proposed, _ = policy_execution._apply_system_pair(  # pyright: ignore[reportPrivateUsage]
-            policy_execution._execution(methods[0]),  # pyright: ignore[reportPrivateUsage]
-            policy_execution._execution(methods[1]),  # pyright: ignore[reportPrivateUsage]
-            methods[0].variables,
-            methods[1].variables,
+        action_roots, actor_keys = _committed(
+            (
+                episode_keys(session.key, seed_ids, local_steps, 2),
+                _actor_keys(session.key, seed_ids, local_steps),
+            )
+        )
+        action, proposed, _ = apply_pair(
+            execution_a,
+            execution_b,
+            variables_a,
+            variables_b,
             memory,
-            Observations(wrapped.observation, wrapped.source_availability),
+            observations,
             wrapped,
-            episode_keys(session.key, seed_ids, local_steps, 2),
-            actor_keys=_actor_keys(session.key, seed_ids, local_steps),
+            action_roots,
+            actor_keys=actor_keys,
             keep_learning_outputs=False,
         )
         return action, proposed
@@ -718,12 +896,17 @@ def _build_system_joint_action(session: DebuggerSession) -> tuple[Action, System
         ),
         session.current_evaluation_frame.frame_index,
     )
-    action, proposed, _ = apply_systems(
-        *methods,
+    # The same arguments public apply_systems passes, including its default
+    # keep_learning_outputs=True, so the actions match the uncompiled route.
+    action, proposed, _ = apply_pair(
+        execution_a,
+        execution_b,
+        variables_a,
+        variables_b,
         memory,
-        Observations(wrapped.observation, wrapped.source_availability),
+        observations,
         wrapped,
-        key,
+        _committed(key),
     )
     return action, proposed
 
@@ -748,14 +931,9 @@ def _build_configured_joint_action(session: DebuggerSession) -> Action:
             raise ValueError("SharedObs requires captured information availability")
         first = _configured_policy(session, TEAM_A_ID, controllers[0])
         second = _configured_policy(session, TEAM_B_ID, controllers[1])
-        executor = (
-            _COMPILED_APPLY_POLICIES
-            if apply_policies is policy_execution.apply_policies
-            else apply_policies
-        )
-        action, _, _ = executor(
-            first.apply,
-            second.apply,
+        compiled = apply_policies is policy_execution.apply_policies
+        executor = _COMPILED_APPLY_POLICIES if compiled else apply_policies
+        inputs = (
             first.variables,
             second.variables,
             first.initial_carry,
@@ -763,6 +941,11 @@ def _build_configured_joint_action(session: DebuggerSession) -> Action:
             Observations(session.observation, availability),
             session.action_mask,
             keys,
+        )
+        action, _, _ = executor(
+            first.apply,
+            second.apply,
+            *(_committed(inputs) if compiled else inputs),
         )
         return action
     if mode != "no_shared_obs" or availability is not None:
@@ -1014,6 +1197,25 @@ def _validate_fixed_initial_frame(
             )
 
 
+def _default_focus_slot(
+    scenario: DebuggerScenario,
+    manual_slots: tuple[int, ...] | None,
+) -> int:
+    """Return the champion a new or restarted match starts focused on.
+
+    scenario.default_controlled_slot, unless the match has Manual slots and
+    that slot is not one of them: then the lowest Manual slot, so a player who
+    plays one champion starts giving orders to it rather than looking at a
+    policy's champion (Watch Only). manual_slots are global slots 0-9 (None or
+    empty means no Manual slot). Pure. The policy seed's focal slot stays
+    scenario.default_controlled_slot.
+    """
+    default_slot = scenario.default_controlled_slot
+    if manual_slots and default_slot not in manual_slots:
+        return min(manual_slots)
+    return default_slot
+
+
 def create_session(
     scenario: DebuggerScenario,
     *,
@@ -1048,8 +1250,11 @@ def create_session(
     evaluation_launch_specification : DebuggerEvaluationLaunchSpecificationV1
         Recorded identity, seed and capture choices for the new episode.
     controlled_global_slot : int | None
-        Requested zero-based active actor slot, or None for the scenario
-        default. An unavailable request falls back to that default.
+        Requested zero-based active actor slot (the focus), or None for the
+        default: the scenario's default slot, or the lowest Manual slot when
+        the match has Manual slots and the scenario's default is a policy's
+        (see _default_focus_slot). An unavailable request falls back to that
+        default.
     show_ranges : bool
         Whether the initial view displays configured range overlays.
     verbose_logging : bool
@@ -1075,8 +1280,13 @@ def create_session(
         Human-owned physical rows, including configured dead actors. None derives
         whole Manual teams. Explicit rows may belong to a composed System team.
     slot_labels : tuple[str | None, ...] or None
-        Ten physical controller labels. None derives whole-team labels; inactive
-        rows use None and Manual rows use Manual. Labels never enter policy input.
+        Ten physical controller labels. None derives them: inactive rows use
+        None, Manual rows use Manual, a built-in team uses its public name
+        (``tdm-beta``) and a System-alias team uses its loaded System's name
+        for each champion (a ``team(...)`` names each champion by its member),
+        never the alias. Labels never enter policy input.
+        The episode context records them as each slot's and team's controller
+        name, so a saved replay shows the same names.
     run_generation : int
         Nonnegative host match generation, default 0. Trusted setup replacement
         passes the previous generation plus one; it never changes scenario RNG.
@@ -1135,6 +1345,11 @@ def create_session(
         manual_slots=manual_slots,
         slot_labels=slot_labels,
         scripted=scenario.mode == "scripted",
+        system_slot_names=None
+        if slot_labels is not None
+        else _system_slot_names(
+            (team_a_controller, team_b_controller), prepared_systems, config
+        ),
     )
     registrations = _session_system_registrations(prepared_systems)
     evaluation_context = build_debugger_evaluation_context_v1(
@@ -1154,6 +1369,7 @@ def create_session(
         expected_horizon=_debugger_expected_horizon(scenario, config, state),
         system_registrations=registrations,
         manual_slots=manual_slots,
+        slot_labels=slot_labels,
     )
     next_key = jax.random.key(
         _required_seed(
@@ -1178,16 +1394,15 @@ def create_session(
         evaluation_context,
         initial_frame,
     )
+    default_slot = _default_focus_slot(scenario, manual_slots)
     requested_slot = (
-        scenario.default_controlled_slot
-        if controlled_global_slot is None
-        else controlled_global_slot
+        default_slot if controlled_global_slot is None else controlled_global_slot
     )
     if not (
         0 <= requested_slot < MAX_AGENT_SLOTS
         and evaluation_context.roster[requested_slot].configured_active
     ):
-        requested_slot = scenario.default_controlled_slot
+        requested_slot = default_slot
     _validate_active_context_slot(
         evaluation_context,
         requested_slot,
@@ -1504,6 +1719,59 @@ def select_controlled_actor(
     return replace(session, controlled_global_slot=global_slot)
 
 
+def agent_pov_recipient_slot(
+    session: DebuggerSession,
+    previous_recipient: int | None,
+) -> int:
+    """Choose whose eyes Agent POV shows: the viewing champion (the recipient).
+
+    The recipient is separate from the focused (controlled) champion. Rules:
+
+    - Mixed control (at least one Manual slot): the recipient is the last
+      Manual champion that was focused, so the view always belongs to a
+      champion you order. Focusing a policy champion, by Tab, a click or a
+      roster pick, never moves it; neither does an enemy you only look at.
+      With Manual champions on both teams, the view follows the one you
+      focused last.
+    - Policies Only (no Manual slot): the recipient is the focused champion,
+      so the view follows the champion you look at.
+
+    Parameters
+    ----------
+    session : DebuggerSession
+        Session after the latest edit. Its ``controlled_global_slot`` is the
+        focused champion and its ``manual_slots`` say who is Manual.
+    previous_recipient : int or None
+        The recipient before this edit, or None at launch. It is kept only
+        while it is still a configured-active Manual slot and the focus rests
+        on a policy champion.
+
+    Returns
+    -------
+    int
+        Global slot 0-9 of the recipient. At launch with a policy focus it is
+        the lowest Manual slot.
+
+    Notes
+    -----
+    Pure host rule; no simulator, file or random work. Calling it again with
+    its own result returns the same slot, so the live service can recompute it
+    for any candidate session without drift. It never reads what anybody can
+    see; the Tab sight rule lives in the input layer.
+    """
+    focus = session.controlled_global_slot
+    manual = session.manual_slots
+    if not manual or focus in manual:
+        return focus
+    if (
+        previous_recipient is not None
+        and previous_recipient in manual
+        and session.evaluation_context.roster[previous_recipient].configured_active
+    ):
+        return previous_recipient
+    return min(manual)
+
+
 def _validate_joint_action(action: Action) -> None:
     """Require all three submitted heads to be int32 arrays with shape [10]."""
     for name, head in zip(Action._fields, action, strict=True):
@@ -1595,7 +1863,14 @@ def submit_joint_action(
     -------
     DebuggerSession
         Matching successor session and captured incoming transition, or the
-        unchanged session when already sealed.
+        unchanged session when already sealed. Its recent_scores gains the
+        old frame's public team scores (DebuggerSession.next_recent_scores,
+        the Momentum switch's 10-tick history), its champion_takedowns adds
+        this tick to every view's Champion Streaks counts and its
+        match_moments adds it to every view's Herald Cards history (runs,
+        rescues, the earlier lead and the fresh start), both through
+        live_presentation.advance_live_match_history_v1 (Agent POV scene work
+        only on a tick with a fall or a rescue).
 
     Raises
     ------
@@ -1654,7 +1929,15 @@ def submit_joint_action(
             step_key = episode_keys(session.key, seed_ids, local_steps, 1)[0]
         else:
             next_key, step_key = jax.random.split(session.key)
-        stepper = _COMPILED_STEP if step is core_env.step else step
+        compiled = step is core_env.step
+        stepper = _COMPILED_STEP if compiled else step
+        step_inputs = (
+            session.config,
+            session.state,
+            session.action_mask,
+            submitted_action,
+            step_key,
+        )
         (
             next_state,
             next_observation,
@@ -1662,13 +1945,7 @@ def submit_joint_action(
             done_flags,
             next_action_mask,
             info,
-        ) = stepper(
-            session.config,
-            session.state,
-            session.action_mask,
-            submitted_action,
-            step_key,
-        )
+        ) = stepper(*(_committed(step_inputs) if compiled else step_inputs))
     except Exception as error:
         raise _transition_failure(
             "simulation",
@@ -1706,6 +1983,9 @@ def submit_joint_action(
             session.status_source_evidence_state,
             coherent_view,
         )
+        champion_takedowns, match_moments = advance_live_match_history_v1(
+            session.champion_takedowns, session.match_moments, coherent_view
+        )
         wrapped = session.environment_state
         if wrapped is not None:
             count, exhausted = _checked_increment(
@@ -1733,6 +2013,9 @@ def submit_joint_action(
             evaluation_context=coherent_view.context,
             current_evaluation_frame=coherent_view.successor_frame,
             incoming_evaluation_view=coherent_view,
+            recent_scores=session.next_recent_scores(),
+            champion_takedowns=champion_takedowns,
+            match_moments=match_moments,
             status_source_evidence_state=status_source_evidence_state,
             last_submission_kind=submission_kind,
             last_report_actor_slots=tuple(sorted(report_actor_slots)),
@@ -1883,6 +2166,47 @@ def submit_interactive(
     )
 
 
+def warm_compiled_turn(session: DebuggerSession) -> bool:
+    """Compile a turn's programs now, so the player's first Lock In is immediate.
+
+    Runs one Submit on ``session`` exactly as Lock In would and throws the
+    result away. This compiles the policy and Core step programs (about 4 to
+    7 s on CPU and 12 s on the RTX 5090 for 7b+pool) before the page opens or
+    while new controllers load, instead of on the first Lock In. The game,
+    the session and every method's memory are unchanged: sessions are
+    immutable and JAX methods are pure.
+
+    Parameters
+    ----------
+    session : DebuggerSession
+        A freshly created or replaced session, before anyone has played on it.
+
+    Returns
+    -------
+    bool
+        True when the turn was compiled. False when it was skipped: a method
+        runs on the host (an LLM, for example), whose outside effects and cost
+        must happen only on a real turn; or the turn fails, which the first
+        real Lock In then reports through the client's normal failure path.
+
+    Notes
+    -----
+    Later turns reuse the compiled programs (see the module description and
+    ``_committed``), so after this no Lock In compiles anything. No file,
+    recording or network I/O happens here.
+    """
+    if any(
+        policy_execution._execution(method).execution == "host"  # pyright: ignore[reportPrivateUsage]
+        for method in session.systems or ()
+    ):
+        return False
+    try:
+        submit_interactive(session)
+    except DebuggerTransitionFailureV1:
+        return False
+    return True
+
+
 def submit_next_script_frame(
     session: DebuggerSession,
 ) -> DebuggerSession:
@@ -1995,6 +2319,12 @@ def _restart_session(
     The old accepted session and its memory remain unchanged on failure. A plain
     restart retains slot ownership. Explicit setup changes validate new tuples
     before initialization; omitted tuples derive whole-team legacy ownership.
+    Derived labels name a System-alias team's champions from its loaded System,
+    never by the alias. The new episode context records the resulting slot
+    labels as controller names. Both follow create_session. The fresh epoch
+    starts with empty recent_scores, zero champion_takedowns and an empty
+    match_moments history, so Momentum, Champion Streaks and the Herald Cards
+    show nothing of the old game.
     """
     if session.scenario.scenario_specification is not None and (
         scenario is not session.scenario
@@ -2079,6 +2409,9 @@ def _restart_session(
         if same_setup and slot_labels is None
         else slot_labels,
         scripted=scenario.mode == "scripted",
+        system_slot_names=None
+        if same_setup or slot_labels is not None
+        else _system_slot_names(selected, prepared_systems, config),
     )
     run_generation = session.run_generation + 1
     launch_specification = build_debugger_evaluation_launch_specification_v1(
@@ -2111,6 +2444,7 @@ def _restart_session(
         expected_horizon=_debugger_expected_horizon(scenario, config, state),
         system_registrations=registrations,
         manual_slots=manual_slots,
+        slot_labels=slot_labels,
     )
     next_key = jax.random.key(
         _required_seed(
@@ -2135,16 +2469,15 @@ def _restart_session(
         evaluation_context,
         initial_frame,
     )
+    default_slot = _default_focus_slot(scenario, manual_slots)
     controlled_slot = (
-        session.controlled_global_slot
-        if preserve_controlled_slot
-        else scenario.default_controlled_slot
+        session.controlled_global_slot if preserve_controlled_slot else default_slot
     )
     if not (
         0 <= controlled_slot < MAX_AGENT_SLOTS
         and evaluation_context.roster[controlled_slot].configured_active
     ):
-        controlled_slot = scenario.default_controlled_slot
+        controlled_slot = default_slot
     _validate_active_context_slot(
         evaluation_context,
         controlled_slot,
@@ -2194,6 +2527,11 @@ def _restart_session(
             initial_frame.action_mask,
         ),
         next_script_frame_index=0,
+        # A restarted game has no earlier frames, so Momentum starts empty
+        # and nobody has a takedown yet.
+        recent_scores=(),
+        champion_takedowns=ChampionTakedownsV1(),
+        match_moments=MatchMomentHistoryV1(),
     )
     return restarted
 
@@ -2279,7 +2617,9 @@ def set_combat_configuration(
         even when controller labels are unchanged. Caller owns resource scopes.
     manual_slots, slot_labels : tuple or None
         New physical Manual ownership and ten controller labels. Omission derives
-        whole-team defaults on a changed setup; an unchanged request is a no-op.
+        whole-team defaults on a changed setup (a System-alias team's labels are
+        its loaded System's names, as in create_session); an unchanged request
+        is a no-op.
 
     Returns
     -------

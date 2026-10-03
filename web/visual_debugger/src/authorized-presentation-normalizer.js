@@ -5412,13 +5412,220 @@ function validateSemanticFrame(frame) {
 }
 
 /**
+ * Check the match summary facts the beat clock reads: each team's score before this
+ * tick (previous_scores), each team's score 10 ticks ago (scores_ten_ticks_ago, for
+ * the Momentum switch), the champions that return this tick (returned_agent_ids)
+ * and each death's home_fall flag. The schema has already checked their types.
+ * previous_scores and scores_ten_ticks_ago may be absent or null in payloads written
+ * before those fields existed; returned_agent_ids then defaults to an empty list.
+ * Throws TypeError through invalid() when a score went down (a score 10 ticks ago
+ * above the score before this tick, or above the current score when previous_scores
+ * is absent, counts too), a combat diagnostic claims a score or a home fall, or a
+ * returning ID is repeated or missing from roster. Pure check: no DOM, storage or
+ * timers. These are global researcher facts; this check grants no Agent POV access.
+ *
+ * @param {Record<string, any>} match Schema-valid match_summary of one frame.
+ * @param {readonly Record<string, any>[]} roster Researcher roster or scene agents
+ *   used to join public agent IDs.
+ * @returns {void}
+ */
+function validateMatchBeatFacts(match, roster) {
+  const previous = match.previous_scores ?? null;
+  if (
+    previous !== null &&
+    (previous.length !== 2 ||
+      previous.some(
+        (/** @type {number} */ score, /** @type {number} */ index) =>
+          !Number.isInteger(score) || score < 0 || score > match.scores[index],
+      ) ||
+      (match.task_mode === 0 &&
+        previous.some((/** @type {number} */ score) => score !== 0)))
+  ) {
+    invalid("Match previous scores must not exceed the current scores.");
+  }
+  // Scores never go down: 10 ticks ago <= before this tick <= now.
+  const earlier = match.scores_ten_ticks_ago ?? null;
+  const later = previous ?? match.scores;
+  if (
+    earlier !== null &&
+    (earlier.length !== 2 ||
+      earlier.some(
+        (/** @type {number} */ score, /** @type {number} */ index) =>
+          !Number.isInteger(score) ||
+          score < 0 ||
+          score > later[index] ||
+          score > match.scores[index],
+      ))
+  ) {
+    invalid("Match scores ten ticks ago must not exceed the later scores.");
+  }
+  if (
+    match.task_mode === 0 &&
+    (match.deaths ?? []).some(
+      (/** @type {Record<string, any>} */ death) => death.home_fall === true,
+    )
+  ) {
+    invalid("Combat diagnostics cannot claim a home fall.");
+  }
+  const returned = /** @type {string[]} */ (match.returned_agent_ids ?? []);
+  if (
+    new Set(returned).size !== returned.length ||
+    returned.some(
+      (publicAgentId) =>
+        !roster.some(
+          (/** @type {Record<string, any>} */ agent) =>
+            agent.public_agent_id === publicAgentId,
+        ),
+    )
+  ) {
+    invalid("Match returns must join unique identities in the researcher roster.");
+  }
+}
+
+/**
+ * Check the Champion Streaks host fact (champion_streaks): the champions that
+ * reached 5, 10, 15 or 20 takedowns without falling on this tick, counted by the
+ * host for this frame's own view. The schema has already checked each record's
+ * types; an absent or null field means not counted and passes. Each champion must be named
+ * once and have a transition-start trajectory in this frame's own incoming events
+ * (Oracle View: latest_events; Agent POV: visual_events), so an Agent POV frame can
+ * never name a champion its team did not see at the start of the tick, and frame
+ * zero (no incoming events) names nobody. Throws TypeError through invalid()
+ * otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateChampionStreaks(frame, oracle) {
+  const streaks = frame.champion_streaks ?? null;
+  if (streaks === null) return;
+  const incoming = oracle ? frame.latest_events : frame.visual_events;
+  const seen = new Set(
+    (incoming?.agent_phase_trajectories ?? [])
+      .filter((/** @type {Record<string, any>} */ row) => row.transition_start != null)
+      .map((/** @type {Record<string, any>} */ row) => row.agent_public_agent_id),
+  );
+  const names = streaks.map(
+    (/** @type {Record<string, any>} */ row) => row.public_agent_id,
+  );
+  if (
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !seen.has(name))
+  ) {
+    invalid(
+      "Champion streaks must name, once each, champions this view saw at the start of the tick.",
+    );
+  }
+}
+
+/**
+ * Check the game-over Honors host fact (match_honors) against this frame's own
+ * view, as the Python protocol does. The schema has already checked its types;
+ * an absent or null field means no Honors and passes. Oracle View must count
+ * every champion (team_id null). Agent POV must count one team (team_id 1 or
+ * 2) whose listed champions are all on that team and include this frame's
+ * recipient (source.source_recipient_public_agent_id), so an Agent POV frame
+ * never lists another team's champions. Every champion is listed once, and
+ * every honor's leaders are listed champions. Throws TypeError through
+ * invalid() otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateMatchHonors(frame, oracle) {
+  const honors = frame.match_honors ?? null;
+  if (honors === null) return;
+  const champions = /** @type {ReadonlyArray<Record<string, any>>} */ (
+    honors.champions ?? []
+  );
+  const ids = champions.map((row) => row.public_agent_id);
+  const listed = new Set(ids);
+  if (listed.size !== ids.length) {
+    invalid("Match honors must list each champion once.");
+  }
+  if (
+    (honors.honors ?? []).some((/** @type {Record<string, any>} */ honor) =>
+      (honor.leaders ?? []).some(
+        (/** @type {Record<string, any>} */ leader) =>
+          !listed.has(leader.public_agent_id),
+      ),
+    )
+  ) {
+    invalid("Match honors must name only listed champions as leaders.");
+  }
+  if (oracle) {
+    if (honors.team_id !== null) {
+      invalid("Oracle View match honors must count every champion.");
+    }
+    return;
+  }
+  const recipient = frame.source?.source_recipient_public_agent_id;
+  if (
+    honors.team_id !== 1 && honors.team_id !== 2
+      ? true
+      : champions.some((row) => row.team_id !== honors.team_id) ||
+        !listed.has(recipient)
+  ) {
+    invalid("Agent POV match honors must count only the recipient's own team.");
+  }
+}
+
+/**
+ * Check the Herald Cards history host fact (match_moments) against this frame's
+ * own view, as the Python protocol does. The schema has already checked its
+ * types; an absent or null field passes. Each team may appear once in runs, and
+ * each rescue must name, once, a champion with a transition-start and a
+ * successor trajectory in this frame's own incoming events (Oracle View:
+ * latest_events; Agent POV: visual_events), so an Agent POV frame never names a
+ * rescue its team did not see at both ends of the tick. Throws TypeError through
+ * invalid() otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateMatchMoments(frame, oracle) {
+  const moments = frame.match_moments ?? null;
+  if (moments === null) return;
+  const teams = moments.runs.map(
+    (/** @type {Record<string, any>} */ row) => row.team_id,
+  );
+  const incoming = oracle ? frame.latest_events : frame.visual_events;
+  const seen = new Set(
+    (incoming?.agent_phase_trajectories ?? [])
+      .filter(
+        (/** @type {Record<string, any>} */ row) =>
+          row.transition_start != null && row.successor != null,
+      )
+      .map((/** @type {Record<string, any>} */ row) => row.agent_public_agent_id),
+  );
+  const names = moments.rescues.map(
+    (/** @type {Record<string, any>} */ row) => row.public_agent_id,
+  );
+  if (
+    new Set(teams).size !== teams.length ||
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !seen.has(name))
+  ) {
+    invalid(
+      "Match moments must name each team once in runs, and rescues of champions this view saw at both ends of the tick.",
+    );
+  }
+}
+
+/**
  * Validate, copy, and freeze one authorized presentation wire frame.
  *
  * `value` is an untrusted version-1 record for one of the six supported live/replay
  * and Oracle/actor leaves. The record must use plain data properties, the exact
  * schema fields, coherent identities/epochs/scenes/actions/events, and matching
  * endpoint, overlay, and presentation-key hashes. Match-summary facts are checked
- * when present. Hashes establish consistency with supplied identities and data;
+ * when present, including previous_scores, returned_agent_ids and each death's
+ * home_fall (see validateMatchBeatFacts), and the champion streak, Honors and
+ * Herald Cards history host facts are checked against the frame's own view
+ * (validateChampionStreaks, validateMatchHonors, validateMatchMoments). Hashes establish consistency with supplied identities and data;
  * the trusted Python producer remains the authority for permitted information.
  *
  * Resolves to a new deeply frozen record containing the validated wire fields and
@@ -5525,6 +5732,7 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
         }
       }
     }
+    validateMatchBeatFacts(match, roster);
     if (
       match.episode_id !== frame.source.episode_id ||
       match.source_frame_index !== frame.source.source_frame_index ||
@@ -5541,6 +5749,9 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
       invalid("Match summary does not join the current task and source epoch.");
     }
   }
+  validateChampionStreaks(frame, semantic.oracle);
+  validateMatchHonors(frame, semantic.oracle);
+  validateMatchMoments(frame, semantic.oracle);
   await Promise.all([
     verifyPresentationKeyDerivation(frame, semantic.presentationKeyPairs),
     verifyPresentationKeyPairs(

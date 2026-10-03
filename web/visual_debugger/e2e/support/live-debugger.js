@@ -47,6 +47,11 @@
  * and `workerExitCleanupResult` also exist only for unit tests. The worker `exit`
  * hook is a fallback only: when the worker ends, it kills any owned process still
  * left, but it cannot run when the worker itself is killed with SIGKILL.
+ *
+ * `openRecordingPanel` and `closeRecordingPanel` open and close the top bar's
+ * Recording popover (#recording-panel, opened by the #recording-badge pill), so
+ * tests can reach Finish And Save, Open Replay, Retry Save and Save As. Opening
+ * leaves an open panel alone; closing leaves a closed panel alone.
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -837,5 +842,23 @@ export function captureServerFailure(child) {
   }
   return new Promise((resolveFailure) => {
     record.capture = resolveFailure;
+  });
+}
+
+/** @param {import("@playwright/test").Page} page */
+export async function openRecordingPanel(page) {
+  const open = await page
+    .locator("#recording-panel")
+    .evaluate((node) => node.matches(":popover-open"));
+  if (!open) await page.locator("#recording-badge").click();
+  await page.locator("#recording-panel").waitFor({ state: "visible" });
+}
+
+/** @param {import("@playwright/test").Page} page */
+export async function closeRecordingPanel(page) {
+  // An open popover sits on top of the page, so close it before later clicks.
+  await page.locator("#recording-panel").evaluate((node) => {
+    if (node instanceof HTMLElement && node.matches(":popover-open"))
+      node.hidePopover();
   });
 }

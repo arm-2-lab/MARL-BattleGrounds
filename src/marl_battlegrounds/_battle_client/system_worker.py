@@ -27,6 +27,7 @@ from uuid import uuid4
 
 import jax
 
+from marl_battlegrounds._battle_client.control import warm_compiled_turn
 from marl_battlegrounds._battle_client.input import InputDispatchResult
 from marl_battlegrounds._battle_client.methods import LoadedControllers
 from marl_battlegrounds._battle_client.model import (
@@ -604,8 +605,11 @@ class SystemWorker:
         load is a trusted host callback; it must accept only already validated
         built-ins, checkpoint Paths or launcher-declared factories. build receives
         the exact resolved assignments and initializes the new session. Both run
-        outside HTTP locks in this replacement's owned context. directory follows
-        prepare. Failed loading leaves the accepted game and its methods intact.
+        outside HTTP locks in this replacement's owned context. The new session's
+        first turn is then compiled once (control.warm_compiled_turn; skipped for
+        host methods), so the first Lock In after the change is immediate.
+        directory follows prepare. Failed loading leaves the accepted game and
+        its methods intact.
         """
         old = self.active
 
@@ -628,7 +632,12 @@ class SystemWorker:
                 if method.resource_scope is not None:
                     candidate.resources.enter_context(method.resource_scope(False))
             candidate.check_cancelled()
-            return build(resolved)
+            session = build(resolved)
+            candidate.check_cancelled()
+            # Compile the new controllers' first turn while "Loading" shows, so
+            # the first Lock In after a setup change does not wait for JAX.
+            warm_compiled_turn(session)
+            return session
 
         return self._prepare_owned(base, loaded_session, directory=directory)
 

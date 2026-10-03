@@ -1,0 +1,873 @@
+/*
+ * Styles for the HUD (src/looks/hud.js and src/match-summary.js): the
+ * scorebug in #match-scoreboard (class "match-strip": crest, names, a 32 px
+ * score with its "/ N" goal, the First To bar under the names, filling toward
+ * the center, with Momentum's recent points in the team's light color over a
+ * Moon Silver underline, and the wave pips under the bar) and the Arena Frames party
+ * frames (class "arena-frames"), including the Replay Viewer's Team Rosters
+ * strip held to one 48 px row in both views. Live play (the BattleClient and
+ * the DevClient combat screen) hides #match-scoreboard and #party-frames,
+ * which then stay empty, and shows the vision page's scorebug instead
+ * (src/styles/battleclient/scorebug.css), so these rules now paint the
+ * Replay Viewer. styles.css imports
+ * this file; its own later rules (the old scoreboard and the compact strip
+ * for #team-rosters) win ties, so a few selectors here use
+ * two classes on purpose.
+ *
+ * Quiet heraldic chrome: Panel fill, a 1 px Panel Edge, no glow. Color only
+ * carries data: team colors for crests, names and scores, class colors for
+ * the Ultimate Charge ring and emblems, the shared Life bar's green, yellow
+ * and red for life (src/styles/life-bar.css). Beat-held
+ * "before" nodes (data-beat-side="before") sit on top of their END node in the
+ * same grid cell and are drawn at opacity 0; the choreographer shows them
+ * until their beat. No CSS animations or transitions on beat-timed elements.
+ * Team A is always on the left. Desktop first; at narrow widths the name
+ * column and policy names drop out so nothing overflows, and a narrow dock
+ * shows each champion as its token alone (a container query on the dock).
+ */
+
+/* Score strip ----------------------------------------------------------- */
+
+.match-scoreboard.match-strip {
+  display: grid;
+  grid-template-areas: "team-a centre team-b";
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0 1rem;
+  min-height: 32px;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+}
+
+.match-strip .match-scoreboard__task {
+  grid-area: centre;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ui-text);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.match-strip__tick {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.match-strip__map {
+  color: var(--ui-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/*
+ * Each team half is a small grid. Top row: crest, the label over the system
+ * name, then the score near the center. Bottom row: the First To bar under the
+ * name, filling toward the center. Team B is the mirror image. The "/ 20"
+ * goal (span.match-strip__goal) and the wave pips (span.match-strip__waves)
+ * have their places in the grid; match-summary.js draws them when it has them.
+ */
+.match-strip .match-scoreboard__team {
+  display: grid;
+  grid-template-areas:
+    "crest names score goal over result"
+    "bar bar bar bar bar bar"
+    "waves waves waves waves waves waves";
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  align-items: end;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.match-strip .match-scoreboard__team--a {
+  grid-area: team-a;
+}
+
+.match-strip .match-scoreboard__team--b {
+  grid-area: team-b;
+  grid-template-areas:
+    "result over score goal names crest"
+    "bar bar bar bar bar bar"
+    "waves waves waves waves waves waves";
+  grid-template-columns: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.match-strip__crest-box {
+  display: inline-grid;
+  grid-area: crest;
+  place-items: center;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+}
+
+.match-scoreboard__team--a .match-strip__crest-box {
+  margin-right: 0.5rem;
+}
+
+.match-scoreboard__team--b .match-strip__crest-box {
+  margin-left: 0.5rem;
+}
+
+.match-strip__crest {
+  width: 16px;
+  height: 16px;
+}
+
+.match-scoreboard__team--a .match-strip__crest {
+  color: var(--team-a);
+}
+
+.match-scoreboard__team--b .match-strip__crest {
+  color: var(--team-b);
+}
+
+.match-strip__names {
+  display: flex;
+  grid-area: names;
+  flex-direction: column;
+  align-self: center;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.match-scoreboard__team--b .match-strip__names {
+  align-items: flex-end;
+}
+
+.match-strip .match-scoreboard__team-label {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-strip .match-scoreboard__team--a .match-scoreboard__team-label {
+  color: var(--team-a-light);
+}
+
+.match-strip .match-scoreboard__team--b .match-scoreboard__team-label {
+  color: var(--team-b-light);
+}
+
+.match-strip .match-scoreboard__policy {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The score box and the bar box each stack the "after" value and the
+ * beat-held "before" value in ONE grid cell (row 1, column 1), so the two
+ * cross-fade in place at the Fall beat. The two-class selectors are needed:
+ * styles.css loads after this file and its older ".match-scoreboard__score
+ * { grid-area: score }" would otherwise push the after digit into a second
+ * row, under the before digit.
+ */
+.match-strip .match-strip__score-box,
+.match-strip .match-strip__bar-box {
+  display: inline-grid;
+}
+
+.match-strip__score-box > .match-scoreboard__score,
+.match-strip__score-box > .match-strip__score-before {
+  grid-area: 1 / 1;
+}
+
+.match-strip .match-strip__score-box {
+  grid-area: score;
+  margin: 0 0.25rem;
+}
+
+.match-strip .match-strip__bar-box {
+  grid-area: bar;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.match-strip .match-scoreboard__score,
+.match-strip .match-strip__score-before {
+  min-width: 1ch;
+  background: var(--panel);
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.match-scoreboard__team--a .match-scoreboard__score,
+.match-scoreboard__team--a .match-strip__score-before {
+  color: var(--team-a);
+}
+
+.match-scoreboard__team--b .match-scoreboard__score,
+.match-scoreboard__team--b .match-strip__score-before {
+  color: var(--team-b);
+}
+
+.match-strip__goal {
+  grid-area: goal;
+  margin-bottom: 3px;
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.match-scoreboard__team--b .match-strip__goal {
+  margin-right: 0.25rem;
+}
+
+/* Team A fills from its right end (the center); Team B from its left end. */
+.match-strip__bar {
+  display: flex;
+  grid-area: 1 / 1;
+  flex-direction: row-reverse;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  height: 4px;
+  background: var(--panel);
+}
+
+.match-scoreboard__team--b .match-strip__bar {
+  flex-direction: row;
+}
+
+.match-strip__fill {
+  height: 100%;
+}
+
+.match-strip__segment {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 1px;
+  background: var(--panel-edge);
+}
+
+.match-scoreboard__team--a .match-strip__segment.is-lit,
+.match-scoreboard__team--a .match-strip__fill {
+  background: var(--team-a);
+}
+
+.match-scoreboard__team--b .match-strip__segment.is-lit,
+.match-scoreboard__team--b .match-strip__fill {
+  background: var(--team-b);
+}
+
+/*
+ * Momentum (switch hud_momentum, off by default; the V5 Arena Frames pick,
+ * broadcast-hud.js segBar): the points a team scored in the last 10 ticks
+ * (segments with class "is-recent", or the recent fill) take its light color
+ * over a 1.5 px Moon Silver underline 2 px below the bar. Each recent
+ * segment's underline reaches 1 px into the 2 px gap on each side, so two
+ * recent neighbors join; the oldest (is-recent-first) and newest
+ * (is-recent-last) stop at their own outer edge, so the line runs unbroken
+ * under exactly the recent points. Team A's bar fills right to left
+ * (row-reverse), so its older side is the right; Team B's is the left.
+ */
+.match-strip__segment.is-recent,
+.match-strip__fill--recent {
+  position: relative;
+}
+
+.match-scoreboard__team--a .match-strip__segment.is-lit.is-recent,
+.match-scoreboard__team--a .match-strip__fill.match-strip__fill--recent {
+  background: var(--team-a-light);
+}
+
+.match-scoreboard__team--b .match-strip__segment.is-lit.is-recent,
+.match-scoreboard__team--b .match-strip__fill.match-strip__fill--recent {
+  background: var(--team-b-light);
+}
+
+.match-strip__segment.is-recent::after,
+.match-strip__fill--recent::after {
+  content: "";
+  position: absolute;
+  top: calc(100% + 2px);
+  right: -1px;
+  left: -1px;
+  height: 1.5px;
+  background: var(--moon-silver);
+}
+
+.match-strip__fill--recent::after,
+.match-scoreboard__team--a .match-strip__segment.is-recent-last::after,
+.match-scoreboard__team--b .match-strip__segment.is-recent-first::after {
+  left: 0;
+}
+
+.match-strip__fill--recent::after,
+.match-scoreboard__team--a .match-strip__segment.is-recent-first::after,
+.match-scoreboard__team--b .match-strip__segment.is-recent-last::after {
+  right: 0;
+}
+
+.match-strip__waves {
+  display: flex;
+  grid-area: waves;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.match-scoreboard__team--a .match-strip__waves {
+  justify-content: flex-end;
+}
+
+/* One wave pip: dim until lit, Ward Silver when the tick has passed. */
+.match-strip__wave {
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 50%;
+  background: var(--panel-edge);
+}
+
+.match-strip__wave.is-lit {
+  background: var(--ward-silver);
+}
+
+.match-strip__overshoot {
+  grid-area: over;
+  margin-bottom: 3px;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.match-strip .match-scoreboard__result {
+  grid-area: result;
+  align-self: center;
+  justify-self: auto;
+  margin: 0 0.25rem;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Arena Frames ------------------------------------------------------------ */
+
+.arena-frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+  color: var(--ui-text);
+}
+
+.arena-frames[hidden] {
+  display: none;
+}
+
+.arena-frames__full-record {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 0;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  color: var(--moon-silver);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.arena-frames__dock {
+  container-type: inline-size;
+  min-width: 0;
+  padding: 0.35rem 0.5rem 0.45rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.arena-frames__dock--a {
+  grid-column: 1;
+}
+
+.arena-frames__dock--b {
+  grid-column: 2;
+}
+
+.arena-frames__header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 24px;
+  min-width: 0;
+}
+
+.arena-frames__crest {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.arena-frames__crest-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.arena-frames__dock--a .arena-frames__crest {
+  color: var(--team-a);
+}
+
+.arena-frames__dock--b .arena-frames__crest {
+  color: var(--team-b);
+}
+
+.arena-frames__eyebrow,
+.arena-frames__standing {
+  flex: none;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.arena-frames__team-name {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-frames__dock--a .arena-frames__team-name {
+  color: var(--team-a-light);
+}
+
+.arena-frames__dock--b .arena-frames__team-name {
+  color: var(--team-b-light);
+}
+
+.arena-frames__standing {
+  display: inline-grid;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.arena-frames__standing > * {
+  grid-area: 1 / 1;
+  background: var(--panel);
+}
+
+.arena-frames__list {
+  display: grid;
+  gap: 2px;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.arena-frame {
+  display: grid;
+  grid-template-columns: 28px 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  height: 34px;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.arena-frame--unseen {
+  cursor: default;
+}
+
+.arena-frame:hover,
+.arena-frame:focus-visible,
+[data-hud-symbol]:focus-visible {
+  outline: 1px solid var(--moon-silver);
+  outline-offset: 1px;
+}
+
+.arena-frame--class-mage {
+  --frame-class: var(--class-mage);
+}
+.arena-frame--class-warrior {
+  --frame-class: var(--class-warrior);
+}
+.arena-frame--class-hunter {
+  --frame-class: var(--class-hunter);
+}
+.arena-frame--class-rogue {
+  --frame-class: var(--class-rogue);
+}
+.arena-frame--class-priest {
+  --frame-class: var(--class-priest);
+}
+
+.arena-frames__dock--a .arena-frame {
+  --frame-field: var(--team-a-field);
+}
+
+.arena-frames__dock--b .arena-frame {
+  --frame-field: var(--team-b-field);
+}
+
+.arena-frame__sigil-cell,
+.arena-frame__body {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+}
+
+.arena-frame__sigil-cell > *,
+.arena-frame__body > * {
+  grid-area: 1 / 1;
+}
+
+.arena-frame__sigil {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: var(--panel);
+  border-radius: 50%;
+}
+
+.arena-frame__ring {
+  position: absolute;
+  inset: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.arena-frame__disc {
+  fill: var(--frame-field, var(--grave-stone));
+}
+
+.arena-frame__track,
+.arena-frame__charge {
+  fill: none;
+  stroke: var(--frame-class, var(--ash));
+  stroke-width: 1.5;
+}
+
+.arena-frame__track {
+  stroke-opacity: 0.12;
+}
+
+.arena-frame__charge {
+  stroke-opacity: 0.7;
+}
+
+.arena-frame__charge.is-ready {
+  stroke-opacity: 1;
+}
+
+.arena-frame__notch {
+  stroke: var(--frame-class, var(--ash));
+  stroke-width: 1.5;
+}
+
+.arena-frame__emblem {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  color: var(--frame-class, var(--ash));
+}
+
+.arena-frame__sigil--fallen .arena-frame__disc {
+  fill: var(--grave-stone);
+  fill-opacity: 0.75;
+}
+
+.arena-frame__sigil--fallen .arena-frame__track {
+  stroke: var(--ash);
+  stroke-opacity: 0.55;
+}
+
+.arena-frame__sigil--fallen .arena-frame__emblem {
+  color: var(--ash);
+}
+
+.arena-frame__sigil--unseen .arena-frame__disc {
+  fill: none;
+}
+
+.arena-frame__sigil--unseen .arena-frame__emblem {
+  opacity: 0.4;
+}
+
+.arena-frame__names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.arena-frame__agent {
+  overflow: hidden;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The "You" tag is a small filled tag under the champion's token. It lives in
+ * the DOM inside .arena-frame__agent, which clips its overflow, so it is
+ * placed against the whole frame (li.is-you) instead: that keeps it out of
+ * the name's clipping box and leaves the name its full width. Its center is
+ * the token's center: the frame's left padding plus half the 28 px token.
+ */
+.arena-frame.is-you {
+  position: relative;
+}
+
+.arena-frame__you {
+  position: absolute;
+  bottom: -3px;
+  left: calc(0.25rem + 14px);
+  z-index: 1;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--moon-silver);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 11px;
+  text-overflow: clip;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.arena-frame__class {
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-frame__alive,
+.arena-frame__fallen {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  background: var(--panel);
+}
+
+/* The frame's life: the shared Life bar (src/styles/life-bar.css). */
+.arena-frame__life {
+  display: block;
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.arena-frame__tray {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.arena-frame__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 30px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  background: var(--groove);
+  color: var(--ui-muted);
+}
+
+.arena-frame__chip-glyph {
+  width: 12px;
+  height: 12px;
+}
+
+.arena-frame__chip-count {
+  color: var(--ui-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.arena-frame__chip--mage {
+  color: var(--class-mage);
+}
+.arena-frame__chip--warrior {
+  color: var(--class-warrior);
+}
+.arena-frame__chip--hunter {
+  color: var(--class-hunter);
+}
+.arena-frame__chip--rogue {
+  color: var(--class-rogue);
+}
+.arena-frame__chip--priest {
+  color: var(--class-priest);
+}
+.arena-frame__chip--rime {
+  color: var(--rime);
+}
+
+.arena-frame__more {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.arena-frame__ward {
+  flex: none;
+  padding: 0 0.3rem;
+  border: 1px solid var(--ward-silver);
+  border-radius: 3px;
+  color: var(--ward-silver);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.arena-frame__returns-in,
+.arena-frame__unseen {
+  color: var(--ui-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.arena-frame__credit {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.arena-frame__credit--team-a {
+  color: var(--team-a);
+}
+
+.arena-frame__credit--team-b {
+  color: var(--team-b);
+}
+
+.arena-frame__credit-join {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+/*
+ * Narrow docks (the five-across strip at about 960 px wide): a cell is then too
+ * narrow for "Agent 5" or "Unseen", which would cut to "A..." or "Unsee". The
+ * cell falls back to the token alone (plus the life bar when seen); the frame's
+ * aria-label and tooltip still name the agent and its state. Only visibility
+ * and height change here, so the strip layout in styles.css keeps its owner.
+ * The "You" tag stays visible: it overrides the inherited visibility.
+ */
+@container (max-width: 420px) {
+  .arena-frame__agent {
+    height: 0;
+    visibility: hidden;
+  }
+
+  .arena-frame__you {
+    visibility: visible;
+  }
+
+  .arena-frame__unseen {
+    visibility: hidden;
+  }
+}
+
+/*
+ * The Replay Viewer's Team Rosters strip is one 48 px row in Oracle View and
+ * in Agent POV alike (Arena Stage rows: top bar, match bar, arena, dock,
+ * strip), so changing the view never changes the arena's height. Each banner
+ * shows its team by a 3 px Host-color edge on its outer side; the team header
+ * stays for screen readers only, and the Full Record chip sits on the strip's
+ * top edge where it takes no height.
+ */
+#team-rosters.arena-frames {
+  position: relative;
+  grid-template-rows: 48px;
+  block-size: 48px;
+}
+
+#team-rosters.arena-frames .arena-frames__dock {
+  box-sizing: border-box;
+  block-size: 48px;
+  overflow: hidden;
+  padding: 7px 0.4rem;
+}
+
+#team-rosters.arena-frames .arena-frames__dock--a {
+  border-left: 3px solid var(--team-a);
+}
+
+#team-rosters.arena-frames .arena-frames__dock--b {
+  border-right: 3px solid var(--team-b);
+}
+
+#team-rosters.arena-frames .arena-frames__header {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+#team-rosters.arena-frames .arena-frames__list {
+  margin: 0;
+}
+
+#team-rosters.arena-frames .arena-frames__full-record {
+  position: absolute;
+  z-index: 1;
+  top: -9px;
+  left: 50%;
+  background: var(--panel);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* Narrow windows: keep everything inside its dock. */
+@media (max-width: 1100px) {
+  .arena-frame {
+    grid-template-columns: 28px minmax(0, 52px) minmax(0, 1fr);
+  }
+
+  .arena-frame__life {
+    flex-basis: 140px;
+  }
+}
+
+@media (max-width: 760px) {
+  .arena-frames {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Phone: the two banners stack, so the strip is two 48 px rows. */
+  #team-rosters.arena-frames {
+    grid-template-rows: 48px 48px;
+    block-size: auto;
+  }
+
+  .arena-frames__dock--b {
+    grid-column: 1;
+  }
+
+  .match-strip .match-scoreboard__policy,
+  .match-strip__map {
+    display: none;
+  }
+}

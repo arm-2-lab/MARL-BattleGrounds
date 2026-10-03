@@ -1,11 +1,59 @@
 /**
  * @file Control presentation time for already-authorized combat frames.
- * CombatChoreographer installs painter-owned SVG, controls Web Animations and
- * suppresses repeated live transitions with a bounded optional storage ledger.
- * Replay can animate or show settled explanations. This module never chooses
- * actions, advances the simulator or calls the debugger command API.
+ *
+ * What it owns: CombatChoreographer installs painter-owned SVG, starts and stops
+ * every Web Animation of a tick, and suppresses repeated live transitions with a
+ * bounded optional storage ledger. Replay can animate a tick, show the settled
+ * paused still, or glide one tick (replay_step).
+ *
+ * The one rule of the beat clock: the DOM always holds the END state. The
+ * durable renderer draws every body, life bar and mark where it ends the tick.
+ * Body glides and beat holds are Web Animations overrides of the earlier look,
+ * created here through the animation factory with ids "mbg:<epoch>:..." and counted
+ * in the plan's bounds. Each uses fill "backwards" and never a forward fill, so
+ * finishing or cancelling any animation shows END. A new tick, Lock In (skip), a
+ * seek, a view change or a recipient change therefore ends every beat at END; a
+ * new server revision of the tick on screen for the same audience (live) keeps it
+ * playing. No timer and no CSS animation drives a beat-timed element.
+ *
+ * Durable nodes it may override (contracts for the look modules and the HUD):
+ * - Body glide wrappers: g.agent-glide elements (data-glide-key) holding a body
+ *   (g.agent with data-presentation-key). A glide is a FLIP translate added on top
+ *   of the wrapper's own transform.
+ * - Beat-held nodes: any element under the battlefield SVG (or surface.beatHoldRoots)
+ *   with data-beat-hold ("impact", "settle", "fall", "return", "set-down" or
+ *   "score"), data-beat-key (the champion's presentation key; not needed for
+ *   "impact", "settle" or "score") and data-beat-side ("before": shows the value
+ *   before the beat and is drawn at its END opacity, normally 0; "after": the END
+ *   value). data-beat-fade gives an optional cross-fade in ms (default 0, a cut).
+ *   data-beat-pulse="p" on an "after" node drawn at opacity 0 makes a flash instead:
+ *   0 to p and back to 0 over the fade (normal motion only). A key with no beat in
+ *   this plan (for example a death the Agent POV team did not see) gets no hold.
+ * - Shiver nodes: elements with data-beat-shiver (pixels) and
+ *   data-beat-shiver-at="impact" shake sideways once at Impact plus data-beat-delay
+ *   over data-beat-fade ms (normal motion, playback below 1.5x).
+ * - The look-owned overrides of a played tick: the Start Spot, afterimage and trail
+ *   marks (looks/movement.js), the Agent POV sight veil and Spotted Glints
+ *   (looks/fog.js) and the Death Dimming path (`path.death-dim` with
+ *   data-dim-start and data-dim-end, looks/atmosphere.js).
+ * - The camera wrapper, through easeCamera and leanCamera (Kill Cam).
+ *
+ * This module never chooses actions, advances the simulator or calls the debugger
+ * command API. It reads only the plan (built from the audience's own events) and
+ * the durable DOM, so in Agent POV nothing it times can depend on an unseen
+ * champion.
  */
-import { buildChoreographyPlan } from "./choreography-plan.js";
+import {
+  BEAT_CLOCK,
+  beatRealTime,
+  buildChoreographyPlan,
+} from "./choreography-plan.js";
+import { dimAnimation } from "./looks/atmosphere.js";
+import { sightAnimationSpecs } from "./looks/fog.js";
+import {
+  animationSpecs as movementAnimationSpecs,
+  dimShiftSpecs,
+} from "./looks/movement.js";
 
 const DEFAULT_LEDGER_KEY = "marl-battlegrounds.visual-debugger.consumed-transitions.v1";
 const DEFAULT_LEDGER_LIMIT = 256;
@@ -14,10 +62,34 @@ const REPLAY_TERMINAL_HOLD_MS = 600;
 const SUPPORTED_PLAYBACK_RATES = Object.freeze([
   0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,
 ]);
+// The one shared curve every body glide uses.
+const GLIDE_EASING = "cubic-bezier(0.45, 0, 0.55, 1)";
+// A camera change eases over this many ms (reduced motion and Agent POV changes cut).
+const CAMERA_EASE_MS = 520;
+// A carried scrub offset larger than this many world units is dropped, so a body is
+// never dragged across the field.
+const STEP_CARRY_LIMIT = 3;
+const BEAT_HOLD_KINDS = new Set([
+  "impact",
+  "settle",
+  "fall",
+  "return",
+  "set-down",
+  "score",
+]);
+// Blow time (ms) of the Impact moment, when life changes and numbers pop.
+const IMPACT_BLOW_MS = 260;
+// A champion's shiver on a hit plays only below this playback rate.
+const SHIVER_RATE_LIMIT = 1.5;
 
 /**
  * @typedef {"normal" | "reduced" | "off"} MotionMode
  * @typedef {"live_once" | "replay_animated" | "replay_static"} RenderPolicy
+ * @typedef {RenderPolicy | "replay_step"} RenderRequest
+ *   What a caller may ask presentFrame for. "replay_step" is the one-tick step
+ *   intent: install the paused still (replay_static), glide each body 240 ms from
+ *   where the previous frame showed it to its new END spot, fade the tick's cues in
+ *   from 240 ms to 320 ms, then settle into the paused still.
  * @typedef {{
  *   element: Element,
  *   keyframes: Keyframe[] | PropertyIndexedKeyframes,
@@ -51,13 +123,38 @@ const SUPPORTED_PLAYBACK_RATES = Object.freeze([
  *     point: {x: number, y: number} | readonly [number, number],
  *   ) => {x: number, y: number},
  *   worldLengthToScreen: (length: number) => number,
+ *   battlefield?: Element | null,
+ *   bodyWrapper?: (presentationKey: string) => Element | null,
+ *   beatHoldRoots?: ReadonlyArray<Element>,
+ *   beforeBeatHolds?: (plan: Record<string, any>) => void,
  * }} ChoreographySurface
+ *   The durable renderer's surface. layer receives the painter's nodes.
+ *   battlefield (optional; default layer's SVG) is searched for glide wrappers and
+ *   beat-held nodes. bodyWrapper (optional) returns a body's glide wrapper by its
+ *   presentation key; without it wrappers are found by their g.agent child's
+ *   data-presentation-key. beatHoldRoots (optional) lists extra roots, such as a
+ *   HUD outside the SVG, searched for beat-held nodes. beforeBeatHolds
+ *   (optional) is called once with the plan on every install (present, resize
+ *   or reproject), before the painter draws and before beat-held nodes are
+ *   collected, so page chrome built from the plan (main.js's Fallen panel) can
+ *   join the beat holds. It must draw only this audience's plan rows; an error
+ *   it throws ends the install like a painter error.
  * @typedef {{
  *   root: Element,
+ *   routeRoot?: Element,
+ *   connectorRoot?: Element,
  *   animationSpecs?: readonly AnimationSpec[],
  *   nodeCount?: number,
  *   persistentNodeCount?: number,
+ *   heldNodeCount?: number,
+ *   heldPersistentNodeCount?: number,
  * }} ChoreographyInstallation
+ *   What the painter returns. root, routeRoot and connectorRoot (the last two
+ *   optional) are the painter's groups that carry the plan's
+ *   data-authorization-key. nodeCount and persistentNodeCount (checked
+ *   against the plan's bounds) leave out held rows carried from the previous
+ *   tick; heldNodeCount and heldPersistentNodeCount (optional, information
+ *   only) count those held rows.
  * @typedef {{
  *   getItem: (key: string) => string | null,
  *   setItem: (key: string, value: string) => void,
@@ -235,10 +332,12 @@ export class BrowserAnimationFactory {
 /**
  * Own one authorized combat explanation and its presentation clocks.
  *
- * The controller mutates only its painter installation under the supplied surface,
- * tracks pause/rate/settlement, and reports immutable state snapshots. New authority
- * clears old nodes before installing replacements. It never submits an action.
- * Call dispose when the owner no longer needs the controller.
+ * The controller mutates only its painter installation under the supplied surface
+ * and the temporary Web Animations overrides it puts on durable nodes (body glides,
+ * beat holds, the step cue fade and the camera ease). It tracks pause, rate and
+ * settlement and reports immutable state snapshots. New authority clears old nodes
+ * and cancels every override (END shows) before installing replacements. It never
+ * submits an action. Call dispose when the owner no longer needs the controller.
  */
 export class CombatChoreographer {
   /**
@@ -246,9 +345,11 @@ export class CombatChoreographer {
    *
    * options.painter supplies install, clear, settle and reproject. planBuilder defaults
    * to buildChoreographyPlan, animationFactory to BrowserAnimationFactory, ledger to
-   * a memory-only ConsumedTransitionLedger, and onStateChange to a no-op. motionMode
-   * defaults to normal and playbackRate to 1. Missing painter throws TypeError;
-   * unknown modes or unsupported rates throw RangeError. No frame is installed yet.
+   * a memory-only ConsumedTransitionLedger, and onStateChange to a no-op. planBuilder
+   * always receives an installed policy: a replay_step request is planned as
+   * replay_static. motionMode defaults to normal and playbackRate to 1. Missing
+   * painter throws TypeError; unknown modes or unsupported rates throw RangeError. No
+   * frame is installed yet.
    *
    * @param {{
    *   painter: {
@@ -313,6 +414,20 @@ export class CombatChoreographer {
     this.gateClock = null;
     /** @type {AnimationHandle | null} */
     this.cleanupClock = null;
+    /**
+     * Running step glides, kept so a quick next step can start from where each
+     * body is drawn (a smooth scrub) instead of jumping back to its last END spot.
+     * @type {Array<{presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, animation: AnimationHandle}>}
+     */
+    this.stepGlides = [];
+    /** @type {AnimationHandle | null} */
+    this.cameraEase = null;
+    /**
+     * The running Kill Cam lean of this tick (also held in this.animations), or null.
+     * @type {AnimationHandle | null}
+     */
+    this.cameraLean = null;
+    this.cameraGeneration = 0;
     /** @type {Set<(value?: unknown) => void>} */
     this.settleWaiters = new Set();
   }
@@ -320,14 +435,16 @@ export class CombatChoreographer {
   /**
    * Return a frozen view of the controller's current presentation state.
    *
-   * The result includes active installation, animation count, nullable plan identity,
-   * render policy, logical milliseconds, motion mode, pause/rate and submission gate.
-   * It reports the last captured logical time; it does not sample the clock itself.
+   * The result includes active installation, animation count (painter animations,
+   * overrides, clocks and a running camera ease), nullable plan identity, render
+   * policy (the installed one: a replay_step request reports replay_static), logical
+   * milliseconds, motion mode, pause/rate and submission gate. It reports the last
+   * captured logical time; it does not sample the clock itself.
    */
   snapshot() {
     return Object.freeze({
       active: this.installation !== null,
-      animationCount: this.#allAnimations().length,
+      animationCount: this.#allAnimations().length + (this.cameraEase ? 1 : 0),
       epochKey: this.plan?.epochKey ?? null,
       authorizationKey: this.plan?.authorizationKey ?? null,
       fingerprint: this.plan?.fingerprint ?? null,
@@ -363,28 +480,47 @@ export class CombatChoreographer {
    *
    * frame is passed to the plan builder; surface supplies the transient SVG layer and
    * projection, or null to clear. presentationControl defaults to live_once with
-   * builder-default visualFilters. restartAnimated=false normally preserves settled
-   * replay state; true permits an explicit same-plan static-to-animated restart.
+   * builder-default visualFilters. renderPolicy accepts live_once, replay_animated,
+   * replay_static or replay_step (see RenderRequest). restartAnimated=false normally
+   * preserves settled replay state; true permits an explicit same-plan
+   * static-to-animated restart.
    *
-   * Return the frozen controller snapshot. Identical plans preserve time; a viewport
-   * change reprojects. Filter changes rebuild live plans without replaying consumed
+   * Return the frozen controller snapshot. Identical plans preserve time; so does a
+   * new live server revision of the same tick for the same audience (live_once,
+   * same epochKey, audienceKey, fingerprint and paintKey; only the authorization
+   * key's authority epoch moved, as when policy work starts or ends): the running
+   * tick keeps playing and the installed groups take the new authorization key.
+   * A viewport change reprojects. Filter changes rebuild live plans without replaying consumed
    * motion and make replay explanations static. Changed authority/disclosure clears
    * old nodes first. Absent scene/plan clears the installation. Live epochs use the
-   * ledger; replay does not consume it. Invalid policy, plans, painter bounds or
-   * browser animations may throw; a policy-induced identity change throws Error.
+   * ledger; replay does not consume it.
+   *
+   * Beat clock: a new tick cancels every running override, so the previous tick's
+   * beats end at END. A played tick (live_once or replay_animated) glides bodies
+   * START to END and holds beat-timed nodes until their beat (see #install). A
+   * replay_step request on a new frame installs the paused still and glides each body
+   * that appears in both the previous and the new plan with the same audienceKey from
+   * where the previous frame showed it (its END spot, or where a still-running step
+   * glide has drawn it) to its new END spot. A body unseen in either Agent POV scene,
+   * a death, a return or a change of audience or recipient snaps. A replay_step
+   * request for the frame already shown is the paused still. Invalid policy, plans,
+   * painter bounds or browser animations may throw; a policy-induced identity change
+   * throws Error.
    *
    * @param {unknown} frame
    * @param {ChoreographySurface | null} surface
    * @param {{
-   *   renderPolicy?: RenderPolicy,
+   *   renderPolicy?: RenderRequest,
    *   visualFilters?: Record<string, boolean>,
    *   restartAnimated?: boolean,
    * }} [presentationControl]
    */
   presentFrame(frame, surface, presentationControl = {}) {
-    const requestedPolicy = normalizeRenderPolicy(
+    const request = normalizeRenderRequest(
       presentationControl.renderPolicy ?? "live_once",
     );
+    const stepRequested = request === "replay_step";
+    const requestedPolicy = stepRequested ? "replay_static" : request;
     const initialPolicy = requestedPolicy;
     let nextPlan = surface
       ? this.planBuilder(
@@ -439,10 +575,37 @@ export class CombatChoreographer {
       nextPlan = policyPlan;
     }
     const samePolicy = this.renderPolicy === nextPolicy;
+    // A new live server revision of the same tick for the same audience: only
+    // the authority epoch (the server's frame revision) moved, for example when
+    // policy work starts or ends. Same transition, same audience, same events
+    // and same paint mean the same plan, so the running glide keeps its time.
+    // Clearing here cut every glide a revision landed in, the arena jumped to
+    // END and Run showed a paused-looking still between ticks.
+    const sameAudienceRevision =
+      sameEpoch &&
+      !sameAuthorization &&
+      nextPolicy === "live_once" &&
+      typeof currentPlan?.audienceKey === "string" &&
+      currentPlan.audienceKey === nextPlan.audienceKey;
 
-    if (sameEpoch && sameAuthorization && sameFingerprint && samePaint && samePolicy) {
+    if (
+      sameEpoch &&
+      (sameAuthorization || sameAudienceRevision) &&
+      sameFingerprint &&
+      samePaint &&
+      samePolicy
+    ) {
       if (this.surface?.viewportKey !== surface.viewportKey && this.installation) {
         this.painter.reproject(this.installation, nextPlan, surface);
+      }
+      if (sameAudienceRevision && this.installation) {
+        for (const node of [
+          this.installation.root,
+          this.installation.routeRoot,
+          this.installation.connectorRoot,
+        ]) {
+          node?.setAttribute?.("data-authorization-key", nextPlan.authorizationKey);
+        }
       }
       this.plan = nextPlan;
       this.surface = surface;
@@ -488,11 +651,18 @@ export class CombatChoreographer {
     const consumedFingerprint =
       nextPolicy === "live_once" ? this.ledger.fingerprintFor(nextPlan.epochKey) : null;
     const alreadyConsumed = consumedFingerprint !== null;
+    const previousPlan = this.plan;
+    // Read where running step glides draw each body before they are cancelled.
+    const carry = stepRequested ? this.#stepCarry(surface) : new Map();
     this.#clearOwned("new_transition");
     this.plan = nextPlan;
     this.surface = surface;
     this.#installForPolicy(nextPlan, surface, nextPolicy, {
       liveSafeRebuild: alreadyConsumed,
+      step:
+        stepRequested && nextPolicy === "replay_static" && previousPlan !== null
+          ? { previousPlan, carry }
+          : null,
     });
     if (nextPolicy === "live_once" && consumedFingerprint !== nextPlan.fingerprint) {
       this.ledger.record(nextPlan.epochKey, nextPlan.fingerprint);
@@ -505,24 +675,31 @@ export class CombatChoreographer {
    * Update installed geometry after a durable resize without replaying time.
    *
    * frame and surface have the presentFrame contract. presentationControl defaults
-   * to live_once and builder-default filters. Return a frozen snapshot. If the plan,
-   * authority, paint choice or installation no longer matches, delegate to presentFrame.
-   * A settled replay remains static. Plan/painter errors propagate.
+   * to live_once and builder-default filters; a replay_step request reprojects as the
+   * paused still (replay_static). Return a frozen snapshot. If the plan, authority,
+   * paint choice or installation no longer matches, delegate to presentFrame. A
+   * settled replay remains static. Running overrides keep their time; the durable
+   * renderer has already moved every node to its new END spot. Plan/painter errors
+   * propagate.
    *
    * @param {unknown} frame
    * @param {ChoreographySurface | null} surface
    * @param {{
-   *   renderPolicy?: RenderPolicy,
+   *   renderPolicy?: RenderRequest,
    *   visualFilters?: Record<string, boolean>,
    * }} [presentationControl]
    */
   reproject(frame, surface, presentationControl = {}) {
+    const request = normalizeRenderRequest(
+      presentationControl.renderPolicy ?? "live_once",
+    );
+    const requestedPolicy = request === "replay_step" ? "replay_static" : request;
+    if (request === "replay_step") {
+      presentationControl = { ...presentationControl, renderPolicy: requestedPolicy };
+    }
     if (!surface || !this.installation || !this.plan) {
       return this.presentFrame(frame, surface, presentationControl);
     }
-    const requestedPolicy = normalizeRenderPolicy(
-      presentationControl.renderPolicy ?? "live_once",
-    );
     let nextPlan = this.planBuilder(
       frame,
       surface,
@@ -616,9 +793,10 @@ export class CombatChoreographer {
    * Set normal, reduced or off motion and reconcile the active explanation.
    *
    * mode outside that set throws RangeError. An unchanged mode is a no-op. Off can
-   * reinstall an active explanation statically; reduced settles current motion through
-   * skip. Returning to normal does not replay an already settled transition. Return a
-   * snapshot; painter/browser failures propagate.
+   * reinstall an active played explanation statically; a running step glide, and
+   * reduced motion, settle through skip (END shows). Returning to normal does not
+   * replay an already settled transition. Return a snapshot; painter/browser failures
+   * propagate.
    *
    * @param {MotionMode} mode
    */
@@ -637,7 +815,11 @@ export class CombatChoreographer {
       this.#allAnimations().length > 0;
     this.motionMode = nextMode;
 
-    if (this.motionMode === "off" && hasActiveExplanation) {
+    if (
+      this.motionMode === "off" &&
+      hasActiveExplanation &&
+      this.renderPolicy !== "replay_static"
+    ) {
       this.paused = false;
       this.#clearOwned("motion_disabled_static_reinstall");
       this.#install(plan, surface, {
@@ -658,11 +840,18 @@ export class CombatChoreographer {
   /**
    * Settle the current explanation immediately and release submission gating.
    *
-   * Finish owned handles where possible, settle the painter, cancel remaining clocks
-   * and publish the final logical time. With no installation, simply release the gate.
-   * Return a snapshot; this does not request or skip a simulator transition.
+   * Finish owned handles where possible (every glide and beat hold shows END), finish
+   * a running camera ease, settle the painter, cancel remaining clocks and publish the
+   * final logical time. A step glide settles back into the paused still. With no
+   * installation, simply release the gate. Lock In calls this, so a Lock In always
+   * ends the beats at END. Return a snapshot; this does not request or skip a
+   * simulator transition.
    */
   skip() {
+    if (this.cameraEase) {
+      safeFinish(this.cameraEase);
+      this.cameraEase = null;
+    }
     const installation = this.installation;
     if (!installation) {
       this.submissionBlocked = false;
@@ -676,6 +865,9 @@ export class CombatChoreographer {
     this.painter.settle(installation);
     this.#cancelAnimations();
     this.submissionBlocked = false;
+    if (this.renderPolicy === "replay_static") {
+      this.paused = true;
+    }
     this.#publish();
     return this.snapshot();
   }
@@ -683,13 +875,17 @@ export class CombatChoreographer {
   /**
    * Remove this controller's installation and clear its active frame identity.
    *
-   * reason defaults to explicit_clear and is passed to the painter. Cancel clocks,
-   * reset logical time, release the gate and publish, resolving settlement waiters.
-   * Return a snapshot. The consumed-transition ledger is retained.
+   * reason defaults to explicit_clear and is passed to the painter. Cancel clocks and
+   * overrides (END shows), reset logical time, release the gate and publish,
+   * resolving settlement waiters. The dispose reason also cancels a running camera
+   * ease. Return a snapshot. The consumed-transition ledger is retained.
    *
    * @param {string} reason
    */
   clear(reason = "explicit_clear") {
+    if (reason === "dispose") {
+      this.#cancelCameraEase();
+    }
     this.#clearOwned(reason);
     this.plan = null;
     this.renderPolicy = null;
@@ -714,13 +910,20 @@ export class CombatChoreographer {
    *
    * plan and surface are ready for the painter; renderPolicy selects live/replay.
    * options.liveSafeRebuild defaults to false and suppresses repeated live transients
-   * when true. replay_static keeps settled explanatory transients and marks paused.
-   * Mutate controller installation state; return undefined. Installation errors propagate.
+   * when true. replay_static keeps settled explanatory transients and marks paused;
+   * options.step (default null) adds the replay_step glide and cue fade on top of
+   * that still: {previousPlan, carry} where previousPlan is the plan shown before
+   * this frame and carry maps a presentation key to the world spot where a running
+   * step glide drew that body. Mutate controller installation state; return
+   * undefined. Installation errors propagate.
    *
    * @param {Record<string, any>} plan
    * @param {ChoreographySurface} surface
    * @param {RenderPolicy} renderPolicy
-   * @param {{liveSafeRebuild?: boolean}} [options]
+   * @param {{
+   *   liveSafeRebuild?: boolean,
+   *   step?: {previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>} | null,
+   * }} [options]
    */
   #installForPolicy(plan, surface, renderPolicy, options = {}) {
     if (renderPolicy === "replay_static") {
@@ -730,6 +933,7 @@ export class CombatChoreographer {
         settled: true,
         persistentOnly: false,
         retainTransientOnSettle: true,
+        step: options.step ?? null,
       });
       return;
     }
@@ -746,16 +950,29 @@ export class CombatChoreographer {
   /**
    * Install bounded painter nodes and create the required animation clocks.
    *
-   * plan supplies phases in milliseconds and resource bounds; surface owns projection
-   * and the transient layer. options gives renderPolicy, settled and persistentOnly;
-   * retainTransientOnSettle is forwarded only when true. Validate node, persistent-node
-   * and animation counts; excess bounds clear the new installation and throw RangeError.
+   * plan supplies phases and beats in milliseconds and resource bounds; surface owns
+   * projection, the transient layer and the durable nodes. options gives
+   * renderPolicy, settled and persistentOnly; retainTransientOnSettle is forwarded
+   * only when true; step (replay_static only) adds the one-tick step glide. Validate
+   * node, persistent-node and animation counts; excess painter bounds clear the new
+   * installation and throw RangeError.
    *
-   * Settled or persistent-only output needs no clocks. Animated replay adds a 600 ms
-   * terminal hold, including eventless transitions. Normal motion can gate submission
-   * until its release phase. Creation failures cancel newly created handles, clear the
-   * installation and rethrow. Completion handlers use generation checks so stale clocks
-   * cannot settle a later authority. Return undefined.
+   * Overrides: a played tick (not settled, motion normal or reduced) adds body
+   * glides (normal motion with Body Glide on: START to END in 0-260 ms, a Charge
+   * rush first) and beat holds for every beat-held node whose beat is in the plan
+   * (reduced motion scales the hold times by plan.beats.reducedScale). They are
+   * counted against plan.bounds.overrideAnimations and the 512 animation limit; over
+   * the limit the extra holds are dropped (never the tick). Settled or
+   * persistent-only output has no overrides and no clocks, except the step glide.
+   *
+   * Clocks: animated replay lasts its whole tick: the later of the event windows and
+   * the beats (plan.beats.explanationEnd) plus the 600 ms end hold, so a tick with
+   * Longer Tick lasts 1700 ms (3200 ms with a death); a plan without beats keeps the
+   * old total plus 600 ms. Normal motion gates submission until the 450 ms release
+   * only when the painter animates events; a glide never gates it. Creation failures
+   * cancel newly created handles, clear the installation and rethrow. Completion
+   * handlers use generation checks so stale clocks cannot settle a later authority.
+   * Return undefined.
    *
    * @param {Record<string, any>} plan
    * @param {ChoreographySurface} surface
@@ -764,6 +981,7 @@ export class CombatChoreographer {
    *   settled: boolean,
    *   persistentOnly: boolean,
    *   retainTransientOnSettle?: boolean,
+   *   step?: {previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>} | null,
    * }} options
    */
   #install(plan, surface, options) {
@@ -784,6 +1002,11 @@ export class CombatChoreographer {
     };
     if (options.retainTransientOnSettle === true) {
       painterOptions.retainTransientOnSettle = true;
+    }
+    // Page chrome built from the plan (the Fallen panel) is drawn first, so its
+    // beat-held rows are found below like every other root's.
+    if (typeof surface.beforeBeatHolds === "function") {
+      surface.beforeBeatHolds(plan);
     }
     const installation = this.painter.install(plan, surface, painterOptions);
     const nodeCount = nonNegativeInteger(installation.nodeCount ?? 0, "nodeCount");
@@ -809,13 +1032,29 @@ export class CombatChoreographer {
       animationSpecs.length === 0 &&
       !settled &&
       !persistentOnly;
+    const overrides =
+      settled || persistentOnly || this.motionMode === "off"
+        ? []
+        : [
+            ...playedGlideSpecs(plan, surface, this.motionMode),
+            ...beatHoldSpecs(plan, surface, this.motionMode),
+            ...playedLookSpecs(
+              plan,
+              surface,
+              this.motionMode,
+              this.playbackRate,
+              options.renderPolicy,
+            ),
+          ];
     const clockBudget =
       settled || persistentOnly
         ? 0
         : eventlessReplayAnimated || staticOff
           ? 1
           : animationSpecs.length === 0
-            ? 0
+            ? overrides.length > 0
+              ? 1
+              : 0
             : this.motionMode === "normal"
               ? 2
               : 1;
@@ -831,6 +1070,11 @@ export class CombatChoreographer {
       this.painter.clear(installation, "animation_bound_exceeded");
       throw new RangeError("choreography painter exceeded the animation bound.");
     }
+    const keptOverrides = boundedOverrides(
+      overrides,
+      plan,
+      MAX_ACTIVE_ANIMATIONS - activeAnimationCount,
+    );
     this.installation = installation;
     this.renderPolicy = options.renderPolicy;
     this.logicalTime =
@@ -842,22 +1086,47 @@ export class CombatChoreographer {
     if (settled || persistentOnly) {
       this.painter.settle(installation);
       this.submissionBlocked = false;
+      if (options.step) {
+        this.#startStepGlide(plan, surface, installation, options.step);
+      }
       return;
     }
-    if (animationSpecs.length === 0 && !staticOff && !eventlessReplayAnimated) {
+    if (
+      animationSpecs.length === 0 &&
+      keptOverrides.length === 0 &&
+      !staticOff &&
+      !eventlessReplayAnimated
+    ) {
       this.logicalTime = Number(plan.phases?.total ?? 0);
       this.painter.settle(installation);
       this.submissionBlocked = false;
       return;
     }
 
-    const authoredDuration =
-      this.motionMode === "reduced"
-        ? Number(plan.phases?.reducedTotal ?? 0)
-        : Number(plan.phases?.total ?? 0);
+    const reduced = this.motionMode === "reduced";
+    const eventEnd = reduced
+      ? Number(plan.phases?.reducedTotal ?? 0)
+      : Number(plan.phases?.total ?? 0);
+    const beatEnd = Number.isFinite(plan.beats?.explanationEnd)
+      ? Number(plan.beats.explanationEnd) *
+        (reduced ? Number(plan.beats.reducedScale ?? 1) : 1)
+      : 0;
+    const overrideEnd = keptOverrides.reduce(
+      (latest, spec) =>
+        Math.max(
+          latest,
+          Number(spec.options.delay ?? 0) + Number(spec.options.duration ?? 0),
+        ),
+      0,
+    );
     const duration =
-      authoredDuration +
-      (options.renderPolicy === "replay_animated" ? REPLAY_TERMINAL_HOLD_MS : 0);
+      options.renderPolicy === "replay_animated"
+        ? Math.max(eventEnd, beatEnd, overrideEnd) + REPLAY_TERMINAL_HOLD_MS
+        : Math.max(eventEnd, overrideEnd);
+    const gated =
+      this.motionMode === "normal" &&
+      !eventlessReplayAnimated &&
+      animationSpecs.length > 0;
     /** @type {AnimationHandle[]} */
     const createdAnimations = [];
     /** @type {AnimationHandle | null} */
@@ -865,7 +1134,7 @@ export class CombatChoreographer {
     /** @type {AnimationHandle | null} */
     let gateClock = null;
     try {
-      for (const spec of animationSpecs) {
+      for (const spec of [...animationSpecs, ...keptOverrides]) {
         const animation = this.animationFactory.create(spec);
         ignoreCancellation(animation.finished);
         createdAnimations.push(animation);
@@ -876,7 +1145,7 @@ export class CombatChoreographer {
         `mbg:${plan.epochKey}:cleanup`,
       );
       ignoreCancellation(cleanupClock.finished);
-      if (this.motionMode === "normal" && !eventlessReplayAnimated) {
+      if (gated) {
         gateClock = this.animationFactory.createClock(
           installation.root,
           Number(plan.phases?.submissionRelease ?? 0),
@@ -899,7 +1168,7 @@ export class CombatChoreographer {
     this.animations = createdAnimations;
     this.cleanupClock = cleanupClock;
     this.gateClock = gateClock;
-    this.submissionBlocked = this.motionMode === "normal" && !eventlessReplayAnimated;
+    this.submissionBlocked = gated;
     for (const animation of this.#allAnimations()) {
       applyPlaybackRate(animation, this.playbackRate);
       if (this.paused) {
@@ -932,6 +1201,255 @@ export class CombatChoreographer {
           this.#publish();
         }),
       );
+    }
+  }
+
+  /**
+   * Start the replay_step glide on top of an already settled paused still.
+   *
+   * plan is the new frame's plan, surface its surface, installation the settled
+   * painter installation and step {previousPlan, carry}. In normal motion with Step
+   * Glide on (plan.beats.stepGlide, default on) and the same audienceKey, each body
+   * present in both plans glides 240 ms from where the previous frame showed it (a
+   * running step glide's drawn spot when carry has one, otherwise its previous END
+   * spot) to its new END spot; a Charge rush takes the first 100 ms forwards or the
+   * first 140 ms backwards. The painter's cue roots fade in from 240 ms to 320 ms,
+   * the movement marks fade in over the step glide and, on a +1 step in Agent POV,
+   * the sight veil cross-fades. A one-step clock then marks the still paused again. Reduced motion, motion off, a
+   * different audience or a move of more than one tick adds nothing. Creation errors
+   * cancel what was created and propagate. Mutates this.animations,
+   * this.cleanupClock, this.stepGlides and this.paused.
+   *
+   * @param {Record<string, any>} plan
+   * @param {ChoreographySurface} surface
+   * @param {ChoreographyInstallation} installation
+   * @param {{previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>}} step
+   */
+  #startStepGlide(plan, surface, installation, step) {
+    const glides = stepGlideSpecs(plan, surface, this.motionMode, step);
+    if (glides === null) return;
+    const fades = stepCueFadeSpecs(plan, installation);
+    const root = battlefieldRoot(surface);
+    const forward =
+      Number(plan.simulatorStep) - Number(step.previousPlan?.simulatorStep) === 1;
+    const lookSpecs = root
+      ? [
+          ...movementAnimationSpecs(root, {
+            epochKey: String(plan.epochKey),
+            mode: "step",
+            motionMode: this.motionMode,
+            beats: plan.beats,
+            stepMs: BEAT_CLOCK.stepGlide,
+          }),
+          ...sightAnimationSpecs(root, plan, {
+            motionMode: this.motionMode,
+            renderPolicy: "replay_step",
+            step: forward ? "forward" : "backward",
+          }),
+        ]
+      : [];
+    const specs = boundedOverrides(
+      [...glides.map(({ spec }) => spec), ...fades, ...lookSpecs],
+      plan,
+      MAX_ACTIVE_ANIMATIONS - 1,
+    );
+    if (specs.length === 0) return;
+    /** @type {AnimationHandle[]} */
+    const created = [];
+    try {
+      for (const spec of specs) {
+        const animation = this.animationFactory.create(spec);
+        ignoreCancellation(animation.finished);
+        created.push(animation);
+      }
+      const clock = this.animationFactory.createClock(
+        installation.root,
+        BEAT_CLOCK.stepCueFadeEnd,
+        `mbg:${plan.epochKey}:step`,
+      );
+      ignoreCancellation(clock.finished);
+      this.cleanupClock = clock;
+    } catch (error) {
+      for (const animation of created) safeCancel(animation);
+      throw error;
+    }
+    this.animations = created;
+    this.stepGlides = glides
+      .map(({ spec, presentationKey, points, offsets }) => {
+        const animation = created[specs.indexOf(spec)];
+        return animation ? { presentationKey, points, offsets, animation } : null;
+      })
+      .filter((glide) => glide !== null);
+    this.paused = false;
+    for (const animation of this.#allAnimations()) {
+      applyPlaybackRate(animation, this.playbackRate);
+    }
+    const generation = this.generation;
+    const clock = this.cleanupClock;
+    ignoreCancellation(
+      /** @type {AnimationHandle} */ (clock).finished.then(() => {
+        if (generation !== this.generation) return;
+        this.#cancelAnimations();
+        this.paused = true;
+        this.#publish();
+      }),
+    );
+  }
+
+  /**
+   * Read where each running step glide draws its body right now, in world units.
+   *
+   * surface is the new frame's surface (unused for the math; world spots do not
+   * depend on the camera). Return a Map from presentation key to the drawn world
+   * spot for glides whose animation reports a finite currentTime inside the glide.
+   * Pure read of animation state; called just before those glides are cancelled.
+   *
+   * @param {ChoreographySurface} surface
+   * @returns {Map<string, readonly [number, number]>}
+   */
+  #stepCarry(surface) {
+    void surface;
+    /** @type {Map<string, readonly [number, number]>} */
+    const carry = new Map();
+    for (const glide of this.stepGlides) {
+      const time = glide.animation.currentTime;
+      if (typeof time !== "number" || !Number.isFinite(time)) continue;
+      if (time <= 0 || time >= BEAT_CLOCK.stepGlide) continue;
+      carry.set(
+        glide.presentationKey,
+        pointAlongGlide(glide.points, glide.offsets, time / BEAT_CLOCK.stepGlide),
+      );
+    }
+    return carry;
+  }
+
+  /**
+   * Ease the camera from its previous frame to a new one (the camera entry point).
+   *
+   * wrapper is the camera wrapper group that holds every arena layer; the durable
+   * renderer has already re-rendered at the new frame (END). fromTransform and
+   * toTransform are the viewport transforms before and after the change (each with
+   * worldToScreen). options.instant (default false) cuts instead: use it for an Agent
+   * POV or view change, which never eases. Reduced motion and motion off always cut.
+   * Otherwise one 520 ms Web Animation (id "mbg:camera:<n>", ease-in-out, fill
+   * "backwards", no forward fill) maps the new picture back onto the old one and eases
+   * to none, so finishing or cancelling it shows the exact new frame. A running ease is
+   * cancelled first. Playback rate does not change it (it is not tick time); skip and
+   * dispose finish or cancel it. Return the frozen snapshot. Transforms that are not
+   * uniform scale and translate (or a null wrapper) cut. Errors from Element.animate
+   * propagate.
+   *
+   * @param {Element | null} wrapper
+   * @param {{worldToScreen: (point: readonly [number, number]) => {x: number, y: number}} | null} fromTransform
+   * @param {{worldToScreen: (point: readonly [number, number]) => {x: number, y: number}} | null} toTransform
+   * @param {{instant?: boolean}} [options]
+   */
+  easeCamera(wrapper, fromTransform, toTransform, options = {}) {
+    this.#cancelCameraEase();
+    this.#cancelCameraLean();
+    const matrix =
+      wrapper && fromTransform && toTransform
+        ? cameraEaseMatrix(fromTransform, toTransform)
+        : null;
+    if (
+      matrix === null ||
+      options.instant === true ||
+      this.motionMode !== "normal" ||
+      (matrix.k === 1 && Math.abs(matrix.x) < 0.01 && Math.abs(matrix.y) < 0.01)
+    ) {
+      this.#publish();
+      return this.snapshot();
+    }
+    this.cameraGeneration += 1;
+    const generation = this.cameraGeneration;
+    const animation = this.animationFactory.create({
+      element: /** @type {Element} */ (wrapper),
+      keyframes: [
+        {
+          transform: `matrix(${matrix.k}, 0, 0, ${matrix.k}, ${matrix.x}, ${matrix.y})`,
+        },
+        { transform: "matrix(1, 0, 0, 1, 0, 0)" },
+      ],
+      options: { duration: CAMERA_EASE_MS, easing: "ease-in-out", fill: "backwards" },
+      id: `mbg:camera:${generation}`,
+    });
+    ignoreCancellation(animation.finished);
+    this.cameraEase = animation;
+    ignoreCancellation(
+      animation.finished.then(() => {
+        if (generation !== this.cameraGeneration || this.cameraEase !== animation)
+          return;
+        this.cameraEase = null;
+        this.#publish();
+      }),
+    );
+    this.#publish();
+    return this.snapshot();
+  }
+
+  /**
+   * Lean the camera toward this tick's seen fall (Kill Cam) for one played tick.
+   *
+   * wrapper is the battlefield camera wrapper (g.battlefield-camera); lean is the
+   * {keyframes, options} pair from looks/camera.js killCamKeyframes (options carry
+   * the tick length, linear easing and fill "backwards", so finishing or cancelling
+   * shows the resting frame). Only in normal motion with a played tick installed
+   * (not paused, not a still): the lean is created through the animation factory
+   * (id "mbg:camera-lean:<n>"), counted with this tick's animations, scaled by the
+   * playback rate and paused with the tick, so a seek, skip, view change, recipient
+   * change, a camera ease or dispose cancels it (END: the resting frame). A running
+   * lean is cancelled first. Return true when a lean started, otherwise false.
+   * Errors from Element.animate propagate. Agent POV: the caller builds the lean only
+   * from this audience's own plan (killCamLean), never from a hidden fall.
+   *
+   * @param {Element | null} wrapper
+   * @param {{keyframes: Keyframe[], options: KeyframeAnimationOptions} | null} lean
+   * @returns {boolean}
+   */
+  leanCamera(wrapper, lean) {
+    this.#cancelCameraLean();
+    if (
+      wrapper === null ||
+      lean === null ||
+      this.motionMode !== "normal" ||
+      this.paused ||
+      this.installation === null ||
+      this.renderPolicy === "replay_static"
+    ) {
+      return false;
+    }
+    this.cameraGeneration += 1;
+    const animation = this.animationFactory.create({
+      element: wrapper,
+      keyframes: lean.keyframes,
+      options: { ...lean.options },
+      id: `mbg:camera-lean:${this.cameraGeneration}`,
+    });
+    ignoreCancellation(animation.finished);
+    applyPlaybackRate(animation, this.playbackRate);
+    this.animations = [...this.animations, animation];
+    this.cameraLean = animation;
+    return true;
+  }
+
+  /**
+   * Cancel a running Kill Cam lean (the resting frame shows). Return undefined.
+   */
+  #cancelCameraLean() {
+    if (this.cameraLean) {
+      safeCancel(this.cameraLean);
+      this.animations = this.animations.filter((handle) => handle !== this.cameraLean);
+      this.cameraLean = null;
+    }
+  }
+
+  /**
+   * Cancel a running camera ease (the new frame shows at once). Return undefined.
+   */
+  #cancelCameraEase() {
+    if (this.cameraEase) {
+      safeCancel(this.cameraEase);
+      this.cameraEase = null;
     }
   }
 
@@ -975,6 +1493,8 @@ export class CombatChoreographer {
   /**
    * Return a new array of owned visual handles followed by gate and cleanup clocks.
    *
+   * The visual handles include the painter's event animations and this controller's
+   * overrides (glides, beat holds, step cue fades). The camera ease is separate.
    * Absent clocks are omitted. Handles remain the controller's mutable browser objects;
    * this helper does not advance, cancel or copy them.
    */
@@ -989,16 +1509,19 @@ export class CombatChoreographer {
   /**
    * Best-effort cancel every owned handle and clear all handle references.
    *
-   * Cancellation errors are ignored. Painter nodes, plan identity, logical time and
-   * submission gating are left to the caller. Return undefined.
+   * Cancelling an override shows END on its node. Cancellation errors are ignored.
+   * Painter nodes, plan identity, logical time and submission gating are left to the
+   * caller. Return undefined.
    */
   #cancelAnimations() {
     for (const animation of this.#allAnimations()) {
       safeCancel(animation);
     }
     this.animations = [];
+    this.stepGlides = [];
     this.gateClock = null;
     this.cleanupClock = null;
+    this.cameraLean = null;
   }
 
   /**
@@ -1020,13 +1543,18 @@ export class CombatChoreographer {
   }
 
   /**
-   * Return true exactly when there are no owned animations and no submission gate.
+   * Return true exactly when there are no owned animations, no camera ease and no
+   * submission gate.
    *
    * A persistent or static installation may still be visible; settlement concerns its
    * presentation clock, not removal of durable explanatory nodes.
    */
   #isSettled() {
-    return this.#allAnimations().length === 0 && !this.submissionBlocked;
+    return (
+      this.#allAnimations().length === 0 &&
+      this.cameraEase === null &&
+      !this.submissionBlocked
+    );
   }
 }
 
@@ -1059,6 +1587,688 @@ function normalizeRenderPolicy(value) {
     return value;
   }
   throw new RangeError(`unknown render policy ${String(value)}.`);
+}
+
+/**
+ * Return a recognized render request: a render policy or "replay_step".
+ *
+ * value "replay_step" is returned as is; anything else must be a render policy (see
+ * normalizeRenderPolicy), otherwise RangeError is thrown. No coercion.
+ *
+ * @param {unknown} value
+ * @returns {RenderRequest}
+ */
+function normalizeRenderRequest(value) {
+  return value === "replay_step" ? "replay_step" : normalizeRenderPolicy(value);
+}
+
+/**
+ * Return the element whose subtree holds the durable nodes a plan may override.
+ *
+ * surface.battlefield wins; otherwise the SVG that owns surface.layer. Return null
+ * when there is no DOM (unit-test surfaces), so no override is made. Pure.
+ *
+ * @param {ChoreographySurface | null | undefined} surface
+ * @returns {Element | null}
+ */
+function battlefieldRoot(surface) {
+  if (!surface) return null;
+  if (
+    surface.battlefield &&
+    typeof surface.battlefield.querySelectorAll === "function"
+  ) {
+    return surface.battlefield;
+  }
+  const layer = /** @type {any} */ (surface.layer);
+  const owner = layer?.ownerSVGElement ?? layer?.closest?.("svg") ?? null;
+  return owner && typeof owner.querySelectorAll === "function" ? owner : null;
+}
+
+/**
+ * Return a lookup from presentation key to a body's glide wrapper.
+ *
+ * surface.bodyWrapper is used when provided. Otherwise scan root once for glide
+ * wrappers (elements with data-glide-key) and key each by its own
+ * data-presentation-key or by its g.agent child's data-presentation-key. Return a
+ * function giving the wrapper or null. Reads the DOM only.
+ *
+ * @param {ChoreographySurface} surface
+ * @param {Element} root
+ * @returns {(presentationKey: string) => Element | null}
+ */
+function bodyWrapperLookup(surface, root) {
+  if (typeof surface.bodyWrapper === "function") {
+    const lookup = surface.bodyWrapper;
+    return (presentationKey) => lookup(presentationKey) ?? null;
+  }
+  /** @type {Map<string, Element>} */
+  const wrappers = new Map();
+  for (const wrapper of root.querySelectorAll("[data-glide-key]")) {
+    const key =
+      wrapper.getAttribute("data-presentation-key") ??
+      wrapper
+        .querySelector(".agent[data-presentation-key]")
+        ?.getAttribute("data-presentation-key") ??
+      null;
+    if (key) wrappers.set(key, wrapper);
+  }
+  return (presentationKey) => wrappers.get(presentationKey) ?? null;
+}
+
+/**
+ * Describe one FLIP glide of a body wrapper as a Web Animations spec.
+ *
+ * element is the wrapper; points are world spots in order (the last is END, where
+ * the DOM already draws the body) at keyframe offsets between 0 and 1; surface
+ * projects world to screen. duration is in ms; id names the animation. Each
+ * keyframe translates the wrapper by its spot minus END in CSS pixels (rounded to a
+ * thousandth of a pixel), added on top
+ * of the wrapper's own transform (composite "add"), easing on the shared glide
+ * curve; the last keyframe is no translation. fill "backwards", no forward fill, so
+ * finishing or cancelling shows END. Return null for a non-finite projection. Pure.
+ *
+ * @param {Element} element
+ * @param {ReadonlyArray<readonly [number, number]>} points
+ * @param {ReadonlyArray<number>} offsets
+ * @param {ChoreographySurface} surface
+ * @param {number} duration
+ * @param {string} id
+ * @returns {AnimationSpec | null}
+ */
+function glideSpec(element, points, offsets, surface, duration, id) {
+  const end = surface.worldToScreen(points[points.length - 1]);
+  /** @type {Keyframe[]} */
+  const keyframes = [];
+  for (const [index, world] of points.entries()) {
+    const screen = surface.worldToScreen(world);
+    const dx = screen.x - end.x;
+    const dy = screen.y - end.y;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    const last = index === points.length - 1;
+    keyframes.push({
+      offset: offsets[index],
+      transform: last
+        ? "translate(0px, 0px)"
+        : `translate(${roundPixel(dx)}px, ${roundPixel(dy)}px)`,
+      ...(last ? {} : { easing: GLIDE_EASING }),
+    });
+  }
+  return {
+    element,
+    keyframes,
+    options: { delay: 0, duration, fill: "backwards", composite: "add" },
+    id,
+  };
+}
+
+/**
+ * Round a pixel offset to a thousandth of a pixel (no visible change) so glide
+ * transforms read cleanly. Pure.
+ *
+ * @param {number} value
+ */
+function roundPixel(value) {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
+ * Return whether two world spots are the same within a millionth of a unit.
+ *
+ * @param {readonly [number, number]} left
+ * @param {readonly [number, number]} right
+ */
+function sameSpot(left, right) {
+  return Math.hypot(left[0] - right[0], left[1] - right[1]) <= 1e-6;
+}
+
+/**
+ * Build the body glides of a played tick.
+ *
+ * plan carries beats (glide: Body Glide on) and bodies (planBodies records);
+ * surface supplies projection and the durable DOM; motionMode is the controller's.
+ * Only normal motion with Body Glide on glides. Each body whose record says glide
+ * moves START to END over 0-260 ms; a body that charged reaches its post-Charge spot
+ * at 110 ms first. A body whose path cuts a stone (body.dimShift, from the plan)
+ * takes the Movement look's Dim Shift (move plus fade) instead of a plain glide.
+ * Bodies with no wrapper in the DOM are skipped. Return a new array
+ * of specs (ids mbg:<epoch>:glide:<public ID>). Reads the DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @returns {AnimationSpec[]}
+ */
+function playedGlideSpecs(plan, surface, motionMode) {
+  if (motionMode !== "normal" || plan.beats?.glide !== true) return [];
+  const root = battlefieldRoot(surface);
+  if (!root) return [];
+  const wrapperFor = bodyWrapperLookup(surface, root);
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  for (const body of Array.isArray(plan.bodies) ? plan.bodies : []) {
+    if (body?.glide !== true || !body.start) continue;
+    const element = wrapperFor(body.presentationKey);
+    if (!element) continue;
+    const charged = body.charged === true && body.postCharge;
+    const points = charged
+      ? [body.start, body.postCharge, body.end]
+      : [body.start, body.end];
+    const offsets = charged
+      ? [0, BEAT_CLOCK.chargeRushEnd / BEAT_CLOCK.glideEnd, 1]
+      : [0, 1];
+    const id = `mbg:${plan.epochKey}:glide:${body.publicAgentId}`;
+    if (body.dimShift === true) {
+      // A path through stone dims out and back in instead of sliding over it.
+      specs.push(
+        ...dimShiftSpecs(
+          element,
+          points,
+          offsets,
+          surface.worldToScreen,
+          BEAT_CLOCK.glideEnd,
+          id,
+        ),
+      );
+      continue;
+    }
+    const spec = glideSpec(element, points, offsets, surface, BEAT_CLOCK.glideEnd, id);
+    if (spec) specs.push(spec);
+  }
+  return specs;
+}
+
+/**
+ * Return the real time (ms, normal motion) of one beat-held node's beat.
+ *
+ * beats is plan.beats; kind is "impact" (blow time 260 ms on the tick's clock, for
+ * every key), "settle" (the Settle window start, or the end of the dramatic hold on
+ * a tick with a Fall or Return beat), "fall" (the champion's Fall beat), "return"
+ * (its Return beat start), "set-down" (when it is set down on its pad) or "score"
+ * (the Fall beat start, on every tick); key is the champion's presentation key.
+ * Return null when this plan has no such beat for that champion (for example a
+ * death the Agent POV team did not see), so the node shows END at once. Pure.
+ *
+ * @param {Record<string, any>} beats
+ * @param {string} kind
+ * @param {string | null} key
+ * @returns {number | null}
+ */
+function beatTimeFor(beats, kind, key) {
+  if (kind === "score") {
+    return Number.isFinite(beats.scoreAt) ? Number(beats.scoreAt) : null;
+  }
+  if (kind === "impact") {
+    return beatRealTime(
+      IMPACT_BLOW_MS,
+      beats.glide === true,
+      Number.isFinite(beats.lead) ? Number(beats.lead) : 0,
+    );
+  }
+  if (kind === "settle") {
+    // On a tick with a dramatic hold, settled marks wait for the hold to end.
+    if (beats.fall || beats.returnBeat) {
+      return Number.isFinite(beats.explanationEnd)
+        ? Number(beats.explanationEnd)
+        : null;
+    }
+    const settle = beats.windows?.settle;
+    return Array.isArray(settle) && Number.isFinite(settle[0])
+      ? Number(settle[0])
+      : null;
+  }
+  if (key === null) return null;
+  if (kind === "fall") {
+    const entry = (Array.isArray(beats.falls) ? beats.falls : []).find(
+      (fall) => fall?.presentationKey === key,
+    );
+    return Number.isFinite(entry?.at) ? Number(entry.at) : null;
+  }
+  const entry = (Array.isArray(beats.returns) ? beats.returns : []).find(
+    (returned) => returned?.presentationKey === key,
+  );
+  const value = kind === "set-down" ? entry?.setDownAt : entry?.at;
+  return Number.isFinite(value) ? Number(value) : null;
+}
+
+/**
+ * Build the beat holds of a played tick (the dramatic hold).
+ *
+ * plan carries beats; surface supplies the battlefield and optional
+ * beatHoldRoots; motionMode is normal or reduced (reduced multiplies every beat
+ * time by beats.reducedScale; fades keep their length). Each node with
+ * data-beat-hold, data-beat-key and data-beat-side whose beat is in the plan gets
+ * one opacity override: a "before" node goes from data-beat-from (default 1) to its
+ * END opacity (its opacity attribute, default 0); an "after" node from
+ * data-beat-from (default 0) to its END opacity (default 1). The change starts at
+ * the beat and lasts data-beat-fade ms (default a 1 ms cut); fill "backwards"
+ * holds the earlier look before it, and nothing holds after it. Return a new array
+ * of specs (ids mbg:<epoch>:hold:<kind>:<n>). A node with data-beat-pulse="p"
+ * instead flashes 0 -> p (at 37.5% of the fade) -> 0 from its beat, in normal
+ * motion only. Reads the DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @returns {AnimationSpec[]}
+ */
+function beatHoldSpecs(plan, surface, motionMode) {
+  const beats = plan.beats;
+  if (motionMode === "off" || !beats || typeof beats !== "object") return [];
+  const scale = motionMode === "reduced" ? Number(beats.reducedScale ?? 1) : 1;
+  const roots = [
+    battlefieldRoot(surface),
+    ...(Array.isArray(surface.beatHoldRoots) ? surface.beatHoldRoots : []),
+  ].filter(
+    (root, index, all) =>
+      root !== null &&
+      typeof root?.querySelectorAll === "function" &&
+      all.indexOf(root) === index,
+  );
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  for (const root of roots) {
+    for (const element of /** @type {Element} */ (root).querySelectorAll(
+      "[data-beat-hold]",
+    )) {
+      const kind = element.getAttribute("data-beat-hold") ?? "";
+      const side = element.getAttribute("data-beat-side");
+      if (!BEAT_HOLD_KINDS.has(kind) || (side !== "before" && side !== "after")) {
+        continue;
+      }
+      const at = beatTimeFor(beats, kind, element.getAttribute("data-beat-key"));
+      if (at === null) continue;
+      const fade = Math.max(1, Number(element.getAttribute("data-beat-fade")) || 0);
+      const pulse = element.getAttribute("data-beat-pulse");
+      if (pulse !== null) {
+        // A flash: 0 up to the peak and back to 0. Reduced motion skips it.
+        if (motionMode !== "normal" || !Number.isFinite(Number(pulse))) continue;
+        specs.push({
+          element,
+          keyframes: [
+            { opacity: 0 },
+            { opacity: Number(pulse), offset: 0.375 },
+            { opacity: 0 },
+          ],
+          options: { delay: at * scale, duration: fade, fill: "backwards" },
+          id: `mbg:${plan.epochKey}:hold:${kind}:${specs.length}`,
+        });
+        continue;
+      }
+      const endAttribute = element.getAttribute("opacity");
+      const end =
+        endAttribute !== null && Number.isFinite(Number(endAttribute))
+          ? Number(endAttribute)
+          : side === "before"
+            ? 0
+            : 1;
+      const fromAttribute = element.getAttribute("data-beat-from");
+      const from =
+        fromAttribute !== null && Number.isFinite(Number(fromAttribute))
+          ? Number(fromAttribute)
+          : side === "before"
+            ? 1
+            : 0;
+      specs.push({
+        element,
+        keyframes: [{ opacity: from }, { opacity: end }],
+        options: { delay: at * scale, duration: fade, fill: "backwards" },
+        id: `mbg:${plan.epochKey}:hold:${kind}:${specs.length}`,
+      });
+    }
+  }
+  return specs;
+}
+
+/**
+ * Build the hit shivers of a played tick.
+ *
+ * plan carries beats; surface supplies the battlefield; motionMode and
+ * playbackRate are the controller's. Only normal motion below 1.5x playback
+ * shivers. Each element with data-beat-shiver (a distance in CSS px) and
+ * data-beat-shiver-at="impact" gets one sideways shake: translateX 0, a, -a, a, 0
+ * at offsets 0, 0.2, 0.5, 0.8 and 1, starting at Impact plus data-beat-delay ms and
+ * lasting data-beat-fade ms (default 120), with no fill, so it never changes the
+ * END look. Return a new array of specs (ids mbg:<epoch>:shiver:<n>). Reads the
+ * DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @param {number} playbackRate
+ * @returns {AnimationSpec[]}
+ */
+function shiverSpecs(plan, surface, motionMode, playbackRate) {
+  const beats = plan.beats;
+  if (motionMode !== "normal" || playbackRate >= SHIVER_RATE_LIMIT || !beats) return [];
+  const root = battlefieldRoot(surface);
+  if (!root) return [];
+  const impact = beatTimeFor(beats, "impact", null);
+  if (impact === null) return [];
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  for (const element of root.querySelectorAll("[data-beat-shiver]")) {
+    if (element.getAttribute("data-beat-shiver-at") !== "impact") continue;
+    const distance = Number(element.getAttribute("data-beat-shiver"));
+    if (!Number.isFinite(distance) || distance === 0) continue;
+    const delay = Number(element.getAttribute("data-beat-delay")) || 0;
+    const duration = Math.max(1, Number(element.getAttribute("data-beat-fade")) || 120);
+    specs.push({
+      element,
+      keyframes: [
+        { transform: "translateX(0px)", offset: 0 },
+        { transform: `translateX(${distance}px)`, offset: 0.2 },
+        { transform: `translateX(${-distance}px)`, offset: 0.5 },
+        { transform: `translateX(${distance}px)`, offset: 0.8 },
+        { transform: "translateX(0px)", offset: 1 },
+      ],
+      options: { delay: impact + delay, duration, composite: "add" },
+      id: `mbg:${plan.epochKey}:shiver:${specs.length}`,
+    });
+  }
+  return specs;
+}
+
+/**
+ * Build the Death Dimming override of a played tick.
+ *
+ * plan names the epoch; surface supplies the battlefield; motionMode is the
+ * controller's. In normal motion each `path.death-dim` the renderer drew (with
+ * data-dim-start and data-dim-end, this audience's Fall beat in ms) gets the
+ * Atmosphere look's dimAnimation. Return a new array of specs. Reads the DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @returns {AnimationSpec[]}
+ */
+function deathDimSpecs(plan, surface, motionMode) {
+  if (motionMode !== "normal") return [];
+  const root = battlefieldRoot(surface);
+  if (!root) return [];
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  for (const element of root.querySelectorAll("path.death-dim")) {
+    const start = Number(element.getAttribute("data-dim-start"));
+    const end = Number(element.getAttribute("data-dim-end"));
+    if (!Number.isFinite(start) || !(end > start)) continue;
+    const spec = dimAnimation(element, { kind: "death-dim", start, end }, plan);
+    specs.push({
+      element: spec.element,
+      keyframes: spec.keyframes,
+      options: { ...spec.options },
+      id: spec.id,
+    });
+  }
+  return specs;
+}
+
+/**
+ * Build the look-owned overrides of a played tick: movement marks, the Agent POV
+ * sight veil, hit shivers and Death Dimming.
+ *
+ * plan, surface and renderPolicy describe the tick; motionMode and playbackRate are
+ * the controller's. Return a new array of specs in that order. Reads the DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @param {number} playbackRate
+ * @param {RenderPolicy} renderPolicy
+ * @returns {AnimationSpec[]}
+ */
+function playedLookSpecs(plan, surface, motionMode, playbackRate, renderPolicy) {
+  const root = battlefieldRoot(surface);
+  if (!root || motionMode === "off") return [];
+  return [
+    ...movementAnimationSpecs(root, {
+      epochKey: String(plan.epochKey),
+      mode: "played",
+      motionMode,
+      beats: plan.beats,
+    }),
+    ...sightAnimationSpecs(root, plan, { motionMode, renderPolicy }),
+    ...shiverSpecs(plan, surface, motionMode, playbackRate),
+    ...deathDimSpecs(plan, surface, motionMode),
+  ];
+}
+
+/**
+ * Build the body glides of a one-tick step (replay_step).
+ *
+ * plan is the new frame's plan; surface its surface; motionMode the controller's;
+ * step {previousPlan, carry}. Return null when the step does not glide: motion is
+ * not normal, Step Glide is off (plan.beats.stepGlide false), the audience changed
+ * (audienceKey differs: another view or recipient) or the frames are not exactly
+ * one tick apart. Otherwise return a new array (possibly empty) of
+ * {spec, presentationKey, points, offsets}: one 240 ms glide per body present in
+ * both plans, alive or fallen at both ends, that did not just return to a pad
+ * (forwards) or leave one (backwards), from carry's drawn spot (when within 3 world
+ * units of its previous END spot) or its previous END spot, to its new END spot.
+ * Forwards, a Charge passes its post-Charge spot at 100 ms; backwards, the left
+ * tick's Charge is reversed with its post-Charge spot at 140 ms. A body whose path
+ * cuts a stone (dimShift on the new body forwards, on the earlier body backwards)
+ * gets the Movement look's Dim Shift pair instead (two entries with the same key).
+ * In Agent POV the plans hold only seen bodies, so a body unseen in either frame
+ * never glides.
+ * Reads the DOM only.
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographySurface} surface
+ * @param {MotionMode} motionMode
+ * @param {{previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>}} step
+ * @returns {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>}> | null}
+ */
+function stepGlideSpecs(plan, surface, motionMode, step) {
+  const previous = step.previousPlan;
+  if (motionMode !== "normal" || plan.beats?.stepGlide === false) return null;
+  if (
+    typeof plan.audienceKey !== "string" ||
+    previous?.audienceKey !== plan.audienceKey
+  ) {
+    return null;
+  }
+  const direction = Number(plan.simulatorStep) - Number(previous.simulatorStep);
+  if (direction !== 1 && direction !== -1) return null;
+  const root = battlefieldRoot(surface);
+  if (!root) return [];
+  const wrapperFor = bodyWrapperLookup(surface, root);
+  const before = new Map(
+    (Array.isArray(previous.bodies) ? previous.bodies : []).map((body) => [
+      body.presentationKey,
+      body,
+    ]),
+  );
+  /** @type {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>}>} */
+  const glides = [];
+  for (const body of Array.isArray(plan.bodies) ? plan.bodies : []) {
+    const earlier = before.get(body.presentationKey);
+    if (!earlier || earlier.alive !== body.alive) continue;
+    if ((direction === 1 && body.returned) || (direction === -1 && earlier.returned)) {
+      continue;
+    }
+    const carried = step.carry.get(body.presentationKey);
+    const from =
+      carried &&
+      Math.hypot(carried[0] - earlier.end[0], carried[1] - earlier.end[1]) <=
+        STEP_CARRY_LIMIT
+        ? carried
+        : earlier.end;
+    const forwardCharge = direction === 1 && body.charged === true && body.postCharge;
+    const backwardCharge =
+      direction === -1 && earlier.charged === true && earlier.postCharge;
+    /** @type {ReadonlyArray<readonly [number, number]>} */
+    const points = forwardCharge
+      ? [from, body.postCharge, body.end]
+      : backwardCharge
+        ? [from, earlier.postCharge, body.end]
+        : [from, body.end];
+    /** @type {ReadonlyArray<number>} */
+    const offsets = forwardCharge
+      ? [0, BEAT_CLOCK.stepChargeRushForward / BEAT_CLOCK.stepGlide, 1]
+      : backwardCharge
+        ? [0, BEAT_CLOCK.stepChargeRushBackward / BEAT_CLOCK.stepGlide, 1]
+        : [0, 1];
+    if (points.every((spot) => sameSpot(spot, body.end))) continue;
+    const element = wrapperFor(body.presentationKey);
+    if (!element) continue;
+    const id = `mbg:${plan.epochKey}:step-glide:${body.publicAgentId}`;
+    if (direction === 1 ? body.dimShift === true : earlier.dimShift === true) {
+      for (const spec of dimShiftSpecs(
+        element,
+        points,
+        offsets,
+        surface.worldToScreen,
+        BEAT_CLOCK.stepGlide,
+        id,
+      )) {
+        glides.push({ spec, presentationKey: body.presentationKey, points, offsets });
+      }
+      continue;
+    }
+    const spec = glideSpec(element, points, offsets, surface, BEAT_CLOCK.stepGlide, id);
+    if (spec) {
+      glides.push({ spec, presentationKey: body.presentationKey, points, offsets });
+    }
+  }
+  return glides;
+}
+
+/**
+ * Build the cue fade of a one-tick step: the painter's roots fade in late.
+ *
+ * plan names the epoch; installation holds the painter roots (root, connectorRoot,
+ * routeRoot). Each present root gets opacity 0 until 240 ms, then fades to its END
+ * opacity by 320 ms (fill "backwards", no forward fill), so a stroke never stretches
+ * between moving bodies. Return a new array of specs (ids mbg:<epoch>:step-cue:<n>).
+ *
+ * @param {Record<string, any>} plan
+ * @param {ChoreographyInstallation} installation
+ * @returns {AnimationSpec[]}
+ */
+function stepCueFadeSpecs(plan, installation) {
+  const record = /** @type {Record<string, any>} */ (installation);
+  return [record.routeRoot, record.connectorRoot, record.root]
+    .filter((element) => element && typeof element === "object")
+    .map((element, index) => ({
+      element,
+      keyframes: [{ opacity: 0 }, { opacity: 1 }],
+      options: {
+        delay: BEAT_CLOCK.stepGlide,
+        duration: BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide,
+        fill: "backwards",
+      },
+      id: `mbg:${plan.epochKey}:step-cue:${index}`,
+    }));
+}
+
+/**
+ * Keep overrides inside the plan's override budget and the free animation room.
+ *
+ * specs are glides first, then holds; plan.bounds.overrideAnimations is the plan's
+ * allowance (a plan without one uses room); room is how many animations the 512
+ * limit still allows. Return the first specs that fit: extra beat holds are dropped,
+ * never the tick. Pure.
+ *
+ * @param {ReadonlyArray<AnimationSpec>} specs
+ * @param {Record<string, any>} plan
+ * @param {number} room
+ * @returns {AnimationSpec[]}
+ */
+function boundedOverrides(specs, plan, room) {
+  const allowance = Number.isInteger(plan.bounds?.overrideAnimations)
+    ? Number(plan.bounds.overrideAnimations)
+    : room;
+  return specs.slice(0, Math.max(0, Math.min(allowance, room)));
+}
+
+/**
+ * Evaluate the shared glide curve, cubic-bezier(0.45, 0, 0.55, 1), at progress x.
+ *
+ * x is clamped to 0..1. Return the eased progress, found by bisection on the curve's
+ * x polynomial (accurate to about 1e-6). Pure.
+ *
+ * @param {number} x
+ */
+function glideCurve(x) {
+  const target = Math.min(1, Math.max(0, x));
+  /**
+   * Evaluate one coordinate of the curve's cubic Bezier at curve parameter t (0..1),
+   * with control values a and b and end points 0 and 1. Pure.
+   *
+   * @param {number} t @param {number} a @param {number} b
+   */
+  const cubic = (t, a, b) =>
+    3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  let low = 0;
+  let high = 1;
+  for (let step = 0; step < 40; step += 1) {
+    const middle = (low + high) / 2;
+    if (cubic(middle, 0.45, 0.55) < target) low = middle;
+    else high = middle;
+  }
+  return cubic((low + high) / 2, 0, 1);
+}
+
+/**
+ * Return where a glide draws its body at progress p (0..1), in world units.
+ *
+ * points and offsets are the glide's world spots and keyframe offsets; each segment
+ * eases on the shared glide curve, as the browser plays it. Pure.
+ *
+ * @param {ReadonlyArray<readonly [number, number]>} points
+ * @param {ReadonlyArray<number>} offsets
+ * @param {number} progress
+ * @returns {readonly [number, number]}
+ */
+function pointAlongGlide(points, offsets, progress) {
+  const p = Math.min(1, Math.max(0, progress));
+  for (let index = 1; index < points.length; index += 1) {
+    if (p <= offsets[index] || index === points.length - 1) {
+      const span = offsets[index] - offsets[index - 1];
+      const local = glideCurve(span > 0 ? (p - offsets[index - 1]) / span : 1);
+      const [x0, y0] = points[index - 1];
+      const [x1, y1] = points[index];
+      return Object.freeze([x0 + (x1 - x0) * local, y0 + (y1 - y0) * local]);
+    }
+  }
+  return points[points.length - 1];
+}
+
+/**
+ * Find the transform that puts the new camera's picture where the old one was.
+ *
+ * fromTransform and toTransform project world to screen before and after a camera
+ * change. Both must be a uniform scale with the same axis flip plus a translation.
+ * Return {k, x, y}: screen_old = k * screen_new + (x, y), or null when either
+ * transform is not of that form or is degenerate. Pure.
+ *
+ * @param {{worldToScreen: (point: readonly [number, number]) => {x: number, y: number}}} fromTransform
+ * @param {{worldToScreen: (point: readonly [number, number]) => {x: number, y: number}}} toTransform
+ * @returns {{k: number, x: number, y: number} | null}
+ */
+function cameraEaseMatrix(fromTransform, toTransform) {
+  const a0 = fromTransform.worldToScreen([0, 0]);
+  const a1 = fromTransform.worldToScreen([1, 0]);
+  const a2 = fromTransform.worldToScreen([0, 1]);
+  const b0 = toTransform.worldToScreen([0, 0]);
+  const b1 = toTransform.worldToScreen([1, 0]);
+  const b2 = toTransform.worldToScreen([0, 1]);
+  const fromScale = a1.x - a0.x;
+  const toScale = b1.x - b0.x;
+  const values = [a0.x, a0.y, fromScale, toScale, b0.x, b0.y];
+  if (
+    !values.every(Number.isFinite) ||
+    Math.abs(toScale) < 1e-9 ||
+    Math.abs(a2.y - a0.y + fromScale) > 1e-6 ||
+    Math.abs(b2.y - b0.y + toScale) > 1e-6 ||
+    Math.abs(a1.y - a0.y) > 1e-6 ||
+    Math.abs(b1.y - b0.y) > 1e-6
+  ) {
+    return null;
+  }
+  const k = fromScale / toScale;
+  return { k, x: a0.x - k * b0.x, y: a0.y - k * b0.y };
 }
 
 /**

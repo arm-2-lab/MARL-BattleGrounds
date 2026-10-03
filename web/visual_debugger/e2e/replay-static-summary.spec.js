@@ -4,7 +4,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { VISUAL_FILTER_IDS } from "../src/visual-filters.js";
+import {
+  DEFAULT_VISUAL_FILTER_STATE,
+  VISUAL_FILTER_IDS,
+  visualFiltersForProduct,
+} from "../src/visual-filters.js";
 import {
   CHOREOGRAPHY_CONNECTOR_ROOT,
   CHOREOGRAPHY_ROOT,
@@ -21,32 +25,36 @@ test.describe.configure({ mode: "serial" });
 test.use({ screenshot: "off" });
 
 const FILTER_INPUT = 'input[type="checkbox"][data-visual-filter-id]';
-const SELECTIVE_FILTER = "status_application";
+// The Visuals tab shows only the Replay Viewer's switches; the count line reads
+// "N Of M On" where M adds one for the Ranges button.
+const REPLAY_FILTER_IDS = visualFiltersForProduct("replay_viewer").map(({ id }) => id);
+// Status lifecycle events paint nothing on the arena now, so the selective
+// filter proof turns off Ultimates, whose routes and cues are placed here.
+const SELECTIVE_FILTER = "ultimate_ability_effects";
+// Hit surfaces of the V5 looks: Basic strokes and dots, Ultimate hit areas,
+// health numbers, status pulses and the fall ring.
+const ACTIVATION_HIT_SELECTOR =
+  ".basic-blow__hit, .combat-impact.basic-dot, .ult-hit-area";
 const SPATIAL_HIT_SELECTOR = [
-  ".combat-impact__hit",
-  ".combat-local__hit",
+  ACTIVATION_HIT_SELECTOR,
   ".combat-net__hit",
+  ".combat-number__hit",
   ".combat-regeneration__hit",
-  ".combat-lifecycle__hit",
   ".combat-semantic-pulse__hit",
   ".combat-lifecycle-ring__hit",
-  ".combat-respawn-wave__panel",
 ].join(", ");
+// A status lifecycle event has no arena look (the Rune Zones on the body show
+// it), so it has no transient family here.
 const TRANSIENT_EVENT_FAMILIES = Object.freeze([
   [
     ".combat-effect--activation[data-tooltip-owner]",
-    ".combat-impact__hit",
+    ACTIVATION_HIT_SELECTOR,
     "activation",
   ],
   [".combat-effect--net-health[data-tooltip-owner]", ".combat-net__hit", "impact"],
   [
     ".combat-effect--regeneration[data-tooltip-owner]",
     ".combat-regeneration__hit",
-    "event",
-  ],
-  [
-    ".combat-effect--status-lifecycle[data-tooltip-owner]",
-    ".combat-lifecycle__hit",
     "event",
   ],
 ]);
@@ -163,6 +171,8 @@ async function scientificSignature(page) {
 
 /** @param {import("@playwright/test").Page} page */
 async function openVisualFilters(page) {
+  // The Replay Viewer keeps Visual Filters in the rail's Visuals tab.
+  await page.locator("#replay-rail-tab-visuals").click();
   await page.locator("#visual-filters").evaluate((details) => {
     if (!(details instanceof HTMLDetailsElement)) {
       throw new TypeError("Visual Filters disclosure is unavailable.");
@@ -231,7 +241,17 @@ async function expectedPlanSignature(page, rawPresentation, disabledFilters = []
       const atoms = (event) =>
         Array.isArray(event.atomicEventIds) ? event.atomicEventIds : [event.eventId];
       const events = /** @type {Array<Record<string, any>>} */ (plan.events);
-      const layoutKeys = events
+      // The painter draws plan events, then the Last Seen and Focus Tally rows
+      // built from several events. A status lifecycle event has no look of its
+      // own (the Rune Zones on the body show it), so it paints nothing.
+      const derived = /** @type {Array<Record<string, any>>} */ (
+        Array.isArray(plan.derivedEvents) ? plan.derivedEvents : []
+      ).filter(({ kind }) => kind === "last_seen" || kind === "focus_tally");
+      const painted = [...events, ...derived].filter(
+        ({ spatial, kind }) =>
+          spatial && kind !== "unknown" && kind !== "status_lifecycle",
+      );
+      const layoutKeys = painted
         .flatMap((event) =>
           Object.entries(event)
             .filter(
@@ -249,7 +269,7 @@ async function expectedPlanSignature(page, rawPresentation, disabledFilters = []
         fingerprint: plan.fingerprint,
         orderedIds: rows.map(({ id }) => id),
         plannedIds: events.flatMap(atoms),
-        spatialIds: events.filter(({ spatial }) => spatial).flatMap(atoms),
+        spatialIds: painted.flatMap(atoms),
         layoutKeys,
       };
     },
@@ -310,8 +330,12 @@ async function staticDomSignature(page) {
       ]
         .map((element) => {
           const route = element.matches(".combat-route-effect");
-          const path = route ? element.querySelector(".combat-route__path") : null;
+          // An Ultimate route draws its band with one hit line; a Basic route
+          // group stays empty (its look sits on the target).
+          const hit = route ? element.querySelector(".ult-hit") : null;
+          const point = (/** @type {string} */ name) => hit?.getAttribute(name) ?? "";
           return {
+            component: route ? element.getAttribute("data-component") : null,
             key: element.getAttribute("data-layout-key"),
             className: element.getAttribute("class"),
             route,
@@ -319,7 +343,11 @@ async function staticDomSignature(page) {
             collisionFree: element.getAttribute("data-layout-collision-free"),
             disposition: element.getAttribute("data-layout-disposition"),
             lane: route ? numberAttribute(element, "data-lane") : null,
-            path: path?.getAttribute("d") ?? null,
+            path:
+              hit === null
+                ? null
+                : `M ${point("x1")} ${point("y1")} L ${point("x2")} ${point("y2")}`,
+            childCount: route ? element.childElementCount : null,
             bridges: [...element.querySelectorAll(".combat-route__bridge-backplate")]
               .map((bridge) => ({
                 ariaHidden: bridge.getAttribute("aria-hidden"),
@@ -398,7 +426,11 @@ async function staticDomSignature(page) {
             JSON.parse(leader.getAttribute("data-leader-points") ?? "[]")
           ),
         })),
-        routeHitCount: routeRoot.querySelectorAll(".combat-route__hit").length,
+        routeHitCount: routeRoot.querySelectorAll(".ult-hit").length,
+        // A leader line belongs to a placed Basic landing or a status pulse.
+        leaderOwnerCount: eventRoot.querySelectorAll(
+          '[data-basic-part="landing"][data-layout-key], .combat-semantic-pulse',
+        ).length,
       };
     },
     {
@@ -513,11 +545,7 @@ async function spatialContractEvidence(page) {
           ];
         }
         if (element.matches(".combat-effect--net-health")) {
-          return [
-            ...element.querySelectorAll(
-              ".combat-net__hit, .combat-net__recipient, .combat-net__label",
-            ),
-          ];
+          return [...element.querySelectorAll(".combat-net__hit, .combat-number")];
         }
         return [element];
       };
@@ -529,7 +557,7 @@ async function spatialContractEvidence(page) {
       const layoutFootprints = layoutElements.map((element) => {
         const texts = [
           ...element.querySelectorAll(
-            ".combat-net__recipient, .combat-net__label, .combat-route__ownership-label",
+            "text.combat-number, .combat-route__ownership-label",
           ),
         ].map((text) => ({
           className: text.getAttribute("class"),
@@ -662,18 +690,25 @@ async function spatialContractEvidence(page) {
                 : null,
           };
         });
-      const routeGeometry = [...routeRoot.querySelectorAll(".combat-route-effect")].map(
-        (route) => ({
-          eventId: route.getAttribute("data-event-id"),
-          visiblePaths: [...route.querySelectorAll(".combat-route__path")].map((path) =>
-            rectangle(path.getBoundingClientRect()),
-          ),
-          markers: [...route.querySelectorAll(".combat-route__arrow")].map((marker) =>
-            rectangle(marker.getBoundingClientRect()),
-          ),
-        }),
-      );
+      // Only an Ultimate route draws on the route layer: its band's visible
+      // marks, beside one invisible hit line. A Basic route group is empty.
+      const routeGeometry = [
+        ...routeRoot.querySelectorAll(
+          '.combat-route-effect[data-component="ultimate"]',
+        ),
+      ].map((route) => ({
+        eventId: route.getAttribute("data-event-id"),
+        visiblePaths: [
+          ...route.querySelectorAll(".ult-band :is(path, line, circle):not(.ult-hit)"),
+        ].map((path) => rectangle(path.getBoundingClientRect())),
+        markers: [...route.querySelectorAll(".combat-route__arrow")].map((marker) =>
+          rectangle(marker.getBoundingClientRect()),
+        ),
+      }));
       return {
+        leaderOwnerCount: eventRoot.querySelectorAll(
+          '[data-basic-part="landing"][data-layout-key], .combat-semantic-pulse',
+        ).length,
         mapBounds: rectangle(map.getBoundingClientRect()),
         effects,
         routeOwners,
@@ -784,6 +819,8 @@ function expectSpatialContracts(evidence) {
   if (!finiteBounds(evidence.mapBounds)) {
     throw new Error("Static map client bounds are not finite.");
   }
+  // With every paint family on, this sample draws Ultimate routes.
+  expect(evidence.routeGeometry.length).toBeGreaterThan(0);
   for (const route of evidence.routeGeometry) {
     expect(
       route.visiblePaths.length,
@@ -793,8 +830,8 @@ function expectSpatialContracts(evidence) {
       assertContained(bounds, evidence.mapBounds, `${route.eventId} visible route`);
     }
   }
-  expect(evidence.leaders.length).toBeGreaterThan(0);
-  expect(evidence.connectorRootParentLayer).toBe("transient-route");
+  expect(evidence.leaders.length).toBe(evidence.leaderOwnerCount);
+  expect(evidence.connectorRootParentLayer).toBe("strike-band");
   expect(evidence.connectorBeforeRoutes).toBe(true);
   for (const leader of evidence.leaders) {
     expect(leader.ariaHidden, String(leader.eventId)).toBe("true");
@@ -889,12 +926,19 @@ function expectBoundedNonOverlap(signature) {
     }
   }
   const routes = signature.placements.filter(({ route }) => route);
+  const ultimateRoutes = routes.filter(({ component }) => component === "ultimate");
   expect(routes.length).toBeGreaterThan(0);
-  expect(signature.routeHitCount).toBe(routes.length);
+  expect(signature.routeHitCount).toBe(ultimateRoutes.length);
   for (const route of routes) {
     expect(route.lane).toBeGreaterThanOrEqual(0);
+    expect(["basic", "ultimate"]).toContain(route.component);
+    if (route.component === "basic") {
+      expect(route.path).toBeNull();
+      expect(route.childCount).toBe(0);
+      continue;
+    }
     expect(route.path).toMatch(/^M /u);
-    expect(route.path).not.toMatch(/NaN|Infinity/u);
+    expect(route.path).not.toMatch(/NaN|Infinity|  /u);
     for (const bridge of route.bridges) {
       expect(bridge).toMatchObject({ ariaHidden: "true" });
       expect(bridge.withLayoutKey).toMatch(/^\["event",/u);
@@ -903,7 +947,7 @@ function expectBoundedNonOverlap(signature) {
       expect(Number.isFinite(bridge.cy)).toBe(true);
     }
   }
-  expect(signature.leaders.length).toBeGreaterThan(0);
+  expect(signature.leaders.length).toBe(signature.leaderOwnerCount);
   for (const leader of signature.leaders) {
     expect(leader.ariaHidden).toBe("true");
     expect(leader.tagName).toBe("line");
@@ -942,6 +986,9 @@ async function expectTransientHoverHelp(page) {
     await expect(owner).not.toHaveAttribute("tabindex", /.+/u);
     await expect(owner).not.toHaveAttribute("aria-label", /.+/u);
   }
+  await expect(
+    page.locator(`${CHOREOGRAPHY_ROOT} .combat-effect--status-lifecycle`),
+  ).toHaveCount(0);
   for (const [ownerSelector, hitSelector, tooltipKind] of TRANSIENT_EVENT_FAMILIES) {
     const owner = page.locator(`${CHOREOGRAPHY_ROOT} ${ownerSelector}`).first();
     await expect(owner).toHaveCount(1);
@@ -949,9 +996,38 @@ async function expectTransientHoverHelp(page) {
     await expect(owner).toHaveAttribute("tabindex", "0");
     await expect(owner).toHaveAttribute("aria-label", /\S/u);
     await expect(owner).toHaveAttribute("aria-description", /\S/u);
-    const hit = owner.locator(hitSelector).first();
-    await expect(hit).toHaveCount(1);
-    await hit.hover();
+    await expect(owner.locator(hitSelector).first()).toHaveCount(1);
+    // Living bodies win hit testing and tooltip ranking, so hover a point of a
+    // hit surface of this family whose top element belongs to that effect and
+    // that lies over no body (a hit centred on a body is covered).
+    const point = await page.evaluate(
+      ([root, ownerSelectorText, hitSelectorText]) => {
+        for (const effect of document.querySelectorAll(
+          `${root} ${ownerSelectorText}`,
+        )) {
+          for (const element of effect.querySelectorAll(hitSelectorText)) {
+            const bounds = element.getBoundingClientRect();
+            for (let row = 1; row < 12; row += 1) {
+              for (let column = 1; column < 12; column += 1) {
+                const x = bounds.left + (bounds.width * column) / 12;
+                const y = bounds.top + (bounds.height * row) / 12;
+                const stack = document.elementsFromPoint(x, y);
+                if (
+                  stack[0]?.closest(".combat-effect") === effect &&
+                  !stack.some((node) => node.closest(".agent"))
+                ) {
+                  return { x, y };
+                }
+              }
+            }
+          }
+        }
+        return null;
+      },
+      [CHOREOGRAPHY_ROOT, ownerSelector, hitSelector],
+    );
+    expect(point, `${ownerSelector} has no reachable hit point`).not.toBeNull();
+    await page.mouse.move(Number(point?.x), Number(point?.y));
     await expect(page.locator("#visual-tooltip")).toBeVisible();
     await expect(page.locator("#visual-tooltip")).toHaveAttribute(
       "data-tooltip-kind",
@@ -974,7 +1050,7 @@ test("paused replay installs a complete deterministic static summary at both sup
   const apiRequests = captureApiRequests(page);
   await page.setViewportSize(MINIMUM_VIEWPORT);
   await page.goto(replay.url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "replay");
   await expect(page.locator("html")).toHaveAttribute("data-audience", "researcher");
   await expect(page.locator("html")).toHaveAttribute(
@@ -997,21 +1073,29 @@ test("paused replay installs a complete deterministic static summary at both sup
   await openVisualFilters(page);
   await expect(
     page.locator(`${FILTER_INPUT}[data-visual-filter-id="target_selection_visuals"]`),
-  ).not.toBeChecked();
+  ).toBeChecked({ checked: DEFAULT_VISUAL_FILTER_STATE.target_selection_visuals });
   await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
     "aria-pressed",
     "false",
   );
-  await expect(page.locator("#visual-filter-count")).toHaveText("11 enabled");
+  const defaultOn = REPLAY_FILTER_IDS.filter(
+    (id) => /** @type {Record<string, boolean>} */ (DEFAULT_VISUAL_FILTER_STATE)[id],
+  ).length;
+  await expect(page.locator("#visual-filter-count")).toHaveText(
+    `${defaultOn} Of ${REPLAY_FILTER_IDS.length + 1} On`,
+  );
   // This full-summary proof explicitly requests every paint family while
-  // preserving its initial no-ranges and no-target-selection contract.
-  for (const filterId of VISUAL_FILTER_IDS) {
-    if (filterId !== "target_selection_visuals") {
-      await setFilter(page, apiRequests, filterId, true);
-    }
+  // keeping ranges and target selection off.
+  for (const filterId of REPLAY_FILTER_IDS) {
+    await setFilter(
+      page,
+      apiRequests,
+      filterId,
+      filterId !== "target_selection_visuals",
+    );
   }
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${VISUAL_FILTER_IDS.length - 1} enabled`,
+    `${REPLAY_FILTER_IDS.length - 1} Of ${REPLAY_FILTER_IDS.length + 1} On`,
   );
 
   /** @type {Awaited<ReturnType<typeof staticDomSignature>> | null} */
@@ -1081,7 +1165,7 @@ test("paused replay installs a complete deterministic static summary at both sup
   expect(apiRequests.slice(allOffMark), "Disable All caused an API request").toEqual(
     [],
   );
-  await expect(page.locator(FILTER_INPUT)).toHaveCount(VISUAL_FILTER_IDS.length);
+  await expect(page.locator(FILTER_INPUT)).toHaveCount(REPLAY_FILTER_IDS.length);
   await expect(page.locator(`${FILTER_INPUT}:checked`)).toHaveCount(0);
   await expect(page.locator("#enable-all-visual-filters-button")).toBeEnabled();
   await expect(page.locator("#disable-all-visual-filters-button")).toBeDisabled();
@@ -1117,7 +1201,7 @@ test("paused replay installs a complete deterministic static summary at both sup
     "Enable All range request count",
   ).toEqual([{ method: "POST", path: "/api/replay/command" }]);
   await expect(page.locator(`${FILTER_INPUT}:checked`)).toHaveCount(
-    VISUAL_FILTER_IDS.length,
+    REPLAY_FILTER_IDS.length,
   );
   await expect(page.locator("#enable-all-visual-filters-button")).toBeDisabled();
   await expect(page.locator("#disable-all-visual-filters-button")).toBeEnabled();
@@ -1131,7 +1215,7 @@ test("paused replay installs a complete deterministic static summary at both sup
   expect(
     restored.rootState.every(
       ({ paintKey }) =>
-        paintKey === `visual-filters-v3:${"1".repeat(VISUAL_FILTER_IDS.length)}`,
+        paintKey === `visual-filters-v4:${"1".repeat(VISUAL_FILTER_IDS.length)}`,
     ),
   ).toBe(true);
   const enabledIdempotencyMark = apiRequests.length;
@@ -1147,7 +1231,7 @@ test("paused replay installs a complete deterministic static summary at both sup
     "disabled Enable All caused an API request",
   ).toEqual([]);
   await expect(page.locator(`${FILTER_INPUT}:checked`)).toHaveCount(
-    VISUAL_FILTER_IDS.length,
+    REPLAY_FILTER_IDS.length,
   );
   expect(browserErrors).toEqual([]);
 });

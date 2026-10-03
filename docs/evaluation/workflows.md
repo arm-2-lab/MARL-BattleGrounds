@@ -387,9 +387,11 @@ Open a selected replay with its printed path:
 .venv/bin/python scripts/dev/replay_viewer.py --replay PATH_TO_REPLAY
 ```
 
-The Viewer reads saved evidence; it does not run the policy again. **Up to Current
-Tick** analyzes the selected prefix and **Entire Episode** analyzes the recorded
-endpoint, which may itself be incomplete. CSV exports are numeric measurements.
+The Viewer reads saved evidence; it does not run the policy again. Its metrics
+live in the **Metrics** tab of the right-hand rail. The Scope switch reads **Up
+To Tick N** (Up to Current Tick), which analyzes the selected prefix, or **Whole
+Game** (Entire Episode), which analyzes the recorded endpoint, which may itself
+be incomplete. CSV exports are numeric measurements.
 **Episode Details** exports context/configuration/completion/runtime metadata,
 without trajectory arrays. Replay export and full metric collection are separate.
 
@@ -419,10 +421,13 @@ Replay format versions and analysis schema versions are separate.
 
 The [metric specification](metric_specification.md) owns formulas, applicability,
 zero/blank rules and display mappings. The [column dictionary](metric_columns.csv)
-provides exact CSV names and positions. In the Viewer, choose a topic and its
-**Totals** or **By Recipient** view. **Find a Measurement** accepts plain words,
-partial words, agent labels and exact CSV names. Arrow keys select a result,
-Enter opens it and Escape closes the list. Hover/focus help names its CSV column,
+provides exact CSV names and positions. In the Viewer's **Metrics** tab, choose
+a topic and its **Totals** or **By Recipient** view. **Find A Measurement**
+accepts plain words, partial words, agent labels and exact CSV names. Arrow keys
+select a result, Enter opens it and Escape closes the list. While the search box
+has focus these keys belong to it; elsewhere the Viewer's keys follow its one
+command table (press **?** for the list). In Agent POV the Metrics tab still
+shows the full recorded game, under a **Full Record** chip. Hover/focus help names its CSV column,
 who acted, who was affected, numerator, denominator and blank-value rule.
 
 Tables hide structurally impossible rows using the recorded active roster;

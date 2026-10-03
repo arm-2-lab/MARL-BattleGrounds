@@ -1,6 +1,9 @@
 /**
  * @file Check captured team names, scores and outcomes, including missing summaries
- * and wrong-episode facts.
+ * and wrong-episode facts, and the score strip's numbers: the tick line ("Tick N
+ * of L", or "Tick N" with no episode limit), the points to win and each team's
+ * numeric score (TDM only). The strip's DOM and beat holds are checked in
+ * hud.test.js.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -188,5 +191,38 @@ test("recorded spawn sides change layout without swapping team scores or results
   await assert.rejects(
     () => normalizeAuthorizedPresentationFrameV1(raw),
     /display sides/u,
+  );
+});
+
+test("match summary gives the tick line and numeric scores for the score strip", async () => {
+  const raw = structuredClone(fixture.presentations.replay_oracle);
+  raw.match_summary.task_mode = 1;
+  raw.match_summary.score_threshold = 20;
+  raw.match_summary.scores = [7, 3];
+  raw.match_summary.outcome = "in_progress";
+  const view = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(raw));
+  assert.ok(view);
+  assert.equal(view.threshold, 20);
+  assert.deepEqual(
+    view.teams.map((/** @type {Record<string, any>} */ team) => team.scoreValue),
+    [7, 3],
+  );
+  assert.deepEqual(view.tick, {
+    current: raw.match_summary.simulator_step_count,
+    limit: raw.match_summary.episode_limit,
+    text: `Tick ${raw.match_summary.simulator_step_count} of ${raw.match_summary.episode_limit}`,
+  });
+  delete raw.match_summary.episode_limit;
+  const open = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(raw));
+  assert.equal(open?.tick?.text, `Tick ${raw.match_summary.simulator_step_count}`);
+  const diagnostic = structuredClone(fixture.presentations.replay_oracle);
+  const plain = matchSummaryView(
+    await normalizeAuthorizedPresentationFrameV1(diagnostic),
+  );
+  assert.equal(plain?.threshold, null);
+  assert.ok(
+    plain?.teams.every(
+      (/** @type {Record<string, any>} */ team) => team.scoreValue === null,
+    ),
   );
 });

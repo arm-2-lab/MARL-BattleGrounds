@@ -1,8 +1,11 @@
 /**
  * @file Format numbers for browser labels without changing recorded measurements.
- * Use formatDisplayNumber for ordinary values and formatCompactDisplayNumber
- * for small battlefield labels. These pure helpers return text; callers retain
- * the exact value for exports, tooltips and accessible labels.
+ * Use formatDisplayNumber for ordinary values, formatCompactDisplayNumber
+ * for small battlefield labels and formatLifeNumber for a champion's life
+ * (the HUD, the scorebug portraits and the Champion Card share it, with
+ * LOW_LIFE_FRACTION, the share of life at which life turns to its warning
+ * color). These pure helpers return text; callers retain the exact value for
+ * exports, tooltips and accessible labels.
  */
 /**
  * Format a finite number with zero to two decimal places.
@@ -82,4 +85,28 @@ export function formatCompactDisplayNumber(value) {
   return `${formatDisplayNumber(scaled, {
     maximumFractionDigits: precision,
   })}${suffix}`;
+}
+
+/** Life at or below this share of the maximum is drawn in its low-life warning color. */
+export const LOW_LIFE_FRACTION = 0.3;
+
+/**
+ * Format a life value the way every life number is printed.
+ *
+ * value is life in hit points. From 10 up it is a whole number rounded down
+ * (199.6 reads "199", so a hurt champion never reads full). Below 10 it has
+ * one decimal rounded up (0.04 reads "0.1", so a living champion never reads
+ * "0.0"); exactly 0 reads "0". Return null for a missing, negative or
+ * non-finite value. Pure.
+ *
+ * @param {unknown} value
+ * @returns {string | null}
+ * @example formatLifeNumber(153.4) // "153"; formatLifeNumber(1.88) // "1.9"
+ */
+export function formatLifeNumber(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  if (value === 0) return "0";
+  if (value >= 10) return String(Math.floor(value));
+  const tenths = Math.ceil(value * 10 - 1e-9) / 10;
+  return tenths >= 10 ? "10" : tenths.toFixed(1);
 }

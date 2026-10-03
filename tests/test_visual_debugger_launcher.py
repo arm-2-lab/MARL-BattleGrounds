@@ -437,6 +437,11 @@ def test_browser_replay_loads_resolves_then_injects_exact_server_binding(
                 "server should not request episode details in this test"
             )
 
+        def timeline_marks(self) -> bytes:
+            raise AssertionError(
+                "server should not request timeline marks in this test"
+            )
+
         def apply_command(self, request: object) -> object:
             del request
             raise AssertionError("server should not apply a command in this test")
@@ -975,6 +980,11 @@ def test_sample_replay_injects_verified_bundle_without_reopening_source_path(
         def episode_details(self) -> tuple[bytes, str]:
             raise AssertionError(
                 "server should not request episode details in this test"
+            )
+
+        def timeline_marks(self) -> bytes:
+            raise AssertionError(
+                "server should not request timeline marks in this test"
             )
 
         def apply_command(self, request: object) -> object:

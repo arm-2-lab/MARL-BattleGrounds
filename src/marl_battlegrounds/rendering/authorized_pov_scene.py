@@ -109,6 +109,12 @@ from marl_battlegrounds.rendering.vocabulary import (
     status_token_id_from_catalog_status_id,
 )
 
+# Built once: constructing a TypeAdapter rebuilds its whole validation schema
+# (7 to 18 ms), which per call made every Agent POV request much slower.
+_AUTHORIZED_SCENE_ADAPTER: TypeAdapter[AuthorizedBattlefieldSceneV1] = TypeAdapter(
+    AuthorizedBattlefieldSceneV1
+)
+
 type NoSharedObsPovSourceV1 = (
     ActorPovProjectionIndexV1
     | ActorPovReplayContent
@@ -168,7 +174,7 @@ def _validate_pov_scene_envelope(
     """
     if type(scene) is not AuthorizedBattlefieldSceneV1:
         raise ValueError("scene must be the exact authorized neutral scene.")
-    validated_scene = TypeAdapter(AuthorizedBattlefieldSceneV1).validate_json(
+    validated_scene = _AUTHORIZED_SCENE_ADAPTER.validate_json(
         dumps(
             asdict(scene),
             allow_nan=False,

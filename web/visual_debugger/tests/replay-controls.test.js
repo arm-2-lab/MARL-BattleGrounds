@@ -1,6 +1,9 @@
 /**
- * @file Check replay cursor/command validation, keyboard navigation, playback state
- * and selection behavior.
+ * @file Check replay cursor/command validation, keyboard navigation (one-tick arrows,
+ * ten-tick Shift + arrows, N for one tick), playback state and its presentation
+ * intent (with the replay_step stepGlide field), selection behavior, and the dock's
+ * plain-words status line ("Paused · Settled", with the exact transport state kept in
+ * data-transport-state).
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -129,8 +132,6 @@ function controlElements(
     rateSelect: new FakeElement(),
     status: new FakeElement(),
     tickForFrameIndex,
-    incomingTransitionForFrameIndex: (/** @type {number} */ frameIndex) =>
-      frameIndex === 0 ? null : `episode:test:transition:${frameIndex - 1}`,
   };
 }
 
@@ -264,8 +265,14 @@ test("keyboard intent is bounded to unmodified replay navigation and edge-trigge
   assert.equal(replayKeyboardIntent({ key: "End" }), null);
   assert.equal(replayKeyboardIntent({ key: "ArrowLeft" }), "previous");
   assert.equal(replayKeyboardIntent({ key: "ArrowRight" }), "next");
-  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", shiftKey: true }), null);
-  assert.equal(replayKeyboardIntent({ key: "ArrowRight", shiftKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", repeat: true }), "previous");
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", shiftKey: true }), "back_ten");
+  assert.equal(
+    replayKeyboardIntent({ key: "ArrowRight", shiftKey: true }),
+    "forward_ten",
+  );
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", altKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "ArrowRight", metaKey: true }), null);
   assert.equal(replayKeyboardIntent({ key: " ", repeat: false }), "toggle");
   assert.equal(replayKeyboardIntent({ key: " ", repeat: true }), null);
   assert.equal(
@@ -276,7 +283,14 @@ test("keyboard intent is bounded to unmodified replay navigation and edge-trigge
   assert.equal(replayKeyboardIntent({ key: "Escape", shiftKey: true }), null);
   assert.equal(replayKeyboardIntent({ key: "Spacebar", repeat: false }), null);
   assert.equal(replayKeyboardIntent({ key: "ArrowRight", ctrlKey: true }), null);
-  assert.equal(replayKeyboardIntent({ key: "n" }), null);
+  assert.equal(replayKeyboardIntent({ key: "n" }), "one_tick");
+  assert.equal(replayKeyboardIntent({ key: "N", shiftKey: true }), "one_tick");
+  assert.equal(replayKeyboardIntent({ key: "n", repeat: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "n", ctrlKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: " ", shiftKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "v" }), null);
+  assert.equal(replayKeyboardIntent({ key: "b" }), null);
+  assert.equal(replayKeyboardIntent({ key: "f" }), null);
 });
 
 test("replay-owned Escape clears selection once without moving the replay cursor", () => {
@@ -457,7 +471,9 @@ test("timeline binding previews slider input without a request and commits once"
     elements.rateSelect.dispatch("change");
     assert.equal(controller.snapshot().playbackRate, 1.75);
     assert.deepEqual(commands, [replaySeekCommand(2), replaySeekCommand(2)]);
-    assert.match(elements.status.textContent, /1\.75× · SETTLED$/u);
+    assert.equal(elements.rateSelect.value, "1.75");
+    assert.equal(elements.status.textContent, "Paused · Settled");
+    assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
 
     elements.keyboardTarget.dispatch("keydown", {
       key: " ",
@@ -465,25 +481,38 @@ test("timeline binding previews slider input without a request and commits once"
       target: elements.playPauseButton,
     });
     assert.equal(controller.snapshot().playing, false);
-    elements.keyboardTarget.dispatch("keydown", {
+    // Shift + Arrow Right jumps ten ticks (clamped to the last frame) and snaps.
+    const shiftedArrow = elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       shiftKey: true,
       target: elements.root,
     });
-    assert.equal(commands.length, 2);
+    assert.equal(shiftedArrow.defaultPrevented, true);
+    await flushMicrotasks();
+    assert.equal(commands.length, 3);
+    assert.deepEqual(commands.at(-1), replaySeekCommand(3));
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, null);
+    elements.keyboardTarget.dispatch("keydown", {
+      key: "ArrowLeft",
+      target: elements.root,
+    });
+    await flushMicrotasks();
+    assert.deepEqual(commands.at(-1), replaySeekCommand(2));
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, "backward");
     elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       target: elements.root,
     });
     await flushMicrotasks();
     assert.deepEqual(commands.at(-1), replaySeekCommand(3));
-    assert.equal(commands.length, 3);
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, "forward");
+    assert.equal(commands.length, 5);
     elements.root.hidden = true;
     const hiddenRootArrow = elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(hiddenRootArrow.defaultPrevented, false);
     elements.root.hidden = false;
     elements.keyboardEnabled = () => false;
@@ -491,7 +520,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(fencedArrow.defaultPrevented, true);
     elements.keyboardEnabled = () => true;
     elements.keyboardAuthorityInstalled = () => false;
@@ -499,7 +528,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(unownedArrow.defaultPrevented, false);
     elements.keyboardAuthorityInstalled = () => true;
     controller.setHidden(true);
@@ -507,7 +536,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(hiddenControllerArrow.defaultPrevented, false);
     controller.setHidden(false);
     controller.setAuthorityPending("disconnect");
@@ -515,7 +544,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(pendingArrow.defaultPrevented, false);
   } finally {
     unbind();
@@ -549,10 +578,8 @@ test("timeline rendering publishes bounded controls and accessible cursor text",
   assert.equal(elements.slider.getAttribute("aria-valuetext"), "Tick 2 of 3");
   assert.equal(elements.position.textContent, "Tick 2 / 3");
   assert.equal(elements.rateSelect.value, "1");
-  assert.equal(
-    elements.status.textContent,
-    "Frame 2 / 3 · Tick 2 / 3 · Incoming Transition episode:test:transition:1 · 1.00× · SETTLED",
-  );
+  assert.equal(elements.status.textContent, "Paused · Settled");
+  assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
   assert.equal(elements.backTenButton.disabled, false);
   assert.equal(elements.previousButton.disabled, false);
   assert.equal(elements.nextButton.disabled, false);
@@ -589,10 +616,8 @@ test("timeline labels use nonzero simulator ticks while slider seeks frame indic
   assert.equal(elements.slider.max, "3");
   assert.equal(elements.slider.getAttribute("aria-valuetext"), "Tick 42 of 43");
   assert.equal(elements.position.textContent, "Tick 42 / 43");
-  assert.equal(
-    elements.status.textContent,
-    "Frame 2 / 3 · Tick 42 / 43 · Incoming Transition episode:test:transition:1 · 1.00× · SETTLED",
-  );
+  assert.equal(elements.status.textContent, "Paused · Settled");
+  assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
   assert.equal(replayTimelineSimulatorStep(timeline, 2), 42);
   assert.equal(replayTimelineSimulatorStep(timeline, 4), null);
   assert.equal(
@@ -959,6 +984,7 @@ test("Play at frame zero advances privately, animates the successor, then settle
     generation: 2,
     renderPolicy: "replay_animated",
     restartAnimated: false,
+    stepGlide: null,
   });
   presentation.resolve();
   await flushMicrotasks();

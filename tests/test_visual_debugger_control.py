@@ -180,6 +180,7 @@ def test_every_debugger_structure_has_the_exact_audited_field_schema() -> None:
             "provenance",
             "scenario_specification",
             "packaged_map",
+            "spawn_banks_exchanged",
         ),
         DebuggerSession: (
             "scenario",
@@ -214,6 +215,9 @@ def test_every_debugger_structure_has_the_exact_audited_field_schema() -> None:
             "borrow_systems",
             "manual_slots",
             "slot_labels",
+            "recent_scores",
+            "champion_takedowns",
+            "match_moments",
         ),
     }
 

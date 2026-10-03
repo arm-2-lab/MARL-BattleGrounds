@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from marl_battlegrounds.core.types import EnvConfig
     from marl_battlegrounds.environment import EpisodeInfo
     from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
+    from marl_battlegrounds.evaluation.policy_execution import Policy, System
     from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
     from marl_battlegrounds.evaluation.replay_capture import ReplayPackets
     from marl_battlegrounds.evaluation.replay_recording import ReplayCollector
@@ -598,6 +599,8 @@ class RunWriter:
         ] = {}
         self._pending_replays: dict[str, dict[str, object]] = {}
         self._recording_provenance: dict[str, object] | None = None
+        # Live Team A/B methods that name replay controllers; in memory only.
+        self._replay_methods: tuple[Policy | System, Policy | System] | None = None
         self._assignment_open: dict[tuple[int, int], list[object]] = {}
         self._source_cache: list[tuple[object, tuple[object, ...], str]] = []
         self._pending_numerical_starts: set[int] = set()
@@ -1019,6 +1022,7 @@ class RunWriter:
         key, identity, systems = self._prepare_pass(
             phase, pass_id, policies, checkpoint_id, details
         )
+        self._replay_methods = None
         if self._checkpoint_pass is not None and key != self._checkpoint_pass:
             raise ValueError(
                 "recording checkpoints require one dedicated training pass"
@@ -1834,6 +1838,29 @@ class RunWriter:
             ),
         }
 
+    def _name_replay_controllers(
+        self, team_a: Policy | System, team_b: Policy | System
+    ) -> None:
+        """Name each champion's controller in this pass's later replays.
+
+        Parameters
+        ----------
+        team_a, team_b : Policy or System
+            The live methods that play Team A and Team B in the current pass.
+            Each new replay context then records one controller name per used
+            champion slot (``controller_names_by_slot``), so a ``team(...)``
+            of several methods shows which member plays which champion.
+
+        Notes
+        -----
+        evaluate calls this after the pass starts. The methods are kept in
+        memory only: they never enter run_details.json, the pass identity or
+        any digest, so resume and saved tables are unchanged. Starting another
+        pass forgets them; a pass without them records team names only.
+        Nothing is called on the methods here.
+        """
+        self._replay_methods = (team_a, team_b)
+
     def _replay_context(
         self, packet: ReplayPackets
     ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
@@ -1856,11 +1883,14 @@ class RunWriter:
 
         provenance holds any discovery already made in this preflight. Return
         the context, runtime and discovery for the later application boundary.
-        No live collector, spool or recorded metadata is created here.
+        No live collector, spool or recorded metadata is created here. When
+        evaluate supplied the live methods (_name_replay_controllers), the
+        context also records each champion slot's controller name.
         """
         from marl_battlegrounds.evaluation.recording_context import (
             build_recording_context,
             capture_recording_provenance,
+            controller_names_by_slot,
         )
 
         entry = self._details["passes"][self._pass_key]
@@ -1890,6 +1920,9 @@ class RunWriter:
                 "system_ids": episode.get("system_ids", entry["system_ids"]),
                 "systems": self._details["systems"],
             },
+            slot_controller_names=None
+            if self._replay_methods is None
+            else controller_names_by_slot(*self._replay_methods, packet.config),
         )
         return context, runtime, provenance
 

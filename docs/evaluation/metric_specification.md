@@ -596,6 +596,10 @@ Agent 8 give `0.5`, or `50%`. The help names Team A or Team B explicitly.
 **Blank When** explains when no number
 can be given. **CSV Column** gives the exact column to use in pandas. Fractions
 remain decimals in the viewer and CSV: `0.4` means `40%`.
+In the Replay Viewer these rows live in the **Metrics** tab. Their help is
+always available; the **Symbol Explanations** switch only turns off the tips
+on arena and panel symbols, never the measurement help. In Agent POV the
+Metrics tab still shows the full recorded game, under a **Full Record** chip.
 
 Every tooltip starts with a short definition for that row. For example:
 "How many times this agent used its Basic ability." Counting rules and brief

@@ -12,6 +12,12 @@ transition ticks unless a field states otherwise. Scenes from recordings that
 record the Team Deathmatch Red Zone rule carry AuthorizedMapV2, whose
 AuthorizedRedZoneV1 row holds each team's exact float32 strip;
 build_authorized_map_v2 builds it for the Oracle and Agent POV scenes alike.
+Each incoming agent_died row carries home_fall (the death scored double);
+``visual_batch_home_fall_slots_v1`` feeds the shared rule in
+evaluation.events, and an Agent POV summary carries the flag only for falls
+that audience saw. A live Agent POV scene may carry AuthorizedTeamSightV1,
+the merged floor the viewing team sees, which the BattleClient's Night Veil
+paints; the live builder computes it, and every other scene leaves it None.
 Class docstrings also feed Pydantic schema descriptions; the compact browser
 schema strips that prose.
 """
@@ -28,6 +34,7 @@ from typing import Annotated, ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_core import PydanticSerializationError
 
+from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
 from marl_battlegrounds.evaluation.models import (
     FLOAT32_SMALLEST_NORMAL,
     EvaluationEpisodeContext,
@@ -89,6 +96,12 @@ from marl_battlegrounds.rendering.scene import (
     VisualEventV2,
 )
 from marl_battlegrounds.rendering.vocabulary import CATALOG_STATUS_ID_BY_CHANNEL
+
+# Built once: constructing a TypeAdapter rebuilds its whole validation schema
+# (7 to 18 ms), which per call made every Agent POV request much slower.
+_BATTLEFIELD_SCENE_ADAPTER: TypeAdapter[BattlefieldSceneV2] = TypeAdapter(
+    BattlefieldSceneV2
+)
 
 AUTHORIZED_PRESENTATION_SCHEMA_VERSION = 1
 _STRICT_WIRE_DATACLASS_CONFIG = ConfigDict(
@@ -2459,6 +2472,94 @@ class AuthorizedSpawnPadV1:
             raise ValueError("inactive spawn-pad rows cannot retain spawn shield.")
 
 
+def _require_point_runs(
+    runs: tuple[tuple[Point2D, ...], ...], *, name: str, minimum: int
+) -> None:
+    """Require a tuple of point tuples, each with at least ``minimum`` points.
+
+    Parameters
+    ----------
+    runs : tuple[tuple[Point2D, ...], ...]
+        Rings or polylines; every point is an (x, y) tuple of finite floats.
+    name : str
+        Field label used in validation errors.
+    minimum : int
+        Fewest points one run may hold (3 for a ring, 2 for a polyline).
+
+    Raises
+    ------
+    ValueError
+        A container is not a tuple, a run is too short, or a point is invalid.
+    """
+    if type(runs) is not tuple:
+        raise ValueError(f"{name} must be a tuple of point tuples.")
+    for run in runs:
+        if type(run) is not tuple or len(run) < minimum:
+            raise ValueError(f"{name} runs need at least {minimum} points each.")
+        for point in run:
+            _require_point(point, name=name)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AuthorizedTeamSightV1:
+    """Store the merged floor a team can see now, for the Agent POV Night Veil.
+
+    The host computes it (``_battle_client.live_presentation``) from the POV
+    scene alone: each living sensor's place and sight reach
+    (``observation_radius``) and the map's stones, with rays stopped by stones
+    and the floor edge, as Core's line of sight is. Stones block sight; other
+    champions do not. The browser only paints it, so line of sight is never
+    rebuilt there (amendment A17). Live Agent POV frames carry it; Oracle View
+    and replay scenes carry None and the browser keeps its reach-circle veil.
+    It names no champion and holds no enemy position.
+
+    All constructor fields are required keyword arguments; instances are frozen.
+
+    Attributes
+    ----------
+    lit_rings : tuple[tuple[Point2D, ...], ...]
+        Closed boundary rings of the lit floor, in world units (y up), each
+        with 3 or more points and its last point joined to its first. Outer
+        rings and the rings of dark holes inside them are mixed; an even-odd
+        fill of the floor rectangle plus every ring paints exactly the unseen
+        floor. Empty when no sensor is alive.
+    own_edges : tuple[tuple[Point2D, ...], ...]
+        Polylines (2 or more points) of the recipient's sight-reach circle that
+        lie outside every teammate's lit shape (the solid Reach Edge).
+    allied_edges : tuple[tuple[Point2D, ...], ...]
+        The same for the other sensors (the dashed Reach Edges).
+
+    Raises
+    ------
+    ValueError
+        A container, run length or point is invalid.
+    """
+
+    __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
+    """Strict Pydantic wire settings: forbid extra fields, nonfinite numbers, and
+    coercion."""
+
+    lit_rings: tuple[tuple[Point2D, ...], ...]
+    """Closed lit-floor boundary rings in world units (even-odd with the floor)."""
+    own_edges: tuple[tuple[Point2D, ...], ...]
+    """The recipient's Reach Edge polylines outside its teammates' shapes."""
+    allied_edges: tuple[tuple[Point2D, ...], ...]
+    """The other sensors' Reach Edge polylines outside their teammates' shapes."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+
+        Raises
+        ------
+        ValueError
+            A container is not a tuple, a ring has fewer than 3 points, a
+            polyline fewer than 2, or a point is not two finite floats.
+        """
+        _require_point_runs(self.lit_rings, name="lit_rings", minimum=3)
+        _require_point_runs(self.own_edges, name="own_edges", minimum=2)
+        _require_point_runs(self.allied_edges, name="allied_edges", minimum=2)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AuthorizedBattlefieldSceneV1:
     """Join authorized bodies, mechanics, and lifecycle facts into one scene.
@@ -2466,7 +2567,8 @@ class AuthorizedBattlefieldSceneV1:
     axes, source/assignee joins, shield bounds, and ordered team waves. Oracle
     static values match catalog values exactly or their exact float32 encoding;
     non-Oracle per-slot static overrides remain allowed.
-    All constructor fields are required keyword arguments; instances are frozen.
+    Constructor fields are keyword arguments, required except team_sight;
+    instances are frozen.
     Attributes
     ----------
     schema_version : Literal[1]
@@ -2489,6 +2591,9 @@ class AuthorizedBattlefieldSceneV1:
         Unique lifecycle pads ordered by team ID and team-local slot.
     respawn_waves : tuple[AuthorizedRespawnWaveV1, ...]
         Team A then Team B lifecycle countdowns.
+    team_sight : AuthorizedTeamSightV1 | None, default None
+        The merged floor the viewing team sees now, for the live Agent POV
+        Night Veil; None in Oracle View, in replays and in older producers.
     Raises
     ------
     ValueError
@@ -2516,6 +2621,8 @@ class AuthorizedBattlefieldSceneV1:
     """Unique lifecycle pads ordered by team ID and team-local slot."""
     respawn_waves: tuple[AuthorizedRespawnWaveV1, ...]
     """Team A then Team B lifecycle countdowns."""
+    team_sight: AuthorizedTeamSightV1 | None = None
+    """Live Agent POV merged team sight for the Night Veil, else None."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.
@@ -2571,6 +2678,10 @@ class AuthorizedBattlefieldSceneV1:
             name="respawn_waves",
             item_type=AuthorizedRespawnWaveV1,
         )
+        if self.team_sight is not None and type(self.team_sight) is not (
+            AuthorizedTeamSightV1
+        ):
+            raise ValueError("team_sight must be an exact AuthorizedTeamSightV1.")
         keys = tuple(row.presentation_key for row in self.agents)
         public_ids = tuple(row.public_agent_id for row in self.agents)
         if len(keys) != len(set(keys)) or len(public_ids) != len(set(public_ids)):
@@ -3980,15 +4091,25 @@ class ReplayIncomingOrdinaryMovementPhaseDisplacementEventV1(
 class ReplayIncomingAgentDiedEventV1(_ReplayIncomingEventBaseV1):
     """Record a death at the successor position.
     Require the canonical event kind and phase rank 90. Use the successor
-    recipient anchor.
-    All constructor fields are required keyword arguments; instances are frozen.
-    Inherited fields are documented on _ReplayIncomingEventBaseV1.
+    recipient anchor. The same row serves Oracle incoming summaries and Agent
+    POV visual events; an Agent POV summary contains it only when that
+    audience saw the fall, so its home_fall flag is never sent for an unseen
+    fall.
+    All constructor fields except home_fall are required keyword arguments;
+    instances are frozen. Inherited fields are documented on
+    _ReplayIncomingEventBaseV1.
     Attributes
     ----------
     event_kind : Literal['agent_died']
         Exact event discriminator for this concrete row type.
     recipient_anchor : ReplayIncomingAgentAnchorV1
         Authorized recipient identity and position at the event required phase.
+    home_fall : bool
+        True when this death started inside the victim's own team's Red Zone
+        and so gave the other team 2 points (decided by
+        evaluation.events.team_deathmatch_home_fall_slots_v1). Default False:
+        an ordinary fall, a non-Team-Deathmatch task, or a payload written
+        before this field existed.
     Raises
     ------
     ValueError
@@ -3999,6 +4120,8 @@ class ReplayIncomingAgentDiedEventV1(_ReplayIncomingEventBaseV1):
     """Exact event discriminator for this concrete row type."""
     recipient_anchor: ReplayIncomingAgentAnchorV1
     """Authorized recipient identity and position at the event required phase."""
+    home_fall: bool = False
+    """True when this death scored double because it fell in its own Red Zone."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.
@@ -4019,6 +4142,8 @@ class ReplayIncomingAgentDiedEventV1(_ReplayIncomingEventBaseV1):
             name="recipient_anchor",
             phase="successor",
         )
+        if type(self.home_fall) is not bool:
+            raise ValueError("home_fall must be an exact Python bool.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -6553,7 +6678,7 @@ def build_oracle_authorized_scene_v1(
     if type(scene) is not BattlefieldSceneV2:
         raise TypeError("scene must be the exact BattlefieldSceneV2 root.")
     _require_text(authority_session_id, name="authority_session_id")
-    scene_adapter = TypeAdapter(BattlefieldSceneV2)
+    scene_adapter = _BATTLEFIELD_SCENE_ADAPTER
     try:
         context_json = context.model_dump_json(warnings="error")
         scene_json = scene_adapter.dump_json(scene, warnings="error")
@@ -6772,6 +6897,7 @@ def _replay_incoming_event(
     *,
     trajectory_by_internal_slot: dict[int, VisualAgentPhaseTrajectoryV2],
     key_by_internal_slot: dict[int, str],
+    home_fall_global_slots: frozenset[int] = frozenset(),
 ) -> ReplayIncomingEventV1:
     """Project one canonical visual event without changing its recorded meaning.
     Replace slot references with authorized anchors and preserve event identity,
@@ -6786,6 +6912,10 @@ def _replay_incoming_event(
     key_by_internal_slot : dict[int, str]
         Lookup from configured-active internal slots to unique authorized opaque
         keys.
+    home_fall_global_slots : frozenset of int, optional
+        Global slots whose death this transition scored double (see
+        visual_batch_home_fall_slots_v1). Only an agent_died row reads it, to
+        set home_fall. Default empty: every death is an ordinary fall.
     Returns
     -------
     ReplayIncomingEventV1
@@ -7030,6 +7160,7 @@ def _replay_incoming_event(
                 event.recipient_anchor,
                 key_by_internal_slot=key_by_internal_slot,
             ),
+            home_fall=event.recipient_global_slot in home_fall_global_slots,
         )
     if type(event) is LethalDamageContributionEventV2:
         return ReplayIncomingLethalDamageContributionEventV1(
@@ -7477,6 +7608,67 @@ def _agent_pov_corpse_choreography_agents_by_slot(
     return agents_by_slot
 
 
+def visual_batch_home_fall_slots_v1(
+    context: EvaluationEpisodeContext,
+    incoming_events: VisualEventBatchV2,
+) -> frozenset[int]:
+    """Return the global slots whose death in one visual batch scored double.
+
+    The batch's transition-start trajectory anchors give the start positions
+    and its agent_died events give the new deaths. The rule itself belongs to
+    evaluation.events.team_deathmatch_home_fall_slots_v1; this helper only
+    feeds it.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        The recorded context of the same episode (roster, task mode, map and
+        Red Zone depth).
+    incoming_events : VisualEventBatchV2
+        Canonical recorded visual batch for one incoming transition.
+
+    Returns
+    -------
+    frozenset of int
+        Global slots 0-9 of home falls; empty when nobody died, the task is not
+        Team Deathmatch, or the Red Zone is off.
+
+    Raises
+    ------
+    ValueError
+        The batch and context name different episodes, or the batch lacks a
+        trajectory for a dead agent.
+
+    Notes
+    -----
+    Global data. Agent POV builders pass the result to
+    build_agent_pov_visual_incoming_summary_v1, which applies it only to falls
+    that audience saw. No I/O or simulator work.
+    """
+    if incoming_events.episode_id != context.identity.episode_id:
+        raise ValueError("home-fall batch and context must join one episode.")
+    dead_slots = {
+        event.recipient_global_slot
+        for event in incoming_events.events
+        if type(event) is AgentDiedEventV2
+    }
+    if not dead_slots:
+        return frozenset()
+    start_by_slot = {
+        row.global_slot: row.transition_start.position
+        for row in incoming_events.agent_phase_trajectories
+    }
+    if not dead_slots <= start_by_slot.keys():
+        raise ValueError("every visual death needs its start trajectory.")
+    return team_deathmatch_home_fall_slots_v1(
+        context,
+        tuple(
+            start_by_slot.get(slot, (0.0, 0.0)) for slot in range(len(context.roster))
+        ),
+        tuple(slot in dead_slots for slot in range(len(context.roster))),
+    )
+
+
 def build_agent_pov_visual_incoming_summary_v1(
     incoming_events: VisualEventBatchV2,
     *,
@@ -7490,6 +7682,7 @@ def build_agent_pov_visual_incoming_summary_v1(
     incoming_recipient_transition_id: str,
     incoming_start_recipient_frame_id: str,
     incoming_successor_recipient_frame_id: str,
+    home_fall_global_slots: frozenset[int] = frozenset(),
 ) -> AgentPovVisualIncomingSummaryV1:
     """Project only incoming visual facts allowed by adjacent Agent POV scenes.
     Validate recorded events and both recipient endpoints. Optional corpse
@@ -7522,6 +7715,11 @@ def build_agent_pov_visual_incoming_summary_v1(
         Recipient-local start frame ID at the incoming transition index.
     incoming_successor_recipient_frame_id : str
         Recipient-local successor frame ID at incoming index plus one.
+    home_fall_global_slots : frozenset of int, optional
+        Global slots whose death scored double, from
+        visual_batch_home_fall_slots_v1 on the same batch. It is read only for
+        agent_died rows that pass the seen-fall filter, so an unseen fall never
+        carries the flag. Default empty: every seen death reads as ordinary.
     Returns
     -------
     AgentPovVisualIncomingSummaryV1
@@ -7805,6 +8003,7 @@ def build_agent_pov_visual_incoming_summary_v1(
                 source_event,
                 trajectory_by_internal_slot=trajectory_by_internal_slot,
                 key_by_internal_slot=key_by_internal_slot,
+                home_fall_global_slots=home_fall_global_slots,
             )
         if type(projected_event) not in _AGENT_POV_VISUAL_INCOMING_EVENT_TYPES_V1:
             raise AssertionError("filtered Agent POV event used an excluded variant")
@@ -7846,6 +8045,7 @@ def _project_replay_incoming_summary_v1(
     incoming_events: VisualEventBatchV2,
     *,
     key_by_internal_slot: dict[int, str],
+    home_fall_global_slots: frozenset[int] = frozenset(),
 ) -> ReplayIncomingSummaryV1:
     """Project a complete validated Oracle event batch without raw slot fields.
     Require the key dictionary to cover exactly the configured-active axis with
@@ -7858,6 +8058,9 @@ def _project_replay_incoming_summary_v1(
     key_by_internal_slot : dict[int, str]
         Lookup from configured-active internal slots to unique authorized opaque
         keys.
+    home_fall_global_slots : frozenset of int, optional
+        Global slots whose death scored double; sets each agent_died row's
+        home_fall. Default empty.
     Returns
     -------
     ReplayIncomingSummaryV1
@@ -7903,6 +8106,7 @@ def _project_replay_incoming_summary_v1(
             event,
             trajectory_by_internal_slot=trajectory_by_internal_slot,
             key_by_internal_slot=key_by_internal_slot,
+            home_fall_global_slots=home_fall_global_slots,
         )
         for event in incoming_events.events
     )
@@ -7933,6 +8137,7 @@ def _incoming_summary(
     key_by_internal_slot: dict[int, str],
     expected_public_agent_id_by_global_slot: tuple[str, ...],
     expected_configured_active_by_global_slot: tuple[bool, ...],
+    home_fall_global_slots: frozenset[int] = frozenset(),
 ) -> ReplayIncomingSummaryV1 | None:
     """Join incoming history to the displayed Oracle scene.
     Frame zero requires no incoming batch and returns None. Later frames require
@@ -7952,6 +8157,8 @@ def _incoming_summary(
         Complete context roster public IDs, including inactive slots.
     expected_configured_active_by_global_slot : tuple[bool, ...]
         Complete context roster activity flags on the same slot axis.
+    home_fall_global_slots : frozenset of int, optional
+        Global slots whose incoming death scored double; default empty.
     Returns
     -------
     ReplayIncomingSummaryV1 or None
@@ -7990,6 +8197,7 @@ def _incoming_summary(
     return _project_replay_incoming_summary_v1(
         incoming_events,
         key_by_internal_slot=key_by_internal_slot,
+        home_fall_global_slots=home_fall_global_slots,
     )
 
 
@@ -8133,9 +8341,10 @@ def build_replay_oracle_presentation_parts_v1(
     """Build current Oracle scene, incoming history, and selected outgoing action.
     Consume already validated recorded roots from one episode. Remap canonical
     incoming events without changing atomic meanings; their successor positions
-    must join scene. No successor scene is accepted, so outgoing anchors cannot
-    use future positions. This pure host projection does not perform I/O or
-    simulator work.
+    must join scene. Each incoming agent_died row carries home_fall from
+    visual_batch_home_fall_slots_v1. No successor scene is accepted, so outgoing
+    anchors cannot use future positions. This pure host projection does not
+    perform I/O or simulator work.
     Parameters
     ----------
     context : EvaluationEpisodeContext
@@ -8198,6 +8407,11 @@ def build_replay_oracle_presentation_parts_v1(
             scene,
             incoming_events,
             key_by_internal_slot=key_by_internal_slot,
+            home_fall_global_slots=(
+                frozenset()
+                if incoming_events is None
+                else visual_batch_home_fall_slots_v1(context, incoming_events)
+            ),
             expected_public_agent_id_by_global_slot=tuple(
                 row.public_agent_id for row in context.roster
             ),
@@ -8300,4 +8514,5 @@ __all__ = [
     "build_oracle_authorized_scene_v1",
     "build_replay_oracle_presentation_parts_v1",
     "oracle_presentation_key_v1",
+    "visual_batch_home_fall_slots_v1",
 ]

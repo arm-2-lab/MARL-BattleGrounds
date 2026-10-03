@@ -2107,6 +2107,9 @@ def test_exit_waits_for_durable_save_and_retry_before_shutdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, recorder = _recording_service(tmp_path)
+    service.apply_command(
+        _request("one-turn", base_revision=0, command=KeyboardCommandV1(key="Enter"))
+    )
     actual_publish = recording_module.publish_prepared_replay
 
     def fail_publish(*_args: object, **_kwargs: object) -> object:
@@ -2122,7 +2125,7 @@ def test_exit_waits_for_durable_save_and_retry_before_shutdown(
         fail_publish,
     )
     failed_exit = service.apply_command(
-        _request("exit-save-failure", base_revision=0, command=ExitCommandV1())
+        _request("exit-save-failure", base_revision=1, command=ExitCommandV1())
     )
 
     assert isinstance(failed_exit.payload, CommandResponseV2)
@@ -2138,7 +2141,7 @@ def test_exit_waits_for_durable_save_and_retry_before_shutdown(
         actual_publish,
     )
     retried_exit = service.apply_command(
-        _request("exit-save-retry", base_revision=1, command=ExitCommandV1())
+        _request("exit-save-retry", base_revision=2, command=ExitCommandV1())
     )
 
     assert isinstance(retried_exit.payload, CommandResponseV2)
@@ -2247,6 +2250,13 @@ def test_keyboard_interrupt_ordinary_retry_success_skips_recovery_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, recorder = _recording_service(tmp_path)
+    service.apply_command(
+        _request(
+            "prefix-before-interrupt",
+            base_revision=0,
+            command=KeyboardCommandV1(key="Enter"),
+        )
+    )
     actual_publish = recording_module.publish_prepared_replay
     calls = 0
 
@@ -2281,6 +2291,13 @@ def test_keyboard_interrupt_closeout_failure_stays_recoverable_and_coherent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service, recorder = _recording_service(tmp_path)
+    service.apply_command(
+        _request(
+            "prefix-before-interrupt",
+            base_revision=0,
+            command=KeyboardCommandV1(key="Enter"),
+        )
+    )
 
     def fail_publish(*_args: object, **_kwargs: object) -> object:
         raise ReplaySaveError(

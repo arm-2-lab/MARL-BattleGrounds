@@ -1,0 +1,197 @@
+/*
+ * Styles for the Ultimates look (src/looks/ultimates.js): colours and fixed
+ * line styles of the Charge, Freezing Trap, Burst, Crippling Poison and Holy
+ * Word: Salvation marks. styles.css imports this file at its top.
+ *
+ * Colours come only from the palette tokens on :root in styles.css. Widths
+ * that scale with the champion's size are SVG attributes written by the look,
+ * so they are not set here. Opacity of the settled still is an attribute too;
+ * the look's Web Animations change it during play. No CSS animations or
+ * transitions: the beat clock owns all timing. Export-safe: flat fills and
+ * strokes only.
+ */
+
+.ult-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10;
+  pointer-events: stroke;
+}
+
+.ult-hit-area {
+  fill: transparent;
+  stroke: none;
+  pointer-events: fill;
+}
+
+/* Charge (Warrior). */
+.ult-charge__echo {
+  fill: var(--bronze-shade);
+}
+
+.ult-charge__glow,
+.ult-charge__core {
+  fill: var(--class-warrior);
+}
+
+.ult-charge__hair {
+  stroke: var(--forge-white);
+  stroke-width: 1;
+  stroke-linecap: butt;
+}
+
+.ult-charge__head {
+  stroke: var(--forge-white);
+  stroke-linecap: round;
+}
+
+.ult-charge__crunch,
+.ult-charge__rivet {
+  fill: var(--forge-white);
+}
+
+.ult-charge__clasp {
+  fill: none;
+  stroke: var(--class-warrior);
+  stroke-linecap: butt;
+}
+
+.ult-charge__ring {
+  fill: none;
+  stroke: var(--class-warrior);
+}
+
+.ult-charge__label {
+  fill: var(--ui-muted);
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+/* Freezing Trap (Hunter). */
+.ult-trap__cord {
+  fill: none;
+  stroke: var(--class-hunter);
+  stroke-linecap: butt;
+}
+
+.ult-trap__snare {
+  fill: none;
+  stroke: var(--rime);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* Burst (Mage). */
+.ult-burst__sliver-tail {
+  fill: var(--class-mage);
+  fill-opacity: 0.45;
+}
+
+.ult-burst__sliver {
+  fill: var(--class-mage);
+}
+
+.ult-burst__sliver-head,
+.ult-burst__flare {
+  fill: var(--starcore);
+}
+
+/* Crippling Poison (Rogue). */
+.ult-poison__ink {
+  fill: var(--ink);
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.ult-poison__glow {
+  fill: none;
+  stroke: var(--class-rogue);
+  stroke-width: 6;
+  stroke-linejoin: round;
+}
+
+.ult-poison__deep {
+  fill: var(--venom-deep);
+  stroke: var(--venom-deep);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.ult-poison__silver {
+  fill: var(--blade-silver);
+}
+
+.ult-poison__line {
+  stroke: var(--starcore);
+  stroke-width: 1;
+}
+
+.ult-poison__flash {
+  fill: var(--life-ivory);
+}
+
+.ult-poison__seep-ink {
+  fill: var(--ink);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.ult-poison__seep {
+  fill: var(--class-rogue);
+}
+
+.ult-poison__tether {
+  stroke: var(--class-rogue);
+  stroke-width: 1;
+}
+
+/* Holy Word: Salvation (Priest): the golden Gilded Bolt, a Dawnlight edge, a
+   gold body and a Dawnlight core, with a wide gold Soft Glow while playing. */
+.ult-salv__bolt-edge {
+  stroke: var(--dawnlight);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.ult-salv__bolt-body {
+  stroke: var(--class-priest);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+}
+
+.ult-salv__bolt-core {
+  stroke: var(--dawnlight);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.ult-salv__glow {
+  stroke: var(--class-priest);
+  stroke-width: 12;
+  stroke-linecap: butt;
+}
+
+.ult-salv__echo,
+.ult-salv__ring,
+.ult-salv__ray {
+  fill: none;
+  stroke: var(--class-priest);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.ult-salv__ray-glow {
+  fill: none;
+  stroke: var(--class-priest);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+}
+
+.ult-salv__flood {
+  fill: var(--dawnlight);
+}

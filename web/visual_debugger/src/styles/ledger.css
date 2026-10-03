@@ -1,0 +1,577 @@
+/*
+ * Scribe's Ledger: the Replay Viewer rail (five tabs, each scrolling on its
+ * own; on the fixed Arena Stage screen the rail fills the side column), the Metrics card's ledger look, the Match Summary, the Technical Frame
+ * groups and the Full Record chip. Owned by src/ledger.js and
+ * src/metrics-panel.js. styles.css imports this file before its own rules, so
+ * every rule here is scoped under #replay-rail or #evaluation-metrics to win.
+ * Flat night panels with silver lines; colour only in crests and emblems.
+ */
+
+/* Rail: tabs on top, one scrolling panel below. */
+#replay-rail:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+#replay-rail .ledger-rail__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+#replay-rail .ledger-rail__tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#replay-rail .ledger-rail__tab[aria-selected="true"] {
+  border-color: rgb(201 212 232 / 45%);
+  background: rgb(201 212 232 / 14%);
+  color: var(--ui-text);
+}
+
+#replay-rail .ledger-rail__tab:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 1px;
+}
+
+#replay-rail .ledger-rail__panel:not([hidden]) {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: var(--ledger-panel-max-height, calc(100dvh - 10rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#replay-rail .ledger-rail__panel:focus-visible {
+  outline: 1px solid var(--moon-silver);
+  outline-offset: -1px;
+}
+
+/* Cards inside a tab: one scroll per tab, so the card cap is lifted. */
+#replay-rail .ledger-card {
+  border-color: var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+#replay-rail .ledger-card .disclosure-body {
+  max-height: none;
+  overflow: visible;
+}
+
+/* Full Record chip: Agent POV only, at the top of researcher tabs. */
+#replay-rail .ledger-full-record {
+  justify-self: start;
+  margin: 0;
+  padding: 0.15rem 0.55rem;
+  min-height: 20px;
+  border: 1px solid rgb(201 212 232 / 45%);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ui-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* Visually hidden live-region holder that never sits in a hidden tab. */
+#replay-rail .ledger-rail__live {
+  display: contents;
+}
+
+/* Ledger header: sticky Scope, Topic, View and Find A Measurement. */
+#evaluation-metrics.ledger .disclosure-body {
+  display: grid;
+  gap: 0.5rem;
+}
+
+#evaluation-metrics.ledger .ledger-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.5rem 0 0.55rem;
+  border-bottom: 1px solid var(--panel-edge);
+  background: var(--panel);
+}
+
+#evaluation-metrics.ledger .ledger-native {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+#evaluation-metrics.ledger .ledger-switch {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#evaluation-metrics.ledger .ledger-switch__part {
+  display: grid;
+  flex: 1 1 0;
+  align-content: center;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+#evaluation-metrics.ledger .ledger-switch__part + .ledger-switch__part {
+  border-left: 1px solid var(--panel-edge);
+}
+
+#evaluation-metrics.ledger .ledger-switch__part[aria-checked="true"] {
+  background: rgb(201 212 232 / 14%);
+  color: var(--ui-text);
+}
+
+#evaluation-metrics.ledger .ledger-switch__part:disabled {
+  opacity: 0.55;
+}
+
+#evaluation-metrics.ledger .ledger-switch__part:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: -2px;
+}
+
+#evaluation-metrics.ledger .ledger-switch__note {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+#evaluation-metrics.ledger .ledger-header__topic {
+  display: grid;
+  gap: 0.15rem;
+}
+
+#evaluation-metrics.ledger .ledger-eyebrow {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#evaluation-metrics.ledger select {
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--ui-text);
+}
+
+#evaluation-metrics.ledger #metric-view-field {
+  margin: 0;
+}
+
+#evaluation-metrics.ledger .metric-search {
+  margin: 0;
+}
+
+#evaluation-metrics.ledger #metric-search {
+  min-height: 32px;
+  margin-block: 0.2rem 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--ui-text);
+}
+
+/* Preparing line: a thin Moon Silver progress under the header. */
+#evaluation-metrics.ledger .metrics-progress {
+  inline-size: 100%;
+  block-size: 2px;
+  accent-color: var(--moon-silver);
+}
+
+#evaluation-metrics.ledger #metric-status,
+#evaluation-metrics.ledger #metric-description {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+/* Ledger rows: one scroll (the tab's), rune dividers, 72 px value box. */
+#evaluation-metrics.ledger #metric-rows {
+  border-top: 0;
+}
+
+#evaluation-metrics.ledger .metric-table tbody {
+  max-height: none;
+  overflow: visible;
+}
+
+#evaluation-metrics.ledger .metric-table th,
+#evaluation-metrics.ledger .metric-table td {
+  min-height: 32px;
+  padding: 0.4rem 0.3rem;
+  border-bottom: 1px solid rgb(36 48 73 / 60%);
+  vertical-align: middle;
+}
+
+#evaluation-metrics.ledger .metric-table thead th {
+  background: var(--panel);
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#evaluation-metrics.ledger .metric-table td:first-child,
+#evaluation-metrics.ledger .metric-table th:first-child {
+  width: 34%;
+  color: var(--ui-text);
+}
+
+#evaluation-metrics.ledger .metric-table td:nth-child(2),
+#evaluation-metrics.ledger .metric-table th:nth-child(2) {
+  width: auto;
+}
+
+#evaluation-metrics.ledger .metric-table .metric-value,
+#evaluation-metrics.ledger .metric-table th:last-child {
+  width: 72px;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+#evaluation-metrics.ledger .metric-table .metric-value[data-value=""] {
+  color: var(--ui-muted);
+  font-weight: 400;
+}
+
+#evaluation-metrics.ledger .metric-table .metric-section th {
+  width: auto;
+  padding-top: 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid rgb(201 212 232 / 35%);
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#evaluation-metrics.ledger .metric-table .metric-section th::before {
+  content: "◆ ";
+  color: var(--moon-silver);
+}
+
+#evaluation-metrics.ledger .metric-measure {
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration-color: var(--ui-muted);
+}
+
+#evaluation-metrics.ledger .metric-condition,
+#evaluation-metrics.ledger .metric-table small {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+/* Found mark: a Moon Silver bar and a soft silver fill (no yellow). */
+#evaluation-metrics.ledger .metric-table tr.metric-search-match {
+  outline: 0;
+  background: rgb(201 212 232 / 14%);
+  box-shadow: inset 2px 0 0 var(--moon-silver);
+}
+
+/* Subject chips: crest or class emblem in the team ring, then "Agent 3". */
+#evaluation-metrics.ledger .ledger-subject {
+  vertical-align: middle;
+}
+
+#evaluation-metrics.ledger .ledger-subject__text {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+#evaluation-metrics.ledger .ledger-subject__chips,
+#evaluation-metrics.ledger .metric-search-results__title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+#evaluation-metrics.ledger .ledger-subject__join {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+#evaluation-metrics.ledger .ledger-chip {
+  display: inline-grid;
+  grid-template-columns: 16px auto;
+  align-items: center;
+  column-gap: 0.25rem;
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+#evaluation-metrics.ledger .ledger-chip__emblem {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border: 1.5px solid var(--team-a);
+  border-radius: 50%;
+  color: var(--ui-text);
+}
+
+#evaluation-metrics.ledger .ledger-chip[data-team="b"] .ledger-chip__emblem {
+  border-color: var(--team-b);
+  outline: 1px solid var(--team-b);
+  outline-offset: 1px;
+}
+
+#evaluation-metrics.ledger .ledger-chip__class {
+  grid-column: 2;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Find A Measurement results: three lines, Moon Silver active option. */
+#evaluation-metrics.ledger .metric-search-results {
+  border: 1px solid rgb(201 212 232 / 45%);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+#evaluation-metrics.ledger .metric-search-results button {
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border-bottom-color: var(--panel-edge);
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 13px;
+}
+
+#evaluation-metrics.ledger .metric-search-results button[aria-selected="true"] {
+  background: rgb(201 212 232 / 14%);
+  box-shadow: inset 2px 0 0 var(--moon-silver);
+}
+
+#evaluation-metrics.ledger .metric-search-results small,
+#evaluation-metrics.ledger .metric-search-results code {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+#evaluation-metrics.ledger .metric-search-results__tag {
+  justify-self: start;
+  padding: 0 0.35rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+
+#evaluation-metrics.ledger .metric-search-definition {
+  border-color: var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+}
+
+/* About These Numbers: the two reading notes folded into one line. */
+#evaluation-metrics.ledger .ledger-notes {
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+#evaluation-metrics.ledger .ledger-notes > summary {
+  cursor: pointer;
+  color: var(--ui-muted);
+  font-weight: 700;
+}
+
+/* Match Summary at the head of the Metrics tab. */
+#evaluation-metrics.ledger .ledger-match:not([hidden]) {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgb(201 212 232 / 35%);
+}
+
+#evaluation-metrics.ledger .ledger-match__heading {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#evaluation-metrics.ledger .ledger-match__team {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+}
+
+#evaluation-metrics.ledger .ledger-match__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.75rem;
+  margin: 0;
+}
+
+#evaluation-metrics.ledger .ledger-match__values dt {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+#evaluation-metrics.ledger .ledger-match__values dt::after {
+  content: " ";
+}
+
+#evaluation-metrics.ledger .ledger-match__values dd {
+  margin: 0 0 0 -0.6rem;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#evaluation-metrics.ledger .ledger-match__note {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+/* Technical Frame: This Frame, This Game, This File, with Copy. */
+#replay-rail .ledger-frame__group,
+#technical-frame-details .ledger-frame__group {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.6rem;
+}
+
+#replay-rail .ledger-rune,
+#technical-frame-details .ledger-rune {
+  margin: 0 0 0.2rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid rgb(201 212 232 / 35%);
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#replay-rail .ledger-rune::before,
+#technical-frame-details .ledger-rune::before {
+  content: "◆ ";
+  color: var(--moon-silver);
+}
+
+#technical-frame-details .ledger-frame__fact {
+  display: grid;
+  grid-template-columns: minmax(7rem, 38%) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 28px;
+}
+
+#technical-frame-details .ledger-frame__label {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+#technical-frame-details .ledger-frame__value {
+  overflow: hidden;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--ui-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#technical-frame-details .ledger-copy {
+  min-height: 24px;
+  padding: 0 0.45rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* The Metrics tab names the card, so its own folding title is not shown. */
+#replay-rail #evaluation-metrics > summary {
+  display: none;
+}
+
+/*
+ * Replay Viewer Arena Stage (one fixed screen from 1024 x 640): the rail fills
+ * the side column to the bottom of the stage, under the Fallen panel when it
+ * shows, and its open tab panel scrolls inside it.
+ */
+@media (min-width: 64rem) and (min-height: 40rem) {
+  html[data-product-kind="replay_viewer"] .hud-panel {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+  }
+
+  html[data-product-kind="replay_viewer"] .hud-panel:has(> #fallen-feed:not([hidden])) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  html[data-product-kind="replay_viewer"]
+    #replay-rail
+    .ledger-rail__panel:not([hidden]) {
+    max-height: none;
+  }
+}

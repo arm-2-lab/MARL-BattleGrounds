@@ -4,7 +4,9 @@ The launch owns this resolver's cache and resource leases. Existing load_method,
 shared_policy and team remain the loading, scalar adaptation and composition
 owners. No checkpoint format, method registry or private source search is added.
 Manual members produce neutral rows; the live turn owner replaces those rows
-with validated human drafts immediately before submission.
+with validated human drafts immediately before submission. Each slot's label
+is the name of the method that plays it, which the clients show and saved
+replays record.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import numpy as np
 from marl_battlegrounds._battle_client.control import (
     _manual_policy,  # pyright: ignore[reportPrivateUsage]
 )
+from marl_battlegrounds._battle_client.model import BUILT_IN_CONTROLLER_NAMES
 from marl_battlegrounds._battle_client.protocol import ExecutionInformationMode
 from marl_battlegrounds._battle_client.setup import BattleSetup, Controller
 from marl_battlegrounds._method_loading import (
@@ -29,13 +32,9 @@ from marl_battlegrounds.evaluation.policy_execution import (
     shared_policy,
     team,
 )
+from marl_battlegrounds.evaluation.recording_identity import team_controller_names
 
-_BUILTIN_NAMES = {
-    "reactive_tdm": "tdm-alpha",
-    "random_valid": "random",
-    "scenario_5": "tdm-beta",
-    "tdm_gamma": "tdm-gamma",
-}
+_BUILTIN_NAMES = BUILT_IN_CONTROLLER_NAMES
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +45,10 @@ class LoadedControllers:
     their System descriptors, or None for a legacy Manual/fixed opponent route.
     methods contains each distinct loaded/adapted object once for launch leases.
     manual_slots and slot_labels use the ten physical rows, including configured
-    dead actors; inactive rows have no label. original_methods retains the exact
+    dead actors; inactive rows have no label. Each label is the name of the
+    method that plays that slot, exactly as given ("Manual" for a human); a
+    team(...) System names the member that owns the slot
+    (recording_identity.team_controller_names). original_methods retains the exact
     returned objects before Policy adaptation so owned replacement can reject a
     reused factory object. No method or parameter is copied.
     """
@@ -129,7 +131,9 @@ def resolve_controllers(
     Direct objects share only by identity. A distinct object never merges because
     of equality.
     Whole-team Systems retain their identity; Policy adaptation retains the
-    original callable and variable leaves. Initialization, resource entry and
+    original callable and variable leaves. Each slot's label is its method's
+    name for that slot (team_controller_names), so a whole-team team(...)
+    System lists its members by champion. Initialization, resource entry and
     model calls remain the launch/worker's responsibility. Loader errors propagate.
     execution_information_mode defaults to SharedObs. NoSharedObs preserves only
     the private client's existing whole-team Manual/Random execution path; other
@@ -138,6 +142,7 @@ def resolve_controllers(
     legacy = validate_controller_information(setup, execution_information_mode)
     config, _ = setup.scenario.build_scenario()
     active = np.asarray(config.agent_profile.active_mask, dtype=np.bool_)
+    classes = np.asarray(config.agent_profile.class_ids).astype(int).tolist()
     if legacy is not None:
         legacy_manual_slots = tuple(
             slot for slot in range(10) if active[slot] and legacy[slot // 5] == "manual"
@@ -218,7 +223,10 @@ def resolve_controllers(
         owned: list[list[int]] = []
         for slot, entry in zip(physical, entries, strict=True):
             method = resolve(entry)
-            labels[slot] = method.name
+            # A team(...) entry names the member that owns this slot.
+            labels[slot] = team_controller_names(
+                method, classes[index * 5 : index * 5 + 5]
+            )[slot % 5]
             if method is manual:
                 manual_slots.append(slot)
             position = next(

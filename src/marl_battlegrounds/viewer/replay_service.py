@@ -5,20 +5,50 @@ serializes commands with a lock, rejects stale revisions, and caches recent
 command identities. Researcher analysis and actor-specific projections are
 built lazily and reused. The HTTP layer owns authentication and file responses;
 this service returns checked models or encoded bytes and runs no simulator.
+
+It also owns the per-audience timeline marks of the Saga Chronicle
+(``ReplayViewerService.timeline_marks``, served at
+``/api/replay/timeline-marks``): falls, Ultimates and returns per tick plus
+fight chapters, built by ``build_replay_fight_chapters_v1``. Oracle View marks
+come from the recorded events. Agent POV marks come only from the Agent POV
+visual events of the current recipient, so a fight the team never saw is
+never marked.
+
+It also keeps each view's Champion Streaks table (``_champion_streaks``,
+counted by ``viewer.champion_streaks``), grown frame by frame once per
+replay and view and shared with the timeline marks' Agent POV pass, so every
+presentation's ``champion_streaks`` field is exact after seeks, view switches
+and reloads. In the same way it keeps each view's Herald Cards history
+(``_match_moments``, counted by ``viewer.match_moments``: the fresh start,
+the largest earlier lead, unanswered runs and rescues), which reuses the
+streak pass's Agent POV takedowns, for every presentation's
+``match_moments`` field. Every view's match summary also gets the recorded
+scores 10 frames back for the Momentum switch.
+
+On the completion frame (the last frame of a finished Team Deathmatch
+replay) every presentation also carries that view's ``match_honors``
+(``_match_honors``): the whole replay's per-champion totals, added up once
+per replay from each transition's events and kill credit
+(``viewer.match_summary``), then picked for Oracle View (every champion) or
+Agent POV (the recipient's own team).
 """
 
 from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import pairwise
 from secrets import token_urlsafe
 from threading import RLock
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Literal, cast
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from marl_battlegrounds.evaluation.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V2,
 )
+from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
 from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
@@ -57,6 +87,17 @@ from marl_battlegrounds.evaluation.replay_v4 import (
     ReplayArtifactV4,
     replay_reference_v4,
 )
+from marl_battlegrounds.rendering.authorized_pov_scene import (
+    build_no_shared_obs_authorized_scene_v1,
+    build_shared_obs_authorized_scene_v1,
+)
+from marl_battlegrounds.rendering.authorized_presentation import (
+    AgentPovVisualIncomingSummaryV1,
+    AuthorizedBattlefieldSceneV1,
+    AuthorizedClassMechanics,
+    build_agent_pov_visual_incoming_summary_v1,
+    visual_batch_home_fall_slots_v1,
+)
 from marl_battlegrounds.rendering.evaluation_adapter import (
     EvaluationScenePresentationStateV1,
     SharedObsSourceMaterialProjection,
@@ -69,6 +110,36 @@ from marl_battlegrounds.rendering.pov_scene import (
     ActorPovProjectionIndexV1,
     build_actor_pov_analyzer_projection_v1,
     build_actor_pov_projection_index_v1,
+)
+from marl_battlegrounds.viewer.champion_streaks import (
+    DAMAGING_ULTIMATE_CLASS_IDS,
+    NO_TAKEDOWNS,
+    ZERO_COUNTS,
+    ChampionStreakV1,
+    TickTakedownsV1,
+    advance_takedown_counts_v1,
+    agent_pov_tick_takedowns_v1,
+    champion_streaks_v1,
+    oracle_tick_takedowns_v1,
+)
+from marl_battlegrounds.viewer.match_moments import (
+    NO_RUNS,
+    MatchMomentFactsV1,
+    RescueFact,
+    advance_team_runs_v1,
+    agent_pov_tick_rescues_v1,
+    is_fresh_start_v1,
+    match_moment_facts_v1,
+    oracle_tick_rescues_v1,
+    score_lead_v1,
+)
+from marl_battlegrounds.viewer.match_summary import (
+    MOMENTUM_TICKS,
+    MatchHonorsV1,
+    MatchTotalsV1,
+    build_match_summary_v1,
+    match_honors_v1,
+    match_transition_totals_v1,
 )
 from marl_battlegrounds.viewer.no_shared_visual import (
     build_replay_no_shared_obs_visual_content_v1,
@@ -131,6 +202,9 @@ if TYPE_CHECKING:
 
 _COMMAND_RECORD_LIMIT = 256
 _METRIC_REPORT_SUFFIX = ".marlbg-metrics.json"
+FIGHT_MERGE_QUIET_TICKS = 2
+"""A fight keeps growing while its next event comes after at most this many
+quiet ticks (ticks with no opening or extending event)."""
 
 type ReplayServiceOutcomeV1 = Literal[
     "response",
@@ -190,6 +264,41 @@ class _CommandRecord:
 
     fingerprint: str
     shutdown_requested: bool
+
+
+type _PovScenes = tuple[AuthorizedBattlefieldSceneV1, AuthorizedBattlefieldSceneV1, str]
+"""One Agent POV recipient's (scene, corpse scene, recipient frame ID) at a frame."""
+
+
+@dataclass(slots=True)
+class _ChampionStreakTable:
+    """One view's Champion Streaks count, grown frame by frame from frame zero.
+
+    counts holds the ten takedown counts (global slot order) after the last
+    counted frame; reached[i] holds the (global slot, streak) pairs reached on
+    frame i, so len(reached) - 1 is the last counted frame. Mutable: only
+    ReplayViewerService._champion_streaks changes it, under its lock.
+    """
+
+    counts: tuple[int, ...] = ZERO_COUNTS
+    reached: list[tuple[tuple[int, int], ...]] = field(default_factory=lambda: [()])
+
+
+@dataclass(slots=True)
+class _MatchMomentTable:
+    """One view's Herald Cards runs and rescues, grown frame by frame from frame zero.
+
+    runs holds (Team A, Team B) takedowns in a row without a loss after the
+    last counted frame; reached[i] holds the (team ID, run) pairs reached on
+    frame i and rescues[i] the (global slot, by_ultimate) rescues this view
+    saw on frame i (viewer.match_moments), so len(reached) - 1 is the last
+    counted frame. Mutable: only ReplayViewerService._match_moments changes
+    it, under the streak lock.
+    """
+
+    runs: tuple[int, int] = NO_RUNS
+    reached: list[tuple[tuple[int, int], ...]] = field(default_factory=lambda: [()])
+    rescues: list[tuple[RescueFact, ...]] = field(default_factory=lambda: [()])
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +450,200 @@ def _endpoint_kind(
     raise ValueError("complete replay has an unsupported endpoint basis")
 
 
+class _TimelineMarkModel(BaseModel):
+    """Strict frozen base for timeline-mark records; unknown fields are refused."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ReplayTimelineAgentMarkV1(_TimelineMarkModel):
+    """One champion named by a timeline mark.
+
+    Attributes
+    ----------
+    public_agent_id : str
+        The champion's public ID, as in every presentation.
+    team_id : {1, 2}
+        Team A (1) or Team B (2).
+    class_id : {1, 2, 3, 4, 5}
+        Mage, Warrior, Hunter, Rogue or Priest.
+    """
+
+    public_agent_id: Annotated[str, Field(min_length=1)]
+    team_id: Literal[1, 2]
+    class_id: Literal[1, 2, 3, 4, 5]
+
+
+class ReplayTimelineFallMarkV1(ReplayTimelineAgentMarkV1):
+    """A champion that fell on this tick.
+
+    Attributes
+    ----------
+    home_fall : bool
+        True when the fall started inside the champion's own Red Zone and so
+        gave the other team 2 points.
+    """
+
+    home_fall: bool
+
+
+class ReplayTimelineUltimateMarkV1(ReplayTimelineAgentMarkV1):
+    """A champion that used its Ultimate on this tick (the caster).
+
+    Attributes
+    ----------
+    damaging : bool
+        True for Charge, Freezing Trap and Crippling Poison (Warrior, Hunter,
+        Rogue), which can open a fight. False for Burst and Holy Word:
+        Salvation, which only extend one.
+    """
+
+    damaging: bool
+
+
+class ReplayTimelineTickMarksV1(_TimelineMarkModel):
+    """Everything one audience may mark on one tick of the Chronicle.
+
+    Attributes
+    ----------
+    frame_index : int
+        The frame this tick's transition enters (1 or more). Frame zero has
+        no incoming tick and never appears.
+    falls : tuple of ReplayTimelineFallMarkV1
+        Champions that fell, in global slot order.
+    ultimates : tuple of ReplayTimelineUltimateMarkV1
+        Ultimate casters, in event order.
+    returns : tuple of ReplayTimelineAgentMarkV1
+        Champions that returned (respawned), in global slot order.
+    """
+
+    frame_index: Annotated[int, Field(ge=1)]
+    falls: tuple[ReplayTimelineFallMarkV1, ...]
+    ultimates: tuple[ReplayTimelineUltimateMarkV1, ...]
+    returns: tuple[ReplayTimelineAgentMarkV1, ...]
+
+
+class ReplayTimelineFightV1(_TimelineMarkModel):
+    """One fight chapter: a viewing aid, never a metric.
+
+    Attributes
+    ----------
+    fight_number : int
+        1 for the first fight, counting up in time.
+    first_frame_index, last_frame_index : int
+        Frames entered by the fight's first and last ticks, both included.
+    ultimate_count : int
+        Ultimates marked on the ticks from first to last frame.
+    fallen_count : int
+        Falls marked on the ticks from first to last frame.
+    """
+
+    fight_number: Annotated[int, Field(ge=1)]
+    first_frame_index: Annotated[int, Field(ge=1)]
+    last_frame_index: Annotated[int, Field(ge=1)]
+    ultimate_count: Annotated[int, Field(ge=0)]
+    fallen_count: Annotated[int, Field(ge=0)]
+
+
+class ReplayTimelineMarksV1(_TimelineMarkModel):
+    """The Saga Chronicle marks of one replay for one audience.
+
+    Attributes
+    ----------
+    schema_version : 1
+        Wire version of this payload.
+    marks_kind : 'replay_timeline_marks'
+        Fixed payload discriminator.
+    audience : {'oracle', 'agent_pov'}
+        Oracle View (every recorded event) or Agent POV (only what the
+        recipient's team saw).
+    recipient_public_agent_id : str or None
+        The Agent POV recipient; None in Oracle View.
+    final_frame_index : int
+        Last captured frame index (the number of captured transitions).
+    ticks : tuple of ReplayTimelineTickMarksV1
+        Only ticks with at least one mark, in time order.
+    fights : tuple of ReplayTimelineFightV1
+        Fight chapters from build_replay_fight_chapters_v1, in time order.
+    """
+
+    schema_version: Literal[1]
+    marks_kind: Literal["replay_timeline_marks"]
+    audience: Literal["oracle", "agent_pov"]
+    recipient_public_agent_id: Annotated[str, Field(min_length=1)] | None
+    final_frame_index: Annotated[int, Field(ge=0)]
+    ticks: tuple[ReplayTimelineTickMarksV1, ...]
+    fights: tuple[ReplayTimelineFightV1, ...]
+
+
+def build_replay_fight_chapters_v1(
+    ticks: tuple[ReplayTimelineTickMarksV1, ...],
+) -> tuple[ReplayTimelineFightV1, ...]:
+    """Group marked ticks into fight chapters with the Saga Chronicle rule.
+
+    A fall or a damaging Ultimate (Charge, Freezing Trap, Crippling Poison)
+    opens a fight. A tick with only Burst or Holy Word: Salvation extends an
+    open fight and never opens one. A fight grows while its next opening or
+    extending tick comes after at most FIGHT_MERGE_QUIET_TICKS (2) quiet
+    ticks; otherwise a new fight starts. Returns alone never touch a fight.
+
+    Parameters
+    ----------
+    ticks : tuple of ReplayTimelineTickMarksV1
+        One audience's marked ticks, in increasing frame_index order. Pass
+        Agent POV ticks to get the chapters that audience saw.
+
+    Returns
+    -------
+    tuple of ReplayTimelineFightV1
+        Fights numbered from 1 in time order; empty when nothing opens one.
+        Counts cover every marked tick from the first to the last frame.
+
+    Raises
+    ------
+    ValueError
+        The ticks are not in strictly increasing frame order.
+
+    Examples
+    --------
+    Falls at frames 3 and 6 (2 quiet ticks between) make one fight; a fall
+    at frame 10 after 3 quiet ticks starts a second fight.
+    """
+    frames = tuple(tick.frame_index for tick in ticks)
+    if any(later <= earlier for earlier, later in pairwise(frames)):
+        raise ValueError("timeline ticks must be in strictly increasing frame order")
+    spans: list[list[int]] = []
+    for tick in ticks:
+        opening = bool(tick.falls) or any(row.damaging for row in tick.ultimates)
+        extending = not opening and bool(tick.ultimates)
+        near = bool(spans) and (
+            tick.frame_index - spans[-1][1] - 1 <= FIGHT_MERGE_QUIET_TICKS
+        )
+        if opening:
+            if near:
+                spans[-1][1] = tick.frame_index
+            else:
+                spans.append([tick.frame_index, tick.frame_index])
+        elif extending and near:
+            spans[-1][1] = tick.frame_index
+    return tuple(
+        ReplayTimelineFightV1(
+            fight_number=number,
+            first_frame_index=first,
+            last_frame_index=last,
+            ultimate_count=sum(
+                len(tick.ultimates)
+                for tick in ticks
+                if first <= tick.frame_index <= last
+            ),
+            fallen_count=sum(
+                len(tick.falls) for tick in ticks if first <= tick.frame_index <= last
+            ),
+        )
+        for number, (first, last) in enumerate(spans, start=1)
+    )
+
+
 class ReplayViewerService:
     """Serialize immutable cursor and viewer-owned presentation around one replay.
 
@@ -437,8 +740,29 @@ class ReplayViewerService:
         self._metric_analysis: ReplayAnalysis | None = None
         self._metric_analysis_lock = RLock()
         self._metric_catalog_bytes: bytes | None = None
+        self._timeline_marks_lock = RLock()
+        self._timeline_marks_bytes: dict[tuple[str, int | None], bytes] = {}
         self._replay = bundle.replay
         self._context = bundle.replay.header.context
+        # SharedObs source rows by (frame index, slot); see _shared_authority_sources.
+        self._source_materials: dict[
+            tuple[int, int], SharedObsSourceMaterialProjection
+        ] = {}
+        # Champion Streaks: one table per view (None is Oracle View, an int an
+        # Agent POV recipient), and each recipient's seen takedowns by
+        # (recipient, frame index); see _champion_streaks.
+        self._champion_streaks_lock = RLock()
+        self._champion_streak_tables: dict[int | None, _ChampionStreakTable] = {}
+        self._pov_tick_takedowns: dict[tuple[int, int], TickTakedownsV1] = {}
+        # Herald Cards history: one table per view, grown under the same lock
+        # and reusing _pov_tick_takedowns, plus the public largest lead before
+        # each frame (built once); see _match_moments.
+        self._match_moment_tables: dict[int | None, _MatchMomentTable] = {}
+        self._largest_leads: tuple[int, ...] | None = None
+        # Honors: the whole replay's per-champion totals, added up once on
+        # the first completion-frame request; see _match_honors.
+        self._honors_lock = RLock()
+        self._honors_totals: MatchTotalsV1 | None = None
         self._active_slots: tuple[int, ...] = tuple(
             row.global_slot for row in self._context.roster if row.configured_active
         )
@@ -751,6 +1075,629 @@ class ReplayViewerService:
                 )
             return self._metric_catalog_bytes
 
+    def timeline_marks(self) -> bytes:
+        """Return the Saga Chronicle marks for the current audience as JSON bytes.
+
+        Returns
+        -------
+        bytes
+            Canonical JSON of one ReplayTimelineMarksV1. In Oracle View it holds
+            every recorded fall, Ultimate and return. In Agent POV it holds only
+            the falls, Ultimates and returns found in the current recipient's
+            Agent POV visual events (the same filter the arena uses), and the
+            fights are built from those marks alone.
+
+        Raises
+        ------
+        RuntimeError
+            Agent POV view has no recipient.
+        ValueError
+            A recorded event or scene fails its existing validation.
+
+        Notes
+        -----
+        The audience is read under the service lock; the build then runs under
+        a separate marks lock, so cursor commands are not blocked. Each audience
+        (Oracle, or each Agent POV recipient) is built once and cached. An
+        Agent POV build checks only ticks whose recorded events hold a fall, an
+        Ultimate or a return, and builds each needed recipient scene once.
+        Measured on a 283-frame SharedObs match on CPU (1 Oct 2026): about
+        11 seconds for the first Agent POV build of one recipient and about
+        2 milliseconds for Oracle marks; later calls return the cached bytes.
+        No file or simulator work.
+        """
+        with self._lock:
+            view_mode = self._view_mode
+            recipient = self._pov_global_slot
+            if view_mode != "researcher" and recipient is None:
+                raise RuntimeError("POV replay view has no selected actor")
+            key: tuple[str, int | None] = (
+                ("oracle", None)
+                if view_mode == "researcher"
+                else ("agent_pov", recipient)
+            )
+            pov_entry = (
+                self._pov_entry(recipient, cache=self._pov_cache)
+                if key[0] == "agent_pov"
+                and recipient is not None
+                and self._context.execution_information_mode == "no_shared_obs"
+                else None
+            )
+            class_mechanics = (
+                self._researcher_space_for_frame(
+                    frame_index=0, selected_global_slot=recipient
+                ).class_mechanics
+                if key[0] == "agent_pov" and recipient is not None
+                else ()
+            )
+        with self._timeline_marks_lock:
+            cached = self._timeline_marks_bytes.get(key)
+            if cached is not None:
+                return cached
+            if key[1] is None:
+                ticks = self._oracle_timeline_ticks()
+            else:
+                ticks = self._agent_pov_timeline_ticks(
+                    key[1],
+                    pov_entry=pov_entry,
+                    class_mechanics=class_mechanics,
+                )
+            marks = ReplayTimelineMarksV1(
+                schema_version=1,
+                marks_kind="replay_timeline_marks",
+                audience="oracle" if key[1] is None else "agent_pov",
+                recipient_public_agent_id=(
+                    None
+                    if key[1] is None
+                    else self._context.roster[key[1]].public_agent_id
+                ),
+                final_frame_index=len(self._replay.transitions),
+                ticks=ticks,
+                fights=build_replay_fight_chapters_v1(ticks),
+            )
+            payload = canonical_json_bytes(marks)
+            self._timeline_marks_bytes[key] = payload
+            return payload
+
+    def _timeline_agent(self, global_slot: int) -> ReplayTimelineAgentMarkV1:
+        """Name one configured-active roster slot for a timeline mark."""
+        row = self._context.roster[global_slot]
+        return ReplayTimelineAgentMarkV1(
+            public_agent_id=row.public_agent_id,
+            team_id=cast("Literal[1, 2]", row.configured_team_id),
+            class_id=cast("Literal[1, 2, 3, 4, 5]", row.class_id),
+        )
+
+    def _timeline_tick(
+        self,
+        frame_index: int,
+        *,
+        fall_slots: tuple[int, ...],
+        home_fall_slots: frozenset[int],
+        ultimate_slots: tuple[int, ...],
+        return_slots: tuple[int, ...],
+    ) -> ReplayTimelineTickMarksV1 | None:
+        """Build one tick's marks from global slots, or None when nothing happened."""
+        if not (fall_slots or ultimate_slots or return_slots):
+            return None
+        falls = tuple(
+            ReplayTimelineFallMarkV1(
+                **self._timeline_agent(slot).model_dump(),
+                home_fall=slot in home_fall_slots,
+            )
+            for slot in sorted(set(fall_slots))
+        )
+        ultimates = tuple(
+            ReplayTimelineUltimateMarkV1(
+                **self._timeline_agent(slot).model_dump(),
+                damaging=self._context.roster[slot].class_id
+                in DAMAGING_ULTIMATE_CLASS_IDS,
+            )
+            for slot in ultimate_slots
+        )
+        returns = tuple(
+            self._timeline_agent(slot) for slot in sorted(set(return_slots))
+        )
+        return ReplayTimelineTickMarksV1(
+            frame_index=frame_index,
+            falls=falls,
+            ultimates=ultimates,
+            returns=returns,
+        )
+
+    def _recorded_mark_slots(
+        self, frame_index: int
+    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Read recorded fall, Ultimate-caster and return slots entering a frame."""
+        events = self._replay.transitions[frame_index - 1].events
+        falls = tuple(
+            event.recipient_global_slot
+            for event in events
+            if event.event_type == "agent_died"
+        )
+        ultimates = tuple(
+            event.source_global_slot
+            for event in events
+            if event.event_type == "ability_activated"
+            and event.ability_component == "ultimate"
+        )
+        returns = tuple(
+            event.agent_global_slot
+            for event in events
+            if event.event_type == "agent_respawned"
+        )
+        return falls, ultimates, returns
+
+    def _oracle_timeline_ticks(self) -> tuple[ReplayTimelineTickMarksV1, ...]:
+        """Build every marked tick from the recorded evaluation events."""
+        ticks: list[ReplayTimelineTickMarksV1] = []
+        for frame_index in range(1, len(self._replay.frames)):
+            falls, ultimates, returns = self._recorded_mark_slots(frame_index)
+            home_falls: frozenset[int] = (
+                team_deathmatch_home_fall_slots_v1(
+                    self._context,
+                    self._replay.frames[frame_index - 1].snapshot.agent_positions,
+                    tuple(slot in falls for slot in range(len(self._context.roster))),
+                )
+                if falls
+                else frozenset[int]()
+            )
+            tick = self._timeline_tick(
+                frame_index,
+                fall_slots=falls,
+                home_fall_slots=home_falls,
+                ultimate_slots=ultimates,
+                return_slots=returns,
+            )
+            if tick is not None:
+                ticks.append(tick)
+        return tuple(ticks)
+
+    def _agent_pov_timeline_ticks(
+        self,
+        recipient_global_slot: int,
+        *,
+        pov_entry: _PovCacheEntry | None,
+        class_mechanics: tuple[AuthorizedClassMechanics, ...],
+    ) -> tuple[ReplayTimelineTickMarksV1, ...]:
+        """Build marked ticks from one recipient's Agent POV visual events.
+
+        Only ticks whose recorded events hold a fall, an Ultimate or a return
+        are checked; others cannot produce a mark. For each, the recipient's
+        Agent POV visual events (_agent_pov_tick_visual_events, the same filter
+        the arena uses) give the marks: only its agent_died, Ultimate
+        ability_activated and agent_respawned rows. On a tick with a recorded
+        fall it also stores the recipient's seen takedowns in
+        _pov_tick_takedowns, so a later Champion Streaks count reuses them.
+        """
+        context = self._context
+        slot_by_public_id = {
+            row.public_agent_id: row.global_slot for row in context.roster
+        }
+        scenes: dict[int, _PovScenes] = {}
+        ticks: list[ReplayTimelineTickMarksV1] = []
+        for frame_index in range(1, len(self._replay.frames)):
+            recorded_falls, recorded_ultimates, recorded_returns = (
+                self._recorded_mark_slots(frame_index)
+            )
+            if not (recorded_falls or recorded_ultimates or recorded_returns):
+                continue
+            visual = self._agent_pov_tick_visual_events(
+                recipient_global_slot,
+                frame_index,
+                pov_entry=pov_entry,
+                class_mechanics=class_mechanics,
+                scenes=scenes,
+            )
+            if recorded_falls:
+                self._pov_tick_takedowns[(recipient_global_slot, frame_index)] = (
+                    agent_pov_tick_takedowns_v1(context, visual)
+                )
+            falls: list[int] = []
+            home_falls: set[int] = set()
+            ultimates: list[int] = []
+            returns: list[int] = []
+            for event in visual.events:
+                if event.event_kind == "agent_died":
+                    slot = slot_by_public_id[event.recipient_anchor.public_agent_id]
+                    falls.append(slot)
+                    if event.home_fall:
+                        home_falls.add(slot)
+                elif (
+                    event.event_kind == "ability_activated"
+                    and event.ability_component == "ultimate"
+                ):
+                    ultimates.append(
+                        slot_by_public_id[event.source_anchor.public_agent_id]
+                    )
+                elif event.event_kind == "agent_respawned":
+                    returns.append(
+                        slot_by_public_id[event.agent_anchor.public_agent_id]
+                    )
+            tick = self._timeline_tick(
+                frame_index,
+                fall_slots=tuple(falls),
+                home_fall_slots=frozenset(home_falls),
+                ultimate_slots=tuple(ultimates),
+                return_slots=tuple(returns),
+            )
+            if tick is not None:
+                ticks.append(tick)
+        return tuple(ticks)
+
+    def _agent_pov_tick_visual_events(
+        self,
+        recipient_global_slot: int,
+        frame_index: int,
+        *,
+        pov_entry: _PovCacheEntry | None,
+        class_mechanics: tuple[AuthorizedClassMechanics, ...],
+        scenes: dict[int, _PovScenes],
+    ) -> AgentPovVisualIncomingSummaryV1:
+        """Build one recipient's Agent POV visual events for one recorded tick.
+
+        Parameters
+        ----------
+        recipient_global_slot : int
+            The Agent POV recipient, a configured-active global slot 0-9.
+        frame_index : int
+            The frame the tick enters, 1 to the last captured frame.
+        pov_entry : _PovCacheEntry or None
+            The recipient's cached NoSharedObs projection, or None for a
+            SharedObs replay (its scenes come from _shared_authority_sources).
+        class_mechanics : tuple of AuthorizedClassMechanics
+            Public class records covering every class, for the corpse scenes.
+        scenes : dict
+            The caller's per-pass cache of (scene, corpse scene, recipient frame
+            ID) by frame index; this call adds the two frames it builds.
+
+        Returns
+        -------
+        AgentPovVisualIncomingSummaryV1
+            build_agent_pov_visual_incoming_summary_v1 over the recipient's
+            start and successor scenes and their death-only corpse scenes, the
+            same inputs the Agent POV presentation uses, so marks and Champion
+            Streaks see exactly what the arena shows.
+
+        Raises
+        ------
+        ValueError
+            A recorded event or scene fails its existing validation.
+
+        Notes
+        -----
+        Host-only scene and event checks; no lock, file or simulator work. The
+        authority label only names the build; it changes no event decision.
+        """
+        context = self._context
+        recipient_public_id = context.roster[recipient_global_slot].public_agent_id
+        view = cast(EvaluationTransitionViewV1, self._transition_view(frame_index))
+        batch = build_visual_event_batch_v2(view)
+        start_scene, start_corpses, start_id = self._agent_pov_scene_at(
+            recipient_global_slot,
+            frame_index - 1,
+            pov_entry=pov_entry,
+            class_mechanics=class_mechanics,
+            scenes=scenes,
+        )
+        end_scene, end_corpses, end_id = self._agent_pov_scene_at(
+            recipient_global_slot,
+            frame_index,
+            pov_entry=pov_entry,
+            class_mechanics=class_mechanics,
+            scenes=scenes,
+        )
+        transition_id = (
+            pov_entry.content.transitions[frame_index - 1].pov_transition_id
+            if pov_entry is not None
+            else (
+                f"{context.identity.episode_id}:shared-obs-visual-union:"
+                f"{recipient_public_id}:transition:{frame_index - 1}"
+            )
+        )
+        return build_agent_pov_visual_incoming_summary_v1(
+            batch,
+            transition_start_scene=start_scene,
+            successor_scene=end_scene,
+            transition_start_corpse_choreography_scene=start_corpses,
+            successor_corpse_choreography_scene=end_corpses,
+            recipient_public_agent_id=recipient_public_id,
+            incoming_recipient_transition_id=transition_id,
+            incoming_start_recipient_frame_id=start_id,
+            incoming_successor_recipient_frame_id=end_id,
+            home_fall_global_slots=visual_batch_home_fall_slots_v1(context, batch),
+        )
+
+    def _agent_pov_scene_at(
+        self,
+        recipient_global_slot: int,
+        frame_index: int,
+        *,
+        pov_entry: _PovCacheEntry | None,
+        class_mechanics: tuple[AuthorizedClassMechanics, ...],
+        scenes: dict[int, _PovScenes],
+    ) -> _PovScenes:
+        """Return one recipient's (scene, corpse scene, frame ID) at one frame.
+
+        The arguments are those of _agent_pov_tick_visual_events; frame_index
+        may be 0. A frame already in scenes is returned from it; otherwise it
+        is built once and stored there. The corpse scene adds only the corpses
+        the recipient's living sensors may show (local Oracle corpse overlay).
+        Host-only; no lock, file or simulator work.
+        """
+        from marl_battlegrounds.viewer.local_oracle_corpse_overlay import (
+            build_local_oracle_corpse_overlay_v1,
+            compose_local_oracle_corpse_scene_v1,
+        )
+
+        cached = scenes.get(frame_index)
+        if cached is not None:
+            return cached
+        context = self._context
+        roster = context.roster
+        recipient_public_id = roster[recipient_global_slot].public_agent_id
+        authority = f"{self._viewer_session_id}:timeline-marks"
+        frame = self._replay.frames[frame_index]
+        if pov_entry is not None:
+            parts = build_no_shared_obs_authorized_scene_v1(
+                pov_entry.projection_index,
+                public_catalog=context.static_mechanics_catalog,
+                authority_session_id=authority,
+                frame_index=frame_index,
+            )
+            sensors: tuple[str, ...] = (
+                (recipient_public_id,)
+                if frame.snapshot.alive_mask[recipient_global_slot]
+                else ()
+            )
+            scene = parts.scene
+            frame_id = parts.source_recipient_frame_id
+        else:
+            recipient_source, other_sources = self._shared_authority_sources(
+                frame_index=frame_index,
+                recipient_global_slot=recipient_global_slot,
+            )
+            shared = build_shared_obs_authorized_scene_v1(
+                recipient_source,
+                all_active_nonrecipient_source_material=other_sources,
+                public_catalog=context.static_mechanics_catalog,
+                authority_session_id=authority,
+            )
+            living = {
+                row.public_agent_id
+                for row in roster
+                if row.configured_active and frame.snapshot.alive_mask[row.global_slot]
+            }
+            sensors = tuple(
+                row.source_public_agent_id
+                for row in shared.authorized_sensor_sources
+                if row.source_public_agent_id in living
+            )
+            scene = shared.scene
+            frame_id = shared.source_recipient_frame_id
+        overlay = build_local_oracle_corpse_overlay_v1(
+            context,
+            frame,
+            scene,
+            authority_session_id=authority,
+            source_authority_epoch=0,
+            recipient_public_agent_id=recipient_public_id,
+            living_sensor_public_agent_ids=sensors,
+        )
+        built = (
+            scene,
+            compose_local_oracle_corpse_scene_v1(
+                scene,
+                overlay,
+                researcher_class_mechanics=class_mechanics,
+            ),
+            frame_id,
+        )
+        scenes[frame_index] = built
+        return built
+
+    def _champion_streaks(
+        self,
+        frame_index: int,
+        *,
+        recipient_global_slot: int | None,
+        pov_entry: _PovCacheEntry | None = None,
+    ) -> tuple[ChampionStreakV1, ...]:
+        """Return one view's Champion Streaks fact for one captured frame.
+
+        Parameters
+        ----------
+        frame_index : int
+            Captured frame index, 0 to the last frame.
+        recipient_global_slot : int or None, keyword-only
+            None for Oracle View; otherwise the Agent POV recipient's global
+            slot. Each view has its own table, so a view switch never mixes
+            counts.
+        pov_entry : _PovCacheEntry or None, optional, keyword-only
+            The recipient's cached NoSharedObs projection (required for a
+            NoSharedObs Agent POV view); None for Oracle View and SharedObs.
+
+        Returns
+        -------
+        tuple of ChampionStreakV1
+            The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+            without falling on this frame's tick in this view
+            (viewer.champion_streaks). Empty on frame zero and on most frames.
+
+        Raises
+        ------
+        ValueError
+            A recorded event or scene fails its existing validation.
+
+        Notes
+        -----
+        Each view's table grows frame by frame from frame zero and is kept for
+        the service's life, so a seek, a view switch or a page reload reads the
+        same exact value, and each tick is counted once per view. Only ticks
+        with a recorded fall need work: Oracle View reads the recorded events;
+        Agent POV builds the recipient's visual events (or reuses those the
+        timeline marks stored). Plain Python on small integers, no JAX. Runs
+        under _champion_streaks_lock; it never takes the service lock, so the
+        caller may hold it.
+        """
+        context = self._context
+        with self._champion_streaks_lock:
+            table = self._champion_streak_tables.setdefault(
+                recipient_global_slot, _ChampionStreakTable()
+            )
+            scenes: dict[int, _PovScenes] = {}
+            class_mechanics: tuple[AuthorizedClassMechanics, ...] | None = None
+            while len(table.reached) <= frame_index:
+                tick_index = len(table.reached)
+                events = self._replay.transitions[tick_index - 1].events
+                if not any(event.event_type == "agent_died" for event in events):
+                    tick = NO_TAKEDOWNS
+                elif recipient_global_slot is None:
+                    tick = oracle_tick_takedowns_v1(context, events)
+                else:
+                    key = (recipient_global_slot, tick_index)
+                    cached = self._pov_tick_takedowns.get(key)
+                    if cached is None:
+                        if class_mechanics is None:
+                            class_mechanics = self._researcher_space_for_frame(
+                                frame_index=0,
+                                selected_global_slot=recipient_global_slot,
+                            ).class_mechanics
+                        cached = agent_pov_tick_takedowns_v1(
+                            context,
+                            self._agent_pov_tick_visual_events(
+                                recipient_global_slot,
+                                tick_index,
+                                pov_entry=pov_entry,
+                                class_mechanics=class_mechanics,
+                                scenes=scenes,
+                            ),
+                        )
+                        self._pov_tick_takedowns[key] = cached
+                    tick = cached
+                table.counts, reached = advance_takedown_counts_v1(table.counts, tick)
+                table.reached.append(reached)
+            return champion_streaks_v1(context, table.reached[frame_index])
+
+    def _match_moments(
+        self,
+        frame_index: int,
+        *,
+        recipient_global_slot: int | None,
+        pov_entry: _PovCacheEntry | None = None,
+    ) -> MatchMomentFactsV1:
+        """Return one view's Herald Cards history facts for one captured frame.
+
+        Parameters
+        ----------
+        frame_index : int
+            Captured frame index, 0 to the last frame.
+        recipient_global_slot : int or None, keyword-only
+            None for Oracle View; otherwise the Agent POV recipient's global
+            slot. Each view has its own table, so a view switch never mixes
+            runs or rescues.
+        pov_entry : _PovCacheEntry or None, optional, keyword-only
+            The recipient's cached NoSharedObs projection (required for a
+            NoSharedObs Agent POV view); None for Oracle View and SharedObs.
+
+        Returns
+        -------
+        MatchMomentFactsV1
+            The frame's ``match_moments`` field (viewer.match_moments):
+            fresh_start (frame zero was tick 0 with 0-0; False on frame zero
+            itself), the largest lead at the start of this tick or earlier
+            (public recorded scores, the same in every view), and this view's
+            runs reached and rescues seen on this frame's tick.
+
+        Raises
+        ------
+        ValueError
+            A recorded event or scene fails its existing validation.
+
+        Notes
+        -----
+        Each view's table grows frame by frame from frame zero and is kept
+        for the service's life, so a seek, a view switch or a page reload
+        reads the same exact value, and each tick is counted once per view.
+        Agent POV needs the recipient's visual events only on a tick with a
+        recorded fall (reusing the takedowns the streak count or timeline
+        marks stored in _pov_tick_takedowns) or an Oracle rescue. Plain
+        Python on small integers, no JAX. Runs under _champion_streaks_lock;
+        it never takes the service lock, so the caller may hold it.
+        """
+        context = self._context
+        frames = self._replay.frames
+        with self._champion_streaks_lock:
+            if self._largest_leads is None:
+                leads = [0]
+                for frame in frames[:-1]:
+                    leads.append(
+                        max(
+                            leads[-1],
+                            score_lead_v1(frame.snapshot.team_deathmatch_scores),
+                        )
+                    )
+                self._largest_leads = tuple(leads)
+            table = self._match_moment_tables.setdefault(
+                recipient_global_slot, _MatchMomentTable()
+            )
+            scenes: dict[int, _PovScenes] = {}
+            class_mechanics: tuple[AuthorizedClassMechanics, ...] | None = None
+            while len(table.reached) <= frame_index:
+                tick_index = len(table.reached)
+                events = self._replay.transitions[tick_index - 1].events
+                fell = any(event.event_type == "agent_died" for event in events)
+                oracle_rescues = oracle_tick_rescues_v1(context, events)
+                if recipient_global_slot is None:
+                    falls = (
+                        oracle_tick_takedowns_v1(context, events).falls
+                        if fell
+                        else frozenset[int]()
+                    )
+                    rescues = oracle_rescues
+                else:
+                    key = (recipient_global_slot, tick_index)
+                    cached = self._pov_tick_takedowns.get(key) if fell else NO_TAKEDOWNS
+                    visual = None
+                    if cached is None or oracle_rescues:
+                        if class_mechanics is None:
+                            class_mechanics = self._researcher_space_for_frame(
+                                frame_index=0,
+                                selected_global_slot=recipient_global_slot,
+                            ).class_mechanics
+                        visual = self._agent_pov_tick_visual_events(
+                            recipient_global_slot,
+                            tick_index,
+                            pov_entry=pov_entry,
+                            class_mechanics=class_mechanics,
+                            scenes=scenes,
+                        )
+                    if cached is None and visual is not None:
+                        cached = agent_pov_tick_takedowns_v1(context, visual)
+                        self._pov_tick_takedowns[key] = cached
+                    falls = NO_TAKEDOWNS.falls if cached is None else cached.falls
+                    rescues = (
+                        agent_pov_tick_rescues_v1(
+                            context, oracle_rescues, events, visual
+                        )
+                        if visual is not None
+                        else ()
+                    )
+                table.runs, reached = advance_team_runs_v1(table.runs, context, falls)
+                table.reached.append(reached)
+                table.rescues.append(rescues)
+            first = frames[0]
+            return match_moment_facts_v1(
+                context,
+                fresh_start=frame_index >= 1
+                and is_fresh_start_v1(
+                    first.simulator_step_count, first.snapshot.team_deathmatch_scores
+                ),
+                largest_lead_before=self._largest_leads[frame_index],
+                reached_runs=table.reached[frame_index],
+                rescues=table.rescues[frame_index],
+            )
+
     def current_presentation(self) -> PresentationResourceResultV1:
         """Build a checked display resource from the locked viewer snapshot.
 
@@ -769,7 +1716,14 @@ class ReplayViewerService:
         Notes
         -----
         This may populate actor projection caches. It does not advance a simulator,
-        change the cursor, or expand an actor's allowed information.
+        change the cursor, or expand an actor's allowed information. Every view's
+        match summary carries the recorded scores 10 frames back
+        (_scores_ten_ticks_ago, the Momentum switch). The frame's
+        champion_streaks field is this view's own count (_champion_streaks)
+        and its match_moments field this view's own Herald Cards history
+        (_match_moments): Oracle View for the researcher view, the
+        recipient's Agent POV otherwise; the first request at a late frame
+        counts every earlier frame of that view once.
         """
         with self._lock:
             if self._view_mode != "researcher":
@@ -831,6 +1785,23 @@ class ReplayViewerService:
                         ),
                         exact_actor_input_export_available=(
                             entry.exact_actor_input_export_available
+                        ),
+                        scores_ten_ticks_ago=self._scores_ten_ticks_ago(
+                            raw_frame.cursor.frame_index
+                        ),
+                        champion_streaks=self._champion_streaks(
+                            raw_frame.cursor.frame_index,
+                            recipient_global_slot=self._pov_global_slot,
+                            pov_entry=entry,
+                        ),
+                        match_honors=self._match_honors(
+                            raw_frame.cursor.frame_index,
+                            team_id=self._team_of(self._pov_global_slot),
+                        ),
+                        match_moments=self._match_moments(
+                            raw_frame.cursor.frame_index,
+                            recipient_global_slot=self._pov_global_slot,
+                            pov_entry=entry,
                         ),
                     )
                     return PresentationResourceResultV1(
@@ -911,6 +1882,16 @@ class ReplayViewerService:
                         frame_index=frame_index,
                         selected_global_slot=self._pov_global_slot,
                     ),
+                    scores_ten_ticks_ago=self._scores_ten_ticks_ago(frame_index),
+                    champion_streaks=self._champion_streaks(
+                        frame_index, recipient_global_slot=self._pov_global_slot
+                    ),
+                    match_honors=self._match_honors(
+                        frame_index, team_id=self._team_of(self._pov_global_slot)
+                    ),
+                    match_moments=self._match_moments(
+                        frame_index, recipient_global_slot=self._pov_global_slot
+                    ),
                 )
                 return PresentationResourceResultV1(outcome="response", payload=frame)
 
@@ -940,11 +1921,106 @@ class ReplayViewerService:
                 selected_internal_slot=self._inspection_global_slot,
                 incoming_transition=incoming_transition,
                 outgoing_transition=outgoing_transition,
+                previous_frame=(
+                    None
+                    if source_frame_index == 0
+                    else self._replay.frames[source_frame_index - 1]
+                ),
+                scores_ten_ticks_ago=self._scores_ten_ticks_ago(source_frame_index),
+                champion_streaks=self._champion_streaks(
+                    source_frame_index, recipient_global_slot=None
+                ),
+                match_honors=self._match_honors(source_frame_index, team_id=None),
+                match_moments=self._match_moments(
+                    source_frame_index, recipient_global_slot=None
+                ),
             )
             return PresentationResourceResultV1(
                 outcome="response",
                 payload=frame,
             )
+
+    def _team_of(self, global_slot: int) -> Literal[1, 2]:
+        """Return the recorded team (1 or 2) of a global slot 0-9. Pure."""
+        return cast(
+            "Literal[1, 2]", self._context.roster[global_slot].configured_team_id
+        )
+
+    def _match_honors(
+        self, frame_index: int, *, team_id: Literal[1, 2] | None
+    ) -> MatchHonorsV1 | None:
+        """Return one view's game-over Honors for a captured frame, or None.
+
+        Parameters
+        ----------
+        frame_index : int
+            Captured frame index, 0 to the last frame.
+        team_id : {1, 2} or None, keyword-only
+            None for Oracle View (every champion); the Agent POV recipient's
+            team otherwise (only that team's own champions).
+
+        Returns
+        -------
+        MatchHonorsV1 or None
+            Honors only on the last frame of a Team Deathmatch replay whose
+            last transition records the game's completion
+            (viewer.match_summary.match_honors_v1 over the whole replay);
+            None on every other frame and for an unfinished replay.
+
+        Notes
+        -----
+        The first call on the completion frame adds up every transition's
+        totals once (match_transition_totals_v1; a match summary with kill
+        credit is built only for transitions with a fall) and keeps them for
+        the service's life under _honors_lock, which never takes the service
+        lock. Reads the immutable replay only; no file or simulator work.
+        """
+        transitions = self._replay.transitions
+        if (
+            self._context.resolved_env_config.task_mode != 1
+            or not transitions
+            or frame_index != len(transitions)
+            or not any(
+                getattr(event, "event_type", None) == "team_deathmatch_completed"
+                for event in transitions[-1].events
+            )
+        ):
+            return None
+        with self._honors_lock:
+            if self._honors_totals is None:
+                totals = MatchTotalsV1()
+                frames = self._replay.frames
+                for index, transition in enumerate(transitions):
+                    events = transition.events
+                    summary = (
+                        build_match_summary_v1(
+                            self._context,
+                            frames[index + 1],
+                            events,
+                            transition_start_frame=frames[index],
+                        )
+                        if any(event.event_type == "agent_died" for event in events)
+                        else None
+                    )
+                    totals = totals.plus(
+                        match_transition_totals_v1(self._context, summary, events)
+                    )
+                self._honors_totals = totals
+            totals = self._honors_totals
+        return match_honors_v1(self._context, totals, team_id=team_id)
+
+    def _scores_ten_ticks_ago(self, frame_index: int) -> tuple[int, ...]:
+        """Return the recorded scores ``MOMENTUM_TICKS`` (10) frames back.
+
+        frame_index is a captured frame index (0 to the last frame). The result
+        is (Team A, Team B) from the recorded frame ``max(0, frame_index -
+        MOMENTUM_TICKS)``, so a younger game reads frame zero and frame zero
+        reads its own scores. Every view's match summary gets it for the
+        scorebug's Momentum switch; scores are public match facts. Reads the
+        immutable replay only; no lock, file or simulator work.
+        """
+        earlier = self._replay.frames[max(0, frame_index - MOMENTUM_TICKS)]
+        return tuple(earlier.snapshot.team_deathmatch_scores)
 
     def _validate_committed_presentation_snapshot(
         self,
@@ -1128,6 +2204,12 @@ class ReplayViewerService:
 
         Notes
         -----
+        View switches move the selection like this. Entering Agent POV with an
+        Oracle selection makes that champion the POV recipient. Leaving Agent
+        POV clears the Oracle selection and any armed lane, so the Oracle frame
+        has no selected champion, exactly like a fresh Oracle render; the last
+        POV recipient is kept only as the recipient for the next POV entry.
+
         The lock covers validation and installation. The latest 256 command IDs are
         remembered; exact repeats while cached do not apply twice. Stale revisions
         and reused IDs with different contents are rejected. Projection caches may
@@ -1303,8 +2385,12 @@ class ReplayViewerService:
                             and inspection_global_slot != pov_global_slot
                         ):
                             pov_global_slot = inspection_global_slot
-                    elif inspection_global_slot != pov_global_slot:
-                        inspection_global_slot = pov_global_slot
+                    else:
+                        # Leaving Agent POV clears the Oracle selection (the
+                        # Reference chip and brackets), so Oracle -> POV ->
+                        # Oracle draws exactly what a fresh Oracle render draws.
+                        # The POV actor is kept only as the next POV recipient.
+                        inspection_global_slot = None
                         armed_lane = None
                     view_mode = command.view_mode
                     changed = True
@@ -1683,7 +2769,15 @@ class ReplayViewerService:
         SharedObsSourceMaterialProjection,
         tuple[SharedObsSourceMaterialProjection, ...],
     ]:
-        """Build one uncached, same-epoch fixed-recipient authority source set."""
+        """Return one same-epoch fixed-recipient authority source set.
+
+        Each (frame, slot) source is built once per replay and then shared by
+        every viewer and request: the replay's frames never change, and a
+        source row depends only on the context, the frame and its own slot,
+        never on who is watching. Building them again for each new Agent POV
+        agent made its timeline marks take seconds. A race between threads can
+        only build an equal row twice; no lock is needed.
+        """
         if self._context.execution_information_mode != "shared_obs":
             raise RuntimeError("Shared authority sources require a SharedObs replay")
         if type(frame_index) is not int or not (
@@ -1699,13 +2793,18 @@ class ReplayViewerService:
 
         def build(global_slot: int) -> SharedObsSourceMaterialProjection:
             """Project one active slot's source material at the already selected
-            frame.
+            frame, once per replay.
             """
-            return build_shared_obs_authority_source_material_projection_v1(
-                self._context,
-                frame,
-                selected_global_slot=global_slot,
-            )
+            key = (frame_index, global_slot)
+            source = self._source_materials.get(key)
+            if source is None:
+                source = build_shared_obs_authority_source_material_projection_v1(
+                    self._context,
+                    frame,
+                    selected_global_slot=global_slot,
+                )
+                self._source_materials[key] = source
+            return source
 
         recipient = build(recipient_global_slot)
         contributors = tuple(
@@ -1938,8 +3037,16 @@ class ReplayViewerService:
 
 
 __all__ = [
+    "FIGHT_MERGE_QUIET_TICKS",
     "PresentationResourceResultV1",
     "ReplayServiceCommandResultV1",
     "ReplayServiceOutcomeV1",
+    "ReplayTimelineAgentMarkV1",
+    "ReplayTimelineFallMarkV1",
+    "ReplayTimelineFightV1",
+    "ReplayTimelineMarksV1",
+    "ReplayTimelineTickMarksV1",
+    "ReplayTimelineUltimateMarkV1",
     "ReplayViewerService",
+    "build_replay_fight_chapters_v1",
 ]

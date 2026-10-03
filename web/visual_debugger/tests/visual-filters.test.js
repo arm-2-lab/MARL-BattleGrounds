@@ -1,12 +1,26 @@
 /**
- * @file Check the filter registry/defaults, immutable updates and each filter's
- * allowed display effect: 20 filters, 11 on by default (Cooldown Effects and Red
- * Zone Floors included), the v3 paint key and the Red Zone floor paint part.
+ * @file Check the Visual Filter registry, defaults, immutable updates and the
+ * paint-part table: 104 switches in fixed order (the 20 earlier switches first,
+ * then the switches of the V5-picked looks, including the live-only Brand
+ * Signature and Palette: High Contrast, and Momentum, an interface switch off
+ * by default), with no switch for an unbuilt part such as instant replay; each
+ * with its exact label, group, default, surface (arena or interface) and
+ * products; the twelve V5 switches the shared looks draw (Class Seals, Kill
+ * Credit Glint, Saved Beat, Last Breath, Battle Text Detail, Aura Glints,
+ * Barrier Held, Spawn Shield Expiry, Status Clear On Death, Freezing Trap
+ * Break, Champion Streaks and Momentum) listed in both live play and the
+ * Replay Viewer; 80 switches on by
+ * default; the v4 paint key; one switch list per product; strict reducer and
+ * state validation; and paint parts read from each look module's PAINT_PARTS:
+ * one owner per part, a repeated part or a malformed list throws, every part
+ * drawn before V5 still classifies to its original switch (so every earlier
+ * switch still owns a drawing part), and unknown or malformed parts fail closed.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildPaintPartTable,
   classifyVisualPaintPart,
   DEFAULT_VISUAL_FILTER_STATE,
   disableAllVisualFilters,
@@ -15,68 +29,414 @@ import {
   isVisualPaintPartEnabled,
   reduceVisualFilterState,
   setVisualFilterEnabled,
+  VISUAL_FILTER_GROUPS,
   VISUAL_FILTER_IDS,
   VISUAL_FILTER_REGISTRY,
-  VISUAL_PAINT_PART_REGISTRY,
   visualFilterPaintKey,
+  visualFiltersForProduct,
+  visualPaintPartRegistry,
 } from "../src/visual-filters.js";
 
+// id, label, group, default, surface, products ("both" means both products).
 const EXPECTED_FILTERS = Object.freeze([
-  ["aura_fields", "Aura Fields"],
-  ["aura_modifier_badges", "Aura Modifier Badges"],
-  ["duration_status_badges", "Duration Status Badges"],
-  ["spawn_shield", "Spawn Shield"],
-  ["target_selection_visuals", "Target Selection Visuals"],
-  ["basic_ability_effects", "Basic Ability Effects"],
-  ["ultimate_ability_effects", "Ultimate Ability Effects"],
-  ["regeneration_effects", "Regeneration Effects"],
-  ["cooldown_effects", "Cooldown Effects"],
-  ["status_application", "Status Application"],
-  ["natural_status_expiry", "Natural Status Expiry"],
-  ["freezing_trap_break", "Freezing Trap Break"],
-  ["status_clear_on_death", "Status Clear on Death"],
-  ["death_effects", "Death Effects"],
-  ["respawn_wave", "Respawn Wave"],
-  ["resurrection_effects", "Resurrection Effects"],
-  ["spawn_shield_expiry", "Spawn-Shield Expiry"],
-  ["scrolling_battle_text", "Scrolling Battle Text"],
-  ["death_announcer", "Death Announcer"],
-  ["red_zone_floors", "Red Zone Floors"],
+  ["aura_fields", "Aura Fields", "Bodies", false, "arena", "both"],
+  ["aura_modifier_badges", "Aura Multipliers", "Diagnostics", false, "arena", "both"],
+  ["duration_status_badges", "Status Plates", "Diagnostics", false, "arena", "both"],
+  ["spawn_shield", "Spawn Shield", "Bodies", true, "arena", "both"],
+  [
+    "target_selection_visuals",
+    "Target Selection Visuals",
+    "Selection",
+    true,
+    "arena",
+    "both",
+  ],
+  ["basic_ability_effects", "Basic Ability Effects", "Combat", true, "arena", "both"],
+  [
+    "ultimate_ability_effects",
+    "Ultimate Ability Effects",
+    "Combat",
+    true,
+    "arena",
+    "both",
+  ],
+  ["regeneration_effects", "Regeneration Effects", "Combat", true, "arena", "both"],
+  ["cooldown_effects", "Cooldown Effects", "Bodies", true, "arena", "both"],
+  ["status_application", "Status Application", "Bodies", true, "arena", "both"],
+  ["natural_status_expiry", "Natural Status Expiry", "Bodies", true, "arena", "both"],
+  ["freezing_trap_break", "Freezing Trap Break", "Bodies", true, "arena", "both"],
+  ["status_clear_on_death", "Status Clear On Death", "Bodies", false, "arena", "both"],
+  ["death_effects", "Death Effects", "Life And Death", true, "arena", "both"],
+  ["respawn_wave", "Respawn Wave", "Life And Death", true, "arena", "both"],
+  [
+    "resurrection_effects",
+    "Resurrection Effects",
+    "Life And Death",
+    true,
+    "arena",
+    "both",
+  ],
+  [
+    "spawn_shield_expiry",
+    "Spawn Shield Expiry",
+    "Life And Death",
+    false,
+    "arena",
+    "both",
+  ],
+  ["scrolling_battle_text", "Scrolling Battle Text", "Combat", true, "arena", "both"],
+  ["death_announcer", "Fallen Feed", "Life And Death", true, "arena", "both"],
+  ["red_zone_floors", "Red Zone Floors", "Arena", true, "arena", "both"],
+  ["map_skins", "Map Skins", "Arena", true, "arena", "both"],
+  ["moonlight", "Moonlight", "Arena", true, "arena", "both"],
+  ["floor_grid", "Floor Grid", "Arena", true, "arena", "both"],
+  ["spawn_waystones", "Spawn Waystones", "Arena", true, "arena", "both"],
+  ["survey_frame", "Survey Frame", "Arena", false, "arena", "both"],
+  ["arena_rim", "Arena Rim", "Arena", false, "arena", "both"],
+  ["obstacle_skins", "Obstacle Skins", "Arena", true, "arena", "both"],
+  ["obstacle_relief", "Obstacle Relief", "Arena", true, "arena", "both"],
+  ["obstacle_shadows", "Obstacle Shadows", "Arena", true, "arena", "both"],
+  ["red_zone_home_fall", "Red Zone Home Fall", "Moments", true, "arena", "both"],
+  ["soft_glow", "Soft Glow", "Combat", true, "arena", "both"],
+  ["moon_motes", "Moon Motes", "Arena", false, "arena", "both"],
+  ["time_of_night", "Time Of Night", "Arena", false, "arena", "both"],
+  ["death_dimming", "Death Dimming", "Moments", false, "arena", "both"],
+  ["pov_sight_veil", "Sight Reach Veil", "Vision", true, "arena", "both"],
+  ["pov_recipient_rim", "Agent POV Rim", "Vision", true, "arena", "replay_viewer"],
+  ["sight_change_marks", "Sight Change Marks", "Vision", true, "arena", "both"],
+  ["life_vessels", "Life Vessels", "Bodies", true, "arena", "both"],
+  ["class_seals", "Class Seals", "Bodies", false, "arena", "both"],
+  ["recent_health_change", "Recent Health Change", "Combat", true, "arena", "both"],
+  ["low_life_warning", "Low Life Warning", "Bodies", true, "arena", "both"],
+  ["hit_reactions", "Hit Reactions", "Combat", true, "arena", "both"],
+  ["fallen_step_aside", "Fallen Step Aside", "Bodies", true, "arena", "both"],
+  ["class_letters", "Class Letters", "Bodies", false, "arena", "both"],
+  ["life_segments", "Life Segments", "Bodies", false, "arena", "both"],
+  ["stride_glide", "Body Glide", "Motion", true, "arena", "both"],
+  ["scholar_long_tick", "Longer Tick", "Motion", true, "arena", "both"],
+  ["step_glide", "Step Glide", "Motion", true, "arena", "replay_viewer"],
+  ["last_move_ghosts", "Start Spots", "Motion", true, "arena", "both"],
+  ["phantom_afterimage", "Phantom Afterimage", "Motion", true, "arena", "both"],
+  ["focus_trail", "Focus Trail", "Motion", true, "arena", "both"],
+  ["home_end_marks", "Home End Marks", "Arena", true, "arena", "both"],
+  ["lore_emblems", "Lore Emblems", "Bodies", true, "arena", "both"],
+  ["status_marks_icons", "Status Icons From Marks", "HUD", true, "interface", "both"],
+  ["status_marks", "Status Marks", "Bodies", true, "arena", "both"],
+  ["aura_glints", "Aura Glints", "Combat", false, "arena", "both"],
+  ["barrier_held", "Barrier Held", "Moments", true, "arena", "both"],
+  ["kindled_blast", "Arcane Blast During Burst", "Combat", true, "arena", "both"],
+  ["close_range_strokes", "Close-Range Strokes", "Combat", true, "arena", "both"],
+  ["saved_beat", "Saved Beat", "Moments", false, "arena", "both"],
+  ["last_breath", "Last Breath", "Combat", false, "arena", "both"],
+  ["battle_text_detail", "Battle Text Detail", "Combat", false, "arena", "both"],
+  ["vigil_pips", "Vigil Pips", "Life And Death", true, "arena", "both"],
+  ["kill_credit_glint", "Kill Credit Glint", "Life And Death", false, "arena", "both"],
+  ["match_moments", "Match Moments", "Moments", true, "arena", "both"],
+  ["moment_full_cards", "Full Lineup And Verdict", "Moments", true, "arena", "both"],
+  ["champion_streaks", "Champion Streaks", "Moments", false, "arena", "both"],
+  ["camera_framing", "Camera Framing", "Camera", true, "interface", "both"],
+  ["camera_change_tip", "Camera Change Tip", "Camera", true, "interface", "both"],
+  ["camera_tip", "New Camera Tip", "Camera", true, "interface", "replay_viewer"],
+  [
+    "auto_frame_fights",
+    "Auto-Frame Fights",
+    "Camera",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  ["kill_cam", "Kill Cam", "Camera", true, "interface", "replay_viewer"],
+  [
+    "kill_slow_motion",
+    "Kill Slow Motion",
+    "Camera",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  ["camera_inset", "Camera Inset", "Camera", true, "interface", "replay_viewer"],
+  ["scorebug", "Scorebug", "HUD", true, "interface", "both"],
+  ["team_rosters", "Team Rosters", "HUD", true, "interface", "both"],
+  ["fighters_standing", "Fighters Standing", "HUD", true, "interface", "replay_viewer"],
+  ["hud_momentum", "Momentum", "HUD", false, "interface", "both"],
+  ["symbol_explanations", "Symbol Explanations", "HUD", true, "interface", "both"],
+  ["reach_rings", "Reach Rings", "Selection", true, "arena", "both"],
+  ["next_action_thread", "Next Action Thread", "Selection", true, "arena", "both"],
+  ["selection_moonlight", "Selection Moonlight", "Selection", true, "arena", "both"],
+  [
+    "selected_agent_frame",
+    "Selected Agent Frame",
+    "Panels",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  [
+    "event_timeline_marks",
+    "Event Timeline Marks",
+    "HUD",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  ["beat_label", "Beat Label", "HUD", true, "interface", "replay_viewer"],
+  ["fight_chapters", "Fight Chapters", "HUD", true, "interface", "replay_viewer"],
+  ["bookmarks", "Bookmarks", "HUD", true, "interface", "replay_viewer"],
+  ["freeze_on_pause", "Freeze On Pause", "HUD", true, "interface", "replay_viewer"],
+  ["hide_marks_ahead", "Hide Marks Ahead", "HUD", false, "interface", "replay_viewer"],
+  ["class_guide", "Class Guide", "Panels", true, "interface", "both"],
+  ["ledger_summary", "Match Summary", "Panels", true, "interface", "replay_viewer"],
+  ["panel_tokens", "Panel Tokens", "Panels", true, "interface", "both"],
+  [
+    "ledger_heraldry",
+    "Ledger Heraldry",
+    "Replay Tools",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  [
+    "plain_actions",
+    "Actions In Words",
+    "Replay Tools",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  [
+    "seen_grouping",
+    "Seen And Not Seen",
+    "Replay Tools",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  [
+    "reference_chip",
+    "Reference Chip",
+    "Replay Tools",
+    true,
+    "interface",
+    "replay_viewer",
+  ],
+  ["brand_lockup", "Brand Lockup", "HUD", true, "interface", "both"],
+  ["brand_signature", "Brand Signature", "HUD", false, "interface", "combat_debugger"],
+  ["title_card", "Title Card", "HUD", true, "interface", "both"],
+  ["command_marks", "Command Marks", "Bodies", true, "arena", "combat_debugger"],
+  ["reach_marks", "Reach Marks", "Combat", true, "arena", "combat_debugger"],
+  ["step_ghost", "Step Ghost", "Motion", true, "arena", "combat_debugger"],
+  ["focus_fire", "Focus Tally", "Diagnostics", false, "arena", "both"],
+  [
+    "high_contrast",
+    "Palette: High Contrast",
+    "Arena",
+    false,
+    "arena",
+    "combat_debugger",
+  ],
 ]);
 
-const INITIAL_FILTER_IDS = [
-  "spawn_shield",
-  "basic_ability_effects",
-  "ultimate_ability_effects",
-  "regeneration_effects",
-  "cooldown_effects",
-  "death_effects",
-  "respawn_wave",
-  "resurrection_effects",
-  "scrolling_battle_text",
-  "death_announcer",
-  "red_zone_floors",
-];
+// The 20 switches the clients had before V5, in their original order.
+const EARLIER_FILTER_IDS = Object.freeze(
+  EXPECTED_FILTERS.slice(0, 20).map(([id]) => /** @type {string} */ (id)),
+);
+const INITIAL_FILTER_IDS = EXPECTED_FILTERS.filter(([, , , enabled]) => enabled).map(
+  ([id]) => /** @type {string} */ (id),
+);
 const ALL_ENABLED = enableAllVisualFilters(DEFAULT_VISUAL_FILTER_STATE);
 
-test("locked registry exposes 20 filters and the eleven initial choices", () => {
+// The 35 drawable parts the renderer drew before V5, each with its switch.
+// They now come from the look modules and must keep their switches.
+const EARLIER_PAINT_PARTS = Object.freeze([
+  [{ surface: "durable", kind: "aura_field" }, "aura_fields"],
+  [{ surface: "durable", kind: "aura_modifier_badge" }, "aura_modifier_badges"],
+  [{ surface: "durable", kind: "duration_status_badge" }, "duration_status_badges"],
+  [{ surface: "durable", kind: "pov_duration_status_badge" }, "duration_status_badges"],
+  [{ surface: "durable", kind: "spawn_shield" }, "spawn_shield"],
+  [{ surface: "durable", kind: "cooldown_badge" }, "cooldown_effects"],
+  [{ surface: "durable", kind: "selection_reticle" }, "target_selection_visuals"],
+  [{ surface: "durable", kind: "selected_pair_legality" }, "target_selection_visuals"],
+  [{ surface: "durable", kind: "red_zone_floor" }, "red_zone_floors"],
+  ...["ability", "semantic"].flatMap((part) => [
+    [
+      { surface: "transient", kind: "activation", component: "basic", part },
+      "basic_ability_effects",
+    ],
+    [
+      { surface: "transient", kind: "activation", component: "ultimate", part },
+      "ultimate_ability_effects",
+    ],
+  ]),
+  ...["damage", "healing", "unchanged"].flatMap((outcome) =>
+    ["effect", "battle_text", "recipient_text"].map((part) => [
+      { surface: "transient", kind: "net_health", outcome, part },
+      "scrolling_battle_text",
+    ]),
+  ),
+  [
+    { surface: "transient", kind: "regeneration", part: "effect" },
+    "regeneration_effects",
+  ],
+  [
+    { surface: "transient", kind: "regeneration", part: "battle_text" },
+    "scrolling_battle_text",
+  ],
+  [{ surface: "transient", kind: "cooldown", semantic: "started" }, "cooldown_effects"],
+  [{ surface: "transient", kind: "cooldown", semantic: "ready" }, "cooldown_effects"],
+  ...[
+    ["applied", "status_application"],
+    ["expired", "natural_status_expiry"],
+    ["trap_broken", "freezing_trap_break"],
+    ["cleared_by_death", "status_clear_on_death"],
+  ].map(([lifecycle, filter]) => [
+    { surface: "transient", kind: "status_lifecycle", lifecycle, part: "effect" },
+    filter,
+  ]),
+  [{ surface: "transient", kind: "death_effect" }, "death_effects"],
+  [{ surface: "transient", kind: "death_announcement" }, "death_announcer"],
+  [{ surface: "transient", kind: "respawn_wave" }, "respawn_wave"],
+  [{ surface: "transient", kind: "resurrection_effect" }, "resurrection_effects"],
+  [{ surface: "transient", kind: "spawn_shield_expiry" }, "spawn_shield_expiry"],
+]);
+
+test("locked registry exposes 104 switches with exact labels, groups and defaults", () => {
   assert.deepEqual(
-    VISUAL_FILTER_REGISTRY.map(({ id, label }) => [id, label]),
+    VISUAL_FILTER_REGISTRY.map(
+      ({ id, label, group, defaultEnabled, surface, products }) => [
+        id,
+        label,
+        group,
+        defaultEnabled,
+        surface,
+        products.length === 2 ? "both" : products[0],
+      ],
+    ),
     EXPECTED_FILTERS,
   );
   assert.deepEqual(
     VISUAL_FILTER_IDS,
     EXPECTED_FILTERS.map(([id]) => id),
   );
-  assert.equal(new Set(VISUAL_FILTER_IDS).size, 20);
-  assert.deepEqual(
-    VISUAL_FILTER_REGISTRY.filter(({ defaultEnabled }) => defaultEnabled).map(
-      ({ id }) => id,
-    ),
-    INITIAL_FILTER_IDS,
-  );
+  assert.equal(new Set(VISUAL_FILTER_IDS).size, 104);
+  assert.equal(INITIAL_FILTER_IDS.length, 80);
+  assert.deepEqual(EARLIER_FILTER_IDS, [
+    "aura_fields",
+    "aura_modifier_badges",
+    "duration_status_badges",
+    "spawn_shield",
+    "target_selection_visuals",
+    "basic_ability_effects",
+    "ultimate_ability_effects",
+    "regeneration_effects",
+    "cooldown_effects",
+    "status_application",
+    "natural_status_expiry",
+    "freezing_trap_break",
+    "status_clear_on_death",
+    "death_effects",
+    "respawn_wave",
+    "resurrection_effects",
+    "spawn_shield_expiry",
+    "scrolling_battle_text",
+    "death_announcer",
+    "red_zone_floors",
+  ]);
+  // V5 turns these earlier switches on by default (plan P9 and the Rune Zones pick).
+  for (const id of [
+    "target_selection_visuals",
+    "status_application",
+    "natural_status_expiry",
+    "freezing_trap_break",
+  ]) {
+    assert.equal(DEFAULT_VISUAL_FILTER_STATE[id], true, id);
+  }
+  for (const removed of [
+    "kindled_lance",
+    "arcane_missiles",
+    "red_zone_home_fall_preview",
+    "barrier_held_preview",
+    "pov_preview",
+    "pov_shared_obs",
+    "pov_hide_unseen",
+    "moment_examples",
+    "devclient_turn_deck",
+    "director_camera",
+    "layout",
+  ]) {
+    assert.equal(
+      VISUAL_FILTER_IDS.includes(/** @type {any} */ (removed)),
+      false,
+      removed,
+    );
+  }
   assert.equal(Object.isFrozen(VISUAL_FILTER_REGISTRY), true);
   assert.equal(VISUAL_FILTER_REGISTRY.every(Object.isFrozen), true);
+  assert.equal(
+    VISUAL_FILTER_REGISTRY.every(({ products }) => Object.isFrozen(products)),
+    true,
+  );
+  assert.deepEqual(
+    [...new Set(VISUAL_FILTER_REGISTRY.map(({ group }) => group))].sort(),
+    [...VISUAL_FILTER_GROUPS].sort(),
+  );
+});
+
+test("each product lists only the switches that matter there", () => {
+  const live = visualFiltersForProduct("combat_debugger");
+  const replay = visualFiltersForProduct("replay_viewer");
+  assert.equal(Object.isFrozen(live), true);
+  assert.deepEqual(
+    live.map(({ id }) => id),
+    EXPECTED_FILTERS.filter(([, , , , , products]) => products !== "replay_viewer").map(
+      ([id]) => id,
+    ),
+  );
+  assert.deepEqual(
+    replay.map(({ id }) => id),
+    EXPECTED_FILTERS.filter(
+      ([, , , , , products]) => products !== "combat_debugger",
+    ).map(([id]) => id),
+  );
+  for (const id of ["camera_tip", "kill_cam", "step_glide", "ledger_heraldry"]) {
+    assert.equal(
+      live.some((entry) => entry.id === id),
+      false,
+      id,
+    );
+  }
+  for (const id of ["command_marks", "reach_marks"]) {
+    assert.equal(
+      replay.some((entry) => entry.id === id),
+      false,
+      id,
+    );
+  }
+  for (const id of [
+    "class_seals",
+    "kill_credit_glint",
+    "saved_beat",
+    "last_breath",
+    "battle_text_detail",
+    "aura_glints",
+    "barrier_held",
+    "spawn_shield_expiry",
+    "status_clear_on_death",
+    "freezing_trap_break",
+    "champion_streaks",
+    "hud_momentum",
+  ]) {
+    assert.equal(
+      live.some((entry) => entry.id === id),
+      true,
+      id,
+    );
+    assert.equal(
+      replay.some((entry) => entry.id === id),
+      true,
+      id,
+    );
+  }
+  assert.throws(() => visualFiltersForProduct("battle_client"), RangeError);
 });
 
 test("default state is immutable, exact, and enabled through the public helper", () => {
@@ -115,9 +475,13 @@ test("set and bulk actions return frozen states without mutating their input", (
     true,
   );
   assert.equal(disableAllVisualFilters(allDisabled), allDisabled);
+  assert.throws(
+    () => setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "spawn_shield", 1),
+    /must be a boolean/u,
+  );
 });
 
-test("strict reducer accepts only exact set and bulk actions", () => {
+test("strict reducer accepts only exact set, bulk, default and preset actions", () => {
   const disabled = reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, {
     type: "set",
     filterId: "scrolling_battle_text",
@@ -139,6 +503,7 @@ test("strict reducer accepts only exact set and bulk actions", () => {
   assert.equal(DEFAULT_VISUAL_FILTER_STATE.death_announcer, true);
   assert.equal(DEFAULT_VISUAL_FILTER_STATE.cooldown_effects, true);
   assert.equal(DEFAULT_VISUAL_FILTER_STATE.red_zone_floors, true);
+  assert.equal(DEFAULT_VISUAL_FILTER_STATE.symbol_explanations, true);
   assert.throws(
     () =>
       reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, {
@@ -153,6 +518,10 @@ test("strict reducer accepts only exact set and bulk actions", () => {
     () => reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, { type: "unknown" }),
     /Unknown visual filter action/u,
   );
+  assert.throws(
+    () => reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, null),
+    /tagged object/u,
+  );
 });
 
 test("state validation and paint-key serialization are strict and deterministic", () => {
@@ -162,19 +531,30 @@ test("state validation and paint-key serialization are strict and deterministic"
   );
   assert.equal(
     visualFilterPaintKey(DEFAULT_VISUAL_FILTER_STATE),
-    "visual-filters-v3:00010111100001110111",
+    "visual-filters-v4:00011111111101110111111100111110001111011110011111111110111000101101111111111011111111110111111110111100",
   );
   assert.equal(
     visualFilterPaintKey(disabled),
-    "visual-filters-v3:00010111100001110011",
+    "visual-filters-v4:00011111111101110011111100111110001111011110011111111110111000101101111111111011111111110111111110111100",
   );
   assert.equal(
     visualFilterPaintKey(Object.fromEntries([...Object.entries(disabled)].reverse())),
     visualFilterPaintKey(disabled),
   );
+  assert.equal(
+    visualFilterPaintKey(ALL_ENABLED),
+    `visual-filters-v4:${"1".repeat(VISUAL_FILTER_IDS.length)}`,
+  );
   assert.throws(
     () => visualFilterPaintKey({ ...DEFAULT_VISUAL_FILTER_STATE, extra: true }),
     /invalid shape/u,
+  );
+  const missing = { ...DEFAULT_VISUAL_FILTER_STATE };
+  delete missing.focus_fire;
+  assert.throws(() => visualFilterPaintKey(missing), /invalid shape/u);
+  assert.throws(
+    () => visualFilterPaintKey({ ...DEFAULT_VISUAL_FILTER_STATE, map_skins: "yes" }),
+    /must be a boolean/u,
   );
   assert.throws(
     () =>
@@ -183,12 +563,17 @@ test("state validation and paint-key serialization are strict and deterministic"
   );
 });
 
-test("every registered paint part has one exact owner and every filter owns a part", () => {
+test("every registered paint part has one owner and every earlier switch owns a part", () => {
+  const registry = visualPaintPartRegistry();
+  assert.equal(visualPaintPartRegistry(), registry);
+  assert.equal(Object.isFrozen(registry), true);
   const serializedParts = new Set();
   const usedFilters = new Set();
-  for (const registration of VISUAL_PAINT_PART_REGISTRY) {
+  for (const registration of registry) {
     assert.equal(Object.isFrozen(registration), true);
     assert.equal(Object.isFrozen(registration.tag), true);
+    assert.equal(typeof registration.owner, "string");
+    assert.ok(registration.owner.length > 0);
     const serialized = JSON.stringify(
       Object.entries(registration.tag).sort(([left], [right]) =>
         left.localeCompare(right),
@@ -201,9 +586,94 @@ test("every registered paint part has one exact owner and every filter owns a pa
       isVisualPaintPartEnabled(DEFAULT_VISUAL_FILTER_STATE, registration.tag),
       INITIAL_FILTER_IDS.includes(registration.filterId),
     );
+    assert.equal(VISUAL_FILTER_IDS.includes(registration.filterId), true);
     usedFilters.add(registration.filterId);
   }
-  assert.deepEqual([...usedFilters].sort(), [...VISUAL_FILTER_IDS].sort());
+  for (const id of EARLIER_FILTER_IDS) {
+    assert.equal(usedFilters.has(id), true, id);
+  }
+  // Every part drawn before V5 is still classified, with its original switch.
+  assert.equal(EARLIER_PAINT_PARTS.length, 35);
+  for (const [part, filter] of EARLIER_PAINT_PARTS) {
+    assert.equal(classifyVisualPaintPart(part), filter, JSON.stringify(part));
+  }
+});
+
+test("the paint-part builder keeps one owner per part and fails on conflicts", () => {
+  const red = {
+    part: { surface: "durable", kind: "red_zone_floor" },
+    filter: "red_zone_floors",
+  };
+  const veil = {
+    part: { surface: "durable", kind: "sight_veil" },
+    filter: "pov_sight_veil",
+  };
+  const table = buildPaintPartTable([
+    ["red-zone", [red]],
+    ["hud", []],
+    ["fog", [veil]],
+  ]);
+  assert.equal(Object.isFrozen(table), true);
+  assert.deepEqual(
+    table.registrations.map(({ owner, filterId, tag }) => [
+      owner,
+      filterId,
+      { ...tag },
+    ]),
+    [
+      ["red-zone", "red_zone_floors", red.part],
+      ["fog", "pov_sight_veil", veil.part],
+    ],
+  );
+  assert.notEqual(table.registrations[0].tag, red.part);
+  assert.equal(Object.isFrozen(table.registrations[0].tag), true);
+  assert.deepEqual(buildPaintPartTable([]).registrations, []);
+  assert.throws(
+    () =>
+      buildPaintPartTable([
+        ["fog", [veil]],
+        ["hud", [veil]],
+      ]),
+    /Duplicate visual paint-part registration .*\(fog and hud\)/u,
+  );
+  assert.throws(
+    () => buildPaintPartTable([["fog", [veil, veil]]]),
+    /Duplicate visual paint-part registration/u,
+  );
+  assert.throws(
+    () =>
+      buildPaintPartTable([
+        ["red-zone", [red]],
+        [
+          "map-skins",
+          [
+            {
+              part: { kind: "red_zone_floor", surface: "durable" },
+              filter: "map_skins",
+            },
+          ],
+        ],
+      ]),
+    /Duplicate visual paint-part registration .*\(red-zone and map-skins\)/u,
+  );
+  assert.throws(() => buildPaintPartTable([["fog", "parts"]]), /PAINT_PARTS array/u);
+  assert.throws(() => buildPaintPartTable([["fog", undefined]]), /PAINT_PARTS array/u);
+  assert.throws(() => buildPaintPartTable([["fog", [null]]]), /not an object/u);
+  assert.throws(
+    () => buildPaintPartTable([["fog", [{ ...veil, owner: "fog" }]]]),
+    /invalid shape/u,
+  );
+  assert.throws(
+    () => buildPaintPartTable([["fog", [{ part: veil.part, filter: "fog_of_war" }]]]),
+    RangeError,
+  );
+  assert.throws(
+    () =>
+      buildPaintPartTable([
+        ["fog", [{ part: { kind: "veil" }, filter: "pov_sight_veil" }]],
+      ]),
+    TypeError,
+  );
 });
 
 test("multipart effects retain coherent filter ownership", () => {
@@ -270,8 +740,8 @@ test("multipart effects retain coherent filter ownership", () => {
     );
   }
   assert.equal(
-    VISUAL_FILTER_IDS.includes("damage_effects") ||
-      VISUAL_FILTER_IDS.includes("healing_effects"),
+    VISUAL_FILTER_IDS.includes(/** @type {any} */ ("damage_effects")) ||
+      VISUAL_FILTER_IDS.includes(/** @type {any} */ ("healing_effects")),
     false,
   );
   assert.equal(
@@ -291,7 +761,10 @@ test("multipart effects retain coherent filter ownership", () => {
       "target_selection_visuals",
     );
   }
-  assert.equal(VISUAL_FILTER_IDS.includes("rejected_action_feedback"), false);
+  assert.equal(
+    VISUAL_FILTER_IDS.includes(/** @type {any} */ ("rejected_action_feedback")),
+    false,
+  );
 });
 
 test("unknown and malformed future paint parts fail closed", () => {

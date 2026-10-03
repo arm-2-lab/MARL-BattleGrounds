@@ -1,6 +1,10 @@
 /**
  * @file Exercise real-service presentation installs, pending views, replay endpoints,
- * forged-root rejection and death/respawn identity.
+ * forged-root rejection and death/respawn identity. A hovered Replay Viewer body
+ * shows the shared Champion Card (class and calling, Agent ID, life, sources by
+ * class only), the same in Oracle View and Agent POV. A respawned champion's
+ * Spawn Shield tip reads the card's words: "Spawn Shield (Invulnerable)", "It
+ * can't be seen or hit, and can't strike yet." and one row, "Time Left".
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -8,7 +12,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
-import { formatDisplayNumber } from "../src/display.js";
+import { classNamesV1 } from "../src/class-documentation.js";
+import { formatDisplayNumber, formatLifeNumber } from "../src/display.js";
 import { statusLifecyclePresentation } from "../src/semantic-vocabulary.js";
 import {
   CHOREOGRAPHY_ROOT,
@@ -806,6 +811,55 @@ async function expectCompactAgentTooltip(
 
 /** @param {import("@playwright/test").Page} page
  * @param {Record<string, any>} agent
+ * @param {unknown} persistentCardBefore
+ * @param {Record<string, any>} presentation */
+async function expectReplayChampionCard(
+  page,
+  agent,
+  persistentCardBefore,
+  presentation,
+) {
+  // The Replay Viewer's arena body shows the shared Champion Card (the card
+  // the BattleClient's #hcard shows), in Oracle View and Agent POV alike.
+  const identity = expectedAgentIdentity(agent, presentation);
+  const names = classNamesV1(agent.class_id);
+  const tooltip = page.locator("#visual-tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveAttribute("data-tooltip-kind", "champion");
+  await expect(tooltip).toHaveAttribute("data-tooltip-accent", identity.accent);
+  await expect(tooltip.locator(".champion-card__title")).toHaveText(
+    `${names?.className} · ${names?.calling}`,
+  );
+  await expect(tooltip.locator(".champion-card__id")).toHaveText(
+    `Agent ID ${identity.displayId}`,
+  );
+  await expect(tooltip.locator(".champion-card__label").first()).toHaveText("Life");
+  await expect(tooltip.locator(".champion-card__value").first()).toHaveText(
+    `${formatLifeNumber(agent.current_health)} / ${formatLifeNumber(
+      agent.maximum_health ?? agent.max_health,
+    )}`,
+  );
+  const tooltipText = await tooltip.innerText();
+  for (const forbidden of [
+    "Controlled actor",
+    "Selected target",
+    "Reference",
+    "Inspected agent",
+    "Health",
+    "Effective Speed",
+    "hidden source",
+  ]) {
+    expect(tooltipText).not.toContain(forbidden);
+  }
+  // Sources are named by class only, never by Agent ID.
+  expect(tooltipText).not.toMatch(/ID \d's/u);
+  expect(await page.locator("#selection-card").evaluate((node) => node.innerHTML)).toBe(
+    persistentCardBefore,
+  );
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {Record<string, any>} agent
  * @param {Record<string, any>} presentation */
 async function expectCertifiedDocumentationCard(page, agent, presentation) {
   const identity = expectedAgentIdentity(agent, presentation);
@@ -1458,7 +1512,7 @@ async function captureCp4ENativeState(page, options) {
 async function openProduct(page, url, mode, { allVisualFilters = false } = {}) {
   captureBrowserErrors(page);
   await page.goto(url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -1480,7 +1534,7 @@ async function enableAllVisualFilters(page) {
   await expect(
     page.locator('#visual-filter-options input[type="checkbox"]:not(:checked)'),
   ).toHaveCount(0);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -1793,10 +1847,10 @@ async function expectTerminalReplayAgentSelection(page) {
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield")).toHaveAttribute(
     "aria-label",
-    "Read-only terminal replay battlefield snapshot.",
+    "Replay arena at its last tick. It never changes.",
   );
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "This replay frame is terminal. Activate an agent to inspect current facts, or use the timeline to review another frame.",
+    "This is the replay's last tick. Click a champion to look at it, or use the timeline to go to another tick.",
   );
   const before = await authenticatedGet(page, "/api/presentation/frame");
   expect(before.presentation_kind).toBe("replay_oracle");
@@ -1861,7 +1915,7 @@ async function authenticatedGet(page, path) {
  * @param {string} transportKind
  * @param {string} presentationKind */
 async function expectInstalledLeaf(page, transportKind, presentationKind) {
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -2354,7 +2408,7 @@ async function seekReplay(page, frameIndex) {
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   await expect(page.locator("#replay-frame-slider")).toHaveValue(String(frameIndex));
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -2504,13 +2558,13 @@ test("all five real service leaves install with safe pending continuity", async 
   ).toHaveCount(1);
   await expect(page.locator("#live-ranges-button")).toHaveAttribute(
     "aria-description",
-    "Toggle server-authored Oracle View range presentation.",
+    "Show or hide the reach rings.",
   );
   await expect(
     page.locator('#command-deck button[data-key="Tab"]:not([data-shift])'),
   ).toHaveAttribute(
     "aria-description",
-    "Move Oracle View control to the next active actor.",
+    "Give the orders to your next champion that can take orders. A policy's champion is skipped; click it to look at it. Staged orders are kept.",
   );
   await expect(page.locator("#command-deck #live-ranges-button")).toHaveCount(0);
   await expect(page.locator("#battlefield-shell #live-ranges-button")).toHaveCount(0);
@@ -2905,18 +2959,16 @@ test("all five real service leaves install with safe pending continuity", async 
     visibleControl.public_agent_id,
   );
 
+  // All ten slots are Manual here (the harness's default), so Tab gives the
+  // orders to the next living Manual slot and Shift+Tab comes back.
   await expectSingleActivationCommand(
     page,
     "/api/command",
     () => page.keyboard.press("Tab"),
     {
-      command_type: "keyboard",
-      key: "Tab",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
+      command_type: "roster_selection",
+      role: "control",
+      global_slot: (visibleControlSlot + 1) % 10,
     },
   );
   await expectBattlefieldRootCommandFocus(page);
@@ -2925,13 +2977,9 @@ test("all five real service leaves install with safe pending continuity", async 
     "/api/command",
     () => page.keyboard.press("Shift+Tab"),
     {
-      command_type: "keyboard",
-      key: "Tab",
-      shift_key: true,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
+      command_type: "roster_selection",
+      role: "control",
+      global_slot: visibleControlSlot,
     },
   );
   switchedAgent = await expectInstalledLeaf(
@@ -3093,7 +3141,7 @@ test("all five real service leaves install with safe pending continuity", async 
     );
     await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
     await expect(page.locator("#battlefield-empty")).toBeHidden();
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
   }
 
   await expectSingleActivationCommand(
@@ -3391,7 +3439,7 @@ test("all five real service leaves install with safe pending continuity", async 
     await route.fulfill({ response });
   });
   await page.locator("#live-ranges-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -3421,21 +3469,21 @@ test("all five real service leaves install with safe pending continuity", async 
     0,
   );
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Replay is read-only. Upcoming Transition shows the authorized recorded joint action out of this frame; activate an agent to inspect current facts, or use the timeline to change frames.",
+    "A replay never changes. Next Tick in the Actions tab shows the orders given on this tick. Click a champion to look at it, or use the timeline to go to another tick.",
   );
   await expect(
     page.locator("#visual-filters .visual-filters__ranges > #replay-ranges-button"),
   ).toHaveCount(1);
   await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
     "aria-description",
-    "Toggle recorded Oracle View range presentation.",
+    "Show or hide the reach rings in this replay.",
   );
   await expect(
     page.locator("#battlefield-utilities > #replay-clear-reference-button"),
   ).toHaveCount(1);
   await expect(page.locator("#replay-clear-reference-button")).toHaveAttribute(
     "aria-description",
-    "Clear the selected Oracle View agent and its inspection highlight.",
+    "Stop looking at the selected champion.",
   );
   await expect(page.locator("#replay-clear-reference-button")).toHaveText(
     "Clear Selection",
@@ -3496,7 +3544,7 @@ test("all five real service leaves install with safe pending continuity", async 
     .locator("#selection-card")
     .evaluate((node) => node.innerHTML);
   await page.locator('#battlefield .agent[data-selected="true"]').hover();
-  await expectCompactAgentTooltip(
+  await expectReplayChampionCard(
     page,
     replaySelectedAgent,
     replayOracleDocumentationBefore,
@@ -3576,7 +3624,7 @@ test("all five real service leaves install with safe pending continuity", async 
       `#battlefield .agent[data-presentation-key="${replayOracleMiddleOwner.presentation_key}"]`,
     )
     .hover();
-  await expectCompactAgentTooltip(
+  await expectReplayChampionCard(
     page,
     replayOracleMiddleOwner,
     replayOracleMiddleDocumentation,
@@ -3744,14 +3792,14 @@ test("all five real service leaves install with safe pending continuity", async 
     .locator("#selection-card")
     .evaluate((node) => node.innerHTML);
   await replayAgentSelectedBody.hover();
-  await expectCompactAgentTooltip(
+  await expectReplayChampionCard(
     page,
     replayAgentSelected,
     replayAgentInitialDocumentation,
     replayAgent.presentation,
   );
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Replay Agent POV is read-only. Activate a visible body or choose any agent in the roster to switch to that agent's fog-of-war view at the same replay tick.",
+    "Replay Agent POV shows only what one team saw. Click a champion you can see, or pick any champion in the roster, to see what its team saw at this tick.",
   );
   const replayAgentRecipientKey =
     replayAgent.presentation.authority.recipient_presentation_key;
@@ -4284,7 +4332,7 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
     for (const state of frameZeroStates) {
       expect(state.status).toBe("OOC");
       expect(state.countdown).toBe("0");
-      expect(state.ariaLabel).toContain("Inspect this authorized agent.");
+      expect(state.ariaLabel).toContain("Click to look at it.");
       expect(state.ariaLabel).not.toMatch(/combat|steps until out/iu);
     }
 
@@ -4664,7 +4712,7 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
       resetPulseCount: 0,
       tooltipTitle: inCombatExpiry.title,
       tooltipSummary:
-        "This agent can regenerate up to 4 health per tick while it remains out of combat.",
+        "It can regain up to 4 life per tick while it stays out of combat.",
     });
     expect(
       `${expirationDom.ariaLabel} ${expirationDom.tooltipTitle} ${expirationDom.tooltipSummary}`,
@@ -6730,7 +6778,7 @@ async function runCp5Slice5Proof(
                 event.tokenId === "in_combat" &&
                 event.lifecycle === "expired" &&
                 Number.isFinite(regenerationPerTick)
-                  ? `This agent can regenerate up to ${formatDisplayNumber(regenerationPerTick)} health per tick while it remains out of combat.`
+                  ? `It can regain up to ${formatDisplayNumber(regenerationPerTick)} life per tick while it stays out of combat.`
                   : lifecycleCopy.summary;
               return {
                 id: event.eventId,
@@ -7075,7 +7123,7 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
           `#battlefield .agent[data-presentation-key="${owner.presentation_key}"]`,
         )
         .hover();
-      await expectCompactAgentTooltip(
+      await expectReplayChampionCard(
         page,
         owner,
         documentationBefore,
@@ -7171,7 +7219,7 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
     });
   });
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Resync required");
+  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "pending",
@@ -7278,10 +7326,13 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   ).toEqual({ contains: false, sameParent: true });
   await expect(shield).toBeVisible();
   await expect(shield).toHaveAttribute("tabindex", "0");
-  await expect(shield).toHaveAttribute("aria-label", "Spawn Shield");
+  // The shield's tip is the Champion Card's Spawn Shield row in a normal-size
+  // tip: the approved name with its effect, the card's sentence (no class gives
+  // the shield, so no source) and one row, Time Left.
+  await expect(shield).toHaveAttribute("aria-label", "Spawn Shield (Invulnerable)");
   await expect(shield).toHaveAttribute(
     "aria-description",
-    "While the spawn shield is active, this agent is protected, concealed from opponents, untargetable, excluded from aura effects, and limited to movement. It can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
+    "It can't be seen or hit, and can't strike yet.",
   );
   expect(await page.locator(subjectSelector).getAttribute("aria-label")).not.toMatch(
     /Spawn Shield|invulnerable|concealed|untargetable/iu,
@@ -7296,39 +7347,17 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   );
   await shield.focus();
   await expect(page.locator("#visual-tooltip")).toBeVisible();
-  await expect(page.locator("#visual-tooltip-title")).toHaveText("Spawn Shield");
+  await expect(page.locator("#visual-tooltip-title")).toHaveText(
+    "Spawn Shield (Invulnerable)",
+  );
   await expect(
     page.locator("#visual-tooltip .semantic-explanation__summary"),
-  ).toHaveText(
-    "While the spawn shield is active, this agent is protected, concealed from opponents, untargetable, excluded from aura effects, and limited to movement. It can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
-  );
+  ).toHaveText("It can't be seen or hit, and can't strike yet.");
   await expect(page.locator("#visual-tooltip .semantic-explanation__label")).toHaveText(
-    [
-      "Protection Effect",
-      "Movement Speed",
-      "Visibility Effect",
-      "Targetability Effect",
-      "Action Effect",
-      "Aura Effect",
-      "Agent Collision Effect",
-      "Effect Duration",
-      "Duration Remaining",
-      "Recipient",
-    ],
+    ["Time Left"],
   );
   await expect(page.locator("#visual-tooltip .semantic-explanation__value")).toHaveText(
-    [
-      "Invulnerable",
-      "2",
-      "Concealed from opponents",
-      "Untargetable",
-      "Movement only",
-      "Excluded as emitter and beneficiary",
-      "The agent can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
-      "3 ticks",
-      "3 ticks",
-      "Agent ID 5 · Rogue · Team B",
-    ],
+    ["3 ticks left"],
   );
   const shieldStyles = await shield.evaluate((root) => {
     const chip = root.querySelector(".agent-spawn-shield__chip");
@@ -7508,12 +7537,12 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     expect(
       Math.abs(deathGeometry.center[1] - deathGeometry.bodyCenter[1]),
     ).toBeLessThanOrEqual(0.001);
-    await expect(deathEffect).toHaveAttribute("aria-label", "Agent Died");
+    await expect(deathEffect).toHaveAttribute("aria-label", "Fallen");
     await deathEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText("Agent Died");
+    await expect(page.locator("#visual-tooltip-title")).toHaveText("Fallen");
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This agent died on the incoming transition.");
+    ).toHaveText("This champion fell this tick.");
     expect(await deathEffect.getAttribute("aria-label")).not.toMatch(
       /_|semantic pulse/iu,
     );
@@ -7568,7 +7597,7 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     );
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This team respawn occurred on the incoming transition.");
+    ).toHaveText("This team's fallen champions came back this tick.");
     const waveGeometry = await wave.evaluate((node) => {
       const map = document.querySelector(".map-boundary");
       const label = node.querySelector(".combat-respawn-wave__label");
@@ -7667,12 +7696,12 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     expect(
       Math.abs(respawnGeometry.center[1] - respawnGeometry.bodyCenter[1]),
     ).toBeLessThanOrEqual(0.001);
-    await expect(respawnEffect).toHaveAttribute("aria-label", "Agent Respawned");
+    await expect(respawnEffect).toHaveAttribute("aria-label", "Returned");
     await respawnEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText("Agent Respawned");
+    await expect(page.locator("#visual-tooltip-title")).toHaveText("Returned");
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This agent respawned on the incoming transition.");
+    ).toHaveText("This champion came back at its waystone this tick.");
     expect(await respawnEffect.getAttribute("aria-label")).not.toMatch(
       /_|semantic pulse/iu,
     );
@@ -7759,7 +7788,7 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     );
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This team respawn occurred on the incoming transition.");
+    ).toHaveText("This team's fallen champions came back this tick.");
     const teamAGeometry = await teamAWave.evaluate((node) => {
       const map = document.querySelector(".map-boundary");
       const label = node.querySelector(".combat-respawn-wave__label");

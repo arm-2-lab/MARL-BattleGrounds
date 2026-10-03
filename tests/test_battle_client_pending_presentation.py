@@ -4,6 +4,10 @@ Real Python frames pass the browser's raw/authorized join and display adapters.
 Mixed Systems, NoSharedObs Random, several drafts, dead configured Manual rows,
 and malformed ownership joins keep the same action and information boundaries.
 Drawing must not call a method or change its memory, draft, epoch, or accepted action.
+Oracle View inspects the focused champion. Agent POV inspects its recipient: with
+Manual champions in the game, focusing a policy champion keeps the view (and the
+editable draft) on a Manual champion; without any, the policy focus is the
+recipient and reads as policy inspection.
 """
 
 # pyright: reportPrivateUsage=false
@@ -103,12 +107,23 @@ def test_mixed_system_drafts_policy_focus_and_last_actions(tmp_path: Path) -> No
         for pov in (False, True):
             pair = _pair(focused, pov=pov)
             wrapper = pair["presentation"]["live_inspection"]["inspection"]
+            # A new service's Agent POV recipient is the focus when it is Manual,
+            # else the lowest Manual slot.
+            subject = (
+                slot
+                if not pov or slot in session.manual_slots
+                else min(session.manual_slots)
+            )
+            if pov:
+                assert pair["presentation"]["authority"][
+                    "recipient_public_agent_id"
+                ] == (session.evaluation_context.roster[subject].public_agent_id)
             assert wrapper["inspection_kind"] == (
                 "editable_live_draft"
-                if slot in session.manual_slots
+                if subject in session.manual_slots
                 else "policy_read_only"
             )
-            if slot not in session.manual_slots:
+            if subject not in session.manual_slots:
                 assert "draft" not in wrapper and "draft_action" not in wrapper
                 assert (
                     wrapper["decision_mask"]["owner_public_agent_id"]

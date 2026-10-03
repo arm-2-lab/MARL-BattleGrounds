@@ -1,8 +1,9 @@
 """Check TDM-GAMMA in the DevClient: selection, execution, records and replays.
 
-GAMMA's private live controller ID is ``tdm_gamma``, its public policy name is
-``tdm-gamma`` and its label is "Reactive TDM GAMMA". Like ALPHA
-(``reactive_tdm``) and BETA (``scenario_5``) it can play either team, and it
+GAMMA's private live controller ID is ``tdm_gamma`` and its public policy
+name, which live slot labels and recorded replays show, is ``tdm-gamma``.
+Like ALPHA (``reactive_tdm``) and BETA (``scenario_5``) it can play either
+team, and it
 needs SharedObs on either team. These tests check that:
 
 - Team B GAMMA is admitted with SharedObs by the protocol models,
@@ -34,8 +35,9 @@ needs SharedObs on either team. These tests check that:
   ``team_a_scenario_controller``.
 - The launcher's recording metadata accepts GAMMA on either team, beside every
   supported controller on the other team.
-- The match summary names GAMMA "Reactive TDM GAMMA", even in a scenario whose
-  name selects a scenario-pressure label for BETA.
+- The match summary names GAMMA ``tdm-gamma`` and BETA ``tdm-beta``, the
+  recorded controller names, even in a scenario whose name would select a
+  scenario-pressure title for an old record.
 - Recording epochs (causal audit): each recorded transition starts at the frame
   of its decision tick, that frame holds the pre-action Hunter Trap ticks, and
   the recorded Team B action equals GAMMA's choice from that same observation.
@@ -140,7 +142,7 @@ _GAMMA_ALGORITHM = "reactive-team-deathmatch-gamma-controller"
 _GAMMA_VERSION = 2
 _GAMMA_PROTOCOL = f"{_GAMMA_ALGORITHM}@{_GAMMA_VERSION}"
 _BETA_ALGORITHM = "scenario-5-pressure-controller"
-_GAMMA_LABEL = "Reactive TDM GAMMA"
+_GAMMA_LABEL = "tdm-gamma"
 # Team A controllers that keep the V6 payload beside Team B GAMMA. BETA and
 # GAMMA on Team A make the payload V7 and have their own tests.
 _V6_TEAM_A_CONTROLLERS: tuple[TeamController, ...] = (
@@ -1186,10 +1188,10 @@ def test_match_summary_names_gamma_team_b() -> None:
         assert summary.teams[1].policy_ids == tuple(
             f"debugger-action-source:{team_b}:slot:{slot}" for slot in _TEAM_B_SLOTS
         )
-    # The BETA label proves the scenario-pressure naming path is active here.
+    # New records name each controller as recorded, not by scenario title.
     assert names == {
         "tdm_gamma": _GAMMA_LABEL,
-        "scenario_5": "TDM Scenario 5 BETA Controller",
+        "scenario_5": "tdm-beta",
     }
 
 

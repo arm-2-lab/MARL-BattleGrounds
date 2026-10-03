@@ -1,0 +1,209 @@
+/*
+ * Styles for the Basic Attacks look, Cleave And Bloom (src/looks/basics.js).
+ * styles.css imports this file. Every colour is a token from the :root block
+ * in styles.css; a part's class colour comes from data-basic-class on its
+ * group. Stroke widths, positions and the still opacities are SVG attributes
+ * written by basics.js; animations are Web Animations started by the
+ * choreographer, never CSS animations. Everything here is export-safe: flat
+ * fills, strokes and opacity only.
+ */
+
+[data-basic-class] {
+  --basic-colour: var(--ui-muted);
+}
+
+[data-basic-class="mage"] {
+  --basic-colour: var(--class-mage);
+}
+
+[data-basic-class="warrior"] {
+  --basic-colour: var(--class-warrior);
+}
+
+[data-basic-class="hunter"] {
+  --basic-colour: var(--class-hunter);
+}
+
+[data-basic-class="rogue"] {
+  --basic-colour: var(--class-rogue);
+}
+
+[data-basic-class="priest"] {
+  --basic-colour: var(--class-priest);
+}
+
+/* The bolt drains toward its star: its scale origin moves by percentage of its own box. */
+.basic-blow--bolt .basic-blow__draw {
+  transform-box: fill-box;
+}
+
+.basic-blow__core,
+.basic-blow__glow,
+.basic-blow__centre {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.basic-blow__core,
+.basic-blow__glow {
+  stroke: var(--basic-colour);
+}
+
+/* Soft Glow: 0.18 of full strength under a bright line, only while playing. */
+.basic-blow__glow {
+  opacity: 0.21;
+}
+
+.basic-blow--streak .basic-blow__core,
+.basic-blow--streak .basic-blow__glow {
+  stroke-linecap: butt;
+}
+
+.basic-blow__centre {
+  stroke: var(--starcore);
+}
+
+.basic-blow--ribbon .basic-blow__centre {
+  stroke: var(--dawnlight);
+}
+
+/* The Comet Bolt (Arcane Blast during Burst): its Soft Glow has square ends. */
+.basic-blow--comet .basic-blow__glow {
+  stroke-linecap: butt;
+}
+
+/* The comet head: a violet ball and tail with a Starcore core and tail. */
+.basic-comet__tail,
+.basic-comet__ball {
+  fill: var(--basic-colour);
+}
+
+.basic-comet__tail {
+  opacity: 0.55;
+}
+
+.basic-comet__tail-core,
+.basic-comet__core,
+.basic-comet__flash {
+  fill: var(--starcore);
+}
+
+/* The ring around the star: a violet ring with a Starcore line on it. */
+.basic-comet__ring,
+.basic-comet__ring-core {
+  fill: none;
+}
+
+.basic-comet__ring {
+  stroke: var(--basic-colour);
+}
+
+.basic-comet__ring-core {
+  stroke: var(--starcore);
+}
+
+.basic-blow__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10px;
+  pointer-events: stroke;
+}
+
+.basic-cleave__fill {
+  fill: var(--basic-colour);
+  pointer-events: visiblePainted;
+}
+
+/* The Lightbringer's soft gold arc is drawn at 58%. */
+.basic-cleave[data-basic-class="priest"] .basic-cleave__fill {
+  opacity: 0.58;
+}
+
+.basic-cleave__accent--line {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.basic-cleave__edge {
+  stroke: var(--forge-white);
+  stroke-width: 1px;
+  opacity: 0.9;
+}
+
+.basic-cleave__core {
+  stroke: var(--starcore);
+  stroke-width: 0.9px;
+}
+
+.basic-cleave[data-kindled="true"] .basic-cleave__core {
+  stroke-width: 1.2px;
+}
+
+.basic-cleave[data-basic-class="priest"] .basic-cleave__core {
+  stroke: var(--dawnlight);
+  stroke-width: 1.2px;
+  opacity: 0.95;
+}
+
+.basic-cleave__stars {
+  fill: var(--starcore);
+}
+
+.basic-cleave__teeth {
+  fill: var(--basic-colour);
+}
+
+.basic-cleave__spine {
+  stroke: var(--blade-silver);
+  stroke-width: 0.7px;
+}
+
+.basic-cleave--twin .basic-cleave__spine {
+  stroke-width: 0.6px;
+}
+
+.basic-sparks__flick {
+  fill: none;
+  stroke: var(--forge-white);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+}
+
+.basic-landing__star,
+.basic-landing__shards,
+.basic-landing__petals,
+.basic-dot {
+  pointer-events: visiblePainted;
+}
+
+.basic-landing__star {
+  fill: var(--starcore);
+}
+
+.basic-landing__shards {
+  fill: var(--class-hunter);
+}
+
+/* Pale yew: the Shard Fan's spines and spark (token --yew-light, Life Ivory until it exists). */
+.basic-landing__spines {
+  fill: none;
+  stroke: var(--yew-light, var(--life-ivory));
+  stroke-width: 0.9px;
+  stroke-linecap: round;
+}
+
+.basic-landing__spark {
+  fill: var(--yew-light, var(--life-ivory));
+}
+
+.basic-landing__petals {
+  fill: var(--class-priest);
+}
+
+.basic-landing__heart {
+  fill: var(--dawnlight);
+}
+
+.basic-dot {
+  fill: var(--basic-colour);
+}

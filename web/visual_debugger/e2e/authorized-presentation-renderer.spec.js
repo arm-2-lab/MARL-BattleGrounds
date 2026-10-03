@@ -8,7 +8,10 @@
  * depth-6 Oracle with a wall and a pillar on the strip edges for a person to
  * inspect. The durable visual filters test includes Red Zone Floors: turning it
  * off removes only the tint (paint with no accessible text) and keeps every
- * obstacle, agent and agent identity.
+ * obstacle, agent and agent identity. In all three Agent leaves a status tip
+ * reads the Champion Card's words (the card's sentence with the source by class
+ * only, then one row, "Time Left"), never names the recipient or a source by
+ * Agent ID, and no researcher presentation key reaches the tip or its owner.
  */
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -54,6 +57,12 @@ test.beforeAll(async () => {
         return;
       }
       const path = resolve(WEB_ROOT, `.${pathname}`);
+      // styles.css imports the part styles under src/styles, so serve them too.
+      if (path.startsWith(`${SOURCE_ROOT}${sep}`) && extname(path) === ".css") {
+        response.writeHead(200, { "content-type": "text/css; charset=utf-8" });
+        response.end(await readFile(path));
+        return;
+      }
       if (!path.startsWith(`${SOURCE_ROOT}${sep}`) || extname(path) !== ".js") {
         response.writeHead(404).end();
         return;
@@ -1394,7 +1403,7 @@ test("all three normalized Agent POV leaves use researcher-space aura attributio
   );
 });
 
-test("all three Agent leaves enrich visible status tooltips from researcher space only", async ({
+test("all three Agent leaves show status tips in the card's words, with no researcher keys", async ({
   page,
 }) => {
   for (const leafName of [
@@ -1581,33 +1590,28 @@ test("all three Agent leaves enrich visible status tooltips from researcher spac
     expect(result.compact.counts.povObserved, leafName).toBe(0);
     expect(result.standard.counts.overflow, leafName).toBe(0);
     for (const row of [...result.standard.rows, ...result.compact.rows]) {
+      // A status tip is the Champion Card's row: the card's sentence with the
+      // source by class only, then one row, Time Left. The recipient and the
+      // other rows stay on the full surface. Every leaf's one status is a
+      // Priest's Blessing of Freedom on a Warrior, 1 tick left.
       if (row.producer === "durable" || row.producer === "povObserved") {
-        expect(row.labels, `${leafName}/${row.producer}`).toContain("Recipient");
-      } else {
-        expect(row.detailsText, `${leafName}/${row.producer}`).toContain("Recipient");
+        expect(row.labels, `${leafName}/${row.producer}`).toEqual(["Time Left"]);
       }
       expect(row.detailsText, `${leafName}/${row.producer}`).toContain(
+        "Slows can't drop it below 85% speed. From a Priest.",
+      );
+      expect(row.detailsText, `${leafName}/${row.producer}`).not.toContain("Recipient");
+      expect(row.detailsText, `${leafName}/${row.producer}`).not.toContain(
         row.expectedRecipient,
       );
       expect(row.detailsText, `${leafName}/${row.producer}`).not.toContain(
         "Not disclosed",
       );
+      expect(row.expectedSources.length, `${leafName}/${row.producer}`).toBe(1);
       for (const expectedSource of row.expectedSources) {
-        expect(row.detailsText, `${leafName}/${row.producer}`).toContain(
+        expect(row.detailsText, `${leafName}/${row.producer}`).not.toContain(
           expectedSource,
         );
-      }
-      if (
-        row.expectedSources.length > 0 &&
-        (row.producer === "durable" || row.producer === "povObserved")
-      ) {
-        expect(row.labels, `${leafName}/${row.producer}`).toContain(
-          row.expectedSources.length === 1 ? "Source" : "Sources",
-        );
-      }
-      if (row.expectedSources.length === 0) {
-        expect(row.labels, `${leafName}/${row.producer}`).not.toContain("Source");
-        expect(row.labels, `${leafName}/${row.producer}`).not.toContain("Sources");
       }
       for (const researcherKey of row.researcherKeys) {
         expect(row.detailsHtml, `${leafName}/${row.producer}`).not.toContain(
@@ -3059,9 +3063,9 @@ test("authorized death, team waves, and resurrection retain outward settled geom
       agentOwnsBodyCenter: true,
       hitPointerEvents: "stroke",
       hitFill: "none",
-      ariaLabel: "Agent Died",
-      tooltipTitle: "Agent Died",
-      tooltipSummary: "This agent died on the incoming transition.",
+      ariaLabel: "Fallen",
+      tooltipTitle: "Fallen",
+      tooltipSummary: "This champion fell this tick.",
     }),
     expect.objectContaining({
       eventType: "agent_respawned",
@@ -3076,9 +3080,9 @@ test("authorized death, team waves, and resurrection retain outward settled geom
       agentOwnsBodyCenter: true,
       hitPointerEvents: "stroke",
       hitFill: "none",
-      ariaLabel: "Agent Respawned",
-      tooltipTitle: "Agent Respawned",
-      tooltipSummary: "This agent respawned on the incoming transition.",
+      ariaLabel: "Returned",
+      tooltipTitle: "Returned",
+      tooltipSummary: "This champion came back at its waystone this tick.",
     }),
   ]);
   for (const lifecycle of result.beforeSettle.lifecycleGeometry) {
@@ -3487,8 +3491,8 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
   expect(overlap.agentPaintOrder).toBeLessThan(overlap.routePaintOrder);
   expect(overlap.activationRoute).toBe(true);
   expect(overlap.routeRootOwned).toBe(true);
-  expect(overlap.routeLayer).toBe("transient-route");
-  const routeLayerIndex = overlap.layerOrder.indexOf("transient-route");
+  expect(overlap.routeLayer).toBe("strike-band");
+  const routeLayerIndex = overlap.layerOrder.indexOf("strike-band");
   expect(routeLayerIndex).toBeGreaterThanOrEqual(0);
   for (const foregroundLayer of [
     "obstacle",

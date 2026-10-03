@@ -1,0 +1,500 @@
+/*
+ * BattleClient floating parts, ported from the approved vision page:
+ *
+ * - The hover card (#hcard): the holder of the Champion Card that follows the
+ *   pointer over a champion, a portrait, an Allowed Now button or a checklist
+ *   row. The card itself (.champion-card: box, bars, rows, team crest) is
+ *   styled in src/styles/symbols-ui.css, shared with the Replay Viewer.
+ * - The How To Play overlay (#htp): it covers the arena (8 px inside its
+ *   edge), never the deck, and holds the four rule cards (.rules, .rule with
+ *   an .ill picture) and the key row (.keysrow). The pictures' team rings
+ *   (.tok-ring--a, .tok-ring--b) and class studs (.tok-studs--<class>) take
+ *   the palette tokens here.
+ * - The Replay Recording popover (#rec-pop), opened by the Recording pill in
+ *   the top bar (a native popover, so a second click closes it). It opens
+ *   over the rail's cards, below the scorebug, where the Visual Filters
+ *   drawer opens, so it never covers the scorebug or the arena. After a
+ *   failed save it also holds Retry Save and the Save As row
+ *   (#recording-save-as-control: a file name box and a Save As button), kept
+ *   inside the popover's width (the rail's cards: 268 to 318 px).
+ * - The Restart dialog (#recording-discard-dialog, class restart-dialog):
+ *   "Save This Game First?" with Save, Discard and Cancel. It stays a native
+ *   <dialog> because src/main.js opens it with showModal(). Like the vision's
+ *   .modal, the dialog itself is the dimmed overlay over the whole screen,
+ *   and its form (.mbox) is the 420 px box in the middle.
+ * - The Visual Filters drawer (#visual-filters-drawer), opened and closed by
+ *   the Visual Filters button in the top bar (a manual popover, so it stays
+ *   open while you look at the arena; a second click closes it). It sits over
+ *   the rail's cards and is as wide as they are (the rail width --rail-w from
+ *   layout.css, less the rail's 12 px and 10 px side padding), and its top is
+ *   the rail's first card (--vf-drawer-top from src/shell.js), so it never
+ *   covers the scorebug, Lock In, Restart or anything else in the stage. The
+ *   Palette select is not shown in live play (the Palette: High Contrast
+ *   switch owns the palette there).
+ * - The V camera tip (#camera-tip) over the status line's message.
+ *
+ * - The view tag's Oracle View colors (#pov-tag[data-view="oracle"]) and its
+ *   spot on the arena's frame under the floor, past the left home strip
+ *   (from the --left-home-end and --floor-band properties src/looks/camera.js
+ *   writes on #arena).
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+/* Hover card: a bare holder placed by src/tooltip.js createHoverCard; the
+   Champion Card inside draws its own 262 px box. */
+html[data-product-kind="combat_debugger"] .bc .hcard {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* How To Play overlay. */
+html[data-product-kind="combat_debugger"] .bc .htp {
+  position: absolute;
+  z-index: 8;
+  inset: 8px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--edge2);
+  border-radius: 8px;
+  background: rgb(15 22 36 / 98%);
+  cursor: default;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .rule {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .rule h3 {
+  font-size: 15px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .rule p {
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .rule .ill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 84px;
+  overflow: hidden;
+  padding: 0 8px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--surround);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .plus {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 14px);
+  gap: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad i {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--edge2);
+  border-radius: 3px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad i.on {
+  border-color: var(--moon);
+  background: #1d2944;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-slot {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 52px;
+  padding: 4px 2px;
+  border: 1px solid var(--moon);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel2);
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .pts {
+  color: var(--ivory);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .zone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 64px;
+  padding: 0 10px;
+  border-left: 2px solid rgb(239 75 75 / 55%);
+  border-radius: 0 4px 4px 0;
+  background: rgb(239 75 75 / 8%);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .ill .zone em {
+  position: absolute;
+  top: 2px;
+  left: 6px;
+  color: var(--crimson);
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* Rule card tokens (src/shell.js ruleToken): the team ring and the four class
+   studs take their colors from the palette tokens, so the script holds no
+   team or class color and a palette change reaches the tokens too. */
+html[data-product-kind="combat_debugger"] .bc .htp .tok-ring--a {
+  stroke: var(--team-a);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-ring--b {
+  stroke: var(--team-b);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--mage {
+  fill: var(--class-mage);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--warrior {
+  fill: var(--class-warrior);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--hunter {
+  fill: var(--class-hunter);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--rogue {
+  fill: var(--class-rogue);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--priest {
+  fill: var(--class-priest);
+}
+
+html[data-product-kind="combat_debugger"] .bc .htp .foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .keysrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .keysrow span {
+  white-space: nowrap;
+}
+
+/* "Read The Full Guide": a button that reads as a link. */
+html[data-product-kind="combat_debugger"] .bc .linkbtn {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  color: var(--moon);
+  background: none;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+html[data-product-kind="combat_debugger"] .bc .linkbtn:hover:not(:disabled) {
+  background: none;
+}
+
+/* Replay Recording popover: over the rail's cards and exactly as wide as
+   they are (268 to 318 px), below the scorebug, where the Visual Filters
+   drawer opens; a 300 px box would leave a sliver of the card under it. So it
+   never covers the scorebug or the arena (owner ruling M3, 3 Oct 2026). Its
+   top is the rail's first card: the drawer's --vf-drawer-top fallback, 144 px
+   (the 48 px top bar, the 84 px scorebug and the rail's 12 px padding). */
+html[data-product-kind="combat_debugger"] .bc .pop {
+  position: fixed;
+  inset: 144px 12px auto auto;
+  display: none;
+  gap: 8px;
+  width: calc(var(--rail-w) - 22px);
+  max-height: calc(100vh - 156px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--edge2);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pop:popover-open {
+  display: grid;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pop .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pop .m {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Save As, shown only after a failed save: the label on its own line, then
+   the file name box and the Save As button side by side, all inside the
+   300 px popover. The old recording panel's wide row in styles.css (a 23 rem
+   box) would push Save As out of the popover, off the screen. */
+html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as label {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as input {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel2);
+  font: inherit;
+  line-height: 1.35;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .pop
+  .recording-save-as
+  input:focus-visible {
+  outline: 2px solid var(--moon);
+  outline-offset: 1px;
+}
+
+/* Restart dialog: "Save This Game First?" over a dimmed page. The dialog
+   sits inside #bc, so it reads the vision's tokens even in the top layer.
+   The dialog is the vision's .modal: it fills the screen with the 70% dim
+   and centers its box. Its own ::backdrop stays clear, so the dim is drawn
+   once. The box is the form (.mbox), sized and painted like the vision's. */
+html[data-product-kind="combat_debugger"] .bc .restart-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: rgb(10 13 20 / 70%);
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .restart-dialog[open] {
+  display: grid;
+  place-items: center;
+}
+
+html[data-product-kind="combat_debugger"] .bc .restart-dialog::backdrop {
+  background: transparent;
+}
+
+html[data-product-kind="combat_debugger"] .bc .restart-dialog .mbox {
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100% - 32px));
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--edge2);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+html[data-product-kind="combat_debugger"] .bc .restart-dialog .mbox p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .restart-dialog .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Visual Filters drawer: over the rail's cards, below the scorebug.
+   src/shell.js writes --vf-drawer-top (the top of the rail's first card, in
+   CSS px) just before the drawer opens and when the window resizes, so the
+   drawer never covers the scorebug. 144 px (the 48 px top bar, the 84 px
+   scorebug and the rail's 12 px padding) is only the fallback. */
+html[data-product-kind="combat_debugger"] .bc .vf-drawer {
+  position: fixed;
+  inset: var(--vf-drawer-top, 144px) 12px auto auto;
+  width: calc(var(--rail-w) - 22px);
+  max-height: calc(100vh - var(--vf-drawer-top, 144px) - 12px);
+  margin: 0;
+  overflow-y: auto;
+  padding: 0;
+  border: 1px solid var(--edge2);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  scrollbar-color: #34425f transparent;
+  scrollbar-width: thin;
+}
+
+html[data-product-kind="combat_debugger"] .bc .vf-drawer > #visual-filters {
+  margin: 0;
+  border: 0;
+}
+
+/* In the drawer the switch list uses the drawer's height and the drawer
+   scrolls, instead of a small scroll box inside it. */
+html[data-product-kind="combat_debugger"] .bc .vf-drawer #visual-filters-body {
+  max-height: none;
+  overflow: visible;
+}
+
+/* The V camera tip (src/looks/camera.js puts #camera-tip in the status line
+   and gives it the message's box as inline left, top, width and height): it
+   covers only the message (#msg) for about 4 s or until the next input, in
+   the message's own look with a Moon Silver edge, so it never covers the
+   arena, the scorebug, the rail or a control. These rules beat the
+   fixed-corner placement in src/styles/camera.css, which stays for a page
+   without a status line. */
+html[data-product-kind="combat_debugger"] .bc .dstatus > #camera-tip {
+  position: absolute;
+  right: auto;
+  bottom: auto;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 2px solid var(--moon);
+  border-radius: 0;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+html[data-product-kind="combat_debugger"] .bc .dstatus > #camera-tip[hidden] {
+  display: none;
+}
+
+/* Live play: the Palette: High Contrast switch (Arena group) owns the page
+   palette (src/shell.js applies it), so the Palette select that src/main.js
+   adds to the Visual Filters is not shown in the BattleClient or the
+   DevClient; the Replay Viewer keeps it. */
+html[data-product-kind="combat_debugger"] .palette-control {
+  display: none;
+}
+
+/* The arena's view tag in Oracle View (src/shell.js writes data-view):
+   amber words and a faint amber edge, as in the vision. Its other rules are in
+   arena.css. */
+html[data-product-kind="combat_debugger"] .bc .povtag[data-view="oracle"] {
+  border-color: rgb(255 181 71 / 55%);
+  color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"] .bc .povtag[data-view="oracle"] span {
+  color: inherit;
+}
+
+/* The view tag's spot: on the arena's frame under the floor, starting 8 px
+   past the left home strip and its corner bracket (the store's Agent POV
+   caption rule), so it never covers the left home end's bracket lines, a
+   floor mark or the herald cards' top band (owner ruling M3, 3 Oct 2026).
+   src/looks/camera.js writes --left-home-end (where the left strip ends) and
+   --floor-band (the frame's height under the floor), both shares of the
+   field's width, on #arena; the field is the battlefield shell, as wide as
+   arena.css makes it and centered in the arena. As in the store, the font
+   fills that band (the 1.1 line and the 1 px border fill the band less 1 px
+   under the floor and 0.2 px over the field's edge), and the tag sits in the
+   band's middle, but the font never drops below 10 px so the words stay
+   readable (owner, 3 Oct 2026: 10 to 11 px). Where the band is thinner than a
+   10 px tag (1366 x 768) the tag keeps its bottom 0.2 px above the field's
+   edge and overlaps the floor's bottom edge by about 3 px. The fallbacks put
+   it at the floor's left edge with the 16/1032 pad until the first frame.
+   arena.css gives the tag only its look (colors and pill shape); these rules
+   own its spot and size. */
+html[data-product-kind="combat_debugger"] .bc .povtag {
+  --tag-field-w: min(100cqw, 100cqh * var(--battlefield-aspect) + 0.5px);
+  --tag-field-h: calc(var(--tag-field-w) / var(--battlefield-aspect));
+  --tag-side: calc((100cqw - var(--tag-field-w)) / 2);
+  --tag-home-end: var(--left-home-end, 0.0155);
+  --tag-band: calc(var(--floor-band, 0.0155) * var(--tag-field-w) - 1.2px);
+  --tag-rest: max(0px, (var(--tag-band) - 1.1em - 2px) / 2);
+
+  top: auto;
+  bottom: calc((100cqh - var(--tag-field-h)) / 2 + 0.2px + var(--tag-rest));
+  left: calc(var(--tag-side) + var(--tag-home-end) * var(--tag-field-w) + 8px);
+  gap: 0.5em;
+  max-width: calc(var(--tag-field-w) * (1 - 2 * var(--tag-home-end)) - 16px);
+  padding: 0 0.8em 0 0.6em;
+  font-size: clamp(10px, (var(--tag-band) - 2px) / 1.1, 11px);
+  line-height: 1.1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .povtag svg {
+  width: 1.1em;
+  height: 1.1em;
+}

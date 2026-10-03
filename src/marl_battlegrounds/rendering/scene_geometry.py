@@ -42,18 +42,24 @@ from marl_battlegrounds.rendering.vocabulary import (
     team_token_from_id,
 )
 
+# Static palette. The browser's styles.css :root block owns every colour. The
+# values from _BACKGROUND through _CLASS_COLORS copy its --background,
+# --battlefield, --text, --text-muted, --team-a, --team-b and --class-* tokens
+# for the static Matplotlib renderer, and
+# web/visual_debugger/tests/palette-parity.test.js fails when any of them drift
+# apart. Change a colour in styles.css first.
 _BACKGROUND = "#0B1020"
 _BATTLEFIELD = "#111827"
 _TEXT = "#F4F7FB"
 _MUTED = "#9AA7B8"
-_TEAM_A = "#3B82F6"
-_TEAM_B = "#F05A67"
+_TEAM_A = "#3D8BFF"
+_TEAM_B = "#EF4B4B"
 _CLASS_COLORS = {
-    "mage": "#22D3EE",
-    "warrior": "#D18B47",
-    "hunter": "#84CC16",
-    "rogue": "#FACC15",
-    "priest": "#F472B6",
+    "mage": "#B99CFF",
+    "warrior": "#D8904F",
+    "hunter": "#8CC84B",
+    "rogue": "#3FD0A0",
+    "priest": "#F5C95A",
 }
 _DAMAGE = "#FB7185"
 _HEALING = "#34D399"
@@ -69,12 +75,25 @@ type VisualEventBatch = VisualEventBatchV1 | VisualEventBatchV2
 def _aura_color(token_id: str) -> str:
     """Choose the legacy aura color for token_id.
 
-    Return a hex color for Mage amplification or Warrior mitigation, or the
-    muted color for any other ID. This lookup does not validate token text.
+    Parameters
+    ----------
+    token_id : str
+        Aura token ID from a V1 scene, such as ``"mage_amplification"``.
+
+    Returns
+    -------
+    str
+        The Mage class colour for ``"mage_amplification"``, the Warrior class
+        colour for ``"warrior_mitigation"``, or the muted text colour for any
+        other ID. Colours are uppercase ``#RRGGBB`` hex from the static palette.
+
+    Notes
+    -----
+    This lookup does not validate token text and has no side effects.
     """
     return {
-        "mage_amplification": "#22D3EE",
-        "warrior_mitigation": "#D18B47",
+        "mage_amplification": _CLASS_COLORS["mage"],
+        "warrior_mitigation": _CLASS_COLORS["warrior"],
     }.get(token_id, _MUTED)
 
 
@@ -651,14 +670,33 @@ def _draw_v2_aura_fields(
 ) -> None:
     """Add V2 aura circles for sources marked alive in scene.
 
-    parts supplies circles. Skip sources marked dead; use the supplied center
-    and radius without recomputing recipients or effects. Mutate axes and
-    return None.
+    Parameters
+    ----------
+    axes : _AxesLike
+        Matplotlib axes to draw on; each circle is added to it.
+    parts : _MatplotlibParts
+        Lazily imported Matplotlib factories; supplies the circle patches.
+    scene : BattlefieldSceneV2
+        Authorized scene whose ``aura_fields`` are drawn as given, in world
+        units. Sources marked dead are skipped.
+
+    Notes
+    -----
+    The Mage's ``"mage_damage_amplification"`` aura uses the Mage class
+    colour. Any other aura ID, which in V2 can only be the Warrior's
+    ``"warrior_damage_mitigation"``, uses the Warrior class colour. Circles
+    are filled at 12% opacity. The supplied centre and radius
+    are used without recomputing recipients or effects. Mutates axes and
+    returns None.
     """
     for aura in scene.aura_fields:
         if not aura.source_alive:
             continue
-        color = "#22D3EE" if aura.aura_id == "mage_damage_amplification" else "#D18B47"
+        color = (
+            _CLASS_COLORS["mage"]
+            if aura.aura_id == "mage_damage_amplification"
+            else _CLASS_COLORS["warrior"]
+        )
         field_patch = parts.circle(
             aura.center,
             aura.radius,

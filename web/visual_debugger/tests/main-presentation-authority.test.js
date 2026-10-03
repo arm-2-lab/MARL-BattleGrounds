@@ -2,8 +2,24 @@
  * @file Check that browser installation and page mode use validated joined authority
  * rather than retained raw transport. The page labels the GAMMA controller
  * (tdm_gamma) "Reactive TDM GAMMA", accepts BETA (scenario_5) and GAMMA for
- * either team only under SharedObs, and styles both teams' BETA and GAMMA
- * roster rows like the other policy controllers.
+ * either team only under SharedObs, and paints no controller tint on roster
+ * rows (the BattleClient look has none). The page start module
+ * (main.js) shares its page parts with shell.js (header and toolbar),
+ * tactics-turn.js (live command deck) and filter-controls.js (Visual Filters):
+ * each check reads the file that now owns the code it pins, and those three
+ * modules never assign page state or paint from raw transport. Every client
+ * starts from the one shipped switch state (no product forces a switch off),
+ * and the live Agent POV instruction says the view follows the champion you
+ * play, never one you only inspect. The replay Oracle instruction names Next
+ * Tick in the Actions tab, and leaving Agent POV empties the hidden POV agent
+ * chip (button content, its aria-label and the picker) like a fresh page. Frames are presented and reprojected on the
+ * page's choreography surface (the renderer's surface plus the HUD and panel
+ * beat-hold roots), the Visual Key is a dialog mounted from its button, and the
+ * live Lock In copy comes from the Tactics Turn deck labels. In scripted live
+ * playback the deck's submit controls (Lock In, which reads "Advance scripted
+ * frame", and the Watching bar's Play One Turn) both send N. The transport no
+ * longer resolves the incoming transition; the Frame tab's Technical Frame
+ * shows it (This Frame group, copyable).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -15,6 +31,10 @@ import {
 } from "../src/presentation-authority-view.js";
 
 const mainUrl = new URL("../src/main.js", import.meta.url);
+const shellUrl = new URL("../src/shell.js", import.meta.url);
+const tacticsTurnUrl = new URL("../src/tactics-turn.js", import.meta.url);
+const filterControlsUrl = new URL("../src/filter-controls.js", import.meta.url);
+const pagePartUrls = [shellUrl, tacticsTurnUrl, filterControlsUrl];
 const indexUrl = new URL("../index.html", import.meta.url);
 const stylesUrl = new URL("../styles.css", import.meta.url);
 const controlsUrl = new URL("../src/controls.js", import.meta.url);
@@ -51,6 +71,8 @@ async function importPureMainHelper(source, name, nextName) {
 
 test("main keeps raw transport and certified presentation authority separate", async () => {
   const source = await readFile(mainUrl, "utf8");
+  const shell = await readFile(shellUrl, "utf8");
+  const pageParts = await Promise.all(pagePartUrls.map((url) => readFile(url, "utf8")));
 
   assert.match(source, /frame: Record<string, any> \| null,/u);
   assert.match(source, /presentation: Readonly<Record<string, any>> \| null,/u);
@@ -66,8 +88,16 @@ test("main keeps raw transport and certified presentation authority separate", a
   );
   assert.doesNotMatch(source, /state\.frame\?\.hud|state\.frame\.hud/u);
   assert.doesNotMatch(source, /frame\?\.replay_audience|frame\.replay_audience/u);
+  for (const part of pageParts) {
+    assert.doesNotMatch(
+      part,
+      /(?:battlefieldRenderer\.render|choreographer\.presentFrame|panels\.render)\(\s*state\.frame/u,
+    );
+    assert.doesNotMatch(part, /state\.frame\?\.hud|state\.frame\.hud/u);
+    assert.doesNotMatch(part, /frame\?\.replay_audience|frame\.replay_audience/u);
+  }
   assert.match(
-    source,
+    shell,
     /const audience = authorizedPresentationAudience\(presentation\) \?\? "unavailable";/u,
   );
 });
@@ -94,6 +124,13 @@ test("main has one branded state install boundary and no legacy half installs", 
   ]);
   assert.deepEqual(presentationAssignments, ["null", "joined.presentation"]);
   assert.deepEqual(authorityAssignments, ["null", "joined"]);
+  for (const url of pagePartUrls) {
+    assert.doesNotMatch(
+      await readFile(url, "utf8"),
+      /state\.(?:frame|timeline|presentation|authority|busy|offline|resyncRequired|shuttingDown|notice|noticeLevel)\s*=(?!=)/u,
+      `${url.pathname} must not assign page state.`,
+    );
+  }
   assert.match(source, /isJoinedTransportAndAuthorizedPresentationV1\(joined\)/u);
   assert.match(source, /isAuthorizedPresentationFrame\(joined\.presentation\)/u);
   assert.match(source, /validateReplayTransportContinuityV1\(/u);
@@ -241,8 +278,9 @@ test("main applies explicit retain-or-clear policy before bounded installation",
 });
 
 test("clear then pending render cannot republish retained Oracle or successor POV transport", async () => {
-  const [source, fixtureText] = await Promise.all([
+  const [source, shell, fixtureText] = await Promise.all([
     readFile(mainUrl, "utf8"),
+    readFile(shellUrl, "utf8"),
     readFile(fixtureUrl, "utf8"),
   ]);
   const fixture = JSON.parse(fixtureText);
@@ -293,6 +331,7 @@ test("clear then pending render cannot republish retained Oracle or successor PO
       generation: 17,
       renderPolicy: "replay_animated",
       restartAnimated: true,
+      stepGlide: null,
     },
     connected: true,
     hidden: false,
@@ -366,12 +405,12 @@ test("clear then pending render cannot republish retained Oracle or successor PO
 
   const replayStart = source.indexOf("function renderReplayMetadata(installed)");
   const replayEnd = source.indexOf("const recordingPersistenceLabels", replayStart);
-  const toolbarStart = source.indexOf("function renderSessionToolbar(");
-  const toolbarEnd = source.indexOf("function setDraftSelection(", toolbarStart);
+  const toolbarStart = shell.indexOf("function renderSessionToolbar(");
+  const toolbarEnd = shell.indexOf("\n  return Object.freeze({", toolbarStart);
   const renderStart = source.indexOf("function render()");
   const renderEnd = source.indexOf("function battlefieldSizeKey()", renderStart);
-  const boundaryStart = source.indexOf("function applyBattlefieldBoundaryCopy()");
-  const boundaryEnd = source.indexOf("function renderViewerBoundary()", boundaryStart);
+  const boundaryStart = shell.indexOf("function applyBattlefieldBoundaryCopy()");
+  const boundaryEnd = shell.indexOf("function renderViewerBoundary()", boundaryStart);
   for (const boundary of [
     replayStart,
     replayEnd,
@@ -379,13 +418,15 @@ test("clear then pending render cannot republish retained Oracle or successor PO
     toolbarEnd,
     renderStart,
     renderEnd,
+    boundaryStart,
+    boundaryEnd,
   ]) {
     assert.notEqual(boundary, -1);
   }
   const replaySource = source.slice(replayStart, replayEnd);
-  const toolbarSource = source.slice(toolbarStart, toolbarEnd);
+  const toolbarSource = shell.slice(toolbarStart, toolbarEnd);
   const renderSource = source.slice(renderStart, renderEnd);
-  const boundarySource = source.slice(boundaryStart, boundaryEnd);
+  const boundarySource = shell.slice(boundaryStart, boundaryEnd);
   assert.doesNotMatch(replaySource, /state\.frame|state\.presentation/u);
   assert.doesNotMatch(toolbarSource, /state\.frame|state\.presentation/u);
   assert.match(toolbarSource, /renderPendingPresentationChrome\(\);/u);
@@ -633,11 +674,14 @@ test("main excludes the global Visual Key from scientific preference and inert s
   const scientificIds = source.slice(idsStart, idsEnd);
 
   assert.doesNotMatch(scientificIds, /visual-key/u);
-  assert.match(source, /elements\.visualKey\.addEventListener\("toggle"/u);
+  // The Visual Key is a dialog behind its button, mounted once at startup.
+  assert.match(source, /createVisualKey\(\{\s*button: elements\.visualKeyButton,/u);
+  assert.doesNotMatch(source, /elements\.visualKey\b/u);
 });
 
 test("main sends authorized battlefield pointer commands in both live visual authorities", async () => {
   const source = await readFile(mainUrl, "utf8");
+  const tacticsTurn = await readFile(tacticsTurnUrl, "utf8");
   const dispatchStart = source.indexOf("async function dispatchCommand(");
   const dispatchEnd = source.indexOf("async function loadCurrentFrame(", dispatchStart);
 
@@ -652,10 +696,10 @@ test("main sends authorized battlefield pointer commands in both live visual aut
   );
   assert.match(
     source,
-    /bindBattlefieldControls\(\{[\s\S]*onCommand: \(command\) => dispatchCommand\(command\),/u,
+    /bindBattlefieldControls\(\{[\s\S]*onCommand: \(command\) => dispatchCommand\(command, \{ source: "field" \}\),/u,
   );
   assert.match(
-    source,
+    tacticsTurn,
     /DEFERRED_SUBMIT_PREPARATION_COMMAND_TYPES = new Set\(\[[\s\S]*"battlefield_pointer"/u,
   );
 });
@@ -753,11 +797,11 @@ test("main resolves one certified activation to Oracle, live-local, or Replay PO
 });
 
 test("command legality requires one exact authorized owner and has no generic fallback", async () => {
-  const source = await readFile(mainUrl, "utf8");
+  const source = await readFile(tacticsTurnUrl, "utf8");
   const renderStart = source.indexOf("function renderDraftState(");
   const renderEnd = source.indexOf("function renderCommandAvailability()", renderStart);
   const clearStart = source.indexOf("function clearOwnerBoundLegalityAvailability(");
-  const clearEnd = source.indexOf("function renderCommandTargets(", clearStart);
+  const clearEnd = source.indexOf("function renderDraftState(", clearStart);
   assert.notEqual(renderStart, -1);
   assert.notEqual(renderEnd, -1);
   assert.notEqual(clearStart, -1);
@@ -917,7 +961,7 @@ test("main derives replay animation only from the current controller intent", as
   assert.doesNotMatch(helperSource, /animate_incoming/u);
   assert.match(
     source,
-    /const choreographyControl = installedChoreographyControl\(\s*presentationFrame,\s*visualFilterSnapshot,\s*\{ consumeAnimatedRestart: true \},?\s*\);[\s\S]*choreographer\.presentFrame\(\s*presentationFrame,\s*battlefieldRenderer\.choreographySurface\(\),\s*choreographyControl,?\s*\)/u,
+    /const choreographyControl = installedChoreographyControl\(\s*presentationFrame,\s*visualFilterSnapshot,\s*\{ consumeAnimatedRestart: true \},?\s*\);[\s\S]*choreographer\.presentFrame\(\s*presentationFrame,\s*pageChoreographySurface\(\),\s*choreographyControl,?\s*\)/u,
   );
   assert.equal(
     [...source.matchAll(/const choreographyControl = installedChoreographyControl\(/gu)]
@@ -926,22 +970,23 @@ test("main derives replay animation only from the current controller intent", as
   );
   assert.match(
     source,
-    /choreographer\.reproject\(\s*presentationFrame,\s*battlefieldRenderer\.choreographySurface\(\),\s*choreographyControl,?\s*\)/u,
+    /choreographer\.reproject\(\s*presentationFrame,\s*pageChoreographySurface\(\),\s*choreographyControl,?\s*\)/u,
   );
   assert.doesNotMatch(resizeSource, /consumeAnimatedRestart/u);
-  assert.match(
-    source,
-    /incomingTransitionForFrameIndex:[\s\S]*installed\.transport\.cursor\?\.frame_index !== frameIndex[\s\S]*return authorizedIncomingTransitionId\(installed\.presentation\);/u,
+  // The transport no longer shows the incoming transition; the Frame tab's
+  // Technical Frame does (This Frame group, with a Copy button).
+  assert.doesNotMatch(source, /incomingTransitionForFrameIndex/u);
+  const ledgerSource = await readFile(
+    new URL("../src/ledger.js", import.meta.url),
+    "utf8",
   );
-  assert.doesNotMatch(
-    source.slice(
-      source.indexOf("incomingTransitionForFrameIndex:"),
-      source.indexOf(
-        "const replayPlayback",
-        source.indexOf("incomingTransitionForFrameIndex:"),
-      ),
-    ),
-    /previousTick|currentTick|\u2192/u,
+  assert.match(
+    ledgerSource,
+    /id: "this-frame",[\s\S]*?factIds: Object\.freeze\(\["frame", "simulator_step", "incoming_transition"\]\)/u,
+  );
+  assert.match(
+    ledgerSource,
+    /const COPYABLE_FACTS = new Set\(\[[\s\S]*?"incoming_transition"/u,
   );
 });
 
@@ -1238,6 +1283,7 @@ test("playback controller owns the first installed-successor render", async () =
 
 test("main renders ranges and inspector chrome only from installed presentation authority", async () => {
   const source = await readFile(mainUrl, "utf8");
+  const filterControls = await readFile(filterControlsUrl, "utf8");
   const visibilityStart = source.indexOf(
     "function installedPresentationRangesVisible(",
   );
@@ -1274,16 +1320,17 @@ test("main renders ranges and inspector chrome only from installed presentation 
     source,
     /authorizedPresentationAudience\(joined\.presentation\) === "researcher"[\s\S]*confirmedResearcherRangesVisible = joined\.transport\.show_ranges;/u,
   );
+  // Every client starts from the one shipped switch state; no product forces a
+  // switch off (Target Selection Visuals is on in all three).
+  assert.match(source, /let visualFilterState = DEFAULT_VISUAL_FILTER_STATE;/u);
+  assert.doesNotMatch(source, /"target_selection_visuals",\s*false/u);
+  assert.doesNotMatch(source, /visualFilterProductDefaultsApplied/u);
   assert.match(
-    source,
-    /productIdentity\.product_kind === "replay_viewer"[\s\S]*"target_selection_visuals",\s*false/u,
+    filterControls,
+    /const visibleControlCount = switches\.length \+ 1;[\s\S]*enabledControlCount/u,
   );
   assert.match(
-    source,
-    /const visibleControlCount = VISUAL_FILTER_REGISTRY.length \+ 1;[\s\S]*enabledControlCount/u,
-  );
-  assert.match(
-    source,
+    filterControls,
     /function applyAllVisualControls\(enabled\)[\s\S]*applyVisualFilterAction\([\s\S]*setActiveRangesVisible\(enabled\)/u,
   );
   assert.equal(
@@ -1313,31 +1360,33 @@ test("main renders ranges and inspector chrome only from installed presentation 
 
 test("main separates battlefield and researcher incoming transition IDs", async () => {
   const source = await readFile(mainUrl, "utf8");
-  const helperStart = source.indexOf("function authorizedIncomingTransitionId(");
-  const helperEnd = source.indexOf("function recordingStatus()", helperStart);
-
-  assert.notEqual(helperStart, -1);
-  assert.notEqual(helperEnd, -1);
-  const helperSource = source
-    .slice(helperStart, helperEnd)
-    .replace(/\n\/\*\*(?:(?!\*\/)[\s\S])*\*\/\s*$/u, "");
-  assert.match(helperSource, /!isRecord\(presentation\.latest_events\)/u);
-  assert.match(
-    helperSource,
-    /authorizedPresentationAudience\(presentation\) === "researcher"\s*\? presentation\.latest_events\.incoming_transition_id\s*:\s*presentation\.latest_events\.incoming_recipient_transition_id/u,
-  );
-  assert.doesNotMatch(helperSource, /state\.frame|transport/u);
-  assert.equal(
-    [...source.matchAll(/authorizedIncomingTransitionId\(presentation\)/gu)].length,
-    1,
-  );
-  assert.equal(
-    [...source.matchAll(/authorizedPresentationLatestTransitionId\(presentation\)/gu)]
-      .length,
-    1,
-  );
-  assert.match(
+  const shell = await readFile(shellUrl, "utf8");
+  const pageSources = [
     source,
+    ...(await Promise.all(pagePartUrls.map((url) => readFile(url, "utf8")))),
+  ];
+  // The transport no longer shows an incoming transition, so main.js keeps no
+  // transition reader of its own; the shell's one audience-scoped reader and
+  // the Frame tab's Technical Frame show it.
+  assert.doesNotMatch(
+    source,
+    /authorizedIncomingTransitionId|incoming_recipient_transition_id/u,
+  );
+  assert.equal(
+    pageSources
+      .map(
+        (pageSource) =>
+          [
+            ...pageSource.matchAll(
+              /authorizedPresentationLatestTransitionId\(presentation\)/gu,
+            ),
+          ].length,
+      )
+      .reduce((total, count) => total + count, 0),
+    1,
+  );
+  assert.match(
+    shell,
     /const incomingTransition = authorizedPresentationLatestTransitionId\(presentation\);/u,
   );
   assert.doesNotMatch(source, /requiredElement\("revision-value"\)/u);
@@ -1353,37 +1402,44 @@ test("main separates battlefield and researcher incoming transition IDs", async 
   );
 });
 
-test("main describes live Agent POV as globally controllable while preserving fog-local battlefield guidance", async () => {
+test("main describes live Agent POV as following the played champion while preserving fog-local battlefield guidance", async () => {
   const source = await readFile(mainUrl, "utf8");
-  const boundaryStart = source.indexOf("function applyBattlefieldBoundaryCopy()");
-  const boundaryEnd = source.indexOf(
-    "function renderReplayMetadata(installed)",
-    boundaryStart,
-  );
+  const shell = await readFile(shellUrl, "utf8");
+  const boundaryStart = shell.indexOf("function applyBattlefieldBoundaryCopy()");
+  const boundaryEnd = shell.indexOf("function renderSessionToolbar(", boundaryStart);
 
   assert.notEqual(boundaryStart, -1);
   assert.notEqual(boundaryEnd, -1);
-  const boundarySource = source.slice(boundaryStart, boundaryEnd);
+  const boundarySource = shell.slice(boundaryStart, boundaryEnd);
   assert.match(boundarySource, /audience === "agent_pov"/u);
   assert.match(
     boundarySource,
-    /Live Agent POV is interactive\. Activate a visible authorized actor or choose any active actor in Roster to control it and switch POV; Shift-click selects a visible authorized target; Escape clears the target and leaves battlefield focus\./u,
+    /Live Agent POV is interactive and shows only what your champion may see\. Click a champion you can see, or pick one in Roster, to inspect it; picking a champion you play also gives it your orders, and the view follows it\. With only policies playing, the view follows the champion you pick\. Shift-click selects a target you can see; Escape clears the target and leaves battlefield focus\./u,
   );
-  assert.doesNotMatch(boundarySource, /fixed recipient|passive inspection/iu);
+  assert.doesNotMatch(
+    boundarySource,
+    /fixed recipient|passive inspection|choose any active actor in Roster to control it and switch POV/iu,
+  );
   assert.match(
     boundarySource,
     /Live Oracle View is interactive\. Activate an authorized actor to control it; Shift-click selects an authorized target; Escape clears the target and leaves battlefield focus\. Battlefield keyboard commands apply only while this surface has focus\./u,
   );
   assert.match(
     boundarySource,
-    /Replay is read-only\. Upcoming Transition shows the authorized recorded joint action out of this frame; activate an agent to inspect current facts, or use the timeline to change frames\./u,
+    /A replay never changes\. Next Tick in the Actions tab shows the orders given on this tick\. Click a champion to look at it, or use the timeline to go to another tick\./u,
   );
   assert.match(
     boundarySource,
-    /Replay Agent POV is read-only\. Activate a visible body or choose any agent in the roster to switch to that agent's fog-of-war view at the same replay tick\./u,
+    /Replay Agent POV shows only what one team saw\. Click a champion you can see, or pick any champion in the roster, to see what its team saw at this tick\./u,
+  );
+  // Leaving Agent POV empties the hidden chip, so Oracle -> POV -> Oracle
+  // leaves the same chip DOM as a fresh page.
+  assert.match(
+    shell,
+    /chip\.hidden = view === null;\s*if \(view === null\) \{[\s\S]*?button\.replaceChildren\(\);\s*button\.removeAttribute\("aria-label"\);\s*picker\.replaceChildren\(\);\s*return;/u,
   );
   assert.match(
-    source,
+    shell,
     /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step\./u,
   );
   assert.match(
@@ -1395,12 +1451,12 @@ test("main describes live Agent POV as globally controllable while preserving fo
     /function installedLiveScientificInspectionAvailable\(\)[\s\S]*isAuthorizedPresentationFrame\(state\.presentation\)[\s\S]*installedAuthorityIsCoherent\(\)/u,
   );
   assert.match(
-    source,
+    shell,
     /READ_ONLY_LIVE_SCIENTIFIC_LABEL[\s\S]*Select an agent to inspect it/u,
   );
   assert.match(
-    source,
-    /This replay frame is terminal\. Activate a visible body or choose any agent in the roster to switch the fog-of-war recipient; use the timeline to review another frame\./u,
+    shell,
+    /This is the replay's last tick\. Click a champion you can see, or pick any champion in the roster, to see what its team saw; use the timeline to go to another tick\./u,
   );
 });
 
@@ -1422,13 +1478,19 @@ test("main leaves the battlefield to visible instructions rather than a tooltip 
   assert.match(utilitySource, /#live-ranges-button/u);
   assert.match(utilitySource, /#replay-ranges-button/u);
   assert.match(utilitySource, /#replay-clear-reference-button/u);
-  assert.match(utilitySource, /sends no (?:replay )?command/u);
-  assert.match(utilitySource, /Oracle View range presentation/u);
+  assert.match(utilitySource, /Nothing is sent to the game\./u);
+  assert.match(utilitySource, /The replay and the view do not change\./u);
+  assert.match(utilitySource, /Show or hide the reach rings\./u);
+  assert.doesNotMatch(
+    utilitySource,
+    /range presentation|fog-authorized|inspected-agent/u,
+  );
 });
 
 test("main labels every policy controller explicitly and fences its action editing", async () => {
-  const [source, styles] = await Promise.all([
+  const [source, tacticsTurn, styles] = await Promise.all([
     readFile(mainUrl, "utf8"),
+    readFile(tacticsTurnUrl, "utf8"),
     readFile(stylesUrl, "utf8"),
   ]);
 
@@ -1440,7 +1502,7 @@ test("main labels every policy controller explicitly and fences its action editi
   assert.doesNotMatch(source, /scenario_3/u);
   assert.doesNotMatch(styles, /data-team-b-controller="scenario_3"/u);
   assert.match(source, /controller === "scenario_5"[\s\S]*return "Reactive TDM BETA"/u);
-  assert.match(styles, /data-team-b-controller="scenario_5"/u);
+
   assert.match(
     source,
     /if \(controller === "tdm_gamma"\) \{\s*return "Reactive TDM GAMMA";\s*\}/u,
@@ -1457,41 +1519,42 @@ test("main labels every policy controller explicitly and fences its action editi
     source,
     /team_[ab]_controller (?:===|!==) "(?:scenario_5|tdm_gamma)"/u,
   );
-  for (const controller of ["scenario_5", "tdm_gamma"]) {
-    for (const team of ["team-a", "team-b"]) {
-      assert.match(
-        styles,
-        new RegExp(
-          `html\\[data-${team}-controller="${controller}"\\] \\.roster-row\\[data-team="${team}"\\]`,
-          "u",
-        ),
-      );
-    }
-  }
+  assert.doesNotMatch(styles, /html\[data-team-[ab]-controller=/u);
   assert.match(
-    source,
+    tacticsTurn,
     /authorizedPresentationController\([\s\S]*controller === null \|\| controller\.manual[\s\S]*Object\.freeze\(\{ label: controller\.label \}\)/u,
   );
-  assert.match(source, /function policyControllerBlocksActionEdit\(command\)/u);
-  assert.match(source, /data-policy-controller-read-only/u);
-  assert.match(styles, /data-policy-controller-read-only="true"/u);
-  assert.doesNotMatch(source, /scriptedControlledActorTeam|scriptedControllerBlocks/u);
+  assert.match(tacticsTurn, /function policyControllerBlocksActionEdit\(command\)/u);
+  assert.match(tacticsTurn, /data-policy-controller-read-only/u);
+  // The vision's Watch Only overlay covers the deck of a policy's champion.
+  assert.match(
+    await readFile(
+      new URL("../src/styles/battleclient/deck.css", import.meta.url),
+      "utf8",
+    ),
+    /\.deck-body > div\.overlay \{/u,
+  );
+  for (const pageSource of [source, tacticsTurn]) {
+    assert.doesNotMatch(
+      pageSource,
+      /scriptedControlledActorTeam|scriptedControllerBlocks/u,
+    );
+  }
   assert.doesNotMatch(styles, /data-scripted-controller-read-only/u);
 });
 
-test("main reuses only Submit for coherent scripted-live advancement", async () => {
-  const [source, index] = await Promise.all([
+test("main reuses only the deck's submit controls for coherent scripted-live advancement", async () => {
+  const [source, shell, tacticsTurn, index] = await Promise.all([
     readFile(mainUrl, "utf8"),
+    readFile(shellUrl, "utf8"),
+    readFile(tacticsTurnUrl, "utf8"),
     readFile(indexUrl, "utf8"),
   ]);
   const helperStart = source.indexOf("function installedAuthorityIsCoherent()");
-  const helperEnd = source.indexOf(
-    "function authorizedIncomingTransitionId(",
-    helperStart,
-  );
-  const availabilityStart = source.indexOf("function renderCommandAvailability()");
-  const availabilityEnd = source.indexOf(
-    "function exposePresentationState(",
+  const helperEnd = source.indexOf("function recordingStatus()", helperStart);
+  const availabilityStart = tacticsTurn.indexOf("function renderCommandAvailability()");
+  const availabilityEnd = tacticsTurn.indexOf(
+    "function renderSystemOperation()",
     availabilityStart,
   );
   const dispatchStart = source.indexOf("async function dispatchCommand(");
@@ -1504,7 +1567,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   assert.notEqual(dispatchStart, -1);
   assert.notEqual(dispatchEnd, -1);
   const helperSource = source.slice(helperStart, helperEnd);
-  const availabilitySource = source.slice(availabilityStart, availabilityEnd);
+  const availabilitySource = tacticsTurn.slice(availabilityStart, availabilityEnd);
   const dispatchSource = source
     .slice(dispatchStart, dispatchEnd)
     .replace(/\n\/\*\*(?:(?!\*\/)[\s\S])*\*\/\s*$/u, "");
@@ -1545,13 +1608,22 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   );
   assert.match(
     availabilitySource,
-    /scriptedAdvance\s*\? "Advance scripted frame"\s*:\s*"Submit joint turn"/u,
+    /if \(scriptedAdvance\) \{\s*elements\.submitTurnButton\.textContent = "Advance scripted frame";[\s\S]*?\} else \{[\s\S]*?DECK_LABELS\.lockInButton[\s\S]*?DECK_LABELS\.lockInKeys[\s\S]*?elements\.submitTurnButton\.setAttribute\("aria-label", DECK_LABELS\.lockInButton\);/u,
   );
   assert.doesNotMatch(availabilitySource, /controlled_actor|fixedAgentRecipient/u);
   assert.doesNotMatch(availabilitySource, /button\.dataset\.key === "Tab"/u);
   assert.match(
     availabilitySource,
-    /editableDraft \|\|[\s\S]*policyInspection \|\|[\s\S]*\(scriptedAdvance && button === elements\.submitTurnButton\)/u,
+    /editableDraft \|\|[\s\S]*policyInspection \|\|[\s\S]*\(scriptedAdvance && submits\)/u,
+  );
+  // The Watching bar's Play One Turn advances scripted play with N too.
+  assert.match(
+    availabilitySource,
+    /const submits =\s*button === elements\.submitTurnButton \|\| button\.id === "watch-submit";/u,
+  );
+  assert.match(
+    availabilitySource,
+    /watchSubmit\.dataset\.key = scriptedAdvance \? "n" : "Enter";[\s\S]*?watchKey\.textContent = scriptedAdvance \? "N" : "Space";/u,
   );
   assert.match(
     availabilitySource,
@@ -1559,36 +1631,43 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
   );
   assert.match(
     availabilitySource,
-    /scriptedAdvance\s*\? "Advance the registered script"\s*:\s*"Submit the staged joint turn"/u,
+    /scriptedAdvance\s*\? "Advance the registered script"\s*:\s*stagedOrderSentence\(presentation\)/u,
   );
   assert.match(
     availabilitySource,
-    /scriptedAdvance\s*\? "One authoritative scripted transition"\s*:\s*"One authoritative transition"/u,
+    /scriptedAdvance\s*\? "One authoritative scripted transition"\s*:\s*DECK_LABELS\.lockInHelp/u,
   );
-  assert.doesNotMatch(source, /advance-script-button/u);
+  for (const pageSource of [source, shell, tacticsTurn]) {
+    assert.doesNotMatch(pageSource, /advance-script-button/u);
+  }
   assert.match(
     source,
-    /"Apply Authorized Action",\s*"Submit all Manual and policy actions for one turn, or advance one scripted turn\. Inspecting a policy does not give you control of it\."/u,
+    /"Lock In Turn",\s*"Send your orders; policies then choose and everyone acts at once\. In a scripted scene it plays the next scripted tick\. Looking at a policy's champion does not give you control of it\."/u,
   );
   assert.match(
     source,
     /authorizedPresentationInspectionState\(state\.presentation\)\.state_kind ===\s*"live_scripted"/u,
   );
   assert.match(
-    source,
+    shell,
     /Inspection-only scripted battlefield\. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step\./u,
   );
   assert.match(
-    source,
+    shell,
     /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step\./u,
   );
   assert.match(
-    source,
+    shell,
     /elements\.battlefield\.setAttribute\("role", "group"\);[\s\S]*elements\.battlefield\.tabIndex = -1;/u,
   );
+  // render() and the resize repaint call it in main.js; renderViewerBoundary in shell.js.
   assert.equal(
     [...source.matchAll(/\n\s*applyBattlefieldBoundaryCopy\(\);/gu)].length,
-    3,
+    2,
+  );
+  assert.equal(
+    [...shell.matchAll(/\n\s*applyBattlefieldBoundaryCopy\(\);/gu)].length,
+    1,
   );
   assert.match(source, /shuttingDown:\s*state\.shuttingDown,/u);
   assert.match(
@@ -1601,7 +1680,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
     /function liveBattlefieldCommandsInteractive\(\)[\s\S]*installedAuthorityIsCoherent\(\)[\s\S]*!isTerminal\(state\.frame\)[\s\S]*!state\.shuttingDown/u,
   );
   assert.match(
-    source,
+    shell,
     /FENCED_LIVE_BATTLEFIELD_LABEL[\s\S]*Read-only live battlefield/u,
   );
   assert.match(
@@ -1614,7 +1693,7 @@ test("main reuses only Submit for coherent scripted-live advancement", async () 
     "const mode = modeAvailability(command, state.frame)",
   );
   assert.match(
-    source,
+    shell,
     /elements\.resetButton\.disabled =\s*disabled \|\|\s*Boolean\(frame\?\.fresh_launch_required\) \|\|\s*restartControlsBlocked \|\|\s*liveScriptedInspectionOnly\(\);/u,
   );
   assert.match(

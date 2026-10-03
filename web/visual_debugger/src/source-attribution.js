@@ -1,8 +1,19 @@
 /**
- * @file Build source labels by joining recorded public source references to exact
- * authorized scene identities. Preserve serialized source order and reject
- * conflicting identities. Never search by global slot, class, position or
- * proximity, and never infer an emitter from an aggregate aura multiplier.
+ * @file Build source wording by joining recorded source references to exact
+ * authorized scene identities.
+ *
+ * One entry point: authorizedSourceAttributionV1 gives the "Source" row of a
+ * card (an aura field, a range, an action): the joined champion labels
+ * ("Hunter · ID 7"), or "Unavailable in this artifact". It preserves
+ * serialized source order and rejects conflicting identities. It never
+ * searches by global slot, class, position or proximity, never infers an
+ * emitter from an aggregate aura multiplier, and never reads getters. Labels
+ * come from `agent-identity.js`. Callers: `explanations.js`.
+ *
+ * Statuses no longer use it: since the owner's 2 October 2026 rulings every
+ * status display names its source by class only ("From a Hunter."), from
+ * `symbols.js` STATUS_NAMES through `semantic-vocabulary.js`
+ * statusCardSentence, the same in Agent POV and Oracle View.
  */
 import { exactAuthorizedAgentIdentityV1 } from "./agent-identity.js";
 
@@ -54,7 +65,9 @@ const UNAVAILABLE = attribution(
  * arrays and valid public identities. Join each unique source by both key and
  * ID to exactly one agent, preserving first occurrence. Bad, absent or
  * conflicting joins return the shared frozen unavailable record. Success is a
- * frozen single/multiple label. Inputs and scene authority are not changed.
+ * frozen single/multiple label whose value is the champion label from
+ * `agent-identity.js` ("Mage · ID 5"; several joined with "; "). Inputs and
+ * scene authority are not changed.
  *
  * @param {unknown} rawOptions
  * @returns {Readonly<SourceAttribution> | null}

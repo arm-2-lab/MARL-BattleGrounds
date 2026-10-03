@@ -30,6 +30,28 @@ PRNG keys. A replay is evidence of a captured trajectory, not a complete trainin
 restart checkpoint. Current recording still uses one information regime per
 episode; canonical new research is SharedObs.
 
+A replay also keeps who controlled each team and each champion, as context
+aggregation keys (no new record field). `marl_bgs.system_name.team_a` and
+`marl_bgs.system_name.team_b` hold each team's controller name.
+`marl_bgs.controller_name.slot_0` to `slot_9` hold the controller of each used
+champion slot in global slot order (0 to 4 Team A, 5 to 9 Team B): a method's
+own name, or `Manual` for a slot a person played. Each value is the name as a
+JSON string with non-ASCII characters escaped: the name
+`Recurrent MAPPO · Seed 7` is stored as `"Recurrent MAPPO \u00b7 Seed 7"`.
+From 2 October 2026, `evaluate` (and the tournaments that run through it)
+writes the slot keys beside its team keys, so a `marl_bgs.team` of several
+methods names each member's champions. Replays saved from the BattleClient or
+DevClient write both kinds from the same date. A training run's optional
+recorded episodes (`recording=True`, off by default) do not write slot keys.
+The names are display text, never identities: policy IDs and digests stay in
+the policy assignments. `evaluation.controller_names` owns the key format and
+its readers.
+
+Older replays still load. The Replay Viewer shows a recorded name exactly as
+recorded, so an older `evaluate` replay that recorded team names now reads
+`tdm-beta` where it used to read `Tdm beta`. A replay with no recorded name
+keeps its earlier labels.
+
 Selected capture returns bounded numerical packets through step info. It adds
 no episode-length buffer to environment state. Retaining a long stacked info
 chunk still costs memory, so choose bounded chunks. `RunWriter` joins packets,

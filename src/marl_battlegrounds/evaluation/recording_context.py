@@ -4,11 +4,17 @@ This host-only boundary restores config types after transfers and joins
 recorded source/runtime facts, policy assignments, random-stream identities
 and map metadata. Missing training history stays unknown. Supplied scenario
 metadata may add details but cannot contradict executed seeds or controllers.
+
+Replays keep their controllers' names here too: each team's name and, when
+the caller passes ``slot_controller_names``, each champion slot's controller
+name, as aggregation keys whose format ``evaluation.controller_names`` owns.
+``controller_names_by_slot`` names a game's ten slots from its two live methods.
 """
 
 import json
 import re
-from typing import cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
 import jax
 import jax.numpy as jnp
@@ -23,6 +29,10 @@ from marl_battlegrounds.evaluation.actor_projection import (
 from marl_battlegrounds.evaluation.catalog import (
     build_evaluation_episode_context_v4,
     build_resolved_env_config_v2,
+)
+from marl_battlegrounds.evaluation.controller_names import (
+    TEAM_CONTROLLER_NAME_KEY,
+    slot_controller_name_keys,
 )
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
@@ -44,9 +54,52 @@ from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.revision import discover_code_revision_v2
 from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
 
+if TYPE_CHECKING:
+    from marl_battlegrounds.evaluation.policy_execution import Policy, System
+
 _CODE_REVISION: TypeAdapter[CodeRevisionV1 | CodeRevisionV2] = TypeAdapter(
     CodeRevisionV1 | CodeRevisionV2
 )
+
+
+def controller_names_by_slot(
+    team_a: Policy | System, team_b: Policy | System, config: EnvConfig
+) -> tuple[str | None, ...]:
+    """Name the controller of each of a game's ten champion slots.
+
+    Parameters
+    ----------
+    team_a, team_b : Policy or System
+        The live methods that play Team A and Team B in this game.
+    config : EnvConfig
+        The game's scalar configuration (host or device arrays); its roster
+        gives which slots are used and each slot's class.
+
+    Returns
+    -------
+    tuple of str or None
+        Ten entries in global slot order: each used slot's controller name
+        from ``team_controller_names`` (exact, never rewritten), None for an
+        unused slot. Pass it to ``build_recording_context`` as
+        ``slot_controller_names``.
+
+    Notes
+    -----
+    Host-only; may copy the roster's two small arrays from the device. It
+    never calls either method.
+    """
+    from marl_battlegrounds.evaluation.recording_identity import (
+        team_controller_names,
+    )
+
+    profile = config.agent_profile
+    active = np.asarray(jax.device_get(profile.active_mask), dtype=np.bool_)
+    classes = np.asarray(jax.device_get(profile.class_ids)).astype(int).tolist()
+    names = (
+        *team_controller_names(team_a, classes[:5]),
+        *team_controller_names(team_b, classes[5:]),
+    )
+    return tuple(name if active[slot] else None for slot, name in enumerate(names))
 
 
 def recorded_policy_assignment(
@@ -371,6 +424,7 @@ def build_recording_context(
     episode: dict[str, object],
     policies: dict[str, object],
     details: dict[str, object],
+    slot_controller_names: Sequence[str | None] | None = None,
 ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
     """Build replay context using only known execution and source facts.
 
@@ -403,6 +457,14 @@ def build_recording_context(
         or runtime data triggers one discovery call for this context. Registered
         display names are retained as JSON strings in system_name aggregation keys
         so Unicode names fit the existing ASCII metadata contract; IDs stay separate.
+    slot_controller_names : sequence of str or None, or None, optional
+        Keyword-only. Ten names in global slot order, one per champion slot,
+        for example from ``controller_names_by_slot``: the method that plays
+        that slot, exactly as shown, or None for an unused slot. Each name
+        becomes a ``marl_bgs.controller_name.slot_N`` aggregation key, so the
+        Replay Viewer can say which method plays each champion of a team
+        built from several methods. None (the default) records no slot names,
+        exactly as before.
 
     Returns
     -------
@@ -419,7 +481,9 @@ def build_recording_context(
         episode lacks its required episode_id.
     ValueError
         Roles, seeds, controller identity, actor IDs, map geometry or
-        supplied metadata contradict the executed conditions.
+        supplied metadata contradict the executed conditions, or
+        slot_controller_names does not hold ten entries, has a blank name, or
+        names an unused slot.
     TypeError
         Config or metadata types violate their validated model.
     OSError
@@ -557,7 +621,7 @@ def build_recording_context(
                         name=f"marl_bgs.system_id.{team_name}", value=system_id
                     ),
                     AggregationKeyV1(
-                        name=f"marl_bgs.system_name.{team_name}",
+                        name=TEAM_CONTROLLER_NAME_KEY.format(team=team_name),
                         value=json.dumps(
                             registration.get(
                                 "name", policies.get(team_name, "Unknown system")
@@ -571,6 +635,13 @@ def build_recording_context(
                     ),
                 )
             )
+    if slot_controller_names is not None:
+        names = tuple(slot_controller_names)
+        if len(names) == 10 and any(
+            name is not None and not active[slot] for slot, name in enumerate(names)
+        ):
+            raise ValueError("slot controller names must leave unused slots empty")
+        aggregation_keys.extend(slot_controller_name_keys(names))
     aggregation_keys.extend(_map_recording_keys(config, episode, details))
     for team_index, team in enumerate(("team_a", "team_b")):
         descriptor = descriptors[team_index] if team_index < len(descriptors) else {}

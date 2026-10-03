@@ -558,6 +558,13 @@ def test_duplicate_finish_does_not_reinstall_or_advance_router(tmp_path: Path) -
 
 def test_graceful_close_maps_host_only_save_outcome(tmp_path: Path) -> None:
     coordinator = _coordinator(tmp_path)
+    coordinator.apply_command(
+        _live_request(
+            "one-turn",
+            base_revision=coordinator.service.revision,
+            command=KeyboardCommandV1(key="Enter"),
+        )
+    )
 
     result = coordinator.graceful_close()
 

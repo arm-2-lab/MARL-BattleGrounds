@@ -3,7 +3,9 @@
 The fixture uses the package's live session, recording and HTTP owners. It
 accepts the old browser tests' setup flags while the public Python launch API is
 qualified separately. Its explicit editable frontend path is test setup, never
-an installed-package fallback.
+an installed-package fallback. Every route, the controller fixtures included,
+opens in Oracle View unless --view pov asks for Agent POV, so browser specs keep
+their Oracle starting view although the public BattleClient opens in Agent POV.
 """
 
 from __future__ import annotations
@@ -97,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else Path("unused-browser-recordings"),
             capture_replay=options.record_replay is not None,
             asset_root=_REPOSITORY_ROOT / "web" / "visual_debugger",
+            view_mode="pov" if options.view == "pov" else "researcher",
         )
 
     from scripts.dev.visual_debugger.scenarios import get_scenario

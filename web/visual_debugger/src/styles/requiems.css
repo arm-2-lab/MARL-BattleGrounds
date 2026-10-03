@@ -1,0 +1,452 @@
+/*
+ * Styles for the Class Requiems look (src/looks/requiems.js): the Fall Ring,
+ * the five class requiems, the "x2" tag, the Kill Credit Glints, the
+ * Homecoming ring, a return's old corpse and its Ash lift ring, and the
+ * corpse marks (ash relic and Vigil Pips) on the arena, plus its page chrome: the Wave Chip pill in the scorebug and the
+ * Fallen panel at the top of the side rail (DOM with small inline SVG lines).
+ * styles.css imports this file at its top. Colors come only from the
+ * :root tokens. Opacity and geometry are set on the nodes (their END values);
+ * nothing here animates, so the beat clock owns all timing.
+ */
+
+/* Fall Ring and its glow: the team color of the fallen champion. */
+.requiem__fall-ring,
+.requiem__fall-glow {
+  fill: none;
+  stroke: var(--team-a);
+  pointer-events: none;
+}
+
+.requiem--team-b .requiem__fall-ring,
+.requiem--team-b .requiem__fall-glow {
+  stroke: var(--team-b);
+}
+
+.requiem__x2 {
+  fill: var(--team-a);
+  stroke: var(--ink);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.requiem--team-b .requiem__x2 {
+  fill: var(--team-b);
+}
+
+/* Class requiems: each piece rests at opacity 0 and only plays at the Fall beat.
+ * The flare and the blades are sigils painted by icons.css; the Hunter's umber
+ * emblem is a plain glyph in currentColor. */
+.requiem__emblem {
+  pointer-events: none;
+}
+
+.requiem__emblem--umber {
+  color: var(--umber);
+}
+
+.requiem__cracks {
+  fill: none;
+  stroke: var(--starcore);
+  stroke-linecap: round;
+}
+
+.requiem__motes {
+  fill: var(--class-mage);
+}
+
+.requiem__rim {
+  fill: none;
+  stroke: var(--class-warrior);
+  stroke-linecap: round;
+}
+
+/* The Warrior's crack grows from its top end down (scaleY from the top). */
+.requiem__crack {
+  fill: none;
+  stroke: var(--forge-white);
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+}
+
+.requiem__ash-ring {
+  fill: none;
+  stroke: var(--ash);
+}
+
+.requiem__leaves {
+  fill: var(--umber);
+}
+
+.requiem__rime {
+  fill: var(--rime);
+}
+
+.requiem__smoke-ring {
+  fill: none;
+  stroke: var(--smoke);
+}
+
+.requiem__smoke-disc {
+  fill: var(--smoke);
+}
+
+/* Rogue smoke puffs: a 1 px Ash edge at 30%; each puff swells about its own
+ * centre (fill-box origin). */
+.requiem__puffs {
+  fill: var(--smoke);
+  stroke: var(--ash);
+  stroke-opacity: 0.3;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.requiem__ray,
+.requiem__rays {
+  fill: none;
+  stroke: var(--class-priest);
+  stroke-linecap: round;
+}
+
+.requiem__ember {
+  fill: var(--class-priest);
+}
+
+.requiem__cracks,
+.requiem__motes,
+.requiem__rim,
+.requiem__crack,
+.requiem__ash-ring,
+.requiem__leaves,
+.requiem__rime,
+.requiem__smoke-ring,
+.requiem__smoke-disc,
+.requiem__puffs,
+.requiem__ray,
+.requiem__rays,
+.requiem__ember {
+  pointer-events: none;
+}
+
+/* Kill Credit Glints: one thin ring per champion that shared a kill, in its
+ * class color. Each ring grows around its own center (fill-box origin). */
+.requiem-glint {
+  fill: none;
+  stroke: var(--moon-silver);
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.requiem-glint--mage {
+  stroke: var(--class-mage);
+}
+
+.requiem-glint--warrior {
+  stroke: var(--class-warrior);
+}
+
+.requiem-glint--hunter {
+  stroke: var(--class-hunter);
+}
+
+.requiem-glint--rogue {
+  stroke: var(--class-rogue);
+}
+
+.requiem-glint--priest {
+  stroke: var(--class-priest);
+}
+
+/* Homecoming: a ring of moonlight narrowing onto the pad. */
+.homecoming__glow {
+  fill: none;
+  stroke: var(--team-a-light);
+}
+
+.homecoming--team-b .homecoming__glow {
+  stroke: var(--team-b-light);
+}
+
+.homecoming__ring {
+  fill: none;
+  stroke: var(--moonward-veil);
+}
+
+.homecoming__rings {
+  pointer-events: none;
+}
+
+/* The old corpse of a return, as the frame before drew it (the same tokens
+   as the Champions look's Ashen Token in champions.css), and the Ash
+   hairline that lifts off it. The ring grows about its own center. */
+.requiem-old-corpse,
+.requiem-old-corpse *,
+.requiem-old-corpse__lift-group,
+.requiem-old-corpse__lift-group * {
+  pointer-events: none;
+}
+
+.requiem-old-corpse__disc {
+  fill: var(--grave-stone);
+  stroke: none;
+}
+
+.requiem-old-corpse__rim {
+  fill: none;
+  stroke: var(--team-a);
+}
+
+.requiem-old-corpse--team-b .requiem-old-corpse__rim {
+  stroke: var(--team-b);
+}
+
+.requiem-old-corpse__seal {
+  fill: none;
+  stroke: var(--ash);
+}
+
+.requiem-old-corpse__emblem {
+  overflow: visible;
+  color: var(--ash);
+}
+
+.requiem-old-corpse__lift {
+  fill: none;
+  stroke: var(--ash);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Team crests (one ring for Team A, two for Team B). */
+.requiem-crest {
+  fill: none;
+}
+
+.requiem-crest--team-a {
+  stroke: var(--team-a);
+}
+
+.requiem-crest--team-b {
+  stroke: var(--team-b);
+}
+
+/* Wave Chip: "Team A Returns", a pill under the team's name in the scorebug. */
+.wave-chip {
+  display: inline-flex;
+  align-self: start;
+  justify-self: start;
+  inline-size: max-content;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 1px 8px 1px 5px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  background: var(--panel);
+  white-space: nowrap;
+}
+
+.wave-chip__crest-icon {
+  inline-size: 10px;
+  block-size: 10px;
+  flex: none;
+}
+
+.wave-chip__label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.wave-chip--team-a .wave-chip__label {
+  color: var(--team-a);
+}
+
+.wave-chip--team-b .wave-chip__label {
+  color: var(--team-b);
+}
+
+/* Fallen panel: the falls of the last 8 ticks at the top of the side rail. */
+.fallen-feed {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+}
+
+.fallen-feed__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fallen-feed__title {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fallen-feed__window,
+.fallen-feed__empty {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.fallen-feed__empty {
+  margin: 0;
+}
+
+.fallen-feed__rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fallen-feed__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  border-top: 1px solid var(--panel-edge);
+  font-size: 11px;
+}
+
+.fallen-feed__row:first-child {
+  border-top: 0;
+}
+
+.fallen-feed__row:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 1px;
+}
+
+.fallen-feed__line {
+  flex: none;
+  overflow: visible;
+}
+
+.fallen-feed__tick {
+  margin-left: auto;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fallen-feed__victim-field {
+  fill: var(--grave-stone);
+  stroke: none;
+}
+
+.fallen-feed__plus,
+.fallen-feed__points,
+.fallen-feed__id {
+  font-family: inherit;
+  font-weight: 700;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.fallen-feed__plus {
+  fill: var(--ui-muted);
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+.fallen-feed__id {
+  fill: var(--ui-muted);
+  font-size: 9px;
+}
+
+.fallen-feed__arrow {
+  fill: none;
+  stroke: var(--ui-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fallen-feed__points {
+  font-size: 12px;
+}
+
+.fallen-feed__points--team-a {
+  fill: var(--team-a);
+}
+
+.fallen-feed__points--team-b {
+  fill: var(--team-b);
+}
+
+.fallen-feed__ability--basic {
+  fill: var(--ui-muted);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--mage {
+  fill: var(--class-mage);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--warrior {
+  fill: var(--class-warrior);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--hunter {
+  fill: var(--class-hunter);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--rogue {
+  fill: var(--class-rogue);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--priest {
+  fill: var(--class-priest);
+}
+
+.fallen-feed__ability--ultimate.fallen-feed__ability--unknown {
+  fill: var(--ui-muted);
+}
+
+/* Corpse marks: the ash relic and the Vigil Pips. */
+.requiem-corpse-marks {
+  pointer-events: none;
+}
+
+.requiem-relic--stroke {
+  fill: none;
+  stroke: var(--ash);
+  stroke-linecap: round;
+}
+
+.requiem-relic--fill {
+  fill: var(--ash);
+  stroke: none;
+}
+
+.vigil-pips {
+  fill: var(--ward-silver);
+  stroke: none;
+}
+
+.vigil-pips__count {
+  stroke: var(--ink);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}

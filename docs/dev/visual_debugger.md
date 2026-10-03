@@ -43,6 +43,15 @@ and
 
 ## Display And Evidence Boundaries
 
+Both clients draw the Runefield look from one page. The BattleClient opens in
+Agent POV, which shows only what the viewing team sees. The Replay Viewer and
+the private DevClient combat screen open in Oracle View, which shows
+everything. The DevClient combat screen is the BattleClient screen plus its
+private setup bar, with the same Agent POV rules. One command table owns every
+key in every client; press **?** in the page for the current list.
+[A45](../design/specification_amendments.md#a45-runefield-client-presentation)
+records these rules, the beat timing and the Sight Reach veil.
+
 The visual filters and Ranges change display, not simulation or recorded data.
 SharedObs display combines permitted same-tick sensor views, as described in
 [A17](../design/specification_amendments.md#a17-sharedobs-recorded-visual-union-presentation).

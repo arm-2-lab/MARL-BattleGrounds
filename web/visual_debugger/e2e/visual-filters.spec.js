@@ -12,6 +12,11 @@
 import { expect, test } from "@playwright/test";
 
 import { REPLAY_AUTOPLAY_CADENCE_MS } from "../src/replay-controls.js";
+import {
+  VISUAL_FILTER_IDS,
+  VISUAL_FILTER_REGISTRY,
+  visualFiltersForProduct,
+} from "../src/visual-filters.js";
 import { startDebugger, stopDebugger } from "./support/live-debugger.js";
 import {
   expectReplayFrameIndex,
@@ -23,55 +28,33 @@ import {
 test.describe.configure({ mode: "serial" });
 test.use({ screenshot: "off" });
 
-const FILTERS = Object.freeze([
-  ["aura_fields", "Aura Fields"],
-  ["aura_modifier_badges", "Aura Modifier Badges"],
-  ["duration_status_badges", "Duration Status Badges"],
-  ["spawn_shield", "Spawn Shield"],
-  ["target_selection_visuals", "Target Selection Visuals"],
-  ["basic_ability_effects", "Basic Ability Effects"],
-  ["ultimate_ability_effects", "Ultimate Ability Effects"],
-  ["regeneration_effects", "Regeneration Effects"],
-  ["cooldown_effects", "Cooldown Effects"],
-  ["status_application", "Status Application"],
-  ["natural_status_expiry", "Natural Status Expiry"],
-  ["freezing_trap_break", "Freezing Trap Break"],
-  ["status_clear_on_death", "Status Clear on Death"],
-  ["death_effects", "Death Effects"],
-  ["respawn_wave", "Respawn Wave"],
-  ["resurrection_effects", "Resurrection Effects"],
-  ["spawn_shield_expiry", "Spawn-Shield Expiry"],
-  ["scrolling_battle_text", "Scrolling Battle Text"],
-  ["death_announcer", "Death Announcer"],
-  ["red_zone_floors", "Red Zone Floors"],
-]);
-
-const FILTER_IDS = FILTERS.map(([id]) => id);
-const INITIAL_FILTERS = new Set([
-  "ultimate_ability_effects",
-  "spawn_shield",
-  "basic_ability_effects",
-  "regeneration_effects",
-  "cooldown_effects",
-  "death_effects",
-  "resurrection_effects",
-  "scrolling_battle_text",
-  "respawn_wave",
-  "death_announcer",
-  "red_zone_floors",
-]);
+// The V5 switch registry is the one owner of switch IDs, labels, help and
+// defaults. Each client shows only its own switches; the paint key covers
+// every registered switch in registry order.
+const FILTER_IDS = [...VISUAL_FILTER_IDS];
+const INITIAL_FILTERS = new Set(
+  VISUAL_FILTER_REGISTRY.filter(({ defaultEnabled }) => defaultEnabled).map(
+    ({ id }) => id,
+  ),
+);
 const INITIAL_DISABLED_FILTERS = FILTER_IDS.filter((id) => !INITIAL_FILTERS.has(id));
 const FILTER_INPUT = 'input[type="checkbox"][data-visual-filter-id]';
 const CHOREOGRAPHY_ROOTS =
   "#battlefield .combat-choreography, #battlefield .combat-choreography-connectors, #battlefield .combat-choreography-routes";
+// Red Zone Floors paints the ash floor, its gravestone border and the marks.
 const RED_ZONE_FLOOR_PAINT =
-  "#battlefield .red-zone-floor-clip, #battlefield .red-zone-floor";
-const RED_ZONE_FLOORS_HELP =
-  "Tint each team's Red Zone floor deep red. When an agent dies inside its own " +
-  "team's Red Zone, the enemy team gets 2 points.";
+  "#battlefield .red-zone-floor, #battlefield .grave-border, #battlefield .grave-mark";
+// Cooldown Effects paints the Rune Ring on each body (a dim track with lit
+// arcs, or the ready ring with its gems).
+const COOLDOWN_RING_PAINT = '#battlefield g.status-marks [data-rune-piece^="ring."]';
 const DEFAULT_CONFIGURATION_HELP =
-  "Restore the eleven default effects, including Cooldown Effects, Death Announcer " +
-  "and Red Zone Floors, and turn off Ranges.";
+  "Every switch as it ships: what a new viewer sees. The view, Ranges and motion stay as they are.";
+
+/** @param {import("@playwright/test").Page} page */
+async function shownFilters(page) {
+  const product = await page.locator("html").getAttribute("data-product-kind");
+  return visualFiltersForProduct(product);
+}
 
 /** @type {Awaited<ReturnType<typeof exportReplayArtifacts>> | null} */
 let artifacts = null;
@@ -222,7 +205,7 @@ async function authenticatedText(page, path) {
  * @param {{viewerMode: "live" | "replay", audience: string, presentationKind: string}} expected */
 async function openInstalled(page, url, expected) {
   await page.goto(url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   const root = page.locator("html");
   await expect(root).toHaveAttribute("data-viewer-mode", expected.viewerMode);
   await expect(root).toHaveAttribute("data-audience", expected.audience);
@@ -287,6 +270,9 @@ async function performCommand(page, path, action) {
 
 /** @param {import("@playwright/test").Page} page */
 async function openVisualFilters(page) {
+  // The Replay Viewer keeps Visual Filters in the rail's Visuals tab.
+  const visualsTab = page.locator("#replay-rail-tab-visuals");
+  if (await visualsTab.isVisible()) await visualsTab.click();
   await page.locator("#visual-filters").evaluate((details) => {
     if (!(details instanceof HTMLDetailsElement)) {
       throw new TypeError("Visual Filters disclosure is unavailable.");
@@ -301,6 +287,7 @@ async function openVisualFilters(page) {
  * @param {boolean} rangesEnabled */
 async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true) {
   const expectedDisabled = new Set(disabledIds);
+  const shown = await shownFilters(page);
   const rows = await page
     .locator(`#visual-filter-options ${FILTER_INPUT}`)
     .evaluateAll((inputs) =>
@@ -311,7 +298,8 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
         return {
           id: input.dataset.visualFilterId,
           option: input.parentElement?.dataset.visualFilterOption,
-          label: input.parentElement?.textContent?.trim(),
+          // The first span holds the label; the second says "On By Default".
+          label: input.parentElement?.querySelector("span")?.textContent?.trim(),
           // Focus adds visual-tooltip for a moment; expectVisualFilterHelp checks it.
           describedBy: (input.getAttribute("aria-describedby") ?? "")
             .split(/\s+/u)
@@ -325,26 +313,33 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
         };
       }),
     );
-  expect(rows).toEqual(
-    FILTERS.map(([id, label]) => ({
-      id,
-      option: id,
-      label,
-      describedBy: `visual-filters-help visual-filter-${id.replaceAll("_", "-")}-help`,
-      value: id,
-      type: "checkbox",
-      autocomplete: "off",
-      defaultChecked: INITIAL_FILTERS.has(id),
-      checked: !expectedDisabled.has(id),
-    })),
+  // Rows follow the panel's groups; compare them as one record per switch.
+  const byId = (/** @type {Array<{id?: string}>} */ list) =>
+    [...list].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  expect(byId(rows)).toEqual(
+    byId(
+      shown.map(({ id, label, defaultEnabled }) => ({
+        id,
+        option: id,
+        label,
+        describedBy: `visual-filters-help visual-filter-${id.replaceAll("_", "-")}-help`,
+        value: id,
+        type: "checkbox",
+        autocomplete: "off",
+        defaultChecked: defaultEnabled,
+        checked: !expectedDisabled.has(id),
+      })),
+    ),
   );
-  const enabledCount = FILTERS.length - expectedDisabled.size + (rangesEnabled ? 1 : 0);
+  const enabledCount =
+    shown.filter(({ id }) => !expectedDisabled.has(id)).length +
+    (rangesEnabled ? 1 : 0);
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${enabledCount} enabled`,
+    `${enabledCount} Of ${shown.length + 1} On`,
   );
   const enableAll = page.locator("#enable-all-visual-filters-button");
   const disableAll = page.locator("#disable-all-visual-filters-button");
-  if (enabledCount === FILTERS.length + 1) {
+  if (enabledCount === shown.length + 1) {
     await expect(enableAll).toBeDisabled();
   } else {
     await expect(enableAll).toBeEnabled();
@@ -362,11 +357,16 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
       })),
     ),
   ).toEqual([
+    { id: "default-visual-filters-button", text: "Default Configuration" },
+    { id: "visual-filter-preset-broadcast", text: "Broadcast" },
+    { id: "visual-filter-preset-researcher", text: "Researcher" },
+    { id: "visual-filter-preset-manuscript", text: "Manuscript" },
+    { id: "visual-filter-preset-minimal", text: "Minimal" },
+    { id: "reset-visual-filters-button", text: "Reset To Default Configuration" },
     { id: "live-ranges-button", text: "Ranges" },
     { id: "replay-ranges-button", text: "Ranges" },
     { id: "enable-all-visual-filters-button", text: "Enable All" },
     { id: "disable-all-visual-filters-button", text: "Disable All" },
-    { id: "default-visual-filters-button", text: "Default Configuration" },
   ]);
 }
 
@@ -375,7 +375,8 @@ async function expectVisualFilterHelp(page) {
   const tooltip = page.locator("#visual-tooltip");
   const sectionHelp = (await page.locator("#visual-filters-help").textContent()) ?? "";
   const descriptions = new Set();
-  for (const [id, label] of FILTERS) {
+  const shown = await shownFilters(page);
+  for (const { id, label, help: registryHelp } of shown) {
     const helpId = `visual-filter-${id.replaceAll("_", "-")}-help`;
     const option = page.locator(
       `#visual-filter-options [data-visual-filter-option="${id}"]`,
@@ -384,16 +385,13 @@ async function expectVisualFilterHelp(page) {
     const hiddenHelp = page.locator(`#visual-filter-options #${helpId}`);
     const ownDescribedBy = `visual-filters-help ${helpId}`;
     await expect(hiddenHelp).toHaveCount(1);
-    await expect(hiddenHelp).toHaveClass("sr-only");
+    // The help line shows under its switch (no longer screen-reader only).
+    await expect(hiddenHelp).toHaveClass("visual-filters__option-help");
     const help = (await hiddenHelp.textContent()) ?? "";
-    expect(help.trim()).not.toBe("");
-    const sentenceCount = help.match(/[.!?](?:\s|$)/gu)?.length ?? 0;
-    expect(sentenceCount).toBeGreaterThanOrEqual(1);
-    expect(sentenceCount).toBeLessThanOrEqual(2);
+    // The registry owns the help line, and every line says what Off shows.
+    expect(help).toBe(registryHelp);
+    expect(help).toContain("Off");
     descriptions.add(help);
-    if (id === "red_zone_floors") {
-      expect(help).toBe(RED_ZONE_FLOORS_HELP);
-    }
     await expect(input).toHaveAttribute("aria-describedby", ownDescribedBy);
     await expect(input).toHaveAccessibleName(label);
     await expect(input).toHaveAccessibleDescription(
@@ -419,14 +417,13 @@ async function expectVisualFilterHelp(page) {
     await expect(tooltip).toBeHidden();
     await expect(input).toHaveAttribute("aria-describedby", ownDescribedBy);
   }
-  expect(descriptions.size).toBe(FILTERS.length);
+  expect(descriptions.size).toBe(shown.length);
 }
 
 /** @param {import("@playwright/test").Page} page
  * @param {"#live-ranges-button" | "#replay-ranges-button"} rangesSelector */
 async function expectFreshDefaults(page, rangesSelector) {
   await expectFilterSurface(page, INITIAL_DISABLED_FILTERS, false);
-  await expect(page.locator("#visual-filter-count")).toHaveText("11 enabled");
   await expect(page.locator(rangesSelector)).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#default-visual-filters-button")).toHaveAttribute(
     "aria-description",
@@ -438,7 +435,7 @@ async function expectFreshDefaults(page, rangesSelector) {
 /** @param {string[]} disabledIds */
 function expectedPaintKey(disabledIds) {
   const disabled = new Set(disabledIds);
-  return `visual-filters-v3:${FILTER_IDS.map((id) => (disabled.has(id) ? "0" : "1")).join("")}`;
+  return `visual-filters-v4:${FILTER_IDS.map((id) => (disabled.has(id) ? "0" : "1")).join("")}`;
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -450,12 +447,15 @@ function choreographyPaintKeys(page) {
 
 /** @param {import("@playwright/test").Page} page */
 function cooldownInventory(page) {
-  return page.locator("#battlefield .cooldown-cell").evaluateAll((cells) =>
-    cells.map((cell) => ({
-      key: cell.getAttribute("data-presentation-key"),
-      ticks: cell.getAttribute("data-ticks"),
-      ariaLabel: cell.getAttribute("aria-label"),
-    })),
+  return page.locator("#battlefield g.status-marks").evaluateAll((groups) =>
+    groups
+      .map((group) => ({
+        key: group.getAttribute("data-marks-for"),
+        ring: [...group.querySelectorAll('[data-rune-piece^="ring."]')].map((piece) =>
+          piece.getAttribute("data-rune-piece"),
+        ),
+      }))
+      .filter(({ ring }) => ring.length > 0),
   );
 }
 
@@ -466,7 +466,7 @@ function cooldownInventory(page) {
 async function expectCooldownToggle(page, apiRequests, replay, label) {
   const science = await scientificSignature(page, replay);
   const cooldowns = await cooldownInventory(page);
-  expect(cooldowns.length, `${label} cooldown cells`).toBeGreaterThan(0);
+  expect(cooldowns.length, `${label} cooldown rings`).toBeGreaterThan(0);
   await setFilter(
     page,
     apiRequests,
@@ -476,7 +476,7 @@ async function expectCooldownToggle(page, apiRequests, replay, label) {
   );
   await expect(
     page.locator(
-      '#battlefield .cooldown-dock, #battlefield .cooldown-cell, #battlefield .required-dock-fallback[data-kind="cooldown"]',
+      `${COOLDOWN_RING_PAINT}, #battlefield .cooldown-cell, #battlefield .required-dock-fallback[data-kind="cooldown"]`,
     ),
   ).toHaveCount(0);
   expect(await scientificSignature(page, replay)).toEqual(science);
@@ -905,7 +905,7 @@ async function expectAllPaintAbsentWithoutDwell(page) {
         '#battlefield .required-dock-fallback[data-kind="status"]',
         "#battlefield .pov-observed-status",
         "#battlefield .agent-spawn-shield",
-        "#battlefield .cooldown-cell",
+        COOLDOWN_RING_PAINT,
         RED_ZONE_FLOOR_PAINT,
         "#battlefield .combat-effect",
         "#battlefield .combat-connector-effect",
@@ -936,17 +936,17 @@ async function expectAllPaintAbsentWithoutDwell(page) {
   expect(state.roots).toEqual([
     {
       state: "settled",
-      paintKey: `visual-filters-v3:${"0".repeat(FILTERS.length)}`,
+      paintKey: `visual-filters-v4:${"0".repeat(FILTER_IDS.length)}`,
       childCount: 0,
     },
     {
       state: "settled",
-      paintKey: `visual-filters-v3:${"0".repeat(FILTERS.length)}`,
+      paintKey: `visual-filters-v4:${"0".repeat(FILTER_IDS.length)}`,
       childCount: 0,
     },
     {
       state: "settled",
-      paintKey: `visual-filters-v3:${"0".repeat(FILTERS.length)}`,
+      paintKey: `visual-filters-v4:${"0".repeat(FILTER_IDS.length)}`,
       childCount: 0,
     },
   ]);
@@ -1053,7 +1053,6 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
     "Live Default Configuration range request count",
   ).toEqual([{ method: "POST", path: "/api/command" }]);
   await expectFilterSurface(page, INITIAL_DISABLED_FILTERS, false);
-  await expect(page.locator("#visual-filter-count")).toHaveText("11 enabled");
   await expect(page.locator("#live-ranges-button")).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -1297,7 +1296,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
   await expectFilterSurface(page, disabledPair);
 
   await page.reload();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -1334,7 +1333,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
   await openVisualFilters(page);
   await expectFreshDefaults(page, "#replay-ranges-button");
   // Cooldown Effects now starts on, so a fresh page already paints cooldowns.
-  await expect(page.locator("#battlefield .cooldown-cell")).not.toHaveCount(0);
+  await expect(page.locator(COOLDOWN_RING_PAINT)).not.toHaveCount(0);
   await ensureRangesOn(page, "replay");
   await page.locator("#enable-all-visual-filters-button").click();
   await setFilter(
@@ -1633,7 +1632,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
     await enabledChoreographyRoots.evaluateAll((roots) =>
       roots.map((root) => root.getAttribute("data-paint-key")),
     ),
-  ).toEqual(Array(3).fill(`visual-filters-v3:${"1".repeat(FILTERS.length)}`));
+  ).toEqual(Array(3).fill(`visual-filters-v4:${"1".repeat(FILTER_IDS.length)}`));
   await expectLocalOnly(
     page,
     apiRequests,
@@ -1650,7 +1649,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
 
   await setFilter(page, apiRequests, "aura_fields", false, "pre-reload replay aura");
   await page.reload();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectReplayFrameIndex(page, 1);
   await openVisualFilters(page);
   await expectFilterSurface(page, INITIAL_DISABLED_FILTERS);
@@ -1674,7 +1673,7 @@ test("real maximum-status replay renders +2 without losing owner semantics", asy
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(replay.url);
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
     await expect(page.locator("html")).toHaveAttribute(
       "data-presentation-authority",
       "installed",
@@ -1835,7 +1834,7 @@ test("amended regular and stress scenarios retain Oracle-Agent presentation cont
    * @param {number} frameIndex
    * @param {Record<string, any> | null} oracle */
   const inspectInstalledFrame = async (audience, frameIndex, oracle) => {
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
     await expect(page.locator("html")).toHaveAttribute(
       "data-presentation-authority",
       "installed",

@@ -3,7 +3,9 @@
 The launcher builds one ``DebuggerEvaluationLaunchSpecificationV1``. Session
 creation and deliberate restarts call ``build_debugger_evaluation_context_v1`` with
 the actual effective config and an increasing run generation. The result records
-nonofficial live provenance, both team controllers and the information mode.
+nonofficial live provenance, both team controllers and the information mode,
+and, when the session passes its slot labels, every controller's name (per team
+and per champion slot) so a saved replay shows the same names as live play.
 Fixed packaged scenarios retain their exact setup and evaluator seed protocol;
 ordinary diagnostics retain their recorded scalar environment seed.
 These builders validate and hash host data; they do not discover Git state, run a
@@ -44,6 +46,10 @@ from marl_battlegrounds.evaluation.catalog import (
     build_evaluation_seed_protocol_v1,
     build_resolved_env_config_v2,
 )
+from marl_battlegrounds.evaluation.controller_names import (
+    slot_controller_name_keys,
+    team_controller_name_key,
+)
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     AssignedPolicySlotV2,
@@ -57,6 +63,7 @@ from marl_battlegrounds.evaluation.models import (
     ExecutionInformationMode,
     NotApplicablePolicySlotV1,
     PolicyAssignmentSlotV2,
+    ResolvedEnvConfigV2,
     VersionedIdentityV1,
     canonical_digest_sha256,
     canonical_json_bytes,
@@ -177,7 +184,12 @@ def build_debugger_evaluation_launch_specification_v1(
 
 
 def _scenario_contract_payload(scenario: DebuggerScenario) -> dict[str, object]:
-    """Project stable authored metadata without serializing its state callback."""
+    """Project stable authored metadata without serializing its state callback.
+
+    A packaged map with exchanged spawn banks adds
+    ``packaged_map_spawn_banks_exchanged: True``; every other scenario keeps
+    its earlier payload, so its scenario identity is unchanged.
+    """
     if type(scenario) is not DebuggerScenario:
         raise TypeError("scenario must be the exact DebuggerScenario type")
     payload: dict[str, object] = {
@@ -220,7 +232,80 @@ def _scenario_contract_payload(scenario: DebuggerScenario) -> dict[str, object]:
         payload["packaged_scenario"] = scenario.scenario_specification
     if scenario.packaged_map is not None:
         payload["packaged_map"] = scenario.packaged_map
+    if scenario.spawn_banks_exchanged:
+        payload["packaged_map_spawn_banks_exchanged"] = True
     return payload
+
+
+def _packaged_map_keys(
+    scenario: DebuggerScenario,
+    config: EnvConfig,
+    resolved_config: ResolvedEnvConfigV2,
+) -> tuple[AggregationKeyV1, ...] | None:
+    """Check a packaged map's geometry and return its recording keys.
+
+    Parameters
+    ----------
+    scenario : DebuggerScenario
+        A scenario whose packaged_map is set (the caller checks this).
+    config : EnvConfig
+        The exact scalar runtime config of the episode.
+    resolved_config : ResolvedEnvConfigV2
+        ``build_resolved_env_config_v2(config)``, already built by the caller.
+
+    Returns
+    -------
+    tuple of AggregationKeyV1 or None
+        Without exchanged banks: the four registered map keys (map_id,
+        map_name, map_origin "registered", map_split). With
+        ``scenario.spawn_banks_exchanged``: the same four keys, checked against
+        the config with its spawn banks put back in catalog order, then
+        ``marl_bgs.source_config_id`` (the content ID of that put-back config)
+        and ``marl_bgs.spawn_locations`` "1", the keys evaluate records for
+        exchanged spawns (``recording_context._map_recording_keys``). None when
+        the exchanged map fails that check; the caller then records a custom
+        map and never claims the packaged map.
+
+    Raises
+    ------
+    ValueError
+        Without exchanged banks, the config's geometry (size, obstacles or
+        ordered spawn banks) differs from the packaged map. This is the earlier
+        behavior for every packaged map.
+
+    Notes
+    -----
+    Host-only. It reads the packaged catalog and hashes the config; it starts
+    no episode and writes no file.
+    """
+    from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
+
+    packaged_map = scenario.packaged_map
+    if packaged_map is None:
+        raise ValueError("a packaged map is required")
+    if not scenario.spawn_banks_exchanged:
+        # Frozen Pydantic models provide their runtime hash for this host cache.
+        return registered_map_metadata(packaged_map.map_id, resolved_config)  # pyright: ignore[reportArgumentType]
+    from marl_battlegrounds.evaluation.evaluation_conditions import config_record
+    from marl_battlegrounds.tasks import (
+        _swap_spawn_banks,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    source = _swap_spawn_banks(config)
+    try:
+        keys = registered_map_metadata(
+            packaged_map.map_id,
+            build_resolved_env_config_v2(source),  # pyright: ignore[reportArgumentType]
+        )
+    except ValueError:
+        return None
+    return (
+        *keys,
+        AggregationKeyV1(
+            name="marl_bgs.source_config_id", value=config_record(source)[0]
+        ),
+        AggregationKeyV1(name="marl_bgs.spawn_locations", value="1"),
+    )
 
 
 def _content_identity(
@@ -539,6 +624,7 @@ def build_debugger_evaluation_context_v1(
     ]
     | None = None,
     manual_slots: tuple[int, ...] | None = None,
+    slot_labels: tuple[str | None, ...] | None = None,
 ) -> EvaluationEpisodeContextV4:
     """Build the recorded custom-evaluation context for one live debugger episode.
 
@@ -580,6 +666,17 @@ def build_debugger_evaluation_context_v1(
         rows retain their old identity bytes. None also preserves older whole-team
         identities. Invalid, duplicate, inactive or out-of-order rows are rejected.
 
+    slot_labels : tuple of str or None, or None, optional
+        The session's ten controller names in slot order, exactly as the live
+        clients show them ("Manual" for a human-played slot, a method's own
+        name otherwise; None for an unused slot). When given, the context
+        records them so a saved replay keeps every controller's name: one
+        ``marl_bgs.controller_name.slot_N`` key per used slot, and one
+        ``marl_bgs.system_name.team_a``/``team_b`` key per team holding its
+        slots' different names joined with " / " in slot order (the keys
+        evaluate writes). None (the default) records no names, as before.
+        The names never enter episode, matchup or seed identities.
+
     Returns
     -------
     EvaluationEpisodeContextV4
@@ -588,7 +685,13 @@ def build_debugger_evaluation_context_v1(
         When the scenario provenance names an approved map ID, the layout
         identity is that map's approved source: its catalog asset ID, catalog
         revision and semantic digest, and the aggregation keys record the map as
-        registered. Other authored provenance gives the layout identity
+        registered. A packaged map gets the same layout identity and keys. If
+        the scenario declares the packaged map's spawn banks exchanged, the
+        map is checked with the banks put back and the keys also record the
+        exchange (``marl_bgs.source_config_id`` and
+        ``marl_bgs.spawn_locations`` "1"); a failed check records a custom map
+        with the resolved-debugger-environment layout instead. Other
+        authored provenance gives the layout identity
         ``authored-map`` version 1 with the map's semantic digest, recorded as a
         custom map. Without provenance the layout identity is
         ``resolved-debugger-environment`` version 1 with the resolved config digest.
@@ -616,9 +719,10 @@ def build_debugger_evaluation_context_v1(
         If the launch record or config is not the exact supported model type.
     ValueError
         If generation, horizon, controllers, input mode, source classification,
-        configuration or recorded identity is invalid, or if the provenance map ID
+        configuration or recorded identity is invalid, if the provenance map ID
         names an approved map whose semantic digest differs from the scenario's
-        map digest.
+        map digest, or if slot_labels does not give exactly the used slots a
+        nonempty name.
 
     Notes
     -----
@@ -708,6 +812,11 @@ def build_debugger_evaluation_context_v1(
         if scenario.mode != "interactive" and manual_slots:
             raise ValueError("Scripted playback cannot own Manual slots")
     resolved_config = build_resolved_env_config_v2(config)
+    packaged_map_keys = (
+        None
+        if scenario.packaged_map is None
+        else _packaged_map_keys(scenario, config, resolved_config)
+    )
     horizon = config.max_steps if expected_horizon is None else expected_horizon
     if type(horizon) is not int or not 0 < horizon <= config.max_steps:
         raise ValueError("expected_horizon must be an exact positive config bound")
@@ -738,10 +847,10 @@ def build_debugger_evaluation_context_v1(
     if specification is not None:
         scenario_identity_digest = specification.canonical_digest_sha256
         layout_identity_digest = specification.layout.canonical_digest
-    elif scenario.packaged_map is not None:
+    elif scenario.packaged_map is not None and packaged_map_keys is not None:
         layout_identity_digest = scenario.packaged_map.source.semantic_digest
     approved_source = None
-    if scenario.packaged_map is not None:
+    if scenario.packaged_map is not None and packaged_map_keys is not None:
         from marl_battlegrounds.tasks import list_tdm_maps
 
         if list_tdm_maps()[scenario.packaged_map.map_id] != scenario.packaged_map:
@@ -1061,12 +1170,28 @@ def build_debugger_evaluation_context_v1(
                         ),
                     ]
                 )
-    if scenario.packaged_map is not None:
-        from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
-
-        aggregation_keys.extend(
-            registered_map_metadata(scenario.packaged_map.map_id, resolved_config)  # pyright: ignore[reportArgumentType]
-        )
+    if slot_labels is not None:
+        active = np.asarray(config.agent_profile.active_mask, dtype=np.bool_)
+        if len(slot_labels) != MAX_AGENT_SLOTS or any(
+            (label is not None) != bool(active[slot])
+            for slot, label in enumerate(slot_labels)
+        ):
+            raise ValueError("slot_labels must name exactly the configured slots")
+        aggregation_keys.extend(slot_controller_name_keys(slot_labels))
+        for team, start in (("team_a", 0), ("team_b", 5)):
+            names = tuple(
+                dict.fromkeys(
+                    label
+                    for label in slot_labels[start : start + 5]
+                    if label is not None
+                )
+            )
+            if names:
+                aggregation_keys.append(
+                    team_controller_name_key(team, " / ".join(names))
+                )
+    if packaged_map_keys is not None:
+        aggregation_keys.extend(packaged_map_keys)
     elif scenario.provenance is not None and scenario.provenance.map_id is not None:
         from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
 

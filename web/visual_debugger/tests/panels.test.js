@@ -1,6 +1,11 @@
 /**
  * @file Check inspector and class-card views against authorized frames, selected
- * recipients and exact section contracts.
+ * recipients and exact section contracts. The Technical Frame shows every
+ * technical fact (in ledger.js's three groups), and the old sidebar Visual Key is
+ * no longer a disclosure panel. In BattleClient and DevClient Agent POV the
+ * Pending Manual Actions card shows only the POV agent's own staged order
+ * (from its POV draft) and reads "Not Observed", with no order, for every
+ * other row, a teammate's or another team's.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -19,6 +24,10 @@ import {
   disclosurePanelInitiallyOpen,
   rosterStatusDurationLabel,
 } from "../src/panels.js";
+import {
+  DEFAULT_VISUAL_FILTER_STATE,
+  setVisualFilterEnabled,
+} from "../src/visual-filters.js";
 import { ultimateTokenFromClassId } from "../src/vocabulary.js";
 
 const authorizedFixture = JSON.parse(
@@ -75,6 +84,7 @@ function rosterDomHarness() {
       className: "",
       textContent: "",
       dataset: {},
+      style: {},
       children,
       disabled: false,
       hidden: false,
@@ -248,7 +258,7 @@ test("authorized replay inspector keeps researcher selection separate from trans
       inspector.owner.public_agent_id,
       expectedOwner.public_agent_id ?? expectedOwner.actor_public_agent_id,
     );
-    assert.equal(inspector.owner_descriptor.title, "Agent ID 0 · Mage · Team A");
+    assert.equal(inspector.owner_descriptor.title, "Mage · ID 0");
     assert.equal(inspector.owner_descriptor.summary, null);
     assert.deepEqual(inspector.owner_descriptor.rows, []);
     assert.deepEqual(
@@ -259,7 +269,7 @@ test("authorized replay inspector keeps researcher selection separate from trans
     );
     assert.equal(
       semanticSection(inspector.owner_descriptor, "Class Overview").summary,
-      "The Mage has the highest Basic damage per tick in the game, which is further enhanced by its own passive and Ultimate (Burst) damage amplification effects. This skill set makes the Mage the game’s ranged “Artillery” class. Despite its high damage output, it is also the most vulnerable: the Mage has the lowest health in the game, making it a “Glass Cannon” that is reliant on strong team formations and allies for protection.",
+      "The Mage is an archmage of the Council of Caelmont, the violet city that floats above the clouds. It has the strongest Basic in the game but the lowest health, so its team must keep it safe. The Mage and allies close to it deal more damage. Its Ultimate, Burst, lights a star inside the Mage, and its own blows hit harder for the next few ticks.",
     );
     assert.deepEqual(
       semanticSection(inspector.owner_descriptor, "Authored Tactical Guide").rows.map(
@@ -281,6 +291,8 @@ test("authorized replay inspector keeps researcher selection separate from trans
         "Base Basic Damage",
         "Out-of-Combat Delay",
         "Out-of-Combat Regeneration",
+        "Basic Name",
+        "Basic Description",
         "Ultimate Name",
         "Ultimate Description",
         "Ultimate Target",
@@ -321,21 +333,21 @@ test("all five certified class cards use the exact documentation section contrac
       1,
       [
         "For 5 ticks, Burst applies a 50% increase (×1.5) to this Mage's damage, starting on the next tick.",
-        "While alive and without a spawn shield, the Mage emits Sorcerer's Empowerment. It strengthens the attacks of living teammates within a radius of 2 who also have no spawn shield, including the Mage itself. Each aura provides a 15% damage bonus. Overlapping auras multiply their damage bonuses, up to 1.32 times normal damage.",
+        "While alive and without a spawn shield, the Mage gives off Sorcerer's Empowerment. It strengthens the attacks of living teammates within a radius of 2 who also have no spawn shield, including the Mage itself. Each aura gives a 15% damage bonus. Overlapping auras multiply their damage bonuses, up to 1.32 times normal damage.",
       ],
     ],
     [
       2,
       [
         "Charge moves the Warrior toward an enemy before normal movement. It deals 20 base damage, stuns for 1 tick, and applies a 50% movement reduction (×0.5) for 5 ticks. Damage bonuses and reductions affect the damage dealt.",
-        "While alive and without a spawn shield, the Warrior emits Guardian's Barrier. It protects living teammates within a radius of 2 who also have no spawn shield, including the Warrior itself. Each barrier reduces incoming damage by 15%. When barriers overlap, each reduces the damage left after the others, down to 72.25% of the original incoming damage.",
+        "While alive and without a spawn shield, the Warrior gives off Guardian's Barrier. It protects living teammates within a radius of 2 who also have no spawn shield, including the Warrior itself. Each barrier reduces incoming damage by 15%. When barriers overlap, each reduces the damage left after the others, down to 72.25% of the original incoming damage.",
       ],
     ],
     [
       3,
       [
         "Freezing Trap deals 10 base damage to one enemy and stuns it for 4 ticks. Damage bonuses and reductions affect the damage dealt. Damage breaks an existing trap.",
-        "Each successful Hunter Basic attack applies Serrated Arrows, causing a 15% movement reduction (×0.85) for 1 tick. Further Basic attacks refresh the slow.",
+        "Far Sight lets the Hunter see everything within a radius of 6.5 around it, farther than any other class. Stone still blocks its sight.",
       ],
     ],
     [
@@ -349,7 +361,7 @@ test("all five certified class cards use the exact documentation section contrac
       5,
       [
         "Holy Word: Salvation heals one ally for 200, before healing reductions and the maximum-health limit.",
-        "Each successful use of the Priest's Basic healing ability applies Blessing of Freedom to its target for 1 tick. The Priest can target itself. Freedom prevents slows from reducing movement below 85% of base movement speed (×0.85), but it does not prevent stuns.",
+        "Each successful Lesser Heal applies Blessing of Freedom to its target for 1 tick. The Priest can target itself. Freedom prevents slows from reducing movement below 85% of base movement speed (×0.85), but it does not prevent stuns.",
       ],
     ],
   ]);
@@ -364,10 +376,7 @@ test("all five certified class cards use the exact documentation section contrac
     assert.ok(mechanics);
     const descriptor = explainClassDocumentation(owner, mechanics);
     assert.ok(descriptor);
-    assert.equal(
-      descriptor.title,
-      `Agent ID ${owner.public_agent_id} · ${className} · ${owner.team_id === 1 ? "Team A" : "Team B"}`,
-    );
+    assert.equal(descriptor.title, `${className} · ID ${owner.public_agent_id}`);
     assert.equal(descriptor.summary, null);
     assert.deepEqual(
       descriptor.sections.map((section) => section.title),
@@ -387,6 +396,8 @@ test("all five certified class cards use the exact documentation section contrac
       "Basic Ability Radius",
       "Out-of-Combat Delay",
       "Out-of-Combat Regeneration",
+      "Basic Name",
+      "Basic Description",
       "Ultimate Name",
       "Ultimate Description",
       "Ultimate Target",
@@ -417,7 +428,7 @@ test("all five certified class cards use the exact documentation section contrac
       sourcePublicAgentId: owner.public_agent_id,
       targetPublicAgentId: "target-for-tooltip-proof",
     });
-    assert.equal(activation.title, `${ultimate.name} (${className} Ultimate Ability)`);
+    assert.equal(activation.title, `${ultimate.name} (${className} Ultimate)`);
     assert.equal(activation.summary, descriptions[0]);
     assert.deepEqual(
       activation.rows.map(({ label }) => label),
@@ -493,7 +504,7 @@ test("class documentation fails closed for unavailable, V1, missing, and mismatc
     );
     assert.doesNotMatch(
       JSON.stringify(descriptor),
-      /Unavailable|Class Overview|Authored Tactical Guide|Ultimate Name|Ultimate Description|Passive Name|Passive Description/u,
+      /Unavailable|Class Overview|Authored Tactical Guide|Basic Name|Basic Description|Ultimate Name|Ultimate Description|Passive Name|Passive Description/u,
     );
   }
 
@@ -582,7 +593,7 @@ test("authorized replay inspector retains final selected owner without outgoing 
       inspector.owner.public_agent_id,
       expectedOwner.public_agent_id ?? expectedOwner.owner_public_agent_id,
     );
-    assert.equal(inspector.owner_descriptor.title, "Agent ID 0 · Mage · Team A");
+    assert.equal(inspector.owner_descriptor.title, "Mage · ID 0");
     assert.equal(inspector.owner_class_accent, "mage");
     assert.deepEqual(Object.keys(inspector), [
       "title",
@@ -782,8 +793,29 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       pendingRows.length,
       liveAgent.researcher_space.pending_joint_action.action_rows.length,
     );
+    // Agent POV: only the POV agent's own row (Team A, from its POV draft)
+    // shows a staged order; every teammate's and enemy's row is Not Observed.
+    const povTeam = "team-a";
+    const ownRows = pendingRows.filter((row) => row.dataset.observed !== "false");
+    assert.equal(ownRows.length, 1);
+    assert.equal(ownRows[0].dataset.team, povTeam);
+    assert.ok(pendingRows.some((row) => row.dataset.team !== povTeam));
+    assert.ok(
+      pendingRows.some(
+        (row) => row.dataset.team === povTeam && row.dataset.observed === "false",
+      ),
+    );
+    for (const row of pendingRows.filter((row) => !ownRows.includes(row))) {
+      assert.equal(row.dataset.observed, "false");
+      assert.equal(dom.textTree(row).includes("Not Observed"), true);
+      assert.doesNotMatch(dom.textTree(row), /Pending|Move \d|Target \d|Ultimate \d/u);
+      assert.equal(
+        dom.descendants(row).some((node) => node.className === "accepted-action-tuple"),
+        false,
+      );
+    }
     assert.equal(
-      pendingRows.every((row) => {
+      ownRows.every((row) => {
         const text = dom.textTree(row);
         const tuples = dom
           .descendants(row)
@@ -837,12 +869,40 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       "No editable joint action is available during scripted playback.",
     );
     panels.renderAuthorizedInspector(liveAgent);
-    assert.equal(
-      dom
-        .descendants(acceptedCard)
-        .filter((node) => node.className === "accepted-action-row").length,
-      liveAgent.researcher_space.latest_transition.action_rows.length,
+    // BattleClient Agent POV: the POV agent's own row plus "Not Observed" for
+    // each teammate in the POV scene; no enemy and no researcher-only row.
+    const liveAcceptedRows = dom
+      .descendants(acceptedCard)
+      .filter((node) => node.className === "accepted-action-row");
+    const liveRecipientId = liveAgent.authority.recipient_public_agent_id;
+    const liveRecipient = liveAgent.scene.agents.find(
+      (/** @type {Record<string, any>} */ agent) =>
+        agent.public_agent_id === liveRecipientId,
     );
+    assert.ok(liveRecipient);
+    const liveTeammates = liveAgent.scene.agents.filter(
+      (/** @type {Record<string, any>} */ agent) =>
+        agent.team_id === liveRecipient.team_id &&
+        agent.public_agent_id !== liveRecipientId,
+    );
+    assert.equal(liveAcceptedRows.length, 1 + liveTeammates.length);
+    assert.ok(
+      liveAcceptedRows.length <
+        liveAgent.researcher_space.latest_transition.action_rows.length,
+    );
+    const notObservedRows = liveAcceptedRows.filter(
+      (row) => row.dataset.observed === "false",
+    );
+    assert.equal(notObservedRows.length, liveTeammates.length);
+    assert.equal(
+      notObservedRows.every((row) => dom.textTree(row).includes("Not Observed")),
+      true,
+    );
+    assert.equal(
+      liveAcceptedRows.every((row) => /^team-[ab]$/u.test(row.dataset.team)),
+      true,
+    );
+    assert.equal(new Set(liveAcceptedRows.map((row) => row.dataset.team)).size, 1);
     panels.renderAuthorizedRoster(liveAgent, false);
     const liveAgentRows = /** @type {Record<string, any>[]} */ (
       [...panels.rosterRows.values()].filter(
@@ -914,8 +974,24 @@ test("authorized roster exposes one native key-only action with isolated fact ow
 
     const replayAgent = await normalizedPresentation("replay_no_shared_obs_agent_pov");
     panels.renderAuthorizedInspector(replayAgent);
-    assert.equal(pendingHeading.textContent, "Upcoming Transition");
+    assert.equal(pendingHeading.textContent, "Next Tick (What Happens Next)");
     assert.equal(pendingScope.hidden, true);
+    const wordRows = dom
+      .descendants(pendingCard)
+      .filter((node) => node.className === "accepted-action-row");
+    assert.equal(wordRows.length, 5);
+    // Actions In Words (on by default): words first, the recorded codes under.
+    assert.match(
+      dom.textTree(wordRows[0]),
+      /Stays · Burst.*Move 0 · Target 0 · Ultimate 1/u,
+    );
+    assert.doesNotMatch(dom.textTree(wordRows[0]), /Submitted|Accepted/u);
+    panels.renderAuthorizedInspector(
+      replayAgent,
+      undefined,
+      undefined,
+      setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "plain_actions", false),
+    );
     const upcomingRows = dom
       .descendants(pendingCard)
       .filter((node) => node.className === "accepted-action-row");
@@ -1080,9 +1156,11 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       const owners = dom
         .descendants(diagnosticsCard)
         .filter((node) => Object.hasOwn(node.dataset, "technicalFact"));
+      // ledger.js draws the facts in its three Technical Frame groups, so the
+      // same facts appear, group by group.
       assert.deepEqual(
-        owners.map((owner) => owner.dataset.technicalFact),
-        expectedFactIds,
+        owners.map((owner) => owner.dataset.technicalFact).sort(),
+        [...expectedFactIds].sort(),
         String(kind),
       );
       assert.equal(
@@ -1102,7 +1180,38 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     }
 
     const replayOracle = await normalizedPresentation("replay_oracle");
+    // Default: token chips and Actions In Words, recorded codes underneath.
     panels.renderAuthorizedInspector(replayOracle);
+    const wordTransitionRows = dom
+      .descendants(acceptedCard)
+      .filter((node) => node.className === "accepted-action-row");
+    assert.ok(wordTransitionRows.length > 0);
+    assert.equal(
+      wordTransitionRows.every((row) => {
+        const text = dom.textTree(row);
+        return (
+          /Agent \d+ (?:Mage|Warrior|Hunter|Rogue|Priest)/u.test(text) &&
+          /(?:Stays|Moves \w+) · /u.test(text) &&
+          /Move \d+ · Target \d+ · Ultimate \d+/u.test(text) &&
+          !/Team [AB]/u.test(text) &&
+          !/(?:mask|combat result|submission|revision|generation|transition)/iu.test(
+            text,
+          )
+        );
+      }),
+      true,
+    );
+    // Ledger Heraldry and Actions In Words off: today's plain text and boxes.
+    panels.renderAuthorizedInspector(
+      replayOracle,
+      undefined,
+      undefined,
+      setVisualFilterEnabled(
+        setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "plain_actions", false),
+        "ledger_heraldry",
+        false,
+      ),
+    );
     const transitionRows = dom
       .descendants(acceptedCard)
       .filter((node) => node.className === "accepted-action-row");
@@ -1111,9 +1220,8 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       transitionRows.every((row) => {
         const text = dom.textTree(row);
         return (
-          /Agent ID .+ · (?:Mage|Warrior|Hunter|Rogue|Priest) · Team [AB]/u.test(
-            text,
-          ) &&
+          /(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+/u.test(text) &&
+          !/Team [AB]/u.test(text) &&
           text.includes("Submitted") &&
           text.includes("Accepted") &&
           !/(?:mask|combat result|submission|revision|generation|transition)/iu.test(
@@ -1247,12 +1355,13 @@ test("native disclosure defaults open only operational live panels and roster", 
     "agent-details",
     "pending-turn-details",
     "latest-transition-details",
-    "visual-key",
     "technical-frame-details",
   ]) {
     assert.equal(disclosurePanelInitiallyOpen(id, false), false);
     assert.equal(disclosurePanelInitiallyOpen(id, true), false);
   }
+  // The old sidebar Visual Key gave way to the Visual Key dialog.
+  assert.throws(() => disclosurePanelInitiallyOpen("visual-key", false), /Unknown/u);
   assert.throws(() => disclosurePanelInitiallyOpen("unknown", false), /Unknown/u);
 });
 

@@ -145,11 +145,15 @@ def test_live_no_shared_excludes_oracle_ids_and_diagnostics() -> None:
         "outcome",
         "teams",
         "deaths",
+        "previous_scores",
+        "scores_ten_ticks_ago",
+        "returned_agent_ids",
         "map",
         "observation_mode",
         "episode_limit",
         "root_seed",
         "episode_seed",
+        "slot_controller_names",
     }
     context = service.session.evaluation_context
     frame = service.session.current_evaluation_frame
@@ -203,7 +207,8 @@ def test_live_no_shared_excludes_oracle_ids_and_diagnostics() -> None:
             if roster.configured_team_id == team["team_id"]
             and isinstance(assignment, AssignedPolicySlotV2)
         )
-        assert team["display_name"] == "Scripted scenario"
+        # The recorded slot labels name scripted playback "Scripted".
+        assert team["display_name"] == "Scripted"
         assert team["policy_ids"] == list(
             dict.fromkeys(assignment.policy_id for assignment in assignments)
         )

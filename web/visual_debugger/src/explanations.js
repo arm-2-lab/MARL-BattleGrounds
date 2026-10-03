@@ -1,21 +1,35 @@
 /**
  * @file Build tooltip and inspector descriptions from authorized display records.
  * These pure builders copy quantities from their inputs and use shared
- * display vocabulary. They do not calculate simulator outcomes, grant
- * information access or validate an entire presentation. Callers must pass
- * records from the appropriate normalized audience and perform required
- * joins. Missing facts stay unavailable; descriptor IDs are internal keys.
+ * display vocabulary: labels from `agent-identity.js` ("Mage · ID 5"),
+ * class guides and ability names from `class-documentation.js`, status and
+ * aura names from `semantic-vocabulary.js` and `symbols.js`. They do not
+ * calculate simulator outcomes, grant information access or validate an
+ * entire presentation. Callers must pass records from the appropriate
+ * normalized audience and perform required joins; in Agent POV that means the
+ * POV arena scene, never the global researcher space, for anything drawn on or
+ * over the arena. Missing facts stay unavailable; descriptor IDs are internal
+ * keys.
  */
 import {
   canonicalAgentIdentity,
   exactAuthorizedAgentIdentityV1,
+  teamLabelFromId,
+  tickCountText,
 } from "./agent-identity.js";
 import {
+  classAbilityNameV1,
+  classNamesV1,
   requiredClassDocumentationValueNamesV1,
   resolveClassDocumentationV1,
 } from "./class-documentation.js";
 import { formatDisplayNumber } from "./display.js";
-import { auraPresentation, statusPresentation } from "./semantic-vocabulary.js";
+import {
+  auraPresentation,
+  statusCardSentence,
+  statusPresentation,
+  statusTimeText,
+} from "./semantic-vocabulary.js";
 import { authorizedSourceAttributionV1 } from "./source-attribution.js";
 import {
   createSemanticDescriptor,
@@ -40,6 +54,62 @@ import {
 
 const COMPACT_AND_FULL = Object.freeze({ compact: true, full: true });
 const FULL_ONLY = Object.freeze({ compact: false, full: true });
+// A status tip's "Time Left" row: shown in the tip (the compact surface) in
+// the Champion Card's words; the full surface keeps "Duration Remaining".
+const COMPACT_ONLY = Object.freeze({ compact: true, full: false });
+
+/**
+ * The fall card's sentence about kill credit, in plain words: who counts as a
+ * Kill Contributor (every champion that hit the fallen one on that tick, and
+ * a Priest whose healing on that tick helped one of them) and that the credit
+ * is shared, with no single last hit.
+ */
+export const DEATH_CREDIT_SENTENCE =
+  "Credit is shared by every champion that hit it on that tick, and by a Priest whose healing on that tick helped one of them. No one is named as the last hit.";
+
+/**
+ * The summary of a planned order's line (explainPendingRoute), in plain words:
+ * it shows who will act on whom, not a path anyone walks.
+ */
+export const PLANNED_ROUTE_SENTENCE =
+  "The order set for this turn: who will act on whom. It is not a path anyone walks.";
+
+/**
+ * The summary of a champion's net life change (explainNetHealth), in plain
+ * words: every blow and heal of the tick added together, with no source named.
+ */
+export const NET_LIFE_SENTENCE =
+  "This champion's whole life change this tick, every blow and heal added together. It does not say who caused it.";
+
+/** The title of a net life change for each recorded outcome. */
+const NET_LIFE_TITLES = Object.freeze({
+  damage: "Net Damage",
+  healing: "Net Healing",
+  unchanged: "No Net Change",
+});
+
+/**
+ * Return the plain summary of a blow or heal whose ability guide is missing.
+ *
+ * names.className is the source's class label ("Priest"), or null or
+ * "Unknown" when the class is not known or must stay hidden (a redacted
+ * source); names.abilityName is the ability's name ("Lesser Heal"), or null;
+ * names.tokenLabel is the display token's label ("Basic Damage"), the last
+ * fallback. Return "The Priest used Lesser Heal this tick." when both class
+ * and ability are known, otherwise "<ability or token label> was used this
+ * tick.". Pure; never an internal word such as "activation".
+ *
+ * @param {{className: string | null, abilityName: string | null, tokenLabel: string}} names
+ * @returns {string}
+ */
+function activationFallbackSentence(names) {
+  const ability = names.abilityName ?? names.tokenLabel;
+  return names.className !== null &&
+    names.className !== "Unknown" &&
+    names.abilityName !== null
+    ? `The ${names.className} used ${ability} this tick.`
+    : `${ability} was used this tick.`;
+}
 
 const TECHNICAL_FACT_HELP = Object.freeze({
   episode: Object.freeze({
@@ -105,13 +175,22 @@ const TECHNICAL_FACT_HELP = Object.freeze({
 export { canonicalAgentIdentity } from "./agent-identity.js";
 
 /**
- * Build a descriptor for a normalized grouped death event. event supplies
- * eventId, label and members with title, killingTeamId and contributor rows.
+ * Build the tip of a fall card (a grouped death event; the BattleClient, the
+ * DevClient combat screen and the Replay Viewer show it on the arena). event
+ * supplies eventId, label (the title, for example "Fallen On Tick 98") and
+ * members with title, killingTeamId and contributor rows. Every word is plain
+ * player English (DEATH_CREDIT_SENTENCE, then "This champion fell." per
+ * fallen champion); no internal word such as "transition" or "agent" shows.
  * Preserve recorded contributor order; null contributors remain explicitly
- * unavailable for historical evidence. Return a semantic descriptor without
- * assigning final-hit credit or changing the event. Caller owns authorization.
+ * unavailable for historical evidence. An empty contributor list (Agent POV
+ * when the team saw no attacker) leaves the Kill Contributors row out, so no
+ * hidden attacker is hinted at. The killing team reads "Team A" or
+ * "Team B" (from `agent-identity.js`); any other team ID reads "Unavailable".
+ * Return a semantic descriptor without assigning final-hit credit or changing
+ * the event. Caller owns authorization.
  *
  * @param {JsonRecord} event
+ * @returns {SemanticDescriptor}
  */
 export function explainDeathAnnouncement(event) {
   return createSemanticDescriptor({
@@ -120,31 +199,36 @@ export function explainDeathAnnouncement(event) {
     title: event.label,
     tone: "information",
     accent: "none",
-    summary:
-      "Kill contributors include direct damage and useful same-tick Priest healing of a damaging contributor. Credit is shared; it does not identify one final hitter.",
+    summary: DEATH_CREDIT_SENTENCE,
     rows: [],
     sections: event.members.map((/** @type {JsonRecord} */ member) => ({
       title: member.title,
-      summary: "This agent died on the incoming transition.",
+      summary: "This champion fell.",
       rows: [
         {
           label: "Killing Team",
           value:
             member.killingTeamId === null
               ? "Unavailable"
-              : `Team ${member.killingTeamId === 1 ? "A" : "B"}`,
+              : (teamLabelFromId(member.killingTeamId) ?? "Unavailable"),
           metadata: COMPACT_AND_FULL,
         },
-        {
-          label: "Kill Contributors",
-          value:
-            member.contributors === null
-              ? "Unavailable — not recorded in this historical evidence."
-              : member.contributors
-                  .map((/** @type {JsonRecord} */ contributor) => contributor.title)
-                  .join("; "),
-          metadata: COMPACT_AND_FULL,
-        },
+        ...(Array.isArray(member.contributors) && member.contributors.length === 0
+          ? []
+          : [
+              {
+                label: "Kill Contributors",
+                value:
+                  member.contributors === null
+                    ? "Unavailable — not recorded in this historical evidence."
+                    : member.contributors
+                        .map(
+                          (/** @type {JsonRecord} */ contributor) => contributor.title,
+                        )
+                        .join("; "),
+                metadata: COMPACT_AND_FULL,
+              },
+            ]),
       ],
       metadata: COMPACT_AND_FULL,
     })),
@@ -350,15 +434,16 @@ function exactNumber(value) {
 }
 
 /**
- * Format an integer as N tick/ticks, using singular only for 1. Return
- * Unavailable for a noninteger. This does not reject negative counts or
- * convert seconds to simulator ticks.
+ * Format an integer as "1 tick" or "N ticks" for a row value, using the shared
+ * wording in `agent-identity.js` (singular only for 1). Return "Unavailable"
+ * for a noninteger. This does not reject negative counts or convert seconds to
+ * simulator ticks.
  *
  * @param {unknown} value
+ * @returns {string}
  */
 function tickCount(value) {
-  const count = integer(value);
-  return count === null ? "Unavailable" : `${count} ${count === 1 ? "tick" : "ticks"}`;
+  return tickCountText(integer(value)) ?? "Unavailable";
 }
 
 /**
@@ -409,21 +494,6 @@ function exactJoinedAuthorizedIdentity(reference, owner, prefix) {
 }
 
 /**
- * Format a two-element array of finite coordinates as (x, y), otherwise
- * return Unavailable. Use the shared number formatter; units and authorized
- * coordinate space are the caller's responsibility.
- *
- * @param {unknown} value
- */
-function point(value) {
-  return Array.isArray(value) &&
-    value.length === 2 &&
-    value.every((coordinate) => finiteNumber(coordinate) !== null)
-    ? `(${formatDisplayNumber(value[0])}, ${formatDisplayNumber(value[1])})`
-    : "Unavailable";
-}
-
-/**
  * Format a finite multiplier as its signed percent change from 1.
  * Use a plus sign for an increase and a minus sign for a decrease. Return
  * Unavailable for other inputs. This converts a recorded multiplier for
@@ -468,9 +538,10 @@ function auraEffectPresentation(presentation, multiplier, scope) {
 }
 
 /**
- * Convert recorded magnitude to one labelled display row, or null for
+ * Convert recorded magnitude to one labeled display row, or null for
  * missing/none kind or nonfinite magnitude. Recognize movement, healing and
- * damage multipliers plus movement floors; other named kinds use a generic
+ * damage multipliers (rows "Movement Effect", "Healing Effect", "Damage
+ * Effect") plus movement floors ("Movement Floor"); other named kinds use a generic
  * numeric row. Return a plain label/value object without looking up tuning
  * values or validating the input's permitted scientific range.
  *
@@ -504,7 +575,7 @@ function statusMagnitudePresentation(magnitudeKind, magnitude) {
   }
   if (kind === "damage_multiplier") {
     return {
-      label: "Damage Amplification Effect",
+      label: "Damage Effect",
       value:
         exact >= 1
           ? `${absolutePercent} more damage dealt (×${formatDisplayNumber(exact)})`
@@ -758,10 +829,30 @@ function exactSpawnShieldMechanics(rawMechanics) {
  * Build Spawn Shield badge state, accessible labels and a descriptor.
  * Use rawAgent's exact identity and nonnegative integer remaining duration.
  * Missing/invalid duration yields inactive/0 for badge control but remains
- * Unavailable in the descriptor. Exact V1 mechanics adds numeric fields;
- * V2 also permits categorical effects. Invalid mechanics does not invent
- * those effects. Return a frozen view without modifying inputs or applying
- * shield logic. A positive recorded duration alone determines active.
+ * Unavailable in the descriptor. A positive recorded duration alone
+ * determines active; the root label reads "Spawn Shield active, 3 ticks
+ * remaining".
+ *
+ * The descriptor (the Spawn Ward's tip on an arena body and a scorebug
+ * portrait, in every client) says what the Champion Card's Spawn Shield row
+ * says, in a normal-size tip (owner, 2 October 2026: every status display
+ * uses the approved status names and the card's own sentences):
+ * - title: "Spawn Shield (Invulnerable)" for V2 mechanics, which record that
+ *   protection, and the plain "Spawn Shield" otherwise;
+ * - summary: the card's sentence, "It can't be seen or hit, and can't strike
+ *   yet." (spawnShieldStatusSummary), for V2 only; V1, unavailable and
+ *   malformed mechanics get none, so historical numeric-only evidence never
+ *   gains today's effects. No class gives the shield, so there is no source;
+ * - rows: first "Time Left" ("3 ticks left", the card's time words, or
+ *   "Unavailable"), shown in the tip only (compact surface). Every other row
+ *   is full-only, kept on the descriptor's full surface
+ *   (projectSemanticDescriptor(descriptor, "full")) and left out of the tip:
+ *   for V2 the long "Rules" sentence and the categorical effects
+ *   (Protection, Visibility, Targetability, Action, Aura and Agent Collision
+ *   Effect), for V1 and V2 the Movement Speed and Effect Duration, and always
+ *   Duration Remaining ("3 ticks") and the Recipient ("Mage · ID 5").
+ * Invalid mechanics does not invent those effects. Return a frozen view
+ * without modifying inputs or applying shield logic.
  *
  * @param {unknown} rawAgent
  * @param {unknown} rawMechanics
@@ -784,41 +875,72 @@ export function createSpawnShieldView(rawAgent, rawMechanics) {
   const active = remainingTicks > 0;
   const mechanics = exactSpawnShieldMechanics(rawMechanics);
   const recipient = identity?.title ?? "Unavailable";
+  // The tip shows the card's words (Time Left, tip only); the full surface
+  // keeps the earlier rows, each full-only.
+  const timeLeft = row(
+    "Time Left",
+    remaining === null ? "Unavailable" : statusTimeText("spawn_shield", remaining),
+    COMPACT_ONLY,
+  );
   const currentRows = [
     row(
       "Duration Remaining",
       remaining === null ? "Unavailable" : tickCount(remaining),
+      FULL_ONLY,
     ),
-    row("Recipient", recipient),
+    row("Recipient", recipient, FULL_ONLY),
   ];
   const summary = spawnShieldStatusSummary(rawMechanics);
-  let rows = currentRows;
+  let rows = [timeLeft, ...currentRows];
   if (mechanics.kind === "v1" && mechanics.values !== null) {
     rows = [
-      row("Movement Speed", formatDisplayNumber(mechanics.values.movement_speed)),
-      row("Effect Duration", tickCount(mechanics.values.configured_duration_steps)),
+      timeLeft,
+      row(
+        "Movement Speed",
+        formatDisplayNumber(mechanics.values.movement_speed),
+        FULL_ONLY,
+      ),
+      row(
+        "Effect Duration",
+        tickCount(mechanics.values.configured_duration_steps),
+        FULL_ONLY,
+      ),
       ...currentRows,
     ];
   } else if (mechanics.kind === "v2" && mechanics.values !== null) {
     rows = [
-      row("Protection Effect", "Invulnerable"),
-      row("Movement Speed", formatDisplayNumber(mechanics.values.movement_speed)),
-      row("Visibility Effect", "Concealed from opponents"),
-      row("Targetability Effect", "Untargetable"),
-      row("Action Effect", "Movement only"),
-      row("Aura Effect", "Excluded as emitter and beneficiary"),
+      timeLeft,
+      row("Rules", statusPresentation("spawn_shield").effect, FULL_ONLY),
+      row("Protection Effect", "Invulnerable", FULL_ONLY),
+      row(
+        "Movement Speed",
+        formatDisplayNumber(mechanics.values.movement_speed),
+        FULL_ONLY,
+      ),
+      row("Visibility Effect", "Concealed from opponents", FULL_ONLY),
+      row("Targetability Effect", "Untargetable", FULL_ONLY),
+      row("Action Effect", "Movement only", FULL_ONLY),
+      row("Aura Effect", "Excluded as emitter and beneficiary", FULL_ONLY),
       row(
         "Agent Collision Effect",
         "The agent can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
+        FULL_ONLY,
       ),
-      row("Effect Duration", tickCount(mechanics.values.configured_duration_steps)),
+      row(
+        "Effect Duration",
+        tickCount(mechanics.values.configured_duration_steps),
+        FULL_ONLY,
+      ),
       ...currentRows,
     ];
   }
+  const shieldWords = statusPresentation("spawn_shield");
   const explanation = descriptor(
     "status",
     `spawn-shield:${identity?.presentationKey ?? "unavailable"}`,
-    statusPresentation("spawn_shield").title,
+    // Only V2 mechanics record that the shield makes its agent invulnerable,
+    // so only they may carry the "(Invulnerable)" subtitle.
+    mechanics.kind === "v2" ? shieldWords.title : shieldWords.name,
     summary,
     rows,
     [],
@@ -830,16 +952,19 @@ export function createSpawnShieldView(rawAgent, rawMechanics) {
     descriptor: explanation,
     remainingTicks,
     rootAriaLabel: active
-      ? `Spawn Shield active, ${remainingTicks} ${remainingTicks === 1 ? "tick" : "ticks"} remaining`
+      ? `${shieldWords.name} active, ${tickCount(remainingTicks)} remaining`
       : null,
     shieldAriaLabel: explanation.title,
   });
 }
 
 /**
- * Return Spawn Shield's categorical summary only for a valid exact V2
- * mechanics record. Return null for V1, unavailable or malformed records.
- * Historical numeric-only evidence does not acquire today's categorical text.
+ * Return the Spawn Shield tip's summary, the Champion Card's sentence for the
+ * shield ("It can't be seen or hit, and can't strike yet.", statusCardSentence
+ * of "spawn_shield"), only for a valid exact V2 mechanics record, which
+ * records those effects. Return null for V1, unavailable or malformed
+ * records: historical numeric-only evidence does not acquire today's
+ * categorical text. Pure.
  *
  * @param {unknown} rawMechanics
  * @returns {string | null}
@@ -847,7 +972,7 @@ export function createSpawnShieldView(rawAgent, rawMechanics) {
 export function spawnShieldStatusSummary(rawMechanics) {
   const mechanics = exactSpawnShieldMechanics(rawMechanics);
   return mechanics.kind === "v2" && mechanics.values !== null
-    ? statusPresentation("spawn_shield").effect
+    ? statusCardSentence("spawn_shield").line
     : null;
 }
 
@@ -995,7 +1120,8 @@ function formattedAuraDocumentationEffect(presentation, multiplier) {
 
 /**
  * Build the named formatted values needed by the supplied class's guide.
- * Use recorded Ultimate, status and aura mechanics for classes 1–5. Return
+ * Use recorded Ultimate, status and aura mechanics for classes 1–5, plus the
+ * Hunter's observation radius for its Far Sight passive. Return
  * a plain string map, or null if class/required values are missing, ambiguous
  * or format as unavailable. This prepares substitutions only; the shared
  * profile resolver decides whether that authored guide applies.
@@ -1086,6 +1212,10 @@ function classDocumentationValueMap(mechanics) {
     ];
   } else if (classId === 3) {
     entries = [
+      [
+        "observationRadius",
+        prefixedMechanicNumber("a radius of ", mechanics.observation_radius),
+      ],
       ["ultimateRawDamage", formattedMechanicNumber(mechanics.ultimate_raw_damage)],
       [
         "trapStunDuration",
@@ -1309,8 +1439,10 @@ function documentationMechanicsRows(mechanics) {
  * Build a persistent class card from matching owner and class mechanics.
  * Require a public ID, recognized team/class names and complete mechanics.
  * Return null for invalid joins or an explicit unsupported mechanics version.
- * V2 with an accepted profile adds authored overview, tactical and ability
- * text; historical version-absent records keep numeric mechanics only.
+ * V2 with an accepted profile adds the authored overview (the class lore
+ * description), the role rows, and Basic, Ultimate and passive names and
+ * descriptions; historical version-absent records keep numeric mechanics only.
+ * The title is the champion label ("Mage · ID 5").
  * Return a descriptor using no current health/status fields and change no input.
  *
  * @param {unknown} rawOwner
@@ -1344,6 +1476,8 @@ export function explainClassDocumentation(rawOwner, rawClassMechanics) {
   const completeMechanicsRows = [...mechanicsRows];
   if (authored !== null) {
     completeMechanicsRows.push(
+      row("Basic Name", authored.basic.name, FULL_ONLY),
+      row("Basic Description", authored.basic.description, FULL_ONLY),
       row("Ultimate Name", authored.ultimate.name, FULL_ONLY),
       row("Ultimate Description", authored.ultimate.description, FULL_ONLY),
     );
@@ -1403,19 +1537,28 @@ export function explainClassDocumentation(rawOwner, rawClassMechanics) {
 }
 
 /**
- * Build a status descriptor from authorized status, recipient and sources.
- * Copy configured/remaining durations and matching magnitude values. Add the
- * positive-raw-damage break rule only when both catalog semantics and record
- * permit it. audience controls direct-source disclosure through the shared
- * attribution helper; in_combat has no source row. Return a descriptor; this
- * does not apply a status or prove upstream audience authorization.
+ * Build a status descriptor from an authorized status and its recipient.
+ *
+ * Title: the approved status name. Summary: the Champion Card row's second
+ * line (statusCardSentence): what it does with its exact number, then where
+ * it comes from by class only ("It moves at ×0.85 speed. From a Hunter.";
+ * an aura of the recipient's own class: "From its own aura."). Sources are
+ * never named by Agent ID, so Agent POV and Oracle View give the same card
+ * (owner rulings, 2 October 2026), and the status's direct_sources are never
+ * read. The tip (compact surface) is the Champion Card's row in a normal-size
+ * tip (owner, 2 October 2026): the title, that sentence and one row, "Time
+ * Left" ("3 ticks left", statusTimeText; "Unavailable" without a count),
+ * shown in the tip only. Every other row is full-only, for the full surface:
+ * the matching magnitude, the configured and remaining durations ("Effect
+ * Duration", "Duration Remaining"), the positive-raw-damage break rule (only
+ * when both catalog semantics and the record permit it), the rules text and
+ * the recipient. Return a descriptor; this does not apply a status or prove
+ * upstream audience authorization.
  *
  * @param {unknown} rawStatus
  * @param {unknown} rawRecipient
- * @param {ReadonlyArray<unknown>} rawSourceAgents
- * @param {"researcher" | "agent_pov"} audience
  */
-function explainDurableStatus(rawStatus, rawRecipient, rawSourceAgents, audience) {
+function explainDurableStatus(rawStatus, rawRecipient) {
   const status = isRecord(rawStatus) ? rawStatus : {};
   const recipient = isRecord(rawRecipient) ? rawRecipient : {};
   const recipientIdentity = exactAuthorizedAgentIdentityV1(recipient);
@@ -1431,42 +1574,45 @@ function explainDurableStatus(rawStatus, rawRecipient, rawSourceAgents, audience
     profile.magnitudeKind === status.magnitude_kind
       ? statusMagnitudePresentation(status.magnitude_kind, status.magnitude)
       : null;
-  const rows = [];
+  const timeLeft =
+    remainingDuration === null ? "" : statusTimeText(token.tokenId, remainingDuration);
+  // The tip says the card's words; the full surface keeps every other row.
+  const rows = [
+    row("Time Left", timeLeft === "" ? "Unavailable" : timeLeft, COMPACT_ONLY),
+  ];
   if (magnitude !== null) {
-    rows.push(row(magnitude.label, magnitude.value));
+    rows.push(row(magnitude.label, magnitude.value, FULL_ONLY));
   }
   rows.push(
     row(
       "Effect Duration",
       configuredDuration === null ? "Unavailable" : tickCount(configuredDuration),
+      FULL_ONLY,
     ),
     row(
       "Duration Remaining",
       remainingDuration === null ? "Unavailable" : tickCount(remainingDuration),
+      FULL_ONLY,
     ),
   );
   if (profile.positiveDamageBreak && status.breaks_on_positive_damage === true) {
-    rows.push(row("Break Rule", "Ends when this agent receives positive raw damage."));
+    rows.push(
+      row(
+        "Break Rule",
+        "Ends when this agent receives positive raw damage.",
+        FULL_ONLY,
+      ),
+    );
   }
-  if (token.tokenId !== "in_combat") {
-    const source = authorizedSourceAttributionV1({
-      attribution_kind: "direct",
-      audience,
-      direct_sources: status.direct_sources,
-      authorized_agents: rawSourceAgents,
-    });
-    if (source !== null) {
-      rows.push(row(source.label, source.value));
-    }
-  }
+  rows.push(row("Rules", profile.effect, FULL_ONLY));
   if (recipientIdentity !== null) {
-    rows.push(row("Recipient", recipientIdentity.title));
+    rows.push(row("Recipient", recipientIdentity.title, FULL_ONLY));
   }
   return descriptor(
     "status",
     `status:${semanticIdentity(recipient)}:${integer(status.status_channel) ?? token.tokenId}`,
     profile.title,
-    profile.effect,
+    statusCardSentence(token.tokenId, status.magnitude, recipient.class_id).line,
     rows,
     [],
     { tone: "information", accent: profile.accent },
@@ -1474,30 +1620,30 @@ function explainDurableStatus(rawStatus, rawRecipient, rawSourceAgents, audience
 }
 
 /**
- * Describe an authorized recipient status without direct-source attribution.
- * rawRecipient defaults to {}. Reuse the same recorded duration/magnitude
- * path as researcher cards, with agent_pov and an empty source list. Return
- * a descriptor; caller supplies recipient-authorized status data.
+ * Describe an authorized recipient status for Agent POV (explainDurableStatus:
+ * the source by class only). rawRecipient defaults to {}. Return a
+ * descriptor; caller supplies recipient-authorized status data.
  *
  * @param {unknown} rawStatus
  * @param {unknown} [rawRecipient]
  */
 export function explainPovStatus(rawStatus, rawRecipient = {}) {
-  return explainDurableStatus(rawStatus, rawRecipient, [], "agent_pov");
+  return explainDurableStatus(rawStatus, rawRecipient);
 }
 
 /**
- * Describe an authorized status for researcher inspection. rawRecipient
- * defaults to {} and rawSourceAgents to []; incomplete exact source joins
- * produce no attribution row. Return the shared durable-status descriptor
- * without assigning contributor credit or changing any record.
+ * Describe an authorized status for researcher inspection. Since the owner's
+ * 2 October 2026 rulings it gives exactly explainPovStatus's descriptor: the
+ * source is named by class only, so the third argument is ignored and kept
+ * only so callers keep one call shape. rawRecipient defaults to {}. Return
+ * the shared durable-status descriptor without changing any record.
  *
  * @param {unknown} rawStatus
  * @param {unknown} [rawRecipient]
- * @param {ReadonlyArray<unknown>} [rawSourceAgents]
+ * @param {ReadonlyArray<unknown>} [_rawSourceAgents] Ignored.
  */
-export function explainStatus(rawStatus, rawRecipient = {}, rawSourceAgents = []) {
-  return explainDurableStatus(rawStatus, rawRecipient, rawSourceAgents, "researcher");
+export function explainStatus(rawStatus, rawRecipient = {}, _rawSourceAgents = []) {
+  return explainDurableStatus(rawStatus, rawRecipient);
 }
 
 /**
@@ -1548,12 +1694,13 @@ export function explainModifier(rawModifier, rawRecipient = {}) {
 }
 
 /**
- * Build a descriptor for items hidden by a compact status/modifier layout.
- * Preserve array order and include each item's compact explanation; an
- * unavailable item keeps its row. kind must be status or modifier. Recipient
- * and source list default to {}/[]. Non-array input becomes an empty list.
- * Hidden here means not drawn in the dock, not scientifically unauthorized;
- * the caller must already have rights to every supplied item.
+ * Build the "More Statuses" descriptor for items that did not fit in a compact
+ * status or modifier row. Title: "2 More Statuses" (or "1 More Status",
+ * "2 More Modifiers"); rows "Status 1", "Status 2" … in array order, each with
+ * its compact explanation; an unavailable item keeps its row. kind must be
+ * status or modifier. Recipient and source list default to {}/[]. Non-array
+ * input becomes an empty list. These items are only left out of the row, not
+ * unseen; the caller must already have rights to every supplied item.
  *
  * @param {ReadonlyArray<unknown>} rawItems
  * @param {"status" | "modifier"} kind
@@ -1573,32 +1720,42 @@ export function explainOverflow(
       kind === "status"
         ? explainStatus(item, recipient, rawSourceAgents)
         : explainModifier(item, recipient);
+    const itemLabel = `${kind === "status" ? "Status" : "Modifier"} ${index + 1}`;
     if (explanation === null) {
-      return row(`Hidden ${index + 1}`, "Unavailable");
+      return row(itemLabel, "Unavailable");
     }
     const compact = projectSemanticDescriptor(explanation, "compact");
     return row(
-      `Hidden ${index + 1}`,
+      itemLabel,
       [explanation.title, ...semanticDescriptorText(compact)].join(" · "),
     );
   });
+  const noun =
+    kind === "status"
+      ? items.length === 1
+        ? "Status"
+        : "Statuses"
+      : items.length === 1
+        ? "Modifier"
+        : "Modifiers";
   return descriptor(
     `${kind}-overflow`,
     `${kind}-overflow:${semanticIdentity(recipient)}`,
-    `${items.length} Hidden ${kind === "status" ? "Statuses" : "Modifiers"}`,
-    `Every hidden ${kind} remains available in canonical display order.`,
-    rows.length === 0 ? [row("Hidden Facts", "None")] : rows,
+    `${items.length} More ${noun}`,
+    `Every ${kind} that did not fit in the row, in display order.`,
+    rows.length === 0 ? [row("More", "None")] : rows,
     [],
     { tone: "neutral" },
   );
 }
 
 /**
- * Describe compact-layout overflow through the Agent POV status route.
- * rawRecipient defaults to {}; retain only its identity fields and never
- * add direct-source attribution. Preserve item order; non-array input is
- * empty. Return a descriptor. The caller must supply authorized hidden-in-
- * layout items, not hidden simulator facts.
+ * Describe compact-layout overflow ("2 More Statuses") through the Agent POV
+ * status route. rawRecipient defaults to {}; retain only its identity fields
+ * and never add direct-source attribution. Preserve item order; non-array
+ * input is empty; rows read "Status 1", "Status 2" …. Return a descriptor. The
+ * caller must supply authorized statuses that only did not fit in the row,
+ * never facts the team cannot see.
  *
  * @param {ReadonlyArray<unknown>} rawItems
  * @param {unknown} [rawRecipient]
@@ -1615,7 +1772,7 @@ export function explainPovOverflow(rawItems, rawRecipient = {}) {
     const explanation = explainPovStatus(item, recipient);
     const compact = projectSemanticDescriptor(explanation, "compact");
     return row(
-      `Hidden ${index + 1}`,
+      `Status ${index + 1}`,
       [explanation.title, ...semanticDescriptorText(compact)].join(" · "),
     );
   });
@@ -1624,9 +1781,9 @@ export function explainPovOverflow(rawItems, rawRecipient = {}) {
     typeof recipient.presentation_key === "string"
       ? `pov-status-overflow:${recipient.presentation_key}`
       : `pov-status-overflow:${text(recipient.public_agent_id) ?? "unknown"}`,
-    `${items.length} Hidden ${items.length === 1 ? "Status" : "Statuses"}`,
-    "Every hidden status remains available in canonical display order.",
-    rows.length === 0 ? [row("Hidden Facts", "None")] : rows,
+    `${items.length} More ${items.length === 1 ? "Status" : "Statuses"}`,
+    "Every status that did not fit in the row, in display order.",
+    rows.length === 0 ? [row("More", "None")] : rows,
     [],
     { tone: "neutral" },
   );
@@ -1810,45 +1967,13 @@ export function explainRange(rawRange, rawOwner = null) {
 }
 
 /**
- * Describe an authorized obstacle's ID and center, plus pillar radius or
- * wall width/height/rotation. Missing fields display Unavailable. Return a
- * pointer-anchored descriptor without reconstructing geometry or checking
- * collision validity. The caller supplies the recorded coordinate units.
- *
- * @param {unknown} rawObstacle
- */
-export function explainObstacle(rawObstacle) {
-  const obstacle = isRecord(rawObstacle) ? rawObstacle : {};
-  const obstacleId = text(obstacle.obstacle_id) ?? "Unavailable";
-  const kind = text(obstacle.kind) ?? "unknown";
-  const rows = [row("Obstacle ID", obstacleId)];
-  if (kind === "pillar") {
-    rows.push(row("Radius", exactNumber(obstacle.radius)));
-  } else if (kind === "wall") {
-    rows.push(
-      row("Width", exactNumber(obstacle.width)),
-      row("Height", exactNumber(obstacle.height)),
-      row("Rotation", exactNumber(obstacle.theta)),
-    );
-  }
-  rows.push(row("Center", point(obstacle.center)));
-  return descriptor(
-    "obstacle",
-    `obstacle:${obstacleId}`,
-    humanize(kind),
-    `Exact normalized ${kind} geometry.`,
-    rows,
-    [],
-    { tone: "neutral", anchor: "pointer" },
-  );
-}
-
-/**
  * Describe one recorded boolean availability lane after an exact owner
  * join. lane=0 means Basic and 1 means Ultimate; any other lane returns null.
  * Prefer named ability availability, falling back to lane_N_available only
  * when the named field is undefined. Invalid/nonboolean/unjoined data returns
  * null. This displays a mask fact; it does not recalculate Core acceptance.
+ * Plain words: the title is "Basic · Agent ID 1" (or "Ultimate · ...") and the
+ * one row is "Allowed Now": "Yes" or "No".
  *
  * @param {unknown} rawLegality
  * @param {0 | 1} lane
@@ -1885,9 +2010,9 @@ export function explainLegality(rawLegality, lane, rawOwner) {
   return descriptor(
     "legality",
     `legality:${identity.presentationKey}:${lane}:${rawAvailable}`,
-    `${laneName} Legality · ${identity.publicIdentity}`,
+    `${laneName} · ${identity.publicIdentity}`,
     null,
-    [row("Status", rawAvailable ? "True" : "False")],
+    [row("Allowed Now", rawAvailable ? "Yes" : "No")],
     [],
     { tone: rawAvailable ? "positive" : "warning", accent: identity.accent },
   );
@@ -1899,6 +2024,9 @@ export function explainLegality(rawLegality, lane, rawOwner) {
  * and recipientAgent identities. Those titles are displayed without an
  * additional route-to-identity join here; the caller owns that join. Missing
  * identity shows Unavailable. Return a pointer-anchored descriptor only.
+ * Plain words: the title is "Planned Basic", "Planned Ultimate" or "Planned
+ * Action" (lane 0, 1 or anything else) and the summary is
+ * PLANNED_ROUTE_SENTENCE.
  *
  * @param {unknown} rawRoute
  * @param {{sourceAgent?: unknown, recipientAgent?: unknown}} [context]
@@ -1912,8 +2040,8 @@ export function explainPendingRoute(rawRoute, context = {}) {
   return descriptor(
     "pending-route",
     `pending:${text(route.source_presentation_key) ?? text(route.source_public_agent_id) ?? "unknown"}:${text(route.target_presentation_key) ?? text(route.target_public_agent_id) ?? "unknown"}:${lane ?? "unknown"}`,
-    `${laneName} Action Route`,
-    "Authorized action route; no physical path is implied.",
+    `Planned ${laneName}`,
+    PLANNED_ROUTE_SENTENCE,
     [
       row("Source", source ?? "Unavailable in this view"),
       row("Recipient", recipient ?? "Unavailable in this view"),
@@ -1925,8 +2053,13 @@ export function explainPendingRoute(rawRoute, context = {}) {
 
 /**
  * Describe a normalized activation event using its authorized identities
- * and display token. A matching source class with an accepted V2 guide may
- * provide authored Ultimate text. Supplied exact identities are displayed;
+ * and display token. With a known source class (1–5) the title is the ability
+ * label: "Burst (Mage Ultimate)" when a matching accepted V2 guide resolves,
+ * "Arcane Blast (Mage Basic)" for any Basic. A matching guide also supplies
+ * the summary (the Ultimate or Basic description); otherwise the summary is a
+ * plain sentence (activationFallbackSentence: "The Priest used Lesser Heal
+ * this tick.", or "Lesser Heal was used this tick." when the source is
+ * redacted or its class unknown). Supplied exact identities are displayed;
  * redaction flags suppress missing-identity fallback rows rather than erase
  * an explicitly supplied identity. Caller must enforce those input rights.
  * If no target ID is supplied and the recipient is not redacted, its label
@@ -1956,6 +2089,15 @@ export function explainActivation(rawEvent) {
     integer(classMechanics?.class_id) === sourceClassId
       ? authorizedUltimatePresentationV1(classMechanics)
       : null;
+  const basicGuide =
+    component === "basic" &&
+    sourceClassId !== null &&
+    integer(classMechanics?.class_id) === sourceClassId &&
+    isRecord(classMechanics)
+      ? (resolvedAuthorizedClassDocumentationV1(classMechanics)?.basic ?? null)
+      : null;
+  const basicName =
+    component === "basic" ? classAbilityNameV1(sourceClassId, "basic") : null;
   const sourceClass = classTokenFromId(sourceClassId);
   const redacted =
     event.targetDisclosure === "redacted" || event.target_disclosure === "redacted";
@@ -1988,10 +2130,21 @@ export function explainActivation(rawEvent) {
   return descriptor(
     "activation",
     `activation:${token.tokenId}:${text(event.sourcePresentationKey ?? event.source_presentation_key) ?? text(source) ?? "source-unavailable"}:${text(event.targetPresentationKey ?? event.target_presentation_key) ?? text(target) ?? (redacted ? "target-redacted" : "source-local")}`,
-    ultimate === null || sourceClass.label === "Unknown"
-      ? token.label
-      : `${ultimate.name} (${sourceClass.label} Ultimate Ability)`,
-    sentence(ultimate?.description ?? token.accessibleName),
+    sourceClass.label !== "Unknown" && ultimate !== null
+      ? `${ultimate.name} (${sourceClass.label} Ultimate)`
+      : sourceClass.label !== "Unknown" && basicName !== null
+        ? `${basicName} (${sourceClass.label} Basic)`
+        : token.label,
+    sentence(ultimate?.description ?? basicGuide?.description) ??
+      activationFallbackSentence({
+        className: sourceRedacted ? null : sourceClass.label,
+        abilityName:
+          basicName ??
+          (component === "ultimate"
+            ? (classNamesV1(sourceClassId)?.ultimateName ?? null)
+            : null),
+        tokenLabel: token.label,
+      }),
     rows,
     [],
     { tone: "information", anchor: "pointer" },
@@ -2003,7 +2156,11 @@ export function explainActivation(rawEvent) {
  * Use supplied exact recipient identity and finite netDelta/net_delta; missing
  * values display Unavailable. Return a descriptor with warning tone for a
  * negative delta. This is recipient-level net change, not individual damage
- * source credit or a calculation from simulator state.
+ * source credit or a calculation from simulator state. Plain words: the title
+ * is "Net Damage", "Net Healing", "No Net Change" (outcome "damage",
+ * "healing" or "unchanged") or "Net Life Change" (any other outcome); the
+ * summary is NET_LIFE_SENTENCE; the rows are "Recipient" and "Life Change"
+ * ("-9.81", "+8", "0").
  *
  * @param {unknown} rawEvent
  */
@@ -2016,11 +2173,13 @@ export function explainNetHealth(rawEvent) {
   return descriptor(
     "impact",
     `net:${text(event.recipientPresentationKey ?? event.recipient_presentation_key) ?? text(event.recipientPublicAgentId ?? event.recipient_public_agent_id) ?? "recipient-unavailable"}:${text(event.outcome) ?? "outcome-unavailable"}`,
-    `Recipient NET ${humanize(event.outcome)}`,
-    "Recipient-level before/after outcome; not source attribution.",
+    NET_LIFE_TITLES[
+      /** @type {keyof typeof NET_LIFE_TITLES} */ (text(event.outcome) ?? "")
+    ] ?? "Net Life Change",
+    NET_LIFE_SENTENCE,
     [
       row("Recipient", recipientIdentity ?? "Unavailable in this view"),
-      row("NET", delta === null ? "Unavailable" : formatNetDelta(delta)),
+      row("Life Change", delta === null ? "Unavailable" : formatNetDelta(delta)),
     ],
     [],
     {

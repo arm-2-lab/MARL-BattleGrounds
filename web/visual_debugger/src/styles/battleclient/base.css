@@ -1,0 +1,320 @@
+/*
+ * BattleClient base: the tokens, type and small shared parts of the live
+ * combat screen (the BattleClient and the DevClient combat screen), ported
+ * from the approved BattleClient vision page
+ * (artifacts/visual-overhaul-20260927/battleclient/vision_template.html).
+ *
+ * Owns: the vision's color tokens on #bc, the #bc root (font, size, color,
+ * no text selection), the page background and one-screen body for live play,
+ * and the small parts every region shares: kbd keycaps, .num, .eyebrow, the
+ * .pill, .tbtn, .sbtn and .bigbtn buttons, the [hidden] rule, and the .tc-…
+ * team and class paint classes for inline SVG.
+ *
+ * Scope: every rule starts with html[data-product-kind="combat_debugger"], so
+ * the Replay Viewer never changes. styles.css imports this file first among
+ * the BattleClient files. Rules inside the grid also carry .bc, which makes
+ * them more specific than the shared shell rules (for example the global
+ * button hover in src/styles/shell.css), so the vision's look wins without
+ * !important. Outside live play, #bc has display: contents and adds no box.
+ *
+ * Tokens: the vision's names and values, set on #bc only (the :root palette
+ * in styles.css stays the one owner of every other token). Only --text
+ * differs from a :root token of the same name; the arena keeps the :root
+ * value through --root-text, so arena drawings do not change color.
+ */
+
+html:not([data-product-kind="combat_debugger"]) .bc {
+  display: contents;
+}
+
+html[data-product-kind="combat_debugger"] {
+  --root-text: var(--text);
+  background: #0a0d14;
+}
+
+html[data-product-kind="combat_debugger"] body {
+  margin: 0;
+  background: #0a0d14;
+}
+
+/* biome-ignore format: the vision page writes each token in upper case, and
+   a page reads a custom property back exactly as written, so the text stays
+   as the vision has it. */
+html[data-product-kind="combat_debugger"] .bc {
+  --ink: #0A0D14;
+  --panel: #0F1624;
+  --panel2: #141D2F;
+  --raise: #1A2438;
+  --edge: #243049;
+  --edge2: #34425F;
+  --surround: #111827;
+  --moon: #C9D4E8;
+  --text: #E6EAF2;
+  --muted: #8C97AD;
+  --alert: #FFB547;
+  --ash: #6B7385;
+  --azure: #3D8BFF;
+  --azureL: #A9CBFF;
+  --crimson: #EF4B4B;
+  --crimsonL: #FFB3AE;
+  --ivory: #F1E7DA;
+  --cinder: #FF8F5A;
+  --mage: #B99CFF;
+  --warrior: #D8904F;
+  --hunter: #8CC84B;
+  --rogue: #3FD0A0;
+  --priest: #F5C95A;
+  --grave-bone: #D8CCB4;
+}
+
+/*
+ * Team and class paint for the inline SVG that src/tactics-turn.js draws
+ * (tokens, crests and the Rune Ring). Each element carries one .tc-… class
+ * and paints with currentColor, so the colors come from the :root palette
+ * tokens in styles.css and no script holds a copy.
+ */
+html[data-product-kind="combat_debugger"] .tc-a {
+  color: var(--team-a);
+}
+
+html[data-product-kind="combat_debugger"] .tc-b {
+  color: var(--team-b);
+}
+
+html[data-product-kind="combat_debugger"] .tc-mage {
+  color: var(--class-mage);
+}
+
+html[data-product-kind="combat_debugger"] .tc-warrior {
+  color: var(--class-warrior);
+}
+
+html[data-product-kind="combat_debugger"] .tc-hunter {
+  color: var(--class-hunter);
+}
+
+html[data-product-kind="combat_debugger"] .tc-rogue {
+  color: var(--class-rogue);
+}
+
+html[data-product-kind="combat_debugger"] .tc-priest {
+  color: var(--class-priest);
+}
+
+html[data-product-kind="combat_debugger"] .bc {
+  --font: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  position: relative;
+  color: var(--text);
+  background: var(--ink);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* The arena keeps the :root text color, so arena drawings look the same as
+   in the Replay Viewer. */
+html[data-product-kind="combat_debugger"] .bc #battlefield {
+  --text: var(--root-text);
+}
+
+/* As on the vision page, a hidden part stays hidden even when its own rule
+   sets a display. */
+html[data-product-kind="combat_debugger"] .bc [hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: [hidden] must beat every display rule. */
+  display: none !important;
+}
+
+html[data-product-kind="combat_debugger"] .bc *,
+html[data-product-kind="combat_debugger"] .bc *::before,
+html[data-product-kind="combat_debugger"] .bc *::after {
+  box-sizing: border-box;
+}
+
+html[data-product-kind="combat_debugger"] .bc :is(h1, h2, h3, h4) {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-wrap: balance;
+}
+
+html[data-product-kind="combat_debugger"] .bc h3 {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+html[data-product-kind="combat_debugger"] .bc :is(p, ul, ol) {
+  margin: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc a {
+  color: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+html[data-product-kind="combat_debugger"] .bc :focus-visible {
+  outline: 2px solid var(--moon);
+  outline-offset: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .num {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-product-kind="combat_debugger"] .bc .eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html[data-product-kind="combat_debugger"] .bc .eyebrow.alert {
+  color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"] .bc kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--edge2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--raise);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  vertical-align: 1px;
+}
+
+/* Pills: Connected and Recording in the top bar. The dot is an <i>; when
+   script writes plain text into a pill (no <i> left), ::before draws it. */
+html[data-product-kind="combat_debugger"] .bc .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pill > i,
+html[data-product-kind="combat_debugger"] .bc .pill:not(:has(> i))::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--moon);
+  animation: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pill.saved > i {
+  border: 1.5px solid var(--moon);
+  background: transparent;
+}
+
+/* Bar buttons (top bar), small buttons (deck, status line, rail) and big
+   buttons (deck overlays, dialogs). */
+html[data-product-kind="combat_debugger"] .bc .tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tbtn.primary {
+  border-color: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel2);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bigbtn {
+  min-height: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--moon);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--raise);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .bigbtn.solid {
+  color: var(--ink);
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .tbtn:hover:not(:disabled),
+html[data-product-kind="combat_debugger"] .bc .sbtn:hover:not(:disabled) {
+  border-color: var(--edge2);
+  background: var(--raise);
+}
+
+html[data-product-kind="combat_debugger"] .bc .tbtn.primary:hover:not(:disabled) {
+  border-color: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bigbtn:hover:not(:disabled) {
+  border-color: var(--moon);
+  background: var(--raise);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bigbtn.solid:hover:not(:disabled) {
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc :is(.bigbtn, .sbtn):disabled {
+  cursor: default;
+  opacity: 0.45;
+}

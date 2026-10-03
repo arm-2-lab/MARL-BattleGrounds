@@ -97,7 +97,7 @@ function collectBrowserErrors(page) {
 async function openRecording(page, url) {
   collectBrowserErrors(page);
   await page.goto(url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page).toHaveTitle("MARL-BattleGrounds BattleClient");
   await expect(page.locator("html")).toHaveAttribute(
     "data-product-kind",
@@ -272,7 +272,7 @@ async function openSavedReplay(livePage) {
   await livePage.locator("#recording-review-button").click();
   const replayPage = await popup;
   collectBrowserErrors(replayPage);
-  await expect(replayPage.locator("#connection-status")).toHaveText("Online");
+  await expect(replayPage.locator("#connection-status")).toHaveText("Connected");
   expect(new URL(replayPage.url()).origin).not.toBe(new URL(livePage.url()).origin);
   await expect(livePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
   await expect(livePage.locator("#submit-turn-button")).toBeDisabled();
@@ -294,7 +294,7 @@ async function expectSettledReplayHandoff(
     "data-product-kind",
     "replay_viewer",
   );
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#replay-timeline")).toBeVisible();
   await expect(page.locator("#replay-timeline")).toBeFocused();
   await expect(page.locator("#replay-frame-slider")).toHaveValue("0");
@@ -575,7 +575,7 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
     1,
   );
   await page.locator("#roster .roster-primary-action").nth(1).click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#submit-turn-button")).toBeDisabled();
   await page.locator("#reset-button").click();
   const fresh = await expectRecordingCount(page, 0);
@@ -931,7 +931,7 @@ test("actor POV separate Viewer retains battlefield fog and artifact-wide facts"
   expectNoBrowserErrors(page);
 });
 
-test("target race remains Online and fenced until Save As recovers cached artifacts", async ({
+test("target race remains Connected and fenced until Save As recovers cached artifacts", async ({
   page,
 }) => {
   const started = requiredRecording();
@@ -944,7 +944,7 @@ test("target race remains Online and fenced until Save As recovers cached artifa
     "data-recording-lifecycle",
     "persistence_failed",
   );
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#recording-persistence-error")).toHaveText(
     "Destination unavailable",
   );
@@ -1115,15 +1115,15 @@ test("target race remains Online and fenced until Save As recovers cached artifa
   expect(recoveryHelp.disabled.length).toBeGreaterThan(0);
 
   await page.locator("#recording-retry-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-recording-lifecycle",
     "persistence_failed",
   );
 
   await page.locator("#exit-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
-  await expect(page.locator("#connection-status")).not.toHaveText("Shutting down");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
+  await expect(page.locator("#connection-status")).not.toHaveText("Closed");
   await expect(page.locator("#notice")).toContainText("remains open for recovery");
 
   await page.locator("#recording-save-as-input").fill("../escape.marlbg-replay.json");
@@ -1178,7 +1178,7 @@ test("Reconnect completes a lost Finish response without retrying publication", 
   } finally {
     releaseResponse();
   }
-  await expect(page.locator("#connection-status")).toHaveText("Resync required");
+  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
   await expect(page.locator("#notice")).toContainText(
     "Command outcome is unknown because the connection failed",
   );
@@ -1221,7 +1221,7 @@ test("blocked popups use a normal link and Viewer Exit can be reopened", async (
   const viewer = await popup;
   await expectSettledReplayHandoff(viewer);
   await viewer.locator("#exit-button").click();
-  await expect(viewer.locator("#connection-status")).toHaveText("Shutting down");
+  await expect(viewer.locator("#connection-status")).toHaveText("Closed");
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
   await page.locator("#recording-review-button").click();
   await expect(link).not.toHaveAttribute("href", firstUrl ?? "");
@@ -1243,7 +1243,7 @@ test("an old replacement dialog cannot save or discard a newer match", async ({
   await expect(page.locator("#recording-discard-dialog")).toBeVisible();
   const second = await context.newPage();
   await second.goto(started.url);
-  await expect(second.locator("#connection-status")).toHaveText("Online");
+  await expect(second.locator("#connection-status")).toHaveText("Connected");
   await captureNextTransition(second, 2);
   await expect
     .poll(async () => (await currentFrame(page)).recording.captured_transition_count)

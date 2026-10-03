@@ -1493,7 +1493,9 @@ def _summary(directory: Path) -> Record:
 
     An unfinished recovery can leave an older complete status and output files.
     Keep their paths as evidence, but do not label them as current results or load
-    the possibly partly recovered update log. This reader changes no source file.
+    the possibly partly recovered update log. ``selection_unavailable_reason``
+    copies the runner's saved reason for a run that ended without a selection.
+    This reader changes no source file.
     """
     details = _read_json(directory / "run_details.json", None)
     if not isinstance(details, dict):
@@ -1587,6 +1589,9 @@ def _summary(directory: Path) -> Record:
         else _read_json(directory / "selection.json", None),
         "final_actor": None if recovering else status.get("final_actor"),
         "selected_actor": None if recovering else status.get("selected_actor"),
+        "selection_unavailable_reason": None
+        if recovering
+        else status.get("selection_unavailable_reason"),
         "latest_update": updates[-1] if updates else None,
         "exposure": None
         if recovering
@@ -1653,9 +1658,43 @@ def _memory_lines(memory: object, *, label: str) -> list[str]:
     ]
 
 
+def _no_selection_reason(summary: Record) -> str:
+    """Say why a finished run has no selected actor and what to load instead.
+
+    Parameters
+    ----------
+    summary : dict
+        One record from ``_summary`` for a run that saved a final actor but no
+        selected actor. ``selection_unavailable_reason`` is the runner's saved
+        reason or absent; ``validation_checkpoints`` counts saved validation
+        results.
+
+    Returns
+    -------
+    str
+        One or two plain sentences. A saved reason wins. A run with no
+        validation results says that validation was off and names the two
+        settings that turn it on. Otherwise it says that no selection was saved.
+        Every case points to the final actor, which the summary shows next.
+    """
+    reason = summary.get("selection_unavailable_reason")
+    if isinstance(reason, str) and reason:
+        return f"{reason}, so no best checkpoint was chosen. Load the final actor."
+    if not summary.get("validation_checkpoints"):
+        return (
+            "This run had no validation, so no best checkpoint was chosen. "
+            "Load the final actor. To choose a best checkpoint, set "
+            "validation_opponents or validation_panel."
+        )
+    return "No selection was saved. Load the final actor."
+
+
 def _write_summary(summaries: Sequence[Record], destination: Path) -> Path:
     """Atomically write factual Markdown from already-read per-run summaries.
 
+    A finished run without a selected actor says why (no validation, or the
+    runner's saved reason) and points to its final actor; only an unfinished or
+    recovering run keeps "Unavailable in the saved active status".
     A QMIX run reports optimizer steps, used TD pairs and replay rows per game.
     A PQN-VDN run reports optimizer steps, learning blocks, used TD pairs with
     the pairs starting on kept rows, and the initial random transitions that
@@ -1837,6 +1876,9 @@ def _write_summary(summaries: Sequence[Record], destination: Path) -> Path:
                 [
                     f"{label}: [{actor}](<{actor}>)."
                     if isinstance(actor, str)
+                    else f"{label}: None. {_no_selection_reason(summary)}"
+                    if key == "selected_actor"
+                    and isinstance(summary["final_actor"], str)
                     else f"{label}: Unavailable in the saved active status.",
                     "",
                 ]

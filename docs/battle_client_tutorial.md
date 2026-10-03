@@ -111,8 +111,8 @@ JAX_PLATFORMS=cpu python battle_client.py medium \
 | A | MAPPO | IPPO |
 | B | FF-MAPPO | FF-IPPO |
 
-Supply four different saved sources. All slots are automatic. Start with Submit
-to inspect one joint turn, or use Run and Pause. The game still starts paused.
+Supply four different saved sources. All slots are automatic. Start with Lock In
+Turn to inspect one joint turn, or use Run and Pause. The game still starts paused.
 
 ## Hard: Ten Different Controllers
 
@@ -244,27 +244,39 @@ win rate. Keep evaluation scenarios out of training and method selection. See
 [the broader cross-play workflow](training/README.md#cross-play-and-zero-shot-coordination)
 for a declared study with more partners, games and training seeds.
 
-## Submit, Save, View And Restart
+## Lock In, Save, View And Restart
 
-All interactive modes print a local URL and normally open it. If a browser does
-not open, paste that URL into one. Add `--no-open` to print it only; `--port 0`
-chooses a free port. Python waits until Exit or Ctrl-C. Closing a browser tab
-leaves the game running, so you can reopen its URL.
+All interactive modes first prepare the first turn: they print "preparing the
+first turn (compiling once)" and compile your JAX methods and the game step,
+which takes a few seconds (about 12 seconds on an RTX 5090 for 7b+pool). Then
+they print a local URL and normally open it, and no Lock In waits for compiling
+again: later turns take about 0.02 seconds plus your method's own time. An LLM
+or other host method is never called while preparing. See
+[Startup And Turn Speed](battle_client.md#startup-and-turn-speed). If a browser
+does not open, paste that URL into one. Add `--no-open` to print it only;
+`--port 0` chooses a free port. Python waits until Exit or Ctrl-C. Closing a
+browser tab leaves the game running, so you can reopen its URL.
 
-1. Select a Manual agent. Stage its movement and combat choice, then use Submit.
-   You may draft several Manual rows first. The policies then choose once from
-   their own permitted inputs; they do not see your drafts. Selecting a policy
-   agent only inspects it. Use the on-screen help for keyboard and pointer controls.
-2. With no configured Manual controller, Submit advances one turn and Run/Pause
-   controls repeated turns. Choosing Actions means a method is still working.
-   Pause stops the next turn; an in-progress turn can finish.
-3. Use Finish And Save to keep an unfinished game's accepted turns. A completed
+1. Select a Manual champion. In the Tactics Turn deck, pick its step, target and
+   action, then press Lock In Turn (Space or Enter). You may plan several Manual
+   champions first. The policies then choose once from their own permitted
+   inputs; they do not see your plans. Selecting a policy champion only inspects
+   it. Press ? for How To Play and the full key list.
+2. With no configured Manual controller, Lock In Turn advances one turn and
+   Run/Pause controls repeated turns. While a method is still working, the deck
+   says the policies are choosing and offers Cancel Policy Work. Pause stops the
+   next turn; an in-progress turn can finish.
+3. The page opens in Agent POV: you see only what the viewing team sees, and
+   unseen enemies read Unseen. Switch to Oracle View to see everything; the
+   screen marks it with an amber tag during play. Policies receive the same
+   inputs in either view.
+4. Use Finish And Save to keep an unfinished game's accepted turns. A completed
    game saves automatically. Capture includes the initial frame. The script writes
    under `recordings/MODE` by default; `--output-dir /chosen/folder` changes it.
-4. Use Open Replay to view the saved file in a separate Viewer. If the new tab is
-   blocked, use the displayed link. The Viewer reads saved actions without calling
+5. Use Open Replay to view the saved file in a separate Viewer. It opens in
+   Oracle View. If the new tab is blocked, use the displayed link. The Viewer reads saved actions without calling
    the policies or LLM. Its Exit closes only that Viewer.
-5. Use Restart for fresh episode memory and a new recording with the same loaded
+6. Use Restart for fresh episode memory and a new recording with the same loaded
    methods. If the current recording is unsaved, choose Save, Discard or Cancel.
    Already saved files stay unchanged. Exit or Ctrl-C tries to save accepted play
    before stopping the live client and its Viewer.

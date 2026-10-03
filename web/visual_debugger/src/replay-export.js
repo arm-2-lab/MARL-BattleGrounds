@@ -5,21 +5,32 @@
  * and SVG resources; they do not prove image pixels came from a simulator.
  * Browser capture loads bundled fonts and uses SVG/Canvas, without saving
  * a file or binding UI events. The caller owns the eventual download.
+ *
+ * The PNG shows what is on screen: the current camera (Whole Map, Everyone In
+ * View or Battle Cam) and the switches that draw on the battlefield. New
+ * exports write provenance version 3, which records those switches and the
+ * camera frame as a world rectangle (Whole Map when the caller gives none).
+ * Versions 1 and 2 still read. The backdrop is locked to #111827 with its grid;
+ * the `--export-backdrop` token in styles.css owns `.battlefield-shell`'s
+ * background, and capture refuses any other backdrop (a palette such as High
+ * Contrast must not change it). Agent POV exports record only public facts:
+ * the recipient, the observation mode and the frame, never hidden champions.
  */
 import { authorizedPresentationSceneView } from "./authorized-presentation-adapter.js";
 import {
   isJoinedTransportAndAuthorizedPresentationV1,
   isNormalizedAuthorizedPresentationFrameV1,
 } from "./authorized-presentation-normalizer.js";
-import { VISUAL_FILTER_IDS } from "./visual-filters.js";
+import { VISUAL_FILTER_IDS, VISUAL_FILTER_REGISTRY } from "./visual-filters.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const PNG_MIME_TYPE = "image/png";
 const PNG_SIGNATURE = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_PROVENANCE_KEYWORD = "MARL-BattleGrounds Replay Provenance";
 const PROVENANCE_SCHEMA_ID = "marl_battlegrounds.replay_battlefield_png_provenance";
-// New exports write this provenance version. Version 2 added red_zone_floors.
-const CURRENT_PROVENANCE_SCHEMA_VERSION = 2;
+// New exports write this provenance version. Version 2 added red_zone_floors;
+// version 3 records the V5 battlefield switches and the camera frame.
+const CURRENT_PROVENANCE_SCHEMA_VERSION = 3;
 // The 19 filter IDs of version-1 provenance, frozen so saved PNGs stay readable
 // when the live registry grows.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V1 = Object.freeze([
@@ -43,13 +54,123 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V1 = Object.freeze([
   "scrolling_battle_text",
   "death_announcer",
 ]);
-// Exact filter IDs each provenance version records; version 2 is the live registry.
+// The 20 filter IDs of version-2 provenance: version 1 plus red_zone_floors.
+const REPLAY_PNG_VISUAL_FILTER_IDS_V2 = Object.freeze([
+  ...REPLAY_PNG_VISUAL_FILTER_IDS_V1,
+  "red_zone_floors",
+]);
+// The filter IDs of version-3 provenance: every switch that draws on the
+// battlefield in the Replay Viewer (surface "arena", product "replay_viewer"),
+// in registry order. Interface switches and live-only marks cannot change the
+// PNG, so they are not recorded. This list is frozen here on purpose: a test
+// checks it still equals the registry, so a registry change must add version 4
+// rather than silently change what version 3 means.
+const REPLAY_PNG_VISUAL_FILTER_IDS_V3 = Object.freeze([
+  "aura_fields",
+  "aura_modifier_badges",
+  "duration_status_badges",
+  "spawn_shield",
+  "target_selection_visuals",
+  "basic_ability_effects",
+  "ultimate_ability_effects",
+  "regeneration_effects",
+  "cooldown_effects",
+  "status_application",
+  "natural_status_expiry",
+  "freezing_trap_break",
+  "status_clear_on_death",
+  "death_effects",
+  "respawn_wave",
+  "resurrection_effects",
+  "spawn_shield_expiry",
+  "scrolling_battle_text",
+  "death_announcer",
+  "red_zone_floors",
+  "map_skins",
+  "moonlight",
+  "floor_grid",
+  "spawn_waystones",
+  "survey_frame",
+  "arena_rim",
+  "obstacle_skins",
+  "obstacle_relief",
+  "obstacle_shadows",
+  "red_zone_home_fall",
+  "soft_glow",
+  "moon_motes",
+  "time_of_night",
+  "death_dimming",
+  "pov_sight_veil",
+  "pov_recipient_rim",
+  "sight_change_marks",
+  "life_vessels",
+  "class_seals",
+  "recent_health_change",
+  "low_life_warning",
+  "hit_reactions",
+  "fallen_step_aside",
+  "class_letters",
+  "life_segments",
+  "stride_glide",
+  "scholar_long_tick",
+  "step_glide",
+  "last_move_ghosts",
+  "phantom_afterimage",
+  "focus_trail",
+  "home_end_marks",
+  "lore_emblems",
+  "status_marks",
+  "aura_glints",
+  "barrier_held",
+  "kindled_blast",
+  "close_range_strokes",
+  "saved_beat",
+  "last_breath",
+  "battle_text_detail",
+  "vigil_pips",
+  "kill_credit_glint",
+  "match_moments",
+  "moment_full_cards",
+  "champion_streaks",
+  "reach_rings",
+  "next_action_thread",
+  "selection_moonlight",
+  "focus_fire",
+]);
+// Exact filter IDs each provenance version records.
 const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
   new Map([
     [1, REPLAY_PNG_VISUAL_FILTER_IDS_V1],
-    [2, VISUAL_FILTER_IDS],
+    [2, REPLAY_PNG_VISUAL_FILTER_IDS_V2],
+    [3, REPLAY_PNG_VISUAL_FILTER_IDS_V3],
   ]),
 );
+// The camera names a version-3 camera frame may carry.
+const REPLAY_PNG_CAMERAS = new Set(["whole_map", "everyone_in_view", "battle_cam"]);
+
+/**
+ * The switch IDs a new export records (provenance version 3), in registry
+ * order: every switch that can change the battlefield picture in the Replay
+ * Viewer.
+ */
+export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V3;
+
+/**
+ * Return the switch IDs the live registry would record today: surface
+ * "arena" and product "replay_viewer", in registry order. A test compares it
+ * with REPLAY_PNG_RECORDED_FILTER_IDS to catch a registry change that needs a
+ * new provenance version.
+ *
+ * @returns {ReadonlyArray<string>} A new frozen list.
+ */
+export function replayPngExportableFilterIds() {
+  return Object.freeze(
+    VISUAL_FILTER_REGISTRY.filter(
+      ({ surface, products }) =>
+        surface === "arena" && products.includes("replay_viewer"),
+    ).map(({ id }) => id),
+  );
+}
 const REPLAY_PRESENTATION_KINDS = new Set([
   "replay_oracle",
   "replay_no_shared_obs_agent_pov",
@@ -250,7 +371,7 @@ function sha256(value, label) {
 /**
  * Copy exactly the ids boolean fields into a frozen record.
  * ids is the filter ID list of one provenance version (default: the live
- * VISUAL_FILTER_IDS, which version 2 records). Throw TypeError for
+ * VISUAL_FILTER_IDS, the complete page state). Throw TypeError for
  * missing/extra fields or nonboolean values. value should already be a
  * plain-data snapshot; this helper does not inspect descriptors. No default
  * filters are filled in.
@@ -272,10 +393,132 @@ function normalizeVisualFilters(value, ids = VISUAL_FILTER_IDS) {
 }
 
 /**
- * Validate a version-1 or version-2 Replay Viewer provenance object and return
- * a deeply frozen plain copy with the same version. The versions differ only in
- * visual_filters: version 1 holds the 19 IDs of REPLAY_PNG_VISUAL_FILTER_IDS_V1,
- * version 2 the 20 live IDs (adding red_zone_floors); a mixed form is rejected.
+ * Return value as a finite number, or throw TypeError naming label. Strings,
+ * booleans, NaN and infinities are rejected; no rounding happens.
+ *
+ * @param {unknown} value @param {string} label
+ */
+function finiteNumber(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    invalid(`${label} must be a finite number.`);
+  }
+  return value;
+}
+
+/**
+ * Validate a stored version-3 camera frame and return a frozen copy.
+ *
+ * The frame is exactly {camera, min_x, min_y, max_x, max_y}: camera is
+ * "whole_map", "everyone_in_view" or "battle_cam"; the four numbers are world
+ * units (y counts up, as in the simulator) with min below max on both axes.
+ * Reading a PNG cannot check the rectangle against the map, because the map
+ * size is not stored; projectReplayPngProvenanceV1 checks Whole Map against
+ * the painted map before writing. Throw TypeError for anything else.
+ *
+ * @param {Record<string, any>} frame A plain-data snapshot.
+ * @returns {Readonly<Record<string, string | number>>}
+ */
+function normalizeStoredCameraFrame(frame) {
+  exactKeys(
+    frame,
+    ["camera", "max_x", "max_y", "min_x", "min_y"],
+    "Replay PNG camera frame",
+  );
+  if (!REPLAY_PNG_CAMERAS.has(frame.camera)) {
+    invalid("Replay PNG camera frame names an unknown camera.");
+  }
+  const minX = finiteNumber(frame.min_x, "Replay PNG camera frame min_x");
+  const minY = finiteNumber(frame.min_y, "Replay PNG camera frame min_y");
+  const maxX = finiteNumber(frame.max_x, "Replay PNG camera frame max_x");
+  const maxY = finiteNumber(frame.max_y, "Replay PNG camera frame max_y");
+  if (!(minX < maxX) || !(minY < maxY)) {
+    invalid("Replay PNG camera frame must have a positive width and height.");
+  }
+  return Object.freeze({
+    camera: frame.camera,
+    min_x: minX,
+    min_y: minY,
+    max_x: maxX,
+    max_y: maxY,
+  });
+}
+
+/**
+ * Turn the caller's camera frame into the stored version-3 form.
+ *
+ * cameraFrame is undefined or null (the camera is on Whole Map), or exactly
+ * {camera, minX, minY, maxX, maxY} with camera "whole_map",
+ * "everyone_in_view" or "battle_cam" and the world rectangle on screen in
+ * world units (y counts up). Whole Map must equal the painted map rectangle
+ * (0, 0) to (width, height). The rectangle may reach past the map edge (a
+ * camera margin), but must have a positive size.
+ *
+ * Agent POV: the frame is a rectangle only; it names no champion, so it adds
+ * no hidden fact beyond what the camera already framed from the POV scene.
+ *
+ * @param {unknown} cameraFrame
+ * @param {Record<string, any>} paintedScene The painted authorized scene; its
+ *   map.width and map.height give the Whole Map rectangle.
+ * @returns {Readonly<Record<string, string | number>>}
+ * @throws {TypeError} For a malformed frame, an unknown camera, a Whole Map
+ *   that is not the map, or a scene without a positive map size.
+ */
+function projectCameraFrame(cameraFrame, paintedScene) {
+  const width = paintedScene?.map?.width;
+  const height = paintedScene?.map?.height;
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !(width > 0) ||
+    !(height > 0) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height)
+  ) {
+    invalid("Replay export could not read the painted map size.");
+  }
+  if (cameraFrame === undefined || cameraFrame === null) {
+    return normalizeStoredCameraFrame({
+      camera: "whole_map",
+      min_x: 0,
+      min_y: 0,
+      max_x: width,
+      max_y: height,
+    });
+  }
+  const frame = snapshotRecord(cameraFrame, "Replay export camera frame");
+  exactKeys(
+    frame,
+    ["camera", "maxX", "maxY", "minX", "minY"],
+    "Replay export camera frame",
+  );
+  const stored = normalizeStoredCameraFrame({
+    camera: frame.camera,
+    min_x: frame.minX,
+    min_y: frame.minY,
+    max_x: frame.maxX,
+    max_y: frame.maxY,
+  });
+  if (
+    stored.camera === "whole_map" &&
+    (stored.min_x !== 0 ||
+      stored.min_y !== 0 ||
+      stored.max_x !== width ||
+      stored.max_y !== height)
+  ) {
+    invalid("Replay export Whole Map frame must equal the painted map.");
+  }
+  return stored;
+}
+
+/**
+ * Validate a version-1, version-2 or version-3 Replay Viewer provenance object
+ * and return a deeply frozen plain copy with the same version. The versions
+ * differ only in the presentation record: version 1 holds the 19 filter IDs of
+ * REPLAY_PNG_VISUAL_FILTER_IDS_V1, version 2 the 20 IDs of
+ * REPLAY_PNG_VISUAL_FILTER_IDS_V2 (adding red_zone_floors), and version 3 the
+ * battlefield switches of REPLAY_PNG_VISUAL_FILTER_IDS_V3 plus a camera_frame
+ * (see normalizeStoredCameraFrame). A mixed form (wrong filter list for the
+ * version, a camera frame before version 3 or none in version 3) is rejected.
  * Require exact root/nested fields, audience-specific
  * source fields, consistent replay kind/observation mode, nonnegative frame
  * counts and an incoming transition exactly when frame_index is nonzero.
@@ -406,6 +649,7 @@ function normalizeProvenance(value) {
       "selected_public_agent_id",
       "show_ranges",
       "visual_filters",
+      ...(root.schema_version >= 3 ? ["camera_frame"] : []),
     ],
     "Replay PNG presentation",
   );
@@ -438,6 +682,14 @@ function normalizeProvenance(value) {
     snapshotRecord(presentation.visual_filters, "Replay PNG visual filters"),
     filterIds,
   );
+  const cameraFrame =
+    root.schema_version >= 3
+      ? {
+          camera_frame: normalizeStoredCameraFrame(
+            snapshotRecord(presentation.camera_frame, "Replay PNG camera frame"),
+          ),
+        }
+      : {};
 
   return deepFreeze({
     schema_id: PROVENANCE_SCHEMA_ID,
@@ -450,6 +702,7 @@ function normalizeProvenance(value) {
     presentation: {
       ...presentation,
       visual_filters: filters,
+      ...cameraFrame,
     },
   });
 }
@@ -533,15 +786,38 @@ export function canonicalReplayPngProvenanceV1(value) {
 }
 
 /**
+ * Require options to have exactly the required keys, plus optionally
+ * cameraFrame. Throw TypeError naming label otherwise. A missing cameraFrame
+ * key means Whole Map, the same as undefined or null.
+ *
+ * @param {Record<string, any>} options
+ * @param {readonly string[]} required
+ * @param {string} label
+ */
+function exactKeysWithOptionalCamera(options, required, label) {
+  exactKeys(
+    options,
+    Object.hasOwn(options, "cameraFrame") ? [...required, "cameraFrame"] : required,
+    label,
+  );
+}
+
+/**
  * Project export metadata from a branded strict Replay Viewer presentation.
  * value must contain exactly presentation, renderPolicy, cssWidth, cssHeight,
- * showRanges, visualFilters and localInspectedPresentationKey. Use
- * replay_static, positive integer CSS sizes and complete boolean filters.
- * The inspection key may be undefined, null or a nonempty string. Resolve
- * the painted selection through the authorized scene, then record 2x pixel
- * sizes. Oracle includes artifact references; Agent POV omits those fields.
- * Return deeply frozen validated provenance at the current version 2, which
- * records all 20 live filters; invalid or unresolved inputs throw TypeError.
+ * showRanges, visualFilters and localInspectedPresentationKey, and may also
+ * contain cameraFrame. Use replay_static, positive integer CSS sizes and the
+ * complete live switch state (every ID of VISUAL_FILTER_IDS, as booleans).
+ * The inspection key may be undefined, null or a nonempty string. cameraFrame
+ * is undefined, null or absent for Whole Map, or {camera, minX, minY, maxX,
+ * maxY}: the camera on screen ("whole_map", "everyone_in_view" or
+ * "battle_cam") and the world rectangle it shows, in world units with y up.
+ * Resolve the painted selection through the authorized scene, then record 2x
+ * pixel sizes. Oracle includes artifact references; Agent POV omits those
+ * fields. Return deeply frozen validated provenance at the current version 3:
+ * it records only the battlefield switches (REPLAY_PNG_RECORDED_FILTER_IDS)
+ * and the camera frame in snake_case (Whole Map is the painted map from
+ * (0, 0) to (width, height)). Invalid or unresolved inputs throw TypeError.
  * Raw transport objects cannot substitute for the brand.
  *
  * @param {unknown} value
@@ -549,7 +825,7 @@ export function canonicalReplayPngProvenanceV1(value) {
  */
 export function projectReplayPngProvenanceV1(value) {
   const options = snapshotRecord(value, "Replay PNG projection options");
-  exactKeys(
+  exactKeysWithOptionalCamera(
     options,
     [
       "cssHeight",
@@ -614,6 +890,10 @@ export function projectReplayPngProvenanceV1(value) {
     invalid("Replay export painted selection does not resolve to an agent.");
   }
   const selectedPublicAgentId = selectedAgent?.public_agent_id ?? null;
+  const cameraFrame = projectCameraFrame(options.cameraFrame, paintedScene);
+  const recordedFilters = Object.fromEntries(
+    REPLAY_PNG_VISUAL_FILTER_IDS_V3.map((id) => [id, visualFilters[id]]),
+  );
 
   const oracle = presentation.presentation_kind === "replay_oracle";
   const authority = oracle
@@ -662,7 +942,8 @@ export function projectReplayPngProvenanceV1(value) {
       pixel_height: cssHeight * 2,
       show_ranges: options.showRanges,
       selected_public_agent_id: selectedPublicAgentId,
-      visual_filters: visualFilters,
+      visual_filters: recordedFilters,
+      camera_frame: { ...cameraFrame },
     },
   });
 }
@@ -1034,7 +1315,8 @@ function provenanceItxtChunk(canonicalProvenanceJson) {
 /**
  * Inspect a PNG with exactly one provenance entry directly after IHDR.
  * Require an uncompressed, untranslated UTF-8 iTXt entry with canonical
- * version-1 or version-2 provenance, matching PNG dimensions and no duplicate keyword
+ * version-1, version-2 or version-3 provenance (version 3 adds the camera
+ * frame), matching PNG dimensions and no duplicate keyword
  * in text chunks. Return frozen metadata, chunk types and provenance. Invalid
  * bytes/metadata throw TypeError. This verifies container consistency, not
  * the truth of the picture or the referenced simulator artifacts.
@@ -1104,7 +1386,8 @@ export function inspectReplayBattlefieldPngV1(value) {
 /**
  * Build a PNG artifact from trusted Canvas bytes and a branded replay view.
  * value contains exactly canvasPngBytes plus the seven projection options
- * documented by projectReplayPngProvenanceV1. Project provenance internally;
+ * documented by projectReplayPngProvenanceV1, and may also contain cameraFrame
+ * (absent, undefined or null means Whole Map). Project provenance internally;
  * callers cannot pass replacement provenance. Return a frozen artifact with
  * Blob, filename, byteLength, schemaVersion, provenance and canonical JSON.
  * Invalid metadata, PNG dimensions or existing provenance throw TypeError.
@@ -1115,7 +1398,7 @@ export function inspectReplayBattlefieldPngV1(value) {
  */
 export function buildReplayBattlefieldPngArtifactV1(value) {
   const options = snapshotRecord(value, "Replay PNG artifact options");
-  exactKeys(
+  exactKeysWithOptionalCamera(
     options,
     [
       "canvasPngBytes",
@@ -1137,6 +1420,7 @@ export function buildReplayBattlefieldPngArtifactV1(value) {
     showRanges: options.showRanges,
     localInspectedPresentationKey: options.localInspectedPresentationKey,
     visualFilters: options.visualFilters,
+    cameraFrame: options.cameraFrame,
   });
   return buildArtifactFromProvenance(options.canvasPngBytes, provenance);
 }
@@ -1416,6 +1700,9 @@ function installResolvedStyleSheet(clone, rules) {
 
 /**
  * Read shell's computed background and return grid spacing in CSS pixels.
+ * The `--export-backdrop` token (styles.css) owns this background; whatever
+ * the token says, the computed colour must still be #111827, so a palette
+ * that changed it fails here instead of exporting a different backdrop.
  * Require the locked dark background and two linear-gradient occurrences
  * containing the expected color, opacity and 1px text. Check the first
  * background-size pair is square and 2rem within 0.01px. This is a limited
@@ -1678,10 +1965,16 @@ function canvasPngBlob(canvas) {
  * Capture one settled installed Replay Viewer frame as a PNG artifact.
  * value has exactly battlefield, installedAuthority, isCurrent,
  * localInspectedPresentationKey, renderPolicy, showRanges, transportState
- * and visualFilters. Require a branded joined authority, SETTLED transport,
- * replay_static render policy and a painted #battlefield SVG in a non-busy
- * #battlefield-shell. isCurrent() must return true after document fonts are
- * ready. Inspection/filter options follow projectReplayPngProvenanceV1.
+ * and visualFilters, and may also have cameraFrame. Require a branded joined
+ * authority, SETTLED transport, replay_static render policy and a painted
+ * #battlefield SVG in a non-busy #battlefield-shell. isCurrent() must return
+ * true after document fonts are ready. Inspection, filter and camera options
+ * follow projectReplayPngProvenanceV1.
+ *
+ * The PNG shows what is on screen: the battlefield as the current camera drew
+ * it. Pass the camera on screen as cameraFrame (absent, undefined or null
+ * means Whole Map) so the provenance records it; call this only after a
+ * camera change has settled, because a camera ease is not part of the still.
  *
  * Snapshot the live SVG/styles synchronously, then load bundled fonts, decode
  * the detached SVG and paint an opaque Canvas at twice each CSS dimension.
@@ -1695,7 +1988,7 @@ function canvasPngBlob(canvas) {
  */
 export async function captureReplayBattlefieldPngV1(value) {
   const options = snapshotRecord(value, "Replay battlefield capture options");
-  exactKeys(
+  exactKeysWithOptionalCamera(
     options,
     [
       "battlefield",
@@ -1768,6 +2061,7 @@ export async function captureReplayBattlefieldPngV1(value) {
     showRanges: options.showRanges,
     localInspectedPresentationKey: options.localInspectedPresentationKey,
     visualFilters: options.visualFilters,
+    cameraFrame: options.cameraFrame,
   });
   const fonts = await loadBundledFontBytes();
   installBundledFonts(detachedBattlefield, fonts);

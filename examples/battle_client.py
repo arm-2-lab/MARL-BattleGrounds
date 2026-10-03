@@ -6,10 +6,12 @@ for paths. The companion guide is docs/battle_client_tutorial.md in the source
 release. No checkout, other example, private file or test module is imported.
 
 Interactive modes save under recordings/MODE by default and block until Exit or
-Ctrl-C. Ordinary maps keep BattleClient's defaults unless an explicit option
-changes them. Scenario modes keep the complete packaged scenario 5 unchanged.
-LLM modes use an already running service; this script starts no server, downloads
-no weights and substitutes no mock. Only scenario-partners runs to completion
+Ctrl-C. The page opens in Agent POV; Oracle View, which shows everything, is one
+switch away. Press ? in the page for How To Play and the key list. Ordinary
+maps keep BattleClient's defaults unless an explicit option changes them.
+Scenario modes keep the complete packaged scenario 5 unchanged. LLM modes use
+an already running service; this script starts no server, downloads no weights
+and substitutes no mock. Only scenario-partners runs to completion
 without a browser. Its exposure labels are declarations, not training audits.
 """
 

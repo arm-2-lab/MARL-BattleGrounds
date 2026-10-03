@@ -5,11 +5,36 @@ for its selected view. Agent battlefields contain only authorized facts; separat
 researcher controls may carry nonspatial match data. Builders return immutable
 presentation models. They do not step the simulator, save history, read replay
 files, or perform HTTP I/O.
+
+Agent POV scenes also carry the team's merged sight (``team_sight``) for the
+BattleClient's Night Veil: the floor the team's living sensors see, with stones
+blocking sight as in Core, computed here from the POV scene's own sensors and
+stones with numpy (_merged_team_sight_v1). numpy is imported inside those
+helpers, only when a frame is built, so importing this module loads no array
+runtime. The browser only paints it.
+
+``advance_live_match_history_v1`` advances the session's Champion Streaks
+counts (every view's takedowns without falling) and its Herald Cards history
+(every view's unanswered runs and rescues, the earlier lead and the fresh
+start; viewer.match_moments) by one transition, building each recipient's
+Agent POV visual events at most once; control.submit_joint_action calls it.
+``advance_live_champion_takedowns_v1`` advances the streak counts alone. Each
+builder's ``champion_streaks`` and ``match_moments`` arguments carry the shown
+view's own rows into its frame. Each builder's
+``match_honors`` argument carries the shown view's game-over Honors and Match
+Summary rows (viewer.match_summary.match_honors_v1, totalled by the live
+service) into the completion frame.
 """
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from marl_battlegrounds._battle_client.model import PendingAction
 from marl_battlegrounds._battle_client.protocol import (
@@ -25,6 +50,7 @@ from marl_battlegrounds._battle_client.protocol import (
 )
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
+    AgentDiedEventV1,
     EvaluationEpisodeContext,
     EvaluationFrame,
     EvaluationFrameV1,
@@ -64,10 +90,15 @@ from marl_battlegrounds.rendering.authorized_pov_scene import (
 )
 from marl_battlegrounds.rendering.authorized_presentation import (
     AcceptedActionTupleV1,
+    AgentPovVisualIncomingSummaryV1,
+    AuthorizedBattlefieldSceneV1,
+    AuthorizedObstacleV1,
+    AuthorizedTeamSightV1,
     SubmittedActionTupleV1,
     build_agent_pov_visual_incoming_summary_v1,
     build_replay_oracle_presentation_parts_v1,
     oracle_presentation_key_v1,
+    visual_batch_home_fall_slots_v1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import (
     SharedObsSourceMaterialProjection,
@@ -82,7 +113,24 @@ from marl_battlegrounds.rendering.scene import (
     ResearcherAnalyzerProjectionV2,
     VisualEventBatchV2,
 )
-from marl_battlegrounds.viewer.match_summary import build_match_summary_v1
+from marl_battlegrounds.viewer.champion_streaks import (
+    NO_TAKEDOWNS,
+    ChampionStreakV1,
+    ChampionTakedownsV1,
+    agent_pov_tick_takedowns_v1,
+    oracle_tick_takedowns_v1,
+)
+from marl_battlegrounds.viewer.match_moments import (
+    MatchMomentFactsV1,
+    MatchMomentHistoryV1,
+    RescueFact,
+    agent_pov_tick_rescues_v1,
+    oracle_tick_rescues_v1,
+)
+from marl_battlegrounds.viewer.match_summary import (
+    MatchHonorsV1,
+    build_match_summary_v1,
+)
 from marl_battlegrounds.viewer.presentation_protocol import (
     AgentPovActionAxisV1,
     LatestTransitionActionRowV1,
@@ -118,6 +166,451 @@ from marl_battlegrounds.viewer.presentation_protocol import (
     build_shared_obs_authorized_current_endpoint_v1,
     build_shared_obs_latest_transition_v1,
 )
+
+# The team-sight sweep (Agent POV Night Veil). One ray every 1.5 degrees plus a
+# pair of rays just either side of every stone corner, pillar tangent and point
+# where a reach circle meets a stone or the floor edge, as the approved vision
+# page's sweep does (vision_build.py, sight_shape).
+_SIGHT_RAY_STEP_DEGREES = 1.5
+_SIGHT_CRITICAL_NUDGE = 1e-4
+# Each sensor's shape is pulled toward its sensor by a different tiny fraction,
+# so two shapes never share a stone face or floor edge exactly (no degenerate
+# overlap in the union). 1e-7 of a 6-unit reach is far below a pixel.
+_SIGHT_SHRINK_STEP = 1e-7
+_SIGHT_DECIMALS = 4
+
+type _Polygon = tuple[np.ndarray, np.ndarray]
+
+
+def _sight_critical_angles(
+    ox: float,
+    oy: float,
+    reach: float,
+    width: float,
+    height: float,
+    obstacles: Sequence[AuthorizedObstacleV1],
+) -> list[float]:
+    """Return the ray angles (radians) where one sensor's lit shape changes.
+
+    Parameters
+    ----------
+    ox, oy : float
+        The sensor's place in world units (y up).
+    reach : float
+        Its sight reach in world units.
+    width, height : float
+        The floor size in world units; the floor spans [0, width] x [0, height].
+    obstacles : Sequence[AuthorizedObstacleV1]
+        The map's stones: pillars (center, radius) and walls (center, width,
+        height, theta in radians, width along the rotated x axis).
+
+    Returns
+    -------
+    list[float]
+        Angles of pillar tangents, wall corners, and points where the reach
+        circle meets a stone edge or the floor edge. Unsorted, may repeat.
+    """
+    angles: list[float] = []
+    for obstacle in obstacles:
+        cx, cy = obstacle.center
+        if obstacle.kind == "pillar" and obstacle.radius is not None:
+            r = obstacle.radius
+            dx, dy = cx - ox, cy - oy
+            distance = math.hypot(dx, dy)
+            if distance > r:
+                bearing, half = math.atan2(dy, dx), math.asin(r / distance)
+                angles += [bearing - half, bearing + half]
+            if abs(reach - r) < distance < reach + r and distance > 1e-9:
+                a = (reach * reach - r * r + distance * distance) / (2 * distance)
+                base = math.atan2(dy, dx)
+                spread = math.acos(max(-1.0, min(1.0, a / reach)))
+                angles += [base - spread, base + spread]
+        elif obstacle.width is not None and obstacle.height is not None:
+            c, sn = math.cos(obstacle.theta), math.sin(obstacle.theta)
+            hw, hh = obstacle.width / 2, obstacle.height / 2
+            corners = [
+                (cx + sx * hw * c - sy * hh * sn, cy + sx * hw * sn + sy * hh * c)
+                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+            ]
+            for index, (px, py) in enumerate(corners):
+                qx, qy = corners[(index + 1) % 4]
+                angles.append(math.atan2(py - oy, px - ox))
+                ex, ey, fx, fy = qx - px, qy - py, px - ox, py - oy
+                a2 = ex * ex + ey * ey
+                b2 = 2 * (fx * ex + fy * ey)
+                c2 = fx * fx + fy * fy - reach * reach
+                disc = b2 * b2 - 4 * a2 * c2
+                if a2 > 1e-12 and disc > 0:
+                    for t in (
+                        (-b2 - math.sqrt(disc)) / (2 * a2),
+                        (-b2 + math.sqrt(disc)) / (2 * a2),
+                    ):
+                        if 0 < t < 1:
+                            angles.append(
+                                math.atan2(py + ey * t - oy, px + ex * t - ox)
+                            )
+    for x in (0.0, width):
+        dx = x - ox
+        if abs(dx) < reach:
+            dy = math.sqrt(reach * reach - dx * dx)
+            angles += [
+                math.atan2(y - oy, dx) for y in (oy - dy, oy + dy) if 0 <= y <= height
+            ]
+    for y in (0.0, height):
+        dy = y - oy
+        if abs(dy) < reach:
+            dx = math.sqrt(reach * reach - dy * dy)
+            angles += [
+                math.atan2(dy, x - ox) for x in (ox - dx, ox + dx) if 0 <= x <= width
+            ]
+    return angles
+
+
+def _sight_polygon(
+    ox: float,
+    oy: float,
+    reach: float,
+    width: float,
+    height: float,
+    obstacles: Sequence[AuthorizedObstacleV1],
+) -> _Polygon:
+    """Return one sensor's lit shape as a star polygon around the sensor.
+
+    Each ray runs from the sensor until it meets a stone, the floor edge or its
+    reach, the same test Core's line of sight makes between two centers
+    (stones block sight; champions do not). Points where three non-reach
+    points lie on one straight line are dropped, as the vision does.
+
+    Parameters
+    ----------
+    ox, oy, reach, width, height, obstacles
+        As in _sight_critical_angles.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, numpy.ndarray]
+        Points (n, 2) float64 in world units, sorted by angle (counterclockwise),
+        and full (n,) bool: True where the ray ran its whole reach (the point
+        lies on the reach circle).
+    """
+    import numpy as np  # lazy: importing this module loads no array runtime
+
+    tau = 2 * math.pi
+    base = [math.radians(i * _SIGHT_RAY_STEP_DEGREES) for i in range(240)]
+    critical = _sight_critical_angles(ox, oy, reach, width, height, obstacles)
+    raw = np.array(
+        base
+        + [a - _SIGHT_CRITICAL_NUDGE for a in critical]
+        + [a + _SIGHT_CRITICAL_NUDGE for a in critical]
+    )
+    raw = np.sort(np.mod(raw, tau))
+    keep = np.concatenate(([True], np.diff(raw) >= 1e-7))
+    angles = raw[keep]
+    dx, dy = np.cos(angles), np.sin(angles)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tx = np.where(
+            dx > 1e-12, (width - ox) / dx, np.where(dx < -1e-12, -ox / dx, np.inf)
+        )
+        ty = np.where(
+            dy > 1e-12, (height - oy) / dy, np.where(dy < -1e-12, -oy / dy, np.inf)
+        )
+    floor = np.minimum(tx, ty)
+    hit = np.full(angles.shape, np.inf)
+    for obstacle in obstacles:
+        cx, cy = obstacle.center
+        if obstacle.kind == "pillar" and obstacle.radius is not None:
+            px, py = cx - ox, cy - oy
+            b = px * dx + py * dy
+            cc = px * px + py * py - obstacle.radius**2
+            disc = b * b - cc
+            with np.errstate(invalid="ignore"):
+                t = np.where(cc > 0, b - np.sqrt(np.maximum(disc, 0.0)), 0.0)
+            t = np.where((disc >= 0) & (t >= 0), t, np.inf)
+        elif obstacle.width is not None and obstacle.height is not None:
+            c, sn = math.cos(obstacle.theta), math.sin(obstacle.theta)
+            lx = (ox - cx) * c + (oy - cy) * sn
+            ly = -(ox - cx) * sn + (oy - cy) * c
+            ldx, ldy = dx * c + dy * sn, -dx * sn + dy * c
+            low = np.full(angles.shape, -np.inf)
+            high = np.full(angles.shape, np.inf)
+            for p0, dp, half in (
+                (lx, ldx, obstacle.width / 2),
+                (ly, ldy, obstacle.height / 2),
+            ):
+                parallel = np.abs(dp) < 1e-12
+                safe = np.where(parallel, 1.0, dp)
+                t1, t2 = (-half - p0) / safe, (half - p0) / safe
+                outside = parallel & (abs(p0) > half)
+                low = np.where(
+                    parallel,
+                    np.where(outside, np.inf, low),
+                    np.maximum(low, np.minimum(t1, t2)),
+                )
+                high = np.where(
+                    parallel,
+                    np.where(outside, -np.inf, high),
+                    np.minimum(high, np.maximum(t1, t2)),
+                )
+            t = np.where((low <= high) & (high >= 0), np.maximum(low, 0.0), np.inf)
+        else:
+            continue
+        hit = np.minimum(hit, t)
+    best = np.minimum(np.minimum(floor, hit), reach)
+    full = np.minimum(floor, hit) >= reach
+    points = np.stack((ox + dx * best, oy + dy * best), axis=1)
+    previous, following = np.roll(points, 1, axis=0), np.roll(points, -1, axis=0)
+    flat = (
+        ~full
+        & ~np.roll(full, 1)
+        & ~np.roll(full, -1)
+        & (
+            np.abs(
+                (points[:, 0] - previous[:, 0]) * (following[:, 1] - previous[:, 1])
+                - (points[:, 1] - previous[:, 1]) * (following[:, 0] - previous[:, 0])
+            )
+            <= 1e-7
+        )
+        & (np.hypot(*(following - previous).T) >= 1e-9)
+    )
+    points, full = points[~flat], full[~flat]
+    # Two rays may end on the same point (for example both sides of a corner
+    # on the floor edge); keep one, so every outline piece has a length.
+    distinct = np.hypot(*(points - np.roll(points, 1, axis=0)).T) > 1e-9
+    if not distinct.any():
+        distinct[0] = True
+    return points[distinct], full[distinct]
+
+
+def _inside_polygon(points: np.ndarray, polygon: np.ndarray) -> np.ndarray:
+    """Return which points lie inside a polygon (even-odd ray test).
+
+    Parameters
+    ----------
+    points : numpy.ndarray
+        (k, 2) float64 query points.
+    polygon : numpy.ndarray
+        (n, 2) float64 closed polygon (last point joins the first).
+
+    Returns
+    -------
+    numpy.ndarray
+        (k,) bool.
+    """
+    import numpy as np  # lazy: importing this module loads no array runtime
+
+    x0, y0 = polygon[:, 0][None, :], polygon[:, 1][None, :]
+    x1 = np.roll(polygon[:, 0], -1)[None, :]
+    y1 = np.roll(polygon[:, 1], -1)[None, :]
+    px, py = points[:, 0][:, None], points[:, 1][:, None]
+    spans = (y0 > py) != (y1 > py)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cross_x = (x1 - x0) * (py - y0) / (y1 - y0) + x0
+    return (np.count_nonzero(spans & (px < cross_x), axis=1) % 2) == 1
+
+
+def _merged_team_sight_v1(
+    scene: AuthorizedBattlefieldSceneV1,
+    *,
+    sensor_public_agent_ids: Sequence[str],
+    own_public_agent_id: str,
+) -> AuthorizedTeamSightV1 | None:
+    """Return the floor the viewing team sees now, merged, for the Night Veil.
+
+    Parameters
+    ----------
+    scene : AuthorizedBattlefieldSceneV1
+        The Agent POV scene being built. Only its map (size and stones) and the
+        rows of the named sensors (place, life, ``observation_radius``) are
+        read, so nothing the team cannot see is used.
+    sensor_public_agent_ids : Sequence[str]
+        Public IDs whose sight the team shares: every SharedObs sensor source,
+        or the recipient alone under NoSharedObs. Rows that are missing or not
+        alive give no light.
+    own_public_agent_id : str
+        The recipient (the champion you order); its Reach Edge is the solid one.
+
+    Returns
+    -------
+    AuthorizedTeamSightV1 | None
+        The lit rings and Reach Edges in world units, rounded to 4 decimals.
+        Empty rings when no sensor is alive (the whole floor is dark). None
+        when the merged outline cannot be traced cleanly (a degenerate touch);
+        the page then keeps its reach-circle veil.
+
+    Notes
+    -----
+    Host display work only: no simulator step, no JAX, no file or network
+    access. Each sensor's shape is the vision page's ray sweep; the union keeps
+    each shape's edge pieces that lie inside no other shape and joins them into
+    closed rings. Cost: about 11 ms per frame on CPU (numpy), measured on the
+    Vision Moment with five sensors; the result is about 10 KB of JSON.
+    """
+    import numpy as np  # lazy: importing this module loads no array runtime
+
+    width, height = scene.map.width, scene.map.height
+    obstacles = scene.map.obstacles
+    wanted = set(sensor_public_agent_ids)
+    sensors = [
+        row
+        for row in scene.agents
+        if row.public_agent_id in wanted and row.life_state == "alive"
+    ]
+    polygons: list[np.ndarray] = []
+    fulls: list[np.ndarray] = []
+    owners: list[str] = []
+    for index, row in enumerate(sensors):
+        ox, oy = row.position
+        points, full = _sight_polygon(
+            ox, oy, row.observation_radius, width, height, obstacles
+        )
+        shrink = 1 - _SIGHT_SHRINK_STEP * (index + 1)
+        polygons.append(np.array((ox, oy)) + (points - np.array((ox, oy))) * shrink)
+        fulls.append(full)
+        owners.append(row.public_agent_id)
+    # Split every edge where it crosses an edge of another shape.
+    splits: list[list[list[tuple[float, tuple[float, float]]]]] = [
+        [[] for _ in polygon] for polygon in polygons
+    ]
+    for i in range(len(polygons)):
+        a0 = polygons[i]
+        d1 = np.roll(a0, -1, axis=0) - a0
+        for j in range(i + 1, len(polygons)):
+            b0 = polygons[j]
+            d2 = np.roll(b0, -1, axis=0) - b0
+            denom = (
+                d1[:, 0][:, None] * d2[:, 1][None, :]
+                - d1[:, 1][:, None] * d2[:, 0][None, :]
+            )
+            ex = b0[:, 0][None, :] - a0[:, 0][:, None]
+            ey = b0[:, 1][None, :] - a0[:, 1][:, None]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t = (ex * d2[:, 1][None, :] - ey * d2[:, 0][None, :]) / denom
+                u = (ex * d1[:, 1][:, None] - ey * d1[:, 0][:, None]) / denom
+            crossing = (np.abs(denom) > 1e-15) & (t > 0) & (t < 1) & (u > 0) & (u < 1)
+            for ia, jb in zip(*np.nonzero(crossing), strict=True):
+                ta, ub = float(t[ia, jb]), float(u[ia, jb])
+                point = (
+                    float(a0[ia, 0] + ta * d1[ia, 0]),
+                    float(a0[ia, 1] + ta * d1[ia, 1]),
+                )
+                splits[i][int(ia)].append((ta, point))
+                splits[j][int(jb)].append((ub, point))
+    # Cut each shape's edges into pieces and keep the pieces inside no other shape.
+    pieces: list[tuple[int, int, tuple[float, float], tuple[float, float]]] = []
+    for i, polygon in enumerate(polygons):
+        count = len(polygon)
+        for k in range(count):
+            start = (float(polygon[k, 0]), float(polygon[k, 1]))
+            end_index = (k + 1) % count
+            end = (float(polygon[end_index, 0]), float(polygon[end_index, 1]))
+            stops = [start, *(point for _, point in sorted(splits[i][k])), end]
+            pieces.extend(
+                (i, k, stops[n], stops[n + 1])
+                for n in range(len(stops) - 1)
+                if stops[n] != stops[n + 1]
+            )
+    if not pieces:
+        return AuthorizedTeamSightV1(lit_rings=(), own_edges=(), allied_edges=())
+    middles = np.array(
+        [((p[0] + q[0]) / 2, (p[1] + q[1]) / 2) for _, _, p, q in pieces]
+    )
+    owner_index = np.array([piece[0] for piece in pieces])
+    covered = np.zeros(len(pieces), dtype=bool)
+    for j, polygon in enumerate(polygons):
+        others = owner_index != j
+        covered[others] |= _inside_polygon(middles[others], polygon)
+    kept = [piece for piece, hidden in zip(pieces, covered, strict=True) if not hidden]
+    # Join the kept pieces into closed rings.
+    outgoing: dict[tuple[float, float], list[int]] = {}
+    for index, (_, _, start, _) in enumerate(kept):
+        outgoing.setdefault(start, []).append(index)
+    used = [False] * len(kept)
+    rings: list[tuple[tuple[float, float], ...]] = []
+    for first in range(len(kept)):
+        if used[first]:
+            continue
+        ring: list[tuple[float, float]] = []
+        index = first
+        while not used[index]:
+            used[index] = True
+            _, _, start, end = kept[index]
+            ring.append(start)
+            following = [n for n in outgoing.get(end, ()) if not used[n]]
+            if not following:
+                if end != kept[first][2]:
+                    return None
+                break
+            if len(following) > 1:
+                return None
+            index = following[0]
+        if len(ring) >= 3:
+            rings.append(tuple(ring))
+    # Reach Edges: kept pieces of reach-circle edges, joined along each shape.
+    own: list[tuple[tuple[float, float], ...]] = []
+    allied: list[tuple[tuple[float, float], ...]] = []
+    run: list[tuple[float, float]] = []
+    run_owner = -1
+    for i, k, start, end in [*kept, (-1, -1, (0.0, 0.0), (0.0, 0.0))]:
+        arc = i >= 0 and bool(fulls[i][k]) and bool(fulls[i][(k + 1) % len(fulls[i])])
+        if run and (not arc or i != run_owner or start != run[-1]):
+            (own if owners[run_owner] == own_public_agent_id else allied).append(
+                tuple(run)
+            )
+            run = []
+        if arc:
+            if not run:
+                run = [start]
+                run_owner = i
+            run.append(end)
+
+    def rounded(
+        runs: list[tuple[tuple[float, float], ...]],
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Round every point to _SIGHT_DECIMALS decimals (world units)."""
+        return tuple(
+            tuple(
+                (round(x, _SIGHT_DECIMALS), round(y, _SIGHT_DECIMALS))
+                for x, y in points
+            )
+            for points in runs
+        )
+
+    return AuthorizedTeamSightV1(
+        lit_rings=rounded(rings),
+        own_edges=rounded(own),
+        allied_edges=rounded(allied),
+    )
+
+
+def _with_team_sight_v1(
+    scene: AuthorizedBattlefieldSceneV1,
+    *,
+    sensor_public_agent_ids: Sequence[str],
+    own_public_agent_id: str,
+) -> AuthorizedBattlefieldSceneV1:
+    """Return the Agent POV scene with its merged team sight attached.
+
+    Parameters
+    ----------
+    scene : AuthorizedBattlefieldSceneV1
+        The POV scene the live builder just made (team_sight None).
+    sensor_public_agent_ids : Sequence[str]
+        As in _merged_team_sight_v1.
+    own_public_agent_id : str
+        As in _merged_team_sight_v1.
+
+    Returns
+    -------
+    AuthorizedBattlefieldSceneV1
+        A copy with ``team_sight`` set, or the same scene when the outline
+        could not be traced (see _merged_team_sight_v1).
+    """
+    sight = _merged_team_sight_v1(
+        scene,
+        sensor_public_agent_ids=sensor_public_agent_ids,
+        own_public_agent_id=own_public_agent_id,
+    )
+    return scene if sight is None else replace(scene, team_sight=sight)
 
 
 def _require_live_header(
@@ -304,6 +797,328 @@ def _shared_obs_source_materials(
         raise ValueError("SharedObs recipient is absent from active source material.")
     nonrecipient = tuple(source for source in sources if source is not recipient)
     return recipient, nonrecipient
+
+
+def advance_live_champion_takedowns_v1(
+    previous: ChampionTakedownsV1,
+    view: EvaluationTransitionViewV1,
+) -> ChampionTakedownsV1:
+    """Advance every view's Champion Streaks counts by one live transition.
+
+    Parameters
+    ----------
+    previous : ChampionTakedownsV1
+        The counts after the transition's start frame (the session's
+        ``champion_takedowns``); frame zero holds ``ChampionTakedownsV1()``.
+    view : EvaluationTransitionViewV1
+        The coherent live transition just captured (context, start frame,
+        transition, successor frame).
+
+    Returns
+    -------
+    ChampionTakedownsV1
+        The counts after the successor frame, for Oracle View and for the
+        Agent POV of every configured-active recipient (see
+        viewer.champion_streaks for the rule). ``previous`` is unchanged.
+
+    Raises
+    ------
+    ValueError
+        A recorded event or authorized scene fails its existing validation.
+
+    Notes
+    -----
+    A transition without a recorded fall changes no count, so it returns
+    at once (``ChampionTakedownsV1.quiet``) with no scene work. On a tick
+    with a fall, Oracle View reads the recorded events and every
+    configured-active recipient's Agent POV is built exactly as the live
+    Agent POV presentation builds it (start and successor scenes, their
+    death-only corpse scenes, then build_agent_pov_visual_incoming_summary_v1),
+    so each view counts only what it shows. SharedObs builds each slot's
+    source material once per frame for all recipients. Host-only: no JAX,
+    file or simulator work. Measured on CPU (2 October 2026): about 8 ms per
+    recipient on a tick with a fall.
+    """
+    events = view.transition.events
+    if not any(isinstance(event, AgentDiedEventV1) for event in events):
+        return previous.quiet()
+    context = view.context
+    agent_pov = tuple(
+        NO_TAKEDOWNS
+        if summary is None
+        else agent_pov_tick_takedowns_v1(context, summary)
+        for summary in _live_agent_pov_visual_events_by_recipient(view)
+    )
+    return previous.advance(oracle_tick_takedowns_v1(context, events), agent_pov)
+
+
+def advance_live_match_history_v1(
+    takedowns: ChampionTakedownsV1,
+    moments: MatchMomentHistoryV1,
+    view: EvaluationTransitionViewV1,
+) -> tuple[ChampionTakedownsV1, MatchMomentHistoryV1]:
+    """Advance every view's streak counts and Herald Cards history by one transition.
+
+    Parameters
+    ----------
+    takedowns : ChampionTakedownsV1
+        The Champion Streaks counts after the transition's start frame (the
+        session's ``champion_takedowns``); frame zero holds
+        ``ChampionTakedownsV1()``.
+    moments : MatchMomentHistoryV1
+        The Herald Cards history after the start frame (the session's
+        ``match_moments``); frame zero holds ``MatchMomentHistoryV1()``.
+    view : EvaluationTransitionViewV1
+        The coherent live transition just captured (context, start frame,
+        transition, successor frame).
+
+    Returns
+    -------
+    takedowns : ChampionTakedownsV1
+        The streak counts after the successor frame; equal to
+        ``advance_live_champion_takedowns_v1(takedowns, view)``.
+    moments : MatchMomentHistoryV1
+        The history after the successor frame, for Oracle View and the Agent
+        POV of every configured-active recipient (see viewer.match_moments
+        for the rules): the fresh start (set from the start frame of the
+        first transition), the largest lead at the start of any tick so far,
+        each view's unanswered runs and this tick's rescues. Both inputs are
+        unchanged.
+
+    Raises
+    ------
+    ValueError
+        A recorded event or authorized scene fails its existing validation.
+
+    Notes
+    -----
+    Each recipient's Agent POV visual events are built once, and only on a
+    tick with a recorded fall or an Oracle rescue (most ticks have
+    neither, so they cost no scene work); streaks, runs and rescues all read
+    the same build. A tick with a rescue but no fall leaves the streak
+    counts unchanged (``ChampionTakedownsV1.quiet``). Host-only: no JAX,
+    file or simulator work. The scene work is the same as the streak count
+    alone (about 8 ms per recipient on CPU, measured 2 October 2026), now
+    also run on the rare ticks with a rescue and no fall.
+    """
+    events = view.transition.events
+    context = view.context
+    start = view.start_frame
+    fell = any(isinstance(event, AgentDiedEventV1) for event in events)
+    oracle_rescues = oracle_tick_rescues_v1(context, events)
+    visual = (
+        _live_agent_pov_visual_events_by_recipient(view)
+        if fell or oracle_rescues
+        else (None,) * len(context.roster)
+    )
+    if fell:
+        oracle_tick = oracle_tick_takedowns_v1(context, events)
+        pov_ticks = tuple(
+            NO_TAKEDOWNS
+            if summary is None
+            else agent_pov_tick_takedowns_v1(context, summary)
+            for summary in visual
+        )
+        takedowns = takedowns.advance(oracle_tick, pov_ticks)
+    else:
+        oracle_tick = NO_TAKEDOWNS
+        pov_ticks = (NO_TAKEDOWNS,) * len(visual)
+        takedowns = takedowns.quiet()
+    pov_rescues: tuple[tuple[RescueFact, ...], ...] = tuple(
+        ()
+        if summary is None
+        else agent_pov_tick_rescues_v1(context, oracle_rescues, events, summary)
+        for summary in visual
+    )
+    scores = view.start_frame.snapshot.team_deathmatch_scores
+    moments = moments.advance(
+        context,
+        start_frame_index=start.frame_index,
+        start_simulator_step_count=start.simulator_step_count,
+        start_scores=(int(scores[0]), int(scores[1])),
+        oracle_falls=oracle_tick.falls,
+        oracle_rescues=oracle_rescues,
+        agent_pov_falls=tuple(tick.falls for tick in pov_ticks),
+        agent_pov_rescues=pov_rescues,
+    )
+    return takedowns, moments
+
+
+def _live_agent_pov_visual_events_by_recipient(
+    view: EvaluationTransitionViewV1,
+) -> tuple[AgentPovVisualIncomingSummaryV1 | None, ...]:
+    """Build every configured-active recipient's Agent POV visual events.
+
+    view is the coherent live transition. Return ten entries in global slot
+    order: the recipient's AgentPovVisualIncomingSummaryV1, built from the
+    same scenes the live Agent POV presentation uses (NoSharedObs: the
+    recipient's own current slice and carrier; SharedObs: the team's sensor
+    union, each slot's source material built once per frame), or None for an
+    inactive slot. Corpse scenes use the public class records of the scenes
+    built here, which together cover every active class. Raises ValueError
+    when a scene or event fails validation. Host-only; no JAX or file work.
+    """
+    from marl_battlegrounds.viewer.local_oracle_corpse_overlay import (
+        build_local_oracle_corpse_overlay_v1,
+        compose_local_oracle_corpse_scene_v1,
+    )
+    from marl_battlegrounds.viewer.no_shared_visual import (
+        build_live_no_shared_obs_visual_adjacent_slice_v1,
+        build_live_no_shared_obs_visual_current_slice_v1,
+    )
+
+    context = view.context
+    catalog = context.static_mechanics_catalog
+    authority = "champion-streaks"
+    roster = context.roster
+    active = tuple(row.global_slot for row in roster if row.configured_active)
+    frames = (view.start_frame, view.successor_frame)
+    # (start scene, start sensors, successor scene, successor sensors, IDs).
+    built: dict[
+        int,
+        tuple[
+            AuthorizedBattlefieldSceneV1,
+            tuple[str, ...],
+            AuthorizedBattlefieldSceneV1,
+            tuple[str, ...],
+            tuple[str, str, str],
+        ],
+    ] = {}
+    if context.execution_information_mode == "shared_obs":
+        sources = tuple(
+            {
+                slot: build_shared_obs_authority_source_material_projection_v1(
+                    context, frame, selected_global_slot=slot
+                )
+                for slot in active
+            }
+            for frame in frames
+        )
+        for recipient in active:
+            ends = []
+            for frame, by_slot in zip(frames, sources, strict=True):
+                parts = build_shared_obs_authorized_scene_v1(
+                    by_slot[recipient],
+                    all_active_nonrecipient_source_material=tuple(
+                        by_slot[slot] for slot in active if slot != recipient
+                    ),
+                    public_catalog=catalog,
+                    authority_session_id=authority,
+                )
+                living = {
+                    row.public_agent_id
+                    for row in roster
+                    if row.configured_active
+                    and frame.snapshot.alive_mask[row.global_slot]
+                }
+                sensors = tuple(
+                    source.source_public_agent_id
+                    for source in parts.authorized_sensor_sources
+                    if source.source_public_agent_id in living
+                )
+                ends.append((parts.scene, sensors, parts.source_recipient_frame_id))
+            prefix = (
+                f"{context.identity.episode_id}:shared-obs-visual-union:"
+                f"{roster[recipient].public_agent_id}"
+            )
+            built[recipient] = (
+                ends[0][0],
+                ends[0][1],
+                ends[1][0],
+                ends[1][1],
+                (
+                    f"{prefix}:transition:{view.start_frame.frame_index}",
+                    ends[0][2],
+                    ends[1][2],
+                ),
+            )
+    else:
+        for recipient in active:
+            current_slice = build_live_no_shared_obs_visual_current_slice_v1(
+                context,
+                view.successor_frame,
+                global_slot=recipient,
+                incoming_transition_view=view,
+            )
+            carrier = build_live_no_shared_obs_visual_adjacent_slice_v1(
+                view, global_slot=recipient
+            )
+            successor = build_no_shared_obs_authorized_scene_v1(
+                current_slice,
+                public_catalog=catalog,
+                authority_session_id=authority,
+            )
+            start = build_no_shared_obs_authorized_scene_v1(
+                carrier,
+                public_catalog=catalog,
+                authority_session_id=authority,
+                frame_index=carrier.start_frame.frame_index,
+            )
+            public_id = roster[recipient].public_agent_id
+            built[recipient] = (
+                start.scene,
+                (public_id,) if view.start_frame.snapshot.alive_mask[recipient] else (),
+                successor.scene,
+                (public_id,)
+                if view.successor_frame.snapshot.alive_mask[recipient]
+                else (),
+                (
+                    carrier.transition.pov_transition_id,
+                    carrier.transition.start_pov_frame_id,
+                    carrier.transition.successor_pov_frame_id,
+                ),
+            )
+    class_mechanics = tuple(
+        {
+            row.class_id: row
+            for scenes in built.values()
+            for scene in (scenes[0], scenes[2])
+            for row in scene.class_mechanics
+        }.values()
+    )
+    batch = build_visual_event_batch_v2(view)
+    home_falls = visual_batch_home_fall_slots_v1(context, batch)
+    summaries: list[AgentPovVisualIncomingSummaryV1 | None] = [None] * len(roster)
+    for recipient, (
+        start_scene,
+        start_sensors,
+        end_scene,
+        end_sensors,
+        (transition_id, start_id, end_id),
+    ) in built.items():
+        public_id = roster[recipient].public_agent_id
+        corpse_scenes = tuple(
+            compose_local_oracle_corpse_scene_v1(
+                scene,
+                build_local_oracle_corpse_overlay_v1(
+                    context,
+                    frame,
+                    scene,
+                    authority_session_id=authority,
+                    source_authority_epoch=0,
+                    recipient_public_agent_id=public_id,
+                    living_sensor_public_agent_ids=sensors,
+                ),
+                researcher_class_mechanics=class_mechanics,
+            )
+            for frame, scene, sensors in (
+                (view.start_frame, start_scene, start_sensors),
+                (view.successor_frame, end_scene, end_sensors),
+            )
+        )
+        summaries[recipient] = build_agent_pov_visual_incoming_summary_v1(
+            batch,
+            transition_start_scene=start_scene,
+            successor_scene=end_scene,
+            transition_start_corpse_choreography_scene=corpse_scenes[0],
+            successor_corpse_choreography_scene=corpse_scenes[1],
+            recipient_public_agent_id=public_id,
+            incoming_recipient_transition_id=transition_id,
+            incoming_start_recipient_frame_id=start_id,
+            incoming_successor_recipient_frame_id=end_id,
+            home_fall_global_slots=home_falls,
+        )
+    return tuple(summaries)
 
 
 def _draft_lane_v1(
@@ -515,6 +1330,11 @@ def build_live_oracle_authorized_presentation_v1(
     current_frame: EvaluationFrame,
     incoming_transition_view: EvaluationTransitionViewV1 | None,
     raw_frame: ResearcherLiveDebuggerFrameV2,
+    *,
+    scores_ten_ticks_ago: tuple[int, int] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> LiveOracleAuthorizedPresentationFrameV1:
     """Build a global live display with incoming history and the current action
     draft.
@@ -529,6 +1349,35 @@ def build_live_oracle_authorized_presentation_v1(
         Checked adjacent start/transition/successor records, or None at frame zero.
     raw_frame : ResearcherLiveDebuggerFrameV2
         Exact mode-specific service response for the committed source revision.
+    scores_ten_ticks_ago : tuple of (int, int) or None, optional, keyword-only
+        Team A and Team B scores 10 ticks before current_frame, from the live
+        session's short history (DebuggerSession.scores_ten_ticks_ago). It
+        becomes match_summary.scores_ten_ticks_ago for the scorebug's Momentum
+        switch. None (the default) leaves that field None (no recent points).
+    champion_streaks : tuple of ChampionStreakV1 or None, optional, keyword-only
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, from the live session's counts
+        (DebuggerSession.champion_takedowns.streaks, viewer.champion_streaks):
+        Oracle View's row, counted from every recorded fall. Copied into the
+        frame's ``champion_streaks`` field, which checks that each named
+        champion is one this view saw at the start of the tick. None (the
+        default) means not counted; browsers then show no streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), from the live service's
+        totals of every transition of the game; give it only on the
+        completion frame. An Agent POV view's honors list only its own team's
+        champions. Copied into the frame's ``match_honors`` field. None (the
+        default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), from
+        the live session's history (DebuggerSession.match_moments.facts):
+        whether the match began fresh, the largest earlier lead, the
+        unanswered runs reached on this tick and the rescues. An Agent POV
+        view's facts name only what its recipient's team saw. Copied into
+        the frame's ``match_moments`` field. None (the default) means not
+        counted; browsers then show no First Blood, Comeback, run or
+        Rescue card.
 
     Returns
     -------
@@ -664,7 +1513,14 @@ def build_live_oracle_authorized_presentation_v1(
             context,
             current_frame,
             () if incoming_view is None else incoming_view.transition.events,
+            transition_start_frame=(
+                None if incoming_view is None else incoming_view.start_frame
+            ),
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="live_oracle",
         product_kind="combat_debugger",
@@ -863,6 +1719,10 @@ def build_live_no_shared_obs_authorized_presentation_v1(
     public_catalog: StaticMechanicsCatalogV1,
     incoming_visual_events: VisualEventBatchV2 | None,
     researcher_space: LiveResearcherSpaceV1,
+    scores_ten_ticks_ago: tuple[int, int] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> LiveNoSharedObsAuthorizedPresentationFrameV1:
     """Build a live own-observation display and separately scoped researcher panels.
 
@@ -889,6 +1749,36 @@ def build_live_no_shared_obs_authorized_presentation_v1(
     researcher_space : LiveResearcherSpaceV1
         Separately authorized global panels for this same frame, without a global
         battlefield scene.
+    scores_ten_ticks_ago : tuple of (int, int) or None, optional
+        Team A and Team B scores 10 ticks before current_global_frame, from the
+        live session's short history (DebuggerSession.scores_ten_ticks_ago).
+        It becomes match_summary.scores_ten_ticks_ago for the scorebug's
+        Momentum switch; scores are public, so Agent POV gets the same value
+        as Oracle View. None (the default) leaves that field None.
+    champion_streaks : tuple of ChampionStreakV1 or None, optional
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, from the live session's counts
+        (DebuggerSession.champion_takedowns.streaks, viewer.champion_streaks):
+        this recipient's Agent POV row, counted only from what it saw. Copied
+        into the frame's ``champion_streaks`` field, which checks that each
+        named champion is one this view saw at the start of the tick. None (the
+        default) means not counted; browsers then show no streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), from the live service's
+        totals of every transition of the game; give it only on the
+        completion frame. An Agent POV view's honors list only its own team's
+        champions. Copied into the frame's ``match_honors`` field. None (the
+        default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), from
+        the live session's history (DebuggerSession.match_moments.facts):
+        whether the match began fresh, the largest earlier lead, the
+        unanswered runs reached on this tick and the rescues. An Agent POV
+        view's facts name only what its recipient's team saw. Copied into
+        the frame's ``match_moments`` field. None (the default) means not
+        counted; browsers then show no First Blood, Comeback, run or
+        Rescue card.
 
     Returns
     -------
@@ -978,6 +1868,15 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         current_slice,
         public_catalog=public_catalog,
         authority_session_id=raw_frame.session_id,
+    )
+    # The Night Veil's merged sight: under NoSharedObs the recipient alone.
+    parts = replace(
+        parts,
+        scene=_with_team_sight_v1(
+            parts.scene,
+            sensor_public_agent_ids=(parts.recipient_public_agent_id,),
+            own_public_agent_id=parts.recipient_public_agent_id,
+        ),
     )
     endpoint = build_no_shared_obs_authorized_current_endpoint_v1(
         parts=parts,
@@ -1071,6 +1970,9 @@ def build_live_no_shared_obs_authorized_presentation_v1(
             incoming_successor_recipient_frame_id=(
                 carrier.transition.successor_pov_frame_id
             ),
+            home_fall_global_slots=visual_batch_home_fall_slots_v1(
+                global_context, incoming_visual_events
+            ),
         )
     latest_events = (
         None
@@ -1146,7 +2048,12 @@ def build_live_no_shared_obs_authorized_presentation_v1(
             global_context,
             current_global_frame,
             () if incoming_visual_events is None else incoming_visual_events.events,
+            transition_start_frame=previous_global_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="live_no_shared_obs_agent_pov",
         product_kind="combat_debugger",
@@ -1202,6 +2109,10 @@ def build_live_shared_obs_authorized_presentation_v1(
     authorized_recipient_global_slot: int,
     pending_action: PendingAction,
     researcher_space: LiveResearcherSpaceV1,
+    scores_ten_ticks_ago: tuple[int, int] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> LiveSharedObsAuthorizedPresentationFrameV1:
     """Build a live SharedObs scene and the recipient's current action inspection.
 
@@ -1224,6 +2135,36 @@ def build_live_shared_obs_authorized_presentation_v1(
     researcher_space : LiveResearcherSpaceV1
         Separately authorized global panels for this same frame, without a global
         battlefield scene.
+    scores_ten_ticks_ago : tuple of (int, int) or None, optional
+        Team A and Team B scores 10 ticks before current_frame, from the live
+        session's short history (DebuggerSession.scores_ten_ticks_ago). It
+        becomes match_summary.scores_ten_ticks_ago for the scorebug's Momentum
+        switch; scores are public, so Agent POV gets the same value as Oracle
+        View. None (the default) leaves that field None.
+    champion_streaks : tuple of ChampionStreakV1 or None, optional
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, from the live session's counts
+        (DebuggerSession.champion_takedowns.streaks, viewer.champion_streaks):
+        this recipient's Agent POV row, counted only from what its team saw.
+        Copied into the frame's ``champion_streaks`` field, which checks that
+        each named champion is one this view saw at the start of the tick. None
+        (the default) means not counted; browsers then show no streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), from the live service's
+        totals of every transition of the game; give it only on the
+        completion frame. An Agent POV view's honors list only its own team's
+        champions. Copied into the frame's ``match_honors`` field. None (the
+        default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), from
+        the live session's history (DebuggerSession.match_moments.facts):
+        whether the match began fresh, the largest earlier lead, the
+        unanswered runs reached on this tick and the rescues. An Agent POV
+        view's facts name only what its recipient's team saw. Copied into
+        the frame's ``match_moments`` field. None (the default) means not
+        counted; browsers then show no First Blood, Comeback, run or
+        Rescue card.
 
     Returns
     -------
@@ -1275,6 +2216,18 @@ def build_live_shared_obs_authorized_presentation_v1(
         all_active_nonrecipient_source_material=current_nonrecipient,
         public_catalog=context.static_mechanics_catalog,
         authority_session_id=raw_frame.session_id,
+    )
+    # The Night Veil's merged team sight, from the team's own sensors.
+    current = replace(
+        current,
+        scene=_with_team_sight_v1(
+            current.scene,
+            sensor_public_agent_ids=tuple(
+                source.source_public_agent_id
+                for source in current.authorized_sensor_sources
+            ),
+            own_public_agent_id=current.recipient_public_agent_id,
+        ),
     )
     endpoint = build_shared_obs_authorized_current_endpoint_v1(
         parts=current,
@@ -1359,8 +2312,9 @@ def build_live_shared_obs_authorized_presentation_v1(
         incoming_recipient_transition_id = raw_frame.incoming_recipient_transition_id
         if incoming_recipient_transition_id is None:
             raise ValueError("non-initial SharedObs frame lacks its incoming identity.")
+        incoming_batch = build_visual_event_batch_v2(view)
         visual_events = build_agent_pov_visual_incoming_summary_v1(
-            build_visual_event_batch_v2(view),
+            incoming_batch,
             transition_start_scene=previous.scene,
             successor_scene=current.scene,
             transition_start_corpse_choreography_scene=(
@@ -1381,6 +2335,9 @@ def build_live_shared_obs_authorized_presentation_v1(
             incoming_recipient_transition_id=incoming_recipient_transition_id,
             incoming_start_recipient_frame_id=previous.source_recipient_frame_id,
             incoming_successor_recipient_frame_id=current.source_recipient_frame_id,
+            home_fall_global_slots=visual_batch_home_fall_slots_v1(
+                context, incoming_batch
+            ),
         )
 
     latest_events = build_shared_obs_incoming_summary_v1(previous, current)
@@ -1472,8 +2429,15 @@ def build_live_shared_obs_authorized_presentation_v1(
         run_state=raw_frame.run_state,
         fresh_launch_required=raw_frame.fresh_launch_required,
         match_summary=build_match_summary_v1(
-            context, current_frame, () if view is None else view.transition.events
+            context,
+            current_frame,
+            () if view is None else view.transition.events,
+            transition_start_frame=None if view is None else view.start_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="live_shared_obs_agent_pov",
         product_kind="combat_debugger",

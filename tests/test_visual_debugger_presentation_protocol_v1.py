@@ -1706,25 +1706,60 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         "root.$defs.LiveOracleAuthorizedPresentationFrameV1": {
             "run_state",
             "fresh_launch_required",
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
         },
         "root.$defs.LiveNoSharedObsAuthorizedPresentationFrameV1": {
             "run_state",
             "fresh_launch_required",
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
         },
         "root.$defs.LiveSharedObsAuthorizedPresentationFrameV1": {
             "run_state",
             "fresh_launch_required",
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
+        },
+        # The Champion Streaks host fact and the game-over Honors host fact;
+        # None from producers that do not count them and before game over.
+        "root.$defs.ReplayOracleAuthorizedPresentationFrameV1": {
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
+        },
+        "root.$defs.ReplayNoSharedObsAuthorizedPresentationFrameV1": {
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
+        },
+        "root.$defs.ReplaySharedObsAuthorizedPresentationFrameV1": {
+            "champion_streaks",
+            "match_honors",
+            "match_moments",
         },
         "root.$defs.MatchSummaryV1": {
             "deaths",
+            "previous_scores",
+            # The Momentum switch's score 10 ticks ago; None in older payloads.
+            "scores_ten_ticks_ago",
+            "returned_agent_ids",
             "map",
             "observation_mode",
             "episode_limit",
             "root_seed",
             "episode_seed",
+            # Recorded per-slot controller names; None in older replays.
+            "slot_controller_names",
         },
-        "root.$defs.MatchDeathV1": {"killing_team_id", "contributors"},
+        "root.$defs.MatchDeathV1": {"killing_team_id", "contributors", "home_fall"},
         "root.$defs.MatchTeamV1": {"display_side"},
+        "root.$defs.ReplayIncomingAgentDiedEventV1": {"home_fall"},
+        # Live Agent POV merged team sight; other scenes leave it None.
+        "root.$defs.AuthorizedBattlefieldSceneV1": {"team_sight"},
     }
     team_properties = cast(
         dict[str, dict[str, object]], definitions["MatchTeamV1"]["properties"]
@@ -1749,6 +1784,7 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         "class_id",
         "killing_team_id",
         "contributors",
+        "home_fall",
     }
     summary_properties = cast(
         dict[str, dict[str, object]], definitions["MatchSummaryV1"]["properties"]

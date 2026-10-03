@@ -1,6 +1,10 @@
 /**
  * @file Check that an agent-recipient change preserves every required replay scope
- * field and accepts only joined frames.
+ * field and accepts only joined frames, and that Replay Viewer Tab / Shift+Tab
+ * stepping (replayAgentStepCommand, bindReplayAgentStepping) moves the Oracle
+ * selection or the Agent POV agent through the recorded roster with the same
+ * command the roster row sends, wraps at the ends, ignores live frames and keys
+ * from outside the battlefield field, and registers exactly one handler.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,10 +14,15 @@ import {
   joinReplayTransportAndTimelineV1,
   joinTransportAndAuthorizedPresentationV1,
 } from "../src/authorized-presentation-normalizer.js";
+import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
+import { authorizedPresentationIdentityRows } from "../src/authorized-presentation-adapter.js";
+import { runLocalCommand } from "../src/command-set.js";
 import {
+  bindReplayAgentStepping,
   isReplayAgentRecipientIdentityRotation,
   isReplayAgentRecipientRotation,
   replayAgentRecipientRotationIdentity,
+  replayAgentStepCommand,
 } from "../src/replay-recipient-rotation.js";
 
 const fixture = JSON.parse(
@@ -129,4 +138,97 @@ test("Replay Agent preference rotation rejects same-recipient and leaf crossings
   assert.equal(isReplayAgentRecipientRotation(noShared, shared), false);
   assert.equal(isReplayAgentRecipientRotation(shared, noShared), false);
   assert.equal(isReplayAgentRecipientRotation(null, shared), false);
+});
+
+test("Tab steps the Oracle selection and the Agent POV agent through the roster", async () => {
+  const oracle = await normalizeAuthorizedPresentationFrameV1(
+    fixture.presentations.replay_oracle,
+  );
+  const oracleRows = authorizedPresentationIdentityRows(oracle);
+  assert.ok(oracleRows.length > 1);
+  const first = oracleRows[0];
+  const last = oracleRows.at(-1);
+  assert.ok(first && last);
+  assert.deepEqual(replayAgentStepCommand(oracle, 1, first.public_agent_id), {
+    command_type: "activate_authorized_agent",
+    presentation_key: oracleRows[1].presentation_key,
+  });
+  assert.deepEqual(replayAgentStepCommand(oracle, -1, first.public_agent_id), {
+    command_type: "activate_authorized_agent",
+    presentation_key: last.presentation_key,
+  });
+  assert.deepEqual(replayAgentStepCommand(oracle, 1, last.public_agent_id), {
+    command_type: "activate_authorized_agent",
+    presentation_key: first.presentation_key,
+  });
+
+  const pov = await normalizeAuthorizedPresentationFrameV1(
+    fixture.presentations.replay_no_shared_obs_agent_pov,
+  );
+  const povRows = authorizedPresentationIdentityRows(pov);
+  const recipientIndex = povRows.findIndex(
+    (row) => row.public_agent_id === pov.authority.recipient_public_agent_id,
+  );
+  assert.ok(recipientIndex >= 0);
+  const next = povRows[(recipientIndex + 1) % povRows.length];
+  assert.deepEqual(replayAgentStepCommand(pov, 1), {
+    command_type: "activate_replay_pov_agent",
+    global_slot: next.command_global_slot,
+    public_agent_id: next.public_agent_id,
+  });
+  assert.ok(Object.isFrozen(replayAgentStepCommand(pov, -1)));
+
+  const live = await normalizeAuthorizedPresentationFrameV1(
+    fixture.presentations.live_oracle,
+  );
+  assert.equal(replayAgentStepCommand(live, 1), null);
+  assert.equal(replayAgentStepCommand({ raw: true }, 1), null);
+});
+
+test("Tab stepping acts only from the field and registers one handler", async () => {
+  const pov = await normalizeAuthorizedPresentationFrameV1(
+    fixture.presentations.replay_shared_obs_agent_pov,
+  );
+  const field = { closest: () => null };
+  const elsewhere = { closest: () => null };
+  /** @type {unknown[]} */
+  const sent = [];
+  const unbind = bindReplayAgentStepping({
+    getPresentation: () => pov,
+    isFieldTarget: (target) => /** @type {unknown} */ (target) === field,
+    onCommand: (command) => {
+      sent.push(command);
+    },
+  });
+  try {
+    assert.throws(
+      () =>
+        bindReplayAgentStepping({
+          getPresentation: () => pov,
+          isFieldTarget: () => true,
+          onCommand: () => undefined,
+        }),
+      TypeError,
+    );
+    assert.equal(
+      runLocalCommand("replay_viewer", {
+        key: "Tab",
+        shiftKey: false,
+        target: elsewhere,
+      }),
+      false,
+    );
+    assert.equal(sent.length, 0);
+    assert.equal(
+      runLocalCommand("replay_viewer", { key: "Tab", shiftKey: true, target: field }),
+      true,
+    );
+    assert.deepEqual(sent, [replayAgentStepCommand(pov, -1)]);
+  } finally {
+    unbind();
+  }
+  assert.equal(
+    runLocalCommand("replay_viewer", { key: "Tab", shiftKey: false, target: field }),
+    false,
+  );
 });

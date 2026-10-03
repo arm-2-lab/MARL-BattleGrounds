@@ -1,5 +1,12 @@
 """Check read-only replay navigation, authority and privacy limits.
 
+Leaving Agent POV clears the Oracle selection, so Oracle -> POV -> Oracle
+gives the same projection as a fresh Oracle render; the last POV actor is
+kept for the next POV entry.
+
+Agent POV presentations keep global match facts in their match summary only,
+including the Momentum switch's recorded scores 10 frames back.
+
 The shared-lock check fails at once if its held metric-report worker finishes
 before it enters the blocked read. It releases that worker inside the executor
 block, so a failed assertion cannot leave the test waiting forever.
@@ -105,6 +112,7 @@ from marl_battlegrounds.evaluation.metrics import (
 )
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
+    AgentRespawnedEventV1,
     AssignedPolicySlotV1,
     EvaluationEpisodeContextV1,
     EvaluationFrameV1,
@@ -2914,14 +2922,35 @@ def test_agent_presentations_exclude_privileged_fields_and_canonical_values(
         "outcome",
         "teams",
         "deaths",
+        "previous_scores",
+        "returned_agent_ids",
         "map",
         "observation_mode",
         "episode_limit",
         "root_seed",
         "episode_seed",
+        "slot_controller_names",
+        "scores_ten_ticks_ago",
     }
     context = replay.header.context
     frame = replay.frames[raw.cursor.frame_index]
+    assert match_summary["previous_scores"] == list(
+        replay.frames[raw.cursor.frame_index - 1].snapshot.team_deathmatch_scores
+    )
+    # Momentum: the recorded scores 10 frames back (frame zero here).
+    assert match_summary["scores_ten_ticks_ago"] == list(
+        replay.frames[
+            max(0, raw.cursor.frame_index - 10)
+        ].snapshot.team_deathmatch_scores
+    )
+    assert match_summary["returned_agent_ids"] == [
+        context.roster[slot].public_agent_id
+        for slot in sorted(
+            event.agent_global_slot
+            for event in replay.transitions[raw.cursor.frame_index - 1].events
+            if isinstance(event, AgentRespawnedEventV1)
+        )
+    ]
     assert match_summary["episode_id"] == context.identity.episode_id
     assert match_summary["source_frame_index"] == frame.frame_index
     assert match_summary["simulator_step_count"] == frame.simulator_step_count
@@ -4054,7 +4083,25 @@ def test_replay_selection_round_trip_preserves_agent_and_cursor(
     assert isinstance(restored, ResearcherReplayViewerFrameV1)
     assert restored.cursor == baseline_cursor
     assert restored.projection.scene.selection is not None
-    assert restored.projection.scene.selection.selected_global_slot == 0
+    assert restored.projection.scene.selection.selected_global_slot is None
+    fresh = ReplayViewerService(
+        case.bundle,
+        initial_frame_index=1,
+        viewer_session_id=f"selection-round-trip-fresh-{audience}",
+    ).current_frame()
+    assert isinstance(fresh, ResearcherReplayViewerFrameV1)
+    assert restored.projection == fresh.projection
+
+    reopened = _agent_viewer_frame(
+        _response(
+            _apply(
+                service,
+                ReplaySetViewCommandV1(view_mode="pov"),
+                command_id=f"reopen-pov-zero-{audience}",
+            )
+        ).frame
+    )
+    assert reopened.public_agent_id == public_ids_by_slot[0]
 
 
 @pytest.mark.parametrize("audience", ("no_shared_obs", "shared_obs"))

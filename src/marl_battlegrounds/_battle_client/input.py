@@ -6,6 +6,20 @@ leave simulator state and random keys unchanged; submissions and resets call the
 control layer. Results explicitly identify transitions and episode restarts so
 recording can follow the correct endpoint. No HTTP response or replay file is
 written here.
+
+Keys: W A S D Q E Z C step and X stays (arrow keys never move; in the
+BattleClient they do nothing), 0 1 2 pick No Combat, Basic or Ultimate, Space
+and Enter lock in (Policies Only: play one turn), N is one tick (in interactive
+play the same as Space; in scripted playback the next registered frame), R
+restarts, G toggles ranges, Tab and Shift+Tab move the focus, Escape clears
+the target. V, B and F belong to the browser and are never handled here.
+
+Agent POV rules (the service passes the recipient as ``pov_global_slot``):
+clicks hit only bodies the recipient's team sees; Tab skips champions that
+team cannot see, except Manual champions and teammates; a roster pick of an
+unseen enemy policy champion is refused without naming where it is; and every
+order (step, 0 1 2, Escape, target picks) goes to the recipient, the champion
+whose view is shown, moving the focus back to it.
 """
 
 from collections.abc import Iterable
@@ -72,6 +86,10 @@ from marl_battlegrounds.rendering.pov_scene import (
     build_actor_pov_analyzer_projection_v1,
 )
 from marl_battlegrounds.rendering.scene import AgentSceneV1, AgentSceneV2
+from marl_battlegrounds.rendering.vocabulary import (
+    class_token_from_id,
+    team_token_from_id,
+)
 from marl_battlegrounds.viewer.no_shared_visual import (
     build_live_no_shared_obs_visual_current_slice_v1,
 )
@@ -86,11 +104,8 @@ _MOVEMENT_KEYS = {
     "z": MOVE_SOUTHWEST,
     "c": MOVE_SOUTHEAST,
     "x": MOVE_STAY,
-    "arrowup": MOVE_NORTH,
-    "arrowdown": MOVE_SOUTH,
-    "arrowright": MOVE_EAST,
-    "arrowleft": MOVE_WEST,
 }
+"""Step keys. Arrow keys are deliberately absent: they never move a champion."""
 
 type RecordingRestartIntentV1 = Literal["reset", "combat_configuration"]
 
@@ -241,7 +256,8 @@ def normalize_key(
     Parameters
     ----------
     key : str or None
-        Browser key text, including supported historical spellings.
+        Browser key text, including supported historical spellings of Tab,
+        Space, Enter and Escape.
     shift_key : bool or None, optional
         Explicit Shift state. None leaves modifier interpretation to the key text.
 
@@ -249,7 +265,8 @@ def normalize_key(
     -------
     str or None
         Lowercase normalized key. None represents a missing key or the disabled
-        Shift+R shortcut. Unknown names remain lowercase for dispatch to ignore.
+        Shift+R shortcut. Unknown names, including arrow keys, remain lowercase
+        for dispatch to ignore.
     """
     if key is None:
         return None
@@ -269,14 +286,6 @@ def normalize_key(
         return "enter"
     if normalized == "esc":
         return "escape"
-    if normalized in ("up", "arrowup"):
-        return "arrowup"
-    if normalized in ("down", "arrowdown"):
-        return "arrowdown"
-    if normalized in ("right", "arrowright"):
-        return "arrowright"
-    if normalized in ("left", "arrowleft"):
-        return "arrowleft"
     if normalized == "tab" and shift_key:
         return "shift+tab"
     return normalized
@@ -469,10 +478,21 @@ def _authorized_pointer_rows(
     session: DebuggerSession,
     *,
     view_mode: ViewMode,
+    recipient_global_slot: int | None = None,
 ) -> tuple[tuple[int, tuple[float, float], float, bool], ...]:
     """Build hit-test rows only from the selected researcher or actor-authorized
     scene.
+
+    In Agent POV the rows come from recipient_global_slot's authorized scene
+    (None means the focused slot), so only bodies that recipient's team sees
+    can be hit. Each row is (global slot, position in map units, body radius,
+    active). Builds host projections only; no simulator or file work.
     """
+    recipient = (
+        session.controlled_global_slot
+        if recipient_global_slot is None
+        else recipient_global_slot
+    )
     if view_mode == "researcher":
         projection = build_researcher_analyzer_projection_v2(
             session.evaluation_context,
@@ -501,16 +521,15 @@ def _authorized_pointer_rows(
             for row in context.roster
             if row.configured_active
         )
-        recipient = next(
+        recipient_source = next(
             source
             for source in sources
-            if source.base_sensor_scene.self_actor.global_slot
-            == session.controlled_global_slot
+            if source.base_sensor_scene.self_actor.global_slot == recipient
         )
         authorized = build_shared_obs_authorized_scene_v1(
-            recipient,
+            recipient_source,
             all_active_nonrecipient_source_material=tuple(
-                source for source in sources if source is not recipient
+                source for source in sources if source is not recipient_source
             ),
             public_catalog=context.static_mechanics_catalog,
             authority_session_id="pointer-hit-test",
@@ -530,7 +549,7 @@ def _authorized_pointer_rows(
     slice_ = build_live_no_shared_obs_visual_current_slice_v1(
         session.evaluation_context,
         session.current_evaluation_frame,
-        global_slot=session.controlled_global_slot,
+        global_slot=recipient,
         incoming_transition_view=session.incoming_evaluation_view,
     )
     projection = build_actor_pov_analyzer_projection_v1(slice_)
@@ -575,6 +594,72 @@ def _manual_edit_rejected(
     )
 
 
+def _agent_pov_focusable_slots(
+    session: DebuggerSession,
+    recipient_global_slot: int,
+) -> frozenset[int]:
+    """Return the slots Agent POV may focus: yours, your team, or seen.
+
+    A configured-active slot may take the focus when it is Manual, on the
+    recipient's team, or a body in the recipient's authorized scene (seen by
+    that team now). Any other champion is unseen, and focusing it could reveal
+    nothing it may show, so Tab skips it and a roster pick is refused.
+    """
+    roster = session.evaluation_context.roster
+    viewing_team = roster[recipient_global_slot].configured_team_id
+    seen = {
+        row[0]
+        for row in _authorized_pointer_rows(
+            session,
+            view_mode="pov",
+            recipient_global_slot=recipient_global_slot,
+        )
+    }
+    return frozenset(
+        row.global_slot
+        for row in roster
+        if row.configured_active
+        and (
+            row.global_slot in session.manual_slots
+            or row.configured_team_id == viewing_team
+            or row.global_slot in seen
+        )
+    )
+
+
+def _out_of_sight_notice(session: DebuggerSession, global_slot: int) -> str:
+    """Explain a refused Agent POV focus without naming where the champion is."""
+    row = session.evaluation_context.roster[global_slot]
+    label = f"{class_token_from_id(row.class_id).label} · ID {global_slot}"
+    return f"{label} is out of sight. Agent POV hides where it is and how it fares."
+
+
+def _focus_notice(
+    session: DebuggerSession, global_slot: int, *, view_mode: ViewMode
+) -> str | None:
+    """Explain an Agent POV focus that leaves the view where it is.
+
+    Only in Agent POV with Manual champions in the game, when the focus lands
+    on a policy champion: the view stays with your Manual champion, so the
+    notice names the champion looked at (class, ID and team, all public) and
+    says the view is kept. None in every other case, including Oracle View.
+    """
+    if (
+        view_mode != "pov"
+        or session.scenario.mode == "scripted"
+        or not session.manual_slots
+        or global_slot in session.manual_slots
+    ):
+        return None
+    row = session.evaluation_context.roster[global_slot]
+    label = f"{class_token_from_id(row.class_id).label} · ID {global_slot}"
+    team = team_token_from_id(row.configured_team_id).label
+    return (
+        f"Looking at {label} of {team}, played by a policy. "
+        "Agent POV keeps your champion's view."
+    )
+
+
 def _dispatch_keyboard(
     session: DebuggerSession,
     command: KeyboardCommandV1,
@@ -582,9 +667,17 @@ def _dispatch_keyboard(
     view_mode: ViewMode,
     preset: Preset,
     include_stress: bool,
+    pov_global_slot: int | None = None,
 ) -> InputDispatchResult:
     """Apply supported unmodified keys while preserving draft, terminal and playback
     boundaries.
+
+    pov_global_slot is the Agent POV recipient; in Agent POV, Tab and
+    Shift+Tab visit only the slots from _agent_pov_focusable_slots. Arrow keys
+    and V are unhandled. N is one tick: in scripted playback it submits the
+    next registered frame; in interactive play it takes Space's own path
+    (submit_interactive), so it locks in the Manual orders, or plays one turn
+    in Policies Only, and is refused with Space's words at game over.
     """
     if command.ctrl_key or command.alt_key or command.meta_key:
         return _result(
@@ -620,15 +713,42 @@ def _dispatch_keyboard(
             for row in session.evaluation_context.roster
             if row.configured_active
         )
+        if view_mode == "pov":
+            recipient = (
+                session.controlled_global_slot
+                if pov_global_slot is None
+                else pov_global_slot
+            )
+            focusable = _agent_pov_focusable_slots(session, recipient)
+        else:
+            focusable = frozenset(active_slots)
         current_index = active_slots.index(session.controlled_global_slot)
-        controlled_slot = active_slots[(current_index + direction) % len(active_slots)]
+        controlled_slot = next(
+            (
+                slot
+                for step in range(1, len(active_slots) + 1)
+                if (
+                    slot := active_slots[
+                        (current_index + direction * step) % len(active_slots)
+                    ]
+                )
+                in focusable
+            ),
+            session.controlled_global_slot,
+        )
         edited = select_controlled_actor(session, controlled_slot)
-        return _pending_edit_result(
+        result = _pending_edit_result(
             session,
             edited,
             view_mode=view_mode,
             preset=preset,
         )
+        notice = (
+            _focus_notice(session, controlled_slot, view_mode=view_mode)
+            if result.changed
+            else None
+        )
+        return result if notice is None else replace(result, notice=notice)
 
     if (
         (key in _MOVEMENT_KEYS or key in ("escape", "0", "1", "2"))
@@ -756,16 +876,7 @@ def _dispatch_keyboard(
             preset=preset,
         )
 
-    if key == "n":
-        if scenario.mode != "scripted":
-            return _result(
-                session,
-                view_mode=view_mode,
-                preset=preset,
-                handled=True,
-                changed=False,
-                notice="N advances scripted playback only.",
-            )
+    if key == "n" and scenario.mode == "scripted":
         edited = submit_next_script_frame(session)
         changed = edited is not session
         if changed:
@@ -789,7 +900,9 @@ def _dispatch_keyboard(
             changed=changed,
             notice=notice,
         )
-    if key in ("space", "enter"):
+    if key in ("space", "enter", "n"):
+        # N is one tick: in interactive play it is Space, through the same
+        # path (Manual: lock in the orders; Policies Only: play one turn).
         edited = submit_interactive(session, actor_global_slots=None)
         transition_applied = edited is not session
         if transition_applied:
@@ -831,19 +944,6 @@ def _dispatch_keyboard(
             handled=True,
             changed=True,
         )
-    if key == "v":
-        edited = (
-            replace(session, verbose_logging=False)
-            if session.verbose_logging
-            else session
-        )
-        return _result(
-            edited,
-            view_mode=view_mode,
-            preset=preset,
-            handled=True,
-            changed=edited is not session,
-        )
     if key in ("[", "]"):
         return _result(
             session,
@@ -868,9 +968,13 @@ def _dispatch_pointer(
     *,
     view_mode: ViewMode,
     preset: Preset,
+    pov_global_slot: int | None = None,
 ) -> InputDispatchResult:
     """Resolve an authorized pointer hit and apply the requested control or target
     edit.
+
+    In Agent POV the hit test uses pov_global_slot's scene (None: the focus),
+    so a click can focus only a body that team sees.
     """
     if command.ctrl_key or command.alt_key or command.meta_key:
         return _result(
@@ -894,7 +998,11 @@ def _dispatch_pointer(
             preset=preset,
         )
     target = _hit_test_rows(
-        _authorized_pointer_rows(session, view_mode=view_mode),
+        _authorized_pointer_rows(
+            session,
+            view_mode=view_mode,
+            recipient_global_slot=pov_global_slot if view_mode == "pov" else None,
+        ),
         command.world_x,
         command.world_y,
     )
@@ -911,12 +1019,18 @@ def _dispatch_pointer(
         if command.shift_key
         else select_controlled_actor(session, target)
     )
-    return _pending_edit_result(
+    result = _pending_edit_result(
         session,
         edited,
         view_mode=view_mode,
         preset=preset,
     )
+    notice = (
+        _focus_notice(session, target, view_mode=view_mode)
+        if result.changed and not command.shift_key
+        else None
+    )
+    return result if notice is None else replace(result, notice=notice)
 
 
 def _dispatch_roster_selection(
@@ -925,9 +1039,14 @@ def _dispatch_roster_selection(
     *,
     view_mode: ViewMode,
     preset: Preset,
+    pov_global_slot: int | None = None,
 ) -> InputDispatchResult:
     """Apply researcher roster selection and reject its use as an actor-view
     disclosure.
+
+    In Agent POV a focus pick (role 'control') of a slot outside
+    _agent_pov_focusable_slots for pov_global_slot is refused with a notice
+    that names only the champion's class and ID.
     """
     authorized_slots = {
         row.global_slot
@@ -944,6 +1063,25 @@ def _dispatch_roster_selection(
             notice=f"Agent g{command.global_slot} is unavailable in this view.",
         )
     if (
+        command.role == "control"
+        and view_mode == "pov"
+        and command.global_slot
+        not in _agent_pov_focusable_slots(
+            session,
+            session.controlled_global_slot
+            if pov_global_slot is None
+            else pov_global_slot,
+        )
+    ):
+        return _result(
+            session,
+            view_mode=view_mode,
+            preset=preset,
+            handled=True,
+            changed=False,
+            notice=_out_of_sight_notice(session, command.global_slot),
+        )
+    if (
         command.role != "control"
         and session.scenario.mode != "scripted"
         and session.controlled_global_slot not in session.manual_slots
@@ -954,12 +1092,18 @@ def _dispatch_roster_selection(
         if command.role == "control"
         else select_clicked_target(session, command.global_slot)
     )
-    return _pending_edit_result(
+    result = _pending_edit_result(
         session,
         edited,
         view_mode=view_mode,
         preset=preset,
     )
+    notice = (
+        _focus_notice(session, command.global_slot, view_mode=view_mode)
+        if result.changed and command.role == "control"
+        else None
+    )
+    return result if notice is None else replace(result, notice=notice)
 
 
 def _dispatch_actor_pov_target_action(
@@ -1022,6 +1166,20 @@ def _dispatch_actor_pov_target_action(
     )
 
 
+def _is_order_command(command: DebuggerCommandV1) -> bool:
+    """Return True for input that edits a champion's draft (an order)."""
+    if isinstance(command, KeyboardCommandV1):
+        if command.ctrl_key or command.alt_key or command.meta_key:
+            return False
+        key = normalize_key(command.key, shift_key=command.shift_key)
+        return key in _MOVEMENT_KEYS or key in ("escape", "0", "1", "2")
+    if isinstance(command, BattlefieldPointerCommandV1):
+        return command.button == "secondary" or command.shift_key
+    if isinstance(command, RosterSelectionCommandV1):
+        return command.role != "control"
+    return isinstance(command, ActorPovTargetActionCommandV1)
+
+
 def dispatch_command(
     session: DebuggerSession,
     command: DebuggerCommandV1,
@@ -1029,6 +1187,7 @@ def dispatch_command(
     view_mode: ViewMode,
     preset: Preset,
     include_stress: bool,
+    pov_global_slot: int | None = None,
 ) -> InputDispatchResult:
     """Apply one parsed live command through the correct host or control helper.
 
@@ -1044,6 +1203,13 @@ def dispatch_command(
         Current presentation choice, copied or updated by the command.
     include_stress : bool
         Whether the surrounding launcher permits stress demonstrations.
+    pov_global_slot : int or None, optional
+        The Agent POV recipient from control.agent_pov_recipient_slot, a
+        configured-active slot 0-9. Used only in Agent POV: clicks hit the
+        bodies its team sees, Tab skips champions that team cannot see, and
+        orders go to it (an order while the focus rests on another champion
+        moves the focus back to the recipient first). None (the default) means
+        the focused slot, the behaviour before the recipient existed.
 
     Returns
     -------
@@ -1072,6 +1238,25 @@ def dispatch_command(
             changed=False,
             notice=_SCRIPTED_INSPECTION_NOTICE,
         )
+    if (
+        view_mode == "pov"
+        and pov_global_slot is not None
+        and pov_global_slot != session.controlled_global_slot
+        and _is_order_command(command)
+    ):
+        # Agent POV shows the recipient, so its orders go to the recipient.
+        refocused = select_controlled_actor(session, pov_global_slot)
+        result = dispatch_command(
+            refocused,
+            command,
+            view_mode=view_mode,
+            preset=preset,
+            include_stress=include_stress,
+            pov_global_slot=pov_global_slot,
+        )
+        if result.changed:
+            return result
+        return replace(result, session=refocused, changed=True)
     if isinstance(command, KeyboardCommandV1):
         return _dispatch_keyboard(
             session,
@@ -1079,6 +1264,7 @@ def dispatch_command(
             view_mode=view_mode,
             preset=preset,
             include_stress=include_stress,
+            pov_global_slot=pov_global_slot,
         )
     if isinstance(command, BattlefieldPointerCommandV1):
         return _dispatch_pointer(
@@ -1086,6 +1272,7 @@ def dispatch_command(
             command,
             view_mode=view_mode,
             preset=preset,
+            pov_global_slot=pov_global_slot,
         )
     if isinstance(command, RosterSelectionCommandV1):
         return _dispatch_roster_selection(
@@ -1093,6 +1280,7 @@ def dispatch_command(
             command,
             view_mode=view_mode,
             preset=preset,
+            pov_global_slot=pov_global_slot,
         )
     if isinstance(command, ActorPovTargetActionCommandV1):
         return _dispatch_actor_pov_target_action(

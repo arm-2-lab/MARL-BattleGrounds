@@ -214,7 +214,7 @@ function captureBrowserErrors(page) {
 async function openReplay(page, url) {
   captureBrowserErrors(page);
   await page.goto(url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "replay");
   await expect(page.locator("#replay-timeline")).toBeVisible();
   expect(page.url()).not.toContain("token=");
@@ -1422,7 +1422,7 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   expect(researcherHelp.registered).toContain("#replay-timeline");
   await expect(page.locator("#replay-timeline")).toHaveAttribute(
     "aria-description",
-    "Use the read-only transport and presentation controls to inspect recorded frames.",
+    "Move through the saved game. The replay never changes.",
   );
 
   const replayBoundary = await page.evaluate(() => {
@@ -1472,7 +1472,7 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   expect(resized.scrollWidth).toBeLessThanOrEqual(resized.clientWidth);
   expect((await currentReplayFrame(page)).frame_id).toBe(frameIdentityBeforeResize);
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   expect((await currentReplayFrame(page)).frame_id).toBe(frameIdentityBeforeResize);
 
   const partialPage = await context.newPage();
@@ -1570,7 +1570,7 @@ test("replay reconnect rejects a valid live frame without crossing the viewer bo
     await route.fulfill({ json: structuredClone(liveFrame), status: 200 });
   });
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Resync required");
+  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
   await expect(page.locator("#connection-status")).toHaveAttribute(
     "data-state",
     "offline",
@@ -1619,7 +1619,7 @@ test("replay reconnect rejects a valid live frame without crossing the viewer bo
   await page.unroute("**/api/frame");
   page.off("request", recordTimelineRequest);
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectReplayFrameIndex(page, 0);
   await expect(page.locator("#replay-frame-position")).toHaveText(
     installedDom.framePosition ?? "",
@@ -1861,7 +1861,7 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await expect(page.locator("#replay-play-pause-button")).toBeEnabled();
 
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectReplayFrameIndex(page, 5);
   await expect(page.locator("#replay-playback-rate")).toHaveValue("2");
   expect(replayPosts).toHaveLength(postsBeforeFinalReplay);
@@ -2162,7 +2162,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       });
       await expect(page.locator("#metric-selection")).toHaveValue(selection);
       await expect(page.locator("#metric-scope")).toHaveValue(scope);
-      await expect(page.locator("#connection-status")).toHaveText("Online");
+      await expect(page.locator("#connection-status")).toHaveText("Connected");
       const labels = await page.locator(".roster-id").allTextContents();
       expect(labels.every((label) => /^Agent ID [0-9]$/u.test(label))).toBe(true);
     }
@@ -3369,9 +3369,9 @@ test("all eight scenario identities and dense authoritative deaths render in bot
       );
       for (const view of /** @type {const} */ (["researcher", "pov"])) {
         await installReplayView(page, view);
-        await expect(page.locator("#match-team-b")).toContainText(
-          `TDM Scenario ${scenarioId} ${variant.toUpperCase()} Controller`,
-        );
+        // New replays record each champion's controller name; the Viewer
+        // shows it exactly as recorded ("tdm-beta"), as live play did.
+        await expect(page.locator("#match-team-b")).toContainText(`tdm-${variant}`);
         const identities = await page
           .locator(".roster-identity")
           .evaluateAll((rows) =>
@@ -3381,7 +3381,7 @@ test("all eight scenario identities and dense authoritative deaths render in bot
             ),
           );
         expect(identities.sort()).toEqual(expected.sort());
-        await expect(page.locator("#connection-status")).toHaveText("Online");
+        await expect(page.locator("#connection-status")).toHaveText("Connected");
         await page.screenshot({
           path: testInfo.outputPath(`scenario-${scenarioId}-${view}.png`),
           fullPage: true,
@@ -3894,13 +3894,13 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       );
       await expect(page.locator("#metric-progress")).toBeHidden();
       await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "false");
-      await expect(page.locator("#connection-status")).toHaveText("Online");
+      await expect(page.locator("#connection-status")).toHaveText("Connected");
       await clickReplayCommand(page, "#replay-first-button");
     } finally {
       await staleFailure.release();
     }
     await installReplayView(page, "researcher");
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
     await expect(page.locator(".match-scoreboard__result")).toHaveCount(0);
     await expect(page.locator("#metric-selection")).toHaveValue("kill_contributions");
     await expect(page.locator("#metric-view")).toHaveValue("recipients");
@@ -3923,7 +3923,7 @@ test("nonzero replay view changes preserve the cursor and playing intent", async
       for (const view of /** @type {const} */ (["pov", "researcher"])) {
         const before = (await currentReplayFrame(page)).cursor;
         await installReplayView(page, view);
-        await expect(page.locator("#connection-status")).toHaveText("Online");
+        await expect(page.locator("#connection-status")).toHaveText("Connected");
         expect((await currentReplayFrame(page)).cursor).toEqual(before);
         await expect(page.locator("#replay-play-pause-button")).toHaveAttribute(
           "aria-pressed",
@@ -3938,7 +3938,7 @@ test("nonzero replay view changes preserve the cursor and playing intent", async
       );
       const playingFrame = (await currentReplayFrame(page)).cursor.frame_index;
       await installReplayView(page, "pov");
-      await expect(page.locator("#connection-status")).toHaveText("Online");
+      await expect(page.locator("#connection-status")).toHaveText("Connected");
       await expect
         .poll(async () => (await currentReplayFrame(page)).cursor.frame_index)
         .toBeGreaterThan(playingFrame);
@@ -3954,7 +3954,7 @@ test("nonzero replay view changes preserve the cursor and playing intent", async
       for (const view of /** @type {const} */ (["researcher", "pov"])) {
         await installReplayView(page, view);
         expect((await currentReplayFrame(page)).cursor).toEqual(terminalCursor);
-        await expect(page.locator("#connection-status")).toHaveText("Online");
+        await expect(page.locator("#connection-status")).toHaveText("Connected");
       }
       expectNoBrowserErrors(page);
     } finally {
@@ -4013,7 +4013,7 @@ test("a stale cross-tab command atomically installs the latest audience without 
     staleResponse.json(),
     matchingTimelineResponse.json(),
   ]);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#view-select")).toHaveValue("pov");
   await expect(page.locator("#notice")).toContainText(
     "coherent latest pair was installed; the command was not retried",
@@ -4117,7 +4117,7 @@ test("accessible playback pauses on hidden/error/endpoint and keeps one request 
     });
   });
   await page.locator("#replay-next-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Resync required");
+  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
   await expect(page.locator("#connection-status")).toHaveAttribute(
     "data-state",
     "offline",
@@ -4128,7 +4128,7 @@ test("accessible playback pauses on hidden/error/endpoint and keeps one request 
   );
   await page.unroute("**/api/replay/command");
   await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectReplayFrameIndex(page, 0);
 
   let activeRequests = 0;

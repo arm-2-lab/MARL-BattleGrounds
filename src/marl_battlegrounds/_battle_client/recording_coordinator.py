@@ -4,6 +4,12 @@ The live HTTP router never changes. Explicit Open Replay requests start or reuse
 one child Viewer with public assets and its own loopback token. The launcher
 closes this coordinator before releasing assets; recording and persistence stay
 with the live service. Browser tabs do not own either server's lifetime.
+
+With ``keep_viewer_after_exit=True`` (the BattleClient), Exit stops only the
+live client: the launcher takes the running child Viewer with
+``release_kept_viewer`` and keeps serving it (``KeptReplayViewer``) until the
+Viewer's own Exit or Ctrl-C. The child serves its page from bytes loaded when
+it started, so it needs no asset folder after that.
 """
 
 from __future__ import annotations
@@ -44,11 +50,17 @@ class RecordingDebuggerCoordinator:
     asset_root : pathlib.Path
         Explicit public browser assets. Keep this directory available until
         close returns. A private launch must also pass the public assets here.
+    keep_viewer_after_exit : bool, default=False
+        True lets an opened Replay Viewer outlive the live client's Exit: Exit
+        fences new opens but leaves the running child serving, and the launcher
+        takes it with release_kept_viewer. False stops the child as soon as
+        Exit is accepted.
 
     Raises
     ------
     TypeError
-        The service is not the exact supported type.
+        The service is not the exact supported type, or keep_viewer_after_exit
+        is not a bool.
     ValueError
         The live service has no recording status.
 
@@ -63,6 +75,7 @@ class RecordingDebuggerCoordinator:
     __slots__ = (
         "_asset_root",
         "_closed",
+        "_keep_viewer_after_exit",
         "_live_binding",
         "_router",
         "_service",
@@ -72,14 +85,26 @@ class RecordingDebuggerCoordinator:
         "_viewer_thread",
     )
 
-    def __init__(self, service: DebuggerService, *, asset_root: Path) -> None:
-        """Bind the recording service and retain its explicit public asset root."""
+    def __init__(
+        self,
+        service: DebuggerService,
+        *,
+        asset_root: Path,
+        keep_viewer_after_exit: bool = False,
+    ) -> None:
+        """Bind the recording service and retain its explicit public asset root.
+
+        See the class description for the parameters and errors.
+        """
         if type(service) is not DebuggerService:
             raise TypeError("recording coordinator requires exact DebuggerService")
+        if type(keep_viewer_after_exit) is not bool:
+            raise TypeError("keep_viewer_after_exit must be a bool")
         if service.recording_status is None:
             raise ValueError("recording coordinator requires recording-enabled service")
         self._service = service
         self._asset_root = asset_root
+        self._keep_viewer_after_exit = keep_viewer_after_exit
         self._viewer_lock = Lock()
         self._viewer_server: DebuggerHTTPServer | None = None
         self._viewer_thread: Thread | None = None
@@ -196,11 +221,17 @@ class RecordingDebuggerCoordinator:
         optional replay_url for a ready Viewer. Startup failure instead adds a
         notice; the saved file and live router remain intact. No browser opens
         on the host: the requesting page owns its tab and popup fallback link.
-        An accepted Exit closes the child before requesting parent shutdown.
+        An accepted Exit fences new opens. Without keep_viewer_after_exit it
+        also closes the child before requesting parent shutdown; with it the
+        child keeps serving for release_kept_viewer.
         """
         result = self._service.apply_command(request)
         if result.shutdown_requested:
-            self.close()
+            if self._keep_viewer_after_exit:
+                with self._viewer_lock:
+                    self._closed = True
+            else:
+                self.close()
         handoff = result.replay_handoff
         if handoff is None:
             return result
@@ -244,6 +275,42 @@ class RecordingDebuggerCoordinator:
             if server is not None and thread is not None:
                 self._stop_viewer(server, thread)
 
+    def release_kept_viewer(self) -> KeptReplayViewer | None:
+        """Hand a still-serving Replay Viewer to the launcher after Exit.
+
+        Returns
+        -------
+        KeptReplayViewer or None
+            The running child Viewer, now owned by the caller, when
+            keep_viewer_after_exit is True and a child is still serving.
+            None when no Viewer was opened, the flag is False, or the child is
+            already stopping or faulted (such a child is stopped here).
+
+        Notes
+        -----
+        Call after the live server stopped, before close. Later opens stay
+        fenced and close finds no child to stop. The caller must end the kept
+        Viewer with KeptReplayViewer.serve_until_closed or close.
+        """
+        with self._viewer_lock:
+            self._closed = True
+            server, thread = self._viewer_server, self._viewer_thread
+            self._viewer_server = None
+            self._viewer_thread = None
+            self._viewer_replay_id = None
+            if server is None or thread is None:
+                return None
+            if (
+                self._keep_viewer_after_exit
+                and thread.is_alive()
+                and not server.shutdown_started.is_set()
+                and not server.debugger_service.shutting_down
+                and not server.debugger_service.faulted
+            ):
+                return KeptReplayViewer(server, thread)
+            self._stop_viewer(server, thread)
+            return None
+
     def graceful_close(self) -> GracefulCloseResult:
         """Save the live prefix on Ctrl-C, close the Viewer, and report the result.
 
@@ -260,4 +327,76 @@ class RecordingDebuggerCoordinator:
             self.close()
 
 
-__all__ = ["RecordingDebuggerCoordinator"]
+class KeptReplayViewer:
+    """A saved-replay Viewer that keeps serving after the live client exits.
+
+    Parameters
+    ----------
+    server : DebuggerHTTPServer
+        The running child Viewer server; this object now owns it and its
+        loopback socket.
+    thread : threading.Thread
+        The thread running that server's request loop.
+
+    Notes
+    -----
+    Only RecordingDebuggerCoordinator.release_kept_viewer makes one. The
+    launcher runs serve_until_closed after the live game, its methods and its
+    asset folder are released, so only the Viewer's replay stays in memory.
+    """
+
+    __slots__ = ("_server", "_thread")
+
+    def __init__(self, server: DebuggerHTTPServer, thread: Thread) -> None:
+        """Take ownership of one running child Viewer and its thread."""
+        self._server = server
+        self._thread = thread
+
+    @property
+    def url(self) -> str:
+        """Return the Viewer's loopback address with its launch token."""
+        server = self._server
+        return f"{server.expected_origin}/#token={server.capability_token}"
+
+    def serve_until_closed(self) -> int:
+        """Block until the Viewer's own Exit or Ctrl-C, then release its socket.
+
+        Returns
+        -------
+        int
+            Zero. Ctrl-C here is the ordinary way to stop the kept Viewer.
+
+        Notes
+        -----
+        Prints two lines first: that the live game closed while its Replay
+        Viewer is still open (with the URL), and how to stop it. Prints
+        "Replay Viewer stopped." at the end. All prints flush at once.
+        """
+        print(
+            f"The live game has closed. Its Replay Viewer is still open: {self.url}",
+            flush=True,
+        )
+        print(
+            "Exit the Replay Viewer, or press Ctrl-C here, to finish.",
+            flush=True,
+        )
+        try:
+            while self._thread.is_alive():
+                self._thread.join(0.2)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.close()
+        print("Replay Viewer stopped.", flush=True)
+        return 0
+
+    def close(self) -> None:
+        """Stop the Viewer if it still serves and release its socket.
+
+        Safe to call more than once. Use it when the launcher must stop the
+        Viewer without waiting (for example after a later cleanup error).
+        """
+        RecordingDebuggerCoordinator._stop_viewer(self._server, self._thread)  # pyright: ignore[reportPrivateUsage]
+
+
+__all__ = ["KeptReplayViewer", "RecordingDebuggerCoordinator"]

@@ -548,6 +548,37 @@ export async function getReplayTimeline(token) {
 }
 
 /**
+ * GET the Saga Chronicle's fight marks of the loaded replay for the current
+ * audience (Oracle View: every fight; Agent POV: only what that recipient's team
+ * saw). token authenticates the request. Return the parsed JSON for
+ * chronicle.js normalizeTimelineMarks. Connection failures reject with
+ * DebuggerApiError; HTTP and invalid replay-error responses reject too. Sends no
+ * cursor command and changes nothing on the server.
+ *
+ * @param {string | null} token
+ * @returns {Promise<any>}
+ */
+export async function getReplayTimelineMarks(token) {
+  let response;
+  try {
+    response = await fetchWithTimeout("/api/replay/timeline-marks", {
+      method: "GET",
+      headers: authorizationHeaders(token),
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+    });
+  } catch (error) {
+    throw new DebuggerApiError(
+      error instanceof Error
+        ? `Could not load the fight marks: ${error.message}`
+        : "Could not load the fight marks.",
+    );
+  }
+  return decodeReplayResponse(response);
+}
+
+/**
  * Serialize request as JSON and POST one live command with the supplied token.
  * Return its parsed response. No retry occurs: a network failure throws
  * DebuggerApiError because the server may already have applied the command.

@@ -1,0 +1,652 @@
+/*
+ * Symbol Tips, the Champion Card, the Visual Key and Frame Explanation (lane
+ * J). styles.css imports this file. Owners: src/tooltip.js (the card and
+ * symbol owners, and the Champion Card: renderChampionCard),
+ * src/looks/visual-key.js (the book button and the dictionary dialog) and
+ * src/looks/frame-explanation.js (callouts in the explain layer and the list).
+ * Colors come from the :root tokens in styles.css; nothing here touches the
+ * export backdrop. Callout and picture fills are SVG attributes, so a PNG
+ * export never depends on these rules.
+ *
+ * The Champion Card rules (.champion-card) are not scoped to one product: the
+ * BattleClient and DevClient show the card in #hcard and the Replay Viewer in
+ * the tooltip card (data-tooltip-kind="champion"), so all three clients draw
+ * the same card from the same rules.
+ */
+
+/* The tooltip card in the browser's top layer (popover="manual"): undo the
+   browser's centered popover box so the controller's left and top place it. */
+#visual-tooltip.visual-tooltip[popover] {
+  inset: auto;
+  margin: 0;
+  overflow: visible;
+}
+
+#visual-tooltip.visual-tooltip[data-tooltip-kind="symbol"] {
+  border-color: var(--withered-gold);
+}
+
+/* The Replay Viewer's Champion Card: the tooltip card becomes a bare holder
+   (no box, arrow or title) and the card inside draws its own box, exactly as
+   #hcard does in live play. */
+#visual-tooltip.visual-tooltip[data-tooltip-kind="champion"] {
+  max-width: none;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#visual-tooltip.visual-tooltip[data-tooltip-kind="champion"]::before,
+#visual-tooltip.visual-tooltip[data-tooltip-kind="champion"] .visual-tooltip__title {
+  display: none;
+}
+
+#visual-tooltip.visual-tooltip[data-tooltip-kind="champion"] .visual-tooltip__details {
+  margin: 0;
+}
+
+/* The Champion Card (src/tooltip.js renderChampionCard; design C "Clean List",
+   owner, 2 October 2026). Its tokens are the BattleClient vision's values,
+   set here so the Replay Viewer draws the same card. */
+.champion-card {
+  --cc-panel: #0f1624;
+  --cc-edge: #243049;
+  --cc-edge2: #34425f;
+  --cc-text: #e6eaf2;
+  --cc-muted: #8c97ad;
+  --cc-moon: #c9d4e8;
+
+  display: grid;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 262px;
+  padding: 10px 12px;
+  border: 1px solid var(--cc-edge2);
+  border-radius: 8px;
+  color: var(--cc-text);
+  background: var(--cc-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  font-family:
+    "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.champion-card__title {
+  font-size: 15px;
+}
+
+.champion-card__id {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--cc-muted);
+}
+
+.champion-card__id .crest {
+  margin-right: 4px;
+}
+
+.champion-card .crest-ring--a {
+  stroke: var(--team-a);
+}
+
+.champion-card .crest-ring--b {
+  stroke: var(--team-b);
+}
+
+.champion-card .crest-dot--a {
+  fill: var(--team-a);
+}
+
+.champion-card .crest-dot--b {
+  fill: var(--team-b);
+}
+
+.champion-card__unseen {
+  font-size: 12.5px;
+}
+
+.champion-card__unseen b {
+  color: var(--ash);
+  font-style: italic;
+}
+
+.champion-card__bars {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 5px 8px;
+  align-items: center;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.champion-card__label {
+  max-width: 9em;
+  color: var(--cc-muted);
+}
+
+.champion-card__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--groove);
+}
+
+.champion-card__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.champion-card__track--ultimate .champion-card__fill {
+  background: var(--class-mage);
+}
+
+.champion-card__track--ultimate[data-class="warrior"] .champion-card__fill {
+  background: var(--class-warrior);
+}
+
+.champion-card__track--ultimate[data-class="hunter"] .champion-card__fill {
+  background: var(--class-hunter);
+}
+
+.champion-card__track--ultimate[data-class="rogue"] .champion-card__fill {
+  background: var(--class-rogue);
+}
+
+.champion-card__track--ultimate[data-class="priest"] .champion-card__fill {
+  background: var(--class-priest);
+}
+
+.champion-card__track--ultimate.is-ready .champion-card__fill {
+  background: var(--dawn-gold);
+  box-shadow: 0 0 6px var(--dawn-gold);
+}
+
+.champion-card__value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.champion-card__value small {
+  color: var(--cc-muted);
+  font-size: inherit;
+}
+
+.champion-card__value.is-ready {
+  color: var(--dawn-gold);
+  font-weight: 700;
+}
+
+.champion-card__rows {
+  display: grid;
+  gap: 7px;
+  margin-top: 3px;
+  padding-top: 7px;
+  border-top: 1px solid var(--cc-edge);
+}
+
+.champion-card__row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 0 7px;
+  align-items: start;
+}
+
+.champion-card__icon {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+}
+
+.champion-card__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.champion-card__name {
+  color: var(--cc-text);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.champion-card__name small {
+  color: var(--cc-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.champion-card__time {
+  color: var(--cc-text);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.champion-card__line {
+  grid-column: 2 / -1;
+  color: var(--cc-muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.champion-card__drain {
+  grid-column: 2 / -1;
+  height: 2px;
+  margin-top: 4px;
+  border-radius: 1px;
+  background: #1c2436;
+}
+
+.champion-card__drain .champion-card__fill {
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.champion-card__row[data-paint="mage"] {
+  color: var(--class-mage);
+}
+
+.champion-card__row[data-paint="warrior"] {
+  color: var(--class-warrior);
+}
+
+.champion-card__row[data-paint="hunter"] {
+  color: var(--class-hunter);
+}
+
+.champion-card__row[data-paint="rogue"] {
+  color: var(--class-rogue);
+}
+
+.champion-card__row[data-paint="priest"] {
+  color: var(--class-priest);
+}
+
+.champion-card__row[data-paint="rime"] {
+  color: var(--rime);
+}
+
+.champion-card__row[data-paint="moon"] {
+  color: var(--moonward-veil);
+}
+
+.champion-card__row[data-paint="neutral"] {
+  color: #c9b98f;
+}
+
+.champion-card__row[data-paint="dew"] {
+  color: var(--moon-dew);
+}
+
+.champion-card__muted {
+  color: var(--cc-muted);
+}
+
+/* The footer under the rows: "+3 more" and "Hold Shift For All", or, while
+   Shift is held, "All 7 statuses" and "Release Shift To Shrink". */
+.champion-card__more {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--cc-edge);
+  color: var(--cc-muted);
+  font-size: 12px;
+}
+
+.champion-card__more b {
+  color: var(--cc-text);
+  font-weight: 700;
+}
+
+/* Three classes, so live play's keycap rule (.bc kbd) does not restyle it and
+   the key looks the same in every client. */
+.champion-card .champion-card__more .champion-card__key {
+  display: inline;
+  min-width: 0;
+  height: auto;
+  padding: 0 4px;
+  border: 1px solid var(--cc-edge2);
+  border-radius: 4px;
+  color: var(--cc-text);
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: inherit;
+}
+
+/* The Hold Shift card taller than the arena box (src/tooltip.js
+   placeChampionCard): the rows spread into two, three or four 262 px columns
+   with 16 px gaps, and the card grows wider instead of taller. A plain card
+   never gets these: it stays one 262 px column and shows fewer rows
+   (renderFittedChampionCard). */
+.champion-card--wide .champion-card__rows {
+  column-gap: 16px;
+}
+
+.champion-card[data-columns="2"] {
+  width: 540px;
+}
+
+.champion-card[data-columns="2"] .champion-card__rows {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.champion-card[data-columns="3"] {
+  width: 818px;
+}
+
+.champion-card[data-columns="3"] .champion-card__rows {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.champion-card[data-columns="4"] {
+  width: 1096px;
+}
+
+.champion-card[data-columns="4"] .champion-card__rows {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.champion-card__muted {
+  margin-top: 3px;
+}
+
+.champion-card__you {
+  margin-top: 3px;
+  color: var(--cc-moon);
+  font-weight: 700;
+}
+
+/* Live play follows the vision page: a champion's card is the vision's hover
+   card (#hcard, drawn by src/tooltip.js createHoverCard), and buttons explain
+   themselves by their labels, so the older semantic champion card, the
+   tooltip copy of the Champion Card (a scorebug portrait registers one for
+   screen readers) and the control help cards never show there; #hcard shows
+   the one Champion Card. Symbol Tips (the Symbol Explanations switch) still
+   do. The Replay Viewer keeps every card. */
+html[data-product-kind="combat_debugger"]
+#visual-tooltip.visual-tooltip:is(
+  [data-tooltip-kind="agent"],
+  [data-tooltip-kind="champion"],
+  [data-tooltip-kind="control"]
+) {
+  display: none;
+}
+
+/* One card at a time in live play: while #hcard shows a Champion Card, the
+   pointer rests on a champion (its body, portrait, row or Allowed Now
+   button), so any other tip at that spot belongs to something under or on
+   that champion (the Spawn Pad under a body, a portrait's Spawn Shield ring)
+   and the champion's card wins. */
+html[data-product-kind="combat_debugger"]:has(#hcard:not([hidden]))
+#visual-tooltip.visual-tooltip {
+  display: none;
+}
+
+/* "Grow past arena" (owner, 2 October 2026): a Hold Shift card that leaves
+   the arena box (data-past-arena, set by src/tooltip.js placeChampionCard)
+   is drawn over every panel, the top bar (z-index 30) included, so all of it
+   shows. The Replay Viewer's card is in the browser's top layer already. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .hcard:has(> .champion-card[data-past-arena="true"]) {
+  z-index: 40;
+}
+
+/* Symbol owners: at least an 18 px hit box and a clear keyboard focus ring. */
+:is(span, div, li, button, kbd)[data-symbol-key] {
+  min-width: 18px;
+  min-height: 18px;
+}
+
+[data-symbol-key]:focus-visible {
+  outline: 2px solid var(--withered-gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Visual Key button: book picture beside the label. */
+#visual-key-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+#visual-key-button .visual-key-book {
+  flex: none;
+}
+
+/* Visual Key dialog: a picture dictionary. Desktop first; it scrolls inside. */
+.visual-key-dialog {
+  width: min(72rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 58%);
+}
+
+.visual-key-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.visual-key-dialog::backdrop {
+  background: rgb(3 7 18 / 76%);
+}
+
+.visual-key-dialog__header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 0.25rem 1rem;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.visual-key-dialog__header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.visual-key-dialog__lead {
+  grid-column: 1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.visual-key-dialog__close {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+.visual-key-dialog__body {
+  overflow: auto;
+  padding: 0.75rem 1.25rem 1.25rem;
+}
+
+.visual-key__group + .visual-key__group {
+  margin-top: 1.1rem;
+}
+
+.visual-key__group-title {
+  margin: 0 0 0.5rem;
+  color: var(--withered-gold);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.visual-key__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 0.6rem;
+}
+
+.visual-key__card {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface-raised);
+}
+
+.visual-key__picture {
+  display: block;
+  width: 112px;
+  height: 72px;
+  border-radius: 6px;
+  background: var(--battlefield);
+}
+
+.visual-key__title {
+  margin: 0 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+/* A mark that serves two causes lists each status name on its own line. */
+.visual-key__name {
+  display: block;
+}
+
+.visual-key__sentence {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.visual-key__numbers {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 0.1rem 0.6rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+}
+
+.visual-key__numbers dt {
+  color: var(--text-muted);
+}
+
+.visual-key__numbers dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.visual-key__keycap,
+.visual-key__keys kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  background: var(--surface-soft);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.visual-key__keys {
+  width: 100%;
+  margin-top: 0.6rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.visual-key__keys caption {
+  padding-bottom: 0.3rem;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.visual-key__keys th,
+.visual-key__keys td {
+  padding: 0.25rem 0.5rem;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.visual-key__keys th {
+  width: 10rem;
+  font-weight: 400;
+}
+
+/* Frame Explanation: callouts in the explain layer. */
+.frame-explanation-callout {
+  cursor: default;
+}
+
+.frame-explanation-callout[data-lit="true"] .frame-explanation-callout__disc {
+  stroke-width: 3;
+}
+
+/* Frame Explanation: the numbered list. */
+.frame-explanation__caption {
+  margin: 0 0 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.frame-explanation__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.frame-explanation__list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.frame-explanation__item {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.frame-explanation__item[data-lit="true"] {
+  background: var(--surface-raised);
+}
+
+.frame-explanation__number {
+  display: inline-grid;
+  place-items: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 1.5px solid var(--withered-gold);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+#frame-explanation-button[aria-pressed="true"] {
+  border-color: var(--withered-gold);
+}

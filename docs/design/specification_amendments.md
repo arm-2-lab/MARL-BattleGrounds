@@ -3492,3 +3492,115 @@ that run (A26).
 correctly. It does not show that turtling stops: teams could wait just outside
 the strip, spawn camping could pay more, and horizon draws remain possible.
 Those need learning evidence.
+
+## A45. Runefield Client Presentation
+
+**Classification:** approved presentation change (owner, 30 September and
+1 October 2026). No Core change.
+**Revises:** the BattleClient's starting view, the Replay Viewer's starting
+speed and keyboard, A17's drawing of the SharedObs view (it adds a reach
+veil; the union itself is unchanged) and A44's Viewer paragraph (visual
+switches and PNG provenance). Simulator rules, observations, action masks,
+policy inputs, metrics, scores and replay files keep their meaning.
+
+**Scope.** The Runefield look is the new drawing of the three clients: the
+BattleClient, the private DevClient combat screen and the Replay Viewer. It
+changes how recorded and live facts are drawn and when they appear during a
+tick. It never changes a fact. Every look switch only changes drawing: it
+never shows a fact the current view may not see, and a switch turned off
+falls back to a plain, truthful drawing (for example a flat stone with its
+true footprint, or a plain token with its team ring and life). Presets set
+switches only; they never change the view, Ranges, layout or motion.
+
+**Starting views.**
+
+| Client | Starts In |
+| --- | --- |
+| BattleClient (`battle_client()`) | Agent POV |
+| DevClient combat screen | Oracle View |
+| Replay Viewer | Oracle View (`--view pov` opts in) |
+| Replay Viewer opened by **Open Replay** | Oracle View |
+
+Oracle View shows everything. Agent POV shows only what the viewing team
+sees. In the BattleClient and DevClient, play in Oracle View is marked with
+an amber "Oracle View · You See Everything" tag.
+
+**Viewing team.** In the BattleClient and DevClient, Agent POV shows the
+view of the Manual champion you focused last. Looking at a policy champion
+or an enemy, with Tab, a click or a roster pick, never changes the viewing
+team. In a game with no Manual champion (Policies Only), the view follows
+the champion you look at. In Agent POV, Tab and Shift+Tab skip champions the
+viewing team cannot see. In the Replay Viewer, the Agent POV recipient is the
+agent chosen in the POV picker.
+
+**Agent POV rules.** In Agent POV nothing on or over the arena shows a
+champion the viewing team cannot see, or anything tied to it: position,
+life, statuses, the class of an unseen attacker, or the timing of its
+events. This covers the arena, overlays, hover tips, Frame Explanation, the
+camera and the beat timing. These parts read only the audience's own scene
+and visual events; they never read the global researcher panels or the
+match summary. An unseen enemy reads "Unseen" with no life in the
+BattleClient and DevClient panels, and a teammate's next action reads "Not
+Observed". A status names its source only on the tick its application was
+seen; otherwise it reads "from a hidden source". One exception: under
+NoSharedObs, a killing blow on the recipient stays drawn, starting from a
+faint Last Seen ring where the attacker was last seen. The Replay Viewer's
+docked researcher tabs (Agent, Metrics, Actions and Frame) still show the
+full recorded game in Agent POV, under a "Full Record" chip. Switching
+Oracle View to Agent POV and back gives exactly a fresh render.
+
+Agent POV is a fairness aid for play, not a security boundary. The browser
+still receives the global researcher panels for the Replay Viewer's docked
+tabs, and a person with browser developer tools can read them.
+
+**One command set.** One table in the browser (`command-set.js`) owns every
+key of the three clients. A key does the same job in every client, or
+nothing. V is Everyone In View in all three clients. B is Battle Cam in the
+Replay Viewer only. F is Frame Explanation. Space and N keep their jobs. The
+in-app Help (press ?) and How To Play lists are written from that table, so
+they always match what the keys do. Guides link to them instead of copying
+key lists.
+
+**Beat timing.** A tick plays as a sequence of beats. Bodies glide to the
+spots where they ended the tick (0-260 ms), blows start at 280 ms, then come
+one Fall beat for the deaths, one Return beat for respawns, and a 600 ms end
+hold. With Longer Tick on (the default), an ordinary tick lasts 1.7 seconds
+at 1x and a tick with a death 3.2 seconds. Life reaches 0, the score
+changes and the fall notices appear at the Fall beat; respawns appear at
+the Return beat, in the panels too. The field holds still through the death
+and respawn beats. Paused frames always show the settled end of the tick.
+The Replay Viewer now starts at 1x speed (it was 0.5x): at 1x a quiet tick
+lasts about as long as one did before at 0.5x.
+
+**Movement truth trade-off.** Positions are drawn where the agent ended the
+tick. A blow is drawn between those end spots, so a stroke drawn end to end
+can look longer than the ability's real reach. A faint imprint ring and
+hairline keep the true spot where the blow was decided. A Warrior's Charge
+is the one exception: its path runs from its start to its landing.
+
+**Sight Reach veil.** In Agent POV the floor outside the observation-reach
+circles of the frame's authorized living sensors is darkened. Under
+NoSharedObs only the recipient counts; under SharedObs its team's sensors
+count. It uses the same recorded data as the range rings. It shows reach,
+not sight: stone also blocks sight inside a circle, and champions just back
+on their pads stay hidden. The browser does not work out line of sight, as
+A17 requires. A true sight shape would need a new host producer and a new
+amendment.
+
+**Host additions (no Core change).** Each recorded death row carries
+`home_fall`, true when the death scored double in its own Red Zone. The rule
+has one owner, `evaluation.events.team_deathmatch_home_fall_slots_v1`.
+Agent POV receives the flag only for falls that audience saw. The Replay
+Viewer serves per-audience timeline marks (falls, Ultimates, returns and
+fight chapters) at `/api/replay/timeline-marks`; Agent POV marks come only
+from what that audience saw.
+
+**Export.** Export PNG captures what is on screen, including the current
+camera. New PNGs write provenance version 3, which records the battlefield
+switches and the camera frame as a world rectangle. Versions 1 and 2 still
+read. Exported PNGs carry no brand mark.
+
+**Limits.** This amendment records the presentation contract and the checks
+that guard it (Agent POV leak and boundary tests, beat-clock and movement
+tests, and the command-set test). It makes no claim about learning, and a
+better-looking replay does not show learned skill.

@@ -1,6 +1,23 @@
 /**
  * @file Check battlefield effect facts, credited death identities and visibility
- * without granting new information rights.
+ * without granting new information rights. Death Announcer cards come from the
+ * global death list only in Oracle View; in Agent POV that list never reaches
+ * the arena. The announcement and the team respawn wave are data rows with no
+ * arena anchor or box (the Fallen panel and the Wave Chip are page chrome), and
+ * a status change reserves no arena box and no plan nodes because it shows on
+ * the body. Status outcomes play in the beat clock's Settle window, and reduced
+ * motion keeps a short copy of the whole schedule. Also pins where each drawing
+ * rule now lives: the arena layer order (Strike Band routes above stones and
+ * under every body and information layer; the atmosphere, Death Dimming and
+ * heralds layers included), and the look modules under `src/looks/` that own
+ * the activation footprints (no shared route arrows remain), the Spawn Ward,
+ * status docks, status-change marks and rest numbers, with their footprints. A
+ * Basic carries its optional sub-parts (glow, close_range, kindled) and an
+ * Ultimate its softGlow, and neither keeps a switched-off activation drawn; a
+ * health change likewise carries its V5 add-ons (savedBeat, lastBreath and
+ * battleTextDetail; a rest heal only battleTextDetail), which never keep a
+ * switched-off number drawn. Life numbers are one small ivory, gold or Moon Dew
+ * number (52 x 22 px bounds).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -9,7 +26,6 @@ import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presen
 import { explainChoreographyEvent } from "../src/choreography-painter.js";
 import {
   buildChoreographyPlan as buildPlan,
-  CHOREOGRAPHY_PAINT_FOOTPRINTS,
   isSubmissionCommand,
 } from "../src/choreography-plan.js";
 import {
@@ -17,6 +33,9 @@ import {
   explainActivation,
 } from "../src/explanations.js";
 import { iconDefinition } from "../src/icons.js";
+import * as basicsLook from "../src/looks/basics.js";
+import { ACTIVATION_FOOTPRINTS } from "../src/looks/strike-routes.js";
+import * as ultimatesLook from "../src/looks/ultimates.js";
 import { routeMarkerPose } from "../src/routes.js";
 import { BATTLEFIELD_LAYER_ORDER } from "../src/scene.js";
 import {
@@ -128,6 +147,13 @@ test("Death Announcer groups by killing team and preserves every credited identi
     const announcements = enabled.events.filter(
       (event) => event.cueSemantic === "death_announcement",
     );
+    if (kind !== "replay_oracle") {
+      // Agent POV: match_summary.deaths is global researcher data, so it never
+      // reaches the arena. Cards come only from falls the team saw.
+      assert.deepEqual(announcements, []);
+      assert.equal(JSON.stringify(raw.current_endpoint), endpointBefore);
+      continue;
+    }
     assert.deepEqual(
       announcements.map((event) => event.teamId),
       [1, 2],
@@ -169,29 +195,30 @@ test("Death Announcer groups by killing team and preserves every credited identi
             explanation.sections[index].rows[1].value.includes(contributor.title),
           );
         }
-        assert.equal(announcement.textRows[index].lines.join(" "), member.title);
+        assert.equal(explanation.sections[index].title, member.title);
       }
-      assert.equal(announcement.textRows.length, announcement.members.length);
-      assert.equal(announcement.panelHeight, 30 + announcement.members.length * 20);
-      assert.ok(announcement.anchor.y - announcement.panelHeight / 2 >= 48);
-      const left = announcement.anchor.x - announcement.panelWidth / 2;
-      const right = left + announcement.panelWidth;
-      const top = announcement.anchor.y - announcement.panelHeight / 2;
-      const bottom = top + announcement.panelHeight;
-      for (const event of enabled.events) {
-        const bounds = event.cueBounds;
-        if (bounds)
-          assert.ok(
-            bounds.right <= left ||
-              bounds.left >= right ||
-              bounds.bottom <= top ||
-              bounds.top >= bottom,
-            `${event.eventId} must leave the readable death panel clear`,
-          );
-      }
+      // The Fallen panel in the side rail draws the falls: the announcement is a
+      // data row with no arena anchor, no panel box and no allocator reservation.
+      assert.equal(announcement.anchor, null);
+      assert.equal(announcement.spatial, false);
+      assert.equal(Object.hasOwn(announcement, "textRows"), false);
+      assert.equal(Object.hasOwn(announcement, "panelWidth"), false);
+      assert.equal(Object.hasOwn(announcement, "cueBounds"), false);
     }
-    assert.ok(announcements[0].anchor.x < announcements[1].anchor.x);
-    assert.equal(enabled.phases.reducedTotal, enabled.phases.total);
+    assert.deepEqual(
+      announcements.map((event) => event.teamSide),
+      ["left", "right"],
+    );
+    // Reduced motion keeps a short copy of the whole beat schedule.
+    assert.ok(enabled.beats);
+    assert.equal(
+      enabled.phases.reducedTotal,
+      enabled.phases.total * enabled.beats.reducedScale,
+    );
+    // The announcement is not spatial, so this tick may have no timed arena
+    // cue at all (total 0); the reduced copy is still the shorter scale.
+    assert.ok(enabled.beats.reducedScale < 1);
+    assert.ok(enabled.phases.reducedTotal <= enabled.phases.total);
     assert.equal(JSON.stringify(raw.current_endpoint), endpointBefore);
     assert.deepEqual(
       buildPlan(
@@ -253,8 +280,8 @@ test("historical death attribution stays neutral and shares at most two side buc
     [2, 1],
   );
   for (const announcement of announcements) {
-    assert.equal(announcement.textRows.length, announcement.members.length);
     const explanation = explainChoreographyEvent(announcement);
+    assert.equal(explanation.sections.length, announcement.members.length);
     assert.equal(explanation.sections[0].rows[0].value, "Unavailable");
     assert.match(explanation.sections[0].rows[1].value, /not recorded/u);
   }
@@ -382,6 +409,10 @@ test("strict authorized fixture preserves exact choreography identity", async ()
         assert.ok(event.route, event.eventId);
         assert.ok(Array.isArray(event.route.bridgeGaps), event.eventId);
       }
+    } else if (event.kind === "status_lifecycle") {
+      // A status change shows on the body; it reserves no arena box.
+      assert.equal(Object.hasOwn(event, "cue"), false, event.eventId);
+      assert.equal(Object.hasOwn(event, "cueBounds"), false, event.eventId);
     } else {
       assert.ok(event.cue, event.eventId);
       assert.equal(event.cueCollisionFree, true, event.eventId);
@@ -651,10 +682,7 @@ test("Agent adjacent-fog choreography preserves disappearance routes and appeara
   );
   assert.ok(authorizedUltimate);
   const ultimateExplanation = explainActivation(ultimateActivation);
-  assert.equal(
-    ultimateExplanation.title,
-    `${authorizedUltimate.name} (Mage Ultimate Ability)`,
-  );
+  assert.equal(ultimateExplanation.title, `${authorizedUltimate.name} (Mage Ultimate)`);
   assert.equal(ultimateExplanation.summary, authorizedUltimate.description);
   assert.deepEqual(
     Object.keys(ultimateActivation.authorizedClassMechanics).filter((key) =>
@@ -1014,13 +1042,19 @@ test("all registered transient families validate without constructing disabled g
     {
       component: "basic",
       impactSemantic: "healing",
-      paintParts: { ability: false, semantic: false },
+      paintParts: {
+        ability: false,
+        semantic: false,
+        glow: false,
+        close_range: false,
+        kindled: false,
+      },
       tokenId: "basic_heal",
     },
     {
       component: "ultimate",
       impactSemantic: "damage",
-      paintParts: { ability: false, semantic: false },
+      paintParts: { ability: false, semantic: false, softGlow: false },
       tokenId: "warrior_charge",
     },
   ]);
@@ -1197,7 +1231,9 @@ test("all registered transient families validate without constructing disabled g
   );
   assert.equal(reversedWave?.teamId, 1);
   assert.equal(reversedWave?.teamSide, "right");
-  assert.ok(reversedWave?.anchor.x > surface.viewportBounds.width / 2);
+  // The team wave is page chrome (the scorebug's Wave Chip): no arena anchor.
+  assert.equal(reversedWave?.anchor, null);
+  assert.equal(reversedWave?.spatial, false);
   assert.equal(
     plan.events.some((event) => event.kind === "rejected_action"),
     false,
@@ -1248,7 +1284,7 @@ test("all registered transient families validate without constructing disabled g
     },
   );
   const shieldExplanation = explainChoreographyEvent(shieldExpiry);
-  assert.equal(shieldExplanation.title, "Expired Spawn Shield");
+  assert.equal(shieldExplanation.title, "Expired Spawn Shield (Invulnerable)");
   assert.equal(shieldExplanation.summary, null);
   assert.equal(
     explainChoreographyEvent({
@@ -1359,7 +1395,18 @@ test("activation ability and semantic paint parts follow their Basic or Ultimate
     assert.ok(activation);
     assert.equal(activation.component, "basic");
     assert.equal(activation.impactSemantic, "healing");
-    assert.deepEqual(activation.paintParts, expected);
+    assert.deepEqual(
+      {
+        ability: activation.paintParts.ability,
+        semantic: activation.paintParts.semantic,
+      },
+      expected,
+    );
+    // A Basic also carries its three optional sub-parts (Soft Glow, Close-Range
+    // Strokes, Arcane Blast During Burst) for basics.js.
+    for (const part of ["glow", "close_range", "kindled"]) {
+      assert.equal(typeof activation.paintParts[part], "boolean");
+    }
     assert.equal(activation.presentationSuppressed, suppressed);
     assert.equal(activation.spatial, !suppressed);
     if (disabled.includes("basic_ability_effects")) {
@@ -1407,10 +1454,14 @@ test("activation ability and semantic paint parts follow their Basic or Ultimate
   );
   assert.ok(damageActivation);
   assert.equal(damageActivation.impactSemantic, "damage");
-  assert.deepEqual(damageActivation.paintParts, {
-    ability: false,
-    semantic: false,
-  });
+  assert.deepEqual(
+    {
+      ability: damageActivation.paintParts.ability,
+      semantic: damageActivation.paintParts.semantic,
+    },
+    { ability: false, semantic: false },
+  );
+  assert.equal(damageActivation.presentationSuppressed, true);
 
   const activationOnlyRaw = structuredClone(fixture.presentations.replay_oracle);
   const activationOnly = activationOnlyRaw.latest_events.events.filter(
@@ -1464,10 +1515,13 @@ test("activation ability and semantic paint parts follow their Basic or Ultimate
 
   const unrelatedUltimateFilter = projectedActivation("ultimate_ability_effects");
   assert.equal(unrelatedUltimateFilter.event.presentationKind, "routed");
-  assert.deepEqual(unrelatedUltimateFilter.event.paintParts, {
-    ability: true,
-    semantic: true,
-  });
+  assert.deepEqual(
+    {
+      ability: unrelatedUltimateFilter.event.paintParts.ability,
+      semantic: unrelatedUltimateFilter.event.paintParts.semantic,
+    },
+    { ability: true, semantic: true },
+  );
   assert.ok(unrelatedUltimateFilter.event.route);
 });
 
@@ -1537,60 +1591,87 @@ test("Charge displacement and rejected actions have no battlefield paint selecto
   assert.doesNotMatch(css, /combat-rejection/u);
 });
 
-test("transient activation routes remain beneath every information-bearing layer", () => {
-  const routeIndex = BATTLEFIELD_LAYER_ORDER.indexOf("transient-route");
-  assert.ok(routeIndex >= 0);
-  for (const foregroundLayer of [
+test("activation routes sit in the Strike Band: above stones, beneath every body and information layer", () => {
+  assert.deepEqual(BATTLEFIELD_LAYER_ORDER, [
+    "map",
+    "atmosphere",
+    "red-zone",
+    "spawns",
+    "team-identity",
+    "aura",
+    "imprints",
+    "debug-range",
+    "pending-route",
+    "fog",
     "obstacle",
+    "death-dim",
+    "strike-band",
     "body",
+    "over",
     "selection-legality",
     "transient-events",
     "durable-status-modifier",
+    "heralds",
+    "explain",
+    "accessible-labels",
+  ]);
+  assert.equal(BATTLEFIELD_LAYER_ORDER.indexOf("transient-route"), -1);
+  const routeIndex = BATTLEFIELD_LAYER_ORDER.indexOf("strike-band");
+  assert.ok(routeIndex >= 0);
+  for (const backgroundLayer of [
+    "map",
+    "atmosphere",
+    "red-zone",
+    "fog",
+    "obstacle",
+    "death-dim",
+  ]) {
+    assert.ok(
+      BATTLEFIELD_LAYER_ORDER.indexOf(backgroundLayer) < routeIndex,
+      `activation routes must paint over ${backgroundLayer}`,
+    );
+  }
+  for (const foregroundLayer of [
+    "body",
+    "over",
+    "selection-legality",
+    "transient-events",
+    "durable-status-modifier",
+    "heralds",
+    "explain",
     "accessible-labels",
   ]) {
     assert.ok(
       BATTLEFIELD_LAYER_ORDER.indexOf(foregroundLayer) > routeIndex,
-      `${foregroundLayer} must paint over transient activation routes`,
+      `${foregroundLayer} must paint over activation routes`,
     );
   }
 });
 
-test("activation arrows prefer full paint before an explicit compact fallback", async () => {
-  const [painter, css] = await Promise.all([
-    readFile(new URL("../src/choreography-painter.js", import.meta.url), "utf8"),
+test("activation footprints stay in one table and the old route arrows are gone", async () => {
+  const [footprints, css] = await Promise.all([
+    readFile(new URL("../src/looks/strike-routes.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
-  const activationArrowRule = css.match(/\.combat-route__arrow\s*\{[^}]*\}/u)?.[0];
-  const compactArrowRule = css.match(
-    /\.combat-route__arrow\[data-marker-variant="compact"\]\s*\{[^}]*\}/u,
-  )?.[0];
-  const activationParticleRule = css.match(
-    /\.combat-route__particle\s*\{[^}]*\}/u,
-  )?.[0];
-  const holyParticleRule = css.match(
-    /\.combat-route-effect\[data-token-id="holy_word"\] \.combat-route__particle\s*\{[^}]*\}/u,
-  )?.[0];
-
-  assert.equal(CHOREOGRAPHY_PAINT_FOOTPRINTS.route.activationMarkerPadding, 17);
-  assert.equal(CHOREOGRAPHY_PAINT_FOOTPRINTS.route.activationCompactMarkerPadding, 8);
-  assert.equal(CHOREOGRAPHY_PAINT_FOOTPRINTS.route.chargeMarkerPadding, 14);
-  assert.equal(CHOREOGRAPHY_PAINT_FOOTPRINTS.route.activationPathPadding.default, 7);
-  assert.equal(CHOREOGRAPHY_PAINT_FOOTPRINTS.route.activationPathPadding.holy_word, 8);
-  assert.match(painter, /d: "M -11 -6 L 2 0 L -11 6 L -7 0 Z"/u);
-  assert.match(painter, /M -6 -3 L 2 0 L -6 3 L -4 0 Z/u);
-  assert.ok(activationArrowRule);
-  assert.match(activationArrowRule, /drop-shadow\(0 0 3px currentColor\)/u);
-  assert.ok(compactArrowRule);
-  assert.match(compactArrowRule, /filter: none/u);
-  assert.ok(activationParticleRule);
-  assert.match(activationParticleRule, /drop-shadow\(0 0 3px currentColor\)/u);
-  assert.ok(holyParticleRule);
-  assert.match(holyParticleRule, /drop-shadow\(0 0 4px currentColor\)/u);
+  assert.equal(basicsLook.FOOTPRINT.route.activationMarkerPadding, 17);
+  assert.equal(basicsLook.FOOTPRINT.route.activationCompactMarkerPadding, 8);
+  assert.equal(ultimatesLook.FOOTPRINT.route.chargeMarkerPadding, 14);
+  assert.equal(basicsLook.FOOTPRINT.route.activationPathPadding, 7);
+  assert.equal(ultimatesLook.FOOTPRINT.route.holyWordPathPadding, 8);
+  assert.equal(ACTIVATION_FOOTPRINTS.activation.mage_burst.width, 70);
+  // Basics and Ultimates draw their own pictures: no shared route drawing,
+  // arrows or particle remain.
+  assert.doesNotMatch(footprints, /export function buildActivation/u);
+  assert.doesNotMatch(footprints, /ARROW_PATH/u);
+  assert.doesNotMatch(css, /\.combat-route__arrow/u);
+  assert.doesNotMatch(css, /\.combat-route__particle/u);
 });
 
-test("scene has one Analysis battlefield branch and owns durable shield and status hooks", async () => {
-  const [source, css] = await Promise.all([
+test("scene has one Analysis battlefield branch and its looks own durable shield and status hooks", async () => {
+  const [source, champions, statuses, css] = await Promise.all([
     readFile(new URL("../src/scene.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/looks/champions.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/looks/statuses.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
   assert.doesNotMatch(source, /debug-protected-zone/u);
@@ -1603,58 +1684,84 @@ test("scene has one Analysis battlefield branch and owns durable shield and stat
     source,
     /scene\.audience === "researcher" \? "Oracle View" : "Agent POV"/u,
   );
-  assert.match(source, /showLegality: visualPolicy\.showSelectedPairLegality/u);
+  // No lane pills: the legality layer is only cleared and reserves no dock.
+  assert.doesNotMatch(source, /showLegality|LEGALITY_DOCK_DIMENSIONS/u);
+  assert.match(
+    source,
+    /#renderSelectedLegality\(\) \{\s*this\.legalityCues\.replaceChildren\(\);/u,
+  );
   assert.match(source, /showModifiers: visualPolicy\.showAuraModifierBadges/u);
   assert.doesNotMatch(
     source,
     /scene\.audience === "researcher" && visualPolicy\.showAuraModifierBadges/u,
   );
-  assert.doesNotMatch(source, /agent-spawn-shield__shell/u);
-  assert.match(source, /agent-spawn-shield__icon/u);
-  assert.match(source, /agent-spawn-shield__ticks/u);
-  assert.match(source, /duration_status_badge/u);
-  assert.doesNotMatch(source, /agent-combat-state-icon/u);
-  assert.doesNotMatch(source, /showCombatStatusIcon/u);
-  assert.doesNotMatch(source, /combat status in combat/u);
-  assert.doesNotMatch(source, /combat status out of combat/u);
+  for (const owner of [source, champions, statuses]) {
+    assert.doesNotMatch(owner, /agent-spawn-shield__shell/u);
+    assert.doesNotMatch(owner, /agent-combat-state-icon/u);
+    assert.doesNotMatch(owner, /showCombatStatusIcon/u);
+    assert.doesNotMatch(owner, /combat status in combat/u);
+    assert.doesNotMatch(owner, /combat status out of combat/u);
+  }
+  // The Spawn Ward: a broken band, a pale veil and silver diamonds that count
+  // the shield ticks (no chip, no icon, no tick text).
+  assert.match(champions, /agent-spawn-shield__ring/u);
+  assert.match(champions, /agent-spawn-shield__veil/u);
+  assert.match(champions, /agent-spawn-shield__diamonds/u);
+  assert.doesNotMatch(champions, /agent-spawn-shield__chip/u);
+  assert.match(statuses, /kind: "duration_status_badge"/u);
+  assert.match(source, /durablePaintPart\(statuses, "duration_status_badge"\)/u);
   assert.match(css, /\.status-cell\[data-token-id="in_combat"\]/u);
   assert.match(css, /\.pov-observed-status\[data-token-id="in_combat"\]/u);
   assert.match(css, /\.combat-effect\[data-token-id="in_combat"\]/u);
-  assert.match(source, /createSpawnShieldView\(agent, spawnShieldMechanics\)/u);
+  assert.match(
+    champions,
+    /createSpawnShieldView\(record\.agent, record\.spawnShieldMechanics\)/u,
+  );
   assert.match(source, /layoutKey: JSON\.stringify\(/u);
   assert.match(source, /bounds: frozenBounds/u);
   assert.match(source, /protectedKind/u);
   assert.match(source, /ownerPresentationKey/u);
-  assert.match(
-    source,
-    /registerTooltipOwner\(nodes\.shieldRoot, spawnShieldView\.descriptor\)/u,
-  );
+  assert.match(champions, /registerTooltipOwner\(shield, view\.descriptor\)/u);
 });
 
 test("lifecycle painter keeps exact status copy while suppressing obsolete ornaments and rejection paint", async () => {
-  const painter = await readFile(
-    new URL("../src/choreography-painter.js", import.meta.url),
-    "utf8",
+  const [painter, support, statuses, ...otherLooks] = await Promise.all(
+    [
+      "../src/choreography-painter.js",
+      "../src/looks/look-support.js",
+      "../src/looks/statuses.js",
+      "../src/looks/basics.js",
+      "../src/looks/ultimates.js",
+      "../src/looks/strike-routes.js",
+      "../src/looks/health-text.js",
+      "../src/looks/requiems.js",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
   );
-  assert.match(painter, /statusLifecyclePresentation\(/u);
-  assert.match(painter, /visibleEvent\.lifecycle !== "cleared_by_death"/u);
-  assert.match(painter, /combat-lifecycle__death-sweep-cut/u);
-  assert.doesNotMatch(painter, /combat-lifecycle__death-sweep-arc/u);
-  assert.doesNotMatch(painter, /combat-semantic-pulse__shield-shell/u);
-  assert.doesNotMatch(
-    painter,
-    /event\.kind === "semantic_pulse"\s*&&\s*event\.cueSemantic === "spawn_shield_expired"\s*&&\s*motionMode === "normal"/u,
-  );
-  assert.doesNotMatch(painter, /rejected_action|combat-rejection/u);
-  assert.doesNotMatch(painter, /combat-lifecycle__reapply|"reapply"/u);
+  assert.match(support, /statusLifecyclePresentation\(/u);
+  // V5 Rune Zones shows a status change on the body: statuses.js builds no
+  // off-body lifecycle badge (no death sweep, ring or change disc).
+  assert.doesNotMatch(statuses, /combat-lifecycle__/u);
+  for (const source of [painter, support, statuses, ...otherLooks]) {
+    assert.doesNotMatch(source, /combat-lifecycle__death-sweep-arc/u);
+    assert.doesNotMatch(source, /combat-semantic-pulse__shield-shell/u);
+    assert.doesNotMatch(
+      source,
+      /event\.kind === "semantic_pulse"\s*&&\s*event\.cueSemantic === "spawn_shield_expired"\s*&&\s*motionMode === "normal"/u,
+    );
+    assert.doesNotMatch(source, /rejected_action|combat-rejection/u);
+    assert.doesNotMatch(source, /combat-lifecycle__reapply|"reapply"/u);
+  }
 });
 
 test("authorized regeneration owns a packed plus cue instead of the generic onion", async () => {
-  const [planSource, painterSource, css] = await Promise.all([
-    readFile(new URL("../src/choreography-plan.js", import.meta.url), "utf8"),
-    readFile(new URL("../src/choreography-painter.js", import.meta.url), "utf8"),
-    readFile(new URL("../styles.css", import.meta.url), "utf8"),
-  ]);
+  const [planSource, painterSource, healthTextSource, supportSource, css] =
+    await Promise.all([
+      readFile(new URL("../src/choreography-plan.js", import.meta.url), "utf8"),
+      readFile(new URL("../src/choreography-painter.js", import.meta.url), "utf8"),
+      readFile(new URL("../src/looks/health-text.js", import.meta.url), "utf8"),
+      readFile(new URL("../src/looks/look-support.js", import.meta.url), "utf8"),
+      readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    ]);
   assert.match(
     planSource,
     /row\.kind === "health_regenerated" \? "regeneration" : "semantic_pulse"/u,
@@ -1663,14 +1770,17 @@ test("authorized regeneration owns a packed plus cue instead of the generic onio
     planSource,
     /layoutCrossPhaseEvents\(paintFiltered, surface, sceneByKey\)/u,
   );
-  assert.match(painterSource, /combat-regeneration__plus/u);
-  assert.match(painterSource, /combat-regeneration__value/u);
+  // Rest draws one Moon Dew number (combat-number with tone "rest") and keeps
+  // its hit box; the old plus and pulse are gone.
+  assert.match(healthTextSource, /combat-number/u);
+  assert.match(healthTextSource, /combat-regeneration__hit/u);
+  assert.doesNotMatch(healthTextSource, /combat-regeneration__plus/u);
   assert.match(painterSource, /combat-choreography-connectors/u);
   assert.match(
-    painterSource,
-    /The recipient regenerated \$\{formatDisplayNumber\(event\.value\)\} health while out of combat\./u,
+    supportSource,
+    /It regained \$\{formatDisplayNumber\(event\.value\)\} life while out of combat\./u,
   );
-  assert.match(css, /\.combat-regeneration__pulse/u);
+  assert.doesNotMatch(css, /\.combat-regeneration__pulse/u);
   assert.match(css, /\.combat-connector-effect/u);
   assert.doesNotMatch(css, /\.combat-regeneration__recipient-anchor/u);
   assert.doesNotMatch(css, /\.combat-semantic-pulse--health-regenerated/u);
@@ -1690,16 +1800,19 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
   netEvent.health_after_combat_resolution = 190;
   netEvent.realized_net_health_change = -10;
   const netFrame = await normalizeAuthorizedPresentationFrameV1(rawNet);
+  // The V5 add-ons (savedBeat, lastBreath, battleTextDetail) stay on here and
+  // never keep a switched-off number drawn on their own.
+  const addOns = { savedBeat: true, lastBreath: true, battleTextDetail: true };
   /** @type {ReadonlyArray<readonly [
    *   string[],
-   *   {effect: boolean, battleText: boolean, recipientText: boolean},
+   *   Record<string, boolean>,
    *   boolean,
    * ]>} */
   const netCases = [
-    [[], { effect: true, battleText: true, recipientText: true }, false],
+    [[], { effect: true, battleText: true, recipientText: true, ...addOns }, false],
     [
       ["scrolling_battle_text"],
-      { effect: false, battleText: false, recipientText: false },
+      { effect: false, battleText: false, recipientText: false, ...addOns },
       true,
     ],
   ];
@@ -1712,8 +1825,11 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
     assert.equal(net.presentationSuppressed, suppressed);
     if (disabled.length === 0) {
       assert.deepEqual(
-        { width: net.cueBounds?.width, height: net.cueBounds?.height },
-        { width: 88, height: 36 },
+        {
+          width: Math.round(net.cueBounds?.width ?? 0),
+          height: Math.round(net.cueBounds?.height ?? 0),
+        },
+        { width: 40, height: 20 },
       );
     }
     if (suppressed) {
@@ -1742,16 +1858,24 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
     await normalizeAuthorizedPresentationFrameV1(rawRegeneration);
   /** @type {ReadonlyArray<readonly [
    *   string[],
-   *   {effect: boolean, battleText: boolean},
+   *   {effect: boolean, battleText: boolean, battleTextDetail: boolean},
    *   boolean,
    * ]>} */
   const regenerationCases = [
-    [[], { effect: true, battleText: true }, false],
-    [["scrolling_battle_text"], { effect: true, battleText: false }, false],
-    [["regeneration_effects"], { effect: false, battleText: true }, false],
+    [[], { effect: true, battleText: true, battleTextDetail: true }, false],
+    [
+      ["scrolling_battle_text"],
+      { effect: true, battleText: false, battleTextDetail: true },
+      false,
+    ],
+    [
+      ["regeneration_effects"],
+      { effect: false, battleText: true, battleTextDetail: true },
+      false,
+    ],
     [
       ["regeneration_effects", "scrolling_battle_text"],
-      { effect: false, battleText: false },
+      { effect: false, battleText: false, battleTextDetail: true },
       true,
     ],
   ];
@@ -1767,13 +1891,10 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
     assert.deepEqual(regeneration.paintParts, expected);
     assert.equal(regeneration.presentationSuppressed, suppressed);
     const explanation = explainChoreographyEvent(regeneration);
-    assert.equal(
-      explanation.summary,
-      "The recipient regenerated 3 health while out of combat.",
-    );
+    assert.equal(explanation.summary, "It regained 3 life while out of combat.");
     assert.deepEqual(
       explanation.rows.map(({ label, value }) => [label, value]),
-      [["Recipient", "Agent ID 0 · Mage · Team A"]],
+      [["Recipient", "Mage · ID 0"]],
     );
     if (disabled.length === 0) {
       assert.deepEqual(
@@ -1781,7 +1902,7 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
           width: Math.round(regeneration.cueBounds?.width ?? 0),
           height: Math.round(regeneration.cueBounds?.height ?? 0),
         },
-        { width: 64, height: 68 },
+        { width: 40, height: 20 },
       );
     }
     if (disabled.length === 1 && disabled[0] === "scrolling_battle_text") {
@@ -1790,7 +1911,7 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
           width: Math.round(regeneration.cueBounds?.width ?? 0),
           height: Math.round(regeneration.cueBounds?.height ?? 0),
         },
-        { width: 48, height: 48 },
+        { width: 24, height: 20 },
       );
     }
     if (disabled.length === 1 && disabled[0] === "regeneration_effects") {
@@ -1799,7 +1920,7 @@ test("NET cues follow scrolling battle text while regeneration retains useful gr
           width: Math.round(regeneration.cueBounds?.width ?? 0),
           height: Math.round(regeneration.cueBounds?.height ?? 0),
         },
-        { width: 64, height: 68 },
+        { width: 40, height: 18 },
       );
     }
     if (suppressed) {
@@ -1844,7 +1965,8 @@ test("authorized age plus application uses the ordinary Applied presentation wit
   assert.equal(JSON.stringify(frame), serializedBefore);
   assert.equal(JSON.stringify(frame.latest_events.events), incomingEventsBefore);
   assert.equal(plan.events.length, 1);
-  assert.equal(plan.bounds.nodes, 33);
+  // Only the 3 plan roots: no look draws this status change, so it adds no nodes.
+  assert.equal(plan.bounds.nodes, 3);
   assert.deepEqual(
     plan.events.map(({ eventId, eventType }) => [eventId, eventType]),
     [[events[1].event_id, events[1].event_kind]],
@@ -1901,13 +2023,9 @@ test("authorized break plus application uses the ordinary Applied presentation w
   assert.deepEqual(plan.events[0]?.applicationEventIds, [events[1].event_id]);
   assert.equal(plan.events[0]?.lifecycle, "applied");
   assert.equal(plan.events[0]?.lifecycleToken.label, "Applied");
-  assert.deepEqual(
-    {
-      width: Math.round(plan.events[0]?.cueBounds?.width ?? 0),
-      height: Math.round(plan.events[0]?.cueBounds?.height ?? 0),
-    },
-    { width: 52, height: 52 },
-  );
+  // A status change shows on the body: the plan reserves no arena box for it.
+  assert.equal(plan.events[0]?.spatial, true);
+  assert.equal(Object.hasOwn(plan.events[0] ?? {}, "cueBounds"), false);
 
   /** @type {ReadonlyArray<readonly [string[], {effect: boolean}, boolean]>} */
   const cases = [
@@ -1946,24 +2064,20 @@ test("authorized break plus application uses the ordinary Applied presentation w
   const applicationExplanation = explainChoreographyEvent(application.events[0]);
   assert.equal(
     applicationExplanation.title,
-    "Applied Priest (Basic: Heal) Blessing of Freedom",
+    "Applied Blessing of Freedom (Slow Resistance)",
   );
   assert.equal(
     applicationExplanation.summary,
-    "Freedom is applied when a Priest heals a same-team target, including itself where same-team targeting permits it. It prevents slow effects from reducing this agent's ordinary movement below the authorized floor; it does not override stun.",
+    "A Priest's Lesser Heal on a teammate, or on the Priest itself, gives Blessing of Freedom: until it ends, slows cannot pull this agent's movement below a set floor. It does not stop a stun.",
   );
   assert.deepEqual(
     applicationExplanation.rows.map(({ label }) => label),
     ["Source", "Recipient"],
   );
   assert.doesNotMatch(JSON.stringify(applicationExplanation), /broken|reappl/iu);
-  assert.deepEqual(
-    {
-      width: Math.round(application.events[0].cueBounds?.width ?? 0),
-      height: Math.round(application.events[0].cueBounds?.height ?? 0),
-    },
-    { width: 52, height: 52 },
-  );
+  // The status change shows on the body: no arena box is reserved for it.
+  assert.equal(application.events[0].spatial, true);
+  assert.equal(Object.hasOwn(application.events[0], "cueBounds"), false);
   assert.equal(applicationDisabled.events[0].presentationSuppressed, true);
   assert.equal(applicationDisabled.events[0].spatial, false);
 });
@@ -2090,14 +2204,14 @@ test("status presentation preserves the valid five-source application maximum", 
       [
         "Sources",
         [
-          "Agent ID 0 · Mage · Team A",
-          "Agent ID 1 · Warrior · Team A",
-          "Agent ID 2 · Priest · Team A",
-          "Agent ID 5 · Hunter · Team B",
-          "Agent ID 6 · Rogue · Team B",
+          "Mage · ID 0",
+          "Warrior · ID 1",
+          "Priest · ID 2",
+          "Hunter · ID 5",
+          "Rogue · ID 6",
         ].join("; "),
       ],
-      ["Recipient", "Agent ID 1 · Warrior · Team A"],
+      ["Recipient", "Warrior · ID 1"],
     ],
   );
 });
@@ -2143,8 +2257,8 @@ test("lifecycle source roles deduplicate canonical identities and preserve disti
       { sourceIdentity: duplicateCanonicalIdentity },
     ]).rows.map(({ label, value }) => [label, value]),
     [
-      ["Source", "Agent ID source-public · Hunter · Team A"],
-      ["Recipient", "Agent ID recipient-public · Warrior · Team A"],
+      ["Source", "Hunter · ID source-public"],
+      ["Recipient", "Warrior · ID recipient-public"],
     ],
   );
   assert.deepEqual(
@@ -2154,11 +2268,8 @@ test("lifecycle source roles deduplicate canonical identities and preserve disti
       { sourceIdentity: distinctSourceIdentity },
     ]).rows.map(({ label, value }) => [label, value]),
     [
-      [
-        "Sources",
-        "Agent ID source-public · Hunter · Team A; Agent ID other-public · Priest · Team B",
-      ],
-      ["Recipient", "Agent ID recipient-public · Warrior · Team A"],
+      ["Sources", "Hunter · ID source-public; Priest · ID other-public"],
+      ["Recipient", "Warrior · ID recipient-public"],
     ],
   );
 });
@@ -2218,8 +2329,11 @@ test("standalone serialized status events keep exact presentation meanings", asy
     assert.deepEqual(plan.events[0].atomicEventIds, [event.event_id]);
     assert.equal(plan.events[0].presentationSuppressed, false);
     assert.equal(plan.events[0].spatial, true);
-    assert.equal(plan.events[0].phaseStart, 0);
-    assert.equal(plan.events[0].phaseEnd, 480);
+    // Every status outcome plays in the beat clock's Settle window.
+    assert.ok(plan.beats);
+    assert.equal(plan.events[0].phaseStart, plan.beats.windows.settle[0]);
+    assert.equal(plan.events[0].phaseEnd, plan.beats.windows.settle[1]);
+    assert.deepEqual(plan.beats.windows.settle, [620, 1100]);
     const explanation = explainChoreographyEvent(plan.events[0]);
     if (eventKind === "status_aged_to_zero") {
       assert.equal(explanation.summary, null);
@@ -2227,7 +2341,7 @@ test("standalone serialized status events keep exact presentation meanings", asy
     if (eventKind === "status_broken_by_damage") {
       assert.equal(
         explanation.summary,
-        "The Freezing Trap stun ended early because the recipient received damage.",
+        "The Freezing Trap stun ended early because this agent took damage.",
       );
     }
     if (eventKind === "status_cleared_by_new_death") {
@@ -2250,8 +2364,8 @@ test("every lifecycle and recipient event uses only canonical Source and Recipie
     class_id: 2,
     team_id: 2,
   });
-  const sourceTitle = "Agent ID source-public · Hunter · Team A";
-  const recipientTitle = "Agent ID recipient-public · Warrior · Team B";
+  const sourceTitle = "Hunter · ID source-public";
+  const recipientTitle = "Warrior · ID recipient-public";
   const applied = explainChoreographyEvent({
     kind: "status_lifecycle",
     eventType: "status_applied",
@@ -2312,10 +2426,7 @@ test("every lifecycle and recipient event uses only canonical Source and Recipie
       [["Recipient", recipientTitle]],
     );
     if (cueSemantic === "health_regenerated") {
-      assert.equal(
-        descriptor.summary,
-        "The recipient regenerated 3.5 health while out of combat.",
-      );
+      assert.equal(descriptor.summary, "It regained 3.5 life while out of combat.");
     }
   }
 });
@@ -2358,6 +2469,6 @@ test("Death Announcer follows recorded spawn sides and keeps credited team ident
   assert.ok(death);
   assert.equal(death.teamId, 1);
   assert.equal(death.teamSide, "right");
-  assert.ok(death.anchor.x > surface.viewportBounds.width / 2);
+  assert.equal(death.anchor, null);
   assert.equal(death.label, "Team A Kills");
 });

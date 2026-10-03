@@ -1,14 +1,18 @@
 """Build live debugger transport frames from recorded evaluation endpoints.
 
 The live service calls ``build_debugger_frame`` for researcher, NoSharedObs or
-SharedObs view mode. Helpers format draft actions, recorded acceptance, exact mask
-values and current episode metadata. Actor views use their authorized identities;
+SharedObs view mode. Researcher (Oracle View) frames describe the focused
+champion; Agent POV frames describe the Agent POV recipient, which the service
+passes as ``pov_global_slot`` and which may differ from the focus. Helpers
+format draft actions, recorded acceptance, exact mask values and current
+episode metadata. Actor views use their authorized identities;
 SharedObs transport leaves detailed presentation to its separate builder. This
 module neither advances the simulator nor writes files or sends HTTP responses.
 Scenario choices come from the caller; no developer registry is imported.
 """
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Literal
 
 from marl_battlegrounds._battle_client.model import DebuggerScenario, DebuggerSession
@@ -749,6 +753,7 @@ def build_debugger_frame(
     include_stress: bool,
     recording_status: RecordingStatusV1 | None = None,
     scenario_catalog: Sequence[DebuggerScenario] | None = None,
+    pov_global_slot: int | None = None,
 ) -> LiveDebuggerFrame:
     """Build one validated live frame for the selected audience and current endpoint.
 
@@ -762,7 +767,7 @@ def build_debugger_frame(
         Nonnegative live-service revision for stale-command detection.
     view_mode : ViewMode
         Researcher or actor view. Actor mode follows the episode's recorded information
-        contract and selected controlled actor.
+        contract and the Agent POV recipient (see pov_global_slot).
     preset : Preset
         Supported presentation choice retained in the transport model.
     include_stress : bool
@@ -773,6 +778,12 @@ def build_debugger_frame(
         Ordered scenario choices supplied by the caller. None shows only the
         current scenario. Stress choices require include_stress=True. No scenario
         factory is called to build this list.
+    pov_global_slot : int or None, optional
+        Agent POV recipient, a configured-active global slot 0-9 chosen by
+        control.agent_pov_recipient_slot. An actor-view frame (sight, HUD,
+        draft and action masks) describes this champion. None (the default)
+        uses the focused ``session.controlled_global_slot``. Ignored in
+        researcher view, which always describes the focused champion.
 
     Returns
     -------
@@ -783,12 +794,15 @@ def build_debugger_frame(
     Raises
     ------
     ValueError
-        If required actor activity, frame joins or strict output-model contracts fail.
+        If required actor activity, frame joins or strict output-model contracts fail,
+        or pov_global_slot is not a configured-active slot.
 
     Notes
     -----
     Reads existing evaluation evidence and builds the selected projection/HUD. It does
     not choose new actions, change the session, or save/serve the resulting frame.
+    An actor-view frame never names the focused champion when it differs from the
+    recipient; the focus is host state only.
     """
     context = session.evaluation_context
     frame = session.current_evaluation_frame
@@ -850,6 +864,18 @@ def build_debugger_frame(
             hud=_build_researcher_hud(session, projection, revision=revision),
         )
 
+    if (
+        pov_global_slot is not None
+        and pov_global_slot != session.controlled_global_slot
+    ):
+        if not (
+            type(pov_global_slot) is int
+            and 0 <= pov_global_slot < len(context.roster)
+            and context.roster[pov_global_slot].configured_active
+        ):
+            raise ValueError("pov_global_slot must be a configured-active slot.")
+        # The actor view describes the recipient; the focus stays host state.
+        session = replace(session, controlled_global_slot=pov_global_slot)
     if context.execution_information_mode == "shared_obs":
         recipient = context.roster[session.controlled_global_slot]
         if not recipient.configured_active:

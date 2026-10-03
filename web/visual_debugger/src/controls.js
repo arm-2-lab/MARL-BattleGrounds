@@ -3,37 +3,38 @@
  * Python remains the authority for command legality and recording lifecycle.
  * These browser helpers build requests and decide local focus/confirmation
  * behavior; they do not execute a simulator transition or persist a replay.
+ *
+ * Which live keys exist comes from the one command set (`command-set.js`): the
+ * battlefield forwards only the keys that table sends to Python (N, one tick,
+ * is among them; the arrows are not), opens How To Play on ?, and hands V and F to their
+ * local handlers in the browser, never to Python. B does nothing in live play.
+ * ? works at any time the battlefield has focus (also at game over and while a
+ * command is out); R and G still reach the page at game over when the caller
+ * allows them. A right click on the battlefield sends the secondary pointer
+ * (Python clears the target), and the browser's own menu stays closed there.
+ *
+ * It also owns the status line's plain sentences for the player's own commands
+ * (statusSentence): the vision page's words for steps, actions, targets,
+ * focus, Lock In, views, Restart and refusals. They are pure text builders;
+ * main.js decides when to show them. audienceSwitchKeepsTick decides when a
+ * view switch shows the tick already played at its end instead of replaying
+ * it, so orders stay open (main.js acts on it).
+ *
+ * nextOrderSlot decides where Tab and Shift+Tab (and the deck's ‹ Prev and
+ * Next ›) give the orders in live play with Manual champions: only to the
+ * champions you command that can take orders (living Manual champions; with
+ * one Manual champion on each team, both), never to a policy's champion. It
+ * is pure; main.js reads the facts and sends the focus change.
  */
+import { forwardedFieldKeys, runLocalCommand } from "./command-set.js";
 import {
   requiresSharedObs as isReactiveController,
   isTeamController,
 } from "./system-controls.js";
 
-const GAME_KEYS = new Set([
-  "Tab",
-  "Escape",
-  "ArrowUp",
-  "ArrowDown",
-  "ArrowLeft",
-  "ArrowRight",
-  " ",
-  "Enter",
-  "0",
-  "1",
-  "2",
-  "w",
-  "a",
-  "s",
-  "d",
-  "q",
-  "e",
-  "z",
-  "c",
-  "x",
-  "r",
-  "g",
-  "?",
-]);
+// The keys the focused battlefield owns in live play: every key the command
+// set forwards to Python from the field, plus ? for How To Play (local).
+const GAME_KEYS = new Set([...forwardedFieldKeys("combat_debugger"), "?"]);
 
 const RECORDING_LIFECYCLE_COMMANDS = new Set([
   "finish_and_review",
@@ -244,11 +245,15 @@ export function recordingReplacementCommand(frame, command) {
  * Missing recording state is allowed. Save/review waits for pending method work;
  * a failed method still permits saving its last accepted game. Exit remains
  * available for cancellation and graceful closeout. An
- * episode replacement asks for confirmation when discard_available is true,
- * or blocks when restart_fenced is true. Outside active recording, block
- * other scientific commands while allowing the declared display-only ones.
- * An allow result retains the command reference; notices explain other
- * results. This does not send commands or replace Python lifecycle checks.
+ * episode replacement (R or another restart) made while the game-over save
+ * runs (lifecycle "sealed" or "finalized_unsaved") is allowed as a new
+ * save_and_replace command wrapping it, with no dialog; otherwise it asks for
+ * confirmation when discard_available is true, or blocks when restart_fenced
+ * is true. Outside active recording, block other scientific commands while
+ * allowing the declared display-only ones. Any other allow result retains the
+ * command reference, so a caller sends `result.command` when it differs from
+ * its own; notices explain other results. This does not send commands or
+ * replace Python lifecycle checks.
  *
  * @param {Record<string, any>} frame
  * @param {Record<string, unknown>} command
@@ -281,6 +286,15 @@ export function recordingCommandDecision(frame, command) {
   }
   const replacement = recordingReplacementCommand(frame, command);
   if (replacement) {
+    // The game-over save is already running ("Saving Replay…"): there is
+    // nothing to choose, so the restart goes out as Save And Replace, which
+    // the server holds until the save ends and then restarts.
+    if (status.lifecycle === "sealed" || status.lifecycle === "finalized_unsaved") {
+      return Object.freeze({
+        action: "allow",
+        command: Object.freeze({ command_type: "save_and_replace", replacement }),
+      });
+    }
     if (status.discard_available === true) {
       return Object.freeze({
         action: "confirm",
@@ -367,9 +381,13 @@ function keyboardCommandFromEvent(event) {
 }
 
 /**
- * Return whether event.key belongs to the battlefield key set. Ctrl, Alt
- * or Meta combinations always return false; Shift is allowed. One-character
- * keys are lowercased for lookup. No event is cancelled by this check.
+ * Return whether event.key is a live key the battlefield forwards to Python
+ * or opens How To Play with (?). The set comes from the command set: W A S D
+ * Q E Z C, X, 0 1 2, Space, Enter, N, R, G, Tab, Escape and ?. Arrow keys,
+ * V, B and F return false (the arrows do nothing live; V and F are local
+ * jobs). Ctrl, Alt or Meta combinations always
+ * return false; Shift is allowed. One-character keys are lowercased for
+ * lookup. No event is cancelled by this check.
  *
  * @param {{
  *   key: string,
@@ -385,6 +403,63 @@ export function isDebuggerKey(event) {
   }
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   return GAME_KEYS.has(key);
+}
+
+/**
+ * Return the global slot that Tab (direction 1) or Shift+Tab (direction -1)
+ * gives the orders to in live play: the next champion you command that can
+ * take orders, in slot order, wrapping around (owner's ruling, 3 October
+ * 2026).
+ *
+ * A champion can take orders when it is Manual (in manualSlots) and is not in
+ * fallenSlots. With one Manual champion on each team, both count. A policy's
+ * champion is never chosen; the player looks at one by clicking its portrait
+ * or body (Watch Only). When currentSlot is a policy's champion or a fallen
+ * one, Tab goes to the first champion that can take orders after it in slot
+ * order (Shift+Tab: the first before it). Pure: reads only its argument.
+ *
+ * Example: manualSlots [0, 1, 2, 3, 4], fallenSlots [2], currentSlot 1 and
+ * direction 1 give 3; currentSlot 7 (an enemy) and direction 1 give 0;
+ * direction -1 from 0 gives 4.
+ *
+ * @param {{
+ *   manualSlots: ReadonlyArray<unknown>,
+ *   currentSlot: number | null,
+ *   fallenSlots?: ReadonlyArray<unknown>,
+ *   direction: 1 | -1,
+ * }} facts manualSlots: the global slots (0 to 9) of every Manual champion,
+ *   in any order (non-integers are ignored). currentSlot: the global slot
+ *   that has the orders, or that the player looks at now; null when unknown
+ *   (Tab then picks the first slot, Shift+Tab the last). fallenSlots: Manual
+ *   slots known to be fallen right now; default none. direction: 1 for Tab
+ *   (next), -1 for Shift+Tab (previous).
+ * @returns {number | null} The slot to give the orders to. It is currentSlot
+ *   itself when that is the only champion that can take orders, and null when
+ *   none can (no Manual slot, or every Manual champion is fallen).
+ */
+export function nextOrderSlot({
+  manualSlots,
+  currentSlot,
+  fallenSlots = [],
+  direction,
+}) {
+  const fallen = new Set(fallenSlots);
+  const ready = [...new Set(manualSlots)]
+    .filter(
+      (slot) => typeof slot === "number" && Number.isInteger(slot) && !fallen.has(slot),
+    )
+    .map((slot) => Number(slot))
+    .sort((left, right) => left - right);
+  if (ready.length === 0) return null;
+  const last = ready[ready.length - 1];
+  if (currentSlot === null || !Number.isInteger(currentSlot)) {
+    return direction < 0 ? last : ready[0];
+  }
+  if (direction < 0) {
+    const before = ready.filter((slot) => slot < currentSlot);
+    return before.length > 0 ? before[before.length - 1] : last;
+  }
+  return ready.find((slot) => slot > currentSlot) ?? ready[0];
 }
 
 /**
@@ -417,7 +492,33 @@ function pointInSvg(svg, event) {
  * onPointerCommand defaults to a no-op and observes the pointer target/request
  * before submission. isInteractive defaults to true; onFencedCommand defaults
  * to false and may consume blocked keys; ownsFencedSpaceDefault defaults to
- * true to suppress page scrolling for a blocked Space key.
+ * true to suppress page scrolling for a blocked Space key. ownsLocalCommands
+ * defaults to true; return false (in the Replay Viewer) to leave V, B and F to
+ * the replay key handler.
+ *
+ * Local jobs: while ownsLocalCommands() is true, a key that is not a forwarded
+ * live key (V or F; B has no live job) runs its registered local handler
+ * through runLocalCommand("combat_debugger", ...) with context
+ * {interactive: isInteractive()}, even while commands are fenced. When a
+ * handler ran, the event's default and propagation are stopped and nothing is
+ * sent to Python. With no handler registered the key does nothing. The local
+ * handler owns its own Agent POV limits.
+ *
+ * Keys while orders are closed (isInteractive() is false): ? still calls
+ * onHelp (How To Play is local and safe at any time, also at game over and
+ * while a command is out). A forwarded key for which allowsWhileClosed(command)
+ * returns true still goes to onCommand (main.js allows R and G at game over).
+ * Every other key goes to onFencedCommand as before.
+ *
+ * Pointer input: the primary button sends a "primary" battlefield_pointer and
+ * a right click (button 2) sends a "secondary" one at the same world point
+ * (Python clears the staged target; it changes nothing else). Both focus the
+ * battlefield first, so keys stay on. While orders are open the browser's
+ * context menu is suppressed on the battlefield. While orders are closed
+ * (isInteractive() is false, for example while an earlier order is out), a
+ * Shift + click (a target pick) or a right click is built the same way and
+ * offered to onFencedCommand, which may keep it to send after the request
+ * (main.js keeps it in order with queued keys); a plain click is ignored.
  *
  * Only events targeted at the battlefield are captured. Pointer input focuses
  * it and rejects missing/nonfinite world coordinates. Ordinary command
@@ -439,8 +540,11 @@ function pointInSvg(svg, event) {
  *   onReleaseFocus: () => void,
  *   isInteractive?: () => boolean,
  *   onFencedCommand?: (command: Record<string, unknown>) => boolean,
+ *   allowsWhileClosed?: (command: Readonly<Record<string, unknown>>) => boolean,
  *   ownsFencedSpaceDefault?: () => boolean,
- * }} bindings
+ *   ownsLocalCommands?: () => boolean,
+ * }} bindings allowsWhileClosed defaults to "never": return true for a
+ *   keyboard command that may still be sent while isInteractive() is false.
  */
 export function bindBattlefieldControls({
   battlefield,
@@ -451,14 +555,40 @@ export function bindBattlefieldControls({
   onReleaseFocus,
   isInteractive = () => true,
   onFencedCommand = () => false,
+  allowsWhileClosed = () => false,
   ownsFencedSpaceDefault = () => true,
+  ownsLocalCommands = () => true,
 }) {
   battlefield.addEventListener("keydown", async (event) => {
+    if (
+      event.target === battlefield &&
+      !isDebuggerKey(event) &&
+      ownsLocalCommands() &&
+      runLocalCommand("combat_debugger", event, { interactive: isInteractive() })
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (event.target !== battlefield || !isDebuggerKey(event)) {
       return;
     }
+    if (event.key === "?" && ownsLocalCommands()) {
+      // How To Play is local: it opens at any time, also at game over.
+      event.preventDefault();
+      event.stopPropagation();
+      onHelp();
+      return;
+    }
     if (!isInteractive()) {
-      if (onFencedCommand(keyboardCommandFromEvent(event))) {
+      const command = keyboardCommandFromEvent(event);
+      if (allowsWhileClosed(command)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCommand(command);
+        return;
+      }
+      if (onFencedCommand(command)) {
         event.preventDefault();
         event.stopPropagation();
       } else if (event.key === " " && ownsFencedSpaceDefault()) {
@@ -483,18 +613,23 @@ export function bindBattlefieldControls({
     onCommand(keyboardCommandFromEvent(event));
   });
 
-  battlefield.addEventListener("pointerdown", (event) => {
-    if (!isInteractive()) {
-      return;
+  battlefield.addEventListener("contextmenu", (event) => {
+    if (isInteractive()) {
+      event.preventDefault();
     }
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    battlefield.focus({ preventScroll: true });
+  });
+
+  /**
+   * Build the battlefield_pointer command for a pointer event at its world
+   * point, or null when the point is outside the drawn field.
+   *
+   * @param {PointerEvent} event A primary or secondary pointerdown.
+   * @returns {Record<string, unknown> | null}
+   */
+  const pointerCommand = (event) => {
     const svgPoint = pointInSvg(battlefield, event);
     if (!svgPoint) {
-      return;
+      return null;
     }
     const worldPoint = toWorldPoint(svgPoint);
     if (
@@ -502,16 +637,226 @@ export function bindBattlefieldControls({
       !Number.isFinite(worldPoint.world_x) ||
       !Number.isFinite(worldPoint.world_y)
     ) {
-      return;
+      return null;
     }
-    const command = {
+    return {
       command_type: "battlefield_pointer",
       world_x: worldPoint.world_x,
       world_y: worldPoint.world_y,
-      button: "primary",
+      button: event.button === 2 ? "secondary" : "primary",
       ...modifierFields(event),
     };
+  };
+
+  battlefield.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.button !== 2) {
+      return;
+    }
+    if (!isInteractive()) {
+      if (event.button === 2 || event.shiftKey) {
+        const command = pointerCommand(event);
+        if (command !== null && onFencedCommand(command)) event.preventDefault();
+      }
+      return;
+    }
+    event.preventDefault();
+    battlefield.focus({ preventScroll: true });
+    const command = pointerCommand(event);
+    if (command === null) {
+      return;
+    }
     onPointerCommand(event.target, command);
     onCommand(command);
   });
+}
+
+/**
+ * The vision page's names for the nine movement ids (0 Stay, 1 North,
+ * 2 South, 3 East, 4 West, 5 North-East, 6 North-West, 7 South-East,
+ * 8 South-West), as Core numbers them.
+ */
+export const STEP_NAMES = Object.freeze([
+  "Stay",
+  "North",
+  "South",
+  "East",
+  "West",
+  "North-East",
+  "North-West",
+  "South-East",
+  "South-West",
+]);
+
+/**
+ * @typedef {(
+ *   | {kind: "step", move: number}
+ *   | {kind: "no_combat"}
+ *   | {kind: "armed", ability: string, target: string | null}
+ *   | {kind: "burst_armed"}
+ *   | {kind: "needs_target", ability: string}
+ *   | {kind: "not_allowed", ability: string, onTarget: boolean, readyIn: number}
+ *   | {kind: "target", target: string, basic: string, ultimate: string,
+ *      auto: boolean, ultimateAllowed: boolean}
+ *   | {kind: "cleared", keysOff: boolean}
+ *   | {kind: "keys_off"}
+ *   | {kind: "focus_own", className: string}
+ *   | {kind: "nobody_ready"}
+ *   | {kind: "look", target: string, controller: string}
+ *   | {kind: "policy_champion", watch: boolean}
+ *   | {kind: "stopped"}
+ *   | {kind: "lock_in", watch: boolean}
+ *   | {kind: "view", view: "pov" | "oracle", unseen: number, viewers: string,
+ *      watch: boolean}
+ *   | {kind: "ranges", shown: boolean}
+ *   | {kind: "restart_cancelled"}
+ *   | {kind: "work_cancelled"}
+ *   | {kind: "running"}
+ *   | {kind: "pausing"}
+ *   | {kind: "paused"}
+ * )} StatusEvent
+ */
+
+/**
+ * Return the status line's plain sentence for one of the player's own
+ * commands, in the vision page's exact words.
+ *
+ * Pure: it reads only its argument. Names come from the caller already
+ * formatted ("Mage (ID 5)", "Shield Bash"); the caller owns Agent POV limits
+ * (it must name only champions the viewing team sees, or the player's own).
+ * Examples: {kind: "step", move: 1} gives "Step: North."; {kind:
+ * "needs_target", ability: "Charge"} gives "Charge needs a target first. Your
+ * order is unchanged."; {kind: "not_allowed", ability: "Shield Bash",
+ * onTarget: true, readyIn: 0} gives "Shield Bash is not allowed on this target
+ * right now. Your order is unchanged."; a readyIn above 0 adds "It is ready in
+ * N ticks." ("1 tick" for one). {kind: "view", view: "pov", unseen: 2,
+ * viewers: "your team", watch: false} gives "Agent POV: you see only what your
+ * team sees. 2 enemy champions are out of sight." The game's first sentence
+ * and the closed page's words are not here: tactics-turn.js owns them
+ * (startGreeting, closedSentence), because they depend on the roster and the
+ * replay's save state.
+ *
+ * @param {StatusEvent} event What happened. Unknown kinds return "".
+ * @returns {string} One or more sentences, or "" for an unknown event.
+ */
+export function statusSentence(event) {
+  const ticks = (/** @type {number} */ n) => `${n} tick${n === 1 ? "" : "s"}`;
+  switch (event.kind) {
+    case "step":
+      return event.move === 0
+        ? "Step: Stay."
+        : `Step: ${STEP_NAMES[event.move] ?? "Stay"}.`;
+    case "no_combat":
+      return "No Combat: your champion only moves this tick. Your target stays picked.";
+    case "armed":
+      return event.target === null
+        ? `${event.ability} is armed.`
+        : `${event.ability} is armed on the ${event.target}.`;
+    case "burst_armed":
+      return "Burst is armed. It has no target, so your target was cleared.";
+    case "needs_target":
+      return `${event.ability} needs a target first. Your order is unchanged.`;
+    case "not_allowed": {
+      const later = event.readyIn > 0 ? ` It is ready in ${ticks(event.readyIn)}.` : "";
+      return event.onTarget
+        ? `${event.ability} is not allowed on this target right now. Your order is unchanged.${later}`
+        : `${event.ability} is not allowed right now. Your order is unchanged.${later}`;
+    }
+    case "target":
+      if (event.auto) {
+        return `Target: ${event.target}. ${event.basic} armed itself, because it is allowed (Auto).`;
+      }
+      return event.ultimateAllowed
+        ? `Target: ${event.target}. ${event.basic} is not allowed on it, so your action is No Combat. Press 2 for ${event.ultimate}.`
+        : `Target: ${event.target}. Nothing is allowed on it right now, so your action is No Combat.`;
+    case "cleared":
+      return event.keysOff
+        ? "Target cleared. Keys are off until you click the arena again."
+        : "Target cleared.";
+    case "keys_off":
+      return "Keys are off until you click the arena again.";
+    case "focus_own":
+      return `Giving orders to your ${event.className}.`;
+    case "nobody_ready":
+      return "All your champions are fallen, so nobody can take orders until they return.";
+    case "look":
+      return `Looking at the ${event.target}, played by ${event.controller}.`;
+    case "policy_champion":
+      return event.watch
+        ? "Nobody is yours this game. You can look, not command."
+        : "This champion is played by a policy. You can look, not command. Pick one of yours to give orders.";
+    case "stopped":
+      return "A fresh start is needed, so orders cannot change. You can look around, save or exit.";
+    case "lock_in":
+      return event.watch
+        ? "Playing one turn."
+        : "Orders sent. The policies choose next.";
+    case "view": {
+      if (event.view === "oracle") {
+        return `Oracle View: every champion is shown, even those ${event.viewers} cannot see.`;
+      }
+      const lead = `Agent POV: you see only what ${event.viewers} sees.`;
+      if (event.unseen === 0) return `${lead} Every champion is in sight.`;
+      const who = event.watch ? "" : "enemy ";
+      return `${lead} ${event.unseen} ${who}champion${event.unseen === 1 ? " is" : "s are"} out of sight.`;
+    }
+    case "ranges":
+      return event.shown ? "Reach rings shown." : "Reach rings hidden.";
+    case "restart_cancelled":
+      return "Restart cancelled. The game goes on.";
+    case "work_cancelled":
+      return "Policy work cancelled. The game so far is kept. A fresh start from Python is needed to play on.";
+    case "running":
+      return "Running. Press Pause to stop after the current turn.";
+    case "pausing":
+      return "Pausing after the current turn.";
+    case "paused":
+      return "Paused after the current turn.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Return whether a live tick the page already showed is only being shown to a
+ * new audience, so the page should show it at its end and not play it again.
+ *
+ * Why: Agent POV and Oracle View carry different transition ids for the same
+ * tick, so the choreographer would glide that tick again after a view switch,
+ * and while it replays the deck counts the tick as All Act and drops order
+ * keys without a word. A view change only changes what the human sees.
+ *
+ * True only when both records exist, they show the same simulator tick, their
+ * audienceKey strings differ (view kind or Agent POV recipient) and both keys
+ * name the same session (the first item of the JSON array audienceKey, as
+ * choreography-plan.js builds it: [session_id, presentation_kind,
+ * recipient_presentation_key]). False for the first tick shown (shown null), a
+ * new tick, a new session (a restart) or the same audience. Pure; it reads
+ * nothing hidden from an Agent POV team, only the two plans' keys.
+ *
+ * @param {{audienceKey: unknown, simulatorStep: unknown} | null} shown The
+ *   audience key and tick of the last live plan shown, or null before the
+ *   first.
+ * @param {{audienceKey: unknown, simulatorStep: unknown} | null} next The same
+ *   facts for the plan just installed, or null when there is none.
+ * @returns {boolean}
+ */
+export function audienceSwitchKeepsTick(shown, next) {
+  if (shown === null || next === null) return false;
+  if (shown.audienceKey === next.audienceKey) return false;
+  if (shown.simulatorStep !== next.simulatorStep) return false;
+  /** @param {unknown} key @returns {unknown} The session id, or null. */
+  const sessionOf = (key) => {
+    try {
+      const parsed = JSON.parse(String(key));
+      return Array.isArray(parsed) ? parsed[0] : null;
+    } catch {
+      return null;
+    }
+  };
+  const session = sessionOf(next.audienceKey);
+  return (
+    session !== null &&
+    session !== undefined &&
+    session === sessionOf(shown.audienceKey)
+  );
 }

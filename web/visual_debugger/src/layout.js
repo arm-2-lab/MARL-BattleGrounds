@@ -1,9 +1,15 @@
 /**
  * @file Place battlefield labels and transient cues in screen space without changing game facts.
- * createViewportTransform owns the fitted world/pixel conversion. layoutStatusDocks
+ * createViewportTransform owns the fitted world/pixel conversion, including the
+ * optional camera frame (a world rectangle; Whole Map when absent).
+ * wholeMapCameraFrame gives the Whole Map frame, and the EVERYONE_IN_VIEW_*
+ * constants are the Everyone In View margin and zoom steps; the Everyone In View
+ * and Battle Cam rules themselves have one owner, looks/camera.js.
+ * layoutStatusDocks
  * and layoutRequiredDocks place disclosed status payloads around protected bodies.
  * layoutCrossPhaseOccupancy places transient cue boxes and directed routes across
- * animation phases. These functions use deterministic geometry only: no DOM reads,
+ * animation phases; a cue with no free spot falls back to its own anchor instead
+ * of failing the whole layout. These functions use deterministic geometry only: no DOM reads,
  * network calls, random draws or simulator decisions. Distances are CSS pixels
  * except the world dimensions accepted by the transform and redZoneFloorIntervals,
  * which turns a recorded map.red_zone into at most two merged floor strips in world
@@ -85,19 +91,25 @@ export const DEFAULT_STATUS_DOCK_OPTIONS = Object.freeze({
  *   height: number,
  * }} Rectangle
  * @typedef {{top: number, right: number, bottom: number, left: number}} Insets
+ * @typedef {{minX: number, minY: number, maxX: number, maxY: number}} CameraFrame
+ *   A world rectangle in world units (Y up): the part of the world the camera
+ *   fits into the padded viewport. Whole Map is {0, 0, worldWidth, worldHeight}.
  * @typedef {{
  *   worldWidth: number,
  *   worldHeight: number,
  *   viewportWidth: number,
  *   viewportHeight: number,
  *   padding?: number | Partial<Insets>,
+ *   cameraFrame?: CameraFrame | null,
  * }} ViewportTransformInput
  * @typedef {{
  *   scale: number,
  *   worldWidth: number,
  *   worldHeight: number,
+ *   cameraFrame: Readonly<CameraFrame>,
  *   viewportBounds: Rectangle,
  *   mapBounds: Rectangle,
+ *   visibleMapBounds: Rectangle,
  *   worldToScreen: (point: Point | readonly [number, number]) => Point,
  *   screenToWorld: (point: Point | readonly [number, number]) => Point,
  *   worldLengthToScreen: (length: number) => number,
@@ -285,19 +297,32 @@ export const DEFAULT_STATUS_DOCK_OPTIONS = Object.freeze({
  */
 
 /**
- * Fit a world rectangle inside a padded viewport while preserving its aspect ratio.
+ * Fit the camera frame inside a padded viewport while preserving its aspect ratio.
  *
  * input gives positive finite worldWidth/worldHeight in world units and
  * viewportWidth/viewportHeight in CSS pixels. padding defaults to zero; a finite
  * nonnegative number applies to all sides, or an inset object supplies individual
- * top/right/bottom/left values with omitted sides set to zero. Center the fitted
- * map in the remaining space. World Y increases upward; screen Y increases downward.
+ * top/right/bottom/left values with omitted sides set to zero. cameraFrame is an
+ * optional world rectangle {minX, minY, maxX, maxY} (world units, Y up); when it
+ * is absent or null the camera shows the Whole Map, exactly as before cameras
+ * existed. The frame is scaled to fit the space left inside the padding and
+ * centered there; a frame smaller than the map zooms in, and the map edges may
+ * then fall outside the viewport. World Y increases upward; screen Y increases
+ * downward.
+ *
+ * Only world positions and world lengths change with the camera: every caller
+ * keeps its own fixed screen-pixel sizes (cue boxes, docks, stroke widths and
+ * labels), because they are drawn in CSS pixels around projected points.
  *
  * Return a frozen transform with pixels-per-world-unit scale, original world
- * dimensions, full viewportBounds, fitted mapBounds and three conversion methods.
- * Conversions do not clamp points to the map. No input is changed. Throw TypeError
- * for malformed objects or nonfinite/nonnumeric values, and RangeError for
- * nonpositive dimensions, negative padding or padding that leaves no map area.
+ * dimensions, the frozen cameraFrame in use, full viewportBounds, the projected
+ * mapBounds of the whole map, visibleMapBounds (the part of mapBounds inside the
+ * viewport; the very same mapBounds record when the whole map is on screen) and
+ * three conversion methods. Conversions do not clamp points to the map or the
+ * frame. No input is changed. Throw TypeError for malformed objects or
+ * nonfinite/nonnumeric values, and RangeError for nonpositive dimensions,
+ * negative padding, padding that leaves no map area, or a camera frame whose
+ * maximum edge is not above its minimum edge.
  *
  * @param {ViewportTransformInput} input
  * @returns {ViewportTransform}
@@ -311,26 +336,61 @@ export function createViewportTransform(input) {
   const viewportWidth = positiveFinite(input.viewportWidth, "viewportWidth");
   const viewportHeight = positiveFinite(input.viewportHeight, "viewportHeight");
   const padding = normalizeInsets(input.padding);
+  const cameraFrame =
+    input.cameraFrame === undefined || input.cameraFrame === null
+      ? wholeMapCameraFrame(worldWidth, worldHeight)
+      : normalizeCameraFrame(input.cameraFrame);
   const availableWidth = viewportWidth - padding.left - padding.right;
   const availableHeight = viewportHeight - padding.top - padding.bottom;
   if (availableWidth <= 0 || availableHeight <= 0) {
     throw new RangeError("viewport padding must leave a positive map rectangle.");
   }
 
-  const scale = Math.min(availableWidth / worldWidth, availableHeight / worldHeight);
-  const fittedWidth = worldWidth * scale;
-  const fittedHeight = worldHeight * scale;
-  const left = padding.left + (availableWidth - fittedWidth) / 2;
-  const top = padding.top + (availableHeight - fittedHeight) / 2;
+  const frameWidth = cameraFrame.maxX - cameraFrame.minX;
+  const frameHeight = cameraFrame.maxY - cameraFrame.minY;
+  const scale = Math.min(availableWidth / frameWidth, availableHeight / frameHeight);
+  const fittedWidth = frameWidth * scale;
+  const fittedHeight = frameHeight * scale;
+  const frameLeft = padding.left + (availableWidth - fittedWidth) / 2;
+  const frameTop = padding.top + (availableHeight - fittedHeight) / 2;
+  // For the Whole Map frame minX and the top gap are exactly zero, so these
+  // reduce to frameLeft and frameTop and the map lands where it always did.
+  const left = frameLeft - cameraFrame.minX * scale;
+  const top = frameTop - (worldHeight - cameraFrame.maxY) * scale;
   const viewportBounds = rectangle(0, 0, viewportWidth, viewportHeight);
-  const mapBounds = rectangle(left, top, left + fittedWidth, top + fittedHeight);
+  const mapBounds = rectangle(
+    left,
+    top,
+    left + worldWidth * scale,
+    top + worldHeight * scale,
+  );
+  const visibleMapBounds =
+    mapBounds.left >= viewportBounds.left &&
+    mapBounds.top >= viewportBounds.top &&
+    mapBounds.right <= viewportBounds.right &&
+    mapBounds.bottom <= viewportBounds.bottom
+      ? mapBounds
+      : rectangle(
+          Math.max(mapBounds.left, viewportBounds.left),
+          Math.max(mapBounds.top, viewportBounds.top),
+          Math.max(
+            Math.max(mapBounds.left, viewportBounds.left),
+            Math.min(mapBounds.right, viewportBounds.right),
+          ),
+          Math.max(
+            Math.max(mapBounds.top, viewportBounds.top),
+            Math.min(mapBounds.bottom, viewportBounds.bottom),
+          ),
+        );
 
   return Object.freeze({
     scale,
     worldWidth,
     worldHeight,
+    cameraFrame,
     viewportBounds,
     mapBounds,
+    visibleMapBounds,
     /**
      * Convert a world point to CSS pixels using this fitted map.
      *
@@ -370,6 +430,63 @@ export function createViewportTransform(input) {
       return nonNegativeFinite(length, "world length") * scale;
     },
   });
+}
+
+/**
+ * Everyone In View keeps this much world space, in world units, around each body
+ * (read by looks/camera.js, the one owner of the Everyone In View rule).
+ */
+export const EVERYONE_IN_VIEW_MARGIN = 1.5;
+/** Everyone In View never zooms in further than this, relative to the Whole Map. */
+export const EVERYONE_IN_VIEW_MAX_ZOOM = 2;
+/** Everyone In View zooms in steps of this size: 1, 1.25, 1.5, 1.75 or 2. */
+export const EVERYONE_IN_VIEW_ZOOM_STEP = 0.25;
+
+/**
+ * Return the Whole Map camera frame for a map of the given size.
+ *
+ * worldWidth and worldHeight are positive finite map sizes in world units. Return
+ * a frozen {minX: 0, minY: 0, maxX: worldWidth, maxY: worldHeight}. This is the
+ * default camera in every client and the frame used when no camera is given.
+ * Throw TypeError for nonnumeric or nonfinite sizes and RangeError for zero or
+ * negative sizes. Pure arithmetic: no DOM, storage or timers.
+ *
+ * @param {number} worldWidth
+ * @param {number} worldHeight
+ * @returns {Readonly<CameraFrame>}
+ */
+export function wholeMapCameraFrame(worldWidth, worldHeight) {
+  return Object.freeze({
+    minX: 0,
+    minY: 0,
+    maxX: positiveFinite(worldWidth, "worldWidth"),
+    maxY: positiveFinite(worldHeight, "worldHeight"),
+  });
+}
+
+/**
+ * Validate a caller-supplied camera frame and return a frozen copy.
+ *
+ * value must be a record with finite minX, minY, maxX and maxY in world units,
+ * with maxX above minX and maxY above minY. The frame may reach outside the map.
+ * Throw TypeError for a malformed record or nonfinite edge and RangeError for an
+ * empty or reversed frame.
+ *
+ * @param {unknown} value
+ * @returns {Readonly<CameraFrame>}
+ */
+function normalizeCameraFrame(value) {
+  if (!isRecord(value)) {
+    throw new TypeError("cameraFrame must be an object.");
+  }
+  const minX = finite(value.minX, "cameraFrame.minX");
+  const minY = finite(value.minY, "cameraFrame.minY");
+  const maxX = finite(value.maxX, "cameraFrame.maxX");
+  const maxY = finite(value.maxY, "cameraFrame.maxY");
+  if (maxX <= minX || maxY <= minY) {
+    throw new RangeError("cameraFrame must have positive width and height.");
+  }
+  return Object.freeze({ minX, minY, maxX, maxY });
 }
 
 /**
@@ -786,12 +903,22 @@ export function layoutRequiredDocks(input, options = {}) {
  * Leader lines are an underlay and do not reserve space. Curve clearance uses 32
  * line segments; fallback route graphs have a fixed node limit.
  *
+ * A cue with no free local or perimeter spot never fails the layout. It falls
+ * back to a box centered on its anchor, shifted only as far as needed to stay
+ * inside the viewport (centered on the viewport on an axis where the box is larger
+ * than the viewport). That placement has disposition "anchor_fallback",
+ * collisionFree false and a zero- or short-length leader, and it still reserves
+ * its box so later cues avoid it. Compaction never moves it.
+ *
  * Return frozen ordered placements, cuePlacements, routePlacements, occupancyLedger,
- * protectedRegions, placementOrder and sorted filteredLayoutKeys. The ledger records
- * bounds, not a claim that every layer blocks every other layer. Inputs are unchanged.
+ * protectedRegions, placementOrder, sorted filteredLayoutKeys and sorted
+ * anchorFallbackLayoutKeys (cues that used the anchor fallback; empty when every
+ * cue found a free spot). The ledger records bounds, not a claim that every layer
+ * blocks every other layer. Inputs are unchanged.
  * Throw TypeError for malformed fields, RangeError for invalid ranges/keys or when an
- * enabled cue/route has no supported placement, and Error if an allocated record is
- * unexpectedly missing. This function does not infer disclosure or game legality.
+ * enabled route has no supported lane, and Error if an allocated record is
+ * unexpectedly missing. This function does not infer disclosure or game legality;
+ * the caller decides which cues exist, so Agent POV limits are kept by the caller.
  *
  * @param {CrossPhaseLayoutInput} input
  * @param {Partial<typeof DEFAULT_CROSS_PHASE_LAYOUT_OPTIONS>} [options]
@@ -822,6 +949,8 @@ export function layoutCrossPhaseOccupancy(input, options = {}) {
   const recipientCounts = new Map();
   /** @type {Array<Record<string, any>>} */
   const cuePlacements = [];
+  /** @type {string[]} */
+  const anchorFallbackLayoutKeys = [];
   const cueAnchors = cueRequests.map(({ layoutKey, anchor }) => ({
     layoutKey,
     anchor,
@@ -852,13 +981,16 @@ export function layoutCrossPhaseOccupancy(input, options = {}) {
         cueAnchors,
         request.layoutKey,
       );
-    if (selected === null) {
-      throw new RangeError(
-        `cross-phase cue ${request.layoutKey} has no bounded collision-free placement.`,
-      );
-    }
-    const { candidate, leader } = selected;
+    // A crowded or very small arena can leave no free spot. One cue must
+    // never blank the whole tick, so it degrades: it is drawn on its anchor
+    // (kept inside the viewport) and marked as not collision-free.
+    const anchorFallback = selected === null;
+    const { candidate, leader } =
+      selected ?? anchorFallbackCuePlacement(request, viewport);
     occupied.push(expandRectangle(candidate.bounds, resolved.clearance));
+    if (anchorFallback) {
+      anchorFallbackLayoutKeys.push(request.layoutKey);
+    }
     cuePlacements.push(
       Object.freeze({
         layoutKey: request.layoutKey,
@@ -867,13 +999,15 @@ export function layoutCrossPhaseOccupancy(input, options = {}) {
         stableOrder: request.stableOrder,
         recipientKey,
         stackIndex,
-        disposition: localCandidates.includes(candidate)
-          ? "recipient_stack"
-          : "perimeter_callout",
+        disposition: anchorFallback
+          ? "anchor_fallback"
+          : localCandidates.includes(candidate)
+            ? "recipient_stack"
+            : "perimeter_callout",
         center: candidate.center,
         bounds: candidate.bounds,
         leader,
-        collisionFree: true,
+        collisionFree: !anchorFallback,
       }),
     );
   }
@@ -890,7 +1024,10 @@ export function layoutCrossPhaseOccupancy(input, options = {}) {
     for (let index = cuePlacements.length - 1; index >= 0; index -= 1) {
       const current = cuePlacements[index];
       const request = cueRequestByKey.get(current.layoutKey);
-      if (request?.kind !== "recipient_cue") {
+      if (
+        request?.kind !== "recipient_cue" ||
+        current.disposition === "anchor_fallback"
+      ) {
         continue;
       }
       const currentDistance = Math.hypot(
@@ -1198,6 +1335,7 @@ export function layoutCrossPhaseOccupancy(input, options = {}) {
     protectedRegions,
     placementOrder: Object.freeze(ordered.map(({ layoutKey }) => layoutKey)),
     filteredLayoutKeys,
+    anchorFallbackLayoutKeys: Object.freeze([...anchorFallbackLayoutKeys].sort()),
   });
 }
 
@@ -1823,6 +1961,47 @@ function firstFreeCueCandidate(candidates, occupied, anchor, cueAnchors, layoutK
     });
   }
   return null;
+}
+
+/**
+ * Place a cue on its own anchor when no collision-free spot exists.
+ *
+ * request is a normalized cue request (anchor point plus positive width and height
+ * in CSS pixels); viewport is the allowed rectangle. The box is centered on the
+ * anchor, then shifted on each axis just enough to lie inside the viewport. On an
+ * axis where the box is wider or taller than the viewport, it is centered on the
+ * viewport instead. Return a frozen { candidate, leader } record in the same shape
+ * as firstFreeCueCandidate; the leader runs from the anchor to the box center and
+ * has zero length when no shift was needed. Pure geometry: no errors, no side
+ * effects, inputs unchanged.
+ *
+ * @param {{anchor: Point, width: number, height: number}} request
+ * @param {Rectangle} viewport
+ * @returns {{candidate: CrossPhaseCueCandidate, leader: Record<string, any>}}
+ */
+function anchorFallbackCuePlacement(request, viewport) {
+  const { anchor, width, height } = request;
+  const fitAxis = (
+    /** @type {number} */ value,
+    /** @type {number} */ size,
+    /** @type {number} */ low,
+    /** @type {number} */ high,
+  ) =>
+    size >= high - low
+      ? (low + high) / 2
+      : Math.min(Math.max(value, low + size / 2), high - size / 2);
+  const candidate = cueCandidate(
+    {
+      x: fitAxis(anchor.x, width, viewport.left, viewport.right),
+      y: fitAxis(anchor.y, height, viewport.top, viewport.bottom),
+    },
+    width,
+    height,
+  );
+  return Object.freeze({
+    candidate,
+    leader: cueLeader(anchor, candidate.center),
+  });
 }
 
 /**

@@ -1,0 +1,388 @@
+/*
+ * Saga Chronicle and the replay transport dock (Replay Viewer only).
+ *
+ * Owns: the transport row look (#replay-timeline .replay-timeline__transport:
+ * 32 px buttons, a fixed 48 px Play/Pause, the tabular tick readout) and the
+ * Chronicle that src/chronicle.js builds inside #chronicle: Row 0 the caption
+ * row (16 px; caption, camera switch, readout), Row 1 the 56 px ribbon (lanes,
+ * groove, chapters, marks, veil, pins, playhead; it is the one visible
+ * scrubber), Row 2 the docked transport (one 32 px row at desktop widths: the
+ * transport buttons, Previous Fight, Step Play, Next Fight, Fights Only,
+ * Bookmark, a compact Speed select and the export actions pushed to the end)
+ * and the bookmark list. The native Tick slider, readout and status line stay
+ * in the DOM but are visually hidden there (chronicle.js adds sr-only).
+ * styles.css imports this file before its own rules, so every rule here that
+ * restyles an existing transport class is scoped under #replay-timeline to win.
+ * Colours come only from the :root tokens in styles.css. The ribbon is never
+ * part of the exported battlefield PNG. No beat-timed element here has a CSS
+ * animation or transition; chronicle.js holds those with Web Animations.
+ */
+
+#replay-timeline .replay-timeline__transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--panel-edge);
+  background: var(--panel);
+}
+
+#replay-timeline .replay-timeline__transport button {
+  min-width: 2.5rem;
+  min-height: 2rem;
+  padding: 0 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#replay-timeline .replay-timeline__transport #replay-play-pause-button {
+  inline-size: 3rem;
+  min-width: 3rem;
+  padding: 0;
+}
+
+#replay-timeline .replay-timeline__slider {
+  flex: 1 1 8rem;
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+}
+
+#replay-timeline .replay-timeline__slider input {
+  accent-color: var(--moon-silver);
+}
+
+#replay-timeline #replay-frame-position {
+  min-width: 9ch;
+  color: var(--ui-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+#replay-timeline .replay-timeline__rate {
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+}
+
+#replay-timeline .replay-timeline__rate select {
+  min-height: 2rem;
+  padding-block: 0.2rem;
+}
+
+/* Docked in the Chronicle: one compact 32 px row, the Chronicle pads it. */
+#chronicle .replay-timeline__transport {
+  min-height: 2rem;
+  padding: 0;
+  border-top: 0;
+  gap: 0.25rem;
+}
+
+#chronicle .replay-timeline__transport button {
+  min-width: 2rem;
+  padding: 0 0.4rem;
+}
+
+#chronicle .replay-timeline__rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+#chronicle .replay-timeline__rate select {
+  min-width: 0;
+  inline-size: 5rem;
+  padding-inline: 0.45rem 1.4rem;
+}
+
+/* The word "Speed" stays for screen readers; the select shows "1.00×". */
+#chronicle .replay-timeline__rate > span {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+#chronicle .replay-artifact-actions {
+  margin-inline-start: auto;
+}
+
+#replay-timeline #replay-transport-status {
+  flex: 1 0 100%;
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+  text-align: start;
+}
+
+/* The Chronicle: caption row, ribbon, buttons, bookmark list. */
+
+#replay-timeline .chronicle {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: var(--panel);
+}
+
+#replay-timeline .chronicle[hidden] {
+  display: none;
+}
+
+.chronicle__caption-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1rem;
+}
+
+.chronicle__caption {
+  flex: 1 1 auto;
+  min-width: 12ch;
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.chronicle__caption[data-kind="fight"],
+.chronicle__caption[data-kind="card"] {
+  color: var(--ui-text);
+}
+
+.chronicle__readout {
+  flex: none;
+  color: var(--ui-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chronicle__ribbon-host {
+  min-width: 0;
+  height: 56px;
+  cursor: pointer;
+}
+
+/* The hidden native slider has focus: the ribbon shows the focus ring. */
+.chronicle__ribbon-host[data-slider-focus] {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 2px;
+}
+
+.chronicle__ribbon {
+  display: block;
+  overflow: visible;
+}
+
+.chronicle__groove {
+  fill: var(--ink);
+  stroke: var(--panel-edge);
+  stroke-width: 1;
+}
+
+.chronicle__played {
+  fill: var(--moon-silver);
+  fill-opacity: 0.3;
+}
+
+/* Ley Seam chapters on the groove; --border is the palette's Ley Seam blue. */
+.chronicle__chapter {
+  fill: var(--border);
+}
+
+.chronicle__chapter--current {
+  stroke: var(--moon-silver);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+}
+
+.chronicle__fall--a {
+  fill: var(--team-a);
+}
+
+.chronicle__fall--b {
+  fill: var(--team-b);
+}
+
+.chronicle__pip {
+  opacity: 0.7;
+}
+
+.chronicle__pip--a {
+  fill: var(--team-a-light);
+}
+
+.chronicle__pip--b {
+  fill: var(--team-b-light);
+}
+
+.chronicle__rune {
+  stroke-width: 1;
+}
+
+.chronicle__rune--damaging {
+  stroke: var(--ink);
+}
+
+.chronicle__rune--support {
+  fill: var(--ink);
+  stroke-width: 1.2;
+}
+
+.chronicle__rune--damaging.chronicle__rune--mage {
+  fill: var(--class-mage);
+}
+.chronicle__rune--damaging.chronicle__rune--warrior {
+  fill: var(--class-warrior);
+}
+.chronicle__rune--damaging.chronicle__rune--hunter {
+  fill: var(--class-hunter);
+}
+.chronicle__rune--damaging.chronicle__rune--rogue {
+  fill: var(--class-rogue);
+}
+.chronicle__rune--damaging.chronicle__rune--priest {
+  fill: var(--class-priest);
+}
+.chronicle__rune--support.chronicle__rune--mage {
+  stroke: var(--class-mage);
+}
+.chronicle__rune--support.chronicle__rune--warrior {
+  stroke: var(--class-warrior);
+}
+.chronicle__rune--support.chronicle__rune--hunter {
+  stroke: var(--class-hunter);
+}
+.chronicle__rune--support.chronicle__rune--rogue {
+  stroke: var(--class-rogue);
+}
+.chronicle__rune--support.chronicle__rune--priest {
+  stroke: var(--class-priest);
+}
+
+.chronicle__veil {
+  fill: var(--panel);
+  fill-opacity: 0.45;
+}
+
+.chronicle__pins {
+  fill: var(--moon-silver);
+  fill-opacity: 0.85;
+}
+
+.chronicle__playhead {
+  stroke: var(--moon-silver);
+  stroke-width: 2;
+}
+
+.chronicle__thumb {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1.5;
+}
+
+.chronicle__hit {
+  fill: transparent;
+}
+
+.chronicle__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.chronicle .chronicle__button {
+  min-height: 2rem;
+  padding: 0 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.chronicle .chronicle__button[aria-expanded="true"] {
+  border-color: var(--moon-silver);
+}
+
+/* The bookmark list: 280 px wide, its own scroll after about 8 rows. */
+.chronicle__bookmarks {
+  position: absolute;
+  z-index: 5;
+  right: 1rem;
+  bottom: 2.75rem;
+  display: grid;
+  gap: 0.375rem;
+  inline-size: min(280px, calc(100% - 2rem));
+  padding: 0.625rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 0.8125rem;
+}
+
+.chronicle__bookmarks[hidden] {
+  display: none;
+}
+
+.chronicle__bookmarks p {
+  margin: 0;
+}
+
+.chronicle__bookmarks-title {
+  color: var(--ui-text);
+  font-weight: 700;
+}
+
+.chronicle__bookmarks-scope,
+.chronicle__bookmarks-status {
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+}
+
+.chronicle__bookmarks-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.chronicle__bookmark-list {
+  display: grid;
+  gap: 0.25rem;
+  max-block-size: 16rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chronicle__bookmark {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.chronicle__bookmark--empty {
+  display: block;
+  color: var(--ui-muted);
+  font-size: 0.6875rem;
+}
+
+.chronicle__bookmark-tick {
+  font-variant-numeric: tabular-nums;
+}
+
+.chronicle__bookmark-note {
+  min-width: 0;
+  min-height: 1.75rem;
+  font-size: 0.6875rem;
+}

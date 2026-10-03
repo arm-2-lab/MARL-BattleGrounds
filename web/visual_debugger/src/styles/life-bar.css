@@ -1,0 +1,82 @@
+/*
+ * The one Life bar (src/life-bar.js createLifeBar; owner, 2 October 2026):
+ * "Life", a thin 6 px track and "77 / 80" in one row. The fill is green above
+ * half (data-life="good"), yellow at half or less ("warn") and red at 30% or
+ * less ("low"). The BattleClient, the DevClient combat screen and the Replay
+ * Viewer all draw it from these rules: the Champion Card, the deck's Your
+ * Champion box, Target chip and Watch Only overlay, and the Replay Viewer's
+ * Champion Frame, Team Rosters frames and Agent tab. Each place sets only
+ * where the bar sits and how wide it is; the look stays here. The arena
+ * tokens keep their own Life Vessel. styles.css imports this file.
+ */
+
+.life-bar {
+  --life-bar-good: #6ccb5f;
+  --life-bar-warn: #f5c95a;
+  --life-bar-low: #ef4b4b;
+  --life-bar-tone: var(--life-bar-good);
+
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.life-bar[data-life="warn"] {
+  --life-bar-tone: var(--life-bar-warn);
+}
+
+.life-bar[data-life="low"] {
+  --life-bar-tone: var(--life-bar-low);
+}
+
+/* Two classes on every part, so a panel's generic "span" rule (for example
+   the docked panels' .fact span) cannot restyle the bar. */
+.life-bar .life-bar__label {
+  display: block;
+  color: var(--ui-muted);
+  font-size: inherit;
+  text-transform: none;
+}
+
+.life-bar .life-bar__track {
+  display: block;
+  height: 6px;
+  min-width: 24px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--groove);
+}
+
+.life-bar .life-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--life-bar-tone);
+}
+
+.life-bar .life-bar__value {
+  display: block;
+  color: var(--ui-text);
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.life-bar .life-bar__value small {
+  color: var(--ui-muted);
+  font-size: inherit;
+}
+
+/* Inside the Champion Card the bar's label, track and value join the card's
+   three-column bars grid, so the Life track lines up with the Ultimate
+   track. */
+.champion-card__bars > .life-bar {
+  display: contents;
+}

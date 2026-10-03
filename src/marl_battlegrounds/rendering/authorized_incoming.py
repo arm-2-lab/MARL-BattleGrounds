@@ -64,6 +64,12 @@ from marl_battlegrounds.rendering.vocabulary import (
     status_token_id_from_catalog_status_id,
 )
 
+# Built once: constructing a TypeAdapter rebuilds its whole validation schema
+# (7 to 18 ms), which per call made every Agent POV request much slower.
+_SHARED_PARTS_ADAPTER: TypeAdapter[SharedObsAuthorizedScenePartsV1] = TypeAdapter(
+    SharedObsAuthorizedScenePartsV1
+)
+
 _STRICT_WIRE_CONFIG = ConfigDict(
     allow_inf_nan=False,
     extra="forbid",
@@ -3044,8 +3050,9 @@ def _validated_shared_parts(
     """
     if type(value) is not SharedObsAuthorizedScenePartsV1:
         raise TypeError(f"{name} must be exact SharedObs authorized scene parts.")
-    adapter = TypeAdapter(SharedObsAuthorizedScenePartsV1)
-    validated = adapter.validate_json(adapter.dump_json(value))
+    validated = _SHARED_PARTS_ADAPTER.validate_json(
+        _SHARED_PARTS_ADAPTER.dump_json(value)
+    )
     if validated != value:
         raise ValueError(f"{name} changes under strict recursive revalidation.")
     return validated

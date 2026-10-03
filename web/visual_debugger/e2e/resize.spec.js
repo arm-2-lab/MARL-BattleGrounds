@@ -1,6 +1,8 @@
 /**
  * @file Check real browser resizing, installed authority, exact debugger grid and
- * independently scrolling panels.
+ * independently scrolling panels. The roster body scrolls by itself; the command
+ * deck grows to its content; at 1280 x 720 and larger the arena column and the
+ * HUD column each scroll by themselves, and below that the page scrolls.
  */
 import { expect, test } from "@playwright/test";
 
@@ -169,7 +171,10 @@ async function expectIndependentDisclosureLayout(page, viewport) {
       throw new Error("Independent disclosure layout targets are unavailable.");
     }
     const toolbarBounds = toolbar.getBoundingClientRect();
+    const arena = document.querySelector(".battlefield-panel");
     return {
+      arenaOverflowY: arena ? getComputedStyle(arena).overflowY : null,
+      hudOverflowY: getComputedStyle(hud).overflowY,
       commandClientHeight: command.clientHeight,
       commandOverflowY: getComputedStyle(command).overflowY,
       commandScrollHeight: command.scrollHeight,
@@ -192,9 +197,17 @@ async function expectIndependentDisclosureLayout(page, viewport) {
   expect(initial.toolbarRight).toBeLessThanOrEqual(viewport.width);
   expect(initial.toolbarBottom).toBeLessThanOrEqual(viewport.height);
   expect(initial.rosterOverflowY).toBe("auto");
-  expect(initial.commandOverflowY).toBe("auto");
   expect(initial.rosterScrollHeight).toBeGreaterThan(initial.rosterClientHeight);
-  expect(initial.commandScrollHeight).toBeGreaterThan(initial.commandClientHeight);
+  // The command deck grows to its content and never clips it. On a wide, tall
+  // window the arena column and the HUD column each scroll by themselves; on a
+  // smaller window the page scrolls instead.
+  expect(initial.commandOverflowY).toBe("visible");
+  expect(initial.commandScrollHeight).toBeLessThanOrEqual(
+    initial.commandClientHeight + 1,
+  );
+  const columnsScroll = viewport.width >= 1280 && viewport.height >= 720;
+  expect(initial.arenaOverflowY).toBe(columnsScroll ? "auto" : "visible");
+  expect(initial.hudOverflowY).toBe(columnsScroll ? "auto" : "visible");
   expect(initial.documentScrollWidth).toBeLessThanOrEqual(initial.documentClientWidth);
 
   const rosterBody = page.locator("#roster-details-body");
@@ -228,7 +241,13 @@ async function expectIndependentDisclosureLayout(page, viewport) {
     body.scrollTop = body.scrollHeight;
   });
   const rosterBoundary = await rosterBody.evaluate((body) => body.scrollTop);
+  // Hovering may scroll the roster into view (it sits below the Your Turn card),
+  // so the wheel check compares against the positions after the hover.
   await rosterBody.hover();
+  const beforeWheel = await page.evaluate(() => ({
+    documentScrollTop: document.scrollingElement?.scrollTop ?? -1,
+    hudScrollTop: document.querySelector(".hud-panel")?.scrollTop ?? -1,
+  }));
   await page.mouse.wheel(0, 600);
   await settleResponsiveLayout(page);
   expect(await rosterBody.evaluate((body) => body.scrollTop)).toBe(rosterBoundary);
@@ -236,10 +255,10 @@ async function expectIndependentDisclosureLayout(page, viewport) {
     await page.locator("#command-deck-body").evaluate((body) => body.scrollTop),
   ).toBe(initial.commandScrollTop);
   expect(await page.locator(".hud-panel").evaluate((hud) => hud.scrollTop)).toBe(
-    initial.hudScrollTop,
+    beforeWheel.hudScrollTop,
   );
   expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? -1)).toBe(
-    initial.documentScrollTop,
+    beforeWheel.documentScrollTop,
   );
 
   const lastRosterAction = page
@@ -351,7 +370,7 @@ test("real Debugger grid is exact, lowest, and click-transparent", async ({ page
     }
   });
   await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -431,7 +450,7 @@ test("supported resize preserves real installed authority at 960px", async ({
 
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -502,7 +521,7 @@ test("disclosure bodies scroll independently at both supported viewports", async
   page,
 }) => {
   await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -524,7 +543,7 @@ test("disclosure bodies scroll independently at both supported viewports", async
     ]) {
       await page.setViewportSize(viewport);
       await page.goto(replay.url);
-      await expect(page.locator("#connection-status")).toHaveText("Online");
+      await expect(page.locator("#connection-status")).toHaveText("Connected");
       await expect(page.locator("html")).toHaveAttribute(
         "data-presentation-authority",
         "installed",

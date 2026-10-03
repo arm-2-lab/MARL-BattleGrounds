@@ -2,7 +2,12 @@
 
 The control layer creates ``DebuggerSession`` endpoints and replaces them after
 validated actions. These models keep one coherent simulator state, observation,
-mask, random key, and evaluation record. Pending actions remain separate from
+mask, random key, and evaluation record, plus a short tail of public team
+scores for the scorebug's Momentum switch (``DebuggerSession.recent_scores``)
+, every view's Champion Streaks counts
+(``DebuggerSession.champion_takedowns``) and every view's Herald Cards
+history (``DebuggerSession.match_moments``).
+Pending actions remain separate from
 accepted simulator actions. Construction checks host contracts; this module has
 no file, network, or simulator-step entry point.
 """
@@ -11,7 +16,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import pairwise
 from math import isfinite
 from typing import TYPE_CHECKING, Literal, TypeGuard, cast
 
@@ -44,6 +50,8 @@ if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.policy_execution import System, SystemState
     from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
     from marl_battlegrounds.rendering.scene import StatusSourceEvidenceStateV2
+    from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
+    from marl_battlegrounds.viewer.match_moments import MatchMomentHistoryV1
 
 SCENARIO_OPPONENT_ERROR = (
     "Scenario opponents are fixed. Remove team_b. "
@@ -78,6 +86,19 @@ SUPPORTED_TEAM_CONTROLLERS: tuple[TeamController, ...] = (
     "tdm_gamma",
 )
 SUPPORTED_TEAM_B_CONTROLLERS: tuple[TeamBController, ...] = SUPPORTED_TEAM_CONTROLLERS
+BUILT_IN_CONTROLLER_NAMES: dict[str, str] = {
+    "reactive_tdm": "tdm-alpha",
+    "random_valid": "random",
+    "scenario_5": "tdm-beta",
+    "tdm_gamma": "tdm-gamma",
+}
+"""Each built-in controller kind's fixed public name, as every client shows it.
+
+Keys are the private live controller kinds; values are the names researchers
+load (``marl_bgs.load_method("tdm-beta")``). Slot labels and recorded replay
+names use the values, never the private kinds. Manual has no entry: its label
+is always "Manual".
+"""
 
 
 def is_system_controller(value: object) -> TypeGuard[str]:
@@ -140,18 +161,59 @@ def normalize_slot_ownership(
     manual_slots: tuple[int, ...] | None,
     slot_labels: tuple[str | None, ...] | None,
     scripted: bool = False,
+    system_slot_names: tuple[tuple[str, ...] | None, tuple[str, ...] | None]
+    | None = None,
 ) -> tuple[tuple[int, ...], tuple[str | None, ...]]:
     """Check physical controller ownership and fill legacy whole-team defaults.
 
-    active_slots names configured rows, including dead actors. controllers uses
-    Team A/B order. None manual_slots derives Manual teams; an explicit tuple may
-    add Manual rows inside a composed System team. Manual teams own every active
-    row and built-in policy teams own none. Rows must be distinct Python ints.
-    None slot_labels derives labels from controller names. Explicit labels have
-    ten rows: nonempty strings for active rows and None only for inactive rows.
-    Manual labels are always Manual. Return sorted ownership and immutable labels;
-    reject contradictory assignments before any method is initialized or called.
-    scripted=True has no Manual rows and labels active rows Scripted.
+    Host-only. It reads plain tuples, calls no method and changes nothing.
+
+    Parameters
+    ----------
+    active_slots : tuple of int
+        Configured physical rows (0 to 9), including dead actors.
+    controllers : tuple of two TeamController
+        Team A and Team B controller kinds or System aliases, in that order.
+    manual_slots : tuple of int or None
+        Rows a human plays. None derives them: every active row of a Manual
+        team. An explicit tuple may also add Manual rows inside a composed
+        System team. Rows must be distinct Python ints. Manual teams own every
+        active row and built-in policy teams own none.
+    slot_labels : tuple of str or None, or None
+        Ten controller labels, one per physical row: nonempty strings for
+        active rows and None only for inactive rows. Manual rows must read
+        "Manual". None derives the labels: "Manual" for Manual rows, a
+        built-in kind's fixed public name (BUILT_IN_CONTROLLER_NAMES, so
+        ``tdm_gamma`` reads ``tdm-gamma``), and for a System alias the name
+        from ``system_slot_names`` when given, else the alias itself.
+    scripted : bool, optional
+        True for scripted playback. It has no Manual rows and derived labels
+        read "Scripted". Default False.
+    system_slot_names : tuple of two (tuple of five str or None), or None
+        Optional names for derived labels, in Team A/B order. Each entry gives
+        a System-alias team's five names in team-local slot order (slot 0
+        first), as ``recording_identity.team_controller_names`` returns them
+        for the team's loaded System, or None for a team without names. Only
+        derived labels use it, and only for non-Manual rows of a System-alias
+        team. Explicit ``slot_labels`` and scripted playback ignore it.
+        Default None: a System alias labels its rows with the alias.
+
+    Returns
+    -------
+    manual_slots : tuple of int
+        The Manual rows, sorted.
+    slot_labels : tuple of str or None
+        The ten checked or derived labels, as an immutable tuple.
+
+    Raises
+    ------
+    ValueError
+        If a Manual row is not a configured row given as a distinct Python
+        int; if scripted playback has Manual rows; if a Manual team's row is
+        not Manual; if a built-in policy team owns a Manual row; or if the
+        labels are not ten rows with nonempty text on exactly the active rows
+        and "Manual" on Manual rows. The caller runs this before any method
+        is initialized or called.
     """
     if manual_slots is None:
         manual_slots = tuple(
@@ -183,16 +245,22 @@ def normalize_slot_ownership(
                 "Only a Manual or composed System team can own Manual rows"
             )
     if slot_labels is None:
-        slot_labels = tuple(
-            None
-            if slot not in active_slots
-            else "Scripted"
-            if scripted
-            else "Manual"
-            if slot in manual_slots
-            else controllers[slot // 5]
-            for slot in range(MAX_AGENT_SLOTS)
-        )
+        names = (None, None) if system_slot_names is None else system_slot_names
+        derived: list[str | None] = []
+        for slot in range(MAX_AGENT_SLOTS):
+            controller = controllers[slot // 5]
+            team_names = names[slot // 5]
+            if slot not in active_slots:
+                derived.append(None)
+            elif scripted:
+                derived.append("Scripted")
+            elif slot in manual_slots:
+                derived.append("Manual")
+            elif is_system_controller(controller) and team_names is not None:
+                derived.append(team_names[slot % 5])
+            else:
+                derived.append(BUILT_IN_CONTROLLER_NAMES.get(controller, controller))
+        slot_labels = tuple(derived)
     if type(slot_labels) is not tuple or len(slot_labels) != MAX_AGENT_SLOTS:
         raise ValueError("Controller labels must contain ten physical rows")
     for slot, label in enumerate(slot_labels):
@@ -211,6 +279,69 @@ def _validate_slot(global_slot: int, *, name: str) -> None:
     if not 0 <= global_slot < MAX_AGENT_SLOTS:
         msg = f"{name} must be in [0, {MAX_AGENT_SLOTS}); got {global_slot}."
         raise ValueError(msg)
+
+
+def _validate_recent_scores(
+    recent_scores: object,
+    frame_index: int,
+    scores: tuple[int, ...],
+) -> None:
+    """Check DebuggerSession.recent_scores against the current frame.
+
+    recent_scores must be a tuple of (Team A, Team B) pairs of Python ints
+    0 or more, at most MOMENTUM_TICKS (10) long and no longer than
+    frame_index (the current frame's index, so frame zero holds none). A
+    team's score never goes down: each pair is at most the next one, and the
+    newest at most scores (the current frame's two scores). Raises TypeError
+    when it is not a tuple of pairs of nonnegative Python ints, and
+    ValueError for a wrong length or a falling score.
+    A shorter tail than possible is allowed; it only shows fewer recent
+    points.
+    """
+    from marl_battlegrounds.viewer.match_summary import MOMENTUM_TICKS
+
+    shape_error = "recent_scores must hold pairs of nonnegative Python ints."
+    if type(recent_scores) is not tuple:
+        raise TypeError(shape_error)
+    for pair in cast("tuple[object, ...]", recent_scores):
+        if type(pair) is not tuple:
+            raise TypeError(shape_error)
+        values = cast("tuple[object, ...]", pair)
+        if len(values) != 2 or any(
+            type(value) is not int or value < 0 for value in values
+        ):
+            raise TypeError(shape_error)
+    pairs = cast("tuple[tuple[int, int], ...]", recent_scores)
+    if len(pairs) > min(MOMENTUM_TICKS, frame_index):
+        raise ValueError(
+            "recent_scores cannot hold more frames than came before this one."
+        )
+    current = (int(scores[0]), int(scores[1]))
+    for earlier, later in pairwise((*pairs, current)):
+        if earlier[0] > later[0] or earlier[1] > later[1]:
+            raise ValueError("recent_scores cannot show a team's score going down.")
+
+
+def _no_champion_takedowns() -> ChampionTakedownsV1:
+    """Return the zero Champion Streaks record of a new game (no takedowns yet).
+
+    DebuggerSession.champion_takedowns uses it as its default. The import stays
+    inside so importing this module loads no rendering or evaluation records.
+    """
+    from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
+
+    return ChampionTakedownsV1()
+
+
+def _no_match_moments() -> MatchMomentHistoryV1:
+    """Return the empty Herald Cards history of a new game (no tick played yet).
+
+    DebuggerSession.match_moments uses it as its default. The import stays
+    inside so importing this module loads no rendering or evaluation records.
+    """
+    from marl_battlegrounds.viewer.match_moments import MatchMomentHistoryV1
+
+    return MatchMomentHistoryV1()
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,6 +507,15 @@ class DebuggerScenario:
     scenario_specification retains one exact packaged scenario's setup; packaged_map
     retains an ordinary map's catalog identity. Both default to None and are
     mutually exclusive with each other and authored provenance.
+
+    spawn_banks_exchanged (default False) says that the factory's map is
+    packaged_map with its two spawn banks exchanged, so Team A starts at the
+    end Team B starts at in the catalog (``tasks._swap_spawn_banks``). Only a
+    packaged map may declare it. The evaluation bridge then checks the map
+    against the catalog with the banks put back, names it as that map and
+    records the exchange (``marl_bgs.spawn_locations`` "1"); if that check
+    fails, the bridge records a custom map instead. False keeps the exact
+    bank-order check every packaged map uses.
     """
 
     name: str
@@ -389,9 +529,21 @@ class DebuggerScenario:
     provenance: DebuggerScenarioProvenance | None = None
     scenario_specification: ResolvedScenarioSpecificationV3 | None = None
     packaged_map: TDMMapInfo | None = None
+    spawn_banks_exchanged: bool = False
 
     def __post_init__(self) -> None:
-        """Validate the controlled slot, scenario mode, and declared audience."""
+        """Validate the controlled slot, scenario mode, audience and map source.
+
+        Raises
+        ------
+        ValueError
+            More than one content source is given, a fixed scenario is invalid,
+            spawn_banks_exchanged is True without a packaged map, or the slot,
+            mode or audience is unknown.
+        TypeError
+            A fixed scenario or packaged map is not its exact catalog record,
+            or spawn_banks_exchanged is not a bool.
+        """
         if (
             sum(
                 value is not None
@@ -427,6 +579,10 @@ class DebuggerScenario:
 
             if type(self.packaged_map) is not TDMMapInfo:
                 raise TypeError("Packaged maps require their installed catalog entry")
+        if type(self.spawn_banks_exchanged) is not bool:
+            raise TypeError("spawn_banks_exchanged must be True or False")
+        if self.spawn_banks_exchanged and self.packaged_map is None:
+            raise ValueError("Only a packaged map can declare exchanged spawn banks")
         _validate_slot(self.default_controlled_slot, name="default_controlled_slot")
         if self.mode not in ("interactive", "scripted"):
             msg = f"unknown scenario mode: {self.mode!r}."
@@ -574,6 +730,30 @@ class DebuggerSession:
     numeric_episode_id defaults to
     1 for diagnostics; fixed scenarios retain their first qualification case ID.
     It is separate from the string recording ID and restart request generation.
+    recent_scores is the live service's short score history for the Momentum
+    switch (hud_momentum): the [Team A, Team B] scores of the frames before
+    the current one, oldest first, at most viewer.match_summary.MOMENTUM_TICKS
+    (10) of them and never more than the current frame index. It is empty on
+    frame zero (a new game, Reset or restart). Each transition appends the
+    old frame's scores (next_recent_scores); scores_ten_ticks_ago reads it.
+    Scores are public match facts; they never enter actor inputs.
+    champion_takedowns holds every view's counts of takedowns without falling
+    after the current frame, for the Champion Streaks switch
+    (viewer.champion_streaks.ChampionTakedownsV1): Oracle View and the Agent
+    POV of every possible recipient, so a view switch is exact at once. It is
+    the zero record on frame zero (a new game, Reset or restart); each
+    transition advances it (live_presentation.
+    advance_live_champion_takedowns_v1). These are display facts only; they
+    never enter actor inputs.
+    match_moments holds every view's Herald Cards history after the current
+    frame (viewer.match_moments.MatchMomentHistoryV1): whether the match
+    began at tick 0 with 0-0, the largest lead at the start of any tick so
+    far, and each view's unanswered runs and this tick's rescues, for Oracle
+    View and the Agent POV of every possible recipient. It is the empty
+    record on frame zero (a new game, Reset or restart); each transition
+    advances it together with champion_takedowns
+    (live_presentation.advance_live_match_history_v1). Display facts only;
+    they never enter actor inputs.
     """
 
     scenario: DebuggerScenario
@@ -608,11 +788,46 @@ class DebuggerSession:
     borrow_systems: bool = False
     manual_slots: tuple[int, ...] = ()
     slot_labels: tuple[str | None, ...] = ()
+    recent_scores: tuple[tuple[int, int], ...] = ()
+    champion_takedowns: ChampionTakedownsV1 = field(
+        default_factory=_no_champion_takedowns
+    )
+    match_moments: MatchMomentHistoryV1 = field(default_factory=_no_match_moments)
 
     @property
     def scenario_name(self) -> str:
         """Return the owned scenario's stable display and provenance name."""
         return self.scenario.name
+
+    @property
+    def scores_ten_ticks_ago(self) -> tuple[int, int]:
+        """Return each team's score 10 ticks before the current frame.
+
+        The result is (Team A, Team B): the oldest entry of recent_scores,
+        which is the frame 10 frames back, or frame zero in a younger game;
+        on frame zero (empty recent_scores) the current frame's own scores.
+        The live presentation passes it to
+        viewer.match_summary.build_match_summary_v1 for the Momentum switch.
+        Pure; reads this session only.
+        """
+        if self.recent_scores:
+            return self.recent_scores[0]
+        scores = self.current_evaluation_frame.snapshot.team_deathmatch_scores
+        return (int(scores[0]), int(scores[1]))
+
+    def next_recent_scores(self) -> tuple[tuple[int, int], ...]:
+        """Return recent_scores for the session one transition later.
+
+        It is this session's recent_scores with the current frame's
+        (Team A, Team B) scores appended, keeping only the newest
+        viewer.match_summary.MOMENTUM_TICKS (10). control.submit_joint_action
+        stores it on the successor session; a new game or restart starts
+        from an empty tuple instead. Pure; returns a new tuple.
+        """
+        from marl_battlegrounds.viewer.match_summary import MOMENTUM_TICKS
+
+        scores = self.current_evaluation_frame.snapshot.team_deathmatch_scores
+        return (*self.recent_scores, (int(scores[0]), int(scores[1])))[-MOMENTUM_TICKS:]
 
     def __post_init__(self) -> None:
         """Bind the exact continuation objects and validate the host endpoint
@@ -777,6 +992,27 @@ class DebuggerSession:
                 raise ValueError(
                     "non-initial sessions require exact submission-kind metadata."
                 )
+        _validate_recent_scores(
+            self.recent_scores,
+            current_frame.frame_index,
+            current_frame.snapshot.team_deathmatch_scores,
+        )
+        from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
+
+        if type(self.champion_takedowns) is not ChampionTakedownsV1:
+            raise TypeError("champion_takedowns must be a ChampionTakedownsV1.")
+        if current_frame.frame_index == 0 and (
+            self.champion_takedowns != ChampionTakedownsV1()
+        ):
+            raise ValueError("frame zero cannot hold champion takedowns.")
+        from marl_battlegrounds.viewer.match_moments import MatchMomentHistoryV1
+
+        if type(self.match_moments) is not MatchMomentHistoryV1:
+            raise TypeError("match_moments must be a MatchMomentHistoryV1.")
+        if current_frame.frame_index == 0 and (
+            self.match_moments != MatchMomentHistoryV1()
+        ):
+            raise ValueError("frame zero cannot hold Herald Cards history.")
         if type(self.last_report_actor_slots) is not tuple:
             raise TypeError("last_report_actor_slots must be a Python tuple.")
         if self.last_report_actor_slots != tuple(

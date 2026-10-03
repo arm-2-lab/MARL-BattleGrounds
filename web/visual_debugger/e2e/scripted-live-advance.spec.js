@@ -1,6 +1,15 @@
 /**
  * @file Check one-step scripted live submission, initial transition display and
- * recording completion.
+ * recording completion. Nobody is Manual in scripted playback, so the deck
+ * shows the Watching bar: its Play One Turn (the control on screen) sends N,
+ * the next scripted frame, and shows N as its key, while the hidden Lock In
+ * button reads "Advance scripted frame" and sends N too. Hovering Play One
+ * Turn opens no card (the vision gives the deck no hover card). A champion is
+ * inspected by clicking or pressing its arena body: no command is sent and the
+ * frame does not change; the hidden legacy roster names it "Agent ID N" and
+ * the selection card shows the same agent as its "Agent N" token chip.
+ * Clicking Play One Turn sends one keyboard N, seals the one-frame script and
+ * leaves Play One Turn disabled, so a further click sends nothing.
  */
 import { expect, test } from "@playwright/test";
 
@@ -11,6 +20,16 @@ let scriptedDebugger = null;
 
 /** @type {string[]} */
 const browserErrors = [];
+
+// The roster button names an agent "Agent ID 1"; the selection card shows the
+// same agent as its token chip "Agent 1".
+/** @param {string | undefined} rosterIdentity */
+function selectionCardIdentity(rosterIdentity) {
+  const id = /^Agent ID (\d+)$/u.exec(String(rosterIdentity))?.[1];
+  if (id === undefined)
+    throw new Error(`Unexpected roster identity ${rosterIdentity}.`);
+  return new RegExp(`Agent ${id}(?!\\d)`, "u");
+}
 
 test.beforeAll(async () => {
   scriptedDebugger = await startScriptedDebugger();
@@ -58,7 +77,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   });
 
   await page.goto(scriptedDebugger.url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -77,9 +96,15 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(submit).toHaveAttribute("data-key", "n");
   await expect(submit).toHaveAttribute(
     "aria-description",
-    "Submit all Manual and policy actions for one turn, or advance one scripted turn. Inspecting a policy does not give you control of it.",
+    "Send your orders; policies then choose and everyone acts at once. In a scripted scene it plays the next scripted tick. Looking at a policy's champion does not give you control of it.",
   );
   await expect(submit).toBeEnabled();
+  // The control on screen is the Watching bar's Play One Turn; it sends N.
+  const playOne = page.locator("#watch-submit");
+  await expect(playOne).toBeVisible();
+  await expect(playOne).toBeEnabled();
+  await expect(playOne).toHaveAttribute("data-key", "n");
+  await expect(playOne.locator("kbd")).toHaveText("N");
   await expect(page.locator("#battlefield")).toHaveAttribute(
     "aria-label",
     "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.",
@@ -95,10 +120,16 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(page.locator("#command-commit-summary")).toHaveText(
     "One authoritative scripted transition",
   );
-  await submit.hover();
-  await expect(page.locator("#visual-tooltip-title")).toHaveText(
-    "Apply Authorized Action",
+  // The vision gives the deck no hover card: hovering Play One Turn opens none.
+  await playOne.hover();
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
   );
+  await expect(page.locator("#visual-tooltip")).toBeHidden();
+  await expect(page.locator("#visual-tooltip-title")).toHaveText("");
   await expect(page.locator("#reset-button")).toBeDisabled();
   await expect(page.locator("#command-target-select")).toBeDisabled();
   expect(
@@ -125,6 +156,11 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
       id: "submit-turn-button",
       key: "n",
       label: "Advance scripted frame",
+    },
+    {
+      id: "watch-submit",
+      key: "n",
+      label: "Play One Turn N",
     },
   ]);
 
@@ -166,54 +202,57 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   });
 
   const baselineFrame = await authenticatedGet(page, "/api/frame");
-  expect(await rosterActions.count()).toBeGreaterThan(1);
-  const localAction = rosterActions.nth(1);
-  const localKey = await localAction.getAttribute("data-presentation-key");
+  // The roster is a hidden legacy list now; the visible way to inspect a
+  // champion is to click or press its body on the arena.
+  const bodies = page.locator('#battlefield .agent[role="button"]');
+  expect(await bodies.count()).toBeGreaterThan(1);
+  const localBody = bodies.nth(1);
+  const localKey = await localBody.getAttribute("data-presentation-key");
+  expect(typeof localKey).toBe("string");
+  const localAction = page.locator(
+    `#roster .roster-primary-action[data-presentation-key="${localKey}"]`,
+  );
+  await expect(localAction).toHaveCount(1);
   const localIdentity = (await localAction.getAttribute("aria-label"))?.replace(
     /^Inspect /u,
     "",
   );
-  expect(typeof localKey).toBe("string");
   expect(typeof localIdentity).toBe("string");
-  await localAction.click();
-  await expect(page.locator("#selection-card")).toContainText(String(localIdentity));
-  await expect(localAction).toHaveAttribute("aria-pressed", "true");
-  await localAction.focus();
-  const scrollBeforeSpace = await page.evaluate(() => window.scrollY);
-  await localAction.press("Enter");
-  await localAction.press(" ");
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeSpace);
-  const localBody = page.locator(`.agent[data-presentation-key="${localKey}"]`);
-  await expect(localBody).toHaveAttribute("data-selected", "true");
-  await expect(page.locator("#battlefield .range-ring-owner")).toHaveCount(3);
   await localBody.click();
+  await expect(page.locator("#selection-card")).toContainText(
+    selectionCardIdentity(localIdentity),
+  );
+  await expect(localAction).toHaveAttribute("aria-pressed", "true");
+  await expect(localBody).toHaveAttribute("data-selected", "true");
   await localBody.focus();
+  const scrollBeforeSpace = await page.evaluate(() => window.scrollY);
   await localBody.press("Enter");
   await localBody.press(" ");
-  const localFactChip = page
-    .locator(
-      `#roster .roster-row[data-presentation-key="${localKey}"] .roster-fact-token[data-tooltip-owner]`,
-    )
-    .first();
-  await expect(localFactChip).toBeVisible();
-  const selectionBeforeFactInspection = await page
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeSpace);
+  await expect(localBody).toHaveAttribute("data-selected", "true");
+  // Live play draws the vision's two Ranges rings, Basic and Ultimate (sight
+  // is the Agent POV veil's job; the Replay Viewer keeps three).
+  await expect(page.locator("#battlefield .range-ring-owner")).toHaveCount(2);
+  expect(
+    (
+      await page
+        .locator("#battlefield .range-ring-owner .range-ring-hit")
+        .evaluateAll((hits) => hits.map((hit) => hit.getAttribute("data-kind")))
+    ).sort(),
+  ).toEqual(["basic", "ultimate"]);
+  // Selecting the same body again keeps the inspection and the roster state.
+  const selectionBeforeRepeat = await page
     .locator('#battlefield .agent[data-selected="true"]')
     .evaluateAll((agents) =>
       agents.map((agent) => agent.getAttribute("data-presentation-key")),
     );
-  const pressedRowsBeforeFactInspection = await rosterActions.evaluateAll((buttons) =>
+  const pressedRowsBeforeRepeat = await rosterActions.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute("aria-pressed")),
   );
-  const classDetailsBeforeFactInspection = await page
-    .locator("#selection-card")
-    .textContent();
-  await localFactChip.hover();
-  await expect(page.locator("#visual-tooltip")).toBeVisible();
-  await localFactChip.click();
-  const factTitle = await page.locator("#visual-tooltip-title").textContent();
-  expect(factTitle).not.toBeNull();
+  const classDetailsBeforeRepeat = await page.locator("#selection-card").textContent();
+  await localBody.click();
   expect(await page.locator("#selection-card").textContent()).toBe(
-    classDetailsBeforeFactInspection,
+    classDetailsBeforeRepeat,
   );
   expect(
     await page
@@ -221,12 +260,12 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
       .evaluateAll((agents) =>
         agents.map((agent) => agent.getAttribute("data-presentation-key")),
       ),
-  ).toEqual(selectionBeforeFactInspection);
+  ).toEqual(selectionBeforeRepeat);
   expect(
     await rosterActions.evaluateAll((buttons) =>
       buttons.map((button) => button.getAttribute("aria-pressed")),
     ),
-  ).toEqual(pressedRowsBeforeFactInspection);
+  ).toEqual(pressedRowsBeforeRepeat);
   await page.locator("#battlefield").evaluate((battlefield) => {
     battlefield.dispatchEvent(
       new KeyboardEvent("keydown", { bubbles: true, key: "Tab" }),
@@ -279,7 +318,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/command",
   );
-  await submit.click();
+  await playOne.click();
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   expect(commandPosts).toHaveLength(1);
@@ -310,7 +349,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
     },
   });
 
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -333,6 +372,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(submit).toHaveText("Advance scripted frame");
   await expect(submit).toHaveAttribute("data-key", "n");
   await expect(submit).toBeDisabled();
+  await expect(playOne).toBeDisabled();
   expect(
     await page
       .locator("#roster .roster-primary-action")
@@ -362,28 +402,32 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
         ),
       ),
   ).toBe(true);
-  const terminalDetails = page.locator("#agent-details");
-  if ((await terminalDetails.getAttribute("open")) === null) {
-    await page.locator("#agent-details > summary").click();
-  }
-  const terminalRosterAction = rosterActions.first();
-  const terminalIdentity = (
-    await terminalRosterAction.getAttribute("aria-label")
-  )?.replace(/^Inspect /u, "");
-  const terminalKey = await terminalRosterAction.getAttribute("data-presentation-key");
+  const terminalBody = bodies.first();
+  const terminalKey = await terminalBody.getAttribute("data-presentation-key");
+  const terminalAction = page.locator(
+    `#roster .roster-primary-action[data-presentation-key="${terminalKey}"]`,
+  );
+  const terminalIdentity = (await terminalAction.getAttribute("aria-label"))?.replace(
+    /^Inspect /u,
+    "",
+  );
   expect(typeof terminalIdentity).toBe("string");
   expect(terminalIdentity).not.toBe(localIdentity);
-  await terminalRosterAction.click();
-  await expect(page.locator("#selection-card")).toContainText(String(terminalIdentity));
-  await expect(terminalRosterAction).toHaveAttribute("aria-pressed", "true");
+  await terminalBody.click();
+  await expect(page.locator("#selection-card")).toContainText(
+    selectionCardIdentity(terminalIdentity),
+  );
+  await expect(terminalAction).toHaveAttribute("aria-pressed", "true");
   await localBody.click();
-  await expect(page.locator("#selection-card")).toContainText(String(localIdentity));
+  await expect(page.locator("#selection-card")).toContainText(
+    selectionCardIdentity(localIdentity),
+  );
   await expect(localBody).toHaveAttribute("data-selected", "true");
-  const terminalBody = page.locator(`.agent[data-presentation-key="${terminalKey}"]`);
   await terminalBody.press("Enter");
-  await expect(page.locator("#selection-card")).toContainText(String(terminalIdentity));
+  await expect(page.locator("#selection-card")).toContainText(
+    selectionCardIdentity(terminalIdentity),
+  );
   await expect(terminalBody).toHaveAttribute("data-selected", "true");
-  await expect(terminalDetails).toHaveAttribute("open", "");
   expect(commandPosts).toHaveLength(1);
   await expect(page.locator("#command-commit-title")).toHaveText(
     "Advance the registered script",
@@ -392,7 +436,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
     "One authoritative scripted transition",
   );
   const terminalRevision = commandPayload.frame.revision;
-  await submit.evaluate((button) => {
+  await playOne.evaluate((button) => {
     if (!(button instanceof HTMLButtonElement)) {
       throw new TypeError("Scripted advance button is unavailable.");
     }

@@ -85,6 +85,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
 from marl_battlegrounds.evaluation.recording_context import (
     build_recording_context,
     capture_recording_provenance,
+    controller_names_by_slot,
 )
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
@@ -960,6 +961,8 @@ def _run_evaluation(
         Episode IDs selected for replay capture, default empty.
         Every selected ID must appear in episodes. Without a writer, replay
         objects are returned in memory; capture does not require a folder.
+        Each replay records each team's name and the name of the method that
+        plays each champion slot (a ``team(...)`` names its members per slot).
     output_dir : str | Path | None
         Optional parent folder for a new run. RunWriter creates a
         run folder below it. This call closes the writer it creates.
@@ -1463,6 +1466,11 @@ def _run_evaluation(
                     details=pass_details,
                 )
         batch_size = effective_batch_size
+        if writer is not None:
+            # Replays name each champion's controller from the live methods.
+            writer._name_replay_controllers(  # pyright: ignore[reportPrivateUsage]
+                team_a, team_b
+            )
         env = make(
             "tdm",
             num_envs=batch_size,
@@ -1484,7 +1492,8 @@ def _run_evaluation(
                 packet: ReplayPackets,
             ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
                 """Build known context for the first packet of one selected in-memory
-                replay.
+                replay, naming each champion slot's controller from the live
+                team_a and team_b methods.
                 """
                 return build_recording_context(
                     packet.config,
@@ -1494,6 +1503,9 @@ def _run_evaluation(
                     episode=schedule[int(packet.episode_id)],
                     policies=policies,
                     details=metadata,
+                    slot_controller_names=controller_names_by_slot(
+                        team_a, team_b, packet.config
+                    ),
                 )
 
             collector = ReplayCollector(context)
@@ -1987,7 +1999,8 @@ def evaluate_episodes(
     save_replays : int, default=0
         Select the first N scheduled IDs. Must not exceed the schedule length.
         Nonempty shorthand and explicit replay selections must identify the same
-        set; conflicting selections fail instead of being combined.
+        set; conflicting selections fail instead of being combined. Each replay
+        records each team's name and each champion's controller name.
     output_dir : str | Path | None, default=None
         Parent directory for a newly created run. No path means no files unless
         writer or resume_from is supplied. In-memory replays remain available.
@@ -2229,6 +2242,10 @@ def evaluate(
     save_replays : int, default=0
         First N scheduled games to capture. Nonempty explicit replay IDs and this
         shorthand must agree. Zero leaves only the explicit selection active.
+        Every replay records each team's name and, for each champion, the
+        name of the method that plays it, exactly as given (a ``team(...)``
+        of several methods names each member's champions); the Replay
+        Viewer shows these names.
     output_dir, resume_from : str | Path | None, default=None
         New-run parent or exact existing run, respectively. Use at most one.
         No output options create no files. Resume skips durable completed games.

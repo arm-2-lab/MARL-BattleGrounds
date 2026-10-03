@@ -123,3 +123,21 @@ Public evaluation scenarios must stay out of training and tuning. A normal
 saved result records behavior; it does not alone certify protected evaluation
 or prove every skill named in the scenario. Keep training exposure records and
 use matched behavioral ablations for the claims you intend to make.
+
+## Tale Titles In The Clients
+
+The top bar of the BattleClient and the Replay Viewer names each packaged
+scenario by its tale title, for example "The Last Mending · Scenario 1". The
+browser owns these titles; they are display names only and change no scenario,
+identity or result.
+
+| Scenario | Tale Title |
+| --- | --- |
+| 1 | The Last Mending |
+| 2 | The Physic Garden |
+| 3 | The Living Wall |
+| 4 | The Gambit |
+| 5 | Turning The Tide |
+| 6 | The Lure |
+| 7 | The Turning Moon |
+| 8 | The Waiting Hour |

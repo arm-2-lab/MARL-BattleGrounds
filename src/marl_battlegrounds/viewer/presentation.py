@@ -3,8 +3,10 @@
 The replay service calls these builders for Oracle, NoSharedObs, or SharedObs
 views. They join recorded current frames with incoming and upcoming transition
 facts, then return immutable presentation models. Actor views preserve their
-information limits. This module does not load files, run simulator steps, or
-change the saved replay.
+information limits. The service's per-view host facts (``champion_streaks``,
+``match_moments`` and, on the completion frame, ``match_honors``) are copied
+into the frame as given. This module does not load files, run simulator
+steps, or change the saved replay.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     build_agent_pov_visual_incoming_summary_v1,
     build_replay_oracle_presentation_parts_v1,
     oracle_presentation_key_v1,
+    visual_batch_home_fall_slots_v1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import (
     SharedObsSourceMaterialProjection,
@@ -56,7 +59,12 @@ from marl_battlegrounds.rendering.pov_scene import (
     build_actor_pov_analyzer_projection_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2, VisualEventBatchV2
-from marl_battlegrounds.viewer.match_summary import build_match_summary_v1
+from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
+from marl_battlegrounds.viewer.match_summary import (
+    MatchHonorsV1,
+    build_match_summary_v1,
+)
 from marl_battlegrounds.viewer.presentation_protocol import (
     AgentPovActionAxisV1,
     LatestTransitionActionRowV1,
@@ -448,6 +456,10 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
     incoming_visual_events: VisualEventBatchV2 | None,
     researcher_space: ReplayResearcherSpaceV1,
     exact_actor_input_export_available: bool = True,
+    scores_ten_ticks_ago: tuple[int, ...] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> ReplayNoSharedObsAuthorizedPresentationFrameV1:
     """Build a NoSharedObs replay presentation for one fixed recipient.
 
@@ -476,6 +488,35 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
     exact_actor_input_export_available : bool
         Whether the source supports exact actor-input export. Defaults to True;
         historical visual-only projections must pass False.
+    scores_ten_ticks_ago : tuple of int or None, optional, keyword-only
+        Team A and Team B scores at the recorded frame
+        ``max(0, frame_index - MOMENTUM_TICKS)`` (10 frames back), read by the
+        replay service from its recorded frames. It becomes
+        ``match_summary.scores_ten_ticks_ago`` for the scorebug's Momentum
+        switch. Scores are public, so Agent POV gets the same value as Oracle
+        View. None (the default) leaves that field None (no recent points).
+    champion_streaks : tuple of ChampionStreakV1 or None, optional, keyword-only
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, counted by the replay service
+        (viewer.champion_streaks) from this recipient's own Agent POV visual
+        events only. Copied into the frame's ``champion_streaks`` field, which
+        checks that each named champion is one this view saw at the start of
+        the tick. None (the default) means not counted; browsers then show no
+        streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), counted by the replay service
+        over the whole replay; give it only on the completion frame. An Agent
+        POV view's honors list only its own team's champions. Copied into the
+        frame's ``match_honors`` field. None (the default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), counted
+        by the replay service frame by frame: whether the match began fresh,
+        the largest earlier lead, the unanswered runs reached on this tick
+        and the rescues. An Agent POV view's facts name only what its
+        recipient's team saw. Copied into the frame's ``match_moments``
+        field. None (the default) means not counted; browsers then show no
+        First Blood, Comeback, run or Rescue card.
 
     Returns
     -------
@@ -662,6 +703,9 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
             incoming_recipient_transition_id=transition.pov_transition_id,
             incoming_start_recipient_frame_id=transition.start_pov_frame_id,
             incoming_successor_recipient_frame_id=transition.successor_pov_frame_id,
+            home_fall_global_slots=visual_batch_home_fall_slots_v1(
+                global_context, incoming_visual_events
+            ),
         )
     latest_events = build_replay_no_shared_obs_incoming_summary_v1(
         source,
@@ -684,7 +728,12 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
             global_context,
             current_global_frame,
             () if incoming_visual_events is None else incoming_visual_events.events,
+            transition_start_frame=previous_global_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="replay_no_shared_obs_agent_pov",
         product_kind="replay_viewer",
@@ -755,6 +804,10 @@ def build_replay_shared_obs_authorized_presentation_v1(
     incoming_transition: EvaluationTransitionV1 | None,
     outgoing_transition: EvaluationTransitionV1 | None,
     researcher_space: ReplayResearcherSpaceV1,
+    scores_ten_ticks_ago: tuple[int, ...] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> ReplaySharedObsAuthorizedPresentationFrameV1:
     """Build a SharedObs replay visual union for one fixed recipient.
 
@@ -796,6 +849,35 @@ def build_replay_shared_obs_authorized_presentation_v1(
     researcher_space : ReplayResearcherSpaceV1
         Separately authorized global panels for this same frame, without a global
         battlefield scene.
+    scores_ten_ticks_ago : tuple of int or None, optional
+        Team A and Team B scores at the recorded frame
+        ``max(0, frame_index - MOMENTUM_TICKS)`` (10 frames back), read by the
+        replay service from its recorded frames. It becomes
+        ``match_summary.scores_ten_ticks_ago`` for the scorebug's Momentum
+        switch. Scores are public, so Agent POV gets the same value as Oracle
+        View. None (the default) leaves that field None (no recent points).
+    champion_streaks : tuple of ChampionStreakV1 or None, optional
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, counted by the replay service
+        (viewer.champion_streaks) from this recipient's own Agent POV visual
+        events only. Copied into the frame's ``champion_streaks`` field, which
+        checks that each named champion is one this view saw at the start of
+        the tick. None (the default) means not counted; browsers then show no
+        streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), counted by the replay service
+        over the whole replay; give it only on the completion frame. An Agent
+        POV view's honors list only its own team's champions. Copied into the
+        frame's ``match_honors`` field. None (the default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), counted
+        by the replay service frame by frame: whether the match began fresh,
+        the largest earlier lead, the unanswered runs reached on this tick
+        and the rescues. An Agent POV view's facts name only what its
+        recipient's team saw. Copied into the frame's ``match_moments``
+        field. None (the default) means not counted; browsers then show no
+        First Blood, Comeback, run or Rescue card.
 
     Returns
     -------
@@ -1053,6 +1135,9 @@ def build_replay_shared_obs_authorized_presentation_v1(
                 f"{local_prefix}:frame:{frame_index - 1}"
             ),
             incoming_successor_recipient_frame_id=current.source_recipient_frame_id,
+            home_fall_global_slots=visual_batch_home_fall_slots_v1(
+                global_context, incoming_visual_events
+            ),
         )
     latest_events = build_shared_obs_incoming_summary_v1(previous, current)
     endpoint = build_shared_obs_authorized_current_endpoint_v1(
@@ -1081,7 +1166,12 @@ def build_replay_shared_obs_authorized_presentation_v1(
             global_context,
             current_global_frame,
             () if incoming_transition is None else incoming_transition.events,
+            transition_start_frame=previous_global_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="replay_shared_obs_agent_pov",
         product_kind="replay_viewer",
@@ -1140,6 +1230,11 @@ def build_replay_oracle_authorized_presentation_v1(
     selected_internal_slot: int | None,
     incoming_transition: EvaluationTransitionV1 | None,
     outgoing_transition: EvaluationTransitionV1 | None,
+    previous_frame: EvaluationFrame | None = None,
+    scores_ten_ticks_ago: tuple[int, ...] | None = None,
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+    match_honors: MatchHonorsV1 | None = None,
+    match_moments: MatchMomentFactsV1 | None = None,
 ) -> ReplayOracleAuthorizedPresentationFrameV1:
     """Build the global current replay display with incoming and outgoing inspection.
 
@@ -1159,6 +1254,41 @@ def build_replay_oracle_authorized_presentation_v1(
         Recorded transition entering this frame, or None at frame zero.
     outgoing_transition : EvaluationTransitionV1 | None
         Recorded transition leaving this frame, or None at the final captured frame.
+    previous_frame : EvaluationFrame | None, optional
+        The recorded frame just before current_frame (None at frame zero). The
+        match summary reads its scores as previous_scores and its positions to
+        mark home falls. Default None keeps working for older callers: previous
+        scores then come from the recorded score-change events and every
+        match-summary home_fall stays False. The incoming event rows always get
+        home_fall from the visual batch.
+    scores_ten_ticks_ago : tuple of int or None, optional
+        Team A and Team B scores at the recorded frame
+        ``max(0, frame_index - MOMENTUM_TICKS)`` (10 frames back; on frame zero
+        the frame's own scores), read by the replay service from its recorded
+        frames. It becomes ``match_summary.scores_ten_ticks_ago`` for the
+        scorebug's Momentum switch. None (the default) leaves that field None
+        (no recent points).
+    champion_streaks : tuple of ChampionStreakV1 or None, optional
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick in this view, counted by the replay service
+        (viewer.champion_streaks) from every recorded fall. Copied into the
+        frame's ``champion_streaks`` field, which checks that each named
+        champion is one this view saw at the start of the tick. None (the
+        default) means not counted; browsers then show no streak.
+    match_honors : MatchHonorsV1 or None, optional, keyword-only
+        This view's game-over Honors and Match Summary rows
+        (viewer.match_summary.match_honors_v1), counted by the replay service
+        over the whole replay; give it only on the completion frame. An Agent
+        POV view's honors list only its own team's champions. Copied into the
+        frame's ``match_honors`` field. None (the default) means no Honors.
+    match_moments : MatchMomentFactsV1 or None, optional, keyword-only
+        This view's Herald Cards history facts (viewer.match_moments), counted
+        by the replay service frame by frame: whether the match began fresh,
+        the largest earlier lead, the unanswered runs reached on this tick
+        and the rescues. An Agent POV view's facts name only what its
+        recipient's team saw. Copied into the frame's ``match_moments``
+        field. None (the default) means not counted; browsers then show no
+        First Blood, Comeback, run or Rescue card.
 
     Returns
     -------
@@ -1289,7 +1419,12 @@ def build_replay_oracle_authorized_presentation_v1(
             context,
             current_frame,
             () if incoming_transition is None else incoming_transition.events,
+            transition_start_frame=None if frame_index == 0 else previous_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
         ),
+        champion_streaks=champion_streaks,
+        match_honors=match_honors,
+        match_moments=match_moments,
         schema_version=1,
         presentation_kind="replay_oracle",
         product_kind="replay_viewer",

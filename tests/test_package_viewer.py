@@ -1,7 +1,7 @@
 """Check package Viewer ownership, lazy options and scoped resource launch.
 
-Old developer imports must share exact objects and patched globals. Browser
-resources stay alive until serving ends; invalid inputs cannot start a server.
+Old developer imports must share exact objects and patched globals. Installed
+browser resources stay alive until serving ends; invalid inputs cannot start a server.
 Installed-wheel HTTP/browser evidence is collected separately at packet closeout.
 """
 
@@ -124,6 +124,7 @@ def test_loaded_replay_uses_resources_until_server_returns(
         metric_analysis = current_frame
         metric_catalog = current_frame
         episode_details = current_frame
+        timeline_marks = current_frame
 
     @contextmanager
     def scoped_resource(_resource: object) -> Generator[Path]:
@@ -147,7 +148,14 @@ def test_loaded_replay_uses_resources_until_server_returns(
         calls.append("serve")
         return 17
 
+    installed = tmp_path / "installed-viewer"
+    (installed / "web").mkdir(parents=True)
+
+    def package_files(_name: str) -> Path:
+        return installed
+
     monkeypatch.setattr(replay_service, "ReplayViewerService", Service)
+    monkeypatch.setattr(launch, "files", package_files)
     monkeypatch.setattr(launch, "as_file", scoped_resource)
     monkeypatch.setattr(server, "serve_browser_debugger", serve)
     options = resolve_playback_options(argparse.Namespace(no_open=True))

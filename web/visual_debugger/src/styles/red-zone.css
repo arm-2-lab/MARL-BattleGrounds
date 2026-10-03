@@ -1,0 +1,119 @@
+/*
+ * Styles for the Red Zone look (src/looks/red-zone.js): Grave Ground, the same
+ * on both home ends and with no team colour. styles.css imports this file at its
+ * top. Colours come from the shared tokens (Ash, Ink, Grave Bone). Opacities and
+ * line widths are the design store's (skins/red-zone.js); the gravestone and
+ * mark strokes grow with the battlefield's --mark-scale, which only live play
+ * sets (the BattleClient vision's drawing scales with its field; the Replay
+ * Viewer has no --mark-scale, so its widths stay as written). A Home Fall
+ * node's opacity is its END value, written by the look as an attribute, and
+ * the beat clock fades it in.
+ */
+.red-zone-line {
+  stroke: var(--grave-bone);
+  stroke-width: 1;
+  stroke-opacity: 0.6;
+  pointer-events: none;
+}
+
+.red-zone-floor.grave-ash {
+  fill: var(--ash);
+  fill-opacity: 0.17;
+  stroke: none;
+  pointer-events: none;
+}
+
+.home-fall-ash {
+  fill: var(--ash);
+  stroke: none;
+  pointer-events: none;
+}
+
+.grave-border,
+.home-fall-border {
+  pointer-events: none;
+}
+
+.grave-border__keyline,
+.grave-border__bone,
+.grave-border__bar,
+.home-fall-border__line {
+  fill: none;
+  stroke-linecap: butt;
+}
+
+.grave-border__keyline {
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+}
+
+.grave-border__bone {
+  stroke: var(--grave-bone);
+  stroke-opacity: 0.6;
+}
+
+.grave-border__stone-shadow {
+  fill: var(--ink);
+  fill-opacity: 0.7;
+  stroke: var(--ink);
+  stroke-width: calc(3px * var(--mark-scale, 1));
+  stroke-opacity: 0.5;
+}
+
+.grave-border__stone {
+  fill: none;
+  stroke: var(--grave-bone);
+  stroke-width: calc(1.2px * var(--mark-scale, 1));
+  stroke-opacity: 0.85;
+}
+
+.grave-border__bar {
+  stroke: var(--grave-bone);
+  stroke-width: calc(1px * var(--mark-scale, 1));
+  stroke-opacity: 0.7;
+}
+
+.home-fall-border__line {
+  stroke: var(--grave-bone);
+}
+
+.home-fall-border__stone {
+  fill: var(--grave-bone);
+  stroke: none;
+}
+
+.grave-mark {
+  opacity: 0.85;
+}
+
+.grave-mark__halo {
+  fill: var(--ink);
+  stroke: var(--ink);
+  stroke-width: calc(3px * var(--mark-scale, 1));
+  stroke-linejoin: round;
+}
+
+.grave-mark__head {
+  fill: var(--grave-bone);
+  stroke: none;
+}
+
+.grave-mark__eyes {
+  fill: var(--ink);
+  stroke: none;
+}
+
+.grave-mark__teeth {
+  fill: none;
+  stroke: var(--ink);
+}
+
+.grave-mark__text {
+  fill: var(--grave-bone);
+  stroke: var(--ink);
+  stroke-width: calc(3px * var(--mark-scale, 1));
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+  font-weight: 700;
+}

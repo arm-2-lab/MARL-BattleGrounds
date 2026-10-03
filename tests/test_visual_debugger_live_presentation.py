@@ -2,7 +2,9 @@
 
 The lock check fails at once if its held presentation worker finishes before it
 enters the blocked builder. It releases that worker inside the executor block,
-so a failed assertion cannot leave the test waiting forever.
+so a failed assertion cannot leave the test waiting forever. A presentation build
+that fails leaves the committed service untouched and is never remembered for
+reuse.
 """
 
 from __future__ import annotations
@@ -58,6 +60,8 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import build_visual_event_batch_v2
+from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
 
 
 def _step_once(service: service_module.DebuggerService) -> None:
@@ -625,9 +629,12 @@ def test_live_packaging_exception_leaves_committed_service_untouched(
         else "build_live_no_shared_obs_authorized_presentation_v1"
     )
     monkeypatch.setattr(service_module, builder_name, fail_packaging)
+    # Force a fresh build: the switch's own build would otherwise be reused.
+    service._presentations.clear()  # pyright: ignore[reportPrivateUsage]
     with pytest.raises(RuntimeError, match="injected presentation packaging failure"):
         service.current_presentation()
 
+    assert service._presentations == []  # pyright: ignore[reportPrivateUsage]
     assert service.current_frame() is before_raw
     assert service.session is before_session
     assert service.revision == before_revision
@@ -802,6 +809,10 @@ def test_recording_lifecycle_presentation_preflight_precedes_recorder_mutation(
         current_frame: EvaluationFrameV1,
         incoming_transition_view: EvaluationTransitionViewV1 | None,
         raw_frame: ResearcherLiveDebuggerFrameV2,
+        *,
+        scores_ten_ticks_ago: tuple[int, int] | None = None,
+        champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+        match_moments: MatchMomentFactsV1 | None = None,
     ) -> LiveOracleAuthorizedPresentationFrameV1:
         nonlocal builder_calls
         builder_calls += 1
@@ -812,6 +823,9 @@ def test_recording_lifecycle_presentation_preflight_precedes_recorder_mutation(
             current_frame,
             incoming_transition_view,
             raw_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
+            champion_streaks=champion_streaks,
+            match_moments=match_moments,
         )
 
     monkeypatch.setattr(
@@ -1051,6 +1065,10 @@ def test_live_presentation_getter_holds_lock_against_submit(
         current_frame: EvaluationFrameV1,
         incoming_transition_view: EvaluationTransitionViewV1 | None,
         raw_frame: ResearcherLiveDebuggerFrameV2,
+        *,
+        scores_ten_ticks_ago: tuple[int, int] | None = None,
+        champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
+        match_moments: MatchMomentFactsV1 | None = None,
     ) -> LiveOracleAuthorizedPresentationFrameV1:
         entered.set()
         assert release.wait()
@@ -1059,6 +1077,9 @@ def test_live_presentation_getter_holds_lock_against_submit(
             current_frame,
             incoming_transition_view,
             raw_frame,
+            scores_ten_ticks_ago=scores_ten_ticks_ago,
+            champion_streaks=champion_streaks,
+            match_moments=match_moments,
         )
 
     monkeypatch.setattr(

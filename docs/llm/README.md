@@ -453,6 +453,8 @@ server, and record its pinned `model_revision` for reproducible evidence.
 `make_system` keeps the API defaults: stop on failure and light records.
 The same object can own selected slots beside other policies or Manual control.
 See the [BattleClient guide](../battle_client.md) for those assignments.
+The page opens in Agent POV. Switching to Oracle View changes only what you
+see; the LLM still receives only its own permitted inputs.
 
 The browser stays responsive while a method works. Cancellation fences its
 answer; arbitrary Python cannot be forcibly interrupted. A failed or cancelled

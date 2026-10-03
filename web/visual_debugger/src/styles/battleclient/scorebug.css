@@ -1,0 +1,485 @@
+/*
+ * BattleClient scorebug (#scorebug) and party portraits, ported from the
+ * approved vision page: each team's host (crest, name, controller line),
+ * its five portraits (#party-a, #party-b), its score out of the goal with a
+ * segment bar, and the middle (tick, First To, Respawn Wave In).
+ *
+ * Sides follow the arena: the vision's order puts Team B on the left
+ * (its recorded game has Team A on the right end). When Team A starts on the
+ * left end, the code that fills the scorebug sets
+ * #scorebug[data-team-a-side="left"] and the mirrored areas below put Team A
+ * on the left, with each host, score and segment bar facing the middle.
+ *
+ * Host names and controller lines cut with an ellipsis instead of pushing
+ * the row wider, so long controller names never wrap the scorebug at
+ * desktop and laptop widths. The vision's narrow-window stack is not ported.
+ *
+ * Who fills it: src/match-summary.js writes the scores, bars, the middle,
+ * data-team-a-side and data-plain (the Scorebug switch off: a plain text
+ * score, no bar); src/looks/hud.js writes the "Yours" tag, the controller
+ * lines and the portraits (button.por: token, life bar, label). Life bars
+ * fill Ivory, or Cinder at 30% life or less (class "low").
+ *
+ * Beat holds (the score and life bars wait for the Fall beat, a returning
+ * champion reappears at its Return beat): an earlier look is drawn in the
+ * same place as its END node and the choreographer swaps them at the beat.
+ * A held portrait pair sits in span.por-stack (both in one grid cell, END
+ * first, the earlier look on top with no pointer events); a held score's old
+ * number sits over #score-a or #score-b, and its old bar shares the bar's
+ * grid cell.
+ *
+ * Momentum (switch hud_momentum, off by default; the Arena Frames pick of
+ * the V5 store, broadcast-hud.js segBar): the points a team scored in the
+ * last 10 ticks (segments with class "recent") fill in its light color
+ * (--azureL, --crimsonL) over a 1.5 px Moon Silver underline 2 px below the
+ * bar (the store spec's size, the same as the Replay Viewer strip in
+ * src/styles/hud.css). The baseline is the host's
+ * match_summary.scores_ten_ticks_ago; the page keeps no score history.
+ * Each recent segment's underline also covers the 1 px gap toward the
+ * next newer segment; the newest one (class "newest") stops at its own
+ * edge, so the line is one unbroken run under exactly the recent points.
+ * --recent-shift says on which side that gap lies: 0px for a bar that
+ * fills rightward (flex row), -1px for one that fills leftward (row-reverse).
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+html[data-product-kind="combat_debugger"] .bc .bc-score {
+  position: relative;
+  grid-area: score;
+  display: grid;
+  grid-template-columns: auto auto minmax(84px, 1fr) auto minmax(84px, 1fr) auto auto;
+  grid-template-areas: "hb pb sb mid sa pa ha";
+  align-items: center;
+  gap: 10px 12px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+html[data-product-kind="combat_debugger"] .bc .bc-score[data-team-a-side="left"] {
+  grid-template-areas: "ha pa sa mid sb pb hb";
+}
+
+/* Crests: Team A one ring, Team B a ring split by a thin dark line. */
+html[data-product-kind="combat_debugger"] .bc .crest {
+  flex: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .crest--a {
+  color: var(--azure);
+}
+
+html[data-product-kind="combat_debugger"] .bc .crest--b {
+  color: var(--crimson);
+}
+
+html[data-product-kind="combat_debugger"] .bc .crest__split {
+  stroke: var(--ink);
+}
+
+/* Hosts. */
+html[data-product-kind="combat_debugger"] .bc .sb-host {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host > div {
+  min-width: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host.a {
+  grid-area: ha;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host.b {
+  grid-area: hb;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-host.a {
+  flex-direction: row;
+  text-align: left;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-host.b {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host b {
+  display: block;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host.a b {
+  color: var(--azureL);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host.b b {
+  color: var(--crimsonL);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host .yours {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--moon);
+  border-radius: 4px;
+  color: var(--moon);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host.a .yours {
+  margin: 0 6px 0 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-host span.ctl {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Portraits. */
+html[data-product-kind="combat_debugger"] .bc .sb-party {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-party.a {
+  grid-area: pa;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-party.b {
+  grid-area: pb;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-party .plabel {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: 40px;
+  min-height: 0;
+  padding: 4px 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por:hover {
+  background: var(--panel2);
+}
+
+html[data-product-kind="combat_debugger"] .bc .por.focus {
+  border-color: var(--edge2);
+  background: var(--panel2);
+}
+
+html[data-product-kind="combat_debugger"] .bc .por .tok {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* A held portrait pair: the END portrait and its earlier look in one cell. */
+html[data-product-kind="combat_debugger"] .bc .por-stack {
+  display: grid;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por-stack > .por {
+  grid-area: 1 / 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por[data-beat-side="before"] {
+  pointer-events: none;
+}
+
+/* An Unseen token: a dark disc, a dashed team ring and an ash class emblem. */
+html[data-product-kind="combat_debugger"] .bc .unseen-tok__disc {
+  fill: #141a26;
+}
+
+html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring {
+  fill: none;
+  opacity: 0.6;
+  stroke-dasharray: 2.2 2.6;
+  stroke-width: 2;
+}
+
+html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring[data-team="team-a"] {
+  stroke: var(--azure);
+}
+
+html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring[data-team="team-b"] {
+  stroke: var(--crimson);
+}
+
+html[data-product-kind="combat_debugger"] .bc .unseen-tok__emblem {
+  opacity: 0.38;
+  filter: grayscale(1);
+}
+
+/* The plain team ring drawn when the token look cannot draw a champion. */
+html[data-product-kind="combat_debugger"] .bc .tok__fallback {
+  fill: #141a26;
+  stroke-width: 3;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok__fallback[data-team="team-a"] {
+  stroke: var(--azure);
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok__fallback[data-team="team-b"] {
+  stroke: var(--crimson);
+}
+
+html[data-product-kind="combat_debugger"] .bc .lb {
+  display: block;
+  overflow: hidden;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: #0d1119;
+}
+
+html[data-product-kind="combat_debugger"] .bc .lb i {
+  display: block;
+  height: 100%;
+  background: var(--ivory);
+}
+
+html[data-product-kind="combat_debugger"] .bc .lb i.low {
+  background: var(--cinder);
+}
+
+html[data-product-kind="combat_debugger"] .bc .por .pl {
+  height: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por .pl.you {
+  padding: 0 5px;
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--moon);
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por.unseen {
+  cursor: default;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por.unseen:hover {
+  background: transparent;
+}
+
+html[data-product-kind="combat_debugger"] .bc .por.unseen .pl {
+  color: var(--ash);
+  font-style: italic;
+}
+
+/* An Unseen portrait's empty life slot is exactly as tall as a life bar
+   (3 px), so the party row keeps its height when portraits turn Unseen. */
+html[data-product-kind="combat_debugger"] .bc .lb.none {
+  height: 0;
+  margin: 1px 0;
+  border-top: 1px dashed #34425f;
+  background: transparent;
+}
+
+/* Scores. */
+html[data-product-kind="combat_debugger"] .bc .sb-score {
+  display: grid;
+  gap: 5px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score .n {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.b .n {
+  color: var(--crimson);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.a .n {
+  color: var(--azure);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score .of {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar {
+  display: flex;
+  gap: 1px;
+  --recent-shift: 0px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar i {
+  width: 3px;
+  height: 8px;
+  border-radius: 1px;
+  background: #1e2840;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.b .segbar i.on {
+  background: var(--crimson);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar {
+  flex-direction: row-reverse;
+  --recent-shift: -1px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar i.on {
+  background: var(--azure);
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.a
+  .segbar {
+  flex-direction: row;
+  --recent-shift: 0px;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.b
+  .segbar {
+  flex-direction: row-reverse;
+  --recent-shift: -1px;
+}
+
+/* Momentum: recent points in the team's light color over one underline. */
+html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar i.on.recent {
+  background: var(--azureL);
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.b .segbar i.on.recent {
+  background: var(--crimsonL);
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar i.recent {
+  position: relative;
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar i.recent::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: var(--recent-shift);
+  width: 4px;
+  height: 1.5px;
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar i.recent.newest {
+  --recent-shift: 0px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .segbar i.recent.newest::after {
+  width: 3px;
+}
+
+/* The number row; a held old number sits over #score-a or #score-b. */
+html[data-product-kind="combat_debugger"] .bc .sb-score > div {
+  position: relative;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score .n[data-beat-side="before"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* The bar row; a held old bar shares its cell. */
+html[data-product-kind="combat_debugger"] .bc .sb-score > .segbar {
+  grid-row: 2;
+  grid-column: 1;
+}
+
+/* The Scorebug switch off: a plain text score ("Score: 2/20"), no bar. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-plain="true"]
+  .sb-score
+  .n {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.b {
+  grid-area: sb;
+  justify-items: start;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-score.a {
+  grid-area: sa;
+  justify-items: end;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.a {
+  justify-items: start;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.b {
+  justify-items: end;
+}
+
+/* The middle: tick, First To, Respawn Wave In. */
+html[data-product-kind="combat_debugger"] .bc .sb-mid {
+  grid-area: mid;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-mid b {
+  font-size: 18px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .sb-mid span {
+  color: var(--muted);
+  font-size: 13px;
+}

@@ -5,6 +5,7 @@
  */
 import { expect, test } from "@playwright/test";
 
+import { closeRecordingPanel, openRecordingPanel } from "./support/live-debugger.js";
 import {
   readJsonArtifact,
   startRecordingDebugger,
@@ -41,7 +42,8 @@ test.afterEach(async () => {
   }
 });
 
-const GAMMA_LABEL = "Reactive TDM GAMMA";
+// GAMMA's public name: its live slot label and its recorded controller name.
+const GAMMA_LABEL = "tdm-gamma";
 const GAMMA_CONFIGURATION = Object.freeze({
   team_a_controller: "manual",
   team_b_controller: "tdm_gamma",
@@ -94,7 +96,7 @@ async function applyLiveCommand(page, activate) {
   await activate();
   const response = await responsePromise;
   expect(response.status()).toBe(200);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   return response;
 }
 
@@ -102,7 +104,11 @@ async function applyLiveCommand(page, activate) {
 async function expectGammaScoreboard(page) {
   const teamB = page.locator("#match-team-b .match-scoreboard__policy");
   await expect(teamB).toHaveText(GAMMA_LABEL);
-  await expect(teamB).toHaveAttribute(
+  // The policy references sit on the team label; hovering the name opens the
+  // team's controller list instead (src/controller-names.js).
+  await expect(
+    page.locator("#match-team-b .match-scoreboard__team-label"),
+  ).toHaveAttribute(
     "title",
     /^debugger-action-source:tdm_gamma:slot:\d+(?:\ndebugger-action-source:tdm_gamma:slot:\d+)*$/u,
   );
@@ -178,7 +184,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   recording = started;
   const errors = collectBrowserErrors(page);
   await page.goto(started.url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-product-kind",
     "combat_debugger",
@@ -204,12 +210,12 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     "data-policy-controller-read-only",
     "true",
   );
-  await expect(page.locator("#command-controlled-actor")).toContainText(
-    "tdm_gamma (read-only)",
+  await expect(page.locator("#command-controlled-actor")).toHaveText(
+    /^Priest · ID \d+ · Watch Only · tdm-gamma$/u,
   );
   await expect(page.locator("#command-controlled-actor")).toHaveAttribute(
     "aria-label",
-    /tdm_gamma \(read-only\)\. This policy chooses its own action\.$/u,
+    /^Priest · ID \d+ · Watch Only · tdm-gamma\. This policy chooses its own action\.$/u,
   );
   await expect(page.locator("#command-target-select")).toBeDisabled();
 
@@ -226,9 +232,11 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     captured_transition_count: 1,
   });
 
+  await openRecordingPanel(page);
   const finishResponse = await applyLiveCommand(page, () =>
     page.locator("#recording-finish-button").click(),
   );
+  await closeRecordingPanel(page);
   expect(finishResponse.request().postDataJSON().command).toMatchObject({
     command_type: "finish_and_review",
   });
@@ -257,7 +265,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   const reviewErrors = collectBrowserErrors(reviewPage);
   await reviewPage.goto(viewer.url);
   await expect(reviewPage).toHaveTitle("MARL-BattleGrounds Replay Viewer");
-  await expect(reviewPage.locator("#connection-status")).toHaveText("Online");
+  await expect(reviewPage.locator("#connection-status")).toHaveText("Connected");
   await expect(reviewPage.locator("html")).toHaveAttribute(
     "data-product-kind",
     "replay_viewer",

@@ -5,7 +5,12 @@ contract table (tests.red_zone_scene_cases) marked accepted and refuses the
 rest through the strict wire adapter; the battlefield scene accepts an exact
 V1 or V2 map; build_authorized_map_v2 records depth 0 as red_zone=None and
 refuses bad bases, depths and pad shapes; an Oracle scene from a context whose
-resolved config is V1 keeps AuthorizedMapV1.
+resolved config is V1 keeps AuthorizedMapV1. Every wire object forbids extra
+properties and requires every field except named historical additions, the
+scene's optional ``team_sight`` (the live Agent POV merged sight; an Oracle
+scene carries it as null) and the frame's optional host facts
+``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
+Honors) and ``match_moments`` (the Herald Cards history).
 """
 
 from __future__ import annotations
@@ -567,7 +572,9 @@ def test_neutral_scene_uses_stable_opaque_keys_and_omits_legacy_roots(
         "spawn_shield_mechanics",
         "spawn_pads",
         "respawn_waves",
+        "team_sight",
     }
+    assert payload["current_endpoint"]["scene"]["team_sight"] is None
     assert "selection" not in json.dumps(payload["current_endpoint"]["scene"])
     assert "observer_visibility" not in json.dumps(payload["current_endpoint"]["scene"])
     assert "ranges" not in json.dumps(payload["current_endpoint"]["scene"])
@@ -1103,25 +1110,37 @@ def test_every_nested_wire_object_forbids_additional_properties() -> None:
         optional: set[str] = (
             {
                 "deaths",
+                "previous_scores",
+                "returned_agent_ids",
                 "map",
                 "observation_mode",
                 "episode_limit",
                 "root_seed",
                 "episode_seed",
+                "slot_controller_names",
+                "scores_ten_ticks_ago",
             }
             if name == "MatchSummaryV1"
-            else {"killing_team_id", "contributors"}
+            else {"killing_team_id", "contributors", "home_fall"}
             if name == "MatchDeathV1"
             else {"display_side"}
             if name == "MatchTeamV1"
+            else {"home_fall"}
+            if name == "ReplayIncomingAgentDiedEventV1"
+            else {"team_sight"}
+            if name == "AuthorizedBattlefieldSceneV1"
             else set()
         )
         assert properties - optional == set(cast(list[str], definition["required"])), (
             name
         )
-    assert set(cast(dict[str, object], schema["properties"])) == set(
-        cast(list[str], schema["required"])
-    )
+    # The host facts are the frame's optional fields: Champion Streaks, the
+    # game-over Honors and the Herald Cards history.
+    assert set(cast(dict[str, object], schema["properties"])) - {
+        "champion_streaks",
+        "match_honors",
+        "match_moments",
+    } == set(cast(list[str], schema["required"]))
 
 
 def test_nested_wire_rows_reject_extra_keys_at_every_epoch_level(

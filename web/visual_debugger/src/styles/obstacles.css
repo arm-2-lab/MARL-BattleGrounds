@@ -1,0 +1,96 @@
+/*
+ * Styles for the Obstacles look (src/looks/obstacles.js): the Standing Stones.
+ * styles.css imports this file at its top. The stone tokens below are new
+ * (design store skins/obstacles.js, Moonstone kit); a realm map skin may set
+ * the same custom properties on the battlefield to recolour its stones.
+ * Selectors use two classes so they win over the old one-class `.obstacle`
+ * rule later in styles.css until that rule is removed.
+ */
+:root {
+  --stone-pillar: #333c4f;
+  --stone-cap: #454f66;
+  --stone-wall: #2d3546;
+  --stone-wall-top: #3a4356;
+  --stone-edge: #10141c;
+  --stone-shadow: #070a10;
+  --stone-blade-end: #535d75;
+}
+
+.stone-shadow-window {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stone-shadow {
+  fill: var(--stone-shadow);
+  stroke: none;
+}
+
+.obstacle.standing-stone,
+.obstacle.plain-stone {
+  stroke: var(--stone-edge);
+  stroke-linejoin: miter;
+  stroke-width: 1.5;
+  vector-effect: none;
+}
+
+/* Below 22 px per world unit the stone edge thins to 1 px. */
+.obstacle.standing-stone[data-detail="fine"] {
+  stroke-width: 1;
+}
+
+.obstacle.standing-stone--pillar {
+  fill: var(--stone-pillar);
+}
+
+.obstacle.standing-stone--wall {
+  fill: var(--stone-wall);
+}
+
+/* Obstacle Skins off: a flat stone on its true footprint, edged in Ward Silver. */
+.obstacle.plain-stone {
+  fill: var(--stone-pillar);
+  stroke: var(--ward-silver);
+  stroke-width: 1;
+  stroke-opacity: 0.6;
+}
+
+.stone-blade__edge,
+.stone-blade__core,
+.stone-blade__end {
+  fill: none;
+  stroke-linecap: butt;
+  pointer-events: none;
+}
+
+.stone-blade__edge {
+  stroke: var(--stone-edge);
+}
+
+.stone-blade__core {
+  stroke: var(--stone-cap);
+}
+
+.stone-blade__end {
+  stroke: var(--stone-blade-end);
+}
+
+.obstacle.stone-blade__hit {
+  fill: none;
+  stroke: var(--stone-edge);
+  stroke-opacity: 0;
+  stroke-width: 10;
+  vector-effect: none;
+}
+
+.stone-wall-top {
+  fill: var(--stone-wall-top);
+  stroke: none;
+  pointer-events: none;
+}
+
+.stone-cap {
+  fill: var(--stone-cap);
+  stroke: none;
+  pointer-events: none;
+}

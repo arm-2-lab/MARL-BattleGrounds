@@ -1,0 +1,38 @@
+/*
+ * Styles for the Focus Tally look (src/looks/focus-tally.js): the beads under a
+ * champion hit by two or more enemies on one tick. styles.css imports this
+ * file. Stroke widths are attributes set by the look; this file sets colours
+ * and opacities from the :root tokens only (export-safe: flat strokes).
+ */
+
+svg .focus-tally {
+  pointer-events: none;
+}
+
+svg .focus-tally path {
+  fill: none;
+  stroke-linecap: butt;
+}
+
+/* The Ink Shadow under-copy keeps the beads crisp over rims and stones. */
+svg .focus-tally__under {
+  stroke: var(--ink);
+  stroke-opacity: 0.6;
+}
+
+svg .focus-tally__thread {
+  stroke-opacity: 0.35;
+}
+
+svg .focus-tally__beads {
+  stroke-opacity: 0.9;
+}
+
+/* The beads and thread take the attacking team's light colour. */
+svg .focus-tally[data-team="team-a"] :is(.focus-tally__thread, .focus-tally__beads) {
+  stroke: var(--team-a-light);
+}
+
+svg .focus-tally[data-team="team-b"] :is(.focus-tally__thread, .focus-tally__beads) {
+  stroke: var(--team-b-light);
+}
