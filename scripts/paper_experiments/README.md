@@ -224,6 +224,7 @@ Its committed inputs are in `hyperparameter_search/`:
 | `shapes_and_ppo_picks.yaml` | Study 1's recipe picks, declared before launch |
 | `q_settings.yaml` | Study 2: 10 cases of one Q-method change each, 30 runs |
 | `q_settings_picks.yaml` | Study 2's recipe picks, including the engagement floor |
+| `continue_to_250m.yaml` | Study 3: each method's strongest run (point margin, kills and deaths together), continued from 40,108,032 to 250,675,200 transitions, 6 runs |
 
 Preparation checks every member of the local opponent bundle against
 `opponents.yaml` and binds the study's opponent names to their checked
@@ -257,6 +258,18 @@ python scripts/paper_experiments/analyze.py \
 
 The analysis writes each recipe pick to `recipe_selection.json` and the
 recipe learning curves to `recipe_curves.png`, `.svg` and `.csv`.
+
+Study 2 compares each change with its base's study 1 runs on the same seeds,
+so its analysis needs one grouping over both studies' run folders: study 2's
+`grouping.yaml` runs plus the base groups' study 1 runs, with the picks from
+`q_settings_picks.yaml` under `recipe_selection`.
+
+Study 3 continues saved runs instead of training new ones, so it needs no
+preparation step. Each case names a parent's full learner checkpoint at
+40,108,032 transitions and inherits that run's settings, opponents and
+validation panel. Its paths are relative to `<search root>/250m/protocol/`:
+copy the file there as `study.yaml`, then start and watch it as above with
+`--output-dir /data/hyperparameter-search/250m/study`.
 
 ## Paths And Portable Files
 

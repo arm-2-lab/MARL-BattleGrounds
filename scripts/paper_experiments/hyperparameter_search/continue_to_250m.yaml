@@ -1,0 +1,127 @@
+# Study 3 of the six-method hyperparameter search: continue each method's
+# strongest run from 40,108,032 to 250,675,200 transitions. These six policies
+# enter the tournament.
+#
+# Each case continues the run's full learner checkpoint at 40,108,032 (the only
+# full learner state a run keeps) with extend_training; it is one lineage with
+# its parent, not a new seed. Everything not listed under changes is inherited
+# from the parent: reward, opponents, exploration, validation panel and maps,
+# seed pairs and actor retention.
+#
+# Paths are relative to <search root>/250m/protocol/, the same layout as the
+# other studies (<search root>/<study>/study/cases/<case>/run). Copy this file
+# there as study.yaml and start it from a frozen worktree:
+#
+#   python -m marl_battlegrounds study start \
+#     --config <search root>/250m/protocol/study.yaml \
+#     --output-dir <search root>/250m/study
+#
+# Choices:
+#   - Parents: each method's strongest single run of studies 1 and 2, judged by
+#     confirmation point margin, kills and deaths together, not by its recipe's
+#     three-seed mean (docs/training/hyperparameter_search.md, Final Recipes).
+#   - Validation: 20 routine checks, one every 5% of the added budget
+#     (about every 10.5M transitions), the last at 250,675,200. Parent
+#     candidates stay eligible, so a run's selected checkpoint can be a parent
+#     checkpoint when nothing later beats it.
+#   - Learning rates: PPO and QMIX rates are constant and carry over. PQN-VDN's
+#     rate fell linearly from 0.00025 to about 0 over its 40M run. It restarts
+#     at 0.00021 and falls linearly to 1e-10 over the 102,816 added optimizer
+#     steps (2,142 learning blocks of 4 epochs x 12 minibatches), reaching the
+#     bottom at the last update, at 250,675,200. 0.00021 = 0.00025 x (1 - 0.16):
+#     the rate a run planned for 250M from the start would have at 40,108,032
+#     (16% of 250,675,200), so 40M-250M follows that run's schedule.
+#
+# Longest runs first. Planned cost about 24 GPU-hours, about 12 hours on two
+# cards (from study 1 and 2 speeds; validation not yet measured at this length).
+schema_version: 1
+name: Hyperparameter Search 250M Continuations
+failure_policy: continue
+resources:
+  devices:
+    - device: GPU-6b11a0c4-14e8-6782-8932-1df56d599796
+      max_workers: 1
+    - device: GPU-8dcabaa4-3802-4240-98e3-6ddebbc6239d
+      max_workers: 1
+cases:
+  # PQN-VDN B768 T128, reward scale 10 (-5.1, 13.1 kills, 17.1 deaths)
+  - id: pqn_vdn-b768-t128-reward-x10--seed-12259871
+    checkpoint: ../../q-settings/study/cases/pqn_vdn-b768-t128-reward-x10--seed-12259871/run/checkpoints/pqn_vdn_checkpoint_step_000040108032_ca564147cbe0f8b475ca93c64289e8d31e8697dd3edca8d3f73e482ad0d4e0a0
+    additional_env_steps: 210567168
+    runtime: &runtime
+      # The parent's training opponents and frozen validation panel, bound to
+      # the same checked bundle as studies 1 and 2 (panel order unchanged).
+      opponents:
+        recurrent-mappo-combat-support-low-amounts-step-30081024: ../../opponents/models/recurrent-mappo-combat-support-low-amounts-step-30081024
+        recurrent-mappo-combat-support-step-35094528: ../../opponents/models/recurrent-mappo-combat-support-step-35094528
+        recurrent-mappo-tactical-support-step-40108032: ../../opponents/models/recurrent-mappo-tactical-support-step-40108032
+        recurrent-mappo-tactical-support-high-amounts-step-25067520: ../../opponents/models/recurrent-mappo-tactical-support-high-amounts-step-25067520
+        recurrent-mappo-tactical-support-zero-sum-step-35094528: ../../opponents/models/recurrent-mappo-tactical-support-zero-sum-step-35094528
+        recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032: ../../opponents/models/recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032
+      validation_opponents:
+        - ../../opponents/models/recurrent-mappo-combat-support-pooled-step-250675200
+        - tdm-alpha
+        - tdm-beta
+        - tdm-gamma
+    changes:
+      validation: &validation
+        env_steps:
+          - 50636390
+          - 61164749
+          - 71693107
+          - 82221466
+          - 92749824
+          - 103278182
+          - 113806541
+          - 124334899
+          - 134863258
+          - 145391616
+          - 155919974
+          - 166448333
+          - 176976691
+          - 187505050
+          - 198033408
+          - 208561766
+          - 219090125
+          - 229618483
+          - 240146842
+          - 250675200
+      learning_rate:
+        kind: linear
+        q_lr: 0.00021
+        optimizer_steps: 102816
+  # QMIX B768 T32, q_lr 0.0001, a target copy every 65,536 new steps (-2.8, 12.8 kills, 15.1 deaths)
+  - id: qmix-b768-t32-lr-1e-4-target-faster--seed-12259871
+    checkpoint: ../../q-settings/study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-12259871/run/checkpoints/qmix_checkpoint_step_000040108032_99a560a87df3edbcb679d6751eb43d6faca8951370efff3d85541a7397981fc0
+    additional_env_steps: 210567168
+    runtime: *runtime
+    changes:
+      validation: *validation
+  # Recurrent IPPO reference (-8.5, 11.1 kills, 15.4 deaths)
+  - id: ippo-reference--seed-20261001
+    checkpoint: ../../shapes-and-ppo/study/cases/ippo-reference--seed-20261001/run/checkpoints/ippo_checkpoint_step_000040108032_2c57b86f181036d6487649b34f2149dac15c1c4742e263c9c43440a593af84bd
+    additional_env_steps: 210567168
+    runtime: *runtime
+    changes:
+      validation: *validation
+  # Recurrent MAPPO reference (-7.9, 8.4 kills, 14.9 deaths)
+  - id: mappo-reference--seed-20261002
+    checkpoint: ../../shapes-and-ppo/study/cases/mappo-reference--seed-20261002/run/checkpoints/mappo_checkpoint_step_000040108032_7ba048e347e28c7bc5bcef0551a0a5f90846ed251d28a73dc73456312a2541d2
+    additional_env_steps: 210567168
+    runtime: *runtime
+    changes:
+      validation: *validation
+  # Feedforward IPPO reference (-10.7, 5.7 kills, 16.4 deaths)
+  - id: ff_ippo-reference--seed-20261001
+    checkpoint: ../../shapes-and-ppo/study/cases/ff_ippo-reference--seed-20261001/run/checkpoints/ff_ippo_checkpoint_step_000040108032_54276f428691e0d46ca03e83734d253c53b033f873e8552b85183c0be396ca9c
+    additional_env_steps: 210567168
+    runtime: *runtime
+    changes:
+      validation: *validation
+  # Feedforward MAPPO, actor_lr 0.0003 (-8.1, 8.0 kills, 15.2 deaths; its selected checkpoint is at 24.1M)
+  - id: ff_mappo-actor-lr-3e-4--seed-20261002
+    checkpoint: ../../shapes-and-ppo/study/cases/ff_mappo-actor-lr-3e-4--seed-20261002/run/checkpoints/ff_mappo_checkpoint_step_000040108032_ae6a5914b33b1986291c4c04d3b89e7d310c5d147150489e48a63bbe67c18f39
+    additional_env_steps: 210567168
+    runtime: *runtime
+    changes:
+      validation: *validation
