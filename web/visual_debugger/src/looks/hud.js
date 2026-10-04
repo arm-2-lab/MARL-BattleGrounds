@@ -1809,9 +1809,10 @@ export function liveScorebugModel(hudRecords, sources, controllers) {
  * or the combat configuration event that comes with each frame); rebuilt
  * nodes would drop the choreographer's running Fall and Return holds, so a
  * falling champion's portrait would show its fallen look before the Fall
- * beat. Any change rebuilds that whole party.
+ * beat. Any change rebuilds that whole party; keyboard focus on one of its
+ * portraits moves to the same champion's new portrait.
  *
- * Side effects: DOM inside scorebug, tooltip registrations, the last paint
+ * Side effects: DOM inside scorebug, keyboard focus, tooltip registrations, the last paint
  * per party (paintedParties), the controller lines' resize observer and the
  * hover list's document listeners (controller-names.js); no storage or
  * network. Missing parts are skipped.
@@ -1837,9 +1838,25 @@ function paintLiveScorebug(scorebug, model, context) {
     party.hidden = !model.rosters;
     const painted = partyPaintKey(team.portraits, context);
     if (painted !== null && paintedParties.get(party) === painted) continue;
+    // Enter on a portrait selects its champion, which repaints this party:
+    // keep keyboard focus on that champion's new portrait.
+    const focused = doc.activeElement;
+    const focusedId =
+      focused instanceof HTMLElement && party.contains(focused)
+        ? (focused.closest(".por")?.getAttribute("data-public-agent-id") ?? null)
+        : null;
     party.replaceChildren(
       ...team.portraits.map((portrait) => portraitNode(doc, portrait, context)),
     );
+    if (focusedId !== null) {
+      const again = Array.from(party.querySelectorAll(".por")).find(
+        (node) =>
+          node.getAttribute("data-public-agent-id") === focusedId &&
+          node instanceof HTMLElement &&
+          node.tabIndex >= 0,
+      );
+      if (again instanceof HTMLElement) again.focus({ preventScroll: true });
+    }
     if (painted === null) paintedParties.delete(party);
     else paintedParties.set(party, painted);
   }

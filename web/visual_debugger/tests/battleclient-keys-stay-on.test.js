@@ -2,7 +2,8 @@
  * @file Check the keys and clicks rules of the BattleClient (owner, 3 October
  * 2026):
  * - keepKeysOnForTopBarPress (main.js) prevents the mouse press default on a
- *   button inside the top bar, on the game-over Verdict card's two buttons
+ *   button inside the top bar, on the arena's two on-screen keys (Everyone In
+ *   View and Frame Explanation), on the game-over Verdict card's two buttons
  *   and on the Match Summary sheet's Close (KEYS_KEPT_BUTTONS) only while
  *   the battlefield has focus and only
  *   outside the Replay Viewer, so keys stay on; it is installed on the
@@ -20,7 +21,8 @@
  *   becomes "Target cleared.", any other message and keys off stay. Once
  *   Exit was accepted (state.shuttingDown) the chip reads "Keys Off" with
  *   the battlefield focused, and the arena has no keys-on frame.
- * - deck.css lets Watch Only cover every deck column but Lock In.
+ * - deck.css lets Watch Only cover every deck column but Lock In, and never
+ *   the deck's header line.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -136,6 +138,7 @@ test("a top-bar button press keeps keys on only while they are on", () => {
   topBar({ replay: true, active: battlefield, battlefield }).press(replay);
   assert.equal(replay.prevented, false, "the Replay Viewer is left alone");
   for (const selector of [
+    ".arena-buttons button",
     ".herald-verdict-actions__button",
     ".match-summary-sheet__close",
   ]) {
@@ -240,11 +243,16 @@ test("Watch Only covers every deck column but Lock In", () => {
     DECK_CSS,
     /\.deck\[data-state="watchonly"\] \.deck-body \{\s+position: relative;\s+\}/u,
   );
+  // It covers the five columns' row from Your Champion to 3 Action, never
+  // 4 Lock In or the deck's header line above it (owner, 4 Oct 2026).
   assert.match(
     DECK_CSS,
-    /\.deck-body > div#watch-only \{\s+grid-column: agent-start \/ action-end;\s+inset: -12px -7px -14px -12px;\s+\}/u,
+    /\.deck-body > div#watch-only \{\s+grid-row: agent-start \/ agent-end;\s+grid-column: agent-start \/ action-end;\s+inset: -4px -7px -12px -12px;\s+\}/u,
   );
-  assert.match(DECK_CSS, /grid-template-areas: "agent step target action lock";/u);
+  assert.match(
+    DECK_CSS,
+    /grid-template-areas:\s+"head head head head head"\s+"agent step target action lock";/u,
+  );
 });
 
 /**

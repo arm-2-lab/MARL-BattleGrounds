@@ -2,7 +2,9 @@
  * @file Check the store's game-over Verdict card and the herald plates' place
  * in `src/looks/heralds.js`. The full Verdict card puts the team whose home
  * end is on the left in the left column, shows each team's controller name
- * (cut with "…" when too long), the lead line only on a horizon draw with a
+ * (a long one shrinks to 13 or 11 px, then is cut with "…"; a short line
+ * such as "2 Policies" stands in only when the caller gives one, so a single
+ * policy keeps its own name), the lead line only on a horizon draw with a
  * lead, an Honors cell per honor with every tied leader's medallion, and the
  * Match Summary and Show Arena buttons, centred over the arena and scaled to
  * fit; verdictButtons gives the buttons' boxes in arena px and
@@ -10,7 +12,8 @@
  * (Show Arena) or with full cards off it is the band plate in the top band.
  * A herald plate lives only in the top band, keeps the spot it was first given
  * for its whole life (same row, same arena), never vanishes when no spot is
- * free, and stays inside BUDGET even with ten falls in one tick. The host's
+ * free (it stays a plate even when page chrome covers the whole band), and
+ * stays inside BUDGET even with ten falls in one tick. The host's
  * `match_honors` fact turns into the verdict's Honors rows (verdictHonours),
  * and buildMatchSummarySheet lists one row per catalog label with a column for
  * each team's total and each champion (the Verdict's left team first), "—" for
@@ -135,8 +138,28 @@ test("the full verdict follows the home ends, names controllers, honors ties and
     ],
   );
   assert.equal(card.columns[1].name, "You");
+  assert.equal(card.columns[1].nameSize, 15);
   assert.match(card.columns[0].name, /…$/u);
+  assert.equal(card.columns[0].nameSize, 11);
   assert.ok(card.columns[0].name.length < DRAW.teams[2].name.length);
+  // One policy keeps its own name, smaller before it is cut; a short line
+  // ("2 Policies") stands in only when the caller gives one.
+  const named = (/** @type {Record<string, any>} */ team) =>
+    heralds
+      .records({
+        part: "verdict",
+        product: "replay_viewer",
+        verdict: { ...DRAW, teams: { 1: { name: "You" }, 2: team } },
+        bounds,
+      })[0]
+      .columns.find((/** @type {any} */ column) => column.teamId === 2);
+  const shrunk = named({ name: "IPPO at step 250,675,200" });
+  assert.equal(shrunk.name, "IPPO at step 250,675,200");
+  assert.ok(shrunk.nameSize < 15);
+  assert.equal(
+    named({ name: "IPPO at step 250,675,200 (run) + QMIX", short: "2 Policies" }).name,
+    "2 Policies",
+  );
   assert.deepEqual(
     card.honours.map((/** @type {any} */ honour) => [
       honour.label,
@@ -265,7 +288,8 @@ test("a plate keeps its first spot, never vanishes and stays inside its budget",
   assert.equal(held.held, true);
   assert.equal(held.x, born.x);
   assert.equal(held.y, born.y);
-  // Chrome over the whole top band leaves no free spot: the card still draws.
+  // Chrome over the whole top band leaves no free spot: the card still draws,
+  // as the same plate (there is no one-line form).
   const [squeezed] = heralds.records({
     event: rowWith(2, false),
     bounds,
@@ -273,7 +297,7 @@ test("a plate keeps its first spot, never vanishes and stays inside its budget",
     chrome: [{ left: 0, top: 0, right: 908, bottom: 60 }],
   });
   assert.equal(squeezed.place, "top");
-  assert.equal(squeezed.kind, "herald-band");
+  assert.equal(squeezed.kind, "herald-plate");
   for (const [count, trade] of [
     [7, false],
     [10, true],

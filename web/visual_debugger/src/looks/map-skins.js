@@ -71,8 +71,9 @@ import {
  */
 
 /**
- * Legacy fixed corner radius of the floor, in CSS pixels. `red-zone.js` still
- * reads it for its tint; the Realm Skins floor itself uses floorCornerRadius.
+ * Legacy fixed corner radius of the floor, in CSS pixels, kept only as a
+ * listed store number (FOOTPRINT here and in `red-zone.js`). The Realm Skins
+ * floor and the Red Zone strips both use floorCornerRadius.
  */
 export const FLOOR_CORNER_RADIUS = 8;
 

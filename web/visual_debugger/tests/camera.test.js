@@ -12,7 +12,8 @@
  * play. Camera switches: framing off gives Whole Map; B does nothing outside
  * the Replay Viewer. Tip texts are quoted exactly. The remembered camera maps
  * the old "director" value to Battle Cam, and every storage failure is safe.
- * build() is export-safe (no url(), gradient, mask, filter, image or id).
+ * There is no Camera Inset any more (owner, 4 Oct 2026): records never give
+ * a "camera-inset" record and the switch draws no picture.
  * Agent POV: over the browser fixture's POV frames, changing hidden champions'
  * researcher rows and match summary rows gives identical camera records in
  * every camera. The switch component shows the tips, remembers the camera,
@@ -20,9 +21,10 @@
  * right ease. The New Camera Tip switch is read live: Off hides a showing
  * first-open tip at once, On shows a tip not seen yet, and once seen it stays
  * seen. The first-open tip button has its own Battle Cam hover help.
- * switchCameras: the Replay Viewer's switch with ["whole_map", "battle_cam"]
- * has those two buttons only; V still turns Everyone In View on (the slot's
- * data-camera names it) and no switch button is lit then. tipHost: the
+ * switchCameras: the Replay Viewer's switch with [] (the owner's 4 Oct 2026
+ * key stack: the arena's V and B keys are the camera's buttons) has no
+ * buttons; V and B still change the camera and the slot's data-camera names
+ * it. tipHost: the
  * Replay Viewer's change tip and first-open tip mount in the given host (its
  * old children replaced, its hidden flag cleared) and not in the slot; live
  * play ignores tipHost.
@@ -39,7 +41,6 @@ import {
   BODY_REACH,
   BUDGET,
   battleCamFrame,
-  build,
   CAMERA_NAMES,
   CHANGE_TIP_MS,
   cameraChangeTip,
@@ -66,7 +67,6 @@ import {
   records,
   rememberCamera,
   tooltip,
-  update,
 } from "../src/looks/camera.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
@@ -549,7 +549,7 @@ test("Kill Slow Motion halves the chosen speed only in the Replay Viewer's Battl
   }
 });
 
-test("records give one frame record, play-only moments and an export-safe inset", () => {
+test("records give one frame record and play-only moments, and no inset", () => {
   const camera = {
     ...campCamera(
       [
@@ -590,17 +590,15 @@ test("records give one frame record, play-only moments and an export-safe inset"
   const list = records(input);
   assert.deepEqual(
     list.map((record) => record.kind),
-    ["camera-frame", "kill-cam", "slow-motion", "camera-inset"],
+    ["camera-frame", "kill-cam", "slow-motion"],
   );
   const still = records({ ...input, playing: false });
   assert.deepEqual(
     still.map((record) => record.kind),
-    ["camera-frame", "camera-inset"],
+    ["camera-frame"],
   );
   assert.deepEqual(
-    records({ ...input, filters: { camera_inset: false, kill_cam: false } }).map(
-      (r) => r.kind,
-    ),
+    records({ ...input, filters: { kill_cam: false } }).map((r) => r.kind),
     ["camera-frame", "slow-motion"],
   );
   const live = records({ ...input, product: "combat_debugger" });
@@ -616,18 +614,6 @@ test("records give one frame record, play-only moments and an export-safe inset"
   const everyone = cameraFrameFor({ ...input, camera_name: "everyone_in_view" });
   assert.equal(everyone?.camera, "everyone_in_view");
 
-  const doc = fakeDocument();
-  const nodes = build(list, /** @type {any} */ (doc));
-  assert.equal(nodes.length, 1);
-  const markup = serialize(nodes[0]);
-  for (const banned of ["url(", "Gradient", "<mask", "<filter", "<image", " id="]) {
-    assert.ok(!markup.includes(banned), `inset has no ${banned}`);
-  }
-  assert.ok(markup.includes('fill-rule="evenodd"'));
-  assert.ok(markup.includes("camera-inset__dot--b"), "a Team B dot");
-  assert.ok(markup.includes("camera-inset__fallen"), "a falling ring");
-  update(nodes, still);
-  assert.ok(serialize(nodes[0]).includes("camera-inset__frame"));
   const help = tooltip({
     kind: "camera-choice",
     camera: "battle_cam",
@@ -978,7 +964,7 @@ test("the New Camera Tip switch is read live: Off hides a showing first-open tip
   }
 });
 
-test("switchCameras leaves Everyone In View out of the switch but V still works", () => {
+test("the Replay Viewer's switch has no buttons, and V and B still change the camera", () => {
   const doc = fakeDocument();
   const slot = doc.createElement("div");
   const camera = createCameraSwitch({
@@ -988,24 +974,27 @@ test("switchCameras leaves Everyone In View out of the switch but V still works"
     timers: { setTimeout: () => ({}), clearTimeout: () => {} },
     applyFrame: () => {},
     registerKeys: false,
-    switchCameras: ["whole_map", "battle_cam"],
+    switchCameras: [],
   });
   try {
     /** @param {any} node @returns {any[]} */
     const all = (node) => [node, ...node.children.flatMap(all)];
     assert.deepEqual(
-      all(slot)
-        .filter((node) => node.className === "camera-switch__choice")
-        .map((node) => node.dataset.camera),
-      ["whole_map", "battle_cam"],
+      all(slot).filter(
+        (node) =>
+          node.className === "camera-switch__choice" ||
+          String(node.className).includes("inset"),
+      ),
+      [],
     );
     assert.equal(camera.pressKey("v"), true);
     assert.equal(camera.camera(), "everyone_in_view");
     assert.equal(slot.dataset.camera, "everyone_in_view");
-    for (const name of ["whole_map", "battle_cam"]) {
-      const button = find(slot, "camera-switch__choice", name);
-      assert.equal(button.getAttribute("aria-pressed"), "false", name);
-    }
+    assert.equal(camera.pressKey("b"), true);
+    assert.equal(camera.camera(), "battle_cam");
+    assert.equal(slot.dataset.camera, "battle_cam");
+    assert.equal(camera.pressKey("b"), true);
+    assert.equal(camera.camera(), "whole_map");
   } finally {
     camera.destroy();
   }
@@ -1088,14 +1077,6 @@ function find(root, className, camera) {
   const found = walk(root);
   assert.ok(found, `found ${className}`);
   return found;
-}
-
-/** @param {any} node @returns {string} */
-function serialize(node) {
-  const attributes = [...node.attributes.entries()]
-    .map(([name, value]) => ` ${name}="${value}"`)
-    .join("");
-  return `<${node.tagName}${attributes}>${node.children.map(serialize).join("")}</${node.tagName}>`;
 }
 
 function fakeDocument() {

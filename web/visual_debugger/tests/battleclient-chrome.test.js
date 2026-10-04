@@ -1,7 +1,7 @@
 /**
  * @file Check the BattleClient's top bar, arena view tag, hover card, How To
- * Play rule cards, Visual Filters drawer list and Visual Key status pictures
- * against the approved vision page and the owner's 1 October 2026 decisions.
+ * Play rule cards and Visual Filters drawer list against the approved vision
+ * page and the owner's 1 October 2026 decisions.
  *
  * Contracts: the place line splits into a bold map name and "Map 47 · Team
  * Deathmatch" (a scenario shows its tale title; matchPlaceTitle keeps its old
@@ -23,10 +23,7 @@
  * (Class Seals to Momentum, as in the Replay Viewer), lists Lore Emblems
  * (Bodies) in both clients, shows the V5
  * names while the Replay Viewer keeps its own, and lists Step Ghost in live
- * play only; and each Visual Key status picture is
- * drawn by the Statuses look and differs from every other status picture (the
- * Parity Runner compares the drawn pixels, including the plain Champion
- * picture).
+ * play only.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -34,7 +31,6 @@ import test from "node:test";
 
 import { authorizedPresentationSceneView } from "../src/authorized-presentation-adapter.js";
 import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
-import { drawSymbolPicture } from "../src/looks/visual-key.js";
 import {
   championCardFacts,
   HELP_OVERLAY_RULES,
@@ -366,129 +362,4 @@ test("the live Visual Filters list shows the V5 add-ons, under their V5 names", 
   assert.deepEqual(named(live, "step_ghost"), ["Step Ghost", "Motion"]);
   assert.equal(named(replay, "step_ghost"), null);
   assert.equal(live.every(Object.isFrozen), true);
-});
-
-class Node {
-  /** @param {string} tag */
-  constructor(tag) {
-    this.tagName = tag;
-    /** @type {Map<string, string>} */
-    this.attributes = new Map();
-    /** @type {Node[]} */
-    this.children = [];
-    this.text = "";
-    this.style = {};
-    this.dataset = {};
-    this.classList = {
-      add: () => {},
-      remove: () => {},
-      toggle: () => false,
-      contains: () => false,
-    };
-  }
-  /** @param {string} name @param {unknown} value */
-  setAttribute(name, value) {
-    this.attributes.set(name, String(value));
-  }
-  /** @param {string} name */
-  getAttribute(name) {
-    return this.attributes.get(name) ?? null;
-  }
-  /** @param {string} name */
-  removeAttribute(name) {
-    this.attributes.delete(name);
-  }
-  /** @param {string} name */
-  hasAttribute(name) {
-    return this.attributes.has(name);
-  }
-  /** @param {...unknown} nodes */
-  append(...nodes) {
-    for (const node of nodes) {
-      if (node instanceof Node) this.children.push(node);
-      else this.text += String(node);
-    }
-  }
-  /** @param {Node} node */
-  appendChild(node) {
-    this.append(node);
-    return node;
-  }
-  /** @param {...unknown} nodes */
-  replaceChildren(...nodes) {
-    this.children = [];
-    this.text = "";
-    this.append(...nodes);
-  }
-  get firstChild() {
-    return this.children[0] ?? null;
-  }
-  set textContent(value) {
-    this.children = [];
-    this.text = String(value);
-  }
-  /** @returns {string} */
-  get textContent() {
-    return this.text + this.children.map((child) => String(child.textContent)).join("");
-  }
-  querySelector() {
-    return null;
-  }
-  querySelectorAll() {
-    return [];
-  }
-  addEventListener() {}
-  /** @returns {string} */
-  markup() {
-    const attributes = [...this.attributes].map(
-      ([name, value]) => ` ${name}="${value}"`,
-    );
-    return `<${this.tagName}${attributes.join("")}>${this.text}${this.children
-      .map((child) => child.markup())
-      .join("")}</${this.tagName}>`;
-  }
-}
-
-function svgDocument() {
-  const doc = {
-    /** @param {string} _namespace @param {string} tag */
-    createElementNS: (_namespace, tag) => {
-      const node = new Node(tag);
-      Object.assign(node, { ownerDocument: doc, namespaceURI: _namespace });
-      return node;
-    },
-    /** @param {string} tag */
-    createElement: (tag) => {
-      const node = new Node(tag);
-      Object.assign(node, { ownerDocument: doc });
-      return node;
-    },
-  };
-  return doc;
-}
-
-test("each Visual Key status picture shows its own mark", () => {
-  const doc = /** @type {any} */ (svgDocument());
-  const statuses = [
-    "stun_sapped",
-    "stun_frozen",
-    "stun_broken",
-    "slow_snagged",
-    "slow_hamstrung",
-    "anti_heal",
-    "freedom",
-    "damage_boost",
-  ];
-  const pictures = statuses.map(
-    (id) => /** @type {any} */ (drawSymbolPicture(id, doc)),
-  );
-  for (const [index, picture] of pictures.entries()) {
-    assert.equal(
-      picture.getAttribute("data-picture-source"),
-      "look:statuses",
-      statuses[index],
-    );
-  }
-  const markups = new Set(pictures.map((picture) => picture.markup()));
-  assert.equal(markups.size, statuses.length);
 });

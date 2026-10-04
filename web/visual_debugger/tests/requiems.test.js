@@ -10,9 +10,7 @@
  * 8 ticks' falls, never a future one, newest first, at most 4 rows; it claims a
  * Basic dot or Ultimate diamond only from the caller's ultimate fact, names no
  * unseen killer, holds this tick's rows to the victim's Fall beat and reads
- * "No one has fallen in the last 8 ticks." when empty. The scorebug Wave Chip
- * reads "Team B Returns" with the team crest and holds to the Return beat
- * when given a key.
+ * "No one has fallen in the last 8 ticks." when empty.
  * build() keeps the END state in the DOM (Fall Ring at 35%, requiem pieces at
  * 0, relics and pips held to the Fall beat), pushes only fill "backwards"
  * animations timed from the beat (none when settled), and draws export-safe
@@ -446,7 +444,7 @@ test("a playing fall keeps requiem pieces at 0 and times fill-backwards animatio
   );
 });
 
-test("a return draws no END ring and the scorebug Wave Chip says which team returns", () => {
+test("a return draws no END ring", () => {
   const { doc, mount } = mountFor({ settled: true });
   requiems.build(
     requiems.records({
@@ -459,19 +457,6 @@ test("a return draws no END ring and the scorebug Wave Chip says which team retu
     byClass(mount.group, "homecoming__rings")[0].getAttribute("opacity"),
     "0",
   );
-  const chip = requiems.buildWaveChip(fakeDocument(), 2, "pk-b");
-  assert.equal(chip.tagName, "span");
-  assert.equal(byClass(chip, "wave-chip__label")[0].textContent, "Team B Returns");
-  assert.ok(
-    String(chip.getAttribute("class")).split(" ").includes("wave-chip--team-b"),
-  );
-  assert.equal(chip.getAttribute("data-beat-hold"), "return");
-  assert.equal(chip.getAttribute("data-beat-key"), "pk-b");
-  assert.equal(byClass(chip, "requiem-crest--team-b").length, 1);
-  assertExportSafe(chip);
-  const plain = requiems.buildWaveChip(fakeDocument(), 1);
-  assert.equal(byClass(plain, "wave-chip__label")[0].textContent, "Team A Returns");
-  assert.equal(plain.getAttribute("data-beat-hold"), null);
 });
 
 test("corpse marks hold to the Fall beat and draw relic and pips", () => {

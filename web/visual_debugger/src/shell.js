@@ -17,10 +17,10 @@
  * the hidden View select it drives; the Replay Viewer's POV agent chip and its
  * picker; the notice pill and the status pills (the audience pill is for
  * screen readers; the View switch shows the view); the Details popover (Step,
- * Transition with Copy, and the replay badges); the Help, Visual Key and Exit
- * labels; the Title Card shown while no frame has come for 300 ms; in live
- * play, the page palette that follows the Palette: High Contrast switch and
- * the Brand Signature (emblem and "MARL-BGs" in the margin by the floor's
+ * Transition with Copy, and the replay badges); the Help and Exit
+ * labels; the Title Card shown while no frame has come for 300 ms; in every
+ * client, the page palette that follows the High Contrast switch; in live
+ * play, the Brand Signature (emblem and "MARL-BGs" in the margin by the floor's
  * bottom-right corner, page chrome only, off by default); the arena's
  * view tag in live play (#pov-tag: "Agent POV · Your Team's Sight · N Unseen"
  * or the amber "Oracle View · You See Everything"; the old #oracle-view-tag
@@ -1569,7 +1569,7 @@ const READ_ONLY_LIVE_SCIENTIFIC_INSTRUCTIONS =
 const AGENT_CLOSEOUT_BATTLEFIELD_LABEL =
   "Agent POV recording closeout battlefield. Authorized bodies can be inspected; simulator controls are unavailable.";
 const AGENT_CLOSEOUT_BATTLEFIELD_INSTRUCTIONS =
-  "Inspect visible bodies here, or choose an agent in the roster to inspect its view. This recording cannot accept another turn.";
+  "Inspect visible bodies here, or click a champion's portrait in the scorebug to inspect its view. This recording cannot accept another turn.";
 const TERMINAL_REPLAY_BATTLEFIELD_LABEL =
   "Replay arena at its last tick. It never changes.";
 const TERMINAL_REPLAY_BATTLEFIELD_INSTRUCTIONS =
@@ -1693,7 +1693,7 @@ const TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS =
  * (#view-switch, #pov-agent-chip, #pov-agent-chip-button, #pov-agent-picker,
  * #session-details, #copy-transition-button, #recording-panel,
  * #recording-badge, #match-place, #oracle-view-tag, #pov-tag, #title-card,
- * #arena, #battlefield, #visual-key-button, #hcard, #bc and the
+ * #arena, #battlefield, #hcard, #bc and the
  * .app-header); a missing part is
  * skipped. It then binds, once: View switch clicks (set the View select and
  * fire its change event), POV agent picker clicks (call
@@ -1770,7 +1770,6 @@ export function createShell(context) {
     titleCard: byId("title-card"),
     arena: byId("arena"),
     battlefield: byId("battlefield"),
-    visualKeyButton: byId("visual-key-button"),
     visualFiltersButton: byId("visual-filters-button"),
     hoverCard: byId("hcard"),
     grid: byId("bc"),
@@ -1786,8 +1785,8 @@ export function createShell(context) {
   let titleCardTimer = null;
   // The picker is rebuilt only when its agents, current agent or availability change.
   let povAgentPickerKey = "";
-  // Live play: the palette the Palette: High Contrast switch last applied
-  // (null before the first live repaint).
+  // The palette the High Contrast switch last applied (null before the first
+  // repaint).
   /** @type {"moonlit" | "high_contrast" | null} */
   let livePalette = null;
   // Live play: the Brand Signature element (built on first use), its last
@@ -1919,32 +1918,23 @@ export function createShell(context) {
   }
 
   /**
-   * Live play only: make the page palette follow the Palette: High Contrast
-   * switch (high_contrast, Arena group, off by default).
+   * Make the page palette follow the High Contrast switch (high_contrast,
+   * Arena group, on by default), in all three clients (owner, 4 Oct 2026:
+   * one switch everywhere; the Replay Viewer's Palette select is gone).
    *
    * On: palette.js's High Contrast palette (`data-palette="high-contrast"` on
    * the root element, which styles/palette.css reads). Off: Moonlit (no
    * attribute). It writes only when the switch's value differs from the last
-   * value it applied, so ordinary repaints change nothing. It also sets the
-   * Palette select (#palette-select), if the page still has one, to the same
-   * palette without firing its change event. The Replay Viewer never calls it:
-   * there the Palette select owns the palette. Colors only: it shows no game
-   * fact, so Agent POV and Oracle View are the same.
+   * value it applied, so ordinary repaints change nothing. Colors only: it
+   * shows no game fact, so Agent POV and Oracle View are the same, and an
+   * exported PNG keeps its locked backdrop.
    *
    * @returns {void}
    */
-  function syncLivePalette() {
+  function syncPalette() {
     const wanted = filterOn("high_contrast") ? "high_contrast" : "moonlit";
     if (wanted === livePalette || typeof document.documentElement !== "object") return;
     livePalette = applyPalette(document.documentElement, wanted);
-    const select = byId("palette-select");
-    if (
-      typeof HTMLSelectElement === "function" &&
-      select instanceof HTMLSelectElement &&
-      select.value !== wanted
-    ) {
-      select.value = wanted;
-    }
   }
 
   /**
@@ -2757,8 +2747,8 @@ export function createShell(context) {
    * tag (renderViewTag; the old Oracle View tag stays hidden), the Agent POV
    * button's hover help (settleAgentPovTitle, once), the
    * POV agent chip (Replay Viewer Agent POV only), the header's `data-brand-lockup` ("on" or "off" from the
-   * brand_lockup switch), the always-visible Visual Key and Visual Filters
-   * buttons once the product is known (main.js gives the Replay Viewer's
+   * brand_lockup switch), the always-visible Visual Filters
+   * button once the product is known (main.js gives the Replay Viewer's
    * Visual Filters button its own job: it opens the rail's Visuals tab), and
    * the Title Card. Side effects: DOM text, `hidden`,
    * `disabled`, `aria-pressed` and the root `data-audience` and `data-preset`
@@ -2880,12 +2870,9 @@ export function createShell(context) {
     if (shellParts.header !== null) {
       shellParts.header.dataset.brandLockup = filterOn("brand_lockup") ? "on" : "off";
     }
+    if (productIdentity !== null) syncPalette();
     if (productIdentity?.product_kind === "combat_debugger") {
-      syncLivePalette();
       syncBrandSignature();
-    }
-    if (shellParts.visualKeyButton !== null && productIdentity !== null) {
-      shellParts.visualKeyButton.hidden = false;
     }
     if (shellParts.visualFiltersButton !== null && productIdentity !== null) {
       shellParts.visualFiltersButton.hidden = false;

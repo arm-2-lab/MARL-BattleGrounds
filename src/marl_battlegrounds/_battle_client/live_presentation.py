@@ -1366,9 +1366,11 @@ def build_live_oracle_authorized_presentation_v1(
         This view's game-over Honors and Match Summary rows
         (viewer.match_summary.match_honors_v1), from the live service's
         totals of every transition of the game; give it only on the
-        completion frame. An Agent POV view's honors list only its own team's
-        champions. Copied into the frame's ``match_honors`` field. None (the
-        default) means no Honors.
+        completion frame. Every view's
+        honors list every champion: the game is over, so Agent POV has
+        nothing left to hide. Copied into the frame's ``match_honors``
+        field, which refuses Honors unless the frame's own match summary
+        shows a finished game. None (the default) means no Honors.
     match_moments : MatchMomentFactsV1 or None, optional, keyword-only
         This view's Herald Cards history facts (viewer.match_moments), from
         the live session's history (DebuggerSession.match_moments.facts):
@@ -1390,7 +1392,8 @@ def build_live_oracle_authorized_presentation_v1(
         A required source or nested model has an unsupported exact type.
     ValueError
         Source identity, epoch, action meaning, or display authorization is
-        inconsistent.
+        inconsistent, or Honors are given on a frame whose match summary
+        does not show a finished game.
 
     Notes
     -----
@@ -1767,9 +1770,11 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         This view's game-over Honors and Match Summary rows
         (viewer.match_summary.match_honors_v1), from the live service's
         totals of every transition of the game; give it only on the
-        completion frame. An Agent POV view's honors list only its own team's
-        champions. Copied into the frame's ``match_honors`` field. None (the
-        default) means no Honors.
+        completion frame. Every view's
+        honors list every champion: the game is over, so Agent POV has
+        nothing left to hide. Copied into the frame's ``match_honors``
+        field, which refuses Honors unless the frame's own match summary
+        shows a finished game. None (the default) means no Honors.
     match_moments : MatchMomentFactsV1 or None, optional, keyword-only
         This view's Herald Cards history facts (viewer.match_moments), from
         the live session's history (DebuggerSession.match_moments.facts):
@@ -1791,7 +1796,8 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         A required source or nested model has an unsupported exact type.
     ValueError
         Source identity, epoch, action meaning, or display authorization is
-        inconsistent.
+        inconsistent, or Honors are given on a frame whose match summary
+        does not show a finished game.
 
     Notes
     -----
@@ -2153,9 +2159,11 @@ def build_live_shared_obs_authorized_presentation_v1(
         This view's game-over Honors and Match Summary rows
         (viewer.match_summary.match_honors_v1), from the live service's
         totals of every transition of the game; give it only on the
-        completion frame. An Agent POV view's honors list only its own team's
-        champions. Copied into the frame's ``match_honors`` field. None (the
-        default) means no Honors.
+        completion frame. Every view's
+        honors list every champion: the game is over, so Agent POV has
+        nothing left to hide. Copied into the frame's ``match_honors``
+        field, which refuses Honors unless the frame's own match summary
+        shows a finished game. None (the default) means no Honors.
     match_moments : MatchMomentFactsV1 or None, optional, keyword-only
         This view's Herald Cards history facts (viewer.match_moments), from
         the live session's history (DebuggerSession.match_moments.facts):
@@ -2177,7 +2185,8 @@ def build_live_shared_obs_authorized_presentation_v1(
         A required source or nested model has an unsupported exact type.
     ValueError
         Source identity, epoch, action meaning, or display authorization is
-        inconsistent.
+        inconsistent, or Honors are given on a frame whose match summary
+        does not show a finished game.
 
     Notes
     -----

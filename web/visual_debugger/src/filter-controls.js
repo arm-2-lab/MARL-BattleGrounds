@@ -21,7 +21,7 @@
  * VISUAL_FILTER_GROUPS order and in registry order inside a group), the
  * preset buttons inside #visual-filter-presets, the hover and screen-reader help
  * of each switch (its registry help line, which always says what Off shows),
- * the "N Of M On" counts, the preset status line ("Broadcast · 2 switches
+ * the "N Of M On" counts, the preset status line ("Researcher · 2 switches
  * changed by hand"), Reset To Default Configuration (grayed while nothing
  * differs from Default Configuration), the Enable All and Disable All buttons
  * and the panel's focus return when it closes.
@@ -240,7 +240,7 @@ function presetButtonSelector(presetId) {
  * for Default Configuration.
  *
  * @param {unknown} state A complete switch state.
- * @param {unknown} presetId The preset in use: "default", "broadcast",
+ * @param {unknown} presetId The preset in use: "default",
  *   "researcher", "manuscript" or "minimal".
  * @param {ReadonlyArray<string>} switchIds The switch IDs this client shows
  *   (for example visualFiltersForProduct(product).map(({id}) => id)).

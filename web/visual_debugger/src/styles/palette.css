@@ -8,8 +8,9 @@
  * (below). Moonlit (no attribute) keeps every token and rule as is.
  *
  * It never sets --export-backdrop or --export-backdrop-grid, and never paints
- * the .battlefield-shell background, so Export PNG keeps #111827 and its grid
- * (tests/palette-parity.test.js checks this).
+ * the .battlefield-shell background, so Export PNG accepts the page's backdrop
+ * (tests/palette-parity.test.js checks this). Its --battlefield does paint the
+ * arena's surround, so a High Contrast PNG shows #0f1522 there, not #111827.
  */
 
 :root[data-palette="high-contrast"] {
@@ -85,16 +86,4 @@
   .battlefield-shell svg {
     forced-color-adjust: none;
   }
-}
-
-.palette-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ui-text);
-  font-size: 13px;
-}
-
-.palette-control__label {
-  font-weight: 700;
 }

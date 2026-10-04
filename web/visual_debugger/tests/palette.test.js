@@ -3,16 +3,15 @@
  *
  * Contracts: Moonlit is the default and first choice, High Contrast second;
  * applyPalette sets or removes `data-palette="high-contrast"` on the root and
- * refuses an unknown palette; currentPalette reads it back; the Palette select
- * starts at the page's palette and changes it, calling onChange. The High
+ * refuses an unknown palette; currentPalette reads it back.
+ * The High
  * Contrast stylesheet redefines only colour tokens under
  * `:root[data-palette="high-contrast"]`, uses the store's Full Moon Contrast
  * values, never touches `--export-backdrop`, `--export-backdrop-grid` or the
  * battlefield shell's background, and every token it sets exists in
- * styles.css or obstacles.css. The Palette select is the Replay Viewer's
- * control: there the palette is not a visual filter switch, so presets and
- * Enable All never change it. Live play lists the store's Palette: High
- * Contrast switch (high_contrast) instead, and no switch is named "palette".
+ * styles.css or obstacles.css. One High Contrast switch (high_contrast) is
+ * the palette control in all three clients, on by default (owner, 4 Oct
+ * 2026); there is no Palette select and no switch named "palette".
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -77,10 +76,6 @@ function tokensIn(css, selector) {
 test("Moonlit is the default; applyPalette sets and clears the root attribute", () => {
   assert.deepEqual(palette.PALETTE_IDS, ["moonlit", "high_contrast"]);
   assert.equal(palette.DEFAULT_PALETTE, "moonlit");
-  assert.deepEqual(
-    palette.PALETTE_OPTIONS.map((option) => option.label),
-    ["Moonlit", "High Contrast"],
-  );
   const doc = fakeDocument();
   const root = doc.documentElement;
   assert.equal(palette.currentPalette(root), "moonlit");
@@ -92,37 +87,6 @@ test("Moonlit is the default; applyPalette sets and clears the root attribute", 
   assert.throws(() => palette.applyPalette(root, "print"), RangeError);
   root.setAttribute("data-palette", "something-else");
   assert.equal(palette.currentPalette(root), "moonlit");
-});
-
-test("the Palette select starts at the page palette and changes it", () => {
-  const doc = fakeDocument();
-  const container = doc.createElement("div");
-  doc.documentElement.setAttribute("data-palette", "high-contrast");
-  /** @type {string[]} */
-  const changes = [];
-  const control = palette.createPaletteControl({
-    container,
-    onChange: (id) => changes.push(id),
-  });
-  assert.equal(container.children[0], control.element);
-  assert.equal(control.element.className, "palette-control");
-  assert.equal(control.element.children[0].textContent, "Palette");
-  assert.equal(control.select.id, "palette-select");
-  assert.deepEqual(
-    /** @type {any} */ (control.select.children).map(
-      (/** @type {any} */ option) => option.value,
-    ),
-    ["moonlit", "high_contrast"],
-  );
-  assert.equal(control.select.value, "high_contrast");
-  control.select.value = "moonlit";
-  /** @type {any} */ (control.select).dispatch("change");
-  assert.equal(doc.documentElement.getAttribute("data-palette"), null);
-  assert.deepEqual(changes, ["moonlit"]);
-  control.setValue("high_contrast");
-  assert.equal(doc.documentElement.getAttribute("data-palette"), "high-contrast");
-  assert.equal(control.select.value, "high_contrast");
-  assert.throws(() => control.setValue(/** @type {any} */ ("print")), RangeError);
 });
 
 test("High Contrast swaps colour tokens but never the export backdrop", async () => {
@@ -164,14 +128,16 @@ test("High Contrast swaps colour tokens but never the export backdrop", async ()
   }
 });
 
-test("the palette is a switch only in live play", () => {
+test("one High Contrast switch, on by default, in all three clients", () => {
   assert.ok(VISUAL_FILTER_IDS.includes("high_contrast"));
   assert.ok(!VISUAL_FILTER_IDS.includes(/** @type {any} */ ("palette")));
-  const live = visualFiltersForProduct("combat_debugger");
-  const replay = visualFiltersForProduct("replay_viewer");
-  assert.equal(live.filter(({ id }) => id === "high_contrast").length, 1);
-  assert.equal(
-    replay.some(({ id }) => id === "high_contrast"),
-    false,
-  );
+  for (const product of /** @type {const} */ (["combat_debugger", "replay_viewer"])) {
+    const rows = visualFiltersForProduct(product).filter(
+      ({ id }) => id === "high_contrast",
+    );
+    assert.equal(rows.length, 1, product);
+    assert.equal(rows[0].label, "High Contrast");
+    assert.equal(rows[0].defaultEnabled, true);
+  }
+  assert.equal("createPaletteControl" in palette, false);
 });

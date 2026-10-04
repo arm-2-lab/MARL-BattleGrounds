@@ -9,14 +9,20 @@ per view, from the recorded history. Contracts checked:
 - Picking Honors: each honor names every champion with the best rounded
   value (ties), an honor nobody earned is left out, unknown kill credit drops
   Kill Contributions, amounts round half up, labels come from the metric
-  catalog, Oracle View lists every active champion and Agent POV only the
-  viewing team's own champions. Impossible records are refused.
-- Live service: the game's last turn ("last_tick" start) gives Oracle View
-  Honors over every champion and Agent POV Honors over the recipient's own
-  team only, the recipient among them; a frame before game over carries none.
+  catalog, every champion is listed when no team is given and only that
+  team's own champions when one is. Impossible records are refused.
+- Live service: the game's last turn ("last_tick" start) gives Honors over
+  every champion in Oracle View and in Agent POV for either team's recipient
+  (the game is over, so nothing is left to hide); a frame before game over
+  carries none.
 - Replay Viewer service: the replay saved from the same game gives the same
-  Honors on its last frame in both views, and none on other frames.
-- Protocol: an Agent POV frame refuses Honors that are not its own team's.
+  Honors on its last frame in both views, and none on other frames; one
+  team's Honors can still be picked.
+- Protocol: an Agent POV frame refuses Honors of only the other team, and a
+  frame whose own match summary does not show a finished game (in progress,
+  no result, or no summary at all) refuses Honors in both views, so a
+  mid-game Agent POV frame can never carry every champion's totals. One
+  team's Honors list only that team's champions.
 """
 
 # pyright: reportPrivateUsage=false
@@ -24,10 +30,11 @@ per view, from the recorded history. Contracts checked:
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
 import jax.numpy as jnp
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
 from tests.test_evaluation_pov import _runtime_provenance
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
@@ -178,7 +185,7 @@ def test_honors_pick_tied_leaders_per_view_and_refuse_impossible_records(
             ),
             champions=oracle.champions,
         )
-    with pytest.raises(ValidationError, match="viewing team"):
+    with pytest.raises(ValidationError, match="only that team"):
         MatchHonorsV1(
             schema_version=1,
             team_id=2,
@@ -187,6 +194,20 @@ def test_honors_pick_tied_leaders_per_view_and_refuse_impossible_records(
             champions=oracle.champions,
         )
     assert isinstance(leader, MatchAgentV1)
+
+
+def _revalidate_with_honors(
+    payload: object, honors: MatchHonorsV1 | None, **changes: object
+) -> None:
+    model = cast(BaseModel, payload)
+    fields = type(model).model_fields
+    type(model).model_validate(
+        {
+            **{name: getattr(model, name) for name in fields},
+            "match_honors": honors,
+            **changes,
+        }
+    )
 
 
 def _presentation(
@@ -215,14 +236,11 @@ def test_live_and_replay_honors_follow_each_view(
     assert [honor.metric for honor in oracle.honors] == ["damage_done"]
     warrior = ended.evaluation_context.roster[1].public_agent_id
     assert [row.public_agent_id for row in oracle.honors[0].leaders] == [warrior]
+    # Agent POV shows every champion at game over, for either team.
     pov = getattr(_presentation(ended, "pov", focus=1), "match_honors", None)
-    assert isinstance(pov, MatchHonorsV1)
-    assert pov.team_id == 1
-    assert {row.team_id for row in pov.champions} == {1}
-    assert warrior in {row.public_agent_id for row in pov.champions}
+    assert pov == oracle
     team_b = getattr(_presentation(ended, "pov", focus=6), "match_honors", None)
-    assert isinstance(team_b, MatchHonorsV1)
-    assert team_b.team_id == 2 and team_b.honors == ()
+    assert team_b == oracle
     context = ended.evaluation_context
     provenance = _runtime_provenance().model_copy(
         update={"package_version": context.code_revision.package_version}
@@ -238,16 +256,47 @@ def test_live_and_replay_honors_follow_each_view(
     replay = ReplayViewerService(loaded)
     assert replay._match_honors(0, team_id=None) is None
     assert replay._match_honors(1, team_id=None) == oracle
-    assert replay._match_honors(1, team_id=1) == pov
+    own_team = replay._match_honors(1, team_id=1)
+    assert own_team is not None and {row.team_id for row in own_team.champions} == {1}
     viewer = ReplayViewerService(loaded, view_mode="pov", initial_frame_index=1)
     payload = viewer.current_presentation().payload
-    honors = getattr(payload, "match_honors", None)
-    assert isinstance(honors, MatchHonorsV1) and honors.team_id is not None
-    with pytest.raises(ValidationError, match="own team"):
-        fields = type(payload).model_fields  # pyright: ignore[reportAttributeAccessIssue]
-        type(payload).model_validate(  # pyright: ignore[reportAttributeAccessIssue]
-            {
-                **{name: getattr(payload, name) for name in fields},
-                "match_honors": oracle,
+    assert getattr(payload, "match_honors", None) == oracle
+    recipient = str(
+        getattr(
+            getattr(payload, "source", None), "source_recipient_public_agent_id", ""
+        )
+    )
+    recipient_team = next(
+        row.configured_team_id
+        for row in context.roster
+        if row.public_agent_id == recipient
+    )
+    other_team = replay._match_honors(1, team_id=2 if recipient_team == 1 else 1)
+    with pytest.raises(ValidationError, match="every champion or"):
+        _revalidate_with_honors(payload, other_team)
+    # Before game over no frame may carry Honors, in either view.
+    for mid_game in (
+        _presentation(start, "researcher"),
+        _presentation(start, "pov", focus=1),
+        ReplayViewerService(loaded, view_mode="pov", initial_frame_index=0)
+        .current_presentation()
+        .payload,
+    ):
+        summary = getattr(mid_game, "match_summary", None)
+        assert summary is not None and summary.outcome == "in_progress"
+        with pytest.raises(ValidationError, match="finished game"):
+            _revalidate_with_honors(mid_game, oracle)
+        # No summary, or a summary of a game without a result, is no proof either.
+        diagnostic = summary.model_copy(
+            update={
+                "task_mode": 0,
+                "outcome": "not_applicable",
+                "score_threshold": 0,
+                "scores": (0, 0),
+                "previous_scores": (0, 0),
+                "scores_ten_ticks_ago": (0, 0),
             }
         )
+        for unfinished in (None, diagnostic):
+            with pytest.raises(ValidationError, match="finished game"):
+                _revalidate_with_honors(mid_game, oracle, match_summary=unfinished)

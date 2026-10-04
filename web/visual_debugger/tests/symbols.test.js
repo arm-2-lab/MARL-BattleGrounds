@@ -1,6 +1,6 @@
 /**
  * @file Check the one symbol list in symbols.js: 58 frozen symbols in the nine
- * Visual Key groups with unique IDs and aliases; the owner's subtitle rule
+ * symbol groups with unique IDs and aliases; the owner's subtitle rule
  * (subtitles only for status effects, class callings and ability labels; every
  * other symbol shows its plain name); the fifteen approved status names in
  * STATUS_NAMES (owner, 2 October 2026: the cause's name, then the plain
@@ -115,7 +115,7 @@ function assertRecursivelyFrozen(value) {
   for (const child of Object.values(value)) assertRecursivelyFrozen(child);
 }
 
-test("the list holds 58 frozen symbols in the nine Visual Key groups", () => {
+test("the list holds 58 frozen symbols in the nine symbol groups", () => {
   assert.deepEqual(SYMBOL_GROUPS, [
     "Bodies And Rings",
     "Classes",

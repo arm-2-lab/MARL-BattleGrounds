@@ -1,6 +1,7 @@
 /**
  * @file Check the Spawn Ward's band close in the Champions look
- * (`src/looks/champions.js`, switch spawn_shield_expiry, off by default).
+ * (`src/looks/champions.js`, switch spawn_shield_expiry, on by default since
+ * 4 Oct 2026; the off checks pass it off).
  *
  * Contracts checked: on the tick a champion's own spawn_shield_expired row says
  * its Spawn Shield ended, a living champion the audience saw at tick start gets
@@ -182,6 +183,10 @@ const EXPIRY_ON = Object.freeze({
   ...DEFAULT_VISUAL_FILTER_STATE,
   spawn_shield_expiry: true,
 });
+const EXPIRY_OFF = Object.freeze({
+  ...DEFAULT_VISUAL_FILTER_STATE,
+  spawn_shield_expiry: false,
+});
 
 test("a seen champion whose shield ended this tick gets a ward lift, timed by the switch", async () => {
   const { scene, transform } = await loadScene("replay_oracle");
@@ -194,8 +199,11 @@ test("a seen champion whose shield ended this tick gets a ward lift, timed by th
     champions
       .records({ scene, transform, showSpawnShield: true, beats, ...input })
       .find((record) => record.presentationKey === key)?.wardLift;
-  assert.equal(DEFAULT_VISUAL_FILTER_STATE.spawn_shield_expiry, false);
-  assert.deepEqual({ ...liftOf({}) }, { fade: champions.WARD_LIFT.cut });
+  assert.equal(DEFAULT_VISUAL_FILTER_STATE.spawn_shield_expiry, true);
+  assert.deepEqual(
+    { ...liftOf({ visualFilters: EXPIRY_OFF }) },
+    { fade: champions.WARD_LIFT.cut },
+  );
   assert.deepEqual(
     { ...liftOf({ visualFilters: EXPIRY_ON }) },
     { fade: champions.WARD_LIFT.fade },
@@ -299,7 +307,7 @@ test("the lift holds the ward until Settle, then the band closes", async () => {
   const cut = pick(
     champions.records({
       ...input,
-      visualFilters: DEFAULT_VISUAL_FILTER_STATE,
+      visualFilters: EXPIRY_OFF,
       beats: { rows: [shieldEndedRow(key)] },
     }),
   );

@@ -31,7 +31,7 @@
  *   covers the scorebug, Lock In, Restart or anything else in the stage. The
  *   Palette select is not shown in live play (the Palette: High Contrast
  *   switch owns the palette there).
- * - The V camera tip (#camera-tip) over the status line's message.
+ * - The V camera tip (#camera-tip) over the deck header line's message.
  *
  * - The view tag's Oracle View colors (#pov-tag[data-view="oracle"]) and its
  *   spot on the arena's frame under the floor, past the left home strip
@@ -549,13 +549,13 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   overflow: visible;
 }
 
-/* The V camera tip (src/looks/camera.js puts #camera-tip in the status line
-   and gives it the message's box as inline left, top, width and height): it
+/* The V camera tip (src/looks/camera.js puts #camera-tip in the deck's
+   header line, #status-line, and gives it the message's box as inline left, top, width and height): it
    covers only the message (#msg) for about 4 s or until the next input, in
    the message's own look with a Moon Silver edge, so it never covers the
    arena, the scorebug, the rail or a control. These rules beat the
    fixed-corner placement in src/styles/camera.css, which stays for a page
-   without a status line. */
+   without that line. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .dstatus
@@ -583,14 +583,6 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   .bc
   .dstatus
   > #camera-tip[hidden] {
-  display: none;
-}
-
-/* Live play: the Palette: High Contrast switch (Arena group) owns the page
-   palette (src/shell.js applies it), so the Palette select that src/main.js
-   adds to the Visual Filters is not shown in the BattleClient or the
-   DevClient; the Replay Viewer keeps it. */
-html[data-product-kind="combat_debugger"] .palette-control {
   display: none;
 }
 

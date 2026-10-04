@@ -33,11 +33,11 @@ one recorded transition into per-champion totals (Kill Contributions from the
 summary's shared kill credit, Damage Done and Effective Healing Done with the
 full metrics' formulas, Deaths, Red Zone Deaths and Ultimate Ability
 Activations), ``MatchTotalsV1.plus`` adds them up, and ``match_honors_v1``
-picks each honor's leaders for one view. Oracle View sees every champion;
-Agent POV sees only the viewing team's own champions, whose totals are their
-own blows, heals and falls, so nothing about an unseen champion is shown.
-The live service and the Replay Viewer service own the history and send the
-result as the presentation's ``match_honors`` field on the completion frame.
+picks each honor's leaders. Both views see every champion, because Honors
+come only once the game is over and nothing is left to hide then (a result
+for one team is still possible). The live service and the Replay Viewer
+service own the history and send the result as the presentation's
+``match_honors`` field on the completion frame.
 """
 
 from __future__ import annotations
@@ -1129,8 +1129,8 @@ class MatchHonorsV1(_MatchModel):
     schema_version : Literal[1]
         Version 1.
     team_id : {1, 2} or None
-        None for Oracle View (every champion); 1 or 2 for Agent POV, where
-        only that team's own champions are counted, named and listed.
+        None for every champion (both views at game over); 1 or 2 when only
+        that team's own champions are counted, named and listed.
     labels : tuple of MatchMetricLabelV1
         One label per ``SUMMARY_METRICS`` key, in that order.
     honors : tuple of MatchHonorV1
@@ -1165,7 +1165,7 @@ class MatchHonorsV1(_MatchModel):
         if self.team_id is not None and any(
             row.team_id != self.team_id for row in self.champions
         ):
-            raise ValueError("Agent POV honors count only the viewing team")
+            raise ValueError("one team's honors count only that team's champions")
         by_id = {row.public_agent_id: row for row in self.champions}
         for honor in self.honors:
             values = [getattr(row, honor.metric) for row in self.champions]
@@ -1213,8 +1213,9 @@ def match_honors_v1(
     totals : MatchTotalsV1
         The whole game's totals (every transition's, added with ``plus``).
     team_id : {1, 2} or None, keyword-only
-        None for Oracle View (every active champion). For Agent POV, the
-        viewing team: only its own champions are listed and can lead.
+        None for every active champion, which both servers use for both views
+        at game over (nothing is left to hide then). 1 or 2: only that team's
+        own champions are listed and can lead.
 
     Returns
     -------
@@ -1226,9 +1227,9 @@ def match_honors_v1(
 
     Notes
     -----
-    Pure; reads the totals and roster only. Agent POV-safe: an Agent POV
-    result holds only the viewing team's own champions, whose totals count
-    their own blows, heals, falls and Ultimates.
+    Pure; reads the totals and roster only. A result for one team holds only
+    that team's own champions, whose totals count their own blows, heals,
+    falls and Ultimates.
     """
     champions: list[MatchChampionTotalsV1] = []
     for row in context.roster:

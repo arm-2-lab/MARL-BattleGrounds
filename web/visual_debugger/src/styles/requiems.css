@@ -2,7 +2,7 @@
  * Styles for the Class Requiems look (src/looks/requiems.js): the Fall Ring,
  * the five class requiems, the "x2" tag, the Kill Credit Glints, the
  * Homecoming ring, a return's old corpse and its Ash lift ring, and the
- * corpse marks (ash relic and Vigil Pips) on the arena, plus its page chrome: the Wave Chip pill in the scorebug and the
+ * corpse marks (ash relic and Vigil Pips) on the arena, plus its page chrome: the
  * Fallen panel at the top of the side rail (DOM with small inline SVG lines).
  * styles.css imports this file at its top. Colors come only from the
  * :root tokens. Opacity and geometry are set on the nodes (their END values);
@@ -236,42 +236,6 @@
 
 .requiem-crest--team-b {
   stroke: var(--team-b);
-}
-
-/* Wave Chip: "Team A Returns", a pill under the team's name in the scorebug. */
-.wave-chip {
-  display: inline-flex;
-  align-self: start;
-  justify-self: start;
-  inline-size: max-content;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-  padding: 1px 8px 1px 5px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 999px;
-  background: var(--panel);
-  white-space: nowrap;
-}
-
-.wave-chip__crest-icon {
-  inline-size: 10px;
-  block-size: 10px;
-  flex: none;
-}
-
-.wave-chip__label {
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
-}
-
-.wave-chip--team-a .wave-chip__label {
-  color: var(--team-a);
-}
-
-.wave-chip--team-b .wave-chip__label {
-  color: var(--team-b);
 }
 
 /* Fallen panel: the falls of the last 8 ticks at the top of the side rail. */

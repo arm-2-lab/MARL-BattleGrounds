@@ -5,9 +5,15 @@
  *   recording status, that the game is saved, that no tick was played so no
  *   replay was saved (Exit before the first tick), or nothing about a replay
  *   when the match records nothing; Do This Now says the same once closed.
- * - recordingWords is the one owner of the Recording pill, popover and seal
- *   words, and once closed while still "recording" with no tick kept it says
- *   "No Replay" instead of a stale "Recording · Tick 0".
+ * - recordingWords is the one owner of the Recording pill and popover words,
+ *   and once closed while still "recording" with no tick kept it says "No
+ *   Replay" instead of a stale "Recording · Tick 0".
+ * - saveButtonState (owner, 4 Oct 2026): the top bar's save button reads
+ *   Finish And Save while recording, Saving Replay… while the server saves
+ *   or this page's save request is out (no action, never usable), Open
+ *   Replay once saved (usable the first time through the server, then again
+ *   when the page holds the Replay Viewer's link), Retry Save after a failed
+ *   save, and hides after Exit or once discarded.
  * - turnTitles gives the title "Closed" after Exit, over game over and stop,
  *   and the disabled Lock In button reads "Closed" after Exit and "Game
  *   Over" at game over, never a turn phase such as "Everyone Acts".
@@ -33,6 +39,7 @@ import {
   hiddenOrderLine,
   orderIsSet,
   recordingWords,
+  saveButtonState,
   turnTitles,
 } from "../src/tactics-turn.js";
 
@@ -86,30 +93,83 @@ test("the closed sentence follows the replay's save state", () => {
 });
 
 test("the Recording words say No Replay after an Exit before the first tick", () => {
-  assert.deepEqual(recordingWords(OPEN_EMPTY, 0, 300, true), {
+  assert.deepEqual(recordingWords(OPEN_EMPTY, 0, true), {
     pill: "No Replay",
     popover: "No Replay · No Tick Was Played",
-    seal: "No Replay",
   });
-  assert.deepEqual(recordingWords(OPEN_EMPTY, 0, 300), {
+  assert.deepEqual(recordingWords(OPEN_EMPTY, 0), {
     pill: "Recording · Tick 0",
     popover: "0 Ticks Kept Since Tick 0",
-    seal: "Recording · Tick 0 of 300",
   });
-  assert.deepEqual(recordingWords(SAVED, 300, 300, true), {
+  assert.deepEqual(recordingWords(SAVED, 300, true), {
     pill: "Saved",
     popover: "Saved · 91 Ticks",
-    seal: "Saved · 91 Ticks",
   });
   assert.equal(
-    recordingWords({ lifecycle: "sealed", captured_transition_count: 1 }, 300, 300)
-      .popover,
+    recordingWords({ lifecycle: "sealed", captured_transition_count: 1 }, 300).popover,
     "Saving Replay… · 1 Tick",
   );
   assert.equal(
-    recordingWords({ lifecycle: "discarded" }, 4, null).pill,
+    recordingWords({ lifecycle: "discarded" }, 4).pill,
     "Recording · Discarded",
   );
+});
+
+test("the top bar's save button turns into Open Replay once the replay is saved", () => {
+  /** @param {ReturnType<typeof saveButtonState>} state */
+  const shown = (state) =>
+    state === null ? null : [state.label, state.action, state.usable];
+  assert.deepEqual(
+    shown(saveButtonState({ lifecycle: "recording", finish_available: true })),
+    ["Finish And Save", "finish", true],
+  );
+  assert.deepEqual(
+    shown(saveButtonState({ lifecycle: "recording", finish_available: false })),
+    ["Finish And Save", "finish", false],
+  );
+  // This page's save request is out, or the server saves a finished game.
+  for (const [recording, options] of /** @type {const} */ ([
+    [{ lifecycle: "recording", finish_available: true }, { saving: true }],
+    [{ lifecycle: "sealed" }, {}],
+    [{ lifecycle: "finalized_unsaved" }, {}],
+  ])) {
+    assert.deepEqual(shown(saveButtonState(recording, options)), [
+      "Saving Replay…",
+      null,
+      false,
+    ]);
+  }
+  assert.deepEqual(
+    shown(saveButtonState({ lifecycle: "saved", review_available: true })),
+    ["Open Replay", "open", true],
+  );
+  // Opened once: the server no longer offers review, the page reopens its link.
+  assert.deepEqual(
+    shown(saveButtonState({ lifecycle: "reviewing", review_available: false })),
+    ["Open Replay", "open", false],
+  );
+  assert.deepEqual(
+    shown(
+      saveButtonState(
+        { lifecycle: "reviewing", review_available: false },
+        { reopen: true },
+      ),
+    ),
+    ["Open Replay", "open", true],
+  );
+  assert.deepEqual(
+    shown(saveButtonState({ lifecycle: "persistence_failed", retry_available: true })),
+    ["Retry Save", "retry", true],
+  );
+  assert.equal(
+    saveButtonState({ lifecycle: "saved", review_available: true }, { closed: true }),
+    null,
+  );
+  assert.equal(saveButtonState({ lifecycle: "discarded" }), null);
+  for (const lifecycle of ["recording", "sealed", "saved", "persistence_failed"]) {
+    const state = saveButtonState({ lifecycle });
+    assert.ok(state !== null && state.help.length > 0, lifecycle);
+  }
 });
 
 test("the This Turn title reads Closed after Exit", () => {

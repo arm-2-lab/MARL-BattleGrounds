@@ -1,9 +1,10 @@
 /**
  * @file Check three live Visual Filters switches that must do a real job.
  *
- * Contracts: Brand Signature and Palette: High Contrast are listed only in
- * live play (the BattleClient and DevClient), off by default, in the HUD and
- * Arena groups. brandSignaturePlacement (src/shell.js) puts the signature
+ * Contracts: Brand Signature is listed only in live play (the BattleClient
+ * and DevClient), off by default, in the HUD group; High Contrast is listed
+ * in all three clients, on by default, in the Arena group (owner, 4 Oct 2026:
+ * one High Contrast switch). brandSignaturePlacement (src/shell.js) puts the signature
  * only in clear space: a stack in the margin right of the battlefield picture
  * with its bottom on the floor's bottom edge at the 1440 x 900 Vision Moment,
  * the store's row under the floor when that band is 40 px or taller, and
@@ -102,24 +103,26 @@ const titleCardOff = setVisualFilterEnabled(
   false,
 );
 
-test("Brand Signature and Palette: High Contrast are live-only switches, off by default", () => {
+test("Brand Signature is a live-only switch, off; High Contrast is in every client, on", () => {
   const live = visualFiltersForProduct("combat_debugger");
   const replay = visualFiltersForProduct("replay_viewer");
-  for (const [id, label, group] of [
-    ["brand_signature", "Brand Signature", "HUD"],
-    ["high_contrast", "Palette: High Contrast", "Arena"],
-  ]) {
-    const entry = live.find((row) => row.id === id);
-    assert.ok(entry, id);
-    assert.equal(entry.label, label);
-    assert.equal(entry.group, group);
-    assert.equal(entry.defaultEnabled, false);
-    assert.match(entry.help, /Off: /);
-    assert.equal(
-      replay.some((row) => row.id === id),
-      false,
-      id,
-    );
+  const signature = live.find((row) => row.id === "brand_signature");
+  assert.ok(signature);
+  assert.equal(signature.label, "Brand Signature");
+  assert.equal(signature.group, "HUD");
+  assert.equal(signature.defaultEnabled, false);
+  assert.match(signature.help, /Off: /);
+  assert.equal(
+    replay.some((row) => row.id === "brand_signature"),
+    false,
+  );
+  for (const list of [live, replay]) {
+    const contrast = list.find((row) => row.id === "high_contrast");
+    assert.ok(contrast);
+    assert.equal(contrast.label, "High Contrast");
+    assert.equal(contrast.group, "Arena");
+    assert.equal(contrast.defaultEnabled, true);
+    assert.match(contrast.help, /Off: /);
   }
 });
 

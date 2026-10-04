@@ -1,19 +1,22 @@
 /**
  * @file Check the Visual Filter registry, defaults, immutable updates and the
- * paint-part table: 100 switches in fixed order (the 20 earlier switches first,
+ * paint-part table: 99 switches in fixed order (the 20 earlier switches first,
  * then the switches of the V5-picked looks, including the live-only Brand
- * Signature and Palette: High Contrast, and Momentum, an interface switch off
- * by default, then the Replay Viewer's Next Step Ghost and All Staged Orders,
- * both off), with no switch for an unbuilt part such as instant replay and none
+ * Signature, High Contrast in all three clients, and Momentum, an interface
+ * switch, then the Replay Viewer's Next Step Ghost and All Staged Orders,
+ * both off), with no switch for an unbuilt part such as instant replay, none
  * of the removed Chronicle and Scribe's Ledger switches (Fight Chapters,
  * Bookmarks, Ledger Heraldry, Actions In Words, Seen And Not Seen, Reference
- * Chip); each
+ * Chip) and no Camera Inset; the owner's 4 Oct 2026 defaults (High Contrast,
+ * Class Seals, Moon Motes, Death Dimming, Spawn Shield Expiry, Saved Beat,
+ * Champion Streaks, Momentum, Kill Cam and Kill Slow Motion on; Moonlight,
+ * Floor Grid and Time Of Night off); each
  * with its exact label, group, default, surface (arena or interface) and
  * products; the twelve V5 switches the shared looks draw (Class Seals, Kill
  * Credit Glint, Saved Beat, Last Breath, Battle Text Detail, Aura Glints,
  * Barrier Held, Spawn Shield Expiry, Status Clear On Death, Freezing Trap
  * Break, Champion Streaks and Momentum) listed in both live play and the
- * Replay Viewer; 74 switches on by
+ * Replay Viewer; 79 switches on by
  * default; the v4 paint key; one switch list per product (95 in the Replay
  * Viewer); strict reducer and
  * state validation; and paint parts read from each look module's PAINT_PARTS:
@@ -85,7 +88,7 @@ const EXPECTED_FILTERS = Object.freeze([
     "spawn_shield_expiry",
     "Spawn Shield Expiry",
     "Life And Death",
-    false,
+    true,
     "arena",
     "both",
   ],
@@ -93,8 +96,8 @@ const EXPECTED_FILTERS = Object.freeze([
   ["death_announcer", "Fallen Feed", "Life And Death", true, "arena", "both"],
   ["red_zone_floors", "Red Zone Floors", "Arena", true, "arena", "both"],
   ["map_skins", "Map Skins", "Arena", true, "arena", "both"],
-  ["moonlight", "Moonlight", "Arena", true, "arena", "both"],
-  ["floor_grid", "Floor Grid", "Arena", true, "arena", "both"],
+  ["moonlight", "Moonlight", "Arena", false, "arena", "both"],
+  ["floor_grid", "Floor Grid", "Arena", false, "arena", "both"],
   ["spawn_waystones", "Spawn Waystones", "Arena", true, "arena", "both"],
   ["survey_frame", "Survey Frame", "Arena", false, "arena", "both"],
   ["arena_rim", "Arena Rim", "Arena", false, "arena", "both"],
@@ -103,14 +106,14 @@ const EXPECTED_FILTERS = Object.freeze([
   ["obstacle_shadows", "Obstacle Shadows", "Arena", true, "arena", "both"],
   ["red_zone_home_fall", "Red Zone Home Fall", "Moments", true, "arena", "both"],
   ["soft_glow", "Soft Glow", "Combat", true, "arena", "both"],
-  ["moon_motes", "Moon Motes", "Arena", false, "arena", "both"],
+  ["moon_motes", "Moon Motes", "Arena", true, "arena", "both"],
   ["time_of_night", "Time Of Night", "Arena", false, "arena", "both"],
-  ["death_dimming", "Death Dimming", "Moments", false, "arena", "both"],
+  ["death_dimming", "Death Dimming", "Moments", true, "arena", "both"],
   ["pov_sight_veil", "Sight Reach Veil", "Vision", true, "arena", "both"],
   ["pov_recipient_rim", "Agent POV Rim", "Vision", true, "arena", "replay_viewer"],
   ["sight_change_marks", "Sight Change Marks", "Vision", true, "arena", "both"],
   ["life_vessels", "Life Vessels", "Bodies", true, "arena", "both"],
-  ["class_seals", "Class Seals", "Bodies", false, "arena", "both"],
+  ["class_seals", "Class Seals", "Bodies", true, "arena", "both"],
   ["recent_health_change", "Recent Health Change", "Combat", true, "arena", "both"],
   ["low_life_warning", "Low Life Warning", "Bodies", true, "arena", "both"],
   ["hit_reactions", "Hit Reactions", "Combat", true, "arena", "both"],
@@ -131,14 +134,14 @@ const EXPECTED_FILTERS = Object.freeze([
   ["barrier_held", "Barrier Held", "Moments", true, "arena", "both"],
   ["kindled_blast", "Arcane Blast During Burst", "Combat", true, "arena", "both"],
   ["close_range_strokes", "Close-Range Strokes", "Combat", true, "arena", "both"],
-  ["saved_beat", "Saved Beat", "Moments", false, "arena", "both"],
+  ["saved_beat", "Saved Beat", "Moments", true, "arena", "both"],
   ["last_breath", "Last Breath", "Combat", false, "arena", "both"],
   ["battle_text_detail", "Battle Text Detail", "Combat", false, "arena", "both"],
   ["vigil_pips", "Vigil Pips", "Life And Death", true, "arena", "both"],
   ["kill_credit_glint", "Kill Credit Glint", "Life And Death", false, "arena", "both"],
   ["match_moments", "Match Moments", "Moments", true, "arena", "both"],
   ["moment_full_cards", "Full Lineup And Verdict", "Moments", true, "arena", "both"],
-  ["champion_streaks", "Champion Streaks", "Moments", false, "arena", "both"],
+  ["champion_streaks", "Champion Streaks", "Moments", true, "arena", "both"],
   ["camera_framing", "Camera Framing", "Camera", true, "interface", "both"],
   ["camera_change_tip", "Camera Change Tip", "Camera", true, "interface", "both"],
   ["camera_tip", "New Camera Tip", "Camera", true, "interface", "replay_viewer"],
@@ -159,11 +162,10 @@ const EXPECTED_FILTERS = Object.freeze([
     "interface",
     "replay_viewer",
   ],
-  ["camera_inset", "Camera Inset", "Camera", true, "interface", "replay_viewer"],
   ["scorebug", "Scorebug", "HUD", true, "interface", "both"],
   ["team_rosters", "Team Rosters", "HUD", true, "interface", "both"],
   ["fighters_standing", "Fighters Standing", "HUD", true, "interface", "replay_viewer"],
-  ["hud_momentum", "Momentum", "HUD", false, "interface", "both"],
+  ["hud_momentum", "Momentum", "HUD", true, "interface", "both"],
   ["symbol_explanations", "Symbol Explanations", "HUD", true, "interface", "both"],
   ["reach_rings", "Reach Rings", "Selection", true, "arena", "both"],
   ["next_action_thread", "Next Action Thread", "Selection", true, "arena", "both"],
@@ -197,14 +199,7 @@ const EXPECTED_FILTERS = Object.freeze([
   ["reach_marks", "Reach Marks", "Combat", true, "arena", "combat_debugger"],
   ["step_ghost", "Step Ghost", "Motion", true, "arena", "combat_debugger"],
   ["focus_fire", "Focus Tally", "Diagnostics", false, "arena", "both"],
-  [
-    "high_contrast",
-    "Palette: High Contrast",
-    "Arena",
-    false,
-    "arena",
-    "combat_debugger",
-  ],
+  ["high_contrast", "High Contrast", "Arena", true, "arena", "both"],
   [
     "next_step_ghost",
     "Next Step Ghost",
@@ -286,7 +281,7 @@ const EARLIER_PAINT_PARTS = Object.freeze([
   [{ surface: "transient", kind: "spawn_shield_expiry" }, "spawn_shield_expiry"],
 ]);
 
-test("locked registry exposes 100 switches with exact labels, groups and defaults", () => {
+test("locked registry exposes 99 switches with exact labels, groups and defaults", () => {
   assert.deepEqual(
     VISUAL_FILTER_REGISTRY.map(
       ({ id, label, group, defaultEnabled, surface, products }) => [
@@ -304,8 +299,8 @@ test("locked registry exposes 100 switches with exact labels, groups and default
     VISUAL_FILTER_IDS,
     EXPECTED_FILTERS.map(([id]) => id),
   );
-  assert.equal(new Set(VISUAL_FILTER_IDS).size, 100);
-  assert.equal(INITIAL_FILTER_IDS.length, 74);
+  assert.equal(new Set(VISUAL_FILTER_IDS).size, 99);
+  assert.equal(INITIAL_FILTER_IDS.length, 79);
   assert.deepEqual(EARLIER_FILTER_IDS, [
     "aura_fields",
     "aura_modifier_badges",
@@ -345,6 +340,7 @@ test("locked registry exposes 100 switches with exact labels, groups and default
     "pov_preview",
     "pov_shared_obs",
     "pov_hide_unseen",
+    "camera_inset",
     "moment_examples",
     "devclient_turn_deck",
     "director_camera",
@@ -531,11 +527,11 @@ test("state validation and paint-key serialization are strict and deterministic"
   );
   assert.equal(
     visualFilterPaintKey(DEFAULT_VISUAL_FILTER_STATE),
-    "visual-filters-v4:0001111111110111011111110011111000111101111001111111111011100010110111111111101111111101111011110000",
+    "visual-filters-v4:000111111111011111111001001111110111111111100111111111101111001011111111111111111111101111011110100",
   );
   assert.equal(
     visualFilterPaintKey(disabled),
-    "visual-filters-v4:0001111111110111001111110011111000111101111001111111111011100010110111111111101111111101111011110000",
+    "visual-filters-v4:000111111111011110111001001111110111111111100111111111101111001011111111111111111111101111011110100",
   );
   assert.equal(
     visualFilterPaintKey(Object.fromEntries([...Object.entries(disabled)].reverse())),

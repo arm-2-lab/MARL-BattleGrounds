@@ -390,8 +390,9 @@ test("a tick with no fall gets a row only for a moment, timed by what it names",
   assert.equal(herald.count, 0);
   assert.equal(herald.phaseStart, plan.beats.explanationEnd);
   const [card] = heralds.records({ event: herald });
-  assert.equal(card.kind, "herald-chip");
-  assert.equal(card.text, "Ultimate Combo · Freezing Trap + Crippling Poison");
+  assert.equal(card.kind, "herald-plate");
+  assert.equal(card.title, "Ultimate Combo");
+  assert.equal(card.eyebrow, "Freezing Trap + Crippling Poison");
   // The same tick with one Ultimate names nothing, so it has no row.
   const single = await oracleFrame();
   asTeamDeathmatch(single, [0, 0], [0, 0]);

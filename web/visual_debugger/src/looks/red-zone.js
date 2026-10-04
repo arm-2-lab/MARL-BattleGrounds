@@ -50,7 +50,7 @@ import {
   setNodeAttributes,
   svgNode,
 } from "./look-support.js";
-import { FLOOR_CORNER_RADIUS } from "./map-skins.js";
+import { FLOOR_CORNER_RADIUS, floorCornerRadius } from "./map-skins.js";
 
 /**
  * @typedef {import("./look-support.js").LookRecord} LookRecord
@@ -206,7 +206,9 @@ function teamStrips(redZone, width) {
 
 /**
  * Return the strip's floor path: a rectangle whose outer corners (on the map
- * edge) follow the floor's rounded corners. Pure.
+ * edge) follow the floor's rounded corners (floorCornerRadius at this
+ * transform's pixels per world unit, the radius the Realm Skins floor uses),
+ * never more than half the strip's width or height. Pure.
  *
  * @param {LookTransform} transform
  * @param {number} x0
@@ -223,8 +225,9 @@ function stripPath(transform, x0, x1, height, roundLeft, roundRight) {
   const top = Math.min(topLeft.y, bottomRight.y);
   const bottom = Math.max(topLeft.y, bottomRight.y);
   const limit = Math.min((right - left) / 2, (bottom - top) / 2);
-  const rl = roundLeft ? Math.min(FLOOR_CORNER_RADIUS, limit) : 0;
-  const rr = roundRight ? Math.min(FLOOR_CORNER_RADIUS, limit) : 0;
+  const corner = Math.min(floorCornerRadius(transform.worldLengthToScreen(1)), limit);
+  const rl = roundLeft ? corner : 0;
+  const rr = roundRight ? corner : 0;
   let d = `M${fixed(left + rl)} ${fixed(top)}H${fixed(right - rr)}`;
   if (rr) d += `A${fixed(rr)} ${fixed(rr)} 0 0 1 ${fixed(right)} ${fixed(top + rr)}`;
   d += `V${fixed(bottom - rr)}`;

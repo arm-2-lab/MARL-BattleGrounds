@@ -8,16 +8,15 @@
  * Replay Viewer's Agent tab Class Guide, and the Match Summary switch
  * (ledger_summary) hides the
  * ledger's Match Summary, both wired from main.js. The scorebug draws "/ 20"
- * beside each score, the public wave pips under each bar, and the Wave Chip
- * under a team's name only when this audience saw one of its champions return
- * (waveChipTeams; Respawn Wave off gives none). requiems.fallenFeedHistory
+ * beside each score and the public wave pips under each bar.
+ * requiems.fallenFeedHistory
  * carries the Fallen panel's falls one tick at a time for the same audience,
  * repeats them on a repaint, keeps only the last 8 ticks, and starts fresh on
  * a seek, a skip or a view or recipient change. main.js mounts the panel from
  * each plan through the choreographer's beforeBeatHolds hook, hides every painter
- * herald card (a plate, its one-line band or a chip: data-herald-moments) while
- * the Verdict card or its tucked band plate shows, and draws a state chip only
- * while no painter herald card shows.
+ * herald card (a plate: data-herald-moments) while the Verdict card or its
+ * tucked plate shows, and draws no state chip (no countdown, no "Match Point ·
+ * Needs 1"; owner, 4 Oct 2026).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -27,7 +26,7 @@ import { fullRecordChipWords } from "../src/agent-identity.js";
 import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
 import { build, records } from "../src/looks/hud.js";
 import { FEED_WINDOW_TICKS, fallenFeedHistory } from "../src/looks/requiems.js";
-import { renderMatchSummary, waveChipTeams } from "../src/match-summary.js";
+import { renderMatchSummary } from "../src/match-summary.js";
 
 const FIXTURE = new URL("./fixtures/authorized-presentations-v1.json", import.meta.url);
 
@@ -258,24 +257,12 @@ test("the Class Guide and Match Summary switches are wired to their cards", asyn
   );
 });
 
-test("the scorebug draws its goal, wave pips and Wave Chip", async () => {
+test("the scorebug draws its goal and wave pips", async () => {
   const raw = await rawOf("replay_oracle");
   raw.match_summary.task_mode = 1;
   raw.match_summary.score_threshold = 20;
   raw.match_summary.outcome = "in_progress";
   const frame = await normalizeAuthorizedPresentationFrameV1(raw);
-  const agents = (raw.current_endpoint.parts ?? raw.current_endpoint).scene.agents;
-  const teamB = agents.find((/** @type {any} */ agent) => agent.team_id === 2);
-  const beat = { returns: [{ publicAgentId: teamB.public_agent_id, seen: true }] };
-  const chips = waveChipTeams(frame, beat, null);
-  assert.deepEqual(chips, [{ teamId: 2, beatKey: teamB.presentation_key }]);
-  assert.deepEqual(waveChipTeams(frame, beat, { respawn_wave: false }), []);
-  assert.deepEqual(
-    waveChipTeams(frame, {
-      returns: [{ publicAgentId: teamB.public_agent_id, seen: false }],
-    }),
-    [],
-  );
   const root = new Node("section");
   const task = new Node("strong");
   const teams = [new Node("div"), new Node("div")];
@@ -285,7 +272,6 @@ test("the scorebug draws its goal, wave pips and Wave Chip", async () => {
       { team_index: 0, period_steps: 5, countdown_steps: 4 },
       { team_index: 1, period_steps: 5, countdown_steps: 0 },
     ],
-    waveChips: chips,
   });
   for (const team of teams) {
     assert.deepEqual(
@@ -303,10 +289,6 @@ test("the scorebug draws its goal, wave pips and Wave Chip", async () => {
     teams[1].byClass("match-strip__waves")[0].getAttribute("aria-label"),
     "Next Wave In 1 Tick",
   );
-  assert.equal(teams[0].byClass("wave-chip").length, 0);
-  const chip = teams[1].byClass("wave-chip")[0];
-  assert.equal(chip.textContent.includes("Team B Returns"), true);
-  assert.equal(chip.getAttribute("data-beat-key"), teamB.presentation_key);
 });
 
 test("the Fallen panel carries falls tick by tick for one audience", () => {
@@ -369,9 +351,8 @@ test("main.js mounts the Fallen panel from each plan and hides plates under the 
     main,
     /const verdictShown = records\.some\(\s*\(row\) => row\.kind === "herald-verdict" \|\| row\.kind === "herald-verdict-plate",?\s*\);[\s\S]*?querySelectorAll\("\[data-herald-moments\]"\)[\s\S]*?card\.setAttribute\("visibility", "hidden"\)/u,
   );
-  // A state chip waits while a painter herald card shows (the store's chip).
-  assert.match(
-    main,
-    /const chipOnly =\s*records\.length > 0 && records\.every\(\(row\) => row\.kind === "herald-state"\);\s*if \(records\.length === 0 \|\| \(chipOnly && painterCards\.length > 0\)\) return;/u,
-  );
+  // There is no state chip any more (owner, 4 Oct 2026): no countdown and no
+  // "Match Point · Needs 1"; only the Lineup and Verdict are drawn here.
+  assert.doesNotMatch(main, /herald-state|part: "state"/u);
+  assert.match(main, /if \(records\.length === 0\) return;/u);
 });

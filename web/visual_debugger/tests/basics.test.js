@@ -3,8 +3,11 @@
  * records() is pure data from one plan event: a ranged Mage, Hunter or Priest
  * draws its bolt, streak or ribbon from 2 px outside its rim to the target rim
  * and lands in its star, Shard Fan or Dawn Bloom; a Warrior or Rogue, or a
- * point-blank ranged blow (rims under 0.55 units), draws its class cleave; with
- * Close-Range Strokes off a point-blank blow keeps its landing alone; a Priest
+ * point-blank ranged blow (rims under 0.55 units), draws its class cleave; when
+ * the two champions touch or overlap (even with their centres together) every
+ * class still draws its full cleave, ending on the target's front shoulder
+ * with the landing there, never a dot; with Close-Range Strokes off a
+ * point-blank blow keeps its landing alone; a Priest
  * healing itself draws four blooms; the detail ladder drops to a class dot
  * under 10 px; Soft Glow adds glows in play only; Basic Ability Effects off
  * draws nothing (or the meaning dot). Arcane Blast During Burst: a Burst
@@ -234,6 +237,56 @@ test("point blank draws the class cleave, or the landing alone with the switch o
     paintParts: { ...close.paintParts, close_range: false },
   });
   assert.equal(plan.shape, "landing_only");
+});
+
+test("touching or overlapping champions still get every class's full cleave", () => {
+  // Source at (100, 200), radius 23 px: rims touching, 4 px overlapping, 6 px
+  // apart, and centres together (an authored setup), for every class.
+  for (const sourceClassId of [1, 2, 3, 4, 5]) {
+    for (const targetX of [146, 142, 152, 100]) {
+      const record = one(blow({ sourceClassId, target: { x: targetX, y: 200 } }));
+      assert.equal(record.shape, "cleave", `class ${sourceClassId} at x ${targetX}`);
+      assert.equal(record.dot, null);
+      const main = record.cleaves[0];
+      const points = [...main.d.matchAll(/(-?[\d.]+) (-?[\d.]+)/gu)].map((m) => [
+        main.origin[0] + Number(m[1]),
+        main.origin[1] + Number(m[2]),
+      ]);
+      // A real stroke, not a tiny line: it spans at least one body radius.
+      const xs = points.map((p) => p[0]);
+      const ys = points.map((p) => p[1]);
+      assert.ok(
+        Math.hypot(
+          Math.max(...xs) - Math.min(...xs),
+          Math.max(...ys) - Math.min(...ys),
+        ) > 23,
+      );
+      if (targetX !== 100) {
+        // It ends on the target's front shoulder, above the line between them,
+        // and the landing (Mage, Hunter, Priest) sits at that end.
+        const end = points.reduce((best, p) =>
+          Math.hypot(p[0] - targetX, p[1] - 200) <
+          Math.hypot(best[0] - targetX, best[1] - 200)
+            ? p
+            : best,
+        );
+        assert.ok(end[1] < 200 - 10 && end[0] > 100 && end[0] < targetX);
+        if (record.landing) {
+          assert.ok(
+            Math.hypot(
+              record.landing.origin[0] - end[0],
+              record.landing.origin[1] - end[1],
+            ) < 16,
+          );
+        }
+      }
+    }
+  }
+  // Close-Range Strokes off still keeps a touching ranged blow's landing alone.
+  const off = one(blow({ target: { x: 146, y: 200 } }), {
+    filters: { close_range_strokes: false },
+  });
+  assert.equal(off.shape, "landing_only");
 });
 
 test("melee classes cleave: Warrior sweep with sparks, Rogue double flick", () => {

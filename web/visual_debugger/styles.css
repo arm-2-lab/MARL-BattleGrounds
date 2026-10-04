@@ -1835,7 +1835,6 @@ fieldset.visual-filters__actions {
   font-size: 0.72rem;
 }
 
-.visual-key summary,
 .diagnostics summary {
   cursor: pointer;
   color: var(--text-muted);
@@ -1865,52 +1864,6 @@ fieldset.visual-filters__actions {
 .visual-tooltip[data-tooltip-accent="priest"] .visual-tooltip__title,
 .semantic-inspector[data-accent="priest"] summary {
   color: var(--class-priest);
-}
-
-.visual-key__list {
-  display: grid;
-  grid-template-columns: minmax(6rem, auto) 1fr;
-  gap: 0.35rem 0.65rem;
-  margin: 0.65rem 0 0;
-  font-size: 0.75rem;
-}
-
-.visual-key__list dt {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-weight: 750;
-}
-
-.visual-key__list dd {
-  margin: 0;
-  color: var(--text-muted);
-}
-
-.key-swatch {
-  display: inline-block;
-  width: 1.35rem;
-  height: 0.7rem;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-}
-
-.key-swatch--team-a {
-  color: var(--team-a);
-}
-
-.key-swatch--team-b {
-  color: var(--team-b);
-}
-
-.key-swatch--controlled {
-  color: var(--text);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-
-.key-swatch--selected {
-  color: var(--target);
-  border-radius: 0;
 }
 
 .empty-copy {

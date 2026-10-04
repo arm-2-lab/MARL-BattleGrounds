@@ -6,15 +6,19 @@
  * the falls the row names (the plan already limits them to what an Agent POV
  * team saw), holds the previous tick's card when the current row gives none,
  * and gives nothing with Match Moments off or the row's paint part off. The
- * plate sits in the middle half of the top band, becomes a one-line band
- * when it cannot fit, and always stays in the top band: when it would touch
- * a champion it is told to avoid it moves sideways (or shrinks) along the
- * band, never to the bottom. The lineup draws medallions only from the given
+ * plate hugs the top edge of the arena (Sliding Top Placement): centred when
+ * nothing is in the way, otherwise slid along the whole band to the spot that
+ * touches the fewest champions it is told to avoid, then covers the least of
+ * them, and never over the page chrome it is told about (the arena key stack)
+ * while a clear spot exists; it shrinks only when it must and never below its
+ * smallest readable size, and it is always the plate (no one-line form). The lineup draws medallions only from the given
  * authorized scene; the verdict shows in the Replay Viewer and at live game
  * over (BattleClient and DevClient), never for another product, and draws
- * exactly the Honours its caller passes (the host limits Agent POV Honours to
- * the viewing team); full cards turn into bands with Full Lineup And Verdict off; the
- * state chip reads "Match Point · Needs N" or "N Ticks Left". build() holds the
+ * exactly the Honours its caller passes (every champion in both views, since
+ * they come only at game over); with Full Lineup And Verdict off the lineup turns into a
+ * band and the verdict into its plate. There is no state chip any more (no
+ * countdown, no "Match Point · Needs 1"): a "state" request draws nothing.
+ * build() holds the
  * END state, pushes only fill "backwards" entry animations from the Fall beat
  * (none when settled or held) and draws export-safe SVG.
  */
@@ -190,7 +194,7 @@ test("switches, paint parts and the previous tick decide whether a herald shows"
   assert.deepEqual(heralds.records({}), []);
 });
 
-test("a plate sits in the middle half of the top band and becomes a band when it cannot fit", () => {
+test("a plate hugs the top edge and slides to the spot that touches the fewest champions", () => {
   const [plate] = heralds.records({
     event: heraldRow([fall(2, 1, "6"), fall(2, 1, "7")]),
     bounds,
@@ -207,14 +211,15 @@ test("a plate sits in the middle half of the top band and becomes a band when it
   });
   assert.equal(smaller.kind, "herald-plate");
   assert.equal(smaller.scale, 0.9);
+  // Too narrow even at its smallest readable size: still the plate, centred.
   const narrow = { ...bounds, right: 200, width: 200 };
-  const [band] = heralds.records({
+  const [tight] = heralds.records({
     event: heraldRow([fall(2, 1, "6"), fall(2, 1, "7")]),
     bounds: narrow,
   });
-  assert.equal(band.kind, "herald-band");
-  assert.equal(band.text, "Double Takedown · Team A +2");
-  assert.equal(band.height, 22);
+  assert.equal(tight.kind, "herald-plate");
+  assert.equal(tight.title, "Double Takedown");
+  assert.ok(Math.abs(tight.scale - 9 / 11) < 1e-9);
   const top = { x: 600, y: 30, radius: 20 };
   const [moved] = heralds.records({
     event: heraldRow([fall(2, 1, "6"), fall(2, 1, "7")]),
@@ -234,6 +239,45 @@ test("a plate sits in the middle half of the top band and becomes a band when it
   });
   assert.equal(clear.place, "top");
   assert.ok(Math.abs(clear.x + (clear.width * clear.scale) / 2 - 600) < 0.01);
+  // Every spot of a short band touches a champion: the card takes one that
+  // touches only one of them, not both, and still hugs the top.
+  const short = { ...bounds, right: 320, width: 320 };
+  const pair = [
+    { x: 40, y: 30, radius: 20 },
+    { x: 280, y: 30, radius: 20 },
+  ];
+  const [squeezed] = heralds.records({
+    event: heraldRow([fall(2, 1, "6"), fall(2, 1, "7")]),
+    bounds: short,
+    avoid: pair,
+  });
+  assert.equal(squeezed.kind, "herald-plate");
+  assert.equal(squeezed.y, heralds.FOOTPRINT.topGap);
+  const tail = heralds.FOOTPRINT.plate.tailReach * squeezed.scale;
+  const box = [
+    squeezed.x - tail - 2,
+    squeezed.x + squeezed.width * squeezed.scale + tail + 2,
+  ];
+  const touched = pair.filter(
+    (body) => box[0] < body.x + body.radius + 3 && box[1] > body.x - body.radius - 3,
+  );
+  assert.equal(touched.length, 1);
+  // Page chrome over the band (the arena key stack) is never covered while a
+  // clear spot exists, even where the card would otherwise sit.
+  const keys = { left: 560, top: 8, right: 640, bottom: 120 };
+  const [aside] = heralds.records({
+    event: heraldRow([fall(2, 1, "6"), fall(2, 1, "7")]),
+    bounds,
+    chrome: [keys],
+  });
+  assert.equal(aside.kind, "herald-plate");
+  assert.equal(aside.y, heralds.FOOTPRINT.topGap);
+  const asideTail = heralds.FOOTPRINT.plate.tailReach * aside.scale;
+  assert.ok(
+    aside.x + aside.width * aside.scale + asideTail <= keys.left ||
+      aside.x - asideTail >= keys.right,
+    "slid clear of the keys",
+  );
 });
 
 test("the lineup shows only the champions in the given scene, as a card or a band", () => {
@@ -338,26 +382,21 @@ test("the verdict shows in the Replay Viewer and at live game over, with the Hon
   assert.equal(draw.lead, "A Lead At Tick 300 Wins Nothing");
 });
 
-test("the state chip names Match Point or the ticks left", () => {
-  assert.equal(
-    heralds.records({
-      part: "state",
-      state: { kind: "match_point", teamIds: [2], needs: 2 },
-      bounds,
-    })[0].text,
-    "Match Point · Needs 2",
-  );
-  assert.equal(
-    heralds.records({
-      part: "state",
-      state: { kind: "ticks_left", left: 1 },
-      bounds,
-    })[0].text,
-    "1 Tick Left",
-  );
-  assert.deepEqual(
-    heralds.records({ part: "state", state: { kind: "other" }, bounds }),
-    [],
+test("there is no state chip: no countdown and no Match Point chip", () => {
+  for (const state of [
+    { kind: "match_point", teamIds: [2], needs: 1 },
+    { kind: "ticks_left", left: 1 },
+    { kind: "ticks_left", left: 20 },
+  ]) {
+    const drawn = heralds.records({ part: "state", state, bounds });
+    assert.ok(
+      drawn.every((record) => record.kind === "herald-plate"),
+      "a state request never draws a chip or band",
+    );
+  }
+  assert.ok(
+    heralds.PAINT_PARTS.every((row) => row.part.kind !== "herald_state"),
+    "no paint part for a state chip",
   );
 });
 
@@ -413,8 +452,16 @@ test("build holds END, animates entry from the Fall beat only while playing, and
   const loose = heralds.build(
     [
       ...heralds.records({
-        part: "state",
-        state: { kind: "ticks_left", left: 9 },
+        part: "verdict",
+        product: "replay_viewer",
+        tucked: true,
+        verdict: {
+          scores: { 1: 20, 2: 3 },
+          winnerTeamId: 1,
+          tick: 99,
+          basis: "threshold",
+          pointsToWin: 20,
+        },
         bounds,
       }),
       ...heralds.records({

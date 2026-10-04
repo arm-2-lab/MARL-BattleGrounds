@@ -12,14 +12,15 @@
  * the save buttons), a Details popover with Step, Transition, Copy and the
  * replay badges, and the toolbar actions; the dock (#replay-timeline) sits under the
  * arena with the transport and export actions; the amber Oracle View tag sits
- * on the field. The Visual Key is the dialog behind #visual-key-button (no
+ * on the field. There is no Visual Key (owner, 4 Oct 2026: no button, no
  * sidebar key) and the Replay Viewer's #champion-frame slot sits before
  * #team-rosters (the Arena Frames). The #roster-details card is marked for
  * no product: the live DevClient shows it in its Developer drawer and the
  * Replay Viewer moves it into its rail's Roster tab. Exit reads "Exit" in
  * every client. The live deck keeps its controls in
  * #command-deck-body with the vision's Lock In Turn button and Prev and Next
- * buttons; Restart sits in the #status-line under it. Retired copy stays out of main.js and the page parts it
+ * buttons and its header line #status-line (the message and Keys On or
+ * Off); Restart and Finish And Save sit in the top bar's toolbar actions. Retired copy stays out of main.js and the page parts it
  * starts (shell.js, tactics-turn.js, filter-controls.js); shell.js owns the
  * audience labels.
  */
@@ -211,9 +212,16 @@ test("every CP3 disclosure keeps its scientific content in one stable direct bod
       );
     }
   }
-  // Restart sits in the status line under the deck, as the vision draws it.
-  assert.match(elementBody(markup, "status-line", "div"), /\bid="reset-button"/u);
+  // Restart sits in the top bar beside Exit (owner, 4 Oct 2026); the deck's
+  // header line (the message and Keys On or Off) is the deck body's first row.
+  const toolbar = /<div class="toolbar-actions">([\s\S]*?)\n {6}<\/div>/u.exec(markup);
+  assert.ok(toolbar);
+  assert.match(toolbar[1], /\bid="reset-button"/u);
   assert.equal([...markup.matchAll(/\bid="reset-button"/gu)].length, 1);
+  assert.match(
+    disclosureBody(markup, "command-deck"),
+    /^\s*(?:<!--[\s\S]*?-->\s*)?<div class="dstatus" id="status-line"/u,
+  );
 });
 
 test("shared shell uses the requested details and visual-filter controls without an event feed", async () => {
@@ -230,11 +238,10 @@ test("shared shell uses the requested details and visual-filter controls without
     markup,
     /<button type="button" class="sbtn" id="prev-actor-button" data-key="Tab" data-shift="true">‹ Prev<\/button><button type="button" class="sbtn" id="next-actor-button" data-key="Tab">Next › <kbd>Tab<\/kbd><\/button>/u,
   );
-  // The Visual Key is a dialog opened by #visual-key-button; the old sidebar
-  // key and its colour lists are gone.
+  // No Visual Key in any client (owner, 4 Oct 2026): no button, no sidebar key.
   assert.doesNotMatch(markup, /<summary>Visual Key<\/summary>/u);
   assert.doesNotMatch(markup, /id="(?:live|replay)-visual-key"/u);
-  assert.match(markup, /id="visual-key-button"/u);
+  assert.doesNotMatch(markup, /id="visual-key-button"/u);
   // The Replay Viewer's Champion Frame slot sits before the Team Rosters strip.
   assert.match(
     markup,

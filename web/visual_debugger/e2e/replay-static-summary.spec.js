@@ -1,7 +1,9 @@
 /**
  * @file Check complete paused replay summaries at both supported viewport sizes
  * without relying on animation. Every painted event has a tooltip owner and a
- * hit surface the pointer can reach, the Focus Tally's beads included.
+ * hit surface the pointer can reach, the Focus Tally's beads included (a
+ * Basic's stroke or cleave is reached in its own route group, which owns the
+ * same tooltip and holds nothing else).
  */
 import { expect, test } from "@playwright/test";
 
@@ -32,10 +34,11 @@ const REPLAY_FILTER_IDS = visualFiltersForProduct("replay_viewer").map(({ id }) 
 // Status lifecycle events paint nothing on the arena now, so the selective
 // filter proof turns off Ultimates, whose routes and cues are placed here.
 const SELECTIVE_FILTER = "ultimate_ability_effects";
-// Hit surfaces of the V5 looks: Basic strokes and dots, Ultimate hit areas,
-// health numbers, status pulses, the fall ring and the Focus Tally's hit arc.
+// Hit surfaces of the V5 looks: Basic strokes, cleaves and dots, Ultimate hit
+// areas, health numbers, status pulses, the fall ring and the Focus Tally's hit
+// arc.
 const ACTIVATION_HIT_SELECTOR =
-  ".basic-blow__hit, .combat-impact.basic-dot, .ult-hit-area";
+  ".basic-blow__hit, .basic-cleave__fill, .combat-impact.basic-dot, .ult-hit-area";
 const SPATIAL_HIT_SELECTOR = [
   ACTIVATION_HIT_SELECTOR,
   ".combat-net__hit",
@@ -333,7 +336,8 @@ async function staticDomSignature(page) {
         .map((element) => {
           const route = element.matches(".combat-route-effect");
           // An Ultimate route draws its band with one hit line; a Basic route
-          // group stays empty (its look sits on the target).
+          // group holds only that Basic's own stroke or cleave (its Strike
+          // Band), or nothing when its look sits on the target.
           const hit = route ? element.querySelector(".ult-hit") : null;
           const point = (/** @type {string} */ name) => hit?.getAttribute(name) ?? "";
           return {
@@ -350,6 +354,11 @@ async function staticDomSignature(page) {
                 ? null
                 : `M ${point("x1")} ${point("y1")} L ${point("x2")} ${point("y2")}`,
             childCount: route ? element.childElementCount : null,
+            basicBandOnly: route
+              ? [...element.children].every((child) =>
+                  child.matches(".basic-blow, .basic-cleave"),
+                )
+              : null,
             bridges: [...element.querySelectorAll(".combat-route__bridge-backplate")]
               .map((bridge) => ({
                 ariaHidden: bridge.getAttribute("aria-hidden"),
@@ -578,7 +587,17 @@ async function spatialContractEvidence(page) {
       });
       const effects = [...eventRoot.querySelectorAll(".combat-effect")].map(
         (effect) => {
-          const hits = [...effect.querySelectorAll(hitSelector)];
+          // A Basic's stroke or cleave sits in its own route group, which owns
+          // the same tooltip, so its hit surfaces count for the event too.
+          const route = routeRoot.querySelector(
+            `.combat-route-effect[data-tooltip-owner][data-event-id="${CSS.escape(
+              effect.getAttribute("data-event-id") ?? "",
+            )}"]`,
+          );
+          const hits = [
+            ...effect.querySelectorAll(hitSelector),
+            ...(route?.querySelectorAll(hitSelector) ?? []),
+          ];
           return {
             eventId: effect.getAttribute("data-event-id"),
             eventType: effect.getAttribute("data-event-type"),
@@ -936,7 +955,7 @@ function expectBoundedNonOverlap(signature) {
     expect(["basic", "ultimate"]).toContain(route.component);
     if (route.component === "basic") {
       expect(route.path).toBeNull();
-      expect(route.childCount).toBe(0);
+      expect(route.basicBandOnly).toBe(true);
       continue;
     }
     expect(route.path).toMatch(/^M /u);
@@ -1001,24 +1020,34 @@ async function expectTransientHoverHelp(page) {
     await expect(owner.locator(hitSelector).first()).toHaveCount(1);
     // Living bodies win hit testing and tooltip ranking, so hover a point of a
     // hit surface of this family whose top element belongs to that effect and
-    // that lies over no body (a hit centred on a body is covered).
+    // that lies over no body (a hit centred on a body is covered). A Basic's
+    // stroke or cleave sits in the event's own route group, which owns the same
+    // blow's tooltip as an "accepted-route" card.
     const point = await page.evaluate(
-      ([root, ownerSelectorText, hitSelectorText]) => {
+      ([root, routeRoot, ownerSelectorText, hitSelectorText]) => {
         for (const effect of document.querySelectorAll(
           `${root} ${ownerSelectorText}`,
         )) {
-          for (const element of effect.querySelectorAll(hitSelectorText)) {
-            const bounds = element.getBoundingClientRect();
-            for (let row = 1; row < 12; row += 1) {
-              for (let column = 1; column < 12; column += 1) {
-                const x = bounds.left + (bounds.width * column) / 12;
-                const y = bounds.top + (bounds.height * row) / 12;
-                const stack = document.elementsFromPoint(x, y);
-                if (
-                  stack[0]?.closest(".combat-effect") === effect &&
-                  !stack.some((node) => node.closest(".agent"))
-                ) {
-                  return { x, y };
+          const route = document.querySelector(
+            `${routeRoot} .combat-route-effect[data-tooltip-owner][data-event-id="${CSS.escape(
+              effect.getAttribute("data-event-id") ?? "",
+            )}"]`,
+          );
+          for (const container of route ? [effect, route] : [effect]) {
+            for (const element of container.querySelectorAll(hitSelectorText)) {
+              const bounds = element.getBoundingClientRect();
+              for (let row = 1; row < 12; row += 1) {
+                for (let column = 1; column < 12; column += 1) {
+                  const x = bounds.left + (bounds.width * column) / 12;
+                  const y = bounds.top + (bounds.height * row) / 12;
+                  const stack = document.elementsFromPoint(x, y);
+                  if (
+                    stack[0]?.closest(".combat-effect, .combat-route-effect") ===
+                      container &&
+                    !stack.some((node) => node.closest(".agent"))
+                  ) {
+                    return { x, y, route: container === route };
+                  }
                 }
               }
             }
@@ -1026,14 +1055,14 @@ async function expectTransientHoverHelp(page) {
         }
         return null;
       },
-      [CHOREOGRAPHY_ROOT, ownerSelector, hitSelector],
+      [CHOREOGRAPHY_ROOT, CHOREOGRAPHY_ROUTE_ROOT, ownerSelector, hitSelector],
     );
     expect(point, `${ownerSelector} has no reachable hit point`).not.toBeNull();
     await page.mouse.move(Number(point?.x), Number(point?.y));
     await expect(page.locator("#visual-tooltip")).toBeVisible();
     await expect(page.locator("#visual-tooltip")).toHaveAttribute(
       "data-tooltip-kind",
-      tooltipKind,
+      point?.route ? "accepted-route" : tooltipKind,
     );
     await expect(page.locator("#visual-tooltip-title")).not.toHaveText("");
     await expect(page.locator("#visual-tooltip-details")).not.toHaveText("");

@@ -2,9 +2,10 @@
  * @file Check three page-start contracts in main.js by reading its source.
  * (1) The page draws the match moment cards from looks/heralds.js: the Lineup
  * card, the Verdict card (by product, through installedProductKind; the Replay
- * Viewer and live game over) and
- * the Match Point or Ticks Left state chip, in its own group in the renderer's
- * herald layer, after the choreographer presents each tick and after a resize.
+ * Viewer and live game over), in its own group in the renderer's herald
+ * layer, after the choreographer presents each tick and after a resize; it
+ * asks for no state chip (owner, 4 Oct 2026: no countdown and no "Match Point
+ * · Needs 1").
  * Champions on the cards come only from the audience's authorized scene; the
  * match facts come from the public scoreboard reader (matchSummaryView), never
  * from researcher_space. (2) No load moves keyboard focus to the replay
@@ -28,13 +29,14 @@ function functionBody(source, name) {
   return source.slice(start, end);
 }
 
-test("main draws the lineup, verdict and state cards from heralds", async () => {
+test("main draws the lineup and verdict cards from heralds, and no state chip", async () => {
   const source = await readFile(mainUrl, "utf8");
   assert.match(source, /import \* as heralds from "\.\/looks\/heralds\.js";/u);
   const records = functionBody(source, "matchMomentCardRecords");
-  for (const part of ["lineup", "verdict", "state"]) {
+  for (const part of ["lineup", "verdict"]) {
     assert.match(records, new RegExp(`part: "${part}"`, "u"));
   }
+  assert.doesNotMatch(records, /part: "state"/u);
   assert.match(records, /authorizedPresentationSceneView\(presentation\)/u);
   assert.match(records, /matchSummaryView\(presentation\)/u);
   assert.match(records, /product: installedProductKind\(\)/u);

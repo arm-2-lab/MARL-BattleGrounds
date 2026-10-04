@@ -1950,7 +1950,7 @@ function treeKeys(trees, into = []) {
  *
  * records come from records(); doc creates nodes; mount (optional) is the
  * painter's EventMount. Without mount, new detached settled groups are made
- * (no animation; used by the Visual Key). For each record a `g.ult` root with
+ * (no animation; for pictures outside the arena and for tests). For each record a `g.ult` root with
  * data-ult-variant goes into mount.group (above bodies) and a `g.ult-band` root
  * into mount.underlay, the Strike Band (or at the start of mount.group when the
  * event has no route group). The nodes are drawn at their END (settled) look.

@@ -1,6 +1,6 @@
 /**
  * @file The Class Requiems look (Runefield part "Death, Respawn And Kills"):
- * how champions fall and come home, the Fallen panel and the Wave Chip.
+ * how champions fall and come home, and the Fallen panel.
  *
  * It owns these drawings:
  * - Fall (`agent_died` pulse): a thin team Fall Ring at 1.0 to 1.3 times the
@@ -35,10 +35,9 @@
  *   sits at the top of the side rail: the last 8 ticks' falls, newest first,
  *   at most 4 rows; each row shows who shared the fall ("+"), a Basic dot or
  *   Ultimate diamond when known, an arrow, the fallen champion and the points.
- * - Wave Chip: buildWaveChip(doc, teamId, beatKey) gives "Team A Returns",
- *   which the scorebug puts under that team's name on its home side.
  * The `death_announcement` and `respawn_wave_occurred` plan pulses therefore
- * draw nothing on the arena: records({event}) gives [] for them, and the plan
+ * draw nothing on the arena (a fallen champion's scorebug portrait counts down
+ * "Returns In N", looks/hud.js): records({event}) gives [] for them, and the plan
  * gives them no anchor and no arena box.
  *
  * Callers: `choreography-painter.js` sends the fall and return pulses here
@@ -47,7 +46,7 @@
  * fall or return, with no glints. The renderer (`scene.js`) draws the corpse marks through
  * records({part: "corpse-marks", scene, transform, audience, filters}) and
  * build(records, doc). main.js mounts the Fallen panel in #fallen-feed at the
- * top of the side rail, and match-summary.js puts the Wave Chip in the scorebug.
+ * top of the side rail.
  *
  * Timing: the DOM always holds the END state (Fall Ring at 35%, relics, pips,
  * "x2"; every passing effect at opacity 0). Each moment before END is a Web
@@ -71,8 +70,7 @@
  * that left sight, or a blow the team did not see. Nothing here imports a
  * researcher helper or reads a researcher view or match summary. The Fallen
  * panel shows only the rows its caller passes, which must already be limited
- * to the audience (the plan's fallen_feed_row rows are). Returns are public,
- * so the Wave Chip is the same in both views.
+ * to the audience (the plan's fallen_feed_row rows are).
  *
  * Export safety: flat fills, strokes, opacity and transforms only; no
  * gradients, masks, filters, url() or images. Colors come from CSS tokens
@@ -241,7 +239,7 @@ export const FEED_ROW_SCALE = 1.5;
 /** Gap in store units between the victim's ID and the points ("+1"). */
 export const FEED_POINTS_GAP = 7;
 
-/** The XHTML namespace, for the page chrome nodes (Fallen panel, Wave Chip). */
+/** The XHTML namespace, for the page chrome nodes (the Fallen panel). */
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 /**
@@ -291,8 +289,8 @@ const STORE_EASE_IN = "cubic-bezier(0.42, 0, 1, 1)";
  *   cueSemantic is "agent_died" gives a "fall" record and "agent_respawned" a
  *   "homecoming" record. Anything else gives [], including the
  *   "death_announcement" and "respawn_wave_occurred" pulses: the Fallen panel
- *   and the Wave Chip are page chrome (fallenFeedRecords, buildFallenFeed,
- *   buildWaveChip), never drawn on the arena.
+ *   is page chrome (fallenFeedRecords, buildFallenFeed), never drawn on the
+ *   arena.
  *   A "fall" record holds the event, anchor (CSS px), radius (event
  *   `anchorRadius`, default DEFAULT_BODY_RADIUS_PX), classKey, teamKey,
  *   homeFall (true only when the event carries `homeFall === true`) and
@@ -2607,56 +2605,6 @@ function fallenRowTooltip(record) {
     metadata: { compact: true, full: true },
     anchor: "pointer",
   });
-}
-
-/**
- * Build the Wave Chip for the scorebug (page chrome, never the arena).
- *
- * doc creates the nodes; teamId is the returning team (2 means Team B, any
- * other value Team A). beatKey (optional, default null) is the presentation
- * key of one champion of that team returning this tick. Return a new, detached
- * `span.wave-chip.wave-chip--team-a|b`: a pill with the team crest (Team B
- * double-ringed, as a small inline SVG) and "Team A Returns". The caller (the
- * scorebug owner) puts it under that team's name on its home side, only on a
- * tick when that team's wave brings champions back. With a beatKey the chip
- * carries the Return beat hold (data-beat-hold "return", data-beat-side
- * "after", data-beat-fade 120), so a choreographer that lists the scorebug
- * among its beatHoldRoots fades it in at that Return beat; without one it
- * simply shows. Returns are public facts, so the chip is the same in Oracle
- * View and Agent POV. Side effects: creates DOM nodes only.
- *
- * @param {Document} doc
- * @param {number} teamId
- * @param {string | null} [beatKey]
- * @returns {HTMLElement}
- */
-export function buildWaveChip(doc, teamId, beatKey = null) {
-  const id = Number(teamId) === 2 ? 2 : 1;
-  const team = id === 2 ? "b" : "a";
-  const words = `${teamLabelFromId(id)} Returns`;
-  const chip = htmlNode(doc, "span", {
-    class: `wave-chip wave-chip--team-${team}`,
-    "data-team-id": id,
-    role: "status",
-    "aria-label": words,
-  });
-  if (typeof beatKey === "string" && beatKey.length > 0) {
-    chip.setAttribute("data-beat-hold", "return");
-    chip.setAttribute("data-beat-key", beatKey);
-    chip.setAttribute("data-beat-side", "after");
-    chip.setAttribute("data-beat-fade", "120");
-  }
-  const crest = effectNode(doc, "svg", {
-    class: "wave-chip__crest-icon",
-    width: 8,
-    height: 8,
-    viewBox: "0 0 8 8",
-    "aria-hidden": "true",
-    focusable: "false",
-  });
-  crest.append(crestNode(doc, 4, 4, 2.8, team, "wave-chip__crest"));
-  chip.append(crest, htmlNode(doc, "span", { class: "wave-chip__label" }, words));
-  return chip;
 }
 
 /**

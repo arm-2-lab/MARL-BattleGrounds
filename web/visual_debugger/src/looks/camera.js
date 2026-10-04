@@ -1,7 +1,7 @@
 /**
  * @file The Camera look: Whole Map, Everyone In View (key V) and Battle Cam
- * (key B, Replay Viewer only), with the camera switch, its tips and the
- * Camera Inset.
+ * (key B, Replay Viewer only), with the camera switch and its tips. (The
+ * Camera Inset picture was removed, owner 4 Oct 2026.)
  *
  * What it owns:
  * - The camera rules as pure functions of one tick (no memory of earlier
@@ -12,16 +12,17 @@
  *   plan (section 4.4) and the owner's row 12 give them.
  * - The camera switch (createCameraSwitch): a self-contained component the
  *   shell (Replay Viewer, slot #replay-camera-switch) and the BattleClient
- *   screen (slot #live-camera-switch) mount. In the Replay Viewer it owns the
- *   Whole Map and Battle Cam (B) buttons (Everyone In View's one button is in
- *   the arena's corner, src/arena-buttons.js), the change tip, the one-time first-open
- *   tip (both shown in the scorebug's empty score half, #camera-tips, so they
- *   cover nothing), the Battle Cam words and the Camera Inset picture, and
+ *   screen (slot #live-camera-switch) mount. In the Replay Viewer it shows no
+ *   buttons since 4 Oct 2026 (the owner's key stack: the arena's V and B keys,
+ *   src/arena-buttons.js, are the camera's buttons, and no lit key means
+ *   Whole Map); it owns the change tip, the one-time first-open tip (both
+ *   shown in the scorebug's empty score half, #camera-tips, so they cover
+ *   nothing) and the Battle Cam words (for screen readers only), and
  *   remembers the last camera in localStorage. In the BattleClient and the DevClient combat
  *   screen no switch shows (owner, 1 October 2026): V alone toggles Everyone
  *   In View, and the change tip (#camera-tip, "Everyone In View on · V: back
  *   to Whole Map" or "Whole Map on · V: Everyone In View") shows under the
- *   arena, over the status line's message, and goes after about 4 s or at
+ *   arena, over the deck header line's message, and goes after about 4 s or at
  *   the next input. Either way it registers the V and B handlers with
  *   `command-set.js`.
  * - The live view tag's spot (viewTagPlace): the arena's view tag (#pov-tag,
@@ -38,7 +39,7 @@
  * and then the choreographer's easeCamera. `visual-filters.js` reads
  * PAINT_PARTS (none: the camera draws nothing on the arena).
  *
- * Boundary (Agent POV): every frame, lean, slow-down and inset dot comes only
+ * Boundary (Agent POV): every frame, lean and slow-down comes only
  * from the audience's own plan camera record (its bodies and fights), its own
  * beat schedule and, optionally, its own arena scene. In Agent POV those hold
  * only champions and fights the team saw, so the camera never leans, zooms or
@@ -61,7 +62,7 @@ import {
   EVERYONE_IN_VIEW_ZOOM_STEP,
 } from "../layout.js";
 import { createSemanticDescriptor, registerTooltipOwner } from "../tooltip.js";
-import { EMPTY_BUDGET, isRecord, SVG_NAMESPACE, svgNode } from "./look-support.js";
+import { EMPTY_BUDGET, isRecord } from "./look-support.js";
 
 /**
  * @typedef {import("./look-support.js").LookInput} LookInput
@@ -202,23 +203,10 @@ export const KILL_SLOW_MOTION = Object.freeze({
   fastRate: 1.5,
 });
 
-/**
- * Camera Inset picture size in CSS px: height, the world margin drawn around
- * the map, and the dot radius limits (dot radius = height * dotScale clamped
- * to [dotMin, dotMax]).
- */
-export const CAMERA_INSET = Object.freeze({
-  height: 22,
-  worldMargin: 0.35,
-  dotScale: 0.075,
-  dotMin: 1.8,
-  dotMax: 3,
-});
-
 /** The camera draws nothing on the arena, so no allocator footprint. */
 export const FOOTPRINT = Object.freeze({});
 
-/** No arena nodes and no event animations (the inset lives in the switch). */
+/** No arena nodes and no event animations. */
 export const BUDGET = EMPTY_BUDGET;
 
 /**
@@ -804,8 +792,7 @@ export function cameraFrameFor(input) {
  * - worldWidth and worldHeight, or transform.worldWidth and
  *   transform.worldHeight: the map size in world units;
  * - scene (optional): the audience's own arena scene (agents' position,
- *   public_agent_id and team_id are read for the clean-edge check and inset
- *   dot colours);
+ *   public_agent_id and team_id are read for the clean-edge check);
  * - playing, reducedMotion, chosenRate: Battle Cam's play-only moments.
  *
  * Return a frozen list, in this order:
@@ -814,9 +801,7 @@ export function cameraFrameFor(input) {
  *   Whole Map;
  * - {kind: "kill-cam", frame, creepFrame, zoom, windows} with Battle Cam,
  *   kill_cam on, in play and motion on, on a seen fall tick;
- * - {kind: "slow-motion", rate, windows, label} (see killSlowMotion);
- * - {kind: "camera-inset", ...} with Battle Cam and camera_inset on: the
- *   whole-map picture (see insetRecord).
+ * - {kind: "slow-motion", rate, windows, label} (see killSlowMotion).
  * With no world size, return an empty list. Agent POV: only the POV plan
  * camera, beats and scene are read; never a researcher view or match summary.
  *
@@ -875,57 +860,32 @@ export function records(input) {
       chosenRate: input.chosenRate,
     });
     if (slow !== null) out.push(Object.freeze({ kind: "slow-motion", ...slow }));
-    if (filters?.camera_inset !== false) {
-      out.push(insetRecord(base, chosen.frame));
-    }
   }
   return Object.freeze(out);
 }
 
 /**
- * Build the export-safe SVG nodes for the records that draw (the Camera Inset).
+ * Build arena nodes for camera records: none. The camera draws nothing on the
+ * arena (its picture inset was removed, owner 4 Oct 2026); this keeps the
+ * shared look contract (records, build, update, tooltip). Returns a new empty
+ * array whatever it is given.
  *
- * Only "camera-inset" records draw; others are skipped. Each inset gives one
- * <g class="camera-inset__picture"> holding the map floor, one dot per body
- * (a filled dot for a living or returning body, a hollow ring for a falling
- * one; Team B dots carry an ink pip), the dim outside the frame (fill-rule
- * attribute evenodd) and the frame outline, in inset CSS px. Colours come from
- * CSS classes (camera.css tokens). Flat fills and strokes only: no gradient,
- * mask, filter, url() or image. Creates detached nodes; the caller places them.
- *
- * @param {ReadonlyArray<LookRecord>} records
- * @param {Document} doc
+ * @param {ReadonlyArray<LookRecord>} _records
+ * @param {Document} _doc
  * @returns {SVGElement[]}
  */
-export function build(records, doc) {
-  return records
-    .filter((record) => record.kind === "camera-inset")
-    .map((record) => {
-      const group = svgNode(doc, "g", { class: "camera-inset__picture" });
-      drawInset(group, record, doc);
-      return group;
-    });
+export function build(_records, _doc) {
+  return [];
 }
 
 /**
- * Redraw inset nodes for new records (a new tick or frame).
+ * Update arena nodes for new camera records: nothing to do, because build
+ * makes none (see build). Returns undefined.
  *
- * nodes are groups from build, in the same order as the "camera-inset"
- * records; each group's children are replaced. Extra nodes or records are left
- * alone. Return undefined. Changes the DOM only.
- *
- * @param {ReadonlyArray<Element>} nodes
- * @param {ReadonlyArray<LookRecord>} records
+ * @param {ReadonlyArray<Element>} _nodes
+ * @param {ReadonlyArray<LookRecord>} _records
  */
-export function update(nodes, records) {
-  const insets = records.filter((record) => record.kind === "camera-inset");
-  nodes.forEach((node, index) => {
-    const record = insets[index];
-    if (!record || !node.ownerDocument) return;
-    node.replaceChildren();
-    drawInset(node, record, node.ownerDocument);
-  });
-}
+export function update(_nodes, _records) {}
 
 /**
  * Return the hover and focus explanation for a camera button record.
@@ -1019,13 +979,13 @@ export function tooltip(record) {
  *   hidden and empty: there is no switch on screen (owner, 1 October 2026).
  * - product: "replay_viewer" (three cameras, a button each unless
  *   switchCameras leaves one out, B, remembered camera, first-open
- *   tip, Battle Cam words and inset) or "combat_debugger" (Whole Map and
+ *   tip and Battle Cam words) or "combat_debugger" (Whole Map and
  *   Everyone In View only, by V alone; always opens on Whole Map). For
  *   "combat_debugger" the change tip is one `span#camera-tip.camera-tip`
- *   (role status) appended to the status line (#status-line) when the page
+ *   (role status) appended to the deck's header line (#status-line) when the page
  *   has one, else to the slot's `.bc` page root (else the body, else the
- *   slot). Each time it shows in the status line it takes the box of the
- *   status line's message (#msg: its offsetLeft, offsetTop, offsetWidth and
+ *   slot). Each time it shows in the deck's header line it takes the box of the
+ *   deck header line's message (#msg: its offsetLeft, offsetTop, offsetWidth and
  *   offsetHeight in CSS px, written as the tip's inline left, top, width and
  *   height), and src/styles/battleclient/overlays.css draws it there. So it
  *   never covers the arena, the scorebug, the rail or any control (owner,
@@ -1058,7 +1018,7 @@ export function tooltip(record) {
  *   half of the right-hand score column, so a tip covers nothing (owner,
  *   3 Oct 2026, Micro List M7). Its children are replaced at mount and its
  *   hidden attribute is removed; the tips keep their own hidden flags.
- *   Ignored for "combat_debugger" (its tip goes to the status line).
+ *   Ignored for "combat_debugger" (its tip goes to the deck's header line).
  *
  * The controller: camera() is the chosen camera; select(camera) picks one
  * (returns false when it is already on, not offered, or camera_framing is
@@ -1078,7 +1038,7 @@ export function tooltip(record) {
  * Re-entrant update calls (applyFrame re-renders the page, which calls update
  * again) are ignored. DOM side effects stay inside slot (and tipHost when
  * given), except in live play:
- * the change tip in the status line, and each update writes the view tag's
+ * the change tip in the deck's header line, and each update writes the view tag's
  * spot (viewTagPlace: --left-home-end and --floor-band, shares of the field's
  * width) as custom properties on #arena, which battleclient/overlays.css
  * reads to place #pov-tag; a zoomed camera leaves the last Whole Map spot.
@@ -1163,7 +1123,7 @@ export function createCameraSwitch(options) {
   const words = element(doc, "span", "camera-switch__words");
   // The BattleClient and DevClient show no switch (owner, 1 October 2026):
   // V alone changes the camera, and its tip (#camera-tip) sits over the
-  // status line's message under the arena, never over the arena, the HUD,
+  // deck header line's message under the arena, never over the arena, the HUD,
   // the rail or a control.
   const live = product === "combat_debugger";
   // Where the Replay Viewer's two tips go: the slot, or the given host.
@@ -1172,12 +1132,6 @@ export function createCameraSwitch(options) {
   tip.setAttribute("role", "status");
   tip.setAttribute("aria-live", "polite");
   tip.hidden = true;
-  const inset = /** @type {SVGSVGElement} */ (
-    /** @type {unknown} */ (doc.createElementNS(SVG_NAMESPACE, "svg"))
-  );
-  inset.setAttribute("class", "camera-switch__inset");
-  inset.setAttribute("aria-hidden", "true");
-  inset.setAttribute("hidden", "");
   if (live) {
     tip.id = "camera-tip";
     doc.getElementById?.("camera-tip")?.remove();
@@ -1188,9 +1142,9 @@ export function createCameraSwitch(options) {
       slot
     ).append(tip);
   } else if (tipHost === slot) {
-    slot.append(label, group, words, tip, inset);
+    slot.append(label, group, words, tip);
   } else {
-    slot.append(label, group, words, inset);
+    slot.append(label, group, words);
     tipHost.replaceChildren(tip);
     tipHost.hidden = false;
   }
@@ -1302,10 +1256,10 @@ export function createCameraSwitch(options) {
   }
 
   /**
-   * Give the live tip the box of the status line's message (#msg), when the
-   * tip sits in the status line beside it: inline left, top, width and
+   * Give the live tip the box of the deck header line's message (#msg), when the
+   * tip sits in the deck's header line beside it: inline left, top, width and
    * height in CSS px from the message's offset box (both are placed against
-   * the status line). Reads layout once per shown tip. Does nothing when
+   * the deck's header line). Reads layout once per shown tip. Does nothing when
    * the page has no message or the tip is elsewhere.
    */
   function coverStatusMessage() {
@@ -1397,7 +1351,6 @@ export function createCameraSwitch(options) {
         : null;
     const key = frame === null ? "whole" : JSON.stringify(frame);
     paintWords(list);
-    paintInset(list);
     paintSwitch();
     if (key !== appliedKey) {
       appliedKey = key;
@@ -1428,26 +1381,6 @@ export function createCameraSwitch(options) {
     }
     words.textContent = text;
     words.classList.toggle("camera-switch__words--slow", Boolean(slow));
-  }
-
-  /** @param {ReadonlyArray<LookRecord>} list */
-  function paintInset(list) {
-    const record = list.find((item) => item.kind === "camera-inset");
-    if (!record) {
-      inset.setAttribute("hidden", "");
-      inset.replaceChildren();
-      return;
-    }
-    inset.removeAttribute("hidden");
-    inset.setAttribute("width", String(record.width));
-    inset.setAttribute("height", String(record.height));
-    inset.setAttribute("viewBox", `0 0 ${record.width} ${record.height}`);
-    const existing = [...inset.children];
-    if (existing.length === 1) {
-      update(existing, [record]);
-    } else {
-      inset.replaceChildren(...build([record], doc));
-    }
   }
 
   return Object.freeze({
@@ -1958,150 +1891,6 @@ function leanWindows(beats) {
     hold: Object.freeze(/** @type {const} */ ([pushEnd, holdEnd])),
     back: Object.freeze(/** @type {const} */ ([holdEnd, backEnd])),
   });
-}
-
-/**
- * Build the Camera Inset record: the whole-map picture with the frame outline.
- *
- * Dots are the audience's camera bodies at their END spots (falling bodies as
- * hollow rings); a dot's team comes from the audience scene by public agent
- * id (team_id 1 is Team A, 2 is Team B; unknown: neutral). Sizes are inset
- * CSS px (CAMERA_INSET).
- *
- * @param {Readonly<{camera: PlanCamera | null, worldWidth: number, worldHeight: number, scene: Record<string, any> | null}>} base
- * @param {WorldFrame} frame
- * @returns {LookRecord}
- */
-function insetRecord(base, frame) {
-  const margin = CAMERA_INSET.worldMargin;
-  const worldW = base.worldWidth + 2 * margin;
-  const worldH = base.worldHeight + 2 * margin;
-  const height = CAMERA_INSET.height;
-  const scale = height / worldH;
-  const width = round(worldW * scale);
-  const project = (/** @type {number} */ x, /** @type {number} */ y) => ({
-    x: round((x + margin) * scale),
-    y: round((base.worldHeight + margin - y) * scale),
-  });
-  /** @type {Map<string, number>} */
-  const teams = new Map();
-  if (isRecord(base.scene) && Array.isArray(base.scene.agents)) {
-    for (const agent of base.scene.agents) {
-      if (
-        isRecord(agent) &&
-        typeof agent.public_agent_id === "string" &&
-        Number.isInteger(agent.team_id)
-      ) {
-        teams.set(agent.public_agent_id, agent.team_id);
-      }
-    }
-  }
-  const dot = clamp(
-    height * CAMERA_INSET.dotScale,
-    CAMERA_INSET.dotMin,
-    CAMERA_INSET.dotMax,
-  );
-  const dots = cameraBodies(base.camera).map((body) => {
-    const team =
-      body.publicAgentId !== undefined ? (teams.get(body.publicAgentId) ?? null) : null;
-    return Object.freeze({
-      ...project(body.end[0], body.end[1]),
-      fallen: body.state === "falling",
-      team: team === 1 ? "a" : team === 2 ? "b" : "neutral",
-    });
-  });
-  const topLeft = project(frame.minX, frame.maxY);
-  const bottomRight = project(frame.maxX, frame.minY);
-  return Object.freeze({
-    kind: "camera-inset",
-    width,
-    height,
-    map: Object.freeze({
-      ...project(0, base.worldHeight),
-      width: round(base.worldWidth * scale),
-      height: round(base.worldHeight * scale),
-    }),
-    frame: Object.freeze({
-      x: topLeft.x,
-      y: topLeft.y,
-      width: round(bottomRight.x - topLeft.x),
-      height: round(bottomRight.y - topLeft.y),
-    }),
-    dotRadius: round(dot),
-    dots: Object.freeze(dots),
-  });
-}
-
-/**
- * Draw one inset record into group (export-safe nodes).
- *
- * @param {Element} group
- * @param {LookRecord} record
- * @param {Document} doc
- */
-function drawInset(group, record, doc) {
-  group.append(
-    svgNode(doc, "rect", {
-      class: "camera-inset__floor",
-      x: record.map.x,
-      y: record.map.y,
-      width: record.map.width,
-      height: record.map.height,
-      rx: 1.5,
-    }),
-  );
-  for (const dot of record.dots) {
-    if (dot.fallen) {
-      group.append(
-        svgNode(doc, "circle", {
-          class: "camera-inset__fallen",
-          cx: dot.x,
-          cy: dot.y,
-          r: round(record.dotRadius * 0.9),
-          fill: "none",
-          "stroke-width": 1,
-        }),
-      );
-      continue;
-    }
-    group.append(
-      svgNode(doc, "circle", {
-        class: `camera-inset__dot camera-inset__dot--${dot.team}`,
-        cx: dot.x,
-        cy: dot.y,
-        r: record.dotRadius,
-      }),
-    );
-    if (dot.team === "b") {
-      group.append(
-        svgNode(doc, "circle", {
-          class: "camera-inset__pip",
-          cx: dot.x,
-          cy: dot.y,
-          r: round(record.dotRadius * 0.36),
-        }),
-      );
-    }
-  }
-  const { x, y, width, height } = record.frame;
-  group.append(
-    svgNode(doc, "path", {
-      class: "camera-inset__dim",
-      d: `M0 0H${record.width}V${record.height}H0Z M${x} ${y}h${width}v${height}h${-width}Z`,
-      "fill-rule": "evenodd",
-      "fill-opacity": 0.35,
-    }),
-    svgNode(doc, "rect", {
-      class: "camera-inset__frame",
-      x,
-      y,
-      width,
-      height,
-      rx: 1,
-      fill: "none",
-      "stroke-width": 1.5,
-    }),
-  );
 }
 
 /**

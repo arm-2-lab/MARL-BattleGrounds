@@ -5,8 +5,8 @@
  * entry here: a stable ID, its group, its plain name, an optional subtitle,
  * one short plain-English explanation, the host fields its numbers come from,
  * and its key when it has one. The HUD, the panels, the hover and focus tips,
- * the Visual Key, Frame Explanation and the website's plain-English page read
- * this list, so a name is written once.
+ * Frame Explanation and the website's plain-English page read this list, so
+ * a name is written once.
  *
  * Subtitle rule (owner, 1 October 2026): only statuses ("Charge (Stun)"),
  * class callings ("Hunter (The Sentinel)") and ability labels ("Arcane Blast
@@ -20,10 +20,10 @@
  * plain sentence for each (with a place for its exact number) and where it
  * comes from by class ("From a Priest."; an aura on a champion of its own
  * class: "From its own aura."). Every surface reads them here: the
- * Champion Card, the Replay Viewer status tray, the Visual Key, Frame
- * Explanation, the status lines, tips and docs. A status mark that serves two
- * causes (the stun stars serve Charge and Crippling Poison) is one symbol
- * whose `names` lists both, so the Visual Key shows both under one picture.
+ * Champion Card, the Replay Viewer status tray, Frame Explanation, the
+ * status lines, tips and docs. A status mark that serves two causes (the
+ * stun stars serve Charge and Crippling Poison) is one symbol whose `names`
+ * lists both.
  *
  * Names come from their owners: class names from `agent-identity.js`, callings
  * and ability names from `class-documentation.js`. This module owns the plain
@@ -46,7 +46,7 @@ import { CLASS_IDENTITIES } from "./agent-identity.js";
 import { classNamesV1 } from "./class-documentation.js";
 
 /**
- * The nine symbol groups, in the order the Visual Key lists them.
+ * The nine symbol groups, in the order a full symbol list shows them.
  *
  * @type {readonly ["Bodies And Rings", "Classes", "Statuses", "Basics", "Ultimates", "Deaths And Returns", "Zones", "HUD Marks", "Camera And Keys"]}
  */
@@ -99,8 +99,7 @@ export const SYMBOL_GROUPS = Object.freeze(
  *   plain name. A mark that serves two causes joins its names with " / ":
  *   "Charge (Stun) / Crippling Poison (Stun)".
  * - names: every name the symbol stands for, in order: just [title] for most
- *   symbols, both status names for a two-cause mark. The Visual Key shows
- *   each on its own line.
+ *   symbols, both status names for a two-cause mark.
  * - eli5: one short plain-English explanation with no tuning numbers.
  * - numberSources: where its numbers come from; empty when it has none.
  * - key: the keyboard key that toggles it ("V", "B" or "F"), or null.
@@ -488,7 +487,7 @@ function ultimateSymbols() {
 }
 
 /**
- * Every symbol, in Visual Key order (grouped as in SYMBOL_GROUPS). Frozen.
+ * Every symbol, in list order (grouped as in SYMBOL_GROUPS). Frozen.
  *
  * @type {readonly SymbolEntry[]}
  */
@@ -524,7 +523,7 @@ export const SYMBOLS = Object.freeze([
     "life_bar",
     "Bodies And Rings",
     "Life",
-    "The pale arc around a champion, and its bar in the HUD, show how much life it has left; at 0 it falls.",
+    "A champion's token fills with its team color from the bottom: the fuller it is, the more life it has left. Its bar in the HUD shows the same; at 0 it falls.",
     {
       aliases: ["life", "health", "life_arc", "health_ring", "hp"],
       numberSources: [
@@ -1003,7 +1002,7 @@ export const SYMBOLS = Object.freeze([
     "stone",
     "Zones",
     "Stone",
-    "Stones block both bodies and sight: nothing can walk or see through them.",
+    "Stones block both bodies and sight: nothing can walk or see through them, except that a Warrior's Charge can pass over them.",
     {
       aliases: ["obstacle", "wall", "pillar"],
       numberSources: [
@@ -1206,7 +1205,7 @@ export function symbolById(idOrAlias) {
 }
 
 /**
- * Return every symbol in one group, in Visual Key order.
+ * Return every symbol in one group, in list order.
  *
  * group must be one of SYMBOL_GROUPS; any other value returns an empty array.
  * The result is a new frozen array of shared entries.

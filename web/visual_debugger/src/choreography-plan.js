@@ -4722,8 +4722,8 @@ function buildAuthorizedPresentationChoreographyPlan(
       if (waveIdentity === null || paintDecision === null) {
         return null;
       }
-      // The team wave is page chrome (the scorebug's Wave Chip), never an arena
-      // mark, so it has no anchor and reserves no arena box.
+      // The team wave is never an arena mark (the scorebug counts the wave
+      // down), so it has no anchor and reserves no arena box.
       planned.push(
         Object.freeze({
           ...common,
@@ -5130,6 +5130,14 @@ export const PLAN_RESOURCE_CAPS = Object.freeze({
 });
 
 /**
+ * Animations the painter's card queue may add to a tick beyond the plan's own
+ * rows (choreography-painter.js carryFromEarlierTicks): a held card's exit
+ * fade (1) and a waiting card's entry (at most 3). Their nodes are counted
+ * with the painter's held rows, against heralds.BUDGET, not the plan's.
+ */
+const CARD_QUEUE_ANIMATIONS = 4;
+
+/**
  * The allowance of a drawn plan row whose kind has no look module of its own: 30
  * nodes, 4 animations and 7 kept nodes, the shared earlier per-event allowance.
  */
@@ -5258,7 +5266,8 @@ export function planEventBudget(event) {
  * - nodes: 3 roots plus the node allowance of every drawn (spatial) row. The painter
  *   skips rows that are not spatial (feed-only, filtered off or suppressed), so they
  *   add nothing; before the beat clock every row counted, which pinned busy ticks at the cap;
- * - animations: 3 clocks plus each drawn row's animation allowance;
+ * - animations: 3 clocks, CARD_QUEUE_ANIMATIONS for the painter's card queue,
+ *   plus each drawn row's animation allowance;
  * - persistentNodes: the kept nodes of every drawn persistent row;
  * - overrideAnimations: per body one glide plus its look overrides
  *   (OVERRIDE_BUDGET.perBodyLook), plus OVERRIDE_BUDGET for the seen falls,
@@ -5272,7 +5281,7 @@ export function planEventBudget(event) {
  */
 export function planResourceDemand(events, derivedEvents, bodies, schedule) {
   let nodes = 3;
-  let animations = 3;
+  let animations = 3 + CARD_QUEUE_ANIMATIONS;
   let persistentNodes = 0;
   for (const event of [...events, ...derivedEvents]) {
     // The painter draws only spatial rows, so only they can add nodes.

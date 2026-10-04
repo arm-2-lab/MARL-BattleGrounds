@@ -803,8 +803,10 @@ export function mountLedgerRail(doc, options = {}) {
  * (#metric-scope, #metric-selection, #metric-view-field, #metric-view,
  * #metric-search-area, #metric-rows); without the card this returns null.
  * It adds the ledger class, inserts the #ledger-match-summary section at the
- * top, gathers the Scope, Topic, View and search controls into one sticky
- * div.ledger-header, adds the Topic eyebrow #metric-topic-section and two
+ * top of the card, gathers the Scope, Topic, View and search controls into
+ * one div.ledger-header placed just before the card (its own block, so in the
+ * Replay Viewer's Metrics tab only the card under it scrolls; ledger.css),
+ * adds the Topic eyebrow #metric-topic-section and two
  * switches (#metric-scope-switch, #metric-view-switch) that mirror the native
  * selects, and folds the two reading notes under the table into an "About
  * These Numbers" disclosure. The native Scope and View selects stay in the
@@ -842,7 +844,10 @@ export function mountLedgerHeader(doc) {
   summary.hidden = true;
   const header = doc.createElement("div");
   header.className = "ledger-header";
-  body.prepend(summary, header);
+  // The header is its own block before the card (owner, 4 Oct 2026): in the
+  // Replay Viewer's Metrics tab only the card under it scrolls.
+  body.prepend(summary);
+  card.before(header);
   /** @param {HTMLSelectElement} select */
   const hideNative = (select) => {
     select.classList.add("ledger-native");

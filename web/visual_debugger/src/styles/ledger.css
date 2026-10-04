@@ -1,7 +1,8 @@
 /*
  * The Replay Viewer rail's contents (src/ledger.js and src/metrics-panel.js):
- * the Metrics card (its sticky header with Scope, Topic, View and Find A
- * Measurement, the Match Summary and the measurement table), the Technical
+ * the Metrics card (its header with Scope, Topic, View and Find A
+ * Measurement, a fixed block above the scrolling card in the Replay Viewer,
+ * the Match Summary and the measurement table), the Technical
  * Frame groups (This Frame, This Game, This File) with Copy, the Replay File
  * facts and the Full Record chip. The content is Scribe's Ledger's; the look
  * is the BattleClient rail's (owner, 3 Oct 2026): the BattleClient's tokens
@@ -9,7 +10,7 @@
  * headings, plain values, its switch style. The tab bar and the tab panels
  * themselves are styled in src/styles/battleclient/rail.css. styles.css
  * imports this file before its own rules, so every rule here is scoped under
- * #replay-rail or #evaluation-metrics to win.
+ * #replay-rail, #replay-rail-metrics or #evaluation-metrics to win.
  */
 
 /* Keyboard focus on a tab or a panel (rail.css draws the tabs and panels). */
@@ -54,24 +55,44 @@
   display: contents;
 }
 
-/* Ledger header: sticky Scope, Topic, View and Find A Measurement. */
-#evaluation-metrics.ledger .disclosure-body {
+/* Ledger header: Scope, Topic, View and Find A Measurement. In the Replay
+   Viewer it is its own block at the top of the Metrics tab, outside the card
+   that scrolls (owner, 4 Oct 2026: nothing scrolls behind it); the rules here
+   are scoped to the card or the tab so they reach it in either place. */
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .disclosure-body {
   display: grid;
   gap: 0.5rem;
 }
 
-#evaluation-metrics.ledger .ledger-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-header {
   display: grid;
   gap: 0.45rem;
-  padding: 0.5rem 0 0.55rem;
+  padding: 0 0 0.55rem;
   border-bottom: 1px solid var(--edge);
   background: var(--panel);
 }
 
-#evaluation-metrics.ledger .ledger-native {
+/* The Metrics tab: the header stays put and only the card under it scrolls,
+   with its own scrollbar, while the tab has room. The card starts from no
+   height and takes the room the header leaves, but never less than 10rem, so
+   the table always shows a few rows. When the header and that much table do
+   not fit (open search results on a short screen such as 1366 x 768, or 200%
+   zoom), the tab itself scrolls (rail.css), header and all, so nothing is cut
+   off and Show More stays reachable. Long search results also scroll in their
+   own list (styles.css .metric-search-results). */
+#replay-rail #replay-rail-metrics > .ledger-header {
+  flex: none;
+}
+
+#replay-rail #replay-rail-metrics > #evaluation-metrics {
+  flex: 1 1 0;
+  min-height: 10rem;
+  overflow-y: auto;
+  scrollbar-color: var(--edge2) transparent;
+  scrollbar-width: thin;
+}
+
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-native {
   position: absolute;
   overflow: hidden;
   width: 1px;
@@ -83,7 +104,7 @@
   white-space: nowrap;
 }
 
-#evaluation-metrics.ledger .ledger-switch {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-switch {
   display: flex;
   gap: 0;
   border: 1px solid var(--edge);
@@ -92,7 +113,7 @@
   overflow: hidden;
 }
 
-#evaluation-metrics.ledger .ledger-switch__part {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-switch__part {
   display: grid;
   flex: 1 1 0;
   align-content: center;
@@ -108,37 +129,41 @@
   text-align: center;
 }
 
-#evaluation-metrics.ledger .ledger-switch__part + .ledger-switch__part {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .ledger-switch__part
+  + .ledger-switch__part {
   border-left: 1px solid var(--edge);
 }
 
-#evaluation-metrics.ledger .ledger-switch__part[aria-checked="true"] {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .ledger-switch__part[aria-checked="true"] {
   background: var(--raise);
   box-shadow: inset 0 -2px 0 var(--moon);
   color: var(--text);
 }
 
-#evaluation-metrics.ledger .ledger-switch__part:disabled {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-switch__part:disabled {
   opacity: 0.55;
 }
 
-#evaluation-metrics.ledger .ledger-switch__part:focus-visible {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .ledger-switch__part:focus-visible {
   outline: 2px solid var(--moon);
   outline-offset: -2px;
 }
 
-#evaluation-metrics.ledger .ledger-switch__note {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-switch__note {
   color: var(--muted);
   font-size: 11px;
   font-weight: 400;
 }
 
-#evaluation-metrics.ledger .ledger-header__topic {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-header__topic {
   display: grid;
   gap: 0.15rem;
 }
 
-#evaluation-metrics.ledger .ledger-eyebrow {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-eyebrow {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
@@ -146,7 +171,7 @@
   text-transform: uppercase;
 }
 
-#evaluation-metrics.ledger select {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) select {
   width: 100%;
   min-height: 32px;
   margin: 0;
@@ -156,15 +181,15 @@
   color: var(--text);
 }
 
-#evaluation-metrics.ledger #metric-view-field {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) #metric-view-field {
   margin: 0;
 }
 
-#evaluation-metrics.ledger .metric-search {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search {
   margin: 0;
 }
 
-#evaluation-metrics.ledger #metric-search {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) #metric-search {
   min-height: 32px;
   margin-block: 0.2rem 0;
   border: 1px solid var(--edge);
@@ -174,25 +199,25 @@
 }
 
 /* Preparing line: a thin Moon Silver progress under the header. */
-#evaluation-metrics.ledger .metrics-progress {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metrics-progress {
   inline-size: 100%;
   block-size: 2px;
   accent-color: var(--moon);
 }
 
-#evaluation-metrics.ledger #metric-status,
-#evaluation-metrics.ledger #metric-description {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) #metric-status,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) #metric-description {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
 }
 
 /* Ledger rows: one scroll (the tab's), rune dividers, 72 px value box. */
-#evaluation-metrics.ledger #metric-rows {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) #metric-rows {
   border-top: 0;
 }
 
-#evaluation-metrics.ledger .metric-table tbody {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table tbody {
   max-height: none;
   overflow: visible;
 }
@@ -201,19 +226,19 @@
    must not keep one either (styles.css gives it overflow: hidden and a
    stable gutter); otherwise its columns sit left of the values, by up to one
    scrollbar's width (15 px in Chromium). */
-#evaluation-metrics.ledger .metric-table thead {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table thead {
   scrollbar-gutter: auto;
 }
 
-#evaluation-metrics.ledger .metric-table th,
-#evaluation-metrics.ledger .metric-table td {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table th,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table td {
   min-height: 32px;
   padding: 0.4rem 0.3rem;
   border-bottom: 1px solid rgb(36 48 73 / 60%);
   vertical-align: middle;
 }
 
-#evaluation-metrics.ledger .metric-table thead th {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table thead th {
   background: var(--panel);
   color: var(--muted);
   font-size: 11px;
@@ -222,19 +247,19 @@
   text-transform: uppercase;
 }
 
-#evaluation-metrics.ledger .metric-table td:first-child,
-#evaluation-metrics.ledger .metric-table th:first-child {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table td:first-child,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table th:first-child {
   width: 34%;
   color: var(--text);
 }
 
-#evaluation-metrics.ledger .metric-table td:nth-child(2),
-#evaluation-metrics.ledger .metric-table th:nth-child(2) {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table td:nth-child(2),
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table th:nth-child(2) {
   width: auto;
 }
 
-#evaluation-metrics.ledger .metric-table .metric-value,
-#evaluation-metrics.ledger .metric-table th:last-child {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table .metric-value,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table th:last-child {
   width: 72px;
   color: var(--text);
   font-size: 13px;
@@ -243,12 +268,14 @@
   text-align: right;
 }
 
-#evaluation-metrics.ledger .metric-table .metric-value[data-value=""] {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .metric-table
+  .metric-value[data-value=""] {
   color: var(--muted);
   font-weight: 400;
 }
 
-#evaluation-metrics.ledger .metric-table .metric-section th {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table .metric-section th {
   width: auto;
   padding-top: 0.85rem;
   text-align: left;
@@ -260,32 +287,34 @@
   text-transform: uppercase;
 }
 
-#evaluation-metrics.ledger .metric-measure {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-measure {
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
   text-decoration-color: var(--muted);
 }
 
-#evaluation-metrics.ledger .metric-condition,
-#evaluation-metrics.ledger .metric-table small {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-condition,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-table small {
   color: var(--muted);
   font-size: 11px;
 }
 
 /* Found mark: a Moon Silver bar and a soft silver fill (no yellow). */
-#evaluation-metrics.ledger .metric-table tr.metric-search-match {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .metric-table
+  tr.metric-search-match {
   outline: 0;
   background: rgb(201 212 232 / 14%);
   box-shadow: inset 2px 0 0 var(--moon);
 }
 
 /* Subject chips: crest or class emblem in the team ring, then "Agent 3". */
-#evaluation-metrics.ledger .ledger-subject {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-subject {
   vertical-align: middle;
 }
 
-#evaluation-metrics.ledger .ledger-subject__text {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-subject__text {
   position: absolute;
   overflow: hidden;
   width: 1px;
@@ -295,20 +324,20 @@
   white-space: nowrap;
 }
 
-#evaluation-metrics.ledger .ledger-subject__chips,
-#evaluation-metrics.ledger .metric-search-results__title {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-subject__chips,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results__title {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
 }
 
-#evaluation-metrics.ledger .ledger-subject__join {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-subject__join {
   color: var(--muted);
   font-size: 11px;
 }
 
-#evaluation-metrics.ledger .ledger-chip {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-chip {
   display: inline-grid;
   grid-template-columns: 16px auto;
   align-items: center;
@@ -319,7 +348,7 @@
   line-height: 1.2;
 }
 
-#evaluation-metrics.ledger .ledger-chip__emblem {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-chip__emblem {
   box-sizing: border-box;
   width: 16px;
   height: 16px;
@@ -329,13 +358,15 @@
   color: var(--text);
 }
 
-#evaluation-metrics.ledger .ledger-chip[data-team="b"] .ledger-chip__emblem {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .ledger-chip[data-team="b"]
+  .ledger-chip__emblem {
   border-color: var(--team-b);
   outline: 1px solid var(--team-b);
   outline-offset: 1px;
 }
 
-#evaluation-metrics.ledger .ledger-chip__class {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-chip__class {
   grid-column: 2;
   color: var(--muted);
   font-size: 11px;
@@ -343,13 +374,13 @@
 }
 
 /* Find A Measurement results: three lines, Moon Silver active option. */
-#evaluation-metrics.ledger .metric-search-results {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results {
   border: 1px solid rgb(201 212 232 / 45%);
   border-radius: 6px;
   background: var(--panel);
 }
 
-#evaluation-metrics.ledger .metric-search-results button {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results button {
   gap: 0.15rem;
   padding: 0.45rem 0.55rem;
   border-bottom-color: var(--edge);
@@ -358,25 +389,27 @@
   font-size: 13px;
 }
 
-#evaluation-metrics.ledger .metric-search-results button[aria-selected="true"] {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics)
+  .metric-search-results
+  button[aria-selected="true"] {
   background: rgb(201 212 232 / 14%);
   box-shadow: inset 2px 0 0 var(--moon);
 }
 
-#evaluation-metrics.ledger .metric-search-results small,
-#evaluation-metrics.ledger .metric-search-results code {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results small,
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results code {
   color: var(--muted);
   font-size: 11px;
 }
 
-#evaluation-metrics.ledger .metric-search-results__tag {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results__tag {
   justify-self: start;
   padding: 0 0.35rem;
   border: 1px solid var(--edge);
   border-radius: 4px;
 }
 
-#evaluation-metrics.ledger .metric-search-definition {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-definition {
   border-color: var(--edge);
   border-radius: 8px;
   background: var(--panel);
@@ -384,40 +417,40 @@
 }
 
 /* About These Numbers: the two reading notes folded into one line. */
-#evaluation-metrics.ledger .ledger-notes {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-notes {
   color: var(--muted);
   font-size: 13px;
 }
 
-#evaluation-metrics.ledger .ledger-notes > summary {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-notes > summary {
   cursor: pointer;
   color: var(--muted);
   font-weight: 700;
 }
 
 /* Match Summary at the head of the Metrics tab. */
-#evaluation-metrics.ledger .ledger-match:not([hidden]) {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match:not([hidden]) {
   display: grid;
   gap: 0.35rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--edge);
 }
 
-#evaluation-metrics.ledger .ledger-match__heading {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__heading {
   margin: 0;
   color: var(--text);
   font-size: 15px;
   font-weight: 700;
 }
 
-#evaluation-metrics.ledger .ledger-match__team {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__team {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.75rem;
 }
 
-#evaluation-metrics.ledger .ledger-match__values {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__values {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -427,12 +460,12 @@
 
 /* Each label and its value read as one pair ("Score 4"), with room before
    the next pair. */
-#evaluation-metrics.ledger .ledger-match__values dt {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__values dt {
   color: var(--muted);
   font-size: 11px;
 }
 
-#evaluation-metrics.ledger .ledger-match__values dd {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__values dd {
   margin: 0 10px 0 0;
   color: var(--text);
   font-size: 13px;
@@ -440,7 +473,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-#evaluation-metrics.ledger .ledger-match__note {
+:is(#evaluation-metrics.ledger, #replay-rail-metrics) .ledger-match__note {
   margin: 0;
   color: var(--muted);
   font-size: 11px;

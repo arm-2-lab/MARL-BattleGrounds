@@ -1,12 +1,12 @@
 /**
  * @file Check the Visual Filter presets and the owner's naming rules for every
- * switch: five presets with Default Configuration first; each preset's exact
- * switch choices (the approved store presets kept to the built switches, with
- * Moon Motes, Time Of Night and Death Dimming turned on by Broadcast, and
- * Momentum on only in Researcher); preset
+ * switch: four presets with Default Configuration first (the owner removed
+ * Broadcast on 4 Oct 2026; its spectacle switches, Moon Motes and Death
+ * Dimming among them, are now on by default); each preset's exact switch
+ * choices (the approved store presets kept to the built switches); preset
  * states are full switch states that never carry View, Ranges, Layout, Motion
- * or a "palette" setting, and every preset keeps the live Palette: High
- * Contrast switch at its default, off; applying a preset drops hand changes and the "changed
+ * or a "palette" setting, and every preset keeps the High Contrast switch at
+ * its default, on; applying a preset drops hand changes and the "changed
  * by hand" list counts the switches that differ from the preset in use; Reset
  * To Default Configuration returns the shipped defaults; and a banned-word
  * scan of every switch label, help line, group, preset text and command help
@@ -41,45 +41,6 @@ function choices(on, off) {
 
 const EXPECTED_PRESETS = [
   ["default", "Default Configuration", {}],
-  [
-    "broadcast",
-    "Broadcast",
-    choices(
-      [
-        "target_selection_visuals",
-        "class_seals",
-        "map_skins",
-        "obstacle_relief",
-        "obstacle_shadows",
-        "soft_glow",
-        "hit_reactions",
-        "status_application",
-        "natural_status_expiry",
-        "freezing_trap_break",
-        "stride_glide",
-        "last_move_ghosts",
-        "focus_trail",
-        "red_zone_home_fall",
-        "scorebug",
-        "team_rosters",
-        "death_announcer",
-        "moon_motes",
-        "time_of_night",
-        "death_dimming",
-      ],
-      [
-        "duration_status_badges",
-        "aura_modifier_badges",
-        "focus_fire",
-        "class_letters",
-        "aura_fields",
-        "survey_frame",
-        "hud_momentum",
-        "spawn_shield_expiry",
-        "status_clear_on_death",
-      ],
-    ),
-  ],
   [
     "researcher",
     "Researcher",
@@ -141,7 +102,6 @@ const EXPECTED_PRESETS = [
         "camera_framing",
         "kill_cam",
         "kill_slow_motion",
-        "camera_inset",
       ],
     ),
   ],
@@ -204,7 +164,6 @@ const EXPECTED_PRESETS = [
         "selection_moonlight",
         "kill_cam",
         "kill_slow_motion",
-        "camera_inset",
         "low_life_warning",
         "vigil_pips",
         "kindled_blast",
@@ -232,10 +191,9 @@ const BANNED = [
   /Stride Glide/u,
 ];
 
-test("five presets, Default Configuration first, with the approved switch choices", () => {
+test("four presets, Default Configuration first, with the approved switch choices", () => {
   assert.deepEqual(VISUAL_FILTER_PRESET_IDS, [
     "default",
-    "broadcast",
     "researcher",
     "manuscript",
     "minimal",
@@ -255,9 +213,15 @@ test("five presets, Default Configuration first, with the approved switch choice
     assert.equal(typeof entry.purpose, "string");
     assert.ok(entry.purpose.length > 10);
   }
-  for (const id of ["moon_motes", "time_of_night", "death_dimming"]) {
-    assert.equal(DEFAULT_VISUAL_FILTER_STATE[id], false, id);
-    assert.equal(visualFilterPresetState("broadcast")[id], true, id);
+  // Broadcast is gone; the owner's defaults keep its motes and dimming on and
+  // Time Of Night off (4 Oct 2026).
+  assert.throws(() => visualFilterPresetState("broadcast"), RangeError);
+  for (const [id, on] of /** @type {const} */ ([
+    ["moon_motes", true],
+    ["death_dimming", true],
+    ["time_of_night", false],
+  ])) {
+    assert.equal(DEFAULT_VISUAL_FILTER_STATE[id], on, id);
   }
 });
 
@@ -294,62 +258,62 @@ test("preset states are full switch states and never touch View, Ranges, Layout 
     );
   }
   for (const [id] of EXPECTED_PRESETS) {
-    assert.equal(visualFilterPresetState(id).high_contrast, false, id);
+    assert.equal(visualFilterPresetState(id).high_contrast, true, id);
   }
   assert.throws(() => visualFilterPresetState("analysis"), RangeError);
-  assert.throws(() => visualFilterPresetState("Broadcast"), RangeError);
+  assert.throws(() => visualFilterPresetState("Researcher"), RangeError);
   assert.throws(() => visualFilterPresetState(undefined), RangeError);
 });
 
 test("applying a preset drops hand changes; the hand-change list counts differences", () => {
-  const broadcast = reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, {
+  const researcher = reduceVisualFilterState(DEFAULT_VISUAL_FILTER_STATE, {
     type: "apply_preset",
-    presetId: "broadcast",
+    presetId: "researcher",
   });
-  assert.equal(broadcast, visualFilterPresetState("broadcast"));
-  assert.deepEqual(visualFilterHandChanges(broadcast, "broadcast"), []);
+  assert.equal(researcher, visualFilterPresetState("researcher"));
+  assert.deepEqual(visualFilterHandChanges(researcher, "researcher"), []);
   const byHand = setVisualFilterEnabled(
-    setVisualFilterEnabled(broadcast, "moon_motes", false),
-    "aura_fields",
+    setVisualFilterEnabled(researcher, "moon_motes", false),
+    "time_of_night",
     true,
   );
-  const changed = visualFilterHandChanges(byHand, "broadcast");
+  const changed = visualFilterHandChanges(byHand, "researcher");
   assert.equal(Object.isFrozen(changed), true);
-  assert.deepEqual(changed, ["aura_fields", "moon_motes"]);
+  assert.deepEqual(changed, ["moon_motes", "time_of_night"]);
   assert.equal(changed.length, 2);
   assert.equal(
-    reduceVisualFilterState(byHand, { type: "apply_preset", presetId: "broadcast" }),
-    broadcast,
+    reduceVisualFilterState(byHand, { type: "apply_preset", presetId: "researcher" }),
+    researcher,
   );
-  // Relative to Default Configuration, the Broadcast state differs in exactly
-  // the switches Broadcast changes from their defaults.
-  const broadcastOverrides = /** @type {Record<string, boolean>} */ (
+  // Relative to Default Configuration, the Researcher state differs in exactly
+  // the switches Researcher changes from their defaults.
+  const researcherOverrides = /** @type {Record<string, boolean>} */ (
     EXPECTED_PRESETS[1][2]
   );
   assert.deepEqual(
-    visualFilterHandChanges(broadcast, "default"),
+    visualFilterHandChanges(researcher, "default"),
     VISUAL_FILTER_IDS.filter(
       (id) =>
-        Object.hasOwn(broadcastOverrides, id) &&
-        broadcastOverrides[id] !== DEFAULT_VISUAL_FILTER_STATE[id],
+        Object.hasOwn(researcherOverrides, id) &&
+        researcherOverrides[id] !== DEFAULT_VISUAL_FILTER_STATE[id],
     ),
   );
   assert.throws(
     () => visualFilterHandChanges({ aura_fields: true }, "default"),
     TypeError,
   );
-  assert.throws(() => visualFilterHandChanges(broadcast, "loud"), RangeError);
+  assert.throws(() => visualFilterHandChanges(researcher, "loud"), RangeError);
   assert.throws(
     () =>
-      reduceVisualFilterState(broadcast, {
+      reduceVisualFilterState(researcher, {
         type: "apply_preset",
-        presetId: "broadcast",
+        presetId: "researcher",
         extra: true,
       }),
     /invalid shape/u,
   );
   assert.throws(
-    () => reduceVisualFilterState(broadcast, { type: "apply_preset", presetId: "x" }),
+    () => reduceVisualFilterState(researcher, { type: "apply_preset", presetId: "x" }),
     RangeError,
   );
 });

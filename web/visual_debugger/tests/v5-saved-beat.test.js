@@ -1,6 +1,6 @@
 /**
  * @file Check the V5 Saved Beat add-on of `src/looks/health-text.js` (switch
- * saved_beat, off by default). Contracts: savedBeatHeld is true only when the
+ * saved_beat, on by default since 4 Oct 2026; the off checks pass it off). Contracts: savedBeatHeld is true only when the
  * recorded Oracle totals say a heal kept a champion alive through blows that
  * would have killed it (healing above 0, start health minus damage at most 0,
  * alive after) and is false without totals; switched on in Oracle View, build
@@ -116,7 +116,7 @@ test("settled shows the word but no rim; reduced motion flashes the rim once, st
 });
 
 test("switched off, nothing extra is drawn and the number is plain", () => {
-  const off = draw(saved(), planFor("researcher"), null);
+  const off = draw(saved(), planFor("researcher"), filtersWith({ saved_beat: false }));
   assert.equal(off.group.querySelector(".combat-saved"), null);
   assert.equal(off.group.querySelector(".combat-saved-rim"), null);
   assert.equal(off.group.querySelector(".combat-number-set"), null);

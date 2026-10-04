@@ -560,24 +560,11 @@ invalidates the separate frozen pre-commit qualification.
 
 ## Visual baselines
 
-The browser tests keep no screenshot baselines today: they check layout with
-measured assertions instead. These commands stay for any future baseline.
-
-Compare first:
-
-```bash
-npm run test:visual --prefix web/visual_debugger
-```
-
-Only after approving an intentional visual change, update:
-
-```bash
-npm run test:visual:update --prefix web/visual_debugger
-```
-
-Review each image at its original resolution and retain its semantic assertions.
-Updating snapshots is not an automatic test repair. Keep failure artifacts in
-ignored outputs and tracked baselines within the repository file-size limit.
+The browser tests keep no screenshot baselines: they check layout with
+measured assertions instead (`e2e/support/visual-regression.js`), at the
+smallest supported window (1366 x 768) and the desktop window (1440 x 900).
+There is no screenshot comparison command. Keep failure artifacts in ignored
+outputs.
 
 ## Automation
 

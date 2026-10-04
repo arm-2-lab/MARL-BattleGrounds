@@ -18,6 +18,10 @@
  * - Point blank: when a Mage, Hunter or Priest strikes with the two rims under
  *   0.55 world units apart, its Basic is drawn as its own cleave; with the
  *   Close-Range Strokes switch off it shows its landing alone.
+ * - Touching: when the two bodies touch or overlap, there is no room for a
+ *   cleave to end between them, so every class's cleave ends on the target's
+ *   front shoulder (60 degrees round its rim) and the landing and the
+ *   Warrior's sparks sit there. A touching blow is still a full stroke.
  * - Arcane Blast During Burst (switch kindled_blast): while a Mage's Burst is
  *   active its bolt is the Comet Bolt. That is a brighter 2.5 px violet bolt
  *   with a Starcore core, a comet head that rides the bolt's tip and then rests
@@ -37,8 +41,8 @@
  * Strokes, bolts and cleaves go in the route group (the Strike Band layer:
  * above stones, under bodies); landings, sparks and dots go in the event group
  * (the foreground events layer); a moved landing's leader goes in the
- * connector group. The Visual Key draws the same pictures through
- * detachedEventMount.
+ * connector group. Without the painter (tests, or a picture outside the
+ * arena), build draws the same pictures through detachedEventMount.
  *
  * Timing: the looks are authored in blow time (the store's milliseconds at
  * 1x). The bolt draws in 80-180 ms and drains 420-540 ms, landings land at
@@ -294,6 +298,14 @@ const CLEAVE = Object.freeze({
   hunter: { a: 52, k: 0.3, w: 3.6, prof: "blade", grow: [170, 220], easing: "linear" },
   priest: { a: 72, k: 0.4, w: 6, prof: "soft", grow: [90, 250], easing: "ease-in-out" },
 });
+/**
+ * Where a touching cleave ends: the first of these angles (degrees round the
+ * target's rim from its near side, the point facing the attacker, toward the
+ * side the cleave bends to) whose end point clears the attacker's rim by 5 px.
+ * 60 degrees for touching champions; further round only for small bodies or
+ * a deep overlap.
+ */
+const TOUCH_END_DEGREES = Object.freeze([60, 75, 90, 105, 120]);
 /** Samples along a cleave's centre line. */
 const CLEAVE_SAMPLES = 20;
 /** The class landing after a ranged or point-blank blow (Warrior and Rogue have none). */
@@ -818,12 +830,28 @@ function sweepEdge(curve, s) {
  *
  * classKey picks the class cleave; A/Rs are the attacker centre and radius,
  * T/Rt the target's; end is just outside the target rim where the landing
- * sits; kindled thickens the Mage's. The bend picks the side the end sits on,
- * else the attacker's screen-left; it bows more until it clears both
- * fighters. level 2 or more adds the class accents. Return frozen drawing data
- * ({part, origin, d, accents, grow, easing}) for the main cleave and the
- * Rogue's twin, or [] when the end is too close to the attacker to draw an
- * arc. Pure.
+ * sits (on the target's near side, moved by the allocator's shift); shift is
+ * that move in CSS pixels ([0, 0] when the landing kept its anchor); kindled
+ * thickens the Mage's. The bend picks the side the end sits on, else the
+ * attacker's screen-left; it bows more until it clears both fighters. level 2
+ * or more adds the class accents.
+ *
+ * Touching: when end lies within 5 px of the attacker's rim (the two bodies
+ * touch or overlap, so the target's near side is pressed against the
+ * attacker), the cleave ends on the target's front shoulder instead: 1.1 Rt
+ * from the target centre, 60 degrees round its rim from the near side toward
+ * the side the cleave bends to (further round, up to 120 degrees, only while
+ * that point is still within 5 px of the attacker's rim; when even 120
+ * degrees is, because the two centres nearly meet, that point moves straight
+ * out from the target until it clears), plus shift. So a touching blow is
+ * always a full stroke. Every other blow keeps end, so its cleave is exactly
+ * as before.
+ *
+ * Return {cleaves, endAngle}. cleaves is frozen drawing data ({part, origin,
+ * d, accents, grow, easing}) for the main cleave and the Rogue's twin ([] only
+ * for a class without a cleave). endAngle is the direction in radians from
+ * the target centre to a touching cleave's end, where the landing and the
+ * Warrior's sparks then go, or null when the cleave kept end. Pure.
  *
  * @param {string} classKey
  * @param {Vec} A
@@ -831,38 +859,73 @@ function sweepEdge(curve, s) {
  * @param {Vec} T
  * @param {number} Rt
  * @param {Vec} end
+ * @param {Vec} shift
  * @param {boolean} kindled
  * @param {number} level
+ * @returns {{cleaves: Array<Readonly<Record<string, any>>>, endAngle: number | null}}
  */
-function cleaveData(classKey, A, Rs, T, Rt, end, kindled, level) {
+function cleaveData(classKey, A, Rs, T, Rt, end, shift, kindled, level) {
   const spec = CLEAVE[/** @type {keyof typeof CLEAVE} */ (classKey)];
-  if (!spec || len(sub(end, A)) < Rs + 5) return [];
+  if (!spec) return { cleaves: [], endAngle: null };
+  const touching = len(sub(end, A)) < Rs + 5;
   const sizeScale = clamp(Rt / 23, 0.7, 1.4);
   const W = spec.w * sizeScale * (kindled ? 1.3 : 1);
   const axisLeft = leftOf(norm(sub(T, A)));
   const offset = dot(sub(end, A), axisLeft);
   const sides =
     Math.abs(offset) > 2 ? [Math.sign(offset), -Math.sign(offset)] : [1, -1];
+  const back = norm(sub(A, T));
+  /**
+   * The end point on side sv: end itself, or for a touching blow the first
+   * shoulder point that clears the attacker (dir is its direction from the
+   * target centre).
+   * @param {Vec} sv
+   * @returns {{at: Vec, dir: Vec | null}}
+   */
+  const endOn = (sv) => {
+    if (!touching) return { at: end, dir: null };
+    /** @type {Vec} */
+    let dir = back;
+    for (const degrees of TOUCH_END_DEGREES) {
+      const turn = degrees * DEG;
+      dir = add(mul(back, Math.cos(turn)), mul(sv, Math.sin(turn)));
+      const at = add(add(T, mul(dir, 1.1 * Rt)), shift);
+      if (len(sub(at, A)) >= Rs + 5) return { at, dir };
+    }
+    // The centres nearly meet: push the last point out until it clears.
+    const w = sub(add(T, shift), A);
+    const b = dot(w, dir);
+    const out = -b + Math.sqrt(Math.max(0, b * b - dot(w, w) + (Rs + 5) ** 2));
+    return { at: add(add(T, mul(dir, Math.max(1.1 * Rt, out + 0.01))), shift), dir };
+  };
   /** @type {ReturnType<typeof sweepCurve> | null} */
   let chosen = null;
   /** @type {Vec} */
   let side = axisLeft;
+  /** @type {{at: Vec, dir: Vec | null}} */
+  let chosenEnd = { at: end, dir: null };
   for (const sign of sides) {
     const sv = mul(axisLeft, sign);
+    const sideEnd = endOn(sv);
     for (let k = spec.k; k <= 0.8 + 1e-9; k += 0.08) {
-      const curve = sweepCurve(A, end, Rs, spec.a, k, sv, W, spec.prof);
+      const curve = sweepCurve(A, sideEnd.at, Rs, spec.a, k, sv, W, spec.prof);
       if (chosen === null) {
         chosen = curve;
         side = sv;
+        chosenEnd = sideEnd;
       }
       if (!sweepGrazes(curve, A, T, Rs, Rt)) {
         chosen = curve;
         side = sv;
+        chosenEnd = sideEnd;
         break;
       }
     }
     if (chosen && !sweepGrazes(chosen, A, T, Rs, Rt)) break;
   }
+  if (chosen === null) return { cleaves: [], endAngle: null };
+  const finalEnd = chosenEnd.at;
+  const endDir = chosenEnd.dir;
   const main = /** @type {ReturnType<typeof sweepCurve>} */ (chosen);
   /** @type {Array<{role: string, d: string, kind: "line" | "fill"}>} */
   const accents = [];
@@ -919,7 +982,7 @@ function cleaveData(classKey, A, Rs, T, Rt, end, kindled, level) {
   if ("twin" in spec && spec.twin) {
     const twin = sweepCurve(
       A,
-      end,
+      finalEnd,
       Rs,
       spec.twin.a,
       spec.twin.k,
@@ -948,7 +1011,10 @@ function cleaveData(classKey, A, Rs, T, Rt, end, kindled, level) {
       }),
     );
   }
-  return cleaves;
+  return {
+    cleaves,
+    endAngle: endDir === null ? null : Math.atan2(endDir[1], endDir[0]),
+  };
 }
 
 /* ---------- records ---------- */
@@ -1100,20 +1166,34 @@ export function records(input) {
   const shift = impactCue && routeEnd ? sub(impactCue, routeEnd) : [0, 0];
   const isCleave = closeRange || classKey === "warrior" || classKey === "rogue";
   const strokeOk = ranged && rimGapUnits !== null && rimGapUnits >= CLOSE_RANGE_UNITS;
+  // Where the landing and the Warrior's sparks sit around the target: its near
+  // side, or a touching cleave's flank end.
+  let landAngle = angle;
   if (isCleave && S) {
     const end = add(polar(T, 1.1 * Rt, angle), shift);
-    const cleaves = cleaveData(classKey, S, Rs, T, Rt, end, kindled, level);
+    const { cleaves, endAngle } = cleaveData(
+      classKey,
+      S,
+      Rs,
+      T,
+      Rt,
+      end,
+      shift,
+      kindled,
+      level,
+    );
     if (cleaves.length === 0) {
       record.shape = "dot";
       record.dot = Object.freeze({ at: pt(polar(T, Rt + 2, angle)), r: 1.5 });
       return finish();
     }
+    if (endAngle !== null) landAngle = endAngle;
     record.shape = "cleave";
     record.cleaves = Object.freeze(cleaves);
     if (classKey === "warrior" && level >= 3) {
       let d = "";
       for (const spread of [-20, 0, 20]) {
-        const a = angle + spread * DEG;
+        const a = landAngle + spread * DEG;
         d += `M${xy(sub(polar(T, 1.36 * Rt, a), T))}L${xy(sub(polar(T, 1.56 * Rt, a), T))}`;
       }
       record.sparks = Object.freeze({ origin: pt(add(T, shift)), d });
@@ -1163,11 +1243,13 @@ export function records(input) {
     LANDING_BY_CLASS[/** @type {keyof typeof LANDING_BY_CLASS} */ (classKey)];
   if (landingType) {
     const shape = landingShape(landingType, Rt, kindled);
-    const pivot = add(add(T, rot(shape.pivot, angle)), shift);
+    const pivot = add(add(T, rot(shape.pivot, landAngle)), shift);
     record.landing = Object.freeze({
       type: landingType,
       origin: pt(pivot),
-      paths: Object.freeze(landingPaths(shape, angle, sizeScale, add(T, shift), pivot)),
+      paths: Object.freeze(
+        landingPaths(shape, landAngle, sizeScale, add(T, shift), pivot),
+      ),
     });
     if (record.shape === "bolt" && kindled) {
       // The Comet Bolt's head rests under the star's center. The bolt ends
@@ -1848,7 +1930,7 @@ function createNode(doc, parent, node, still) {
  *
  * records come from records(); doc creates the nodes; mount (optional) is the
  * painter's EventMount. Without mount, detached settled groups are made (no
- * animation), for pictures such as the Visual Key. Strokes, cleaves and the
+ * animation), for pictures outside the arena and for tests. Strokes, cleaves and the
  * Comet Bolt's head go in mount.underlay (the Strike Band), or in mount.group
  * when there is no route group; landings, the Comet Bolt's ring, sparks,
  * blessings and dots go in mount.group; the allocator's leader for a moved

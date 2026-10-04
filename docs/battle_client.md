@@ -113,11 +113,14 @@ roster or makes a slot-specific model compatible with a different roster.
 
 The screen shows the map, step and score limits, Red Zone depth, classes and
 each configured agent's controller. Under the battlefield, the deck plans one
-turn for the champion you order, in four steps. **Your Champion** shows its
+turn for the champion you order, in four steps. Its top line is the message
+line: what each of your orders did, refusals and game messages, with **Keys
+On** or **Keys Off · Click The Arena** at its right (a sentence too long for the
+line ends in "…"; point at it to read it whole). **Your Champion** shows its
 token, class, calling, Agent ID, "You Control This Agent", its **Life** bar,
 and **‹ Prev** and **Next ›** (Tab). **1 Step** is a pad of nine keys, Q W E A
-X D Z S C, where X is Stay; the name of the chosen step shows under it. The
-arrow keys do nothing. **2 Target** shows the picked target ("Mage · ID 5" with
+X D Z S C, where X is Stay; the name of the chosen step shows in its heading
+("1 Step North-West"). The arrow keys do nothing. **2 Target** shows the picked target ("Mage · ID 5" with
 its Life bar under the name, "No Target Yet", or, in Agent POV, "Warrior · ID 6
 · Out Of Sight" with no life for a kept target your team cannot see now), a
 **× Esc** button that clears it, and
@@ -128,19 +131,13 @@ its abilities), or "Nothing is allowed right now." **3
 Action** has three slots, **None**, the class's Basic and its Ultimate, with
 reach and the Ultimate's Rune Ring and readiness ("Ready" or "In 3 Ticks").
 A slot is tagged **Armed**, **Auto** (the game armed your Basic itself when you
-picked a target it allows) or **Not Allowed**. **4 Lock In** says your whole
-order in one sentence, for example "Your order: Charge the Mage (ID 5), then
-stay where you land.", then **Lock In Turn** (Space, Enter or N, the one-tick
-key). With two champions it lists both sentences. With three or more it shows
-one short row per champion, for example "Mage: Arcane Blast → Warrior 6" or
-"Warrior: Fallen · Returns In 3", so every champion's line is on screen
-(point at a row for its full sentence, step included). Every row stays whole on
-one line: when a row is too long for the column, its step gives way first,
-then its text gets smaller half a pixel at a time, down to 10 px at the least,
-and only a row still too long at 10 px sets its letters a little closer. The
-ability's name and the target are never cut with "…". The deck keeps one height from turn to
-turn, so the arena never changes size when Allowed Now or the Lock In list
-grows. While the turn
+picked a target it allows) or **Not Allowed**. **4 Lock In** is the **Lock In
+Turn** button (Space, Enter or N, the one-tick key); each champion's order is
+listed once, in the rail's **Your Turn** card. The deck keeps one height from
+turn to turn, so the arena never changes size when Allowed Now grows. It is
+short, so the arena gets the room: about 176 px tall in a 1920 x 1080 window,
+where Your Champion takes two short columns and Allowed Now sits beside the
+target, and about 194 px on laptops. While the turn
 plays the button reads **Orders Sent**, **Policies Choosing…** and **Everyone
 Acts**. You may plan several Manual champions before Lock In; changing focus
 keeps the other plans. A joint turn uses all your Manual rows and the policies'
@@ -155,7 +152,7 @@ Returns In 3 Ticks" instead. The deck and the rail say a champion has fallen at
 its Fall beat, the moment the arena shows the fall and the score changes, never
 earlier. The tokens on the arena keep their own Life Vessel.
 
-The rail beside the arena has three cards. **Your Turn** shows the tick, a set
+The rail beside the arena has three cards and the Fallen panel. **Your Turn** shows the tick, a set
 pill ("1 Of 1 Set"), **Guide**, **Hints** and **Off** (how much help; the
 choice is kept in this browser), **Do This Now** (one next step; at the Guide
 level a dashed outline marks the control it names), the four phases **You
@@ -174,7 +171,9 @@ nothing else about it, or **In Sight · Order Hidden** when it can. Then comes
 **Policies**: every policy of both teams with its team crest, its
 full name and its number of champions ("Recurrent MAPPO · 4 Champions"), and
 **Waiting**, **Choosing…** or **Done**. It lists the same controllers, names
-and counts as the scorebug's hover lists, without "You". The **Class Guide** shows the champion
+and counts as the scorebug's hover lists, without "You". Right under Your
+Turn, the **Fallen** panel lists every fall of the last 8 ticks, so it shows
+without scrolling. The **Class Guide** shows the champion
 in view: its calling, lore line, life, speed, sight, and its Basic and
 Ultimate written from the game's own numbers, with where each is allowed now
 for a champion you play. **How To Play** repeats the steps for your roster:
@@ -187,14 +186,26 @@ it says so and points to Step and Lock In.
 The top bar shows the brand, the place ("**Teutoburg Forest** · Map 47 · Team
 Deathmatch", or a scenario's tale title), the **Agent POV** and **Oracle View**
 switch, a **Connected** pill (it reads **Disconnected** when the page loses the
-local server), the **Recording** pill, then four buttons: **Visual Key** (a
-picture dictionary of every mark, drawn by the arena's own look code),
-**Visual Filters** (a drawer of display switches, closed until you open it),
-**How To Play ?** and **Exit**. The drawer lists the live switches under their
-V5 names, including the twelve V5 add-ons described below (all off by default
-except Barrier Held and Freezing Trap Break), with the five presets,
-**Enable All**, **Disable All** and **Reset To Default Configuration**. Press **F** for Frame
-Explanation; it has no button. The full map name ("Teutoburg Forest · Map 47")
+local server), the **Recording** pill, then **Visual Filters** (a drawer of
+display switches, closed until you open it), **How To Play ?**, **Finish And
+Save**, **Restart R** and **Exit**. Finish And Save reads **Saving Replay…**
+while the replay is saved and then turns into **Open Replay**, which opens the
+saved game in a Replay Viewer tab (and opens it again when pressed again); after
+a failed save it reads **Retry Save**. There is no Visual Key: hover tips, the
+Champion Card and Frame Explanation explain each mark where it shows. The drawer
+lists the live switches under their
+V5 names, including the twelve V5 add-ons described below, with the four
+presets (**Default Configuration**, **Researcher**, **Manuscript** and
+**Minimal**), **Enable All**, **Disable All** and **Reset To Default
+Configuration**. The shipped defaults turn on **High Contrast** (one switch in
+all three clients: brighter rings, clearer stones and crisper text), **Class
+Seals**, **Moon Motes**, **Death Dimming**, **Spawn Shield Expiry**, **Saved
+Beat**, **Champion Streaks** and **Momentum**, and turn off **Moonlight**,
+**Floor Grid** and **Time Of Night**. The arena's top-right corner holds two
+key buttons stacked one over the other, showing only their key: **V**
+(Everyone In View) and **F** (Frame Explanation). Each does what its key does,
+lights while it is on, and names itself on hover. The full map
+name ("Teutoburg Forest · Map 47")
 always shows, at every window size from 1366 x 768 up and in every phase: when
 the bar runs short, "Team Deathmatch" disappears first (whole, never cut
 off halfway), then the "BattleClient" name is cut. At game over a **Game Over** pill appears after
@@ -202,7 +213,7 @@ off halfway), then the "BattleClient" name is cut. At game over a **Game Over** 
 below the scorebug, so it never covers the scorebug, the deck or **Lock In**.
 Every client spells the brand **MARL-BGs**.
 
-**Class Seals** (Visual Filters, Bodies, off by default) puts each champion on
+**Class Seals** (Visual Filters, Bodies, on by default) puts each champion on
 its class seal instead of the plain class glow: the Mage on a starglass
 octagon, the Warrior on a bronze boss with eight rivets, the Hunter on a
 greenwood four-leaf shape, the Rogue on a steel diamond with curved sides and
@@ -230,7 +241,7 @@ blow land on the fallen champion, so a ring never tells you about a hidden
 champion or a blow your team did not see. Off: no rings; the Fallen panel
 still lists everyone who shared the kill.
 
-**Champion Streaks** (Visual Filters, Moments, off by default) lets a herald
+**Champion Streaks** (Visual Filters, Moments, on by default) lets a herald
 card name a champion each time it has taken part in 5, 10, 15 or 20
 takedowns without falling: its medallion, "Team A Mage" and "10 Takedowns
 Without Falling", with any other moment of the tick added after a dot, such
@@ -243,27 +254,34 @@ your team saw count: a fall it saw, struck by a champion it saw at the start
 of the turn. Off: the herald cards are the plain ones.
 
 **Herald cards** (Visual Filters, Moments, **Match Moments**) name a turn's
-big moments, with the store's words: **Team Wiped** (every champion of a
-team is down), **First Blood** (the first fall of a game that began at tick 0
-with 0-0), **Match Point** (a team's score rose to 1 or 2 short of First To),
-**Double**, **Triple** or **Quadruple Takedown**, a run such as **5
+big moments, with the store's words: **Penta Takedown** (all five champions
+of one team fell on one turn; it heads the card with "Team B Wiped" in its top
+line), **Team Wiped** (every champion of a team is down), **First Blood** (the
+first fall of a game that began at tick 0
+with 0-0), **Match Point** (a team's score rose to exactly 1 point short of
+First To), **Double**, **Triple** or **Quadruple Takedown**, a run such as **5
 Unanswered** (a team's 5th, 10th, 15th or 20th takedown in a row without a
 loss of its own), **Rescue** (a Priest's heal kept a champion alive through blows that
 would have killed it), **Ultimate Takedown**, **Trade**, **Scores Level** (the
 scores became level after one team led by 3 or more), **Ultimate Combo** (two
-or more damaging Ultimates struck one champion) and **30 Ticks Left** (then 10,
-then 5 to 1, while no team has reached First To). When several happen on one
+or more damaging Ultimates struck one champion) and **30 Ticks Left** (while
+no team has reached First To; there is no countdown after it). When several
+happen on one
 turn the most important heads the card and up to two more join its small top
 line, such as "Team A +2 · Trade". A plain single takedown gets no card; the
 Fallen panel tells it. A card enters with the Fall beat (a Rescue, the ticks
 left or a combo on a champion that lived wait until the turn settles) and
-holds through the next turn. First Blood, Team Wiped and Match Point also draw
-a thin line across the top band behind the card. With **Death Announcer** off,
-the moments born from a fall are left out. A card always sits in the top band
-of the arena. When a champion stands there, the card slides sideways, shrinks
-a little or turns into its one-line form, and if no spot is free it still
-shows; it never moves to the bottom and never silently disappears. It keeps
-its spot while it holds through the next turn.
+holds through the next turn. Only one card shows at a time, and each stays at
+least 2 seconds; a card that comes sooner waits its turn, and the old card
+fades out before the new one fades in. Penta Takedown, First Blood, Team Wiped
+and Match Point also draw a thin line across the top band behind the card.
+With **Death Announcer** off, the moments born from a fall are left out. Every
+card is the same plate and always hugs the top edge of the arena: it slides
+sideways to cover the fewest champions, keeps clear of the V and F keys at
+the arena's top right, shrinks a little only when it must,
+and if no spot is free it still shows; it never moves to the bottom, never
+turns into a thin band and never silently disappears. It keeps its spot while
+it holds through the next turn.
 
 The server keeps the facts a card needs that one turn cannot show, for every
 view (Oracle View and each champion's Agent POV): whether the game began at
@@ -279,21 +297,22 @@ views.
 
 At game over the **Verdict** card shows why the game ended ("Tick 300 · No
 Team Reached 20"), each team's controllers under its name ("You", "Recurrent
-MAPPO", or "You + 4 Policies" when the names do not fit), both scores and
+MAPPO"; a long single policy name shrinks and is cut with "…", and "You + 4
+Policies" stands in only for a team of several policies), both scores and
 Victory, Defeat or Draw. The team whose home end is on the left of the arena
 has the left column. A draw at the time limit with a lead adds "A Lead At Tick
 300 Wins Nothing". **Honors** names the champions with the most Kill
 Contributions, Damage Done and Effective Healing Done (tied champions share
 the honor, up to six shown and then "+N"; an honor nobody earned is left
 out). The server counts these over the whole game with the same rules as the
-metric catalog. In Agent POV it counts
-only your own team's champions, so the card never tells you anything about a
-champion you could not see. **Match Summary** opens every counted champion's
-totals (Kill Contributions, Deaths, Damage Done, Effective Healing Done, Red
-Zone Deaths and Ultimate Ability Activations) in the deck's place below the
-arena; **Close** or a view switch closes it, because each view counts its own
-champions. **Show Arena** tucks the Verdict into a slim band at the top of the
-arena for the rest of the session.
+metric catalog. Both views count every champion of both teams: the game is
+over, so Agent POV has nothing left to hide. **Match Summary** opens every
+champion's totals (Kill Contributions, Deaths, Damage Done, Effective Healing
+Done, Red Zone Deaths and Ultimate Ability Activations) in the deck's place
+below the arena; **Close** or a view switch closes it. **Show Arena** tucks the
+Verdict into its plate at the top of the arena for the rest of the session; a
+**Match Summary** button then shows in the arena's top-right corner, under V
+and F, and opens or closes the sheet again.
 
 **Aura Glints** (Visual Filters, Combat, off by default) shows when an aura
 helped. On a tick when a Warrior's or Mage's aura helped an ally inside it, one
@@ -314,7 +333,7 @@ its studs at the same moment. In Agent POV the client works the moment out
 only from champions your team sees, and from the life change your team saw, so
 it can miss a save but never shows one that did not happen. Off: no collar.
 
-**Spawn Shield Expiry** (Visual Filters, Life And Death, off by default) marks
+**Spawn Shield Expiry** (Visual Filters, Life And Death, on by default) marks
 the moment a Spawn Shield ends. The ward stays until the tick settles; then its
 dashed band closes into the solid team ring over a fifth of a second, the token
 comes up to full strength, and a dashed silver ring lifts off the champion. A
@@ -337,7 +356,7 @@ shards ring the body for the rest of the tick, so a paused tick still shows the
 crack and the shards. Off: the ice simply goes out when the tick settles. In
 Agent POV it shows only on a champion your team saw at the start of the tick.
 
-**Saved Beat** (Visual Filters, Moments, off by default) marks a heal that
+**Saved Beat** (Visual Filters, Moments, on by default) marks a heal that
 kept a champion alive. When the blows of a tick would have taken all of a
 champion's life but a heal on the same tick kept it standing, "Saved" in gold
 sits just above its life number, and in play the champion's rim flashes gold
@@ -388,12 +407,12 @@ stun removes it); it is hidden while a Warrior Charge is armed, because the
 Charge decides where the Warrior lands. A policy's champion you only look at
 gets a soft silver ring and no plan marks. The reach rings of the focused
 champion (Basic dashed, Ultimate dotted) are shown from the start; **G** hides
-or shows them. There is no camera switch on screen: **V** zooms to keep every
-champion your view shows in frame (**Everyone In View**) and back to the
+or shows them. **V** (or the arena's **Everyone In View** key, lit while it is
+on) zooms to keep every champion your view shows in frame and back to the
 **Whole Map**, and a short tip says which camera is on ("Everyone In View on
-· V: back to Whole Map"). It sits in the status line under the arena, in place
-of the message, for about 4 seconds or until your next key or click, so it
-never covers the arena, the scorebug, the rail or a control. When the
+· V: back to Whole Map"). It sits in the deck's message line, in place of the
+message, for about 4 seconds or until your next key or click, so it never
+covers the arena, the scorebug, the rail or a control. When the
 champions are spread over the whole field, Everyone In View is the Whole Map.
 
 Hover a champion's body, portrait, Turn Checklist row or Allowed Now button for
@@ -452,9 +471,8 @@ Broken)** (damage broke the ice early, shown on that tick), **Serrated Arrows
 (Healing Reduction)**, **Blessing of Freedom (Slow Resistance)**, **Burst
 (Damage Boost)**, **Spawn Shield (Invulnerable)**, **In Combat**, **Rest
 (Regeneration)**, **Sorcerer's Empowerment (Damage Boost)** and **Guardian's
-Barrier (Damage Mitigation)**. The Visual Key uses the same names; where one
-mark serves two causes (the stun stars serve Charge and Crippling Poison), it
-lists both names under that mark.
+Barrier (Damage Mitigation)**. Where one mark serves two causes (the stun stars
+serve Charge and Crippling Poison), its tip lists both names.
 
 The card is the same in Agent POV and Oracle View. In Agent POV a champion your
 team cannot see gets a short card: its name, calling, crest and Agent ID,
@@ -506,7 +524,7 @@ not before, and a returning champion reappears when it is set down. Until then
 the old score and the old portrait stay on screen, so the score never goes
 blank.
 
-With **Momentum** on (Visual Filters, HUD group, off by default), the points a
+With **Momentum** on (Visual Filters, HUD group, on by default), the points a
 team scored in the last 10 ticks glow in its lighter color on its bar, over a
 thin silver line; older points keep the team color. For example, a team at 3
 that scored its third point on this turn shows two plain marks and one bright
@@ -525,8 +543,8 @@ Looking at a policy-controlled champion does not make it Manual. Click its
 portrait or its body to look at it. The deck then shows **Watch Only** with the
 champion's name, calling, Agent ID and who plays it, and **Back To Your
 Warrior** (your champion's class) returns the orders to you. Watch Only covers
-the deck's other columns but never **4 Lock In**: your order list and **Lock In
-Turn** stay visible, and Lock In still sends every order you staged. No action
+the deck's other columns but never **4 Lock In** or the message line: **Lock
+In Turn** stays visible, and Lock In still sends every order you staged. No action
 is shown before that policy chooses, and policies never see your orders. Human
 Oracle View inspection is diagnostic play, not an autonomous evaluation.
 
@@ -545,7 +563,8 @@ While
 Run plays, the policies choose the next turn as soon as the champions of the
 current turn have landed, and the next turn starts the moment the current one
 ends, so play flows without a pause between turns. After Pause, the turn on
-screen and a turn already requested still finish.
+screen and a turn already requested still finish; Play One Turn and Lock In
+come back once they have.
 A dead Manual agent still prevents automatic Run because it can respawn. With
 Manual slots, the client always waits for Lock In. Lock In also advances one
 turn when every agent is policy controlled. While a slow method works, the deck
@@ -554,19 +573,21 @@ disabled until that turn finishes. After a cancel the deck shows **Stopped · A
 Fresh Start Is Needed**: the game so far is kept, you may look around, **Finish
 And Save** or exit, and a fresh match starts from Python. Refreshes and other
 tabs read the same game.
-They do not create another running loop.
+They do not create another running loop. Run belongs to the page that pressed
+it: a refresh ends it after the turn already out, so press **Run** again to
+carry on.
 
-Click the arena to turn keys on; the status line then says **Keys On** (it
-says **Keys Off · Click The Arena** otherwise), and pressing a deck button keeps
-them on. So does pressing a top-bar button (Agent POV, Oracle View, the
-Recording pill, How To Play, Visual Key, Visual Filters), and so do the game-over
-Verdict's **Match Summary** and **Show Arena** and the Match Summary's **Close**:
-a view switch keeps keys on, and the Visual Key gives them back when it closes.
-After Exit no key works, so the chip says **Keys Off**. A click on the arena
-never pins a card: a stone's or a mark's card shows only while the pointer
-rests on it. The status line also shows the recording seal ("Recording · Tick 91 of
-300", "Saving Replay…" while a finished game saves, or "Saved" once saved),
-**Finish And Save** and **Restart R**. Press
+Click the arena to turn keys on; the deck's message line then says **Keys On**
+(it says **Keys Off · Click The Arena** otherwise), and pressing a deck button
+keeps them on. So does pressing a top-bar button (Agent POV, Oracle View, the
+Recording pill, Visual Filters, How To Play, Finish And Save, Restart), the
+arena's corner keys, and the game-over Verdict's **Match Summary** and **Show
+Arena** and the Match Summary's **Close**: a view switch keeps keys on, and the
+Restart dialog gives them back when it closes. After Exit no key works, so the
+chip says **Keys Off**. A click on the arena never pins a card: a stone's or a
+mark's card shows only while the pointer rests on it. **Tab** never leaves the
+arena while keys are on: while the policies choose or after the game ends it
+does nothing, instead of walking onto the stones and marks. Press
 **?** for How To Play over the arena, at any time, even after the game ends;
 **Read The Full Guide** opens the full key list. That list is written from the
 client's one command table, so it always matches what each key does. **Esc**
@@ -589,13 +610,14 @@ Damage** or **Net Healing** with its **Life Change**, your planned order's
 line says **Planned Basic** or **Planned Ultimate**, and a row of the Fallen
 panel ("Fallen On Tick 92") says who shares the credit for the fall.
 
-The status line under the deck says what each of your orders did, for example
+The deck's message line says what each of your orders did, for example
 "Step: North." or "Charge is armed on the Mage (ID 5).". Its first sentence
 fits your roster ("You play five champions on Team A. Each keeps its own order
 until you lock in."). At game over it names only what works: "Finish And Save"
 while the game is unsaved, "Saving the replay…" while it saves, then "The game
-is over and saved. Press Restart for a new match, or click Saved at the top,
-then Open Replay." Notices written in developer words are shown in plain words,
+is over and saved. Press Restart for a new match, or Open Replay to watch it."
+A page opened after the game ended starts with that game-over sentence.
+Notices written in developer words are shown in plain words,
 for example "That step is not allowed right now. Your order is unchanged." The page refuses an
 order the game does not allow before sending it, from the game's own masks, and
 the control shakes: "Charge needs a target first. Your order is unchanged." when
@@ -729,20 +751,22 @@ installed package. Use `capture_replay=False` to skip recording and its cost.
 
 Completed games save automatically, in the background. At game over the arena
 shows the Verdict card at once: the result, both scores and why the game ended.
-While the file is written, the Recording pill and the status line's seal read
-**Saving Replay…**; then they read **Saved**. On a busy CPU (3 October 2026) a
+While the file is written, the Recording pill and the top bar's save button
+read **Saving Replay…**; then the pill reads **Saved** and the button **Open
+Replay**. On a busy CPU (3 October 2026) a
 177-tick game (14.8 MB replay) said Saved about 8 s after game over, and a
 300-tick game (23.7 MB) about 13 s after, because the client writes the file,
 reads it back and loads it again before it says Saved. View
 switches and the help keep working meanwhile; Exit, Restart and Open Replay wait
-for the save to finish. **Finish And Save** (in
-the status line, and in the popover that the **Recording** pill in the top bar
-opens; the popover opens over the side rail, below the scorebug, so it never
-covers the scorebug or the arena) ends an unfinished game and saves the
-accepted prefix. The pill and the
-status line's seal then read Saved. The live page stays open for inspection.
-**Open Replay**, in the same popover, is available once a save exists; it opens
-the saved game in a separate [Replay Viewer](dev/replay_viewer.md) tab. If your
+for the save to finish. **Finish And Save** (in the top bar, and in the popover
+that the **Recording** pill in the top bar opens; the popover opens over the
+side rail, below the scorebug, so it never covers the scorebug or the arena)
+ends an unfinished game and saves the accepted prefix. The pill then reads
+Saved and the top bar's button turns into **Open Replay**. The live page stays
+open for inspection. **Open Replay** (that button, or the same button in the
+popover) is available once a save exists; it opens the saved game in a
+separate [Replay Viewer](dev/replay_viewer.md) tab, which shows "Opening
+Replay" until the viewer is ready. If your
 browser blocks the new tab, use the link shown beside that button.
 
 **Restart** starts the same matchup with fresh episode memory, frame-zero capture
@@ -758,7 +782,9 @@ Restart starts the fresh match at once. **R** or **Restart** pressed while a
 finished game is still saving (**Saving Replay…**) asks nothing either: the
 client waits for the save to end, then starts the fresh match.
 
-If saving fails, use **Retry Save** or **Save As**. Save As accepts a file name
+If saving fails, the Recording popover says why in one line (for example
+"Reason: The replay file could not be written."); use **Retry Save** or
+**Save As**. Save As accepts a file name
 ending in `.marlbg-replay.json`, inside the same output directory. It rejects paths
 and existing files. A failed save keeps the recorded data in memory. If saving
 succeeds but the next match cannot start, the saved file and accepted game remain

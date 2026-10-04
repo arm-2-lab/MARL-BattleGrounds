@@ -1010,7 +1010,9 @@ export class CombatChoreographer {
    * plan supplies phases and beats in milliseconds and resource bounds; surface owns
    * projection, the transient layer and the durable nodes. options gives
    * renderPolicy, settled and persistentOnly; retainTransientOnSettle is forwarded
-   * only when true; step (replay_static only) adds the one-tick step glide. Validate
+   * only when true; step (replay_static only) adds the one-tick step glide. The
+   * painter also gets the page clock (performance.now()) and the playback rate
+   * for its card queue. Validate
    * node, persistent-node and animation counts; excess painter bounds clear the new
    * installation and throw RangeError.
    *
@@ -1054,12 +1056,17 @@ export class CombatChoreographer {
      *   settled: boolean,
      *   persistentOnly: boolean,
      *   retainTransientOnSettle?: boolean,
+     *   clock?: number,
+     *   playbackRate: number,
      * }} */
     const painterOptions = {
       motionMode: this.motionMode,
       renderPolicy: options.renderPolicy,
       settled,
       persistentOnly,
+      // The painter's card queue times cards with the page clock and the rate.
+      clock: globalThis.performance?.now?.(),
+      playbackRate: this.playbackRate,
     };
     if (options.retainTransientOnSettle === true) {
       painterOptions.retainTransientOnSettle = true;

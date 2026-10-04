@@ -492,7 +492,9 @@ function pointInSvg(svg, event) {
  * onPointerCommand defaults to a no-op and observes the pointer target/request
  * before submission. isInteractive defaults to true; onFencedCommand defaults
  * to false and may consume blocked keys; ownsFencedSpaceDefault defaults to
- * true to suppress page scrolling for a blocked Space key. ownsLocalCommands
+ * true to suppress page scrolling for a blocked Space key;
+ * ownsFencedTabDefault defaults to true to keep a blocked Tab in the arena
+ * (the Replay Viewer passes false: its own Tab steps agents). ownsLocalCommands
  * defaults to true; return false (in the Replay Viewer) to leave V, B and F to
  * the replay key handler.
  *
@@ -508,13 +510,20 @@ function pointInSvg(svg, event) {
  * onHelp (How To Play is local and safe at any time, also at game over and
  * while a command is out). A forwarded key for which allowsWhileClosed(command)
  * returns true still goes to onCommand (main.js allows R and G at game over).
- * Every other key goes to onFencedCommand as before.
+ * Every other key goes to onFencedCommand as before. A Tab that
+ * onFencedCommand does not keep has its browser default stopped while
+ * ownsFencedTabDefault() is true, so Tab never moves focus from the arena
+ * onto the marks drawn inside it (stones, champions) while the policies
+ * choose or at game over (owner, 3 Oct 2026); it does nothing there.
  *
  * Pointer input: the primary button sends a "primary" battlefield_pointer and
  * a right click (button 2) sends a "secondary" one at the same world point
  * (Python clears the staged target; it changes nothing else). Both focus the
  * battlefield first, so keys stay on. While orders are open the browser's
- * context menu is suppressed on the battlefield. While orders are closed
+ * context menu is suppressed on the battlefield, and so is the menu that
+ * follows a right press the battlefield took (sent, or kept by
+ * onFencedCommand), although that press has already made the page busy.
+ * While orders are closed
  * (isInteractive() is false, for example while an earlier order is out), a
  * Shift + click (a target pick) or a right click is built the same way and
  * offered to onFencedCommand, which may keep it to send after the request
@@ -542,6 +551,7 @@ function pointInSvg(svg, event) {
  *   onFencedCommand?: (command: Record<string, unknown>) => boolean,
  *   allowsWhileClosed?: (command: Readonly<Record<string, unknown>>) => boolean,
  *   ownsFencedSpaceDefault?: () => boolean,
+ *   ownsFencedTabDefault?: () => boolean,
  *   ownsLocalCommands?: () => boolean,
  * }} bindings allowsWhileClosed defaults to "never": return true for a
  *   keyboard command that may still be sent while isInteractive() is false.
@@ -557,6 +567,7 @@ export function bindBattlefieldControls({
   onFencedCommand = () => false,
   allowsWhileClosed = () => false,
   ownsFencedSpaceDefault = () => true,
+  ownsFencedTabDefault = () => true,
   ownsLocalCommands = () => true,
 }) {
   battlefield.addEventListener("keydown", async (event) => {
@@ -593,6 +604,10 @@ export function bindBattlefieldControls({
         event.stopPropagation();
       } else if (event.key === " " && ownsFencedSpaceDefault()) {
         event.preventDefault();
+      } else if (event.key === "Tab" && ownsFencedTabDefault()) {
+        // Keep focus in the arena: the browser's own Tab would walk onto the
+        // marks drawn inside it, where the arena's keys no longer work.
+        event.preventDefault();
       }
       return;
     }
@@ -613,10 +628,15 @@ export function bindBattlefieldControls({
     onCommand(keyboardCommandFromEvent(event));
   });
 
+  // The browser fires contextmenu after the right press's pointerdown, which
+  // has already sent its command and made the page busy, so the press itself
+  // records that the battlefield took it.
+  let rightPressTaken = false;
   battlefield.addEventListener("contextmenu", (event) => {
-    if (isInteractive()) {
+    if (rightPressTaken || isInteractive()) {
       event.preventDefault();
     }
+    rightPressTaken = false;
   });
 
   /**
@@ -652,14 +672,19 @@ export function bindBattlefieldControls({
     if (event.button !== 0 && event.button !== 2) {
       return;
     }
+    rightPressTaken = false;
     if (!isInteractive()) {
       if (event.button === 2 || event.shiftKey) {
         const command = pointerCommand(event);
-        if (command !== null && onFencedCommand(command)) event.preventDefault();
+        if (command !== null && onFencedCommand(command)) {
+          event.preventDefault();
+          rightPressTaken = event.button === 2;
+        }
       }
       return;
     }
     event.preventDefault();
+    rightPressTaken = event.button === 2;
     battlefield.focus({ preventScroll: true });
     const command = pointerCommand(event);
     if (command === null) {

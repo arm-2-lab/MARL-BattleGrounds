@@ -1151,7 +1151,7 @@ export function updateCueLeader(connector, event) {
  * doc creates the groups; event says whether a route group is needed (when it
  * has a route). The groups are settled with motion off and no plan timing, so
  * nothing animates. Return the EventMount to pass to an event look's build.
- * Used by pictures drawn outside the arena (for example the Visual Key).
+ * Used by pictures drawn outside the arena and by tests.
  *
  * @param {Document} doc
  * @param {JsonRecord} event

@@ -287,7 +287,10 @@ class RecordingPainter {
 
   /** @param {Record<string, any>} plan @param {unknown} _surface @param {Record<string, any>} options */
   install(plan, _surface, options) {
-    this.calls.push(["install", plan, options]);
+    // The page clock (the card queue's) differs between two renders; the
+    // round trip must equal a fresh render in everything else.
+    const { clock: _clock, ...rest } = options;
+    this.calls.push(["install", plan, rest]);
     return {
       root: {},
       nodeCount: 3,

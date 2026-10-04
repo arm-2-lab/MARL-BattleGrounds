@@ -18,10 +18,13 @@
   pointer-events: stroke;
 }
 
+/* An Ultimate's hit area is a ring on the champion it marks: the body keeps
+   its own centre for hover and clicks, as the Fall and Return rings do. */
 .ult-hit-area {
-  fill: transparent;
-  stroke: none;
-  pointer-events: fill;
+  fill: none;
+  stroke: transparent;
+  stroke-width: 8;
+  pointer-events: stroke;
 }
 
 /* Charge (Warrior). */

@@ -21,11 +21,13 @@
  * own marks (Ultimates, falls, returns, heralds, Last Seen, Focus Tally, Basics)
  * get no generic group fade.
  *
- * The one thing it remembers between plans is the herald row of the tick it
- * last painted for one audience (carryFromEarlierTicks), so a Herald Card holds
- * through the next tick. Only a move of exactly one tick for the same audience
- * keeps it; a seek, skip, view or recipient change forgets it, so such a paint
- * equals a fresh render.
+ * The one thing it remembers between plans is the moment card of the tick it
+ * last painted for one audience (carryFromEarlierTicks): its herald row, so a
+ * Herald Card holds through the next tick, and the card queue (owner, 4 Oct
+ * 2026: one card at a time, each at least heralds.MINIMUM_CARD_MS of replay
+ * time, a later card waiting its turn). Only a move of exactly one tick for
+ * the same audience keeps it; a seek, skip, view or recipient change forgets
+ * it, so such a paint equals a fresh render.
  *
  * All event identity, positions, phases and layout come from the supplied plan
  * (or, for held rows, an earlier plan of the same audience); this module does
@@ -99,8 +101,11 @@ const SELF_TIMED_PULSES = new Set([
  * (whether the Beyond Death tag fits); falls and returns read the plan, the
  * transform and the switch state (Kill Credit Glint rings the plan's named
  * killers at their END body spots); heralds read the visible arena, the END
- * body spots to avoid, the switches and the previous tick's herald row
- * (`previous`, so a card holds through the next tick); Last Seen rings read
+ * body spots and the page chrome over the arena (surface.chromeRects, the
+ * same in every view) to avoid, the switches and, as `previous`, the earlier row whose
+ * card a held row draws again (its heldRow, else the previous tick's row; a
+ * tick's own row gets the previous tick's row only without the card queue,
+ * see TickCarry); Last Seen rings read
  * the transform, switches and the audience scene (a body still drawn at END
  * gets no ring). Others read only the event. Every input belongs to this
  * audience (Agent POV: its own plan and scene). Pure.
@@ -130,11 +135,19 @@ function lookInput(look, event, context) {
         const center = surface.worldToScreen(body.end);
         return { x: center.x, y: center.y, radius: surface.worldLengthToScreen(0.5) };
       });
+    // A held row draws its own earlier card (heldRow, or the previous tick's
+    // row); this tick's own row draws the previous card only without the queue.
+    const previous = event.held
+      ? (event.heldRow ?? context.carry.previousHerald)
+      : context.carry.ownRowsHoldPrevious
+        ? context.carry.previousHerald
+        : null;
     return {
       event,
       bounds: surface.viewportBounds,
-      previous: context.carry.previousHerald,
+      previous,
       avoid,
+      chrome: surface.chromeRects ?? [],
       filters: visualFilters,
     };
   }
@@ -195,39 +208,184 @@ function eventLook(event) {
  * What the painter remembers about the tick it last painted for one audience.
  *
  * audienceKey is the plan's audienceKey (session, view kind and Agent POV
- * recipient); step its simulatorStep; herald that tick's drawn herald_card row,
- * or null when it had none. The row comes from that plan, so it belongs to that
- * plan's audience.
+ * recipient); episode the plan's transitionId without its last
+ * `:transition:<index>` part, which names the episode (and, in Agent POV, the
+ * recipient), or null when the ID has another form; step its simulatorStep;
+ * herald that tick's drawn herald_card row, or null when it had none. The row
+ * comes from that plan, so it belongs to that plan's audience.
  *
  * @typedef {Readonly<{
  *   audienceKey: string,
+ *   episode: string | null,
  *   step: number,
  *   herald: JsonRecord | null,
  *   previousHerald: JsonRecord | null,
+ *   card: CardOnScreen | null,
+ *   waiting: JsonRecord | null,
+ *   waitingSince?: number | null,
+ *   carry: TickCarry,
  * }>} TickMemory
  * previousHerald is the herald row this tick itself carried (kept so a repaint
- * of the same tick carries the same row).
+ * of the same tick carries the same row). card is the moment card on screen at
+ * the end of the tick and waiting the card waiting its turn (the card queue;
+ * see carryFromEarlierTicks), with waitingSince the page clock time it
+ * arrived. carry is what this paint carried, so a repaint of a queued tick
+ * carries exactly the same.
+ */
+
+/**
+ * The moment card on screen, for the card queue.
+ *
+ * row is the herald_card row the card was drawn from (the very object drawn,
+ * so a held copy keeps its spot); shownAt is the page clock time it appeared,
+ * in ms (-Infinity when unknown: it then counts as shown long enough); step
+ * is the simulatorStep of the paint that first showed it.
+ *
+ * @typedef {Readonly<{row: JsonRecord, shownAt: number, step: number}>} CardOnScreen
  */
 
 /**
  * What one tick's paint takes from the same audience's previous tick.
  *
  * previousHerald is the herald_card row of exactly one tick before, or null.
- * heldRows are extra rows the painter draws because this tick's plan has none
- * of its own: a held Herald Card row (kind "herald_card", no falls, held true,
- * eventId `<transitionId>:herald:held`) when the plan has no herald row but the
- * previous tick had one; looks/heralds.js draws it as the previous card.
+ * heldRows are extra rows the painter draws because of earlier ticks: a held
+ * Herald Card row (kind "herald_card", no falls, held true, eventId
+ * `<transitionId>:herald:held`, heldRow the row whose card it draws again,
+ * exitAt null or when it fades out) and, in the card queue, a waiting card's
+ * row drawn this tick (eventId `<transitionId>:herald:queued`, held false,
+ * phaseStart its entry time). ownRowsHoldPrevious true (no queue) lets this
+ * tick's own herald row draw previousHerald when it names no moment, as
+ * before the queue. ownRow, in the card queue only, says what to paint in
+ * place of this tick's own herald row ({eventId, replacement}: replacement
+ * is the row to paint, often a copy with a later phaseStart, or null to paint
+ * nothing because the card waits or lost its waiting spot).
  *
  * @typedef {Readonly<{
  *   previousHerald: JsonRecord | null,
  *   heldRows: ReadonlyArray<JsonRecord>,
+ *   ownRowsHoldPrevious: boolean,
+ *   ownRow?: Readonly<{eventId: string, replacement: JsonRecord | null}>,
  * }>} TickCarry
+ */
+
+/**
+ * How the card queue reads time for one paint.
+ *
+ * queue true applies the queue (a played tick: the Replay Viewer playing or
+ * live play, in normal motion); false paints as before the queue. now is the
+ * page clock at the paint in ms (performance.now()); rate the playback rate
+ * (1 at normal speed); filters the page's switch state (for which moments a
+ * row names). Any field may be missing: no now counts every earlier card as
+ * shown long enough, no rate counts as 1.
+ *
+ * @typedef {Readonly<{
+ *   queue?: boolean,
+ *   now?: number,
+ *   rate?: number,
+ *   filters?: Readonly<Record<string, boolean>> | null,
+ * }>} CardTiming
  */
 
 /** The carry of a tick with nothing remembered: no previous row, no held rows. */
 const NO_CARRY = /** @type {TickCarry} */ (
-  Object.freeze({ previousHerald: null, heldRows: Object.freeze([]) })
+  Object.freeze({
+    previousHerald: null,
+    heldRows: Object.freeze([]),
+    ownRowsHoldPrevious: true,
+  })
 );
+
+/**
+ * Return the headline rank of the card a row names (MOMENT_RANK of its first
+ * moment; lower is bigger), or Infinity when it names none. Pure.
+ *
+ * @param {JsonRecord | null} row
+ * @param {Readonly<Record<string, boolean>> | null} filters
+ * @returns {number}
+ */
+function cardRank(row, filters) {
+  const head = row === null ? undefined : heralds.cardMoments(row, filters)[0];
+  return head === undefined
+    ? Number.POSITIVE_INFINITY
+    : Number(
+        heralds.MOMENT_RANK[
+          /** @type {keyof typeof heralds.MOMENT_RANK} */ (head.kind)
+        ] ?? 50,
+      );
+}
+
+/**
+ * Build the held row that draws an earlier card again this tick. Pure.
+ *
+ * @param {JsonRecord} plan The plan being painted (transitionId, beats).
+ * @param {JsonRecord} row The row whose card is drawn again.
+ * @param {number | null} exitAt When it fades out (ms from the tick's start), or
+ *   null to stay the whole tick. A card that fades out is not persistent, so
+ *   it stays hidden once faded.
+ * @returns {JsonRecord}
+ */
+function heldCardRow(plan, row, exitAt) {
+  return Object.freeze({
+    eventId: `${plan.transitionId}:herald:held`,
+    eventType: "agent_died",
+    kind: "herald_card",
+    count: 0,
+    byTeam: Object.freeze({ 1: 0, 2: 0 }),
+    falls: Object.freeze([]),
+    spatial: true,
+    persistent: exitAt === null ? row.persistent === true : false,
+    phaseStart: 0,
+    phaseEnd: Number(plan.beats?.explanationEnd ?? row.phaseEnd ?? 0),
+    held: true,
+    heldFromEventId: row.eventId,
+    heldRow: row,
+    exitAt,
+  });
+}
+
+/**
+ * A plan's derived rows as the card queue paints them.
+ *
+ * The card queue may paint this tick's own herald row later (a copy with its
+ * new phaseStart and exitAt) or not at all (it waits, or a bigger card won):
+ * carry.ownRow names that row by eventId and gives its replacement, or null
+ * for none. Every other row, and every row when carry has no ownRow (no
+ * queue), passes through unchanged. Pure.
+ *
+ * @param {JsonRecord[]} rows The plan's derived rows, in order.
+ * @param {TickCarry} carry This paint's carry (carryFromEarlierTicks).
+ * @returns {JsonRecord[]} A new array in the same order.
+ */
+function queuedOwnRow(rows, carry) {
+  const ownRow = carry.ownRow;
+  if (ownRow === undefined) return [...rows];
+  return rows.flatMap((row) =>
+    row.eventId !== ownRow.eventId
+      ? [row]
+      : ownRow.replacement === null
+        ? []
+        : [ownRow.replacement],
+  );
+}
+
+/**
+ * The episode part of a transition ID: the ID without its last
+ * `:transition:<index>`, such as "ep7" for "ep7:transition:12" or
+ * "ep7:actor-pov:3" for "ep7:actor-pov:3:transition:12". Two plans of one
+ * audience with different episode parts belong to different episodes (a
+ * BattleClient Restart keeps the session, so the audience key alone cannot
+ * tell). Pure.
+ *
+ * @param {unknown} transitionId The plan's transitionId.
+ * @returns {string | null} The episode part, or null when transitionId is not
+ *   a string ending in `:transition:<index>` (such IDs all count as one
+ *   episode).
+ */
+function episodeOf(transitionId) {
+  if (typeof transitionId !== "string") return null;
+  const match = /^(.*):transition:\d+$/u.exec(transitionId);
+  return match === null ? null : match[1];
+}
 
 /**
  * Work out what a plan's paint carries from the same audience's previous tick.
@@ -237,15 +395,37 @@ const NO_CARRY = /** @type {TickCarry} */ (
  * tick it last painted and hands it back here as `previous` for looks/heralds.js.
  *
  * memory is the painter's last TickMemory, or null for none. plan is the plan
- * about to be painted; its audienceKey (string) and simulatorStep (integer) say
- * whose tick it is.
+ * about to be painted; its audienceKey (string), transitionId (string, ending in
+ * `:transition:<index>`) and simulatorStep (integer) say whose tick it is.
+ * timing (CardTiming, default none) turns on the card queue.
  *
- * Rules: the same audienceKey and exactly one tick later carries memory's herald
- * row; the same audienceKey and the same simulatorStep (a repaint of the same
- * tick) carries what that tick carried before; anything else (a seek, a skip
- * back or forward, a new episode, a view or recipient change, or a plan without
- * audienceKey or simulatorStep) carries nothing, so the paint equals a fresh
- * render.
+ * Rules: the same audienceKey and episode (see TickMemory) and exactly one tick
+ * later carries memory's herald row; the same audienceKey and episode and the
+ * same simulatorStep (a repaint of the same tick) carries what that tick
+ * carried before; anything else (a seek, a skip back or forward, a new episode
+ * such as a BattleClient Restart, which keeps the session, a view or recipient
+ * change, or a plan without audienceKey or simulatorStep) carries nothing, so
+ * the paint equals a fresh render.
+ *
+ * The card queue (owner, 4 Oct 2026; timing.queue true, one tick later only):
+ * one moment card is on screen at a time and each stays at least
+ * heralds.MINIMUM_CARD_MS of replay time (page time x rate), in continuous
+ * time, so a card whose turn comes mid-tick starts then.
+ * - A card's turn comes when the card on screen has had its minimum plus
+ *   heralds.CARD_FADE_OUT_MS (and never before CARD_FADE_OUT_MS into the
+ *   tick); the card on screen fades out CARD_FADE_OUT_MS before, so two cards
+ *   never show at once and there is no gap.
+ * - The waiting card (at most one) starts as soon as its turn comes. This
+ *   tick's own card (a drawn row that names a moment) arrives at its
+ *   phaseStart: it shows then when no card is on screen or the one on screen
+ *   has had its minimum; otherwise it waits. If a card is still waiting when
+ *   it arrives, the bigger moment (cardRank) keeps the waiting spot, a tie
+ *   going to this tick's own card, and the other is dropped.
+ * - A card that cannot start before the tick ends keeps waiting. With no card
+ *   waiting, the card on screen holds through the tick after the one that
+ *   first showed it, then leaves once its minimum is up.
+ * Without the queue a tick's own card shows at once, as before, and the
+ * memory still tracks the card on screen for a later played tick.
  *
  * Agent POV: memory only returns a row from a plan with the same audience key,
  * which the plan already limited to the falls that team saw; a recipient or
@@ -258,9 +438,10 @@ const NO_CARRY = /** @type {TickCarry} */ (
  *
  * @param {TickMemory | null} memory
  * @param {JsonRecord} plan
+ * @param {CardTiming | null} [timing] Default null (no queue).
  * @returns {{memory: TickMemory | null, carry: TickCarry}}
  */
-export function carryFromEarlierTicks(memory, plan) {
+export function carryFromEarlierTicks(memory, plan, timing = null) {
   const audienceKey = typeof plan?.audienceKey === "string" ? plan.audienceKey : null;
   const step = Number.isInteger(plan?.simulatorStep)
     ? Number(plan.simulatorStep)
@@ -268,14 +449,12 @@ export function carryFromEarlierTicks(memory, plan) {
   if (audienceKey === null || step === null) {
     return { memory: null, carry: NO_CARRY };
   }
-  const sameAudience = memory?.audienceKey === audienceKey;
-  const previousHerald = !sameAudience
-    ? null
-    : step === memory.step + 1
-      ? memory.herald
-      : step === memory.step
-        ? memory.previousHerald
-        : null;
+  const episode = episodeOf(plan.transitionId);
+  const sameAudience =
+    memory?.audienceKey === audienceKey && memory?.episode === episode;
+  const filters = timing?.filters ?? null;
+  const now = Number.isFinite(timing?.now) ? Number(timing?.now) : null;
+  const rate = Number(timing?.rate) > 0 ? Number(timing?.rate) : 1;
   const derived = Array.isArray(plan.derivedEvents) ? plan.derivedEvents : [];
   // Only a drawn row counts: a row that is not spatial (filtered off or dropped
   // for budget) was never shown, so it is never held.
@@ -283,6 +462,28 @@ export function carryFromEarlierTicks(memory, plan) {
     derived.find(
       (/** @type {JsonRecord} */ row) => row?.kind === "herald_card" && row.spatial,
     ) ?? null;
+  const nextTick = sameAudience && step === memory.step + 1;
+  if (timing?.queue === true && sameAudience && step === memory.step) {
+    return { memory, carry: memory.carry };
+  }
+  if (timing?.queue === true && nextTick) {
+    return queuedCarry(memory, plan, {
+      audienceKey,
+      episode,
+      step,
+      herald,
+      filters,
+      now,
+      rate,
+    });
+  }
+  const previousHerald = !sameAudience
+    ? null
+    : nextTick
+      ? memory.herald
+      : step === memory.step
+        ? memory.previousHerald
+        : null;
   const ownRow = derived.some(
     (/** @type {JsonRecord} */ row) => row?.kind === "herald_card",
   );
@@ -307,12 +508,232 @@ export function carryFromEarlierTicks(memory, plan) {
           }),
         ]
       : [];
+  const carry =
+    previousHerald === null
+      ? NO_CARRY
+      : Object.freeze({
+          previousHerald,
+          heldRows: Object.freeze(heldRows),
+          ownRowsHoldPrevious: true,
+        });
+  // The card on screen after this paint, for a later played tick's queue.
+  const ownNames = herald !== null && heralds.cardMoments(herald, filters).length > 0;
+  /** @type {CardOnScreen | null} */
+  let card = null;
+  if (ownNames) {
+    card = Object.freeze({
+      row: herald,
+      shownAt:
+        now === null
+          ? Number.NEGATIVE_INFINITY
+          : now + Number(herald.phaseStart ?? 0) / rate,
+      step,
+    });
+  } else if (previousHerald !== null && nextTick && memory.card !== null) {
+    card = memory.card;
+  }
   return {
-    memory: Object.freeze({ audienceKey, step, herald, previousHerald }),
-    carry:
-      previousHerald === null
-        ? NO_CARRY
-        : Object.freeze({ previousHerald, heldRows: Object.freeze(heldRows) }),
+    memory: Object.freeze({
+      audienceKey,
+      episode,
+      step,
+      herald,
+      previousHerald,
+      card,
+      waiting: null,
+      carry,
+    }),
+    carry,
+  };
+}
+
+/**
+ * The card queue's carry for a played tick exactly one tick after memory's
+ * (see carryFromEarlierTicks for the rules). Pure.
+ *
+ * Time runs in replay ms from this tick's start (page time x rate), so a card
+ * whose turn comes mid-tick starts then, exactly as the owner's approved demo
+ * showed: the waiting card starts when the card on screen has had its
+ * minimum (plus the fade), even before this tick's own card arrives; this
+ * tick's own card then shows, waits or competes for the one waiting spot.
+ * A card may enter and leave in the same tick (a long tick with a fall).
+ *
+ * @param {TickMemory} memory
+ * @param {JsonRecord} plan
+ * @param {{
+ *   audienceKey: string,
+ *   episode: string | null,
+ *   step: number,
+ *   herald: JsonRecord | null,
+ *   filters: Readonly<Record<string, boolean>> | null,
+ *   now: number | null,
+ *   rate: number,
+ * }} tick
+ * @returns {{memory: TickMemory, carry: TickCarry}}
+ */
+function queuedCarry(memory, plan, tick) {
+  const { audienceKey, episode, step, herald, filters, now, rate } = tick;
+  const minimum = heralds.MINIMUM_CARD_MS;
+  const fade = heralds.CARD_FADE_OUT_MS;
+  const tickMs = Number(plan.beats?.tickMs) > 0 ? Number(plan.beats?.tickMs) : 1700;
+  // Page clock to replay ms from this tick's start (no clock: long ago).
+  const relative = (/** @type {number} */ at) =>
+    now === null || !Number.isFinite(at) ? Number.NEGATIVE_INFINITY : (at - now) * rate;
+  const own =
+    herald !== null && heralds.cardMoments(herald, filters).length > 0 ? herald : null;
+  /**
+   * A card on screen during this tick: its row, when it entered (null: it was
+   * already on screen when the tick began), when it leaves (null: it stays
+   * past the tick's end), when it appeared (replay ms from the tick's start)
+   * and the step that first showed it.
+   *
+   * @typedef {{row: JsonRecord, enter: number | null, exit: number | null, shownAt: number, step: number}} Showing
+   */
+  /** @type {Showing | null} */
+  let current =
+    memory.card === null
+      ? null
+      : {
+          row: memory.card.row,
+          enter: null,
+          exit: null,
+          shownAt: relative(memory.card.shownAt),
+          step: memory.card.step,
+        };
+  /** @type {{row: JsonRecord, arrived: number} | null} */
+  let waiting =
+    memory.waiting === null
+      ? null
+      : { row: memory.waiting, arrived: relative(memory.waitingSince ?? Number.NaN) };
+  /** @type {Showing[]} */
+  const shown = [];
+  /** @param {{row: JsonRecord, arrived: number}} card */
+  const dueOf = (card) =>
+    Math.max(
+      card.arrived,
+      current === null ? 0 : current.shownAt + minimum + fade,
+      fade,
+    );
+  /** @param {number} at @param {JsonRecord} row */
+  const handOver = (at, row) => {
+    if (current !== null) {
+      current.exit = at - fade;
+      shown.push(current);
+    }
+    current = { row, enter: at, exit: null, shownAt: at, step };
+  };
+  const arrival = own === null ? null : Number(own.phaseStart ?? 0);
+  // The waiting card starts as soon as its turn comes, before this tick's own card.
+  if (waiting !== null) {
+    const due = dueOf(waiting);
+    if (due < (arrival ?? tickMs)) {
+      handOver(due, waiting.row);
+      waiting = null;
+    }
+  }
+  if (own !== null && arrival !== null) {
+    if (waiting !== null) {
+      // One card waits: the bigger moment keeps the spot; a tie goes to the newer.
+      if (cardRank(own, filters) <= cardRank(waiting.row, filters)) {
+        waiting = { row: own, arrived: arrival };
+      }
+    } else if (current === null || current.shownAt + minimum + fade <= arrival) {
+      handOver(Math.max(arrival, current === null ? 0 : fade), own);
+    } else {
+      waiting = { row: own, arrived: arrival };
+    }
+  }
+  if (waiting !== null) {
+    const due = dueOf(waiting);
+    if (due < tickMs) {
+      handOver(due, waiting.row);
+      waiting = null;
+    }
+  }
+  // With no card waiting, a card that was on screen before the tick holds
+  // through the tick after it first showed, then leaves once its minimum is up.
+  if (current !== null && current.enter === null && waiting === null) {
+    const minimumEnd = current.shownAt + minimum;
+    if (step !== current.step + 1) {
+      if (minimumEnd <= 0) current = null;
+      else if (minimumEnd < tickMs) current.exit = minimumEnd;
+    }
+  }
+  if (current !== null) shown.push(current);
+  /** @type {JsonRecord[]} */
+  const heldRows = [];
+  /** @type {JsonRecord | null} */
+  let ownReplacement = null;
+  /** @type {CardOnScreen | null} */
+  let card = null;
+  for (const each of shown) {
+    if (each.enter === null) {
+      heldRows.push(heldCardRow(plan, each.row, each.exit));
+    } else if (each.row === own) {
+      ownReplacement =
+        each.enter === arrival && each.exit === null
+          ? own
+          : Object.freeze({
+              ...own,
+              phaseStart: each.enter,
+              exitAt: each.exit,
+              persistent: each.exit === null ? own.persistent === true : false,
+              queuedFromEventId: own.eventId,
+            });
+      each.row = ownReplacement;
+    } else {
+      const queued = Object.freeze({
+        ...each.row,
+        eventId: `${plan.transitionId}:herald:queued`,
+        spatial: true,
+        persistent: each.exit === null,
+        phaseStart: each.enter,
+        phaseEnd: Math.max(
+          each.enter,
+          Number(plan.beats?.explanationEnd ?? each.enter),
+        ),
+        exitAt: each.exit,
+        queuedFromEventId: each.row.queuedFromEventId ?? each.row.eventId,
+      });
+      heldRows.push(queued);
+      each.row = queued;
+    }
+    if (each.exit === null) {
+      card = Object.freeze({
+        row: each.row,
+        shownAt: now === null ? Number.NEGATIVE_INFINITY : now + each.shownAt / rate,
+        step: each.step,
+      });
+    }
+  }
+  /** @type {TickCarry} */
+  const carry = Object.freeze({
+    previousHerald: null,
+    heldRows: Object.freeze(heldRows),
+    ownRowsHoldPrevious: false,
+    ...(herald === null
+      ? {}
+      : {
+          ownRow: Object.freeze({
+            eventId: String(herald.eventId),
+            replacement: ownReplacement,
+          }),
+        }),
+  });
+  return {
+    memory: Object.freeze({
+      audienceKey,
+      episode,
+      step,
+      herald,
+      previousHerald: null,
+      card,
+      waiting: waiting === null ? null : waiting.row,
+      waitingSince:
+        waiting === null || now === null ? null : now + waiting.arrived / rate,
+      carry,
+    }),
+    carry,
   };
 }
 
@@ -324,7 +745,13 @@ export function carryFromEarlierTicks(memory, plan) {
  *   settled: boolean,
  *   persistentOnly: boolean,
  *   retainTransientOnSettle?: boolean,
+ *   clock?: number,
+ *   playbackRate?: number,
  * }} PainterOptions
+ *   clock is the page clock at the install in ms (performance.now()) and
+ *   playbackRate the controller's rate (default 1); the card queue reads them
+ *   (see carryFromEarlierTicks). Without clock every earlier card counts as
+ *   shown long enough.
  * @typedef {{
  *   element: Element,
  *   keyframes: Keyframe[] | PropertyIndexedKeyframes,
@@ -392,11 +819,14 @@ export class SvgChoreographyPainter {
    * replay tick, so it ends like its Settled Still). Default false: transients
    * are removed at settle (live play).
    *
-   * Paint plan.events, then the held row carried from this audience's previous
-   * tick (a held Herald Card; see carryFromEarlierTicks), then the drawn derived
-   * rows (herald_card, last_seen, focus_tally). A herald row also gets the
-   * previous tick's herald row. Skip nonspatial/unknown rows and, in persistent-only
-   * mode, nonpersistent rows.
+   * Paint plan.events, then the rows carried from this audience's earlier ticks
+   * (a held Herald Card, and in the card queue a waiting card; see
+   * carryFromEarlierTicks), then the drawn derived rows (herald_card, last_seen,
+   * focus_tally; the card queue may replace or skip the own herald row). The
+   * card queue runs when renderPolicy is not "replay_static", the install is
+   * neither settled nor persistent-only and motionMode is "normal"; it reads
+   * options.clock and options.playbackRate. Skip nonspatial/unknown rows and,
+   * in persistent-only mode, nonpersistent rows.
    * Return a mutable installation with its roots, event map (held rows included),
    * frozen animation specs, counted nodes and carry. nodeCount and
    * persistentNodeCount count the plan's own rows (which plan.bounds covers);
@@ -477,7 +907,19 @@ export class SvgChoreographyPainter {
     const animationSpecs = [];
 
     const visualFilters = surface.visualFilters ?? null;
-    const { memory, carry } = carryFromEarlierTicks(this.#tickMemory, plan);
+    // The card queue runs on played ticks in normal motion (the Replay Viewer
+    // playing, live play); a seek, step, pause or still shows a tick's own card.
+    const queue =
+      options.renderPolicy !== "replay_static" &&
+      !options.settled &&
+      !options.persistentOnly &&
+      options.motionMode === "normal";
+    const { memory, carry } = carryFromEarlierTicks(this.#tickMemory, plan, {
+      queue,
+      now: options.clock,
+      rate: options.playbackRate,
+      filters: visualFilters,
+    });
     /** @type {PaintContext} */
     const context = { plan, surface, visualFilters, carry };
     const derived = (
@@ -485,7 +927,8 @@ export class SvgChoreographyPainter {
     ).filter((/** @type {JsonRecord} */ event) =>
       PAINTED_DERIVED_KINDS.has(event.kind),
     );
-    for (const event of [...plan.events, ...carry.heldRows, ...derived]) {
+    const painted = queuedOwnRow(derived, carry);
+    for (const event of [...plan.events, ...carry.heldRows, ...painted]) {
       if (
         !event.spatial ||
         event.kind === "unknown" ||
@@ -699,7 +1142,8 @@ export class SvgChoreographyPainter {
    * geometry, and surface provides the new viewportKey. Update viewport metadata and
    * supported event geometry; remove existing events that are now absent/nonspatial.
    * Held rows keep the carry they were installed with (installation.carry), so a
-   * held card keeps the layout of the tick it came from.
+   * held card keeps the layout of the tick it came from, and this tick's own
+   * card keeps the queue's copy (its new phaseStart and exitAt).
    * No new event subtree or animation is installed here. Return undefined. The caller
    * owns identity compatibility and any rebuild needed for changed content.
    *
@@ -715,7 +1159,10 @@ export class SvgChoreographyPainter {
     const nextEvents = /** @type {JsonRecord[]} */ ([
       ...plan.events,
       ...carry.heldRows,
-      ...(Array.isArray(plan.derivedEvents) ? plan.derivedEvents : []),
+      ...queuedOwnRow(
+        Array.isArray(plan.derivedEvents) ? plan.derivedEvents : [],
+        carry,
+      ),
     ]);
     const nextById = new Map(nextEvents.map((event) => [event.eventId, event]));
     /** @type {PaintContext} */

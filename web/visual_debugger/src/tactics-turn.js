@@ -1,6 +1,6 @@
 /**
  * @file The Tactics Turn: the BattleClient and DevClient combat screen's turn
- * deck, its status line and the three live rail cards. A player plans one
+ * deck, the deck's header line and the three live rail cards. A player plans one
  * turn for the champion it orders and locks it in. Every tick is a turn;
  * nothing moves until Lock In, and there is no timer. It also sorts keyboard
  * commands into draft keys, submit keys and the rest; the draft keys come
@@ -26,30 +26,26 @@
  *   vision's pills while they fit, else a grid of short buttons, fitPicks), 3 Action
  *   (None, the class's real Basic and Ultimate with reach, the Rune Ring and
  *   the Armed, Auto and Not Allowed tags, and a shake on a refused press) and
- *   4 Lock In (the order list and the button label Lock In Turn, Orders
- *   Sent, Policies Choosing… or Everyone Acts, plus Cancel Policy Work). The
- *   order list is the vision's full sentence for one or two Manual
- *   champions and one short row each (compactOrderParts) for three or more,
- *   so every line shows; each short row stays whole on one line
- *   (fitOrderRow: the step gives way first, then the text steps down to
- *   10 px; the ability and the target are never cut); the deck's
- *   data-orders ("one", "two" or "many",
- *   from the roster, never the view) lets deck.css keep the deck one height
- *   from turn to turn and across view switches.
+ *   4 Lock In (the button label Lock In Turn, Orders Sent, Policies
+ *   Choosing… or Everyone Acts, plus Cancel Policy Work). The deck has no
+ *   order list of its own (owner, 4 Oct 2026: the rail's This Turn checklist
+ *   already lists every order, so the deck is shorter and the arena taller).
  * - The deck overlays: Watch Only (a policy's champion is in view, with its
  *   life; Back To Your Warrior), Stopped (policy work was cancelled; Finish And Save; the
  *   phases then rest on You Plan with the policies Waiting) and
  *   the Watching bar when nobody is Manual (Run or Pause and Play One Turn).
- * - The status line (#status-line): the recording seal, the one message line
- *   (#msg; the vision's refusal sentences, written from the host's masks
- *   before anything is sent; the first sentence true for the roster mix,
- *   startGreeting; on the tick the game ends, the game-over step for the
- *   replay's save state, gameOverStep, said again when that state changes;
- *   once Exit was accepted, the closed sentence for the replay's save state,
- *   closedSentence; host notices in the player's words, plainHostNotice),
- *   Keys On or Keys Off, and Restart. The Recording words of the seal (and
- *   of main.js's Recording pill and popover) have one owner here,
- *   recordingWords.
+ * - The deck's header line (#status-line, owner, 4 Oct 2026: it replaced the
+ *   status line under the deck): the one message line (#msg; the vision's
+ *   refusal sentences, written from the host's masks before anything is
+ *   sent; the first sentence true for the roster mix, startGreeting; on the
+ *   tick the game ends, the game-over step for the replay's save state,
+ *   gameOverStep, said again when that state changes; once Exit was
+ *   accepted, the closed sentence for the replay's save state,
+ *   closedSentence; host notices in the player's words, plainHostNotice) and
+ *   Keys On or Keys Off. Restart (in the top bar) is wired here too. The
+ *   words of main.js's Recording pill and popover (recordingWords) and of
+ *   its top-bar save button (saveButtonState: Finish And Save, Saving
+ *   Replay…, Open Replay or Retry Save) have one owner here.
  * - The rail cards: This Turn (#turn-card: tick, title, set pill, Guide /
  *   Hints / Off, Do This Now, the four phases You Plan · Lock In · Policies
  *   Choose · All Act, the checklist of the champions you play and the
@@ -64,7 +60,7 @@
  * has fallen or is out of sight (paintLife).
  *
  * Controller names: the Policies block, the "Played By" names (the deck's
- * chip, Watch Only and the Class Guide note) and the status line's "played
+ * chip, Watch Only and the Class Guide note) and the message line's "played
  * by ..." all come from the one controller model (controllerRosterFromFrame
  * in match-summary.js, built from the combat configuration and the identity
  * directory, the same facts the scorebug's lines and hover lists use;
@@ -960,21 +956,21 @@ export function turnTitles(input) {
 
 /**
  * Write the game-over step: the rail's Do This Now at game over and the
- * status line on the tick the game ends. It names only what really exists
+ * deck's message line on the tick the game ends. It names only what really exists
  * for the replay's save state, so it never offers Finish And Save once the
  * game has saved itself.
  *
  * - No recording (null or not an object): "The game is over. Press Restart
  *   for a new match."
- * - lifecycle "saved" or "reviewing": the game is saved; Open Replay is in
- *   the Saved menu at the top.
+ * - lifecycle "saved" or "reviewing": the game is saved; the top bar's save
+ *   button now reads Open Replay.
  * - lifecycle "recording" with finish_available true: Finish And Save is
  *   offered (its button shows).
  * - lifecycle "sealed" or "finalized_unsaved": the capture is closed and the
  *   server is saving the replay in the background: "Saving the replay…" (the
- *   Recording pill and seal say "Saving Replay…" then).
- * - lifecycle "persistence_failed": the save failed; Retry Save and Save As
- *   are in the Save Failed menu at the top.
+ *   Recording pill and the top bar's save button say "Saving Replay…" then).
+ * - lifecycle "persistence_failed": the save failed; the top bar's save
+ *   button reads Retry Save, and Save As is in the Save Failed menu.
  * - anything else (for example "discarded"): Restart only.
  *
  * Pure.
@@ -990,7 +986,7 @@ export function gameOverStep(recording) {
       : null;
   const lifecycle = status?.lifecycle;
   if (lifecycle === "saved" || lifecycle === "reviewing") {
-    return "The game is over and saved. Press Restart for a new match, or click Saved at the top, then Open Replay.";
+    return "The game is over and saved. Press Restart for a new match, or Open Replay to watch it.";
   }
   if (lifecycle === "recording" && status?.finish_available === true) {
     return "The game is over. Press Restart for a new match, or Finish And Save.";
@@ -999,13 +995,13 @@ export function gameOverStep(recording) {
     return "The game is over. Saving the replay…";
   }
   if (lifecycle === "persistence_failed") {
-    return "The game is over, but the replay did not save. Click Save Failed at the top, then Retry Save or Save As.";
+    return "The game is over, but the replay did not save. Press Retry Save at the top, or click Save Failed for Save As.";
   }
   return "The game is over. Press Restart for a new match.";
 }
 
 /**
- * Write the sentence the status line and Do This Now show once Exit was
+ * Write the sentence the message line and Do This Now show once Exit was
  * accepted, true for the replay's save state. The server saves every played
  * tick before it closes, so only these three cases exist:
  *
@@ -1038,25 +1034,23 @@ export function closedSentence(recording) {
 }
 
 /**
- * Write the Recording pill, the Recording popover's state line and the
- * status line's seal for one recording state, in the vision's words. The one
- * owner of these words: main.js paints the pill and the popover with it
- * (renderRecordingControls) and the deck paints the seal (renderSeal).
+ * Write the Recording pill and the Recording popover's state line for one
+ * recording state, in the vision's words. The one owner of these words:
+ * main.js paints the pill and the popover with it (renderRecordingControls).
  *
  * - "recording": pill "Recording · Tick 91", popover "0 Ticks Kept Since
- *   Tick 91" (ticks kept, then the tick capture began), seal "Recording ·
- *   Tick 91 of 300" ("of 300" only when limit is known).
+ *   Tick 91" (ticks kept, then the tick capture began).
  * - "sealed" or "finalized_unsaved" (the game is over and the server saves
  *   the replay in the background): "Saving Replay…", "Saving Replay… · 300
- *   Ticks", "Saving Replay…".
- * - "saved" or "reviewing": "Saved", "Saved · 91 Ticks", "Saved · 91 Ticks".
+ *   Ticks".
+ * - "saved" or "reviewing": "Saved", "Saved · 91 Ticks".
  * - "persistence_failed": "Save Failed · Retry", "Save Failed · 91 Ticks
- *   Kept", "Save Failed · Retry".
+ *   Kept".
  * - closed (Exit was accepted) while the recording is still "recording" with
  *   no tick kept: the server closed without a replay (Exit before the first
- *   tick), so "No Replay", "No Replay · No Tick Was Played", "No Replay".
+ *   tick), so "No Replay", "No Replay · No Tick Was Played".
  * - any other lifecycle (for example "discarded"): "Recording · Discarded"
- *   in all three, with "· N Ticks" on the popover.
+ *   in both, with "· N Ticks" on the popover.
  *
  * Pure.
  *
@@ -1064,49 +1058,159 @@ export function closedSentence(recording) {
  *   (`lifecycle` and `captured_transition_count`, a count of kept ticks; a
  *   value that is not an integer reads 0).
  * @param {number} tick The installed tick (simulator steps), a public fact.
- * @param {number | null} limit The episode's tick limit, or null when unknown.
  * @param {boolean} [closed] True once Exit was accepted. Default false.
- * @returns {Readonly<{pill: string, popover: string, seal: string}>}
+ * @returns {Readonly<{pill: string, popover: string}>}
  */
-export function recordingWords(recording, tick, limit, closed = false) {
+export function recordingWords(recording, tick, closed = false) {
   const kept = Number.isInteger(recording.captured_transition_count)
     ? Number(recording.captured_transition_count)
     : 0;
   const ticks = `${kept} Tick${kept === 1 ? "" : "s"}`;
   const lifecycle = String(recording.lifecycle);
-  /** @param {string} pill @param {string} popover @param {string} seal */
-  const words = (pill, popover, seal) => Object.freeze({ pill, popover, seal });
+  /** @param {string} pill @param {string} popover */
+  const words = (pill, popover) => Object.freeze({ pill, popover });
   if (lifecycle === "saved" || lifecycle === "reviewing") {
-    return words("Saved", `Saved · ${ticks}`, `Saved · ${ticks}`);
+    return words("Saved", `Saved · ${ticks}`);
   }
   if (lifecycle === "persistence_failed") {
-    return words(
-      "Save Failed · Retry",
-      `Save Failed · ${ticks} Kept`,
-      "Save Failed · Retry",
-    );
+    return words("Save Failed · Retry", `Save Failed · ${ticks} Kept`);
   }
   if (lifecycle === "sealed" || lifecycle === "finalized_unsaved") {
-    return words("Saving Replay…", `Saving Replay… · ${ticks}`, "Saving Replay…");
+    return words("Saving Replay…", `Saving Replay… · ${ticks}`);
   }
   if (lifecycle === "recording" && closed && kept === 0) {
-    return words("No Replay", "No Replay · No Tick Was Played", "No Replay");
+    return words("No Replay", "No Replay · No Tick Was Played");
   }
   if (lifecycle === "recording") {
     return words(
       `Recording · Tick ${tick}`,
       `${ticks} Kept Since Tick ${Math.max(0, tick - kept)}`,
-      `Recording · Tick ${tick}${limit === null ? "" : ` of ${limit}`}`,
     );
   }
   const label = `Recording · ${lifecycle
     .replaceAll("_", " ")
     .replace(/\b\w/gu, (letter) => letter.toUpperCase())}`;
-  return words(label, `${label} · ${ticks}`, label);
+  return words(label, `${label} · ${ticks}`);
 }
 
 /**
- * Return the player's words for a host notice the status line shows, or the
+ * Say why a replay save failed, for the Recording popover's reason line
+ * (#pop-reason, under its state line). The one owner of these words, beside
+ * recordingWords; main.js paints the line and hides it when this is "".
+ *
+ * - "target_unavailable": "Reason: The save folder or file name could not be
+ *   used, for example a missing folder or a file that already exists."
+ * - "publication_failed": "Reason: The replay file could not be written."
+ * - "verification_failed": "Reason: The saved file did not read back the
+ *   same as this game, so it was not trusted."
+ *
+ * The words never name a folder or a file path (the server sends only the
+ * code). Pure.
+ *
+ * @param {Readonly<Record<string, any>> | null} recording The recording
+ *   status (`lifecycle` and `persistence_error_code`), or null when the
+ *   match records nothing.
+ * @returns {string} The sentence, or "" when the lifecycle is not
+ *   "persistence_failed" or the code is missing or unknown.
+ */
+export function saveFailedReason(recording) {
+  if (recording?.lifecycle !== "persistence_failed") return "";
+  switch (recording.persistence_error_code) {
+    case "target_unavailable":
+      return "Reason: The save folder or file name could not be used, for example a missing folder or a file that already exists.";
+    case "publication_failed":
+      return "Reason: The replay file could not be written.";
+    case "verification_failed":
+      return "Reason: The saved file did not read back the same as this game, so it was not trusted.";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Pick what live play's save button in the top bar (#recording-finish-button)
+ * shows for one recording state. Owner, 4 Oct 2026: Finish And Save turns
+ * into Open Replay once the replay is saved, instead of disappearing.
+ *
+ * - "recording": "Finish And Save" (action "finish"); usable while
+ *   finish_available is true.
+ * - "sealed" or "finalized_unsaved" (the server saves a finished game), or
+ *   options.saving (this page's save request is waiting for its answer):
+ *   "Saving Replay…" (action null: it shows the save is under way and is
+ *   never usable).
+ * - "saved" or "reviewing": "Open Replay" (action "open"); usable while
+ *   review_available is true (the server opens the Replay Viewer the first
+ *   time) or options.reopen is true (this page already holds the Replay
+ *   Viewer's link and opens it again).
+ * - "persistence_failed": "Retry Save" (action "retry"); usable while
+ *   retry_available is true.
+ * - options.closed (Exit was accepted) or any other lifecycle (for example
+ *   "discarded"): null, and the button hides.
+ *
+ * help is the button's hover help, in the same plain words as the other
+ * controls. Pure; it never sends anything.
+ *
+ * @param {Readonly<Record<string, any>>} recording The recording status
+ *   (`lifecycle` and the `*_available` flags).
+ * @param {{saving?: boolean, reopen?: boolean, closed?: boolean}} [options]
+ *   saving: a save request from this page is in flight (default false);
+ *   reopen: the page holds this game's Replay Viewer link (default false);
+ *   closed: Exit was accepted (default false).
+ * @returns {Readonly<{label: string, action: "finish" | "open" | "retry" | null,
+ *   usable: boolean, help: string}> | null}
+ */
+export function saveButtonState(recording, options = {}) {
+  if (options.closed === true) return null;
+  const lifecycle = String(recording.lifecycle);
+  /**
+   * @param {string} label
+   * @param {"finish" | "open" | "retry" | null} action
+   * @param {boolean} usable
+   * @param {string} help
+   */
+  const state = (label, action, usable, help) =>
+    Object.freeze({ label, action, usable, help });
+  if (
+    options.saving === true ||
+    lifecycle === "sealed" ||
+    lifecycle === "finalized_unsaved"
+  ) {
+    return state(
+      "Saving Replay…",
+      null,
+      false,
+      "The replay is being saved. This button turns into Open Replay when it is done.",
+    );
+  }
+  if (lifecycle === "recording") {
+    return state(
+      "Finish And Save",
+      "finish",
+      recording.finish_available === true,
+      "Save this game and keep it on screen to look over. Restart begins another match.",
+    );
+  }
+  if (lifecycle === "saved" || lifecycle === "reviewing") {
+    return state(
+      "Open Replay",
+      "open",
+      recording.review_available === true || options.reopen === true,
+      "Open the saved game in a separate Replay Viewer tab.",
+    );
+  }
+  if (lifecycle === "persistence_failed") {
+    return state(
+      "Retry Save",
+      "retry",
+      recording.retry_available === true,
+      "Saving failed. Try saving the same replay again.",
+    );
+  }
+  return null;
+}
+
+/**
+ * Return the player's words for a host notice the message line shows, or the
  * notice unchanged when it has none.
  *
  * - "The episode ended and its replay was saved." becomes the saved
@@ -1184,7 +1288,7 @@ export function plainHostNotice(text) {
 }
 
 /**
- * Write the first status-line sentence of a game, true for its roster mix.
+ * Write the first message-line sentence of a game, true for its roster mix.
  *
  * - Nobody Manual (watchMode): "Nobody is yours this game. The match starts
  *   paused."
@@ -1304,7 +1408,7 @@ export function howToPlayLines(input) {
 }
 
 /**
- * Write the status-line sentence for a new tick, or null to keep the line.
+ * Write the message-line sentence for a new tick, or null to keep the line.
  *
  * terminal: the new tick ended the game; then the sentence is the game-over
  * step for the replay's save state (gameOverStep(recording)), whoever played
@@ -1474,8 +1578,8 @@ export function doThisNow(input) {
  * Decide, before anything is sent, whether the deck refuses an order input,
  * and with which sentence (the vision page's words).
  *
- * Pure. A refused input is never sent: the deck shows the sentence in the
- * status line (or nothing, when `text` is null) and shakes the control.
+ * Pure. A refused input is never sent: the deck shows the sentence in its
+ * message line (or nothing, when `text` is null) and shakes the control.
  *
  * @param {{
  *   intent: {kind: "step", moveAction: number} | {kind: "lane", lane: 0 | 1 | 2}
@@ -1570,7 +1674,7 @@ export function deckRefusal(input) {
 }
 
 /**
- * Write the status-line sentence for an accepted order input, in the vision
+ * Write the message-line sentence for an accepted order input, in the vision
  * page's words. The deck shows it at once, before the host answers; a host
  * refusal replaces it.
  *
@@ -1819,7 +1923,7 @@ export function checklistLine(row) {
  * "North-West"), the action ("No Combat", "Arcane Blast → Warrior 6",
  * "Burst"), and the action split into its ability ("No Combat", "Arcane
  * Blast", "Burst") and its target ("Warrior 6", or null). The one owner of
- * these words for checklistLine and compactOrderParts.
+ * these words for checklistLine.
  *
  * Pure.
  *
@@ -1851,86 +1955,18 @@ function orderWords(row) {
 /**
  * Write the words for a fallen champion that takes no orders until its
  * team's respawn wave: "Fallen · Returns In 3 Ticks" (Your Champion's life
- * and the rail's checklist row), or with `short` "Fallen · Returns In 3" (a
- * short Lock In row, the Champion Card's form). "Fallen" alone when the wave
- * clock is unknown (returnsIn null).
+ * and the rail's checklist row). "Fallen" alone when the wave clock is
+ * unknown (returnsIn null).
  *
  * Pure.
  *
  * @param {{returnsIn: number | null}} fallen Ticks until the champion is back
  *   (1 means after the next Lock In), or null when unknown.
- * @param {boolean} [short] Leave out the word "Ticks". Default false.
  * @returns {string}
  */
-export function fallenWords(fallen, short = false) {
+export function fallenWords(fallen) {
   if (fallen.returnsIn === null) return "Fallen";
-  return short
-    ? `Fallen · Returns In ${fallen.returnsIn}`
-    : `Fallen · Returns In ${ticksText(fallen.returnsIn, true)}`;
-}
-
-/**
- * Return the three parts of one short Lock In row (the rows the deck shows
- * when you play three or more champions): `main` (the action, or the step
- * and No Combat), `target` ("Warrior 6", or null) and `tail` (the step when
- * the champion also acts, or null). The deck draws each row whole on one
- * line (fitOrderRow): a row too long for the column drops the tail first,
- * then its text steps down; the ability's name and the target are never cut.
- * compactOrderLine joins them.
- *
- * - Fallen: main "Fallen · Returns In 3" (fallenWords, short; "Fallen" when
- *   the respawn wave is unknown).
- * - The default order: main "Stay · No Combat".
- * - No Combat: main "North · No Combat".
- * - An action: main "Arcane Blast", target "Warrior 6", tail "North-West"
- *   (no tail while it stays).
- *
- * Pure.
- *
- * @param {{touched: boolean, moveAction: unknown, lane: "none" | "basic" |
- *   "ultimate", classId: unknown, ultimateNeedsNoTarget: boolean, targetShort:
- *   string | null, fallen?: {className: string, returnsIn: number | null} |
- *   null}} row touched is false while the order is the default one (Stay,
- *   No Combat), as the server holds it;
- *   targetShort is the target as "Mage 5", or null; fallen is set while the
- *   champion is fallen (returnsIn in ticks, or null when unknown).
- * @returns {{main: string, target: string | null, tail: string | null}}
- */
-export function compactOrderParts(row) {
-  if (row.fallen) {
-    return { main: fallenWords(row.fallen, true), target: null, tail: null };
-  }
-  if (!row.touched) return { main: "Stay · No Combat", target: null, tail: null };
-  const words = orderWords(row);
-  if (words.ability === "No Combat" && words.target === null) {
-    return { main: `${words.step} · No Combat`, target: null, tail: null };
-  }
-  return {
-    main: words.ability,
-    target: words.target,
-    tail: words.step === "Stay" ? null : words.step,
-  };
-}
-
-/**
- * Write one short line of the Lock In list when you play three or more
- * champions (compactOrderParts joined): "Arcane Blast → Warrior 6",
- * "Charge → Mage 5 · North", "North · No Combat", "Stay · No Combat" for an
- * untouched order, and "Fallen · Returns In 3" ("Fallen" when the respawn
- * wave is unknown) for a fallen champion. The full sentence
- * (orderSentence) stays in the row's title; the rail's checklist shows the
- * same words with their labels (checklistLine).
- *
- * Pure.
- *
- * @param {Parameters<typeof compactOrderParts>[0]} row As compactOrderParts.
- * @returns {string}
- */
-export function compactOrderLine(row) {
-  const parts = compactOrderParts(row);
-  return `${parts.main}${parts.target === null ? "" : ` → ${parts.target}`}${
-    parts.tail === null ? "" : ` · ${parts.tail}`
-  }`;
+  return `Fallen · Returns In ${ticksText(fallen.returnsIn, true)}`;
 }
 
 /**
@@ -1969,77 +2005,12 @@ export function hiddenOrderLine(seen) {
 }
 
 /**
- * The text sizes, in CSS pixels, a short Lock In row tries after its step
- * was dropped (owner, 3 Oct 2026): half a pixel at a time from 11.5 down to
- * 10, the smallest. deck.css draws the row at 12 px first.
- */
-const ORDER_ROW_SIZES = Object.freeze([11.5, 11, 10.5, 10]);
-
-/**
- * The letter spacings, in em, a short Lock In row tries after 10 px, only
- * when it is still too long there (the longest ability on the longest
- * target, such as "Priest: Holy Word: Salvation → Hunter 2", needs about
- * 196 px in the 190 px column; -0.02em is enough for it).
- */
-const ORDER_ROW_SPACINGS = Object.freeze([-0.01, -0.02, -0.03, -0.04, -0.05]);
-
-/**
- * Fit one short Lock In row (`p.order-row`, three or more Manual champions)
- * whole on one line, so its ability's name and its target are never cut
- * (owner, 3 Oct 2026). In order, it stops at the first form that fits the
- * row's own width (scrollWidth no wider than clientWidth):
- *
- * 1. the row as deck.css draws it (12 px, with its step);
- * 2. the step (`.order-tail`) hidden: the step gives way first;
- * 3. the text at 11.5, 11, 10.5 and then 10 px (ORDER_ROW_SIZES);
- * 4. at 10 px, its letters a little closer, -0.01em to -0.05em
- *    (ORDER_ROW_SPACINGS), which keeps the space after the name;
- * 5. last, the gaps between its parts closed up too (column-gap 0.1em).
- *
- * Each call starts again from step 1, so a row that becomes shorter grows
- * back. The row's title keeps the full sentence with the step. A row that is
- * still too long after step 5 stays at the last form and deck.css clips it;
- * no row of the five classes' abilities and targets is that long in the
- * 190 px column.
- *
- * Side effects: sets or removes the row's inline font-size, column-gap and
- * letter-spacing (through the style object, which the page's security policy
- * allows) and the step's `hidden`. Reads layout (scrollWidth, clientWidth)
- * once per form tried. Works on any element with that shape.
- *
- * @param {HTMLElement} row One `.order-row` paragraph.
- * @returns {void}
- */
-export function fitOrderRow(row) {
-  const tail = /** @type {HTMLElement | null} */ (row.querySelector(".order-tail"));
-  for (const property of ["font-size", "column-gap", "letter-spacing"]) {
-    row.style.removeProperty(property);
-  }
-  if (tail) tail.hidden = false;
-  const fits = () => row.scrollWidth <= row.clientWidth;
-  if (fits()) return;
-  if (tail) {
-    tail.hidden = true;
-    if (fits()) return;
-  }
-  for (const size of ORDER_ROW_SIZES) {
-    row.style.setProperty("font-size", `${size}px`);
-    if (fits()) return;
-  }
-  for (const spacing of ORDER_ROW_SPACINGS) {
-    row.style.setProperty("letter-spacing", `${spacing}em`);
-    if (fits()) return;
-  }
-  row.style.setProperty("column-gap", "0.1em");
-}
-
-/**
  * Fit the Allowed Now buttons (#command-target-select) into 2 Target, which
  * never makes the deck taller (deck.css, contain: size): the vision's pills,
  * each with its name and abilities ("Mage · ID 0 Arcane Blast"), while they
  * all show without scrolling; three or more that would scroll become the
  * two-column grid of short buttons (data-count "many": token and "Mage · ID
- * 0"; each button's title still names its abilities), which scrolls only
+ * 0"; each button's hover help still names its abilities), which scrolls only
  * past six. One or two buttons always keep the pill form.
  *
  * Side effects: sets picks.dataset.count to the number of buttons, reads
@@ -2054,20 +2025,6 @@ export function fitPicks(picks) {
   picks.dataset.count = String(count);
   if (count >= 3 && picks.scrollHeight > picks.clientHeight + 1) {
     picks.dataset.count = "many";
-  }
-}
-
-/**
- * Fit every short Lock In row of a list (fitOrderRow on each `.order-row`).
- * Rows of the one- and two-champion forms are full sentences that wrap, so
- * they are left alone.
- *
- * @param {ParentNode} list The Lock In list (#order-line).
- * @returns {void}
- */
-export function fitOrderRows(list) {
-  for (const row of list.querySelectorAll(".order-row")) {
-    fitOrderRow(/** @type {HTMLElement} */ (row));
   }
 }
 
@@ -2423,7 +2380,7 @@ const UNSEEN_TOKEN = `<svg class="tok" width="20" height="20" viewBox="0 0 20 20
  * @property {any} liveRunStatus `#live-run-status` (hidden legacy).
  * @property {any} liveControlHelp `#live-control-help` (hidden legacy).
  * @property {any} liveMatchRules `#live-match-rules` (hidden legacy).
- * @property {any} resetButton `#reset-button`: "Restart R" in the status line.
+ * @property {any} resetButton `#reset-button`: "Restart R" in the top bar.
  */
 
 /**
@@ -2457,6 +2414,10 @@ export function liveRunning(state) {
  * @property {boolean} [pageRun] True while the page's own Run plays one turn
  *   after another in Policies Only (main.js toggleLiveRun); the server's
  *   run_state then stays "paused". Default false.
+ * @property {boolean} [pageRunLoop] True while that Run's loop is still going
+ *   (main.js runLiveTurns): from Run until its last turn has landed and
+ *   played to its end, so also for a moment after Pause. Lock In and Play
+ *   One Turn stay disabled while it is true. Default false.
  */
 
 /**
@@ -2540,6 +2501,7 @@ const ROUTINE_MESSAGES = new Set([
  *   renderSystemOperation: () => void,
  *   bindCommandDeck: () => void,
  *   showStatusMessage: (message: string, level?: string) => void,
+ *   forgetRefusalEchoes: () => void,
  * }>} The deck API. See each function's own documentation.
  */
 export function createTacticsTurn(context) {
@@ -2601,7 +2563,7 @@ export function createTacticsTurn(context) {
    * an actor is selected. Other commands keep their normal availability checks.
    *
    * Side effect: when it returns true it remembers the vision's refusal
-   * sentence, so the warning main.js shows next in the status line reads "This
+   * sentence, so the warning main.js shows next in the message line reads "This
    * champion is played by a policy. You can look, not command. Pick one of
    * yours to give orders." (or, with nobody Manual, "Nobody is yours this
    * game. You can look, not command.").
@@ -2851,14 +2813,17 @@ export function createTacticsTurn(context) {
    *
    * Runs on every page repaint and on every choreography state change. Lock In
    * Turn sends Enter; while a turn is in flight its label reads Orders Sent,
-   * Policies Choosing… or Everyone Acts and it is disabled. In scripted
+   * Policies Choosing… or Everyone Acts and it is disabled. Lock In and the
+   * Watching bar's Play One Turn also stay disabled while the page's own Run
+   * plays and, after Pause, until Run's last tick has played to its end
+   * (state.pageRunLoop): main.js ignores their keys then. In scripted
    * playback the button becomes "Advance scripted frame" and sends N, and the
    * Watching bar's Play One Turn (the deck shown when nobody is Manual) also
    * sends N, stays enabled until the script ends and shows N as its key, so
    * the control on screen always advances the next scripted frame. In the
    * Replay Viewer every deck control is disabled. Ends by calling
    * renderTacticsTurn for the champion, target, action slots, overlays,
-   * status line and rail cards. Side effects: DOM text, `disabled`, `aria-*`
+   * message line and rail cards. Side effects: DOM text, `disabled`, `aria-*`
    * and `data-*` attributes and tooltips on the deck and the rail cards; no
    * request is sent.
    *
@@ -2967,7 +2932,7 @@ export function createTacticsTurn(context) {
         button.disabled =
           disabled ||
           Boolean(state.frame?.system_operation) ||
-          (liveRunning(state) && submits) ||
+          ((liveRunning(state) || state.pageRunLoop === true) && submits) ||
           (turnInFlight && submits && !scriptedAdvance) ||
           scientificFenced ||
           !enabledByInspection ||
@@ -3068,13 +3033,13 @@ export function createTacticsTurn(context) {
    *   basicIcon: Element | null, basicName: HTMLElement | null, basicSub: HTMLElement | null,
    *   ultIcon: Element | null, ultName: HTMLElement | null, ultSub: HTMLElement | null,
    *   ultReady: HTMLElement | null, runeRing: Element | null,
-   *   orderLine: HTMLElement | null, lockLabel: HTMLElement | null,
+   *   lockLabel: HTMLElement | null,
    *   watchOnly: HTMLElement | null, woTok: HTMLElement | null, woName: HTMLElement | null,
    *   woMeta: HTMLElement | null, woLife: HTMLElement | null, woBack: HTMLElement | null,
    *   stopped: HTMLElement | null,
    *   wbTok: HTMLElement | null, wbState: HTMLElement | null, wbNote: HTMLElement | null,
    *   watchSubmit: HTMLButtonElement | null,
-   *   statusLine: HTMLElement | null, recSeal: HTMLElement | null, recSealText: HTMLElement | null,
+   *   statusLine: HTMLElement | null,
    *   msg: HTMLElement | null, keysChip: HTMLElement | null, keysText: HTMLElement | null,
    *   arena: HTMLElement | null,
    *   turnCard: HTMLElement | null, turnEyebrow: HTMLElement | null, turnTitle: HTMLElement | null,
@@ -3089,7 +3054,7 @@ export function createTacticsTurn(context) {
   let picksDisabled = true;
 
   /**
-   * The status line's current sentence, its kind ("info" or "refuse"),
+   * The message line's current sentence, its kind ("info" or "refuse"),
    * whether the deck wrote it and when (ms), and the vision refusal to show in
    * place of main.js's next policy warning (set by
    * policyControllerBlocksActionEdit).
@@ -3267,17 +3232,43 @@ export function createTacticsTurn(context) {
     if (last && last.html === html && last.first === element.firstChild) return;
     element.innerHTML = html;
     writtenHtml.set(element, { html, first: element.firstChild });
+    registerWrittenHelp(element);
   }
 
   /**
-   * What the short Lock In rows were last fitted for (fitShortOrderRows):
-   * their markup, the list's width in CSS pixels and the list's first node
-   * (another module replacing the rows makes a new one). html is "" while
-   * the list shows full sentences.
+   * Give every control the deck just wrote with a data-help-title (the Allowed
+   * Now buttons, the rail's champion rows, the target's clear button) the
+   * page's registered hover help: that title and its data-help sentence. The
+   * page's help rule allows no native title, so the deck writes these two
+   * attributes instead. Side effects: registerTooltipOwner on each such node
+   * (it also sets aria-description). A root without querySelectorAll (a
+   * test stand-in) is skipped.
    *
-   * @type {{html: string, width: number, first: ChildNode | null}}
+   * @param {Element} root The element whose markup was just written.
+   * @returns {void}
    */
-  let orderFit = { html: "", width: -1, first: null };
+  function registerWrittenHelp(root) {
+    if (typeof root.querySelectorAll !== "function") return;
+    for (const node of root.querySelectorAll("[data-help-title]")) {
+      const title = node.getAttribute("data-help-title") ?? "";
+      registerTooltipOwner(
+        node,
+        {
+          kind: "control",
+          id: `control:deck:${title}`,
+          title,
+          tone: "information",
+          accent: "none",
+          summary: node.getAttribute("data-help") ?? "",
+          rows: [],
+          sections: [],
+          metadata: { compact: true, full: false },
+          anchor: "element",
+        },
+        { inspectable: false },
+      );
+    }
+  }
 
   /**
    * What Allowed Now was last fitted for (fitAllowedNow): its first node and
@@ -3313,36 +3304,6 @@ export function createTacticsTurn(context) {
       width: picks.clientWidth,
       height: picks.clientHeight,
     };
-  }
-
-  /**
-   * Fit the short Lock In rows whole on one line (fitOrderRows) when their
-   * markup, the list's width or the list's nodes changed since the last fit,
-   * so an ordinary repaint reads layout once and changes nothing. With html
-   * "" (the list shows full sentences) it only forgets the last fit.
-   *
-   * @param {string} html The rows' markup as the deck just wrote it, or "".
-   * @param {boolean} [force] Fit even when nothing changed (fonts loaded).
-   *   Default false.
-   * @returns {void}
-   */
-  function fitShortOrderRows(html, force = false) {
-    const list = deckParts?.orderLine;
-    if (html === "" || !(list instanceof HTMLElement)) {
-      orderFit = { html: "", width: -1, first: null };
-      return;
-    }
-    const width = list.clientWidth;
-    if (
-      !force &&
-      orderFit.html === html &&
-      orderFit.width === width &&
-      orderFit.first === list.firstChild
-    ) {
-      return;
-    }
-    fitOrderRows(list);
-    orderFit = { html, width, first: list.firstChild };
   }
 
   /**
@@ -3914,8 +3875,9 @@ export function createTacticsTurn(context) {
   }
 
   /**
-   * Show one sentence in the status line. The line always keeps room for two
-   * lines, so a new sentence never moves the page.
+   * Show one sentence in the deck's message line. The line is one line tall
+   * and a sentence too long for it ends in "…" (its hover help shows it
+   * whole), so a new sentence never moves the page.
    *
    * @param {string} text The sentence ("" clears it).
    * @param {"info" | "refuse"} kind "refuse" draws the Alert edge.
@@ -3936,10 +3898,12 @@ export function createTacticsTurn(context) {
   }
 
   /**
-   * Paint the status line's message from statusMessage. A controller named
+   * Paint the message line's message from statusMessage. A controller named
    * after "played by" is cut with "…" past the fixed name width
-   * (paintNamedSentence in controller-names.js), so the line keeps to two
-   * lines.
+   * (paintNamedSentence in controller-names.js). The line's hover help
+   * (registerTooltipOwner, re-registered when the sentence changes) holds
+   * the whole sentence, because the one-line message ends a long one in
+   * "…".
    *
    * @returns {void}
    */
@@ -3947,14 +3911,53 @@ export function createTacticsTurn(context) {
     const msg = deckParts?.msg;
     if (!msg) return;
     // A "played by <name>" sentence cuts the name with "…" like every
-    // controller name, so a long name never pushes the line past two lines.
+    // controller name, so a long name never makes the line longer.
     paintNamedSentence(msg, statusMessage.text);
     msg.classList.toggle("refuse", statusMessage.kind === "refuse");
     msg.dataset.level = statusMessage.kind === "refuse" ? "warning" : "info";
+    // The line is one line tall and ends a long sentence in "…" (deck.css):
+    // its hover help always holds the whole sentence.
+    if (msg.dataset.tipText !== statusMessage.text) {
+      msg.dataset.tipText = statusMessage.text;
+      registerTooltipOwner(
+        msg,
+        {
+          kind: "control",
+          id: "control:#msg:Message",
+          title: "Message",
+          tone: "information",
+          accent: "none",
+          summary:
+            statusMessage.text === ""
+              ? "Messages about your orders and the game show here."
+              : statusMessage.text,
+          rows: [],
+          sections: [],
+          metadata: { compact: true, full: false },
+          anchor: "element",
+        },
+        { inspectable: false },
+      );
+    }
   }
 
   /**
-   * Show one plain message from the page in the status line. Messages only
+   * Forget the sentences announced before the newest refusal
+   * (echoesBeforeRefusal). main.js calls this each time it sends a new live
+   * command: only one command is out at a time, so every earlier input has
+   * its answer by then, and an answer that comes later belongs to the new
+   * command and must show, even when it repeats an older sentence (for
+   * example "Target cleared." for a right click after a refused 1). A refusal
+   * written less than REFUSAL_HOLD_MS ago still outranks it.
+   *
+   * @returns {void}
+   */
+  function forgetRefusalEchoes() {
+    echoesBeforeRefusal.clear();
+  }
+
+  /**
+   * Show one plain message from the page in the message line. Messages only
    * repeat what the host or the page said; they never guess a cause.
    *
    * Routine messages ("", "Waiting for the game to answer…", "Loading the
@@ -4203,7 +4206,8 @@ export function createTacticsTurn(context) {
 
   /**
    * Write announcements for changes the page did not start with a deck input:
-   * a new game (startGreeting, true for the roster mix), a new tick (the
+   * a new game (startGreeting, true for the roster mix; a page opened after
+   * the game ended says the game-over step instead), a new tick (the
    * game-over step when that tick ends the game), a new champion in view, Run
    * stopping, policy work being cancelled, and at game over a change of the
    * replay's save state (the game-over step is said again, gameOverStep, but
@@ -4246,13 +4250,17 @@ export function createTacticsTurn(context) {
       previous.stopped = data.stopped;
       const teamOf = (/** @type {string} */ publicId) =>
         data.rosterRows.find((row) => row.public_agent_id === publicId)?.agent?.team_id;
+      // A page opened after the game ended says the game-over step, not the
+      // first sentence of a match that is already over.
       say(
-        startGreeting({
-          watchMode: data.watchMode,
-          teamA: data.manualIds.filter((publicId) => teamOf(publicId) === 1).length,
-          teamB: data.manualIds.filter((publicId) => teamOf(publicId) === 2).length,
-          pov: authorizedPresentationAudience(data.presentation) === "agent_pov",
-        }),
+        data.terminal
+          ? gameOverStep(data.recording)
+          : startGreeting({
+              watchMode: data.watchMode,
+              teamA: data.manualIds.filter((publicId) => teamOf(publicId) === 1).length,
+              teamB: data.manualIds.filter((publicId) => teamOf(publicId) === 2).length,
+              pov: authorizedPresentationAudience(data.presentation) === "agent_pov",
+            }),
         "info",
         true,
       );
@@ -4519,12 +4527,54 @@ export function createTacticsTurn(context) {
   }
 
   /**
-   * Repaint the deck, the overlays, the status line and the rail cards from
+   * Empty every deck part that shows a champion: the Your Champion token,
+   * name, calling, meta line, chip and life; the target chip and the Allowed
+   * Now picks; the Watch Only and Stopped tokens and their words; and the Your
+   * Turn checklist rows. Used when no live frame is installed (a refused or
+   * revoked frame, the Replay Viewer), so no champion of an old scene, nor its
+   * token's identity, stays in the page.
+   *
+   * @param {Record<string, any>} parts The deck parts (deckParts).
+   * @returns {void}
+   */
+  function clearChampionParts(parts) {
+    for (const part of [
+      parts.agTok,
+      parts.picks,
+      parts.woTok,
+      parts.wbTok,
+      parts.checklist,
+    ]) {
+      setHtml(part, "");
+    }
+    for (const part of [
+      parts.agName,
+      parts.agEpi,
+      parts.agMeta,
+      parts.agChip,
+      parts.tchip,
+      parts.woName,
+      parts.woMeta,
+      parts.wbState,
+      parts.wbNote,
+    ]) {
+      setText(part, "");
+    }
+    // Only touch a life line that still holds something: the Replay Viewer
+    // runs this on every frame.
+    for (const host of [parts.agLife, parts.woLife]) {
+      if (host?.firstChild) host.replaceChildren();
+    }
+  }
+
+  /**
+   * Repaint the deck, the overlays, the message line and the rail cards from
    * the installed frame. Runs at the end of renderCommandAvailability and
    * renderSystemOperation; does nothing before bindCommandDeck. In the Replay
-   * Viewer (or with no live frame) the rail cards and the status line are
-   * hidden, except that after an accepted Exit the status line keeps its
-   * closed sentence and seal. Once Exit was accepted the title and the pill
+   * Viewer (or with no live frame) the rail cards and the message line are
+   * hidden, except that after an accepted Exit the message line keeps its
+   * closed sentence, and every part that shows a champion is emptied
+   * (clearChampionParts). Once Exit was accepted the title and the pill
    * read "Closed" and no phase is current.
    *
    * Agent POV: life, reach, cooldowns and Allowed Now come only from the
@@ -4537,7 +4587,7 @@ export function createTacticsTurn(context) {
    * tick); one repaint is scheduled for each Fall beat time of the tick.
    *
    * Side effects: DOM text, markup, `hidden`, classes, `data-*` and `aria-*`
-   * changes in the deck, the status line and the rail cards (including the
+   * changes in the deck, the message line and the rail cards (including the
    * deck's data-orders, which sizes the Lock In list in deck.css, and the How
    * To Play card's lines); moves the `.beacon` mark; toggles `.keys-on` on
    * #arena through paintKeys; may set one timer (the Fall beat repaint).
@@ -4562,13 +4612,13 @@ export function createTacticsTurn(context) {
     for (const card of [parts.turnCard, parts.classCard]) {
       if (card) card.hidden = !data.live;
     }
-    // After an accepted live Exit the status line keeps the closed sentence
-    // and the seal, even when the Exit answer left no installed frame.
+    // After an accepted live Exit the message line keeps the closed sentence,
+    // even when the Exit answer left no installed frame.
     const closedLive = data.closed && !isReplayMode();
     if (parts.statusLine) parts.statusLine.hidden = !data.live && !closedLive;
     if (parts.howtoCard) parts.howtoCard.hidden = !data.live || guideMode !== "guide";
     if (!data.live) {
-      if (closedLive) renderSeal(data);
+      clearChampionParts(parts);
       paintMessage();
       return;
     }
@@ -4692,7 +4742,7 @@ export function createTacticsTurn(context) {
     const noTarget = ultimateNeedsNoTarget(mechanics, classId);
     const lane = effectiveLane(draft);
     const clearButton =
-      '<button type="button" class="xbtn" data-key="Escape" id="clear-target-button" aria-label="Clear target (Esc)" title="Clear Target · Esc">×<small>Esc</small></button>';
+      '<button type="button" class="xbtn" data-key="Escape" id="clear-target-button" aria-label="Clear target (Esc)" data-help-title="Clear Target" data-help="Remove the target you picked. You can also press Esc.">×<small>Esc</small></button>';
     if (parts.tchip) {
       if (picked.chip.state === "none") {
         parts.tchip.className = "tchip none";
@@ -4759,8 +4809,8 @@ export function createTacticsTurn(context) {
                   (agent) => agent.public_agent_id === row.publicAgentId,
                 ),
               );
-              const title = ` title="${escapeHtml(`${row.name} · ID ${row.number}: ${what}`)}"`;
-              return `<button type="button" class="pick" data-target="${escapeHtml(row.publicAgentId)}" aria-pressed="${row.publicAgentId === stagedId}" aria-label="${escapeHtml(`${row.name}, Agent ID ${row.number}, Team ${row.team ?? ""}: ${what}`)}"${title}>${championToken(rowFacts, "XS", {}, { agent: sceneAgentById(data, row.publicAgentId), scene: data.scene })}${escapeHtml(`${row.name} · ID ${row.number}`)} <em>${escapeHtml(what)}</em></button>`;
+              const help = ` data-help-title="${escapeHtml(`${row.name} · ID ${row.number}`)}" data-help="${escapeHtml(`Allowed now: ${what}. Click to make it your target.`)}"`;
+              return `<button type="button" class="pick" data-target="${escapeHtml(row.publicAgentId)}" aria-pressed="${row.publicAgentId === stagedId}" aria-label="${escapeHtml(`${row.name}, Agent ID ${row.number}, Team ${row.team ?? ""}: ${what}`)}"${help}>${championToken(rowFacts, "XS", {}, { agent: sceneAgentById(data, row.publicAgentId), scene: data.scene })}${escapeHtml(`${row.name} · ID ${row.number}`)} <em>${escapeHtml(what)}</em></button>`;
             })
             .join(""),
     );
@@ -4839,66 +4889,10 @@ export function createTacticsTurn(context) {
       setHtml(parts.runeRing, cooldown === null ? "" : lines + dots);
     }
 
-    // 4 Lock In. Agent POV lists only the viewing team's orders (L18). The
-    // list's size and form follow the roster (every Manual champion of both
-    // teams), not the view, so neither a turn nor a view switch changes the
-    // arena's size: data-orders sizes the list (deck.css). One or two Manual
-    // champions: the vision's full sentences ("Your order: ..." when this
-    // view shows one). Three or more: one short row each
-    // (compactOrderParts), the full sentence in its title, so every line
-    // shows.
+    // 4 Lock In: the button only. The rail's This Turn checklist lists each
+    // champion's order (owner, 4 Oct 2026: no second list in the deck).
+    // Agent POV: only the viewing team's orders (L18).
     const manualRows = data.shownManualIds.map((publicId) => manualRow(data, publicId));
-    const shownCount = data.shownManualIds.length;
-    const rosterCount = data.manualIds.length;
-    parts.deck.dataset.orders =
-      rosterCount <= 1 ? "one" : rosterCount === 2 ? "two" : "many";
-    if (rosterCount > 2 && shownCount > 0) {
-      const rowsHtml = manualRows
-        .map((row) => {
-          const short = compactOrderParts({
-            touched: row.touched,
-            moveAction: row.moveAction,
-            lane: row.lane,
-            classId: row.classId,
-            ultimateNeedsNoTarget: ultimateNeedsNoTarget(
-              data.mechanicsOf(row.classId),
-              row.classId,
-            ),
-            targetShort: row.targetShort,
-            fallen: row.fallen,
-          });
-          // Spaces between the parts keep the row's text whole; the row
-          // stays whole on one line (fitOrderRow): the step gives way
-          // first, then the text steps down; the title keeps the step.
-          return `<p class="order-row" title="${escapeHtml(orderFor(data, row.publicId))}"><b>${row.facts?.team ? crestSvg(row.facts.team, 14) : ""}${escapeHtml(row.facts?.name ?? "Champion")}:</b> <span class="order-main">${escapeHtml(short.main)}</span>${
-            short.target === null
-              ? ""
-              : ` <span class="order-target">→ ${escapeHtml(short.target)}</span>`
-          }${short.tail === null ? "" : ` <span class="order-tail">· ${escapeHtml(short.tail)}</span>`}</p>`;
-        })
-        .join("");
-      setHtml(parts.orderLine, rowsHtml);
-      fitShortOrderRows(rowsHtml);
-    } else if (shownCount === 2) {
-      setHtml(
-        parts.orderLine,
-        manualRows
-          .map(
-            (row) =>
-              `<p><b>${row.facts?.team ? crestSvg(row.facts.team, 14) : ""}${escapeHtml(row.facts?.name ?? "Champion")}:</b> ${escapeHtml(orderFor(data, row.publicId))}</p>`,
-          )
-          .join(""),
-      );
-    } else if (data.shownManualIds.length === 1) {
-      setHtml(
-        parts.orderLine,
-        `<p><b>Your order:</b> ${escapeHtml(orderFor(data, data.shownManualIds[0]))}</p>`,
-      );
-    } else {
-      setHtml(parts.orderLine, "");
-    }
-    // Full sentences wrap and are never fitted: forget the last row fit.
-    if (!(rosterCount > 2 && shownCount > 0)) fitShortOrderRows("");
     const titles = turnTitles({
       phase,
       stopped: data.stopped,
@@ -4962,8 +4956,7 @@ export function createTacticsTurn(context) {
       );
     }
 
-    // Status line.
-    renderSeal(data);
+    // The deck's header line.
     paintMessage();
 
     // This Turn, Class Guide and the beacon.
@@ -4987,35 +4980,6 @@ export function createTacticsTurn(context) {
       focusedManual,
       controllerHtml: controllerSentenceHtml,
     });
-  }
-
-  /**
-   * Paint the recording seal with recordingWords (the one owner of the
-   * Recording words, shared with main.js's pill and popover): "Recording ·
-   * Tick 91 of 300" while recording, "Saving Replay…" while the server saves
-   * a finished game (lifecycle "sealed" or "finalized_unsaved"), "Saved · 91
-   * Ticks" once saved, "Save Failed · Retry" after a failed save and, once
-   * Exit closed a game before its first tick, "No Replay"; hidden when the
-   * match records nothing. It reads data.recording, so after an accepted
-   * Exit it shows the Exit answer's own status, as the pill does.
-   *
-   * @param {ReturnType<typeof deckData>} data This repaint's facts.
-   * @returns {void}
-   */
-  function renderSeal(data) {
-    const parts = deckParts;
-    if (!parts?.recSeal) return;
-    const recording = data.recording;
-    parts.recSeal.hidden = recording === null;
-    if (recording === null) return;
-    parts.recSeal.classList.toggle(
-      "saved",
-      recording.lifecycle === "saved" || recording.lifecycle === "reviewing",
-    );
-    setText(
-      parts.recSealText,
-      recordingWords(recording, data.tick ?? 0, data.limit, data.closed).seal,
-    );
   }
 
   /**
@@ -5182,12 +5146,12 @@ export function createTacticsTurn(context) {
           if (row === undefined) {
             const facts = manualChampionFacts(data, publicId);
             const agent = sceneAgentById(data, publicId);
-            html += `<button type="button" class="cl-row${publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(publicId)}" data-observed="false" data-sight="${agent === null ? "out" : "in"}" title="${escapeHtml(HIDDEN_ORDER_TITLE)}">${agent === null ? UNSEEN_TOKEN : championToken(facts, "XS", {}, { agent, scene: data.scene })}<span><b>${escapeHtml(`${facts?.name ?? "Champion"} · ${facts?.calling ?? ""}`)}</b><span>${escapeHtml(hiddenOrderLine(agent !== null))}</span></span></button>`;
+            html += `<button type="button" class="cl-row${publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(publicId)}" data-observed="false" data-sight="${agent === null ? "out" : "in"}" data-help-title="${escapeHtml(`${facts?.name ?? "Champion"} · ${facts?.calling ?? ""}`)}" data-help="${escapeHtml(HIDDEN_ORDER_TITLE)}">${agent === null ? UNSEEN_TOKEN : championToken(facts, "XS", {}, { agent, scene: data.scene })}<span><b>${escapeHtml(`${facts?.name ?? "Champion"} · ${facts?.calling ?? ""}`)}</b><span>${escapeHtml(hiddenOrderLine(agent !== null))}</span></span></button>`;
             continue;
           }
           if (row.fallen) {
             // A fallen champion takes no orders: it says when it returns.
-            html += `<button type="button" class="cl-row${row.publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(row.publicId)}" data-fallen="true">${championToken(row.facts, "XS", {}, { agent: sceneAgentById(data, row.publicId), scene: data.scene })}<span><b>${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}</b><span>${escapeHtml(fallenWords(row.fallen))}</span></span><em class="cl-state fallen">Fallen</em></button>`;
+            html += `<button type="button" class="cl-row${row.publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(row.publicId)}" data-fallen="true" data-help-title="${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}" data-help="${escapeHtml(`${fallenWords(row.fallen)}. A fallen champion takes no orders until it returns. Click to look at it.`)}">${championToken(row.facts, "XS", {}, { agent: sceneAgentById(data, row.publicId), scene: data.scene })}<span><b>${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}</b><span>${escapeHtml(fallenWords(row.fallen))}</span></span><em class="cl-state fallen">Fallen</em></button>`;
             continue;
           }
           const line = row.known
@@ -5202,7 +5166,7 @@ export function createTacticsTurn(context) {
                 targetShort: row.targetShort,
               })
             : "Step: Stay · Action: Click To See";
-          html += `<button type="button" class="cl-row${row.publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(row.publicId)}">${championToken(row.facts, "XS", {}, { agent: sceneAgentById(data, row.publicId), scene: data.scene })}<span><b>${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}</b><span>${escapeHtml(line)}</span></span><em class="cl-state${row.touched ? "" : " def"}">${row.touched ? "Set" : "Default"}</em></button>`;
+          html += `<button type="button" class="cl-row${row.publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(row.publicId)}" data-help-title="${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}" data-help="${escapeHtml(`${line}. Click to give this champion orders. Set means its order is not the default Stay and No Combat.`)}">${championToken(row.facts, "XS", {}, { agent: sceneAgentById(data, row.publicId), scene: data.scene })}<span><b>${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}</b><span>${escapeHtml(line)}</span></span><em class="cl-state${row.touched ? "" : " def"}">${row.touched ? "Set" : "Default"}</em></button>`;
         }
       }
     }
@@ -5392,7 +5356,6 @@ export function createTacticsTurn(context) {
       ultSub: part("ult-sub"),
       ultReady: part("ult-ready"),
       runeRing: part("rune-ring"),
-      orderLine: part("order-line"),
       lockLabel: part("lock-label"),
       watchOnly: part("watch-only"),
       woTok: part("wo-tok"),
@@ -5406,8 +5369,6 @@ export function createTacticsTurn(context) {
       wbNote: part("wb-note"),
       watchSubmit: /** @type {HTMLButtonElement | null} */ (part("watch-submit")),
       statusLine: part("status-line"),
-      recSeal: part("rec-seal"),
-      recSealText: part("rec-seal-text"),
       msg: part("msg"),
       keysChip: part("keys-chip"),
       keysText: part("keys-text"),
@@ -5553,15 +5514,14 @@ export function createTacticsTurn(context) {
    *
    * First it runs installVisionDeck (see there for its listeners). It
    * listens for window resizes and for the page's fonts to finish loading,
-   * to fit the short Lock In rows and Allowed Now again (fitShortOrderRows,
-   * fitAllowedNow). Then it
+   * to fit Allowed Now again (fitAllowedNow). Then it
    * adds click listeners to Restart (`reset`), Run or Pause (the page's own
    * Run through context.toggleLiveRun when main.js gives it, else `run` or
    * `pause` with the installed session and run generation) and every deck
    * button with
    * `data-key` (the same keyboard command its key would send: the pad, the
    * three action slots, ‹ Prev and Next ›, Lock In Turn and Play One Turn).
-   * A press the deck refuses (deckRefusal) sends nothing: the status line
+   * A press the deck refuses (deckRefusal) sends nothing: the message line
    * shows the vision's sentence and the control shakes. Python still checks
    * every command.
    *
@@ -5569,14 +5529,12 @@ export function createTacticsTurn(context) {
    */
   function bindCommandDeck() {
     installVisionDeck();
-    // The short Lock In rows are fitted to the column's width: fit them again
-    // when the window size changes or the page's fonts finish loading.
+    // Allowed Now is fitted to its column: fit it again when the window size
+    // changes or the page's fonts finish loading.
     window.addEventListener("resize", () => {
-      fitShortOrderRows(orderFit.html);
       fitAllowedNow();
     });
     void document.fonts?.ready.then(() => {
-      fitShortOrderRows(orderFit.html, true);
       fitAllowedNow(true);
     });
     elements.resetButton.addEventListener("click", () => {
@@ -5632,5 +5590,6 @@ export function createTacticsTurn(context) {
     renderSystemOperation,
     bindCommandDeck,
     showStatusMessage,
+    forgetRefusalEchoes,
   });
 }

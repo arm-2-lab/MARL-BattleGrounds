@@ -7,9 +7,9 @@
  * and notices show under the readout (#rune-scrubber-notice). Scores read from
  * the shared scorebug and results from the Verdict card. The rail's tabs hold
  * the roster, metrics, Visual Filters and the Technical Frame. Exported PNGs carry
- * version 4 provenance, which records the 72 battlefield switches and the Whole
- * Map camera frame, and Default Configuration restores 71 of the 95 listed
- * switches with Ranges off ("71 Of 96 On"). Layout checks use the smallest
+ * version 5 provenance, which records the 73 battlefield switches (High
+ * Contrast included) and the Whole Map camera frame, and Default Configuration
+ * restores 76 of the 95 listed switches with Ranges off ("76 Of 96 On"). Layout checks use the smallest
  * supported screen, 1366 x 768, and the spec keeps no screenshot baseline.
  * Shift + Arrow Left / Right step ten ticks. A
  * live frame met on Reconnect fails closed: the page goes offline, the pill
@@ -18,7 +18,9 @@
  * the side rail (never on the arena): newest first, at most 4 rows, each with
  * its Kill Contributors tip; Agent POV lists only the falls its team saw.
  * Metric checks use scalar schema 15 (11,192
- * measurements in 28 topics and 44 tables); a historical recording shows every
+ * measurements in 28 topics and 44 tables); the Metrics tab's header (Scope,
+ * Topic, View and Find A Measurement) stays put while only the card under it
+ * scrolls, and the card keeps a few rows even at 200% zoom; a historical recording shows every
  * Red Zone row as a dash explaining that the rule was not recorded. Exit must
  * flush its replay response and end the server with exit code 0 and no signal,
  * checked strictly by expectServerShutdown.
@@ -162,10 +164,12 @@ const FIXED_EXPORT_FONT_PATHS = new Set([
 const REPLAY_VIEWER_FILTER_IDS = Object.freeze(
   visualFiltersForProduct("replay_viewer").map(({ id }) => id),
 );
+// High Contrast is off here so the export checks also see the Moonlit surround.
 const REPRESENTATIVE_DISABLED_FILTERS = Object.freeze([
   "aura_fields",
   "ultimate_ability_effects",
   "scrolling_battle_text",
+  "high_contrast",
 ]);
 
 /** @type {Awaited<ReturnType<typeof exportReplayArtifacts>> | null} */
@@ -944,12 +948,12 @@ function expectedReplayPngProvenance(snapshot) {
         authorized_endpoint_digest_sha256:
           presentation.source.source_authorized_endpoint_digest_sha256,
       };
-  // Provenance version 4 records only the battlefield switches
+  // Provenance version 5 records only the battlefield switches
   // (REPLAY_PNG_RECORDED_FILTER_IDS) and the camera frame; these tests keep
   // the camera on Whole Map, which is the painted map from (0, 0).
   return {
     schema_id: "marl_battlegrounds.replay_battlefield_png_provenance",
-    schema_version: 4,
+    schema_version: 5,
     product_kind: "replay_viewer",
     presentation_kind: presentation.presentation_kind,
     authority,
@@ -984,31 +988,55 @@ function expectedReplayPngProvenance(snapshot) {
   };
 }
 
+// The arena surround an exported PNG shows, out to its corners: the palette's
+// --battlefield (styles.css: Moonlit #111827, the same as the locked
+// --export-backdrop; palette.css: High Contrast #0f1522). Enable All turns
+// High Contrast on.
+const MOONLIT_BASE_RGB = /** @type {const} */ ([17, 24, 39]);
+const HIGH_CONTRAST_BASE_RGB = /** @type {const} */ ([15, 21, 34]);
+
 /** @param {import("@playwright/test").Page} page
  * @param {Buffer} bytes
  * @param {readonly [number, number, number]} resolvedShellBorderRgb
- * @param {Array<Record<string, any>>} rasterCues */
-async function decodeReplayPngPixels(page, bytes, resolvedShellBorderRgb, rasterCues) {
+ * @param {Array<Record<string, any>>} rasterCues
+ * @param {readonly [number, number, number]} resolvedBaseRgb
+ * @param {Buffer | null} controlBytes */
+async function decodeReplayPngPixels(
+  page,
+  bytes,
+  resolvedShellBorderRgb,
+  rasterCues,
+  resolvedBaseRgb,
+  controlBytes,
+) {
   return page.evaluate(
-    async ({ base64, shellBorderRgb, cues }) => {
-      const binary = atob(base64);
-      const encoded = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      const bitmap = await createImageBitmap(
-        new Blob([encoded], { type: "image/png" }),
-      );
+    async ({ base64, shellBorderRgb, cues, baseRgb, controlBase64 }) => {
       const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const context = canvas.getContext("2d", { alpha: true });
-      if (!context) {
-        throw new Error("PNG pixel proof requires a 2D Canvas context.");
+      const decode = async (/** @type {string} */ encodedBase64) => {
+        const binary = atob(encodedBase64);
+        const encoded = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const bitmap = await createImageBitmap(
+          new Blob([encoded], { type: "image/png" }),
+        );
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext("2d", { alpha: true });
+        if (!context) {
+          throw new Error("PNG pixel proof requires a 2D Canvas context.");
+        }
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return context.getImageData(0, 0, canvas.width, canvas.height).data;
+      };
+      // The same picture with the Ranges layer hidden, when given: a range
+      // ring's pixels are the ones that differ from it.
+      const control = controlBase64 === null ? null : await decode(controlBase64);
+      const pixels = await decode(base64);
+      if (control !== null && control.length !== pixels.length) {
+        throw new Error("The control PNG must have the same size.");
       }
-      context.drawImage(bitmap, 0, 0);
-      bitmap.close();
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let transparentPixels = 0;
       let basePixels = 0;
-      let gridPixels = 0;
       let nonBackdropPixels = 0;
       let shellBorderEdgePixels = 0;
       const isRgb = (
@@ -1023,15 +1051,8 @@ async function decodeReplayPngPixels(page, bytes, resolvedShellBorderRgb, raster
         Math.abs(pixels[offset + 2] - blue) <= tolerance;
       for (let offset = 0; offset < pixels.length; offset += 4) {
         if (pixels[offset + 3] !== 255) transparentPixels += 1;
-        if (isRgb(offset, 17, 24, 39)) basePixels += 1;
-        if (isRgb(offset, 21, 30, 47, 1) || isRgb(offset, 25, 35, 53, 1)) {
-          gridPixels += 1;
-        }
-        if (
-          !isRgb(offset, 17, 24, 39, 1) &&
-          !isRgb(offset, 21, 30, 47, 2) &&
-          !isRgb(offset, 25, 35, 53, 2)
-        ) {
+        if (isRgb(offset, baseRgb[0], baseRgb[1], baseRgb[2])) basePixels += 1;
+        if (!isRgb(offset, baseRgb[0], baseRgb[1], baseRgb[2], 1)) {
           nonBackdropPixels += 1;
         }
       }
@@ -1076,7 +1097,23 @@ async function decodeReplayPngPixels(page, bytes, resolvedShellBorderRgb, raster
               if (boundaryDistance > 4) continue;
             }
             const offset = (y * canvas.width + x) * 4;
-            if (isRgb(offset, cue.color[0], cue.color[1], cue.color[2], 8)) {
+            // A ring pixel differs from the control picture by more than 8 on
+            // some channel, and every channel moves toward the ring's color.
+            const matches =
+              cue.label === "range-ring" && control !== null
+                ? [0, 1, 2].some(
+                    (channel) =>
+                      Math.abs(pixels[offset + channel] - control[offset + channel]) >
+                      8,
+                  ) &&
+                  [0, 1, 2].every(
+                    (channel) =>
+                      (pixels[offset + channel] - control[offset + channel]) *
+                        (cue.color[channel] - control[offset + channel]) >=
+                      0,
+                  )
+                : isRgb(offset, cue.color[0], cue.color[1], cue.color[2], 8);
+            if (matches) {
               matchingPixels += 1;
               const quadrant =
                 (y + 0.5 >= centerY ? 2 : 0) + (x + 0.5 >= centerX ? 1 : 0);
@@ -1091,7 +1128,6 @@ async function decodeReplayPngPixels(page, bytes, resolvedShellBorderRgb, raster
         height: canvas.height,
         transparentPixels,
         basePixels,
-        gridPixels,
         nonBackdropPixels,
         shellBorderEdgePixels,
         edgePixelCount: edgeOffsets.size,
@@ -1108,8 +1144,58 @@ async function decodeReplayPngPixels(page, bytes, resolvedShellBorderRgb, raster
       base64: bytes.toString("base64"),
       shellBorderRgb: resolvedShellBorderRgb,
       cues: rasterCues,
+      baseRgb: resolvedBaseRgb,
+      controlBase64: controlBytes === null ? null : controlBytes.toString("base64"),
     },
   );
+}
+
+// The Runefield range rings are dotted and dashed, so few PNG pixels carry
+// their exact color. A second export with only the Ranges layer hidden (through
+// its own inline style, put back exactly afterwards; never the server state)
+// shows which pixels the rings themselves paint.
+/** @param {import("@playwright/test").Page} page */
+async function exportWithoutRangeCues(page) {
+  const layer = page.locator('#battlefield [data-layer="range-cues"]');
+  // The page's style policy blocks writing a style attribute back, so the
+  // restore goes through the style object (allowed), and an attribute that
+  // was absent before is removed again.
+  const original = await layer.evaluate((element) => {
+    if (!(element instanceof SVGElement)) {
+      throw new TypeError("The Ranges layer is not an SVG element.");
+    }
+    const before = {
+      hadStyle: element.hasAttribute("style"),
+      value: element.style.getPropertyValue("visibility"),
+      priority: element.style.getPropertyPriority("visibility"),
+    };
+    element.style.setProperty("visibility", "hidden", "important");
+    return before;
+  });
+  try {
+    const downloadPromise = page.waitForEvent("download");
+    await openExportMenu(page);
+    await page.locator("#replay-export-png-button").click();
+    const download = await downloadPromise;
+    await expect(page.locator("#replay-export-png-button")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const downloadPath = await download.path();
+    if (downloadPath === null) {
+      throw new Error("The control PNG download has no local path.");
+    }
+    return await readFile(downloadPath);
+  } finally {
+    await layer.evaluate((element, before) => {
+      if (!(element instanceof SVGElement)) return;
+      if (before.value === "") element.style.removeProperty("visibility");
+      else element.style.setProperty("visibility", before.value, before.priority);
+      if (!before.hadStyle && element.getAttribute("style") === "") {
+        element.removeAttribute("style");
+      }
+    }, original);
+  }
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -1198,17 +1284,29 @@ async function exportAndInspectReplayPng(page, options) {
   expect(expectedFilename).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/u);
   expect(expectedFilename).not.toMatch(/[\\/]/u);
 
+  const baseRgb =
+    container.provenance.presentation.visual_filters.high_contrast === true
+      ? HIGH_CONTRAST_BASE_RGB
+      : MOONLIT_BASE_RGB;
+  const hasRangeCue = before.dom.rasterCues.some(
+    (/** @type {Record<string, any>} */ cue) => cue.label === "range-ring",
+  );
   const pixelEvidence = await decodeReplayPngPixels(
     page,
     bytes,
     shellBorderRgb,
     before.dom.rasterCues,
+    baseRgb,
+    hasRangeCue ? await exportWithoutRangeCues(page) : null,
   );
   expect(pixelEvidence.width).toBe(container.width);
   expect(pixelEvidence.height).toBe(container.height);
   expect(pixelEvidence.transparentPixels).toBe(0);
   expect(pixelEvidence.basePixels).toBeGreaterThan(100);
-  expect(pixelEvidence.gridPixels).toBeGreaterThan(100);
+  // The arena paints its own surround to every edge, so the backdrop's grid
+  // never shows on the page or in the PNG; each corner is exactly the
+  // palette's surround color.
+  expect(pixelEvidence.corners).toEqual(Array(4).fill([...baseRgb, 255]));
   expect(pixelEvidence.nonBackdropPixels).toBeGreaterThan(1_000);
   expect(pixelEvidence.shellBorderEdgePixels).toBe(0);
   expect(pixelEvidence.corners).not.toContainEqual([...shellBorderRgb, 255]);
@@ -1600,8 +1698,9 @@ test("canonical complete and partial artifacts join their frame-zero and capture
     page.locator("#replay-timeline #replay-clear-reference-button"),
   ).toHaveCount(0);
   await expect(page.locator("#battlefield-shell #replay-ranges-button")).toHaveCount(0);
-  // The Visual Key is one top-bar button in every client (BattleClient look).
-  await expect(page.locator("#visual-key-button")).toHaveText("Visual Key");
+  // No client has a Visual Key button (owner, 4 Oct 2026): hover tips, the
+  // Champion Card and Frame Explanation explain each mark where it shows.
+  await expect(page.locator("#visual-key-button")).toHaveCount(0);
   await expect(page.locator("#roster-details")).toHaveAttribute("open", "");
   // Owner, 3 Oct 2026 (B8): the long agent details card left the Replay
   // Viewer rail; the Agent tab holds the Champion Frame and the Class Guide.
@@ -3075,12 +3174,15 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await expect(
       page.locator('[data-metric="team_a_damage_to_hunter_trap_recipient"]'),
     ).toContainText("Hunter Trap");
+    // The header stays put while the card under it scrolls (owner, 4 Oct 2026).
     const controlsBefore = await page.locator("#metric-scope").boundingBox();
-    await page.locator("#metric-rows tbody").evaluate((element) => {
+    const scrolled = await page.locator("#evaluation-metrics").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
     });
+    expect(scrolled).toBeGreaterThan(0);
     expect(await page.locator("#metric-scope").boundingBox()).toEqual(controlsBefore);
-    await page.locator("#metric-rows tbody").evaluate((element) => {
+    await page.locator("#evaluation-metrics").evaluate((element) => {
       element.scrollTop = 0;
     });
     await page
@@ -3167,7 +3269,9 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     }
     await metricSearch.press("ArrowDown");
     await expect(selectedResult).toHaveCount(1);
-    await page.locator("#evaluation-metrics").screenshot({
+    // The search sits in the Metrics tab's fixed header, outside the card that
+    // scrolls, so search pictures capture the whole tab.
+    await page.locator("#replay-rail-metrics").screenshot({
       path: testInfo.outputPath("metric-search-connecting-words.png"),
     });
     await metricSearch.fill("crippling poison");
@@ -3198,7 +3302,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       await page.setViewportSize({ width, height: 900 });
       await metricSearch.press("ArrowUp");
       await expect(selectedResult).toBeInViewport();
-      await page.locator("#evaluation-metrics").screenshot({
+      await page.locator("#replay-rail-metrics").screenshot({
         path: testInfo.outputPath(`metric-search-keyboard-${width}.png`),
       });
     }
@@ -3320,7 +3424,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await expect(selectedResult).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expect(page.locator("#visual-tooltip")).toBeHidden();
-    await page.locator("#evaluation-metrics").screenshot({
+    await page.locator("#replay-rail-metrics").screenshot({
       path: testInfo.outputPath("metric-search-collapsed.png"),
     });
     await page.locator("#metric-search").click();
@@ -3329,7 +3433,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       healingResults,
     );
     await expect(page.locator("#metric-search-more")).toBeVisible();
-    await page.locator("#evaluation-metrics").screenshot({
+    await page.locator("#replay-rail-metrics").screenshot({
       path: testInfo.outputPath("metric-search-reopened.png"),
     });
     await page.locator("#metric-search-more").click();
@@ -3448,7 +3552,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
         useInnerText: true,
       });
       await expect(page.locator(`[data-metric="${unavailable}"]`)).toHaveCount(0);
-      await page.locator("#evaluation-metrics").screenshot({
+      await page.locator("#replay-rail-metrics").screenshot({
         path: testInfo.outputPath(`metric-search-inactive-${view}.png`),
       });
     }
@@ -3481,7 +3585,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await expect(page.locator("#visual-filter-red-zone-floors")).toBeChecked();
     // Every listed switch at its shipped default. Default Configuration never
     // touches Ranges (filter-controls.js), so the Ranges that Enable All
-    // turned on stays on: "72 Of 96 On".
+    // turned on stays on: "77 Of 96 On".
     const shippedOn = visualFiltersForProduct("replay_viewer").filter(
       ({ defaultEnabled }) => defaultEnabled,
     ).length;
@@ -3539,19 +3643,19 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await page.evaluate(() => {
       document.documentElement.style.zoom = "2";
     });
-    // The rows have no scroll of their own: the Metrics tab's panel holds the
-    // one scroll (ledger.css). Focusing the rows already scrolls that panel
-    // part way, so the check is that End takes it to its bottom.
-    const panelSpaceBelow = () =>
-      page.locator("#evaluation-metrics").evaluate((card) => {
-        const panel = card.closest(".ledger-rail__panel");
-        if (!panel) throw new Error("Expected the Metrics tab's panel.");
-        return panel.scrollHeight - panel.clientHeight - panel.scrollTop;
-      });
+    // The rows have no scroll of their own: under the Metrics tab's header,
+    // the card holds the table's scroll (ledger.css; at 200% zoom the tab may
+    // scroll too, so the card always keeps a few rows). Focusing the rows
+    // already scrolls the card part way, so the check is that End takes it to
+    // its bottom.
+    const cardSpaceBelow = () =>
+      page
+        .locator("#evaluation-metrics")
+        .evaluate((card) => card.scrollHeight - card.clientHeight - card.scrollTop);
     await page.locator("#metric-rows tbody").focus();
-    expect(await panelSpaceBelow()).toBeGreaterThan(1);
+    expect(await cardSpaceBelow()).toBeGreaterThan(1);
     await page.keyboard.press("End");
-    await expect.poll(panelSpaceBelow).toBeLessThanOrEqual(1);
+    await expect.poll(cardSpaceBelow).toBeLessThanOrEqual(1);
     await page
       .locator("#evaluation-metrics")
       .screenshot({ path: testInfo.outputPath("metric-panel-200-percent.png") });

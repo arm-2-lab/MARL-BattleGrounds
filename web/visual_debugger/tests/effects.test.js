@@ -3,7 +3,8 @@
  * without granting new information rights. Death Announcer cards come from the
  * global death list only in Oracle View; in Agent POV that list never reaches
  * the arena. The announcement and the team respawn wave are data rows with no
- * arena anchor or box (the Fallen panel and the Wave Chip are page chrome), and
+ * arena anchor or box (the Fallen panel is page chrome; the scorebug counts
+ * the wave down), and
  * a status change reserves no arena box and no plan nodes because it shows on
  * the body. Status outcomes play in the beat clock's Settle window, and reduced
  * motion keeps a short copy of the whole schedule. Also pins where each drawing
@@ -1231,7 +1232,8 @@ test("all registered transient families validate without constructing disabled g
   );
   assert.equal(reversedWave?.teamId, 1);
   assert.equal(reversedWave?.teamSide, "right");
-  // The team wave is page chrome (the scorebug's Wave Chip): no arena anchor.
+  // The team wave is never an arena mark (the scorebug counts it down): no
+  // arena anchor.
   assert.equal(reversedWave?.anchor, null);
   assert.equal(reversedWave?.spatial, false);
   assert.equal(

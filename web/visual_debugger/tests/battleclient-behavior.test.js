@@ -9,12 +9,23 @@
  * (2) On the focused battlefield ? opens How To Play at any time (also while
  * orders are closed, as at game over) and sends nothing; a key that
  * allowsWhileClosed accepts (R and G at game over) still reaches onCommand
- * while orders are closed; any other key then goes to onFencedCommand.
+ * while orders are closed; any other key then goes to onFencedCommand, and a
+ * Tab it does not keep has its browser default stopped in live play
+ * (ownsFencedTabDefault), so focus never walks onto the arena's marks; the
+ * Replay Viewer's Tab is left alone.
  * (3) main.js wires the controls the vision page shows: How To Play on #htp,
  * the Recording popover's Finish And Save, Open Replay kept visible, the
  * Restart dialog's Save focus and "Restart cancelled" sentence (read from
- * its source), and the pill, popover and seal words, which main.js imports
- * from their one owner, recordingWords in tactics-turn.js.
+ * its source), and the pill and popover words, which main.js imports from
+ * their one owner, recordingWords in tactics-turn.js, and after a failed save
+ * the popover's reason line, from saveFailedReason there (one plain sentence
+ * per save error code, "" otherwise); the top bar's save
+ * button follows saveButtonState (owner, 4 Oct 2026) and its click answers
+ * its data-action (finish, open, retry); the arena's Match Summary key shows
+ * only while the Verdict is folded into its plate and opens or closes the
+ * sheet; every command dispatchCommand sends makes the deck forget the
+ * sentences said before its last refusal (forgetRefusalEchoes), so the answer
+ * to an input made after a refusal always shows.
  * (4) audienceSwitchKeepsTick says a view switch shows the tick already
  * played at its end (no replay, orders stay open) only for the same session
  * and tick with a different audience, never for a new tick, a restart, the
@@ -32,7 +43,10 @@
  * settled), pageRunOwnsLockIn claims Space, Enter and N (any case, any
  * modifiers) and nothing else, and dispatchCommand drops such a command
  * silently unless it is Run's own quiet turn, so no second turn is sent and no
- * glide is cut short, as on the vision page.
+ * glide is cut short, as on the vision page. For that whole time the loop's
+ * flag lives in the page state (state.pageRunLoop), and the deck keeps Lock In
+ * and Play One Turn disabled while it is true, so neither looks ready while
+ * its press would be dropped.
  * (8) N is one tick, a Lock In key like Space: the focused battlefield
  * forwards N; main.js names the Lock In keys in one helper (isLockInKeyName:
  * Enter, Space, N) used by isFreshUnmodifiedEnter, the fenced-input queue and
@@ -54,9 +68,13 @@ import {
   STEP_NAMES,
   statusSentence,
 } from "../src/controls.js";
-import { commandRole, recordingWords } from "../src/tactics-turn.js";
+import { commandRole, recordingWords, saveFailedReason } from "../src/tactics-turn.js";
 
 const MAIN = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+const TACTICS = readFileSync(
+  new URL("../src/tactics-turn.js", import.meta.url),
+  "utf8",
+);
 
 /** @param {string} name A top-level function declared in main.js. */
 function mainFunction(name) {
@@ -260,6 +278,40 @@ test("? opens How To Play at any time and R and G pass while orders are closed",
   assert.equal(sent.length, 2);
 });
 
+test("a Tab while orders are closed stays in the arena in live play", () => {
+  /** @param {boolean} live */
+  const tabWhileClosed = (live) => {
+    const battlefield = /** @type {any} */ (new EventTarget());
+    /** @type {Record<string, unknown>[]} */
+    const fenced = [];
+    bindBattlefieldControls({
+      battlefield,
+      toWorldPoint: () => null,
+      onCommand: () => {},
+      onHelp: () => {},
+      onReleaseFocus: () => {},
+      isInteractive: () => false,
+      onFencedCommand: (command) => {
+        fenced.push(command);
+        return false;
+      },
+      ownsFencedTabDefault: () => live,
+    });
+    const tab = keydown("Tab");
+    battlefield.dispatchEvent(tab);
+    const back = keydown("Tab", true);
+    battlefield.dispatchEvent(back);
+    return { fenced, prevented: [tab.defaultPrevented, back.defaultPrevented] };
+  };
+  // The policies choose or the game is over: nothing keeps the Tab, and the
+  // browser's own Tab would walk onto the marks inside the arena.
+  const live = tabWhileClosed(true);
+  assert.deepEqual(live.prevented, [true, true]);
+  assert.equal(live.fenced.length, 2, "the fenced handler is still asked first");
+  // The Replay Viewer's own Tab steps agents, so its default is left alone.
+  assert.deepEqual(tabWhileClosed(false).prevented, [false, false]);
+});
+
 test("main.js wires the vision's help, recording and Restart controls", () => {
   assert.match(MAIN, /howToPlay: requiredElement\("htp"\)/u);
   assert.match(MAIN, /onHelp: \(\) => toggleHowToPlay\(\)/u);
@@ -274,18 +326,46 @@ test("main.js wires the vision's help, recording and Restart controls", () => {
   assert.match(MAIN, /recordingPopover\.hidePopover\(\)/u);
   assert.match(MAIN, /recordingSaveReplaceButton\.focus\(/u);
   assert.match(MAIN, /kind: "restart_cancelled"/u);
-  assert.match(MAIN, /\n {2}recordingWords,\n\} from "\.\/tactics-turn\.js";/u);
+  assert.match(
+    MAIN,
+    /\n {2}recordingWords,\n {2}saveButtonState,\n {2}saveFailedReason,\n\} from "\.\/tactics-turn\.js";/u,
+  );
   assert.equal(
-    recordingWords({ lifecycle: "persistence_failed" }, 91, 300).pill,
+    recordingWords({ lifecycle: "persistence_failed" }, 91).pill,
     "Save Failed · Retry",
   );
   const live = recordingWords(
     { lifecycle: "recording", captured_transition_count: 0 },
     91,
-    300,
   );
   assert.equal(live.pill, "Recording · Tick 91");
   assert.equal(live.popover, "0 Ticks Kept Since Tick 91");
+  // After a failed save the popover says why, in plain words, never a path.
+  const failed = (/** @type {string | null} */ code) =>
+    saveFailedReason({ lifecycle: "persistence_failed", persistence_error_code: code });
+  assert.equal(
+    failed("target_unavailable"),
+    "Reason: The save folder or file name could not be used, for example a missing folder or a file that already exists.",
+  );
+  assert.equal(
+    failed("publication_failed"),
+    "Reason: The replay file could not be written.",
+  );
+  assert.equal(
+    failed("verification_failed"),
+    "Reason: The saved file did not read back the same as this game, so it was not trusted.",
+  );
+  assert.equal(failed(null), "");
+  assert.equal(failed("something_new"), "");
+  assert.equal(
+    saveFailedReason({
+      lifecycle: "saved",
+      persistence_error_code: "publication_failed",
+    }),
+    "",
+  );
+  assert.equal(saveFailedReason(null), "");
+  assert.match(MAIN, /elements\.recordingPopReason\.hidden = reason === "";/u);
 });
 
 test("a view switch keeps the tick already played instead of replaying it", () => {
@@ -345,10 +425,10 @@ test("main.js runs Policies Only turns one at a time in the vision's words", () 
     /dispatchCommand\(keyboardCommand\("Enter"\), \{\s*source: "control",\s*quiet: true,\s*keepPresentation: true,\s*\}\)/u,
   );
   assert.match(MAIN, /liveRunMayContinue\(\{ ignorePause: true \}\)/u);
-  assert.match(MAIN, /if \(!liveRunLoopActive\) void runLiveTurns\(\);/u);
+  assert.match(MAIN, /if \(!state\.pageRunLoop\) void runLiveTurns\(\);/u);
   assert.match(
     MAIN,
-    /liveRunLoopActive = false;\s*liveRunHoldsNextTick = false;\s*const paused = !state\.pageRun;/u,
+    /state\.pageRunLoop = false;\s*liveRunHoldsNextTick = false;\s*const paused = !state\.pageRun;/u,
   );
   assert.match(
     MAIN,
@@ -389,9 +469,9 @@ test("Space, Enter and N are ignored while the page's own Run plays", () => {
   /** @type {(active: boolean) => (command: Record<string, unknown>) => boolean} */
   const owns = (active) =>
     new Function(
-      "liveRunLoopActive",
+      "state",
       `${mainFunction("isLockInKeyName")}\n${source}\nreturn pageRunOwnsLockIn;`,
-    )(active);
+    )({ pageRunLoop: active });
   const running = owns(true);
   for (const key of ["Enter", "enter", " ", "n", "N"]) {
     assert.equal(running({ command_type: "keyboard", key }), true, key);
@@ -412,6 +492,13 @@ test("Space, Enter and N are ignored while the page's own Run plays", () => {
   assert.equal(owns(false)({ command_type: "keyboard", key: " " }), false);
   assert.equal(owns(false)({ command_type: "keyboard", key: "Enter" }), false);
   assert.equal(owns(false)({ command_type: "keyboard", key: "n" }), false);
+  // While they are dropped, Lock In and Play One Turn are disabled too: after
+  // Pause the button would otherwise look ready while its press does nothing.
+  assert.match(
+    TACTICS,
+    /\(\(liveRunning\(state\) \|\| state\.pageRunLoop === true\) && submits\)/u,
+  );
+  assert.match(MAIN, /state\.pageRunLoop = true;\s*try \{/u);
   // dispatchCommand drops them silently, before the focus queue and the busy
   // warning, unless the command is Run's own quiet turn.
   assert.match(
@@ -510,4 +597,37 @@ test("N passes the closed-orders key gate only in scripted inspection; R and G d
   assert.equal(scriptedAllowed(key("g")), true);
   // Scripted inspection still lets N (its next frame) and G through.
   assert.match(MAIN, /command\.key !== "n" && command\.key !== "g"/u);
+});
+
+test("main.js wires the top bar's save button and the arena's Match Summary key", () => {
+  assert.match(MAIN, /const saveButton = saveButtonState\(recording, \{/u);
+  assert.match(MAIN, /paintSaveButton\(saveButton, interactionDisabled\);/u);
+  assert.match(
+    MAIN,
+    /elements\.recordingFinishButton\.addEventListener\("click", saveButtonClick\);/u,
+  );
+  const click = /\nfunction saveButtonClick\(\) \{[\s\S]*?\n\}/u.exec(MAIN)?.[0] ?? "";
+  assert.match(click, /action === "finish"\) \{\s+finishAndSave\(\);/u);
+  assert.match(click, /command_type: "review_replay"/u);
+  assert.match(
+    click,
+    /window\.open\(elements\.recordingReplayLink\.href, "_blank", "noopener"\)/u,
+  );
+  assert.match(click, /command_type: "retry_save"/u);
+  assert.match(MAIN, /elements\.arenaMatchSummaryButton\.hidden = !verdictFolded;/u);
+  assert.match(
+    MAIN,
+    /const verdictFolded = records\.some\(\(row\) => row\.kind === "herald-verdict-plate"\);/u,
+  );
+  assert.match(
+    MAIN,
+    /if \(matchSummarySheet !== null\) closeMatchSummarySheet\(\);\s+else openMatchSummarySheet\(\);/u,
+  );
+});
+
+test("a command sent after a refusal makes the deck forget older echoes", () => {
+  const dispatch =
+    /\nasync function dispatchCommand\([\s\S]*?\n\}/u.exec(MAIN)?.[0] ?? "";
+  assert.match(dispatch, /forgetRefusalEchoes\(\);/u);
+  assert.match(MAIN, /\n {2}forgetRefusalEchoes,\n\} = createTacticsTurn\(\{/u);
 });

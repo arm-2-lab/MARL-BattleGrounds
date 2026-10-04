@@ -261,7 +261,10 @@ test("a Priest token shows the cross exactly where its seal is drawn", async () 
   assert.ok(living.record.seal);
   assert.ok(living.record.radius >= champions.CLASS_SEAL.minRadius);
   assert.deepEqual(variants(living.root, "agent-class-icon"), ["cross"]);
-  const plain = drawnPriest(scene, DEFAULT_VISUAL_FILTER_STATE);
+  const plain = drawnPriest(scene, {
+    ...DEFAULT_VISUAL_FILTER_STATE,
+    class_seals: false,
+  });
   assert.equal(plain.record.seal, null);
   assert.deepEqual(variants(plain.root, "agent-class-icon"), ["full"]);
 

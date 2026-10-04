@@ -16,8 +16,11 @@ for that frame's own view (see viewer.champion_streaks); its check requires
 each named champion to be one the view's own incoming events saw at the
 start of the tick. A completion frame may carry ``match_honors``, the
 game-over Honors and Match Summary rows of that frame's own view (see
-viewer.match_summary.match_honors_v1); in Agent POV its check requires the
-viewing team's own champions only, the recipient among them. Every frame
+viewer.match_summary.match_honors_v1); its check requires the frame's own
+match summary to show a finished game; Oracle View lists every champion, and
+Agent POV lists every champion (the game is over, so nothing is left to hide)
+or, from an older producer, its own team with the recipient among them, never
+only the other team. Every frame
 may carry ``match_moments``, the Herald Cards' history facts for that
 frame's own view (see viewer.match_moments); its check requires each
 rescued champion to be one the view's own incoming events saw at both ends
@@ -4500,10 +4503,14 @@ class _MatchPresentationProtocolModel(_PresentationProtocolModel):
     match_honors : MatchHonorsV1 or None
         The game-over Honors and Match Summary rows of this frame's own view
         (viewer.match_summary.match_honors_v1), sent only on the completion
-        frame. Oracle View lists every champion (team_id None); an Agent POV
-        frame lists only the viewing team's own champions, the recipient
-        among them. None (the default) before the game ends, and when the
-        host has no complete history; browsers then show no Honors.
+        frame and refused unless match_summary shows a finished game (outcome
+        "team_a_win", "team_b_win" or "draw"). Oracle View lists every
+        champion (team_id None). An Agent POV
+        frame lists every champion too (team_id None: the game is over, so
+        nothing is left to hide), or its own team with the recipient among
+        them (team_id that team), never only the other team. None (the
+        default) before the game ends, and when the host has no complete
+        history; browsers then show no Honors.
     match_moments : MatchMomentFactsV1 or None
         The Herald Cards' history facts for this frame's own view
         (viewer.match_moments): whether the match began fresh, the largest
@@ -4522,15 +4529,33 @@ class _MatchPresentationProtocolModel(_PresentationProtocolModel):
 
     @model_validator(mode="after")
     def _validate_match_source(self) -> Self:
-        """Require optional match facts to share the surrounding source episode and
-        step, every champion streak to name a champion this view's own
-        incoming events saw at the start of the tick (Agent POV: visual_events;
-        Oracle View: latest_events), each once, and Honors to suit the view:
-        Oracle View lists every champion (team_id None); Agent POV lists only
-        one team (team_id set) with the recipient among its champions. Every
-        rescue in match_moments must name, once, a champion this view's own
-        incoming events saw at both ends of the tick (a trajectory with a
-        start and a successor anchor).
+        """Require optional match facts to fit this frame and its view.
+
+        Optional match facts must share the surrounding source episode and
+        step. Every champion streak must name a champion this view's own
+        incoming events saw at the start of the tick (Agent POV:
+        visual_events; Oracle View: latest_events), each once. Every rescue in
+        match_moments must name, once, a champion this view's own incoming
+        events saw at both ends of the tick (a trajectory with a start and a
+        successor anchor). Honors are game-over facts: they need this frame's
+        own match_summary to show a finished game (outcome "team_a_win",
+        "team_b_win" or "draw"), so a frame from the middle of a game can never
+        carry them. Oracle View Honors list every champion (team_id None);
+        Agent POV Honors list every champion too (the game is over, so nothing
+        is left to hide) or, from an older producer, the recipient's own team
+        (team_id set, the recipient among its champions), never only the other
+        team.
+
+        Returns
+        -------
+        Self
+            This model, unchanged.
+
+        Raises
+        ------
+        ValueError
+            When a streak, rescue, Honors or the match summary breaks one of
+            the rules above.
         """
         moments = self.match_moments
         if moments is not None and moments.rescues:
@@ -4555,10 +4580,24 @@ class _MatchPresentationProtocolModel(_PresentationProtocolModel):
                 )
         honors = self.match_honors
         if honors is not None:
+            # Honors come only once the game is over: a mid-game frame must
+            # never carry them (in Agent POV they name champions the team
+            # cannot see).
+            if self.match_summary is None or self.match_summary.outcome not in (
+                "team_a_win",
+                "team_b_win",
+                "draw",
+            ):
+                raise ValueError(
+                    "match honors need this frame's match summary to show a "
+                    "finished game"
+                )
             agent_pov = "visual_events" in type(self).model_fields
             if not agent_pov and honors.team_id is not None:
                 raise ValueError("Oracle View honors must count every champion")
-            if agent_pov:
+            # Agent POV may show every champion (the game is over) or its own
+            # team, never only the other team.
+            if agent_pov and honors.team_id is not None:
                 pov_source = cast(
                     LiveNoSharedObsPresentationSourceIdentityV1
                     | LiveSharedObsPresentationSourceIdentityV1
@@ -4567,11 +4606,10 @@ class _MatchPresentationProtocolModel(_PresentationProtocolModel):
                     self.__dict__["source"],
                 )
                 recipient = pov_source.source_recipient_public_agent_id
-                if honors.team_id is None or recipient not in {
-                    row.public_agent_id for row in honors.champions
-                }:
+                if recipient not in {row.public_agent_id for row in honors.champions}:
                     raise ValueError(
-                        "Agent POV honors must count only the recipient's own team"
+                        "Agent POV honors must count every champion or the "
+                        "recipient's own team"
                     )
         streaks = self.champion_streaks
         if streaks is not None:

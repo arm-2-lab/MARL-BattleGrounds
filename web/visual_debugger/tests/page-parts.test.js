@@ -5,7 +5,7 @@
  * shell names each product and audience ("View Unavailable" for anything else)
  * and writes the product header (tab title, product name, How To Play or
  * Replay Viewer Help); the
- * Visual Filters help rows keep their page order (the five presets with
+ * Visual Filters help rows keep their page order (the four presets with
  * Default Configuration first, Reset To Default Configuration, Enable All,
  * Disable All, then each switch; a switch renamed for live play gets one row
  * per client, each with the label that client shows), and every preset and
@@ -14,11 +14,14 @@
  * exact strings private tools insert before, the IDs and classes those tools
  * hide or retitle, and one hidden, empty slot per planned interface piece, none
  * marked for a product (the shell would un-hide it). The side rail (#rail)
- * starts with the live Your Turn, Class Guide and How To Play cards, then the
- * This Turn and How To Play slots, the Fallen panel and the Replay Viewer
- * rail, whose six tab panels start with Roster. The toolbar holds Visual
- * Filters after Visual Key, starting hidden and marked for no product, and
- * the button opens and closes the #visual-filters-drawer popover.
+ * starts with the live Your Turn card, then the Fallen panel (right under Your
+ * Turn in live play, owner 4 Oct 2026), the Class Guide and How To Play
+ * cards, the This Turn and How To Play slots and the Replay Viewer rail,
+ * whose six tab panels start with Roster. The toolbar holds Help,
+ * Visual Filters (starting hidden and marked for no product; it opens and
+ * closes the #visual-filters-drawer popover), Finish And Save (starting
+ * hidden, unmarked), Restart (live only) and Exit; no Visual Key and no
+ * top-bar Frame Explanation (owner, 3 and 4 Oct 2026).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -164,14 +167,13 @@ test("shell names each product and audience and writes the product header", () =
 test("Visual Filters help rows keep their page order", () => {
   assert.ok(Object.isFrozen(VISUAL_FILTER_CONTROL_HELP));
   assert.deepEqual(
-    VISUAL_FILTER_CONTROL_HELP.slice(0, 9).map(([selector, title]) => [
+    VISUAL_FILTER_CONTROL_HELP.slice(0, 8).map(([selector, title]) => [
       selector,
       title,
     ]),
     [
       ["#visual-filters > summary", "Visual Filters"],
       ["#default-visual-filters-button", "Default Configuration"],
-      ["[data-visual-filter-preset='broadcast']", "Broadcast"],
       ["[data-visual-filter-preset='researcher']", "Researcher"],
       ["[data-visual-filter-preset='manuscript']", "Manuscript"],
       ["[data-visual-filter-preset='minimal']", "Minimal"],
@@ -180,11 +182,11 @@ test("Visual Filters help rows keep their page order", () => {
       ["#disable-all-visual-filters-button", "Disable All"],
     ],
   );
-  for (const [, , summary] of VISUAL_FILTER_CONTROL_HELP.slice(1, 7)) {
+  for (const [, , summary] of VISUAL_FILTER_CONTROL_HELP.slice(1, 6)) {
     assert.match(summary, /The view, Ranges and motion stay as they are\.$/u);
   }
   assert.deepEqual(
-    VISUAL_FILTER_CONTROL_HELP.slice(9),
+    VISUAL_FILTER_CONTROL_HELP.slice(8),
     Object.entries(VISUAL_FILTER_OPTION_HELP).flatMap(([id, help]) => {
       const liveLabel = LIVE_SWITCH_NAMES[id]?.label;
       return liveLabel === undefined
@@ -266,7 +268,7 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     [
       "this-turn",
       "section",
-      /<aside id="rail" class="hud-panel bc-rail"[^>]*>\s*<!--[^>]*-->\s*<section class="rc" id="turn-card"[\s\S]*?id="howto-card"[\s\S]*?<\/section>\s*<!--[^>]*-->\s*<section id="this-turn"/u,
+      /<aside id="rail" class="hud-panel bc-rail"[^>]*>\s*<!--[^>]*-->\s*<section class="rc" id="turn-card"[\s\S]*?id="fallen-feed"[\s\S]*?id="howto-card"[\s\S]*?<\/section>\s*<!--[^>]*-->\s*<section id="this-turn"/u,
     ],
     [
       "how-to-play",
@@ -276,7 +278,7 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     [
       "fallen-feed",
       "section",
-      /id="how-to-play"[^>]*><\/section>\s*<!--[^>]*-->\s*<section id="fallen-feed"/u,
+      /id="turn-card"[\s\S]*?<\/section>\s*<!--[^>]*-->\s*<section id="fallen-feed" hidden><\/section>\s*<!--[^>]*-->\s*<section class="rc cg" id="class-card"/u,
     ],
     [
       "chronicle",
@@ -291,7 +293,7 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     [
       "replay-rail",
       "div",
-      /id="fallen-feed"[^>]*><\/section>\s*<!--[^>]*-->\s*<div id="replay-rail"/u,
+      /id="how-to-play"[^>]*><\/section>\s*<!--[^>]*-->\s*<div id="replay-rail"/u,
     ],
     ["replay-rail-tabs", "div", /id="replay-rail"[\s\S]*id="replay-rail-tabs"/u],
     [
@@ -359,9 +361,9 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
   assert.deepEqual(order, [
     "reconnect-button",
     "help-button",
-    "visual-key-button",
     "visual-filters-button",
-    "frame-explanation-button",
+    "recording-finish-button",
+    "reset-button",
     "exit-button",
   ]);
   const filtersButton = openingTag(markup, "visual-filters-button");
@@ -377,15 +379,17 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     openingTag(markup, "visual-filters-drawer")[0],
     /^<div\b(?=[^>]*\bpopover="manual")/u,
   );
-  for (const [id, label] of [
-    ["visual-key-button", "Visual Key"],
-    ["frame-explanation-button", "Frame Explanation"],
-  ]) {
-    const tag = openingTag(markup, id);
-    assert.match(tag[0], /^<button\b/u);
-    assert.match(tag[0], /\btype="button"/u);
-    assert.match(tag[0], /\shidden[\s>]/u, `#${id} must start hidden.`);
-    assert.doesNotMatch(tag[0], /data-(?:live|replay)-only/u, id);
-    assert.match(markup, new RegExp(`id="${id}"[^>]*>${label}</button>`, "u"));
-  }
+  // No Visual Key and no top-bar Frame Explanation (its one button is the
+  // arena corner's): owner, 3 and 4 Oct 2026.
+  assert.doesNotMatch(markup, /id="(?:visual-key|frame-explanation)-button"/u);
+  // Finish And Save starts hidden and unmarked (src/main.js shows it while
+  // the match records; topbar.css hides it in the Replay Viewer); Restart is
+  // live play's (data-live-only).
+  const finish = openingTag(markup, "recording-finish-button");
+  assert.match(finish[0], /^<button\b(?=[^>]*\btype="button")(?=[^>]*\shidden[\s>])/u);
+  assert.doesNotMatch(finish[0], /data-(?:live|replay)-only/u);
+  assert.match(markup, /id="recording-finish-button"[^>]*>Finish And Save<\/button>/u);
+  const restart = openingTag(markup, "reset-button");
+  assert.match(restart[0], /\sdata-live-only[\s>]/u);
+  assert.match(restart[0], /\bdata-key="r"/u);
 });

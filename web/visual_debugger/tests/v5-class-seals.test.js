@@ -3,8 +3,9 @@
  *
  * Contracts checked: classSealPaths and tokenGeometry(R).sealRadius give the
  * spec's seal shapes and radius (Mage octagon, Warrior boss and rivets, Hunter
- * quatrefoil, Rogue cushion lozenge, Priest sun); the switch class_seals is off
- * by default and then every token keeps its plain halo and an empty seal group;
+ * quatrefoil, Rogue cushion lozenge, Priest sun); the switch class_seals is on
+ * by default (owner, 4 Oct 2026); switched off, every token keeps its plain
+ * halo and an empty seal group;
  * switched on, every heraldic token of 18 px or more stands on its class seal
  * instead of the halo (engraved from 22 px), and a small token or an unknown
  * class falls back to the halo (a stale saved Heraldic Tokens Off is ignored,
@@ -47,6 +48,7 @@ const fixture = JSON.parse(
 );
 
 const SEALS_ON = Object.freeze({ ...DEFAULT_VISUAL_FILTER_STATE, class_seals: true });
+const SEALS_OFF = Object.freeze({ ...DEFAULT_VISUAL_FILTER_STATE, class_seals: false });
 
 /** @param {string} name */
 async function loadFrame(name) {
@@ -292,10 +294,10 @@ test("the seal radius and the five seal shapes follow the spec", () => {
   assert.notEqual(champions.classSealPaths("mage", 23.01), mage);
 });
 
-test("off by default the halo stays; switched on, each class stands on its seal", async () => {
+test("switched off the halo stays; switched on (the default) each class stands on its seal", async () => {
   const { scene, transform } = await loadFrame("replay_oracle");
-  const plain = champions.records({ scene, transform });
-  assert.equal(DEFAULT_VISUAL_FILTER_STATE.class_seals, false);
+  const plain = champions.records({ scene, transform, visualFilters: SEALS_OFF });
+  assert.equal(DEFAULT_VISUAL_FILTER_STATE.class_seals, true);
   for (const record of plain) {
     assert.equal(record.seal, null);
     const { bundle, root } = drawn(record);
@@ -596,7 +598,7 @@ test("the audience's own rows time the spend, the awakening and a new mark", asy
 test("switching Class Seals on and off on retained nodes equals a fresh render", async () => {
   const { scene, transform, beats } = await loadFrame("replay_oracle");
   const on = champions.records({ scene, transform, beats, visualFilters: SEALS_ON });
-  const off = champions.records({ scene, transform, beats });
+  const off = champions.records({ scene, transform, beats, visualFilters: SEALS_OFF });
   for (const [index, record] of on.entries()) {
     const { bundle, root } = drawn(off[index]);
     champions.update([bundle], [record]);
@@ -693,7 +695,7 @@ test("a fallen champion keeps a cold ash outline; a falling one holds its seal",
   assert.equal(root.find("champion-seal")[0].children.length, 0);
   assertExportSafe(root.markup());
   const noSeals = recordFor(
-    champions.records({ scene: dead, transform }),
+    champions.records({ scene: dead, transform, visualFilters: SEALS_OFF }),
     "agent-slot-6",
   );
   assert.equal(drawn(noSeals).root.find("champion-seal__ash").length, 0);

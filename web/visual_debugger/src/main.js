@@ -14,7 +14,7 @@
  *
  * It mounts the V5 chrome parts once at startup: the HUD (looks/hud.js; party
  * frames in the BattleClient and DevClient, the Arena Frames along the bottom
- * of the stage in the Replay Viewer), the camera switch (looks/camera.js), the Visual Key dialog, Frame
+ * of the stage in the Replay Viewer), the camera switch (looks/camera.js), Frame
  * Explanation (F), the Palette choice, and in the Replay Viewer the five-tab
  * rail (ledger.js), the Rune Scrubber dock (rune-scrubber.js) and Tab agent stepping
  * (replay-recipient-rotation.js). It hands the choreographer a page surface that
@@ -29,7 +29,7 @@
  * Run in Policies Only is paced by this page (toggleLiveRun): it sends Play
  * One Turn, waits for the next tick and its choreography, then sends the
  * next, so every tick glides to its end; the server's run_state stays
- * "paused". Those turns leave the status line alone, so "Running." stays
+ * "paused". Those turns leave the message line alone, so "Running." stays
  * there until Pause. While Run is active a Space, Enter or N from the player
  * is ignored (pageRunOwnsLockIn), as on the vision page. N is one tick: the
  * battlefield forwards it and the page treats it as a Lock In key, like Space
@@ -52,7 +52,7 @@
  *
  * In the BattleClient and DevClient it also owns the live controls' behavior:
  * How To Play over the arena (#htp: ?, the How To Play button, Close and Full
- * Guide); the status line's message (#msg) in the vision page's words for the
+ * Guide); the deck's message line (#msg) in the vision page's words for the
  * player's own commands (ownOrderFacts, laneRefusal, acceptedCommandSentence,
  * hostNoticeSentence; the words come from statusSentence in controls.js);
  * Tab, Shift+Tab, ‹ Prev and Next ›, which give the orders only to your
@@ -60,9 +60,11 @@
  * the Keys chip and the arena's keys-on frame (a top-bar button press or a
  * view switch keeps keys on, and a click on the arena never pins a card);
  * R and G while orders are closed
- * (game over, after a save); the Recording pill, popover and seal
- * (recordingWords); Finish And Save from the status line, the popover and the
- * Stopped overlay; Back To Your champion (Watch Only); the Restart dialog's
+ * (game over, after a save); the Recording pill and popover
+ * (recordingWords); the top bar's save button (saveButtonState: Finish And
+ * Save, Saving Replay…, then Open Replay once saved, or Retry Save), Finish
+ * And Save in the popover and the Stopped overlay; the arena's on-screen V and
+ * F keys (arena-buttons.js); Back To Your champion (Watch Only); the Restart dialog's
  * Save focus and Cancel sentence; Open Replay's new tab, which shows the dark
  * "Opening Replay" page (opening-replay-page.js) until the Replay Viewer's
  * page arrives; and the closed page after Exit. Agent POV: the renderer and the
@@ -97,7 +99,6 @@ import {
   authorizedOracleCommandSlotForPublicAgentId,
   authorizedPresentationAgentDisplayId,
   authorizedPresentationAudience,
-  authorizedPresentationEpisodeLimit,
   authorizedPresentationFrameExplanationInput,
   authorizedPresentationHasResearcherSpace,
   authorizedPresentationIdentityRows,
@@ -155,13 +156,11 @@ import {
 import * as heralds from "./looks/heralds.js";
 import { createHud } from "./looks/hud.js";
 import * as requiems from "./looks/requiems.js";
-import { createVisualKey } from "./looks/visual-key.js";
 import {
   controllerRosterFromFrame,
   hudSourcesFromFrame,
   matchSummaryView,
   renderMatchSummary,
-  waveChipTeams,
 } from "./match-summary.js";
 import {
   buildMetricSearchIndex,
@@ -172,7 +171,6 @@ import {
   searchMeasurements,
 } from "./metrics-panel.js";
 import { writeOpeningReplayPage } from "./opening-replay-page.js";
-import { createPaletteControl } from "./palette.js";
 import {
   authorizedInspectorView,
   DebuggerPanels,
@@ -223,6 +221,8 @@ import {
   isFreshDeferredDraft,
   plainHostNotice,
   recordingWords,
+  saveButtonState,
+  saveFailedReason,
 } from "./tactics-turn.js";
 import {
   createChampionCardDescriptor,
@@ -338,9 +338,8 @@ const elements = {
   recordingPillText: requiredElement("rec-pill-text"),
   recordingPopover: requiredElement("rec-pop"),
   recordingPopState: requiredElement("pop-state"),
+  recordingPopReason: requiredElement("pop-reason"),
   recordingPopFinishButton: requiredElement("pop-finish"),
-  recordingSeal: requiredElement("rec-seal"),
-  recordingSealText: requiredElement("rec-seal-text"),
   stoppedSaveButton: requiredElement("stopped-save"),
   watchOnlyBackButton: requiredElement("wo-back"),
   statusMessage: requiredElement("msg"),
@@ -382,15 +381,22 @@ const elements = {
   replayCameraSwitch: requiredElement("replay-camera-switch"),
   cameraTips: requiredElement("camera-tips"),
   liveCameraSwitch: requiredElement("live-camera-switch"),
-  visualKeyButton: requiredElement("visual-key-button"),
   visualFiltersButton: requiredElement("visual-filters-button"),
-  frameExplanationButton: requiredElement("frame-explanation-button"),
   arenaButtons: requiredElement("arena-buttons"),
   arenaEveryoneInViewButton: /** @type {HTMLButtonElement} */ (
     requiredElement("arena-everyone-in-view-button")
   ),
+  arenaBattleCamButton: /** @type {HTMLButtonElement} */ (
+    requiredElement("arena-battle-cam-button")
+  ),
+  arenaClearSelectionButton: /** @type {HTMLButtonElement} */ (
+    requiredElement("arena-clear-selection-button")
+  ),
   arenaFrameExplanationButton: /** @type {HTMLButtonElement} */ (
     requiredElement("arena-frame-explanation-button")
+  ),
+  arenaMatchSummaryButton: /** @type {HTMLButtonElement} */ (
+    requiredElement("arena-match-summary-button")
   ),
   replayRailFrame: requiredElement("replay-rail-frame"),
   replayRailActions: requiredElement("replay-rail-actions"),
@@ -438,7 +444,7 @@ const elements = {
  * changes until the document itself reloads. Every client starts with the
  * same shipped switch state (DEFAULT_VISUAL_FILTER_STATE) and Default
  * Configuration as the preset in use. visualFilterPresetId is the preset the
- * viewer last picked ("default", "broadcast", "researcher", "manuscript" or
+ * viewer last picked ("default", "researcher", "manuscript" or
  * "minimal"); hand changes are counted against it.
  */
 let visualFilterState = DEFAULT_VISUAL_FILTER_STATE;
@@ -509,8 +515,9 @@ let verdictTucked = false;
  * arena, or null: in the BattleClient and DevClient it takes the deck's place
  * (the deck is inert at game over); in the Replay Viewer it covers the
  * timeline dock under the arena. Opened by the Verdict card's Match
- * Summary button; closed by its Close button, a view switch (each view has its
- * own Honors) or when the Verdict leaves.
+ * Summary button or, while the Verdict is folded into its band, by the
+ * arena's Match Summary key (which also closes it); closed by its Close
+ * button, a view switch or when the Verdict leaves.
  *
  * @type {HTMLElement | null}
  */
@@ -545,6 +552,7 @@ let fallenFeedMemory = null;
  *   notice: string | null,
  *   noticeLevel: string,
  *   pageRun: boolean,
+ *   pageRunLoop: boolean,
  * }}
  */
 const state = {
@@ -565,7 +573,7 @@ const state = {
   // (no Exit yet, or the match records nothing). It is newer than the
   // installed frame's when that answer's frame could not be installed (the
   // read raced the server's shutdown), so the Recording pill, popover and
-  // seal paint it once shuttingDown is true. Set only by dispatchCommand's
+  // save button paint it once shuttingDown is true. Set only by dispatchCommand's
   // Exit paths; never cleared, because a page that accepted Exit stops
   // reading.
   exitRecording: null,
@@ -573,6 +581,13 @@ const state = {
   noticeLevel: "info",
   // True while the page's own Run plays turn after turn (toggleLiveRun).
   pageRun: false,
+  // True while runLiveTurns is going: from Run until its last turn has landed
+  // and played to its end, so also for that last tick after Pause has cleared
+  // pageRun. toggleLiveRun reads it so a quick Pause then Run never starts a
+  // second loop. Its Lock In keys are ignored then (pageRunOwnsLockIn), so the
+  // deck keeps Play One Turn and Lock In disabled while it is true
+  // (tactics-turn.js renderCommandAvailability). Only runLiveTurns writes it.
+  pageRunLoop: false,
 };
 
 /**
@@ -816,6 +831,7 @@ const {
   renderSystemOperation,
   bindCommandDeck,
   showStatusMessage,
+  forgetRefusalEchoes,
 } = createTacticsTurn({
   elements,
   state,
@@ -933,24 +949,9 @@ const CONTROL_HELP = Object.freeze([
   ["#reconnect-button", "Reconnect", "Load the newest game state again."],
   ["#help-button", "How To Play", "Open the guide to the keys and controls."],
   [
-    "#visual-key-button",
-    "Visual Key",
-    "Open the key: every mark on the battlefield, with one plain sentence each.",
-  ],
-  [
     "#visual-filters-button",
     "Visual Filters",
     "Choose which marks and effects the battlefield shows. It changes only your screen, never the game.",
-  ],
-  [
-    "#palette-select",
-    "Palette",
-    "Choose the battlefield's colors: Moonlit, the default, or High Contrast for projectors and low vision. It changes only your screen.",
-  ],
-  [
-    "#frame-explanation-button",
-    "Frame Explanation",
-    "Number what happened on this tick, on the battlefield and in a list. You can also press F.",
   ],
   [
     "#arena-everyone-in-view-button",
@@ -958,14 +959,59 @@ const CONTROL_HELP = Object.freeze([
     "Move the camera so every champion on the field is in view. Press it again for the whole map. You can also press V.",
   ],
   [
+    "#arena-battle-cam-button",
+    "Battle Cam",
+    "Follow the fights: the camera frames each fight, leans in on each fall and slows it down while the replay plays. Press it again for the whole map. You can also press B.",
+  ],
+  [
+    "#arena-clear-selection-button",
+    "Clear Selection",
+    "Clear the selected champion, so no champion is picked. You can also press Esc.",
+  ],
+  [
     "#arena-frame-explanation-button",
     "Frame Explanation",
     "Number what happened on this tick, on the battlefield and in a list. You can also press F.",
   ],
   [
+    "#arena-match-summary-button",
+    "Match Summary",
+    "Open or close the game's Match Summary: each champion's kills, deaths, damage, healing, Red Zone deaths and Ultimates, for both teams.",
+  ],
+  [
     "#help-close-button",
     "Close How To Play",
     "Close the guide to the keys and controls.",
+  ],
+  [
+    "#full-guide",
+    "Full Guide",
+    "Open How To Play over the arena: every key and control, in plain words. You can also press ?.",
+  ],
+  [
+    '#guide-level button[data-level="guide"]',
+    "Guide",
+    "The most help: Do This Now, a dashed outline around the control to use next, and the How To Play card. Your choice is remembered.",
+  ],
+  [
+    '#guide-level button[data-level="hints"]',
+    "Hints",
+    "Some help: Do This Now only, with no outline and no How To Play card. Your choice is remembered.",
+  ],
+  [
+    '#guide-level button[data-level="off"]',
+    "Off",
+    "No help on this card: Do This Now, the outline and the How To Play card are hidden. Your choice is remembered.",
+  ],
+  [
+    "#recording-badge",
+    "Replay Recording",
+    "Open the replay menu: how much of this game the replay has kept, where it is saved, Finish And Save, Open Replay, and Retry Save or Save As if a save fails.",
+  ],
+  [
+    "#pop-finish",
+    "Finish And Save",
+    "Save this game and keep it on screen to look over. Restart begins another match.",
   ],
   ["#exit-button", "Exit", "Close the client and stop its server safely."],
   [
@@ -1336,35 +1382,17 @@ const cameraSwitch =
         getFilters: () => visualFilterState,
         reducedMotion: () => choreographer.snapshot().motionMode !== "normal",
         applyFrame: (frame, { ease }) => applyCameraFrameWithEase(frame, ease),
-        // Everyone In View's one button is the arena's corner key (owner,
-        // 3 Oct 2026: one button for each job).
+        // The camera's buttons are the arena's V and B keys (owner, 4 Oct
+        // 2026: no camera buttons in the bottom row; no lit key is Whole Map).
         // Its tips sit in the scorebug's empty score half, covering nothing
         // (owner, 3 Oct 2026, Micro List M7).
         ...(replayProductPage
           ? {
-              switchCameras: /** @type {const} */ (["whole_map", "battle_cam"]),
+              switchCameras: /** @type {const} */ ([]),
               tipHost: elements.cameraTips,
             }
           : {}),
       });
-
-// The Visual Key dialog, opened by the button beside Help. Its numbers come
-// from the shown audience's arena scene only, never researcher_space.
-if (productIdentity !== null) {
-  createVisualKey({
-    button: elements.visualKeyButton,
-    product: replayProductPage ? "replay_viewer" : "combat_debugger",
-    getCatalogue: () => {
-      const scene = installedAuthorizedPresentationSceneView(state.presentation);
-      return {
-        classMechanics: asArray(scene?.class_mechanics),
-        spawnShieldMechanics: scene?.spawn_shield_mechanics ?? null,
-        redZone: isRecord(scene?.map) ? (scene.map.red_zone ?? null) : null,
-        respawnWaves: asArray(scene?.respawn_waves),
-      };
-    },
-  });
-}
 
 /** Where the Frame Explanation list goes: the Frame tab, or under Your Turn live. */
 const frameExplanationList = document.createElement("section");
@@ -1391,11 +1419,9 @@ const frameExplanation =
         getTransform: () => battlefieldRenderer.transform,
         getLayer: () => battlefieldRenderer.layers.explain,
         listHost: frameExplanationList,
-        // The Replay Viewer's one Frame Explanation button is the arena's
-        // corner key; live play keeps the top-bar slot.
-        button: replayProductPage
-          ? elements.arenaFrameExplanationButton
-          : elements.frameExplanationButton,
+        // Every client's one Frame Explanation button is the arena's corner
+        // key (owner, 3 Oct 2026; live play since 4 Oct 2026).
+        button: elements.arenaFrameExplanationButton,
         isPaused: () => !replayPlayback.snapshot().playing,
         pause: () => replayPlayback.pause("frame_explanation"),
         canExplain: () => installedPresentationAuthority() !== null && !state.busy,
@@ -1410,23 +1436,36 @@ const frameExplanation =
         },
       });
 
-// The arena's two on-screen keys, top right (owner, 3 Oct 2026): the only
-// Everyone In View and Frame Explanation buttons. Everyone In View presses V
-// through the one command set; Frame Explanation is createFrameExplanation's
-// own button (above). The Replay Viewer first; the BattleClient will wire the
-// same buttons.
+// The arena's on-screen keys, stacked at its top right (owner, 4 Oct 2026):
+// the only Everyone In View (V), Battle Cam (B), Frame Explanation (F) and
+// Clear Selection (Esc) buttons. V, B and Esc press their key through the one
+// command set; Frame Explanation is createFrameExplanation's own button
+// (above). The Replay Viewer first; live play (the BattleClient and the
+// DevClient) wires V and F below.
 if (replayProductPage && productIdentity !== null) {
   wireArenaButtons({
     group: elements.arenaButtons,
     everyoneInView: elements.arenaEveryoneInViewButton,
+    battleCam: elements.arenaBattleCamButton,
+    clearSelection: elements.arenaClearSelectionButton,
     product: "replay_viewer",
     cameraSlot: elements.replayCameraSwitch,
   });
 }
 
-/** The High Contrast palette choice, at the top of the Visuals panel. */
-const paletteControl = createPaletteControl({ container: elements.visualFiltersBody });
-elements.visualFiltersBody.prepend(paletteControl.element);
+// Live play: the same two keys (owner, 4 Oct 2026). A click on Everyone In
+// View passes the same {interactive} fact the arena's V key passes
+// (controls.js bindBattlefieldControls), and its lit state follows the live
+// camera slot.
+if (!replayProductPage && productIdentity !== null) {
+  wireArenaButtons({
+    group: elements.arenaButtons,
+    everyoneInView: elements.arenaEveryoneInViewButton,
+    product: "combat_debugger",
+    cameraSlot: elements.liveCameraSwitch,
+    context: () => ({ interactive: liveBattlefieldCommandsInteractive() }),
+  });
+}
 
 if (replayProductPage) {
   runeScrubber = createRuneScrubber(elements.chronicle, {
@@ -1512,6 +1551,7 @@ function renderPendingPresentationChrome() {
   elements.recordingPersistenceFact.toggleAttribute("hidden", true);
   elements.recordingPersistenceError.textContent = pending.recording.persistence;
   elements.recordingStatusNote.textContent = pending.recording.status;
+  paintSaveFailedReason(null);
   for (const control of [
     elements.recordingFinishButton,
     elements.recordingReviewButton,
@@ -3088,7 +3128,9 @@ function selectAgentFromHud(publicAgentId) {
  * frame reads the researcher scene for docked facts (a docked researcher panel,
  * labelled Full Record in Agent POV) and the incoming rows of the shown
  * audience. It is drawn after the choreographer settles, so a life or fall never
- * shows before its beat. Side effects: DOM inside #champion-frame.
+ * shows before its beat. With no authorized presentation (authority cleared or
+ * pending) the slot is hidden and emptied at once, so no champion of an old
+ * scene stays in the page. Side effects: DOM inside #champion-frame.
  *
  * @param {unknown} presentation
  */
@@ -3100,6 +3142,7 @@ function renderChampionFrameForPage(presentation) {
     !isAuthorizedPresentationFrame(presentation)
   ) {
     slot.hidden = true;
+    if (!isAuthorizedPresentationFrame(presentation)) slot.replaceChildren();
     renderReplayClassGuide(presentation, [], null);
     return;
   }
@@ -4204,7 +4247,9 @@ function setReplayMetricSearchOpen(open) {
 /**
  * Render catalog search matches up to the current result limit.
  * Clear the active result, update status and the More control, and wire each row
- * to measurement selection. Do nothing until a catalog is available.
+ * to measurement selection. Every team, agent and recipient row gets its crest
+ * or class emblem from the catalog's agent list. Do nothing until a catalog is
+ * available.
  */
 function renderReplayMetricSearch() {
   if (replayMetricCatalog === null) return;
@@ -4217,12 +4262,15 @@ function renderReplayMetricSearch() {
     ? (message ??
       `${Math.min(matches.length, replayMetricSearchLimit)} of ${matches.length} measurements found.`)
     : "Search includes every numerical CSV column, including those that do not apply to this roster.";
+  // The catalog's agent list gives every team, agent and recipient row its
+  // crest or class emblem beside the words (owner, 4 Oct 2026).
   renderMetricSearchResults(
     elements.metricSearchResults,
     matches,
     replayMetricCatalog.topics,
     replayMetricSearchLimit,
     selectReplayMeasurement,
+    { agents: replayMetricCatalog.agents },
   );
 }
 
@@ -4311,7 +4359,9 @@ function replayMetricContext() {
  * Render metrics and start the catalog or summary GETs that the current scope needs.
  * Reset cached UI state when the replay changes, reuse current results, and label
  * loading or failed requests. Check generation and replay digest before accepting
- * async replies so an old artifact cannot populate the new page.
+ * async replies so an old artifact cannot populate the new page. The table shows
+ * team and agent icons from the catalog's agent list once the catalog has
+ * arrived (the catalog's arrival draws the table again).
  */
 function renderReplayMetrics() {
   const context = replayMetricContext();
@@ -4395,7 +4445,10 @@ function renderReplayMetrics() {
       elements.metricViewField,
       summary.topics,
     );
-    const renderKey = `${context.key}:${elements.metricSelection.value}:${elements.metricView.value}`;
+    // The table draws team and agent icons once the catalog (and its agent
+    // list) has arrived, so its arrival draws the table again.
+    const agents = replayMetricCatalog?.agents;
+    const renderKey = `${context.key}:${elements.metricSelection.value}:${elements.metricView.value}:${agents ? "icons" : "words"}`;
     if (renderKey !== replayMetricRenderKey) {
       renderMetricRows(
         elements.metricRows,
@@ -4403,6 +4456,7 @@ function renderReplayMetrics() {
         elements.metricView.value,
         summary,
         elements.metricDescription,
+        agents ? { agents } : {},
       );
       replayMetricRenderKey = renderKey;
     }
@@ -4742,17 +4796,75 @@ const recordingPersistenceLabels = Object.freeze({
 });
 
 /**
+ * Paint live play's save button in the top bar (#recording-finish-button)
+ * from saveButtonState (tactics-turn.js, the one owner of its words): its
+ * label, its action in data-action ("finish", "open" or "retry"; none for
+ * "Saving Replay…"), disabled unless the state is usable and nothing blocks
+ * input (blocked), and its hover help. A null state hides the button (the
+ * match records nothing, the page is the Replay Viewer, or Exit was
+ * accepted). The click is handled by saveButtonClick.
+ *
+ * @param {ReturnType<typeof saveButtonState>} saveButton The state to show,
+ *   or null to hide the button.
+ * @param {boolean} [blocked] True while the page or the recording blocks
+ *   input (busy, offline, closed, or a recording rule). Default false.
+ * @returns {void}
+ */
+function paintSaveButton(saveButton, blocked = false) {
+  const button = elements.recordingFinishButton;
+  button.hidden = saveButton === null;
+  if (saveButton === null) {
+    button.disabled = true;
+    delete button.dataset.action;
+    return;
+  }
+  if (button.textContent !== saveButton.label) button.textContent = saveButton.label;
+  if (saveButton.action === null) delete button.dataset.action;
+  else button.dataset.action = saveButton.action;
+  button.disabled = blocked || !saveButton.usable;
+  if (button.dataset.helpLabel !== saveButton.label) {
+    button.dataset.helpLabel = saveButton.label;
+    registerControlHelpOwner(
+      button,
+      "#recording-finish-button",
+      saveButton.label,
+      saveButton.help,
+    );
+  }
+}
+
+/**
+ * Write the Recording popover's reason line (#pop-reason) for one recording
+ * status: after a failed save it says why (saveFailedReason, tactics-turn.js);
+ * otherwise it is emptied and hidden. Side effects: that line's text and
+ * `hidden` only.
+ *
+ * @param {Readonly<Record<string, any>> | null} recording The recording
+ *   status, or null when the match records nothing.
+ * @returns {void}
+ */
+function paintSaveFailedReason(recording) {
+  const reason = saveFailedReason(recording);
+  elements.recordingPopReason.textContent = reason;
+  elements.recordingPopReason.hidden = reason === "";
+}
+
+/**
  * Paint live recording lifecycle, persistence facts, actions, and progress hints.
  * Use the supplied installed pair and recording metadata; hide replay/unavailable
  * recording surfaces and close obsolete discard dialogs. Progress text describes
  * current request state, not a fabricated percentage. Writes the Recording
  * pill (#rec-pill-text) and the popover's state line (#pop-state) through
- * recordingWords (tactics-turn.js, the one owner of these words; the deck's
- * renderSeal paints the status line's seal from the same words and the same
- * status), with the `saved` class once saved. Finish And Save (status line,
- * popover, Stopped overlay) and Retry Save show only when they work; Open
- * Replay stays visible and is disabled until a save exists; after an
- * accepted Exit, Finish And Save and Retry Save are hidden. While the server
+ * recordingWords (tactics-turn.js, the one owner of these words), and after a
+ * failed save the reason line under it (#pop-reason, paintSaveFailedReason), with the
+ * `saved` class once saved, and the top bar's save button through
+ * saveButtonState and paintSaveButton (Finish And Save, Saving Replay…, Open
+ * Replay or Retry Save; owner, 4 Oct 2026: it turns into Open Replay instead
+ * of disappearing). Finish And Save in the popover and the Stopped overlay
+ * and Retry Save show only when they work; the popover's Open Replay stays
+ * visible and is disabled until a save exists; after an accepted Exit, the
+ * popover's Finish And Save and Retry Save and the top bar's save button
+ * are hidden. While the server
  * saves a finished game in the background (lifecycle "sealed"), the words
  * read "Saving Replay…" and the popover note says Open Replay works once it
  * says Saved. After an accepted Exit, the Exit answer's own recording status
@@ -4768,9 +4880,11 @@ function renderRecordingControls(installed) {
     // An Exit answer whose frame raced the shutdown may leave no installed
     // pair: its own recording words still replace "Saving Replay…".
     if (state.shuttingDown && state.exitRecording !== null) {
-      const words = recordingWords(state.exitRecording, 0, null, true);
+      const words = recordingWords(state.exitRecording, 0, true);
+      paintSaveButton(null);
       elements.recordingPillText.textContent = words.pill;
       elements.recordingPopState.textContent = words.popover;
+      paintSaveFailedReason(state.exitRecording);
       elements.recordingBadge.classList.toggle(
         "saved",
         ["saved", "reviewing"].includes(String(state.exitRecording.lifecycle)),
@@ -4789,6 +4903,8 @@ function renderRecordingControls(installed) {
   elements.recordingPanel.toggleAttribute("hidden", unavailable);
   elements.recordingBadge.toggleAttribute("hidden", unavailable);
   if (unavailable) {
+    paintSaveButton(null);
+    paintSaveFailedReason(null);
     delete document.documentElement.dataset.recordingLifecycle;
     if (elements.recordingDiscardDialog.open) {
       elements.recordingDiscardDialog.close();
@@ -4802,11 +4918,11 @@ function renderRecordingControls(installed) {
   const words = recordingWords(
     recording,
     integer(installed.transport.simulator_step_count, 0),
-    authorizedPresentationEpisodeLimit(installed.presentation),
     state.shuttingDown,
   );
   elements.recordingPillText.textContent = words.pill;
   elements.recordingPopState.textContent = words.popover;
+  paintSaveFailedReason(recording);
   const saved = recording.lifecycle === "saved" || recording.lifecycle === "reviewing";
   elements.recordingBadge.classList.toggle("saved", saved);
   elements.recordingLifecycle.textContent = humanize(recording.lifecycle);
@@ -4836,7 +4952,6 @@ function renderRecordingControls(installed) {
       command_type: "finish_and_review",
     }).action === "block";
   const actionAvailability = [
-    [elements.recordingFinishButton, recording.finish_available === true],
     [elements.recordingPopFinishButton, recording.finish_available === true],
     [elements.stoppedSaveButton, recording.finish_available === true],
     [elements.recordingReviewButton, recording.review_available === true],
@@ -4885,6 +5000,14 @@ function renderRecordingControls(installed) {
         ? REPLAY_SAVE_MESSAGE
         : "Saving the recorded game. Longer replays can take longer. Metrics can be computed in Replay Viewer.";
   }
+  const saveButton = saveButtonState(recording, {
+    saving: preparation === "metrics",
+    reopen:
+      openedReplayEpisodeId === installed.transport.episode_id &&
+      elements.recordingReplayLink.hasAttribute("href"),
+    closed: state.shuttingDown,
+  });
+  paintSaveButton(saveButton, interactionDisabled);
 
   if (recording.discard_available !== true && elements.recordingDiscardDialog.open) {
     elements.recordingDiscardDialog.close();
@@ -5200,15 +5323,15 @@ function currentRevision() {
 /**
  * Store a notice message and level for the next connection render.
  * The level defaults to info; this helper does not repaint or send a request.
- * In the BattleClient and DevClient the status line's message (#msg, through
+ * In the BattleClient and DevClient the message line's message (#msg, through
  * paintStatusLine) also shows it ("warning" and "error" keep their level and
  * look refused, anything else shows as info). In the Replay Viewer the Rune
  * Scrubber shows it under the readout for 4 s (runeScrubber.showNotice; the
  * top-bar #notice pill stays hidden there), after the same plain-words
- * translation of host notices the live status line uses (plainHostNotice); a
+ * translation of host notices the live message line uses (plainHostNotice); a
  * warning or error whose words that translation changed also goes to the
  * browser console in one line (logRawError), so the exact host text is kept.
- * Side effects: page state and that status line or notice line.
+ * Side effects: page state and that message line or notice line.
  *
  * @param {string} message
  * @param {string} level
@@ -5217,7 +5340,7 @@ function setNotice(message, level = "info") {
   state.notice = message;
   state.noticeLevel = level;
   if (!isReplayMode() && typeof message === "string") {
-    // The live deck's status line repeats the latest notice in plain words.
+    // The live deck's message line repeats the latest notice in plain words.
     paintStatusLine(message, level === "error" || level === "warning" ? level : "info");
   } else if (runeScrubber !== null && typeof message === "string") {
     // Host words (a server notice, a stale or repeated command) read in plain
@@ -5249,7 +5372,7 @@ function logRawError(context, error) {
 }
 
 /**
- * Write one message into the status line's message (#msg, under the deck), as
+ * Write one message into the deck's message line (#msg, the deck's header), as
  * the vision page does: the text, `data-level` ("info", "warning" or "error")
  * and the `refuse` class for a warning or error (a refusal or a problem). Also
  * hands the same message to the deck (showStatusMessage), which keeps it for
@@ -5272,13 +5395,13 @@ function paintStatusLine(text, level) {
  * the top bar keeps only the connection status and the Recording pill. Warnings,
  * errors and results the user asked for still go through setNotice.
  *
- * In the BattleClient and DevClient the status line's message (#msg, through
+ * In the BattleClient and DevClient the message line's message (#msg, through
  * paintStatusLine) shows statusText at info level (an empty string clears
  * that line). The Replay Viewer has no deck, so statusText is not shown there.
  * This helper does not repaint or send a request. Side effects: page state and
- * that status line.
+ * that message line.
  *
- * @param {string} [statusText] Plain words for the deck status line. Defaults
+ * @param {string} [statusText] Plain words for the deck message line. Defaults
  *   to "" (an empty line).
  * @returns {void}
  */
@@ -5316,7 +5439,7 @@ function clearNotice(statusText = "") {
  */
 
 /**
- * Read the facts the status line needs about the champion in focus and its
+ * Read the facts the message line needs about the champion in focus and its
  * staged order, from one installed live presentation and its transport frame.
  *
  * Agent POV: everything comes from the audience's own arena scene (champion
@@ -5681,9 +5804,9 @@ function humanize(value) {
  * then the HUD's party frames.
  * Delegate to the shared match-summary renderer with this page DOM targets and
  * the current switch state, beatView("end") result (scores wait for the Fall
- * beat through beat holds), the scene's public wave clock (wave pips) and
- * waveChipTeams (the Wave Chip waits for its Return beat; the scorebug is one
- * of the choreographer's beatHoldRoots), then hud.render with hudSourcesFromFrame (the HUD's
+ * beat through beat holds; the scorebug is one of the choreographer's
+ * beatHoldRoots) and the scene's public wave clock (wave pips), then
+ * hud.render with hudSourcesFromFrame (the HUD's
  * one frame reader; Agent POV: unseen champions read "Unseen"). Both run before
  * the choreographer plans the tick, so its beat holds find their nodes.
  *
@@ -5703,7 +5826,6 @@ function renderInstalledMatch(presentation) {
       filters: visualFilterState,
       beat,
       waves: hudSources?.waves ?? null,
-      waveChips: waveChipTeams(presentation, beat, visualFilterState),
     },
   );
   // The HUD is drawn before the choreographer plans the tick, so its beat holds
@@ -5718,8 +5840,7 @@ function renderInstalledMatch(presentation) {
 
 /**
  * Work out the match moment cards for one installed tick (looks/heralds.js
- * records with part "lineup", "verdict" or "state"). Pure: no DOM, storage or
- * timers.
+ * records with part "lineup" or "verdict"). Pure: no DOM, storage or timers.
  *
  * - Lineup card: on tick 0 in every product. Its medallions come only from the
  *   audience's authorized arena scene (in Agent POV only the champions the team
@@ -5731,15 +5852,17 @@ function renderInstalledMatch(presentation) {
  *   winner and why the match ended ("threshold" for a win, "tie" when both
  *   teams reached First To with equal scores, else "horizon"), each team's
  *   controller line from the one controller model (controllerRosterFromFrame:
- *   the full line, and the short "You + 4 Policies" line for when it does not
- *   fit), the team whose home end is on the left (its recorded spawn side) as
+ *   the full line, and, only for a team with two or more policies, the short
+ *   "You + 4 Policies" line for when it does not fit; a single policy keeps
+ *   its own name), the team whose home end is on the left (its recorded spawn side) as
  *   the left column, and the Honors of the frame's own `match_honors` host
- *   fact (heralds.verdictHonours; in Agent POV the host keeps only the viewing
- *   team's champions). options.tucked draws its band plate (Show Arena).
- * - State chip: on any other tick of a Team Deathmatch still in play, and only
- *   when this tick's choreography plan draws no herald plate. "Match Point ·
- *   Needs N" when a team is 1 or 2 points short of First To (N is the smaller
- *   gap), else "N Ticks Left" when 30 ticks or fewer remain.
+ *   fact (heralds.verdictHonours; Agent POV lists every champion too, because
+ *   Honors come only once the game is over and nothing is left to hide then,
+ *   viewer/match_summary.py). options.tucked draws its herald plate (Show
+ *   Arena).
+ * Any other tick gives no card here: the countdown chip and the "Match Point ·
+ * Needs 1" chip were removed (owner, 4 Oct 2026); moment cards, 30 Ticks Left
+ * included, come from the choreography plan's herald rows.
  *
  * Agent POV: nothing here reads a champion the POV team cannot see. Champions
  * come only from authorizedPresentationSceneView; the match facts are the
@@ -5753,20 +5876,25 @@ function renderInstalledMatch(presentation) {
  * @param {import("./looks/look-support.js").Rectangle} bounds
  *   The arena's visible rectangle in CSS pixels (the choreography surface's
  *   viewportBounds), used to place the cards.
- * @param {unknown} plan This tick's choreography plan (choreographer.plan), or
- *   null; only its herald_card rows are read, to keep the state chip off a
- *   herald plate.
+ * @param {unknown} _plan This tick's choreography plan (choreographer.plan), or
+ *   null; not read since the state chip was removed (kept so callers stay
+ *   unchanged).
  * @param {Readonly<Record<string, boolean>>} filters The page's switch state;
  *   match_moments off draws nothing and moment_full_cards off draws the Lineup
- *   and Verdict as one-line bands.
- * @param {{combatConfiguration?: unknown, tucked?: boolean}} [options] Live
- *   play's transport combat_configuration (its manual slots and slot labels
- *   name the controllers; null in the Replay Viewer) and whether the player
- *   tucked the Verdict with Show Arena. Default {}.
+ *   as a one-line band and the Verdict as its herald plate.
+ * @param {{
+ *   combatConfiguration?: unknown,
+ *   tucked?: boolean,
+ *   chrome?: ReadonlyArray<{left: number, top: number, right: number, bottom: number}>,
+ * }} [options] Live play's transport combat_configuration (its manual slots
+ *   and slot labels name the controllers; null in the Replay Viewer), whether
+ *   the player tucked the Verdict with Show Arena, and the page chrome over
+ *   the arena in the bounds' units (the surface's chromeRects, such as the
+ *   key stack), which the Verdict's plate keeps clear of. Default {}.
  * @returns {ReadonlyArray<import("./looks/look-support.js").LookRecord>} The
  *   records to draw, in order; empty when no card applies.
  */
-function matchMomentCardRecords(presentation, bounds, plan, filters, options = {}) {
+function matchMomentCardRecords(presentation, bounds, _plan, filters, options = {}) {
   if (!isAuthorizedPresentationFrame(presentation)) return [];
   const audience = authorizedPresentationAudience(presentation);
   const scene = authorizedPresentationSceneView(presentation);
@@ -5806,15 +5934,21 @@ function matchMomentCardRecords(presentation, bounds, plan, filters, options = {
       presentation,
       options.combatConfiguration ?? null,
     );
+    // A team's line names its controllers. The short line ("4 Policies")
+    // stands in only when the team has two or more policies; a single policy
+    // keeps its own name, shrunk or cut by the card (owner, 4 Oct 2026: never
+    // "1 Policy").
     /** @param {1 | 2} teamId */
     const lineOf = (teamId) => {
       const team = rosterTeam(roster, teamId);
-      return team === null || team.controllers.length === 0
-        ? { name: String(teams[teamId - 1]?.name ?? "") }
-        : {
-            name: controllerLineParts(team).join(" + "),
-            short: collapsedControllerLine(team),
-          };
+      if (team === null || team.controllers.length === 0) {
+        return { name: String(teams[teamId - 1]?.name ?? "") };
+      }
+      const policies = team.controllers.filter(
+        (controller) => !controller.you && !controller.manual,
+      ).length;
+      const name = controllerLineParts(team).join(" + ");
+      return policies >= 2 ? { name, short: collapsedControllerLine(team) } : { name };
     };
     const left = teams.find((team) => team.side === "left");
     return heralds.records({
@@ -5825,6 +5959,7 @@ function matchMomentCardRecords(presentation, bounds, plan, filters, options = {
       filters,
       leftTeamId: left?.teamId === 2 ? 2 : 1,
       tucked: options.tucked === true,
+      chrome: options.chrome ?? [],
       verdict: {
         scores: { 1: scoreA, 2: scoreB },
         winnerTeamId,
@@ -5843,46 +5978,11 @@ function matchMomentCardRecords(presentation, bounds, plan, filters, options = {
       },
     });
   }
-  const planRows =
-    isRecord(plan) && Array.isArray(plan.derivedEvents) ? plan.derivedEvents : [];
-  const heraldPlateShown = planRows.some(
-    (/** @type {unknown} */ row) =>
-      isRecord(row) &&
-      row.kind === "herald_card" &&
-      heralds.records({ event: row, bounds, filters }).length > 0,
-  );
-  if (heraldPlateShown) return [];
-  const short = [scoreA, scoreB]
-    .map((score, index) => ({ teamId: index + 1, needs: pointsToWin - score }))
-    .filter((team) => team.needs >= 1 && team.needs <= 2);
-  if (short.length > 0) {
-    return heralds.records({
-      part: "state",
-      bounds,
-      filters,
-      state: {
-        kind: "match_point",
-        teamIds: short.map((team) => team.teamId),
-        needs: Math.min(...short.map((team) => team.needs)),
-      },
-    });
-  }
-  if (Number.isInteger(tickLimit) && Number.isInteger(tick)) {
-    const left = Number(tickLimit) - Number(tick);
-    if (left >= 0 && left <= 30) {
-      return heralds.records({
-        part: "state",
-        bounds,
-        filters,
-        state: { kind: "ticks_left", left },
-      });
-    }
-  }
   return [];
 }
 
 /**
- * Redraw the match moment cards (Lineup card, Verdict card or state chip) for
+ * Redraw the match moment cards (Lineup card or Verdict card) for
  * the installed tick in the renderer's herald layer, above every body. Each call
  * first removes the page's previous card group, so every render (and Oracle
  * View to Agent POV to Oracle View) starts fresh. With no presentation, no scene
@@ -5892,12 +5992,9 @@ function matchMomentCardRecords(presentation, bounds, plan, filters, options = {
  * layer (export-safe SVG from heralds.build, pointer-events none so clicks reach
  * the arena) and updates matchMomentCardsGroup. When the Verdict card (or its
  * tucked band plate) is drawn, every painter herald card in the herald layer
- * (a plate, its one-line band or a chip: `[data-herald-moments]`) gets
- * `visibility="hidden"`, so it never shares the top slot with the Verdict;
- * on any other tick that attribute is removed again. A state chip ("Match
- * Point · Needs N", "N Ticks Left") is drawn only while the painter shows no
- * herald card (a card held from the last tick included), as the store's
- * state chip shows only when no card shows. The full Verdict also gets its two working
+ * (a plate: `[data-herald-moments]`) gets `visibility="hidden"`, so it never
+ * shares the top slot with the Verdict; on any other tick that attribute is
+ * removed again. The full Verdict also gets its two working
  * buttons (heralds.buildVerdictActions) in the battlefield shell, replaced on
  * every call (verdictActions): Show Arena tucks it (verdictTucked) and Match
  * Summary opens the sheet (openMatchSummarySheet). A tick without a Verdict
@@ -5914,6 +6011,7 @@ function renderMatchMomentCards(presentation) {
   verdictActions?.remove();
   verdictActions = null;
   if (presentation === null || presentation === undefined) {
+    elements.arenaMatchSummaryButton.hidden = true;
     closeMatchSummarySheet();
     return;
   }
@@ -5928,15 +6026,21 @@ function renderMatchMomentCards(presentation) {
       combatConfiguration:
         installedPresentationAuthority()?.transport?.combat_configuration ?? null,
       tucked: verdictTucked,
+      chrome: surface.chromeRects,
     },
   );
   // The Verdict card owns the top slot on the final tick: a herald card the
-  // painter drew this tick (a plate, its one-line band or a chip; each names
-  // its moments in data-herald-moments) is hidden, never stacked.
+  // painter drew this tick (a plate; each names its moments in
+  // data-herald-moments) is hidden, never stacked.
   const verdictShown = records.some(
     (row) => row.kind === "herald-verdict" || row.kind === "herald-verdict-plate",
   );
-  if (!verdictShown) closeMatchSummarySheet();
+  // The arena's Match Summary key opens the sheet again while the Verdict is
+  // folded into its plate (Show Arena, or Full Cards off), which has no
+  // buttons of its own (owner, 4 Oct 2026).
+  const verdictFolded = records.some((row) => row.kind === "herald-verdict-plate");
+  elements.arenaMatchSummaryButton.hidden = !verdictFolded;
+  if (!verdictShown && !verdictFolded) closeMatchSummarySheet();
   const painterCards = [
     ...surface.heraldLayer.querySelectorAll("[data-herald-moments]"),
   ];
@@ -5944,11 +6048,7 @@ function renderMatchMomentCards(presentation) {
     if (verdictShown) card.setAttribute("visibility", "hidden");
     else card.removeAttribute("visibility");
   }
-  // The state chip shows only while no herald card shows (the store's state
-  // chip), so a card held through this tick keeps the top band to itself.
-  const chipOnly =
-    records.length > 0 && records.every((row) => row.kind === "herald-state");
-  if (records.length === 0 || (chipOnly && painterCards.length > 0)) return;
+  if (records.length === 0) return;
   const doc = surface.ownerDocument;
   const group = /** @type {SVGGElement} */ (
     doc.createElementNS("http://www.w3.org/2000/svg", "g")
@@ -5986,11 +6086,17 @@ function onVerdictAction(id) {
   openMatchSummarySheet();
 }
 
+// The arena's Match Summary key: opens the sheet, or closes the open one.
+elements.arenaMatchSummaryButton.addEventListener("click", () => {
+  if (matchSummarySheet !== null) closeMatchSummarySheet();
+  else openMatchSummarySheet();
+});
+
 /**
  * Open the Match Summary sheet of the installed frame below the arena (never
  * over it; see matchSummarySheet). Keyboard focus moves to its Close button,
- * unless the arena holds keys (a mouse press with keys on keeps them on). The sheet reads only the frame's own `match_honors` host fact (in
- * Agent POV, the viewing team's champions); shown IDs come from
+ * unless the arena holds keys (a mouse press with keys on keeps them on). The sheet reads only the frame's own `match_honors` host fact (every
+ * champion in both views: the game is over); shown IDs come from
  * authorizedPresentationAgentDisplayId, and the team whose home end is on the
  * left is listed first, as on the Verdict card. Replaces an open sheet. Side
  * effects: DOM and focus only.
@@ -6019,6 +6125,7 @@ function openMatchSummarySheet() {
   if (home instanceof HTMLElement) home.append(sheet);
   else elements.fallenFeed.before(sheet);
   matchSummarySheet = sheet;
+  elements.arenaMatchSummaryButton.setAttribute("aria-pressed", "true");
   // A mouse press with keys on keeps them on (keepKeysOnForTopBarPress);
   // otherwise (keyboard use) focus moves to the sheet's Close.
   if (document.activeElement !== elements.battlefield) {
@@ -6038,6 +6145,7 @@ function closeMatchSummarySheet() {
   const hadFocus = matchSummarySheet?.contains(document.activeElement) === true;
   matchSummarySheet?.remove();
   matchSummarySheet = null;
+  elements.arenaMatchSummaryButton.setAttribute("aria-pressed", "false");
   if (hadFocus && !isReplayMode()) elements.battlefield.focus({ preventScroll: true });
 }
 
@@ -6496,7 +6604,7 @@ function hurryLivePoll() {
  * Pause clears state.pageRun at once (the button reads Run again), but the
  * tick on screen and a turn already out (Run sends the next turn once the
  * bodies of the tick on screen have landed) still land and play to their end;
- * only then does the loop stop and the status line say "Paused after the
+ * only then does the loop stop and the message line say "Paused after the
  * current turn.", as on the vision page. Run pressed again before that turn has landed keeps the same loop
  * going; it never starts a second one, so no turn is sent twice. The loop
  * also stops at game over, at a fresh-launch stop, when the page goes
@@ -6514,15 +6622,8 @@ function toggleLiveRun() {
   }
   state.pageRun = true;
   render();
-  if (!liveRunLoopActive) void runLiveTurns();
+  if (!state.pageRunLoop) void runLiveTurns();
 }
-
-/**
- * True while runLiveTurns is running (from its start until its last turn has
- * landed and settled), even after Pause has cleared state.pageRun. toggleLiveRun
- * reads it so a quick Pause then Run never starts a second loop.
- */
-let liveRunLoopActive = false;
 
 /**
  * Return whether the page's own Run owns Lock In right now, so a Space,
@@ -6532,7 +6633,7 @@ let liveRunLoopActive = false;
  * key (isLockInKeyName: Enter or N in any case, or Space " "), with any
  * modifiers. The vision page ignores Lock In while Run plays; without this
  * check, a Space or N pressed during a glide (All Act) would cut the glide
- * short and send a second turn. Pure; reads liveRunLoopActive and the
+ * short and send a second turn. Pure; reads state.pageRunLoop and the
  * command (and calls isLockInKeyName). Live play only (the loop never runs
  * in the Replay Viewer).
  *
@@ -6541,7 +6642,7 @@ let liveRunLoopActive = false;
  */
 function pageRunOwnsLockIn(command) {
   return (
-    liveRunLoopActive &&
+    state.pageRunLoop &&
     command.command_type === "keyboard" &&
     isLockInKeyName(command.key)
   );
@@ -6624,7 +6725,7 @@ async function whenRunTickReleased() {
  * The loop behind the page's own Run (see toggleLiveRun). One turn at a time,
  * overlapped so the ticks flow into each other: wait until no request or
  * policy work is out and the current tick's bodies have landed
- * (whenRunTickReleased), send Play One Turn (quietly: the status line keeps
+ * (whenRunTickReleased), send Play One Turn (quietly: the message line keeps
  * "Running."; see dispatchCommand) without cutting the current tick short
  * (keepPresentation), so the policies choose while its last beats play; hold
  * the next tick back (liveRunHoldsNextTick) until the current tick's
@@ -6632,15 +6733,15 @@ async function whenRunTickReleased() {
  * installed (this wait goes on after Pause, because Pause stops after the turn
  * already out) and repeat. So every tick plays to its end and the next one
  * starts straight away, with no still, paused-looking frame between them.
- * Ends with state.pageRun false, liveRunLoopActive false,
- * liveRunHoldsNextTick false and, when the player paused, the status line
+ * Ends with state.pageRun false, state.pageRunLoop false,
+ * liveRunHoldsNextTick false and, when the player paused, the message line
  * "Paused after the current turn.". Never throws; a failed command reports
  * through dispatchCommand and stops the loop.
  *
  * @returns {Promise<void>}
  */
 async function runLiveTurns() {
-  liveRunLoopActive = true;
+  state.pageRunLoop = true;
   try {
     while (liveRunMayContinue()) {
       if (state.busy || state.frame?.system_operation) {
@@ -6699,7 +6800,7 @@ async function runLiveTurns() {
       }
     }
   } finally {
-    liveRunLoopActive = false;
+    state.pageRunLoop = false;
     liveRunHoldsNextTick = false;
     const paused = !state.pageRun;
     state.pageRun = false;
@@ -6958,11 +7059,16 @@ function renderPage() {
   frameExplanation?.refresh();
   if (isReplayMode()) {
     const shown = presentationFrame;
-    void choreographer.whenSettled().then(() => {
-      if (installedPresentationAuthority()?.presentation === shown) {
-        renderChampionFrameForPage(shown);
-      }
-    });
+    if (!isAuthorizedPresentationFrame(shown)) {
+      // No authority to wait for: empty the Champion Frame now.
+      renderChampionFrameForPage(shown);
+    } else {
+      void choreographer.whenSettled().then(() => {
+        if (installedPresentationAuthority()?.presentation === shown) {
+          renderChampionFrameForPage(shown);
+        }
+      });
+    }
   }
   panels.render(presentationFrame, {
     visualFilterState: visualFilterSnapshot,
@@ -7605,7 +7711,7 @@ function resendsAfterStale(command) {
  * Mark an accepted Exit (its answer scheduled the shutdown): the page stops
  * reading (state.shuttingDown), keeps the answer's own recording status
  * (state.exitRecording; null when the match records nothing) for the
- * Recording pill, popover and seal, says the closed sentence for that save
+ * Recording pill, popover and save button, says the closed sentence for that save
  * state (closedSentence in tactics-turn.js: saved, no tick played, or
  * nothing recorded) and shows keys off, since no key works any more.
  * Side effects: page state, the notice and the Keys chip.
@@ -7632,7 +7738,7 @@ function acceptExit(payload) {
  * then dispatch retained input. Show handled failures, require resync when needed,
  * and open requested replays separately; normal completion resolves without a value.
  *
- * Status line: the page writes the vision's sentence for the player's own
+ * Message line: the page writes the vision's sentence for the player's own
  * commands (statusSentence in controls.js). A 1 or 2 that the decision mask
  * refuses is refused here, before sending ("Charge needs a target first. Your
  * order is unchanged.", or "... is not allowed on this target right now."),
@@ -7652,7 +7758,7 @@ function acceptExit(payload) {
  * "control") to your next champion that can take orders, worked out from the
  * newest frame when the command is about to go out (ownChampionTabStep), and
  * that command is sent instead with the same options. When nothing needs
- * sending, the status line says "Giving orders to your <Class>." (the only
+ * sending, the message line says "Giving orders to your <Class>." (the only
  * one that can take orders) or "All your champions are fallen, so nobody can
  * take orders until they return.", and inputs queued behind the Tab still go
  * out in order. In Policies Only the key goes to Python unchanged.
@@ -7664,7 +7770,7 @@ function acceptExit(payload) {
  * line says "The replay is still saving. The new match starts once it is
  * saved."
  *
- * Exit: pressed while the game-over save runs, the status line first says
+ * Exit: pressed while the game-over save runs, the message line first says
  * "The replay is still saving. The match closes once it is saved." (the
  * server waits for the save). An accepted Exit (acceptExit) says the closed
  * sentence for the replay's save state from the answer's own recording
@@ -7686,7 +7792,7 @@ function acceptExit(payload) {
  *   keepPresentation?: boolean,
  * }} options source (default "page") says where the input came from: "field"
  *   for the focused battlefield (Esc then also says keys are off), "control"
- *   for a deck or rail button. quiet (default false) leaves the status line
+ *   for a deck or rail button. quiet (default false) leaves the message line
  *   alone while the command is out and after it is accepted; the page's own
  *   Run sets it so "Running." stays on the line from turn to turn, as on the
  *   vision page. Refusals, stale or duplicate answers and failures still
@@ -7968,6 +8074,9 @@ async function dispatchCommand(
         : "Waiting for the game to answer…",
     );
   }
+  // A new command is out: an older sentence its answer repeats is no longer a
+  // late echo of an input made before the deck's last refusal.
+  forgetRefusalEchoes();
   /** @type {Array<Readonly<Record<string, unknown>>>} */
   let deferredDraftsToDispatch = [];
   /** @type {Readonly<Record<string, unknown>> | null} */
@@ -8194,7 +8303,7 @@ async function dispatchCommand(
       }
       if (commandResponseSchedulesShutdown(command, payload)) {
         // The answer's own recording status is newer than the installed
-        // frame's (Exit waited for the save): the pill, popover and seal show
+        // frame's (Exit waited for the save): the pill, popover and save button show
         // it, so they never stay on "Saving Replay…" after a save.
         acceptExit(payload);
         return;
@@ -8266,7 +8375,11 @@ function getCurrentAuthority() {
 /**
  * Load and install the current matched transport, presentation, and replay timeline.
  * Skip busy or shutting-down pages, preserve permitted old display while loading, and show
- * handled failures with resync required. A successful plain load clears the
+ * handled failures with resync required. The page is also offline, and the
+ * pill then reads "Disconnected" (shell.js connectionPill puts it before
+ * "Resync Required"), when the failure is not an answer from the server (no
+ * answer at all, or a frame the page could not accept) or the server refused
+ * the link (401 or 403). A successful plain load clears the
  * top-bar notice (clearNotice); a load that had to discard a mixed pair says so.
  * No load moves keyboard focus (replay keys listen on the whole document), so
  * no help card opens at rest. This never retries a simulator command.
@@ -8545,13 +8658,19 @@ function liveKeyAllowedWhileClosed(command) {
 }
 
 /**
- * Move focus to the first enabled command button, or Help when none exists.
- * Use preventScroll so releasing battlefield keyboard control does not move the page.
+ * Move focus to the first enabled command button the deck shows, or Help when
+ * none shows (for example while a request is out and the deck's buttons are
+ * disabled). A hidden button, such as Watch Only's Back while that overlay is
+ * closed, cannot take focus, so it is skipped: otherwise focus would stay on
+ * the arena and keys would stay on after Esc said they are off. Use
+ * preventScroll so releasing battlefield keyboard control does not move the
+ * page.
  */
 function releaseBattlefieldFocus() {
-  const firstCommand = /** @type {HTMLButtonElement | null} */ (
-    elements.commandDeck?.querySelector("button:not([disabled])") ?? null
-  );
+  const firstCommand =
+    /** @type {HTMLButtonElement[]} */ ([
+      ...(elements.commandDeck?.querySelectorAll("button:not([disabled])") ?? []),
+    ]).find((button) => button.getClientRects().length > 0) ?? null;
   const focusTarget = firstCommand ?? elements.helpButton;
   focusTarget.focus({ preventScroll: true });
 }
@@ -8583,6 +8702,12 @@ bindBattlefieldControls({
    */
   ownsFencedSpaceDefault: () => !isReplayMode(),
   /**
+   * Return whether a Tab that is not kept while orders are closed stays in
+   * the arena (live play). The Replay Viewer returns false: its own Tab steps
+   * agents (bindReplayAgentStepping).
+   */
+  ownsFencedTabDefault: () => !isReplayMode(),
+  /**
    * Return whether the focused live battlefield runs local keys (V and F) for
    * the BattleClient and DevClient. The Replay Viewer returns false: its one
    * keyboard dispatcher (bindReplayTimelineControls) owns V, B and F there, so
@@ -8596,12 +8721,12 @@ bindBattlefieldControls({
  * Show whether keys are on: they are on while the battlefield has keyboard
  * focus (a click on the arena gives it; Esc and a click elsewhere take it,
  * but a click on a top-bar button or a view switch keeps it).
- * Writes the status line's Keys chip ("Keys On" or "Keys Off · Click The
+ * Writes the message line's Keys chip ("Keys On" or "Keys Off · Click The
  * Arena", class `off`) and the `keys-on` class on #arena (its silver frame),
  * as on the vision page. BattleClient and DevClient only; in the Replay Viewer
  * the chip is not shown and #arena keeps no class.
  *
- * When keys turn on, a status line that still says they are off is made true
+ * When keys turn on, a message line that still says they are off is made true
  * again: "Keys are off until you click the arena again." empties, and
  * "Target cleared. Keys are off until you click the arena again." becomes
  * "Target cleared.". Any other message stays.
@@ -8646,16 +8771,19 @@ let topBarPressKeptKeys = null;
 
 /**
  * The buttons whose mouse press keeps keys on (keepKeysOnForTopBarPress):
- * every top-bar button, the Verdict card's two buttons and the Match Summary
+ * every top-bar button, the arena's two on-screen keys (Everyone In View and
+ * Frame Explanation), the Verdict card's two buttons and the Match Summary
  * sheet's Close.
  */
 const KEYS_KEPT_BUTTONS =
-  ".app-header button, .herald-verdict-actions__button, .match-summary-sheet__close";
+  ".app-header button, .arena-buttons button, .herald-verdict-actions__button, .match-summary-sheet__close";
 
 /**
  * Keep keys on when a top-bar button is pressed with the mouse (owner, 3
  * October 2026): Agent POV, Oracle View, the Recording pill, How To Play,
- * Visual Key, Visual Filters and Exit, plus the game-over Verdict card's
+ * Visual Filters, Finish And Save, Restart and Exit, the arena's Everyone In
+ * View and Frame Explanation keys (4 Oct 2026), plus the game-over Verdict
+ * card's
  * Match Summary and Show Arena buttons and the Match Summary sheet's Close
  * (KEYS_KEPT_BUTTONS). While the battlefield has keyboard focus, the mouse
  * press on one of these buttons does not move focus to that button (its
@@ -8684,7 +8812,7 @@ function keepKeysOnForTopBarPress(event) {
 
 /**
  * Give keys back after a dialog opened from the top bar closes (owner, 3
- * October 2026). A modal dialog such as the Visual Key takes focus while it is
+ * October 2026). A modal dialog such as the Restart dialog takes focus while it is
  * open, and on close it hands focus to its own top-bar button. When that
  * button's press had kept keys on (topBarPressKeptKeys), focus goes back to the
  * battlefield right after the dialog's own close work, so keys are on again;
@@ -8851,9 +8979,10 @@ elements.viewSelect.addEventListener("change", () => {
 bindCommandDeck();
 
 /**
- * Finish And Save from the status line, the Recording popover or the Stopped
+ * Finish And Save from the top bar, the Recording popover or the Stopped
  * overlay: close the popover, then send one finish_and_review. Python ends the
- * game and writes the replay file; the pill and seal then read Saved.
+ * game and writes the replay file; the pill then reads Saved and the top
+ * bar's button turns into Open Replay.
  */
 function finishAndSave() {
   if (elements.recordingPopover.matches(":popover-open")) {
@@ -8862,13 +8991,36 @@ function finishAndSave() {
   void dispatchCommand({ command_type: "finish_and_review" });
 }
 
-for (const button of [
-  elements.recordingFinishButton,
-  elements.recordingPopFinishButton,
-  elements.stoppedSaveButton,
-]) {
+for (const button of [elements.recordingPopFinishButton, elements.stoppedSaveButton]) {
   button.addEventListener("click", finishAndSave);
 }
+
+/**
+ * Answer a click on the top bar's save button by its data-action (set by
+ * paintSaveButton): "finish" saves (finishAndSave); "open" opens the saved
+ * replay, through review_replay the first time (the server starts the Replay
+ * Viewer; the new tab shows the "Opening Replay" page meanwhile) and after
+ * that by opening the same Replay Viewer link again in a new tab; "retry"
+ * sends retry_save. "Saving Replay…" has no action and is disabled.
+ */
+function saveButtonClick() {
+  const button = elements.recordingFinishButton;
+  if (button.disabled) return;
+  const action = button.dataset.action;
+  if (action === "finish") {
+    finishAndSave();
+  } else if (action === "open") {
+    if (recordingStatus()?.review_available === true) {
+      void dispatchCommand({ command_type: "review_replay" });
+    } else if (elements.recordingReplayLink.hasAttribute("href")) {
+      window.open(elements.recordingReplayLink.href, "_blank", "noopener");
+    }
+  } else if (action === "retry") {
+    void dispatchCommand({ command_type: "retry_save" });
+  }
+}
+
+elements.recordingFinishButton.addEventListener("click", saveButtonClick);
 
 // Watch Only: Back To Your <Class> gives the orders back to your champion (the
 // last Manual champion you ordered, else the first Manual slot). The own

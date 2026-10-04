@@ -1,10 +1,36 @@
 /**
- * @file Check pointer/keyboard draft submission and rapid input against exactly one
- * real successor transition. The deck names champions "<Class> · ID N" and
- * target options "<Class> · ID N · <what is allowed>"; the selection card and
- * action rows show "Agent N" token chips; accepted rows show actions in words
- * with their codes; the Rune Ring on the body shows a cooldown; the hidden
- * Reconnect button is clicked through its handler after a configuration change.
+ * @file Check that pointer and keyboard orders in the BattleClient's live play
+ * install exactly one real successor transition each, however fast they come.
+ * Contracts:
+ * - Order keys and a Lock In pressed while a draft is out wait in order
+ *   ("Input Queued", "Submit Queued"). While a Lock In is out, the deck refuses
+ *   order keys and a second Lock In: it shakes a refused step key and sends or
+ *   queues nothing. After a tick, Everyone Acts shows for a moment; the deck
+ *   takes orders again once Lock In reads "Lock In Turn".
+ * - The deck's Your Champion shows the class and "Agent ID N". Allowed Now has
+ *   one pick per body that allows an ability now, naming those abilities; a
+ *   pick, by pointer or keyboard, sets the target and gives the arena the
+ *   keys, and × Esc clears it. Shift + click on a body also picks it.
+ * - A Your Turn row gives that Manual champion the orders and the arena the
+ *   keys, also for a champion the Agent POV team cannot see. Enter on an arena
+ *   body keeps focus on that body's successor.
+ * - A Warrior's Charge and the reply Charge stay installable in Agent POV.
+ * - Escape clears the target and turns the keys off. A right click on the
+ *   arena clears it too, takes the keys and keeps the browser's context menu
+ *   away while orders are open.
+ * - The Rune Ring on the body shows the cooldown; the ready ring from before a
+ *   Burst stays only as the tick's faded "before" piece.
+ * - A lost answer or a refused capability shows "Disconnected"; Reconnect
+ *   reads the frame again and nothing is sent twice. A stale tab adopts the
+ *   latest Ranges state from the Visual Filters drawer.
+ * - The Class Guide changes only when a champion is activated.
+ * - Space on How To Play opens the How To Play card and sends nothing.
+ * - The developer cards (Roster, Agent Details, Technical Frame) sit in the
+ *   Developer drawer, which only the DevClient shows; the page still keeps
+ *   their open state, which the tests set directly.
+ * - A declared System shows Policies Choosing; a cancelled reply stops the
+ *   game, keeps it and shows the deck's Stopped panel. The hidden Reconnect
+ *   button is clicked through its handler after a configuration change.
  */
 import { expect, test } from "@playwright/test";
 
@@ -14,23 +40,11 @@ import { startDebugger, stopDebugger } from "./support/live-debugger.js";
 let serverProcess = null;
 let debuggerUrl = "";
 
-// The command deck names a champion "<Class> · ID N"; target options add
-// " · <what is allowed>"; the selection card shows the "Agent N" token chip.
+// The deck's Your Champion shows the class and "Agent ID N".
 const CLASS_NAMES = "(?:Mage|Warrior|Hunter|Rogue|Priest)";
-/** @param {string | number} publicAgentId */
-const deckActorPattern = (publicAgentId) =>
-  new RegExp(`^${CLASS_NAMES} · ID ${publicAgentId}(?: ·|$)`, "u");
-/** @param {string | number} publicAgentId */
-const chipPattern = (publicAgentId) => new RegExp(`Agent ${publicAgentId}(?!\\d)`, "u");
-// A Manual roster button reads "Control and inspect Agent ID N" in researcher
-// view and "Inspect Agent ID N" in Agent POV, so match the same agent in either.
-/** @param {string} label */
-const rosterNameForEitherView = (label) => {
-  const id = /Agent ID (\d+)$/u.exec(label)?.[1];
-  if (id === undefined) throw new Error(`Unexpected roster label ${label}.`);
-  return new RegExp(`^(?:Control and inspect|Inspect) Agent ID ${id}$`, "u");
-};
-
+// The arena_5v5 roster is Mage, Warrior, Hunter, Rogue and Priest on each
+// team, so Agent ID 4 is Team A's Priest.
+const PRIEST_ID = "4";
 const SCIENTIFIC_DISCLOSURES = Object.freeze([
   "#command-deck",
   "#roster-details",
@@ -62,6 +76,13 @@ test.afterAll(async () => {
  * @returns {Promise<number>} */
 async function currentStep(page) {
   return Number(await page.locator("#step-value").textContent());
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function waitForPlanPhase(page) {
+  // After a played tick the deck shows Everyone Acts for a moment and takes
+  // no orders. You may plan again once Lock In reads Lock In Turn.
+  await expect(page.locator("#lock-label")).toHaveText("Lock In Turn");
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -106,63 +127,110 @@ async function activateLiveCommand(page, activate) {
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {number} publicAgentId */
-async function controlLiveAgent(page, publicAgentId) {
-  await activateLiveCommand(page, () =>
-    page
-      .getByRole("button", {
-        name: `Control and inspect Agent ID ${publicAgentId}`,
-        exact: true,
-      })
-      .click(),
-  );
-  await expect(page.locator("#command-controlled-actor")).toHaveText(
-    deckActorPattern(publicAgentId),
-  );
+ * @returns {Promise<string>} */
+async function deckChampionId(page) {
+  const meta = await page.locator("#ag-meta").textContent();
+  const id = meta?.match(/^Agent ID (\d+)$/u)?.[1];
+  if (id === undefined) {
+    throw new Error(`The deck names no champion: ${meta}.`);
+  }
+  return id;
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {number} publicAgentId */
-async function liveTargetOption(page, publicAgentId) {
-  const option = page.locator("#command-target-select option").filter({
-    hasText: new RegExp(`^${CLASS_NAMES} · ID ${publicAgentId} · `, "u"),
-  });
-  await expect(option).toHaveCount(1);
-  const value = await option.getAttribute("value");
-  const text = await option.textContent();
-  if (value === null || text === null) {
-    throw new Error(`Agent ID ${publicAgentId} has no target option.`);
-  }
-  return { option, text, value };
+ * @param {string | number} publicAgentId */
+async function focusOwnChampion(page, publicAgentId) {
+  // A Your Turn row gives the orders to that Manual champion.
+  await activateLiveCommand(page, () =>
+    page.locator(`#checklist .cl-row[data-slot="${publicAgentId}"]`).click(),
+  );
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${publicAgentId}`);
+  await expect(page.locator("#ag-name")).toHaveText(
+    new RegExp(`^${CLASS_NAMES}$`, "u"),
+  );
+  await expect(page.locator("#ag-chip")).toHaveText("You Control This Agent");
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {string | number} publicAgentId */
+function allowedNowPick(page, publicAgentId) {
+  return page.locator(`#command-target-select .pick[data-target="${publicAgentId}"]`);
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {string | number} publicAgentId
+ * @returns {Promise<boolean>} */
+async function ultimateAllowedOn(page, publicAgentId) {
+  // A pick names the abilities allowed on that body now ("Shield Bash ·
+  // Charge"); a body with nothing allowed has no pick.
+  const ultimateName = await page.locator("#ult-name").textContent();
+  const abilities = await allowedNowPick(page, publicAgentId)
+    .locator("em")
+    .allTextContents();
+  return (
+    ultimateName !== null &&
+    abilities.some((what) => what.split(" · ").includes(ultimateName))
+  );
 }
 
 /** @param {import("@playwright/test").Page} page */
-async function liveRosterActorOutsideBattlefield(page) {
-  const publicId = (/** @type {string | null} */ label) =>
-    label?.match(/Agent ID ([^,.]+)/u)?.[1] ?? null;
-  const visiblePublicIds = new Set(
-    (
-      await page
-        .locator("#battlefield .agent")
-        .evaluateAll((agents) =>
-          agents.map((agent) => agent.getAttribute("aria-label")),
-        )
-    ).map(publicId),
+async function ownRowOutsideBattlefield(page) {
+  // In Agent POV, Your Turn keeps a row for every Manual champion, also for
+  // one the viewing team cannot see. Find such a row other than the focused
+  // champion's.
+  const drawnIds = new Set(
+    await page
+      .locator("#battlefield .agent[data-presentation-key]")
+      .evaluateAll((agents) =>
+        agents.map(
+          (agent) => agent.getAttribute("aria-label")?.match(/^Agent ID (\d+)/u)?.[1],
+        ),
+      ),
   );
-  const rosterActors = page.locator(
-    '#roster .roster-primary-action:not([aria-pressed="true"])',
-  );
-  const labels = await rosterActors.evaluateAll((buttons) =>
-    buttons.map((button) => button.getAttribute("aria-label")),
-  );
-  const index = labels.findIndex((label) => {
-    const candidate = publicId(label);
-    return candidate !== null && !visiblePublicIds.has(candidate);
-  });
-  if (index < 0) {
-    throw new Error("The live researcher roster has no actor outside this snapshot.");
+  const rowIds = await page
+    .locator("#checklist .cl-row:not(.focus)")
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-slot")));
+  const id = rowIds.find((candidate) => candidate !== null && !drawnIds.has(candidate));
+  if (id === undefined) {
+    throw new Error("Agent POV has no Manual champion outside its sight.");
   }
-  return rosterActors.nth(index);
+  return page.locator(`#checklist .cl-row[data-slot="${id}"]`);
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {"pov" | "researcher"} mode */
+function viewButton(page, mode) {
+  // The top bar's Agent POV and Oracle View buttons set the hidden View
+  // select (#view-select), which holds the page's view.
+  return page.locator(`#view-switch button[data-view-mode="${mode}"]`);
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {"pov" | "researcher"} mode */
+async function chooseView(page, mode) {
+  await viewButton(page, mode).click();
+  await expect(page.locator("#view-select")).toHaveValue(mode);
+  await expect(viewButton(page, mode)).toHaveAttribute("aria-pressed", "true");
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function openVisualFilters(page) {
+  // Live play keeps Visual Filters in a drawer that its top bar button opens.
+  const drawer = page.locator("#visual-filters-drawer");
+  if (!(await drawer.evaluate((node) => node.matches(":popover-open")))) {
+    await page.locator("#visual-filters-button").click();
+  }
+  await expect(drawer).toBeVisible();
+  await expect(page.locator("#visual-filters")).toHaveAttribute("open", "");
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function closeVisualFilters(page) {
+  const drawer = page.locator("#visual-filters-drawer");
+  if (await drawer.evaluate((node) => node.matches(":popover-open"))) {
+    await page.locator("#visual-filters-button").click();
+  }
+  await expect(drawer).toBeHidden();
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -215,8 +283,21 @@ async function holdNextPresentation(page, path = "/api/presentation/frame") {
  * @param {boolean} open */
 async function setDisclosureOpen(page, selector, open) {
   const disclosure = page.locator(selector);
+  const summary = disclosure.locator(":scope > summary");
   if ((await disclosure.getAttribute("open")) !== (open ? "" : null)) {
-    await disclosure.locator(":scope > summary").click();
+    if (await summary.isVisible()) {
+      await summary.click();
+    } else {
+      // The BattleClient keeps the developer cards (Roster, Agent Details,
+      // Technical Frame) in its closed Developer drawer, which only the
+      // DevClient shows; the page still keeps their open state.
+      await disclosure.evaluate((details, value) => {
+        if (!(details instanceof HTMLDetailsElement)) {
+          throw new TypeError("Disclosure is unavailable.");
+        }
+        details.open = value;
+      }, open);
+    }
   }
   if (open) {
     await expect(disclosure).toHaveAttribute("open", "");
@@ -321,26 +402,19 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
     "data-submission-scope",
     "joint_turn",
   );
-  await expect(page.locator("#command-controlled-actor")).toHaveText(
-    new RegExp(`^${CLASS_NAMES} · ID \\d+$`, "u"),
+  await expect(page.locator("#ag-name")).toHaveText(
+    new RegExp(`^${CLASS_NAMES}$`, "u"),
   );
+  await expect(page.locator("#ag-meta")).toHaveText(/^Agent ID \d+$/u);
   await expect(
     page.locator("#battlefield .agent[data-presentation-key]"),
   ).not.toHaveCount(0);
 
-  const controlledActor = await page.locator("#command-controlled-actor").textContent();
-  const controlledPublicId = controlledActor?.match(/ · ID (\d+)/u)?.[1];
-  if (controlledPublicId === undefined) {
-    throw new Error("Controlled actor identity is unavailable.");
-  }
-  const draftLabel = page
-    .locator("#pending-card .accepted-action-row")
-    .filter({
-      has: page
-        .locator(".accepted-action-row__title")
-        .filter({ hasText: chipPattern(controlledPublicId) }),
-    })
-    .locator(".accepted-action-tuple__value");
+  const controlledPublicId = await deckChampionId(page);
+  // Your Turn lists each Manual champion's staged order in words.
+  const draftLabel = page.locator(
+    `#checklist .cl-row[data-slot="${controlledPublicId}"] > span > span`,
+  );
   await expect(draftLabel).toHaveCount(1);
   const draftBefore = await draftLabel.textContent();
   if (draftBefore === null || draftBefore.length === 0) {
@@ -378,6 +452,7 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
     throw new Error("Installed battlefield has no presentation key.");
   }
   const retainedDisclosureOpen = await disclosureOpenState(page);
+  const northKey = page.locator('#pad .key[data-key="w"]');
   const heldSubmitPresentation = await holdNextPresentation(page);
   try {
     await page.locator("#submit-turn-button").evaluate((button) => {
@@ -414,17 +489,28 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
         `#battlefield .agent[data-presentation-key="${retainedPresentationKey}"]`,
       )
       .dispatchEvent("pointerdown", { button: 0 });
+    // While a Lock In is out, the deck refuses order keys without a word: it
+    // shakes the key and neither sends nor queues it.
+    await expect(northKey).not.toHaveClass(/\bshake\b/u);
     await page.locator("#battlefield").focus();
     await page.keyboard.press("w");
-    await expect(page.locator("#connection-status")).toHaveText("Input Queued");
-    await expect.poll(() => commands.length).toBe(2);
+    await expect(northKey).toHaveClass(/\bshake\b/u);
+    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    expect(commands).toHaveLength(2);
     heldSubmitPresentation.release();
   } finally {
     heldSubmitPresentation.release();
     await heldSubmitPresentation.dispose();
   }
   await expect(page.locator("#step-value")).toHaveText(String(successorStep + 1));
-  await expect.poll(() => commands.length).toBe(3);
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
+  // The refused W never lands: the new turn's step is the reset Stay.
+  await expect(page.locator('#pad .key[data-key="x"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(northKey).toHaveAttribute("aria-pressed", "false");
+  expect(commands).toHaveLength(2);
   expect(
     commands.filter(
       (command) =>
@@ -432,11 +518,6 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
         String(command.key).toLowerCase() === "enter",
     ),
   ).toHaveLength(1);
-  expect(commands[2]).toMatchObject({
-    command_type: "keyboard",
-    key: "w",
-    repeat: false,
-  });
 
   const transitionId = await page.locator("#transition-value").textContent();
   expect(transitionId).not.toBeNull();
@@ -538,6 +619,7 @@ test("pointer draft keeps battlefield focus and queues one Enter exactly once", 
   await expect(page.locator("#step-value")).toHaveText(String(baseStep + 1));
   await expect.poll(() => requests.length).toBe(2);
   await expect(battlefield).toBeFocused();
+  await waitForPlanPhase(page);
 
   const keyboardMovementCandidate = page
     .locator(
@@ -642,7 +724,7 @@ test("Enter follows a coherent idempotent draft exactly once", async ({ page }) 
   await page.unroute("**/api/command");
 });
 
-test("target selection preserves pointer Submit and keyboard-native focus", async ({
+test("Allowed Now picks queue one Lock In behind pointer and keyboard picks", async ({
   page,
 }) => {
   /** @type {Record<string, any>[]} */
@@ -654,74 +736,83 @@ test("target selection preserves pointer Submit and keyboard-native focus", asyn
 
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  const baseStep = await currentStep(page);
-  const battlefield = page.locator("#battlefield");
-  const targetSelect = page.locator("#command-target-select");
-  const basicButton = page.locator("#basic-button");
-  await expect(targetSelect).toHaveValue("");
-  expect(
-    await targetSelect
-      .locator('option[value=""]')
-      .evaluate((option) =>
-        / · (?:No Combat|Ultimate)$/u.test(option.textContent ?? ""),
-      ),
-  ).toBe(true);
-  await expect(basicButton).toHaveAttribute("data-authoritative-available", "false");
-  await expect(basicButton).toHaveAttribute("aria-disabled", "true");
-
-  const authorizedNonzeroTarget = await targetSelect.evaluate((select) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("Target control is unavailable.");
-    }
-    const option = [...select.options].find(
-      (candidate) => !candidate.disabled && candidate.value !== "",
-    );
-    return option
-      ? {
-          value: option.value,
-          basicAvailable: option.textContent?.includes("B ✓") === true,
-        }
-      : null;
-  });
-  if (authorizedNonzeroTarget === null) {
-    throw new Error("Target control has no alternative authorized option.");
-  }
-
-  await targetSelect.selectOption(authorizedNonzeroTarget.value);
-  await expect.poll(() => requests.length).toBe(1);
-  await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(targetSelect).toHaveValue(authorizedNonzeroTarget.value);
-  await expect(basicButton).toHaveAttribute(
-    "data-authoritative-available",
-    String(authorizedNonzeroTarget.basicAvailable),
-  );
-  await expect(basicButton).toHaveAttribute(
-    "aria-disabled",
-    String(!authorizedNonzeroTarget.basicAvailable),
-  );
-
-  await targetSelect.selectOption("");
-  await expect.poll(() => requests.length).toBe(2);
-  await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(targetSelect).toHaveValue("");
-  await expect(basicButton).toHaveAttribute("data-authoritative-available", "false");
-  await expect(basicButton).toHaveAttribute("aria-disabled", "true");
+  await waitForPlanPhase(page);
+  const initialChampionId = await deckChampionId(page);
+  // The Priest may heal its teammates and itself from its spawn, so Allowed
+  // Now has picks for it at the start of a match.
+  await focusOwnChampion(page, PRIEST_ID);
+  await expect(page.locator("#ag-name")).toHaveText("Priest");
   requests.length = 0;
 
-  const pointerTarget = authorizedNonzeroTarget.value;
+  const baseStep = await currentStep(page);
+  const battlefield = page.locator("#battlefield");
+  const picks = page.locator("#command-target-select .pick");
+  const targetChip = page.locator("#tchip");
+  const basicButton = page.locator("#basic-button");
+  const basicTag = basicButton.locator(".tag");
+  const basicName = await page.locator("#basic-name").textContent();
+  if (basicName === null || basicName.length === 0) {
+    throw new Error("The deck does not name the Basic.");
+  }
+  await expect(targetChip).toHaveClass(/\bnone\b/u);
+  await expect(targetChip).toContainText("No Target Yet");
+  await expect(
+    page.locator('#command-target-select .pick[aria-pressed="true"]'),
+  ).toHaveCount(0);
+  await expect(basicButton).toHaveAttribute("data-authoritative-available", "false");
+  await expect(basicTag).toHaveText("Not Allowed");
+  expect(await picks.count()).toBeGreaterThanOrEqual(2);
+
+  const firstPick = picks.first();
+  const pointerTarget = await firstPick.getAttribute("data-target");
+  const pointerAbilities = await firstPick.locator("em").textContent();
+  if (pointerTarget === null || pointerAbilities === null) {
+    throw new Error("The first Allowed Now pick does not name its target.");
+  }
+  // A pick names the abilities allowed on that body now; the Basic arms
+  // itself (Auto) when the Basic is one of them.
+  const basicAvailable = pointerAbilities.includes(basicName);
+  await firstPick.click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0].command).toMatchObject({
+    command_type: "roster_selection",
+    role: "target",
+  });
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
+  await expect(allowedNowPick(page, pointerTarget)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(targetChip).not.toHaveClass(/\bnone\b/u);
+  await expect(basicButton).toHaveAttribute(
+    "data-authoritative-available",
+    String(basicAvailable),
+  );
+  await expect(basicTag).toHaveText(basicAvailable ? "Auto" : "Not Allowed");
+
+  await page.locator("#clear-target-button").click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1].command).toMatchObject({
+    command_type: "keyboard",
+    key: "Escape",
+  });
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
+  await expect(targetChip).toHaveClass(/\bnone\b/u);
+  await expect(
+    page.locator('#command-target-select .pick[aria-pressed="true"]'),
+  ).toHaveCount(0);
+  await expect(basicButton).toHaveAttribute("data-authoritative-available", "false");
+  await expect(basicTag).toHaveText("Not Allowed");
+  requests.length = 0;
 
   const heldPointerPresentation = await holdNextPresentation(page);
   try {
-    await targetSelect.focus();
-    await targetSelect.dispatchEvent("pointerdown", {
-      button: 0,
-      pointerType: "mouse",
-    });
-    await targetSelect.selectOption(pointerTarget);
+    await allowedNowPick(page, pointerTarget).click();
     await heldPointerPresentation.held;
     await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
+    await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
     await expect.poll(() => requests.length).toBe(1);
     heldPointerPresentation.release();
   } finally {
@@ -738,23 +829,22 @@ test("target selection preserves pointer Submit and keyboard-native focus", asyn
   await expect(page.locator("#step-value")).toHaveText(String(baseStep + 1));
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(battlefield).toBeFocused();
+  await waitForPlanPhase(page);
 
-  const keyboardDirection = await targetSelect.evaluate((select) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("Target control is unavailable.");
-    }
-    const enabled = [...select.options].filter((option) => !option.disabled);
-    const currentIndex = enabled.findIndex((option) => option.value === select.value);
-    if (enabled.length < 2 || currentIndex < 0) {
-      throw new Error("Target control has no keyboard alternative.");
-    }
-    return currentIndex < enabled.length - 1 ? "ArrowDown" : "ArrowUp";
-  });
+  // A keyboard pick hands focus to the arena, so the keys stay on for the
+  // Lock In that follows it.
+  const keyboardPick = page
+    .locator('#command-target-select .pick[aria-pressed="false"]')
+    .first();
+  const keyboardTarget = await keyboardPick.getAttribute("data-target");
+  if (keyboardTarget === null) {
+    throw new Error("Allowed Now has no second pick for the keyboard.");
+  }
   const heldKeyboardPresentation = await holdNextPresentation(page);
   let heldKeyboardSubmitPresentation = null;
   try {
-    await targetSelect.focus();
-    await page.keyboard.press(keyboardDirection);
+    await keyboardPick.focus();
+    await page.keyboard.press("Enter");
     await heldKeyboardPresentation.held;
     await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
     await expect(battlefield).toBeFocused();
@@ -765,7 +855,10 @@ test("target selection preserves pointer Submit and keyboard-native focus", asyn
     heldKeyboardPresentation.release();
     await heldKeyboardSubmitPresentation.held;
     await expect.poll(() => requests.length).toBe(4);
-    expect(requests[2].command.command_type).not.toBe("keyboard");
+    expect(requests[2].command).toMatchObject({
+      command_type: "roster_selection",
+      role: "target",
+    });
     expect(String(requests[3].command.key).toLowerCase()).toBe("enter");
     expect(requests[3].command_id).not.toBe(requests[2].command_id);
     expect(requests[3].base_revision).toBe(requests[2].base_revision + 1);
@@ -778,12 +871,20 @@ test("target selection preserves pointer Submit and keyboard-native focus", asyn
   }
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect.poll(() => requests.length).toBe(4);
-  await expect(targetSelect).toBeFocused();
+  await expect(battlefield).toBeFocused();
+  await expect(allowedNowPick(page, keyboardTarget)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.locator("#step-value")).toHaveText(String(baseStep + 2));
   await page.unroute("**/api/command");
+
+  await waitForPlanPhase(page);
+  await activateLiveCommand(page, () => page.locator("#clear-target-button").click());
+  await focusOwnChampion(page, initialChampionId);
 });
 
-test("Agent pointer roster selection queues movement before one Enter", async ({
+test("Agent pointer Your Turn selection queues movement before one Enter", async ({
   page,
 }) => {
   /** @type {Record<string, any>[]} */
@@ -795,30 +896,24 @@ test("Agent pointer roster selection queues movement before one Enter", async ({
 
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  const viewSelect = page.locator("#view-select");
-  await viewSelect.selectOption("pov");
-  await expect(viewSelect).toHaveValue("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
   );
-  const initialRosterActorLabel = await page
-    .locator('#roster .roster-primary-action[aria-pressed="true"]')
-    .getAttribute("aria-label");
-  if (initialRosterActorLabel === null) {
-    throw new Error("Agent POV has no initially controlled roster actor.");
-  }
+  const initialChampionId = await deckChampionId(page);
   requests.length = 0;
 
   const baseStep = await currentStep(page);
   const battlefield = page.locator("#battlefield");
-  const hiddenRosterActor = await liveRosterActorOutsideBattlefield(page);
-  await expect(hiddenRosterActor).toBeVisible();
+  const hiddenChampionRow = await ownRowOutsideBattlefield(page);
+  await expect(hiddenChampionRow).toBeVisible();
+  const selectedId = await hiddenChampionRow.getAttribute("data-slot");
 
   const heldRosterPresentation = await holdNextPresentation(page);
   try {
-    await hiddenRosterActor.click();
+    await hiddenChampionRow.click();
     await heldRosterPresentation.held;
     await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
     await expect(battlefield).toBeFocused();
@@ -861,19 +956,16 @@ test("Agent pointer roster selection queues movement before one Enter", async ({
   expect(requests[2].command_id).not.toBe(requests[1].command_id);
   expect(requests[1].base_revision).toBe(requests[0].base_revision + 1);
   expect(requests[2].base_revision).toBe(requests[1].base_revision + 1);
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${selectedId}`);
   await expect(battlefield).toBeFocused();
 
   await page.unroute("**/api/command");
-  await page
-    .getByRole("button", { name: initialRosterActorLabel, exact: true })
-    .click();
-  await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await viewSelect.selectOption("researcher");
-  await expect(viewSelect).toHaveValue("researcher");
+  await focusOwnChampion(page, initialChampionId);
+  await chooseView(page, "researcher");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 });
 
-test("Agent keyboard roster selection retains researcher focus without submitting", async ({
+test("Agent keyboard Your Turn selection gives the arena the keys without submitting", async ({
   page,
 }) => {
   /** @type {Record<string, any>[]} */
@@ -885,32 +977,19 @@ test("Agent keyboard roster selection retains researcher focus without submittin
 
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  const viewSelect = page.locator("#view-select");
-  await viewSelect.selectOption("pov");
-  await expect(viewSelect).toHaveValue("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 
-  const initialRosterActorLabel = await page
-    .locator('#roster .roster-primary-action[aria-pressed="true"]')
-    .getAttribute("aria-label");
-  if (initialRosterActorLabel === null) {
-    throw new Error("Agent POV has no initially controlled roster actor.");
-  }
-  const hiddenRosterActor = await liveRosterActorOutsideBattlefield(page);
-  await expect(hiddenRosterActor).toBeVisible();
-  const focusedPresentationKey = await hiddenRosterActor.getAttribute(
-    "data-presentation-key",
-  );
-  const focusedRosterLabel = await hiddenRosterActor.getAttribute("aria-label");
-  if (focusedPresentationKey === null || focusedRosterLabel === null) {
-    throw new Error("Agent researcher roster action has no presentation key.");
-  }
+  const initialChampionId = await deckChampionId(page);
+  const hiddenChampionRow = await ownRowOutsideBattlefield(page);
+  await expect(hiddenChampionRow).toBeVisible();
+  const selectedId = await hiddenChampionRow.getAttribute("data-slot");
   const baseStep = await currentStep(page);
   requests.length = 0;
 
   const heldRosterPresentation = await holdNextPresentation(page);
   try {
-    await hiddenRosterActor.press("Enter");
+    await hiddenChampionRow.press("Enter");
     await heldRosterPresentation.held;
     await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
     await expect.poll(() => requests.length).toBe(1);
@@ -927,37 +1006,23 @@ test("Agent keyboard roster selection retains researcher focus without submittin
     command_type: "roster_selection",
     role: "control",
   });
-  // The activated agent becomes the Agent POV recipient, so its row's
-  // presentation key changes; focus stays on that same agent's roster button.
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        surface: document.activeElement?.closest("#roster")?.id ?? null,
-        label: document.activeElement?.getAttribute("aria-label") ?? null,
-      })),
-    )
-    .toEqual({ surface: "roster", label: focusedRosterLabel });
+  // The row gives that champion the orders and the arena the keys, so the
+  // next order key goes to it.
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${selectedId}`);
+  await expect(
+    page.locator(`#checklist .cl-row[data-slot="${selectedId}"]`),
+  ).toHaveClass(/\bfocus\b/u);
+  await expect(page.locator("#battlefield")).toBeFocused();
 
   await page.unroute("**/api/command");
-  await viewSelect.evaluate((select) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("View mode control is unavailable.");
-    }
-    select.value = "researcher";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await expect(viewSelect).toHaveValue("researcher");
+  // With the keys on, the Oracle View button leaves the arena focused.
+  await chooseView(page, "researcher");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectExactDisclosureDefaults(page);
-  await expect
-    .poll(() =>
-      page.evaluate(() => document.activeElement?.closest("#roster") === null),
-    )
-    .toBe(true);
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${selectedId}`);
+  await expect(page.locator("#battlefield")).toBeFocused();
 
-  await page
-    .getByRole("button", { name: rosterNameForEitherView(initialRosterActorLabel) })
-    .click();
+  await focusOwnChampion(page, initialChampionId);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 });
 
@@ -974,17 +1039,10 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   const viewSelect = page.locator("#view-select");
-  await viewSelect.selectOption("pov");
-  await expect(viewSelect).toHaveValue("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 
-  const initialRosterActorLabel = await page
-    .locator('#roster .roster-primary-action[aria-pressed="true"]')
-    .getAttribute("aria-label");
-  const initialPublicId = initialRosterActorLabel?.match(/Agent ID ([^.]+)/u)?.[1];
-  if (initialRosterActorLabel === null || initialPublicId === undefined) {
-    throw new Error("Agent POV has no parseable initially controlled actor.");
-  }
+  const initialPublicId = await deckChampionId(page);
   const battlefieldActors = page.locator("#battlefield .agent[data-presentation-key]");
   const labels = await battlefieldActors.evaluateAll((actors) =>
     actors.map((actor) => actor.getAttribute("aria-label")),
@@ -1008,13 +1066,13 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
     throw new Error("Visible Agent battlefield actor lacks its public identity.");
   }
   await setDisclosureOpen(page, "#technical-frame-details", true);
-  await setDisclosureOpen(page, "#visual-filters", true);
+  await openVisualFilters(page);
   const ranges = page.locator("#live-ranges-button");
   if ((await ranges.getAttribute("aria-pressed")) !== "false") {
     await ranges.click();
   }
   await expect(ranges).toHaveAttribute("aria-pressed", "false");
-  await setDisclosureOpen(page, "#visual-filters", false);
+  await closeVisualFilters(page);
   await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
   const baseStep = await currentStep(page);
   requests.length = 0;
@@ -1038,9 +1096,7 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
     command_type: "roster_selection",
     role: "control",
   });
-  await expect(page.locator("#command-controlled-actor")).toHaveText(
-    deckActorPattern(String(targetPublicId)),
-  );
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${targetPublicId}`);
   await expect(page.locator("#agent-details")).toHaveAttribute("open", "");
   await expect(page.locator("#technical-frame-details")).toHaveAttribute("open", "");
   await expect(ranges).toHaveAttribute("aria-pressed", "false");
@@ -1066,9 +1122,7 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
   });
   await expect(viewSelect).toHaveValue("researcher");
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(page.locator("#command-controlled-actor")).toHaveText(
-    deckActorPattern(String(targetPublicId)),
-  );
+  await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${targetPublicId}`);
   await expectExactDisclosureDefaults(page);
   await expect
     .poll(() =>
@@ -1078,9 +1132,7 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
     )
     .toBe(false);
 
-  await page
-    .getByRole("button", { name: rosterNameForEitherView(initialRosterActorLabel) })
-    .click();
+  await focusOwnChampion(page, initialPublicId);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 });
 
@@ -1116,7 +1168,8 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
 
   const battlefield = page.locator("#battlefield");
   const viewSelect = page.locator("#view-select");
-  const targetSelect = page.locator("#command-target-select");
+  const targetChip = page.locator("#tchip");
+  /** @type {string | null} */
   let initialControlledPublicId = null;
   let primaryError = null;
   const expectHealthyInstallation = async () => {
@@ -1143,30 +1196,23 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
   try {
     await page.goto(debuggerUrl);
     await expectHealthyInstallation();
-    const initialControlledLabel = await page
-      .locator("#command-controlled-actor")
-      .textContent();
-    initialControlledPublicId =
-      initialControlledLabel?.match(/ · ID (\d+)/u)?.[1] ?? null;
-    if (initialControlledPublicId === null) {
-      throw new Error("The initial controlled actor identity is unavailable.");
-    }
+    initialControlledPublicId = await deckChampionId(page);
     await activateLiveCommand(page, () => page.locator("#reset-button").click());
     await expect(page.locator("#step-value")).toHaveText("0");
 
     // Use only ordinary browser drafts and joint submissions to converge the
-    // two Warriors. Stop as soon as Agent 1's exact mask exposes Charge.
+    // two Warriors. Stop as soon as Agent 1's exact mask exposes Charge, which
+    // Allowed Now then offers on Agent 6.
     let stagedTurns = 0;
-    /** @type {Awaited<ReturnType<typeof liveTargetOption>> | null} */
-    let chargeTarget = null;
+    let chargeAllowed = false;
     while (stagedTurns < 9) {
-      await controlLiveAgent(page, 1);
-      chargeTarget = await liveTargetOption(page, 6);
-      if (/ · (?:Basic And Ultimate|Ultimate)$/u.test(chargeTarget.text)) {
+      await focusOwnChampion(page, 1);
+      chargeAllowed = await ultimateAllowedOn(page, 6);
+      if (chargeAllowed) {
         break;
       }
       await selectMovement("d");
-      await controlLiveAgent(page, 6);
+      await focusOwnChampion(page, 6);
       await selectMovement("z");
       const stepBeforeMovement = await currentStep(page);
       await activateLiveCommand(page, () =>
@@ -1175,25 +1221,21 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
       await expect(page.locator("#step-value")).toHaveText(
         String(stepBeforeMovement + 1),
       );
+      await waitForPlanPhase(page);
       stagedTurns += 1;
     }
     expect(stagedTurns).toBeGreaterThan(0);
-    expect(chargeTarget).not.toBeNull();
-    if (chargeTarget === null) {
-      throw new Error("The Warriors could not be staged into Charge range.");
-    }
-    expect(chargeTarget.text).toMatch(/ · (?:Basic And Ultimate|Ultimate)$/u);
+    expect(chargeAllowed).toBe(true);
 
     // Freeze both movement drafts at the converged geometry before combat.
     await selectMovement("x");
-    await controlLiveAgent(page, 6);
+    await focusOwnChampion(page, 6);
     await selectMovement("x");
-    await controlLiveAgent(page, 1);
-    chargeTarget = await liveTargetOption(page, 6);
-    await activateLiveCommand(page, () =>
-      targetSelect.selectOption(chargeTarget.value),
-    );
-    await expect(targetSelect).toHaveValue(chargeTarget.value);
+    await focusOwnChampion(page, 1);
+    expect(await ultimateAllowedOn(page, 6)).toBe(true);
+    await activateLiveCommand(page, () => allowedNowPick(page, 6).click());
+    await expect(allowedNowPick(page, 6)).toHaveAttribute("aria-pressed", "true");
+    await expect(targetChip).toContainText("Warrior · ID 6");
     await expect(page.locator("#ultimate-button")).toHaveAttribute(
       "data-authoritative-available",
       "true",
@@ -1219,6 +1261,7 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
     const firstChargeStep = await currentStep(page);
     await activateLiveCommand(page, () => page.locator("#submit-turn-button").click());
     await expect(page.locator("#step-value")).toHaveText(String(firstChargeStep + 1));
+    await waitForPlanPhase(page);
     const afterFirstCharge = await currentAuthorizedPresentation(page);
     const firstChargeRow = /** @type {TransitionActionRow[]} */ (
       afterFirstCharge.latest_transition.action_rows
@@ -1240,10 +1283,11 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
     const settlingStep = await currentStep(page);
     await activateLiveCommand(page, () => page.locator("#submit-turn-button").click());
     await expect(page.locator("#step-value")).toHaveText(String(settlingStep + 1));
+    await waitForPlanPhase(page);
 
-    await controlLiveAgent(page, 6);
+    await focusOwnChampion(page, 6);
     const stepBeforeAgentInstall = await currentStep(page);
-    await activateLiveCommand(page, () => viewSelect.selectOption("pov"));
+    await activateLiveCommand(page, () => viewButton(page, "pov").click());
     await expect(viewSelect).toHaveValue("pov");
     await expect(page.locator("#step-value")).toHaveText(
       String(stepBeforeAgentInstall),
@@ -1280,12 +1324,10 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
       expect("source_presentation_key" in status).toBe(false);
     }
 
-    const reverseTarget = await liveTargetOption(page, 1);
-    expect(reverseTarget.text).toMatch(/ · (?:Basic And Ultimate|Ultimate)$/u);
-    await activateLiveCommand(page, () =>
-      targetSelect.selectOption(reverseTarget.value),
-    );
-    await expect(targetSelect).toHaveValue(reverseTarget.value);
+    expect(await ultimateAllowedOn(page, 1)).toBe(true);
+    await activateLiveCommand(page, () => allowedNowPick(page, 1).click());
+    await expect(allowedNowPick(page, 1)).toHaveAttribute("aria-pressed", "true");
+    await expect(targetChip).toContainText("Warrior · ID 1");
     await expect(battlefield.locator('.agent[data-selected="true"]')).toHaveAttribute(
       "aria-label",
       /^Agent ID 1[,.]/u,
@@ -1336,11 +1378,12 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
 
     const fixedStep = await currentStep(page);
     for (let cycle = 0; cycle < 3; cycle += 1) {
-      for (const mode of ["researcher", "pov"]) {
-        await activateLiveCommand(page, () => viewSelect.selectOption(mode));
+      for (const mode of /** @type {const} */ (["researcher", "pov"])) {
+        await activateLiveCommand(page, () => viewButton(page, mode).click());
         await expect(viewSelect).toHaveValue(mode);
         await expect(page.locator("#step-value")).toHaveText(String(fixedStep));
-        await expect(targetSelect).toHaveValue(reverseTarget.value);
+        // The picked target stays Agent 1 in both views.
+        await expect(targetChip).toContainText("Warrior · ID 1");
         await expect(
           battlefield.locator('.agent[data-controlled="true"]'),
         ).toHaveAttribute("aria-label", /^Agent ID 6[,.]/u);
@@ -1367,11 +1410,11 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
     await page.unroute("**/api/command");
     if (!page.isClosed()) {
       if ((await viewSelect.inputValue()) !== "researcher") {
-        await activateLiveCommand(page, () => viewSelect.selectOption("researcher"));
+        await activateLiveCommand(page, () => viewButton(page, "researcher").click());
       }
       await activateLiveCommand(page, () => page.locator("#reset-button").click());
       if (initialControlledPublicId !== null) {
-        await controlLiveAgent(page, Number(initialControlledPublicId));
+        await focusOwnChampion(page, initialControlledPublicId);
       }
     }
   } catch (error) {
@@ -1385,7 +1428,7 @@ test("post-Charge Agent history stays installable through a reciprocal Charge", 
   }
 });
 
-test("right click stays native while Escape alone clears the target and releases focus", async ({
+test("Escape clears the target and frees the keys; a right click clears it and keeps them", async ({
   page,
 }) => {
   /** @type {Record<string, any>[]} */
@@ -1397,62 +1440,28 @@ test("right click stays native while Escape alone clears the target and releases
 
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
+  await waitForPlanPhase(page);
+  const initialChampionId = await deckChampionId(page);
+  // The Priest has Allowed Now picks from its spawn.
+  await focusOwnChampion(page, PRIEST_ID);
   const battlefield = page.locator("#battlefield");
-  const targetSelect = page.locator("#command-target-select");
-  const target = await targetSelect.evaluate((select) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("Target control is unavailable.");
+  const targetChip = page.locator("#tchip");
+  const pressedPicks = page.locator(
+    '#command-target-select .pick[aria-pressed="true"]',
+  );
+  const pickFirstTarget = async () => {
+    const pick = page.locator("#command-target-select .pick").first();
+    const target = await pick.getAttribute("data-target");
+    if (target === null) {
+      throw new Error("Allowed Now has no authorized target.");
     }
-    return [...select.options].find((option) => !option.disabled && option.value !== "")
-      ?.value;
-  });
-  if (typeof target !== "string") {
-    throw new Error("Target control has no authorized nonzero target.");
-  }
-  await targetSelect.selectOption(target);
-  await expect.poll(() => commands.length).toBe(1);
-  await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(targetSelect).toHaveValue(target);
+    await activateLiveCommand(page, () => pick.click());
+    await expect(allowedNowPick(page, target)).toHaveAttribute("aria-pressed", "true");
+    await expect(targetChip).not.toHaveClass(/\bnone\b/u);
+  };
+
+  await pickFirstTarget();
   commands.length = 0;
-
-  await page.locator("#help-button").focus();
-  const nativeEvents = await battlefield.evaluate((surface) => {
-    const pointerdown = new PointerEvent("pointerdown", {
-      bubbles: true,
-      cancelable: true,
-      button: 2,
-      clientX: 100,
-      clientY: 100,
-      pointerType: "mouse",
-    });
-    const contextmenu = new MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      button: 2,
-      clientX: 100,
-      clientY: 100,
-    });
-    const pointerDispatched = surface.dispatchEvent(pointerdown);
-    const contextmenuDispatched = surface.dispatchEvent(contextmenu);
-    return {
-      pointerDispatched,
-      pointerDefaultPrevented: pointerdown.defaultPrevented,
-      contextmenuDispatched,
-      contextmenuDefaultPrevented: contextmenu.defaultPrevented,
-      activeElementId: document.activeElement?.id ?? null,
-    };
-  });
-  expect(nativeEvents).toEqual({
-    pointerDispatched: true,
-    pointerDefaultPrevented: false,
-    contextmenuDispatched: true,
-    contextmenuDefaultPrevented: false,
-    activeElementId: "help-button",
-  });
-  await page.waitForTimeout(100);
-  expect(commands).toEqual([]);
-  await expect(targetSelect).toHaveValue(target);
-
   await battlefield.focus();
   await page.keyboard.press("Escape");
   await expect.poll(() => commands.length).toBe(1);
@@ -1461,9 +1470,59 @@ test("right click stays native while Escape alone clears the target and releases
     key: "Escape",
   });
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(targetSelect).toHaveValue("");
+  await expect(targetChip).toHaveClass(/\bnone\b/u);
+  await expect(pressedPicks).toHaveCount(0);
   await expect(battlefield).not.toBeFocused();
+
+  await pickFirstTarget();
+  commands.length = 0;
+  // A right click on the arena clears the target as well. It takes the
+  // keys, even from another control, and keeps the browser's context menu
+  // away while orders are open.
+  await page.locator("#help-button").focus();
+  const rightClick = await battlefield.evaluate((surface) => {
+    const box = surface.getBoundingClientRect();
+    const point = {
+      clientX: box.left + box.width / 2,
+      clientY: box.top + box.height / 2,
+    };
+    const pointerdown = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      pointerType: "mouse",
+      ...point,
+    });
+    const contextmenu = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      ...point,
+    });
+    surface.dispatchEvent(pointerdown);
+    surface.dispatchEvent(contextmenu);
+    return {
+      pointerDefaultPrevented: pointerdown.defaultPrevented,
+      contextmenuDefaultPrevented: contextmenu.defaultPrevented,
+      activeElementId: document.activeElement?.id ?? null,
+    };
+  });
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toMatchObject({
+    command_type: "battlefield_pointer",
+    button: "secondary",
+  });
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
+  await expect(targetChip).toHaveClass(/\bnone\b/u);
+  await expect(pressedPicks).toHaveCount(0);
+  await expect(battlefield).toBeFocused();
+  expect(rightClick).toEqual({
+    pointerDefaultPrevented: true,
+    contextmenuDefaultPrevented: true,
+    activeElementId: "battlefield",
+  });
   await page.unroute("**/api/command");
+  await focusOwnChampion(page, initialChampionId);
 });
 
 test("Live Mage Burst retains every authorized Mage and Warrior aura modifier", async ({
@@ -1471,8 +1530,9 @@ test("Live Mage Burst retains every authorized Mage and Warrior aura modifier", 
 }) => {
   await page.goto(debuggerUrl);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await setDisclosureOpen(page, "#visual-filters", true);
+  await openVisualFilters(page);
   await page.locator("#enable-all-visual-filters-button").click();
+  await closeVisualFilters(page);
   await page.locator("#reset-button").click();
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#step-value")).toHaveText("0");
@@ -1549,9 +1609,11 @@ test("Live Mage Burst retains every authorized Mage and Warrior aura modifier", 
     page.locator('#battlefield .required-dock-fallback[data-kind="cooldown"]'),
   ).toHaveCount(0);
   await expect(page.locator("#battlefield .cooldown-cell")).toHaveCount(0);
+  // The ready ring from before the Burst stays only as the tick's faded
+  // "before" piece, drawn at opacity 0; no ready ring shows at rest.
   await expect(
     page.locator(
-      `#battlefield g.status-marks[data-marks-for="${inventories.controlledKey}"] [data-rune-piece="ring.ready"]`,
+      `#battlefield g.status-marks[data-marks-for="${inventories.controlledKey}"] [data-rune-piece="ring.ready"]:not([data-beat-side="before"][opacity="0"])`,
     ),
   ).toHaveCount(0);
 });
@@ -1595,11 +1657,11 @@ test("WASD followed immediately by Enter submits the installed draft once", asyn
   await page.unroute("**/api/command");
 });
 
-for (const [viewLabel, viewValue] of [
+for (const [viewLabel, viewValue] of /** @type {const} */ ([
   ["Oracle", "researcher"],
   ["Agent", "pov"],
-]) {
-  test(`${viewLabel} queues next-turn WASD and Enter behind an in-flight Submit`, async ({
+])) {
+  test(`${viewLabel} refuses next-turn WASD and Enter while a Submit is in flight`, async ({
     page,
   }) => {
     /** @type {Record<string, any>[]} */
@@ -1611,19 +1673,20 @@ for (const [viewLabel, viewValue] of [
 
     await page.goto(debuggerUrl);
     await expect(page.locator("#connection-status")).toHaveText("Connected");
-    const viewSelect = page.locator("#view-select");
     if (viewValue === "pov") {
-      await viewSelect.selectOption(viewValue);
-      await expect(viewSelect).toHaveValue(viewValue);
+      await chooseView(page, viewValue);
       await expect(page.locator("#connection-status")).toHaveText("Connected");
     }
     requests.length = 0;
 
     const baseStep = await currentStep(page);
     const battlefield = page.locator("#battlefield");
+    const northKey = page.locator('#pad .key[data-key="w"]');
+    const westKey = page.locator('#pad .key[data-key="a"]');
+    await expect(northKey).not.toHaveClass(/\bshake\b/u);
+    await expect(westKey).not.toHaveClass(/\bshake\b/u);
     await battlefield.focus();
     const heldSubmitPresentation = await holdNextPresentation(page);
-    let heldDraftPresentation = null;
     try {
       await page.keyboard.press("Enter");
       await heldSubmitPresentation.held;
@@ -1631,32 +1694,39 @@ for (const [viewLabel, viewValue] of [
       await expect.poll(() => requests.length).toBe(1);
       await expect(battlefield).toBeFocused();
 
+      // Until the turn has played, the deck refuses order keys and a second
+      // Lock In without a word: it shakes a refused step key and neither
+      // sends nor queues anything.
       await page.keyboard.press("w");
-      await expect(page.locator("#connection-status")).toHaveText("Input Queued");
+      await expect(northKey).toHaveClass(/\bshake\b/u);
       await page.keyboard.press("Enter");
-      await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
-      await expect.poll(() => requests.length).toBe(1);
-      heldDraftPresentation = await holdNextPresentation(page);
-      heldSubmitPresentation.release();
-      await heldDraftPresentation.held;
-      await expect.poll(() => requests.length).toBe(2);
-      expect(String(requests[1].command.key).toLowerCase()).toBe("w");
-      await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
-
       await page.keyboard.press("a");
-      await expect.poll(() => requests.length).toBe(2);
-      await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
-      await page.keyboard.press("Escape");
-      await expect.poll(() => requests.length).toBe(2);
-      await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
-      heldDraftPresentation.release();
+      await expect(westKey).toHaveClass(/\bshake\b/u);
+      await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+      expect(requests).toHaveLength(1);
+      heldSubmitPresentation.release();
     } finally {
       heldSubmitPresentation.release();
       await heldSubmitPresentation.dispose();
-      heldDraftPresentation?.release();
-      await heldDraftPresentation?.dispose();
     }
 
+    await expect(page.locator("#step-value")).toHaveText(String(baseStep + 1));
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
+    expect(requests).toHaveLength(1);
+    // Nothing waited behind the Lock In: the new turn starts at Stay.
+    await expect(page.locator('#pad .key[data-key="x"]')).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(battlefield).toBeFocused();
+
+    // Once the turn has played, the same keys plan and lock in the next one.
+    await waitForPlanPhase(page);
+    await page.keyboard.press("w");
+    await expect.poll(() => requests.length).toBe(2);
+    await expect(northKey).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
+    await page.keyboard.press("Enter");
     await expect.poll(() => requests.length).toBe(3);
     expect(
       requests.map((request) => String(request.command.key).toLowerCase()),
@@ -1667,11 +1737,10 @@ for (const [viewLabel, viewValue] of [
     expect(requests[2].base_revision).toBe(requests[1].base_revision + 1);
     await expect(page.locator("#step-value")).toHaveText(String(baseStep + 2));
     await expect(page.locator("#connection-status")).toHaveText("Connected");
-    await expect(battlefield).not.toBeFocused();
+    await expect(battlefield).toBeFocused();
     await page.unroute("**/api/command");
     if (viewValue === "pov") {
-      await viewSelect.selectOption("researcher");
-      await expect(viewSelect).toHaveValue("researcher");
+      await chooseView(page, "researcher");
       await expect(page.locator("#connection-status")).toHaveText("Connected");
     }
     await page.locator("#reset-button").click();
@@ -1791,12 +1860,15 @@ test("battlefield Space submits once and consumes busy repeats without scrolling
   );
   await expect.poll(() => commands.length).toBe(1);
 
+  // Space on the focused How To Play button stays native: it opens the How
+  // To Play card over the arena and sends nothing.
   const helpButton = page.locator("#help-button");
   await helpButton.focus();
   await page.keyboard.press("Space");
-  await expect(page.locator("#help-dialog")).toHaveAttribute("open", "");
+  await expect(page.locator("#htp")).toBeVisible();
   await expect.poll(() => commands.length).toBe(1);
   await page.locator("#help-close-button").click();
+  await expect(page.locator("#htp")).toBeHidden();
   await page.unroute("**/api/command");
 });
 
@@ -1826,8 +1898,8 @@ test("a stale tab adopts the latest ranges state without replaying its command",
     "data-presentation-authority",
     "installed",
   );
-  await setDisclosureOpen(page, "#visual-filters", true);
-  await setDisclosureOpen(stalePage, "#visual-filters", true);
+  await openVisualFilters(page);
+  await openVisualFilters(stalePage);
   const ranges = page.locator("#live-ranges-button");
   const staleRanges = stalePage.locator("#live-ranges-button");
   const initialRangesPressed = await ranges.getAttribute("aria-pressed");
@@ -1906,7 +1978,13 @@ test("a lost applied response requires GET resync and never replays submit", asy
   } finally {
     releaseAppliedResponse();
   }
-  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
+  // A command lost on the way back leaves the page without its server's
+  // answer, so the pill reads Disconnected until Reconnect reads the frame.
+  await expect(page.locator("#connection-status")).toHaveText("Disconnected");
+  await expect(page.locator("#connection-status")).toHaveAttribute(
+    "data-state",
+    "offline",
+  );
   await expect(battlefield).not.toBeFocused();
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
@@ -1935,7 +2013,7 @@ test("a lost applied response requires GET resync and never replays submit", asy
   await expect.poll(() => interceptedCommands).toBe(1);
   await page.unroute("**/api/command");
 
-  await setDisclosureOpen(page, "#visual-filters", true);
+  await openVisualFilters(page);
   const ranges = page.locator("#live-ranges-button");
   const rangesBefore = await ranges.getAttribute("aria-pressed");
   await ranges.click();
@@ -1987,7 +2065,12 @@ test("a command authorization failure clears the retained battlefield", async ({
   } finally {
     releaseCommand();
   }
-  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
+  // A refused capability takes the page offline: the pill reads Disconnected.
+  await expect(page.locator("#connection-status")).toHaveText("Disconnected");
+  await expect(page.locator("#connection-status")).toHaveAttribute(
+    "data-state",
+    "offline",
+  );
   await expect.poll(() => interceptedCommands).toBe(1);
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
@@ -2055,7 +2138,7 @@ test("an accepted Exit cannot retain a scene after sidecar authorization fails",
   await page.unroute("**/api/presentation/frame");
 });
 
-test("class details change only through explicit agent activation", async ({
+test("the Class Guide changes only through explicit champion activation", async ({
   page,
 }) => {
   /** @type {Record<string, any>[]} */
@@ -2071,14 +2154,27 @@ test("class details change only through explicit agent activation", async ({
     "data-presentation-authority",
     "installed",
   );
-  const details = page.locator("#selection-card");
-  const detailsText = () =>
-    details.evaluate((card) => card.textContent?.replace(/\s+/gu, " ").trim() ?? "");
-  await expect(details).toHaveText(
-    "Activate an agent to inspect its comprehensive class details.",
-  );
+  await waitForPlanPhase(page);
+  // Live play shows the champion in view's class details in the rail's
+  // Class Guide.
+  const classGuide = page.locator("#class-card");
+  const guideText = () =>
+    classGuide.evaluate((card) => card.textContent?.replace(/\s+/gu, " ").trim() ?? "");
+  /** @param {string} publicAgentId */
+  const expectGuideFor = async (publicAgentId) => {
+    await expect(page.locator("#ag-meta")).toHaveText(`Agent ID ${publicAgentId}`);
+    const className = await page.locator("#ag-name").textContent();
+    if (className === null || className.length === 0) {
+      throw new Error("The deck does not name the champion in view.");
+    }
+    await expect(classGuide.locator("h3")).toContainText(className);
+  };
+  const initialChampionId = await deckChampionId(page);
+  await expect(classGuide).toBeVisible();
+  await expectGuideFor(initialChampionId);
   await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
   await expect(page.locator("#agent-details")).not.toHaveAttribute("data-accent");
+  const initialGuide = await guideText();
   const baseStep = await currentStep(page);
 
   const obstacle = page.locator("#battlefield .obstacle[data-tooltip-owner]").first();
@@ -2088,78 +2184,55 @@ test("class details change only through explicit agent activation", async ({
   await obstacle.focus();
   await expect(page.locator("#visual-tooltip")).toBeVisible();
   await obstacle.click();
-  await expect(details).toHaveText(
-    "Activate an agent to inspect its comprehensive class details.",
-  );
+  await expect.poll(guideText).toBe(initialGuide);
   expect(commands).toHaveLength(0);
 
-  const targetSelect = page.locator("#command-target-select");
-  const originalTargetValue = await targetSelect.inputValue();
-  const nextTargetValue = await targetSelect.evaluate((select, currentValue) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("Target control is unavailable.");
-    }
-    const alternate = [...select.options].find(
-      (option) => option.value !== currentValue && option.value !== "",
+  const otherIds = await page
+    .locator("#checklist .cl-row")
+    .evaluateAll(
+      (rows, initial) =>
+        rows
+          .map((row) => row.getAttribute("data-slot") ?? "")
+          .filter((id) => id !== "" && id !== initial),
+      initialChampionId,
     );
-    return alternate?.value ?? (currentValue === "" ? null : "");
-  }, originalTargetValue);
-  if (nextTargetValue === null) {
-    throw new Error("Target control has no alternate authorized choice.");
+  if (otherIds.length < 5) {
+    throw new Error("The live match has fewer than five other Manual champions.");
   }
-  await activateLiveCommand(page, () => targetSelect.selectOption(nextTargetValue));
-  expect(commands.at(-1)).toMatchObject({
-    command_type: "roster_selection",
-    role: "target",
-  });
-  await expect(details).toHaveText(
-    "Activate an agent to inspect its comprehensive class details.",
-  );
+  const [battlefieldId, rosterPointerId, rosterKeyboardId] = otherIds;
+  const [firstTargetId, secondTargetId] = otherIds.slice(-2);
+  const targetChip = page.locator("#tchip");
+  /** @param {string} publicAgentId */
+  const pickTargetBody = async (publicAgentId) => {
+    // Shift + click on a body picks it as the target.
+    const commandsBefore = commands.length;
+    await activateLiveCommand(page, () =>
+      page
+        .locator(`#battlefield .agent[aria-label^="Agent ID ${publicAgentId}."]`)
+        .click({ modifiers: ["Shift"] }),
+    );
+    expect(commands).toHaveLength(commandsBefore + 1);
+    expect(commands.at(-1)).toMatchObject({
+      command_type: "battlefield_pointer",
+      button: "primary",
+      shift_key: true,
+    });
+    await expect(targetChip).toContainText(`· ID ${publicAgentId}`);
+  };
+
+  await pickTargetBody(firstTargetId);
+  await expect.poll(guideText).toBe(initialGuide);
   await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
 
-  const initialRosterActor = page.locator(
-    '#roster .roster-primary-action[aria-pressed="true"]',
-  );
-  const initialRosterActorLabel = await initialRosterActor.getAttribute("aria-label");
-  const initialPublicId =
-    initialRosterActorLabel?.match(/Agent ID ([^,.]+)/u)?.[1] ?? null;
-  if (initialRosterActorLabel === null || initialPublicId === null) {
-    throw new Error("The initially controlled actor has no public identity.");
-  }
-  const rosterLabels = await page
-    .locator("#roster .roster-primary-action")
-    .evaluateAll((buttons) =>
-      buttons
-        .map((button) => button.getAttribute("aria-label"))
-        .filter((label) => typeof label === "string"),
-    );
-  const activationLabels = rosterLabels.filter(
-    (label) => label !== initialRosterActorLabel,
-  );
-  if (activationLabels.length < 3) {
-    throw new Error("The live roster has fewer than three alternate agents.");
-  }
-  const publicIdFromLabel = (/** @type {string} */ label) => {
-    const publicId = label.match(/Agent ID ([^,.]+)/u)?.[1];
-    if (publicId === undefined) {
-      throw new Error(`Could not parse a public identity from ${label}.`);
-    }
-    return publicId;
-  };
-  const [battlefieldLabel, rosterPointerLabel, rosterKeyboardLabel] = activationLabels;
-  const battlefieldPublicId = publicIdFromLabel(battlefieldLabel);
-  const rosterPointerPublicId = publicIdFromLabel(rosterPointerLabel);
-  const rosterKeyboardPublicId = publicIdFromLabel(rosterKeyboardLabel);
-
   const battlefieldActor = page.locator(
-    `#battlefield .agent[aria-label^="Agent ID ${battlefieldPublicId}."]`,
+    `#battlefield .agent[aria-label^="Agent ID ${battlefieldId}."]`,
   );
   await expect(battlefieldActor).toHaveCount(1);
   await activateLiveCommand(page, () => battlefieldActor.click());
   await expect(page.locator("#agent-details")).toHaveAttribute("open", "");
-  await expect(details).toContainText(chipPattern(battlefieldPublicId));
-  const battlefieldDetails = await detailsText();
-  expect(battlefieldDetails).not.toContain("Activate an agent");
+  await expectGuideFor(battlefieldId);
+  const battlefieldGuide = await guideText();
+  expect(battlefieldGuide).not.toBe(initialGuide);
 
   const retainedObstacle = page
     .locator("#battlefield .obstacle[data-tooltip-owner]")
@@ -2167,250 +2240,39 @@ test("class details change only through explicit agent activation", async ({
   await retainedObstacle.hover();
   await retainedObstacle.focus();
   await retainedObstacle.click();
-  await expect.poll(detailsText).toBe(battlefieldDetails);
-  const commandsAfterObstacle = commands.length;
-  const retainedTargetValue = await targetSelect.evaluate((select) => {
-    if (!(select instanceof HTMLSelectElement)) {
-      throw new TypeError("Target control is unavailable.");
-    }
-    const currentValue = select.value;
-    const alternate = [...select.options].find(
-      (option) => option.value !== "" && option.value !== currentValue,
-    );
-    return alternate?.value ?? null;
-  });
-  if (retainedTargetValue === null) {
-    throw new Error("Target control has no alternate nonzero choice.");
-  }
-  await activateLiveCommand(page, () => targetSelect.selectOption(retainedTargetValue));
-  expect(commands).toHaveLength(commandsAfterObstacle + 1);
-  expect(commands.at(-1)).toMatchObject({
-    command_type: "roster_selection",
-    role: "target",
-  });
-  await expect.poll(detailsText).toBe(battlefieldDetails);
+  await expect.poll(guideText).toBe(battlefieldGuide);
+  await pickTargetBody(secondTargetId);
+  await expect.poll(guideText).toBe(battlefieldGuide);
 
   await activateLiveCommand(page, () =>
-    page.getByRole("button", { name: rosterPointerLabel, exact: true }).click(),
+    page.locator(`#checklist .cl-row[data-slot="${rosterPointerId}"]`).click(),
   );
-  await expect(details).toContainText(chipPattern(rosterPointerPublicId));
-  const rosterPointerDetails = await detailsText();
-  expect(rosterPointerDetails).not.toBe(battlefieldDetails);
+  await expectGuideFor(rosterPointerId);
+  const rosterPointerGuide = await guideText();
+  expect(rosterPointerGuide).not.toBe(battlefieldGuide);
 
   await activateLiveCommand(page, () =>
-    page.getByRole("button", { name: rosterKeyboardLabel, exact: true }).press("Enter"),
+    page.locator(`#checklist .cl-row[data-slot="${rosterKeyboardId}"]`).press("Enter"),
   );
-  await expect(details).toContainText(chipPattern(rosterKeyboardPublicId));
-  const rosterKeyboardDetails = await detailsText();
-  expect(rosterKeyboardDetails).not.toBe(rosterPointerDetails);
+  await expectGuideFor(rosterKeyboardId);
+  const rosterKeyboardGuide = await guideText();
+  expect(rosterKeyboardGuide).not.toBe(rosterPointerGuide);
 
   const finalObstacle = page
     .locator("#battlefield .obstacle[data-tooltip-owner]")
     .first();
   await finalObstacle.focus();
   await finalObstacle.click();
-  await expect.poll(detailsText).toBe(rosterKeyboardDetails);
+  await expect.poll(guideText).toBe(rosterKeyboardGuide);
   await expect(page.locator("#step-value")).toHaveText(String(baseStep));
 
-  await activateLiveCommand(page, () =>
-    page.getByRole("button", { name: initialRosterActorLabel, exact: true }).click(),
-  );
-  if ((await targetSelect.inputValue()) !== originalTargetValue) {
-    await activateLiveCommand(page, () =>
-      targetSelect.selectOption(originalTargetValue),
-    );
+  await focusOwnChampion(page, initialChampionId);
+  if (!(await targetChip.evaluate((chip) => chip.classList.contains("none")))) {
+    await activateLiveCommand(page, () => page.locator("#clear-target-button").click());
   }
+  await expect(targetChip).toHaveClass(/\bnone\b/u);
   await expect(page.locator("#step-value")).toHaveText(String(baseStep));
   await page.unroute("**/api/command");
-});
-
-test("native panels preserve user state only within exact authority", async ({
-  page,
-}) => {
-  await page.goto(debuggerUrl);
-  await expect(page.locator("#connection-status")).toHaveText("Connected");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-presentation-authority",
-    "installed",
-  );
-  await expect(page.locator("#view-select")).toHaveValue("researcher");
-  await expectExactDisclosureDefaults(page);
-
-  const firstActivation = page
-    .locator(
-      '#roster .roster-primary-action[data-presentation-key]:not([aria-pressed="true"])',
-    )
-    .first();
-  await expect(firstActivation).toBeVisible();
-  const firstCommand = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/command",
-  );
-  await firstActivation.press("Enter");
-  expect((await firstCommand).status()).toBe(200);
-  await expect(page.locator("#agent-details")).toHaveAttribute("open", "");
-
-  await setDisclosureOpen(page, "#agent-details", false);
-  await setDisclosureOpen(page, "#visual-filters", true);
-  const ranges = page.locator("#live-ranges-button");
-  if ((await ranges.getAttribute("aria-pressed")) !== "true") {
-    await ranges.click();
-    await expect(ranges).toHaveAttribute("aria-pressed", "true");
-  }
-  await expect(page.locator("#battlefield .range-ring-owner").first()).toBeVisible();
-  await page.locator("#battlefield .range-ring-owner").first().dispatchEvent("click");
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-
-  await setDisclosureOpen(page, "#technical-frame-details", true);
-  const rosterBody = page.locator("#roster-details-body");
-  let savedScrollTop = await rosterBody.evaluate((body) => {
-    body.style.height = "56px";
-    body.style.maxHeight = "56px";
-    body.style.overflowY = "scroll";
-    body.scrollTop = 24;
-    return body.scrollTop;
-  });
-  expect(savedScrollTop).toBeGreaterThan(0);
-
-  const focusedAction = page
-    .locator(
-      '#roster .roster-primary-action[data-presentation-key]:not([aria-pressed="true"])',
-    )
-    .first();
-  const focusedPresentationKey = await focusedAction.getAttribute(
-    "data-presentation-key",
-  );
-  if (focusedPresentationKey === null) {
-    throw new Error("Authorized roster action has no presentation key.");
-  }
-  await focusedAction.focus();
-  savedScrollTop = await rosterBody.evaluate((body) => body.scrollTop);
-  const commandDisclosureOpen = await disclosureOpenState(page);
-
-  /** @type {import("@playwright/test").Request[]} */
-  const commandRequests = [];
-  const recordCommands = (
-    /** @type {import("@playwright/test").Request} */ request,
-  ) => {
-    if (
-      request.method() === "POST" &&
-      new URL(request.url()).pathname === "/api/command"
-    ) {
-      commandRequests.push(request);
-    }
-  };
-  page.on("request", recordCommands);
-  const heldCommandPresentation = await holdNextPresentation(page);
-  try {
-    await focusedAction.press("Enter");
-    await heldCommandPresentation.held;
-    await expectRetainedDisclosureAuthority(
-      page,
-      focusedPresentationKey,
-      commandDisclosureOpen,
-    );
-    heldCommandPresentation.release();
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "installed",
-    );
-  } finally {
-    heldCommandPresentation.release();
-    await heldCommandPresentation.dispose();
-    page.off("request", recordCommands);
-  }
-  expect(commandRequests).toHaveLength(1);
-  expect(commandRequests[0].postDataJSON().command).toMatchObject({
-    command_type: "roster_selection",
-    role: "control",
-  });
-  await expect(page.locator("#roster-details")).toHaveAttribute("open", "");
-  await expect(page.locator("#technical-frame-details")).toHaveAttribute("open", "");
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-  await expect
-    .poll(() => rosterBody.evaluate((body) => body.scrollTop))
-    .toBe(savedScrollTop);
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        surface: document.activeElement?.closest("#roster")?.id ?? null,
-        presentationKey:
-          document.activeElement
-            ?.closest("[data-presentation-key]")
-            ?.getAttribute("data-presentation-key") ?? null,
-      })),
-    )
-    .toEqual({ surface: "roster", presentationKey: focusedPresentationKey });
-
-  const refreshDisclosureOpen = await disclosureOpenState(page);
-  const heldRefresh = await holdNextPresentation(page, "/api/live/snapshot");
-  try {
-    await page.locator("#reconnect-button").evaluate((button) => {
-      if (!(button instanceof HTMLButtonElement)) {
-        throw new TypeError("Reconnect button is unavailable.");
-      }
-      button.click();
-    });
-    await heldRefresh.held;
-    await expectRetainedDisclosureAuthority(
-      page,
-      focusedPresentationKey,
-      refreshDisclosureOpen,
-    );
-    await page.locator("#help-button").click();
-    await expect(page.locator("#help-dialog")).toHaveAttribute("open", "");
-    heldRefresh.release();
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "installed",
-    );
-  } finally {
-    heldRefresh.release();
-    await heldRefresh.dispose();
-  }
-  await expect
-    .poll(() =>
-      page.evaluate(() => document.activeElement?.closest("dialog")?.id ?? null),
-    )
-    .toBe("help-dialog");
-  await page.locator("#help-close-button").click();
-  await expect(page.locator("#help-dialog")).not.toHaveAttribute("open", "");
-  await expect
-    .poll(() => rosterBody.evaluate((body) => body.scrollTop))
-    .toBe(savedScrollTop);
-
-  await setDisclosureOpen(page, "#roster-details", false);
-  await page.locator("#view-select").selectOption("pov");
-  await expect(page.locator("#view-select")).toHaveValue("pov");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-presentation-authority",
-    "installed",
-  );
-  await expectExactDisclosureDefaults(page);
-  await expect.poll(() => rosterBody.evaluate((body) => body.scrollTop)).toBe(0);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        (oldKey) =>
-          document.activeElement
-            ?.closest("[data-presentation-key]")
-            ?.getAttribute("data-presentation-key") !== oldKey,
-        focusedPresentationKey,
-      ),
-    )
-    .toBe(true);
-
-  await setDisclosureOpen(page, "#technical-frame-details", true);
-  await page.locator("#view-select").selectOption("researcher");
-  await expect(page.locator("#view-select")).toHaveValue("researcher");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-presentation-authority",
-    "installed",
-  );
-  await expectExactDisclosureDefaults(page);
-  await expect.poll(() => rosterBody.evaluate((body) => body.scrollTop)).toBe(0);
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
 });
 
 test("declared System loads, accepts one turn and abandons a cancelled late reply", async ({
@@ -2476,6 +2338,7 @@ test("declared System loads, accepts one turn and abandons a cancelled late repl
     await expect(page.locator("#system-operation-status")).toHaveText(
       "Policies Choosing",
     );
+    await expect(page.locator("#lock-label")).toHaveText("Policies Choosing…");
     await expect(page.locator("#step-value")).toHaveText("1");
     await expect(page.locator("#system-operation-status")).toHaveText("");
     await page.locator("#submit-turn-button").click();
@@ -2483,12 +2346,20 @@ test("declared System loads, accepts one turn and abandons a cancelled late repl
     await page.locator("#cancel-system-button").click();
     await expect(page.locator("#system-operation-status")).toHaveText("");
     await expect(page.locator("#step-value")).toHaveText("1");
-    await expect(page.locator("#live-run-status")).toHaveText(
-      "Fresh Launch Required · Accepted Game Kept",
+    // The deck's Stopped panel says a fresh launch is needed, that the
+    // accepted game is kept, and that it can still be inspected and saved.
+    const stopped = page.locator("#stopped");
+    await expect(page.locator("#command-deck")).toHaveAttribute(
+      "data-state",
+      "stopped",
     );
+    await expect(stopped).toBeVisible();
+    await expect(stopped).toContainText("A Fresh Start Is Needed");
+    await expect(stopped).toContainText("The game so far is kept.");
     await expect(page.locator("#submit-turn-button")).toBeDisabled();
     await expect(page.locator("#reset-button")).toBeDisabled();
-    await expect(page.locator("#live-control-help")).toContainText("inspect and save");
+    await expect(stopped).toContainText("You can still look around, save it, or exit.");
+    await expect(page.locator("#stopped-save")).toBeVisible();
     const rejected = await configureTeamA("manual");
     expect(rejected.notice).toContain("fresh client launch");
     await expect(page.locator("#command-deck")).toHaveAttribute(

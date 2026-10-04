@@ -5,10 +5,11 @@
  * the window (max-height 100dvh); its top bar and scorebug rows are
  * max-content, so the grid never shrinks them to their min-height and the
  * DevClient's setup line never runs over the scorebug; the stage row is at
- * least 420 px and takes the rest; the deck and the status line never shrink;
- * only the arena gets shorter, down to 120 px; and the rail adds no height
- * (height 0, min-height 100%) and scrolls on its own, so long rail content
- * never pushes Lock In or the status line off screen. The rules use the scope
+ * least 420 px and takes the rest; the deck (with its header line, which
+ * replaced the status line on 4 Oct 2026) never shrinks; only the arena gets
+ * shorter, down to 120 px; and the rail adds no height (height 0, min-height
+ * 100%) and scrolls on its own, so long rail content never pushes Lock In or
+ * the deck's header line off screen. The rules use the scope
  * shared with the Replay Viewer since 3 Oct 2026. The measured proof at the
  * six sizes is a browser check outside this file.
  */
@@ -45,12 +46,9 @@ test("#bc is one window tall with max-content top rows and a 420 px stage floor"
   assert.match(body, /max-height: 100dvh;/);
 });
 
-test("the deck and status line keep their size and the rail scrolls without adding height", async () => {
+test("the deck keeps its size and the rail scrolls without adding height", async () => {
   const text = await battleClientCss("layout.css");
-  assert.match(
-    text,
-    /\.bc-stage > :is\(#command-deck, #status-line\) \{ flex: none; \}/,
-  );
+  assert.match(text, /\.bc-stage > #command-deck \{ flex: none; \}/);
   const rail = ruleBody(text, ".bc .bc-rail");
   assert.match(rail, /height: 0;/);
   assert.match(rail, /min-height: 100%;/);

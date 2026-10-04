@@ -18,9 +18,10 @@ Open Replay always opens the child Replay Viewer in Oracle View.
 Honors: the presentation builder keeps each committed game's per-transition
 totals (``viewer.match_summary.match_transition_totals_v1``, from the Oracle
 match summary it builds anyway) by frame index, and on the completion frame
-adds them up into each view's ``match_honors`` (Oracle View every champion,
-Agent POV the recipient's own team). A game whose history has a gap (a frame
-never built) gets no Honors rather than wrong ones.
+adds them up into each view's ``match_honors``, which lists every champion in
+both views: the game is over, so Agent POV has nothing left to hide. A game
+whose history has a gap (a frame never built) gets no Honors rather than
+wrong ones.
 
 Background save (``save_in_background=True``, what the BattleClient uses): when
 the game ends, the service installs the game-over frame at once with recording
@@ -901,12 +902,12 @@ class DebuggerService:
         match_moments is the same audience's row of session.match_moments
         (the Herald Cards history): Oracle View's, or the recipient's Agent
         POV row (never another view's). On the
-        completion frame its match_honors is this audience's Honors
-        (_match_honors: Oracle View every champion, Agent POV the recipient's
-        own team); the Oracle frame is then built a second time with them,
-        once per game. Raises RuntimeError when raw_frame does not match the
-        audience and ValueError when a presentation contract fails. No
-        simulator step or file write.
+        completion frame its match_honors is the game's Honors (_match_honors:
+        every champion, in both views, because the game is over); the Oracle
+        frame is then built a second time with them, once per game. Raises
+        RuntimeError when raw_frame does not match the audience and
+        ValueError when a presentation contract fails. No simulator step or
+        file write.
 
         A commit builds the candidate's presentation to prove it can be shown;
         the page's request and the live snapshot then ask for the same one. A
@@ -991,13 +992,10 @@ class DebuggerService:
                 scores_ten_ticks_ago=session.scores_ten_ticks_ago,
             )
             researcher_space = build_live_researcher_space_v1(oracle_presentation)
+            # At game over Agent POV shows every champion too: nothing is
+            # left to hide.
             honors = self._match_honors(
-                session,
-                oracle_presentation.match_summary,
-                cast(
-                    "Literal[1, 2]",
-                    context.roster[recipient].configured_team_id,
-                ),
+                session, oracle_presentation.match_summary, None
             )
             if type(raw_frame) is SharedObsAgentPovLiveDebuggerFrameV2:
                 presentation = build_live_shared_obs_authorized_presentation_v1(
@@ -1080,7 +1078,8 @@ class DebuggerService:
             The Oracle match summary of the session's current frame (built with
             its transition start frame), or None (no summary: no Honors).
         team_id : {1, 2} or None
-            None for Oracle View; the Agent POV recipient's team otherwise.
+            None for every champion (what both views show, since the game is
+            over); 1 or 2 for that team's own champions only.
 
         Returns
         -------

@@ -10,10 +10,12 @@
 
   Live play (BattleClient and DevClient combat screen) follows the approved
   BattleClient vision page: one #bc grid with the top bar (.bc-top: brand,
-  place line, View switch, Connected and Recording pills, Visual Key, Visual
-  Filters, How To Play, Exit), the scorebug (#scorebug), the stage (#stage:
-  the arena box #arena, the deck #command-deck and the status line
-  #status-line) and a 340 px rail (#rail: Your Turn #turn-card, Class Guide
+  place line, View switch, Connected and Recording pills, Visual Filters,
+  How To Play, Finish And Save, Restart, Exit), the scorebug
+  (#scorebug), the stage (#stage: the arena box #arena and the deck
+  #command-deck, whose header line #status-line holds the message and Keys
+  On or Off; owner, 4 Oct 2026: no status line under the deck) and a 340 px
+  rail (#rail: Your Turn #turn-card, Class Guide
   #class-card, How To Play #howto-card). Floating parts: the hover card
   (#hcard), the How To Play overlay over the arena (#htp), the Replay
   Recording popover (#rec-pop), the Visual Filters drawer
@@ -214,13 +216,6 @@
           <button id="help-button" class="button button--quiet tbtn primary" type="button">
             Help
           </button>
-          <!-- Empty slot: opens the Visual Key picture dictionary. -->
-          <button
-            id="visual-key-button"
-            class="button button--quiet tbtn"
-            type="button"
-            hidden
-          >Visual Key</button>
           <!-- Live play: opens and closes the Visual Filters drawer. The
                Replay Viewer: opens the rail's Visuals tab (src/main.js). -->
           <button
@@ -231,13 +226,13 @@
             aria-haspopup="dialog"
             hidden
           >Visual Filters</button>
-          <!-- Empty slot: opens the Frame Explanation for the paused tick. -->
-          <button
-            id="frame-explanation-button"
-            class="button button--quiet tbtn"
-            type="button"
-            hidden
-          >Frame Explanation</button>
+          <!-- Live play: Finish And Save. It reads Saving Replay… while the
+               server saves and turns into Open Replay once the replay is
+               saved (src/main.js renderRecordingControls); hidden when the
+               match records nothing. Then Restart. Never shown in the Replay
+               Viewer (topbar.css). -->
+          <button id="recording-finish-button" class="tbtn" type="button" hidden disabled>Finish And Save</button>
+          <button id="reset-button" class="tbtn" type="button" data-key="r" data-live-only>Restart <kbd>R</kbd></button>
           <button id="exit-button" class="button button--quiet tbtn" type="button" disabled>
             Exit
           </button>
@@ -350,11 +345,23 @@
             Oracle View <span>· You See Everything</span>
           </p>
         </div>
-          <!-- On-screen keys, top right of the arena: each presses its key
-               (src/arena-buttons.js wires and shows them; hidden until then). -->
-          <div id="arena-buttons" class="arena-buttons" role="group" aria-label="Arena Shortcuts" hidden>
-            <button type="button" class="sbtn" id="arena-everyone-in-view-button" aria-keyshortcuts="V" aria-pressed="false">Everyone In View <kbd aria-hidden="true">V</kbd></button>
-            <button type="button" class="sbtn" id="arena-frame-explanation-button" aria-keyshortcuts="F" aria-pressed="false">Frame Explanation <kbd aria-hidden="true">F</kbd></button>
+          <!-- On-screen keys, stacked at the arena's top right, key only (owner,
+               4 Oct 2026; the name is the button's label and its hover card):
+               V Everyone In View, B Battle Cam (Replay Viewer only), F Frame
+               Explanation and Esc Clear Selection (Replay Viewer only). Each
+               does exactly what its key does (src/arena-buttons.js wires and
+               shows them; hidden until then). Match Summary shows only while
+               the game-over Verdict is folded into its plate (src/main.js
+               renderMatchMomentCards) and opens or closes the Match Summary
+               sheet. data-arena-chrome marks it as page chrome over the arena,
+               which moment cards keep clear of (src/scene.js). -->
+          <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of buttons; a fieldset would change how the page styles and disables it. -->
+          <div id="arena-buttons" class="arena-buttons" role="group" aria-label="Arena Shortcuts" data-arena-chrome hidden>
+            <button type="button" class="sbtn arena-key" id="arena-everyone-in-view-button" aria-label="Everyone In View" aria-keyshortcuts="V" aria-pressed="false"><kbd aria-hidden="true">V</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-battle-cam-button" aria-label="Battle Cam" aria-keyshortcuts="B" aria-pressed="false" hidden><kbd aria-hidden="true">B</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-frame-explanation-button" aria-label="Frame Explanation" aria-keyshortcuts="F" aria-pressed="false"><kbd aria-hidden="true">F</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-clear-selection-button" aria-label="Clear Selection" aria-keyshortcuts="Escape" hidden><kbd aria-hidden="true">Esc</kbd></button>
+            <button type="button" class="sbtn" id="arena-match-summary-button" aria-pressed="false" hidden>Match Summary</button>
           </div>
           <!-- Empty slot: the view tag ("Agent POV · …" or "Oracle View · …"). -->
           <p class="povtag" id="pov-tag" hidden></p>
@@ -512,6 +519,12 @@
         <details id="command-deck" class="command-deck deck" data-state="play" data-tactics-turn="installed" data-live-only open>
           <summary>Command Deck</summary>
           <div id="command-deck-body" class="deck-body" data-disclosure-body="command-deck">
+            <!-- The deck's header line across every column: the one message
+                 line (#msg) and Keys On or Off. -->
+            <div class="dstatus" id="status-line" data-live-only hidden>
+              <p class="msg" id="msg" role="status" aria-live="polite"></p>
+              <span class="keys off" id="keys-chip"><i></i><span id="keys-text">Keys Off · Click The Arena</span></span>
+            </div>
             <div class="dk-agent">
               <div class="ag-top"><span id="ag-tok"></span><div><b id="ag-name"></b><em id="ag-epi"></em></div></div>
               <div class="ag-meta" id="ag-meta"></div>
@@ -520,7 +533,7 @@
               <div class="ag-nav"><button type="button" class="sbtn" id="prev-actor-button" data-key="Tab" data-shift="true">‹ Prev</button><button type="button" class="sbtn" id="next-actor-button" data-key="Tab">Next › <kbd>Tab</kbd></button></div>
             </div>
             <div class="dk-step">
-              <h4 class="dh"><i>1</i>Step</h4>
+              <h4 class="dh"><i>1</i>Step <span class="pad-note" id="pad-note"><b>Stay</b></span></h4>
               <div class="pad" id="pad">
                 <button type="button" class="key" data-key="q" data-move-action="6" data-command-role="draft" aria-label="North-West, key Q" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-45 6 6)"/></svg><b>Q</b></button>
                 <button type="button" class="key" data-key="w" data-move-action="1" data-command-role="draft" aria-label="North, key W" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(0 6 6)"/></svg><b>W</b></button>
@@ -532,7 +545,6 @@
                 <button type="button" class="key" data-key="s" data-move-action="2" data-command-role="draft" aria-label="South, key S" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 6 6)"/></svg><b>S</b></button>
                 <button type="button" class="key" data-key="c" data-move-action="7" data-command-role="draft" aria-label="South-East, key C" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(135 6 6)"/></svg><b>C</b></button>
               </div>
-              <p class="pad-note" id="pad-note"><b>Stay</b></p>
             </div>
             <div class="dk-target">
               <h4 class="dh"><i>2</i>Target <span>Shift + Click A Body</span></h4>
@@ -551,7 +563,6 @@
             </div>
             <div class="dk-lock">
               <h4 class="dh"><i>4</i>Lock In</h4>
-              <div class="order" id="order-line"></div>
               <button type="button" class="lockbtn" id="submit-turn-button" data-key="Enter" data-command-role="interactive-submit"><b id="lock-label">Lock In Turn</b><span>Space or Enter</span></button>
               <button type="button" class="sbtn cancel" id="cancel-system-button" hidden>Cancel Policy Work</button>
             </div>
@@ -592,15 +603,6 @@
           </div>
         </details>
 
-        <!-- Live play: the status line under the deck (recording seal, the one
-             message line, Keys On or Off, Finish And Save, Restart). -->
-        <div class="dstatus" id="status-line" data-live-only hidden>
-          <span class="seal" id="rec-seal"><i></i><span id="rec-seal-text" class="num"></span></span>
-          <p class="msg" id="msg" role="status" aria-live="polite"></p>
-          <span class="keys off" id="keys-chip"><i></i><span id="keys-text">Keys Off · Click The Arena</span></span>
-          <button type="button" class="sbtn" id="recording-finish-button" hidden disabled>Finish And Save</button>
-          <button type="button" class="sbtn" id="reset-button" data-key="r">Restart <kbd>R</kbd></button>
-        </div>
       </section>
 
       <aside id="rail" class="hud-panel bc-rail" aria-label="Inspector">
@@ -614,6 +616,11 @@
           <ol class="phases" id="phases"><li data-p="plan">You Plan</li><li data-p="sent">Lock In</li><li data-p="choosing">Policies Choose</li><li data-p="act">All Act</li></ol>
           <div class="cl" id="checklist"></div>
         </section>
+        <!-- Empty slot: the Fallen panel (falls of the last 8 ticks). In live
+             play it sits right under Your Turn, so it shows without scrolling
+             (owner, 4 Oct 2026); in the Replay Viewer the live cards are
+             hidden, so it stays at the top of the rail. -->
+        <section id="fallen-feed" hidden></section>
         <!-- Live play: the Class Guide of the champion in view. -->
         <section class="rc cg" id="class-card" aria-label="Class Guide" data-live-only hidden></section>
         <!-- Live play: the short How To Play card. -->
@@ -631,8 +638,6 @@
         <section id="this-turn" hidden></section>
         <!-- Empty slot: the How To Play card. -->
         <section id="how-to-play" hidden></section>
-        <!-- Empty slot: the Fallen panel (falls of the last 8 ticks). -->
-        <section id="fallen-feed" hidden></section>
         <!-- Empty slot: the Replay Viewer rail with its six tabs (src/ledger.js). -->
         <div id="replay-rail" hidden>
           <div id="replay-rail-tabs" hidden></div>
@@ -768,6 +773,8 @@
     <div class="pop" id="rec-pop" popover role="dialog" aria-label="Replay Recording">
       <p class="eyebrow">Replay Recording</p>
       <b id="pop-state"></b>
+      <!-- After a failed save: why it failed (saveFailedReason in src/tactics-turn.js). -->
+      <p id="pop-reason" hidden></p>
       <p>Saves to <b id="pop-folder">./recordings</b> when the game ends, when you press Finish And Save, or when you Exit.</p>
       <div class="row"><button type="button" class="sbtn" id="pop-finish">Finish And Save</button><button type="button" class="sbtn" id="recording-review-button" disabled>Open Replay</button><button type="button" class="sbtn" id="recording-retry-button" hidden disabled>Retry Save</button></div>
       <!-- biome-ignore lint/a11y/useValidAnchor: This link stays hidden until the server supplies its separate replay URL. -->

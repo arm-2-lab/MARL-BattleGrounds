@@ -1,9 +1,10 @@
 /**
- * @file Provide stable screenshot and layout-check helpers for browser visual
- * regression tests.
+ * @file Provide the layout-check helpers for browser visual tests: stable
+ * presentation frames, measured layout assertions and the hover-help
+ * inventory. The browser tests keep no screenshot baselines; they check
+ * layout with measured assertions. MINIMUM_VIEWPORT is the smallest window
+ * the clients support (1366 x 768, the owner's minimum).
  */
-import { fileURLToPath } from "node:url";
-
 import { expect } from "@playwright/test";
 
 import {
@@ -15,16 +16,11 @@ import {
 } from "./choreography.js";
 
 export const DESKTOP_VIEWPORT = Object.freeze({ width: 1440, height: 900 });
-export const MINIMUM_VIEWPORT = Object.freeze({ width: 960, height: 600 });
+export const MINIMUM_VIEWPORT = Object.freeze({ width: 1366, height: 768 });
 export const ABILITY_EVENT_TYPE = "ability_activated";
 export const HEALTH_RESOLUTION_EVENT_TYPE = "recipient_health_resolution";
 export const STATUS_EVENT_TYPE = "status_applied";
 export const POV_HEALTH_EVENT_TYPE = "own_health_changed";
-
-// Reported hosted-Linux retries held these two dense, semantically asserted
-// proofs at stable 0.1013% and 0.1005% diffs. Keep the normal 0.1% policy for
-// every other snapshot and admit only that narrow reviewed raster tail here.
-export const DENSE_BASELINE_MAX_DIFF_PIXEL_RATIO = 0.00105;
 
 /**
  * Check that every visible control (button, select, input, summary or focusable
@@ -152,10 +148,6 @@ export async function expectVisibleInteractiveHelpInventory(page) {
   expect(inventory.registered.length).toBeGreaterThan(0);
   return inventory;
 }
-
-const SNAPSHOT_STYLE_PATH = fileURLToPath(
-  new URL("./visual-snapshot.css", import.meta.url),
-);
 
 /** @typedef {{count: () => number}} CommandPostCounter */
 
@@ -940,28 +932,4 @@ export async function assertStablePresentationFrame(
   });
   await assertVisibleDecimalPrecision(page);
   return commandCountBeforePresentation;
-}
-
-/** @param {import("@playwright/test").Page} page
- * @param {string} snapshotName
- * @param {Parameters<typeof assertStablePresentationFrame>[1]} options
- * @param {{maxDiffPixelRatio?: number}} [snapshotPolicy] */
-export async function captureBaseline(
-  page,
-  snapshotName,
-  options,
-  snapshotPolicy = {},
-) {
-  const commandCountBeforePresentation = await assertStablePresentationFrame(
-    page,
-    options,
-  );
-  await expect(page).toHaveScreenshot(snapshotName, {
-    animations: "allow",
-    stylePath: SNAPSHOT_STYLE_PATH,
-    ...(snapshotPolicy.maxDiffPixelRatio === undefined
-      ? {}
-      : { maxDiffPixelRatio: snapshotPolicy.maxDiffPixelRatio }),
-  });
-  expect(options.commandPosts.count()).toBe(commandCountBeforePresentation);
 }

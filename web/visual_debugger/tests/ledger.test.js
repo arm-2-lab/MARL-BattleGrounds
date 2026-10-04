@@ -12,7 +12,9 @@
  * Technical Frame and the Replay File facts into Frame), keeps live regions
  * out of hidden tabs, opens the Metrics card only while its tab is shown and
  * moves with Left, Right, Home and End; the Scope and View switches mirror the
- * native selects and fire their change events; the Technical Frame sorts its
+ * native selects and fire their change events; the ledger header (Scope, Topic,
+ * View and Find A Measurement) sits just before the Metrics card as its own
+ * block, so only the card under it scrolls; the Technical Frame sorts its
  * facts into This Frame, This Game and This File with Copy on ids and cuts
  * long ids in the middle; the Full Record chip appears only in Agent POV,
  * names the POV agent with the same words as panels.js fullRecordLabel (never
@@ -159,6 +161,12 @@ function fakeDocument() {
         const siblings = this.parentElement.children;
         item.parentElement = this.parentElement;
         siblings.splice(siblings.indexOf(this) + 1, 0, item);
+      },
+      before(/** @type {any} */ item) {
+        item.remove();
+        const siblings = this.parentElement.children;
+        item.parentElement = this.parentElement;
+        siblings.splice(siblings.indexOf(this), 0, item);
       },
       replaceChildren(/** @type {any[]} */ ...items) {
         this.textContent = "";
@@ -553,6 +561,16 @@ test("the ledger header mirrors Scope and View and folds the reading notes", () 
   assert.equal(scopeSwitch.children[1].getAttribute("aria-checked"), "true");
   scopeSwitch.children[1].click();
   assert.deepEqual(changes, ["final"]);
+  // The header is its own block just before the Metrics card, so in the
+  // Metrics tab only the card under it scrolls.
+  const card = doc.getElementById("evaluation-metrics");
+  const header = scopeSwitch.parentElement;
+  assert.equal(header.className, "ledger-header");
+  assert.equal(header.parentElement, card.parentElement);
+  assert.equal(
+    header.parentElement.children.indexOf(header) + 1,
+    header.parentElement.children.indexOf(card),
+  );
   const fold = doc.getElementById("metric-rows").nextElementSibling;
   assert.equal(fold.className, "ledger-notes");
   assert.equal(fold.children[0].textContent, "About These Numbers");

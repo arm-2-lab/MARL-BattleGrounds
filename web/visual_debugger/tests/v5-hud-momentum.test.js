@@ -1,5 +1,5 @@
 /**
- * @file Check Momentum (switch hud_momentum, off by default; the V5 Arena
+ * @file Check Momentum (switch hud_momentum, on by default since 4 Oct 2026; the V5 Arena
  * Frames pick, broadcast-hud.js segBar) in src/match-summary.js.
  *
  * Contracts checked:
@@ -376,7 +376,7 @@ test("Momentum is page chrome, never a battlefield mark", () => {
   const row = VISUAL_FILTER_REGISTRY.find((entry) => entry.id === "hud_momentum");
   assert.ok(row);
   assert.equal(row.surface, "interface");
-  assert.equal(row.defaultEnabled, false);
+  assert.equal(row.defaultEnabled, true);
   assert.deepEqual([...row.products].sort(), ["combat_debugger", "replay_viewer"]);
   assert.equal(replayPngExportableFilterIds().includes("hud_momentum"), false);
 });

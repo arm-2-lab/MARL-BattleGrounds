@@ -18,11 +18,15 @@ A normal workflow is:
 
 The Viewer opens in Oracle View at 1x speed. The right-hand rail has six
 tabs: **Roster**, **Agent**, **Metrics**, **Actions**, **Visuals** and
-**Frame**. Two buttons sit in the arena's top-right corner: **Everyone In
-View** (the same as V) and **Frame Explanation** (the same as F); each lights
-while it is on. Hover or focus a tab, a top-bar button (**Agent POV**,
-**Oracle View**, **Visual Key**, **Visual Filters**), a corner button, the
-**Palette** choice or the one-time Battle Cam tip for one plain sentence on
+**Frame**. Four key buttons are stacked at the arena's top right, showing
+only their key so the arena keeps its size on every screen: **V** Everyone
+In View, **B** Battle Cam, **F** Frame Explanation and **Esc** Clear
+Selection. Each does exactly what its key does, and V, B and F light while
+they are on. Hover or focus one for its name and what it does. There is no
+Visual Key: hover tips, the Champion Card and Frame Explanation explain each
+mark where it shows. Hover or focus a tab, a top-bar button (**Agent POV**,
+**Oracle View**, **Visual Filters**), a key button or the one-time Battle Cam
+tip for one plain sentence on
 what it holds or does; the same tips show in the BattleClient. The **Arena
 Frames** under the arena list every champion, one thin row each; each team's
 "Standing 4 of 5" count is under its name in the scoreboard (in Agent POV,
@@ -331,10 +335,14 @@ play/pause. Without installed, connected, visible replay authority, the keys
 do nothing. While a frame is still loading, Space and the arrow keys are
 consumed without a new command, so the page does not scroll.
 
-The camera choices are **Whole Map** (the default), **Everyone In View** (V,
-or its button in the arena's corner) and **Battle Cam** (B, Replay Viewer
-only). The switch in the Rune Scrubber row shows Whole Map and Battle Cam. Battle Cam frames the fights and
-can lean in on a kill; its parts are Visuals switches. The Viewer remembers the
+The camera choices are **Whole Map** (the default), **Everyone In View** (V)
+and **Battle Cam** (B, Replay Viewer only). V and B, or their key buttons,
+turn their camera on and off: pressing the lit one again returns to Whole
+Map, and no lit key means Whole Map. There are no camera buttons in the Rune
+Scrubber row and no small map picture. Everyone In View zooms in as far as it
+can while every champion stays on screen. Battle Cam frames the fights and,
+while the replay plays, leans in on each fall and slows it down; its parts
+are Visuals switches. The Viewer remembers the
 last camera in this browser. A camera change shows a short tip, and the first
 visit shows one Battle Cam tip; both sit in the scoreboard's empty space beside
 the tick, so they never cover the arena or a panel. In Agent POV the camera only frames champions and
@@ -553,9 +561,16 @@ switch, its label, help and default; the tab, the renderer and the PNG export
 all read it, so this guide does not copy the list. Ranges is a separate
 control and starts off.
 
-Five presets set many switches at once: **Default Configuration** (every
-switch as it ships), **Broadcast** (spectacle and atmosphere, no diagnostics),
-**Researcher** (exact numbers and every diagnostic), **Manuscript** (flat paper
+The shipped defaults turn on **High Contrast**, **Class Seals**, **Moon
+Motes**, **Death Dimming**, **Spawn Shield Expiry**, **Saved Beat**,
+**Champion Streaks**, **Momentum**, **Kill Cam** and **Kill Slow Motion**, and
+turn off **Moonlight**, **Floor Grid** and **Time Of Night**. **High
+Contrast** is one switch in all three clients (brighter rings, clearer stones
+and crisper text; an exported PNG shows the same colors).
+
+Four presets set many switches at once: **Default Configuration** (every
+switch as it ships), **Researcher** (exact numbers and every diagnostic),
+**Manuscript** (flat paper
 figures that still read in grayscale) and **Minimal** (bodies, blows, life and
 falls only). A preset never changes the view, Ranges, layout or motion.
 
@@ -564,7 +579,7 @@ see. A switch turned off falls back to a plain, truthful drawing (for example a
 flat stone with its true footprint, or a plain token with its team ring and
 life); it never hides a fact of the game.
 
-**Class Seals** (Bodies, off by default) puts each champion on its class seal
+**Class Seals** (Bodies, on by default) puts each champion on its class seal
 instead of the plain class glow: a starglass octagon (Mage), a riveted bronze
 boss (Warrior), a greenwood four-leaf shape (Hunter), a steel diamond with
 curved sides (Rogue) or a gold sun (Priest, whose emblem then shows only its
@@ -623,7 +638,7 @@ The look is `src/looks/requiems.js`; it reads the plan's own Fallen feed row
 for the killers and the plan's end-of-tick bodies for the spots, never the
 match summary.
 
-**Champion Streaks** (Moments, off by default) lets a herald card name a
+**Champion Streaks** (Moments, on by default) lets a herald card name a
 champion each time it has taken part in 5, 10, 15 or 20 takedowns without
 falling: its living medallion, the eyebrow "Team A Mage" and the title "10
 Takedowns Without Falling" (no dots). Up to two other moments
@@ -644,12 +659,15 @@ for a killer of one of the tick's named falls.
 
 **Herald cards** name every moment of the store's Herald Cards option that
 can happen in a game, with the store's words, medallions and headline order:
-Team Wiped, First Blood (only in a game that began at tick 0 with 0-0), Match
-Point (a score that rose this tick to 1 or 2 short of First To), Double,
-Triple or Quadruple Takedown, runs ("5 Unanswered", then 10, 15 and 20; no dots),
-Champion Streaks (when switched on), Rescue, Ultimate Takedown, Trade, Scores
-Level (level after a lead of 3 or more), Ultimate Combo (two or more damaging
-Ultimates on one champion) and Ticks Left (30, 10, then 5 to 1). The first
+Penta Takedown (all five champions of one team on one tick; it heads the card
+with "Team B Wiped" in the eyebrow), Team Wiped, First Blood (only in a game
+that began at tick 0 with 0-0), Match Point (a score that rose this tick to
+exactly 1 point short of First To), Double, Triple or Quadruple Takedown, runs
+("5 Unanswered", then 10, 15 and 20; no dots), Champion Streaks, Rescue,
+Ultimate Takedown, Trade, Scores Level (level after a lead of 3 or more),
+Ultimate Combo (two or more damaging Ultimates on one champion) and 30 Ticks
+Left. There is no countdown chip, no 10 or 5-to-1 Ticks Left card and no
+"Match Point · Needs 1" chip. The first
 heads the card and up to two more join its eyebrow; a plain single takedown
 gets no card. `heraldMoments` in `src/looks/heralds.js` is the one moment
 finder: it reads only the plan's `herald_card` row. The plan
@@ -664,28 +682,41 @@ Oracle View reads every recorded fact; Agent POV counts runs from the falls the
 team saw and names a rescue only when the team saw the rescued champion at
 both ends of the tick, the Priest's heal and every blow on it. A card enters at
 the Fall beat (a Rescue, Ticks Left or a combo whose target lived waits for the
-tick to settle); First Blood, Team Wiped and Match Point draw the Herald Rule,
+tick to settle); Penta Takedown, First Blood, Team Wiped and Match Point draw the Herald Rule,
 a 1 px line across the top band behind the card. With **Death Announcer** off
 the moments born from a fall are left out, as in the store. Each card names its
 moments in `data-herald-moments`. The live BattleClient and DevClient use the
 same look and the same server facts.
 
-**Herald cards** (`src/looks/heralds.js`) live only in the arena's top band,
-as the store's Herald Cards place them: the card looks in the band's middle
-half first, centred, then shifted sideways, then smaller (never under 9 px
-words), then in its one-line form, choosing the spot that covers the fewest
-champions the view draws; only when nothing fits the middle half does it look
-along the whole band. When no spot is free it still draws, in its one-line form
-at its smallest readable size, so a card never silently vanishes, and a card
-held through the next tick keeps the spot it was born with. A plate draws at
+**Herald cards** (`src/looks/heralds.js`) are always the same plate, with its
+swallowtails, rule, glyphs, eyebrow and title: there is no one-line band or
+chip form. A plate hugs the top edge of the arena and slides along it to the
+spot that touches the fewest champions the view draws, then covers the least
+of them, then sits nearest the middle. It never covers the V, B, F and Esc
+keys at the arena's top right while a clear spot exists (that matters when
+the camera zooms in). Only when every full-size spot touches
+a champion does it shrink, never under 9 px words. When no spot fits at all
+it still draws at its smallest readable size, so a card never silently
+vanishes, and a card held through the next tick keeps the spot it was born
+with.
+
+**One card at a time.** While the replay plays (and in live play), one card
+shows at a time and each stays at least 2 seconds at 1x (1 second at 2x).
+A card that comes sooner waits its turn, then replaces the one on screen; the
+old card fades out before the new one fades in, so there is no overlap and no
+empty gap between back-to-back cards. At most one card waits: when another
+arrives, the bigger moment keeps the waiting spot. A paused, stepped or sought
+tick shows its own card at once. The painter (`src/choreography-painter.js`,
+`carryFromEarlierTicks`) owns this queue; a view or recipient change starts it
+fresh, so Agent POV and Oracle View never share a queue. A plate draws at
 most seven medallions (the eyebrow keeps the real counts), so even a ten-fall
 tick stays inside the look's node budget (48 nodes: seven fallen Mages, whose
 sigil has one more path, with the Herald Rule). The plan charges a herald row
 only its own card's allowance (`rowBudget`: a run's crest and dots need 12
 nodes), so a busy tick, such as a return wave of eight champions, keeps its
-card instead of dropping it for the largest card's allowance. Scores Level and Ultimate Combo
-are one-line chips with no swallowtails or rule, as the store's chip pill; a
-one-line band or chip fades in at its row's start time like a plate.
+card instead of dropping it for the largest card's allowance. Scores Level
+shows both teams' crests and Ultimate Combo one rune diamond per caster, on
+the same plate.
 
 The **Verdict** card on the completion frame is the store's full card: the
 basis words, both teams' controller names, scores and results, the lead line
@@ -695,15 +726,18 @@ on the left. Honors come from the frame's own `match_honors` field: the server
 adds up every transition's totals once per replay (`viewer/match_summary.py`:
 Kill Contributions from the shared kill credit, Damage Done and Effective
 Healing Done with the full metrics' formulas, Deaths, Red Zone Deaths and
-Ultimate Ability Activations) and picks each honor's leaders for the view:
-Oracle View every champion, Agent POV only the recipient's own team. On the
+Ultimate Ability Activations) and picks each honor's leaders. Both views count
+every champion of both teams: the replay's game is over, so Agent POV has
+nothing left to hide. On the
 owner's 300-tick game of 3 October 2026 all sixty per-champion totals equal
 the replay's full metrics; adding them up takes about 15 ms once JAX's kill
 credit calculation is warm (about 0.4 s on the first replay of a process).
 Match Summary opens the same totals as a table under the arena (one row per
 metric, one column per team total and champion; in the BattleClient it takes
 the deck's place), and a view switch closes it; Show Arena tucks the card into
-its band plate for the session.
+its band plate for the session, and a **Match Summary** key then shows in the
+arena's top-right corner beside the other two, which opens or closes the
+table again.
 
 Five status and aura switches belong to the Rune Zones look
 (`src/looks/statuses.js`); each draws only from the viewed audience's own
@@ -725,7 +759,7 @@ scene and events, and Off keeps the plain, truthful drawing:
   champions the team saw (tick-start spots, 0.85 per covering Warrior) and the
   net life change its rows carry, taken as damage with no healing, so it can
   miss a save but never invents one.
-- **Spawn Shield Expiry** (Life And Death, off by default): the Ward Lift, a
+- **Spawn Shield Expiry** (Life And Death, on by default): the Ward Lift, a
   dashed silver ring at 0.95 times the body radius, lifts off a champion as
   its Spawn Shield ends, in the Settle window (play only). The plan row gives
   the look the body's radius in pixels. The band closes with it: the
@@ -748,7 +782,7 @@ scene and events, and Off keeps the plain, truthful drawing:
   shards stay for the frame, so a paused frame shows them. Off, the ice cuts
   out at Settle with no crack or shards.
 
-**Momentum** (HUD, off by default) marks each team's recent form on its First
+**Momentum** (HUD, on by default) marks each team's recent form on its First
 To bar in the score strip: the points it scored in the last 10 ticks glow in
 the team's lighter color over a thin silver line, and older points keep the
 team color. The bar's hover tip adds **Last 10 Ticks** ("3 points, the bright
@@ -777,8 +811,8 @@ the recorded next tick:
   teammates' plans, and the other team's orders never show. The selected
   champion's line stays the Next Action Thread's, so no line is drawn twice.
 
-Both are recorded in the PNG provenance (version 4) with the other battlefield
-switches.
+Both are recorded in the PNG provenance (version 4 and later) with the other
+battlefield switches.
 
 The map label reads either the recording's map metadata or its verified authored
 layout name, revision and digest. Older authored replays such as Three Body
@@ -798,7 +832,8 @@ value, recipient label, and connector. Those parts are enabled or disabled
 together; damage and healing remain distinguished by their outcome sign and
 color rather than by separate filters.
 
-Saved Beat, Last Breath and Battle Text Detail (all off by default) add to the
+Saved Beat (on by default), Last Breath and Battle Text Detail (both off by
+default) add to the
 life numbers, so they need Scrolling Battle Text. Saved Beat writes "Saved"
 above the number of a champion that a heal kept alive through blows that would
 have killed it, and flashes its rim gold twice in play (Oracle View only: Agent
@@ -827,11 +862,12 @@ toolbar, timeline, and inspectors are outside the image. The result uses the
 bundled fonts and locked battlefield background, reflects the current audience,
 camera, selection, Ranges, and visual-filter states, and embeds one standard
 `MARL-BattleGrounds Replay Provenance` iTXt record. It shows what is on screen,
-so a zoomed camera exports the zoomed view. New exports write provenance
-version 4, which records the battlefield switches (version 3's list plus Next
-Step Ghost and All Staged Orders) and the camera frame as a world rectangle;
-PNGs saved with versions 1, 2 and 3 still read. Exported PNGs
-carry no brand mark. Export does not navigate the replay or request another
+so a zoomed camera exports the zoomed view, but it never includes the match
+moment cards (moment plates, the Lineup and the Verdict): a figure shows the
+game. New exports write provenance version 5, which records the battlefield
+switches (version 3's list plus High Contrast, Next Step Ghost and All Staged
+Orders) and the camera frame as a world rectangle; PNGs saved with versions 1
+to 4 still read. Exported PNGs carry no brand mark. Export does not navigate the replay or request another
 replay frame.
 
 The scoreboard derives the task, participant identities, current scores and
@@ -860,7 +896,14 @@ results. An indeterminate progress indicator appears while metrics are prepared.
 Longer replays can take longer; the indicator makes no fixed-duration promise.
 Playback, seeking and POV changes remain available while analysis prepares. CSV
 preparation also shows an indicator when the metrics panel is closed. The
-**Topic** selector starts with **Episode Results**. It has 28 topics under six
+**Topic** selector starts with **Episode Results**. The Scope switch, Topic,
+View and **Find A Measurement** stay fixed at the top of the tab; only the
+results and the table under them scroll. The table always keeps a few rows:
+when the top part and those rows do not fit (open search results on a short
+screen such as 1366 x 768, or 200% zoom), the whole tab scrolls, so nothing
+is cut off and **Show More** is always reachable. Team rows show their crest and
+agent and recipient rows their class emblem beside the words, in the table
+and in search results; Episode rows stay plain. The topic list has 28 topics under six
 headings, including five named Ultimates and **Team Formation**. Sixteen topics
 have separate **Totals** and **By Recipient** views; twelve have one table.
 **Respawning** shows each team's wave count, mean agents returned per wave, and

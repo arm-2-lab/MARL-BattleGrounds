@@ -3,17 +3,17 @@
  * bordered box in the Surround color that holds the battlefield SVG, the
  * view tag (#pov-tag; its spot on the frame under the floor is set in
  * overlays.css), the How To Play overlay (#htp, styled in overlays.css) and
- * the two on-screen keys in its top-right corner (#arena-buttons: Everyone
- * In View and Frame Explanation; styled at the end of this file).
+ * the on-screen key stack in its top-right corner (#arena-buttons: V
+ * Everyone In View, B Battle Cam, F Frame Explanation and Esc Clear
+ * Selection, key only; styled at the end of this file).
  *
  * Size: as in the vision, the arena's height follows the stage's width, so
  * the battlefield fills the arena's full width (1074 x 553.6 px inside a
  * 1076 x 555.6 px box at 1440 px wide, when the window is at least 986 px
  * tall). Only the one-window rule in layout.css (#bc is one window tall, so
- * the deck, Lock In and the status line stay on screen) makes it shorter,
- * for example about 86 px shorter at 1440 x 900; it is never less than
- * 120 px (the renderer needs room for its 24 px padding). The
- * deck and the status line never shrink. The battlefield keeps the vision's
+ * the deck and Lock In stay on screen) makes it shorter at most window
+ * sizes; it is never less than 120 px (the renderer needs room for its 24 px
+ * padding). The deck never shrinks. The battlefield keeps the vision's
  * shape: width over height is --battlefield-aspect (default 1032 / 532,
  * about 1.93985, the vision's map 47 field drawing, so the arena is exactly
  * as tall as the vision's at every width). Inside the box,
@@ -236,10 +236,14 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   display: none;
 }
 
-/* The two on-screen keys in the arena's top-right corner (#arena-buttons,
-   src/arena-buttons.js): small buttons over the Surround, above the
-   battlefield, each with its keycap. A lit key (aria-pressed true: Everyone
-   In View is the camera, or Frame Explanation is open) gets the moon edge. */
+/* The on-screen key stack in the arena's top-right corner (#arena-buttons,
+   src/arena-buttons.js; owner, 4 Oct 2026): small key-only buttons stacked
+   top to bottom over the Surround, beside the battlefield, so they fit the
+   room right of the floor on laptop screens and the arena keeps its size.
+   Each shows only its keycap (V, B, F, Esc); its name is its aria-label and
+   hover card. A lit key (aria-pressed true: its camera is on, or Frame
+   Explanation is open) gets the moon edge. The game-over Match Summary
+   button, which has no key, keeps its words under the keys. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   #arena
@@ -249,7 +253,28 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   top: 8px;
   right: 8px;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .arena-buttons
+  > .arena-key {
+  justify-content: center;
+  min-inline-size: 30px;
+  padding: 3px 4px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .arena-buttons
+  > .arena-key
+  > kbd {
+  margin: 0;
+  min-inline-size: 18px;
+  text-align: center;
 }
 
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])

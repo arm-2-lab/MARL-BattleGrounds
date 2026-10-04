@@ -99,7 +99,7 @@ test("the game-over step names only what the save state offers", () => {
     const step = gameOverStep({ lifecycle, finish_available: false });
     assert.equal(
       step,
-      "The game is over and saved. Press Restart for a new match, or click Saved at the top, then Open Replay.",
+      "The game is over and saved. Press Restart for a new match, or Open Replay to watch it.",
     );
     assert.doesNotMatch(step, /Finish And Save/u);
   }
@@ -108,7 +108,7 @@ test("the game-over step names only what the save state offers", () => {
   }
   assert.equal(
     gameOverStep({ lifecycle: "persistence_failed" }),
-    "The game is over, but the replay did not save. Click Save Failed at the top, then Retry Save or Save As.",
+    "The game is over, but the replay did not save. Press Retry Save at the top, or click Save Failed for Save As.",
   );
   for (const recording of [null, undefined, { lifecycle: "discarded" }, "x"]) {
     assert.equal(

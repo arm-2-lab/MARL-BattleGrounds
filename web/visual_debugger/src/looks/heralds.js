@@ -11,17 +11,22 @@
  *   the store's headline order (RANK). The first is the card's moment; up to
  *   two more join its eyebrow as short words ("Team A +2 · Trade"). The
  *   moments, with the store's words and glyphs:
+ *   - Penta Takedown: one team lost five champions this tick (the fallen;
+ *     "TEAM A +5 · TEAM B WIPED" / "Penta Takedown"; tier 1). It heads the
+ *     card above Team Wiped, which a five-champion team always reaches too.
  *   - Team Wiped: every active champion of one team is fallen after this
  *     tick and one of them fell on it (fallen medallions, one per member;
- *     "TEAM B" / "Team Wiped"; a tier-1 moment).
+ *     "TEAM B" / "Team Wiped"; a tier-1 moment). In another card's eyebrow it
+ *     reads "Team B Wiped".
  *   - First Blood: the first tick with a fall, only in a match that began at
  *     tick 0 with 0-0 (the row's freshStart host fact): the fallen, "TEAM B
  *     +1" or "TRADED" when both teams lost one / "First Blood"; tier 1.
- *   - Match Point: a team's score rose this tick into 1 or 2 points short of
+ *   - Match Point: a team's score rose this tick to exactly 1 point short of
  *     First To (its crest; "TEAM A NEEDS 1 POINT" or "BOTH TEAMS NEED 1
- *     POINT" / "Match Point"; neutral; tier 1).
- *   - Double, Triple, Quadruple (or Multi) Takedown: one team lost two or
- *     more this tick (the fallen; "TEAM A +2").
+ *     POINT" / "Match Point"; neutral; tier 1). 2 points short is not Match
+ *     Point.
+ *   - Double, Triple or Quadruple Takedown: one team lost two, three or four
+ *     this tick (the fallen; "TEAM A +2").
  *   - Takedown runs: a team's 5th, 10th, 15th or 20th (every 5th) takedown
  *     in a row with no loss of its own (the row's runs host fact): its crest
  *     and the words, no dots; "TEAM B" / "5 Unanswered". Every run ranks as
@@ -43,14 +48,14 @@
  *     with a divider; "TEAM A LOST 1 · TEAM B LOST 1"; neutral).
  *   - Scores Level (the owner's "Comeback"): the scores became level this
  *     tick after one team had led by 3 or more (the row's largestLeadBefore
- *     host fact). A one-line chip: "Scores Level · 7 – 7".
+ *     host fact): both teams' crests; "7 – 7" / "Scores Level"; neutral.
  *   - Ultimate Combo: two or more damaging Ultimates struck the same
- *     champion this tick. A one-line chip: "◆◆ Ultimate Combo · Charge +
- *     Freezing Trap".
- *   - Ticks Left: 30, 10, 5, 4, 3, 2 or 1 ticks before the draw tick while
- *     no team has reached First To (a Moon Silver crescent whose lit part is
- *     the ticks left out of 30; "DRAW IF NO TEAM REACHES 20" / "30 Ticks
- *     Left"; neutral).
+ *     champion this tick: one rune diamond per caster; "CHARGE + FREEZING
+ *     TRAP" / "Ultimate Combo"; neutral.
+ *   - Ticks Left: 30 ticks before the draw tick while no team has reached
+ *     First To (a Moon Silver crescent; "DRAW IF NO TEAM REACHES 20" / "30
+ *     Ticks Left"; neutral). The owner removed the 10, 5, 4, 3, 2 and 1
+ *     cards and the countdown chip (4 Oct 2026).
  *   A plain single takedown gets no card (its Fallen feed row tells it). With
  *   the Death Announcer switch off, the moments born from a fall (First
  *   Blood, Multi Takedown, Team Wiped, Trade, Ultimate Takedown, runs and
@@ -58,11 +63,13 @@
  *   Blood, Match Point) also draws the Herald Rule: a 1 px line in its rule
  *   color at 35% across the arena's top band, behind the card. Each card's
  *   group carries `data-herald-moments`, the kinds it names in order (for
- *   example "multi trade"). The plate enters at the row's phaseStart (the
- *   plan's: the first Fall beat, or the tick's settled time when only a
- *   Rescue, Ticks Left or a Combo without a fall is named) and, when the
- *   caller passes the previous tick's row, holds through the next tick in
- *   the same spot.
+ *   example "multi trade"). Every moment card is this plate: there is no
+ *   one-line band or chip form (owner, 4 Oct 2026). The plate enters at the
+ *   row's phaseStart (the plan's: the first Fall beat, or the tick's settled
+ *   time when only a Rescue, Ticks Left or a Combo without a fall is named,
+ *   or the later time the painter's card queue gives it) and, when the
+ *   caller passes the previous tick's row, holds in the same spot; a held
+ *   card with an exitAt fades out at that time (the queue's hand-over).
  * - Lineup card (frame 0): the map, each team's crest and the medallions of
  *   its champions this audience may see, and the match rules.
  * - Verdict card (the final frame, in the Replay Viewer and, at game over, in
@@ -73,40 +80,41 @@
  *   Arena buttons. Its band form (Show Arena, or the `moment_full_cards`
  *   switch off) is a herald plate: crest, score, "–", score, crest, the basis
  *   words and the result.
- * - State chip: "Match Point · Needs 2" or "12 Ticks Left".
- * With `moment_full_cards` off the lineup and verdict show as bands. With
+ * With `moment_full_cards` off the lineup shows as a one-line band and the
+ * verdict as its herald plate. With
  * `match_moments` off nothing is drawn (the scorebug still shows score and
  * result).
  *
- * Placement (the store's "Band placement"): a herald plate always lives in
- * the top band of the arena, never at the bottom and never over the middle of
- * the floor. It looks in the band's centre slot (the middle half) first:
- * centred, then shifted sideways, then smaller (never so small that its
- * smallest words go under 9 px), then in its one-line form, choosing the spot
- * that covers the fewest champions. Only when no form fits the centre slot
- * does it look along the whole band. A card never silently vanishes: when no
- * spot fits anywhere it still draws, in its one-line form at its smallest
- * readable size, centred. A row drawn again with the same arena rectangle (the
- * next tick's hold, a repaint) keeps the spot it was first given, as the store
- * keeps a card's spot for its whole life. Scores Level and Ultimate Combo are
- * one-line chips only (the store's chip pill: no swallowtails, no rule), placed
- * by the same search.
+ * Placement (Sliding Top Placement, owner 4 Oct 2026): a herald plate always
+ * hugs the top edge of the arena's visible area. It tries spots across the
+ * whole width and picks the one that covers the fewest champions, then the
+ * least champion area, then the one nearest the centre. Only when every
+ * full-size spot covers someone does it try smaller sizes, never so small
+ * that its smallest words go under 9 px, and it never turns into another
+ * form. It never covers page chrome (such as the view tag) while a spot
+ * clear of it exists. A card never silently vanishes: when no spot fits
+ * anywhere it still draws at its smallest readable size, centred. A row drawn
+ * again with the same arena rectangle (the next tick's hold, a repaint) keeps
+ * the spot it was first given.
  *
  * Callers: `choreography-painter.js` (for `herald_card` plan rows, through
  * records({event, bounds, previous, avoid, chrome}), build(records, doc, mount)
- * and update(nodes, records)); the clients' renderer for the lineup, verdict
- * and state chip through records({part, ...}) and build(records, doc), plus
+ * and update(nodes, records); it owns the card queue and reads
+ * MINIMUM_CARD_MS, CARD_FADE_OUT_MS and cardMoments); the clients' renderer
+ * for the lineup and verdict through records({part, ...}) and
+ * build(records, doc), plus
  * verdictHonours(matchHonors) (the frame's host fact turned into the
  * verdict's Honors rows), verdictButtons(record) and buildVerdictActions(doc,
  * record, onPress) for the verdict's two working buttons, and
  * buildMatchSummarySheet(doc, matchHonors, options) for the sheet its Match
  * Summary button opens (page chrome, never over the arena).
  *
- * Timing: the DOM always holds the END state (the card fully shown). The entry
- * (opacity 0 to 1 over 240 ms, unfurling from 92% width, medallions settling
- * from 115%; the tier-1 Herald Rule grows from the card's centre over 320 ms;
- * a one-line band or chip fades in over 240 ms) is a Web Animations
- * description with `fill: "backwards"` pushed to `mount.animationSpecs`,
+ * Timing: the DOM always holds the END state (the card fully shown, or, for a
+ * held card with an exitAt, hidden). The entry (opacity 0 to 1 over 240 ms,
+ * unfurling from 92% width, medallions settling from 115%; the tier-1 Herald
+ * Rule grows from the card's centre over 320 ms) and a held card's exit
+ * (opacity 1 to 0 over CARD_FADE_OUT_MS from its exitAt) are Web Animations
+ * descriptions with `fill: "backwards"` pushed to `mount.animationSpecs`,
  * timed from the row's `phaseStart` (real ms). Reduced motion fades only, over
  * 120 ms. No timers and no CSS animations.
  *
@@ -122,8 +130,9 @@
  * from the blows and bodies the team saw) and its public match facts (scores
  * before and after the tick, First To, the tick and the draw tick, which
  * every view's scorebug shows). The verdict's Honors come only from the
- * caller, which passes the frame's own host fact (`match_honors`): in Agent
- * POV the host limits it to the viewing team's own champions. Spots avoid only the bodies
+ * caller, which passes the frame's own host fact (`match_honors`): Agent POV
+ * lists every champion too, because Honors come only once the game is over
+ * and nothing is left to hide then. Spots avoid only the bodies
  * the caller passes (in Agent POV only the POV scene's bodies), so an unseen
  * champion never moves a card. Nothing here imports a researcher helper or
  * reads a researcher view or match summary.
@@ -148,7 +157,7 @@ import {
  * @typedef {"a" | "b"} TeamKey
  * @typedef {{classKey: string | null, teamKey: TeamKey, fallen: boolean}} Medallion
  * @typedef {Readonly<{kind: string, [field: string]: any}>} HeraldMoment
- *   One moment heraldMoments found: its kind ("wiped", "firstBlood",
+ *   One moment heraldMoments found: its kind ("penta", "wiped", "firstBlood",
  *   "matchPoint", "multi", "multiBig", "run", "runBig", "streak", "rescue",
  *   "ultTakedown", "trade", "level", "combo" or "moonset") and its fields
  *   (listed at heraldMoments).
@@ -167,29 +176,31 @@ import {
  *   has now taken part in without falling (a positive integer; the store
  *   fires at 5 and 8). The row's owner decides who has a streak.
  * @typedef {Readonly<{
- *   key: "plate" | "line",
+ *   key: "plate",
  *   width: number,
  *   height: number,
  *   minScale: number,
  * }>} BandForm
- *   One way a top-band card may be drawn: its key ("plate" the 40 px plate,
- *   "line" the 22 px one-line band), its unscaled drawn box in CSS px (tails
+ *   How a top-band card is drawn: key "plate" (the 40 px plate, the only
+ *   form since 4 Oct 2026), its unscaled drawn box in CSS px (tails
  *   included) and the smallest scale at which its smallest words stay
  *   readable (MIN_TEXT_PX).
  * @typedef {Readonly<{
- *   form: "plate" | "line",
+ *   form: "plate",
  *   scale: number,
  *   left: number,
  *   top: number,
  *   width: number,
  *   height: number,
+ *   covered: number,
  *   hit: number,
- *   cost: number,
+ *   distance: number,
  * }>} BandSpot
  *   Where a top-band card is drawn: its form, scale and drawn box in CSS px
- *   (left, top, width, height: tails included, after scaling), hit (how much
- *   champion area it covers, px squared) and cost (hit plus its distance from
- *   the band's centre and its shrink, the store's weighting).
+ *   (left, top, width, height: tails included, after scaling), covered (how
+ *   many champion circles it touches), hit (how much champion area it
+ *   covers, px squared) and distance (from its centre to the band's centre,
+ *   px). Spots compare by covered, then hit, then distance.
  * @typedef {Readonly<{
  *   id: "summary" | "show_arena",
  *   label: string,
@@ -213,6 +224,13 @@ export const PLATE_MEDALLIONS_MAX = 7;
 /** Most tied leaders one Honors cell draws before "+N". */
 const HONOR_MEDALLIONS_MAX = 6;
 
+/**
+ * Smaller sizes a Verdict column's controller name tries, in CSS px, before it
+ * is cut with "…" (heralds.css has a class for each: herald__name--13 and
+ * herald__name--11). The full size is 15 px.
+ */
+const VERDICT_NAME_SIZES = Object.freeze([13, 11]);
+
 /** Smallest words a card may shrink to, in CSS px (the store's 9 px). */
 const MIN_TEXT_PX = 9;
 
@@ -223,7 +241,7 @@ const BAND_SCALES = Object.freeze([1, 0.9, 0.8, 0.7, 0.6, 0.5]);
  * Sizes in CSS pixels of the plate, the one-line band and the full cards.
  * plate.medallionStep is the step between overlapping medallions (20: a 6 px
  * overlap) and plate.wipedStep Team Wiped's (18: an 8 px overlap, the
- * store's). band.diamond is an Ultimate Combo chip's rune diamond.
+ * store's). The band sizes are the folded Lineup's one-line band.
  */
 export const FOOTPRINT = Object.freeze({
   plate: Object.freeze({
@@ -245,7 +263,6 @@ export const FOOTPRINT = Object.freeze({
     pad: 10,
     gap: 6,
     crest: 12,
-    diamond: 11,
     tailReach: 7,
   }),
   fullCard: Object.freeze({ width: 372, pad: 14, medallion: 28 }),
@@ -268,13 +285,13 @@ export const FOOTPRINT = Object.freeze({
  * (group, body, inner group, two tails, panel, rule, glyph group, eyebrow and
  * title), 4 or 5 per medallion (the field-and-ring path, a Team B living
  * medallion's ink ring, and the class sigil: 3 nodes, 4 for the Mage), one
- * path per divider, diamond, crest or dot row, 7 or 8 for a Rescue
+ * path per divider, diamond or crest, 7 or 8 for a Rescue
  * medallion (its medallion, gold ring and "+"), 2 for the Ticks Left
  * crescent, and 2 for a tier-1 card's Herald Rule (its group and line). The
  * most it draws (a tier-1 First Blood naming PLATE_MEDALLIONS_MAX fallen
- * Mages at 5 nodes each: 47) stays within 48 nodes; a one-line
- * band or chip draws at most 8. It starts at most 3 animations (card,
- * glyphs, Herald Rule; a band or chip 1). A paused card keeps all of them, so
+ * Mages at 5 nodes each: 47) stays within 48 nodes. It starts at most 3
+ * animations (card, glyphs, Herald Rule; a held card's exit fade 1). A
+ * paused card keeps all of them, so
  * the persistent allowance equals the node allowance. The painter drops a
  * held card over this allowance, so it must cover the largest card.
  */
@@ -293,7 +310,6 @@ export const PAINT_PARTS = paintParts([
   [{ surface: "transient", kind: "herald_streak" }, "champion_streaks"],
   [{ surface: "transient", kind: "herald_lineup" }, "match_moments"],
   [{ surface: "transient", kind: "herald_verdict" }, "match_moments"],
-  [{ surface: "transient", kind: "herald_state" }, "match_moments"],
 ]);
 
 /** The Verdict card's two buttons, in order. */
@@ -312,8 +328,26 @@ const DEFAULT_BOUNDS = Object.freeze({
   height: 600,
 });
 
-/** Names for 2, 3 and 4 takedowns in one tick; more is "Multi Takedown". */
-const MULTI_NAMES = Object.freeze(["", "", "Double", "Triple", "Quadruple"]);
+/**
+ * Names for 2, 3, 4 and 5 takedowns of one team in one tick ("Double
+ * Takedown" ... "Penta Takedown"). A team has at most five champions; any
+ * larger count would read "Multi Takedown".
+ */
+const MULTI_NAMES = Object.freeze(["", "", "Double", "Triple", "Quadruple", "Penta"]);
+
+/**
+ * The Minimum Card Time (owner, 4 Oct 2026): a moment card stays on screen at
+ * least this long, in replay time ms (2 s at 1x, 1 s at 2x), before the next
+ * card may replace it. The painter's card queue (choreography-painter.js)
+ * owns the waiting; this look only draws the times it is given.
+ */
+export const MINIMUM_CARD_MS = 2000;
+
+/**
+ * How long a card being replaced takes to fade out, in replay time ms. The
+ * next card starts to fade in only after it, so two cards are never on screen.
+ */
+export const CARD_FADE_OUT_MS = 150;
 
 /** The XHTML namespace, for the verdict's working buttons (page chrome). */
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
@@ -353,17 +387,18 @@ export function textWidth(text, size, caps = false) {
  *   killers, killingTeamId, points, ultimate?}], streaks?, match?,
  *   freshStart?, largestLeadBefore?, runs?, rescues?, combos?, wiped?,
  *   phaseStart, phaseEnd, paintParts}; see heraldMoments for the fact
- *   fields). It gives one card for the moments heraldMoments(event, filters)
- *   finds (see heraldRecord): a plate (or its one-line form; see the file's
- *   Placement note), or a one-line chip for Scores Level and Ultimate Combo.
+ *   fields). It gives one plate for the moments heraldMoments(event, filters)
+ *   finds (see heraldRecord), placed as the file's Placement note says.
  *   A row with no moment (a plain single fall) gives []. With
  *   `filters.champion_streaks` true, the row's `streaks` (ChampionStreakFact
  *   list; absent or invalid entries are skipped) also count; with the switch
  *   false or absent they are ignored. With `filters.death_announcer` false
  *   the moments born from a fall are left out. When the row gives no card,
- *   previous (the previous tick's herald_card row) gives its card again with
- *   held true (no entry animation), in the spot it was first given when the
- *   bounds are the same. A row whose paintParts.effect is false gives [].
+ *   previous (an earlier herald_card row) gives its card again with held
+ *   true (no entry animation), in the spot it was first given when the
+ *   bounds are the same. The row's exitAt (a finite number of ms from the
+ *   tick's start, set by the painter's card queue) makes the card drawn,
+ *   its own or the held one, fade out then. A row whose paintParts.effect is false gives [].
  * - `{part: "lineup", scene, bounds?, filters?, mapTitle, mapLabel?,
  *   pointsToWin?, tickLimit?, redZoneDoubles?, leftTeamId?}`: the lineup card.
  *   Medallions come only from scene.agents (the authorized arena scene: in
@@ -376,17 +411,16 @@ export function textWidth(text, size, caps = false) {
  *   winnerTeamId: 1 | 2 | null, tick, basis: "threshold" | "horizon" |
  *   "tie", pointsToWin, teams?: {1?: {name, short?}, 2?: {name, short?}}
  *   (each team's controller line, shown under its team word: the full line
- *   name ("You + Recurrent MAPPO") when it fits the column, else the short
- *   line ("You + 4 Policies") when given, cut with "…" when still too long),
+ *   name ("You + Recurrent MAPPO") when it fits the column at 15 px, else
+ *   the short line ("You + 4 Policies") when given, else the full line at 13
+ *   or 11 px, cut with "…" only when it still does not fit),
  *   honours?: [{label, value, leaders: [{classId, teamId}]}] (at most 3 are
  *   drawn; an older row with classId and teamId and no leaders names one
- *   leader)}. The caller passes the frame's own Honors (in Agent POV the
- *   host already limits them to the viewing team). leftTeamId (1 or 2,
+ *   leader)}. The caller passes the frame's own Honors (every champion in
+ *   both views: they come only once the game is over). leftTeamId (1 or 2,
  *   default 1) is the team whose home end is on the left of the arena: its
  *   column is drawn on the left. tucked true (the page's Show Arena) or
- *   `filters.moment_full_cards` false gives the band form in the top band.
- * - `{part: "state", state, bounds?, filters?}`: state is {kind:
- *   "match_point", teamIds: [1 | 2], needs} or {kind: "ticks_left", left}.
+ *   `filters.moment_full_cards` false gives its herald plate in the top band.
  * bounds is the arena's visible rectangle in CSS px (default a 960 x 600 band
  * at the origin); event.anchor ({x, y}: top centre) moves a herald's band
  * centre and top. avoid (optional) lists the champion circles {x, y, radius}
@@ -434,11 +468,9 @@ export function records(input) {
         )
       : Object.freeze([]);
   }
-  if (input?.part === "state") {
-    return freezeOne(stateRecord(input.state, bounds));
-  }
   // The painter passes avoid; only its spots are kept for the row's life.
   const keep = Array.isArray(input?.avoid);
+  const exitAt = isRecord(input?.event) ? input.event.exitAt : null;
   const current = heraldRecord(
     input?.event,
     bounds,
@@ -447,12 +479,22 @@ export function records(input) {
     chrome,
     filters,
     keep,
+    Number.isFinite(exitAt) ? Number(exitAt) : null,
   );
   if (current !== null) {
     return Object.freeze([current]);
   }
   return freezeOne(
-    heraldRecord(input?.previous, bounds, true, avoid, chrome, filters, keep),
+    heraldRecord(
+      input?.previous,
+      bounds,
+      true,
+      avoid,
+      chrome,
+      filters,
+      keep,
+      Number.isFinite(exitAt) ? Number(exitAt) : null,
+    ),
   );
 }
 
@@ -549,8 +591,10 @@ function streakFacts(event) {
  * The store's headline order (match-moments.js RANK): when several moments
  * share a tick, the lowest number heads the card and the next two join its
  * eyebrow. The Verdict (0) is drawn by the clients' renderer, not here.
+ * Penta Takedown (0.5, owner 4 Oct 2026) heads the Team Wiped it causes.
  */
 export const MOMENT_RANK = Object.freeze({
+  penta: 0.5,
   wiped: 1,
   firstBlood: 2,
   matchPoint: 3,
@@ -577,6 +621,7 @@ const FALL_KINDS = Object.freeze(
     "firstBlood",
     "multi",
     "multiBig",
+    "penta",
     "wiped",
     "trade",
     "ultTakedown",
@@ -586,8 +631,12 @@ const FALL_KINDS = Object.freeze(
   ]),
 );
 
-/** Ticks before the draw tick on which a Ticks Left card is born (store moonset). */
-const TICKS_LEFT_MARKS = Object.freeze([30, 10, 5, 4, 3, 2, 1]);
+/**
+ * Ticks before the draw tick on which a Ticks Left card is born (store
+ * moonset). Only 30 since the owner removed the 10, 5, 4, 3, 2 and 1 cards
+ * (4 Oct 2026).
+ */
+const TICKS_LEFT_MARKS = Object.freeze([30]);
 
 /** The lead a team must have held before the scores became level (Scores Level). */
 const COMEBACK_LEAD = 3;
@@ -653,10 +702,10 @@ function teamIdOf(value) {
  *   traded, victims, points (the fallen team's points when every fall's
  *   points are known, else null)}; only with freshStart, a named fall and
  *   a 0-0 start of the tick;
- * - matchPoint {teamIds, needs}: a team whose score rose into 1 or 2 short
- *   of pointsToWin (needs is the smaller gap);
- * - multi or multiBig (3 or more) {teamId, victims, n, points}: one team
- *   lost two or more;
+ * - matchPoint {teamIds, needs}: a team whose score rose to exactly 1 short
+ *   of pointsToWin (needs is always 1);
+ * - multi (2), multiBig (3 or 4) or penta (5) {teamId, victims, n, points}:
+ *   one team lost two or more;
  * - run or runBig (5 or more) {teamId, takedowns};
  * - streak {champion, takedowns} (switch on, and only on a tick with a
  *   named fall);
@@ -730,15 +779,13 @@ export function heraldMoments(event, filters = null) {
   if (pointsToWin !== null && before !== null && after !== null) {
     const teamIds = /** @type {Array<1 | 2>} */ ([1, 2]).filter(
       (team) =>
-        after[team - 1] > before[team - 1] &&
-        after[team - 1] >= pointsToWin - 2 &&
-        after[team - 1] < pointsToWin,
+        after[team - 1] > before[team - 1] && after[team - 1] === pointsToWin - 1,
     );
     if (teamIds.length > 0) {
       found.push({
         kind: "matchPoint",
         teamIds,
-        needs: Math.min(...teamIds.map((team) => pointsToWin - after[team - 1])),
+        needs: 1,
       });
     }
   }
@@ -746,7 +793,7 @@ export function heraldMoments(event, filters = null) {
     const list = lostBy[lost];
     if (list.length < 2) continue;
     found.push({
-      kind: list.length >= 3 ? "multiBig" : "multi",
+      kind: list.length >= 5 ? "penta" : list.length >= 3 ? "multiBig" : "multi",
       teamId: 3 - lost,
       victims: list.map((fall) => fall.victim),
       n: list.length,
@@ -896,7 +943,7 @@ export function cardMoments(event, filters = null) {
  * Upper bounds of the nodes one glyph draws on a plate (see BUDGET): a fallen
  * medallion 5 (its ring path and a sigil of at most 4 nodes), a living one 6
  * (plus a Team B ink ring), a Rescue medallion 8 (a living one, its gold ring
- * and "+"), the Ticks Left crescent 2 and a diamond, crest, divider or dot row 1.
+ * and "+"), the Ticks Left crescent 2 and a diamond, crest or divider 1.
  */
 const GLYPH_NODES_MAX = Object.freeze({
   fallen: 5,
@@ -922,7 +969,7 @@ const GLYPH_NODES_MAX = Object.freeze({
  * node). A row that names no moment may still draw the previous tick's held
  * card, so it gets the whole BUDGET. Return {nodesPerRecord,
  * animationsPerRecord, persistentNodesPerRecord}, frozen. Busy ticks then
- * keep a small card (a run's crest and dots need 13 nodes) instead of
+ * keep a small card (a run's card is only its crest and words) instead of
  * dropping it for the largest card's allowance.
  *
  * @param {unknown} event
@@ -943,7 +990,6 @@ export function rowBudget(event, filters = null) {
     (spec.dividerAfter === null ? 0 : GLYPH_NODES_MAX.path) +
     (spec.diamondClassKey ? GLYPH_NODES_MAX.path : 0) +
     spec.crests.length * GLYPH_NODES_MAX.path +
-    (spec.dots === null ? 0 : GLYPH_NODES_MAX.path) +
     (spec.rescue === null ? 0 : GLYPH_NODES_MAX.rescue) +
     (spec.crescent === null ? 0 : GLYPH_NODES_MAX.crescent) +
     spec.diamonds.length * GLYPH_NODES_MAX.path;
@@ -992,9 +1038,9 @@ function ticksLeftWords(left) {
 /**
  * Return a moment's short words when it joins another card's eyebrow (the
  * store's chipWords): "◆ Charge Takedown", "Trade", "5 Unanswered", "Double
- * Takedown", "Scores Level", "◆◆ Ultimate Combo", "10 Ticks Left", "Match
- * Point", "Rescue", "Team A Mage 5 Takedowns", "Team Wiped" or "First
- * Blood". Pure.
+ * Takedown", "Penta Takedown", "Scores Level", "◆◆ Ultimate Combo", "30
+ * Ticks Left", "Match Point", "Rescue", "Team A Mage 5 Takedowns", "Team B
+ * Wiped" or "First Blood". Pure.
  *
  * @param {HeraldMoment} moment
  * @returns {string}
@@ -1010,6 +1056,7 @@ function chipWords(moment) {
       return `${moment.takedowns} Unanswered`;
     case "multi":
     case "multiBig":
+    case "penta":
       return `${MULTI_NAMES[moment.n] || "Multi"} Takedown`;
     case "level":
       return "Scores Level";
@@ -1024,7 +1071,7 @@ function chipWords(moment) {
     case "streak":
       return `${teamWords(moment.champion.teamId)} ${classIdentityFromId(Number(moment.champion.classId))?.label ?? "Champion"} ${moment.takedowns} Takedowns`.trim();
     case "wiped":
-      return "Team Wiped";
+      return `${teamWords(moment.fallenTeamId)} Wiped`.trim();
     case "firstBlood":
       return "First Blood";
     default:
@@ -1039,14 +1086,12 @@ function chipWords(moment) {
  *   eyebrow: string,
  *   ruleTeam: TeamKey | null,
  *   tier1: boolean,
- *   chip: string | null,
  *   diamonds: ReadonlyArray<string | null>,
  *   medallions: ReadonlyArray<Medallion>,
  *   medallionStep: number,
  *   dividerAfter: number | null,
  *   diamondClassKey: string | null,
  *   crests: ReadonlyArray<Readonly<{teamKey: TeamKey, size: number}>>,
- *   dots: Readonly<{count: number, teamKey: TeamKey}> | null,
  *   rescue: Medallion | null,
  *   crescent: Readonly<{left: number}> | null,
  *   streak: Readonly<{title: string, takedowns: number}> | null,
@@ -1054,11 +1099,10 @@ function chipWords(moment) {
  *   What one card draws (cardSpec): the moment kinds it names in order, its
  *   title and eyebrow (chips joined with " · "), its rule team (null for a
  *   neutral Moon Silver rule), whether it is a tier-1 moment (Herald Rule),
- *   chip (the one-line words of a chip-only moment, Scores Level or Ultimate
- *   Combo, else null) with its diamonds (caster class keys), and its glyphs:
- *   medallions (stepping medallionStep px, a divider before index
- *   dividerAfter), the Ultimate rune diamond, crests ({teamKey, size}),
- *   dots, the Rescue medallion and the Ticks Left crescent. streak names a
+ *   and its glyphs: diamonds (an Ultimate Combo's caster class keys, one rune
+ *   diamond each), medallions (stepping medallionStep px, a divider before
+ *   index dividerAfter), the Ultimate rune diamond, crests ({teamKey, size}),
+ *   the Rescue medallion and the Ticks Left crescent. streak names a
  *   heading streak's champion for the tooltip.
  */
 
@@ -1078,14 +1122,12 @@ function cardSpec(moments) {
     kinds: Object.freeze(moments.map((moment) => moment.kind)),
     ruleTeam: /** @type {TeamKey | null} */ (null),
     tier1: false,
-    chip: /** @type {string | null} */ (null),
     diamonds: /** @type {ReadonlyArray<string | null>} */ ([]),
     medallions: /** @type {ReadonlyArray<Medallion>} */ ([]),
     medallionStep: FOOTPRINT.plate.medallionStep,
     dividerAfter: /** @type {number | null} */ (null),
     diamondClassKey: /** @type {string | null} */ (null),
     crests: /** @type {ReadonlyArray<{teamKey: TeamKey, size: number}>} */ ([]),
-    dots: /** @type {{count: number, teamKey: TeamKey} | null} */ (null),
     rescue: /** @type {Medallion | null} */ (null),
     crescent: /** @type {{left: number} | null} */ (null),
     streak: /** @type {{title: string, takedowns: number} | null} */ (null),
@@ -1122,6 +1164,16 @@ function cardSpec(moments) {
           teamKey: teamKey(team),
           size: 22,
         })),
+      });
+    case "penta":
+      return Object.freeze({
+        ...base,
+        title: `${MULTI_NAMES[head.n] || "Multi"} Takedown`,
+        eyebrow: `${teamWords(head.teamId)}${plusWords(head.points)}${tail}`,
+        ruleTeam: teamKey(head.teamId),
+        tier1: true,
+        medallions: fallen(head.victims),
+        medallionStep: FOOTPRINT.plate.wipedStep,
       });
     case "multi":
     case "multiBig":
@@ -1187,15 +1239,17 @@ function cardSpec(moments) {
       return Object.freeze({
         ...base,
         title: "Scores Level",
-        eyebrow: "",
-        chip: `Scores Level · ${head.score} – ${head.score}${tail}`,
+        eyebrow: `${head.score} – ${head.score}${tail}`,
+        crests: [
+          { teamKey: teamKey(1), size: 18 },
+          { teamKey: teamKey(2), size: 18 },
+        ],
       });
     case "combo":
       return Object.freeze({
         ...base,
         title: "Ultimate Combo",
-        eyebrow: head.abilities.join(" + "),
-        chip: `Ultimate Combo · ${head.abilities.join(" + ")}${tail}`,
+        eyebrow: `${head.abilities.join(" + ")}${tail}`,
         diamonds: head.casters.map(
           (/** @type {{classKey: string | null}} */ caster) => caster.classKey,
         ),
@@ -1225,7 +1279,7 @@ function boundsKeyOf(bounds) {
 
 /**
  * @typedef {Readonly<{
- *   type: "diamond" | "crest" | "medallion" | "divider" | "dots" | "rescue" | "crescent",
+ *   type: "diamond" | "crest" | "medallion" | "divider" | "rescue" | "crescent",
  *   x: number,
  *   [field: string]: any,
  * }>} PlacedGlyph
@@ -1238,15 +1292,15 @@ function boundsKeyOf(bounds) {
  *
  * spec is the card's HeraldCardSpec; medallions is spec.medallions cut to
  * PLATE_MEDALLIONS_MAX and dividerAfter its divider index (or null). Order
- * and sizes (unscaled CSS px): the rune diamond (11 px, then a 6 px gap),
+ * and sizes (unscaled CSS px): an Ultimate Combo's rune diamonds and the
+ * Ultimate Takedown's rune diamond (11 px each, then a 6 px gap),
  * crests (spec size each, 4 px apart), the Rescue medallion (24 px inside a
  * 30 px gold ring), the Ticks Left crescent (22 px), the medallions (26 px,
  * one every spec.medallionStep px, so they overlap; a 1 px divider takes 15
- * px before index dividerAfter), then dots (6 px, 3 px apart, 6 px after
- * the last glyph). Return {items, width}: the PlacedGlyph list ("diamond"
- * {classKey}, "crest" {teamKey, size}, "rescue" {medallion}, "crescent"
- * {left}, "divider", "medallion" {medallion}, "dots" {count, teamKey}) and
- * the glyph block's width (the last glyph's right edge minus the padding).
+ * px before index dividerAfter). Return {items, width}: the PlacedGlyph list
+ * ("diamond" {classKey}, "crest" {teamKey, size}, "rescue" {medallion},
+ * "crescent" {left}, "divider", "medallion" {medallion}) and the glyph
+ * block's width (the last glyph's right edge minus the padding).
  *
  * @param {HeraldCardSpec} spec
  * @param {ReadonlyArray<Medallion>} medallions
@@ -1260,6 +1314,11 @@ function glyphLayout(spec, medallions, dividerAfter) {
   /** @type {number} */
   let x = size.padLeft;
   let end = x;
+  for (const classKey of spec.diamonds) {
+    items.push({ type: "diamond", x, classKey });
+    end = x + 11;
+    x += 17;
+  }
   if (spec.diamondClassKey) {
     items.push({ type: "diamond", x, classKey: spec.diamondClassKey });
     end = x + 11;
@@ -1290,16 +1349,6 @@ function glyphLayout(spec, medallions, dividerAfter) {
     end = x + size.medallion;
     x += spec.medallionStep;
   });
-  if (spec.dots !== null && spec.dots.count > 0) {
-    const start = end + 6;
-    items.push({
-      type: "dots",
-      x: start,
-      count: spec.dots.count,
-      teamKey: spec.dots.teamKey,
-    });
-    end = start + 9 * spec.dots.count - 3;
-  }
   return {
     items: Object.freeze(items.map((item) => Object.freeze(item))),
     width: end - size.padLeft,
@@ -1310,28 +1359,27 @@ function glyphLayout(spec, medallions, dividerAfter) {
  * Build the herald card record for one herald_card row, or null.
  *
  * event is the row (or null); bounds the arena rectangle; held true when the
- * row is the previous tick's (no entry animation). avoid lists champion
- * circles {x, y, radius} and chrome page-chrome rectangles {left, top, right,
- * bottom}, all in CSS px (see placeOnBand). filters is the page's switch
- * state (see heraldMoments). keep true stores the spot for the row's life
- * (SPOT_BY_ROW); a row already placed in the same bounds keeps its spot
- * whatever avoid says.
+ * row is drawn again after its own tick (no entry animation). avoid lists
+ * champion circles {x, y, radius} and chrome page-chrome rectangles {left,
+ * top, right, bottom}, all in CSS px (see placeOnBand). filters is the page's
+ * switch state (see heraldMoments). keep true stores the spot for the row's
+ * life (SPOT_BY_ROW); a row already placed in the same bounds keeps its spot
+ * whatever avoid says. exitAt is when the card fades out, in ms from the
+ * tick's start, or null to stay the whole tick (the painter's card queue sets
+ * it on a held card, or on a card that enters and leaves in one tick).
  *
- * The card names cardMoments(event, filters) (null when there are none):
- * - a plate moment gives a "herald-plate" record (or its one-line
- *   "herald-band" form; see placeOnBand) with title, eyebrow, ruleTeam,
- *   medallions (at most PLATE_MEDALLIONS_MAX), dividerAfter, diamondClassKey,
- *   dots when it has dots, glyphs (glyphLayout's PlacedGlyph list) and
- *   glyphWidth; a tier-1 plate (Team Wiped, First Blood, Match Point) also
- *   carries tierRule {x0, x1, y}: the Herald Rule across the band (4 px
- *   inside each side of bounds) at the plate's vertical centre, in the
- *   card's own unscaled coordinates;
- * - Scores Level and Ultimate Combo give a "herald-chip" record: the 22 px
- *   chip with text (its one line) and diamonds (caster class keys).
- * Every record carries kinds (the moment kinds it names, in order), fallen
- * (every named fall's title, for the tooltip), streak ({title, takedowns},
- * only when a streak heads it), phaseStart (the row's), place "top" and its
- * drawn box (x, y, scale, width, height). Pure apart from the spot memory.
+ * The card names cardMoments(event, filters) (null when there are none). It
+ * is always a "herald-plate" record (owner, 4 Oct 2026: one plate style)
+ * with title, eyebrow, ruleTeam, medallions (at most PLATE_MEDALLIONS_MAX),
+ * dividerAfter, diamondClassKey, glyphs (glyphLayout's PlacedGlyph list) and
+ * glyphWidth; a tier-1 plate (Penta Takedown, Team Wiped, First Blood, Match
+ * Point) also carries tierRule {x0, x1, y}: the Herald Rule across the band
+ * (4 px inside each side of bounds) at the plate's vertical centre, in the
+ * card's own unscaled coordinates. Every record carries kinds (the moment
+ * kinds it names, in order), fallen (every named fall's title, for the
+ * tooltip), streak ({title, takedowns}, only when a streak heads it),
+ * phaseStart (the row's), exitAt (a finite number or null), place "top" and
+ * its drawn box (x, y, scale, width, height). Pure apart from the spot memory.
  *
  * @param {unknown} event
  * @param {Rectangle} bounds
@@ -1340,16 +1388,25 @@ function glyphLayout(spec, medallions, dividerAfter) {
  * @param {ReadonlyArray<JsonRecord>} chrome
  * @param {Readonly<Record<string, boolean>>} filters
  * @param {boolean} keep
+ * @param {number | null} [exitAt] default null.
  * @returns {LookRecord | null}
  */
-function heraldRecord(event, bounds, held, avoid, chrome, filters, keep) {
+function heraldRecord(
+  event,
+  bounds,
+  held,
+  avoid,
+  chrome,
+  filters,
+  keep,
+  exitAt = null,
+) {
   if (!isRecord(event) || event.kind !== "herald_card") return null;
   if (isRecord(event.paintParts) && event.paintParts.effect === false) return null;
   const moments = cardMoments(event, filters);
   if (moments.length === 0) return null;
   const spec = cardSpec(moments);
   const size = FOOTPRINT.plate;
-  const band = FOOTPRINT.band;
   const medallions = spec.medallions.slice(0, PLATE_MEDALLIONS_MAX);
   const dividerAfter =
     spec.dividerAfter === null || spec.dividerAfter >= medallions.length
@@ -1361,49 +1418,29 @@ function heraldRecord(event, bounds, held, avoid, chrome, filters, keep) {
     textWidth(spec.title, 18),
   );
   const width = size.padLeft + layout.width + size.gap + textBlock + size.padRight;
-  const text = spec.chip ?? `${spec.title} · ${spec.eyebrow}`;
-  const lineWidth =
-    2 * band.pad +
-    spec.diamonds.length * (band.diamond + band.gap) +
-    textWidth(text, 13);
-  /** @type {ReadonlyArray<BandForm>} */
-  const forms =
-    spec.chip !== null
-      ? [
-          {
-            key: "line",
-            width: lineWidth,
-            height: band.height,
-            minScale: Math.max(0.5, MIN_TEXT_PX / 13),
-          },
-        ]
-      : [
-          {
-            key: "plate",
-            width: width + 2 * size.tailReach,
-            height: size.height,
-            minScale: Math.max(size.minScale, MIN_TEXT_PX / 11),
-          },
-          {
-            key: "line",
-            width: lineWidth + 2 * band.tailReach,
-            height: band.height,
-            minScale: Math.max(0.5, MIN_TEXT_PX / 13),
-          },
-        ];
+  /** @type {BandForm} */
+  const form = {
+    key: "plate",
+    width: width + 2 * size.tailReach,
+    height: size.height,
+    minScale: Math.max(size.minScale, MIN_TEXT_PX / 11),
+  };
   const boundsKey = boundsKeyOf(bounds);
   const kept = SPOT_BY_ROW.get(/** @type {object} */ (event));
   let spot = kept !== undefined && kept.boundsKey === boundsKey ? kept.spot : null;
   if (spot === null) {
-    spot = placeOnBand(bounds, slotOf(bounds, event.anchor), forms, avoid, chrome);
+    spot = placeOnBand(bounds, slotOf(bounds, event.anchor), form, avoid, chrome);
     if (keep) SPOT_BY_ROW.set(/** @type {object} */ (event), { boundsKey, spot });
   }
   const falls = asArray(event.falls).filter((fall) => isRecord(fall?.victim));
-  const common = {
+  const x = spot.left + size.tailReach * spot.scale;
+  return Object.freeze({
+    kind: "herald-plate",
     eventId: String(event.eventId ?? "herald"),
     event,
     held,
     phaseStart: Number(event.phaseStart ?? 0),
+    exitAt: Number.isFinite(exitAt) ? Number(exitAt) : null,
     title: spec.title,
     eyebrow: spec.eyebrow,
     ruleTeam: spec.ruleTeam,
@@ -1413,228 +1450,181 @@ function heraldRecord(event, bounds, held, avoid, chrome, filters, keep) {
     ),
     ...(spec.streak === null ? {} : { streak: Object.freeze({ ...spec.streak }) }),
     place: "top",
-  };
-  if (spec.chip !== null) {
-    return Object.freeze({
-      kind: "herald-chip",
-      ...common,
-      text,
-      crests: Object.freeze([]),
-      diamonds: Object.freeze([...spec.diamonds]),
-      width: lineWidth,
-      height: band.height,
-      scale: spot.scale,
-      x: spot.left,
-      y: spot.top,
-    });
-  }
-  if (spot.form === "plate") {
-    const x = spot.left + size.tailReach * spot.scale;
-    return Object.freeze({
-      kind: "herald-plate",
-      ...common,
-      medallions: Object.freeze(medallions),
-      dividerAfter,
-      diamondClassKey: spec.diamondClassKey,
-      ...(spec.dots === null ? {} : { dots: Object.freeze({ ...spec.dots }) }),
-      glyphs: layout.items,
-      glyphWidth: layout.width,
-      ...(spec.tier1
-        ? {
-            tierRule: Object.freeze({
-              x0: (bounds.left + 4 - x) / spot.scale,
-              x1: (bounds.right - 4 - x) / spot.scale,
-              y: size.height / 2,
-            }),
-          }
-        : {}),
-      width,
-      height: size.height,
-      scale: spot.scale,
-      x,
-      y: spot.top,
-    });
-  }
-  return Object.freeze({
-    kind: "herald-band",
-    ...common,
-    text,
-    crests: Object.freeze([]),
-    diamonds: Object.freeze([]),
-    width: lineWidth,
-    height: band.height,
+    medallions: Object.freeze(medallions),
+    dividerAfter,
+    diamondClassKey: spec.diamondClassKey,
+    glyphs: layout.items,
+    glyphWidth: layout.width,
+    ...(spec.tier1
+      ? {
+          tierRule: Object.freeze({
+            x0: (bounds.left + 4 - x) / spot.scale,
+            x1: (bounds.right - 4 - x) / spot.scale,
+            y: size.height / 2,
+          }),
+        }
+      : {}),
+    width,
+    height: size.height,
     scale: spot.scale,
-    x: spot.left + band.tailReach * spot.scale,
+    x,
     y: spot.top,
   });
 }
 
 /**
- * Choose the spot for a card in the arena's top band, as the store's band
- * placement does (pure).
+ * Choose the spot for a card in the arena's top band: Sliding Top Placement
+ * (owner, 4 Oct 2026). Pure.
  *
- * bounds is the arena rectangle; slot the band's centre slot ({x0, x1, top}:
- * its x range and the band's top, from slotOf); forms the card's forms,
- * richest first (BandForm); avoid the champion circles {x, y, radius} and
- * chrome the page-chrome rectangles {left, top, right, bottom}, all in CSS
- * px. Search the centre slot first (spotFor per form; a smaller form is
- * taken only when it costs under 60% of the richer one's best spot and that
- * spot covers more than 5% of a champion's area); only when no form fits
- * the slot, search the whole band (4 px inside each side). When nothing
- * fits anywhere, return the last form at its smallest readable scale,
- * centred on the slot, so a card never vanishes. Return the BandSpot.
+ * bounds is the arena rectangle; slot comes from slotOf (its top is the
+ * card's top, so the card hugs the top edge, and the middle of x0 and x1 is
+ * the band's centre); form the card's BandForm; avoid the champion circles
+ * {x, y, radius} and chrome the page-chrome rectangles {left, top, right,
+ * bottom}, all in CSS px. The card slides along the whole band (4 px inside
+ * each side): at full size first, and only when every full-size spot covers
+ * a champion at smaller sizes from BAND_SCALES, never below form.minScale.
+ * Spots compare by how many champions they touch, then how much champion
+ * area they cover, then the larger size, then the distance from the centre
+ * (see spotFor for the spots tried and the chrome rule). When the card is
+ * wider than the band even at its smallest readable size, it is centred at
+ * that size, so a card never vanishes. Return the BandSpot.
  *
  * @param {Rectangle} bounds
  * @param {{x0: number, x1: number, top: number}} slot
- * @param {ReadonlyArray<BandForm>} forms
+ * @param {BandForm} form
  * @param {ReadonlyArray<JsonRecord>} avoid
  * @param {ReadonlyArray<JsonRecord>} chrome
  * @returns {BandSpot}
  */
-function placeOnBand(bounds, slot, forms, avoid, chrome) {
-  const firstRadius = Number(avoid[0]?.radius);
-  const radius = Number.isFinite(firstRadius) && firstRadius > 0 ? firstRadius : 14;
-  const bodyCost = (2 * radius + 6) ** 2;
+function placeOnBand(bounds, slot, form, avoid, chrome) {
   const span = /** @type {const} */ ([bounds.left + 4, bounds.right - 4]);
   const centre = (slot.x0 + slot.x1) / 2;
-  /** @param {readonly [number, number]} range */
-  const search = (range) => {
-    /** @type {BandSpot | null} */
-    let pick = null;
-    for (const form of forms) {
-      const spot = spotFor(
-        form,
-        range,
-        slot.top,
-        centre,
-        bounds,
-        avoid,
-        chrome,
-        bodyCost,
-      );
-      if (spot === null) continue;
-      if (pick === null) pick = spot;
-      else if (spot.cost < 0.6 * pick.cost && pick.hit > 0.05 * bodyCost) pick = spot;
-      if (pick.hit <= 0.05 * bodyCost) break;
-    }
-    return pick;
-  };
-  const inSlot = search([Math.max(span[0], slot.x0), Math.min(span[1], slot.x1)]);
-  const pick = inSlot ?? search(span);
-  if (pick !== null) return pick;
-  const last = forms[forms.length - 1];
-  const width = last.width * last.minScale;
-  const height = last.height * last.minScale;
-  const left = centre - width / 2;
-  const hit = hitOf(
-    [left - 2, slot.top - 2, left + width + 2, slot.top + height + 2],
-    avoid,
-  );
-  return Object.freeze({
-    form: last.key,
-    scale: last.minScale,
-    left,
-    top: slot.top,
-    width,
-    height,
-    hit,
-    cost: Number.POSITIVE_INFINITY,
-  });
-}
-
-/**
- * Find the best spot for one form inside an x range of the top band (pure;
- * the store's spotFor).
- *
- * form is the BandForm; range [lo, hi] the x range in CSS px; top the band's
- * top; centre the band centre x; bounds the arena (for the search step);
- * avoid, chrome and bodyCost as in placeOnBand. For each scale of
- * BAND_SCALES down to form.minScale: the free stretches of the range (chrome
- * that reaches the card's height cuts them) wide enough for the card; in
- * each, the centred spot, then spots stepped sideways (max(6, width / 80) px
- * apart) and both ends. cost = hit + 2 x |card centre - centre| + (1 -
- * scale) x 0.35 x bodyCost. The search stops at the first scale that has a
- * spot covering no champion. Return the cheapest BandSpot, or null when the
- * form fits nowhere at a readable size.
- *
- * @param {BandForm} form
- * @param {readonly [number, number]} range
- * @param {number} top
- * @param {number} centre
- * @param {Rectangle} bounds
- * @param {ReadonlyArray<JsonRecord>} avoid
- * @param {ReadonlyArray<JsonRecord>} chrome
- * @param {number} bodyCost
- * @returns {BandSpot | null}
- */
-function spotFor(form, range, top, centre, bounds, avoid, chrome, bodyCost) {
-  const [lo, hi] = range;
   /** @type {BandSpot | null} */
   let best = null;
   for (const scale of BAND_SCALES) {
     if (scale < form.minScale - 1e-6) break;
-    const width = form.width * scale;
-    const height = form.height * scale;
-    if (width > hi - lo) continue;
-    const cuts = chrome
-      .filter((rect) => Number(rect.top) < top + height && Number(rect.bottom) > top)
-      .map((rect) => [Number(rect.left), Number(rect.right)])
-      .sort((left, right) => left[0] - right[0]);
-    /** @type {Array<[number, number]>} */
-    const free = [];
-    let x = lo;
-    for (const [cutLeft, cutRight] of cuts) {
-      if (cutLeft > x) free.push([x, Math.min(cutLeft, hi)]);
-      x = Math.max(x, cutRight);
-    }
-    if (hi > x) free.push([x, hi]);
-    const step = Math.max(6, bounds.width / 80);
-    for (const [a, z] of free) {
-      if (z - a < width) continue;
-      const first = Math.min(Math.max(centre - width / 2, a), z - width);
-      const lefts = [first];
-      for (let d = step; first - d >= a || first + d <= z - width; d += step) {
-        if (first - d >= a) lefts.push(first - d);
-        if (first + d <= z - width) lefts.push(first + d);
-      }
-      lefts.push(a, z - width);
-      for (const left of lefts) {
-        const hit = hitOf(
-          [left - 2, top - 2, left + width + 2, top + height + 2],
-          avoid,
-        );
-        const cost =
-          hit + Math.abs(left + width / 2 - centre) * 2 + (1 - scale) * 0.35 * bodyCost;
-        if (best === null || cost < best.cost) {
-          best = Object.freeze({
-            form: form.key,
-            scale,
-            left,
-            top,
-            width,
-            height,
-            hit,
-            cost,
-          });
-        }
-      }
-    }
-    if (best !== null && best.hit <= 0) break;
+    const spot = spotFor(form, scale, span, slot.top, centre, avoid, chrome);
+    if (spot !== null && (best === null || spotBefore(spot, best))) best = spot;
+    if (best !== null && best.covered === 0) break;
   }
-  return best;
+  if (best !== null) return best;
+  const width = form.width * form.minScale;
+  const height = form.height * form.minScale;
+  const left = centre - width / 2;
+  const cover = coverOf(
+    [left - 2, slot.top - 2, left + width + 2, slot.top + height + 2],
+    avoid,
+  );
+  return Object.freeze({
+    form: form.key,
+    scale: form.minScale,
+    left,
+    top: slot.top,
+    width,
+    height,
+    covered: cover.covered,
+    hit: cover.hit,
+    distance: 0,
+  });
 }
 
 /**
- * Return how much champion area a card box covers (pure): the summed overlap
- * of the box [left, top, right, bottom] with each avoid circle's square
- * (centre +- radius + 3 px), in px squared. Circles without finite numbers
- * are skipped.
+ * Return whether spot a goes before spot b: fewer champions touched, then
+ * less champion area covered (to 1 px squared), then a larger scale, then
+ * nearer the band's centre. Pure.
+ *
+ * @param {BandSpot} a
+ * @param {BandSpot} b
+ * @returns {boolean}
+ */
+function spotBefore(a, b) {
+  if (a.covered !== b.covered) return a.covered < b.covered;
+  if (Math.round(a.hit) !== Math.round(b.hit)) return a.hit < b.hit;
+  if (a.scale !== b.scale) return a.scale > b.scale;
+  return a.distance < b.distance;
+}
+
+/**
+ * Find the best spot for a card of one scale along the band (pure).
+ *
+ * form is the BandForm and scale its size factor; range [lo, hi] the band's
+ * x range in CSS px; top the card's top; centre the band's centre x; avoid
+ * and chrome as in placeOnBand. Page chrome that reaches the card's height
+ * cuts the range into free stretches; the card tries, in every stretch wide
+ * enough for it, the left edges from the stretch's start to its end in steps
+ * of 4 px, plus the spot centred on the band (moved inside the stretch) and
+ * both ends. Only when no stretch is wide enough is chrome ignored, so the
+ * card never covers chrome while a clear spot exists. Return the spot that
+ * goes first by spotBefore, or null when the card is wider than the range.
+ *
+ * @param {BandForm} form
+ * @param {number} scale
+ * @param {readonly [number, number]} range
+ * @param {number} top
+ * @param {number} centre
+ * @param {ReadonlyArray<JsonRecord>} avoid
+ * @param {ReadonlyArray<JsonRecord>} chrome
+ * @returns {BandSpot | null}
+ */
+function spotFor(form, scale, range, top, centre, avoid, chrome) {
+  const [lo, hi] = range;
+  const width = form.width * scale;
+  const height = form.height * scale;
+  if (width > hi - lo) return null;
+  const cuts = chrome
+    .filter((rect) => Number(rect.top) < top + height && Number(rect.bottom) > top)
+    .map((rect) => [Number(rect.left), Number(rect.right)])
+    .sort((left, right) => left[0] - right[0]);
+  /** @type {Array<[number, number]>} */
+  const free = [];
+  let x = lo;
+  for (const [cutLeft, cutRight] of cuts) {
+    if (cutLeft > x) free.push([x, Math.min(cutLeft, hi)]);
+    x = Math.max(x, cutRight);
+  }
+  if (hi > x) free.push([x, hi]);
+  const stretches = free.filter(([a, z]) => z - a >= width);
+  /** @type {BandSpot | null} */
+  let best = null;
+  for (const [a, z] of stretches.length > 0 ? stretches : [[lo, hi]]) {
+    const lefts = [Math.min(Math.max(centre - width / 2, a), z - width), a, z - width];
+    for (let left = a; left <= z - width; left += 4) lefts.push(left);
+    for (const left of lefts) {
+      const cover = coverOf(
+        [left - 2, top - 2, left + width + 2, top + height + 2],
+        avoid,
+      );
+      /** @type {BandSpot} */
+      const spot = {
+        form: form.key,
+        scale,
+        left,
+        top,
+        width,
+        height,
+        covered: cover.covered,
+        hit: cover.hit,
+        distance: Math.abs(left + width / 2 - centre),
+      };
+      if (best === null || spotBefore(spot, best)) best = spot;
+    }
+  }
+  return best === null ? null : Object.freeze(best);
+}
+
+/**
+ * Return how many champions a card box touches and how much of their area it
+ * covers (pure): box is [left, top, right, bottom]; each avoid circle counts
+ * as its square (centre +- radius + 3 px). covered is the number of squares
+ * the box overlaps and hit the summed overlap in px squared. Circles without
+ * finite numbers are skipped.
  *
  * @param {readonly [number, number, number, number]} box
  * @param {ReadonlyArray<JsonRecord>} avoid
- * @returns {number}
+ * @returns {{covered: number, hit: number}}
  */
-function hitOf(box, avoid) {
+function coverOf(box, avoid) {
+  let covered = 0;
   let hit = 0;
   for (const circle of avoid) {
     const cx = Number(circle.x);
@@ -1643,9 +1633,12 @@ function hitOf(box, avoid) {
     if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) continue;
     const w = Math.min(box[2], cx + r) - Math.max(box[0], cx - r);
     const h = Math.min(box[3], cy + r) - Math.max(box[1], cy - r);
-    if (w > 0 && h > 0) hit += w * h;
+    if (w > 0 && h > 0) {
+      covered += 1;
+      hit += w * h;
+    }
   }
-  return hit;
+  return { covered, hit };
 }
 
 /**
@@ -1874,8 +1867,8 @@ function honourValueText(value) {
  * y of each line), columns, honours and buttons (card-local boxes; see
  * verdictButtons). Band form: a herald plate ("herald-verdict-plate": crest,
  * score, "–", score, crest; the basis eyebrow; the result title, with the
- * lead after it), or its one-line form, placed by placeOnBand with avoid and
- * chrome.
+ * lead after it), placed by placeOnBand with avoid and chrome (it has no
+ * one-line form since 4 Oct 2026).
  *
  * @param {Record<string, any>} input
  * @param {Rectangle} bounds
@@ -1906,8 +1899,9 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
   };
   const scoreOf = (/** @type {1 | 2} */ team) => Number(verdict.scores[team]);
   if (!full) {
+    // The folded Verdict is always its herald plate (one plate style, owner
+    // 4 Oct 2026), placed by the same Sliding Top Placement as moment cards.
     const size = FOOTPRINT.plate;
-    const band = FOOTPRINT.band;
     const glyphWidth = 116;
     const titleWidth =
       textWidth(common.title, 18) +
@@ -1918,57 +1912,31 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
       size.gap +
       Math.max(textWidth(words.eyebrow, 11, true), titleWidth) +
       size.padRight;
-    const text = `${scoreOf(leftTeamId)} – ${scoreOf(rightTeamId)} · ${common.title}${words.lead ? ` · ${words.lead}` : ""}`;
-    const crests = [teamKey(leftTeamId), teamKey(rightTeamId)];
-    const lineWidth =
-      2 * band.pad + crests.length * (band.crest + band.gap) + textWidth(text, 13);
     const spot = placeOnBand(
       bounds,
       slotOf(bounds, null),
-      [
-        {
-          key: "plate",
-          width: width + 2 * size.tailReach,
-          height: size.height,
-          minScale: Math.max(size.minScale, MIN_TEXT_PX / 11),
-        },
-        {
-          key: "line",
-          width: lineWidth + 2 * band.tailReach,
-          height: band.height,
-          minScale: Math.max(0.5, MIN_TEXT_PX / 13),
-        },
-      ],
+      {
+        key: "plate",
+        width: width + 2 * size.tailReach,
+        height: size.height,
+        minScale: Math.max(size.minScale, MIN_TEXT_PX / 11),
+      },
       avoid,
       chrome,
     );
-    if (spot.form === "plate") {
-      return Object.freeze({
-        kind: "herald-verdict-plate",
-        ...common,
-        lead: words.lead,
-        sides: Object.freeze([
-          Object.freeze({ teamKey: teamKey(leftTeamId), score: scoreOf(leftTeamId) }),
-          Object.freeze({ teamKey: teamKey(rightTeamId), score: scoreOf(rightTeamId) }),
-        ]),
-        glyphWidth,
-        width,
-        height: size.height,
-        scale: spot.scale,
-        x: spot.left + size.tailReach * spot.scale,
-        y: spot.top,
-        place: "top",
-      });
-    }
     return Object.freeze({
-      kind: "herald-band",
+      kind: "herald-verdict-plate",
       ...common,
-      text,
-      crests: Object.freeze(crests),
-      width: lineWidth,
-      height: band.height,
+      lead: words.lead,
+      sides: Object.freeze([
+        Object.freeze({ teamKey: teamKey(leftTeamId), score: scoreOf(leftTeamId) }),
+        Object.freeze({ teamKey: teamKey(rightTeamId), score: scoreOf(rightTeamId) }),
+      ]),
+      glyphWidth,
+      width,
+      height: size.height,
       scale: spot.scale,
-      x: spot.left + band.tailReach * spot.scale,
+      x: spot.left + size.tailReach * spot.scale,
       y: spot.top,
       place: "top",
     });
@@ -1977,20 +1945,26 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
   const cardWidth = FOOTPRINT.fullCard.width;
   const columnWidth = (cardWidth - 2 * layoutSize.padX) / 2 - 4;
   const teams = isRecord(verdict.teams) ? verdict.teams : {};
+  // A name that does not fit at 15 px uses its short line when the caller
+  // gives one ("2 Policies"); without one (a single policy) it shrinks to 13
+  // or 11 px and is cut with "…" only if it still does not fit, so a team
+  // keeps its policy's own name (owner, 4 Oct 2026).
   const nameOf = (/** @type {1 | 2} */ team) => {
     const entry = isRecord(teams[team]) ? teams[team] : {};
     const name = String(entry.name ?? "").trim();
     const short = String(entry.short ?? "").trim();
-    if (short !== "" && textWidth(name, 15) > columnWidth) {
-      return cutToWidth(short, 15, columnWidth);
+    if (textWidth(name, 15) <= columnWidth) return { text: name, size: 15 };
+    if (short !== "") return { text: cutToWidth(short, 15, columnWidth), size: 15 };
+    for (const size of VERDICT_NAME_SIZES) {
+      if (textWidth(name, size) <= columnWidth) return { text: name, size };
     }
-    return cutToWidth(name, 15, columnWidth);
+    return { text: cutToWidth(name, 11, columnWidth), size: 11 };
   };
   const names = {
     [leftTeamId]: nameOf(leftTeamId),
     [rightTeamId]: nameOf(rightTeamId),
   };
-  const named = names[1] !== "" || names[2] !== "";
+  const named = names[1].text !== "" || names[2].text !== "";
   const honours = asArray(verdict.honours)
     .filter((row) => isRecord(row) && typeof row.label === "string")
     .slice(0, 3)
@@ -2082,7 +2056,8 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
           teamId: team,
           score: scoreOf(/** @type {1 | 2} */ (team)),
           result: words.results[/** @type {1 | 2} */ (team)],
-          name: names[team],
+          name: names[team].text,
+          nameSize: names[team].size,
         }),
       ),
     ),
@@ -2104,47 +2079,6 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
     x: bounds.left + bounds.width / 2 - (cardWidth * scale) / 2,
     y: top + Math.max(0, (room - height * scale) / 2),
   });
-}
-
-/**
- * Build the state chip record, or null for an unknown state. Pure.
- *
- * state {kind: "match_point", teamIds, needs} reads "Match Point · Needs N"
- * with one crest per team; {kind: "ticks_left", left} reads "N Ticks Left"
- * ("1 Tick Left").
- *
- * @param {unknown} state
- * @param {Rectangle} bounds
- * @returns {LookRecord | null}
- */
-function stateRecord(state, bounds) {
-  if (!isRecord(state)) return null;
-  const common = {
-    eventId: `herald:state:${state.kind}`,
-    event: null,
-    held: false,
-    phaseStart: 0,
-    eyebrow: "",
-    ruleTeam: null,
-    fallen: Object.freeze([]),
-  };
-  const slot = slotOf(bounds, null);
-  if (state.kind === "match_point" && Number.isInteger(state.needs)) {
-    const teams = asArray(state.teamIds).filter((team) => team === 1 || team === 2);
-    if (teams.length === 0) return null;
-    return bandRecord(
-      "herald-state",
-      { ...common, title: "Match Point" },
-      `Match Point · Needs ${state.needs}`,
-      slot,
-      teams.map(teamKey),
-    );
-  }
-  if (state.kind === "ticks_left" && Number.isInteger(state.left) && state.left >= 0) {
-    const text = `${state.left} ${state.left === 1 ? "Tick" : "Ticks"} Left`;
-    return bandRecord("herald-state", { ...common, title: text }, text, slot, []);
-  }
-  return null;
 }
 
 /**
@@ -2179,7 +2113,7 @@ export function build(records, doc, mount) {
             ? buildVerdict(doc, record)
             : record.kind === "herald-verdict-plate"
               ? buildVerdictPlate(doc, record)
-              : buildBand(doc, record, mount);
+              : buildBand(doc, record);
     if (mount) {
       mount.group.append(card);
     }
@@ -2358,8 +2292,7 @@ function cardGroup(doc, record, kindClass) {
  * 1.5 px Dawn Gold ring of 30 px with a small gold "+" at its top right;
  * "crescent" the Ticks Left moon (a 1 px Moon Silver circle at 50% and its
  * lit part, ticks left out of 30); "divider" a 1 px line; "medallion" one 26
- * px medallion; "dots" one 6 px team-colored dot per count, 3 px apart
- * (`herald__streak-dots`). Return undefined.
+ * px medallion. Return undefined.
  *
  * @param {Document} doc
  * @param {Element} parent
@@ -2374,7 +2307,7 @@ function appendGlyphs(doc, parent, glyphs, mid) {
       case "diamond":
         parent.append(
           effectNode(doc, "path", {
-            class: `herald__diamond herald__diamond--${glyph.classKey}`,
+            class: `herald__diamond herald__diamond--${glyph.classKey ?? "unknown"}`,
             d: `M${fmt(x + 5.5)} ${fmt(mid - 4.7)}L${fmt(x + 10.2)} ${fmt(mid)}L${fmt(x + 5.5)} ${fmt(mid + 4.7)}L${fmt(x + 0.8)} ${fmt(mid)}Z`,
           }),
         );
@@ -2441,17 +2374,6 @@ function appendGlyphs(doc, parent, glyphs, mid) {
           size.medallion,
         );
         break;
-      case "dots":
-        parent.append(
-          effectNode(doc, "path", {
-            class: `herald__streak-dots herald__streak-dots--team-${glyph.teamKey}`,
-            "data-streak-dots": glyph.count,
-            d: Array.from({ length: Number(glyph.count) }, (_, index) =>
-              ringPath(x + 3 + 9 * index, mid, 3),
-            ).join(""),
-          }),
-        );
-        break;
       default:
         break;
     }
@@ -2481,7 +2403,7 @@ function tierRulePath(record) {
  * 2 px team rule along its top edge (10 px in, 70%; neutral 50%); the glyphs
  * at the left (record.glyphs, laid out by glyphLayout and drawn by
  * appendGlyphs: the Ultimate diamond, crests, the Rescue medallion, the
- * Ticks Left crescent, medallions with a Trade's divider, then dots); the
+ * Ticks Left crescent, medallions with a Trade's divider); the
  * 11 px uppercase eyebrow and the 18 px title stacked on the right. A tier-1
  * record's Herald Rule (record.tierRule) is drawn first, behind the plate: a
  * 1 CSS px line at 35% in the rule color across the band. With an animating
@@ -2489,7 +2411,11 @@ function tierRulePath(record) {
  * 92% to full width, 240 ms; opacity only over 120 ms in reduced motion),
  * the glyphs fade in after it and the Herald Rule grows from the card's
  * centre over 320 ms, all from record.phaseStart (times the plan's reduced
- * scale in reduced motion). Return the card group.
+ * scale in reduced motion). A record with a finite exitAt (the painter's card
+ * queue handing over to the next card) also fades the whole card out over
+ * CARD_FADE_OUT_MS from exitAt, fill "backwards": the choreographer then
+ * keeps it hidden for the rest of the tick (its painter row is not
+ * persistent). Return the card group.
  *
  * @param {Document} doc
  * @param {LookRecord} record
@@ -2560,6 +2486,28 @@ function buildPlate(doc, record, mount) {
     card.append(tier);
   }
   card.append(body);
+  if (
+    mount &&
+    Number.isFinite(record.exitAt) &&
+    !mount.options.settled &&
+    mount.options.motionMode !== "off"
+  ) {
+    mount.animationSpecs.push(
+      animationSpec(
+        card,
+        [{ opacity: 1 }, { opacity: 0 }],
+        {
+          delay: Math.max(0, Number(record.exitAt)),
+          duration: CARD_FADE_OUT_MS,
+          easing: "ease-in",
+          fill: "backwards",
+        },
+        mount.plan,
+        record.event ?? { eventId: record.eventId },
+        "herald-exit",
+      ),
+    );
+  }
   if (mount && !record.held) {
     const { options, plan } = mount;
     if (!options.settled && options.motionMode !== "off") {
@@ -2642,55 +2590,35 @@ function buildPlate(doc, record, mount) {
 }
 
 /**
- * Draw a one-line band (herald band, Scores Level or Ultimate Combo chip,
- * lineup or verdict band, state chip) and, for a herald band or chip, its
- * entry animation.
+ * Draw a one-line band: the Lineup's folded form ("herald-band", with
+ * `moment_full_cards` off). Moment cards and the folded Verdict are always
+ * plates since 4 Oct 2026, so this is the only band left.
  *
  * 22 px tall panel (radius 6) with small swallowtails and a 2 px rule along
- * its top (team color at 70% or neutral at 50%) for herald, lineup and
- * verdict bands; a herald chip ("herald-chip") and a state chip have
- * neither, as the store's chip pill. Then the crests, a chip's rune diamonds
- * (record.diamonds, one 11 px diamond per caster class key) and the 13 px
- * words. With an animating mount (mount.options.settled false and motion
- * not "off"), a herald band or chip that is not held fades in from
- * record.phaseStart over 240 ms (120 ms in reduced motion, its delay times
- * the plan's reduced scale), fill "backwards"; other bands get no
- * animation. Return the card group.
+ * its top (neutral, at 50%; a team's color at 70% when record.ruleTeam is
+ * set), then the crests (record.crests) and the 13 px words (record.text).
+ * No entry animation. Return the card group.
  *
  * @param {Document} doc
  * @param {LookRecord} record
- * @param {EventMount} [mount]
  * @returns {SVGElement}
  */
-function buildBand(doc, record, mount) {
+function buildBand(doc, record) {
   const band = FOOTPRINT.band;
-  const chip = record.kind === "herald-state" || record.kind === "herald-chip";
-  const card = cardGroup(
-    doc,
-    record,
-    record.kind === "herald-state"
-      ? "herald--state"
-      : record.kind === "herald-chip"
-        ? "herald--chip"
-        : "herald--band",
-  );
+  const card = cardGroup(doc, record, "herald--band");
   if (record.held) card.setAttribute("data-herald-held", "true");
-  if (!chip) {
-    const tail = "M10 0H0L4 8L0 16H10Z";
-    card.append(
-      effectNode(doc, "path", {
-        class: "herald__tail",
-        d: tail,
-        transform: "translate(-7 3)",
-      }),
-      effectNode(doc, "path", {
-        class: "herald__tail",
-        d: tail,
-        transform: `translate(${fmt(record.width + 7)} 3) scale(-1 1)`,
-      }),
-    );
-  }
+  const tail = "M10 0H0L4 8L0 16H10Z";
   card.append(
+    effectNode(doc, "path", {
+      class: "herald__tail",
+      d: tail,
+      transform: "translate(-7 3)",
+    }),
+    effectNode(doc, "path", {
+      class: "herald__tail",
+      d: tail,
+      transform: `translate(${fmt(record.width + 7)} 3) scale(-1 1)`,
+    }),
     effectNode(doc, "rect", {
       class: "herald__panel",
       x: 0,
@@ -2699,58 +2627,22 @@ function buildBand(doc, record, mount) {
       height: band.height,
       rx: 6,
     }),
+    effectNode(doc, "rect", {
+      class: "herald__rule",
+      x: 8,
+      y: -1,
+      width: fmt(Math.max(0, record.width - 16)),
+      height: 2,
+      opacity: record.ruleTeam ? 0.7 : 0.5,
+    }),
   );
-  if (!chip) {
-    card.append(
-      effectNode(doc, "rect", {
-        class: "herald__rule",
-        x: 8,
-        y: -1,
-        width: fmt(Math.max(0, record.width - 16)),
-        height: 2,
-        opacity: record.ruleTeam ? 0.7 : 0.5,
-      }),
-    );
-  }
   let x = band.pad;
   const mid = band.height / 2;
   for (const team of asArray(record.crests)) {
     appendCrest(doc, card, x + band.crest / 2, mid, band.crest / 2 - 1, team);
     x += band.crest + band.gap;
   }
-  for (const classKey of asArray(record.diamonds)) {
-    card.append(
-      effectNode(doc, "path", {
-        class: `herald__diamond herald__diamond--${classKey ?? "unknown"}`,
-        d: `M${fmt(x + 5.5)} ${fmt(mid - 4.7)}L${fmt(x + 10.2)} ${fmt(mid)}L${fmt(x + 5.5)} ${fmt(mid + 4.7)}L${fmt(x + 0.8)} ${fmt(mid)}Z`,
-      }),
-    );
-    x += band.diamond + band.gap;
-  }
   appendText(doc, card, "herald__band-text", record.text, x, mid + 0.5);
-  const herald = record.kind === "herald-band" || record.kind === "herald-chip";
-  if (mount && herald && !record.held) {
-    const { options, plan } = mount;
-    if (!options.settled && options.motionMode !== "off") {
-      const reduced = options.motionMode === "reduced";
-      const scale = reduced ? Number(plan.beats?.reducedScale ?? 1) || 1 : 1;
-      mount.animationSpecs.push(
-        animationSpec(
-          card,
-          [{ opacity: 0 }, { opacity: 1 }],
-          {
-            delay: Math.max(0, Number(record.phaseStart ?? 0) * scale),
-            duration: reduced ? 120 : 240,
-            easing: "ease-out",
-            fill: "backwards",
-          },
-          plan,
-          record.event ?? { eventId: record.eventId },
-          "herald-card",
-        ),
-      );
-    }
-  }
   return card;
 }
 
@@ -2905,10 +2797,12 @@ function buildVerdict(doc, record) {
         layout.crestY + 4,
       );
       if (layout.nameBaseline !== null && column.name !== "") {
+        const size =
+          Number(column.nameSize) === 15 ? "" : ` herald__name--${column.nameSize}`;
         appendText(
           doc,
           card,
-          `herald__name herald__name--team-${column.teamKey}${end}`,
+          `herald__name herald__name--team-${column.teamKey}${size}${end}`,
           column.name,
           edge,
           layout.nameBaseline,
@@ -3206,8 +3100,8 @@ export function buildVerdictActions(doc, record, onPress) {
  * team_id, class_id}]}], ...}) or null. Return the rows records({part:
  * "verdict"}) draws: [{label, value, leaders: [{classId, teamId,
  * publicAgentId}]}], in the host's order; [] for null or a malformed fact.
- * Pure: reads only the given host fact (in Agent POV the host already kept
- * only the viewing team's champions).
+ * Pure: reads only the given host fact (the host lists every champion in
+ * both views, since Honors come only once the game is over).
  *
  * @param {unknown} matchHonors
  * @returns {ReadonlyArray<Readonly<{label: string, value: number, leaders: ReadonlyArray<Readonly<{classId: number, teamId: number, publicAgentId: string}>>}>>}
@@ -3261,7 +3155,8 @@ export function verdictHonours(matchHonors) {
  * use tabular figures. A null or malformed fact gives a sheet that says "No
  * Match Summary For This Game.". Side effects: creates DOM nodes and one
  * click listener; no timers or storage. Agent POV: shows exactly the fact
- * given, which the host limits to the viewing team.
+ * given; the host lists every champion in both views once the game is over
+ * (a fact for one team reads "Your Team's Champions").
  *
  * @param {Document} doc
  * @param {unknown} matchHonors
@@ -3449,11 +3344,9 @@ export function tooltip(record) {
     ![
       "herald-plate",
       "herald-band",
-      "herald-chip",
       "herald-lineup",
       "herald-verdict",
       "herald-verdict-plate",
-      "herald-state",
     ].includes(String(record.kind))
   ) {
     return null;

@@ -5606,11 +5606,17 @@ function validateRecentFalls(frame) {
 /**
  * Check the game-over Honors host fact (match_honors) against this frame's own
  * view, as the Python protocol does. The schema has already checked its types;
- * an absent or null field means no Honors and passes. Oracle View must count
- * every champion (team_id null). Agent POV must count one team (team_id 1 or
- * 2) whose listed champions are all on that team and include this frame's
- * recipient (source.source_recipient_public_agent_id), so an Agent POV frame
- * never lists another team's champions. Every champion is listed once, and
+ * an absent or null field means no Honors and passes. Honors come only once
+ * the game is over: the frame's own match_summary must show a finished game
+ * (outcome "team_a_win", "team_b_win" or "draw"), so a mid-game frame (in
+ * Agent POV, one that could name champions the team cannot see) is refused,
+ * and so is a frame without a match summary. Oracle View must count
+ * every champion (team_id null). Agent POV may count every champion too
+ * (team_id null: Honors come only once the game is over, so nothing is left
+ * to hide) or one team (team_id 1 or 2) whose listed champions are all on
+ * that team and include this frame's recipient
+ * (source.source_recipient_public_agent_id), never only the other team.
+ * Every champion is listed once, and
  * every honor's leaders are listed champions. Throws TypeError through
  * invalid() otherwise. Pure check: no DOM, storage or timers.
  *
@@ -5621,6 +5627,9 @@ function validateRecentFalls(frame) {
 function validateMatchHonors(frame, oracle) {
   const honors = frame.match_honors ?? null;
   if (honors === null) return;
+  if (!TEAM_DEATHMATCH_OUTCOMES.has(frame.match_summary?.outcome)) {
+    invalid("Match honors come only with a match summary of a finished game.");
+  }
   const champions = /** @type {ReadonlyArray<Record<string, any>>} */ (
     honors.champions ?? []
   );
@@ -5645,6 +5654,7 @@ function validateMatchHonors(frame, oracle) {
     }
     return;
   }
+  if (honors.team_id === null) return;
   const recipient = frame.source?.source_recipient_public_agent_id;
   if (
     honors.team_id !== 1 && honors.team_id !== 2
@@ -5652,7 +5662,9 @@ function validateMatchHonors(frame, oracle) {
       : champions.some((row) => row.team_id !== honors.team_id) ||
         !listed.has(recipient)
   ) {
-    invalid("Agent POV match honors must count only the recipient's own team.");
+    invalid(
+      "Agent POV match honors must count every champion or the recipient's own team.",
+    );
   }
 }
 

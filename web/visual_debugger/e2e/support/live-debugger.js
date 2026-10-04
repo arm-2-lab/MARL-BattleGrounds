@@ -49,7 +49,7 @@
  * left, but it cannot run when the worker itself is killed with SIGKILL.
  *
  * `openRecordingPanel` and `closeRecordingPanel` open and close the top bar's
- * Recording popover (#recording-panel, opened by the #recording-badge pill), so
+ * Replay Recording popover (#rec-pop, opened by the #recording-badge pill), so
  * tests can reach Finish And Save, Open Replay, Retry Save and Save As. Opening
  * leaves an open panel alone; closing leaves a closed panel alone.
  */
@@ -845,19 +845,21 @@ export function captureServerFailure(child) {
   });
 }
 
+// The Recording pill opens the Replay Recording popover (#rec-pop); the old
+// #recording-panel stays hidden in the page.
 /** @param {import("@playwright/test").Page} page */
 export async function openRecordingPanel(page) {
   const open = await page
-    .locator("#recording-panel")
+    .locator("#rec-pop")
     .evaluate((node) => node.matches(":popover-open"));
   if (!open) await page.locator("#recording-badge").click();
-  await page.locator("#recording-panel").waitFor({ state: "visible" });
+  await page.locator("#rec-pop").waitFor({ state: "visible" });
 }
 
 /** @param {import("@playwright/test").Page} page */
 export async function closeRecordingPanel(page) {
   // An open popover sits on top of the page, so close it before later clicks.
-  await page.locator("#recording-panel").evaluate((node) => {
+  await page.locator("#rec-pop").evaluate((node) => {
     if (node instanceof HTMLElement && node.matches(":popover-open"))
       node.hidePopover();
   });

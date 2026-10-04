@@ -177,8 +177,14 @@ function harness(options = {}) {
 const surface = /** @type {any} */ ({ viewportKey: "16:12:800:600" });
 
 /** @param {any[][]} calls */
+// The page clock (the card queue's) changes every call; checks compare the rest.
 const installOptions = (calls) =>
-  calls.filter(([kind]) => kind === "install").map((call) => call[2]);
+  calls
+    .filter(([kind]) => kind === "install")
+    .map((call) => {
+      const { clock: _clock, ...rest } = call[2];
+      return rest;
+    });
 
 test("live install policies are unchanged and retain no transients", () => {
   const live = harness();
@@ -198,12 +204,14 @@ test("live install policies are unchanged and retain no transients", () => {
       renderPolicy: "live_once",
       settled: false,
       persistentOnly: false,
+      playbackRate: 1,
     },
     {
       motionMode: "normal",
       renderPolicy: "live_once",
       settled: true,
       persistentOnly: true,
+      playbackRate: 1,
     },
   ]);
 });
@@ -218,6 +226,7 @@ test("a played replay tick keeps its cues at settle and loses them when the next
     renderPolicy: "replay_animated",
     settled: false,
     persistentOnly: false,
+    playbackRate: 1,
     retainTransientOnSettle: true,
   });
   for (const animation of animationFactory.created) animation.finish();
@@ -243,6 +252,7 @@ test("a played replay tick keeps its cues at settle and loses them when the next
     renderPolicy: "replay_static",
     settled: true,
     persistentOnly: false,
+    playbackRate: 1,
     retainTransientOnSettle: true,
   });
 });

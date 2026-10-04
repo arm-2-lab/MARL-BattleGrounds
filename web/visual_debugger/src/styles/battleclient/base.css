@@ -291,7 +291,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   background: transparent;
 }
 
-/* Bar buttons (top bar), small buttons (deck, status line, rail) and big
+/* Bar buttons (top bar), small buttons (deck, rail) and big
    buttons (deck overlays, dialogs). */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc

@@ -1,17 +1,46 @@
 /**
- * @file Check real rendered authority boundaries, agent identity, range preferences,
- * the debugger grid and the Red Zone floor tint (exact recorded strips, clipped and
- * merged, painted after the floor boundary and before the grid, beneath obstacles).
- * The expected strips come from expectedRedZoneIntervals, an independent copy of
- * the display rule: clip each recorded strip to the drawn floor, drop strips with
- * no width, merge overlaps. The Red Zone Floors test attaches a screenshot of a
- * depth-6 Oracle with a wall and a pillar on the strip edges for a person to
- * inspect. The durable visual filters test includes Red Zone Floors: turning it
- * off removes only the tint (paint with no accessible text) and keeps every
- * obstacle, agent and agent identity. In all three Agent leaves a status tip
- * reads the Champion Card's words (the card's sentence with the source by class
- * only, then one row, "Time Left"), never names the recipient or a source by
- * Agent ID, and no researcher presentation key reaches the tip or its owner.
+ * @file Check the shared battlefield renderer and event painter on real
+ * authorized fixture frames, in a bare page without the client shell.
+ *
+ * - Authority: only authorized ranges are drawn, and raw options cannot add
+ *   one. The Replay Viewer's Ranges button shows every authorized ring; with it
+ *   off, the Reach Rings switch keeps only the selected champion's rings. Bodies
+ *   carry opaque presentation keys and no slot attributes. Raw or forged scenes
+ *   paint nothing.
+ * - Floor: live play's one-unit grid is the lowest paint, meets the floor edge
+ *   within rounding, ignores the pointer and is absent from replays.
+ * - Red Zone: one Ash floor path holds one subpath per recorded team strip,
+ *   clipped to the floor. expectedRedZoneStrips is the independent copy of that
+ *   rule (a strip no wider than 1e-6 units is left out). Each rule edge gets a
+ *   border. The Red Zone lies over the floor and grid and under the stones and
+ *   bodies; off, one plain line marks each rule edge. Stones keep their look and
+ *   hit testing, and the Ash corners follow the floor's own corner radius. The
+ *   test attaches a screenshot of a depth-6 Oracle with a wall and a pillar on
+ *   the strip edges for a person to inspect.
+ * - Switches: Target Selection Visuals hides only the selection brackets, and
+ *   no lane pill is painted. Each durable switch (aura fields, modifier and
+ *   status badges, Spawn Shield, the Rune Ring cooldown, Red Zone Floors)
+ *   removes only its own paint and keeps every body, its identity and label.
+ *   The old cooldown docks never return.
+ * - Tips: an aura tip names its source with the champion label ("Mage · ID 0"),
+ *   and no hidden source key reaches the DOM. In all three Agent leaves a status
+ *   tip reads the Champion Card's words (source by class only, then one row,
+ *   "Time Left") and never names the recipient or a source by ID.
+ * - Events: a Basic stroke runs from 2 px outside the striker's rim to just
+ *   outside the target's rim and ends in its class landing (a Priest's heal
+ *   blooms, a Mage's blow lands in a star), outside the body and without
+ *   catching the pointer at the body's center. Charge stays feed-only.
+ *   Regeneration numbers sit on their planned cues. A cooldown start paints
+ *   nothing. Crippling Poison draws its stiletto and one venom seep. A broken
+ *   Freezing Trap shows on the frozen token (crack at Impact, six shards at
+ *   Settle). Falls and returns center on their bodies and end on their still
+ *   picture in every motion mode. Team waves and the death card stay off the
+ *   arena. A merged status application paints no off-body badge.
+ * - Layout: a champion's body, with the Replay Viewer's Champion Card, wins
+ *   pointer arbitration over an accepted route and its Spawn Pad. The Rune Ring
+ *   shows the Ultimate cooldown on the body at every arena size. Living bodies
+ *   paint over corpses. The plan and the score strip keep each team's recorded
+ *   side and color.
  */
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -95,19 +124,22 @@ test.afterAll(async () => {
 
 /** @param {import("@playwright/test").Page} page
  * @param {Record<string, any>} rawPresentation
- * @param {boolean} showRanges */
-async function renderPresentation(page, rawPresentation, showRanges) {
+ * @param {boolean} showRanges
+ * @param {boolean} reachRings */
+async function renderPresentation(page, rawPresentation, showRanges, reachRings) {
   await page.goto(origin);
   return await page.evaluate(
-    async ({ rawPresentation: raw, showRanges: visible }) => {
+    async ({ rawPresentation: raw, showRanges: visible, reachRings: ringsOn }) => {
       const moduleRoot = "/src";
       const { normalizeAuthorizedPresentationFrameV1 } = await import(
         `${moduleRoot}/authorized-presentation-normalizer.js`
       );
       const { BattlefieldRenderer } = await import(`${moduleRoot}/scene.js`);
-      const { DEFAULT_VISUAL_FILTER_STATE, enableAllVisualFilters } = await import(
-        `${moduleRoot}/visual-filters.js`
-      );
+      const {
+        DEFAULT_VISUAL_FILTER_STATE,
+        enableAllVisualFilters,
+        setVisualFilterEnabled,
+      } = await import(`${moduleRoot}/visual-filters.js`);
       const allVisualFilters = enableAllVisualFilters(DEFAULT_VISUAL_FILTER_STATE);
       const { authorizedPresentationSceneView } = await import(
         `${moduleRoot}/authorized-presentation-adapter.js`
@@ -120,6 +152,7 @@ async function renderPresentation(page, rawPresentation, showRanges) {
               typeof range.radius === "number" && range.radius > 0,
           )
         : [];
+      const selectedKey = authorizedScene?.selection?.selected_presentation_key ?? null;
       const battlefield = document.querySelector("#battlefield");
       const empty = document.querySelector("#empty");
       if (!(battlefield instanceof SVGSVGElement) || !(empty instanceof HTMLElement)) {
@@ -128,7 +161,11 @@ async function renderPresentation(page, rawPresentation, showRanges) {
       const renderer = new BattlefieldRenderer({ battlefield, empty });
       const painted = renderer.render(presentation, {
         showRanges: visible,
-        visualFilterState: allVisualFilters,
+        visualFilterState: setVisualFilterEnabled(
+          allVisualFilters,
+          "reach_rings",
+          ringsOn,
+        ),
         // Deliberately ignored: transport may control visibility, never geometry.
         ranges: [{ center: [999, 999], radius: 999, global_slot: 999 }],
       });
@@ -155,6 +192,12 @@ async function renderPresentation(page, rawPresentation, showRanges) {
         authorizedRangeKeys: authorizedRanges.map(
           (/** @type {Record<string, any>} */ range) => range.presentation_key,
         ),
+        selectedRangeKeys: authorizedRanges
+          .filter(
+            (/** @type {Record<string, any>} */ range) =>
+              range.presentation_key === selectedKey,
+          )
+          .map((/** @type {Record<string, any>} */ range) => range.presentation_key),
         inspectionOwner: presentation.inspection?.actor_presentation_key ?? null,
         rangeCount: rangeNodes.length,
         rangeKeys: rangeNodes.map((node) => node.getAttribute("data-presentation-key")),
@@ -164,30 +207,43 @@ async function renderPresentation(page, rawPresentation, showRanges) {
         slotAttributes,
       };
     },
-    { rawPresentation, showRanges },
+    { rawPresentation, showRanges, reachRings },
   );
 }
 
+// The Replay Viewer's Ranges button (showRanges) draws every authorized ring.
+// With it off, the Reach Rings switch keeps only the selected champion's rings.
 test("replay Oracle range preference changes visibility but not authority", async ({
   page,
 }) => {
   const raw = fixture.presentations.replay_oracle;
-  const hidden = await renderPresentation(page, raw, false);
-  const visible = await renderPresentation(page, raw, true);
+  const hidden = await renderPresentation(page, raw, false, false);
+  const selectedOnly = await renderPresentation(page, raw, false, true);
+  const visible = await renderPresentation(page, raw, true, true);
+  const visibleWithoutSwitch = await renderPresentation(page, raw, true, false);
   expect(hidden.painted).toBe(true);
   expect(hidden.rangeCount).toBe(0);
+  expect(selectedOnly.selectedRangeKeys.length).toBeGreaterThan(0);
+  expect(selectedOnly.rangeKeys).toEqual(selectedOnly.selectedRangeKeys);
   expect(visible.rangeCount).toBe(visible.authorizedRangeCount);
   expect(visible.rangeKeys).toEqual(visible.authorizedRangeKeys);
+  expect(visibleWithoutSwitch.rangeKeys).toEqual(
+    visibleWithoutSwitch.authorizedRangeKeys,
+  );
 });
 
 test("Agent DOM identity remains opaque and raw options cannot mint ranges", async ({
   page,
 }) => {
   const raw = fixture.presentations.replay_shared_obs_agent_pov;
-  const hidden = await renderPresentation(page, raw, false);
-  const visible = await renderPresentation(page, raw, true);
+  const hidden = await renderPresentation(page, raw, false, false);
+  const selectedOnly = await renderPresentation(page, raw, false, true);
+  const visible = await renderPresentation(page, raw, true, true);
   expect(hidden.rangeCount).toBe(0);
   expect(hidden.slotAttributes).toEqual([]);
+  expect(selectedOnly.selectedRangeKeys.length).toBeGreaterThan(0);
+  expect(selectedOnly.rangeKeys).toEqual(selectedOnly.selectedRangeKeys);
+  expect(selectedOnly.slotAttributes).toEqual([]);
   expect(visible.rangeCount).toBe(visible.authorizedRangeCount);
   expect(visible.rangeKeys).toEqual(visible.authorizedRangeKeys);
   expect(visible.bodyCount).toBeGreaterThan(0);
@@ -281,6 +337,9 @@ test("Debugger unit grid is lowest, exact, click-transparent, and absent from re
       replayRaw: fixture.pairs.replay_oracle.presentation,
     },
   );
+  // Each SVG attribute is rounded to 0.01 px on its own. The floor's bottom edge
+  // is y plus height, so a line end may differ from it by three such roundings.
+  const ROUNDING_PX = 0.015 + 1e-9;
   expect(result.liveRows).toHaveLength(2);
   for (const row of result.liveRows) {
     expect(row.vertical).toBe(19);
@@ -289,40 +348,53 @@ test("Debugger unit grid is lowest, exact, click-transparent, and absent from re
     expect(row.mapFirst).toBe(true);
     expect(row.pointerEvents).toBe("none");
     expect(row.firstVertical).not.toBeNull();
-    expect(
-      [Number(row.firstVertical?.y1), Number(row.firstVertical?.y2)].sort(
-        (left, right) => left - right,
-      ),
-    ).toEqual([
-      Number(row.boundary.y),
-      Number(row.boundary.y) + Number(row.boundary.height),
-    ]);
+    const [lineTop, lineBottom] = [
+      Number(row.firstVertical?.y1),
+      Number(row.firstVertical?.y2),
+    ].sort((left, right) => left - right);
+    const floorTop = Number(row.boundary.y);
+    const floorBottom = floorTop + Number(row.boundary.height);
+    expect(Math.abs(lineTop - floorTop)).toBeLessThanOrEqual(ROUNDING_PX);
+    expect(Math.abs(lineBottom - floorBottom)).toBeLessThanOrEqual(ROUNDING_PX);
     expect(Number(row.firstVertical?.x1)).toBeGreaterThan(Number(row.boundary.x));
     expect(row.firstVertical?.x1).toBe(row.firstVertical?.x2);
   }
   expect(result.replayGridCount).toBe(0);
 });
 
-/** @param {number} width @param {Record<string, any> | null} redZone */
-function expectedRedZoneIntervals(width, redZone) {
+/**
+ * @param {number} width
+ * @param {Record<string, any> | null} redZone
+ * @returns {Array<{teamId: number, low: number, high: number, atLeft: boolean, atRight: boolean, inner: number | null}>}
+ */
+function expectedRedZoneStrips(width, redZone) {
   if (redZone === null) {
     return [];
   }
-  const clipped = [redZone.team_a_x_range, redZone.team_b_x_range]
-    .map(([low, high]) => [Math.max(0, low), Math.min(width, high)])
-    .filter(([low, high]) => high > low)
-    .sort((left, right) => left[0] - right[0]);
-  /** @type {number[][]} */
-  const merged = [];
-  for (const [low, high] of clipped) {
-    const last = merged.at(-1);
-    if (last !== undefined && low <= last[1]) {
-      last[1] = Math.max(last[1], high);
-    } else {
-      merged.push([low, high]);
-    }
-  }
-  return merged;
+  // A strip no wider than this many world units is left out.
+  const collapsed = 1e-6;
+  /** @type {Array<{teamId: number, range: number[]}>} */
+  const recorded = [
+    { teamId: 1, range: redZone.team_a_x_range },
+    { teamId: 2, range: redZone.team_b_x_range },
+  ];
+  return recorded
+    .map(({ teamId, range: [from, to] }) => ({
+      teamId,
+      low: Math.min(Math.max(Math.min(from, to), 0), width),
+      high: Math.min(Math.max(Math.max(from, to), 0), width),
+    }))
+    .filter(({ low, high }) => high - low > collapsed)
+    .map((strip) => {
+      const atLeft = strip.low <= collapsed;
+      const atRight = strip.high >= width - collapsed;
+      return {
+        ...strip,
+        atLeft,
+        atRight,
+        inner: atLeft && !atRight ? strip.high : atRight && !atLeft ? strip.low : null,
+      };
+    });
 }
 
 test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
@@ -368,57 +440,92 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
         throw new Error("Red Zone test surface is unavailable.");
       }
       const renderer = new BattlefieldRenderer({ battlefield, empty });
-      /** @param {Element} element */
-      const numbers = (element, /** @type {string[]} */ names) =>
-        Object.fromEntries(
-          names.map((name) => [name, Number(element.getAttribute(name))]),
-        );
+      // Measure each subpath of the Ash floor with a scratch path's real bounds.
+      /** @param {Element} ash */
+      const stripBoxes = (ash) =>
+        (ash.getAttribute("d")?.match(/M[^M]*/gu) ?? []).map((part) => {
+          const scratch = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+          );
+          scratch.setAttribute("d", part);
+          ash.parentElement?.append(scratch);
+          const box = scratch.getBBox();
+          scratch.remove();
+          return {
+            left: box.x,
+            right: box.x + box.width,
+            top: box.y,
+            bottom: box.y + box.height,
+            arcRadii: Array.from(part.matchAll(/A([\d.]+) ([\d.]+)/gu), (match) =>
+              Number(match[1]),
+            ),
+          };
+        });
+      /** @param {string | null | undefined} path */
+      const firstX = (path) =>
+        Number(/^M([-\d.]+) /u.exec(path ?? "")?.[1] ?? Number.NaN);
       /** @param {Record<string, any>} presentation @param {any} filters */
       const paint = (presentation, filters) => {
         renderer.render(presentation, {
           showRanges: false,
           visualFilterState: filters,
         });
-        const mapLayer = battlefield.querySelector('[data-layer="map"]');
+        const camera = battlefield.querySelector(".battlefield-camera");
+        const layer = battlefield.querySelector('[data-layer="red-zone"]');
         const boundary = battlefield.querySelector(".map-boundary");
         if (
-          !(mapLayer instanceof SVGGElement) ||
+          !(camera instanceof SVGGElement) ||
+          !(layer instanceof SVGGElement) ||
           !(boundary instanceof SVGRectElement)
         ) {
-          throw new Error("Map layer is unavailable.");
+          throw new Error("Red Zone layer is unavailable.");
         }
-        const windows = Array.from(mapLayer.querySelectorAll(".red-zone-floor-clip"));
-        const firstTint = mapLayer.querySelector(".red-zone-floor");
+        const ash = Array.from(layer.querySelectorAll(".red-zone-floor"));
+        const ashStyle = ash[0] ? getComputedStyle(ash[0]) : null;
+        const borders = Array.from(layer.querySelectorAll(".grave-border"));
+        const marks = layer.querySelectorAll(".grave-mark").length;
+        const lines = Array.from(layer.querySelectorAll(".red-zone-line"));
         return {
-          order: Array.from(mapLayer.children).map((child) =>
-            child.classList.contains("map-grid-line")
-              ? "grid"
-              : child.getAttribute("class"),
+          layerOrder: Array.from(camera.children, (child) =>
+            child.getAttribute("data-layer"),
           ),
-          boundary: numbers(boundary, ["x", "y", "width", "height", "rx"]),
-          windows: windows.map((window) => ({
-            x: Number(window.getAttribute("x")),
-            y: Number(window.getAttribute("y")),
-            width: Number(window.getAttribute("width")),
-            height: Number(window.getAttribute("height")),
-            rect: numbers(window.querySelector(".red-zone-floor") ?? window, [
-              "x",
-              "y",
-              "width",
-              "height",
-              "rx",
-            ]),
-            childCount: window.children.length,
-            ids: window.querySelectorAll("[id]").length + (window.id ? 1 : 0),
+          floorRadius: Number(boundary.getAttribute("rx")),
+          ashCount: ash.length,
+          strips: ash[0] ? stripBoxes(ash[0]) : [],
+          ashLook: ashStyle
+            ? {
+                fill: ashStyle.fill,
+                fillOpacity: ashStyle.fillOpacity,
+                fillRule: ashStyle.fillRule,
+                pointerEvents: ashStyle.pointerEvents,
+              }
+            : null,
+          ashPaintOnly: ash.every(
+            (node) =>
+              node.getAttribute("aria-hidden") === "true" &&
+              !node.hasAttribute("role") &&
+              !node.hasAttribute("aria-label") &&
+              !node.hasAttribute("data-tooltip-owner"),
+          ),
+          borderX: borders.map((border) =>
+            firstX(border.querySelector(".grave-border__bone")?.getAttribute("d")),
+          ),
+          borderPointerEvents: borders.map(
+            (border) => getComputedStyle(border).pointerEvents,
+          ),
+          marks,
+          lines: lines.map((line) => ({
+            x1: Number(line.getAttribute("x1")),
+            x2: Number(line.getAttribute("x2")),
+            y: [Number(line.getAttribute("y1")), Number(line.getAttribute("y2"))].sort(
+              (left, right) => left - right,
+            ),
           })),
-          fill: firstTint ? getComputedStyle(firstTint).fill : null,
-          clipPointerEvents: windows[0]
-            ? getComputedStyle(windows[0]).pointerEvents
-            : null,
-          tintPointerEvents: firstTint
-            ? getComputedStyle(firstTint).pointerEvents
-            : null,
-          mapLayerFirst: mapLayer === battlefield.querySelector("[data-layer]"),
+          otherCount:
+            layer.children.length - ash.length - borders.length - marks - lines.length,
+          gridCount: battlefield.querySelectorAll('[data-layer="map"] .map-grid-line')
+            .length,
         };
       };
       /** @param {Element} obstacle */
@@ -431,6 +538,10 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
         const presentation = await normalizeAuthorizedPresentationFrameV1(raw);
         const map = presentation.current_endpoint.scene.map;
         const on = paint(presentation, allVisualFilters);
+        const surface = renderer.choreographySurface();
+        if (surface === null) {
+          throw new Error("Red Zone projection is unavailable.");
+        }
         const obstacleRows = Array.from(battlefield.querySelectorAll(".obstacle")).map(
           (obstacle) => {
             const box = obstacle.getBoundingClientRect();
@@ -451,7 +562,10 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
         rows.push({
           name,
           width: map.width,
+          height: map.height,
           redZone: map.red_zone ?? null,
+          origin: surface.worldToScreen([0, 0]),
+          unit: surface.worldToScreen([1, 1]),
           on,
           off,
           obstacleRows,
@@ -459,8 +573,15 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
         });
       }
       const legacy = await normalizeAuthorizedPresentationFrameV1(legacyRaw);
-      const legacyPaint = paint(legacy, allVisualFilters);
-      return { rows, legacyWindows: legacyPaint.windows.length };
+      renderer.render(legacy, {
+        showRanges: false,
+        visualFilterState: allVisualFilters,
+      });
+      return {
+        rows,
+        legacyNodes:
+          battlefield.querySelector('[data-layer="red-zone"]')?.children.length ?? null,
+      };
     },
     {
       cases: Object.fromEntries(
@@ -470,62 +591,93 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
     },
   );
 
-  const expectedWindowCounts = {
+  // Each team's strip is drawn on its own (overlaps are not merged); a strip
+  // with exactly one map edge has an inner edge, the rule line.
+  const expectedStripCounts = {
     live_oracle_depth_6: 2,
     live_oracle_depth_5_5_swapped_banks: 2,
-    live_oracle_overlapping_strips: 1,
-    "live_oracle_full-width_strips": 1,
-    live_oracle_both_banks_on_the_left: 1,
+    live_oracle_overlapping_strips: 2,
+    "live_oracle_full-width_strips": 2,
+    live_oracle_both_banks_on_the_left: 2,
     live_oracle_depth_0_1_on_width_17_3: 2,
     live_oracle_12_x_12_map: 2,
     live_oracle_depth_0: 0,
-    "live_oracle_depth_1e-8_on_width_20": 1,
-    live_oracle_depth_12_1_on_width_12_1: 1,
-    "live_oracle_depth_1e-8_on_width_12_1": 1,
+    "live_oracle_depth_1e-8_on_width_20": 0,
+    live_oracle_depth_12_1_on_width_12_1: 2,
+    "live_oracle_depth_1e-8_on_width_12_1": 0,
     live_oracle_depth_6_obstacles_on_strip_edges: 2,
     replay_oracle_depth_5: 2,
   };
+  const expectedEdgeCounts = {
+    ...expectedStripCounts,
+    "live_oracle_full-width_strips": 0,
+    live_oracle_depth_12_1_on_width_12_1: 0,
+  };
   expect(result.rows.map((row) => row.name)).toEqual(caseNames);
-  expect(result.legacyWindows).toBe(0);
+  expect(result.legacyNodes).toBe(0);
   for (const row of result.rows) {
-    const expected = expectedRedZoneIntervals(row.width, row.redZone);
-    expect(row.on.windows, row.name).toHaveLength(
-      expectedWindowCounts[/** @type {keyof typeof expectedWindowCounts} */ (row.name)],
-    );
-    expect(row.on.windows).toHaveLength(expected.length);
-    expect(row.off.windows, row.name).toHaveLength(0);
-    expect(row.on.mapLayerFirst).toBe(true);
-    const { x, y, width, height, rx } = row.on.boundary;
-    const scale = width / row.width;
-    for (const [index, [low, high]] of expected.entries()) {
-      const window = row.on.windows[index];
-      expect(window.x, `${row.name} left`).toBeCloseTo(x + low * scale, 6);
-      expect(window.x + window.width, `${row.name} right`).toBeCloseTo(
-        x + high * scale,
-        6,
+    const name = /** @type {keyof typeof expectedStripCounts} */ (row.name);
+    const expected = expectedRedZoneStrips(row.width, row.redZone);
+    const scaleX = row.unit.x - row.origin.x;
+    /** @param {number} x */
+    const screenX = (x) => row.origin.x + x * scaleX;
+    const floorTop = row.origin.y + row.height * (row.unit.y - row.origin.y);
+    const floorBottom = row.origin.y;
+    const edges = expected.flatMap(({ inner }) => (inner === null ? [] : [inner]));
+    expect(expected, row.name).toHaveLength(expectedStripCounts[name]);
+    expect(edges, row.name).toHaveLength(expectedEdgeCounts[name]);
+    expect(row.on.ashCount, row.name).toBe(row.redZone === null ? 0 : 1);
+    expect(row.on.strips, row.name).toHaveLength(expected.length);
+    for (const [index, strip] of expected.entries()) {
+      const box = row.on.strips[index];
+      expect(box.left, `${row.name} left`).toBeCloseTo(screenX(strip.low), 2);
+      expect(box.right, `${row.name} right`).toBeCloseTo(screenX(strip.high), 2);
+      expect(box.top, `${row.name} top`).toBeCloseTo(floorTop, 2);
+      expect(box.bottom, `${row.name} bottom`).toBeCloseTo(floorBottom, 2);
+      // Only the corners on the map edge are rounded, as the floor's are.
+      expect(box.arcRadii, row.name).toHaveLength(
+        (strip.atLeft ? 2 : 0) + (strip.atRight ? 2 : 0),
       );
-      expect(window.y).toBeCloseTo(y, 6);
-      expect(window.height).toBeCloseTo(height, 6);
-      expect(window.childCount).toBe(1);
-      expect(window.ids).toBe(0);
-      expect(window.rect.x).toBeCloseTo(x - window.x, 6);
-      expect(window.rect.y).toBe(0);
-      expect(window.rect.width).toBeCloseTo(width, 6);
-      expect(window.rect.height).toBeCloseTo(height, 6);
-      expect(window.rect.rx).toBe(rx);
     }
-    const tintCount = row.on.windows.length;
-    const gridCount = row.on.order.filter((part) => part === "grid").length;
-    expect(row.on.order, row.name).toEqual([
-      "map-boundary",
-      ...Array(tintCount).fill("red-zone-floor-clip"),
-      ...Array(gridCount).fill("grid"),
-    ]);
-    if (tintCount > 0) {
-      expect(row.on.fill).toBe("rgba(127, 29, 29, 0.22)");
-      expect(row.on.clipPointerEvents).toBe("none");
-      expect(row.on.tintPointerEvents).toBe("none");
+    expect(row.on.borderX, row.name).toHaveLength(edges.length);
+    for (const [index, inner] of edges.entries()) {
+      expect(row.on.borderX[index], `${row.name} rule edge`).toBeCloseTo(
+        screenX(inner),
+        2,
+      );
     }
+    expect(row.on.borderPointerEvents.every((value) => value === "none")).toBe(true);
+    expect(row.on.otherCount, row.name).toBe(0);
+    // Off: no floor, border or mark, but one plain line on each rule edge.
+    expect(row.off.ashCount, row.name).toBe(0);
+    expect(row.off.borderX, row.name).toEqual([]);
+    expect(row.off.marks, row.name).toBe(0);
+    expect(row.off.otherCount, row.name).toBe(0);
+    expect(row.off.lines, row.name).toHaveLength(edges.length);
+    for (const [index, inner] of edges.entries()) {
+      const line = row.off.lines[index];
+      expect(line.x1).toBeCloseTo(screenX(inner), 2);
+      expect(line.x2).toBe(line.x1);
+      expect(line.y[0]).toBeCloseTo(floorTop, 2);
+      expect(line.y[1]).toBeCloseTo(floorBottom, 2);
+    }
+    // The Red Zone sits over the floor (and its grid) and under the stones
+    // and bodies.
+    const order = row.on.layerOrder;
+    expect(order.indexOf("map")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("red-zone")).toBeGreaterThan(order.indexOf("map"));
+    expect(order.indexOf("obstacle")).toBeGreaterThan(order.indexOf("red-zone"));
+    expect(order.indexOf("body")).toBeGreaterThan(order.indexOf("red-zone"));
+    if (expected.length > 0) {
+      expect(row.on.ashLook, row.name).toEqual({
+        fill: "rgb(107, 115, 133)",
+        fillOpacity: "0.17",
+        // Two strips that overlap are one path, so the overlap is not darker.
+        fillRule: "nonzero",
+        pointerEvents: "none",
+      });
+    }
+    expect(row.on.ashPaintOnly, row.name).toBe(true);
     expect(
       row.obstacleRows.map((obstacle) => obstacle.look),
       row.name,
@@ -536,26 +688,33 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
   }
   const byName = Object.fromEntries(result.rows.map((row) => [row.name, row]));
   // A wall across x = 6 and a pillar across x = 14 sit on the strip edges; both stay
-  // on top of the tint and keep their fill and stroke.
+  // on top of the Red Zone and keep their fill and stroke.
   expect(byName.live_oracle_depth_6_obstacles_on_strip_edges.obstacleRows).toHaveLength(
     2,
   );
-  // Replay has no grid lines, and the tint still shows.
-  expect(byName.replay_oracle_depth_5.on.order).toEqual([
-    "map-boundary",
-    "red-zone-floor-clip",
-    "red-zone-floor-clip",
-  ]);
-  // A collapsed right strip paints nothing; the thin left strip remains.
+  // Live play draws its unit grid under the Red Zone; the Replay Viewer has no
+  // grid lines, and the Red Zone still shows.
+  expect(byName.live_oracle_depth_6.on.gridCount).toBeGreaterThan(0);
+  expect(byName.replay_oracle_depth_5.on.gridCount).toBe(0);
+  expect(byName.replay_oracle_depth_5.on.strips).toHaveLength(2);
+  // A strip no wider than 1e-6 units paints nothing and has no rule line.
   for (const name of [
     "live_oracle_depth_1e-8_on_width_20",
     "live_oracle_depth_1e-8_on_width_12_1",
   ]) {
-    expect(byName[name].on.windows[0].x).toBeCloseTo(byName[name].on.boundary.x, 6);
+    expect(byName[name].on.strips).toEqual([]);
+    expect(byName[name].off.lines).toEqual([]);
   }
-  // Depth equal to the float32 width paints the whole drawn floor once.
-  const fullNarrow = byName.live_oracle_depth_12_1_on_width_12_1.on;
-  expect(fullNarrow.windows[0].width).toBeCloseTo(fullNarrow.boundary.width, 6);
+  // Depth equal to the float32 width covers the whole drawn floor.
+  const fullNarrow = byName.live_oracle_depth_12_1_on_width_12_1;
+  for (const strip of fullNarrow.on.strips) {
+    expect(strip.left).toBeCloseTo(fullNarrow.origin.x, 2);
+    expect(strip.right).toBeCloseTo(
+      fullNarrow.origin.x +
+        fullNarrow.width * (fullNarrow.unit.x - fullNarrow.origin.x),
+      2,
+    );
+  }
 
   await page.evaluate(
     async ({ raw }) => {
@@ -585,9 +744,26 @@ test("Red Zone Floors paint exact recorded strips beneath obstacles", async ({
     path: screenshotPath,
     contentType: "image/png",
   });
+
+  // The Ash floor's rounded corners follow the floor's own corners: the same
+  // radius, or less where the strip is too narrow for it.
+  for (const row of result.rows) {
+    for (const strip of row.on.strips) {
+      const fits = Math.min(
+        row.on.floorRadius,
+        (strip.right - strip.left) / 2,
+        (strip.bottom - strip.top) / 2,
+      );
+      for (const radius of strip.arcRadii) {
+        expect(radius, `${row.name} Ash corner radius`).toBeCloseTo(fits, 1);
+      }
+    }
+  }
 });
 
-test("Target Selection Visuals hides only reticle and legality paint", async ({
+// The arena's lane pills are retired: the deck's Action slots and the Command
+// Ring carry legality, so no legality paint or legality region reaches the arena.
+test("Target Selection Visuals hides only the selection brackets and no lane pill is painted", async ({
   page,
 }) => {
   await page.goto(origin);
@@ -629,7 +805,15 @@ test("Target Selection Visuals hides only reticle and legality paint", async ({
         pendingRoute: battlefield.querySelector('[data-layer="pending-route"]')
           ?.innerHTML,
         ranges: battlefield.querySelector('[data-layer="debug-range"]')?.innerHTML,
-        agents: battlefield.querySelector('[data-layer="body"]')?.innerHTML,
+        // The brackets live in the body layer's first group, so read only the
+        // body groups here.
+        agents: Array.from(
+          battlefield.querySelectorAll('[data-layer="body"] > [data-body-state]'),
+          (group) => group.outerHTML,
+        ).join(""),
+        legalityPaint: battlefield.querySelectorAll(
+          '[data-layer="selection-legality"] [data-layer="legality-cues"] *',
+        ).length,
         legalityProtected: renderer
           .choreographySurface()
           .protectedRects.filter(
@@ -647,13 +831,14 @@ test("Target Selection Visuals hides only reticle and legality paint", async ({
     return { enabled, disabled, restored, presentationBytes };
   }, fixture.presentations.replay_oracle);
   expect(result.enabled.visibleReticles).toBe(1);
-  expect(result.enabled.legality).toBe(2);
-  expect(result.enabled.legalityTooltipOwners).toBe(2);
-  expect(result.enabled.legalityProtected).toBeGreaterThan(0);
   expect(result.disabled.visibleReticles).toBe(0);
-  expect(result.disabled.legality).toBe(0);
-  expect(result.disabled.legalityTooltipOwners).toBe(0);
-  expect(result.disabled.legalityProtected).toBe(0);
+  for (const state of [result.enabled, result.disabled, result.restored]) {
+    expect(state.legality).toBe(0);
+    expect(state.legalityTooltipOwners).toBe(0);
+    expect(state.legalityPaint).toBe(0);
+    expect(state.legalityProtected).toBe(0);
+  }
+  expect(result.enabled.agents.length).toBeGreaterThan(0);
   expect(result.disabled.controlled).toBe(result.enabled.controlled);
   expect(result.restored.controlled).toBe(result.enabled.controlled);
   expect(result.disabled.pendingRoute).toBe(result.enabled.pendingRoute);
@@ -794,7 +979,7 @@ test("durable visual filters remove owned paint and restore stable battlefield i
       const povPresentationBytes = JSON.stringify(povPresentation);
       const redZonePresentationBytes = JSON.stringify(redZonePresentation);
       const renderer = new BattlefieldRenderer({ battlefield, empty });
-      /** @type {Array<{filterId: string, ownerSelector: string, ownsTooltip: boolean, reservesLayout: boolean, layoutAttribute: string | null, accessible?: boolean}>} */
+      /** @type {Array<{filterId: string, ownerSelector: string, ownsTooltip: boolean, reservesLayout: boolean, layoutAttribute: string | null, accessible?: boolean, absentFromFrame?: boolean}>} */
       const filterCases = [
         {
           filterId: "aura_fields",
@@ -819,30 +1004,36 @@ test("durable visual filters remove owned paint and restore stable battlefield i
           layoutAttribute: "data-suppressed-status-presentation-keys",
         },
         {
+          // The Spawn Ward is drawn only on a shielded champion, and no fixture
+          // frame has one, so this switch must leave the drawing unchanged.
           filterId: "spawn_shield",
-          ownerSelector: ".agent-spawn-shield",
+          ownerSelector: ".agent-spawn-shield, .agent-ward-lift",
           ownsTooltip: false,
           reservesLayout: false,
           layoutAttribute: null,
+          absentFromFrame: true,
         },
         {
+          // The Rune Ring on each body shows the Ultimate cooldown; it is paint
+          // inside the body's hidden status marks.
           filterId: "cooldown_effects",
-          ownerSelector: ".cooldown-cell",
-          ownsTooltip: true,
-          reservesLayout: true,
-          layoutAttribute: "data-suppressed-cooldown-presentation-keys",
+          ownerSelector: '.status-marks > [data-rune-piece^="ring."]',
+          ownsTooltip: false,
+          reservesLayout: false,
+          layoutAttribute: null,
+          accessible: false,
         },
       ];
       /** @type {typeof filterCases} */
       const redZoneFilterCases = [
         {
+          // The Ash floor, the rule-edge borders and the "×2" marks (each
+          // mark has its own label and tip); off leaves a plain edge line.
           filterId: "red_zone_floors",
-          ownerSelector: ".red-zone-floor-clip, .red-zone-floor",
-          ownsTooltip: false,
+          ownerSelector: ".red-zone-floor, .grave-border, .grave-mark",
+          ownsTooltip: true,
           reservesLayout: false,
           layoutAttribute: null,
-          // The tint is paint only; it carries no label, role or hidden flag.
-          accessible: false,
         },
       ];
       const viewports = [
@@ -868,10 +1059,10 @@ test("durable visual filters remove owned paint and restore stable battlefield i
         ".obstacle",
         ".agent",
         ".agent-body",
-        ".agent-health",
+        ".champion-life",
         ".agent-team-ring",
         ".agent-class-icon",
-        ".agent-dead-mark",
+        ".champion-fallen",
         ".agent-selection",
       ];
       /** @param {{left: number, top: number, right: number, bottom: number}} bounds */
@@ -902,8 +1093,25 @@ test("durable visual filters remove owned paint and restore stable battlefield i
               owner.hasAttribute("aria-hidden") ||
               owner.hasAttribute("role"),
           ).length,
+          hiddenFromAssistiveTech: owners.every(
+            (owner) => owner.closest('[aria-hidden="true"]') !== null,
+          ),
         };
       };
+      // Retired docks and the Red Zone's plain edge lines, counted in every state.
+      const sideCounts = () => ({
+        cooldownDocks: battlefield.querySelectorAll(
+          '.cooldown-cell, .required-dock-fallback[data-kind="cooldown"]',
+        ).length,
+        redZoneLines: battlefield.querySelectorAll(".red-zone-line").length,
+        ashPaintOnly: Array.from(battlefield.querySelectorAll(".red-zone-floor")).every(
+          (ash) =>
+            ash.getAttribute("aria-hidden") === "true" &&
+            !ash.hasAttribute("aria-label") &&
+            !ash.hasAttribute("role") &&
+            !ash.hasAttribute("data-tooltip-owner"),
+        ),
+      });
 
       for (const { viewport, runPresentation, runCases } of renderRuns) {
         battlefield.style.width = `${viewport.width}px`;
@@ -929,6 +1137,8 @@ test("durable visual filters remove owned paint and restore stable battlefield i
 
         for (const filterCase of runCases) {
           const baselineOwned = ownedSnapshot(filterCase.ownerSelector);
+          const baselineSides = sideCounts();
+          const baselineMarkup = battlefield.outerHTML;
           const baselineProtectedKey = protectedKey();
           const baselineAgentAria = originalAgent.getAttribute("aria-label") ?? "";
           const durableLayer = battlefield.querySelector(
@@ -948,6 +1158,8 @@ test("durable visual filters remove owned paint and restore stable battlefield i
             visualFilterState: disabledState,
           });
           const disabledOwned = ownedSnapshot(filterCase.ownerSelector);
+          const disabledSides = sideCounts();
+          const disabledMarkupUnchanged = battlefield.outerHTML === baselineMarkup;
           const disabledProtectedKey = protectedKey();
           const disabledAgentAria = originalAgent.getAttribute("aria-label") ?? "";
           const disabledLayoutAttribute =
@@ -978,11 +1190,14 @@ test("durable visual filters remove owned paint and restore stable battlefield i
             ...filterCase,
             explicitDefaultMatchesImplicit,
             baselineOwned,
+            baselineSides,
             baselineProtectedKey,
             baselineAgentAria,
             baselineLayoutAttribute,
             baselineCoreCounts,
             disabledOwned,
+            disabledSides,
+            disabledMarkupUnchanged,
             disabledProtectedKey,
             disabledAgentAria,
             disabledLayoutAttribute,
@@ -1063,30 +1278,51 @@ test("durable visual filters remove owned paint and restore stable battlefield i
   expect(result.presentationUnchanged).toBe(true);
   expect(result.stateFrozen).toBe(true);
   expect(result.rows).toHaveLength(12);
-  // Two separate strips: two clip windows, each holding one tint rect.
-  expect(
-    result.rows
-      .filter((row) => row.filterId === "red_zone_floors")
-      .map((row) => row.baselineOwned),
-  ).toEqual(Array(2).fill({ count: 4, tooltipOwnerCount: 0, ariaOwnerCount: 0 }));
+  const nothingOwned = {
+    count: 0,
+    tooltipOwnerCount: 0,
+    ariaOwnerCount: 0,
+    hiddenFromAssistiveTech: true,
+  };
+  // Two strips with a rule edge each: one Ash floor path, two borders and four
+  // "×2" marks, each mark with its own label and tip. Off, a plain line marks
+  // each rule edge instead, and the Ash floor is always paint only.
+  const redZoneRows = result.rows.filter((row) => row.filterId === "red_zone_floors");
+  expect(redZoneRows).toHaveLength(2);
+  for (const row of redZoneRows) {
+    expect(row.baselineOwned).toEqual(
+      expect.objectContaining({ count: 7, tooltipOwnerCount: 4, ariaOwnerCount: 7 }),
+    );
+    expect(row.baselineSides.redZoneLines, row.viewport).toBe(0);
+    expect(row.disabledSides.redZoneLines, row.viewport).toBe(2);
+    expect(row.baselineSides.ashPaintOnly, row.viewport).toBe(true);
+  }
   for (const row of result.rows) {
     expect(row.explicitDefaultMatchesImplicit, row.viewport).toBe(true);
-    expect(row.baselineOwned.count, `${row.viewport} ${row.filterId}`).toBeGreaterThan(
-      0,
-    );
+    // The old Ultimate cooldown docks are retired in every state.
+    expect(row.baselineSides.cooldownDocks, row.filterId).toBe(0);
+    expect(row.disabledSides.cooldownDocks, row.filterId).toBe(0);
+    if (row.absentFromFrame) {
+      expect(row.baselineOwned, `${row.viewport} ${row.filterId}`).toEqual(
+        nothingOwned,
+      );
+      expect(row.disabledMarkupUnchanged, row.filterId).toBe(true);
+    } else {
+      expect(
+        row.baselineOwned.count,
+        `${row.viewport} ${row.filterId}`,
+      ).toBeGreaterThan(0);
+    }
     if (row.accessible === false) {
       expect(row.baselineOwned.ariaOwnerCount, row.filterId).toBe(0);
-    } else {
+      expect(row.baselineOwned.hiddenFromAssistiveTech, row.filterId).toBe(true);
+    } else if (!row.absentFromFrame) {
       expect(row.baselineOwned.ariaOwnerCount, row.filterId).toBeGreaterThan(0);
     }
     if (row.ownsTooltip) {
       expect(row.baselineOwned.tooltipOwnerCount, row.filterId).toBeGreaterThan(0);
     }
-    expect(row.disabledOwned).toEqual({
-      count: 0,
-      tooltipOwnerCount: 0,
-      ariaOwnerCount: 0,
-    });
+    expect(row.disabledOwned).toEqual(nothingOwned);
     expect(row.disabledCoreCounts).toEqual(row.baselineCoreCounts);
     expect(row.disabledIdentityStable).toBe(true);
     expect(row.disabledAgentAccessible).toBe(true);
@@ -1105,11 +1341,7 @@ test("durable visual filters remove owned paint and restore stable battlefield i
     expect(row.baselineOwned.count, row.viewport).toBeGreaterThan(0);
     expect(row.baselineOwned.tooltipOwnerCount, row.viewport).toBeGreaterThan(0);
     expect(row.baselineOwned.ariaOwnerCount, row.viewport).toBeGreaterThan(0);
-    expect(row.disabledOwned).toEqual({
-      count: 0,
-      tooltipOwnerCount: 0,
-      ariaOwnerCount: 0,
-    });
+    expect(row.disabledOwned).toEqual(nothingOwned);
     expect(row.restoredOwned).toEqual(row.baselineOwned);
     expect(row.disabledIdentityStable).toBe(true);
   }
@@ -1159,6 +1391,11 @@ test("selected Replay aura modifiers remain exact beside Mage Burst duration and
       )
       .sort();
     const selectedKey = scene.selection?.selected_presentation_key ?? null;
+    const selectedCooldown =
+      scene.agents.find(
+        (/** @type {Record<string, any>} */ agent) =>
+          agent.presentation_key === selectedKey,
+      )?.ultimate_cooldown_remaining ?? null;
     const renderer = new BattlefieldRenderer({ battlefield, empty });
     const rows = [];
     for (const viewport of [
@@ -1195,18 +1432,37 @@ test("selected Replay aura modifiers remain exact beside Mage Burst duration and
             : battlefield.querySelectorAll(
                 `.status-cell[data-presentation-key="${selectedKey}"]`,
               ).length,
-        selectedCooldownCount:
+        // The Ultimate cooldown is the Rune Ring on the body (the old cooldown
+        // docks are retired).
+        selectedRingPieces:
           selectedKey === null
-            ? 0
-            : battlefield.querySelectorAll(
-                `.cooldown-cell[data-presentation-key="${selectedKey}"]`,
-              ).length,
+            ? []
+            : Array.from(
+                battlefield.querySelectorAll(
+                  `.status-marks[data-marks-for="${CSS.escape(selectedKey)}"] > [data-rune-piece^="ring."]`,
+                ),
+                (piece) => piece.getAttribute("data-rune-piece"),
+              ),
+        cooldownDocks: battlefield.querySelectorAll(
+          '.cooldown-cell, .required-dock-fallback[data-kind="cooldown"]',
+        ).length,
       });
     }
-    return { expected, selectedKey, rows };
+    return { expected, selectedKey, selectedCooldown, rows };
   }, fixture.state_cases.replay_oracle_final_selected);
 
   expect(result.selectedKey).not.toBeNull();
+  // The selected Mage's Burst is cooling down: the Rune Ring's six arcs of 5
+  // ticks light as the 30-tick cooldown runs out.
+  expect(result.selectedCooldown).toBeGreaterThan(0);
+  const litArcs = Math.min(
+    5,
+    Math.max(0, Math.floor((30 - result.selectedCooldown) / 5)),
+  );
+  const expectedRing = [
+    "ring.track",
+    ...Array.from({ length: litArcs }, (_, index) => `ring.arc.${index}`),
+  ];
   expect(result.expected).toHaveLength(2);
   expect(
     result.expected.some((/** @type {string} */ key) =>
@@ -1223,7 +1479,8 @@ test("selected Replay aura modifiers remain exact beside Mage Burst duration and
     expect(row.suppressed, row.viewport).toBe("");
     expect(row.collisionFree, row.viewport).not.toContain("false");
     expect(row.selectedStatusCount, row.viewport).toBeGreaterThan(0);
-    expect(row.selectedCooldownCount, row.viewport).toBeGreaterThan(0);
+    expect(row.selectedRingPieces, row.viewport).toEqual(expectedRing);
+    expect(row.cooldownDocks, row.viewport).toBe(0);
   }
 });
 
@@ -1310,7 +1567,18 @@ test("all three normalized Agent POV leaves use researcher-space aura attributio
           text: details.textContent,
         });
       });
-      const auraMarkup = auraOwners.map((owner) => owner.outerHTML);
+      // Live play and the Replay Viewer place the arena differently, so compare
+      // the aura owners without their circle geometry.
+      const auraMarkup = auraOwners.map((owner) => {
+        const copy = owner.cloneNode(true);
+        if (!(copy instanceof Element)) {
+          throw new Error("Agent POV aura owner did not copy.");
+        }
+        for (const name of ["cx", "cy", "r"]) {
+          copy.removeAttribute(name);
+        }
+        return copy.outerHTML;
+      });
       const modifierOwners = Array.from(
         battlefield.querySelectorAll(
           '[data-layer="durable-status-modifier"] .modifier-cell[data-tooltip-owner]',
@@ -1369,8 +1637,8 @@ test("all three normalized Agent POV leaves use researcher-space aura attributio
     }
     expect(installed.tooltipBytes).toHaveLength(2);
     for (const tooltipBytes of installed.tooltipBytes) {
-      expect(tooltipBytes).toContain("Source");
-      expect(tooltipBytes).toMatch(/Agent ID .+ · (?:Mage|Warrior) · Team [AB]/u);
+      // The Source row names the emitter with the champion label ("Mage · ID 0").
+      expect(tooltipBytes).toMatch(/Source(?:Mage|Warrior) · ID \d+"/u);
       expect(tooltipBytes).not.toContain("Not disclosed");
     }
     expect(installed.expectedModifierRows).toHaveLength(2);
@@ -1468,7 +1736,7 @@ test("all three Agent leaves show status tips in the card's words, with no resea
         if (!identity)
           throw new Error("Tooltip identity is absent from the recorded directory.");
         const slot = (identity.team_id - 1) * 5 + identity.team_local_slot;
-        return `Agent ID ${slot} · ${agent.class_name} · Team ${agent.team_id === 1 ? "A" : "B"}`;
+        return `${agent.class_name} · ID ${slot}`;
       };
       const producerSelectors = {
         durable: ".status-cell[data-tooltip-owner]",
@@ -1706,7 +1974,7 @@ test("Oracle aura attribution remains exact in the tooltip and absent from aura 
   expect(result.auraMarkup.join("\n")).not.toContain("data-source-presentation-key");
   const sourceIndex = result.labels.indexOf("Source");
   expect(sourceIndex).toBeGreaterThanOrEqual(0);
-  expect(result.values[sourceIndex]).toBe("Agent ID 0 · Mage · Team A");
+  expect(result.values[sourceIndex]).toBe("Mage · ID 0");
 });
 
 test("incoming choreography paints presentation-key metadata and no slots", async ({
@@ -1781,7 +2049,59 @@ test("incoming choreography paints presentation-key metadata and no slots", asyn
   expect(result.slotAttributeCount).toBe(0);
 });
 
-test("live and replay damage/healing marks meet their activation route endpoint", async ({
+/**
+ * @param {{
+ *   source: {x: number, y: number},
+ *   target: {x: number, y: number},
+ *   sourceRadius: number,
+ *   targetRadius: number,
+ *   start: {x: number, y: number},
+ *   end: {x: number, y: number},
+ *   landingCenter: {x: number, y: number},
+ *   endInsideLanding: boolean,
+ * }} blow
+ * @param {string} label
+ */
+function expectBasicBlowGeometry(blow, label) {
+  const along = { x: blow.target.x - blow.source.x, y: blow.target.y - blow.source.y };
+  const length = Math.hypot(along.x, along.y);
+  const unit = { x: along.x / length, y: along.y / length };
+  /** @param {{x: number, y: number}} point */
+  const offLine = (point) =>
+    Math.abs((point.x - blow.source.x) * unit.y - (point.y - blow.source.y) * unit.x);
+  /** @param {{x: number, y: number}} point */
+  const fromTarget = (point) =>
+    Math.hypot(point.x - blow.target.x, point.y - blow.target.y);
+  // The stroke leaves 2 px outside the striker's rim and ends just outside the
+  // target's rim (1.04 radii), on the line between the two champions.
+  expect(blow.start.x, `${label} stroke start`).toBeCloseTo(
+    blow.source.x + unit.x * (blow.sourceRadius + 2),
+    1,
+  );
+  expect(blow.start.y, `${label} stroke start`).toBeCloseTo(
+    blow.source.y + unit.y * (blow.sourceRadius + 2),
+    1,
+  );
+  expect(fromTarget(blow.end), `${label} stroke end`).toBeCloseTo(
+    1.04 * blow.targetRadius,
+    1,
+  );
+  expect(offLine(blow.end), `${label} stroke end`).toBeLessThan(0.05);
+  // The landing sits on the same line, outside the target body and on the
+  // striker's side, and it covers the stroke's end.
+  expect(offLine(blow.landingCenter), `${label} landing`).toBeLessThan(0.05);
+  expect(fromTarget(blow.landingCenter), `${label} landing`).toBeGreaterThan(
+    blow.targetRadius,
+  );
+  expect(
+    (blow.landingCenter.x - blow.target.x) * unit.x +
+      (blow.landingCenter.y - blow.target.y) * unit.y,
+    `${label} landing side`,
+  ).toBeLessThan(0);
+  expect(blow.endInsideLanding, `${label} landing covers the stroke end`).toBe(true);
+}
+
+test("live and replay Basic blows run rim to rim and land where their stroke ends", async ({
   page,
 }) => {
   const presentations = [
@@ -1876,9 +2196,33 @@ test("live and replay damage/healing marks meet their activation route endpoint"
           (event.impactSemantic === "damage" || event.impactSemantic === "healing") &&
           event.route,
       );
+      const camera = battlefield.querySelector(".battlefield-camera");
+      const cameraMatrix =
+        camera instanceof SVGGElement ? camera.getScreenCTM()?.inverse() : null;
+      if (!cameraMatrix) {
+        throw new Error("Activation camera frame is unavailable.");
+      }
+      // Map a point in a node's own frame to the plan's CSS pixel frame.
+      /** @param {SVGGraphicsElement} node @param {DOMPointInit} point */
+      const toField = (node, point) => {
+        const matrix = node.getScreenCTM();
+        if (matrix === null) {
+          throw new Error("Activation node has no screen transform.");
+        }
+        const field = new DOMPoint(point.x, point.y)
+          .matrixTransform(matrix)
+          .matrixTransform(cameraMatrix);
+        return { x: field.x, y: field.y };
+      };
+      const netCues = Array.from(
+        battlefield.querySelectorAll(".combat-effect--net-health"),
+      );
       return {
         presentationKind: presentation.presentation_kind,
-        scrollingTextCount: battlefield.querySelectorAll(".combat-net__label").length,
+        netCueLabels: netCues.map((cue) => cue.getAttribute("aria-label")),
+        netNumberCount: battlefield.querySelectorAll(
+          ".combat-effect--net-health .combat-number, .combat-net__label",
+        ).length,
         activations: activations.map((event) => {
           const selector = `[data-event-id="${CSS.escape(event.eventId)}"]`;
           const effect = battlefield.querySelector(
@@ -1887,33 +2231,50 @@ test("live and replay damage/healing marks meet their activation route endpoint"
           const routeEffect = battlefield.querySelector(
             `.combat-route-effect--activation${selector}`,
           );
-          const impact = effect?.querySelector(".combat-impact");
-          const semantic = impact?.querySelector(".combat-impact__semantic");
-          const routePath = routeEffect?.querySelector(".combat-route__path");
+          const landing = effect?.querySelector(".combat-impact.basic-landing");
+          const stroke = routeEffect?.querySelector(".basic-blow__core");
           if (
             !(effect instanceof SVGElement) ||
-            !(impact instanceof SVGGraphicsElement) ||
-            !(semantic instanceof SVGElement) ||
-            !(routePath instanceof SVGPathElement)
+            !(landing instanceof SVGGraphicsElement) ||
+            !(stroke instanceof SVGPathElement)
           ) {
-            throw new Error(`Activation impact ${event.eventId} is unavailable.`);
+            throw new Error(`Activation landing ${event.eventId} is unavailable.`);
           }
-          const matrix = impact.transform.baseVal.consolidate()?.matrix;
-          if (!matrix) {
-            throw new Error(`Activation impact ${event.eventId} has no transform.`);
-          }
-          const pathEnd = routePath.getPointAtLength(routePath.getTotalLength());
+          const strokeEnd = stroke.getPointAtLength(stroke.getTotalLength());
+          const strokeEndOnScreen = new DOMPoint(
+            strokeEnd.x,
+            strokeEnd.y,
+          ).matrixTransform(stroke.getScreenCTM() ?? undefined);
+          // The stroke stops on the landing's edge; allow 0.01 px of rounding.
+          const landingBox = landing.getBoundingClientRect();
+          const edge = 0.01;
           return {
             semantic: event.impactSemantic,
-            routeEnd: event.route.end,
-            transform: { x: matrix.e, y: matrix.f },
-            pathEnd: { x: pathEnd.x, y: pathEnd.y },
-            semanticLineCount: semantic.querySelectorAll(":scope > line").length,
-            impactLayoutAttributes: impact
+            sourceClass: effect.getAttribute("data-source-class"),
+            blow: {
+              source: event.source,
+              target: event.target,
+              sourceRadius: event.sourceRadius,
+              targetRadius: event.targetRadius,
+              start: toField(stroke, stroke.getPointAtLength(0)),
+              end: toField(stroke, strokeEnd),
+              landingCenter: toField(landing, { x: 0, y: 0 }),
+              endInsideLanding:
+                strokeEndOnScreen.x >= landingBox.left - edge &&
+                strokeEndOnScreen.x <= landingBox.right + edge &&
+                strokeEndOnScreen.y >= landingBox.top - edge &&
+                strokeEndOnScreen.y <= landingBox.bottom + edge,
+            },
+            landingClass: landing.getAttribute("class"),
+            landingBasicClass: landing.getAttribute("data-basic-class"),
+            semanticMarkCount: effect.querySelectorAll(".combat-impact__semantic")
+              .length,
+            impactLayoutAttributes: landing
               .getAttributeNames()
               .filter((name) => name.startsWith("data-layout-")),
-            impactLeaderCount: effect.querySelectorAll(".combat-cue__leader--impact")
-              .length,
+            impactLeaderCount: battlefield.querySelectorAll(
+              `${selector} .combat-cue__leader--impact`,
+            ).length,
             hasPlannedImpactCue: event.impactCue !== undefined,
             hasPlannedImpactBounds: event.impactBounds !== undefined,
             hasPlannedImpactLeader: event.impactLeader !== undefined,
@@ -1930,15 +2291,25 @@ test("live and replay damage/healing marks meet their activation route endpoint"
     expect(new Set(result.activations.map(({ semantic }) => semantic))).toEqual(
       new Set([expectedSemantic]),
     );
-    expect(result.scrollingTextCount).toBeGreaterThan(0);
+    // The recipient's whole-tick life change is unchanged in this frame, so its
+    // battle text cue says so and draws no number.
+    expect(result.netCueLabels).toEqual(["No Net Change"]);
+    expect(result.netNumberCount).toBe(0);
     for (const activation of result.activations) {
-      expect(activation.transform.x).toBeCloseTo(activation.routeEnd.x, 3);
-      expect(activation.transform.y).toBeCloseTo(activation.routeEnd.y, 3);
-      expect(activation.pathEnd.x).toBeCloseTo(activation.routeEnd.x, 3);
-      expect(activation.pathEnd.y).toBeCloseTo(activation.routeEnd.y, 3);
-      expect(activation.semanticLineCount).toBe(
-        activation.semantic === "healing" ? 2 : 1,
+      expectBasicBlowGeometry(
+        activation.blow,
+        `${raw.presentation_kind} ${expectedSemantic}`,
       );
+      // The landing's shape carries the meaning: a Priest's heal blooms, a
+      // Mage's blow lands in a star; no plus or minus mark is drawn.
+      expect(activation.sourceClass).toBe(
+        expectedSemantic === "healing" ? "priest" : "mage",
+      );
+      expect(activation.landingBasicClass).toBe(activation.sourceClass);
+      expect(activation.landingClass).toContain(
+        expectedSemantic === "healing" ? "basic-landing--bloom" : "basic-landing--star",
+      );
+      expect(activation.semanticMarkCount).toBe(0);
       expect(activation.impactLayoutAttributes).toEqual([]);
       expect(activation.impactLeaderCount).toBe(0);
       expect(activation.hasPlannedImpactCue).toBe(false);
@@ -1951,7 +2322,7 @@ test("live and replay damage/healing marks meet their activation route endpoint"
   }
 });
 
-test("Agent POV damage and healing impacts stop outside the recipient body without intercepting its centre", async ({
+test("Agent POV damage and healing landings stop outside the recipient body without intercepting its center", async ({
   page,
 }) => {
   await page.setViewportSize(MINIMUM_VIEWPORT);
@@ -2064,35 +2435,60 @@ test("Agent POV damage and healing impacts stop outside the recipient body witho
         const effect = battlefield.querySelector(
           `.combat-effect--activation[data-event-id="${escapedEventId}"]`,
         );
-        const impact = effect?.querySelector(".combat-impact");
-        const semantic = impact?.querySelector(".combat-impact__semantic");
+        const landing = effect?.querySelector(".combat-impact.basic-landing");
+        const stroke = battlefield.querySelector(
+          `.combat-route-effect--activation[data-event-id="${escapedEventId}"] .basic-blow__core`,
+        );
         const targetAgent = battlefield.querySelector(
           `.agent[data-presentation-key="${CSS.escape(event.targetPresentationKey)}"]`,
         );
         const body = targetAgent?.querySelector(".agent-body");
+        const camera = battlefield.querySelector(".battlefield-camera");
         if (
           !(effect instanceof SVGElement) ||
-          !(impact instanceof SVGGraphicsElement) ||
-          !(semantic instanceof SVGElement) ||
+          !(landing instanceof SVGGraphicsElement) ||
+          !(stroke instanceof SVGPathElement) ||
           !(targetAgent instanceof SVGElement) ||
-          !(body instanceof SVGCircleElement)
+          !(body instanceof SVGCircleElement) ||
+          !(camera instanceof SVGGElement)
         ) {
           throw new Error("Agent impact or recipient body is unavailable.");
         }
-        const impactMatrix = impact.transform.baseVal.consolidate()?.matrix;
         const bodyMatrix = body.getScreenCTM();
-        if (!impactMatrix || bodyMatrix === null) {
+        const cameraMatrix = camera.getScreenCTM()?.inverse();
+        if (bodyMatrix === null || !cameraMatrix) {
           throw new Error("Agent impact or recipient screen geometry is unavailable.");
         }
+        // Map a point in a node's own frame to the plan's CSS pixel frame.
+        /** @param {SVGGraphicsElement} node @param {DOMPointInit} point */
+        const toField = (node, point) => {
+          const matrix = node.getScreenCTM();
+          if (matrix === null) {
+            throw new Error("Agent impact node has no screen transform.");
+          }
+          const field = new DOMPoint(point.x, point.y)
+            .matrixTransform(matrix)
+            .matrixTransform(cameraMatrix);
+          return { x: field.x, y: field.y };
+        };
+        const strokeEnd = stroke.getPointAtLength(stroke.getTotalLength());
+        const strokeEndOnScreen = new DOMPoint(
+          strokeEnd.x,
+          strokeEnd.y,
+        ).matrixTransform(stroke.getScreenCTM() ?? undefined);
+        // The stroke stops on the landing's edge; allow 0.01 px of rounding.
+        const landingBox = landing.getBoundingClientRect();
+        const edge = 0.01;
         const centre = { x: body.cx.baseVal.value, y: body.cy.baseVal.value };
         const bodyRadius = body.r.baseVal.value;
         const routeEndDistance = Math.hypot(
           event.route.end.x - centre.x,
           event.route.end.y - centre.y,
         );
+        const landingCenter = toField(landing, { x: 0, y: 0 });
         const impactDistance = Math.hypot(
-          impactMatrix.e - centre.x,
-          impactMatrix.f - centre.y,
+          landingCenter.x - centre.x,
+          landingCenter.y - centre.y,
         );
         const targetCentreDistance = Math.hypot(
           event.target.x - centre.x,
@@ -2111,7 +2507,7 @@ test("Agent POV damage and healing impacts stop outside the recipient body witho
                 ?.closest(".agent[data-presentation-key]")
                 ?.getAttribute("data-presentation-key") ?? "";
             battlefield.dataset.centrePointerInterceptedByImpact = String(
-              pointerTarget?.closest(".combat-impact") !== null,
+              pointerTarget?.closest(".combat-impact, .basic-blow") !== null,
             );
           },
           { capture: true, once: true },
@@ -2127,7 +2523,23 @@ test("Agent POV damage and healing impacts stop outside the recipient body witho
           routeEndDistance,
           impactDistance,
           targetCentreDistance,
-          semanticLineCount: semantic.querySelectorAll(":scope > line").length,
+          sourceClass: effect.getAttribute("data-source-class"),
+          landingClass: landing.getAttribute("class"),
+          semanticMarkCount: effect.querySelectorAll(".combat-impact__semantic").length,
+          blow: {
+            source: event.source,
+            target: event.target,
+            sourceRadius: event.sourceRadius,
+            targetRadius: bodyRadius,
+            start: toField(stroke, stroke.getPointAtLength(0)),
+            end: toField(stroke, strokeEnd),
+            landingCenter,
+            endInsideLanding:
+              strokeEndOnScreen.x >= landingBox.left - edge &&
+              strokeEndOnScreen.x <= landingBox.right + edge &&
+              strokeEndOnScreen.y >= landingBox.top - edge &&
+              strokeEndOnScreen.y <= landingBox.bottom + edge,
+          },
           screenCentre: { x: screenCentre.x, y: screenCentre.y },
           viewport: { width: window.innerWidth, height: window.innerHeight },
         };
@@ -2152,8 +2564,16 @@ test("Agent POV damage and healing impacts stop outside the recipient body witho
     expect(geometry.targetEndpointPhase).toBe("successor");
     expect(geometry.targetCentreDistance).toBeCloseTo(0, 3);
     expect(geometry.routeEndDistance).toBeCloseTo(geometry.bodyRadius + 3, 3);
-    expect(geometry.impactDistance).toBeCloseTo(geometry.routeEndDistance, 3);
-    expect(geometry.semanticLineCount).toBe(expectedSemantic === "healing" ? 2 : 1);
+    // The landing stops outside the recipient body, where the stroke ends.
+    expect(geometry.impactDistance).toBeGreaterThan(geometry.bodyRadius);
+    expectBasicBlowGeometry(geometry.blow, `${leafName} ${expectedSemantic}`);
+    expect(geometry.sourceClass).toBe(
+      expectedSemantic === "healing" ? "priest" : "mage",
+    );
+    expect(geometry.landingClass).toContain(
+      expectedSemantic === "healing" ? "basic-landing--bloom" : "basic-landing--star",
+    );
+    expect(geometry.semanticMarkCount).toBe(0);
     expect(pointerTarget.agentKey).toBe(geometry.targetPresentationKey);
     expect(pointerTarget.interceptedByImpact).toBe("false");
   }
@@ -2351,7 +2771,7 @@ test("digest-valid OOC state keeps all five class glyphs centered across project
   }
 });
 
-test("authorized regeneration paints packed successor plus cues while reset stays feed-only", async ({
+test("authorized regeneration paints packed successor heal numbers while reset stays feed-only", async ({
   page,
 }) => {
   const raw = structuredClone(fixture.presentations.replay_oracle);
@@ -2464,13 +2884,31 @@ test("authorized regeneration paints packed successor plus cues while reset stay
         event.phaseEnd,
       ]),
       effectCount: effects.length,
+      // Each heal is one rest-toned battle-text number with its hover box.
       values: effects.map(
+        (effect) => effect.querySelector(".combat-number")?.textContent ?? null,
+      ),
+      tones: effects.map(
         (effect) =>
-          effect.querySelector(".combat-regeneration__value")?.textContent ?? null,
+          effect.querySelector(".combat-number")?.getAttribute("data-tone") ?? null,
       ),
-      plusLineCounts: effects.map(
-        (effect) => effect.querySelectorAll(".combat-regeneration__plus > line").length,
-      ),
+      numberAt: effects.map((effect) => {
+        const number = effect.querySelector(".combat-number");
+        return number
+          ? { x: Number(number.getAttribute("x")), y: Number(number.getAttribute("y")) }
+          : null;
+      }),
+      hitBoxes: effects.map((effect) => {
+        const hit = effect.querySelector(".combat-regeneration__hit");
+        return hit
+          ? {
+              left: Number(hit.getAttribute("x")),
+              top: Number(hit.getAttribute("y")),
+              width: Number(hit.getAttribute("width")),
+              height: Number(hit.getAttribute("height")),
+            }
+          : null;
+      }),
       tooltipOwnerCounts: effects.map((effect) =>
         effect.hasAttribute("data-tooltip-owner") ? 1 : 0,
       ),
@@ -2526,7 +2964,19 @@ test("authorized regeneration paints packed successor plus cues while reset stay
   }
   expect(result.effectCount).toBe(3);
   expect(result.values).toEqual(["+4", "+2", "+1"]);
-  expect(result.plusLineCounts).toEqual([2, 2, 2]);
+  expect(result.tones).toEqual(["rest", "rest", "rest"]);
+  // Each number sits on its planned cue and its hover box is the planned box.
+  for (const [index, cue] of result.regenerationCues.entries()) {
+    expect(result.numberAt[index]?.x).toBeCloseTo(cue.x, 6);
+    expect(result.numberAt[index]?.y).toBeCloseTo(cue.y, 6);
+    const bounds = result.regenerationBounds[index];
+    expect(result.hitBoxes[index]).toEqual({
+      left: expect.closeTo(bounds.left, 6),
+      top: expect.closeTo(bounds.top, 6),
+      width: expect.closeTo(bounds.width, 6),
+      height: expect.closeTo(bounds.height, 6),
+    });
+  }
   expect(result.tooltipOwnerCounts).toEqual([1, 1, 1]);
   expect(result.sourceAttributeCount).toBe(0);
   expect(result.onionCount).toBe(0);
@@ -2642,26 +3092,51 @@ test("shared painter removes cooldown start clutter and keeps clear trap and poi
     if (!cooldownStarted || !cooldownReady) {
       throw new Error("Cooldown plan events are unavailable.");
     }
+    const poisonEvent = planEvents.find((event) => event.tokenId === "rogue_poison");
+    const trapEvent = planEvents.find((event) => event.lifecycle === "trap_broken");
     const poisonEffect = battlefield.querySelector(
       '.combat-effect--activation[data-token-id="rogue_poison"]',
     );
-    const impact = poisonEffect?.querySelector(".combat-impact");
-    const dagger = poisonEffect?.querySelector(".combat-poison__dagger");
-    const damageLine = poisonEffect?.querySelector(
-      ".combat-impact__semantic--damage > line",
+    const poisonRoute = battlefield.querySelector(
+      '.combat-route-effect--activation[data-token-id="rogue_poison"]',
     );
-    const trapEffect = battlefield.querySelector(
-      '.combat-effect--status-lifecycle[data-lifecycle="trap_broken"]',
+    const poison = poisonEffect?.querySelector(
+      '.ult--poison[data-ult-variant="poison"]',
     );
+    const strikeFrame = poison?.querySelector('[data-ult-key="poison.strikeFrame"]');
+    // A Freezing Trap break shows on the frozen champion's own token.
+    const trapMarks =
+      typeof trapEvent?.recipientPresentationKey === "string"
+        ? battlefield.querySelector(
+            `.status-marks[data-marks-for="${CSS.escape(trapEvent.recipientPresentationKey)}"]`,
+          )
+        : null;
     if (
+      !poisonEvent ||
       !(poisonEffect instanceof SVGElement) ||
-      !(impact instanceof SVGElement) ||
-      !(dagger instanceof SVGSVGElement) ||
-      !(damageLine instanceof SVGLineElement) ||
-      !(trapEffect instanceof SVGElement)
+      !(poisonRoute instanceof SVGElement) ||
+      !(poison instanceof SVGElement) ||
+      !(strikeFrame instanceof SVGElement) ||
+      !(trapMarks instanceof SVGElement)
     ) {
       throw new Error("Trap or poisoned-dagger cue is unavailable.");
     }
+    /** @param {Element} parent @param {string} key */
+    const ultOpacity = (parent, key) =>
+      Array.from(parent.querySelectorAll(`[data-ult-key="${key}"]`), (node) =>
+        node.getAttribute("opacity"),
+      );
+    /** @param {string} piece */
+    const rune = (piece) => {
+      const node = trapMarks.querySelector(`[data-rune-piece="${piece}"]`);
+      return node
+        ? {
+            hold: node.getAttribute("data-beat-hold"),
+            side: node.getAttribute("data-beat-side"),
+            subpaths: (node.getAttribute("d")?.match(/M/gu) ?? []).length,
+          }
+        : null;
+    };
 
     const forgedStartPlan = {
       ...plan,
@@ -2707,18 +3182,24 @@ test("shared painter removes cooldown start clutter and keeps clear trap and poi
       ).length,
       defensiveEventNodeCount: defensiveInstallation.eventNodes.size,
       poison: {
-        icon: dagger.getAttribute("data-icon"),
-        rightEdge: dagger.x.baseVal.value + dagger.width.baseVal.value,
-        damageMarkLeftEdge: damageLine.x1.baseVal.value,
-        splashCount: poisonEffect.querySelectorAll(".combat-poison__splash").length,
-        flareCount: poisonEffect.querySelectorAll(".combat-poison__flare").length,
+        target: poisonEvent.target,
+        source: poisonEvent.source,
+        strikeFrame: strikeFrame.getAttribute("transform"),
+        strike: ultOpacity(poison, "poison.strike"),
+        flash: ultOpacity(poison, "poison.flash"),
+        seep: ultOpacity(poison, "poison.seep"),
+        rest: ultOpacity(poisonRoute, "poison.rest"),
+        tether: ultOpacity(poisonRoute, "poison.tether"),
+        semanticMarkCount: poisonEffect.querySelectorAll(".combat-impact__semantic")
+          .length,
       },
       trap: {
-        statusIconCount: trapEffect.querySelectorAll(".combat-lifecycle__status-icon")
-          .length,
-        changeBadgeCount: trapEffect.querySelectorAll(".combat-lifecycle__change")
-          .length,
-        shardCount: trapEffect.querySelectorAll(".combat-lifecycle__shard").length,
+        offBodyCount: battlefield.querySelectorAll(
+          ".combat-effect--status-lifecycle, .combat-route-effect--status-lifecycle",
+        ).length,
+        shell: rune("frozen.shell"),
+        crack: rune("shatter.crack"),
+        shards: rune("shatter.shards"),
       },
     };
   }, raw);
@@ -2738,18 +3219,37 @@ test("shared painter removes cooldown start clutter and keeps clear trap and poi
   expect(result.cooldownStartedDomCount).toBe(0);
   expect(result.cooldownReadyDomCount).toBe(1);
   expect(result.defensiveEventNodeCount).toBe(0);
-  expect(result.poison.icon).toBe("activation-poison");
-  expect(result.poison.rightEdge).toBeLessThanOrEqual(result.poison.damageMarkLeftEdge);
-  expect(result.poison.splashCount).toBe(1);
-  expect(result.poison.flareCount).toBe(0);
+  // Crippling Poison is the Rogue's stiletto on the target's rim, pointing at
+  // the Rogue, with one venom seep; no separate damage mark competes with it.
+  // A still shows only the resting blade (70%) and its tether (30%): the
+  // strike, the tip flash and the seep play and are hidden afterwards.
+  const { source, target } = result.poison;
+  const facing = (Math.atan2(source.y - target.y, source.x - target.x) * 180) / Math.PI;
+  const frame = /^translate\(([-\d.]+) ([-\d.]+)\) rotate\(([-\d.]+)\)$/u.exec(
+    result.poison.strikeFrame ?? "",
+  );
+  expect(frame).not.toBeNull();
+  expect(Number(frame?.[1])).toBeCloseTo(target.x, 1);
+  expect(Number(frame?.[2])).toBeCloseTo(target.y, 1);
+  expect(Number(frame?.[3])).toBeCloseTo(facing, 1);
+  expect(result.poison.strike).toEqual(["0"]);
+  expect(result.poison.flash).toEqual(["0"]);
+  expect(result.poison.seep).toEqual(["0"]);
+  expect(result.poison.rest).toEqual(["0.7"]);
+  expect(result.poison.tether).toEqual(["0.3"]);
+  expect(result.poison.semanticMarkCount).toBe(0);
+  // A broken Freezing Trap draws no off-body badge: the ice shell holds until
+  // Settle, the crack comes at Impact and six shards fall at Settle.
   expect(result.trap).toEqual({
-    statusIconCount: 1,
-    changeBadgeCount: 0,
-    shardCount: 6,
+    offBodyCount: 0,
+    shell: { hold: "settle", side: "before", subpaths: 1 },
+    crack: { hold: "impact", side: "after", subpaths: expect.any(Number) },
+    shards: { hold: "settle", side: "after", subpaths: 6 },
   });
+  expect(result.trap.crack?.subpaths).toBeGreaterThan(0);
 });
 
-test("authorized death, team waves, and resurrection retain outward settled geometry", async ({
+test("authorized falls and returns settle on their bodies while team waves stay off the arena", async ({
   page,
 }) => {
   const raw = structuredClone(fixture.presentations.replay_oracle);
@@ -2844,6 +3344,37 @@ test("authorized death, team waves, and resurrection retain outward settled geom
     if (surface === null || plan === null) {
       throw new Error("Authorized lifecycle choreography is unavailable.");
     }
+    const ringSelector = ".requiem__fall-ring, .homecoming__ring";
+    /** @param {Element} ring */
+    const stillOpacity = (ring) => {
+      // A ring shows in a still at its own opacity times its groups' opacity.
+      let opacity = 1;
+      for (
+        let node = /** @type {Element | null} */ (ring);
+        node !== null && !node.classList.contains("combat-lifecycle-ring");
+        node = node.parentElement
+      ) {
+        const value = node.getAttribute("opacity");
+        opacity *= value === null ? 1 : Number(value);
+      }
+      return opacity;
+    };
+    /** @param {Element} ring */
+    const ringRadius = (ring) =>
+      ring instanceof SVGGraphicsElement ? ring.getBBox().width / 2 : Number.NaN;
+    /** @param {Record<string, any>} installation */
+    const ringAnimations = (installation) =>
+      installation.animationSpecs
+        .filter((/** @type {Record<string, any>} */ spec) =>
+          /:(?:fall-ring|homecoming)$/u.test(spec.id),
+        )
+        .map((/** @type {Record<string, any>} */ spec) => ({
+          id: spec.id.split(":").at(-1),
+          keyframes: spec.keyframes.map((/** @type {Record<string, any>} */ frame) => ({
+            opacity: Number(frame.opacity),
+            transform: frame.transform ?? null,
+          })),
+        }));
     const painter = new SvgChoreographyPainter();
     const normal = painter.install(plan, surface, {
       motionMode: "normal",
@@ -2856,58 +3387,15 @@ test("authorized death, team waves, and resurrection retain outward settled geom
       title,
       details,
     });
-    const lifecycleAnimations = normal.animationSpecs
-      .filter((/** @type {Record<string, any>} */ spec) =>
-        spec.id.endsWith(":lifecycle-ring"),
-      )
-      .map((/** @type {Record<string, any>} */ spec) =>
-        spec.keyframes.map((/** @type {Record<string, any>} */ keyframe) => ({
-          radius: String(keyframe.r),
-          opacity: Number(keyframe.opacity),
-        })),
-      );
-    const lifecycleNodes = Array.from(
+    const lifecycleGeometry = Array.from(
       battlefield.querySelectorAll(".combat-lifecycle-ring"),
-    );
-    const waves = Array.from(battlefield.querySelectorAll(".combat-respawn-wave"));
-    const waveGeometry = waves.map((wave) => {
-      const effect = wave.closest(".combat-effect");
-      const event = plan.events.find(
-        (/** @type {Record<string, any>} */ candidate) =>
-          candidate.eventId === effect?.getAttribute("data-event-id"),
-      );
-      const panel = wave.querySelector(".combat-respawn-wave__panel");
-      const label = wave.querySelector(".combat-respawn-wave__label");
-      if (!event?.anchor || !(panel instanceof SVGRectElement)) {
-        throw new Error("Authorized wave geometry is unavailable.");
-      }
-      return {
-        teamIndex: event.teamIndex,
-        teamId: event.teamId,
-        side: event.teamSide,
-        anchor: event.anchor,
-        bounds: {
-          left: event.anchor.x + panel.x.baseVal.value,
-          top: event.anchor.y + panel.y.baseVal.value,
-          right: event.anchor.x + panel.x.baseVal.value + panel.width.baseVal.value,
-          bottom: event.anchor.y + panel.y.baseVal.value + panel.height.baseVal.value,
-        },
-        label: label?.textContent ?? null,
-        color: getComputedStyle(wave).color,
-        ownerCount: wave.querySelectorAll("[data-tooltip-owner]").length,
-        layoutKey: wave.getAttribute("data-layout-key"),
-        layoutDisposition: wave.getAttribute("data-layout-disposition"),
-        layoutCollisionFree: wave.getAttribute("data-layout-collision-free"),
-        ariaLabel: effect?.getAttribute("aria-label") ?? null,
-      };
-    });
-    const lifecycleGeometry = lifecycleNodes.map((node) => {
+    ).map((node) => {
       const effect = node.closest(".combat-effect");
       const event = plan.events.find(
         (/** @type {Record<string, any>} */ candidate) =>
           candidate.eventId === effect?.getAttribute("data-event-id"),
       );
-      const ring = node.querySelector(".combat-lifecycle-ring__ring");
+      const ring = node.querySelector(ringSelector);
       const hit = node.querySelector(".combat-lifecycle-ring__hit");
       const agent =
         typeof event?.agentPresentationKey === "string"
@@ -2920,7 +3408,7 @@ test("authorized death, team waves, and resurrection retain outward settled geom
         !(node instanceof SVGGraphicsElement) ||
         !(effect instanceof SVGElement) ||
         !event?.anchor ||
-        !(ring instanceof SVGCircleElement) ||
+        !(ring instanceof SVGGraphicsElement) ||
         !(hit instanceof SVGCircleElement) ||
         !(agent instanceof SVGElement) ||
         !(body instanceof SVGCircleElement)
@@ -2942,12 +3430,12 @@ test("authorized death, team waves, and resurrection retain outward settled geom
       return {
         eventType: event.eventType,
         lifecycle: node.getAttribute("data-lifecycle-ring"),
-        color: getComputedStyle(node).color,
-        radius: ring.getAttribute("r"),
-        strokeOpacity: getComputedStyle(ring).strokeOpacity,
+        ring: ring.getAttribute("class"),
+        stroke: getComputedStyle(ring).stroke,
+        radiusInBodies: ringRadius(ring) / body.r.baseVal.value,
+        stillOpacity: stillOpacity(ring),
         center: { x: center.x, y: center.y },
         bodyCenter: { x: bodyCenter.x, y: bodyCenter.y },
-        planAnchor: event.anchor,
         planLayoutFields: [
           "cue",
           "cueBounds",
@@ -2980,9 +3468,21 @@ test("authorized death, team waves, and resurrection retain outward settled geom
       persistentNodeCount: normal.persistentNodeCount,
       persistentNodeBound: plan.bounds.persistentNodes,
       lifecycleGeometry,
-      lifecycleAnimations,
-      waveGeometry,
-      viewportBounds: surface.viewportBounds,
+      ringAnimations: ringAnimations(normal),
+      waveRows: plan.events
+        .filter(
+          (/** @type {Record<string, any>} */ event) =>
+            event.eventType === "respawn_wave_occurred",
+        )
+        .map((/** @type {Record<string, any>} */ event) => ({
+          teamIndex: event.teamIndex,
+          teamId: event.teamId,
+          side: event.teamSide,
+          anchor: event.anchor ?? null,
+        })),
+      arenaWaveCount: battlefield.querySelectorAll(
+        '.combat-effect[data-event-type="respawn_wave_occurred"], .combat-respawn-wave',
+      ).length,
       shieldCount: battlefield.querySelectorAll(
         '.combat-effect[data-event-type="spawn_shield_expired"]',
       ).length,
@@ -2990,7 +3490,7 @@ test("authorized death, team waves, and resurrection retain outward settled geom
         ".combat-effect[data-tooltip-owner]",
       ).length,
       childOwnerCount: battlefield.querySelectorAll(
-        ".combat-lifecycle-ring [data-tooltip-owner], .combat-respawn-wave [data-tooltip-owner]",
+        ".combat-lifecycle-ring [data-tooltip-owner]",
       ).length,
     };
     painter.settle(normal);
@@ -3008,20 +3508,18 @@ test("authorized death, team waves, and resurrection retain outward settled geom
     const endpointModes = {};
     /** @type {Array<[string, {motionMode: "normal" | "reduced" | "off", settled: boolean, persistentOnly: boolean}]>} */
     const modeCases = [
+      ["normal", { motionMode: "normal", settled: false, persistentOnly: false }],
       ["reduced", { motionMode: "reduced", settled: false, persistentOnly: false }],
       ["off", { motionMode: "off", settled: false, persistentOnly: false }],
       ["settled", { motionMode: "normal", settled: true, persistentOnly: false }],
     ];
     for (const [name, options] of modeCases) {
       const installation = painter.install(plan, surface, options);
+      const rings = Array.from(battlefield.querySelectorAll(ringSelector));
       endpointModes[name] = {
-        ringRadii: Array.from(
-          battlefield.querySelectorAll(".combat-lifecycle-ring__ring"),
-        ).map((ring) => ring.getAttribute("r")),
-        lifecycleAnimationCount: installation.animationSpecs.filter(
-          (/** @type {Record<string, any>} */ spec) =>
-            spec.id.endsWith(":lifecycle-ring"),
-        ).length,
+        ringRadii: rings.map((ring) => ringRadius(ring).toFixed(2)),
+        ringOpacities: rings.map(stillOpacity),
+        ringAnimations: ringAnimations(installation),
         eventTypes: Array.from(
           battlefield.querySelectorAll(".combat-effect[data-event-type]"),
         ).map((node) => node.getAttribute("data-event-type")),
@@ -3042,20 +3540,26 @@ test("authorized death, team waves, and resurrection retain outward settled geom
 
   expect(result.serializedUnchanged).toBe(true);
   expect(result.planEventIds).toEqual(raw.latest_events.ordered_event_ids);
-  expect(result.beforeSettle.eventCount).toBe(5);
+  // Three of the five rows paint on the arena: the fall, the Ward Lift and the
+  // return. A respawn wave draws nothing on the arena (the scorebug counts it
+  // down).
+  expect(result.beforeSettle.eventCount).toBe(3);
   expect(result.beforeSettle.nodeCount).toBeLessThanOrEqual(
     raw.latest_events.event_count * 30 + 3,
   );
   expect(result.beforeSettle.persistentNodeCount).toBeLessThanOrEqual(
     result.beforeSettle.persistentNodeBound,
   );
+  // The fall keeps a thin Team B Fall Ring at 1.3 body radii (35% in a still);
+  // the return's moonlight ring narrows to 0.9 radii and is gone in a still.
   expect(result.beforeSettle.lifecycleGeometry).toEqual([
     expect.objectContaining({
       eventType: "agent_died",
       lifecycle: "death",
-      color: "rgb(251, 113, 133)",
-      radius: "32",
-      strokeOpacity: "0.5",
+      ring: "requiem__fall-ring",
+      stroke: "rgb(239, 75, 75)",
+      radiusInBodies: expect.closeTo(1.3, 2),
+      stillOpacity: 0.35,
       planLayoutFields: [],
       domLayoutAttributes: [],
       semanticLeaderCount: 0,
@@ -3070,9 +3574,10 @@ test("authorized death, team waves, and resurrection retain outward settled geom
     expect.objectContaining({
       eventType: "agent_respawned",
       lifecycle: "resurrection",
-      color: "rgb(255, 255, 255)",
-      radius: "32",
-      strokeOpacity: "0.5",
+      ring: "homecoming__ring",
+      stroke: "rgb(220, 230, 255)",
+      radiusInBodies: expect.closeTo(0.9, 2),
+      stillOpacity: 0,
       planLayoutFields: [],
       domLayoutAttributes: [],
       semanticLeaderCount: 0,
@@ -3100,80 +3605,60 @@ test("authorized death, team waves, and resurrection retain outward settled geom
     expect(copy).not.toMatch(/_/u);
     expect(copy).not.toMatch(/semantic pulse/iu);
   }
-  expect(result.beforeSettle.lifecycleAnimations).toHaveLength(2);
-  for (const keyframes of result.beforeSettle.lifecycleAnimations) {
-    expect(
-      keyframes.map((/** @type {{radius: string}} */ frame) =>
-        Number.parseFloat(frame.radius),
-      ),
-    ).toEqual([9, 17, 25, 32]);
-    expect(keyframes.at(-1)?.opacity).toBe(1);
-  }
-  expect(result.beforeSettle.waveGeometry).toEqual([
-    expect.objectContaining({
-      teamIndex: 0,
-      teamId: 1,
-      side: "left",
-      label: "EVENT: Team A Respawn",
-      color: "rgb(59, 130, 246)",
-      ownerCount: 0,
-      layoutDisposition: "perimeter_callout",
-      layoutCollisionFree: "true",
-      ariaLabel: "EVENT: Team A Respawn",
-    }),
-    expect.objectContaining({
-      teamIndex: 1,
-      teamId: 2,
-      side: "right",
-      label: "EVENT: Team B Respawn",
-      color: "rgb(240, 90, 103)",
-      ownerCount: 0,
-      layoutDisposition: "perimeter_callout",
-      layoutCollisionFree: "true",
-      ariaLabel: "EVENT: Team B Respawn",
-    }),
+  // In play the Fall Ring grows outward onto its still; the Homecoming ring
+  // narrows from 1.6 radii and fades out, which is its still.
+  const [fallRing, homecoming] = result.beforeSettle.ringAnimations;
+  expect(
+    result.beforeSettle.ringAnimations.map((/** @type {any} */ row) => row.id),
+  ).toEqual(["fall-ring", "homecoming"]);
+  const scales = (/** @type {Array<{transform: string | null}>} */ frames) =>
+    frames.map((frame) =>
+      Number(/scale\(([\d.]+)\)/u.exec(frame.transform ?? "")?.[1]),
+    );
+  expect(fallRing.keyframes.at(0)).toEqual({ opacity: 0, transform: "scale(0.77)" });
+  expect(fallRing.keyframes.at(-1)).toEqual({ opacity: 0.35, transform: "scale(1)" });
+  const fallScales = scales(fallRing.keyframes);
+  expect(fallScales).toEqual([...fallScales].sort((left, right) => left - right));
+  expect(scales(homecoming.keyframes)[0]).toBeCloseTo(1.6 / 0.9, 2);
+  expect(homecoming.keyframes.at(-1)).toEqual({ opacity: 0, transform: "scale(1)" });
+  expect(result.beforeSettle.waveRows).toEqual([
+    { teamIndex: 0, teamId: 1, side: "left", anchor: null },
+    { teamIndex: 1, teamId: 2, side: "right", anchor: null },
   ]);
-  const [teamA, teamB] = result.beforeSettle.waveGeometry;
-  expect(teamA.layoutKey).toBe(
-    JSON.stringify(["event", raw.latest_events.events[2].event_id, "cue"]),
-  );
-  expect(teamB.layoutKey).toBe(
-    JSON.stringify(["event", raw.latest_events.events[3].event_id, "cue"]),
-  );
-  for (const wave of [teamA, teamB]) {
-    expect([wave.label, wave.ariaLabel].join(" ")).not.toMatch(/_|semantic pulse/iu);
-  }
-  const bounds = result.beforeSettle.viewportBounds;
-  expect(teamA.bounds.left).toBeGreaterThanOrEqual(bounds.left);
-  expect(teamA.bounds.top).toBeGreaterThanOrEqual(bounds.top);
-  expect(teamB.bounds.right).toBeLessThanOrEqual(bounds.right);
-  expect(teamB.bounds.bottom).toBeLessThanOrEqual(bounds.bottom);
-  expect(teamA.bounds.right).toBeLessThan(teamB.bounds.left);
+  expect(result.beforeSettle.arenaWaveCount).toBe(0);
   expect(result.beforeSettle.shieldCount).toBe(1);
-  expect(result.beforeSettle.eventOwnerCount).toBe(5);
+  expect(result.beforeSettle.eventOwnerCount).toBe(3);
   expect(result.beforeSettle.childOwnerCount).toBe(0);
-  expect(result.afterNormalSettle.eventCount).toBe(4);
+  expect(result.afterNormalSettle.eventCount).toBe(2);
   expect(result.afterNormalSettle.eventTypes).toEqual([
     "agent_died",
-    "respawn_wave_occurred",
-    "respawn_wave_occurred",
     "agent_respawned",
   ]);
-  expect(result.afterNormalSettle.settledCount).toBe(4);
+  expect(result.afterNormalSettle.settledCount).toBe(2);
+  // Every motion mode ends on the same still rings; only play moves them, and
+  // reduced motion only fades.
   for (const mode of ["reduced", "off", "settled"]) {
-    expect(result.endpointModes[mode].ringRadii).toEqual(["32", "32"]);
-    expect(result.endpointModes[mode].lifecycleAnimationCount).toBe(0);
+    expect(result.endpointModes[mode].ringRadii).toEqual(
+      result.endpointModes.normal.ringRadii,
+    );
+    expect(result.endpointModes[mode].ringOpacities).toEqual([0.35, 0]);
+  }
+  expect(result.endpointModes.off.ringAnimations).toEqual([]);
+  expect(result.endpointModes.settled.ringAnimations).toEqual([]);
+  expect(result.endpointModes.reduced.ringAnimations.length).toBeGreaterThan(0);
+  for (const animation of result.endpointModes.reduced.ringAnimations) {
+    for (const frame of animation.keyframes) {
+      expect(frame.transform, animation.id).toBeNull();
+    }
   }
   expect(result.endpointModes.settled.eventTypes).toEqual([
     "agent_died",
-    "respawn_wave_occurred",
-    "respawn_wave_occurred",
     "agent_respawned",
   ]);
   expect(result.remainingEffectCount).toBe(0);
 });
 
-test("authorized multi-application status paints one route-free lifecycle", async ({
+test("authorized multi-application status merges into one plan row and paints no off-body badge", async ({
   page,
 }) => {
   const raw = structuredClone(fixture.presentations.replay_oracle);
@@ -3259,38 +3744,24 @@ test("authorized multi-application status paints one route-free lifecycle", asyn
       title,
       details,
     });
-    const effect = battlefield.querySelector(
-      ".combat-effect--status-lifecycle[data-tooltip-owner]",
-    );
-    if (!(effect instanceof SVGElement)) {
-      throw new Error("Authorized status lifecycle owner is unavailable.");
-    }
-    const hit = effect.querySelector(".combat-lifecycle__hit");
-    if (!(hit instanceof SVGElement)) {
-      throw new Error("Authorized status lifecycle hit target is unavailable.");
-    }
-    const hitBounds = hit.getBoundingClientRect();
-    hit.dispatchEvent(
-      new PointerEvent("pointermove", {
-        bubbles: true,
-        composed: true,
-        clientX: hitBounds.left + hitBounds.width / 2,
-        clientY: hitBounds.top + hitBounds.height / 2,
-        pointerType: "mouse",
-      }),
-    );
-    await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame));
-    const labels = Array.from(
-      details.querySelectorAll(".semantic-explanation__label"),
-      (node) => node.textContent,
-    );
-    const values = Array.from(
-      details.querySelectorAll(".semantic-explanation__value"),
-      (node) => node.textContent,
-    );
     const planned = plan.events[0];
+    // No badge is painted off the body: the recipient's status card shows the
+    // status, and it names its source by class only.
+    const recipientKey = planned?.recipientPresentationKey;
+    const card =
+      typeof recipientKey === "string"
+        ? battlefield.querySelector(
+            `.status-cell[data-presentation-key="${CSS.escape(recipientKey)}"][data-token-id="${CSS.escape(String(planned.tokenId))}"]`,
+          )
+        : null;
+    if (!(card instanceof SVGElement)) {
+      throw new Error("Recipient status card is unavailable.");
+    }
+    card.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     const response = {
       planEventCount: plan.events.length,
+      plannedKind: planned?.kind ?? null,
+      plannedLifecycle: planned?.lifecycle ?? null,
       effectCount: battlefield.querySelectorAll(".combat-effect--status-lifecycle")
         .length,
       lifecycleCount: battlefield.querySelectorAll(".combat-lifecycle").length,
@@ -3309,40 +3780,53 @@ test("authorized multi-application status paints one route-free lifecycle", asyn
         planned?.applicationSources?.map((/** @type {Record<string, any>} */ source) =>
           Object.keys(source).sort(),
         ) ?? null,
-      domAtomicIds: JSON.parse(effect.getAttribute("data-atomic-event-ids") ?? "null"),
-      domApplicationIds: JSON.parse(
-        effect.getAttribute("data-application-event-ids") ?? "null",
+      sourceIdentities:
+        planned?.applicationSources?.map(
+          (/** @type {Record<string, any>} */ source) => ({
+            classId: source.sourceIdentity?.class_id,
+            displayId: source.sourceIdentity?.display_agent_id,
+            teamId: source.sourceIdentity?.team_id,
+          }),
+        ) ?? null,
+      cardTitle: title.textContent,
+      cardText: details.textContent ?? "",
+      cardLabels: Array.from(
+        details.querySelectorAll(".semantic-explanation__label"),
+        (node) => node.textContent,
       ),
-      tooltipRows: labels.map((label, index) => ({
-        label,
-        value: values[index],
-      })),
     };
     controller.destroy();
     return response;
   }, raw);
 
   expect(result.planEventCount).toBe(1);
-  expect(result.effectCount).toBe(1);
-  expect(result.lifecycleCount).toBe(1);
+  expect(result.plannedKind).toBe("status_lifecycle");
+  expect(result.plannedLifecycle).toBe("applied");
+  expect(result.effectCount).toBe(0);
+  expect(result.lifecycleCount).toBe(0);
   expect(result.routeChildCount).toBe(0);
   expect(result.statusUnderlayCount).toBe(0);
   expect(result.plannedAtomicIds).toEqual(applicationIds);
   expect(result.plannedApplicationIds).toEqual(applicationIds);
-  expect(result.domAtomicIds).toEqual(applicationIds);
-  expect(result.domApplicationIds).toEqual(applicationIds);
   expect(result.sourcePublicAgentIds).toEqual(["agent-slot-0", "agent-slot-2"]);
   expect(result.sourceRecordKeys).toEqual([
     ["eventId", "sourceIdentity", "sourcePresentationKey", "sourcePublicAgentId"],
     ["eventId", "sourceIdentity", "sourcePresentationKey", "sourcePublicAgentId"],
   ]);
-  expect(result.tooltipRows).toContainEqual({
-    label: "Sources",
-    value: "Agent ID 0 · Mage · Team A; Agent ID 2 · Priest · Team A",
-  });
+  // The merged row keeps both sources' exact identities: a Mage (ID 0) and a
+  // Priest (ID 2), both of Team A.
+  expect(result.sourceIdentities).toEqual([
+    { classId: 1, displayId: "0", teamId: 1 },
+    { classId: 5, displayId: "2", teamId: 1 },
+  ]);
+  expect(result.cardTitle).toBe("Blessing of Freedom (Slow Resistance)");
+  expect(result.cardText).toContain("From a Priest.");
+  expect(result.cardLabels).toEqual(["Time Left"]);
+  expect(result.cardText).not.toContain("Mage · ID 0");
+  expect(result.cardText).not.toContain("Priest · ID 2");
 });
 
-test("agent wins real SVG hit arbitration over an overlapping accepted route", async ({
+test("a champion's body wins real SVG hit arbitration over an overlapping accepted route", async ({
   page,
 }) => {
   await page.goto(origin);
@@ -3363,8 +3847,13 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
       `${moduleRoot}/choreography-painter.js`
     );
     const { createRouteGeometry } = await import(`${moduleRoot}/routes.js`);
-    const { createSemanticDescriptor, createTooltipController, registerTooltipOwner } =
-      await import(`${moduleRoot}/tooltip.js`);
+    const {
+      createChampionCardDescriptor,
+      createSemanticDescriptor,
+      createTooltipController,
+      registerTooltipOwner,
+    } = await import(`${moduleRoot}/tooltip.js`);
+    const { championCardFacts } = await import(`${moduleRoot}/shell.js`);
     const presentation = await normalizeAuthorizedPresentationFrameV1(raw);
     const battlefield = document.querySelector("#battlefield");
     const empty = document.querySelector("#empty");
@@ -3396,7 +3885,10 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
       persistentOnly: false,
     });
 
-    const routeHit = battlefield.querySelector(".combat-route__hit");
+    // A Basic stroke's hit path is the accepted route's pointer surface.
+    const routeHit = battlefield.querySelector(
+      ".combat-route-effect--activation .basic-blow__hit",
+    );
     const routeOwner = routeHit?.closest(".combat-route-effect");
     const targetKey = routeOwner?.getAttribute("data-target-presentation-key");
     const agent =
@@ -3406,14 +3898,15 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
           )
         : battlefield.querySelector(".agent");
     const body = agent?.querySelector(".agent-body");
-    const battlefieldMatrix = battlefield.getScreenCTM();
+    const hitMatrix =
+      routeHit instanceof SVGGraphicsElement ? routeHit.getScreenCTM() : null;
     const bodyMatrix = body instanceof SVGGraphicsElement ? body.getScreenCTM() : null;
     if (
       !(routeHit instanceof SVGPathElement) ||
       !(routeOwner instanceof SVGElement) ||
       !(agent instanceof SVGElement) ||
       !(body instanceof SVGGraphicsElement) ||
-      battlefieldMatrix === null ||
+      hitMatrix === null ||
       bodyMatrix === null
     ) {
       throw new Error("Authorized route and agent geometry are unavailable.");
@@ -3423,12 +3916,19 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
       bodyBounds.x + bodyBounds.width / 2,
       bodyBounds.y + bodyBounds.height / 2,
     ).matrixTransform(bodyMatrix);
-    const localCenter = screenCenter.matrixTransform(battlefieldMatrix.inverse());
+    // The stroke group is moved and turned, so build the route in the hit
+    // path's own frame: 80 px either side of the body center on screen.
+    const toHitFrame = (/** @type {number} */ dx) => {
+      const local = new DOMPoint(screenCenter.x + dx, screenCenter.y).matrixTransform(
+        hitMatrix.inverse(),
+      );
+      return { x: local.x, y: local.y };
+    };
     const geometry = createRouteGeometry(
       {
         eventId: "component-route-agent-overlap",
-        source: { x: localCenter.x - 80, y: localCenter.y },
-        target: { x: localCenter.x + 80, y: localCenter.y },
+        source: toHitFrame(-80),
+        target: toHitFrame(80),
         sourceRadius: 0,
         targetRadius: 0,
         offset: 0,
@@ -3452,6 +3952,25 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
         anchor: "pointer",
       }),
     );
+    // The Replay Viewer page gives each body its Champion Card, as main.js
+    // installAuthorizedAgentActivation does; every body here also stands on
+    // its Spawn Pad, whose Symbol Tip lies under the body.
+    const facts = championCardFacts({
+      presentation,
+      combatConfiguration: null,
+      subject: {
+        presentationKey: agent.getAttribute("data-presentation-key"),
+        slot: null,
+        publicAgentId: null,
+        classId: null,
+      },
+    });
+    if (facts === null) {
+      throw new Error("The body's Champion Card facts are unavailable.");
+    }
+    registerTooltipOwner(agent, createChampionCardDescriptor(facts, "champion:body"), {
+      inspectable: false,
+    });
     const controller = createTooltipController({
       root: document.body,
       tooltip,
@@ -3471,14 +3990,16 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
     ];
     const routeRoot = routeOwner.parentElement;
     const routeLayer = routeRoot?.parentElement;
+    const camera = battlefield.querySelector(".battlefield-camera");
     return {
       agentPaintOrder: owners.indexOf(agent),
       routePaintOrder: owners.indexOf(routeOwner),
+      padPaintOrder: owners.findIndex((owner) => owner.closest(".waystone") !== null),
       activationRoute: routeOwner.classList.contains("combat-route-effect--activation"),
       routeRootOwned:
         routeRoot?.classList.contains("combat-choreography-routes") === true,
       routeLayer: routeLayer?.getAttribute("data-layer") ?? null,
-      layerOrder: [...battlefield.children].map((layer) =>
+      layerOrder: Array.from(camera?.children ?? [], (layer) =>
         layer.getAttribute("data-layer"),
       ),
       x: screenCenter.x,
@@ -3489,13 +4010,16 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
   expect(overlap.agentPaintOrder).toBeGreaterThanOrEqual(0);
   expect(overlap.routePaintOrder).toBeGreaterThanOrEqual(0);
   expect(overlap.agentPaintOrder).toBeLessThan(overlap.routePaintOrder);
+  expect(overlap.agentPaintOrder).toBeLessThan(overlap.padPaintOrder);
   expect(overlap.activationRoute).toBe(true);
   expect(overlap.routeRootOwned).toBe(true);
   expect(overlap.routeLayer).toBe("strike-band");
   const routeLayerIndex = overlap.layerOrder.indexOf("strike-band");
   expect(routeLayerIndex).toBeGreaterThanOrEqual(0);
+  // Routes lie above the stones and under the bodies and everything on them.
+  expect(overlap.layerOrder.indexOf("obstacle")).toBeGreaterThanOrEqual(0);
+  expect(overlap.layerOrder.indexOf("obstacle")).toBeLessThan(routeLayerIndex);
   for (const foregroundLayer of [
-    "obstacle",
     "body",
     "selection-legality",
     "transient-events",
@@ -3509,11 +4033,13 @@ test("agent wins real SVG hit arbitration over an overlapping accepted route", a
   await page.mouse.move(overlap.x, overlap.y);
   await expect(page.locator("#visual-tooltip")).toHaveAttribute(
     "data-tooltip-kind",
-    "agent",
+    "champion",
   );
 });
 
-test("remote cooldown placement preserves the canonical badge in the shared renderer", async ({
+// The old Ultimate cooldown docks (and their far-away fallback badge) are
+// retired: the Rune Ring on the champion's own token shows the cooldown.
+test("the Ultimate cooldown stays on the champion's Rune Ring at every arena size", async ({
   page,
 }) => {
   await page.goto(origin);
@@ -3521,6 +4047,9 @@ test("remote cooldown placement preserves the canonical badge in the shared rend
     const moduleRoot = "/src";
     const { normalizeAuthorizedPresentationFrameV1 } = await import(
       `${moduleRoot}/authorized-presentation-normalizer.js`
+    );
+    const { authorizedPresentationSceneView } = await import(
+      `${moduleRoot}/authorized-presentation-adapter.js`
     );
     const { BattlefieldRenderer } = await import(`${moduleRoot}/scene.js`);
     const { DEFAULT_VISUAL_FILTER_STATE, enableAllVisualFilters } = await import(
@@ -3540,9 +4069,20 @@ test("remote cooldown placement preserves the canonical badge in the shared rend
       !(title instanceof HTMLElement) ||
       !(details instanceof HTMLElement)
     ) {
-      throw new Error("Cooldown fallback test surface is unavailable.");
+      throw new Error("Cooldown test surface is unavailable.");
     }
     const presentation = await normalizeAuthorizedPresentationFrameV1(raw);
+    const scene = authorizedPresentationSceneView(presentation);
+    const selectedKey = scene?.selection?.selected_presentation_key;
+    if (typeof selectedKey !== "string") {
+      throw new Error("The selected champion is unavailable.");
+    }
+    const cooldowns = Object.fromEntries(
+      scene.agents.map((/** @type {Record<string, any>} */ agent) => [
+        agent.presentation_key,
+        agent.ultimate_cooldown_remaining,
+      ]),
+    );
     const renderer = new BattlefieldRenderer({ battlefield, empty });
     const controller = createTooltipController({
       root: document.body,
@@ -3561,104 +4101,107 @@ test("remote cooldown placement preserves the canonical badge in the shared rend
         visualFilterState: allVisualFilters,
       });
       return {
-        cooldowns: battlefield.querySelectorAll(".cooldown-cell").length,
-        fallbacks: battlefield.querySelectorAll(
-          '.cooldown-cell[data-compact-fallback="true"]',
+        cooldownDocks: battlefield.querySelectorAll(
+          '.cooldown-cell, .required-dock-fallback[data-kind="cooldown"]',
         ).length,
-        obsoleteFallbacks: battlefield.querySelectorAll(
-          '.required-dock-fallback[data-kind="cooldown"]',
-        ).length,
+        rings: Array.from(battlefield.querySelectorAll(".agent"), (agent) => {
+          const key = agent.getAttribute("data-presentation-key") ?? "";
+          const body = agent.querySelector(".agent-body");
+          const marks = battlefield.querySelector(
+            `.status-marks[data-marks-for="${CSS.escape(key)}"]`,
+          );
+          const ready = marks?.querySelector('[data-rune-piece="ring.ready"]');
+          return {
+            key,
+            cooldown: cooldowns[key],
+            bodyRadius: Number(body?.getAttribute("r")),
+            bodyCenter: [
+              Number(body?.getAttribute("cx")),
+              Number(body?.getAttribute("cy")),
+            ],
+            marksAt: (
+              /^translate\(([-\d.]+) ([-\d.]+)\)$/u.exec(
+                marks?.getAttribute("transform") ?? "",
+              ) ?? []
+            )
+              .slice(1)
+              .map(Number),
+            marksRadius: Number(marks?.getAttribute("data-radius")),
+            marksHidden: marks?.getAttribute("aria-hidden") ?? null,
+            pieces: Array.from(
+              marks?.querySelectorAll(':scope > [data-rune-piece^="ring."]') ?? [],
+              (piece) => piece.getAttribute("data-rune-piece"),
+            ),
+            readyRadius: ready ? Number(ready.getAttribute("r")) : null,
+          };
+        }),
       };
     };
     const ordinary = renderAt(720, 480);
     const remote = renderAt(50, 70);
-    const cell = battlefield.querySelector(
-      '.cooldown-cell[data-compact-fallback="true"]',
+    const selected = battlefield.querySelector(
+      `.agent[data-presentation-key="${CSS.escape(selectedKey)}"]`,
     );
-    const box = cell?.querySelector(".cooldown-cell__box");
-    const value = cell?.querySelector(".cooldown-cell__value");
-    const icon = cell?.querySelector(".cooldown-cell__icon");
-    const group = cell?.parentElement;
-    if (
-      !(cell instanceof SVGElement) ||
-      !(box instanceof SVGRectElement) ||
-      !(value instanceof SVGTextElement) ||
-      !(icon instanceof SVGSVGElement) ||
-      !(group instanceof SVGGElement)
-    ) {
-      throw new Error("Remote cooldown did not retain its canonical SVG badge.");
+    if (!(selected instanceof SVGElement)) {
+      throw new Error("The selected champion's token is unavailable.");
     }
-    const ownerKey = cell.getAttribute("data-presentation-key");
-    const protectedRegion = renderer
-      .choreographySurface()
-      ?.protectedRects.find(
-        (/** @type {Record<string, any>} */ region) =>
-          region.protectedKind === "cooldown" &&
-          region.ownerPresentationKey === ownerKey,
-      );
-    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-    const remoteDetails = {
-      visibleText: cell.textContent,
-      value: value.textContent,
-      iconHidden: icon.hasAttribute("hidden"),
-      box: {
-        left: box.x.baseVal.value,
-        top: box.y.baseVal.value,
-        width: box.width.baseVal.value,
-        height: box.height.baseVal.value,
-      },
-      protectedBounds: protectedRegion?.bounds ?? null,
-      leaderCount: group.querySelectorAll(".cooldown-dock__leader").length,
-      ticks: cell.getAttribute("data-ticks"),
-      tokenId: cell.getAttribute("data-token-id"),
-      className: cell.getAttribute("data-class"),
-      ownerLabel: cell.getAttribute("data-owner-label"),
-      ariaLabel: cell.getAttribute("aria-label"),
-      tabIndex: cell.getAttribute("tabindex"),
-      tooltipHidden: tooltip.hidden,
-      tooltipTitle: title.textContent,
-      tooltipDetails: details.textContent,
+    selected.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    const remoteTip = {
+      hidden: tooltip.hidden,
+      title: title.textContent,
+      details: details.textContent,
     };
     const restored = renderAt(720, 480);
     controller.destroy();
-    return { ordinary, remote, remoteDetails, restored };
+    return { selectedKey, ordinary, remote, remoteTip, restored };
   }, fixture.state_cases.replay_oracle_final_selected);
 
-  expect(result.ordinary).toEqual({
-    cooldowns: 1,
-    fallbacks: 0,
-    obsoleteFallbacks: 0,
-  });
-  expect(result.remote).toEqual({
-    cooldowns: 1,
-    fallbacks: 1,
-    obsoleteFallbacks: 0,
-  });
-  expect(result.remoteDetails.visibleText).toBe("29");
-  expect(result.remoteDetails.value).toBe("29");
-  expect(result.remoteDetails.iconHidden).toBe(false);
-  expect(result.remoteDetails.box.width).toBe(38);
-  expect(result.remoteDetails.box.height).toBe(18);
-  expect(result.remoteDetails.protectedBounds).toEqual({
-    left: result.remoteDetails.box.left,
-    top: result.remoteDetails.box.top,
-    right: result.remoteDetails.box.left + 38,
-    bottom: result.remoteDetails.box.top + 18,
-    width: 38,
-    height: 18,
-  });
-  expect(result.remoteDetails.leaderCount).toBe(1);
-  expect(result.remoteDetails.ticks).toBe("29");
-  expect(result.remoteDetails.tokenId).toBe("mage_burst");
-  expect(result.remoteDetails.className).toBe("mage");
-  expect(result.remoteDetails.ownerLabel).toBe("Agent ID 0");
-  expect(result.remoteDetails.ariaLabel).toContain("29 ticks remaining");
-  expect(result.remoteDetails.ariaLabel).toContain(result.remoteDetails.ownerLabel);
-  expect(result.remoteDetails.tabIndex).toBe("0");
-  expect(result.remoteDetails.tooltipHidden).toBe(false);
-  expect(result.remoteDetails.tooltipTitle).toContain("Cooldown");
-  expect(result.remoteDetails.tooltipTitle).toContain(result.remoteDetails.ownerLabel);
-  expect(result.remoteDetails.tooltipDetails).toContain("29 ticks");
+  /** @param {number} ticks */
+  const expectedRing = (ticks) =>
+    ticks <= 0
+      ? ["ring.ready", "ring.gem.0", "ring.gem.1", "ring.gem.2", "ring.gem.3"]
+      : [
+          "ring.track",
+          ...Array.from(
+            { length: Math.min(5, Math.max(0, Math.floor((30 - ticks) / 5))) },
+            (_, index) => `ring.arc.${index}`,
+          ),
+        ];
+  for (const { size, state } of [
+    { size: "720x480", state: result.ordinary },
+    { size: "50x70", state: result.remote },
+  ]) {
+    expect(state.cooldownDocks, size).toBe(0);
+    expect(state.rings).toHaveLength(5);
+    for (const ring of state.rings) {
+      // The ring rides the body at its own size and is hidden paint; the
+      // champion's card says the cooldown in words.
+      expect(ring.marksAt, `${size} ${ring.key}`).toHaveLength(2);
+      expect(ring.marksAt[0], `${size} ${ring.key}`).toBeCloseTo(ring.bodyCenter[0], 1);
+      expect(ring.marksAt[1], `${size} ${ring.key}`).toBeCloseTo(ring.bodyCenter[1], 1);
+      expect(ring.marksRadius, `${size} ${ring.key}`).toBeCloseTo(ring.bodyRadius, 2);
+      expect(ring.marksHidden).toBe("true");
+      expect(ring.pieces, `${size} ${ring.key}`).toEqual(expectedRing(ring.cooldown));
+      if (ring.readyRadius !== null) {
+        expect(ring.readyRadius).toBeCloseTo(0.68 * ring.marksRadius, 1);
+      }
+    }
+  }
+  const selectedOrdinary = result.ordinary.rings.find(
+    (/** @type {Record<string, any>} */ ring) => ring.key === result.selectedKey,
+  );
+  const selectedRemote = result.remote.rings.find(
+    (/** @type {Record<string, any>} */ ring) => ring.key === result.selectedKey,
+  );
+  // The selected Mage's Burst has 29 ticks left: an unlit track at any size.
+  expect(selectedOrdinary?.cooldown).toBe(29);
+  expect(selectedOrdinary?.pieces).toEqual(["ring.track"]);
+  expect(selectedRemote?.pieces).toEqual(["ring.track"]);
+  expect(selectedRemote?.bodyRadius).toBeLessThan(selectedOrdinary?.bodyRadius ?? 0);
+  expect(result.remoteTip.hidden).toBe(false);
+  expect(result.remoteTip.title).toBe("Mage · ID 0");
+  expect(result.remoteTip.details).toContain("Ultimate Status");
+  expect(result.remoteTip.details).toContain("On Cooldown (29 ticks)");
   expect(result.restored).toEqual(result.ordinary);
 });
 
@@ -3709,8 +4252,9 @@ for (const caseName of [
         livingBody.cy.baseVal.value,
       ).matrixTransform(matrix);
       const top = document.elementFromPoint(center.x, center.y)?.closest(".agent");
-      const deadGroup = dead.parentElement;
-      const livingGroup = living.parentElement;
+      // Each body sits in its glide wrapper inside the dead or living group.
+      const deadGroup = dead.closest("[data-body-state]");
+      const livingGroup = living.closest("[data-body-state]");
       const ordered = Boolean(
         deadGroup &&
           livingGroup &&
@@ -3745,7 +4289,11 @@ for (const caseName of [
   });
 }
 
-test("all three team displays follow recorded spawn sides and keep team colours", async ({
+// Team waves and the death card are page chrome now (the scorebug's wave
+// countdown and the Fallen panel), so the arena draws neither; their plan rows keep each
+// team's recorded side. The Replay Viewer strip keeps Team A in its left box
+// whatever its spawn side, and records each team's side on its box.
+test("team displays follow recorded spawn sides and keep team colors", async ({
   page,
 }) => {
   await page.goto(origin);
@@ -3808,11 +4356,10 @@ test("all three team displays follow recorded spawn sides and keep team colours"
       settled: false,
       persistentOnly: false,
     });
-    const waves = [...battlefield.querySelectorAll(".combat-respawn-wave")];
-    const death = battlefield.querySelector(".combat-death-announcement");
-    const midpoint =
-      battlefield.getBoundingClientRect().x +
-      battlefield.getBoundingClientRect().width / 2;
+    const planEvents = /** @type {Record<string, any>[]} */ (plan.events);
+    const deathCard = planEvents.find(
+      (event) => event.cueSemantic === "death_announcement",
+    );
 
     const root = document.createElement("div");
     const task = document.createElement("span");
@@ -3822,14 +4369,21 @@ test("all three team displays follow recorded spawn sides and keep team colours"
     document.body.append(root);
     renderMatchSummary({ root, task, teams, taskSelect }, presentation);
     return {
-      waves: waves.map((node) => ({
-        team: node.getAttribute("data-team-id"),
-        side: node.getAttribute("data-team-side"),
-      })),
-      deathSide: death?.getAttribute("data-team-side"),
-      deathOnRight: (death?.getBoundingClientRect().x ?? 0) > midpoint,
+      waves: planEvents
+        .filter((event) => event.eventType === "respawn_wave_occurred")
+        .map((event) => ({ team: event.teamId, side: event.teamSide })),
+      deathCard: deathCard
+        ? { team: deathCard.teamId, side: deathCard.teamSide, label: deathCard.label }
+        : null,
+      arenaWaveCount: battlefield.querySelectorAll(
+        '.combat-respawn-wave, .combat-effect[data-event-type="respawn_wave_occurred"]',
+      ).length,
+      arenaDeathCardCount: battlefield.querySelectorAll(
+        '.combat-death-announcement, [data-cue-semantic="death_announcement"]',
+      ).length,
       teams: teams.map((node) => ({
         team: node.dataset.team,
+        side: node.dataset.side,
         label: node.querySelector("strong")?.textContent,
         blue: node.classList.contains("match-scoreboard__team--a"),
         red: node.classList.contains("match-scoreboard__team--b"),
@@ -3837,13 +4391,15 @@ test("all three team displays follow recorded spawn sides and keep team colours"
     };
   }, fixture.presentations.replay_oracle);
   expect(result.waves).toEqual([
-    { team: "1", side: "right" },
-    { team: "2", side: "left" },
+    { team: 1, side: "right" },
+    { team: 2, side: "left" },
   ]);
-  expect(result.deathSide).toBe("right");
-  expect(result.deathOnRight).toBe(true);
+  // Team A (on the right) killed a Team B champion.
+  expect(result.deathCard).toEqual({ team: 1, side: "right", label: "Team A Kills" });
+  expect(result.arenaWaveCount).toBe(0);
+  expect(result.arenaDeathCardCount).toBe(0);
   expect(result.teams).toEqual([
-    { team: "2", label: "Team B (Red)", blue: false, red: true },
-    { team: "1", label: "Team A (Blue)", blue: true, red: false },
+    { team: "1", side: "right", label: "Team A", blue: true, red: false },
+    { team: "2", side: "left", label: "Team B", blue: false, red: true },
   ]);
 });

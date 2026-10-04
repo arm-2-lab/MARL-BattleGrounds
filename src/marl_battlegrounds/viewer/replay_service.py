@@ -37,8 +37,8 @@ On the completion frame (the last frame of a finished Team Deathmatch
 replay) every presentation also carries that view's ``match_honors``
 (``_match_honors``): the whole replay's per-champion totals, added up once
 per replay from each transition's events and kill credit
-(``viewer.match_summary``), then picked for Oracle View (every champion) or
-Agent POV (the recipient's own team).
+(``viewer.match_summary``). Both views list every champion: the game is over,
+so Agent POV has nothing left to hide.
 """
 
 from __future__ import annotations
@@ -2094,8 +2094,7 @@ class ReplayViewerService:
                             pov_entry=entry,
                         ),
                         match_honors=self._match_honors(
-                            raw_frame.cursor.frame_index,
-                            team_id=self._team_of(self._pov_global_slot),
+                            raw_frame.cursor.frame_index, team_id=None
                         ),
                         match_moments=self._match_moments(
                             raw_frame.cursor.frame_index,
@@ -2199,9 +2198,7 @@ class ReplayViewerService:
                     champion_streaks=self._champion_streaks(
                         frame_index, recipient_global_slot=self._pov_global_slot
                     ),
-                    match_honors=self._match_honors(
-                        frame_index, team_id=self._team_of(self._pov_global_slot)
-                    ),
+                    match_honors=self._match_honors(frame_index, team_id=None),
                     match_moments=self._match_moments(
                         frame_index, recipient_global_slot=self._pov_global_slot
                     ),
@@ -2266,12 +2263,6 @@ class ReplayViewerService:
                 payload=frame,
             )
 
-    def _team_of(self, global_slot: int) -> Literal[1, 2]:
-        """Return the recorded team (1 or 2) of a global slot 0-9. Pure."""
-        return cast(
-            "Literal[1, 2]", self._context.roster[global_slot].configured_team_id
-        )
-
     def _match_honors(
         self, frame_index: int, *, team_id: Literal[1, 2] | None
     ) -> MatchHonorsV1 | None:
@@ -2282,8 +2273,8 @@ class ReplayViewerService:
         frame_index : int
             Captured frame index, 0 to the last frame.
         team_id : {1, 2} or None, keyword-only
-            None for Oracle View (every champion); the Agent POV recipient's
-            team otherwise (only that team's own champions).
+            None for every champion (what both views show, since the game is
+            over); 1 or 2 for that team's own champions only.
 
         Returns
         -------

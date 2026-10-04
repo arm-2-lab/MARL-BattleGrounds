@@ -127,7 +127,7 @@ html[data-product-kind="combat_debugger"] .bc .cg-note .controller-name {
   max-width: min(var(--controller-name-max), calc(100% - 4.5em));
 }
 
-/* The status line's "played by <name>" run wraps as one text. */
+/* The deck message line's "played by <name>" run stays one text. */
 html[data-product-kind="combat_debugger"] .bc .msg > span {
   min-width: 0;
 }

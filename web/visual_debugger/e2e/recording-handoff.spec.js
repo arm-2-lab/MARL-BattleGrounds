@@ -1,7 +1,28 @@
 /**
  * @file Check live recording finish/discard/exit, saved interrupted prefixes and
  * multi-tab save/restart and separate replay viewing. Saved live recordings are replay V4 files (they record
- * the Red Zone rule) without a metric sidecar. Exit must end the server with exit code 0 and no
+ * the Red Zone rule) without a metric sidecar.
+ *
+ * The BattleClient shows the recording in its top bar. The Recording pill
+ * (#rec-pill-text) and its popover's state line (#pop-state) name the tick and
+ * the kept ticks, then Saved or Save Failed. The top bar's save button reads
+ * Finish And Save, Saving Replay… while a save waits, then Open Replay or Retry
+ * Save. The Recording popover (#rec-pop) holds Open Replay (disabled until a
+ * save exists), Retry Save, Save As and the fallback link. Restart's Save This
+ * Game First? dialog focuses Save. Live notices show on the deck's message line
+ * (#msg); the replay-link race reads the page's notice (#notice), because the
+ * new match's first line replaces that warning on #msg. A lost Finish answer
+ * reads Disconnected; Reconnect then shows the saved replay without a second
+ * save. A new Replay Viewer opens in Oracle View at tick 0 whatever the live
+ * view, moves no focus, and its Agent POV shows the live Agent POV champion
+ * with that team's fog. After a failed save the Recording popover says why in
+ * plain words ("Reason: The save folder or file name could not be used, ..."),
+ * never a path, and the line is gone once Save As saves; the page stays Connected: the View
+ * buttons, Visual Filters (with Ranges) and Exit stay in the Tab order, while
+ * the arena, the deck's keys, the Allowed Now picks and Lock In do not. Agent
+ * POV closeout lists every champion by team, with unseen enemies Out Of Sight.
+ *
+ * Exit must end the server with exit code 0 and no
  * signal, checked strictly by expectServerShutdown. A server that dies before its
  * shutdown response must reject that response promptly through the browser's real
  * requestfailed event, be reported as a failure naming its SIGKILL outcome (never as
@@ -19,9 +40,11 @@ import { expect, test } from "@playwright/test";
 import { finishControllerClock } from "./support/choreography.js";
 import {
   captureServerFailure,
+  closeRecordingPanel,
   expectServerShutdown,
   findOwnedProcessIds,
   killOwnedProcesses,
+  openRecordingPanel,
   ServerFailureError,
   serverOwnerToken,
   signalOwnedProcess,
@@ -108,9 +131,28 @@ async function openRecording(page, url) {
     "data-recording-lifecycle",
     "recording",
   );
-  await expect(page.locator("#recording-panel")).toBeVisible();
-  await expect(page.locator("#recording-progress")).toContainText("0 /");
+  await expect(page.locator("#recording-badge")).toBeVisible();
+  await expect(page.locator("#rec-pill-text")).toHaveText("Recording · Tick 0");
+  await expect(page.locator("#pop-state")).toHaveText("0 Ticks Kept Since Tick 0");
   expect(page.url()).not.toContain("token=");
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {string} text */
+async function expectLiveMessage(page, text) {
+  // Live play shows notices on the deck's message line, never in the top bar.
+  await expect(page.locator("#msg")).toBeVisible();
+  await expect(page.locator("#msg")).toContainText(text);
+}
+
+/** @param {import("@playwright/test").Page} page
+ * @param {"pov" | "researcher"} mode */
+async function chooseView(page, mode) {
+  // The top bar's View buttons drive the hidden View select.
+  const button = page.locator(`#view-switch button[data-view-mode="${mode}"]`);
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#view-select")).toHaveValue(mode);
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -151,19 +193,24 @@ async function killServerWithLauncherPaused(token, launcherPid) {
 
 /** @param {import("@playwright/test").Page} page */
 async function expectReplaySaving(page) {
-  const progress = page.getByRole("progressbar", {
-    name: "Saving replay",
-  });
-  await expect(progress).toBeVisible();
-  expect(await progress.getAttribute("value")).toBeNull();
-  await expect(progress).toHaveAttribute("aria-describedby", "recording-status-note");
-  await expect(page.locator("#recording-status-note")).toContainText(
-    "Saving replay. Longer recordings can take longer.",
+  // While the save request waits, the top bar's save button says so and does nothing.
+  const save = page.locator("#recording-finish-button");
+  await expect(save).toBeVisible();
+  await expect(save).toHaveText("Saving Replay…");
+  await expect(save).toBeDisabled();
+  await expect(save).not.toHaveAttribute("data-action");
+  await expect(save).toHaveAttribute(
+    "aria-description",
+    "The replay is being saved. This button turns into Open Replay when it is done.",
   );
-  await expect(page.locator("#recording-metrics-help")).toBeVisible();
-  await expect(page.locator("#recording-metrics-help")).toContainText(
-    "Saving captured frames and provenance.",
-  );
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function expectFinishAndSave(page) {
+  const save = page.locator("#recording-finish-button");
+  await expect(save).toBeVisible();
+  await expect(save).toHaveText("Finish And Save");
+  await expect(save).toHaveAttribute("data-action", "finish");
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -225,12 +272,20 @@ function expectExactWireRecording(frame, count) {
 /** @param {import("@playwright/test").Page} page
  * @param {number} count */
 async function expectRecordingCount(page, count) {
-  await expect(page.locator("#recording-progress")).toHaveText(
-    new RegExp(`^${count} / [1-9]\\d* transitions$`),
+  const kept = `${count} Tick${count === 1 ? "" : "s"} Kept`;
+  await expect(page.locator("#pop-state")).toHaveText(
+    new RegExp(`^${kept} Since Tick \\d+$`),
   );
   const frame = await currentFrame(page);
   expectExactWireRecording(frame, count);
   expect(frame.frame_index).toBe(count);
+  // The pill names the current tick; the popover counts the kept ticks.
+  const tick = frame.simulator_step_count;
+  expect(Number.isInteger(tick)).toBe(true);
+  await expect(page.locator("#rec-pill-text")).toHaveText(`Recording · Tick ${tick}`);
+  await expect(page.locator("#pop-state")).toHaveText(
+    `${kept} Since Tick ${tick - count}`,
+  );
   return frame;
 }
 
@@ -268,9 +323,19 @@ async function openSavedReplay(livePage) {
     "saved",
   );
   await expect(livePage.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  // Saved: the top bar's save button turns into Open Replay. The test opens the
+  // Replay Viewer from the Recording popover's Open Replay.
+  const save = livePage.locator("#recording-finish-button");
+  await expect(save).toHaveText("Open Replay");
+  await expect(save).toHaveAttribute("data-action", "open");
+  await expect(save).toBeEnabled();
+  await expect(livePage.locator("#rec-pill-text")).toHaveText("Saved");
+  await openRecordingPanel(livePage);
+  await expect(livePage.locator("#pop-state")).toHaveText(/^Saved · \d+ Ticks?$/u);
   const popup = livePage.waitForEvent("popup");
   await livePage.locator("#recording-review-button").click();
   const replayPage = await popup;
+  await closeRecordingPanel(livePage);
   collectBrowserErrors(replayPage);
   await expect(replayPage.locator("#connection-status")).toHaveText("Connected");
   expect(new URL(replayPage.url()).origin).not.toBe(new URL(livePage.url()).origin);
@@ -280,15 +345,80 @@ async function openSavedReplay(livePage) {
   return replayPage;
 }
 
-/** @param {import("@playwright/test").Page} page
+/** @param {Record<string, any>} frame
+ * @param {Record<string, any>} timeline
  * @param {"researcher" | "pov"} audience
  * @param {"shared_obs" | "no_shared_obs"} informationMode */
-async function expectSettledReplayHandoff(
-  page,
-  audience = "researcher",
+function expectReplayAudienceFrame(
+  frame,
+  timeline,
+  audience,
   informationMode = "shared_obs",
 ) {
+  const researcher = audience === "researcher";
+  const sharedPov = !researcher && informationMode === "shared_obs";
+  expect(frame).toMatchObject({
+    schema_version: 1,
+    frame_kind: researcher
+      ? "researcher_replay_viewer"
+      : sharedPov
+        ? "shared_obs_agent_pov_replay_viewer"
+        : "actor_pov_replay_viewer",
+    view_mode: researcher ? "researcher" : "pov",
+    cursor: { frame_index: 0 },
+    timeline_id: timeline.timeline_id,
+  });
+  if (researcher) {
+    expect(frame).toMatchObject({
+      incoming_transition_index: null,
+      incoming_transition_id: null,
+    });
+    expect(timeline).toMatchObject({ timeline_kind: "researcher" });
+    expect(timeline.rows[0].frame_id).toBe(frame.frame_id);
+  } else if (sharedPov) {
+    expect(frame).toMatchObject({ incoming_recipient_transition_id: null });
+    expect(timeline).toMatchObject({
+      timeline_kind: "shared_obs_agent_pov",
+      artifact_summary: { public_agent_id: frame.public_agent_id },
+    });
+    expect(timeline.rows[0].recipient_frame_id).toBe(frame.recipient_frame_id);
+  } else {
+    expect(frame).toMatchObject({ incoming_pov_transition_id: null });
+    expect(timeline).toMatchObject({
+      timeline_kind: "actor_pov",
+      pov_global_slot: frame.pov_global_slot,
+      public_agent_id: frame.public_agent_id,
+    });
+    expect(timeline.rows[0].pov_frame_id).toBe(frame.pov_frame_id);
+  }
+}
+
+/** @param {import("@playwright/test").Page} replayPage */
+async function switchReplayToAgentPov(replayPage) {
+  const response = replayPage.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === "POST" &&
+      new URL(candidate.url()).pathname === "/api/replay/command",
+  );
+  await chooseView(replayPage, "pov");
+  expect((await response).status()).toBe(200);
+  await expect(replayPage.locator("html")).toHaveAttribute(
+    "data-audience",
+    "agent_pov",
+  );
+  const [frame, timeline] = await Promise.all([
+    currentFrame(replayPage),
+    currentTimeline(replayPage),
+  ]);
+  expectReplayAudienceFrame(frame, timeline, "pov");
+  return { frame, timeline };
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function expectSettledReplayHandoff(page) {
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "replay");
+  // A new Viewer opens in Oracle View, whatever the live view was.
+  await expect(page.locator("html")).toHaveAttribute("data-audience", "researcher");
   await expect(page).toHaveTitle("MARL-BattleGrounds Replay Viewer");
   await expect(page.locator("html")).toHaveAttribute(
     "data-product-kind",
@@ -296,7 +426,12 @@ async function expectSettledReplayHandoff(
   );
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#replay-timeline")).toBeVisible();
-  await expect(page.locator("#replay-timeline")).toBeFocused();
+  // The first replay load moves no focus: replay keys listen on the whole page,
+  // and a focused timeline would open its help card at rest.
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(
+    true,
+  );
+  await expect(page.locator("#visual-tooltip")).toBeHidden();
   await expect(page.locator("#replay-frame-slider")).toHaveValue("0");
   await expect(page.locator("#replay-frame-position")).toContainText("Tick 0 /");
   await expect(page.locator("#battlefield")).toHaveAttribute("role", "group");
@@ -341,42 +476,7 @@ async function expectSettledReplayHandoff(
       };
     }),
   ]);
-  const researcher = audience === "researcher";
-  const sharedPov = !researcher && informationMode === "shared_obs";
-  expect(frame).toMatchObject({
-    schema_version: 1,
-    frame_kind: researcher
-      ? "researcher_replay_viewer"
-      : sharedPov
-        ? "shared_obs_agent_pov_replay_viewer"
-        : "actor_pov_replay_viewer",
-    view_mode: researcher ? "researcher" : "pov",
-    cursor: { frame_index: 0 },
-    timeline_id: timeline.timeline_id,
-  });
-  if (researcher) {
-    expect(frame).toMatchObject({
-      incoming_transition_index: null,
-      incoming_transition_id: null,
-    });
-    expect(timeline).toMatchObject({ timeline_kind: "researcher" });
-    expect(timeline.rows[0].frame_id).toBe(frame.frame_id);
-  } else if (sharedPov) {
-    expect(frame).toMatchObject({ incoming_recipient_transition_id: null });
-    expect(timeline).toMatchObject({
-      timeline_kind: "shared_obs_agent_pov",
-      artifact_summary: { public_agent_id: frame.public_agent_id },
-    });
-    expect(timeline.rows[0].recipient_frame_id).toBe(frame.recipient_frame_id);
-  } else {
-    expect(frame).toMatchObject({ incoming_pov_transition_id: null });
-    expect(timeline).toMatchObject({
-      timeline_kind: "actor_pov",
-      pov_global_slot: frame.pov_global_slot,
-      public_agent_id: frame.public_agent_id,
-    });
-    expect(timeline.rows[0].pov_frame_id).toBe(frame.pov_frame_id);
-  }
+  expectReplayAudienceFrame(frame, timeline, "researcher");
   expect(boundary).toEqual({
     everyLiveRootHidden: true,
     focusableInsideLiveRoot: [],
@@ -459,14 +559,23 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
     discard_available: false,
   });
   expect(initial.recording).not.toHaveProperty("path");
+  await expectFinishAndSave(page);
   await expect(page.locator("#recording-finish-button")).toBeEnabled();
-  await expect(page.locator("#recording-review-button")).toBeHidden();
+  // The Recording popover: Finish And Save works; Open Replay stays in view but
+  // waits for a save; Retry Save and Save As appear only after a failed save.
+  await openRecordingPanel(page);
+  await expect(page.locator("#pop-finish")).toBeVisible();
+  await expect(page.locator("#pop-finish")).toBeEnabled();
+  await expect(page.locator("#recording-review-button")).toBeVisible();
+  await expect(page.locator("#recording-review-button")).toBeDisabled();
   await expect(page.locator("#recording-retry-button")).toBeHidden();
   await expect(page.locator("#recording-save-as-control")).toBeHidden();
+  await expect(page.locator("#recording-replay-link")).toBeHidden();
+  await closeRecordingPanel(page);
   await expect(page.locator("body")).not.toContainText(started.outputDirectory);
   await expect(page.locator("body")).not.toContainText(started.replayPath);
 
-  await page.locator("#view-select").selectOption("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("html")).toHaveAttribute("data-audience", "agent_pov");
   const pov = await currentFrame(page);
   expect(pov).toMatchObject({
@@ -476,9 +585,10 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
   });
   expectExactWireRecording(pov, 0);
   expect(pov.recording).toEqual(initial.recording);
-  await expect(page.locator("#recording-panel")).toBeVisible();
+  await expect(page.locator("#recording-badge")).toBeVisible();
+  await expect(page.locator("#rec-pill-text")).toHaveText("Recording · Tick 0");
   await expect(page.locator("body")).not.toContainText(started.outputDirectory);
-  await page.locator("#view-select").selectOption("researcher");
+  await chooseView(page, "researcher");
   await expect(page.locator("html")).toHaveAttribute("data-audience", "researcher");
 
   const captured = await captureOneTransition(page);
@@ -497,7 +607,8 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
   await expect(page.locator("#recording-discard-intent")).toHaveText(
     "Reset the current episode",
   );
-  await expect(page.locator("#recording-discard-cancel-button")).toBeFocused();
+  // Save is the suggested choice, so it takes focus.
+  await expect(page.locator("#recording-save-replace-button")).toBeFocused();
   await expectRecordingCount(page, 1);
   const openDiscardHelp = await expectVisibleInteractiveHelpInventory(page);
   expect(openDiscardHelp.registered).toContain("#recording-discard-cancel-button");
@@ -529,7 +640,7 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
   });
 
   await captureOneTransition(page);
-  await expect(page.locator("#recording-metrics-progress")).toBeHidden();
+  await expectFinishAndSave(page);
   let releaseFinish = () => {};
   const heldFinish = new Promise((resolve) => {
     releaseFinish = () => resolve(null);
@@ -557,7 +668,7 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
   expect(response.status()).toBe(200);
   const replayPage = await openSavedReplay(page);
   await expectSettledReplayHandoff(replayPage);
-  await expect(page.locator("#recording-metrics-progress")).toBeHidden();
+  await expect(page.locator("#recording-finish-button")).toHaveText("Open Replay");
   expect(page.url()).toBe(stableUrl);
   expect(
     await page.evaluate(() =>
@@ -574,7 +685,12 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
     metricReportPathForReplay(firstPath),
     1,
   );
-  await page.locator("#roster .roster-primary-action").nth(1).click();
+  // A saved game stays open to look at: the Your Turn card's champion rows
+  // still change which champion the deck shows.
+  const secondChampion = page.locator("#checklist .cl-row").nth(1);
+  await expect(secondChampion).not.toHaveClass(/\bfocus\b/u);
+  await secondChampion.click();
+  await expect(secondChampion).toHaveClass(/\bfocus\b/u);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#submit-turn-button")).toBeDisabled();
   await page.locator("#reset-button").click();
@@ -839,7 +955,7 @@ test("actor POV separate Viewer retains battlefield fog and artifact-wide facts"
 }) => {
   const started = requiredRecording();
   await openRecording(page, started.url);
-  await page.locator("#view-select").selectOption("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("html")).toHaveAttribute("data-audience", "agent_pov");
   const initialPov = await currentFrame(page);
   expect(initialPov).toMatchObject({
@@ -856,7 +972,8 @@ test("actor POV separate Viewer retains battlefield fog and artifact-wide facts"
   ]) {
     expect(initialPov).not.toHaveProperty(forbidden);
   }
-  await expect(page.locator("#recording-panel")).toBeVisible();
+  await expect(page.locator("#recording-badge")).toBeVisible();
+  await expect(page.locator("#rec-pill-text")).toHaveText("Recording · Tick 0");
 
   await captureOneTransition(page);
   const responsePromise = page.waitForResponse(
@@ -869,7 +986,12 @@ test("actor POV separate Viewer retains battlefield fog and artifact-wide facts"
   expect(response.status()).toBe(200);
   const livePage = page;
   page = await openSavedReplay(livePage);
-  const { frame, timeline } = await expectSettledReplayHandoff(page, "pov");
+  // A new Viewer opens in Oracle View, whatever the live view. Its Agent POV
+  // shows the champion the live Agent POV showed, with that team's fog.
+  await expectSettledReplayHandoff(page);
+  const { frame, timeline } = await switchReplayToAgentPov(page);
+  expect(initialPov.recipient_public_agent_id).toEqual(expect.any(String));
+  expect(frame.public_agent_id).toBe(initialPov.recipient_public_agent_id);
   expect(frame).toMatchObject({
     artifact_summary: {
       public_agent_id: frame.public_agent_id,
@@ -948,14 +1070,32 @@ test("target race remains Connected and fenced until Save As recovers cached art
   await expect(page.locator("#recording-persistence-error")).toHaveText(
     "Destination unavailable",
   );
+  // A failed save shows in the pill, the deck's message line and the top
+  // bar's save button, which turns into Retry Save.
+  await expect(page.locator("#rec-pill-text")).toHaveText("Save Failed · Retry");
+  await expect(page.locator("#pop-state")).toHaveText("Save Failed · 1 Tick Kept");
+  await expectLiveMessage(page, "Replay save failed; choose Retry Save or Save As.");
+  const saveButton = page.locator("#recording-finish-button");
+  await expect(saveButton).toHaveText("Retry Save");
+  await expect(saveButton).toHaveAttribute("data-action", "retry");
+  await expect(saveButton).toBeEnabled();
+  await openRecordingPanel(page);
+  await expect(page.locator("#pop-finish")).toBeHidden();
+  await expect(page.locator("#recording-retry-button")).toBeVisible();
   await expect(page.locator("#recording-retry-button")).toBeEnabled();
+  await expect(page.locator("#recording-save-as-input")).toBeVisible();
   await expect(page.locator("#recording-save-as-input")).toBeEnabled();
   await expect(page.locator("#recording-save-as-button")).toBeEnabled();
+  await closeRecordingPanel(page);
   await expect(page.locator("#reset-button")).toBeEnabled();
   await expect(page.locator("#scenario-select")).toHaveCount(0);
   await expect(page.locator("#movement-scale-input")).toHaveCount(0);
   await expect(page.locator("#advance-script-button")).toHaveCount(0);
-  await expect(page.locator("#view-select")).toBeEnabled();
+  for (const mode of ["pov", "researcher"]) {
+    await expect(
+      page.locator(`#view-switch button[data-view-mode="${mode}"]`),
+    ).toBeEnabled();
+  }
   await expect(page.locator("#preset-select")).toHaveCount(0);
   await expect(page.locator("#exit-button")).toBeEnabled();
   const oracleCloseoutLabel =
@@ -969,8 +1109,23 @@ test("target race remains Connected and fenced until Save As recovers cached art
   await expect(page.locator('[data-key="v"]')).toHaveCount(0);
   await expect(page.locator('[data-key="n"]')).toHaveCount(0);
   await expect(page.locator('[data-key="w"]')).toBeDisabled();
+  // Allowed Now is a group of pick buttons: the group is disabled, and so is
+  // every pick in it.
   await expect(page.locator("#command-target-select")).toBeDisabled();
-  const rosterButtons = page.locator("#roster button");
+  await expect(page.locator("#command-target-select")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(page.locator("#command-target-select .pick:enabled")).toHaveCount(0);
+  // The Ranges switch (G) sits in the Visual Filters drawer and stays usable.
+  await expect(page.locator("#visual-filters-button")).toBeEnabled();
+  await page.locator("#visual-filters-button").click();
+  await expect(page.locator("#live-ranges-button")).toBeVisible();
+  await expect(page.locator("#live-ranges-button")).toBeEnabled();
+  await page.locator("#visual-filters-button").click();
+  await expect(page.locator("#visual-filters-drawer")).toBeHidden();
+  // The Your Turn card's champion rows stay usable for looking at champions.
+  const rosterButtons = page.locator("#checklist .cl-row");
   await expect.poll(() => rosterButtons.count()).toBeGreaterThan(0);
   expect(
     await rosterButtons.evaluateAll((buttons) =>
@@ -1009,7 +1164,9 @@ test("target race remains Connected and fenced until Save As recovers cached art
     const blockedSelectors = [
       "#battlefield",
       "#command-target-select",
+      "#command-target-select .pick",
       '[data-key="w"]',
+      "#submit-turn-button",
     ];
     /** @param {Element | null} element */
     const tabFocusable = (element) =>
@@ -1028,7 +1185,12 @@ test("target race remains Connected and fenced until Save As recovers cached art
         }
       }
     }
-    const allowedSelectors = ["#view-select", '[data-key="g"]', "#exit-button"];
+    const allowedSelectors = [
+      '#view-switch button[data-view-mode="pov"]',
+      '#view-switch button[data-view-mode="researcher"]',
+      "#visual-filters-button",
+      "#exit-button",
+    ];
     const allowedFocus = [];
     for (const selector of allowedSelectors) {
       const element = document.querySelector(selector);
@@ -1039,29 +1201,39 @@ test("target race remains Connected and fenced until Save As recovers cached art
     return { allowedFocus, blockedTabLeaks };
   });
   expect(focusFence).toEqual({
-    allowedFocus: ["#view-select", '[data-key="g"]', "#exit-button"],
+    allowedFocus: [
+      '#view-switch button[data-view-mode="pov"]',
+      '#view-switch button[data-view-mode="researcher"]',
+      "#visual-filters-button",
+      "#exit-button",
+    ],
     blockedTabLeaks: [],
   });
 
-  await page.locator("#view-select").selectOption("pov");
+  await chooseView(page, "pov");
   await expect(page.locator("html")).toHaveAttribute("data-audience", "agent_pov");
   const agentCloseoutLabel =
     "Agent POV recording closeout battlefield. Authorized bodies can be inspected; simulator controls are unavailable.";
   await expect(page.getByRole("group", { name: agentCloseoutLabel })).toBeVisible();
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Inspect visible bodies here, or choose an agent in the roster to inspect its view. This recording cannot accept another turn.",
+    "Inspect visible bodies here, or click a champion's portrait in the scorebug to inspect its view. This recording cannot accept another turn.",
   );
   const agentCloseoutBodies = page.locator("#battlefield .agent[role='button']");
   await expect.poll(() => agentCloseoutBodies.count()).toBeGreaterThan(0);
-  const agentCloseoutRows = page.locator("#roster .roster-primary-action");
+  // Agent POV still lists every champion under its team. Enemies the team
+  // cannot see read Out Of Sight, in the list and on the scorebug.
+  const agentCloseoutRows = page.locator("#checklist .cl-row");
   await expect.poll(() => agentCloseoutRows.count()).toBeGreaterThan(1);
-  await expect(page.locator('#roster [data-visibility="visible"]')).toBeVisible();
-  await expect(page.locator('#roster [data-visibility="not-visible"]')).toBeVisible();
-  await expect(page.locator("#roster .roster-team[data-team-id]")).toHaveCount(2);
-  await expect(page.locator("#roster .roster-team[data-team-id]:visible")).toHaveCount(
-    0,
-  );
+  await expect(page.locator("#checklist > .cl-head")).toHaveText(["Team A", "Team B"]);
+  const unseenRows = page.locator('#checklist .cl-row[data-sight="out"]');
+  await expect(unseenRows.first()).toBeVisible();
+  await expect(unseenRows.first()).toContainText("Out Of Sight");
+  await expect(
+    page.locator('#checklist .cl-row:not([data-sight="out"])').first(),
+  ).toBeVisible();
+  await expect(page.locator("#scorebug .por.unseen").first()).toBeVisible();
+  await expect(page.locator("#scorebug .por:not(.unseen)").first()).toBeVisible();
   expect(
     await agentCloseoutRows.evaluateAll((buttons) =>
       buttons.every(
@@ -1089,8 +1261,15 @@ test("target race remains Connected and fenced until Save As recovers cached art
     throw new Error("Agent closeout body lacks a public identity.");
   }
   await inspectedCloseoutBody.click();
+  // The page's agent inspector follows the inspected body. The BattleClient
+  // keeps that inspector in its closed Developer drawer and shows the champion
+  // in its hover card instead.
   await expect(page.locator("#agent-details")).toHaveAttribute("open", "");
   await expect(page.locator("#agent-details")).toContainText(
+    new RegExp(`Agent ${inspectedCloseoutPublicId}(?!\\d)`, "u"),
+  );
+  await expect(page.locator("#hcard")).toBeVisible();
+  await expect(page.locator("#hcard")).toContainText(
     `Agent ID ${inspectedCloseoutPublicId}`,
   );
   await page.evaluate(
@@ -1111,8 +1290,25 @@ test("target race remains Connected and fenced until Save As recovers cached art
   });
   await expect(page.locator("body")).not.toContainText(started.outputDirectory);
   await expect(page.locator("body")).not.toContainText(started.replayPath);
+  // Check the help inventory with the recovery controls in view.
+  await openRecordingPanel(page);
+  // The popover says why the save failed, in plain words.
+  await expect(page.locator("#pop-reason")).toHaveText(
+    "Reason: The save folder or file name could not be used, for example a missing folder or a file that already exists.",
+  );
   const recoveryHelp = await expectVisibleInteractiveHelpInventory(page);
   expect(recoveryHelp.disabled.length).toBeGreaterThan(0);
+  const helped = [
+    ...recoveryHelp.registered,
+    ...recoveryHelp.describedBy.map(({ label }) => label),
+  ];
+  for (const control of [
+    "#recording-retry-button",
+    "#recording-save-as-input",
+    "#recording-save-as-button",
+  ]) {
+    expect(helped).toContain(control);
+  }
 
   await page.locator("#recording-retry-button").click();
   await expect(page.locator("#connection-status")).toHaveText("Connected");
@@ -1121,14 +1317,17 @@ test("target race remains Connected and fenced until Save As recovers cached art
     "persistence_failed",
   );
 
+  await closeRecordingPanel(page);
   await page.locator("#exit-button").click();
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#connection-status")).not.toHaveText("Closed");
-  await expect(page.locator("#notice")).toContainText("remains open for recovery");
+  await expectLiveMessage(page, "remains open for recovery");
 
+  await openRecordingPanel(page);
   await page.locator("#recording-save-as-input").fill("../escape.marlbg-replay.json");
   await page.locator("#recording-save-as-button").click();
-  await expect(page.locator("#notice")).toContainText(
+  await expectLiveMessage(
+    page,
     "Save As requires a basename ending in .marlbg-replay.json",
   );
   await expect(page.locator("html")).toHaveAttribute(
@@ -1142,7 +1341,12 @@ test("target race remains Connected and fenced until Save As recovers cached art
   await page.locator("#recording-save-as-input").fill(recoveredName);
   await page.locator("#recording-save-as-button").click();
   const replayPage = await openSavedReplay(page);
-  await expectSettledReplayHandoff(replayPage, "pov");
+  // Saved now: the reason line is gone.
+  await expect(page.locator("#pop-reason")).toBeHidden();
+  await expect(page.locator("#pop-reason")).toHaveText("");
+  await expectSettledReplayHandoff(replayPage);
+  const { frame: recoveredPov } = await switchReplayToAgentPov(replayPage);
+  expect(recoveredPov.public_agent_id).toBe(failedFrame.recipient_public_agent_id);
   await expectSavedArtifacts(recoveredReplayPath, recoveredMetricPath, 1);
   expect(await readFile(started.replayPath)).toEqual(Buffer.from(sentinel));
   expectNoBrowserErrors(page);
@@ -1178,12 +1382,17 @@ test("Reconnect completes a lost Finish response without retrying publication", 
   } finally {
     releaseResponse();
   }
-  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
-  await expect(page.locator("#notice")).toContainText(
+  // A failed connection reads Disconnected, which comes before Resync Required.
+  await expect(page.locator("#connection-status")).toHaveText("Disconnected");
+  await expect(page.locator("#reconnect-button")).toBeVisible();
+  await expectLiveMessage(
+    page,
     "Command outcome is unknown because the connection failed",
   );
-  await expect(page.locator("#recording-metrics-progress")).toBeHidden();
-  await expect(page.locator("#recording-metrics-help")).toBeHidden();
+  // The lost answer ends the saving state: the button is Finish And Save
+  // again, disabled until Reconnect.
+  await expectFinishAndSave(page);
+  await expect(page.locator("#recording-finish-button")).toBeDisabled();
   expect(finishRequests).toBe(1);
 
   await page.unroute("**/api/command");
@@ -1191,7 +1400,7 @@ test("Reconnect completes a lost Finish response without retrying publication", 
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
   const replayPage = await openSavedReplay(page);
   await expectSettledReplayHandoff(replayPage);
-  await expect(page.locator("#recording-metrics-progress")).toBeHidden();
+  await expect(page.locator("#recording-finish-button")).toHaveText("Open Replay");
   expect(finishRequests).toBe(1);
   await expectSavedArtifacts(started.replayPath, started.metricReportPath, 1);
 
@@ -1212,6 +1421,7 @@ test("blocked popups use a normal link and Viewer Exit can be reopened", async (
     "data-recording-lifecycle",
     "saved",
   );
+  await openRecordingPanel(page);
   await page.locator("#recording-review-button").click();
   const link = page.locator("#recording-replay-link");
   await expect(link).toBeVisible();
@@ -1223,6 +1433,7 @@ test("blocked popups use a normal link and Viewer Exit can be reopened", async (
   await viewer.locator("#exit-button").click();
   await expect(viewer.locator("#connection-status")).toHaveText("Closed");
   await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "live");
+  await openRecordingPanel(page);
   await page.locator("#recording-review-button").click();
   await expect(link).not.toHaveAttribute("href", firstUrl ?? "");
   const reopened = page.waitForEvent("popup");
@@ -1249,14 +1460,14 @@ test("an old replacement dialog cannot save or discard a newer match", async ({
     .poll(async () => (await currentFrame(page)).recording.captured_transition_count)
     .toBe(2);
   // The normal background read installs the newer revision while the dialog stays open.
-  await expect(page.locator("#recording-progress")).toContainText("2 /");
+  await expect(page.locator("#pop-state")).toHaveText(/^2 Ticks Kept Since Tick \d+$/u);
   /** @type {import("@playwright/test").Request[]} */
   const commands = [];
   page.on("request", (request) => {
     if (isLiveCommandPost(request)) commands.push(request);
   });
   await page.locator("#recording-save-replace-button").click();
-  await expect(page.locator("#notice")).toContainText("The match changed");
+  await expectLiveMessage(page, "The match changed");
   expect(commands).toHaveLength(0);
   expect((await currentFrame(page)).recording.captured_transition_count).toBe(2);
   expect(
@@ -1297,6 +1508,7 @@ test("an old replay response cannot attach a link to a newer match", async ({
     }
     await route.continue();
   });
+  await openRecordingPanel(page);
   await page.locator("#recording-review-button").click();
   await heldPromise;
   try {
@@ -1323,8 +1535,12 @@ test("an old replay response cannot attach a link to a newer match", async ({
     "data-recording-lifecycle",
     "recording",
   );
+  // The new match has no saved replay: no link, and Open Replay waits again.
+  await openRecordingPanel(page);
   await expect(page.locator("#recording-replay-link")).toBeHidden();
-  await expect(page.locator("#recording-review-button")).toBeHidden();
+  await expect(page.locator("#recording-review-button")).toBeVisible();
+  await expect(page.locator("#recording-review-button")).toBeDisabled();
+  await expectFinishAndSave(page);
   expect((await currentFrame(page)).episode_id).not.toBe(previous.episode_id);
   await expectSavedArtifacts(started.replayPath, started.metricReportPath, 0);
   expectNoBrowserErrors(page);

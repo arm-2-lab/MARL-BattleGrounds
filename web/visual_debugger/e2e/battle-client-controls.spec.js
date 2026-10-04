@@ -5,18 +5,19 @@
  * says the target is cleared and keys are off. A 1 with no target is refused
  * by the page in the vision's words and never reaches Python. A right click
  * on the arena sends the secondary pointer. G in Oracle View sends keyboard g
- * and the status line says the reach rings changed. N on the focused arena
+ * and the deck's message line says the reach rings changed. N on the focused arena
  * is one tick: in interactive play it goes to Python as keyboard n and locks
  * in, so the tick advances by exactly one. The Recording pill opens its popover; Finish And Save there closes
- * it, saves, and the pill and seal read Saved while Open Replay stays visible
- * and becomes enabled. After the
+ * it and saves; the pill reads Saved, the top bar's save button turns into an
+ * enabled Open Replay, and the popover's Open Replay stays visible and becomes
+ * enabled. After the
  * save, R restarts at once (a new episode, no dialog). Exit closes the server
  * and the page says the match is closed. In Policies Only (the harness's
  * autonomous fixture), Run is paced by the page: it sends only Play One Turn
  * (keyboard Enter) commands, one turn at a time, never Python's run or pause,
  * so the server's run_state stays paused; the button reads Pause (pressed),
  * Play One Turn is disabled, Space and N on the focused arena are ignored,
- * and the status line keeps "Running." from turn to turn. Pause lets at most
+ * and the deck's message line keeps "Running." from turn to turn. Pause lets at most
  * the turn already out land, then says "Paused after the current turn." and
  * sends nothing more; Play One Turn then plays exactly
  * one tick and says "The turn played. The match is paused again.".
@@ -167,7 +168,9 @@ test("every BattleClient control sends its command and shows its effect", async 
   await page.locator("#pop-finish").click();
   await expect(page.locator("#rec-pop")).toBeHidden();
   await expect(page.locator("#rec-pill-text")).toHaveText("Saved");
-  await expect(page.locator("#rec-seal-text")).toHaveText(/^Saved · \d+ Ticks?$/u);
+  // The top bar's save button turns into Open Replay (owner, 4 Oct 2026).
+  await expect(page.locator("#recording-finish-button")).toHaveText("Open Replay");
+  await expect(page.locator("#recording-finish-button")).toBeEnabled();
   expect(commands.at(-1)).toMatchObject({ command_type: "finish_and_review" });
   await page.locator("#recording-badge").click();
   await expect(page.locator("#recording-review-button")).toBeEnabled();

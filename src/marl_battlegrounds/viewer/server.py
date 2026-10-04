@@ -118,7 +118,6 @@ _REQUIRED_RUNTIME_ASSET_PATHS = (
     "src/looks/champion-frame.js",
     "src/looks/frame-explanation.js",
     "src/looks/hud.js",
-    "src/looks/visual-key.js",
     "src/main.js",
     "src/match-summary.js",
     "src/metrics-panel.js",

@@ -3,7 +3,11 @@
  * and separate Replay Viewer inspection. Preserve exact policy and replay identities:
  * the shared scorebug names Team B "tdm-gamma" and Team A "You" in live play or the
  * recorded "Manual" in the Replay Viewer, and the match summary keeps every policy
- * reference.
+ * reference. In live play, a click on GAMMA's Priest sends one control request
+ * and the deck shows Watch Only: the Priest's class, Agent ID and "Played By
+ * tdm-gamma", with every Allowed Now pick disabled. Lock In then accepts one
+ * step, and the Recording pill's popover shows the kept tick and saves the
+ * replay with its Finish And Save.
  * Private controller-menu behavior is checked in the local editor test suite.
  */
 import { expect, test } from "@playwright/test";
@@ -202,22 +206,42 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   await expect(page.locator("#step-value")).toHaveText("0");
   await expectGammaScoreboard(page, "You");
 
-  const priestB = page.locator('#roster .roster-row[data-team="team-b"]').filter({
-    has: page.locator(".roster-class", { hasText: "Priest" }),
+  // The BattleClient has no Roster panel: a click on a champion's body sends
+  // the same control request the old Roster row sent.
+  const priestB = page.locator(
+    '#battlefield .agent[data-team="team-b"][data-class="priest"]',
+  );
+  const focusResponse = await applyLiveCommand(page, () => priestB.click());
+  expect(focusResponse.request().postDataJSON().command).toMatchObject({
+    command_type: "roster_selection",
+    role: "control",
+    global_slot: expect.any(Number),
   });
-  await applyLiveCommand(page, () => priestB.locator(".roster-primary-action").click());
   await expect(page.locator("#command-deck")).toHaveAttribute(
     "data-policy-controller-read-only",
     "true",
   );
-  await expect(page.locator("#command-controlled-actor")).toHaveText(
-    /^Priest · ID \d+ · Watch Only · tdm-gamma$/u,
+  // GAMMA's champion is in view but not yours: the deck shows Watch Only with
+  // its class, ID and the tdm-gamma label, and no target can be picked.
+  const watchOnly = page.locator("#watch-only");
+  await expect(watchOnly).toBeVisible();
+  await expect(watchOnly.locator(".eyebrow")).toHaveText("Watch Only");
+  await expect(page.locator("#wo-name")).toHaveText(/^Priest · /u);
+  await expect(page.locator("#wo-meta")).toHaveText(
+    /^Agent ID \d+ · Played By tdm-gamma$/u,
   );
-  await expect(page.locator("#command-controlled-actor")).toHaveAttribute(
-    "aria-label",
-    /^Priest · ID \d+ · Watch Only · tdm-gamma\. This policy chooses its own action\.$/u,
+  await expect(page.locator("#wo-meta .controller-name")).toHaveText(GAMMA_LABEL);
+  await expect(watchOnly).toContainText(
+    "You can look at this champion, but not command it. Policies never see your orders.",
   );
   await expect(page.locator("#command-target-select")).toBeDisabled();
+  const picks = page.locator("#command-target-select button.pick");
+  await expect(picks.first()).toBeVisible();
+  expect(
+    await picks.evaluateAll((buttons) =>
+      buttons.every((button) => button instanceof HTMLButtonElement && button.disabled),
+    ),
+  ).toBe(true);
 
   await expect(page.locator("#submit-turn-button")).toBeEnabled();
   await applyLiveCommand(page, () => page.locator("#submit-turn-button").click());
@@ -232,9 +256,12 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     captured_transition_count: 1,
   });
 
+  // The Recording pill opens the Replay Recording popover; its Finish And Save
+  // saves the replay.
   await openRecordingPanel(page);
+  await expect(page.locator("#pop-state")).toHaveText("1 Tick Kept Since Tick 0");
   const finishResponse = await applyLiveCommand(page, () =>
-    page.locator("#recording-finish-button").click(),
+    page.locator("#pop-finish").click(),
   );
   await closeRecordingPanel(page);
   expect(finishResponse.request().postDataJSON().command).toMatchObject({

@@ -1566,7 +1566,7 @@ export function update(nodes, records) {
 /**
  * Return the tooltip descriptor of a record (through tooltip.js), or null for
  * an unknown kind. Only Last Seen marks register theirs on the arena; the
- * others serve the Visual Key. The text names no champion the audience cannot
+ * other kinds have no hover on the arena. The text names no champion the audience cannot
  * see: a Last Seen card names only the class it saw.
  *
  * @param {LookRecord} record

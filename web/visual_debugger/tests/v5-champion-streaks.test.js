@@ -1,6 +1,7 @@
 /**
  * @file Check the Champion Streaks switch (`champion_streaks`) of the Herald
- * Cards look (`src/looks/heralds.js`). With the switch off (the default) a
+ * Cards look (`src/looks/heralds.js`). With the switch off (it is on by
+ * default since 4 Oct 2026; these checks pass it explicitly) a
  * herald_card row's `streaks` facts are ignored and every card is exactly the
  * plain one: a single fall still gives no card. Switched on, the row's first
  * valid streak heads the card: the title "5 Takedowns Without Falling", the
@@ -9,12 +10,13 @@
  * tick's fall moment join the eyebrow, at most two ("Team B Rogue In 10
  * Takedowns", "Double Takedown", "Trade", "◆ Charge Takedown"). Invalid facts
  * are skipped, the previous tick's held card follows the same switch, a card
- * too wide for the slot becomes the one-line band, and the tooltip explains
+ * too wide for its spot stays the plate at a smaller readable size, and the
+ * tooltip explains
  * the streak in plain words with shared credit. Agent POV: the look draws
  * only the streaks the row carries and counts no history itself, so a row
  * without a fact for a champion gives that champion no card. build() draws
  * no dots and stays inside the node budget with export-safe nodes, and the switch
- * owns the registered herald_streak paint part with token colors.
+ * owns the registered herald_streak paint part; heralds.css keeps no dot rules.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -234,16 +236,18 @@ test("Agent POV: only the row's own facts are drawn, so an unseen streak gives n
   assert.doesNotMatch(JSON.stringify(card), /"4"/u);
 });
 
-test("a card too wide for its slot becomes the one-line band", () => {
+test("a card too wide for its spot stays the plate, at a smaller readable size", () => {
   const narrow = { left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400 };
-  const [band] = heralds.records({
+  const [card] = heralds.records({
     event: heraldRow([fall(2, "6")], [streak(1, 1, "0", 10)]),
     bounds: narrow,
     filters: ON,
   });
-  assert.equal(band.kind, "herald-band");
-  assert.equal(band.text, "10 Takedowns Without Falling · Team A Mage");
-  assert.deepEqual(band.streak, { title: "Champion · ID 0", takedowns: 10 });
+  assert.equal(card.kind, "herald-plate");
+  assert.equal(card.title, "10 Takedowns Without Falling");
+  assert.equal(card.eyebrow, "Team A Mage");
+  assert.ok(card.scale <= 1 && card.scale >= 9 / 11 - 1e-9);
+  assert.deepEqual(card.streak, { title: "Champion · ID 0", takedowns: 10 });
 });
 
 test("build draws no dots, stays inside the budget with export-safe nodes, and the tooltip explains it", () => {
@@ -278,7 +282,7 @@ test("build draws no dots, stays inside the budget with export-safe nodes, and t
   assert.deepEqual(rows[1], ["Fallen", "Warrior · ID 6; Warrior · ID 7"]);
 });
 
-test("the switch owns its paint part and its dots use team tokens", async () => {
+test("the switch owns its paint part and the styles keep no dot rules", async () => {
   assert.ok(
     heralds.PAINT_PARTS.some(
       (registration) =>
@@ -291,6 +295,5 @@ test("the switch owns its paint part and its dots use team tokens", async () => 
     new URL("../src/styles/heralds.css", import.meta.url),
     "utf8",
   );
-  assert.match(css, /\.herald__streak-dots--team-a \{\s*fill: var\(--team-a\);/u);
-  assert.match(css, /\.herald__streak-dots--team-b \{\s*fill: var\(--team-b\);/u);
+  assert.doesNotMatch(css, /streak-dots/u);
 });

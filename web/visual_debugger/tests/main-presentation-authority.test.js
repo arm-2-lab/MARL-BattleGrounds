@@ -14,7 +14,7 @@
  * Tick in the Actions tab, and leaving Agent POV empties the hidden POV agent
  * chip (button content, its aria-label and the picker) like a fresh page. Frames are presented and reprojected on the
  * page's choreography surface (the renderer's surface plus the HUD and panel
- * beat-hold roots), the Visual Key is a dialog mounted from its button, and the
+ * beat-hold roots), no Visual Key is mounted (owner, 4 Oct 2026), and the
  * live Lock In copy comes from the Tactics Turn deck labels. In scripted live
  * playback the deck's submit controls (Lock In, which reads "Advance scripted
  * frame", and the Watching bar's Play One Turn) both send N. The transport no
@@ -670,16 +670,14 @@ test("main shares the Agent Details latch and rejects stale local keys and focus
   assert.match(restore, /focusWasNotMovedByUser/u);
 });
 
-test("main excludes the global Visual Key from scientific preference and inert state", async () => {
+test("main mounts no Visual Key and keeps none in its scientific disclosures", async () => {
   const source = await readFile(mainUrl, "utf8");
   const idsStart = source.indexOf("const SCIENTIFIC_DISCLOSURE_BODY_IDS");
   const idsEnd = source.indexOf("const scientificDisclosures", idsStart);
   const scientificIds = source.slice(idsStart, idsEnd);
 
   assert.doesNotMatch(scientificIds, /visual-key/u);
-  // The Visual Key is a dialog behind its button, mounted once at startup.
-  assert.match(source, /createVisualKey\(\{\s*button: elements\.visualKeyButton,/u);
-  assert.doesNotMatch(source, /elements\.visualKey\b/u);
+  assert.doesNotMatch(source, /createVisualKey|visualKeyButton|visual-key/u);
 });
 
 test("main sends authorized battlefield pointer commands in both live visual authorities", async () => {

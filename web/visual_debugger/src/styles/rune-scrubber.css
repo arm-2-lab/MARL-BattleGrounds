@@ -432,15 +432,13 @@ html[data-product-kind="replay_viewer"]
   gap: 4px;
 }
 
-/* The camera switch keeps one width in every camera state, so the row stays
-   on one line and the dock (and so the arena) never changes height (B12):
-   - no "CAMERA" eyebrow (the button group keeps its name "Camera" through
-     its aria-label);
+/* The camera switch takes no room in the row (owner, 4 Oct 2026: its
+   buttons are the arena's V and B keys; the Camera Inset is gone):
+   - no "CAMERA" eyebrow (the empty button group keeps its name "Camera"
+     through its aria-label);
    - the Battle Cam words ("Battle Cam · 1.45×", "Slow Motion · 0.50×") stay in
-     the page for screen readers but take no room: the pressed Battle Cam
-     button already names the mode;
-   - the Camera Inset map (43 x 22 px) keeps a fixed slot inside the 32 px row,
-     empty while the inset is off, so turning it on moves nothing. */
+     the page for screen readers but take no room: the lit B key already
+     names the mode. */
 html[data-product-kind="replay_viewer"]
   #replay-timeline
   .rune-scrubber__row
@@ -458,25 +456,6 @@ html[data-product-kind="replay_viewer"]
   height: 1px;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-html[data-product-kind="replay_viewer"]
-  #replay-timeline
-  .rune-scrubber__row
-  .camera-switch__inset {
-  flex: none;
-  inline-size: 44px;
-  block-size: 22px;
-}
-
-/* The inset's empty slot: while the inset is hidden (the BattleClient's
-   [hidden] rule removes it from the layout), the switch keeps the same room as
-   padding: 44 px for the inset plus the switch's 6 px gap. */
-html[data-product-kind="replay_viewer"]
-  #replay-timeline
-  .rune-scrubber__row
-  #replay-camera-switch:has(> .camera-switch__inset[hidden]) {
-  padding-inline-end: 50px;
 }
 
 /* The Export menu opens above its button, inside the dock's own layer. */

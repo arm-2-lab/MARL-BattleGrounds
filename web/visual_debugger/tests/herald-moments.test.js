@@ -1,20 +1,26 @@
 /**
  * @file Check the Herald Cards moment finder and its cards
  * (`src/looks/heralds.js`: heraldMoments, cardMoments, momentEntersAtSettle,
- * records and build). Contracts: the store's moments (Team Wiped, First
- * Blood, Match Point, Multi Takedown, takedown runs, Rescue, Ultimate
- * Takedown, Trade, Scores Level, Ultimate Combo, Ticks Left) are found from
+ * records and build). Contracts: the store's moments (Penta Takedown, Team
+ * Wiped, First Blood, Match Point, Multi Takedown, takedown runs, Rescue,
+ * Ultimate Takedown, Trade, Scores Level, Ultimate Combo, Ticks Left) are found from
  * the row's facts alone, in the store's headline order (RANK), with the
  * store's words and glyphs; a card names the headline and at most two more
  * moments in its eyebrow; First Blood needs the fresh start and a 0-0 start
  * of the tick, Scores Level a lead of 3 or more before, Match Point a score
  * that rose this tick; the Death Announcer switch off drops the moments born
  * from a fall; a plain single fall still gives no card; Rescue, Ticks Left and
- * a Combo whose target lived wait for the tick to settle; Scores Level and
- * Ultimate Combo are one-line chips; a tier-1 card draws its Herald Rule
- * behind the plate and grows it from the card's centre; every card names
- * its moments in data-herald-moments; a one-line band or chip fades in from
- * the row's phaseStart; the largest cards stay inside BUDGET and draw only
+ * a Combo whose target lived wait for the tick to settle; Ticks Left names
+ * only 30 ticks left (no 10, 5, 4, 3, 2 or 1); Penta Takedown (five falls of
+ * one team) is a tier-1 card that heads the Team Wiped it causes, which joins
+ * its eyebrow as "Team B Wiped"; every moment card is the same plate,
+ * Scores Level (both crests) and Ultimate Combo (a rune diamond per caster)
+ * included, even when the arena is too narrow (it shrinks to its smallest
+ * readable size instead); a tier-1 card draws its Herald Rule behind the
+ * plate and grows it from the card's centre; every card names its moments
+ * in data-herald-moments; a plate fades in from the row's phaseStart; a held
+ * card with an exitAt fades out from it over CARD_FADE_OUT_MS (fill
+ * "backwards") and one without stays; the largest cards stay inside BUDGET and draw only
  * export-safe nodes; rowBudget, the row's allowance the plan charges, covers
  * every card it can draw plus the card's own group, which the painter counts
  * as a kept node (Match Point near the end of a match included), and the whole
@@ -146,8 +152,8 @@ test("Team Wiped and Match Point outrank the takedowns, with their glyphs", () =
     row({
       falls: [fall(2, "5"), fall(2, "6")],
       match: {
-        before: [16, 10],
-        after: [18, 10],
+        before: [17, 10],
+        after: [19, 10],
         pointsToWin: 20,
         tick: 150,
         tickLimit: 300,
@@ -155,21 +161,28 @@ test("Team Wiped and Match Point outrank the takedowns, with their glyphs", () =
     }),
   );
   assert.equal(point.title, "Match Point");
-  assert.equal(point.eyebrow, "Team A Needs 2 Points · Double Takedown");
+  assert.equal(point.eyebrow, "Team A Needs 1 Point · Double Takedown");
   assert.equal(point.ruleTeam, null);
   assert.deepEqual(
     point.glyphs.map((/** @type {any} */ glyph) => [glyph.type, glyph.size]),
     [["crest", 22]],
   );
   const both = heralds.heraldMoments(
-    row({ match: { before: [18, 17], after: [19, 18], pointsToWin: 20, tick: 200 } }),
+    row({ match: { before: [18, 18], after: [19, 19], pointsToWin: 20, tick: 200 } }),
   );
   assert.deepEqual(both[0], { kind: "matchPoint", teamIds: [1, 2], needs: 1 });
   assert.equal(
     card(
-      row({ match: { before: [18, 17], after: [19, 18], pointsToWin: 20, tick: 200 } }),
+      row({ match: { before: [18, 18], after: [19, 19], pointsToWin: 20, tick: 200 } }),
     ).eyebrow,
     "Both Teams Need 1 Point",
+  );
+  // 2 points short is not Match Point; only exactly 1 point short is.
+  assert.deepEqual(
+    kinds(
+      row({ match: { before: [16, 10], after: [18, 10], pointsToWin: 20, tick: 150 } }),
+    ),
+    [],
   );
   // A score that did not rise this tick is a state, not a new Match Point.
   assert.deepEqual(
@@ -226,7 +239,7 @@ test("runs, Rescue, Ultimate Takedown and Trade keep the store's order and words
   );
 });
 
-test("Scores Level, Ultimate Combo and Ticks Left need their facts and wait as the store says", () => {
+test("Scores Level, Ultimate Combo and 30 Ticks Left are plates that need their facts and wait as the store says", () => {
   const level = row({
     falls: [fall(1, "1")],
     match: {
@@ -238,10 +251,18 @@ test("Scores Level, Ultimate Combo and Ticks Left need their facts and wait as t
     },
     largestLeadBefore: 3,
   });
-  const chip = card(level);
-  assert.equal(chip.kind, "herald-chip");
-  assert.equal(chip.text, "Scores Level · 8 – 8");
-  assert.deepEqual(chip.kinds, ["level"]);
+  const levelCard = card(level);
+  assert.equal(levelCard.kind, "herald-plate");
+  assert.equal(levelCard.title, "Scores Level");
+  assert.equal(levelCard.eyebrow, "8 – 8");
+  assert.deepEqual(
+    levelCard.glyphs.map((/** @type {any} */ glyph) => [glyph.type, glyph.teamKey]),
+    [
+      ["crest", "a"],
+      ["crest", "b"],
+    ],
+  );
+  assert.deepEqual(levelCard.kinds, ["level"]);
   assert.deepEqual(kinds({ ...level, largestLeadBefore: 2 }), []);
   const combo = row({
     combos: [
@@ -255,9 +276,17 @@ test("Scores Level, Ultimate Combo and Ticks Left need their facts and wait as t
       },
     ],
   });
-  const comboChip = card(combo);
-  assert.equal(comboChip.text, "Ultimate Combo · Charge + Freezing Trap");
-  assert.deepEqual(comboChip.diamonds, ["warrior", "hunter"]);
+  const comboCard = card(combo);
+  assert.equal(comboCard.kind, "herald-plate");
+  assert.equal(comboCard.title, "Ultimate Combo");
+  assert.equal(comboCard.eyebrow, "Charge + Freezing Trap");
+  assert.deepEqual(
+    comboCard.glyphs.map((/** @type {any} */ glyph) => [glyph.type, glyph.classKey]),
+    [
+      ["diamond", "warrior"],
+      ["diamond", "hunter"],
+    ],
+  );
   const [comboMoment] = heralds.heraldMoments(combo);
   assert.equal(heralds.momentEntersAtSettle(comboMoment), true);
   assert.equal(heralds.momentEntersAtSettle({ ...comboMoment, fell: true }), false);
@@ -275,20 +304,24 @@ test("Scores Level, Ultimate Combo and Ticks Left need their facts and wait as t
   assert.equal(moon.title, "30 Ticks Left");
   assert.equal(moon.eyebrow, "Draw If No Team Reaches 20");
   assert.equal(moon.glyphs[0].type, "crescent");
-  assert.equal(
-    card(
-      row({
-        match: {
-          before: [5, 9],
-          after: [5, 9],
-          pointsToWin: 20,
-          tick: 299,
-          tickLimit: 300,
-        },
-      }),
-    ).title,
-    "1 Tick Left",
-  );
+  // The owner removed the 10, 5, 4, 3, 2 and 1 Ticks Left cards (4 Oct 2026).
+  for (const left of [10, 5, 4, 3, 2, 1]) {
+    assert.deepEqual(
+      kinds(
+        row({
+          match: {
+            before: [5, 9],
+            after: [5, 9],
+            pointsToWin: 20,
+            tick: 300 - left,
+            tickLimit: 300,
+          },
+        }),
+      ),
+      [],
+      `${left} ticks left`,
+    );
+  }
   assert.deepEqual(
     kinds(
       row({
@@ -324,7 +357,7 @@ test("Scores Level, Ultimate Combo and Ticks Left need their facts and wait as t
         before: [5, 9],
         after: [5, 9],
         pointsToWin: 20,
-        tick: 290,
+        tick: 270,
         tickLimit: 300,
       },
     }),
@@ -341,7 +374,7 @@ test("the Death Announcer switch off drops the moments born from a fall", () => 
       before: [0, 0],
       after: [2, 0],
       pointsToWin: 20,
-      tick: 290,
+      tick: 270,
       tickLimit: 300,
     },
     rescues: [{ champion: { classId: 1, teamId: 1 }, byUltimate: false }],
@@ -403,7 +436,7 @@ function mount(animate) {
   };
 }
 
-test("build draws the Herald Rule behind a tier-1 plate, names the moments and fades bands in", () => {
+test("build draws the Herald Rule behind a tier-1 plate, names the moments, fades plates in and held cards out", () => {
   const event = row({
     falls: [fall(2, "5"), fall(2, "6")],
     freshStart: true,
@@ -425,25 +458,26 @@ test("build draws the Herald Rule behind a tier-1 plate, names the moments and f
     assert.equal(spec.options.fill, "backwards");
     assert.equal(spec.options.delay, 960);
   }
-  // A chip and a one-line band fade in from phaseStart; held ones do not.
-  const chipRow = row({
+  // An Ultimate Combo is a plate too: it unfurls from phaseStart like any card.
+  const comboRow = row({
     combos: [{ casters: [{ classId: 2 }, { classId: 4 }], fell: true }],
     phaseStart: 1400,
   });
-  const chipped = mount(true);
-  heralds.build(
-    heralds.records({ event: chipRow, bounds }),
-    chipped.doc,
-    chipped.mount,
+  const combo = mount(true);
+  heralds.build(heralds.records({ event: comboRow, bounds }), combo.doc, combo.mount);
+  assert.deepEqual(
+    combo.mount.animationSpecs.map((/** @type {any} */ spec) =>
+      spec.id.split(":").at(-1),
+    ),
+    ["herald-card", "herald-glyphs"],
   );
-  assert.equal(chipped.mount.animationSpecs.length, 1);
-  assert.equal(chipped.mount.animationSpecs[0].options.delay, 1400);
+  assert.equal(combo.mount.animationSpecs[0].options.delay, 1400);
+  // Too narrow for the full plate: still the plate, at its smallest readable size.
   const narrow = { left: 0, top: 0, right: 200, bottom: 300, width: 200, height: 300 };
-  const [band] = heralds.records({ event, bounds: narrow });
-  assert.equal(band.kind, "herald-band");
-  const banded = mount(true);
-  heralds.build([band], banded.doc, banded.mount);
-  assert.equal(banded.mount.animationSpecs.length, 1);
+  const [small] = heralds.records({ event, bounds: narrow });
+  assert.equal(small.kind, "herald-plate");
+  assert.ok(Math.abs(small.scale - 9 / 11) < 1e-9);
+  // A held card stays the whole tick; with an exitAt it fades out from it.
   const held = mount(true);
   heralds.build(
     heralds.records({ event: row(), previous: event, bounds }),
@@ -451,6 +485,55 @@ test("build draws the Herald Rule behind a tier-1 plate, names the moments and f
     held.mount,
   );
   assert.equal(held.mount.animationSpecs.length, 0);
+  const leaving = mount(true);
+  heralds.build(
+    heralds.records({ event: row({ exitAt: 1250 }), previous: event, bounds }),
+    leaving.doc,
+    leaving.mount,
+  );
+  assert.equal(leaving.mount.animationSpecs.length, 1);
+  const [exit] = leaving.mount.animationSpecs;
+  assert.equal(exit.id.split(":").at(-1), "herald-exit");
+  assert.deepEqual(exit.keyframes, [{ opacity: 1 }, { opacity: 0 }]);
+  assert.equal(exit.options.delay, 1250);
+  assert.equal(exit.options.duration, heralds.CARD_FADE_OUT_MS);
+  assert.equal(exit.options.fill, "backwards");
+  // A settled paint never fades a held card out.
+  const still = mount(false);
+  heralds.build(
+    heralds.records({ event: row({ exitAt: 1250 }), previous: event, bounds }),
+    still.doc,
+    still.mount,
+  );
+  assert.equal(still.mount.animationSpecs.length, 0);
+});
+
+test("Penta Takedown heads five falls of one team above the Team Wiped it causes", () => {
+  const five = [1, 2, 3, 4, 5].map((classId) => ({
+    victim: { title: `Champion · ID ${classId + 4}`, classId, teamId: 2 },
+    killers: [],
+    killingTeamId: 1,
+    points: 1,
+  }));
+  const event = row({
+    falls: five,
+    wiped: [{ teamId: 2, members: five.map((fallen) => fallen.victim) }],
+  });
+  assert.deepEqual(kinds(event), ["penta", "wiped"]);
+  const penta = card(event);
+  assert.equal(penta.title, "Penta Takedown");
+  assert.equal(penta.eyebrow, "Team A +5 · Team B Wiped");
+  assert.equal(penta.ruleTeam, "a");
+  assert.ok(penta.tierRule, "a tier-1 card draws the Herald Rule");
+  assert.equal(penta.medallions.length, 5);
+  // Four falls stay a Quadruple Takedown under Team Wiped.
+  const four = row({
+    falls: five.slice(0, 4),
+    wiped: [{ teamId: 2, members: five.slice(0, 4).map((fallen) => fallen.victim) }],
+  });
+  assert.deepEqual(kinds(four), ["wiped", "multiBig"]);
+  assert.equal(card(four).eyebrow, "Team B · Quadruple Takedown");
+  assert.deepEqual(kinds(event, { death_announcer: false }), []);
 });
 
 test("a row with no moment keeps the whole BUDGET for a held card; a run needs 12 nodes", () => {

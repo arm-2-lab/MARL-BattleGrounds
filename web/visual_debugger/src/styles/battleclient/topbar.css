@@ -2,10 +2,14 @@
  * BattleClient top bar (.bc-top, the shared header of every client), ported
  * from the approved vision page: brand lockup (emblem, "MARL-BGs", product
  * name), the place line, the View switch, the Connected and Recording pills,
- * then the Visual Key, Visual Filters, How To Play (Help in the Replay
- * Viewer) and Exit buttons. The Replay Viewer adds its POV agent chip; its
- * Frame Explanation button is in the arena's corner, not here (owner, 3 Oct
- * 2026: one button for each job).
+ * then the Visual Filters, How To Play (Help in the Replay Viewer) and Exit
+ * buttons (owner, 4 Oct 2026: no Visual Key; hover tips, the Champion Card
+ * and Frame Explanation explain every mark where it shows). Live play adds Finish And Save (it reads Saving
+ * Replay… while the server saves and Open Replay once saved) and Restart
+ * just before Exit (owner, 4 Oct 2026: they left the status line under the
+ * deck); the Replay Viewer never shows them. The Replay Viewer adds its POV
+ * agent chip. Frame Explanation's one button is in the arena's corner in
+ * every client, not here (owner, 3 Oct 2026: one button for each job).
  *
  * The rune wordmark, divider and long name give way to the vision's plain
  * "MARL-BGs" (.bname), and the h1 product name becomes the gray .bprod.
@@ -14,9 +18,7 @@
  * actions 4; the DevClient adds a second line at 5 to 7). Inside the toolbar
  * the buttons follow the vision's order. The Details button and the
  * screen-reader audience pill are never shown (the Replay Viewer's replay
- * facts are in its Frame tab); the top bar's Frame Explanation slot is never
- * shown (live play: the vision has none and F opens Frame Explanation; the
- * Replay Viewer: its button is the arena corner's).
+ * facts are in its Frame tab).
  *
  * One row: the bar never wraps in live play, so no message or long place
  * line can push the buttons onto a second row and move the page down. When
@@ -30,14 +32,14 @@
  * same reason. The private DevClient turns wrapping back on for its own
  * second line (its setup bar). The old #notice pill is never shown: in live
  * play the vision has no notice and src/main.js setNotice also sends each
- * notice to the deck's status line (#msg); in the Replay Viewer setNotice
+ * notice to the deck's message line (#msg); in the Replay Viewer setNotice
  * shows it under the Rune Scrubber's readout (owner, 3 Oct 2026), whose line
  * is the one screen-reader status.
  *
  * The emblem is the 64 px PNG shown at 26 px (src/shell.js drops the WebP
  * choice in live play). Brand Lockup off leaves only the client name in plain
  * text. The V camera tip is not in the bar (overlays.css places it over the
- * status line's message).
+ * message of the deck's header line).
  *
  * Scope: live play and the Replay Viewer, which takes the BattleClient's look
  * (owner, 3 Oct 2026). Shared rules start with
@@ -369,13 +371,6 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
-  #visual-key-button {
-  order: 1;
-}
-
-html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
-  .bc
-  .bc-top
   #visual-filters-button {
   order: 2;
 }
@@ -390,15 +385,64 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
-  #exit-button {
+  #recording-finish-button {
   order: 4;
 }
 
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
-  #reconnect-button {
+  #reset-button {
   order: 5;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #exit-button {
+  order: 6;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #reconnect-button {
+  order: 7;
+}
+
+/* Finish And Save and Restart are live play's (the Replay Viewer has no
+   recording and no match to restart). */
+html[data-product-kind="replay_viewer"]
+  .bc
+  .bc-top
+  :is(#recording-finish-button, #reset-button) {
+  display: none;
+}
+
+/* While they cannot be used (orders are out, the game is closing) they are
+   dimmed like the deck's buttons. "Saving Replay…" (no data-action) is not
+   dimmed: it shows the save is under way. Open Replay takes the Moon Silver
+   edge, so the finished game's next step stands out. */
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  :is(#recording-finish-button[data-action], #reset-button):disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-finish-button:not([data-action]) {
+  cursor: progress;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .bc-top
+  #recording-finish-button[data-action="open"] {
+  border-color: var(--moon);
 }
 
 /* Live play: the Visual Filters button shows only while its drawer holds
@@ -423,14 +467,9 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
-  .session-details-button,
-html[data-product-kind="combat_debugger"] .bc .bc-top #frame-explanation-button {
+  .session-details-button {
   display: none;
 }
-
-/* The Replay Viewer never shows the top bar's Frame Explanation slot: its one
-   Frame Explanation button is in the arena's top-right corner (owner, 3 Oct
-   2026; #arena-buttons, arena.css). */
 
 /* The Connected and Recording pills keep the vision's plain pill in every
    state (the shared shell gives them dashed and tinted variants). A saved

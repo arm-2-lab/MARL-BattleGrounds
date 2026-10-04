@@ -104,18 +104,24 @@ function netRow(plan) {
   return row;
 }
 
+// The add-ons off: Saved Beat is on by default since 4 Oct 2026; Last Breath
+// and Battle Text Detail are off by default.
+const ADD_ONS_OFF = setVisualFilterEnabled(
+  DEFAULT_VISUAL_FILTER_STATE,
+  "saved_beat",
+  false,
+);
+
 /** @param {ReadonlyArray<string>} ids */
 function switchedOn(ids) {
-  let state = DEFAULT_VISUAL_FILTER_STATE;
+  let state = ADD_ONS_OFF;
   for (const id of ids) state = setVisualFilterEnabled(state, id, true);
   return state;
 }
 
 test("an Oracle health row carries the recorded totals and attackers", async () => {
   const { frame, recipientKey, sourceKey } = await savedTick();
-  const row = netRow(
-    buildChoreographyPlan(frame, surface, DEFAULT_VISUAL_FILTER_STATE),
-  );
+  const row = netRow(buildChoreographyPlan(frame, surface, ADD_ONS_OFF));
   assert.equal(row.recipientPresentationKey, recipientKey);
   assert.equal(row.maximumHealth, 200);
   assert.equal(row.recipientRadius, 5);
@@ -179,9 +185,7 @@ test("an Agent POV health row carries no totals and no attackers", async () => {
 
 test("the reserved cue box is plain with the add-ons off and grows when they are on", async () => {
   const { frame } = await savedTick();
-  const plain = netRow(
-    buildChoreographyPlan(frame, surface, DEFAULT_VISUAL_FILTER_STATE),
-  );
+  const plain = netRow(buildChoreographyPlan(frame, surface, ADD_ONS_OFF));
   assert.equal(plain.cueBounds.width, 40);
   assert.equal(plain.cueBounds.height, 20);
   const detailed = netRow(

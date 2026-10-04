@@ -7,13 +7,18 @@
  * a file or binding UI events. The caller owns the eventual download.
  *
  * The PNG shows what is on screen: the current camera (Whole Map, Everyone In
- * View or Battle Cam) and the switches that draw on the battlefield. New
- * exports write provenance version 4, which records those switches and the
+ * View or Battle Cam) and the switches that draw on the battlefield, except the
+ * match moment cards (EXPORT_OMIT_SELECTOR: every herald plate, the Lineup and
+ * the Verdict), which are never exported because a figure shows the game
+ * (owner, 4 Oct 2026). New
+ * exports write provenance version 5, which records those switches and the
  * camera frame as a world rectangle (Whole Map when the caller gives none).
- * Versions 1, 2 and 3 still read. The backdrop is locked to #111827 with its grid;
+ * Versions 1 to 4 still read. The backdrop is locked to #111827 with its grid;
  * the `--export-backdrop` token in styles.css owns `.battlefield-shell`'s
  * background, and capture refuses any other backdrop (a palette such as High
- * Contrast must not change it). Agent POV exports record only public facts:
+ * Contrast must not change it). The arena paints its own surround over the
+ * whole backdrop (the palette's --battlefield: #111827 in Moonlit, #0f1522 in
+ * High Contrast), so neither the backdrop nor its grid shows in the PNG. Agent POV exports record only public facts:
  * the recipient, the observation mode and the frame, never hidden champions.
  */
 import { authorizedPresentationSceneView } from "./authorized-presentation-adapter.js";
@@ -24,14 +29,18 @@ import {
 import { VISUAL_FILTER_IDS, VISUAL_FILTER_REGISTRY } from "./visual-filters.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+// The match moment cards an exported PNG leaves out: the painter's herald root
+// (every moment plate) and the page's Lineup and Verdict card group.
+const EXPORT_OMIT_SELECTOR = ".combat-choreography-heralds, [data-match-moment-cards]";
 const PNG_MIME_TYPE = "image/png";
 const PNG_SIGNATURE = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_PROVENANCE_KEYWORD = "MARL-BattleGrounds Replay Provenance";
 const PROVENANCE_SCHEMA_ID = "marl_battlegrounds.replay_battlefield_png_provenance";
 // New exports write this provenance version. Version 2 added red_zone_floors;
 // version 3 records the V5 battlefield switches and the camera frame; version 4
-// adds the Replay Viewer's Next Step Ghost and All Staged Orders.
-const CURRENT_PROVENANCE_SCHEMA_VERSION = 4;
+// adds the Replay Viewer's Next Step Ghost and All Staged Orders; version 5
+// adds High Contrast, a Replay Viewer switch since 4 Oct 2026.
+const CURRENT_PROVENANCE_SCHEMA_VERSION = 5;
 // The 19 filter IDs of version-1 provenance, frozen so saved PNGs stay readable
 // when the live registry grows.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V1 = Object.freeze([
@@ -147,6 +156,16 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V4 = Object.freeze([
   "next_step_ghost",
   "all_staged_orders",
 ]);
+// The filter IDs of version-5 provenance: High Contrast became a Replay Viewer
+// switch that changes the battlefield's colors (owner, 4 Oct 2026), so it is
+// recorded, in registry order before the two Replay Tools switches. Frozen for
+// the same reason as version 3.
+const REPLAY_PNG_VISUAL_FILTER_IDS_V5 = Object.freeze([
+  ...REPLAY_PNG_VISUAL_FILTER_IDS_V3,
+  "high_contrast",
+  "next_step_ghost",
+  "all_staged_orders",
+]);
 // Exact filter IDs each provenance version records.
 const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
   new Map([
@@ -154,17 +173,18 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
     [2, REPLAY_PNG_VISUAL_FILTER_IDS_V2],
     [3, REPLAY_PNG_VISUAL_FILTER_IDS_V3],
     [4, REPLAY_PNG_VISUAL_FILTER_IDS_V4],
+    [5, REPLAY_PNG_VISUAL_FILTER_IDS_V5],
   ]),
 );
-// The camera names a version-3 or version-4 camera frame may carry.
+// The camera names a camera frame (version 3 and later) may carry.
 const REPLAY_PNG_CAMERAS = new Set(["whole_map", "everyone_in_view", "battle_cam"]);
 
 /**
- * The switch IDs a new export records (provenance version 4), in registry
+ * The switch IDs a new export records (provenance version 5), in registry
  * order: every switch that can change the battlefield picture in the Replay
  * Viewer.
  */
-export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V4;
+export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V5;
 
 /**
  * Return the switch IDs the live registry would record today: surface
@@ -522,7 +542,7 @@ function projectCameraFrame(cameraFrame, paintedScene) {
 }
 
 /**
- * Validate a version-1, version-2, version-3 or version-4 Replay Viewer
+ * Validate a version-1, version-2, version-3, version-4 or version-5 Replay Viewer
  * provenance object and return a deeply frozen plain copy with the same
  * version. The versions differ only in the presentation record: version 1
  * holds the 19 filter IDs of REPLAY_PNG_VISUAL_FILTER_IDS_V1, version 2 the 20
@@ -530,7 +550,9 @@ function projectCameraFrame(cameraFrame, paintedScene) {
  * the battlefield switches of REPLAY_PNG_VISUAL_FILTER_IDS_V3 plus a
  * camera_frame (see normalizeStoredCameraFrame), and version 4 the switches of
  * REPLAY_PNG_VISUAL_FILTER_IDS_V4 (adding next_step_ghost and
- * all_staged_orders) plus a camera_frame. A mixed form (wrong filter list for
+ * all_staged_orders) plus a camera_frame, and version 5 the switches of
+ * REPLAY_PNG_VISUAL_FILTER_IDS_V5 (adding high_contrast) plus a camera_frame.
+ * A mixed form (wrong filter list for
  * the version, a camera frame before version 3 or none from version 3 on) is
  * rejected.
  * Require exact root/nested fields, audience-specific
@@ -828,7 +850,7 @@ function exactKeysWithOptionalCamera(options, required, label) {
  * "battle_cam") and the world rectangle it shows, in world units with y up.
  * Resolve the painted selection through the authorized scene, then record 2x
  * pixel sizes. Oracle includes artifact references; Agent POV omits those
- * fields. Return deeply frozen validated provenance at the current version 4:
+ * fields. Return deeply frozen validated provenance at the current version 5:
  * it records only the battlefield switches (REPLAY_PNG_RECORDED_FILTER_IDS)
  * and the camera frame in snake_case (Whole Map is the painted map from
  * (0, 0) to (width, height)). Invalid or unresolved inputs throw TypeError.
@@ -906,7 +928,7 @@ export function projectReplayPngProvenanceV1(value) {
   const selectedPublicAgentId = selectedAgent?.public_agent_id ?? null;
   const cameraFrame = projectCameraFrame(options.cameraFrame, paintedScene);
   const recordedFilters = Object.fromEntries(
-    REPLAY_PNG_VISUAL_FILTER_IDS_V4.map((id) => [id, visualFilters[id]]),
+    REPLAY_PNG_VISUAL_FILTER_IDS_V5.map((id) => [id, visualFilters[id]]),
   );
 
   const oracle = presentation.presentation_kind === "replay_oracle";
@@ -1329,8 +1351,8 @@ function provenanceItxtChunk(canonicalProvenanceJson) {
 /**
  * Inspect a PNG with exactly one provenance entry directly after IHDR.
  * Require an uncompressed, untranslated UTF-8 iTXt entry with canonical
- * version-1, version-2, version-3 or version-4 provenance (version 3 adds the
- * camera frame, version 4 two more switches), matching PNG dimensions and no duplicate keyword
+ * version-1 to version-5 provenance (version 3 adds the camera frame, version
+ * 4 two more switches, version 5 High Contrast), matching PNG dimensions and no duplicate keyword
  * in text chunks. Return frozen metadata, chunk types and provenance. Invalid
  * bytes/metadata throw TypeError. This verifies container consistency, not
  * the truth of the picture or the referenced simulator artifacts.
@@ -1887,7 +1909,8 @@ function assertSelfContainedSvgResources(clone) {
  * Synchronously clone battlefield and copy its supported computed styles.
  * Require a window and #battlefield-shell parent, matching clone structure
  * and the locked backdrop. width/height are validated CSS pixels. Strip
- * transient attributes, set dimensions/viewBox and insert backdrop/styles.
+ * transient attributes, remove the match moment cards (EXPORT_OMIT_SELECTOR)
+ * from the clone, set dimensions/viewBox and insert backdrop/styles.
  * Return a detached mutable SVG; invalid structure/resources throw TypeError.
  * The live DOM is read only. After this call, asynchronous painting uses the
  * clone's appearance rather than rereading live styles.
@@ -1910,12 +1933,15 @@ function detachBattlefieldSnapshot(battlefield, width, height) {
     invalid("Replay battlefield clone is structurally inconsistent.");
   }
   const resolvedStyleRules = [];
+  /** @type {Element[]} */
+  const omitted = [];
   for (let index = 0; index < originals.length; index += 1) {
     const original = originals[index];
     const cloned = clones[index];
     if (original.localName !== cloned.localName) {
       invalid("Replay battlefield clone element order is inconsistent.");
     }
+    if (original.matches?.(EXPORT_OMIT_SELECTOR)) omitted.push(cloned);
     stripTransientAndExternalAttributes(cloned);
     const className = `replay-export-resolved-v1-${index}`;
     cloned.setAttribute("class", className);
@@ -1923,6 +1949,7 @@ function detachBattlefieldSnapshot(battlefield, width, height) {
       `.${className}{${resolvedStyleDeclarations(view.getComputedStyle(original))}}`,
     );
   }
+  for (const node of omitted) node.remove();
   clone.setAttribute("id", "battlefield");
   clone.setAttribute("xmlns", SVG_NAMESPACE);
   clone.setAttribute("width", String(width));

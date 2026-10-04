@@ -22,10 +22,6 @@ export default defineConfig({
     // Web-first assertions such as toHaveText keep retrying until they pass,
     // unless a check of the product's own timing sets its own limit.
     timeout: 0,
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.001,
-      scale: "css",
-    },
   },
   reporter: "line",
   outputDir: "test-results",

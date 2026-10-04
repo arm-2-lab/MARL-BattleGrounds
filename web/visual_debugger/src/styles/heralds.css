@@ -1,8 +1,7 @@
 /*
  * Styles for the Herald Cards look (src/looks/heralds.js): herald plates
- * (with their glyphs: medallions, the Ultimate rune diamond, crests, run and
- * streak dots, the Rescue medallion's Dawn Gold ring and the Ticks Left
- * crescent) and a tier-1 card's Herald Rule, one-line bands, the Scores
+ * (with their glyphs: medallions, the Ultimate rune diamond, crests, the
+ * Rescue medallion's Dawn Gold ring and the Ticks Left crescent) and a tier-1 card's Herald Rule, one-line bands, the Scores
  * Level and Ultimate Combo chips, the lineup card, the verdict card (with its
  * Honors and buttons) and its band plate, the state chip, and the verdict's
  * working buttons (page chrome laid over the card).
@@ -108,6 +107,15 @@
 /* The controller name under a verdict column's team word (Host Light). */
 .herald__name {
   font-size: 15px;
+}
+
+/* A long controller name shrinks before it is cut (heralds.js VERDICT_NAME_SIZES). */
+.herald__name--13 {
+  font-size: 13px;
+}
+
+.herald__name--11 {
+  font-size: 11px;
 }
 
 .herald__name--team-a {
@@ -301,15 +309,6 @@
 .herald__crescent-rim {
   fill: none;
   stroke: var(--moon-silver);
-}
-
-/* Champion Streak and takedown runs: one dot per takedown, in the team color. */
-.herald__streak-dots--team-a {
-  fill: var(--team-a);
-}
-
-.herald__streak-dots--team-b {
-  fill: var(--team-b);
 }
 
 /* The Match Summary sheet (page chrome below the arena, never over it): Panel

@@ -21,8 +21,9 @@
  * wrapper for the choreographer's glides), lays out the status, modifier and
  * lane-pill docks with the shared allocator (`layout.js`; the Rune Ring replaced
  * the old Ultimate cooldown docks) and publishes a narrow choreographySurface
- * (with the herald layer, this render's transform, switch state and arena scene
- * for the event looks).
+ * (with the herald layer, this render's transform, switch state, arena scene
+ * and the page chrome over the arena, such as the key stack, for the event
+ * looks).
  *
  * Smooth play: a repaint changes only what changed. Each layer keeps every
  * node that is equal to its new drawing (replaceLayer), and a body already in
@@ -208,6 +209,12 @@ export const BATTLEFIELD_CAMERA_CLASS = "battlefield-camera";
  *   viewportKey: string,
  *   viewportBounds: Rectangle,
  *   protectedRects: ReadonlyArray<ProtectedRegion>,
+ *   chromeRects: ReadonlyArray<Readonly<{
+ *     left: number,
+ *     top: number,
+ *     right: number,
+ *     bottom: number,
+ *   }>>,
  *   worldToScreen: (
  *     point: {x: number, y: number} | readonly [number, number],
  *   ) => {x: number, y: number},
@@ -1581,7 +1588,8 @@ export class BattlefieldRenderer {
    * battlefield SVG root (where the choreographer looks for
    * the `g.agent-glide` body wrappers; only drawn bodies are there, so in Agent
    * POV an unseen champion is never found), ownerDocument, the visible map bounds, an immutable
-   * protected-region snapshot and a viewportKey that includes those regions and
+   * protected-region snapshot, the page chrome over the arena (chromeRects, see
+   * #arenaChromeRects; read from layout once per call) and a viewportKey that includes those regions and
    * the map bounds (which change with the camera frame). Projection functions
    * close over this render's transform. Callers may append only their own
    * children to layer and routeLayer and must project authorized event anchors
@@ -1628,6 +1636,7 @@ export class BattlefieldRenderer {
       ].join(":"),
       viewportBounds: Object.freeze({ ...transform.visibleMapBounds }),
       protectedRects: this.choreographyProtectedRects,
+      chromeRects: this.#arenaChromeRects(),
       /**
        * Project a supplied authorized world point with this surface's captured transform.
        *
@@ -1647,6 +1656,51 @@ export class BattlefieldRenderer {
       scene: this.lastScene,
     };
     return Object.freeze(surface);
+  }
+
+  /**
+   * Read the page chrome over the arena, for moment cards to keep clear of.
+   *
+   * Every shown element of the battlefield's document marked
+   * `data-arena-chrome` (the arena key stack, index.html) gives one rectangle
+   * {left, top, right, bottom} in this SVG's user units (CSS px from its
+   * top-left corner, the units of viewportBounds), mapped through the SVG's
+   * screen matrix. A hidden element or one with no size gives none. Page
+   * chrome is the same in every view, so this reads nothing about champions.
+   * Reads layout (getBoundingClientRect); writes nothing.
+   *
+   * @returns {ReadonlyArray<Readonly<{left: number, top: number, right: number, bottom: number}>>}
+   *   A frozen list, empty when there is no such element or the SVG has no
+   *   screen matrix (a document without layout, such as a test DOM).
+   */
+  #arenaChromeRects() {
+    const doc = this.battlefield.ownerDocument;
+    const matrix = this.battlefield.getScreenCTM?.()?.inverse?.() ?? null;
+    if (matrix === null || typeof doc?.querySelectorAll !== "function") {
+      return Object.freeze([]);
+    }
+    /** @param {number} x @param {number} y */
+    const toUser = (x, y) => ({
+      x: matrix.a * x + matrix.c * y + matrix.e,
+      y: matrix.b * x + matrix.d * y + matrix.f,
+    });
+    const rects = [];
+    for (const element of doc.querySelectorAll("[data-arena-chrome]")) {
+      if (/** @type {HTMLElement} */ (element).hidden) continue;
+      const box = element.getBoundingClientRect();
+      if (!(box.width > 0 && box.height > 0)) continue;
+      const a = toUser(box.left, box.top);
+      const b = toUser(box.right, box.bottom);
+      rects.push(
+        Object.freeze({
+          left: Math.min(a.x, b.x),
+          top: Math.min(a.y, b.y),
+          right: Math.max(a.x, b.x),
+          bottom: Math.max(a.y, b.y),
+        }),
+      );
+    }
+    return Object.freeze(rects);
   }
 
   /**

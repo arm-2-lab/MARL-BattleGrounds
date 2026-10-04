@@ -64,7 +64,6 @@ import { PAINT_PARTS as SPAWNS_PAINT_PARTS } from "./looks/spawns.js";
 import { PAINT_PARTS as STATUSES_PAINT_PARTS } from "./looks/statuses.js";
 import { PAINT_PARTS as TEAM_IDENTITY_PAINT_PARTS } from "./looks/team-identity.js";
 import { PAINT_PARTS as ULTIMATES_PAINT_PARTS } from "./looks/ultimates.js";
-import { PAINT_PARTS as VISUAL_KEY_PAINT_PARTS } from "./looks/visual-key.js";
 
 /**
  * @typedef {
@@ -141,7 +140,6 @@ import { PAINT_PARTS as VISUAL_KEY_PAINT_PARTS } from "./looks/visual-key.js";
  *   | "auto_frame_fights"
  *   | "kill_cam"
  *   | "kill_slow_motion"
- *   | "camera_inset"
  *   | "scorebug"
  *   | "team_rosters"
  *   | "fighters_standing"
@@ -187,7 +185,7 @@ import { PAINT_PARTS as VISUAL_KEY_PAINT_PARTS } from "./looks/visual-key.js";
  *   filterId: VisualFilterId,
  *   owner: string,
  * }>} VisualPaintPartRegistration
- * @typedef {"default" | "broadcast" | "researcher" | "manuscript" | "minimal"} VisualFilterPresetId
+ * @typedef {"default" | "researcher" | "manuscript" | "minimal"} VisualFilterPresetId
  * @typedef {Readonly<{
  *   id: VisualFilterPresetId,
  *   label: string,
@@ -377,7 +375,7 @@ const REGISTRY_ROWS = [
     "spawn_shield_expiry",
     "Spawn Shield Expiry",
     "Life And Death",
-    false,
+    true,
     "arena",
     BOTH,
     "When a spawn shield ends, the ward's dashed band closes into the solid team ring and a dashed silver ring lifts off the champion. In Agent POV only on champions your team sees. Paused: not shown. Off: the ward simply ends as the tick settles.",
@@ -422,7 +420,7 @@ const REGISTRY_ROWS = [
     "moonlight",
     "Moonlight",
     "Arena",
-    true,
+    false,
     "arena",
     BOTH,
     "A soft pool of moonlight over the middle of the floor, darker toward the walls. It means nothing in the game. Off: a flat floor.",
@@ -431,7 +429,7 @@ const REGISTRY_ROWS = [
     "floor_grid",
     "Floor Grid",
     "Arena",
-    true,
+    false,
     "arena",
     BOTH,
     "Faint stone joints on whole world units (one stone course is one unit) and a dashed seam down the mirror line. Off: a plain floor with no lines.",
@@ -512,7 +510,7 @@ const REGISTRY_ROWS = [
     "moon_motes",
     "Moon Motes",
     "Arena",
-    false,
+    true,
     "arena",
     BOTH,
     "Twelve faint silver motes drift slowly during play; in a still they rest in fixed spots. They mean nothing in the game. Off: a clear floor.",
@@ -530,7 +528,7 @@ const REGISTRY_ROWS = [
     "death_dimming",
     "Death Dimming",
     "Moments",
-    false,
+    true,
     "arena",
     BOTH,
     "When a champion falls during play, the floor, home zones and stones dim for the fall beat while champions and marks stay bright. Never in a still. In Agent POV only for falls your team saw. Off: the light stays steady.",
@@ -576,7 +574,7 @@ const REGISTRY_ROWS = [
     "class_seals",
     "Class Seals",
     "Bodies",
-    false,
+    true,
     "arena",
     BOTH,
     "On larger tokens, each champion stands on its class seal, which lights up when its Ultimate is ready (with Cooldown Effects on) and fades back under a status mark. The Priest then shows only its cross, because the seal is its sun. Off: the plain class halo.",
@@ -765,7 +763,7 @@ const REGISTRY_ROWS = [
     "saved_beat",
     "Saved Beat",
     "Moments",
-    false,
+    true,
     "arena",
     BOTH,
     "When a heal keeps a champion alive through blows that would have killed it, 'Saved' shows above its number and its rim flashes gold twice. Needs Scrolling Battle Text. Oracle View only: Agent POV does not see the blows and heals behind a life change. Paused: the word stays, the flash does not. Off: no 'Saved' word and no flash.",
@@ -828,7 +826,7 @@ const REGISTRY_ROWS = [
     "champion_streaks",
     "Champion Streaks",
     "Moments",
-    false,
+    true,
     "arena",
     BOTH,
     "The herald cards also name a champion each time it reaches 5, 10, 15 or 20 takedowns without falling, such as 'Team A Mage' with '10 Takedowns Without Falling'. In Agent POV only the takedowns your team saw count. Needs Match Moments. Off: no streak cards.",
@@ -888,15 +886,6 @@ const REGISTRY_ROWS = [
     "Battle Cam only: names the held fall beat in the words beside the camera switch. Off: no words.",
   ],
   [
-    "camera_inset",
-    "Camera Inset",
-    "Camera",
-    true,
-    "interface",
-    REPLAY,
-    "Battle Cam only: a small whole-map picture beside the switch outlines the part of the map on screen. Off: no picture.",
-  ],
-  [
     "scorebug",
     "Scorebug",
     "HUD",
@@ -928,7 +917,7 @@ const REGISTRY_ROWS = [
     "hud_momentum",
     "Momentum",
     "HUD",
-    false,
+    true,
     "interface",
     BOTH,
     "On each team's score bar, the points it scored in the last 10 ticks glow brighter over a thin silver line. Scores are public, so Agent POV shows the same. Needs Scorebug. Off: every scored point looks the same.",
@@ -940,7 +929,7 @@ const REGISTRY_ROWS = [
     true,
     "interface",
     BOTH,
-    "Hover, tap or focus a symbol (a status icon, a panel row, the selected champion's frame, or a floor mark when paused) to read what it means, with its numbers. Off: no tips. The Visual Key button and F (Frame Explanation) still work.",
+    "Hover, tap or focus a symbol (a status icon, a panel row, the selected champion's frame, or a floor mark when paused) to read what it means, with its numbers. Off: no tips. F (Frame Explanation) still works.",
   ],
   [
     "reach_rings",
@@ -1106,12 +1095,12 @@ const REGISTRY_ROWS = [
   ],
   [
     "high_contrast",
-    "Palette: High Contrast",
+    "High Contrast",
     "Arena",
-    false,
+    true,
     "arena",
-    LIVE,
-    "Brighter rings, clearer stones and crisper text for projectors, bright rooms and low vision. It changes colors only: every mark stays where it is and means the same. Off: the soft Moonlit night colors.",
+    BOTH,
+    "Brighter rings, clearer stones and crisper text for projectors, bright rooms and low vision. It changes colors only: every mark stays where it is and means the same, and an exported PNG shows the same colors. Off: the soft Moonlit night colors.",
   ],
   [
     "next_step_ghost",
@@ -1242,8 +1231,8 @@ export function visualFiltersForProduct(product) {
 // ---------------------------------------------------------------------------
 
 // Preset contents come from the approved store presets, kept to the switches
-// built here. The owner's 1 Oct rule adds the three atmosphere switches to
-// Broadcast (they are off by default).
+// built here. The owner removed Broadcast on 4 Oct 2026: its spectacle switches
+// are now the Default Configuration.
 /** @type {ReadonlyArray<VisualFilterPreset>} */
 export const VISUAL_FILTER_PRESETS = Object.freeze([
   preset(
@@ -1251,42 +1240,6 @@ export const VISUAL_FILTER_PRESETS = Object.freeze([
     "Default Configuration",
     "Every switch as it ships: what a new viewer sees.",
     {},
-  ),
-  preset(
-    "broadcast",
-    "Broadcast",
-    "Watch the match like a sports broadcast: spectacle and atmosphere, no diagnostics.",
-    {
-      duration_status_badges: false,
-      aura_modifier_badges: false,
-      target_selection_visuals: true,
-      focus_fire: false,
-      class_letters: false,
-      aura_fields: false,
-      survey_frame: false,
-      hud_momentum: false,
-      spawn_shield_expiry: false,
-      status_clear_on_death: false,
-      class_seals: true,
-      map_skins: true,
-      obstacle_relief: true,
-      obstacle_shadows: true,
-      soft_glow: true,
-      hit_reactions: true,
-      status_application: true,
-      natural_status_expiry: true,
-      freezing_trap_break: true,
-      stride_glide: true,
-      last_move_ghosts: true,
-      focus_trail: true,
-      red_zone_home_fall: true,
-      scorebug: true,
-      team_rosters: true,
-      death_announcer: true,
-      moon_motes: true,
-      time_of_night: true,
-      death_dimming: true,
-    },
   ),
   preset(
     "researcher",
@@ -1345,7 +1298,6 @@ export const VISUAL_FILTER_PRESETS = Object.freeze([
       camera_framing: false,
       kill_cam: false,
       kill_slow_motion: false,
-      camera_inset: false,
     },
   ),
   preset(
@@ -1405,7 +1357,6 @@ export const VISUAL_FILTER_PRESETS = Object.freeze([
       selection_moonlight: false,
       kill_cam: false,
       kill_slow_motion: false,
-      camera_inset: false,
       low_life_warning: false,
       vigil_pips: false,
       kindled_blast: false,
@@ -1443,7 +1394,7 @@ const PRESET_STATE_BY_ID = new Map(
  * them.
  *
  * @param {unknown} presetId One of VISUAL_FILTER_PRESET_IDS: "default"
- *   (Default Configuration), "broadcast", "researcher", "manuscript" or
+ *   (Default Configuration), "researcher", "manuscript" or
  *   "minimal".
  * @returns {VisualFilterState} A shared frozen state; the same object for the
  *   same preset every time. "default" returns DEFAULT_VISUAL_FILTER_STATE.
@@ -1459,7 +1410,7 @@ export function visualFilterPresetState(presetId) {
 /**
  * List the switches changed by hand: those whose value in state differs from
  * what presetId gives. The preset row shows the count, for example
- * "Broadcast · 2 switches changed by hand", and Reset To Default Configuration
+ * "Researcher · 2 switches changed by hand", and Reset To Default Configuration
  * is grayed out when this list is empty for "default".
  *
  * @param {unknown} state A complete switch state (validated like every helper).
@@ -1505,7 +1456,6 @@ const LOOK_PAINT_PART_SOURCES = Object.freeze([
   ["fog", () => FOG_PAINT_PARTS],
   ["camera", () => CAMERA_PAINT_PARTS],
   ["hud", () => HUD_PAINT_PARTS],
-  ["visual-key", () => VISUAL_KEY_PAINT_PARTS],
   ["frame-explanation", () => FRAME_EXPLANATION_PAINT_PARTS],
   ["hotbar", () => HOTBAR_PAINT_PARTS],
   ["champion-frame", () => CHAMPION_FRAME_PAINT_PARTS],

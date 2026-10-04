@@ -24,9 +24,8 @@
  * on hover), its score in a fixed box with "/ N"
  * beside it, a First To N bar of segments (N = match_summary.score_threshold)
  * with "+N" when a team goes past it, the team's wave pips (the public respawn
- * clock, when the caller passes the scene's respawn_waves), the Wave Chip
- * ("Team A Returns", from waveChipTeams) under the name on a tick when that
- * team's wave brings champions back, and in the center "Tick N of 300" (from
+ * clock, when the caller passes the scene's respawn_waves), and in the
+ * center "Tick N of 300" (from
  * simulator_step_count and episode_limit). With the Scorebug switch off it falls back to a plain text
  * score line. Combat diagnostics show names and the tick, never scores.
  *
@@ -40,10 +39,9 @@
  *
  * Boundary: the strip reads only match_summary, which holds public match
  * facts (task, map, team names, scores, the scores 10 ticks ago, tick), plus
- * what the caller passes in its options (the public wave clock and the Wave
- * Chip teams); it never reads the researcher space. The live scorebug reads
- * the same public facts, the same in every view. waveChipTeams reads the audience's own arena scene and
- * beat view only (Agent POV: only returns the team saw). hudSourcesFromFrame keeps the HUD's Agent POV rules: the
+ * what the caller passes in its options (the public wave clock); it never
+ * reads the researcher space. The live scorebug reads the same public facts,
+ * the same in every view. hudSourcesFromFrame keeps the HUD's Agent POV rules: the
  * audience scene and visual events for what the team sees; the researcher
  * view only for the Replay Viewer's docked full record; identity fields only
  * (never health or positions) to list unseen champions in the BattleClient;
@@ -73,7 +71,6 @@ import {
   rosterTeam,
 } from "./controller-names.js";
 import { createSvgIcon } from "./icons.js";
-import { buildWaveChip } from "./looks/requiems.js";
 import { symbolById } from "./symbols.js";
 import { createSemanticDescriptor, registerTooltipOwner } from "./tooltip.js";
 
@@ -193,7 +190,6 @@ export function matchSummaryView(presentation) {
  *   filters?: Readonly<Record<string, boolean>> | null,
  *   beat?: Readonly<{score?: Readonly<{before: unknown, after: unknown, changed: boolean}>}> | null,
  *   waves?: ReadonlyArray<Record<string, any>> | null,
- *   waveChips?: ReadonlyArray<Readonly<{teamId: number, beatKey: string | null}>> | null,
  * }} MatchSummaryRenderOptions
  *   filters is the visual filter state (default: every switch at its default,
  *   so the strip is on and tips are on). Only "scorebug" (false: plain text
@@ -205,8 +201,7 @@ export function matchSummaryView(presentation) {
  *   choreography-plan.js, or null/absent for no beat holds (the score then
  *   shows its END value at once). waves (default none) is the scene's
  *   respawn_waves list ({team_index 0 or 1, period_steps, countdown_steps});
- *   with it each team's strip gets its wave pips. waveChips (default none) is
- *   waveChipTeams' result; each listed team gets the Wave Chip under its name.
+ *   with it each team's strip gets its wave pips.
  */
 
 /**
@@ -237,7 +232,7 @@ export function matchSummaryView(presentation) {
  * into it (liveScorebugView, then renderLiveScorebug; see there for the Fall beat
  * hold). options.waves,
  * options.filters (only "scorebug" and "hud_momentum") and
- * options.beat.score are read; Wave Chips are not drawn there. With
+ * options.beat.score are read. With
  * "hud_momentum" true the bars mark the points scored since the host's
  * match_summary.scores_ten_ticks_ago (momentumBaselineFromFrame), in the
  * strip and the live scorebug alike. looks/hud.js fills its hosts and
@@ -323,9 +318,6 @@ export function renderMatchSummary(elements, presentation, options = {}) {
             ? beatScore.before[index]
             : null;
         const waves = Array.isArray(options.waves) ? options.waves : [];
-        const chip = Array.isArray(options.waveChips)
-          ? options.waveChips.find((entry) => entry?.teamId === team.teamId)
-          : undefined;
         renderStripTeam(root, team, summary.threshold, {
           before:
             Number.isInteger(before) && before !== team.scoreValue ? before : null,
@@ -336,7 +328,6 @@ export function renderMatchSummary(elements, presentation, options = {}) {
               (/** @type {Record<string, any>} */ wave) =>
                 wave?.team_index === team.teamId - 1,
             ) ?? null,
-          waveChip: chip === undefined ? null : { beatKey: chip.beatKey ?? null },
         });
       } else {
         renderPlainTeam(root, team);
@@ -959,11 +950,10 @@ function renderStripTask(task, summary, tips) {
 /**
  * Write one team's strip content into root.
  *
- * Order in the DOM (Team B is mirrored by CSS): crest, label and name (with
- * the Wave Chip under the name when options.waveChip is set), score box, the
+ * Order in the DOM (Team B is mirrored by CSS): crest, label and name, score box, the
  * goal ("/ 20", aria-hidden, since the score's label already says "of 20"),
  * First To bar, wave pips, "+N" overshoot, result. For a combat diagnostic
- * only the crest, label, name and Wave Chip are drawn. options.before is the
+ * only the crest, label and name are drawn. options.before is the
  * score before this tick when it changed (else null); it adds the Fall-beat
  * "before" nodes. options.recentBaseline (default null) is Momentum: this
  * team's score 10 ticks ago (momentumBaselineFromFrame), or null with the
@@ -971,8 +961,7 @@ function renderStripTask(task, summary, tips) {
  * as recent (scoreBar), the held "before" bar too, and the score and bar
  * tips gain a "Last 10 Ticks" row ("2 points, the bright segments" or "No
  * points"). options.wave is this team's respawn_waves row or null (no
- * pips). options.waveChip is {beatKey} when this team's wave brings champions
- * back this tick, else null.
+ * pips).
  *
  * @param {HTMLElement} root
  * @param {Record<string, any>} team One team of matchSummaryView.
@@ -982,7 +971,6 @@ function renderStripTask(task, summary, tips) {
  *   recentBaseline?: number | null,
  *   tips: boolean,
  *   wave?: Record<string, any> | null,
- *   waveChip?: Readonly<{beatKey: string | null}> | null,
  * }} options
  */
 function renderStripTeam(root, team, threshold, options) {
@@ -1015,9 +1003,6 @@ function renderStripTeam(root, team, threshold, options) {
   name.className = "match-scoreboard__policy";
   name.textContent = team.name;
   names.append(title, name);
-  if (options.waveChip) {
-    names.append(buildWaveChip(doc, team.teamId, options.waveChip.beatKey));
-  }
   root.replaceChildren(crestBox, names);
   if (team.scoreValue === null || threshold === null) {
     appendResult(root, team);
@@ -1394,59 +1379,4 @@ export function hudSourcesFromFrame(frame) {
     displayIdOf: (publicAgentId) =>
       authorizedPresentationAgentDisplayId(frame, publicAgentId),
   };
-}
-
-/**
- * Work out which teams get the scorebug's Wave Chip this tick.
- *
- * frame is the installed presentation; beat is its `beatView(frame, "end",
- * {visualFilters})` result (or null); filters is the switch state (null: the
- * defaults, Respawn Wave on). A team gets one entry when Respawn Wave is on and
- * at least one of its champions comes back this tick in this audience's beat
- * view: beatKey is the presentation key of the first such champion (so the chip
- * fades in at that Return beat), found in the audience's own arena scene.
- * Returns a frozen list of frozen {teamId (1 or 2), beatKey}, Team A first;
- * empty when nothing returns, the switch is off or the frame is not approved.
- *
- * Agent POV: beatView lists only returns the team saw, and the scene holds only
- * seen champions, so a return the team did not see adds no chip. Reads no
- * researcher view and no match summary field. Pure.
- *
- * @param {unknown} frame
- * @param {Readonly<{returns?: ReadonlyArray<Readonly<{publicAgentId: string, seen: boolean}>>}> | null} beat
- * @param {Readonly<Record<string, boolean>> | null} [filters]
- * @returns {ReadonlyArray<Readonly<{teamId: 1 | 2, beatKey: string | null}>>}
- */
-export function waveChipTeams(frame, beat, filters = null) {
-  if (filters?.respawn_wave === false || !isAuthorizedPresentationFrame(frame)) {
-    return Object.freeze([]);
-  }
-  const agents = authorizedPresentationSceneView(frame)?.agents;
-  const byId = new Map(
-    (Array.isArray(agents) ? agents : [])
-      .filter((agent) => typeof agent?.public_agent_id === "string")
-      .map((agent) => [agent.public_agent_id, agent]),
-  );
-  /** @type {Map<1 | 2, string | null>} */
-  const teams = new Map();
-  for (const entry of Array.isArray(beat?.returns) ? beat.returns : []) {
-    if (entry?.seen !== true) continue;
-    const agent = byId.get(entry.publicAgentId);
-    const teamId = agent?.team_id === 1 || agent?.team_id === 2 ? agent.team_id : null;
-    if (teamId === null || teams.has(teamId)) continue;
-    teams.set(
-      teamId,
-      typeof agent.presentation_key === "string" ? agent.presentation_key : null,
-    );
-  }
-  return Object.freeze(
-    [1, 2]
-      .filter((teamId) => teams.has(/** @type {1 | 2} */ (teamId)))
-      .map((teamId) =>
-        Object.freeze({
-          teamId: /** @type {1 | 2} */ (teamId),
-          beatKey: teams.get(/** @type {1 | 2} */ (teamId)) ?? null,
-        }),
-      ),
-  );
 }
