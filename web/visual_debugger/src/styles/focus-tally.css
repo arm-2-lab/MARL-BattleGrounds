@@ -9,6 +9,13 @@ svg .focus-tally {
   pointer-events: none;
 }
 
+/* The invisible hit arc over the bead row is the only part the pointer finds,
+ * so hovering the beads opens the tally's tip; it lies outside the body. */
+svg .focus-tally path.focus-tally__hit {
+  stroke: transparent;
+  pointer-events: stroke;
+}
+
 svg .focus-tally path {
   fill: none;
   stroke-linecap: butt;

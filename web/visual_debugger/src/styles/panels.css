@@ -1,6 +1,7 @@
 /*
  * Styles for the docked panels (src/panels.js), the token chips
- * (src/token-chip.js) and the Visuals tab (src/filter-controls.js).
+ * (src/token-chip.js), the Visuals tab (src/filter-controls.js) and the Replay
+ * Viewer's Full Class Details under the Agent tab's Class Guide (src/main.js).
  * styles.css imports this file. Colours come only from the :root tokens in
  * styles.css; this file never paints the battlefield or the export backdrop.
  */
@@ -137,6 +138,41 @@ button.token-chip:hover .token-chip__text {
 }
 
 /* Agent details. */
+
+/* The Replay Viewer's Full Class Details (main.js renderReplayClassDetails):
+   a closed disclosure under the Class Guide in the Agent tab that holds the
+   old Agent card's class facts (owner, 4 Oct 2026). Its summary reads like the
+   rail's eyebrows; the body reuses the semantic inspector's own styles. */
+.replay-class-details {
+  margin: 0.5rem 0 0;
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 0.4rem;
+}
+
+.replay-class-details[hidden] {
+  display: none;
+}
+
+.replay-class-details__summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.replay-class-details__order {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+}
+
+.replay-class-details__order span {
+  color: var(--text-muted);
+}
+
 .agent-details__section {
   margin: 0 0 0.75rem;
 }

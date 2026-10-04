@@ -179,7 +179,7 @@ const EXAMPLE_OWNERS = Object.freeze({
   score: "hud",
   tick_clock: "hud",
   fighters_standing: "hud",
-  chronicle_ribbon: "hud",
+  event_track: "hud",
 });
 
 /**

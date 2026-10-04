@@ -9,8 +9,8 @@
  *
  * - Out Of Sight: the class emblem with no team ring and the words
  *   "Warrior · ID 6 · Out Of Sight". It never shows life, position or a ring.
- * - Plain: today's text, "Agent ID 6", used when the Panel Tokens switch is off
- *   or, in the Replay Viewer, when Ledger Heraldry is off.
+ * - Plain: today's text, "Agent ID 6", used when the Panel Tokens switch is
+ *   off.
  *
  * Who calls it: panels.js (roster rows, agent details, Actions rows) and any
  * other docked panel that names a champion. tokenChipModel is pure data for

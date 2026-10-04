@@ -20,6 +20,18 @@
  * focuses a seen champion (onSelect) or explains an unseen one (onRefuse).
  * The Arena Frames below are then not drawn.
  *
+ * The Replay Viewer (owner, 3 Oct 2026) shows the same scorebug for its one
+ * score display and the Arena Frames along the bottom of the stage, League
+ * of Legends style: this file paints the scorebug's two team lines from the
+ * replay's controller model with no "Yours" tag and no portraits
+ * (paintReplayScorebugHosts; the Arena Frames show every champion), and
+ * writes data-team-a-side on the frames container so hud.css gives the team
+ * whose home end is on the arena's left the left dock. Its docks have no
+ * header row (owner, 3 Oct 2026: keep the bottom band thin; the scorebug
+ * above already names each team on the same side): render moves each
+ * team's "Standing 4 of 5" under that team's name in the scorebug, and in
+ * Agent POV only the viewing team's (placeReplayStanding).
+ *
  * What it draws (plan P1, P12, P15, P21, P23): per team, Team A on the left,
  * a header (crest, "Team A" or "Team B", the policy name as a controller
  * line in the Replay Viewer, "Standing 4 of 5")
@@ -46,8 +58,12 @@
  * this tick gets a "before" node with its life from before the blow
  * (data-beat-hold="fall"); a champion that returns gets a "before" node with
  * its fallen look (data-beat-hold="return"); Standing changes with them. The
- * choreographer shows each "before" node until its beat. Statuses, Ready and
- * life changes without a fall show END at once (there is no Settle hold kind).
+ * choreographer shows each "before" node until its beat. A life change without
+ * a fall (a hit or a heal the audience has a row for: beatView's hits) gets a
+ * "before" life bar with the life from before the tick (data-beat-hold
+ * "impact"), so the bar changes at Impact, with the arena. Statuses and Ready
+ * still show END at once: the tray before the tick cannot be rebuilt exactly
+ * from the tick's own rows (ages, refreshes and breaks change remaining ticks).
  *
  * Boundary (Agent POV, plan P23 and owner rules s5, s11):
  * - BattleClient and DevClient (product "combat_debugger"): every frame reads
@@ -64,8 +80,8 @@
  *   is built from the POV scene row, and an unseen champion gets the reduced
  *   card ("Unseen · Team A cannot see it now.") while its chip tips say only
  *   "Your team cannot see this champion now".
- *   With the Seen And Not Seen switch on, each team lists seen champions
- *   first, then unseen, then fallen; off, ID order.
+ *   Each team lists its champions in shown-ID order in both views, so a
+ *   frame never moves when sight changes.
  * - Kill credit in Agent POV names only killers the team saw (the caller's
  *   fallen_feed_row list from the choreography plan); with no list, Agent POV
  *   names none. Oracle View may fall back to the match summary's deaths
@@ -247,8 +263,8 @@ function field(value, key) {
  *   or null/absent for no holds.
  *   filters: the visual filter state; a missing switch counts as on (every
  *   switch read here is on by default). Switches read: team_rosters,
- *   fighters_standing, death_announcer, respawn_wave, symbol_explanations and
- *   seen_grouping (Replay Viewer Agent POV order only).
+ *   fighters_standing, death_announcer, respawn_wave, status_marks_icons and
+ *   symbol_explanations.
  *   falls: the choreography plan's fallen_feed_row derived events for this
  *   frame ({victim: {publicAgentId}, killers: [{publicAgentId, classId,
  *   teamId, title}]}), already limited to what the audience saw. Absent:
@@ -300,8 +316,8 @@ function field(value, key) {
  *   public ID, or null. controllerRoster: the Replay Viewer's one controller
  *   model (controllerRosterFromFrame in match-summary.js: each champion's
  *   recorded controller name, or each team's recorded name for old
- *   replays, with its champions), which names the Team Rosters strip's
- *   teams and the Champion Card's "played by"; null or absent in live play,
+ *   replays, with its champions), which names the Arena Frames' and the
+ *   scorebug's teams and the Champion Card's "played by"; null or absent in live play,
  *   where the scorebug builds the model from the launch's combat
  *   configuration instead.
  */
@@ -325,17 +341,16 @@ function field(value, key) {
  *    "Agent 0" is the POV agent's own champion chipText, so the chip and the
  *    strip always agree; "...Not Limited To This Agent's View" when the POV
  *    agent is unknown or not in the rows; null when fullRecord is false),
- *    rosters (team_rosters switch), tips (symbol_explanations switch)};
+ *    povTeamId (the Agent POV agent's team, 1 or 2; null in Oracle View or
+ *    when that agent is not in the rows), rosters (team_rosters switch),
+ *    tips (symbol_explanations switch)};
  * 2. per team, Team A first: one `team_header` record {teamId, side ("left"
  *    or "right"), label, name, controllers (the team in
  *    sources.controllerRoster, or null when absent), standing {alive,
  *    total} | null (null when the
  *    switch is off or the team has an unseen champion), standingHold {before,
  *    kind "fall" | "return", beatKey} | null}, followed by its `champion`
- *    records in shown-ID order. Exception: in the Replay Viewer's Agent POV
- *    with the seen_grouping switch on (the default), each team lists the
- *    living champions its POV team sees first, then those it does not see,
- *    then the fallen, each group in shown-ID order (see seenGroupRank).
+ *    records in shown-ID order, in every client and both views.
  * A `champion` record has: teamId, side, publicAgentId, displayId, chipText
  * ("Agent 5"), classId, className, calling, classToken ("mage" ...), state
  * ("alive", "fallen" or "unseen"), seen (in the audience's arena scene), you
@@ -345,7 +360,10 @@ function field(value, key) {
  * returned (true on its return tick, with Respawn Wave on), returnsIn (ticks)
  * | null, credits (killers' {publicAgentId, classId, teamId, label}, only on
  * the tick of the fall, with Fallen Feed on), fallHold {beatKey, life} |
- * null, returnHold {beatKey, returnsIn} | null, tipLimited and card (the
+ * null, returnHold {beatKey, returnsIn} | null, hitHold {beatKey, life} |
+ * null (a living champion whose life changed this tick without a fall and
+ * without a return, from the audience's own beatView hits: life is the life
+ * before the tick, shown until Impact), tipLimited and card (the
  * Champion Card facts of tooltip.js, ChampionCardFacts: read from the
  * audience's own scene row through championCardFactsFromAgent, so it is the
  * card the arena body shows; the reduced "unseen" facts when the audience
@@ -466,6 +484,7 @@ export function records(input) {
         credits: Object.freeze([]),
         fallHold: null,
         returnHold: null,
+        hitHold: null,
         tipLimited: true,
         card: unseenCardFacts(base, povTeam, playedBy(teamId, publicAgentId)),
       });
@@ -506,6 +525,21 @@ export function records(input) {
       returned && returnEntry !== undefined
         ? Object.freeze({ beatKey: String(returnEntry.presentationKey), returnsIn: 1 })
         : null;
+    const hitEntry =
+      alive && returnHold === null && life !== null
+        ? (Array.isArray(beat?.hits) ? beat.hits : []).find(
+            (/** @type {any} */ entry) => entry?.publicAgentId === publicAgentId,
+          )
+        : undefined;
+    const hitHold =
+      hitEntry !== undefined &&
+      typeof hitEntry.before === "number" &&
+      hitEntry.before !== life?.current
+        ? Object.freeze({
+            beatKey: String(hitEntry.presentationKey),
+            life: lifeRecord(hitEntry.before, maximum),
+          })
+        : null;
     const countdown = sources.waves.find(
       (wave) => wave?.team_id === teamId,
     )?.countdown_steps;
@@ -535,6 +569,7 @@ export function records(input) {
       credits,
       fallHold,
       returnHold,
+      hitHold,
       tipLimited: audience === "agent_pov" && cardAgent === null,
     };
     return Object.freeze({
@@ -556,12 +591,9 @@ export function records(input) {
     });
   });
 
-  const grouped =
-    product === "replay_viewer" && audience === "agent_pov" && on("seen_grouping");
   champions.sort(
     (a, b) =>
       a.teamId - b.teamId ||
-      (grouped ? seenGroupRank(a) - seenGroupRank(b) : 0) ||
       Number(a.displayId) - Number(b.displayId) ||
       String(a.publicAgentId).localeCompare(String(b.publicAgentId)),
   );
@@ -580,6 +612,7 @@ export function records(input) {
       fullRecord: researcherAgents !== null,
       fullRecordLabel:
         researcherAgents === null ? null : fullRecordChipWords(recipientChip),
+      povTeamId: povTeamId === 1 || povTeamId === 2 ? povTeamId : null,
       rosters: on("team_rosters"),
       tips: on("symbol_explanations"),
     }),
@@ -759,22 +792,6 @@ function trayRecord(statuses, context) {
 }
 
 /**
- * Return a champion's place in the Seen And Not Seen grouping (the
- * seen_grouping switch, Replay Viewer Agent POV only): 0 for a living
- * champion the POV team sees, 1 for one it does not see, 2 for a fallen
- * champion. records() sorts by team, then this rank, then shown ID. Agent POV:
- * it reads only the record's state and seen fields, which say what the POV
- * team saw, so the order shows nothing beyond the strip itself. Pure.
- *
- * @param {LookRecord} record A `champion` record built in records().
- * @returns {0 | 1 | 2}
- */
-function seenGroupRank(record) {
-  if (record.state === "fallen") return 2;
-  return record.seen === true ? 0 : 1;
-}
-
-/**
  * The reduced Champion Card facts of a champion the audience cannot see now
  * (Replay Viewer Agent POV): its class name and calling, shown ID, team and
  * who plays it, with "Unseen · Team A cannot see it now." (unseenBy is the
@@ -860,8 +877,10 @@ function descriptor(id, title, summary, rows, accent = "none") {
 
 /**
  * Make node a HUD symbol (data-hud-symbol, tabindex -1) and, when tips is
- * true, register desc as its shared tip. Changes node and the tooltip
- * registry only.
+ * true, register desc as its shared tip. The tip is registered while the node
+ * is still focusable, so its sentence lands in aria-description: the roving
+ * Tab stop (createHud's settleTabStop) may give any symbol tabindex 0 later.
+ * Changes node and the tooltip registry only.
  *
  * @param {Element} node
  * @param {string} id
@@ -870,10 +889,12 @@ function descriptor(id, title, summary, rows, accent = "none") {
  */
 function symbol(node, id, tips, desc) {
   node.setAttribute("data-hud-symbol", id);
+  node.setAttribute("tabindex", "0");
+  if (tips) {
+    const made = desc();
+    if (made !== null) registerTooltipOwner(node, made);
+  }
   node.setAttribute("tabindex", "-1");
-  if (!tips) return;
-  const made = desc();
-  if (made !== null) registerTooltipOwner(node, made);
 }
 
 /**
@@ -898,7 +919,9 @@ function el(doc, tag, className, text) {
  * screen readers. Changes node only.
  *
  * @param {HTMLElement} node
- * @param {"fall" | "return"} kind
+ * @param {"fall" | "return" | "impact"} kind "impact" is keyless for the
+ *   choreographer (every life change shows at the one Impact beat); the key is
+ *   still written for tools and tests.
  * @param {string} beatKey The champion's presentation key in the audience's events.
  */
 function holdBefore(node, kind, beatKey) {
@@ -914,7 +937,7 @@ function holdBefore(node, kind, beatKey) {
  * Mark node as the beat "after" node: the END value, faded in at the beat.
  *
  * @param {HTMLElement} node
- * @param {"fall" | "return"} kind
+ * @param {"fall" | "return" | "impact"} kind
  * @param {string} beatKey
  */
 function holdAfter(node, kind, beatKey) {
@@ -991,8 +1014,8 @@ function sigil(doc, record, state) {
  * Draw a frame's life as the one shared Life bar (`life-bar.js`: "Life", a
  * thin bar colored green, yellow or red, and "77 / 80"), in a
  * `span.arena-frame__life` holder. A life with no maximum counts its own
- * value as full. The Team Rosters strip hides the label and number for room
- * (styles.css); the frame's tip carries the exact life.
+ * value as full. The Replay Viewer's Arena Frames hide the "Life" label for
+ * room and keep the number (hud.css); the frame's tip carries the exact life.
  *
  * @param {Document} doc
  * @param {Readonly<Record<string, any>>} life See lifeRecord.
@@ -1065,7 +1088,11 @@ function fallenBody(doc, record, returnsIn, tips, withCredits) {
 
 /**
  * Draw a living frame's body: life bar, tray chips, "+N", and the Spawn Shield
- * or Returned chip.
+ * or Returned chip. With a hitHold (and no lifeOverride) the life bar is a
+ * span.arena-frame__life-stack holding the END bar (data-beat-hold "impact",
+ * side "after") and the bar from before the tick (side "before", opacity 0 at
+ * END, aria-hidden, no tip), drawn in the same place, so the choreographer
+ * swaps them at Impact.
  *
  * @param {Document} doc
  * @param {Record<string, any>} record
@@ -1091,7 +1118,17 @@ function aliveBody(doc, record, tips, interactive, lifeOverride = null) {
             ),
       );
     }
-    body.append(bar);
+    if (lifeOverride === null && record.hitHold?.life) {
+      // The life before the tick shows until Impact, as on the arena.
+      const before = lifeBar(doc, record.hitHold.life);
+      holdBefore(before, "impact", record.hitHold.beatKey);
+      holdAfter(bar, "impact", record.hitHold.beatKey);
+      const stack = el(doc, "span", "arena-frame__life-stack");
+      stack.append(bar, before);
+      body.append(stack);
+    } else {
+      body.append(bar);
+    }
   }
   if (lifeOverride !== null) return body;
   const tray = el(doc, "span", "arena-frame__tray");
@@ -1546,7 +1583,7 @@ export function yoursTeam(controllers) {
  *   ariaLabel: string,
  *   refusal: string | null,
  *   hold: Readonly<{
- *     kind: "fall" | "return",
+ *     kind: "fall" | "return" | "impact",
  *     beatKey: string,
  *     state: "alive" | "fallen",
  *     life: PortraitLife,
@@ -1674,6 +1711,14 @@ export function liveScorebugModel(hudRecords, sources, controllers) {
         beatKey: String(record.returnHold.beatKey),
         state: "fallen",
         life: fallenLife,
+      });
+    } else if (record.hitHold !== null) {
+      // A hit or a heal: the portrait's life bar changes at Impact.
+      hold = Object.freeze({
+        kind: "impact",
+        beatKey: String(record.hitHold.beatKey),
+        state: "alive",
+        life: portraitLife(record.hitHold.life) ?? fallenLife,
       });
     }
     return Object.freeze({
@@ -1865,6 +1910,89 @@ function clearLiveScorebug(scorebug) {
     }
   }
   publishControllerRoster(scorebug.ownerDocument, NO_CONTROLLER_ROSTER);
+}
+
+/**
+ * Paint the scorebug's two team hosts in the Replay Viewer: each host's
+ * controller line from the frame's one controller model
+ * (sources.controllerRoster, the same model the Arena Frames headers and the
+ * Verdict read), no "Yours" tag (a replay has no player at the keyboard), and
+ * empty, hidden portrait rows, because the Arena Frames under the arena show
+ * every champion (owner, 3 Oct 2026: one score display at the top, the party
+ * frames at the bottom). sources null, or a frame without a roster, paints
+ * both lines empty. The scores and the middle lines come from
+ * match-summary.js. Side effects: DOM inside scorebug's hosts and parties and
+ * the controller lines' fit observer (controller-names.js). No tooltips here;
+ * the line's own hover list is controller-names.js's.
+ *
+ * @param {HTMLElement} scorebug The page's #scorebug.
+ * @param {HudSources | null} sources
+ * @returns {void}
+ */
+function paintReplayScorebugHosts(scorebug, sources) {
+  const roster = sources?.controllerRoster ?? NO_CONTROLLER_ROSTER;
+  for (const key of /** @type {const} */ (["a", "b"])) {
+    const yours = scorebug.querySelector(`.sb-host.${key} .yours`);
+    if (yours instanceof HTMLElement) yours.hidden = true;
+    const line = scorebug.querySelector(`#ctl-${key}`);
+    if (line instanceof HTMLElement)
+      paintControllerLine(
+        line,
+        rosterTeam(roster, key === "a" ? 1 : 2) ??
+          NO_CONTROLLER_ROSTER.teams[key === "a" ? 0 : 1],
+        { fitRoot: scorebug },
+      );
+    const party = scorebug.querySelector(`#party-${key}`);
+    if (party instanceof HTMLElement) {
+      party.replaceChildren();
+      party.hidden = true;
+      paintedParties.delete(party);
+    }
+  }
+}
+
+/**
+ * Move each team's Standing count from its Arena Frames dock to the scorebug.
+ *
+ * Replay Viewer only (render calls it when the page has #scorebug). scorebug
+ * is the page's #scorebug, frames the Arena Frames container just built,
+ * view the hud_view record (null when nothing was drawn). First removes any
+ * Standing count an earlier render put in the scorebug. Then, for every
+ * dock: gives the dock an accessible name ("Team B Arena Frames", from its
+ * header's eyebrow), removes its header row (the owner's thin bottom band;
+ * the scorebug above names each team on the same side), and appends the
+ * header's `span.arena-frames__standing` (with its Fall or Return beat hold
+ * nodes and its Fighters Standing tip, moved, not copied) to the scorebug
+ * host that holds that team's controller line (`#ctl-a` for Team A,
+ * `#ctl-b` for Team B). Agent POV (view.audience "agent_pov"): only the
+ * viewing team's count moves (view.povTeamId); the other team's is dropped,
+ * because the scorebug is not under the Full Record chip and that team's
+ * champions can be out of sight. A dock without a header, or a host that is
+ * missing, is skipped. Side effects: DOM of frames and scorebug only.
+ *
+ * @param {HTMLElement} scorebug
+ * @param {HTMLElement} frames
+ * @param {LookRecord | null} view
+ * @returns {void}
+ */
+function placeReplayStanding(scorebug, frames, view) {
+  for (const old of scorebug.querySelectorAll("span.arena-frames__standing"))
+    old.remove();
+  for (const dock of frames.querySelectorAll("div.arena-frames__dock")) {
+    const header = dock.querySelector("div.arena-frames__header");
+    if (header === null) continue;
+    const label = header.querySelector("span.arena-frames__eyebrow")?.textContent ?? "";
+    if (label !== "") dock.setAttribute("aria-label", `${label} Arena Frames`);
+    const standing = header.querySelector("span.arena-frames__standing");
+    header.remove();
+    if (standing === null) continue;
+    const teamId = Number(dock.getAttribute("data-team-id"));
+    if (view?.audience === "agent_pov" && view.povTeamId !== teamId) continue;
+    const host = scorebug.querySelector(
+      `#ctl-${teamId === 1 ? "a" : "b"}`,
+    )?.parentElement;
+    host?.append(standing);
+  }
 }
 
 /**
@@ -2226,7 +2354,7 @@ export function update(_nodes, _records) {}
  *   cardFacts?: ((subject: import("../tooltip.js").HoverCardSubject) => import("../tooltip.js").ChampionCardFacts | null) | null,
  * }} HudOptions
  *   frames: the container for the party frames (#party-frames, or the
- *   Replay Viewer's Team Rosters strip). extraRoots: other HUD containers
+ *   Replay Viewer's Arena Frames, #team-rosters). extraRoots: other HUD containers
  *   whose data-hud-symbol marks share the one Tab stop, in Tab order before
  *   the frames (the score strip's #match-scoreboard); default none. onSelect:
  *   called with a champion's public ID when a frame or a live scorebug
@@ -2273,8 +2401,17 @@ export function update(_nodes, _records) {}
  * installed live frame); a new configuration repaints the last sources at
  * once. render(null) empties the hosts and portraits too.
  *
+ * Replay Viewer: render draws the Arena Frames into the frames container,
+ * sets its data-audience, data-product and data-team-a-side ("left" or
+ * "right": Team A's recorded display side, the side the scorebug uses), and,
+ * when the page has #scorebug, paints its two team lines, empties its
+ * portrait rows (paintReplayScorebugHosts) and moves each dock's Standing
+ * count under its team's name there, removing the docks' header rows
+ * (placeReplayStanding).
+ *
  * Controller names (controller-names.js): the live scorebug's two lines
- * and, in the Replay Viewer, each Team Rosters header's team name are
+ * and, in the Replay Viewer, the scorebug's two lines (and each Arena Frames
+ * header's team name on a page without #scorebug, which keeps the header) are
  * controller lines from the one controller model (live: liveControllerRoster;
  * Replay Viewer: sources.controllerRoster). Each shows its names when they
  * fit in its real width, else the short line ("You + 4 Policies", "1
@@ -2501,8 +2638,11 @@ export function createHud(options) {
       const nodes = build(hudRecords, doc);
       frames.replaceChildren(...nodes);
       frames.hidden = nodes.length === 0;
-      // The Replay Viewer's team names are controller lines: fitted now that
-      // they are in the page; then the hover lists read the same model.
+      const view = hudRecords.find((record) => record.kind === "hud_view");
+      if (scorebug !== null) placeReplayStanding(scorebug, frames, view ?? null);
+      // Header team names (a page without #scorebug keeps the header) are
+      // controller lines: fitted now that they are in the page; then the
+      // hover lists read the same model.
       for (const name of frames.querySelectorAll(".arena-frames__team-name")) {
         const team = teamNameLines.get(name);
         if (team)
@@ -2512,9 +2652,13 @@ export function createHud(options) {
       }
       if (sources?.controllerRoster)
         publishControllerRoster(doc, sources.controllerRoster);
-      const view = hudRecords.find((record) => record.kind === "hud_view");
+      if (scorebug !== null) paintReplayScorebugHosts(scorebug, sources);
       frames.dataset.audience = view?.audience ?? "";
       frames.dataset.product = view?.product ?? "";
+      // The team whose home end is on the arena's left gets the left dock,
+      // as on the scorebug (recorded display side; hud.css places the docks).
+      frames.dataset.teamASide =
+        sources?.teams?.[0]?.display_side === "right" ? "right" : "left";
       const { current } = settleTabStop();
       if (hadFocus && current) current.focus();
       return hudRecords;

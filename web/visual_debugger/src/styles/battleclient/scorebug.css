@@ -14,6 +14,13 @@
  * the row wider, so long controller names never wrap the scorebug at
  * desktop and laptop widths. The vision's narrow-window stack is not ported.
  *
+ * Replay Viewer only: #camera-tips (div.sb-tips) holds the camera tips
+ * (src/looks/camera.js). It is placed in the right-hand score column's grid
+ * area as an absolute box, so it takes no grid space, and it leaves the
+ * column's outer 7.5rem to the score and its bar: the tips sit in the empty
+ * inner half next to the middle and cover nothing (owner, 3 Oct 2026, Micro
+ * List M7). Every other client keeps it hidden.
+ *
  * Who fills it: src/match-summary.js writes the scores, bars, the middle,
  * data-team-a-side and data-plain (the Scorebug switch off: a plain text
  * score, no bar); src/looks/hud.js writes the "Yours" tag, the controller
@@ -41,10 +48,15 @@
  * --recent-shift says on which side that gap lies: 0px for a bar that
  * fills rightward (flex row), -1px for one that fills leftward (row-reverse).
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
-html[data-product-kind="combat_debugger"] .bc .bc-score {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score {
   position: relative;
   grid-area: score;
   display: grid;
@@ -58,50 +70,93 @@ html[data-product-kind="combat_debugger"] .bc .bc-score {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-score[data-team-a-side="left"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"] {
   grid-template-areas: "ha pa sa mid sb pb hb";
 }
 
+/* Replay Viewer: the camera tips' box, in the right-hand score column (sa, or
+   sb when Team A is on the left), inner half only. */
+html[data-product-kind="replay_viewer"] .bc .bc-score > .sb-tips {
+  position: absolute;
+  grid-area: sa;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-inline-end: 7.5rem;
+  pointer-events: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  > .sb-tips {
+  grid-area: sb;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-score > .sb-tips[hidden] {
+  display: none;
+}
+
 /* Crests: Team A one ring, Team B a ring split by a thin dark line. */
-html[data-product-kind="combat_debugger"] .bc .crest {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest {
   flex: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .crest--a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest--a {
   color: var(--azure);
 }
 
-html[data-product-kind="combat_debugger"] .bc .crest--b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest--b {
   color: var(--crimson);
 }
 
-html[data-product-kind="combat_debugger"] .bc .crest__split {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest__split {
   stroke: var(--ink);
 }
 
 /* Hosts. */
-html[data-product-kind="combat_debugger"] .bc .sb-host {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host > div {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  > div {
   min-width: 0;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host.a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a {
   grid-area: ha;
   flex-direction: row-reverse;
   text-align: right;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host.b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.b {
   grid-area: hb;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-host.a {
@@ -109,7 +164,7 @@ html[data-product-kind="combat_debugger"]
   text-align: left;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-host.b {
@@ -117,7 +172,10 @@ html[data-product-kind="combat_debugger"]
   text-align: right;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  b {
   display: block;
   overflow: hidden;
   font-size: 15px;
@@ -125,15 +183,24 @@ html[data-product-kind="combat_debugger"] .bc .sb-host b {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host.a b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a
+  b {
   color: var(--azureL);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host.b b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.b
+  b {
   color: var(--crimsonL);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host .yours {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  .yours {
   display: inline-block;
   margin-left: 6px;
   padding: 0 5px;
@@ -145,11 +212,17 @@ html[data-product-kind="combat_debugger"] .bc .sb-host .yours {
   vertical-align: 2px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host.a .yours {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a
+  .yours {
   margin: 0 6px 0 0;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-host span.ctl {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  span.ctl {
   display: block;
   overflow: hidden;
   color: var(--muted);
@@ -159,25 +232,36 @@ html[data-product-kind="combat_debugger"] .bc .sb-host span.ctl {
 }
 
 /* Portraits. */
-html[data-product-kind="combat_debugger"] .bc .sb-party {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-party.a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party.a {
   grid-area: pa;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-party.b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party.b {
   grid-area: pb;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-party .plabel {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party
+  .plabel {
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por {
   display: grid;
   justify-items: center;
   gap: 3px;
@@ -190,74 +274,106 @@ html[data-product-kind="combat_debugger"] .bc .por {
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por:hover {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por:hover {
   background: var(--panel2);
 }
 
-html[data-product-kind="combat_debugger"] .bc .por.focus {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.focus {
   border-color: var(--edge2);
   background: var(--panel2);
 }
 
-html[data-product-kind="combat_debugger"] .bc .por .tok {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .tok {
   display: block;
   overflow: visible;
   pointer-events: none;
 }
 
 /* A held portrait pair: the END portrait and its earlier look in one cell. */
-html[data-product-kind="combat_debugger"] .bc .por-stack {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por-stack {
   display: grid;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por-stack > .por {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por-stack
+  > .por {
   grid-area: 1 / 1;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por[data-beat-side="before"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por[data-beat-side="before"] {
   pointer-events: none;
 }
 
 /* An Unseen token: a dark disc, a dashed team ring and an ash class emblem. */
-html[data-product-kind="combat_debugger"] .bc .unseen-tok__disc {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__disc {
   fill: #141a26;
 }
 
-html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring {
   fill: none;
   opacity: 0.6;
   stroke-dasharray: 2.2 2.6;
   stroke-width: 2;
 }
 
-html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring[data-team="team-a"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring[data-team="team-a"] {
   stroke: var(--azure);
 }
 
-html[data-product-kind="combat_debugger"] .bc .unseen-tok__ring[data-team="team-b"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring[data-team="team-b"] {
   stroke: var(--crimson);
 }
 
-html[data-product-kind="combat_debugger"] .bc .unseen-tok__emblem {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__emblem {
   opacity: 0.38;
   filter: grayscale(1);
 }
 
 /* The plain team ring drawn when the token look cannot draw a champion. */
-html[data-product-kind="combat_debugger"] .bc .tok__fallback {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback {
   fill: #141a26;
   stroke-width: 3;
 }
 
-html[data-product-kind="combat_debugger"] .bc .tok__fallback[data-team="team-a"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback[data-team="team-a"] {
   stroke: var(--azure);
 }
 
-html[data-product-kind="combat_debugger"] .bc .tok__fallback[data-team="team-b"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback[data-team="team-b"] {
   stroke: var(--crimson);
 }
 
-html[data-product-kind="combat_debugger"] .bc .lb {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb {
   display: block;
   overflow: hidden;
   width: 28px;
@@ -266,24 +382,36 @@ html[data-product-kind="combat_debugger"] .bc .lb {
   background: #0d1119;
 }
 
-html[data-product-kind="combat_debugger"] .bc .lb i {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb
+  i {
   display: block;
   height: 100%;
   background: var(--ivory);
 }
 
-html[data-product-kind="combat_debugger"] .bc .lb i.low {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb
+  i.low {
   background: var(--cinder);
 }
 
-html[data-product-kind="combat_debugger"] .bc .por .pl {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .pl {
   height: 14px;
   color: var(--muted);
   font-size: 11px;
   line-height: 14px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por .pl.you {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .pl.you {
   padding: 0 5px;
   border-radius: 4px;
   color: var(--ink);
@@ -291,22 +419,31 @@ html[data-product-kind="combat_debugger"] .bc .por .pl.you {
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por.unseen {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen {
   cursor: default;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por.unseen:hover {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen:hover {
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .por.unseen .pl {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen
+  .pl {
   color: var(--ash);
   font-style: italic;
 }
 
 /* An Unseen portrait's empty life slot is exactly as tall as a life bar
    (3 px), so the party row keeps its height when portraits turn Unseen. */
-html[data-product-kind="combat_debugger"] .bc .lb.none {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb.none {
   height: 0;
   margin: 1px 0;
   border-top: 1px dashed #34425f;
@@ -314,58 +451,88 @@ html[data-product-kind="combat_debugger"] .bc .lb.none {
 }
 
 /* Scores. */
-html[data-product-kind="combat_debugger"] .bc .sb-score {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score {
   display: grid;
   gap: 5px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score .n {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .n {
   font-size: 32px;
   font-weight: 700;
   line-height: 1;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.b .n {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .n {
   color: var(--crimson);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.a .n {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .n {
   color: var(--azure);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score .of {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .of {
   margin-left: 4px;
   color: var(--muted);
   font-size: 15px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar {
   display: flex;
   gap: 1px;
   --recent-shift: 0px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar i {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i {
   width: 3px;
   height: 8px;
   border-radius: 1px;
   background: #1e2840;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.b .segbar i.on {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .segbar
+  i.on {
   background: var(--crimson);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar {
   flex-direction: row-reverse;
   --recent-shift: -1px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar i.on {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar
+  i.on {
   background: var(--azure);
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-score.a
@@ -374,7 +541,7 @@ html[data-product-kind="combat_debugger"]
   --recent-shift: 0px;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-score.b
@@ -384,19 +551,33 @@ html[data-product-kind="combat_debugger"]
 }
 
 /* Momentum: recent points in the team's light color over one underline. */
-html[data-product-kind="combat_debugger"] .bc .sb-score.a .segbar i.on.recent {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar
+  i.on.recent {
   background: var(--azureL);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.b .segbar i.on.recent {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .segbar
+  i.on.recent {
   background: var(--crimsonL);
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar i.recent {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent {
   position: relative;
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar i.recent::after {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent::after {
   content: "";
   position: absolute;
   top: 10px;
@@ -406,33 +587,48 @@ html[data-product-kind="combat_debugger"] .bc .segbar i.recent::after {
   background: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar i.recent.newest {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent.newest {
   --recent-shift: 0px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .segbar i.recent.newest::after {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent.newest::after {
   width: 3px;
 }
 
 /* The number row; a held old number sits over #score-a or #score-b. */
-html[data-product-kind="combat_debugger"] .bc .sb-score > div {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  > div {
   position: relative;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score .n[data-beat-side="before"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .n[data-beat-side="before"] {
   position: absolute;
   top: 0;
   left: 0;
 }
 
 /* The bar row; a held old bar shares its cell. */
-html[data-product-kind="combat_debugger"] .bc .sb-score > .segbar {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  > .segbar {
   grid-row: 2;
   grid-column: 1;
 }
 
 /* The Scorebug switch off: a plain text score ("Score: 2/20"), no bar. */
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-plain="true"]
   .sb-score
@@ -443,24 +639,28 @@ html[data-product-kind="combat_debugger"]
   line-height: 1.35;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b {
   grid-area: sb;
   justify-items: start;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-score.a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a {
   grid-area: sa;
   justify-items: end;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-score.a {
   justify-items: start;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-score[data-team-a-side="left"]
   .sb-score.b {
@@ -468,18 +668,26 @@ html[data-product-kind="combat_debugger"]
 }
 
 /* The middle: tick, First To, Respawn Wave In. */
-html[data-product-kind="combat_debugger"] .bc .sb-mid {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid {
   grid-area: mid;
   display: grid;
   gap: 2px;
   text-align: center;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-mid b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid
+  b {
   font-size: 18px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .sb-mid span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid
+  span {
   color: var(--muted);
   font-size: 13px;
 }

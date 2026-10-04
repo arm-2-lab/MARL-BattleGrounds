@@ -17,16 +17,24 @@
  * researcher rows and match summary rows gives identical camera records in
  * every camera. The switch component shows the tips, remembers the camera,
  * handles V and B through the one command set and applies frames with the
- * right ease.
+ * right ease. The New Camera Tip switch is read live: Off hides a showing
+ * first-open tip at once, On shows a tip not seen yet, and once seen it stays
+ * seen. The first-open tip button has its own Battle Cam hover help.
+ * switchCameras: the Replay Viewer's switch with ["whole_map", "battle_cam"]
+ * has those two buttons only; V still turns Everyone In View on (the slot's
+ * data-camera names it) and no switch button is lit then. tipHost: the
+ * Replay Viewer's change tip and first-open tip mount in the given host (its
+ * old children replaced, its hidden flag cleared) and not in the slot; live
+ * play ignores tipHost.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-
-import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
 import { authorizedPresentationSceneView } from "../src/authorized-presentation-adapter.js";
+import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
 import { buildChoreographyPlan } from "../src/choreography-plan.js";
 import { runLocalCommand } from "../src/command-set.js";
+import { createViewportTransform } from "../src/layout.js";
 import {
   BODY_REACH,
   BUDGET,
@@ -45,8 +53,8 @@ import {
   FIRST_OPEN_TIP,
   FIRST_OPEN_TIP_MS,
   FIRST_OPEN_TIP_SEEN_KEY,
-  firstOpenTipDue,
   FOOTPRINT,
+  firstOpenTipDue,
   killCamKeyframes,
   killCamLean,
   killSlowMotion,
@@ -60,7 +68,6 @@ import {
   tooltip,
   update,
 } from "../src/looks/camera.js";
-import { createViewportTransform } from "../src/layout.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   enableAllVisualFilters,
@@ -627,6 +634,12 @@ test("records give one frame record, play-only moments and an export-safe inset"
     product: "replay_viewer",
   });
   assert.equal(help?.title, "Battle Cam");
+  const firstTipHelp = tooltip({ kind: "camera-first-tip" });
+  assert.equal(firstTipHelp?.title, "Battle Cam");
+  assert.equal(
+    firstTipHelp?.summary,
+    "Turn on Battle Cam: the camera follows the fights for you.",
+  );
   assert.equal(tooltip({ kind: "camera-frame" }), null);
 });
 
@@ -895,6 +908,162 @@ test("the switch remembers the camera, shows tips, handles V and B, and applies 
       ),
       false,
     );
+  } finally {
+    live.destroy();
+  }
+});
+
+test("the New Camera Tip switch is read live: Off hides a showing first-open tip", () => {
+  const doc = fakeDocument();
+  /** @type {Map<string, string>} */
+  const saved = new Map();
+  const storage = /** @type {any} */ ({
+    getItem: (/** @type {string} */ key) => saved.get(key) ?? null,
+    setItem: (/** @type {string} */ key, /** @type {string} */ value) =>
+      saved.set(key, value),
+  });
+  const timers = { setTimeout: () => ({}), clearTimeout: () => {} };
+  /** @type {Record<string, boolean>} */
+  const filters = { camera_tip: true };
+  const slot = doc.createElement("div");
+  const camera = createCameraSwitch({
+    slot: /** @type {any} */ (slot),
+    product: "replay_viewer",
+    storage,
+    timers,
+    applyFrame: () => {},
+    getFilters: () => filters,
+    registerKeys: false,
+  });
+  const repaint = () =>
+    camera.update({ worldWidth: W, worldHeight: H, reason: "resize" });
+  try {
+    const firstTip = find(slot, "camera-switch__first-tip");
+    assert.equal(firstTip.hidden, false, "the first open shows the tip");
+    filters.camera_tip = false;
+    repaint();
+    assert.equal(firstTip.hidden, true, "Off hides the showing tip at once");
+    filters.camera_tip = true;
+    repaint();
+    assert.equal(firstTip.hidden, true, "once seen, the tip stays seen");
+    assert.equal(saved.get(FIRST_OPEN_TIP_SEEN_KEY), "1");
+  } finally {
+    camera.destroy();
+  }
+
+  // Opened with the switch Off: nothing shows and nothing is marked seen;
+  // turning it On lets the unseen tip show.
+  saved.clear();
+  filters.camera_tip = false;
+  const laterSlot = doc.createElement("div");
+  const later = createCameraSwitch({
+    slot: /** @type {any} */ (laterSlot),
+    product: "replay_viewer",
+    storage,
+    timers,
+    applyFrame: () => {},
+    getFilters: () => filters,
+    registerKeys: false,
+  });
+  try {
+    const firstTip = find(laterSlot, "camera-switch__first-tip");
+    assert.equal(firstTip.hidden, true);
+    assert.equal(saved.has(FIRST_OPEN_TIP_SEEN_KEY), false);
+    filters.camera_tip = true;
+    later.update({ worldWidth: W, worldHeight: H, reason: "resize" });
+    assert.equal(firstTip.hidden, false, "On shows a tip not seen yet");
+    assert.equal(saved.get(FIRST_OPEN_TIP_SEEN_KEY), "1");
+  } finally {
+    later.destroy();
+  }
+});
+
+test("switchCameras leaves Everyone In View out of the switch but V still works", () => {
+  const doc = fakeDocument();
+  const slot = doc.createElement("div");
+  const camera = createCameraSwitch({
+    slot: /** @type {any} */ (slot),
+    product: "replay_viewer",
+    storage: null,
+    timers: { setTimeout: () => ({}), clearTimeout: () => {} },
+    applyFrame: () => {},
+    registerKeys: false,
+    switchCameras: ["whole_map", "battle_cam"],
+  });
+  try {
+    /** @param {any} node @returns {any[]} */
+    const all = (node) => [node, ...node.children.flatMap(all)];
+    assert.deepEqual(
+      all(slot)
+        .filter((node) => node.className === "camera-switch__choice")
+        .map((node) => node.dataset.camera),
+      ["whole_map", "battle_cam"],
+    );
+    assert.equal(camera.pressKey("v"), true);
+    assert.equal(camera.camera(), "everyone_in_view");
+    assert.equal(slot.dataset.camera, "everyone_in_view");
+    for (const name of ["whole_map", "battle_cam"]) {
+      const button = find(slot, "camera-switch__choice", name);
+      assert.equal(button.getAttribute("aria-pressed"), "false", name);
+    }
+  } finally {
+    camera.destroy();
+  }
+});
+
+test("tipHost holds both Replay Viewer tips, and live play ignores it", () => {
+  const doc = fakeDocument();
+  /** @param {any} node @returns {any[]} */
+  const all = (node) => [node, ...node.children.flatMap(all)];
+  const has = (/** @type {any} */ root, /** @type {string} */ name) =>
+    all(root).some((node) => node.className === name);
+  const slot = doc.createElement("div");
+  const host = doc.createElement("div");
+  host.hidden = true;
+  host.append(doc.createElement("span"));
+  const camera = createCameraSwitch({
+    slot: /** @type {any} */ (slot),
+    tipHost: /** @type {any} */ (host),
+    product: "replay_viewer",
+    storage: /** @type {any} */ ({ getItem: () => null, setItem: () => {} }),
+    timers: { setTimeout: () => ({}), clearTimeout: () => {} },
+    applyFrame: () => {},
+    registerKeys: false,
+  });
+  try {
+    assert.equal(host.hidden, false);
+    assert.deepEqual(
+      host.children.map((/** @type {any} */ node) => node.className),
+      ["camera-switch__tip", "camera-switch__first-tip"],
+      "the host's old children are replaced by the two tips",
+    );
+    assert.equal(find(host, "camera-switch__first-tip").hidden, false);
+    assert.equal(has(slot, "camera-switch__tip"), false);
+    assert.equal(has(slot, "camera-switch__first-tip"), false);
+    assert.equal(camera.pressKey("v"), true);
+    assert.equal(
+      find(host, "camera-switch__tip").hidden,
+      false,
+      "the change tip shows there",
+    );
+  } finally {
+    camera.destroy();
+  }
+  const liveSlot = doc.createElement("div");
+  const liveHost = doc.createElement("div");
+  liveHost.hidden = true;
+  const live = createCameraSwitch({
+    slot: /** @type {any} */ (liveSlot),
+    tipHost: /** @type {any} */ (liveHost),
+    product: "combat_debugger",
+    storage: null,
+    timers: { setTimeout: () => ({}), clearTimeout: () => {} },
+    applyFrame: () => {},
+    registerKeys: false,
+  });
+  try {
+    assert.equal(liveHost.hidden, true);
+    assert.equal(liveHost.children.length, 0);
   } finally {
     live.destroy();
   }

@@ -2,7 +2,9 @@
  * @file Check real browser resizing, installed authority, exact debugger grid and
  * independently scrolling panels. The roster body scrolls by itself; the command
  * deck grows to its content; at 1280 x 720 and larger the arena column and the
- * HUD column each scroll by themselves, and below that the page scrolls.
+ * HUD column each scroll by themselves, and below that the page scrolls. The
+ * Replay Viewer's dock stays whole on screen, with no sideways page scroll, at
+ * 1440 x 900 and at its smallest supported screen, 1366 x 768.
  */
 import { expect, test } from "@playwright/test";
 
@@ -537,9 +539,11 @@ test("disclosure bodies scroll independently at both supported viewports", async
     sampleReplay: "death-respawn-shield",
   });
   try {
+    // Owner, 2 Oct 2026: the Replay Viewer's smallest supported screen is
+    // 1366 x 768; below it the page may run off the screen.
     for (const viewport of [
       { width: 1440, height: 900 },
-      { width: 960, height: 600 },
+      { width: 1366, height: 768 },
     ]) {
       await page.setViewportSize(viewport);
       await page.goto(replay.url);

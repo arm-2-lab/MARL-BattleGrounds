@@ -560,6 +560,9 @@ invalidates the separate frozen pre-commit qualification.
 
 ## Visual baselines
 
+The browser tests keep no screenshot baselines today: they check layout with
+measured assertions instead. These commands stay for any future baseline.
+
 Compare first:
 
 ```bash

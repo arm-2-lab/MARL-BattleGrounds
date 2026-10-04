@@ -7,7 +7,13 @@ src/ and assets/. ``serve_browser_debugger`` also prints the launch URL,
 optionally opens a browser, and handles shutdown. API calls require the launch
 token and the expected local origin. The coordinator owns service calls; this
 module does not import or advance the simulator. Responses disable caching,
-request logs are suppressed, and command bodies are limited to 64 KiB.
+request logs are suppressed, and command bodies are limited to 64 KiB. A server
+made with ``page_ready`` holds only its page (``/`` and ``/index.html``) until
+that event is set; the BattleClient's Open Replay child uses it so its tab opens
+once the Replay Viewer is ready, while the page's API answers at once. Every GET
+and POST that any server in the process answers is counted, and
+``wait_for_quiet_requests`` waits until none runs, so background work (the Open
+Replay prepare) gives way to the game.
 """
 
 from __future__ import annotations
@@ -25,7 +31,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import Parameter, Signature, signature
 from pathlib import Path
 from socket import socket
-from threading import Event, Lock, RLock, Thread
+from threading import Condition, Event, Lock, RLock, Thread
+from time import monotonic
 from typing import Any, Literal, Protocol, cast, get_args
 
 from pydantic import BaseModel, ValidationError
@@ -37,7 +44,7 @@ _CLIENT_SOCKET_TIMEOUT_SECONDS = 2.0
 _METRIC_REPORT_ROUTE = "/api/replay/metric-report"
 _METRIC_CATALOG_ROUTE = "/api/replay/metrics/catalog.json"
 _TIMELINE_MARKS_ROUTE = "/api/replay/timeline-marks"
-"""GET route for the Saga Chronicle marks of the current replay audience.
+"""GET route for the Rune Scrubber marks of the current replay audience.
 
 Answers 200 with the JSON bytes from HttpCoordinatorBinding.timeline_marks
 (one ReplayTimelineMarksV1: Oracle View marks, or the current Agent POV
@@ -97,7 +104,6 @@ _REQUIRED_RUNTIME_ASSET_PATHS = (
     "src/choreography-painter.js",
     "src/choreography-plan.js",
     "src/choreography.js",
-    "src/chronicle.js",
     "src/command-set.js",
     "src/controls.js",
     "src/system-controls.js",
@@ -124,6 +130,7 @@ _REQUIRED_RUNTIME_ASSET_PATHS = (
     "src/replay-frame-normalizer.js",
     "src/replay-recipient-rotation.js",
     "src/routes.js",
+    "src/rune-scrubber.js",
     "src/scene.js",
     "src/shell.js",
     "src/tactics-turn.js",
@@ -860,6 +867,88 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     return manifest
 
 
+# Every GET and POST that any DebuggerHTTPServer in this process is answering,
+# counted under this condition, and when the last one ended (time.monotonic
+# seconds); see wait_for_quiet_requests.
+_REQUEST_ACTIVITY = Condition()
+_requests_in_flight = 0
+_last_request_end = 0.0
+
+
+@contextmanager
+def _counted_request() -> Generator[None]:
+    """Count one request as running, for wait_for_quiet_requests, while it runs.
+
+    On exit, also after an error, it uncounts the request, records the end
+    time and wakes every waiter. Takes only the activity condition, briefly.
+    """
+    global _requests_in_flight, _last_request_end
+    with _REQUEST_ACTIVITY:
+        _requests_in_flight += 1
+    try:
+        yield
+    finally:
+        with _REQUEST_ACTIVITY:
+            _requests_in_flight -= 1
+            _last_request_end = monotonic()
+            _REQUEST_ACTIVITY.notify_all()
+
+
+def wait_for_quiet_requests(
+    quiet_seconds: float = 0.15, *, longest_wait_seconds: float | None = None
+) -> bool:
+    """Wait until no server in this process is answering a request.
+
+    Parameters
+    ----------
+    quiet_seconds : float, optional
+        How long, in seconds, no request may have run before this returns.
+        Default 0.15, so the few requests of one click (a command, then its
+        presentation and timeline reads) all finish first.
+    longest_wait_seconds : float or None, optional, keyword-only
+        The longest this call waits, in seconds; then it returns False even
+        though requests still come. None (the default) waits as long as
+        requests keep coming.
+
+    Returns
+    -------
+    bool
+        True when it became quiet; False when longest_wait_seconds ran out
+        first.
+
+    Notes
+    -----
+    Returns True once no GET or POST of any DebuggerHTTPServer in this
+    process is running and quiet_seconds have passed since the last one
+    ended; at once when no request has run for that long. A page GET held by
+    its server's page_ready event does not count. Background work calls it
+    between small pieces so it rarely shares the CPU (the Python GIL) with a
+    request: the BattleClient's Open Replay prepare does, with a bound
+    (_battle_client.recording_coordinator._GiveWayToRequests). The longest
+    single request is one that waits for a background save (about 13 s after
+    a 300-tick game). Waits on one condition and holds no other lock.
+    """
+    deadline = (
+        None if longest_wait_seconds is None else monotonic() + longest_wait_seconds
+    )
+    with _REQUEST_ACTIVITY:
+        while True:
+            now = monotonic()
+            remaining = (
+                None
+                if _requests_in_flight > 0
+                else _last_request_end + quiet_seconds - now
+            )
+            if remaining is not None and remaining <= 0:
+                return True
+            if deadline is not None:
+                if now >= deadline:
+                    return False
+                left = deadline - now
+                remaining = left if remaining is None else min(remaining, left)
+            _REQUEST_ACTIVITY.wait(remaining)
+
+
 class DebuggerHTTPServer(ThreadingHTTPServer):
     """Threaded loopback server carrying one monotonic active coordinator."""
 
@@ -875,6 +964,7 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
         capability_token: str,
         static_manifest: dict[str, StaticAsset],
         port: int,
+        page_ready: Event | None = None,
     ) -> None:
         """Bind a threaded server to the local loopback interface.
 
@@ -892,6 +982,10 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
             Preloaded exact routes and response bytes.
         port : int
             Local TCP port; zero asks the operating system to select one.
+        page_ready : threading.Event or None, optional
+            When given, a GET of the page (``/`` or ``/index.html``) waits
+            until this event is set, then answers as usual; every other route
+            answers at once. None (the default) never waits.
 
         Raises
         ------
@@ -926,6 +1020,7 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
             self._coordinator_router = coordinator_router
         self.capability_token = capability_token
         self.static_manifest = static_manifest
+        self.page_ready = page_ready
         self.shutdown_started = Event()
         self._shutdown_lock = Lock()
         super().__init__(("127.0.0.1", port), DebuggerRequestHandler)
@@ -1079,16 +1174,24 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         # read releases the router lock so cursor and POV commands stay usable.
         """Handle one GET while holding the coordinator generation through the
         response.
+
+        A page GET (``/`` or ``/index.html``) first waits for the server's
+        page_ready event, when it has one, holding no lock while it waits.
+        The GET then counts as running for wait_for_quiet_requests.
         """
-        snapshot = self.debugger_server.coordinator_router.snapshot()
-        if snapshot.binding.mode == "replay" and (
-            _METRIC_ANALYSIS_ROUTE.fullmatch(self.path) is not None
-            or self.path == _METRIC_CATALOG_ROUTE
-        ):
-            self._handle_get(snapshot.binding)
-            return
-        with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
-            self._handle_get(snapshot.binding)
+        page_ready = self.debugger_server.page_ready
+        if page_ready is not None and self.path in ("/", "/index.html"):
+            page_ready.wait()
+        with _counted_request():
+            snapshot = self.debugger_server.coordinator_router.snapshot()
+            if snapshot.binding.mode == "replay" and (
+                _METRIC_ANALYSIS_ROUTE.fullmatch(self.path) is not None
+                or self.path == _METRIC_CATALOG_ROUTE
+            ):
+                self._handle_get(snapshot.binding)
+                return
+            with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
+                self._handle_get(snapshot.binding)
 
     def _handle_get(self, coordinator: HttpCoordinatorBinding) -> None:
         """Route a checked GET to bootstrap, static bytes, or authenticated service
@@ -1384,9 +1487,12 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Handle one POST while holding the coordinator generation through the
-        response.
+        response; it counts as running for wait_for_quiet_requests.
         """
-        with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
+        with (
+            _counted_request(),
+            self.debugger_server.coordinator_router.pinned_snapshot() as snapshot,
+        ):
             self._handle_post(snapshot.binding)
 
     def _handle_post(self, coordinator: HttpCoordinatorBinding) -> None:
@@ -1729,6 +1835,7 @@ def create_server(
     capability_token: str | None = None,
     coordinator: HttpCoordinatorBinding | None = None,
     coordinator_router: HttpCoordinatorRouter | None = None,
+    page_ready: Event | None = None,
 ) -> DebuggerHTTPServer:
     """Validate browser assets and bind a local debugger server.
 
@@ -1747,6 +1854,10 @@ def create_server(
     coordinator_router : HttpCoordinatorRouter or None, optional
         Existing exact router. Any supplied service or binding must be its current
         objects. Defaults to None.
+    page_ready : threading.Event or None, optional
+        When given, the server holds every GET of its page (``/`` or
+        ``/index.html``) until the event is set; API, bootstrap and file
+        routes answer at once. Defaults to None (never holds).
 
     Returns
     -------
@@ -1801,6 +1912,7 @@ def create_server(
         capability_token=capability_token or secrets.token_urlsafe(32),
         static_manifest=manifest,
         port=port,
+        page_ready=page_ready,
     )
 
 

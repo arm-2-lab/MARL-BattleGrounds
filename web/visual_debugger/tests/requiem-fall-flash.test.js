@@ -11,7 +11,11 @@
  * puffs each swell from 0.6 to 1.3 about their own centres. Priest: ray i is
  * lit at the beat and out by 1000 + 60i. Every animation still starts hidden
  * at or after the Fall beat. Fallen row: an ID never runs into the next "+"
- * or into the points, whatever its length.
+ * or into the points, whatever its length; the points stand FEED_POINTS_GAP
+ * clear of the victim's ID; the row is drawn FEED_ROW_SCALE (1.5) times its
+ * store-unit viewBox. Fallen panel height: the "No one has fallen" line is
+ * exactly one row tall and a row's line fits in it, so the panel does not
+ * jump when its last row ages out at a tick start.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -248,7 +252,48 @@ test("a Fallen row never runs an ID into a plus sign or the points", () => {
       ? Number(next.getAttribute("x")) - plusHalfWidth
       : Number(next.getAttribute("x"));
     assert.ok(nextLeft - end >= 1.5, `${text.textContent} clears ${next.textContent}`);
+    if (nextClass.includes("fallen-feed__points")) {
+      assert.ok(nextLeft - end >= requiems.FEED_POINTS_GAP, "the +1 stands clear");
+    }
     checked += 1;
   }
   assert.equal(checked, 4);
+  // Drawn half again as big as the store units in its viewBox.
+  const svg = descendants(row).find((node) => node.tagName === "svg");
+  const [, , viewWidth, viewHeight] = String(svg.getAttribute("viewBox"))
+    .split(" ")
+    .map(Number);
+  assert.ok(
+    Math.abs(
+      Number(svg.getAttribute("height")) - viewHeight * requiems.FEED_ROW_SCALE,
+    ) < 0.01,
+  );
+  assert.ok(
+    Math.abs(Number(svg.getAttribute("width")) - viewWidth * requiems.FEED_ROW_SCALE) <
+      0.01,
+  );
+});
+
+test("the empty Fallen line is one row tall, so the panel keeps its height", async () => {
+  const css = await readFile(
+    new URL("../src/styles/requiems.css", import.meta.url),
+    "utf8",
+  );
+  const minHeight = (/** @type {string} */ selector) => {
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(
+      (rule) =>
+        rule[1]
+          .trim()
+          .split(/\s*\n\s*/u)
+          .at(-1) === selector,
+    );
+    const values = rules.flatMap((rule) => [
+      ...rule[2].matchAll(/min-height: (\d+)px;/gu),
+    ]);
+    assert.equal(values.length, 1, `${selector} sets one min-height`);
+    return Number(values[0][1]);
+  };
+  const rowHeight = minHeight(".fallen-feed__row");
+  assert.equal(minHeight(".fallen-feed__empty"), rowHeight);
+  assert.ok(15 * requiems.FEED_ROW_SCALE <= rowHeight, "a row's line fits in one row");
 });

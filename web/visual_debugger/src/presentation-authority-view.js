@@ -97,6 +97,7 @@ export function pendingPresentationSurfaceView(replaySnapshot) {
         pauseReason: "presentation_pending",
         atStart: true,
         atEnd: true,
+        targetFrameIndex: null,
       }),
     }),
     recording: Object.freeze({

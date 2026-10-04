@@ -16,10 +16,22 @@ A normal workflow is:
    for the current tick or the full captured game.
 5. Use Exit Replay Viewer or stop its terminal process when finished.
 
-The Viewer opens in Oracle View at 1x speed. The right-hand rail has five
-tabs: **Agent**, **Metrics**, **Actions**, **Visuals** and **Frame**. The
-**Team Rosters** strip under the arena lists every champion. Press **?** in the
-page for Help and the full key list. The look and its rules are recorded in
+The Viewer opens in Oracle View at 1x speed. The right-hand rail has six
+tabs: **Roster**, **Agent**, **Metrics**, **Actions**, **Visuals** and
+**Frame**. Two buttons sit in the arena's top-right corner: **Everyone In
+View** (the same as V) and **Frame Explanation** (the same as F); each lights
+while it is on. Hover or focus a tab, a top-bar button (**Agent POV**,
+**Oracle View**, **Visual Key**, **Visual Filters**), a corner button, the
+**Palette** choice or the one-time Battle Cam tip for one plain sentence on
+what it holds or does; the same tips show in the BattleClient. The **Arena
+Frames** under the arena list every champion, one thin row each; each team's
+"Standing 4 of 5" count is under its name in the scoreboard (in Agent POV,
+the viewing team's only). The **Agent** tab shows the selected champion's
+Champion Frame (life, Ultimate, Effective Speed, statuses, Recent Ticks and
+Next Target) and its Class Guide; under it, the closed **Full Class Details**
+opens to the class's order, overview, role, strength and weakness, every
+class mechanic and the passive's rules. Press **?** in the page for Help and
+the full key list. The look and its rules are recorded in
 [A45](../design/specification_amendments.md#a45-runefield-client-presentation).
 
 The top bar shows the brand (the carved **MARL-BGs**, the same spelling as
@@ -28,7 +40,7 @@ every client), **Replay Viewer**, the place line ("**Teutoburg Forest** · Map
 the bar runs short, the place line gives way first, "Team Deathmatch" before
 the map name, because the scoreboard above the arena names the map too; only
 then is "Replay Viewer" cut. At 1440 px wide the map name shows whole, except
-in Agent POV on a frame with an end-of-game pill (such as Declared Horizon),
+in Agent POV on a frame with an end-of-game pill (such as Time Limit),
 where the agent picker and the pill take its room. At 1366 px it shows whole
 in Oracle View before the end. The scoreboard always shows it.
 
@@ -55,7 +67,11 @@ python -m marl_battlegrounds replay "runs/my game.marlbg-replay.json" \
 The installed package includes the existing browser HTML, JavaScript, CSS and
 fonts. It needs no source checkout, Node.js, frontend build or asset download.
 The server stays on loopback and prints its actual URL. The replay is checked
-before serving or opening the browser. `--no-open` leaves browser opening to you.
+before serving or opening the browser. Then the launcher prints "getting Agent
+POV ready" and builds every agent's Agent POV view first, so entering Agent POV
+and switching agents are quick from the first click. That takes a few seconds
+for a full game (about 7 s for a 246-tick five-against-five game on CPU) and
+well under a second for a short scenario. `--no-open` leaves browser opening to you.
 The process reads the replay; it does not change that file or run simulator turns.
 
 For a static frame, install the optional plotting extra and choose a frame:
@@ -133,7 +149,9 @@ described below. Write complete option names; abbreviations are rejected.
 
 In [BattleClient](../battle_client.md), use **Finish And Save** (a finished game
 saves by itself: wait until the Recording pill says **Saved**), then **Open Replay**.
-The Viewer opens in a separate tab, in Oracle View. The live page stays available for inspection
+The Viewer opens in a separate tab, in Oracle View. After a full game the new tab first shows
+a dark "Opening Replay" page for a few seconds while every agent's Agent POV view is built, so
+switching is quick from the start; the game keeps answering meanwhile. The live page stays available for inspection
 and Restart. Each product has its own local URL and access token. Closing a tab
 leaves its server running; the Viewer's Exit stops only that Viewer. BattleClient
 can reopen it. Exiting BattleClient leaves the Viewer it opened running: the
@@ -243,19 +261,29 @@ to bypass the no-overwrite boundary.
 
 ## Transport and Exact-Frame Summaries
 
-The **Chronicle** dock under the arena holds the transport. Its ribbon shows
-each team's falls, Ultimates and returns along the game, with one lit chapter
-per fight; click or drag it to seek. Its button row holds, in order: Start,
-Previous Fight, −10, −1, Play/Pause, Step Play, +1, +10, Next Fight, End,
-Fights Only (off by default), Bookmark, Speed, Export PNG, Download Metrics CSV
-and Episode Details. Step Play plays one tick, then settles. Bookmarks keep only frame
-numbers and notes, in this browser. In Agent POV the marks and fights come only
-from what the viewing team saw, so a fight it never saw is never marked.
+The **Rune Scrubber** dock under the arena holds the transport. Its Event
+Track shows each team's falls (Team A above the groove, Team B below it),
+Ultimate runes on the groove in the caster's class color (filled for a
+damaging Ultimate, hollow for Burst or Holy Word: Salvation) and return pips.
+Hover a mark for who fell, cast or returned; click or drag the track to seek.
+Its one button row holds, in order: Start, −10, −1, Play/Pause, +1, +10, End,
+the readout ("Tick 118 of 204" with the beat under it: Settled, Playing or
+Paused · Strike), Speed, an Export menu (Export PNG, Download Metrics CSV and
+Episode Details) and the camera switch. In Agent POV the marks come only from
+what the viewing team saw, so an event it never saw is never marked. A Replay
+Viewer notice (for example "Exported …" or a failed request) shows under the
+readout for about 4 seconds, whole, then the beat label comes back; there is no
+notice in the top bar.
 
 Playback sends at most one replay request at a time, with one presentation in
-flight. A press made during a request waits as the one pending press; a newer
-press replaces it. The native Tick slider and readout stay in the page for
-keyboard and screen-reader users.
+flight. A press made during a request (a button, a key or the track) is not
+lost: it waits as the one pending target. Relative presses add up, so five
+quick +1 presses become one move of five ticks; Start, End and the track
+replace the target. The buttons never grey out while a request runs. The
+native Tick slider and readout stay in the page for keyboard and screen-reader
+users. V, B, F, G and N also work while a transport button has focus; Space
+and Enter still press the focused button. In a text box, such as Find A
+Measurement, every key types as usual: N types an "n" and moves nothing.
 
 Buttons, committed seeks, view/range changes, and reconnects show a
 static summary of the exact selected frame. It shows enabled durable facts and
@@ -273,9 +301,9 @@ row grammar. Both panels remain global researcher evidence in Oracle View and
 Agent POV: they show every configured-active actor in canonical roster order and
 never stage, predict, or execute an action. In Agent POV they carry a **Full
 Record** chip. Agent POV fog of war applies only to the arena and everything
-drawn over it. The Team Rosters strip likewise remains a global researcher
-control. With **Seen And Not Seen** on, each team lists seen champions first,
-then unseen, then fallen, so any agent's POV can be selected at the same replay
+drawn over it. The Arena Frames likewise remain a global researcher control.
+Each team lists its champions in ID order in both views, so a frame never moves
+when sight changes, and any agent's POV can be selected at the same replay
 tick. Upcoming is absent only when the displayed frame has no recorded
 successor.
 
@@ -303,10 +331,13 @@ play/pause. Without installed, connected, visible replay authority, the keys
 do nothing. While a frame is still loading, Space and the arrow keys are
 consumed without a new command, so the page does not scroll.
 
-The camera switch offers **Whole Map** (the default), **Everyone In View** (V)
-and **Battle Cam** (B, Replay Viewer only). Battle Cam frames the fights and
+The camera choices are **Whole Map** (the default), **Everyone In View** (V,
+or its button in the arena's corner) and **Battle Cam** (B, Replay Viewer
+only). The switch in the Rune Scrubber row shows Whole Map and Battle Cam. Battle Cam frames the fights and
 can lean in on a kill; its parts are Visuals switches. The Viewer remembers the
-last camera in this browser. In Agent POV the camera only frames champions and
+last camera in this browser. A camera change shows a short tip, and the first
+visit shows one Battle Cam tip; both sit in the scoreboard's empty space beside
+the tick, so they never cover the arena or a panel. In Agent POV the camera only frames champions and
 fights the viewing team saw.
 
 ## Audiences and Recorded Authority
@@ -323,7 +354,7 @@ visual POV.
 In Agent POV nothing on or over the arena shows a champion the viewing team
 cannot see, or anything tied to it: position, life, statuses, an unseen
 attacker's class, or the timing of its events. Hover tips, Frame Explanation
-(F), the camera and the Chronicle marks follow the same rule. The docked
+(F), the camera and the Rune Scrubber marks follow the same rule. The docked
 Agent, Metrics, Actions and Frame tabs are researcher panels: they show the
 full recorded game under a **Full Record** chip. The **Sight Reach Veil**
 darkens the floor outside the observation-reach circles of the frame's
@@ -353,7 +384,8 @@ cut with "…" past a fixed width, a short count such as "3 Policies" (or
 names do not fit, and hovering it drops down **Team A Controllers** (or
 Team B): each
 controller's name in full, how many champions it plays and each of those
-champions. The Team Rosters strip uses the same list. These are the names the
+champions. Each champion's tip in the Arena Frames names its controller from
+the same list. These are the names the
 live client showed, one per champion, exactly as recorded: "tdm-beta" stays
 "tdm-beta", and a champion a person played reads **Manual** (only the live
 client calls it **You**). Like **You** in live play, **Manual** comes first
@@ -421,10 +453,9 @@ left · It moves at ×0.5 speed. From a Warrior."), so Oracle View and Agent POV
 read the same. The Spawn Shield ring on an arena body has a small tip in the
 same words: "Spawn Shield (Invulnerable)", "It can't be seen or hit, and can't
 strike yet." and **Time Left**. Each panel that shows a champion's life (the Champion Frame,
-the Agent tab and the Team Rosters strip) uses the BattleClient's one **Life**
-bar: green above half life, yellow at half or less, red at 30% or less. The
-compact Team Rosters strip keeps only the bar itself; the frame's tip gives
-the exact life.
+the Agent tab and the Arena Frames) uses the BattleClient's one **Life**
+bar: green above half life, yellow at half or less, red at 30% or less. Each
+Arena Frames row shows the bar with its number (for example 114 / 200).
 
 Blows are drawn between the end spots of their source and target, so a stroke
 can look longer than the ability's real reach; a faint imprint ring and
@@ -562,7 +593,13 @@ or with depth 0, show no tint. Turning the filter off only hides the tint.
 
 **Fallen Feed** lists the falls of the last 8 ticks at the top of the rail, and
 **Match Moments** herald cards name the match's big moments (see Herald cards
-below). Hover
+below). The earlier ticks' rows come from the frame's `recent_falls` field,
+which the server works out per view from the recorded frames
+(`viewer/champion_streaks.py`, the one owner of kill credit), so a seek, a
+reload or a view switch shows the same rows as playing up to the tick; the
+shown tick's own row comes from the beat plan and appears at its Fall beat.
+An old recording without lethal damage contribution events names no killers
+on the earlier rows. Hover
 or focus a fall to see its complete **Kill Contributors** list. Useful same-tick
 Priest support shares credit; healing that is all excess does not. In Agent POV
 both show only falls the viewing team saw, naming only attackers it saw. Team
@@ -721,6 +758,28 @@ sends with every frame (`match_summary.scores_ten_ticks_ago`: each team's score
 the right marks and the page keeps no history. Scores are public, so Agent POV
 shows exactly what Oracle View shows. Off, every scored point looks the same.
 
+Two **Replay Tools** switches (both off by default, Replay Viewer only) show
+the recorded next tick:
+
+- **Next Step Ghost** draws a dotted circle, the BattleClient's Step Ghost
+  ring, at the spot where each living champion stands at the end of the next
+  tick. The spots come from the frame's `next_end_spots` field, which the
+  server reads from the recorded next frame. In Agent POV it lists only
+  champions the viewing team sees now and still sees at the end of the next
+  tick, so a ghost never tells where an unseen champion went. A champion that
+  does not move gets no ghost, and the last tick has none.
+- **All Staged Orders** draws the Next Action Thread for every champion at
+  once: a dashed silver line to whoever it acts on next, with a dot for a
+  Basic or a diamond for an Ultimate under that body (a self Ultimate, such as
+  the Mage's Burst, puts the diamond under the champion itself). It reads the
+  frame's own recorded next actions (`upcoming_transition`). In Agent POV
+  those hold only the recipient's own order: champions cannot see their
+  teammates' plans, and the other team's orders never show. The selected
+  champion's line stays the Next Action Thread's, so no line is drawn twice.
+
+Both are recorded in the PNG provenance (version 4) with the other battlefield
+switches.
+
 The map label reads either the recording's map metadata or its verified authored
 layout name, revision and digest. Older authored replays such as Three Body
 Problem r3 therefore retain their recorded map identity. Geometry alone does not
@@ -769,8 +828,9 @@ bundled fonts and locked battlefield background, reflects the current audience,
 camera, selection, Ranges, and visual-filter states, and embeds one standard
 `MARL-BattleGrounds Replay Provenance` iTXt record. It shows what is on screen,
 so a zoomed camera exports the zoomed view. New exports write provenance
-version 3, which records the battlefield switches and the camera frame as a
-world rectangle; PNGs saved with versions 1 and 2 still read. Exported PNGs
+version 4, which records the battlefield switches (version 3's list plus Next
+Step Ghost and All Staged Orders) and the camera frame as a world rectangle;
+PNGs saved with versions 1, 2 and 3 still read. Exported PNGs
 carry no brand mark. Export does not navigate the replay or request another
 replay frame.
 
@@ -859,8 +919,8 @@ actions; `Charge Slow Count` asks for the separate Slow application count. It
 supports common measurement questions, not arbitrary English. Conditions such as
 `damage without poison` or `damage after poison` show a clear explanation
 instead of guessing a different measurement. Applicable matches open their table
-and focus the named measure. A bright yellow outline and light tint mark the row
-for three seconds. Choosing another result moves the cue; choosing the same
+and focus the named measure. A Moon Silver bar on its left and a soft silver
+tint mark the row for three seconds. Choosing another result moves the cue; choosing the same
 result starts its three seconds again. The cue disappears without moving
 keyboard focus. It does not flash or move, including when reduced motion is
 enabled. The search list is loaded once per replay analysis. Seeking, scope

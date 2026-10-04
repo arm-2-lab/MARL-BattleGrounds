@@ -26,7 +26,13 @@ export const POV_HEALTH_EVENT_TYPE = "own_health_changed";
 // every other snapshot and admit only that narrow reviewed raster tail here.
 export const DENSE_BASELINE_MAX_DIFF_PIXEL_RATIO = 0.00105;
 
-/** @param {import("@playwright/test").Page} page */
+/**
+ * Check that every visible control (button, select, input, summary or focusable
+ * element; a role="tabpanel" is not a control) has registered hover help or an
+ * aria-describedby target, and none uses a native title.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
 export async function expectVisibleInteractiveHelpInventory(page) {
   const inventory = await page
     .locator('button, select, input, summary, [tabindex]:not([tabindex="-1"])')
@@ -64,6 +70,8 @@ export async function expectVisibleInteractiveHelpInventory(page) {
       };
       const visible = elements.filter((element) => {
         if (!(element instanceof Element)) return false;
+        // The ARIA tab pattern keeps tabindex 0 on a tab panel; it is not a control.
+        if (element.getAttribute("role") === "tabpanel") return false;
         const style = getComputedStyle(element);
         return (
           !element.hasAttribute("hidden") &&

@@ -1,16 +1,21 @@
 /**
  * @file Check the Visual Filter registry, defaults, immutable updates and the
- * paint-part table: 104 switches in fixed order (the 20 earlier switches first,
+ * paint-part table: 100 switches in fixed order (the 20 earlier switches first,
  * then the switches of the V5-picked looks, including the live-only Brand
  * Signature and Palette: High Contrast, and Momentum, an interface switch off
- * by default), with no switch for an unbuilt part such as instant replay; each
+ * by default, then the Replay Viewer's Next Step Ghost and All Staged Orders,
+ * both off), with no switch for an unbuilt part such as instant replay and none
+ * of the removed Chronicle and Scribe's Ledger switches (Fight Chapters,
+ * Bookmarks, Ledger Heraldry, Actions In Words, Seen And Not Seen, Reference
+ * Chip); each
  * with its exact label, group, default, surface (arena or interface) and
  * products; the twelve V5 switches the shared looks draw (Class Seals, Kill
  * Credit Glint, Saved Beat, Last Breath, Battle Text Detail, Aura Glints,
  * Barrier Held, Spawn Shield Expiry, Status Clear On Death, Freezing Trap
  * Break, Champion Streaks and Momentum) listed in both live play and the
- * Replay Viewer; 80 switches on by
- * default; the v4 paint key; one switch list per product; strict reducer and
+ * Replay Viewer; 74 switches on by
+ * default; the v4 paint key; one switch list per product (95 in the Replay
+ * Viewer); strict reducer and
  * state validation; and paint parts read from each look module's PAINT_PARTS:
  * one owner per part, a repeated part or a malformed list throws, every part
  * drawn before V5 still classifies to its original switch (so every earlier
@@ -180,45 +185,11 @@ const EXPECTED_FILTERS = Object.freeze([
     "replay_viewer",
   ],
   ["beat_label", "Beat Label", "HUD", true, "interface", "replay_viewer"],
-  ["fight_chapters", "Fight Chapters", "HUD", true, "interface", "replay_viewer"],
-  ["bookmarks", "Bookmarks", "HUD", true, "interface", "replay_viewer"],
   ["freeze_on_pause", "Freeze On Pause", "HUD", true, "interface", "replay_viewer"],
   ["hide_marks_ahead", "Hide Marks Ahead", "HUD", false, "interface", "replay_viewer"],
   ["class_guide", "Class Guide", "Panels", true, "interface", "both"],
   ["ledger_summary", "Match Summary", "Panels", true, "interface", "replay_viewer"],
   ["panel_tokens", "Panel Tokens", "Panels", true, "interface", "both"],
-  [
-    "ledger_heraldry",
-    "Ledger Heraldry",
-    "Replay Tools",
-    true,
-    "interface",
-    "replay_viewer",
-  ],
-  [
-    "plain_actions",
-    "Actions In Words",
-    "Replay Tools",
-    true,
-    "interface",
-    "replay_viewer",
-  ],
-  [
-    "seen_grouping",
-    "Seen And Not Seen",
-    "Replay Tools",
-    true,
-    "interface",
-    "replay_viewer",
-  ],
-  [
-    "reference_chip",
-    "Reference Chip",
-    "Replay Tools",
-    true,
-    "interface",
-    "replay_viewer",
-  ],
   ["brand_lockup", "Brand Lockup", "HUD", true, "interface", "both"],
   ["brand_signature", "Brand Signature", "HUD", false, "interface", "combat_debugger"],
   ["title_card", "Title Card", "HUD", true, "interface", "both"],
@@ -233,6 +204,22 @@ const EXPECTED_FILTERS = Object.freeze([
     false,
     "arena",
     "combat_debugger",
+  ],
+  [
+    "next_step_ghost",
+    "Next Step Ghost",
+    "Replay Tools",
+    false,
+    "arena",
+    "replay_viewer",
+  ],
+  [
+    "all_staged_orders",
+    "All Staged Orders",
+    "Replay Tools",
+    false,
+    "arena",
+    "replay_viewer",
   ],
 ]);
 
@@ -299,7 +286,7 @@ const EARLIER_PAINT_PARTS = Object.freeze([
   [{ surface: "transient", kind: "spawn_shield_expiry" }, "spawn_shield_expiry"],
 ]);
 
-test("locked registry exposes 104 switches with exact labels, groups and defaults", () => {
+test("locked registry exposes 100 switches with exact labels, groups and defaults", () => {
   assert.deepEqual(
     VISUAL_FILTER_REGISTRY.map(
       ({ id, label, group, defaultEnabled, surface, products }) => [
@@ -317,8 +304,8 @@ test("locked registry exposes 104 switches with exact labels, groups and default
     VISUAL_FILTER_IDS,
     EXPECTED_FILTERS.map(([id]) => id),
   );
-  assert.equal(new Set(VISUAL_FILTER_IDS).size, 104);
-  assert.equal(INITIAL_FILTER_IDS.length, 80);
+  assert.equal(new Set(VISUAL_FILTER_IDS).size, 100);
+  assert.equal(INITIAL_FILTER_IDS.length, 74);
   assert.deepEqual(EARLIER_FILTER_IDS, [
     "aura_fields",
     "aura_modifier_badges",
@@ -362,6 +349,12 @@ test("locked registry exposes 104 switches with exact labels, groups and default
     "devclient_turn_deck",
     "director_camera",
     "layout",
+    "fight_chapters",
+    "bookmarks",
+    "ledger_heraldry",
+    "plain_actions",
+    "seen_grouping",
+    "reference_chip",
   ]) {
     assert.equal(
       VISUAL_FILTER_IDS.includes(/** @type {any} */ (removed)),
@@ -397,7 +390,14 @@ test("each product lists only the switches that matter there", () => {
       ([, , , , , products]) => products !== "combat_debugger",
     ).map(([id]) => id),
   );
-  for (const id of ["camera_tip", "kill_cam", "step_glide", "ledger_heraldry"]) {
+  assert.equal(replay.length, 95);
+  for (const id of [
+    "camera_tip",
+    "kill_cam",
+    "step_glide",
+    "next_step_ghost",
+    "all_staged_orders",
+  ]) {
     assert.equal(
       live.some((entry) => entry.id === id),
       false,
@@ -531,11 +531,11 @@ test("state validation and paint-key serialization are strict and deterministic"
   );
   assert.equal(
     visualFilterPaintKey(DEFAULT_VISUAL_FILTER_STATE),
-    "visual-filters-v4:00011111111101110111111100111110001111011110011111111110111000101101111111111011111111110111111110111100",
+    "visual-filters-v4:0001111111110111011111110011111000111101111001111111111011100010110111111111101111111101111011110000",
   );
   assert.equal(
     visualFilterPaintKey(disabled),
-    "visual-filters-v4:00011111111101110011111100111110001111011110011111111110111000101101111111111011111111110111111110111100",
+    "visual-filters-v4:0001111111110111001111110011111000111101111001111111111011100010110111111111101111111101111011110000",
   );
   assert.equal(
     visualFilterPaintKey(Object.fromEntries([...Object.entries(disabled)].reverse())),

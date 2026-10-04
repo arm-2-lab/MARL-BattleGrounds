@@ -6,8 +6,9 @@
  * the detail ladder sets 3, 2.5 or 2 px beads and drops the thread below R 14
  * px; the thread runs 8 degrees past the first and last bead; records answer
  * only a painted `focus_tally` plan row with an anchor; the beads take the
- * attacking team's colour key; build draws an under-copy, thread and beads in
- * the painter's group with export-safe SVG; the tooltip calls it a plain count
+ * attacking team's colour key; build draws an under-copy, thread, beads and an
+ * 8 px hit arc over the thread span (so the pointer can open the tip) in the
+ * painter's group with export-safe SVG, and update moves every path; the tooltip calls it a plain count
  * of visible hits. The `focus_fire` switch (off by default) owns the plan's
  * `focus_tally` paint part, so turning it on paints the rows the plan makes.
  * Agent POV: on the fixture recordings the look draws nothing that the plan
@@ -172,10 +173,18 @@ test("build draws an export-safe under-copy, thread and beads in the event group
   assert.equal(group.getAttribute("data-lethal"), "true");
   assert.deepEqual(
     group.children.map((/** @type {any} */ child) => child.getAttribute("class")),
-    ["focus-tally__under", "focus-tally__thread", "focus-tally__beads"],
+    [
+      "focus-tally__under",
+      "focus-tally__thread",
+      "focus-tally__beads",
+      "focus-tally__hit",
+    ],
   );
   assert.equal(group.children[0].getAttribute("stroke-width"), "5.5");
   assert.equal(group.children[2].getAttribute("stroke-width"), "3");
+  assert.equal(group.children[3].getAttribute("stroke-width"), "8");
+  assert.equal(group.children[3].getAttribute("d"), records[0].hitPath);
+  assert.equal(records[0].hitPath, records[0].threadPath);
   assert.doesNotMatch(
     serialize(mount.group),
     /url\(|gradient|<mask|<filter|<image|<foreignObject| id="/iu,
@@ -186,6 +195,7 @@ test("build draws an export-safe under-copy, thread and beads in the event group
   });
   tally.update(nodes, moved);
   assert.equal(group.children[2].getAttribute("d"), moved[0].beadsPath);
+  assert.equal(group.children[3].getAttribute("d"), moved[0].hitPath);
   assert.deepEqual(tally.build([], doc), []);
 });
 

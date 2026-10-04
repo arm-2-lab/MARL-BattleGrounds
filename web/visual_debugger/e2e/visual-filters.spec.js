@@ -1,13 +1,19 @@
 /**
  * @file Check page-local visual preferences across live/replay audiences and dense
- * real scenario displays. A fresh page in the live Combat Debugger and in the
- * Replay Viewer starts with the eleven default filters on, including Cooldown
- * Effects and Red Zone Floors, and Ranges off ("11 enabled"). Default
+ * real scenario displays. A fresh page starts with every listed switch at its
+ * shipped default: 61 of the 84 live (DevClient combat screen) switches, 60 of
+ * the BattleClient's 83 (it leaves Panel Tokens out: no docked panels) and 71
+ * of the 95 Replay Viewer switches, including Cooldown Effects and Red Zone
+ * Floors; the Replay Viewer starts with Ranges off ("71 Of 96 On"). Default
  * Configuration, Enable All and Disable All change only local paint and the
- * Ranges setting. Every filter has short help on hover and keyboard focus, and
- * its checkbox names both the shared help and its own description. Turning Red
+ * Ranges setting. A scenario smoke page shows no error notice in the top bar or
+ * under the Replay Viewer's readout. Every filter has short help on hover and keyboard focus, and
+ * its checkbox's name is the switch name and its default tag ("Aura Fields Off
+ * By Default"), and its description is the shared help and its own line. Turning Red
  * Zone Floors off and on in Oracle, or Cooldown Effects off and on in Oracle
- * and Agent POV, sends no request and leaves the scientific data unchanged.
+ * and Agent POV, sends no request and leaves the scientific data unchanged; the
+ * Replay Viewer's This Tick and Next Tick are read from its Actions tab, live
+ * play's from the Pending and Latest Transition cards.
  */
 import { expect, test } from "@playwright/test";
 
@@ -53,7 +59,17 @@ const DEFAULT_CONFIGURATION_HELP =
 /** @param {import("@playwright/test").Page} page */
 async function shownFilters(page) {
   const product = await page.locator("html").getAttribute("data-product-kind");
-  return visualFiltersForProduct(product);
+  // The BattleClient has no docked panels for Panel Tokens to change, so its
+  // drawer leaves that switch out; the DevClient (its Developer drawer shown)
+  // keeps it (main.js installVisualFilterControls omit).
+  const developerDrawer = await page
+    .locator("#developer-drawer")
+    .evaluate((drawer) => !(drawer instanceof HTMLElement) || !drawer.hidden)
+    .catch(() => false);
+  return visualFiltersForProduct(product).filter(
+    ({ id }) =>
+      product !== "combat_debugger" || developerDrawer || id !== "panel_tokens",
+  );
 }
 
 /** @type {Awaited<ReturnType<typeof exportReplayArtifacts>> | null} */
@@ -268,11 +284,51 @@ async function performCommand(page, path, action) {
   );
 }
 
+/**
+ * Seek with the replay slider the way a let-go does. The Rune Scrubber keeps
+ * the native range input (#replay-frame-slider) for screen readers only (its
+ * label is visually hidden) and draws its own track, so the input has no box
+ * to fill: set its value, then send input and change.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} frameIndex The replay frame to seek to.
+ */
+async function seekWithSlider(page, frameIndex) {
+  await page.locator("#replay-frame-slider").evaluate((slider, value) => {
+    if (!(slider instanceof HTMLInputElement)) {
+      throw new TypeError("Replay slider is unavailable.");
+    }
+    slider.value = String(value);
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+  }, frameIndex);
+}
+
+/**
+ * Show the Replay Viewer's Roster tab (the roster rows sit in it); live play
+ * shows its roster without tabs, so nothing changes there.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function showReplayRoster(page) {
+  const rosterTab = page.locator("#replay-rail-tab-roster");
+  if (await rosterTab.isVisible()) await rosterTab.click();
+}
+
 /** @param {import("@playwright/test").Page} page */
 async function openVisualFilters(page) {
-  // The Replay Viewer keeps Visual Filters in the rail's Visuals tab.
+  // The Replay Viewer keeps Visual Filters in the rail's Visuals tab; live play
+  // keeps them in the Visual Filters drawer, which its button opens.
   const visualsTab = page.locator("#replay-rail-tab-visuals");
-  if (await visualsTab.isVisible()) await visualsTab.click();
+  if (await visualsTab.isVisible()) {
+    await visualsTab.click();
+  } else if (
+    !(await page
+      .locator("#visual-filters-drawer")
+      .evaluate((drawer) => drawer.matches(":popover-open")))
+  ) {
+    await page.locator("#visual-filters-button").click();
+  }
   await page.locator("#visual-filters").evaluate((details) => {
     if (!(details instanceof HTMLDetailsElement)) {
       throw new TypeError("Visual Filters disclosure is unavailable.");
@@ -376,7 +432,7 @@ async function expectVisualFilterHelp(page) {
   const sectionHelp = (await page.locator("#visual-filters-help").textContent()) ?? "";
   const descriptions = new Set();
   const shown = await shownFilters(page);
-  for (const { id, label, help: registryHelp } of shown) {
+  for (const { id, label, help: registryHelp, defaultEnabled } of shown) {
     const helpId = `visual-filter-${id.replaceAll("_", "-")}-help`;
     const option = page.locator(
       `#visual-filter-options [data-visual-filter-option="${id}"]`,
@@ -393,11 +449,18 @@ async function expectVisualFilterHelp(page) {
     expect(help).toContain("Off");
     descriptions.add(help);
     await expect(input).toHaveAttribute("aria-describedby", ownDescribedBy);
-    await expect(input).toHaveAccessibleName(label);
+    // The label wraps the name and its default tag, so both are in the name.
+    await expect(input).toHaveAccessibleName(
+      `${label} ${defaultEnabled ? "On" : "Off"} By Default`,
+    );
     await expect(input).toHaveAccessibleDescription(
       `${sectionHelp.replace(/\s+/gu, " ").trim()} ${help}`,
     );
 
+    // Scroll the switch into view first and let that scroll land: a scroll
+    // closes an open tip, and the live drawer scrolls under a hover.
+    await option.scrollIntoViewIfNeeded();
+    await settleLocalRender(page);
     await option.hover();
     await expect(tooltip).toBeVisible();
     await expect(page.locator("#visual-tooltip-title")).toHaveText(label);
@@ -518,7 +581,7 @@ async function scientificSignature(page, replay) {
       apiPaths.map(async (path) => [path, await authenticatedText(page, path)]),
     ),
   );
-  const dom = await page.evaluate(() => {
+  const dom = await page.evaluate((replayViewer) => {
     /** @param {string} selector */
     const exactHtml = (selector) => {
       const element = document.querySelector(selector);
@@ -526,6 +589,23 @@ async function scientificSignature(page, replay) {
         throw new Error(`Missing scientific surface ${selector}.`);
       }
       return element.innerHTML;
+    };
+    // The Replay Viewer shows This Tick and Next Tick in its Actions tab, each
+    // part found by its heading words (owner's Actions tab structure, 3 October
+    // 2026); live play keeps #pending-card and #accepted-card.
+    /** @param {string} title */
+    const actionsPartHtml = (title) => {
+      const part = Array.from(
+        document.querySelectorAll("#replay-rail-actions .panel-actions__part"),
+      ).find(
+        (candidate) =>
+          candidate.querySelector(".panel-actions__title")?.textContent?.trim() ===
+          title,
+      );
+      if (!(part instanceof HTMLElement)) {
+        throw new Error(`Missing scientific surface Actions part ${title}.`);
+      }
+      return part.innerHTML;
     };
     const controls = Array.from(
       document.querySelectorAll(
@@ -560,8 +640,12 @@ async function scientificSignature(page, replay) {
       step: document.querySelector("#step-value")?.textContent,
       transition: document.querySelector("#transition-value")?.textContent,
       selection: exactHtml("#selection-card"),
-      pending: exactHtml("#pending-card"),
-      accepted: exactHtml("#accepted-card"),
+      pending: replayViewer
+        ? actionsPartHtml("Next Tick (What Happens Next)")
+        : exactHtml("#pending-card"),
+      accepted: replayViewer
+        ? actionsPartHtml("This Tick (What Happened)")
+        : exactHtml("#accepted-card"),
       diagnostics: exactHtml("#diagnostics-card"),
       disclosures: [
         "roster-details",
@@ -592,7 +676,7 @@ async function scientificSignature(page, replay) {
         selected: element.getAttribute("data-selected"),
       })),
     };
-  });
+  }, replay);
   return { api, dom };
 }
 
@@ -702,6 +786,7 @@ async function expectReplayAgentTargetFilter(
     presentationKind: "replay_oracle",
   });
   await expectReplayFrameIndex(page, 1);
+  await showReplayRoster(page);
   const candidate = page
     .locator('#roster .roster-primary-action:not([aria-pressed="true"])')
     .first();
@@ -1042,7 +1127,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
     { label: "live disabled Enable All idempotency" },
   );
 
-  // Default Configuration restores the eleven defaults and turns Oracle ranges
+  // Default Configuration restores every shipped default and turns Oracle ranges
   // off through one server command; a second press changes nothing.
   const liveDefaultMark = apiRequests.length;
   await performCommand(page, "/api/command", () =>
@@ -1531,6 +1616,7 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
   const recipientSwitchCursor = structuredClone(
     JSON.parse(await authenticatedText(page, "/api/frame")).cursor,
   );
+  await showReplayRoster(page);
   const nextReplayRecipient = page
     .locator('#roster .roster-primary-action:not([aria-pressed="true"])')
     .first();
@@ -1543,14 +1629,10 @@ test("visual filters remain page-local across live Oracle/NoShared and replay Or
   await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
   await expectFilterSurface(page, replayDisabled, false);
 
-  await performCommand(page, "/api/replay/command", () =>
-    page.locator("#replay-frame-slider").fill("2"),
-  );
+  await performCommand(page, "/api/replay/command", () => seekWithSlider(page, 2));
   await expectReplayFrameIndex(page, 2);
   await expectFilterSurface(page, replayDisabled, false);
-  await performCommand(page, "/api/replay/command", () =>
-    page.locator("#replay-frame-slider").fill("1"),
-  );
+  await performCommand(page, "/api/replay/command", () => seekWithSlider(page, 1));
   await expectReplayFrameIndex(page, 1);
   await expectFilterSurface(page, replayDisabled, false);
 
@@ -1701,6 +1783,7 @@ test("real maximum-status replay renders +2 without losing owner semantics", asy
       `#battlefield .agent[data-presentation-key="${ownerAgent.presentation_key}"]`,
     );
     if ((await ownerBody.getAttribute("data-selected")) !== "true") {
+      await showReplayRoster(page);
       await performCommand(page, "/api/replay/command", () =>
         page
           .locator(
@@ -1719,7 +1802,6 @@ test("real maximum-status replay renders +2 without losing owner semantics", asy
     expect(await overflow.locator(".status-overflow__label").innerHTML()).toBe("+2");
 
     const owner = "Agent ID 0";
-    const fullOwner = "Agent ID 0 · Mage · Team A";
     await expect(overflow).toHaveAttribute("data-zone", "status-overflow");
     await expect(overflow).toHaveAttribute("data-hidden-count", "2");
     await expect(overflow).toHaveAttribute("data-owner-label", owner);
@@ -1728,8 +1810,13 @@ test("real maximum-status replay renders +2 without losing owner semantics", asy
 
     await overflow.dispatchEvent("focusin");
     await expect(page.locator("#visual-tooltip")).toBeVisible();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText("2 Hidden Statuses");
-    await expect(page.locator("#visual-tooltip")).toContainText(fullOwner);
+    // The overflow's name comes from the one symbol list ("More Statuses").
+    await expect(page.locator("#visual-tooltip-title")).toHaveText("2 More Statuses");
+    // The tip lists the statuses the row left out, one row each; the owner is
+    // named on the overflow itself (data-owner-label and aria-label above).
+    await expect(
+      page.locator("#visual-tooltip .semantic-explanation__label"),
+    ).toHaveText(["Status 1", "Status 2"]);
 
     await page.setViewportSize({ width: 480, height: 360 });
     await page.evaluate(async () => {
@@ -1870,9 +1957,12 @@ test("amended regular and stress scenarios retain Oracle-Agent presentation cont
         "#battlefield [data-global-slot], #battlefield [data-team-local-slot]",
       ),
     ).toHaveCount(0);
-    const notice = page.locator("#notice:not([hidden])");
-    if ((await notice.count()) > 0) {
-      expect(await notice.innerText()).not.toMatch(
+    // Replay Viewer notices show under the readout (owner, 3 Oct 2026, B9).
+    const notice = page.locator(
+      "#notice:not([hidden]), #rune-scrubber-notice:not([hidden])",
+    );
+    for (const text of await notice.allInnerTexts()) {
+      expect(text).not.toMatch(
         /could not process|safe fault|reconnect|no authorized battlefield scene/iu,
       );
     }
@@ -1928,9 +2018,7 @@ test("amended regular and stress scenarios retain Oracle-Agent presentation cont
         oracleFrames.push(await inspectInstalledFrame("researcher", frameIndex, null));
       }
 
-      await performCommand(page, "/api/replay/command", () =>
-        page.locator("#replay-frame-slider").fill("0"),
-      );
+      await performCommand(page, "/api/replay/command", () => seekWithSlider(page, 0));
       await expectReplayFrameIndex(page, 0);
       await performCommand(page, "/api/replay/command", () =>
         page.locator("#view-select").selectOption("pov"),

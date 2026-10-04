@@ -1,18 +1,34 @@
-"""Check the Saga Chronicle timeline marks the Replay Viewer serves per audience.
+"""Check the Rune Scrubber timeline marks the Replay Viewer serves per audience.
 
-build_replay_fight_chapters_v1: a fall or a damaging Ultimate (Charge,
-Freezing Trap, Crippling Poison) opens a fight; Burst and Holy Word: Salvation
-only extend an open fight; a fight grows across at most 2 quiet ticks and a
-third quiet tick starts a new one; returns never touch a fight; counts cover
-the whole span; unordered ticks are refused. ReplayViewerService.timeline_marks
-returns one ReplayTimelineMarksV1 for the current audience: Oracle View marks
-equal the recorded falls, Ultimates and returns; Agent POV marks equal exactly
-what that recipient's Agent POV visual events show (SharedObs and NoSharedObs),
+ReplayViewerService.timeline_marks returns one ReplayTimelineMarksV1 for the
+current audience with exactly the fields schema_version, marks_kind, audience,
+recipient_public_agent_id, final_frame_index and ticks (no fight list: nothing
+groups ticks into fights any more). Oracle View marks equal the recorded falls,
+Ultimates and returns; Agent POV marks equal exactly what that recipient's
+Agent POV visual events show (SharedObs and NoSharedObs),
 so another team's unseen returns are left out; the bytes are cached per
 audience. replay_http_binding offers the marks, so real launches (the
 standalone Replay Viewer and the BattleClient's Open Replay child) serve them.
 GET /api/replay/timeline-marks needs the launch token, answers with the current
 audience's JSON, and stays 404 when a binding offers no marks.
+
+ReplayViewerService.prepare_agent_pov builds every agent's Agent POV work up
+front: in a SharedObs replay every frame's source rows for every agent, and for
+every agent its marks (byte for byte like a request) and its Champion Streaks
+and Herald Cards tables to the last frame, plus Oracle View's tables; a second
+call changes nothing, and a later Agent POV request returns the cached bytes. In a
+NoSharedObs replay it also builds every agent's projection. A piece that fails
+its validation makes it return False and leaves the rest on demand. A server
+made with page_ready (create_server) holds a GET of its page until the event
+is set while its API answers at once, and wait_for_quiet_requests waits while
+any request of the process runs, or returns False once its longest wait runs
+out. prepare_agent_pov calls its between before every small piece (at least
+one per source row) with unchanged results. The BattleClient's Open Replay
+(RecordingDebuggerCoordinator._open_viewer) returns its child's address at
+once, holds that child's page while a background thread prepares the service
+with a _GiveWayToRequests pause between pieces, then lets the page open; a
+second Open Replay reuses the child. That pause waits for quiet requests for at
+most WAIT_SECONDS, then lets the prepare work for WORK_SECONDS without waiting.
 """
 
 # pyright: reportPrivateUsage=false
@@ -20,15 +36,20 @@ audience's JSON, and stays 404 when a binding offers no marks.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from http import HTTPStatus
 from http.client import HTTPConnection
 from pathlib import Path
-from threading import Thread
+from threading import Condition, Event, Thread
 from typing import Any, cast
 
 import pytest
 
+from marl_battlegrounds._battle_client import recording_coordinator
+from marl_battlegrounds._battle_client.recording_coordinator import (
+    RecordingDebuggerCoordinator,
+)
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1,
     AgentDiedEventV1,
@@ -40,22 +61,15 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     ReplayIncomingAbilityActivatedEventV1,
     ReplayIncomingAgentDiedEventV1,
 )
+from marl_battlegrounds.viewer import server as server_module
 from marl_battlegrounds.viewer.launch import replay_http_binding
 from marl_battlegrounds.viewer.presentation_protocol import (
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
     ReplaySharedObsAuthorizedPresentationFrameV1,
 )
 from marl_battlegrounds.viewer.replay_protocol import ReplayCommandRequestV1
-from marl_battlegrounds.viewer.replay_service import (
-    FIGHT_MERGE_QUIET_TICKS,
-    ReplayTimelineAgentMarkV1,
-    ReplayTimelineFallMarkV1,
-    ReplayTimelineTickMarksV1,
-    ReplayTimelineUltimateMarkV1,
-    ReplayViewerService,
-    build_replay_fight_chapters_v1,
-)
-from marl_battlegrounds.viewer.server import create_server
+from marl_battlegrounds.viewer.replay_service import ReplayViewerService
+from marl_battlegrounds.viewer.server import create_server, wait_for_quiet_requests
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SHARED_REPLAY = (
@@ -73,83 +87,6 @@ _TOKEN = "timeline-marks-token"
 _ROUTE = "/api/replay/timeline-marks"
 
 
-def _agent(slot: int, class_id: int = 1) -> dict[str, Any]:
-    return {
-        "public_agent_id": f"agent-{slot}",
-        "team_id": 1 if slot < 5 else 2,
-        "class_id": class_id,
-    }
-
-
-def _tick(
-    frame: int,
-    *,
-    falls: tuple[int, ...] = (),
-    ultimates: tuple[tuple[int, int], ...] = (),
-    returns: tuple[int, ...] = (),
-) -> ReplayTimelineTickMarksV1:
-    return ReplayTimelineTickMarksV1(
-        frame_index=frame,
-        falls=tuple(
-            ReplayTimelineFallMarkV1(**_agent(slot), home_fall=False) for slot in falls
-        ),
-        ultimates=tuple(
-            ReplayTimelineUltimateMarkV1(
-                **_agent(slot, class_id), damaging=class_id in (2, 3, 4)
-            )
-            for slot, class_id in ultimates
-        ),
-        returns=tuple(ReplayTimelineAgentMarkV1(**_agent(slot)) for slot in returns),
-    )
-
-
-def _spans(
-    ticks: tuple[ReplayTimelineTickMarksV1, ...],
-) -> list[tuple[int, int, int, int]]:
-    return [
-        (
-            fight.first_frame_index,
-            fight.last_frame_index,
-            fight.ultimate_count,
-            fight.fallen_count,
-        )
-        for fight in build_replay_fight_chapters_v1(ticks)
-    ]
-
-
-def test_fight_rule_opens_extends_and_merges_across_two_quiet_ticks() -> None:
-    assert FIGHT_MERGE_QUIET_TICKS == 2
-    # A fall at 3 and another after 2 quiet ticks (6) stay one fight; after 3
-    # quiet ticks (10) a new fight starts.
-    assert _spans(
-        (_tick(3, falls=(1,)), _tick(6, falls=(6,)), _tick(10, falls=(2,)))
-    ) == [
-        (3, 6, 0, 2),
-        (10, 10, 0, 1),
-    ]
-    # Charge (Warrior), Freezing Trap (Hunter) and Crippling Poison (Rogue) open.
-    for class_id in (2, 3, 4):
-        assert _spans((_tick(5, ultimates=((1, class_id),)),)) == [(5, 5, 1, 0)]
-    # Burst (Mage) and Holy Word: Salvation (Priest) never open a fight...
-    assert _spans((_tick(4, ultimates=((0, 1),)), _tick(5, ultimates=((2, 5),)))) == []
-    # ...but extend an open one within 2 quiet ticks, and not beyond.
-    assert _spans(
-        (
-            _tick(3, falls=(1,)),
-            _tick(6, ultimates=((0, 1),)),
-            _tick(9, ultimates=((2, 5),)),
-            _tick(13, ultimates=((7, 5),)),
-        )
-    ) == [(3, 9, 2, 1)]
-    # Returns never open or extend a fight, but a later fall can merge over them.
-    assert _spans((_tick(2, returns=(1,)), _tick(4, returns=(6,)))) == []
-    assert _spans(
-        (_tick(2, falls=(1,)), _tick(4, returns=(6,)), _tick(5, falls=(7,)))
-    ) == [(2, 5, 0, 2)]
-    with pytest.raises(ValueError, match="increasing frame order"):
-        build_replay_fight_chapters_v1((_tick(5, falls=(1,)), _tick(5, falls=(2,))))
-
-
 def _next(service: ReplayViewerService, index: int) -> None:
     service.apply_command(
         ReplayCommandRequestV1.model_validate(
@@ -165,6 +102,19 @@ def _next(service: ReplayViewerService, index: int) -> None:
 
 def _marks(service: ReplayViewerService) -> dict[str, Any]:
     return json.loads(service.timeline_marks())
+
+
+def _command(service: ReplayViewerService, name: str, command: dict[str, Any]) -> None:
+    service.apply_command(
+        ReplayCommandRequestV1.model_validate(
+            {
+                "client_id": "marks",
+                "command_id": name,
+                "base_revision": service.revision,
+                "command": command,
+            }
+        )
+    )
 
 
 def _tick_ids(
@@ -187,6 +137,14 @@ def test_oracle_marks_equal_the_recorded_events(replay_path: Path) -> None:
     roster = replay.header.context.roster
     service = ReplayViewerService(loaded, view_mode="researcher")
     marks = _marks(service)
+    assert set(marks) == {
+        "schema_version",
+        "marks_kind",
+        "audience",
+        "recipient_public_agent_id",
+        "final_frame_index",
+        "ticks",
+    }
     assert marks["audience"] == "oracle"
     assert marks["recipient_public_agent_id"] is None
     assert marks["final_frame_index"] == len(replay.transitions)
@@ -298,10 +256,10 @@ def test_another_teams_unseen_returns_are_left_out() -> None:
     assert all(frame not in watcher or not watcher[frame][2] for frame in return_frames)
 
 
-def _get(port: int, *, token: str | None) -> tuple[int, bytes]:
+def _get(port: int, *, token: str | None, route: str = _ROUTE) -> tuple[int, bytes]:
     connection = HTTPConnection("127.0.0.1", port, timeout=None)
     headers = {} if token is None else {"X-MARL-Debugger-Token": token}
-    connection.request("GET", _ROUTE, headers=headers)
+    connection.request("GET", route, headers=headers)
     response = connection.getresponse()
     payload = response.read()
     connection.close()
@@ -344,3 +302,217 @@ def test_timeline_marks_route_needs_the_token_and_serves_the_audience(
         thread.join()
     with pytest.raises(ValueError, match="timeline marks require"):
         replace(binding, timeline_marks=cast(Any, "not callable"))
+
+
+def test_prepare_builds_every_agent_like_a_request() -> None:
+    loaded = load_replay(_SHARED_REPLAY)
+    service = ReplayViewerService(loaded, view_mode="researcher")
+    pauses: list[None] = []
+    assert service.prepare_agent_pov(between=lambda: pauses.append(None))
+    slots = service._active_slots
+    frame_count = len(loaded.replay.frames)
+    assert len(pauses) > frame_count * len(slots)
+    assert set(service._source_materials) == {
+        (frame, slot) for frame in range(frame_count) for slot in slots
+    }
+    for table in (service._champion_streak_tables, service._match_moment_tables):
+        assert set(table) == {None, *slots}
+        assert all(len(row.reached) == frame_count for row in table.values())
+    reference = ReplayViewerService(loaded, view_mode="researcher")
+    _command(reference, "pov", {"command_type": "set_view", "view_mode": "pov"})
+    for slot in slots:
+        _command(
+            reference,
+            f"agent-{slot}",
+            {"command_type": "set_pov_actor", "global_slot": slot},
+        )
+        assert reference._pov_global_slot == slot
+        assert service._timeline_marks_bytes[("agent_pov", slot)] == (
+            reference.timeline_marks()
+        )
+    built = dict(service._timeline_marks_bytes)
+    assert service.prepare_agent_pov()
+    assert service._timeline_marks_bytes == built
+    _command(service, "pov", {"command_type": "set_view", "view_mode": "pov"})
+    recipient = service._pov_global_slot
+    assert service.timeline_marks() is built[("agent_pov", recipient)]
+
+
+def test_no_shared_obs_prepare_builds_every_agents_projection() -> None:
+    loaded = load_replay(_NO_SHARED_REPLAY)
+    service = ReplayViewerService(loaded, view_mode="pov", pov_global_slot=0)
+    assert set(service._pov_cache) == {0}
+    assert service.prepare_agent_pov()
+    slots = service._active_slots
+    assert set(service._pov_cache) == set(slots)
+    for slot in slots:
+        assert service._timeline_marks_bytes[("agent_pov", slot)] == (
+            ReplayViewerService(
+                loaded, view_mode="pov", pov_global_slot=slot
+            ).timeline_marks()
+        )
+        assert len(service._champion_streak_tables[slot].reached) == len(
+            loaded.replay.frames
+        )
+
+
+def test_a_failing_prepare_leaves_the_rest_on_demand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ReplayViewerService(load_replay(_SHARED_REPLAY), view_mode="researcher")
+
+    def broken(*_args: object, **_kwargs: object) -> bytes:
+        raise ValueError("a recorded scene failed its validation")
+
+    monkeypatch.setattr(service, "_agent_pov_marks_bytes", broken)
+    assert not service.prepare_agent_pov()
+    assert not service._agent_pov_prepared
+    assert service._timeline_marks_bytes == {}
+
+
+def test_a_held_page_waits_while_the_api_answers() -> None:
+    service = ReplayViewerService(load_replay(_SHARED_REPLAY), view_mode="researcher")
+    waiting = Event()
+
+    class _Hold(Event):
+        def wait(self, timeout: float | None = None) -> bool:
+            waiting.set()
+            return super().wait(timeout)
+
+    hold = _Hold()
+    server = create_server(
+        service,
+        asset_root=_ASSET_ROOT,
+        port=0,
+        capability_token=_TOKEN,
+        coordinator=replay_http_binding(service),
+        page_ready=hold,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    answers: list[int] = []
+    page = Thread(
+        target=lambda: answers.append(
+            _get(server.server_port, token=None, route="/")[0]
+        )
+    )
+    try:
+        page.start()
+        waiting.wait()
+        assert _get(server.server_port, token=_TOKEN)[0] == HTTPStatus.OK
+        # The page request is still inside the hold: it can answer only after set.
+        assert answers == []
+        hold.set()
+        page.join()
+        assert answers == [HTTPStatus.OK]
+    finally:
+        hold.set()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_quiet_wait_waits_while_a_request_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waiting = Event()
+
+    class _Activity(Condition):
+        def wait(self, timeout: float | None = None) -> bool:
+            waiting.set()
+            return super().wait(timeout)
+
+    monkeypatch.setattr(server_module, "_REQUEST_ACTIVITY", _Activity())
+    done: list[bool] = []
+    waiter = Thread(
+        target=lambda: (wait_for_quiet_requests(quiet_seconds=0), done.append(True))
+    )
+    with server_module._counted_request():
+        waiter.start()
+        waiting.wait()
+        # The waiter is inside the wait: it can return only after the request.
+        assert done == []
+    waiter.join()
+    assert done == [True]
+    with server_module._counted_request():
+        assert not wait_for_quiet_requests(quiet_seconds=0, longest_wait_seconds=0)
+    assert wait_for_quiet_requests(quiet_seconds=0, longest_wait_seconds=0)
+
+
+def test_give_way_waits_then_opens_a_work_slice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+    quiet = [False]
+    waits: list[float | None] = []
+
+    def fake_wait(
+        quiet_seconds: float = 0.15, *, longest_wait_seconds: float | None = None
+    ) -> bool:
+        del quiet_seconds
+        waits.append(longest_wait_seconds)
+        return quiet[0]
+
+    monkeypatch.setattr(recording_coordinator, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(recording_coordinator, "wait_for_quiet_requests", fake_wait)
+    give_way = recording_coordinator._GiveWayToRequests()
+    give_way()
+    assert waits == [give_way.WAIT_SECONDS]
+    # Requests kept coming, so the next pieces run for WORK_SECONDS unpaused.
+    clock[0] = give_way.WORK_SECONDS / 2
+    give_way()
+    assert len(waits) == 1
+    clock[0] = give_way.WORK_SECONDS
+    quiet[0] = True
+    give_way()
+    give_way()
+    assert len(waits) == 3
+
+
+def test_open_replay_answers_at_once_and_holds_only_the_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ReplayViewerService(load_replay(_SHARED_REPLAY), view_mode="researcher")
+    real_prepare = service.prepare_agent_pov
+    release = Event()
+    given: list[object] = []
+
+    def held_prepare(*, between: Callable[[], None] | None = None) -> bool:
+        given.append(between)
+        release.wait()
+        return real_prepare(between=between)
+
+    monkeypatch.setattr(service, "prepare_agent_pov", held_prepare)
+    coordinator = object.__new__(RecordingDebuggerCoordinator)
+    coordinator._closed = False
+    coordinator._viewer_server = None
+    coordinator._viewer_thread = None
+    coordinator._viewer_replay_id = None
+    coordinator._asset_root = _ASSET_ROOT
+    # Returns while the prepare is still held.
+    url = coordinator._open_viewer(service)
+    server = coordinator._viewer_server
+    thread = coordinator._viewer_thread
+    assert server is not None
+    assert thread is not None
+    try:
+        page_ready = server.page_ready
+        assert page_ready is not None
+        assert not page_ready.is_set()
+        assert url.startswith(server.expected_origin)
+        status, _ = _get(server.server_port, token=server.capability_token)
+        assert status == HTTPStatus.OK
+        release.set()
+        page_ready.wait()
+        assert [type(pause) for pause in given] == [
+            recording_coordinator._GiveWayToRequests
+        ]
+        assert service._agent_pov_prepared
+        assert {("agent_pov", slot) for slot in service._active_slots} <= set(
+            service._timeline_marks_bytes
+        )
+        assert _get(server.server_port, token=None, route="/")[0] == HTTPStatus.OK
+        assert coordinator._open_viewer(service) == url
+    finally:
+        release.set()
+        RecordingDebuggerCoordinator._stop_viewer(server, thread)

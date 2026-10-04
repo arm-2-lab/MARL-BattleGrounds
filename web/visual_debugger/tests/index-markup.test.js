@@ -14,8 +14,10 @@
  * arena with the transport and export actions; the amber Oracle View tag sits
  * on the field. The Visual Key is the dialog behind #visual-key-button (no
  * sidebar key) and the Replay Viewer's #champion-frame slot sits before
- * #team-rosters. The #roster-details card is data-live-only, so the Replay
- * Viewer rail holds only its five tabs. The live deck keeps its controls in
+ * #team-rosters (the Arena Frames). The #roster-details card is marked for
+ * no product: the live DevClient shows it in its Developer drawer and the
+ * Replay Viewer moves it into its rail's Roster tab. Exit reads "Exit" in
+ * every client. The live deck keeps its controls in
  * #command-deck-body with the vision's Lock In Turn button and Prev and Next
  * buttons; Restart sits in the #status-line under it. Retired copy stays out of main.js and the page parts it
  * starts (shell.js, tactics-turn.js, filter-controls.js); shell.js owns the
@@ -238,9 +240,13 @@ test("shared shell uses the requested details and visual-filter controls without
     markup,
     /<section\s+id="champion-frame"[^>]*data-replay-only[^>]*hidden[^>]*>[\s\S]*id="team-rosters"/u,
   );
-  // The Roster card is live play only: the Replay Viewer lists champions in
-  // the Team Rosters strip, so its rail holds only the five tabs.
-  assert.match(markup, /<details\s+id="roster-details"[^>]*\sdata-live-only[\s>]/u);
+  // The Roster card serves both: the DevClient's Developer drawer and the
+  // Replay Viewer's Roster tab (src/ledger.js moves it there).
+  assert.match(markup, /<details\s+id="roster-details"[^>]*>/u);
+  assert.doesNotMatch(
+    /<details\s+id="roster-details"[^>]*>/u.exec(markup)?.[0] ?? "",
+    /data-(?:live|replay)-only/u,
+  );
   // The count is written by filter-controls.js for the client's own switches
   // (they differ per client); the page starts at the empty count.
   assert.match(markup, /id="visual-filter-count"[^>]*>0 enabled</u);
@@ -602,5 +608,5 @@ test("the top bar, popovers, dock and Oracle View tag follow the V5 shell", asyn
   );
   assert.doesNotMatch(markup, /\b(?:Sound|Mute|Volume)\b/u);
   assert.doesNotMatch(shell, /Exit combat debugger|Exit replay viewer/u);
-  assert.match(shell, /"Exit Replay Viewer" : "Exit"/u);
+  assert.match(shell, /elements\.exitButton\.textContent = "Exit";/u);
 });

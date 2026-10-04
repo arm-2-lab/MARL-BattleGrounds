@@ -9,7 +9,11 @@
  * inputs (Step, No Combat, armed lanes, a target pick with Auto, Clear,
  * Orders Sent, Playing One Turn); the This Turn titles and the Lock In
  * labels for every phase; the Class Guide written from the host's real
- * class_mechanics; reach formatting; and the export-safe token, crest and
+ * class_mechanics, and its card markup (classGuideCardHtml, the one owner of
+ * the card's words for the live rail and the Replay Viewer's Agent tab:
+ * escaped words, the vision's icon or the glyph fallback, Ultimate
+ * readiness, the caller's extra lines, and the short card for an unknown
+ * class); reach formatting; and the export-safe token, crest and
  * Rune Ring SVG (flat fills, strokes, opacity only), painted through the
  * .tc-… palette classes of src/styles/battleclient/base.css.
  */
@@ -17,6 +21,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  classGuideCardHtml,
   classGuideView,
   crestSvg,
   deckAnnouncement,
@@ -257,6 +262,41 @@ test("the Class Guide is written from the host's class mechanics", () => {
   assert.equal(reachText("x"), null);
   assert.equal(ticksText(1), "1 tick");
   assert.equal(ticksText(30, true), "30 Ticks");
+});
+
+test("the Class Guide card markup is one owner for both clients", () => {
+  const page = {
+    /** @param {string} id */
+    getElementById: (id) => (id === "ab-bash" || id === "ab-charge" ? {} : null),
+  };
+  const card = classGuideCardHtml(/** @type {any} */ (page), 2, WARRIOR, {
+    cooldown: 3,
+    basicNow: '<span class="now ok">Allowed on: Mage 5</span>',
+    note: '<p class="stats cg-note">Played by tdm-beta.</p>',
+  });
+  assert.match(
+    card,
+    /^<p class="eyebrow">Class Guide<\/p><h3>Warrior<span>The Undying<\/span><\/h3>/u,
+  );
+  assert.match(card, /<use href="#ab-bash"\/>/u);
+  assert.match(card, /<b>Charge<\/b><em>Ultimate · Ready In 3 Ticks<\/em>/u);
+  assert.match(
+    card,
+    /8 damage to one enemy within 1\.5\.<\/p><span class="now ok">Allowed on: Mage 5<\/span>/u,
+  );
+  assert.ok(card.endsWith('<p class="stats cg-note">Played by tdm-beta.</p>'));
+  const ready = classGuideCardHtml(/** @type {any} */ (page), 2, WARRIOR, {
+    cooldown: 0,
+  });
+  assert.match(ready, /<em>Ultimate · Ready<\/em>/u);
+  assert.match(
+    classGuideCardHtml(/** @type {any} */ (page), 2, WARRIOR),
+    /<em>Ultimate<\/em>/u,
+  );
+  assert.equal(
+    classGuideCardHtml(/** @type {any} */ (page), 9, WARRIOR),
+    '<p class="eyebrow">Class Guide</p><p class="stats">Pick a champion to read its guide.</p>',
+  );
 });
 
 test("tokens and crests are export-safe SVG", async () => {

@@ -38,19 +38,26 @@
  *   (from the --left-home-end and --floor-band properties src/looks/camera.js
  *   writes on #arena).
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
 /* Hover card: a bare holder placed by src/tooltip.js createHoverCard; the
    Champion Card inside draws its own 262 px box. */
-html[data-product-kind="combat_debugger"] .bc .hcard {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .hcard {
   position: absolute;
   z-index: 20;
   pointer-events: none;
 }
 
 /* How To Play overlay. */
-html[data-product-kind="combat_debugger"] .bc .htp {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp {
   position: absolute;
   z-index: 8;
   inset: 8px;
@@ -62,7 +69,10 @@ html[data-product-kind="combat_debugger"] .bc .htp {
   cursor: default;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp header {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,13 +80,19 @@ html[data-product-kind="combat_debugger"] .bc .htp header {
   margin-bottom: 12px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .rules {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .rules {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .rule {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .rule {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -86,15 +102,27 @@ html[data-product-kind="combat_debugger"] .bc .htp .rule {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .rule h3 {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .rule
+  h3 {
   font-size: 15px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .rule p {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .rule
+  p {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .rule .ill {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .rule
+  .ill {
   position: relative;
   display: flex;
   align-items: center;
@@ -108,19 +136,32 @@ html[data-product-kind="combat_debugger"] .bc .htp .rule .ill {
   background: var(--surround);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .plus {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .plus {
   color: var(--muted);
   font-size: 18px;
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .mini-pad {
   display: grid;
   grid-template-columns: repeat(3, 14px);
   gap: 2px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad i {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .mini-pad
+  i {
   display: block;
   width: 14px;
   height: 14px;
@@ -128,12 +169,21 @@ html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad i {
   border-radius: 3px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-pad i.on {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .mini-pad
+  i.on {
   border-color: var(--moon);
   background: #1d2944;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-slot {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .mini-slot {
   display: grid;
   place-items: center;
   width: 54px;
@@ -148,13 +198,21 @@ html[data-product-kind="combat_debugger"] .bc .htp .ill .mini-slot {
   text-align: center;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .pts {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .pts {
   color: var(--ivory);
   font-size: 15px;
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .zone {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .zone {
   position: relative;
   display: flex;
   align-items: center;
@@ -166,7 +224,12 @@ html[data-product-kind="combat_debugger"] .bc .htp .ill .zone {
   background: rgb(239 75 75 / 8%);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .ill .zone em {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .ill
+  .zone
+  em {
   position: absolute;
   top: 2px;
   left: 6px;
@@ -178,35 +241,59 @@ html[data-product-kind="combat_debugger"] .bc .htp .ill .zone em {
 /* Rule card tokens (src/shell.js ruleToken): the team ring and the four class
    studs take their colors from the palette tokens, so the script holds no
    team or class color and a palette change reaches the tokens too. */
-html[data-product-kind="combat_debugger"] .bc .htp .tok-ring--a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-ring--a {
   stroke: var(--team-a);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-ring--b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-ring--b {
   stroke: var(--team-b);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--mage {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-studs--mage {
   fill: var(--class-mage);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--warrior {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-studs--warrior {
   fill: var(--class-warrior);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--hunter {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-studs--hunter {
   fill: var(--class-hunter);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--rogue {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-studs--rogue {
   fill: var(--class-rogue);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .tok-studs--priest {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .tok-studs--priest {
   fill: var(--class-priest);
 }
 
-html[data-product-kind="combat_debugger"] .bc .htp .foot {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htp
+  .foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -215,7 +302,9 @@ html[data-product-kind="combat_debugger"] .bc .htp .foot {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .keysrow {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .keysrow {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
@@ -223,12 +312,17 @@ html[data-product-kind="combat_debugger"] .bc .keysrow {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .keysrow span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .keysrow
+  span {
   white-space: nowrap;
 }
 
 /* "Read The Full Guide": a button that reads as a link. */
-html[data-product-kind="combat_debugger"] .bc .linkbtn {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .linkbtn {
   min-height: 0;
   padding: 0;
   border: 0;
@@ -238,7 +332,9 @@ html[data-product-kind="combat_debugger"] .bc .linkbtn {
   text-decoration: underline;
 }
 
-html[data-product-kind="combat_debugger"] .bc .linkbtn:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .linkbtn:hover:not(:disabled) {
   background: none;
 }
 
@@ -248,7 +344,9 @@ html[data-product-kind="combat_debugger"] .bc .linkbtn:hover:not(:disabled) {
    never covers the scorebug or the arena (owner ruling M3, 3 Oct 2026). Its
    top is the rail's first card: the drawer's --vf-drawer-top fallback, 144 px
    (the 48 px top bar, the 84 px scorebug and the rail's 12 px padding). */
-html[data-product-kind="combat_debugger"] .bc .pop {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop {
   position: fixed;
   inset: 144px 12px auto auto;
   display: none;
@@ -265,17 +363,25 @@ html[data-product-kind="combat_debugger"] .bc .pop {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pop:popover-open {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop:popover-open {
   display: grid;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pop .row {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop
+  .row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pop .m {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop
+  .m {
   color: var(--muted);
   font-size: 11px;
 }
@@ -284,14 +390,21 @@ html[data-product-kind="combat_debugger"] .bc .pop .m {
    the file name box and the Save As button side by side, all inside the
    300 px popover. The old recording panel's wide row in styles.css (a 23 rem
    box) would push Save As out of the popover, off the screen. */
-html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop
+  .recording-save-as {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as label {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop
+  .recording-save-as
+  label {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 11px;
@@ -300,7 +413,11 @@ html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as label {
   text-transform: uppercase;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as input {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pop
+  .recording-save-as
+  input {
   width: 100%;
   min-width: 0;
   min-height: 0;
@@ -313,7 +430,7 @@ html[data-product-kind="combat_debugger"] .bc .pop .recording-save-as input {
   line-height: 1.35;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .pop
   .recording-save-as
@@ -327,7 +444,9 @@ html[data-product-kind="combat_debugger"]
    The dialog is the vision's .modal: it fills the screen with the 70% dim
    and centers its box. Its own ::backdrop stays clear, so the dim is drawn
    once. The box is the form (.mbox), sized and painted like the vision's. */
-html[data-product-kind="combat_debugger"] .bc .restart-dialog {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -344,16 +463,23 @@ html[data-product-kind="combat_debugger"] .bc .restart-dialog {
   box-shadow: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .restart-dialog[open] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog[open] {
   display: grid;
   place-items: center;
 }
 
-html[data-product-kind="combat_debugger"] .bc .restart-dialog::backdrop {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog::backdrop {
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .restart-dialog .mbox {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog
+  .mbox {
   display: grid;
   gap: 10px;
   width: min(420px, calc(100% - 32px));
@@ -364,12 +490,19 @@ html[data-product-kind="combat_debugger"] .bc .restart-dialog .mbox {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .restart-dialog .mbox p {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog
+  .mbox
+  p {
   color: var(--muted);
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .restart-dialog .row {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .restart-dialog
+  .row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -380,7 +513,9 @@ html[data-product-kind="combat_debugger"] .bc .restart-dialog .row {
    CSS px) just before the drawer opens and when the window resizes, so the
    drawer never covers the scorebug. 144 px (the 48 px top bar, the 84 px
    scorebug and the rail's 12 px padding) is only the fallback. */
-html[data-product-kind="combat_debugger"] .bc .vf-drawer {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .vf-drawer {
   position: fixed;
   inset: var(--vf-drawer-top, 144px) 12px auto auto;
   width: calc(var(--rail-w) - 22px);
@@ -396,14 +531,20 @@ html[data-product-kind="combat_debugger"] .bc .vf-drawer {
   scrollbar-width: thin;
 }
 
-html[data-product-kind="combat_debugger"] .bc .vf-drawer > #visual-filters {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .vf-drawer
+  > #visual-filters {
   margin: 0;
   border: 0;
 }
 
 /* In the drawer the switch list uses the drawer's height and the drawer
    scrolls, instead of a small scroll box inside it. */
-html[data-product-kind="combat_debugger"] .bc .vf-drawer #visual-filters-body {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .vf-drawer
+  #visual-filters-body {
   max-height: none;
   overflow: visible;
 }
@@ -415,7 +556,10 @@ html[data-product-kind="combat_debugger"] .bc .vf-drawer #visual-filters-body {
    arena, the scorebug, the rail or a control. These rules beat the
    fixed-corner placement in src/styles/camera.css, which stays for a page
    without a status line. */
-html[data-product-kind="combat_debugger"] .bc .dstatus > #camera-tip {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .dstatus
+  > #camera-tip {
   position: absolute;
   right: auto;
   bottom: auto;
@@ -435,7 +579,10 @@ html[data-product-kind="combat_debugger"] .bc .dstatus > #camera-tip {
   line-height: 1.35;
 }
 
-html[data-product-kind="combat_debugger"] .bc .dstatus > #camera-tip[hidden] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .dstatus
+  > #camera-tip[hidden] {
   display: none;
 }
 
@@ -450,12 +597,17 @@ html[data-product-kind="combat_debugger"] .palette-control {
 /* The arena's view tag in Oracle View (src/shell.js writes data-view):
    amber words and a faint amber edge, as in the vision. Its other rules are in
    arena.css. */
-html[data-product-kind="combat_debugger"] .bc .povtag[data-view="oracle"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag[data-view="oracle"] {
   border-color: rgb(255 181 71 / 55%);
   color: var(--alert);
 }
 
-html[data-product-kind="combat_debugger"] .bc .povtag[data-view="oracle"] span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag[data-view="oracle"]
+  span {
   color: inherit;
 }
 
@@ -476,7 +628,9 @@ html[data-product-kind="combat_debugger"] .bc .povtag[data-view="oracle"] span {
    it at the floor's left edge with the 16/1032 pad until the first frame.
    arena.css gives the tag only its look (colors and pill shape); these rules
    own its spot and size. */
-html[data-product-kind="combat_debugger"] .bc .povtag {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag {
   --tag-field-w: min(100cqw, 100cqh * var(--battlefield-aspect) + 0.5px);
   --tag-field-h: calc(var(--tag-field-w) / var(--battlefield-aspect));
   --tag-side: calc((100cqw - var(--tag-field-w)) / 2);
@@ -494,7 +648,10 @@ html[data-product-kind="combat_debugger"] .bc .povtag {
   line-height: 1.1;
 }
 
-html[data-product-kind="combat_debugger"] .bc .povtag svg {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag
+  svg {
   width: 1.1em;
   height: 1.1em;
 }

@@ -9,7 +9,11 @@ With ``keep_viewer_after_exit=True`` (the BattleClient), Exit stops only the
 live client: the launcher takes the running child Viewer with
 ``release_kept_viewer`` and keeps serving it (``KeptReplayViewer``) until the
 Viewer's own Exit or Ctrl-C. The child serves its page from bytes loaded when
-it started, so it needs no asset folder after that.
+it started, so it needs no asset folder after that. A new child serves at once,
+but holds its page until its replay service has built every agent's Agent POV
+work (``ReplayViewerService.prepare_agent_pov``, run on a background thread), so
+Open Replay answers at once, the BattleClient keeps playing, and the replay tab
+opens with Agent POV ready.
 """
 
 from __future__ import annotations
@@ -17,7 +21,8 @@ from __future__ import annotations
 from dataclasses import replace
 from http.client import HTTPConnection
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
+from time import monotonic
 
 from marl_battlegrounds._battle_client.protocol import (
     ApiErrorV2,
@@ -37,7 +42,73 @@ from marl_battlegrounds.viewer.server import (
     HttpCoordinatorBinding,
     HttpCoordinatorRouter,
     create_server,
+    wait_for_quiet_requests,
 )
+
+
+class _GiveWayToRequests:
+    """The Open Replay prepare's pause: let the game go first, but always finish.
+
+    Called before each small piece of ReplayViewerService.prepare_agent_pov.
+    It waits until no request of this process runs (viewer.server
+    .wait_for_quiet_requests), but for at most WAIT_SECONDS (0.5 s); when
+    requests keep coming that long, it lets the prepare work for
+    WORK_SECONDS (0.25 s) without waiting, then waits again. So with requests
+    nonstop the prepare still gets about a third of the time and always
+    finishes, and with gaps of 0.15 s or more it works only in the gaps.
+    Measured on CPU (3 Oct 2026, a 253-tick prepare right after Restart into
+    a Policies Only game on Run, whose page polls the game about 6 times a
+    second): the replay tab was ready after 25 s (about 10 s with the game
+    left alone); Run kept its pace and its slowest request took 457 ms.
+    Waiting at most 1.0 s gave 40 s and 553 ms; 0.25 s gave 17 s and 832 ms;
+    with no bound the prepare had not finished after 300 s. Plain
+    monotonic-clock state; one instance per prepare, used on one thread.
+    """
+
+    WAIT_SECONDS = 0.5
+    WORK_SECONDS = 0.25
+
+    def __init__(self) -> None:
+        """Start with no work slice open."""
+        self._work_until = 0.0
+
+    def __call__(self) -> None:
+        """Wait for quiet requests, or open a work slice after the longest wait."""
+        if monotonic() < self._work_until:
+            return
+        if not wait_for_quiet_requests(longest_wait_seconds=self.WAIT_SECONDS):
+            self._work_until = monotonic() + self.WORK_SECONDS
+
+
+def _prepare_then_release_page(viewer: ReplayViewerService, page_ready: Event) -> None:
+    """Build a child Viewer's Agent POV work, then let its page open.
+
+    Parameters
+    ----------
+    viewer : ReplayViewerService
+        The child's replay service; ReplayViewerService.prepare_agent_pov
+        runs on it (at once when already prepared; it returns False and
+        leaves the rest on demand when a piece fails).
+    page_ready : threading.Event
+        The child server's page hold (create_server page_ready); always set
+        at the end, also after an error, so the page never waits forever.
+
+    Notes
+    -----
+    Runs on the coordinator's ``marl-replay-agent-pov-prepare`` daemon
+    thread. Before each small piece the prepare gives way to this process's
+    requests (_GiveWayToRequests), so the game goes first: without that, a
+    Restart during a 253-tick prepare took 2.7 to 2.9 s instead of 0.15 s
+    (CPU, 3 Oct 2026), because each of its many short JAX calls hands the
+    Python lock to the busy prepare thread. The pause is bounded, so the
+    prepare finishes even while requests never stop. A child stopped
+    meanwhile does not stop this work; it ends with the prepare, or with the
+    process.
+    """
+    try:
+        viewer.prepare_agent_pov(between=_GiveWayToRequests())
+    finally:
+        page_ready.set()
 
 
 class RecordingDebuggerCoordinator:
@@ -157,6 +228,21 @@ class RecordingDebuggerCoordinator:
         Viewer. Startup has a 2-second network limit. Failures close candidate
         resources and leave any prior Viewer intact; exceptions reach the
         command owner, which returns a path-free retry notice.
+
+        A new child serves at once but holds its page (create_server
+        page_ready) while a daemon thread named
+        ``marl-replay-agent-pov-prepare`` builds every agent's Agent POV work
+        (ReplayViewerService.prepare_agent_pov, see
+        _prepare_then_release_page), the way the BattleClient compiles its
+        first turn before its page opens. So this returns at once, the live
+        game keeps answering at full speed (the prepare waits while any of
+        this process's requests runs), and the requesting page's new tab,
+        which shows "Opening Replay" meanwhile, opens with Agent POV ready:
+        about 8 s after a 253-tick five-against-five game on CPU when the
+        game is left alone, longer while it is played, well under a second
+        after a short scenario. A reused child keeps its own hold, which its thread
+        releases. If that work fails its validation, the page still opens
+        and the failing part builds on demand, where its error shows.
         """
         if self._closed:
             raise RuntimeError("The live client has closed.")
@@ -173,11 +259,13 @@ class RecordingDebuggerCoordinator:
         ):
             return f"{current.expected_origin}/#token={current.capability_token}"
 
+        page_ready = Event()
         candidate = create_server(
             viewer,
             asset_root=self._asset_root,
             port=0,
             coordinator=replay_http_binding(viewer),
+            page_ready=page_ready,
         )
 
         def serve() -> None:
@@ -212,6 +300,12 @@ class RecordingDebuggerCoordinator:
         self._viewer_replay_id = viewer.replay_id
         if current is not None and current_thread is not None:
             self._stop_viewer(current, current_thread)
+        Thread(
+            target=_prepare_then_release_page,
+            args=(viewer, page_ready),
+            name="marl-replay-agent-pov-prepare",
+            daemon=True,
+        ).start()
         return f"{candidate.expected_origin}/#token={candidate.capability_token}"
 
     def apply_command(self, request: CommandRequestV1) -> ServiceCommandResult:

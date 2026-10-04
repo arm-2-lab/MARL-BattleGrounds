@@ -3591,14 +3591,35 @@ amendment.
 `home_fall`, true when the death scored double in its own Red Zone. The rule
 has one owner, `evaluation.events.team_deathmatch_home_fall_slots_v1`.
 Agent POV receives the flag only for falls that audience saw. The Replay
-Viewer serves per-audience timeline marks (falls, Ultimates, returns and
-fight chapters) at `/api/replay/timeline-marks`; Agent POV marks come only
-from what that audience saw.
+Viewer serves per-audience timeline marks (falls, Ultimates and returns) at
+`/api/replay/timeline-marks` for its Rune Scrubber transport; Agent POV marks
+come only from what that audience saw. Nothing groups ticks into fights.
+Every Replay Viewer presentation frame also carries two facts the server
+works out from the recorded frames; neither is a replay-file field:
+
+- `next_end_spots`, for the Next Step Ghost switch: where each champion
+  stands at the end of the recorded next tick. Oracle View lists every living
+  champion. Agent POV lists only champions the viewing team sees alive now
+  and still sees in its next authorized scene, so it never tells where an
+  unseen champion went. The final frame lists none.
+- `recent_falls`, for the Fallen panel: the falls of the 7 ticks before the
+  shown one (the panel's 8-tick window; the shown tick's own falls come from
+  the browser's beat plan), each with its killers, points and any damaging
+  Ultimate. The server owns this history, so a seek, a reload or a view
+  switch shows the same rows as playing up to the tick. Kill credit has one
+  owner, `viewer.champion_streaks`: Oracle View names the lethal damage
+  contributors; Agent POV names only falls the team saw and only killers
+  whose blow it saw land. Limit: an old recording without lethal damage
+  contribution events names no killers on these earlier rows.
+
+All Staged Orders needs no new fact: it draws the frame's own recorded next
+actions, which in Agent POV hold only the recipient's own order.
 
 **Export.** Export PNG captures what is on screen, including the current
-camera. New PNGs write provenance version 3, which records the battlefield
-switches and the camera frame as a world rectangle. Versions 1 and 2 still
-read. Exported PNGs carry no brand mark.
+camera. New PNGs write provenance version 4, which records the battlefield
+switches (version 3's list plus Next Step Ghost and All Staged Orders) and
+the camera frame as a world rectangle. Versions 1, 2 and 3 still read.
+Exported PNGs carry no brand mark.
 
 **Limits.** This amendment records the presentation contract and the checks
 that guard it (Agent POV leak and boundary tests, beat-clock and movement

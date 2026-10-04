@@ -1,13 +1,20 @@
 /**
- * @file Scribe's Ledger: the Replay Viewer's right-hand rail and the look of
- * its Metrics, Actions and Frame cards.
+ * @file The Replay Viewer's right-hand rail (the Arena Stage panels, owner,
+ * 3 Oct 2026): its six tabs and the parts of their content this module draws.
+ * The content follows Scribe's Ledger's (full Metrics, Actions as This Tick
+ * and Next Tick, the Visuals organization); the look is the BattleClient
+ * rail's (src/styles/battleclient/rail.css and src/styles/ledger.css).
  *
  * What it owns:
- * - The rail's five tabs (Agent, Metrics, Actions, Visuals, Frame) in the
- *   empty #replay-rail slot of index.html. Each tab panel scrolls on its own.
- *   mountLedgerRail moves today's cards into the tab panels by element ID, so
- *   every existing ID, listener and renderer keeps working (panels.js and
- *   filter-controls.js still draw the Agent, Actions and Visuals bodies).
+ * - The rail's six tabs (Roster, Agent, Metrics, Actions, Visuals, Frame) in
+ *   the empty #replay-rail slot of index.html. Each tab panel scrolls on its
+ *   own. mountLedgerRail moves today's cards into the tab panels by element
+ *   ID (LEDGER_TAB_CONTENT: the roster into Roster, the Champion Frame into
+ *   Agent, where main.js adds the Class Guide under it, the Metrics card,
+ *   the two action cards, the Visual Filters card, and the Technical Frame
+ *   with the Replay File facts), so every existing ID, listener and renderer
+ *   keeps working (panels.js and filter-controls.js still draw the Roster,
+ *   Actions and Visuals bodies).
  * - The Ledger Header of the Metrics tab: a sticky header with the Scope
  *   switch ("Up To Tick N | Whole Game", with "Shows the ending too."), the
  *   Topic select with its section eyebrow, the View switch ("Totals | By
@@ -16,8 +23,8 @@
  * - The Match Summary at the head of the Metrics tab (ledgerMatchSummary).
  * - The Technical Frame in three groups (This Frame, This Game, This File)
  *   with Copy buttons (renderTechnicalFrame).
- * - The "Full Record" chip that the Agent, Metrics, Actions and Frame tabs
- *   show in Agent POV.
+ * - The "Full Record" chip that the Roster, Agent, Metrics, Actions and
+ *   Frame tabs show in Agent POV.
  *
  * Who calls it: main.js, only in the Replay Viewer. It calls mountLedgerRail
  * once when the replay page starts, then rail.update for every installed
@@ -28,17 +35,18 @@
  * Nothing in this module draws on or over the arena, and nothing here feeds
  * the arena, its hover cards or the HUD.
  */
+
+import {
+  canonicalAgentIdentity,
+  fullRecordChipWords,
+  teamLabelFromId,
+} from "./agent-identity.js";
 import {
   authorizedPresentationAudience,
   authorizedPresentationIdentityRows,
   authorizedPresentationTechnicalFacts,
   isAuthorizedPresentationFrame,
 } from "./authorized-presentation-adapter.js";
-import {
-  canonicalAgentIdentity,
-  fullRecordChipWords,
-  teamLabelFromId,
-} from "./agent-identity.js";
 import { explainTechnicalFact } from "./explanations.js";
 import {
   createMetricSubjectChips,
@@ -48,39 +56,52 @@ import {
 import { registerTooltipOwner } from "./tooltip.js";
 
 /**
- * The five rail tabs in order. id names the tab; label is its button text;
- * panelId is the index.html slot it fills; fullRecord says whether the tab
- * shows the Full Record chip in Agent POV (every researcher panel does; the
- * Visuals tab only holds view switches).
+ * The six rail tabs in order. id names the tab; label is its button text and
+ * its hover help's heading; help is the one plain sentence the tab button's
+ * hover and focus help reads; panelId is the index.html slot it fills;
+ * fullRecord says whether the tab shows the Full Record chip in Agent POV
+ * (every researcher panel does; the Visuals tab only holds view switches).
  */
 export const LEDGER_TABS = Object.freeze([
   Object.freeze({
+    id: "roster",
+    label: "Roster",
+    help: "Every champion in this game, team by team. Pick one to look at it.",
+    panelId: "replay-rail-roster",
+    fullRecord: true,
+  }),
+  Object.freeze({
     id: "agent",
     label: "Agent",
+    help: "The champion you picked: its life, statuses, Ultimate and class guide.",
     panelId: "replay-rail-agent",
     fullRecord: true,
   }),
   Object.freeze({
     id: "metrics",
     label: "Metrics",
+    help: "Numbers about this game for researchers. The agents never see them.",
     panelId: "replay-rail-metrics",
     fullRecord: true,
   }),
   Object.freeze({
     id: "actions",
     label: "Actions",
+    help: "What every champion did on this tick, and what each one does next.",
     panelId: "replay-rail-actions",
     fullRecord: true,
   }),
   Object.freeze({
     id: "visuals",
     label: "Visuals",
+    help: "Choose which marks and effects the battlefield shows. It changes only your screen, never the game.",
     panelId: "replay-rail-visuals",
     fullRecord: false,
   }),
   Object.freeze({
     id: "frame",
     label: "Frame",
+    help: "The raw facts of this tick, this game and this file, for developers.",
     panelId: "replay-rail-frame",
     fullRecord: true,
   }),
@@ -92,11 +113,12 @@ export const LEDGER_TABS = Object.freeze([
  * from the page is skipped.
  */
 export const LEDGER_TAB_CONTENT = Object.freeze({
-  agent: Object.freeze(["agent-details"]),
+  roster: Object.freeze(["roster-details"]),
+  agent: Object.freeze(["champion-frame"]),
   metrics: Object.freeze(["evaluation-metrics"]),
   actions: Object.freeze(["pending-turn-details", "latest-transition-details"]),
   visuals: Object.freeze(["visual-filters"]),
-  frame: Object.freeze(["technical-frame-details"]),
+  frame: Object.freeze(["technical-frame-details", "replay-details"]),
 });
 
 /** The tab the rail opens on. Agent keeps metric work lazy until asked. */
@@ -552,15 +574,16 @@ function isDetails(node) {
  * Build the Replay Viewer rail and the Ledger Header, once per page.
  *
  * doc is the page document. It must hold index.html's #replay-rail slot with
- * #replay-rail-tabs and the five #replay-rail-<tab> panels; without them this
+ * #replay-rail-tabs and the six #replay-rail-<tab> panels; without them this
  * returns null and changes nothing. options defaults to {}:
  * options.initialTab is the first open tab ("agent" by default; an unknown
  * name falls back to it); options.subjectChip builds the crest chips (see
  * createMetricSubjectChips; the built-in chip by default).
  *
  * What it does: shows the rail; fills #replay-rail-tabs with a tab list (one
- * role="tab" button per LEDGER_TABS entry; Left, Right, Home and End move
- * between tabs and open them); moves each card in LEDGER_TAB_CONTENT into
+ * role="tab" button per LEDGER_TABS entry, each with its hover and focus help
+ * from the entry's label and help; Left, Right, Home and End move between tabs
+ * and open them); moves each card in LEDGER_TAB_CONTENT into
  * its panel, keeping its ID; moves every visually hidden live region
  * (.sr-only with aria-live) out of the panels into one always-shown holder,
  * so an announcement is never lost in a hidden tab; adds a hidden Full Record
@@ -623,6 +646,22 @@ export function mountLedgerRail(doc, options = {}) {
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", tab.panelId);
     button.addEventListener("click", () => selectTab(tab.id));
+    registerTooltipOwner(
+      button,
+      {
+        kind: "control",
+        tone: "information",
+        accent: "none",
+        id: `ledger-tab:${tab.id}`,
+        title: tab.label,
+        summary: tab.help,
+        rows: [],
+        sections: [],
+        metadata: { compact: true, full: false },
+        anchor: "element",
+      },
+      { inspectable: false },
+    );
     buttons.set(tab.id, button);
     tabsHost.append(button);
     panel.setAttribute("role", "tabpanel");

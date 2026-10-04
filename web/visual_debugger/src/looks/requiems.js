@@ -79,7 +79,11 @@
  * through classes in `src/styles/requiems.css`. Glints rest at opacity 0 and
  * are never built in a settled still, so a PNG export never shows one.
  */
-import { classIdentityFromId, teamLabelFromId } from "../agent-identity.js";
+import {
+  canonicalAgentIdentity,
+  classIdentityFromId,
+  teamLabelFromId,
+} from "../agent-identity.js";
 import { explainDeathAnnouncement } from "../explanations.js";
 import { createSvgIcon } from "../icons.js";
 import { createSemanticDescriptor, registerTooltipOwner } from "../tooltip.js";
@@ -225,6 +229,17 @@ export const FEED_WINDOW_TICKS = 8;
  * The row advances by it, so the next "+" or the points never overlap an ID.
  */
 export const FEED_ID_ADVANCE_PX = 5.6;
+
+/**
+ * How much bigger than the store's sizes a Fallen row is drawn on the page
+ * (owner, 3 Oct 2026: option A, "bigger emblems", so the row reads at a
+ * glance). The row is laid out in store units (feedLineNode) and its svg is
+ * shown this many times as wide and tall; its viewBox keeps the store units.
+ */
+export const FEED_ROW_SCALE = 1.5;
+
+/** Gap in store units between the victim's ID and the points ("+1"). */
+export const FEED_POINTS_GAP = 7;
 
 /** The XHTML namespace, for the page chrome nodes (Fallen panel, Wave Chip). */
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
@@ -2093,7 +2108,8 @@ export function fallenFeedRecords(input) {
  * fallen_feed_row derivedEvents are read. Rows are kept even when the Fallen
  * Feed switch is off, so turning it on shows the recent falls.
  *
- * Rules (the same as the herald carry in choreography-painter.js): the same
+ * Rules without recent (live play; the same as the herald carry in
+ * choreography-painter.js): the same
  * audienceKey one tick later keeps the remembered falls of the last
  * FEED_WINDOW_TICKS ticks and adds this tick's; the same audienceKey and the
  * same tick (a repaint, resize or switch change) gives the same rows as
@@ -2101,19 +2117,43 @@ export function fallenFeedRecords(input) {
  * change, or no plan) starts again from this tick's falls only, so the panel
  * equals a fresh render.
  *
+ * The Replay Viewer passes recent instead: recent.rows is the frame's
+ * `recent_falls` host fact (the server owns the history, so a seek, a reload
+ * or a view switch gives the same rows as playing up to the tick): records
+ * {tick, victim_public_agent_id, killer_public_agent_ids, points,
+ * ultimate_public_agent_id} for the ticks before this one. recent.identityOf
+ * maps a public ID to that champion's identity directory row (public_agent_id,
+ * class_id, team_id and its shown display_agent_id), or null for an unknown ID,
+ * whose row or killer is then left out; each becomes the same identity record
+ * the plan gives ({publicAgentId, classId, teamId, title "Mage · ID 5", ...}
+ * from canonicalAgentIdentity).
+ * With recent, the earlier rows are exactly those records inside the window
+ * (tick - FEED_WINDOW_TICKS < row tick < tick), each mapped like a plan row:
+ * killers in the plan's order (numeric public ID order), killingTeamId the
+ * killers' one team (the victim's other team when nobody is named, null for
+ * a mix), points as given and ultimate {classId, publicAgentId} of the caster
+ * or null; rows of one tick in victim ID order. The memory is not used then.
+ * This tick's own rows always come from the plan, so they keep the Fall beat.
+ *
  * Returns {memory, tick, rows}: memory to keep (null without a plan, audience
  * key or tick), tick (the plan's tick or null) and rows, FallenFeedSource rows
  * with their tick, ready for fallenFeedRecords.
  *
- * Agent POV: the plan's fallen_feed_row rows hold only falls the team saw and
- * only killers it saw, and a different audience key never reuses memory, so
- * Oracle -> POV -> Oracle shows a fresh panel. Pure: inputs are not changed.
+ * Agent POV: the plan's fallen_feed_row rows and the server's recent_falls
+ * hold only falls the team saw and only killers whose blow it saw land, and a
+ * different audience key never reuses memory, so Oracle -> POV -> Oracle shows
+ * a fresh panel. Pure: inputs are not changed.
  *
  * @param {FallenFeedMemory | null} memory
  * @param {JsonRecord | null} plan
+ * @param {{
+ *   rows: ReadonlyArray<JsonRecord>,
+ *   identityOf: (publicAgentId: string) => Readonly<Record<string, any>> | null,
+ * } | null} [recent] The server's earlier rows (Replay Viewer), or null
+ *   (default) to carry them in memory (live play).
  * @returns {{memory: FallenFeedMemory | null, tick: number | null, rows: ReadonlyArray<FallenFeedSource>}}
  */
-export function fallenFeedHistory(memory, plan) {
+export function fallenFeedHistory(memory, plan, recent = null) {
   const audienceKey = typeof plan?.audienceKey === "string" ? plan.audienceKey : null;
   const tick = Number.isInteger(plan?.simulatorStep)
     ? Number(plan?.simulatorStep)
@@ -2140,18 +2180,91 @@ export function fallenFeedHistory(memory, plan) {
       ),
   );
   const same = memory?.audienceKey === audienceKey;
+  /** @param {string} left @param {string} right */
+  const byId = (left, right) => left.localeCompare(right, "en", { numeric: true });
+  /**
+   * The plan's identity record for one public ID, or null when unknown.
+   *
+   * @param {string} publicAgentId
+   * @returns {Readonly<Record<string, any>> | null}
+   */
+  const identityOf = (publicAgentId) => {
+    const agent = recent?.identityOf(publicAgentId) ?? null;
+    if (!isRecord(agent)) return null;
+    return Object.freeze({
+      ...canonicalAgentIdentity(agent),
+      publicAgentId,
+      classId: Number.isInteger(agent.class_id) ? agent.class_id : null,
+      teamId: agent.team_id === 1 || agent.team_id === 2 ? agent.team_id : null,
+    });
+  };
   /** @type {ReadonlyArray<FallenFeedSource>} */
-  const earlier = !same
-    ? Object.freeze([])
-    : tick === memory.tick + 1
-      ? Object.freeze(
-          [...memory.earlier, ...memory.current].filter(
-            (row) => row.tick > tick - FEED_WINDOW_TICKS,
+  const earlier = recent
+    ? Object.freeze(
+        asArray(recent.rows)
+          .filter(
+            (row) =>
+              isRecord(row) &&
+              Number.isInteger(row.tick) &&
+              row.tick < tick &&
+              row.tick > tick - FEED_WINDOW_TICKS,
+          )
+          .flatMap((row) => {
+            const victim = identityOf(String(row.victim_public_agent_id));
+            if (victim === null) return [];
+            const killers = asArray(row.killer_public_agent_ids)
+              .map(String)
+              .sort(byId)
+              .map((id) => identityOf(id))
+              .filter((killer) => killer !== null);
+            const teams = new Set(killers.map((killer) => killer.teamId));
+            const caster =
+              typeof row.ultimate_public_agent_id === "string"
+                ? identityOf(row.ultimate_public_agent_id)
+                : null;
+            return [
+              Object.freeze({
+                tick: row.tick,
+                victim,
+                victimPresentationKey: null,
+                killers: Object.freeze(killers),
+                killingTeamId:
+                  teams.size === 1
+                    ? [...teams][0]
+                    : teams.size === 0 && (victim.teamId === 1 || victim.teamId === 2)
+                      ? 3 - victim.teamId
+                      : null,
+                points: row.points === 1 || row.points === 2 ? row.points : null,
+                ultimate:
+                  caster === null
+                    ? null
+                    : Object.freeze({
+                        classId: caster.classId,
+                        publicAgentId: caster.publicAgentId,
+                      }),
+              }),
+            ];
+          })
+          .sort(
+            (left, right) =>
+              left.tick - right.tick ||
+              byId(
+                String(left.victim.publicAgentId),
+                String(right.victim.publicAgentId),
+              ),
           ),
-        )
-      : tick === memory.tick
-        ? memory.earlier
-        : Object.freeze([]);
+      )
+    : !same
+      ? Object.freeze([])
+      : tick === memory.tick + 1
+        ? Object.freeze(
+            [...memory.earlier, ...memory.current].filter(
+              (row) => row.tick > tick - FEED_WINDOW_TICKS,
+            ),
+          )
+        : tick === memory.tick
+          ? memory.earlier
+          : Object.freeze([]);
   const next = Object.freeze({ audienceKey, tick, earlier, current });
   return { memory: next, tick, rows: Object.freeze([...earlier, ...current]) };
 }
@@ -2229,8 +2342,10 @@ function feedRecord(row, tick, displayIdOf) {
  * detached `section.fallen-feed` the caller mounts at the top of the rail
  * (and replaces on every frame, filter or view change). It holds a header
  * ("Fallen" and "Last 8 Ticks"), then either "No one has fallen in the last 8
- * ticks." or one focusable `li.fallen-feed__row` per record. A row's line is
- * one small inline SVG drawn as in the store's shell part (11 px emblems):
+ * ticks." (styled one row tall, so the panel keeps its height when the last
+ * row ages out) or one focusable `li.fallen-feed__row` per record. A row's
+ * line is one small inline SVG drawn as in the store's shell part (11 px
+ * emblems in store units, shown FEED_ROW_SCALE times as big):
  * each named killer's class emblem in its team colour with its shown ID,
  * joined by "+"; the ability mark (a grey dot for Basics, a diamond for an
  * Ultimate) when known; an arrow; the fallen champion's grey emblem on a
@@ -2308,8 +2423,11 @@ export function buildFallenFeed(doc, records) {
  * gets its full width; then a 2 px gap and a 9 px slot for the "+" (12 px,
  * centred), so no ID ever runs into a "+"; the ability mark 8 px wide after
  * a 3 px gap; the arrow 15 px wide; the victim disc 12 px across; then the
- * points ("+1", 12 px) 4 px after the victim's ID. Return the svg.
- * Export-safe nodes only (it is page chrome, but it follows the same rule).
+ * points ("+1", 12 px) FEED_POINTS_GAP (7) after the victim's ID, so the ID
+ * never runs into the "+1". These are store units: the svg's width and
+ * height are FEED_ROW_SCALE times its viewBox, so the page shows the row half
+ * again as big. Return the svg. Export-safe nodes only (it is page chrome,
+ * but it follows the same rule).
  *
  * @param {Document} doc
  * @param {FallenFeedRecord} record
@@ -2398,7 +2516,7 @@ function feedLineNode(doc, record) {
     line.append(feedText(doc, "fallen-feed__id", x + 2.5, cy, record.victim.displayId));
     x += 2.5 + record.victim.displayId.length * FEED_ID_ADVANCE_PX;
   }
-  x += 4;
+  x += FEED_POINTS_GAP;
   if (record.points !== null) {
     line.append(
       feedText(
@@ -2413,8 +2531,8 @@ function feedLineNode(doc, record) {
   }
   const width = fmt(Math.max(x, 1));
   setEffectAttributes(line, {
-    width,
-    height,
+    width: fmt(Number(width) * FEED_ROW_SCALE),
+    height: fmt(height * FEED_ROW_SCALE),
     viewBox: `0 0 ${width} ${height}`,
   });
   return line;

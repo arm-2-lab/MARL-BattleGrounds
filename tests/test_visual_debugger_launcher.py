@@ -1,7 +1,9 @@
 """Check public Replay Viewer launch commands and shared recording metadata.
 
 Replay arguments, shell forwarding, lazy imports and sample integrity keep their
-public checks. Real episode assignments show whether either team runs a policy.
+public checks. A browser launch builds every agent's Agent POV work before it
+serves and still loads no JAX, Core or live stack; a NoSharedObs sample may load
+NumPy there, for the Agent POV corpses any Agent POV request draws. Real episode assignments show whether either team runs a policy.
 Private DevClient launcher and authoring tests live with the local toolkit.
 """
 
@@ -446,6 +448,9 @@ def test_browser_replay_loads_resolves_then_injects_exact_server_binding(
             del request
             raise AssertionError("server should not apply a command in this test")
 
+        def prepare_agent_pov(self) -> bool:
+            return True
+
     service = FakeReplayService()
 
     def fake_load(path: Path) -> object:
@@ -688,10 +693,11 @@ status = main([
     '--sample-replay', {sample_name!r}, '--no-open',
 ])
 assert status == 41
+# Agent POV work before serving draws this NoSharedObs sample's corpses with
+# NumPy, as any Agent POV request does; JAX and Core stay unloaded.
 forbidden = (
     'jax',
     'jaxlib',
-    'numpy',
     'marl_battlegrounds.core',
     'marl_battlegrounds._battle_client.control',
     'marl_battlegrounds._battle_client.evaluation_bridge',
@@ -990,6 +996,9 @@ def test_sample_replay_injects_verified_bundle_without_reopening_source_path(
         def apply_command(self, request: object) -> object:
             del request
             raise AssertionError("server should not apply a command in this test")
+
+        def prepare_agent_pov(self) -> bool:
+            return True
 
     service = FakeReplayService()
 

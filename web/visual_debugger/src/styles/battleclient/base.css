@@ -10,12 +10,14 @@
  * .pill, .tbtn, .sbtn and .bigbtn buttons, the [hidden] rule, and the .tc-…
  * team and class paint classes for inline SVG.
  *
- * Scope: every rule starts with html[data-product-kind="combat_debugger"], so
- * the Replay Viewer never changes. styles.css imports this file first among
+ * Scope: every rule starts with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]):
+ * live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). styles.css imports this file first among
  * the BattleClient files. Rules inside the grid also carry .bc, which makes
  * them more specific than the shared shell rules (for example the global
  * button hover in src/styles/shell.css), so the vision's look wins without
- * !important. Outside live play, #bc has display: contents and adds no box.
+ * !important. In any other product, #bc has display: contents and adds no box.
  *
  * Tokens: the vision's names and values, set on #bc only (the :root palette
  * in styles.css stays the one owner of every other token). Only --text
@@ -23,16 +25,18 @@
  * value through --root-text, so arena drawings do not change color.
  */
 
-html:not([data-product-kind="combat_debugger"]) .bc {
+html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+.bc {
   display: contents;
 }
 
-html[data-product-kind="combat_debugger"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]) {
   --root-text: var(--text);
   background: #0a0d14;
 }
 
-html[data-product-kind="combat_debugger"] body {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  body {
   margin: 0;
   background: #0a0d14;
 }
@@ -40,7 +44,7 @@ html[data-product-kind="combat_debugger"] body {
 /* biome-ignore format: the vision page writes each token in upper case, and
    a page reads a custom property back exactly as written, so the text stays
    as the vision has it. */
-html[data-product-kind="combat_debugger"] .bc {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]) .bc {
   --ink: #0A0D14;
   --panel: #0F1624;
   --panel2: #141D2F;
@@ -73,35 +77,43 @@ html[data-product-kind="combat_debugger"] .bc {
  * and paints with currentColor, so the colors come from the :root palette
  * tokens in styles.css and no script holds a copy.
  */
-html[data-product-kind="combat_debugger"] .tc-a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+.tc-a {
   color: var(--team-a);
 }
 
-html[data-product-kind="combat_debugger"] .tc-b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-b {
   color: var(--team-b);
 }
 
-html[data-product-kind="combat_debugger"] .tc-mage {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-mage {
   color: var(--class-mage);
 }
 
-html[data-product-kind="combat_debugger"] .tc-warrior {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-warrior {
   color: var(--class-warrior);
 }
 
-html[data-product-kind="combat_debugger"] .tc-hunter {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-hunter {
   color: var(--class-hunter);
 }
 
-html[data-product-kind="combat_debugger"] .tc-rogue {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-rogue {
   color: var(--class-rogue);
 }
 
-html[data-product-kind="combat_debugger"] .tc-priest {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .tc-priest {
   color: var(--class-priest);
 }
 
-html[data-product-kind="combat_debugger"] .bc {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc {
   --font: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
 
   position: relative;
@@ -116,59 +128,85 @@ html[data-product-kind="combat_debugger"] .bc {
 
 /* The arena keeps the :root text color, so arena drawings look the same as
    in the Replay Viewer. */
-html[data-product-kind="combat_debugger"] .bc #battlefield {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield {
   --text: var(--root-text);
 }
 
 /* As on the vision page, a hidden part stays hidden even when its own rule
    sets a display. */
-html[data-product-kind="combat_debugger"] .bc [hidden] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  [hidden] {
   /* biome-ignore lint/complexity/noImportantStyles: [hidden] must beat every display rule. */
   display: none !important;
 }
 
-html[data-product-kind="combat_debugger"] .bc *,
-html[data-product-kind="combat_debugger"] .bc *::before,
-html[data-product-kind="combat_debugger"] .bc *::after {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  *,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  *::before,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  *::after {
   box-sizing: border-box;
 }
 
-html[data-product-kind="combat_debugger"] .bc :is(h1, h2, h3, h4) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  :is(h1, h2, h3, h4) {
   margin: 0;
   font-weight: 700;
   letter-spacing: normal;
   text-wrap: balance;
 }
 
-html[data-product-kind="combat_debugger"] .bc h3 {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  h3 {
   font-size: 18px;
   line-height: 1.3;
 }
 
-html[data-product-kind="combat_debugger"] .bc :is(p, ul, ol) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  :is(p, ul, ol) {
   margin: 0;
 }
 
-html[data-product-kind="combat_debugger"] .bc a {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  a {
   color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  button {
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
 
-html[data-product-kind="combat_debugger"] .bc :focus-visible {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  :focus-visible {
   outline: 2px solid var(--moon);
   outline-offset: 2px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .num {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .num {
   font-variant-numeric: tabular-nums;
 }
 
-html[data-product-kind="combat_debugger"] .bc .eyebrow {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .eyebrow {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
@@ -177,11 +215,15 @@ html[data-product-kind="combat_debugger"] .bc .eyebrow {
   text-transform: uppercase;
 }
 
-html[data-product-kind="combat_debugger"] .bc .eyebrow.alert {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .eyebrow.alert {
   color: var(--alert);
 }
 
-html[data-product-kind="combat_debugger"] .bc kbd {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -203,7 +245,9 @@ html[data-product-kind="combat_debugger"] .bc kbd {
 
 /* Pills: Connected and Recording in the top bar. The dot is an <i>; when
    script writes plain text into a pill (no <i> left), ::before draws it. */
-html[data-product-kind="combat_debugger"] .bc .pill {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -222,8 +266,13 @@ html[data-product-kind="combat_debugger"] .bc .pill {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pill > i,
-html[data-product-kind="combat_debugger"] .bc .pill:not(:has(> i))::before {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pill
+  > i,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pill:not(:has(> i))::before {
   content: "";
   flex: none;
   width: 7px;
@@ -234,14 +283,19 @@ html[data-product-kind="combat_debugger"] .bc .pill:not(:has(> i))::before {
   animation: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .pill.saved > i {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .pill.saved
+  > i {
   border: 1.5px solid var(--moon);
   background: transparent;
 }
 
 /* Bar buttons (top bar), small buttons (deck, status line, rail) and big
    buttons (deck overlays, dialogs). */
-html[data-product-kind="combat_debugger"] .bc .tbtn {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tbtn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -257,11 +311,15 @@ html[data-product-kind="combat_debugger"] .bc .tbtn {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .tbtn.primary {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tbtn.primary {
   border-color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .sbtn {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sbtn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -277,7 +335,9 @@ html[data-product-kind="combat_debugger"] .bc .sbtn {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bigbtn {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bigbtn {
   min-height: 0;
   padding: 10px 14px;
   border: 1px solid var(--moon);
@@ -290,31 +350,45 @@ html[data-product-kind="combat_debugger"] .bc .bigbtn {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bigbtn.solid {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bigbtn.solid {
   color: var(--ink);
   background: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .tbtn:hover:not(:disabled),
-html[data-product-kind="combat_debugger"] .bc .sbtn:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tbtn:hover:not(:disabled),
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sbtn:hover:not(:disabled) {
   border-color: var(--edge2);
   background: var(--raise);
 }
 
-html[data-product-kind="combat_debugger"] .bc .tbtn.primary:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tbtn.primary:hover:not(:disabled) {
   border-color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bigbtn:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bigbtn:hover:not(:disabled) {
   border-color: var(--moon);
   background: var(--raise);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bigbtn.solid:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bigbtn.solid:hover:not(:disabled) {
   background: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc :is(.bigbtn, .sbtn):disabled {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  :is(.bigbtn, .sbtn):disabled {
   cursor: default;
   opacity: 0.45;
 }

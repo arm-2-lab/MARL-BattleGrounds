@@ -14,7 +14,9 @@
  * to 8 degrees after the last; a 5.5 px Ink Shadow under-copy of the beads. The
  * beads take the attacking team's light colour. Detail ladder (body radius R
  * in CSS px): beads 3 px at R 22 or more, 2.5 px from R 14, and 2 px with no
- * thread below R 14.
+ * thread below R 14. An invisible 8 px hit arc over the bead row (thread
+ * span) lets the pointer open the tally's tip; it sits outside the body, so
+ * the body under it keeps its clicks.
  *
  * Boundary: records reads only the one admitted plan row it is given. In Agent
  * POV the plan counts a blow only when its source and target were seen, and the
@@ -57,18 +59,21 @@ export const FOOTPRINT = Object.freeze({});
 /**
  * Nodes per record, counted the way the choreography painter counts a kept
  * row (its event group plus everything inside it): the painter's event group,
- * the `g.focus-tally` group, the under-copy, the thread and the beads path
- * (5). The painter drops the empty connector, so it adds nothing. The painter
- * fades the event group in (1 animation). Rows are persistent (kept in the
- * paused still), so all 5 nodes are retained. A budget below the drawn count
- * made the painter refuse the whole tick ("exceeded the planned persistent
- * node bound").
+ * the `g.focus-tally` group, the under-copy, the thread, the beads path and
+ * the hit arc (6). The painter drops the empty connector, so it adds nothing.
+ * The painter fades the event group in (1 animation). Rows are persistent
+ * (kept in the paused still), so all 6 nodes are retained. A budget below the
+ * drawn count made the painter refuse the whole tick ("exceeded the planned
+ * persistent node bound").
  */
 export const BUDGET = Object.freeze({
-  nodesPerRecord: 5,
+  nodesPerRecord: 6,
   animationsPerRecord: 1,
-  persistentNodesPerRecord: 5,
+  persistentNodesPerRecord: 6,
 });
+
+/** The hit arc's stroke width in CSS px (an invisible pointer target). */
+export const HIT_STROKE_PX = 8;
 
 /** The Focus Tally switch (`focus_fire`) owns the plan's `focus_tally` rows. */
 export const PAINT_PARTS = paintParts([
@@ -171,8 +176,9 @@ function arcPath(centre, radius, start, end) {
  * `anchorRadius` (the target's body radius in CSS px; default
  * DEFAULT_BODY_RADIUS_PX) are read. Return one frozen {kind: "focus-tally",
  * event, centre, radius, ringRadius, count, teamKey, beadWidth, beadsPath,
- * underPath, threadPath} record, or [] for any other input. threadPath is null
- * when the ladder drops the thread. Pure data: no DOM.
+ * underPath, threadPath, hitPath} record, or [] for any other input.
+ * threadPath is null when the ladder drops the thread; hitPath, the arc of
+ * the hit target, always spans the thread's angles. Pure data: no DOM.
  *
  * @param {LookInput} input
  * @returns {ReadonlyArray<LookRecord>}
@@ -201,6 +207,12 @@ export function records(input) {
     .join(" ");
   const first = angles[0][0];
   const last = angles[angles.length - 1][1];
+  const span = arcPath(
+    centre,
+    ringRadius,
+    first - BEAD_DEGREES.threadOverhang,
+    last + BEAD_DEGREES.threadOverhang,
+  );
   return Object.freeze([
     Object.freeze({
       kind: "focus-tally",
@@ -213,14 +225,8 @@ export function records(input) {
       beadWidth: ladder.beadWidth,
       beadsPath,
       underPath: beadsPath,
-      threadPath: ladder.thread
-        ? arcPath(
-            centre,
-            ringRadius,
-            first - BEAD_DEGREES.threadOverhang,
-            last + BEAD_DEGREES.threadOverhang,
-          )
-        : null,
+      threadPath: ladder.thread ? span : null,
+      hitPath: span,
     }),
   ]);
 }
@@ -232,8 +238,10 @@ export function records(input) {
  * EventMount (a detached one is made when absent, for pictures outside the
  * arena). Each record becomes one `g.focus-tally` in mount.group (data-team,
  * data-count, data-target-agent-id, data-lethal) holding, bottom to top, the
- * Ink Shadow under-copy, the thread (when the ladder keeps it) and the beads.
- * Widths are written as attributes; colours come from focus-tally.css. The
+ * Ink Shadow under-copy, the thread (when the ladder keeps it), the beads and
+ * the invisible hit arc (`focus-tally__hit`, HIT_STROKE_PX wide; the only part
+ * that takes the pointer). Widths are written as attributes; colours and
+ * pointer rules come from focus-tally.css. The
  * painter fades the group in at Impact; nothing here animates. Return the
  * mount's containers (mountNodes), or [] for no records.
  *
@@ -279,6 +287,11 @@ export function build(records, doc, mount) {
         d: each.beadsPath,
         "stroke-width": each.beadWidth,
       }),
+      svgNode(doc, "path", {
+        class: "focus-tally__hit",
+        d: each.hitPath,
+        "stroke-width": HIT_STROKE_PX,
+      }),
     );
     target.group.append(group);
   }
@@ -291,8 +304,8 @@ export function build(records, doc, mount) {
  *
  * nodes are the containers build returned (the event group first); records
  * come from records() for the same event. Each `g.focus-tally` in the group
- * gets its record's new paths and widths, in order. Return undefined. DOM
- * changes only.
+ * gets its record's new paths (under-copy, thread, beads and hit arc) and
+ * bead width, in order. Return undefined. DOM changes only.
  *
  * @param {ReadonlyArray<Element>} nodes
  * @param {ReadonlyArray<LookRecord>} records
@@ -305,7 +318,9 @@ export function update(nodes, records) {
     const under = group.querySelector(".focus-tally__under");
     const thread = group.querySelector(".focus-tally__thread");
     const beads = group.querySelector(".focus-tally__beads");
+    const hit = group.querySelector(".focus-tally__hit");
     if (under) setEffectAttributes(under, { d: record.underPath });
+    if (hit) setEffectAttributes(hit, { d: record.hitPath });
     if (thread) setEffectAttributes(thread, { d: record.threadPath ?? "" });
     if (beads) {
       setEffectAttributes(beads, {

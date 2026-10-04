@@ -13,10 +13,10 @@
  * deck) and filter-controls.js (the Visual Filters panel with its presets).
  *
  * It mounts the V5 chrome parts once at startup: the HUD (looks/hud.js; party
- * frames in the BattleClient and DevClient, the Team Rosters strip in the Replay
- * Viewer), the camera switch (looks/camera.js), the Visual Key dialog, Frame
+ * frames in the BattleClient and DevClient, the Arena Frames along the bottom
+ * of the stage in the Replay Viewer), the camera switch (looks/camera.js), the Visual Key dialog, Frame
  * Explanation (F), the Palette choice, and in the Replay Viewer the five-tab
- * rail (ledger.js), the Saga Chronicle (chronicle.js) and Tab agent stepping
+ * rail (ledger.js), the Rune Scrubber dock (rune-scrubber.js) and Tab agent stepping
  * (replay-recipient-rotation.js). It hands the choreographer a page surface that
  * adds the HUD and panel beat-hold roots, and draws the Replay Viewer's Champion
  * Frame after each tick settles. After each tick it redraws the match moment
@@ -63,7 +63,9 @@
  * (game over, after a save); the Recording pill, popover and seal
  * (recordingWords); Finish And Save from the status line, the popover and the
  * Stopped overlay; Back To Your champion (Watch Only); the Restart dialog's
- * Save focus and Cancel sentence; and the closed page after Exit. Agent POV: the renderer and the
+ * Save focus and Cancel sentence; Open Replay's new tab, which shows the dark
+ * "Opening Replay" page (opening-replay-page.js) until the Replay Viewer's
+ * page arrives; and the closed page after Exit. Agent POV: the renderer and the
  * choreographer receive the whole installed frame, and each must read only the
  * audience's own scene and events for anything drawn on or over the arena; the
  * camera frame passed to setCameraFrame must come from that same scene.
@@ -89,6 +91,7 @@ import {
   postCommand,
   postReplayCommand,
 } from "./api.js";
+import { wireArenaButtons } from "./arena-buttons.js";
 import {
   authorizedOracleCommandSlotForPresentationKey,
   authorizedOracleCommandSlotForPublicAgentId,
@@ -116,9 +119,13 @@ import {
 import { CombatChoreographer, ConsumedTransitionLedger } from "./choreography.js";
 import { SvgChoreographyPainter } from "./choreography-painter.js";
 import { beatView, isSubmissionCommand } from "./choreography-plan.js";
-import { chronicleBeatsFromSchedule, createChronicle } from "./chronicle.js";
-import { classNamesV1 } from "./class-documentation.js";
+import { classLoreV1, classNamesV1 } from "./class-documentation.js";
 import { registerLocalCommandHandler } from "./command-set.js";
+import {
+  collapsedControllerLine,
+  controllerLineParts,
+  rosterTeam,
+} from "./controller-names.js";
 import {
   audienceSwitchKeepsTick,
   bindBattlefieldControls,
@@ -146,14 +153,9 @@ import {
   tooltip as frameExplanationTooltip,
 } from "./looks/frame-explanation.js";
 import * as heralds from "./looks/heralds.js";
-import * as requiems from "./looks/requiems.js";
 import { createHud } from "./looks/hud.js";
+import * as requiems from "./looks/requiems.js";
 import { createVisualKey } from "./looks/visual-key.js";
-import {
-  collapsedControllerLine,
-  controllerLineParts,
-  rosterTeam,
-} from "./controller-names.js";
 import {
   controllerRosterFromFrame,
   hudSourcesFromFrame,
@@ -169,6 +171,7 @@ import {
   renderMetricSearchResults,
   searchMeasurements,
 } from "./metrics-panel.js";
+import { writeOpeningReplayPage } from "./opening-replay-page.js";
 import { createPaletteControl } from "./palette.js";
 import {
   authorizedInspectorView,
@@ -176,6 +179,7 @@ import {
   describeRecordedAction,
   disclosurePanelInitiallyOpen,
   fullRecordLabel,
+  renderSemanticInspector,
 } from "./panels.js";
 import {
   pendingPresentationSurfaceView,
@@ -196,6 +200,7 @@ import {
   bindReplayAgentStepping,
   isReplayAgentRecipientRotation,
 } from "./replay-recipient-rotation.js";
+import { createRuneScrubber, scrubberBeatsFromSchedule } from "./rune-scrubber.js";
 import { BattlefieldRenderer } from "./scene.js";
 import {
   applyProductHeader,
@@ -209,12 +214,14 @@ import {
   isTeamController,
 } from "./system-controls.js";
 import {
+  classGuideCardHtml,
   closedSentence,
   commandPreparesDeferredSubmit,
   commandRole,
   createTacticsTurn,
   isDeferredDraftKey,
   isFreshDeferredDraft,
+  plainHostNotice,
   recordingWords,
 } from "./tactics-turn.js";
 import {
@@ -373,9 +380,18 @@ const elements = {
   championFrame: requiredElement("champion-frame"),
   chronicle: requiredElement("chronicle"),
   replayCameraSwitch: requiredElement("replay-camera-switch"),
+  cameraTips: requiredElement("camera-tips"),
   liveCameraSwitch: requiredElement("live-camera-switch"),
   visualKeyButton: requiredElement("visual-key-button"),
+  visualFiltersButton: requiredElement("visual-filters-button"),
   frameExplanationButton: requiredElement("frame-explanation-button"),
+  arenaButtons: requiredElement("arena-buttons"),
+  arenaEveryoneInViewButton: /** @type {HTMLButtonElement} */ (
+    requiredElement("arena-everyone-in-view-button")
+  ),
+  arenaFrameExplanationButton: /** @type {HTMLButtonElement} */ (
+    requiredElement("arena-frame-explanation-button")
+  ),
   replayRailFrame: requiredElement("replay-rail-frame"),
   replayRailActions: requiredElement("replay-rail-actions"),
   thisTurn: requiredElement("this-turn"),
@@ -521,6 +537,7 @@ let fallenFeedMemory = null;
  *   presentation: Readonly<Record<string, any>> | null,
  *   timeline: Record<string, any> | null,
  *   busy: boolean,
+ *   quietBusy: boolean,
  *   offline: boolean,
  *   resyncRequired: boolean,
  *   shuttingDown: boolean,
@@ -538,6 +555,9 @@ const state = {
   presentation: null,
   timeline: null,
   busy: false,
+  // True while the request in flight is autoplay's own next-frame fetch
+  // (sendReplayCommand); the connection pill then stays "Connected".
+  quietBusy: false,
   offline: false,
   resyncRequired: false,
   shuttingDown: false,
@@ -913,6 +933,36 @@ const CONTROL_HELP = Object.freeze([
   ["#reconnect-button", "Reconnect", "Load the newest game state again."],
   ["#help-button", "How To Play", "Open the guide to the keys and controls."],
   [
+    "#visual-key-button",
+    "Visual Key",
+    "Open the key: every mark on the battlefield, with one plain sentence each.",
+  ],
+  [
+    "#visual-filters-button",
+    "Visual Filters",
+    "Choose which marks and effects the battlefield shows. It changes only your screen, never the game.",
+  ],
+  [
+    "#palette-select",
+    "Palette",
+    "Choose the battlefield's colors: Moonlit, the default, or High Contrast for projectors and low vision. It changes only your screen.",
+  ],
+  [
+    "#frame-explanation-button",
+    "Frame Explanation",
+    "Number what happened on this tick, on the battlefield and in a list. You can also press F.",
+  ],
+  [
+    "#arena-everyone-in-view-button",
+    "Everyone In View",
+    "Move the camera so every champion on the field is in view. Press it again for the whole map. You can also press V.",
+  ],
+  [
+    "#arena-frame-explanation-button",
+    "Frame Explanation",
+    "Number what happened on this tick, on the battlefield and in a list. You can also press F.",
+  ],
+  [
     "#help-close-button",
     "Close How To Play",
     "Close the guide to the keys and controls.",
@@ -1029,6 +1079,8 @@ const choreographer = new CombatChoreographer({
 const replayTimelineElements = {
   root: elements.replayTimeline,
   keyboardTarget: document,
+  // Tab on the field while a step loads is held (replay-controls.js).
+  fieldRoot: elements.battlefieldShell,
   /**
    * Return whether a matched frame and presentation are currently installed.
    * This lets keyboard handling distinguish an installed view from a loading gap;
@@ -1087,13 +1139,14 @@ function replayTimelineRenderState(playback) {
 }
 
 /**
- * The Replay Viewer's Saga Chronicle (fight chapters and bookmarks under the
- * arena), or null in the BattleClient and DevClient. Created after the playback
- * controller it drives; its update runs on every playback state change.
+ * The Replay Viewer's Rune Scrubber (the transport dock under the arena: the
+ * Event Track and one button row), or null in the BattleClient and DevClient.
+ * Created after the playback controller it drives; its update runs on every
+ * playback state change.
  *
- * @type {ReturnType<typeof createChronicle> | null}
+ * @type {ReturnType<typeof createRuneScrubber> | null}
  */
-let chronicle = null;
+let runeScrubber = null;
 
 const replayPlayback = new ReplayPlaybackController({
   // 1x everywhere: with the beat clock a quiet replay tick already lasts 1.7 s.
@@ -1123,7 +1176,7 @@ const replayPlayback = new ReplayPlaybackController({
       invalidateReplayArtifactAction();
     }
     choreographer.setPlaybackRate(playback.playbackRate);
-    updateChronicle(playback);
+    updateRuneScrubber(playback);
     const timeline =
       installedPresentationAuthority() === null
         ? pendingPresentationSurfaceView(playback).replay.timeline
@@ -1143,16 +1196,18 @@ const replayPlayback = new ReplayPlaybackController({
     }
   },
   /**
-   * Show a playback failure unless an error notice is already visible.
-   * Use error.message for an Error, otherwise the generic navigation message.
-   * Update connection presentation without replacing an existing error notice.
+   * Show a playback failure unless an error notice is already visible: one
+   * plain sentence, "Could not move the replay. Try again, or press Reconnect."
+   * The raw error is not shown on the page; it goes to the browser console in
+   * one line (logRawError). Update connection presentation without replacing
+   * an existing error notice.
+   *
+   * @param {unknown} error The failure the controller caught.
    */
   onError: (error) => {
+    logRawError("Replay move failed", error);
     if (!state.notice || state.noticeLevel !== "error") {
-      setNotice(
-        error instanceof Error ? error.message : "Replay navigation failed.",
-        "error",
-      );
+      setNotice("Could not move the replay. Try again, or press Reconnect.", "error");
       renderConnection();
     }
   },
@@ -1210,8 +1265,64 @@ const hud = createHud({
       },
 });
 
-/** The Replay Viewer's five-tab rail (Agent, Metrics, Actions, Visuals, Frame). */
+/** The Replay Viewer's six-tab rail (Roster, Agent, Metrics, Actions, Visuals, Frame). */
 const ledgerRail = replayProductPage ? mountLedgerRail(document) : null;
+
+/**
+ * The Replay Viewer's Class Guide: the BattleClient rail's Class Guide card
+ * (tactics-turn.js classGuideCardHtml, the one owner of its words) for the
+ * selected champion, under the Champion Frame in the Agent tab. Null outside
+ * the Replay Viewer.
+ */
+const replayClassGuide = (() => {
+  if (!replayProductPage) return null;
+  const card = document.createElement("section");
+  card.id = "replay-class-card";
+  card.className = "cg replay-class-card";
+  card.setAttribute("aria-label", "Class Guide");
+  card.hidden = true;
+  elements.championFrame.after(card);
+  return card;
+})();
+
+/**
+ * The Replay Viewer's Full Class Details (owner, 4 Oct 2026, Micro List M22): a
+ * closed disclosure under the Class Guide holding the facts only the old long
+ * Agent card showed: the order name, then the old card's own class part
+ * (panels.js renderSemanticInspector: Class Overview, the Tactical Guide's
+ * role, strength and weakness, every class mechanic such as body radius and the
+ * out-of-combat delay and regeneration, the passive and its rules, and the rule
+ * notes). renderReplayClassDetails fills it. Null outside the Replay Viewer.
+ */
+const replayClassDetails = (() => {
+  if (replayClassGuide === null) return null;
+  const details = document.createElement("details");
+  details.id = "replay-class-details";
+  details.className = "replay-class-details";
+  details.hidden = true;
+  const summary = document.createElement("summary");
+  summary.className = "replay-class-details__summary";
+  summary.textContent = "Full Class Details";
+  const body = document.createElement("div");
+  body.className = "replay-class-details__body";
+  details.append(summary, body);
+  replayClassGuide.after(details);
+  return Object.freeze({ details, body });
+})();
+
+/** The champion and class whose facts #replay-class-details holds, or null. */
+let replayClassDetailsKey = /** @type {string | null} */ (null);
+
+// The Replay Viewer keeps its Visual Filters in the rail's Visuals tab, so
+// its top-bar Visual Filters button opens that tab instead of the live
+// drawer (which stays empty there).
+if (ledgerRail !== null) {
+  const filtersButton = elements.visualFiltersButton;
+  filtersButton.removeAttribute("popovertarget");
+  filtersButton.removeAttribute("aria-haspopup");
+  filtersButton.setAttribute("aria-controls", "replay-rail-visuals");
+  filtersButton.addEventListener("click", () => ledgerRail.selectTab("visuals"));
+}
 
 /** The camera switch: Replay Viewer transport slot, or the field corner live. */
 const cameraSwitch =
@@ -1225,6 +1336,16 @@ const cameraSwitch =
         getFilters: () => visualFilterState,
         reducedMotion: () => choreographer.snapshot().motionMode !== "normal",
         applyFrame: (frame, { ease }) => applyCameraFrameWithEase(frame, ease),
+        // Everyone In View's one button is the arena's corner key (owner,
+        // 3 Oct 2026: one button for each job).
+        // Its tips sit in the scorebug's empty score half, covering nothing
+        // (owner, 3 Oct 2026, Micro List M7).
+        ...(replayProductPage
+          ? {
+              switchCameras: /** @type {const} */ (["whole_map", "battle_cam"]),
+              tipHost: elements.cameraTips,
+            }
+          : {}),
       });
 
 // The Visual Key dialog, opened by the button beside Help. Its numbers come
@@ -1270,7 +1391,11 @@ const frameExplanation =
         getTransform: () => battlefieldRenderer.transform,
         getLayer: () => battlefieldRenderer.layers.explain,
         listHost: frameExplanationList,
-        button: elements.frameExplanationButton,
+        // The Replay Viewer's one Frame Explanation button is the arena's
+        // corner key; live play keeps the top-bar slot.
+        button: replayProductPage
+          ? elements.arenaFrameExplanationButton
+          : elements.frameExplanationButton,
         isPaused: () => !replayPlayback.snapshot().playing,
         pause: () => replayPlayback.pause("frame_explanation"),
         canExplain: () => installedPresentationAuthority() !== null && !state.busy,
@@ -1285,12 +1410,26 @@ const frameExplanation =
         },
       });
 
+// The arena's two on-screen keys, top right (owner, 3 Oct 2026): the only
+// Everyone In View and Frame Explanation buttons. Everyone In View presses V
+// through the one command set; Frame Explanation is createFrameExplanation's
+// own button (above). The Replay Viewer first; the BattleClient will wire the
+// same buttons.
+if (replayProductPage && productIdentity !== null) {
+  wireArenaButtons({
+    group: elements.arenaButtons,
+    everyoneInView: elements.arenaEveryoneInViewButton,
+    product: "replay_viewer",
+    cameraSlot: elements.replayCameraSwitch,
+  });
+}
+
 /** The High Contrast palette choice, at the top of the Visuals panel. */
 const paletteControl = createPaletteControl({ container: elements.visualFiltersBody });
 elements.visualFiltersBody.prepend(paletteControl.element);
 
 if (replayProductPage) {
-  chronicle = createChronicle(elements.chronicle, {
+  runeScrubber = createRuneScrubber(elements.chronicle, {
     controller: replayPlayback,
     loadMarks: () => getReplayTimelineMarks(state.token),
     tickForFrameIndex: replayTimelineElements.tickForFrameIndex,
@@ -1489,7 +1628,9 @@ function clearPresentationAuthority(reason) {
 /**
  * Prepare the page for an authority request with the supplied reason and policy.
  * With retain_last_authorized and an installed pair, keep its display preferences
- * and mark the retained surface pending. Otherwise clear presentation authority.
+ * and mark the retained surface pending; the hover tip is hidden, except during
+ * autoplay's own next-frame fetch (state.quietBusy), when it stays up until the
+ * next render refreshes it. Otherwise clear presentation authority.
  * This does not send the request or install its result.
  *
  * @param {string} reason
@@ -1501,7 +1642,10 @@ function beginPresentationAuthorityAttempt(reason, pendingPolicy) {
     installedPresentationAuthority() !== null
   ) {
     retainPresentationPreferenceAcrossBusyRender();
-    tooltipController.hide();
+    // Autoplay's own next-frame fetch (state.quietBusy) keeps a hover tip up:
+    // hiding it here made it blink off for ~80 ms before every played tick.
+    // The next render's refresh redraws it for the new tick.
+    if (!state.quietBusy) tooltipController.hide();
     document.documentElement.dataset.presentationAuthority = "retained";
     return;
   }
@@ -2862,24 +3006,24 @@ function updateCameraForTick(presentationFrame, renderPolicy) {
 }
 
 /**
- * Update the Saga Chronicle from one playback snapshot (Replay Viewer only).
+ * Update the Rune Scrubber from one playback snapshot (Replay Viewer only).
  *
  * playback is the ReplayPlaybackController snapshot. The audience is Oracle View
  * or Agent POV with the current recipient; the replay key is the installed
  * replay's canonical digest. Does nothing in the BattleClient or DevClient.
- * Side effects: Chronicle DOM and, on an audience or replay change, one
- * timeline-marks GET (made by the Chronicle).
+ * Side effects: Rune Scrubber DOM and, on an audience or replay change, one
+ * timeline-marks GET (made by the Rune Scrubber).
  *
  * @param {ReturnType<ReplayPlaybackController["snapshot"]>} playback
  */
-function updateChronicle(playback) {
-  if (chronicle === null) return;
+function updateRuneScrubber(playback) {
+  if (runeScrubber === null) return;
   const installed = installedPresentationAuthority();
   const presentation = installed?.presentation ?? null;
   const transport = installed?.transport ?? null;
   const summary =
     transport?.artifact_facts?.artifact_summary ?? transport?.artifact_summary;
-  chronicle.update({
+  runeScrubber.update({
     playback,
     audience:
       authorizedPresentationAudience(presentation) === "agent_pov"
@@ -2956,6 +3100,7 @@ function renderChampionFrameForPage(presentation) {
     !isAuthorizedPresentationFrame(presentation)
   ) {
     slot.hidden = true;
+    renderReplayClassGuide(presentation, [], null);
     return;
   }
   const pov = authorizedPresentationAudience(presentation) === "agent_pov";
@@ -2998,14 +3143,124 @@ function renderChampionFrameForPage(presentation) {
     }),
   );
   slot.hidden = false;
+  renderReplayClassGuide(presentation, researcherAgents, selected);
+}
+
+/**
+ * Fill the Replay Viewer's Class Guide (#replay-class-card, under the
+ * Champion Frame in the Agent tab) for the selected champion: its class's
+ * guide with the numbers from the recorded class_mechanics and its Ultimate
+ * readiness ("Ultimate · Ready In 3 Ticks"), in the BattleClient's words
+ * (classGuideCardHtml). With nobody selected, or the Class Guide switch
+ * (class_guide) off, the card hides. It also fills or hides the Full Class
+ * Details under it (renderReplayClassDetails). The Agent tab is a docked researcher
+ * panel, so in Agent POV it reads the full record like the Champion Frame;
+ * nothing here draws over the arena.
+ *
+ * @param {unknown} presentation The installed presentation.
+ * @param {ReadonlyArray<Record<string, any>>} researcherAgents The full-record
+ *   scene agents.
+ * @param {unknown} selected The selected agent record, if any.
+ * @returns {void} Side effects: the card's DOM and hidden flag, and the Full
+ *   Class Details section's.
+ */
+function renderReplayClassGuide(presentation, researcherAgents, selected) {
+  const card = replayClassGuide;
+  if (card === null) return;
+  const chosenId = isRecord(selected)
+    ? String(selected.public_agent_id)
+    : (activatedAgentPublicId ?? null);
+  const agent = researcherAgents.find(
+    (row) => isRecord(row) && String(row.public_agent_id) === chosenId,
+  );
+  if (!isRecord(agent) || !isVisualFilterEnabled(visualFilterState, "class_guide")) {
+    card.hidden = true;
+    card.replaceChildren();
+    renderReplayClassDetails(presentation, null);
+    return;
+  }
+  const mechanics =
+    asArray(authorizedPresentationResearcherSceneView(presentation)?.class_mechanics)
+      .filter(isRecord)
+      .find((row) => row.class_id === agent.class_id) ?? null;
+  const cooldown = Number.isInteger(agent.ultimate_cooldown)
+    ? Math.max(0, Number(agent.ultimate_cooldown))
+    : null;
+  // classGuideCardHtml escapes every recorded word it writes.
+  card.innerHTML = classGuideCardHtml(document, agent.class_id, mechanics, {
+    cooldown,
+  });
+  card.hidden = false;
+  renderReplayClassDetails(presentation, agent);
+}
+
+/**
+ * Fill or hide the Replay Viewer's Full Class Details (#replay-class-details)
+ * for the champion the Class Guide shows.
+ *
+ * agent is that champion's full-record scene agent, or null to hide the
+ * section (nobody selected, or the Class Guide switch off). The facts are the
+ * class's, read through the same authorized inspector view as the old Agent
+ * card (authorizedInspectorView with this champion's public ID), so the
+ * section holds exactly what that card held: "Order" from classLoreV1, then
+ * renderSemanticInspector of the inspector's owner_descriptor. A champion
+ * whose class mechanics are missing hides the section. The body is rebuilt
+ * only when the champion or its class changes, so an open section stays open
+ * and keeps its scroll while the replay plays. It is a docked researcher panel
+ * (Full Record in Agent POV, like the rest of the Agent tab); nothing here
+ * draws over the arena.
+ *
+ * @param {unknown} presentation The installed presentation.
+ * @param {Record<string, any> | null} agent The selected full-record agent.
+ * @returns {void} Side effects: the section's DOM, hidden flag and
+ *   replayClassDetailsKey.
+ */
+function renderReplayClassDetails(presentation, agent) {
+  if (replayClassDetails === null) return;
+  const { details, body } = replayClassDetails;
+  const descriptor = isRecord(agent)
+    ? (authorizedInspectorView(
+        presentation,
+        installedLocalInspectedPresentationKey(presentation),
+        String(agent.public_agent_id),
+      )?.owner_descriptor ?? null)
+    : null;
+  if (!isRecord(agent) || descriptor === null) {
+    details.hidden = true;
+    body.replaceChildren();
+    replayClassDetailsKey = null;
+    return;
+  }
+  const key = `${agent.public_agent_id}:${agent.class_id}`;
+  if (key !== replayClassDetailsKey) {
+    const lore = classLoreV1(agent.class_id);
+    const parts = [];
+    if (lore !== null) {
+      const order = document.createElement("p");
+      order.className = "replay-class-details__order";
+      const label = document.createElement("span");
+      label.textContent = "Order";
+      const value = document.createElement("strong");
+      value.textContent = lore.order;
+      order.append(label, value);
+      parts.push(order);
+    }
+    const classPart = document.createElement("div");
+    classPart.className = "replay-class-details__class";
+    renderSemanticInspector(classPart, descriptor);
+    parts.push(classPart);
+    body.replaceChildren(...parts);
+    replayClassDetailsKey = key;
+  }
+  details.hidden = false;
 }
 
 /**
  * Return the choreography surface for this page: the renderer's surface plus
  * the HUD and panel roots whose beat-held nodes the choreographer also times
- * (the score strip, the live scorebug #scorebug in the BattleClient and
- * DevClient, so its score and portraits change at the Fall and Return beats
- * and not when the frame installs, the party frames or Team Rosters, the
+ * (the old score strip, the scorebug #scorebug in every client, so its score
+ * and portraits change at the Fall and Return beats and not when the frame
+ * installs, the party frames or the Replay Viewer's Arena Frames, the
  * Roster, the selection card, the Fallen panel and the Replay Viewer's
  * Actions tab), and the
  * beforeBeatHolds hook that redraws the Fallen panel from each plan before the
@@ -3019,9 +3274,7 @@ function pageChoreographySurface() {
     ...surface,
     beatHoldRoots: Object.freeze([
       elements.matchScoreboard,
-      ...(isReplayMode()
-        ? []
-        : [document.getElementById("scorebug")].filter((root) => root !== null)),
+      ...[document.getElementById("scorebug")].filter((root) => root !== null),
       isReplayMode() ? elements.teamRosters : elements.partyFrames,
       elements.roster,
       elements.selectionCard,
@@ -3037,20 +3290,26 @@ function pageChoreographySurface() {
  * choreography plan.
  *
  * plan is the plan about to be shown (the choreographer passes it through the
- * surface's beforeBeatHolds hook), or null to clear the panel. The falls are
- * carried from tick to tick by requiems.fallenFeedHistory (the last 8 ticks of
- * the same audience; a seek, view or recipient change starts again), and the
- * panel shows only while the Fallen Feed switch (death_announcer) is on and the
- * plan has a tick. Shown IDs come from authorizedPresentationAgentDisplayId on
- * the installed presentation.
+ * surface's beforeBeatHolds hook), or null to clear the panel. This tick's
+ * falls come from the plan. The earlier ticks' falls (the last 8 ticks) come,
+ * in the Replay Viewer, from the installed frame's recent_falls host fact
+ * when that frame is the plan's tick (the server owns the history, so a seek
+ * shows the same rows as playing there), with identities from the frame's
+ * identity rows; otherwise (live play, older producers) requiems.
+ * fallenFeedHistory carries them from tick to tick (the same audience; a
+ * seek, view or recipient change starts again). The panel shows only while
+ * the Fallen Feed switch (death_announcer) is on and the plan has a tick.
+ * Shown IDs come from authorizedPresentationAgentDisplayId on the installed
+ * presentation.
  *
  * Side effects: updates fallenFeedMemory, replaces the slot's children with
  * requiems.buildFallenFeed (which registers row tooltips) and sets its hidden
  * flag. This tick's rows carry the Fall beat hold, so the choreographer fades
  * them in at that champion's Fall beat. No timers or storage.
  *
- * Agent POV: the plan's fallen_feed_row rows hold only the falls the team saw
- * and only the attackers it saw; nothing else is read, so the panel never names
+ * Agent POV: the plan's fallen_feed_row rows and the frame's recent_falls hold
+ * only the falls the team saw and only the attackers whose blow it saw land;
+ * identity rows add only names, classes and teams, so the panel never names
  * an unseen champion. Oracle -> POV -> Oracle gives a fresh panel.
  *
  * @param {Record<string, any> | null} plan
@@ -3058,7 +3317,28 @@ function pageChoreographySurface() {
  */
 function renderFallenFeed(plan) {
   const slot = elements.fallenFeed;
-  const history = requiems.fallenFeedHistory(fallenFeedMemory, plan);
+  const installed = installedPresentationAuthority()?.presentation ?? null;
+  const recentFalls =
+    installed !== null &&
+    Array.isArray(installed.recent_falls) &&
+    installed.source?.source_simulator_step_count === plan?.simulatorStep
+      ? installed.recent_falls
+      : null;
+  const identities = new Map(
+    recentFalls === null
+      ? []
+      : authorizedPresentationIdentityRows(installed).map((row) => [
+          row.public_agent_id,
+          row.agent,
+        ]),
+  );
+  const history = requiems.fallenFeedHistory(
+    fallenFeedMemory,
+    plan,
+    recentFalls === null
+      ? null
+      : { rows: recentFalls, identityOf: (id) => identities.get(id) ?? null },
+  );
   fallenFeedMemory = history.memory;
   if (
     history.tick === null ||
@@ -3723,21 +4003,19 @@ function downloadReplayArtifact(blob, filename) {
 function replayMetricDownloadError(error) {
   if (error instanceof DebuggerApiError && error.status === 404) {
     return Object.freeze({
-      message: "No metric report is available for this replay.",
+      message: "This replay has no metrics to download.",
       level: "warning",
     });
   }
   if (error instanceof DebuggerApiError && error.status === 403) {
     return Object.freeze({
-      message: "Metric download is not authorized for this replay session.",
+      message:
+        "This replay session cannot download metrics. Open the link printed in the terminal again.",
       level: "error",
     });
   }
   return Object.freeze({
-    message:
-      error instanceof Error
-        ? `Metric download failed: ${error.message}`
-        : "Metric download failed.",
+    message: "Could not download the file. Try again.",
     level: "error",
   });
 }
@@ -3783,18 +4061,19 @@ async function exportReplayBattlefieldPng() {
       throw new TypeError("Replay PNG builder returned an invalid artifact.");
     }
     downloadReplayArtifact(artifact.blob, artifact.filename);
-    setNotice(`Exported ${artifact.filename}.`, "success");
+    const exportedFrame = playback.cursor?.frame_index ?? 0;
+    const exportedTick = replayTimelineElements.tickForFrameIndex(exportedFrame);
+    setNotice(
+      `Exported the PNG of tick ${Number.isSafeInteger(exportedTick) ? exportedTick : exportedFrame}.`,
+      "success",
+    );
     renderConnection();
   } catch (error) {
     if (!replayArtifactActionIsCurrent(transaction)) {
       return;
     }
-    setNotice(
-      error instanceof Error
-        ? `PNG export failed: ${error.message}`
-        : "PNG export failed.",
-      "error",
-    );
+    logRawError("PNG export failed", error);
+    setNotice("Could not export the PNG. Try again.", "error");
     renderConnection();
   } finally {
     finishReplayArtifactAction(transaction);
@@ -3835,13 +4114,17 @@ async function downloadReplayMetricReport(details = false) {
       }),
       report.filename,
     );
-    setNotice(`Downloaded ${report.filename}.`, "success");
+    setNotice(
+      details ? "Downloaded the episode details." : "Downloaded the metrics CSV.",
+      "success",
+    );
     renderConnection();
   } catch (error) {
     if (!replayArtifactActionIsCurrent(transaction)) {
       return;
     }
     const failure = replayMetricDownloadError(error);
+    logRawError("Download failed", error);
     setNotice(failure.message, failure.level);
     renderConnection();
   } finally {
@@ -4919,8 +5202,13 @@ function currentRevision() {
  * The level defaults to info; this helper does not repaint or send a request.
  * In the BattleClient and DevClient the status line's message (#msg, through
  * paintStatusLine) also shows it ("warning" and "error" keep their level and
- * look refused, anything else shows as info). Side effects: page state and
- * that status line.
+ * look refused, anything else shows as info). In the Replay Viewer the Rune
+ * Scrubber shows it under the readout for 4 s (runeScrubber.showNotice; the
+ * top-bar #notice pill stays hidden there), after the same plain-words
+ * translation of host notices the live status line uses (plainHostNotice); a
+ * warning or error whose words that translation changed also goes to the
+ * browser console in one line (logRawError), so the exact host text is kept.
+ * Side effects: page state and that status line or notice line.
  *
  * @param {string} message
  * @param {string} level
@@ -4931,7 +5219,33 @@ function setNotice(message, level = "info") {
   if (!isReplayMode() && typeof message === "string") {
     // The live deck's status line repeats the latest notice in plain words.
     paintStatusLine(message, level === "error" || level === "warning" ? level : "info");
+  } else if (runeScrubber !== null && typeof message === "string") {
+    // Host words (a server notice, a stale or repeated command) read in plain
+    // words, through the BattleClient's own translation (plainHostNotice).
+    const plain = plainHostNotice(message);
+    if (plain !== message && (level === "error" || level === "warning")) {
+      logRawError("Host notice", message);
+    }
+    runeScrubber.showNotice(plain, level);
   }
+}
+
+/**
+ * Write a raw error to the browser console as one line, for developers
+ * (owner, 4 Oct 2026, Micro List M15). The Replay Viewer page shows only plain
+ * words; this keeps the exact text a bug report needs.
+ *
+ * @param {string} context What failed, in a few words ("PNG export failed").
+ * @param {unknown} error Any thrown value or host text: an Error gives its name
+ *   and message, anything else its string form. Runs of whitespace (line
+ *   breaks included) become one space.
+ * @returns {void} Side effect: one console.error call, "MARL-BGs <context>:
+ *   <text>".
+ */
+function logRawError(context, error) {
+  const text =
+    error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.error(`MARL-BGs ${context}: ${text.replace(/\s+/gu, " ").trim()}`);
 }
 
 /**
@@ -6463,8 +6777,8 @@ async function pollLiveMatch() {
     state.resyncRequired = true;
     setNotice(
       error instanceof Error
-        ? `${error.message} Use Reconnect to read the match.`
-        : "Could not refresh the match. Use Reconnect.",
+        ? "Could not read the match. Press Reconnect."
+        : "Could not read the match. Press Reconnect.",
       "error",
     );
     render();
@@ -6540,8 +6854,8 @@ function settleLiveAudienceSwitch(nextPlan) {
  * After the choreographer presents the tick: a live tick that is only being
  * re-shown to a new audience (a view switch) is settled at its END without
  * replaying (settleLiveAudienceSwitch); the camera switch gets the tick
- * (updateCameraForTick, which may lean for Kill Cam), the Saga Chronicle dims
- * its marks until their beats, the rail's Full Record chips and the Chronicle
+ * (updateCameraForTick, which may lean for Kill Cam), the Rune Scrubber dims
+ * its marks until their beats, the rail's Full Record chips and the Rune Scrubber
  * update, Frame Explanation refreshes, and (Replay Viewer) the Champion Frame is
  * drawn once the choreographer settles. While this runs, renderInProgress is
  * true, so a camera change asked for during the paint waits for it to finish.
@@ -6613,13 +6927,13 @@ function renderPage() {
     updateCameraForTick(presentationFrame, choreographyControl.renderPolicy);
     const plan = choreographer.plan;
     if (
-      chronicle !== null &&
+      runeScrubber !== null &&
       isRecord(plan) &&
       isRecord(installed?.transport?.cursor)
     ) {
-      chronicle.presentTick(
+      runeScrubber.presentTick(
         Number(installed.transport.cursor.frame_index),
-        chronicleBeatsFromSchedule(plan.beats),
+        scrubberBeatsFromSchedule(plan.beats),
         replayPlayback.snapshot().playbackRate,
       );
     }
@@ -6628,8 +6942,8 @@ function renderPage() {
     choreographer.clear("presentation_error");
     setNotice(
       error instanceof Error
-        ? `Combat presentation failed: ${error.message} The authoritative frame remains available.`
-        : "Combat presentation failed. The authoritative frame remains available.",
+        ? "Could not draw this tick. The panels still show its facts."
+        : "Could not draw this tick. The panels still show its facts.",
       "error",
     );
     renderConnection();
@@ -6640,7 +6954,7 @@ function renderPage() {
   lastBattlefieldSizeKey = battlefieldSizeKey();
   renderReplayMetrics();
   refreshLedgerRail(presentationFrame);
-  updateChronicle(replayPlayback.snapshot());
+  updateRuneScrubber(replayPlayback.snapshot());
   frameExplanation?.refresh();
   if (isReplayMode()) {
     const shown = presentationFrame;
@@ -6735,8 +7049,8 @@ function scheduleBattlefieldResize() {
       choreographer.clear("resize_projection_error");
       setNotice(
         error instanceof Error
-          ? `Combat presentation resize failed: ${error.message}`
-          : "Combat presentation resize failed.",
+          ? "Could not redraw the arena at this size."
+          : "Could not redraw the arena at this size.",
         "error",
       );
       renderConnection();
@@ -6890,6 +7204,12 @@ async function confirmRecordingReplacement(choice) {
  * response or join race may install a fresh GET pair and return handled_resync.
  * Update connection, shutdown, and notice state; rethrow failures after fencing
  * authority as needed. deferFinalRender defaults to false for ordinary commands.
+ * With deferFinalRender true (the playback controller's play and step commands)
+ * the page is not repainted while the request is in flight, only the connection
+ * and busy state, and the final repaint is left to the controller; so the old
+ * frame is never redrawn between two played ticks. Autoplay's own next_frame
+ * request also sets state.quietBusy while it runs, so the connection pill stays
+ * "Connected" between played ticks.
  *
  * @param {Readonly<Record<string, any>>} command
  * @param {{deferFinalRender?: boolean}} [options]
@@ -6915,6 +7235,8 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
   });
   invalidateReplayArtifactAction();
   state.busy = true;
+  // Autoplay's own fetch of the next frame keeps the pill on "Connected".
+  state.quietBusy = deferFinalRender && command.command_type === "next_frame";
   clearNotice();
   const previousAuthority = state.authority;
   const previousFrame = state.frame;
@@ -6995,7 +7317,16 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
           continuityResult: "stale_resync",
         }),
     });
-    render();
+    if (deferFinalRender) {
+      // Playback and stepping (the playback controller's commands): do not
+      // repaint the old frame while the next one is fetched. That repaint drew
+      // the settled still and dropped the tick's held END cues just before the
+      // next tick started: the "paused" flash between ticks. Only the busy
+      // state is shown; the controller repaints when the answer lands.
+      renderConnection();
+    } else {
+      render();
+    }
     const installOutcome = await installPromise;
     if (installOutcome.status === "superseded") {
       throw new DebuggerApiError(
@@ -7021,14 +7352,14 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
       setNotice(
         stale
           ? payload?.error_code === "command_id_conflict"
-            ? "The replay service rejected a command-ID conflict. Its coherent latest pair was installed; the command was not retried."
-            : "This replay tab was stale. Its coherent latest pair was installed; the command was not retried."
+            ? "Two presses crossed, so the page now shows the latest tick. Your press was not repeated."
+            : "This tab was behind, so it now shows the latest tick. Your press was not repeated."
           : installOutcome.resynchronized
-            ? "The command completed once, its mixed presentation candidate was discarded, and one fresh GET pair was installed."
+            ? "Done. The page reloaded the tick to stay in step."
             : (notice ??
               (payload?.result === "duplicate"
-                ? "Duplicate replay command recognized; it was not applied again."
-                : "Replay already matched that request.")),
+                ? "That press was already done."
+                : "Already at that tick.")),
         stale ||
           installOutcome.resynchronized ||
           payload?.result === "duplicate" ||
@@ -7039,7 +7370,7 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
     }
     if (commandResponseSchedulesShutdown(request.command, payload)) {
       state.shuttingDown = true;
-      setNotice("Exit accepted. The local replay viewer is shutting down.", "info");
+      setNotice("The Replay Viewer is closing.", "info");
     }
     return stale || installOutcome.resynchronized
       ? Object.freeze({ handled_resync: true, frame: state.frame })
@@ -7058,10 +7389,7 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
     const payload = commandOutcome.current?.payload;
     if (commandResponseSchedulesShutdown(request.command, payload)) {
       state.shuttingDown = true;
-      setNotice(
-        "Exit was accepted, but no coherent successor presentation was installed while the local replay viewer shuts down.",
-        "info",
-      );
+      setNotice("The Replay Viewer is closing.", "info");
     } else {
       state.offline =
         error instanceof DebuggerApiError &&
@@ -7070,9 +7398,9 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
       replayPlayback.setConnected(false);
       setNotice(
         status === 401 || status === 403
-          ? "Replay capability is invalid. Reopen the exact URL printed by the Python launcher."
+          ? "This link no longer works. Open the link printed in the terminal again."
           : error instanceof Error
-            ? `${error.message} Reconnect before sending another replay command.`
+            ? "Could not reach the Replay Viewer. Press Reconnect."
             : "Replay command failed. Reconnect before sending another command.",
         "error",
       );
@@ -7080,6 +7408,7 @@ async function sendReplayCommand(command, { deferFinalRender = false } = {}) {
     throw error;
   } finally {
     state.busy = false;
+    state.quietBusy = false;
     if (!deferFinalRender || state.resyncRequired || state.shuttingDown) {
       render();
     }
@@ -7115,10 +7444,7 @@ async function dispatchReplayCommand(command) {
     authorizedPresentationAudience(state.presentation) !== "researcher" &&
     (command.command_type === "select_agent" || command.command_type === "set_ranges")
   ) {
-    setNotice(
-      "Reference and range controls are unavailable in actor POV replay.",
-      "warning",
-    );
+    setNotice("Ranges and reference picks work only in Oracle View.", "warning");
     renderConnection();
     return null;
   }
@@ -7246,7 +7572,7 @@ function dispatchPanelCommand(command, { pointerOriginated = false } = {}) {
   if (!isReplayMode()) {
     return dispatchCommand(command);
   }
-  setNotice("That live debugger action is unavailable in replay.", "warning");
+  setNotice("That action works only in live play.", "warning");
   renderConnection();
   return Promise.resolve(null);
 }
@@ -7395,7 +7721,7 @@ async function dispatchCommand(
   } = {},
 ) {
   if (isReplayMode()) {
-    setNotice("Live debugger commands are unavailable in read-only replay.", "warning");
+    setNotice("Live play commands do not work in a replay.", "warning");
     renderConnection();
     return;
   }
@@ -7656,7 +7982,20 @@ async function dispatchCommand(
     command.command_type === "review_replay"
       ? window.open("about:blank", "_blank")
       : null;
-  if (replayWindow !== null) replayWindow.opener = null;
+  if (replayWindow !== null) {
+    replayWindow.opener = null;
+    // The Replay Viewer holds its page until Agent POV is ready, so the tab
+    // shows a dark "Opening Replay" page in this client's colors meanwhile.
+    const tokens = getComputedStyle(
+      document.querySelector(".bc") ?? document.documentElement,
+    );
+    writeOpeningReplayPage(replayWindow, {
+      background: tokens.getPropertyValue("--ink"),
+      text: tokens.getPropertyValue("--text"),
+      muted: tokens.getPropertyValue("--muted"),
+      font: getComputedStyle(document.body).fontFamily,
+    });
+  }
   let replayOpened = false;
   try {
     const installPromise = presentationInstallation.installFromCommand({
@@ -8021,9 +8360,9 @@ async function loadCurrentFrame() {
     }
     setNotice(
       status === 401 || status === 403
-        ? "Debugger capability is invalid. Reopen the exact URL printed by the Python launcher."
+        ? "This link no longer works. Open the link printed in the terminal again."
         : error instanceof Error
-          ? `${error.message} Reconnect to request one fresh authority pair.`
+          ? "Could not load the match. Press Reconnect."
           : "Could not load debugger frame.",
       "error",
     );
@@ -8758,9 +9097,13 @@ for (const event of ["focus", "click"]) {
 elements.metricSearchArea.addEventListener(
   "focusout",
   (/** @type {FocusEvent} */ event) => {
+    // Focus moving to a holder of the search (the Metrics tab panel, which a
+    // press on the search's own text focuses) keeps the list open.
+    const next = event.relatedTarget;
     if (
-      event.relatedTarget !== null &&
-      !elements.metricSearchArea.contains(event.relatedTarget)
+      next !== null &&
+      !elements.metricSearchArea.contains(/** @type {Node} */ (next)) &&
+      !(next instanceof Node && next.contains(elements.metricSearchArea))
     ) {
       setReplayMetricSearchOpen(false);
     }

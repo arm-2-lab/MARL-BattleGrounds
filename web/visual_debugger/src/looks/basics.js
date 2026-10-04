@@ -47,7 +47,8 @@
  * (blow 760 ms), which the plan already placed on the beat clock, so Body Glide
  * and Longer Tick are followed without importing the plan. Each animation is a
  * Web Animations description (fill "backwards", first frame invisible) that
- * the choreographer starts; the DOM always holds the still picture: cleaves at
+ * the choreographer starts (and, in a played tick, keeps hidden once it has
+ * faded out); the DOM always holds the still picture: cleaves at
  * 80%, bolts, streaks and ribbons at 50% (the Comet Bolt and its head at 65%,
  * its ring at 55%), landings at 80%. Reduced motion is opacity only, within
  * 150 ms. No timers and no CSS animations.
@@ -1740,7 +1741,9 @@ function motionFrames(motion, record) {
  * (blowClock); the animation lasts until the later of blow 600 ms and the
  * event's phaseEnd, so the node stays hidden until the event's own phase has
  * ended. fill is "backwards": before it starts it shows its first, invisible
- * frame, and when it ends the DOM still returns. Return the AnimationSpec (id
+ * frame, and when it ends the DOM still returns, except in a played tick, where
+ * the choreographer keeps the node hidden once its fade has ended
+ * (choreography.js endsHidden), so a blow shows once. Return the AnimationSpec (id
  * `mbg:<epoch>:<event>:basic-<motion>`).
  *
  * @param {Element} element

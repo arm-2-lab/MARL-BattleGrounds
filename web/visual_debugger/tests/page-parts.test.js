@@ -16,8 +16,9 @@
  * marked for a product (the shell would un-hide it). The side rail (#rail)
  * starts with the live Your Turn, Class Guide and How To Play cards, then the
  * This Turn and How To Play slots, the Fallen panel and the Replay Viewer
- * rail. The toolbar holds Visual Filters (live play only) after Visual Key,
- * and the button opens and closes the #visual-filters-drawer popover.
+ * rail, whose six tab panels start with Roster. The toolbar holds Visual
+ * Filters after Visual Key, starting hidden and marked for no product, and
+ * the button opens and closes the #visual-filters-drawer popover.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -294,9 +295,14 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     ],
     ["replay-rail-tabs", "div", /id="replay-rail"[\s\S]*id="replay-rail-tabs"/u],
     [
+      "replay-rail-roster",
+      "section",
+      /id="replay-rail-tabs"[\s\S]*id="replay-rail-roster"/u,
+    ],
+    [
       "replay-rail-agent",
       "section",
-      /id="replay-rail-tabs"[\s\S]*id="replay-rail-agent"/u,
+      /id="replay-rail-roster"[\s\S]*id="replay-rail-agent"/u,
     ],
     [
       "replay-rail-metrics",
@@ -336,6 +342,7 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     [...rail[1].matchAll(/\bid="([^"]+)"/gu)].map((match) => match[1]),
     [
       "replay-rail-tabs",
+      "replay-rail-roster",
       "replay-rail-agent",
       "replay-rail-metrics",
       "replay-rail-actions",
@@ -361,7 +368,10 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
   assert.match(filtersButton[0], /^<button\b/u);
   assert.match(filtersButton[0], /\btype="button"/u);
   assert.match(filtersButton[0], /\bpopovertarget="visual-filters-drawer"/u);
-  assert.match(filtersButton[0], /\sdata-live-only[\s>]/u);
+  // Shown in every client once the product is known (src/shell.js); the
+  // Replay Viewer's button opens the rail's Visuals tab (src/main.js).
+  assert.doesNotMatch(filtersButton[0], /\sdata-(?:live|replay)-only[\s>]/u);
+  assert.match(filtersButton[0], /\shidden[\s>]/u);
   assert.match(markup, /id="visual-filters-button"[^>]*>Visual Filters<\/button>/u);
   assert.match(
     openingTag(markup, "visual-filters-drawer")[0],

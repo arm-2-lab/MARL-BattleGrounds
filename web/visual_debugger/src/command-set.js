@@ -42,6 +42,11 @@
  *   skipsTextAndDialogs: boolean,
  *   jobs: Readonly<Record<CommandProduct, CommandEntry | null>>,
  * }>} CommandRow
+ *   skipsTextAndDialogs true marks a key that keeps its job while a button has
+ *   focus (V, B, F, G and N: a focused transport button does not swallow them)
+ *   but never fires from a text field or an open dialog. Space and Enter are
+ *   not marked, so a focused button still takes them. In live play G and N are
+ *   forwarded to Python, so the mark changes only the Replay Viewer for them.
  * @typedef {Readonly<{
  *   row: CommandRow,
  *   entry: CommandEntry,
@@ -144,12 +149,15 @@ export const COMMAND_SET = Object.freeze([
     id: "one_tick",
     keys: ["n"],
     keycaps: "N",
-    // N is one tick: forwarded from the focused battlefield.
+    skipsTextAndDialogs: true,
+    // N is one tick in every client: forwarded from the focused battlefield.
     // In interactive play Python treats it as Space (Manual: Lock In; Policies
     // Only: play one turn), and the page queues and refuses it as it does
-    // Space; in scripted play it shows the next frame, as before.
+    // Space; in scripted play it shows the next frame, as before. In the
+    // Replay Viewer it does exactly what +1 and Arrow Right do (owner, 3 Oct
+    // 2026).
     combat: forwarded("one_tick", "One tick (Lock In; scripted play: next frame)"),
-    replay: local("one_tick", "Play one tick, then settle", "replay_one_tick"),
+    replay: local("one_tick", "Forward one tick, the same as +1", "replay_one_tick"),
   }),
   commandRow({
     id: "tick_step",
@@ -185,6 +193,7 @@ export const COMMAND_SET = Object.freeze([
     id: "ranges",
     keys: ["g"],
     keycaps: "G",
+    skipsTextAndDialogs: true,
     combat: forwarded("ranges", "Ranges"),
     replay: local("ranges", "Ranges", "ranges"),
   }),
@@ -413,7 +422,8 @@ export function registerLocalCommandHandler(handlerName, handler) {
  * Run the local job a key event selects in product, if one is registered.
  *
  * Steps: resolve the key (resolveCommandKey); stop unless its route is "local";
- * for V, B and F stop when the event's target is a text field or sits in an
+ * for the rows marked skipsTextAndDialogs (V, B, F, G and N) stop when the
+ * event's target is a text field or sits in an
  * open dialog, or a modal dialog is open; stop when no handler is registered;
  * otherwise call the handler. The caller decides whether to cancel the event:
  * when this returns true it should call preventDefault and stopPropagation, so

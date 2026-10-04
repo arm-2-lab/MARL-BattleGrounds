@@ -2,11 +2,10 @@
  * @file Check two HUD record contracts in looks/hud.js records().
  *
  * Contracts checked:
- * - Seen And Not Seen (seen_grouping switch): in the Replay Viewer's Agent POV
- *   with the switch on (also when the switch is missing), each team lists the
- *   living champions its POV team sees first, then the unseen, then the
- *   fallen, each group in shown-ID order. Switch off, Oracle View and the
- *   BattleClient keep plain shown-ID order.
+ * - ID order: each team lists its champions in shown-ID order in the Replay
+ *   Viewer's Agent POV (seen, unseen and fallen mixed, so a frame never moves
+ *   when sight changes; the old seen_grouping switch is gone and a stale
+ *   value of it changes nothing), in Oracle View and in the BattleClient.
  * - Full Record chip: the words name the POV agent with the same chip text as
  *   its own strip frame ("Agent 0", never the raw public ID such as
  *   "agent-slot-0"), even when displayIdOf cannot name it, and read
@@ -93,19 +92,11 @@ const shownOrder = (list) =>
 const label = (list) =>
   list.find((record) => record.kind === "hud_view")?.fullRecordLabel;
 
-test("Replay Viewer Agent POV groups seen, then unseen, then fallen by default", () => {
-  const expected = ["0", "3", "1", "2", "6", "5"];
-  assert.deepEqual(shownOrder(records({ sources: sources({}) })), expected);
+test("Agent POV, Oracle View and the BattleClient all keep shown-ID order", () => {
+  const idOrder = ["0", "1", "2", "3", "5", "6"];
+  assert.deepEqual(shownOrder(records({ sources: sources({}) })), idOrder);
   assert.deepEqual(
     shownOrder(records({ sources: sources({}), filters: { seen_grouping: true } })),
-    expected,
-  );
-});
-
-test("switch off, Oracle View and the BattleClient keep shown-ID order", () => {
-  const idOrder = ["0", "1", "2", "3", "5", "6"];
-  assert.deepEqual(
-    shownOrder(records({ sources: sources({}), filters: { seen_grouping: false } })),
     idOrder,
   );
   assert.deepEqual(

@@ -2,6 +2,8 @@
 
 Old developer imports must share exact objects and patched globals. Installed
 browser resources stay alive until serving ends; invalid inputs cannot start a server.
+launch_replay builds every agent's Agent POV work (prepare_agent_pov) before it
+takes the browser resources and serves.
 Installed-wheel HTTP/browser evidence is collected separately at packet closeout.
 """
 
@@ -126,6 +128,10 @@ def test_loaded_replay_uses_resources_until_server_returns(
         episode_details = current_frame
         timeline_marks = current_frame
 
+        def prepare_agent_pov(self) -> bool:
+            calls.append("prepare")
+            return True
+
     @contextmanager
     def scoped_resource(_resource: object) -> Generator[Path]:
         nonlocal active
@@ -161,7 +167,7 @@ def test_loaded_replay_uses_resources_until_server_returns(
     options = resolve_playback_options(argparse.Namespace(no_open=True))
     assert launch.launch_replay(None, options=options, loaded_bundle=bundle) == 17
     assert not active
-    assert calls == ["validate", "resource", "serve", "release"]
+    assert calls == ["validate", "prepare", "resource", "serve", "release"]
 
 
 def test_invalid_replay_does_not_resolve_assets_or_serve(

@@ -1,12 +1,27 @@
 /**
  * @file Exercise artifact loading, replay endpoints, playback controls, reconnect
- * boundaries and exported views in a real browser. Exported PNGs carry version 2
- * provenance, which records all 20 visual filters, and Default Configuration
- * restores the eleven default filters with Ranges off. Metric checks use scalar
- * schema 15 (11,192 measurements in 28 topics and 44 tables); a historical
- * recording shows every Red Zone row as a dash explaining that the rule was not
- * recorded. Exit must flush its replay response and end the server with exit
- * code 0 and no signal, checked strictly by expectServerShutdown.
+ * boundaries and exported views in a real browser. The Rune Scrubber dock reads
+ * "Tick N / M" with its state in plain words ("Paused · Settled", "Playing") and
+ * the exact state in data-transport-state; the Replay Viewer starts at 1x.
+ * Export PNG, Download Metrics CSV and Episode Details sit in the Export menu,
+ * and notices show under the readout (#rune-scrubber-notice). Scores read from
+ * the shared scorebug and results from the Verdict card. The rail's tabs hold
+ * the roster, metrics, Visual Filters and the Technical Frame. Exported PNGs carry
+ * version 4 provenance, which records the 72 battlefield switches and the Whole
+ * Map camera frame, and Default Configuration restores 71 of the 95 listed
+ * switches with Ranges off ("71 Of 96 On"). Layout checks use the smallest
+ * supported screen, 1366 x 768, and the spec keeps no screenshot baseline.
+ * Shift + Arrow Left / Right step ten ticks. A
+ * live frame met on Reconnect fails closed: the page goes offline, the pill
+ * reads "Disconnected" and the notice says "Could not load the match. Press
+ * Reconnect." Deaths are announced in the Fallen panel at the top of
+ * the side rail (never on the arena): newest first, at most 4 rows, each with
+ * its Kill Contributors tip; Agent POV lists only the falls its team saw.
+ * Metric checks use scalar schema 15 (11,192
+ * measurements in 28 topics and 44 tables); a historical recording shows every
+ * Red Zone row as a dash explaining that the rule was not recorded. Exit must
+ * flush its replay response and end the server with exit code 0 and no signal,
+ * checked strictly by expectServerShutdown.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -15,7 +30,8 @@ import { basename, dirname, join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 import { buildMetricSearchIndex, findMeasurements } from "../src/metric-search.js";
-import { VISUAL_FILTER_IDS } from "../src/visual-filters.js";
+import { REPLAY_PNG_RECORDED_FILTER_IDS } from "../src/replay-export.js";
+import { visualFiltersForProduct } from "../src/visual-filters.js";
 import { installWaapiAutopause } from "./support/choreography.js";
 import { expectServerShutdown } from "./support/live-debugger.js";
 import {
@@ -91,12 +107,46 @@ const PAIRED_METRIC_TOPICS = new Set([
   "ultimate_priest",
 ]);
 
+/**
+ * Pick the metric scope through the Metrics tab's Scope switch (it mirrors the
+ * hidden native select) and wait for its status words: "Up To Tick N" or
+ * "Whole Game · Tick N".
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {"cursor" | "final"} scope
+ * @param {number} tick
+ */
+async function selectMetricScope(page, scope, tick) {
+  await page.locator(`#metric-scope-switch [data-value="${scope}"]`).click();
+  await expect(page.locator("#metric-scope")).toHaveValue(scope);
+  await expect(page.locator("#metric-status")).toContainText(
+    scope === "cursor" ? `Up To Tick ${tick}` : `Whole Game · Tick ${tick}`,
+  );
+}
+
+/**
+ * Check the shared scorebug's two scores and their "/ N" target. Owner, 3 Oct
+ * 2026: the scorebug (#scorebug) is the one score display in every client;
+ * the result words are the Verdict card's (completion frame only).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {readonly [string, string]} scores Team A then Team B.
+ * @param {string} target For example "/ 1".
+ */
+async function expectScorebug(page, scores, target) {
+  await expect(page.locator("#score-a")).toHaveText(scores[0]);
+  await expect(page.locator("#score-b")).toHaveText(scores[1]);
+  await expect(page.locator("#scorebug .of")).toHaveText([target, target]);
+}
+
 /** @param {import("@playwright/test").Page} page @param {string} topic @param {string} [view] */
 async function selectMetricTable(page, topic, view = "totals") {
   await page.locator("#metric-selection").selectOption(topic);
   if (PAIRED_METRIC_TOPICS.has(topic)) {
     await expect(page.locator("#metric-view-field")).toBeVisible();
-    await page.locator("#metric-view").selectOption(view);
+    // The Metrics tab's View switch mirrors the hidden native select.
+    await page.locator(`#metric-view-switch [data-value="${view}"]`).click();
+    await expect(page.locator("#metric-view")).toHaveValue(view);
   } else {
     await expect(page.locator("#metric-view-field")).toBeHidden();
     await expect(page.locator("#metric-view")).toHaveValue("single");
@@ -107,6 +157,11 @@ const FIXED_EXPORT_FONT_PATHS = new Set([
   "/assets/fonts/AtkinsonHyperlegible-Regular.woff2",
   "/assets/fonts/AtkinsonHyperlegible-Bold.woff2",
 ]);
+// The switches the Replay Viewer's Visuals tab lists (visual-filters.js owns
+// the list; live-only switches are not shown here).
+const REPLAY_VIEWER_FILTER_IDS = Object.freeze(
+  visualFiltersForProduct("replay_viewer").map(({ id }) => id),
+);
 const REPRESENTATIVE_DISABLED_FILTERS = Object.freeze([
   "aura_fields",
   "ultimate_ability_effects",
@@ -330,9 +385,55 @@ async function expectReplayChoreographySettled(page) {
   );
 }
 
+/**
+ * Check the Rune Scrubber's readout: the visible tick, the transport state and,
+ * when given, the speed and the incoming transition ID. The status line reads
+ * plain words ("Paused · Settled" or "Playing"); the exact state is its
+ * data-transport-state attribute, the speed is the Speed select, and the
+ * incoming transition ID is the Frame tab's Technical Frame (#transition-value).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{position: string, state: "SETTLED" | "PLAYING", rate?: string,
+ *   incomingTransitionId?: string | null}} expected
+ */
+async function expectReplayTransport(page, expected) {
+  await expect(page.locator("#replay-frame-position")).toHaveText(expected.position);
+  await expect(page.locator("#replay-transport-status")).toHaveAttribute(
+    "data-transport-state",
+    expected.state,
+  );
+  await expect(page.locator("#replay-transport-status")).toHaveText(
+    expected.state === "PLAYING" ? "Playing" : "Paused · Settled",
+  );
+  if (expected.rate !== undefined) {
+    await expect(page.locator("#replay-playback-rate")).toHaveValue(expected.rate);
+  }
+  if (expected.incomingTransitionId !== undefined) {
+    await expect(page.locator("#transition-value")).toHaveText(
+      expected.incomingTransitionId ?? "—",
+    );
+  }
+}
+
+/**
+ * Click Reconnect. The button shows only when offline or a resync is needed;
+ * its click handler still loads the newest frame while it is hidden, so a
+ * connected page clicks it through the DOM.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function clickReconnect(page) {
+  await page.locator("#reconnect-button").evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new TypeError("Reconnect button is unavailable.");
+    }
+    button.click();
+  });
+}
+
 /** @param {import("@playwright/test").Page} page
  * @param {{width: number, height: number}} viewport */
-async function captureReplayTransportBaseline(page, viewport) {
+async function expectReplayTransportAtViewport(page, viewport) {
   await page.setViewportSize(viewport);
   await waitForStablePresentation(page);
 
@@ -373,8 +474,12 @@ async function captureReplayTransportBaseline(page, viewport) {
     "aria-pressed",
     "false",
   );
-  await expect(page.locator("#replay-frame-position")).toHaveText("Tick 0 / 5");
-  await expect(page.locator("#replay-playback-rate")).toHaveValue("0.5");
+  // A45: the Replay Viewer starts at 1x speed.
+  await expectReplayTransport(page, {
+    position: "Tick 0 / 5",
+    state: "SETTLED",
+    rate: "1",
+  });
   await expect(page.locator("#replay-playback-rate option")).toHaveText([
     "0.25×",
     "0.50×",
@@ -385,9 +490,6 @@ async function captureReplayTransportBaseline(page, viewport) {
     "1.75×",
     "2.00×",
   ]);
-  await expect(page.locator("#replay-transport-status")).toHaveText(
-    "Frame 0 / 5 · Tick 0 / 5 · 0.50× · SETTLED",
-  );
   const layout = await transport.evaluate((element) => ({
     horizontalOverflow: element.scrollWidth - element.clientWidth,
     viewportEscape: {
@@ -400,11 +502,6 @@ async function captureReplayTransportBaseline(page, viewport) {
   }));
   expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
   expect(layout.viewportEscape).toEqual({ left: 0, right: 0 });
-
-  await expect(transport).toHaveScreenshot(
-    `replay-transport-${viewport.width}x${viewport.height}.png`,
-    { animations: "disabled" },
-  );
 }
 
 /** @param {number} milliseconds */
@@ -595,6 +692,56 @@ async function currentReplayPresentation(page) {
   });
 }
 
+/**
+ * Press outside the metric search area, which closes its lists. The search
+ * sits in the Metrics tab's sticky header, so its open lists lie over the
+ * description below it; the press lands on the Metrics tab button instead,
+ * which is outside the area and already selected, so nothing else changes.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function pressOutsideMetricSearch(page) {
+  await expect(page.locator("#replay-rail-tab-metrics")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.locator("#replay-rail-tab-metrics").click();
+}
+
+/**
+ * Check the Replay Viewer's Fallen panel (#fallen-feed) against the shown
+ * frame. The panel lists the falls of the last 8 ticks, newest first, at most
+ * 4 rows; a row of the shown tick has data-age-ticks "0" and the Fall words
+ * "Tick N: ... took down ..." or "Tick N: ... fell". In Oracle View the shown
+ * tick's rows are its recorded deaths (match_summary.deaths, up to 4); Agent
+ * POV shows only the falls its team saw, so it may show fewer.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {Record<string, any>} presentation The shown frame's presentation.
+ * @param {"researcher" | "pov"} view
+ */
+async function expectFallenPanel(page, presentation, view) {
+  const rows = await page
+    .locator("#fallen-feed .fallen-feed__row")
+    .evaluateAll((items) =>
+      items.map((item) => ({
+        age: Number(item.getAttribute("data-age-ticks")),
+        label: item.getAttribute("aria-label") ?? "",
+      })),
+    );
+  expect(rows.length).toBeLessThanOrEqual(4);
+  const ages = rows.map(({ age }) => age);
+  expect(ages).toEqual([...ages].sort((left, right) => left - right));
+  for (const { age, label } of rows) {
+    expect(age >= 0 && age < 8, label).toBe(true);
+    expect(label).toMatch(/^Tick \d+: .+ (?:took down .+|fell)$/u);
+  }
+  const shownTick = rows.filter(({ age }) => age === 0).length;
+  const deaths = Math.min(4, presentation.match_summary.deaths.length);
+  if (view === "researcher") expect(shownTick).toBe(deaths);
+  else expect(shownTick).toBeLessThanOrEqual(deaths);
+}
+
 /** @param {import("@playwright/test").Page} page
  * @param {"researcher" | "pov"} view */
 async function installReplayView(page, view) {
@@ -611,9 +758,29 @@ async function installReplayView(page, view) {
   );
 }
 
+/**
+ * Open the Rune Scrubber's Export menu. Owner, 3 Oct 2026: Export PNG,
+ * Download Metrics CSV and Episode Details sit inside it, so a press on one
+ * of them first opens the menu (pressing a menu button closes it again).
+ * Notices such as "Exported ..." then show under the readout
+ * (#rune-scrubber-notice) for about 4 s.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function openExportMenu(page) {
+  const button = page.locator("#rune-scrubber-export-button");
+  if ((await button.getAttribute("aria-expanded")) !== "true") {
+    await button.click();
+  }
+  await expect(page.locator("#rune-scrubber-export-menu")).toBeVisible();
+}
+
 /** @param {import("@playwright/test").Page} page */
 async function waitForSettledReplayArtifactActions(page) {
-  await expect(page.locator("#replay-transport-status")).toContainText("SETTLED");
+  await expect(page.locator("#replay-transport-status")).toHaveAttribute(
+    "data-transport-state",
+    "SETTLED",
+  );
   await expect(page.locator("#battlefield-shell")).toHaveAttribute(
     "aria-busy",
     "false",
@@ -681,15 +848,26 @@ async function replayExportSnapshot(page) {
           height: rect.height,
         };
       };
-      const agentBodies = [...battlefield.querySelectorAll(".agent .agent-body")].slice(
-        0,
-        2,
-      );
-      if (agentBodies.length < 2) {
-        throw new TypeError("Replay raster proof requires two painted agent bodies.");
+      // The Runefield token's painted team mark is its solid team ring
+      // (.agent-team-ring, or .champion-ring in the other look), or the Spawn
+      // Ward's dashed team ring while the champion is shielded; the body
+      // circle (.agent-body) is the groove, with no stroke.
+      const teamRings = [
+        ...battlefield.querySelectorAll(
+          ".agent .agent-team-ring, .agent .champion-ring, .agent-spawn-shield .agent-spawn-shield__ring",
+        ),
+      ]
+        .filter(
+          (ring) =>
+            getComputedStyle(ring).display !== "none" &&
+            ring.getBoundingClientRect().width > 0,
+        )
+        .slice(0, 2);
+      if (teamRings.length < 2) {
+        throw new TypeError("Replay raster proof requires two painted team rings.");
       }
-      const rasterCues = agentBodies.map((body, index) =>
-        resolvedRasterCue(body, "stroke", `agent-body-stroke-${index}`),
+      const rasterCues = teamRings.map((ring, index) =>
+        resolvedRasterCue(ring, "stroke", `team-ring-stroke-${index}`),
       );
       if (ranges.getAttribute("aria-pressed") === "true") {
         const rangeRing = battlefield.querySelector(".range-ring");
@@ -766,9 +944,12 @@ function expectedReplayPngProvenance(snapshot) {
         authorized_endpoint_digest_sha256:
           presentation.source.source_authorized_endpoint_digest_sha256,
       };
+  // Provenance version 4 records only the battlefield switches
+  // (REPLAY_PNG_RECORDED_FILTER_IDS) and the camera frame; these tests keep
+  // the camera on Whole Map, which is the painted map from (0, 0).
   return {
     schema_id: "marl_battlegrounds.replay_battlefield_png_provenance",
-    schema_version: 2,
+    schema_version: 4,
     product_kind: "replay_viewer",
     presentation_kind: presentation.presentation_kind,
     authority,
@@ -789,7 +970,16 @@ function expectedReplayPngProvenance(snapshot) {
       pixel_height: dom.clientHeight * 2,
       show_ranges: dom.showRanges,
       selected_public_agent_id: selectedAgent?.public_agent_id ?? null,
-      visual_filters: dom.visualFilters,
+      visual_filters: Object.fromEntries(
+        REPLAY_PNG_RECORDED_FILTER_IDS.map((id) => [id, dom.visualFilters[id]]),
+      ),
+      camera_frame: {
+        camera: "whole_map",
+        min_x: 0,
+        min_y: 0,
+        max_x: scene.map.width,
+        max_y: scene.map.height,
+      },
     },
   };
 }
@@ -928,12 +1118,14 @@ async function exportAndInspectReplayPng(page, options) {
   await waitForSettledReplayArtifactActions(page);
   const before = await replayExportSnapshot(page);
   expect(Object.keys(before.dom.visualFilters).sort()).toEqual(
-    [...VISUAL_FILTER_IDS].sort(),
+    [...REPLAY_VIEWER_FILTER_IDS].sort(),
   );
-  expect(before.dom.shellBorder.top).toBe("1px");
-  expect(before.dom.shellBorder.right).toBe("1px");
-  expect(before.dom.shellBorder.bottom).toBe("1px");
-  expect(before.dom.shellBorder.left).toBe("1px");
+  // The Arena Stage draws no shell border now; the PNG must still never carry
+  // the shell's border color at its edges (checked on the pixels below).
+  expect(before.dom.shellBorder.top).toBe("0px");
+  expect(before.dom.shellBorder.right).toBe("0px");
+  expect(before.dom.shellBorder.bottom).toBe("0px");
+  expect(before.dom.shellBorder.left).toBe("0px");
   const shellBorderMatch = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/u.exec(
     before.dom.shellBorder.color,
   );
@@ -949,11 +1141,12 @@ async function exportAndInspectReplayPng(page, options) {
   if (options.expectRangeCue === true) {
     expect(before.dom.rasterCues.map(({ label }) => label)).toContain("range-ring");
   }
+  // With no shell border the arena fills its shell exactly.
   expect(
-    Math.abs(before.dom.shellRect.width - before.dom.battlefieldRect.width - 2),
+    Math.abs(before.dom.shellRect.width - before.dom.battlefieldRect.width),
   ).toBeLessThanOrEqual(0.01);
   expect(
-    Math.abs(before.dom.shellRect.height - before.dom.battlefieldRect.height - 2),
+    Math.abs(before.dom.shellRect.height - before.dom.battlefieldRect.height),
   ).toBeLessThanOrEqual(0.01);
 
   /** @type {Array<{method: string, path: string}>} */
@@ -968,13 +1161,14 @@ async function exportAndInspectReplayPng(page, options) {
   let download;
   try {
     const downloadPromise = page.waitForEvent("download");
+    await openExportMenu(page);
     await page.locator("#replay-export-png-button").click();
     download = await downloadPromise;
     await expect(page.locator("#replay-export-png-button")).toHaveAttribute(
       "aria-busy",
       "false",
     );
-    await expect(page.locator("#notice")).toContainText("Exported");
+    await expect(page.locator("#rune-scrubber-notice")).toContainText("Exported");
   } finally {
     page.off("request", recordRequest);
   }
@@ -1053,6 +1247,8 @@ async function exportAndInspectReplayPng(page, options) {
 
 /** @param {import("@playwright/test").Page} page */
 async function enableAllReplayVisualFilters(page) {
+  // The Replay Viewer's switches live in the rail's Visuals tab.
+  await page.locator("#replay-rail-tab-visuals").click();
   await page.locator("#visual-filters").evaluate((details) => {
     if (!(details instanceof HTMLDetailsElement)) {
       throw new TypeError("Replay visual-filter disclosure is unavailable.");
@@ -1063,8 +1259,10 @@ async function enableAllReplayVisualFilters(page) {
   if (await enableAll.isEnabled()) {
     await enableAll.click();
   }
+  // Every listed switch plus Ranges: "96 Of 96 On".
+  const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${VISUAL_FILTER_IDS.length + 1} enabled`,
+    `${controls} Of ${controls} On`,
   );
   await expect(enableAll).toBeDisabled();
   await expect(page.locator("#disable-all-visual-filters-button")).toBeEnabled();
@@ -1073,6 +1271,8 @@ async function enableAllReplayVisualFilters(page) {
 /** @param {import("@playwright/test").Page} page
  * @param {{proveVisibleUltimate?: boolean}} [options] */
 async function installRepresentativeReplayPresentationState(page, options = {}) {
+  // The Replay Viewer's switches and Ranges live in the rail's Visuals tab.
+  await page.locator("#replay-rail-tab-visuals").click();
   await page.locator("#visual-filters").evaluate((details) => {
     if (!(details instanceof HTMLDetailsElement)) {
       throw new TypeError("Replay visual-filter disclosure is unavailable.");
@@ -1104,8 +1304,9 @@ async function installRepresentativeReplayPresentationState(page, options = {}) 
     await expect(input).toBeChecked();
     await input.uncheck();
   }
+  const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${VISUAL_FILTER_IDS.length - REPRESENTATIVE_DISABLED_FILTERS.length + 1} enabled`,
+    `${controls - REPRESENTATIVE_DISABLED_FILTERS.length} Of ${controls} On`,
   );
   if (options.proveVisibleUltimate === true) {
     await expect(ultimateEffects).toHaveCount(0);
@@ -1201,17 +1402,18 @@ async function proveReplayLeafExports(page, options) {
   await installReplayView(page, options.view);
   await installFirstFrame(page);
   await enableAllReplayVisualFilters(page);
-  await page.setViewportSize({ width: 960, height: 600 });
+  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+  await page.setViewportSize({ width: 1366, height: 768 });
   await waitForStablePresentation(page);
   await waitForSettledReplayArtifactActions(page);
   expect((await currentReplayPresentation(page)).presentation_kind).toBe(
     options.presentationKind,
   );
   const allOn = await exportAndInspectReplayPng(page, {
-    label: `${options.label} 960x600 all-on`,
+    label: `${options.label} 1366x768 all-on`,
   });
   expect(Object.values(allOn.provenance.presentation.visual_filters)).toEqual(
-    VISUAL_FILTER_IDS.map(() => true),
+    REPLAY_PNG_RECORDED_FILTER_IDS.map(() => true),
   );
 
   const laterFrame = await clickReplayCommand(page, "#replay-next-button");
@@ -1234,7 +1436,7 @@ async function proveReplayLeafExports(page, options) {
   expect(representative.provenance.presentation.selected_public_agent_id).toEqual(
     expect.any(String),
   );
-  for (const id of VISUAL_FILTER_IDS) {
+  for (const id of REPLAY_PNG_RECORDED_FILTER_IDS) {
     expect(representative.provenance.presentation.visual_filters[id]).toBe(
       !REPRESENTATIVE_DISABLED_FILTERS.includes(id),
     );
@@ -1273,9 +1475,10 @@ async function downloadEpisodeDetails(page, sourceMetricPath) {
         new URL(candidate.url()).pathname === EPISODE_DETAILS_ROUTE,
     );
     const downloadPromise = page.waitForEvent("download");
+    await openExportMenu(page);
     await page.locator("#replay-episode-details-button").click();
     [response, download] = await Promise.all([responsePromise, downloadPromise]);
-    await expect(page.locator("#notice")).toContainText("Downloaded");
+    await expect(page.locator("#rune-scrubber-notice")).toContainText("Downloaded");
   } finally {
     page.off("request", record);
   }
@@ -1309,6 +1512,7 @@ async function downloadEpisodeDetails(page, sourceMetricPath) {
 async function proveMissingMetricUi(page) {
   await waitForSettledReplayArtifactActions(page);
   const downloaded = page.waitForEvent("download");
+  await openExportMenu(page);
   await page.locator("#replay-episode-details-button").click();
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe("episode-details.json");
@@ -1317,7 +1521,7 @@ async function proveMissingMetricUi(page) {
   const details = JSON.parse(await readFile(path, "utf8"));
   expect(details.schema_id).toBe("marlbg.replay.episode_details");
   expect(details.context.identity.episode_id).toEqual(expect.any(String));
-  await expect(page.locator("#notice")).toContainText("Downloaded");
+  await expect(page.locator("#rune-scrubber-notice")).toContainText("Downloaded");
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -1396,19 +1600,14 @@ test("canonical complete and partial artifacts join their frame-zero and capture
     page.locator("#replay-timeline #replay-clear-reference-button"),
   ).toHaveCount(0);
   await expect(page.locator("#battlefield-shell #replay-ranges-button")).toHaveCount(0);
-  await expect(page.locator("#replay-visual-key > dt")).toHaveText([
-    "Team A",
-    "Team B",
-    "Selected agent",
-  ]);
-  await expect(page.locator("#live-visual-key")).toHaveAttribute("hidden", "");
-  await expect(page.locator("#replay-visual-key")).not.toHaveAttribute("hidden", "");
+  // The Visual Key is one top-bar button in every client (BattleClient look).
+  await expect(page.locator("#visual-key-button")).toHaveText("Visual Key");
   await expect(page.locator("#roster-details")).toHaveAttribute("open", "");
-  for (const selector of [
-    "#agent-details",
-    "#visual-key",
-    "#technical-frame-details",
-  ]) {
+  // Owner, 3 Oct 2026 (B8): the long agent details card left the Replay
+  // Viewer rail; the Agent tab holds the Champion Frame and the Class Guide.
+  await expect(page.locator("#replay-rail #agent-details")).toHaveCount(0);
+  await expect(page.locator("#replay-rail-agent #champion-frame")).toHaveCount(1);
+  for (const selector of ["#agent-details", "#technical-frame-details"]) {
     await expect(page.locator(selector)).not.toHaveAttribute("open", "");
   }
   await expect(page.locator("#replay-completion-badge")).toHaveText("Complete");
@@ -1418,7 +1617,10 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   await expect(page.locator("#battlefield")).toHaveAttribute("role", "group");
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   const researcherHelp = await expectVisibleInteractiveHelpInventory(page);
-  expect(researcherHelp.disabled.length).toBeGreaterThan(0);
+  // At rest the Replay Viewer shows no disabled control: the dock's buttons
+  // stay pressable at either end (renderReplayTimelineControls disables them
+  // only while the replay is unavailable), and every shown control has help.
+  expect(researcherHelp.disabled).toEqual([]);
   expect(researcherHelp.registered).toContain("#replay-timeline");
   await expect(page.locator("#replay-timeline")).toHaveAttribute(
     "aria-description",
@@ -1458,7 +1660,9 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   await expect(page.getByRole("button", { name: "Submit joint turn" })).toHaveCount(0);
 
   const frameIdentityBeforeResize = frame.frame_id;
-  await page.setViewportSize({ width: 960, height: 600 });
+  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768; below it
+  // the page may run off the screen.
+  await page.setViewportSize({ width: 1366, height: 768 });
   await page.evaluate(
     () =>
       new Promise((resolve) => {
@@ -1471,7 +1675,8 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   }));
   expect(resized.scrollWidth).toBeLessThanOrEqual(resized.clientWidth);
   expect((await currentReplayFrame(page)).frame_id).toBe(frameIdentityBeforeResize);
-  await page.locator("#reconnect-button").click();
+  await expect(page.locator("#reconnect-button")).toBeHidden();
+  await clickReconnect(page);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   expect((await currentReplayFrame(page)).frame_id).toBe(frameIdentityBeforeResize);
 
@@ -1494,9 +1699,7 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   expect(partialTimeline.rows[2].endpoint_kind).toBe("captured_prefix");
   expectResearcherJoin(partialFrame, partialTimeline, 2);
   await expect(partialPage.locator("#replay-frame-position")).toHaveText("Tick 2 / 2");
-  await expect(partialPage.locator("#terminal-badge")).toHaveText(
-    "End of captured prefix",
-  );
+  await expect(partialPage.locator("#terminal-badge")).toHaveText("Recording Ends");
   await expect(partialPage.locator("#replay-completion-badge")).toHaveText("Partial");
   await expect(partialPage.locator("#replay-end-reason")).toHaveText(
     "browser_test_capture_stopped",
@@ -1506,7 +1709,7 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   await partialPage.close();
 });
 
-test("replay transport has permanent visual proof at the minimum supported viewport", async ({
+test("replay transport keeps its controls inside the minimum supported viewport", async ({
   page,
 }) => {
   const complete = requiredViewer(completeViewer, "complete");
@@ -1519,7 +1722,9 @@ test("replay transport has permanent visual proof at the minimum supported viewp
   ]);
   expectResearcherJoin(frame, timeline, 0);
   expect(timeline.final_frame_index).toBe(5);
-  await captureReplayTransportBaseline(page, { width: 960, height: 600 });
+  // Owner, 4 Oct 2026: the 960 x 600 screenshot baseline is dropped, because
+  // the smallest supported screen is 1366 x 768.
+  await expectReplayTransportAtViewport(page, { width: 1366, height: 768 });
   expectNoBrowserErrors(page);
 });
 
@@ -1569,15 +1774,32 @@ test("replay reconnect rejects a valid live frame without crossing the viewer bo
     frameRequestCount += 1;
     await route.fulfill({ json: structuredClone(liveFrame), status: 200 });
   });
-  await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Resync Required");
+  // A notice under the readout shows for 4 s (SCRUBBER_NOTICE_MS), so record
+  // every text it shows.
+  await page.locator("#rune-scrubber-notice").evaluate((notice) => {
+    /** @type {string[]} */
+    const seen = [];
+    /** @type {any} */ (window).noticeTexts = seen;
+    new MutationObserver(() => seen.push(notice.textContent ?? "")).observe(notice, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  });
+  await clickReconnect(page);
+  // A product mismatch marks the page offline as well as stale, and the shared
+  // connection pill reads "Disconnected" before "Resync Required" (its
+  // priority order, shell.js connectionPill).
+  await expect(page.locator("#connection-status")).toHaveText("Disconnected");
   await expect(page.locator("#connection-status")).toHaveAttribute(
     "data-state",
     "offline",
   );
-  await expect(page.locator("#notice")).toContainText(
-    "Raw transport and presentation kinds raced between GET responses",
-  );
+  // The notice tells the person in plain words, not the raw join error
+  // (owner's plain-English rule).
+  await expect
+    .poll(() => page.evaluate(() => /** @type {any} */ (window).noticeTexts))
+    .toContain("Could not load the match. Press Reconnect.");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "pending",
@@ -1654,9 +1876,10 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   };
   page.on("request", recordReplayPost);
 
+  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
   for (const viewport of [
     { width: 1440, height: 900 },
-    { width: 960, height: 600 },
+    { width: 1366, height: 768 },
   ]) {
     await page.setViewportSize(viewport);
     const transport = page.locator("#replay-timeline .replay-timeline__transport");
@@ -1686,14 +1909,21 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await expectReplayFrameIndex(page, 1);
   await expectReplayChoreographySettled(page);
   const frameOne = await currentReplayFrame(page);
-  await expect(page.locator("#replay-transport-status")).toHaveText(
-    `Frame 1 / 5 · Tick 1 / 5 · Incoming Transition ${frameOne.incoming_transition_id} · 0.50× · SETTLED`,
-  );
+  // A45: the Replay Viewer starts at 1x. The status line no longer repeats the
+  // speed or the transition ID (the Speed select and the Technical Frame do).
+  await expectReplayTransport(page, {
+    position: "Tick 1 / 5",
+    state: "SETTLED",
+    rate: "1",
+    incomingTransitionId: frameOne.incoming_transition_id,
+  });
 
-  await page.locator("#replay-playback-rate").selectOption("1");
-  await expect(page.locator("#replay-transport-status")).toContainText(
-    "1.00× · SETTLED",
-  );
+  await page.locator("#replay-playback-rate").selectOption("0.5");
+  await expectReplayTransport(page, {
+    position: "Tick 1 / 5",
+    state: "SETTLED",
+    rate: "0.5",
+  });
 
   const postsBeforePreview = replayPosts.length;
   const statusBeforePreview = await page
@@ -1739,13 +1969,13 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   const postsBeforeRate = replayPosts.length;
   await page.locator("#replay-playback-rate").selectOption("2");
   expect(replayPosts).toHaveLength(postsBeforeRate);
-  await expect(page.locator("#replay-transport-status")).toHaveText(
-    `Frame 4 / 5 · Tick 4 / 5 · Incoming Transition ${frameFour.incoming_transition_id} · 2.00× · SETTLED`,
-  );
+  await expectReplayTransport(page, {
+    position: "Tick 4 / 5",
+    state: "SETTLED",
+    rate: "2",
+    incomingTransitionId: frameFour.incoming_transition_id,
+  });
 
-  await page.locator("#battlefield").focus();
-  await page.keyboard.press("Shift+ArrowLeft");
-  expect(replayPosts).toHaveLength(postsBeforeRate);
   await page.locator("#replay-playback-rate").focus();
   await page.keyboard.press("ArrowLeft");
   expect(replayPosts).toHaveLength(postsBeforeRate);
@@ -1765,18 +1995,34 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await clickReplayCommand(page, "#replay-first-button");
   await clickReplayCommand(page, "#replay-next-button");
   await expectReplayFrameIndex(page, 1);
+  // Shift + Arrow Left is Back Ten Ticks in the one command set (owner's V5
+  // decision): from tick 1 it snaps to tick 0 with one seek.
+  const keyboardBackTen = await pressReplayCommand(page, "Shift+ArrowLeft");
+  expect(keyboardBackTen).toMatchObject({ frame: { cursor: { frame_index: 0 } } });
+  expect(replayPosts.at(-1)?.command).toEqual({
+    command_type: "absolute_seek",
+    frame_index: 0,
+  });
+  await expectReplayFrameIndex(page, 0);
+  await clickReplayCommand(page, "#replay-next-button");
+  await expectReplayFrameIndex(page, 1);
 
   const postsBeforePausedReplay = replayPosts.length;
   await page.locator("#replay-play-pause-button").click();
-  await expect(page.locator("#replay-transport-status")).toHaveText(
-    `Frame 1 / 5 · Tick 1 / 5 · Incoming Transition ${frameOne.incoming_transition_id} · 2.00× · PLAYING`,
-  );
+  await expectReplayTransport(page, {
+    position: "Tick 1 / 5",
+    state: "PLAYING",
+    rate: "2",
+    incomingTransitionId: frameOne.incoming_transition_id,
+  });
   await page.locator("#replay-play-pause-button").click();
   expect(replayPosts).toHaveLength(postsBeforePausedReplay);
   await expectReplayChoreographySettled(page);
-  await expect(page.locator("#replay-transport-status")).toContainText(
-    "2.00× · SETTLED",
-  );
+  await expectReplayTransport(page, {
+    position: "Tick 1 / 5",
+    state: "SETTLED",
+    rate: "2",
+  });
 
   await page.route("**/api/replay/command", async (route) => {
     await delay(250);
@@ -1793,12 +2039,14 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   expect(continuedRequest.postDataJSON().command).toEqual({
     command_type: "next_frame",
   });
+  // Aura Fields is off by default in the V5 switch list, so the switch flips
+  // to its other state: a real change during the request stops playback.
   const cancellationFilter = page.locator('input[data-visual-filter-id="aura_fields"]');
   await cancellationFilter.evaluate((element) => {
     if (!(element instanceof HTMLInputElement)) {
       throw new TypeError("Visual filter input is unavailable.");
     }
-    element.checked = false;
+    element.checked = !element.checked;
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
   const continuedResponse = await continuedResponsePromise;
@@ -1807,14 +2055,16 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   expect(replayPosts.at(-1)?.command).toEqual({ command_type: "next_frame" });
   await expectReplayFrameIndex(page, 2);
   await expectReplayChoreographySettled(page);
-  await expect(page.locator("#replay-transport-status")).toContainText(
-    "2.00× · SETTLED",
-  );
+  await expectReplayTransport(page, {
+    position: "Tick 2 / 5",
+    state: "SETTLED",
+    rate: "2",
+  });
   await cancellationFilter.evaluate((element) => {
     if (!(element instanceof HTMLInputElement)) {
       throw new TypeError("Visual filter input is unavailable.");
     }
-    element.checked = true;
+    element.checked = !element.checked;
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
@@ -1851,16 +2101,20 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
 
   const postsBeforeFinalReplay = replayPosts.length;
   await page.locator("#replay-play-pause-button").click();
-  await expect(page.locator("#replay-transport-status")).toContainText(
-    "2.00× · PLAYING",
+  await expect(page.locator("#replay-transport-status")).toHaveAttribute(
+    "data-transport-state",
+    "PLAYING",
   );
-  await expect(page.locator("#replay-transport-status")).toContainText(
-    "2.00× · SETTLED",
-  );
+  await expectReplayTransport(page, {
+    position: "Tick 5 / 5",
+    state: "SETTLED",
+    rate: "2",
+  });
   expect(replayPosts).toHaveLength(postsBeforeFinalReplay);
   await expect(page.locator("#replay-play-pause-button")).toBeEnabled();
 
-  await page.locator("#reconnect-button").click();
+  await expect(page.locator("#reconnect-button")).toBeHidden();
+  await clickReconnect(page);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expectReplayFrameIndex(page, 5);
   await expect(page.locator("#replay-playback-rate")).toHaveValue("2");
@@ -1937,10 +2191,11 @@ test("basic_support Agent POV playback visibly dwells for Hunter and Priest", as
     await expectReplayFrameIndex(page, 1);
     const frame = await currentReplayFrame(page);
     expect(frame.public_agent_id).toBe(publicAgentId);
-    await expect(page.locator("#replay-transport-status")).toContainText("Frame 1 / 2");
-    await expect(page.locator("#replay-transport-status")).toContainText(
-      "0.25× · PLAYING",
-    );
+    await expectReplayTransport(page, {
+      position: "Tick 1 / 2",
+      state: "PLAYING",
+      rate: "0.25",
+    });
     const eventIds = await visibleAnimatedEventIds(frame.incoming_pov_transition_id);
     const presentation = await currentReplayPresentation(page);
     const enemyHunterAttack = presentation.visual_events.events.find(
@@ -1982,7 +2237,7 @@ test("basic_support Agent POV playback visibly dwells for Hunter and Priest", as
     const hunterEventIds = await proveRecipientFrameOneDwell("1");
 
     await expectReplayFrameIndex(page, 2);
-    await expect(page.locator("#replay-transport-status")).toContainText("Frame 2 / 2");
+    await expect(page.locator("#replay-frame-position")).toHaveText("Tick 2 / 2");
     expect(replayCommands).toEqual([
       { command_type: "next_frame" },
       { command_type: "next_frame" },
@@ -2060,7 +2315,8 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       (response) =>
         new URL(response.url()).pathname === "/api/replay/metrics/catalog.json",
     );
-    await page.locator("#evaluation-metrics > summary").click();
+    // The metrics card lives in the rail's Metrics tab, which opens it.
+    await page.locator("#replay-rail-tab-metrics").click();
     expect((await analysisResponse).status()).toBe(200);
     const catalogResult = await catalogResponse;
     expect(catalogResult.status()).toBe(200);
@@ -2163,8 +2419,9 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       await expect(page.locator("#metric-selection")).toHaveValue(selection);
       await expect(page.locator("#metric-scope")).toHaveValue(scope);
       await expect(page.locator("#connection-status")).toHaveText("Connected");
+      // Panel Tokens names each champion with its token chip, "Agent 3".
       const labels = await page.locator(".roster-id").allTextContents();
-      expect(labels.every((label) => /^Agent ID [0-9]$/u.test(label))).toBe(true);
+      expect(labels.every((label) => /^Agent [0-9]$/u.test(label))).toBe(true);
     }
     expect(requests).toHaveLength(initialRequests);
     await expect(page.locator("#metric-rows thead th")).toHaveText([
@@ -2421,7 +2678,9 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
         ).toHaveText(effect);
       }
       await selectMetricTable(page, "ultimate_warrior");
-      await page.setViewportSize({ width: 640, height: 900 });
+      // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768, so the
+      // metric help must stay inside that window.
+      await page.setViewportSize({ width: 1366, height: 768 });
       const narrowMeasure = page.locator(
         '[data-metric="team_a_warrior_charge_applications"] .metric-measure',
       );
@@ -2438,8 +2697,8 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       if (narrowTooltip === null) throw new Error("The metric help is missing.");
       expect(narrowTooltip.x).toBeGreaterThanOrEqual(0);
       expect(narrowTooltip.y).toBeGreaterThanOrEqual(0);
-      expect(narrowTooltip.x + narrowTooltip.width).toBeLessThanOrEqual(640);
-      expect(narrowTooltip.y + narrowTooltip.height).toBeLessThanOrEqual(900);
+      expect(narrowTooltip.x + narrowTooltip.width).toBeLessThanOrEqual(1366);
+      expect(narrowTooltip.y + narrowTooltip.height).toBeLessThanOrEqual(768);
       await page.screenshot({
         path: testInfo.outputPath(`ultimate-activation-narrow-${pov}.png`),
       });
@@ -2608,13 +2867,15 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       const hiddenHealing = page.locator(
         '#metric-search-results [data-measurement="agent_0_healing_done"]',
       );
-      await expect(hiddenHealing).toContainText("Not applicable to this roster");
+      // The tag is a label, so it reads in Title Case (owner's label rule).
+      await expect(hiddenHealing).toContainText("Not Applicable To This Roster");
       await hiddenHealing.click();
       await expect(page.locator("#metric-search-definition")).toBeFocused();
       await expect(page.locator("#metric-search-definition")).toContainText(
         "Agent ID 0 cannot provide this healing with Basic or Ultimate abilities.",
       );
-      await page.locator("#metric-description").click();
+      await pressOutsideMetricSearch(page);
+      await expect(page.locator("#metric-search-results")).toBeHidden();
       await selectMetricTable(page, "priest_rescue");
       await expect(
         page.locator('[data-metric="agent_2_ultimate_rescue_contributions"]'),
@@ -3049,7 +3310,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await metricSearch.focus();
     await metricSearch.press("ArrowDown");
     await expect(selectedResult).toHaveCount(1);
-    await page.locator("#metric-description").click();
+    await pressOutsideMetricSearch(page);
     await expect(page.locator("#metric-search-results")).toBeHidden();
     await expect(page.locator("#metric-search-more")).toBeHidden();
     await expect(page.locator("#metric-search-definition")).toBeHidden();
@@ -3074,7 +3335,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await page.locator("#metric-search-more").click();
     await expect(page.locator("#metric-search-results")).toBeVisible();
     await expect(page.locator("#metric-search-results button")).toHaveCount(60);
-    await page.locator("#metric-description").click();
+    await pressOutsideMetricSearch(page);
     await expect(page.locator("#metric-search-results")).toBeHidden();
     await page.locator("#metric-search").focus();
     await expect(page.locator("#metric-search-results")).toBeVisible();
@@ -3112,12 +3373,16 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       await page.keyboard.press("Escape");
       const destination = page.locator(`[data-metric="${name}"]`);
       await expect(page.locator(".metric-search-match")).toHaveCount(1);
-      await expect(destination).toHaveCSS("outline-color", "rgb(240, 255, 79)");
-      await expect(destination).toHaveCSS("outline-width", "2px");
-      await expect(destination).toHaveCSS("outline-offset", "-2px");
+      // The ledger's found mark: a Moon Silver bar on the left and a soft
+      // silver fill, with no outline (src/styles/ledger.css).
+      await expect(destination).toHaveCSS("outline-width", "0px");
+      await expect(destination).toHaveCSS(
+        "box-shadow",
+        "rgb(201, 212, 232) 2px 0px 0px 0px inset",
+      );
       await expect(destination).toHaveCSS(
         "background-color",
-        "rgba(240, 255, 79, 0.1)",
+        "rgba(201, 212, 232, 0.14)",
       );
       await page.locator("#evaluation-metrics").screenshot({
         path: testInfo.outputPath(`search-destination-${view}.png`),
@@ -3162,7 +3427,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       await page.locator("#metric-search-definition").click();
       await expect(page.locator("#metric-search-definition")).toBeVisible();
       await expect(page.locator("#metric-search-results")).toBeVisible();
-      await page.locator("#metric-description").click();
+      await pressOutsideMetricSearch(page);
       await expect(page.locator("#metric-search-results")).toBeHidden();
       await expect(page.locator("#metric-search-more")).toBeHidden();
       await expect(page.locator("#metric-search-definition")).toBeHidden();
@@ -3194,6 +3459,8 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await page.locator("#metric-search").fill("");
     await selectMetricTable(page, "controlled_damage");
 
+    // Enable All and Default Configuration sit in the rail's Visuals tab.
+    await page.locator("#replay-rail-tab-visuals").click();
     await page.locator("#enable-all-visual-filters-button").click();
     await page.locator("#default-visual-filters-button").focus();
     await page.keyboard.press("Enter");
@@ -3212,16 +3479,29 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await expect(page.locator("#visual-filter-death-announcer")).toBeChecked();
     await expect(page.locator("#visual-filter-cooldown-effects")).toBeChecked();
     await expect(page.locator("#visual-filter-red-zone-floors")).toBeChecked();
-    await expect(page.locator("#visual-filter-count")).toHaveText("11 enabled");
+    // Every listed switch at its shipped default. Default Configuration never
+    // touches Ranges (filter-controls.js), so the Ranges that Enable All
+    // turned on stays on: "72 Of 96 On".
+    const shippedOn = visualFiltersForProduct("replay_viewer").filter(
+      ({ defaultEnabled }) => defaultEnabled,
+    ).length;
+    await expect(page.locator("#visual-filter-count")).toHaveText(
+      `${shippedOn + 1} Of ${REPLAY_VIEWER_FILTER_IDS.length + 1} On`,
+    );
     await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
       "aria-pressed",
-      "false",
+      "true",
     );
+    await page.locator("#replay-rail-tab-metrics").click();
     await page.locator("#metric-rows tbody").focus();
     await page.mouse.move(0, 0);
     await expect(page.locator("#visual-tooltip")).toBeHidden();
-    for (const width of [1440, 820, 640]) {
-      await page.setViewportSize({ width, height: 900 });
+    // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+    for (const [width, height] of [
+      [1440, 900],
+      [1366, 768],
+    ]) {
+      await page.setViewportSize({ width, height });
       await expect(
         page.locator("#metric-rows thead").getByRole("columnheader"),
       ).toHaveCount(3);
@@ -3259,74 +3539,70 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await page.evaluate(() => {
       document.documentElement.style.zoom = "2";
     });
+    // The rows have no scroll of their own: the Metrics tab's panel holds the
+    // one scroll (ledger.css). Focusing the rows already scrolls that panel
+    // part way, so the check is that End takes it to its bottom.
+    const panelSpaceBelow = () =>
+      page.locator("#evaluation-metrics").evaluate((card) => {
+        const panel = card.closest(".ledger-rail__panel");
+        if (!panel) throw new Error("Expected the Metrics tab's panel.");
+        return panel.scrollHeight - panel.clientHeight - panel.scrollTop;
+      });
     await page.locator("#metric-rows tbody").focus();
+    expect(await panelSpaceBelow()).toBeGreaterThan(1);
     await page.keyboard.press("End");
-    await expect
-      .poll(() => page.locator("#metric-rows tbody").evaluate((body) => body.scrollTop))
-      .toBeGreaterThan(0);
+    await expect.poll(panelSpaceBelow).toBeLessThanOrEqual(1);
     await page
       .locator("#evaluation-metrics")
       .screenshot({ path: testInfo.outputPath("metric-panel-200-percent.png") });
     await page.evaluate(() => {
       document.documentElement.style.zoom = "";
     });
+    // The death announcer is the Fallen panel at the top of the side rail now
+    // (page chrome, never on the arena; Runefield "Death, Respawn And Kills").
+    // Its switch sits in the Visuals tab.
+    await page.locator("#replay-rail-tab-visuals").click();
     await page.locator("#visual-filter-death-announcer").check();
     await page.locator("#replay-playback-rate").selectOption("0.25");
+    const fallenRows = page.locator("#fallen-feed .fallen-feed__row");
     for (const view of /** @type {const} */ (["researcher", "pov"])) {
       await installReplayView(page, view);
       await clickReplayCommand(page, "#replay-first-button");
-      await expect(page.locator(".combat-death-announcement")).toHaveCount(0);
+      await expect(fallenRows).toHaveCount(0);
       await page.locator("#replay-play-pause-button").click();
-      const announcements = page.locator(".combat-death-announcement");
-      await expect(announcements.first()).toBeVisible();
-      await expect
-        .poll(() =>
-          announcements
-            .first()
-            .evaluate((card) =>
-              Number(
-                getComputedStyle(/** @type {Element} */ (card.parentElement)).opacity,
-              ),
-            ),
-        )
-        .toBeGreaterThan(0.5);
-      const presentation = await currentReplayPresentation(page);
-      await expect(page.locator(".combat-death-announcement__agent")).toHaveCount(
-        presentation.match_summary.deaths.length,
-      );
-      await expect(announcements).toHaveCount(
-        new Set(
-          presentation.match_summary.deaths.map(
-            (/** @type {{team_id: number, killing_team_id: number | null}} */ death) =>
-              death.killing_team_id ?? death.team_id,
-          ),
-        ).size,
-      );
+      if (view === "researcher") {
+        await expect(fallenRows.first()).toBeVisible();
+      } else {
+        // Agent POV lists only the falls its team saw. Team A never sees
+        // Agent 5 fall in this replay, so the panel stays empty while that
+        // tick plays.
+        await expect(page.locator("#replay-frame-position")).toHaveText("Tick 1 / 1");
+        await expect(fallenRows).toHaveCount(0);
+      }
       await page.screenshot({
         path: testInfo.outputPath(`death-announcer-${view}.png`),
         fullPage: true,
       });
       await page.locator("#replay-play-pause-button").click();
       // The established Replay Pause behavior settles the recorded snapshot.
-      await expect(page.locator("#replay-transport-status")).toContainText("SETTLED");
-      await expect(announcements.first()).toBeVisible();
-      expect((await currentReplayPresentation(page)).match_summary.deaths).toEqual(
-        presentation.match_summary.deaths,
+      await expect(page.locator("#replay-transport-status")).toHaveAttribute(
+        "data-transport-state",
+        "SETTLED",
       );
+      await expectFallenPanel(page, await currentReplayPresentation(page), view);
       await page.locator("#replay-play-pause-button").click();
       await expect(
         page.locator("#battlefield .combat-choreography[data-state=playing]"),
       ).toHaveCount(1);
-      await expect(announcements.first()).toBeVisible();
       await expectReplayChoreographySettled(page);
       // Reaching the end also installs the final static transition summary.
       await expect(page.locator("html")).toHaveAttribute(
         "data-render-policy",
         "replay_static",
       );
-      await expect(announcements.first()).toBeVisible();
+      await expectFallenPanel(page, await currentReplayPresentation(page), view);
       await clickReplayCommand(page, "#replay-first-button");
-      await expect(announcements).toHaveCount(0);
+      await expect(fallenRows).toHaveCount(0);
     }
     expectNoBrowserErrors(page);
   } finally {
@@ -3353,7 +3629,9 @@ test("all eight scenario identities and dense authoritative deaths render in bot
         (
           /** @type {{global_slot: number, class_id: number, configured_team_id: number}} */ row,
         ) =>
-          `Agent ID ${row.global_slot} · ${classes[row.class_id]} · Team ${row.configured_team_id === 1 ? "A" : "B"}`,
+          // Panel Tokens (on by default) names each champion with its token
+          // chip, "Agent 3"; the chip's own label keeps "Agent ID 3".
+          `Agent ${row.global_slot} · ${classes[row.class_id]} · Team ${row.configured_team_id === 1 ? "A" : "B"}`,
       );
       const variant = [3, 5, 8].includes(scenarioId) ? "beta" : "alpha";
       const initialPov = scenarioId <= 2;
@@ -3370,8 +3648,9 @@ test("all eight scenario identities and dense authoritative deaths render in bot
       for (const view of /** @type {const} */ (["researcher", "pov"])) {
         await installReplayView(page, view);
         // New replays record each champion's controller name; the Viewer
-        // shows it exactly as recorded ("tdm-beta"), as live play did.
-        await expect(page.locator("#match-team-b")).toContainText(`tdm-${variant}`);
+        // shows it exactly as recorded ("tdm-beta"), as live play did. The
+        // team line is the shared scorebug's controller line (#ctl-b).
+        await expect(page.locator("#ctl-b")).toContainText(`tdm-${variant}`);
         const identities = await page
           .locator(".roster-identity")
           .evaluateAll((rows) =>
@@ -3405,130 +3684,110 @@ test("all eight scenario identities and dense authoritative deaths render in bot
     await installWaapiAutopause(page);
     viewer = await startReplayViewer({ replayPath: acceptance.dense });
     await openReplay(page, viewer.url);
+    // The death announcer is the Fallen panel at the top of the side rail now
+    // (page chrome, never on the arena; Runefield "Death, Respawn And Kills"):
+    // newest first, at most 4 rows, each with its Kill Contributors tip. Its
+    // switch sits in the Visuals tab.
+    await page.locator("#replay-rail-tab-visuals").click();
     await page.locator("#visual-filter-death-announcer").check();
-    for (const width of [1440, 820]) {
-      await page.setViewportSize({ width, height: 900 });
+    const fallenRows = page.locator("#fallen-feed .fallen-feed__row");
+    // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1366, height: 768 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const width = viewport.width;
       for (const view of /** @type {const} */ (["researcher", "pov"])) {
         await installReplayView(page, view);
         await clickReplayCommand(page, "#replay-first-button");
-        await expect(page.locator(".combat-death-announcement")).toHaveCount(0);
+        await expect(fallenRows).toHaveCount(0);
         await page.locator("#replay-play-pause-button").click();
-        const cards = page.locator(".combat-death-announcement");
-        await expect(cards).toHaveCount(2);
-        await cards.first().evaluate(async (card) => {
-          const owner = card.parentElement;
-          const battlefield = card.closest("svg");
-          const animation = owner?.getAnimations()[0];
-          if (!animation?.effect || !battlefield)
-            throw new Error("The authoritative death animation is unavailable.");
-          const timing = animation.effect.getTiming();
-          const time = Number(timing.delay) + Number(timing.duration) / 2;
-          const animations = battlefield
-            .getAnimations({ subtree: true })
-            .filter(({ id }) => id.startsWith("mbg:"));
-          await document.fonts.ready;
-          for (const owned of animations) {
-            owned.pause();
-            owned.currentTime = time;
-          }
-          await Promise.all(animations.map(({ ready }) => ready));
-          await new Promise((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(resolve)),
-          );
-        });
+        await expect(fallenRows).toHaveCount(4);
         const presentation = await currentReplayPresentation(page);
         expect(presentation.match_summary.scores).toEqual([5, 5]);
         expect(presentation.match_summary.deaths).toHaveLength(10);
-        for (const [team, start] of /** @type {const} */ ([
-          ["a", 5],
-          ["b", 0],
-        ])) {
-          await expect(
-            page.locator(
-              `.combat-death-announcement--team-${team} .combat-death-announcement__agent`,
-            ),
-          ).toHaveText(
-            Array.from(
-              { length: 5 },
-              (_, slot) =>
-                `Agent ID ${start + slot} · Mage · Team ${team === "a" ? "B" : "A"}`,
-            ),
-          );
-        }
-        await expect(
-          page.locator(".combat-death-announcement__contributor"),
-        ).toHaveCount(0);
-        const geometry = await cards.evaluateAll((elements) =>
-          elements.map((card) => {
-            const panel = card.querySelector("rect")?.getBoundingClientRect();
-            const field = card.closest("svg")?.getBoundingClientRect();
-            if (!panel || !field) throw new Error("Missing death card geometry.");
-            return {
-              left: panel.left,
-              right: panel.right,
-              contained:
-                panel.left >= field.left &&
-                panel.right <= field.right &&
-                panel.top >= field.top &&
-                panel.bottom <= field.bottom,
-              readable: Array.from(card.querySelectorAll("text")).every((text) => {
-                const box = text.getBoundingClientRect();
-                return (
-                  box.left >= panel.left &&
-                  box.right <= panel.right &&
-                  box.top >= panel.top &&
-                  box.bottom <= panel.bottom
-                );
-              }),
-              opacity: Number(
-                getComputedStyle(/** @type {Element} */ (card.parentElement)).opacity,
-              ),
-            };
-          }),
+        // Ten falls on one tick: the panel keeps 4, all from this tick, each
+        // naming the one opposite Mage who struck it (victim ID v, killer
+        // v + 5 or v - 5).
+        const rows = await fallenRows.evaluateAll((items) =>
+          items.map((item) => ({
+            age: item.getAttribute("data-age-ticks"),
+            label: item.getAttribute("aria-label") ?? "",
+          })),
         );
-        expect(
-          geometry.every(
-            (card) => card.contained && card.readable && card.opacity > 0.5,
-          ),
-        ).toBe(true);
-        expect(geometry[0].right).toBeLessThan(geometry[1].left);
-        for (const team of ["a", "b"]) {
-          const victims = page.locator(
-            `.combat-death-announcement--team-${team} .combat-death-announcement__victim`,
+        /** @type {Array<{killer: number, victim: number}>} */
+        const credits = [];
+        for (const row of rows) {
+          expect(row.age).toBe("0");
+          const match = /^Tick \d+: Mage · ID (\d) took down Mage · ID (\d)$/u.exec(
+            row.label,
           );
-          await expect(victims).toHaveCount(5);
-          for (let slot = 0; slot < 5; slot++) {
-            const victim = victims.nth(slot);
-            await expect(victim).toHaveAttribute("tabindex", "0");
-            await victim.locator("rect").hover();
-            await expect(page.locator("#visual-tooltip")).toBeVisible();
-            await expect(page.locator("#visual-tooltip")).toContainText(
-              "Kill Contributors",
-            );
-            await expect(page.locator("#visual-tooltip")).toContainText(
-              `Agent ID ${slot + (team === "a" ? 5 : 0)} · Mage · Team ${team === "a" ? "B" : "A"}`,
-            );
-            await expect(page.locator("#visual-tooltip")).toContainText(
-              `Agent ID ${slot + (team === "a" ? 0 : 5)} · Mage · Team ${team.toUpperCase()}`,
-            );
-            await expect(page.locator("#visual-tooltip")).not.toContainText(
-              `Agent ID ${((slot + 1) % 5) + (team === "a" ? 0 : 5)} · Mage · Team ${team.toUpperCase()}`,
-            );
-          }
+          expect(match, row.label).not.toBeNull();
+          const killer = Number(match?.[1]);
+          const victim = Number(match?.[2]);
+          expect((victim + 5) % 10, row.label).toBe(killer);
+          credits.push({ killer, victim });
+        }
+        for (const [index, { killer, victim }] of credits.entries()) {
+          await fallenRows.nth(index).hover();
+          await expect(page.locator("#visual-tooltip")).toBeVisible();
+          await expect(page.locator("#visual-tooltip")).toContainText(
+            "Kill Contributors",
+          );
+          await expect(page.locator("#visual-tooltip")).toContainText(
+            `Mage · ID ${victim}`,
+          );
+          await expect(page.locator("#visual-tooltip")).toContainText(
+            `Mage · ID ${killer}`,
+          );
+          await expect(page.locator("#visual-tooltip")).not.toContainText(
+            `Mage · ID ${(killer + 1) % 10}`,
+          );
         }
         await page.mouse.move(0, 0);
-        await cards
-          .first()
-          .locator(".combat-death-announcement__victim")
-          .first()
-          .focus();
+        await fallenRows.first().focus();
         await expect(page.locator("#visual-tooltip")).toBeVisible();
         await expect(page.locator("#visual-tooltip")).toContainText(
-          "Agent ID 5 · Mage · Team B",
+          `Mage · ID ${credits[0].victim}`,
         );
-        await expect(page.locator("#visual-tooltip")).toContainText(
-          "Agent ID 0 · Mage · Team A",
-        );
+        // The panel stays on screen, reads whole and never covers the arena.
+        const geometry = await page.locator("#fallen-feed").evaluate((panel) => {
+          const box = panel.getBoundingClientRect();
+          const field = document.querySelector("#battlefield")?.getBoundingClientRect();
+          if (!field) throw new Error("Missing battlefield geometry.");
+          return {
+            onScreen:
+              box.left >= 0 &&
+              box.top >= 0 &&
+              box.right <= document.documentElement.clientWidth &&
+              box.bottom <= document.documentElement.clientHeight,
+            coversArena:
+              box.left < field.right &&
+              box.right > field.left &&
+              box.top < field.bottom &&
+              box.bottom > field.top,
+            insideArenaSvg: panel.closest("svg") !== null,
+            readable: Array.from(panel.querySelectorAll(".fallen-feed__row")).every(
+              (row) => {
+                const rowBox = row.getBoundingClientRect();
+                const line = row.querySelector(".fallen-feed__line");
+                const lineBox = line?.getBoundingClientRect();
+                return (
+                  lineBox !== undefined &&
+                  lineBox.left >= rowBox.left - 0.5 &&
+                  lineBox.right <= rowBox.right + 0.5
+                );
+              },
+            ),
+          };
+        });
+        expect(geometry).toEqual({
+          onScreen: true,
+          coversArena: false,
+          insideArenaSvg: false,
+          readable: true,
+        });
         // Escape also clears the replay reference and pauses that user command.
         // Transfer focus without issuing a command before testing Pause itself.
         await page.locator("#replay-play-pause-button").focus();
@@ -3545,8 +3804,8 @@ test("all eight scenario identities and dense authoritative deaths render in bot
           "data-render-policy",
           "replay_static",
         );
-        // Pausing keeps this transition's evidence, like the other static cues.
-        await expect(cards).toHaveCount(2);
+        // Pausing keeps this tick's falls, like the other static cues.
+        await expect(fallenRows).toHaveCount(4);
         expect((await currentReplayPresentation(page)).match_summary.deaths).toEqual(
           presentation.match_summary.deaths,
         );
@@ -3556,35 +3815,12 @@ test("all eight scenario identities and dense authoritative deaths render in bot
               document.getAnimations().filter(({ id }) => id.startsWith("mbg:")).length,
           ),
         ).toBe(0);
-        const textOverlaps = await page.locator("#battlefield").evaluate((field) => {
-          const panels = [
-            ...field.querySelectorAll(".combat-death-announcement rect"),
-          ].map((panel) => panel.getBoundingClientRect());
-          const labels = [
-            ...field.querySelectorAll(".combat-net__recipient, .combat-net__label"),
-          ];
-          if (labels.length === 0)
-            throw new Error("The dense replay has no scrolling text.");
-          return labels
-            .filter((label) => {
-              const text = label.getBoundingClientRect();
-              return panels.some(
-                (panel) =>
-                  text.left < panel.right &&
-                  text.right > panel.left &&
-                  text.top < panel.bottom &&
-                  text.bottom > panel.top,
-              );
-            })
-            .map((label) => label.textContent);
-        });
-        expect(textOverlaps).toEqual([]);
         await page.screenshot({
           path: testInfo.outputPath(`dense-deaths-paused-${width}-${view}.png`),
           fullPage: true,
         });
         await clickReplayCommand(page, "#replay-first-button");
-        await expect(cards).toHaveCount(0);
+        await expect(fallenRows).toHaveCount(0);
       }
     }
     expectNoBrowserErrors(page);
@@ -3642,21 +3878,21 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
   }
   try {
     await openReplay(page, viewer.url);
-    await expect(page.locator("#match-task")).toContainText("Task mode: TDM");
-    await expect(page.locator("#match-team-a")).toContainText(
+    // The shared scorebug: First To 1 (Team Deathmatch), each team's
+    // controller line and score; no result before the Verdict card.
+    await expect(page.locator("#scorebug")).toContainText("First To 1");
+    await expect(page.locator("#ctl-a")).toContainText(
       "Policy 0 / Policy 1 / Policy 2",
     );
-    await expect(page.locator("#match-team-b")).toContainText("Policy 5 / Policy 6");
-    await expect(page.locator(".match-scoreboard__score")).toHaveText([
-      "Score: 0/1",
-      "Score: 0/1",
-    ]);
-    await expect(page.locator(".match-scoreboard__result")).toHaveCount(0);
+    await expect(page.locator("#ctl-b")).toContainText("Policy 5 / Policy 6");
+    await expectScorebug(page, ["0", "0"], "/ 1");
+    await expect(page.locator("#battlefield .herald--verdict")).toHaveCount(0);
     const initialMetrics = await holdMetricResponse(
       "**/api/replay/metrics/0/cursor.json",
     );
     try {
-      await page.locator("#evaluation-metrics > summary").click();
+      // The metrics card lives in the rail's Metrics tab, which opens it.
+      await page.locator("#replay-rail-tab-metrics").click();
       await initialMetrics.requested;
       await expect(
         page.getByRole("progressbar", { name: "Preparing replay metrics" }),
@@ -3664,7 +3900,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       expect(await page.locator("#metric-progress").getAttribute("value")).toBeNull();
       await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "true");
       await expect(page.locator("#metric-status")).toContainText(
-        "Preparing metrics. Longer replays can take longer.",
+        "Preparing Metrics · Longer Games Take Longer.",
       );
       await expect(page.locator("#evaluation-metrics")).toContainText(
         "Metrics summarize the captured game.",
@@ -3674,9 +3910,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
     } finally {
       await initialMetrics.release();
     }
-    await expect(page.locator("#metric-status")).toContainText(
-      "Up to Current Tick · tick 0",
-    );
+    await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
     await expect(page.locator("#metric-progress")).toBeHidden();
     await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "false");
     expect(
@@ -3694,17 +3928,16 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       ["cursor", 0],
       ["final", 1],
     ])) {
-      await page.locator("#metric-scope").selectOption(scope);
-      await expect(page.locator("#metric-status")).toContainText(
-        `${scope === "cursor" ? "Up to Current Tick" : "Entire Episode"} · tick ${frameIndex}`,
-      );
+      await selectMetricScope(page, scope, frameIndex);
       await waitForSettledReplayArtifactActions(page);
       const heldCsv =
         scope === "cursor"
           ? await holdMetricResponse("**/api/replay/metrics/0/cursor.csv")
           : null;
-      if (heldCsv !== null) await page.locator("#evaluation-metrics > summary").click();
+      // Leaving the Metrics tab closes its card (the CSV must not need it).
+      if (heldCsv !== null) await page.locator("#replay-rail-tab-roster").click();
       const downloaded = page.waitForEvent("download");
+      await openExportMenu(page);
       await page.locator("#replay-download-metrics-button").click();
       if (heldCsv !== null) {
         try {
@@ -3722,8 +3955,9 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
             "role",
             "status",
           );
+          // The same plain status as the Metrics tab's own preparing line.
           await expect(page.locator("#replay-metrics-preparation")).toContainText(
-            "Longer replays can take longer.",
+            "Preparing Metrics · Longer Games Take Longer.",
           );
           await expect(page.locator("#replay-metrics-preparation")).toContainText(
             "Metrics summarize the captured game.",
@@ -3748,7 +3982,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
         "aria-busy",
         "false",
       );
-      if (heldCsv !== null) await page.locator("#evaluation-metrics > summary").click();
+      if (heldCsv !== null) await page.locator("#replay-rail-tab-metrics").click();
       expect(download.suggestedFilename()).toBe(
         `tdm-metrics__episode-episode-001__schema-15__${scope}__frame-${frameIndex}.csv`,
       );
@@ -3821,28 +4055,20 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       );
     }
     // Explicit final analysis never moves the scoreboard into the future.
-    await expect(page.locator(".match-scoreboard__score")).toHaveText([
-      "Score: 0/1",
-      "Score: 0/1",
-    ]);
-    await expect(page.locator(".match-scoreboard__result")).toHaveCount(0);
+    await expectScorebug(page, ["0", "0"], "/ 1");
+    await expect(page.locator("#battlefield .herald--verdict")).toHaveCount(0);
     await downloadEpisodeDetails(
       page,
       artifacts.tdm.replace(REPLAY_SUFFIX, METRIC_SUFFIX),
     );
     await selectMetricTable(page, "kill_contributions", "recipients");
-    await page.locator("#metric-scope").selectOption("cursor");
-    await expect(page.locator("#metric-status")).toContainText(
-      "Up to Current Tick · tick 0",
-    );
+    await selectMetricScope(page, "cursor", 0);
     await expect(page.locator("#metric-selection")).toHaveValue("kill_contributions");
     await expect(page.locator("#metric-view")).toHaveValue("recipients");
     await installReplayView(page, "pov");
     await expect(page.locator("#evaluation-metrics")).toBeVisible();
-    await expect(page.locator("#match-task")).toContainText("Task mode: TDM");
-    await expect(page.locator("#metric-status")).toContainText(
-      "Up to Current Tick · tick 0",
-    );
+    await expect(page.locator("#scorebug")).toContainText("First To 1");
+    await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
 
     const staleMetrics = await holdMetricResponse(
       "**/api/replay/metrics/1/cursor.json",
@@ -3852,25 +4078,18 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       await staleMetrics.requested;
       await expect(page.locator("#metric-progress")).toBeVisible();
       await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "true");
-      await expect(page.locator(".match-scoreboard__score")).toHaveText([
-        "Score: 1/1",
-        "Score: 0/1",
-      ]);
-      await expect(page.locator(".match-scoreboard__result")).toHaveText([
-        "VICTORY",
-        "DEFEAT",
-      ]);
+      await expectScorebug(page, ["1", "0"], "/ 1");
+      // The result words are on the Verdict card, Team A's column first here.
+      await expect(
+        page.locator("#battlefield .herald--verdict .herald__result"),
+      ).toHaveText(["Victory", "Defeat"]);
       await clickReplayCommand(page, "#replay-first-button");
       await expect(page.locator("#metric-progress")).toBeHidden();
       await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "false");
-      await expect(page.locator(".match-scoreboard__result")).toHaveCount(0);
-      await expect(page.locator("#metric-status")).not.toContainText(
-        "Up to Current Tick · tick 1",
-      );
+      await expect(page.locator("#battlefield .herald--verdict")).toHaveCount(0);
+      await expect(page.locator("#metric-status")).not.toContainText("Up To Tick 1");
       await staleMetrics.release();
-      await expect(page.locator("#metric-status")).toContainText(
-        "Up to Current Tick · tick 0",
-      );
+      await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
     } finally {
       await staleMetrics.release();
     }
@@ -3884,9 +4103,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       await expect(page.locator("#metric-progress")).toBeVisible();
       await clickReplayCommand(page, "#replay-first-button");
       await staleFailure.release();
-      await expect(page.locator("#metric-status")).toContainText(
-        "Up to Current Tick · tick 0",
-      );
+      await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
       await expect(page.locator("#metric-progress")).toBeHidden();
       await clickReplayCommand(page, "#replay-last-button");
       await expect(page.locator("#metric-status")).toContainText(
@@ -3901,7 +4118,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
     }
     await installReplayView(page, "researcher");
     await expect(page.locator("#connection-status")).toHaveText("Connected");
-    await expect(page.locator(".match-scoreboard__result")).toHaveCount(0);
+    await expect(page.locator("#battlefield .herald--verdict")).toHaveCount(0);
     await expect(page.locator("#metric-selection")).toHaveValue("kill_contributions");
     await expect(page.locator("#metric-view")).toHaveValue("recipients");
     expect(catalogRequests).toHaveLength(1);
@@ -4015,8 +4232,10 @@ test("a stale cross-tab command atomically installs the latest audience without 
   ]);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#view-select")).toHaveValue("pov");
-  await expect(page.locator("#notice")).toContainText(
-    "coherent latest pair was installed; the command was not retried",
+  // Owner, 3 Oct 2026 (B9): Replay Viewer notices show under the readout for
+  // about 4 s, in plain words; a stale tab says it was behind.
+  await expect(page.locator("#rune-scrubber-notice")).toContainText(
+    "This tab was behind, so it now shows the latest tick. Your press was not repeated.",
   );
   await expect(page.locator("#replay-play-pause-button")).toHaveAttribute(
     "aria-pressed",
@@ -4123,8 +4342,9 @@ test("accessible playback pauses on hidden/error/endpoint and keeps one request 
     "offline",
   );
   await expect(play).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator("#notice")).toContainText(
-    "Reconnect before sending another replay command",
+  // The notice says it in plain words (the raw error stays out of sight).
+  await expect(page.locator("#rune-scrubber-notice")).toContainText(
+    "Could not reach the Replay Viewer. Press Reconnect.",
   );
   await page.unroute("**/api/replay/command");
   await page.locator("#reconnect-button").click();
@@ -4153,7 +4373,8 @@ test("accessible playback pauses on hidden/error/endpoint and keeps one request 
   await expect(play).toHaveAttribute("aria-label", "Play replay");
   await expect(play).toHaveAttribute("aria-pressed", "false");
   await expect(play).toBeEnabled();
-  await expect(page.locator("#terminal-badge")).toHaveText("Declared horizon");
+  // The top bar names the replay's end in plain words ("Time Limit").
+  await expect(page.locator("#terminal-badge")).toHaveText("Time Limit");
   await page.unroute("**/api/replay/command");
 
   expect(maximumActiveRequests).toBe(1);
@@ -4289,6 +4510,8 @@ test("Actor POV keeps battlefield fog while exposing artifact-wide facts", async
   ).filter((value) => typeof value === "string");
   expect(researcherEventIds.length).toBeGreaterThan(0);
 
+  // The roster lives in the rail's Roster tab.
+  await page.locator("#replay-rail-tab-roster").click();
   const selfRoster = page.locator("#roster .roster-primary-action").first();
   await expect(selfRoster).toBeVisible();
   await selfRoster.hover();
@@ -4393,13 +4616,18 @@ test("Actor POV keeps battlefield fog while exposing artifact-wide facts", async
       battlefield: snapshot(requiredRoot("#battlefield")),
       inspector: snapshot(requiredRoot("#agent-details")),
       technical: snapshot(technicalRoot),
+      // The Technical Frame groups its facts (This Frame, This Game, This
+      // File); a long value is cut in the middle with its whole text as title.
       technicalFacts: [
-        ...technicalRoot.querySelectorAll(".fact[data-technical-fact]"),
-      ].map((node) => ({
-        id: node.getAttribute("data-technical-fact"),
-        label: node.querySelector("span")?.textContent ?? "",
-        value: node.querySelector("strong")?.textContent ?? "",
-      })),
+        ...technicalRoot.querySelectorAll(".ledger-frame__fact[data-technical-fact]"),
+      ].map((node) => {
+        const value = node.querySelector(".ledger-frame__value");
+        return {
+          id: node.getAttribute("data-technical-fact"),
+          label: node.querySelector(".ledger-frame__label")?.textContent ?? "",
+          value: value?.getAttribute("title") ?? value?.textContent ?? "",
+        };
+      }),
       technicalJson: [...document.querySelectorAll(".technical-json")].map(
         (node) => node.textContent ?? "",
       ),
@@ -4494,11 +4722,6 @@ test("Actor POV keeps battlefield fog while exposing artifact-wide facts", async
   }
   expect(surfaces.technicalFacts).toEqual([
     {
-      id: "episode",
-      label: "Episode",
-      value: "browser-replay-complete",
-    },
-    {
       id: "frame",
       label: "Frame",
       value: String(povFrame.cursor.frame_index),
@@ -4512,6 +4735,11 @@ test("Actor POV keeps battlefield fog while exposing artifact-wide facts", async
       id: "incoming_transition",
       label: "Incoming Transition",
       value: povFrame.incoming_pov_transition_id,
+    },
+    {
+      id: "episode",
+      label: "Episode",
+      value: "browser-replay-complete",
     },
     { id: "task_mode", label: "Task Mode", value: "Combat diagnostic" },
     { id: "map", label: "Map", value: "layout" },

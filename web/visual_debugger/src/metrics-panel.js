@@ -4,7 +4,7 @@
  * registers metric tooltips. It does not compute measurements, change missing
  * values to zero or decide which scientific measurements apply.
  *
- * The Replay Viewer's Metrics tab (Scribe's Ledger, owned by ledger.js) calls
+ * The Replay Viewer's Metrics tab (the rail tab owned by ledger.js) calls
  * these renderers. The ledger look adds small subject chips (team crest or
  * class emblem plus "Agent 3") beside each row's subject. The chips only show
  * identity from the catalog's own subject IDs and agent list; the exact host
@@ -461,8 +461,7 @@ function primaryLocationLabel(row, topics) {
  * Recipient"); line 3 the exact CSV name. A row Python marks inapplicable adds
  * the tag "Not Applicable To This Roster". options defaults to {}:
  * options.agents is the catalog agent list (default none, so no chips);
- * options.heraldry false turns chips off; options.subjectChip is passed to
- * createMetricSubjectChips. Results are the full researcher record and never
+ * options.subjectChip is passed to createMetricSubjectChips. Results are the full researcher record and never
  * follow Agent POV.
  *
  * @param {HTMLElement} container
@@ -470,7 +469,7 @@ function primaryLocationLabel(row, topics) {
  * @param {Record<string, any>[]} topics
  * @param {number} limit
  * @param {(row: Record<string, any>) => void} select
- * @param {{agents?: ReadonlyArray<Record<string, any>>, heraldry?: boolean,
+ * @param {{agents?: ReadonlyArray<Record<string, any>>,
  *   subjectChip?: SubjectChipFactory}} [options]
  */
 export function renderMetricSearchResults(
@@ -497,13 +496,14 @@ export function renderMetricSearchResults(
     button.dataset.measurement = row.name;
     const title = doc.createElement("span");
     title.className = "metric-search-results__title";
-    const chips =
-      options.heraldry === false
-        ? null
-        : createMetricSubjectChips(doc, metricSubjectParts(row, options.agents), {
-            join: row.scope === "ally_pair" ? "↔" : "→",
-            subjectChip: options.subjectChip,
-          });
+    const chips = createMetricSubjectChips(
+      doc,
+      metricSubjectParts(row, options.agents),
+      {
+        join: row.scope === "ally_pair" ? "↔" : "→",
+        subjectChip: options.subjectChip,
+      },
+    );
     if (chips) title.append(chips);
     title.append(element("strong", row.label));
     button.append(
@@ -620,8 +620,8 @@ function element(tag, text) {
  * and "Agent 3"; a directed row shows two chips joined by "→", an ally pair
  * by "↔") and keeps the exact host subject text in a span.ledger-subject__text
  * that screen readers read; the CSS hides that text visually only while chips
- * are shown. options.heraldry false (the Ledger Heraldry switch) gives today's
- * plain text subjects. options.subjectChip replaces the built-in chip (see
+ * are shown. Without options.agents every subject is today's plain host text.
+ * options.subjectChip replaces the built-in chip (see
  * createMetricSubjectChips). Section rows keep their exact titles from
  * METRIC_SECTION_TITLES. No option changes which rows, labels, units,
  * definitions, values or CSV names appear. The table is the full researcher
@@ -632,7 +632,7 @@ function element(tag, text) {
  * @param {string} view
  * @param {Record<string, any>} summary
  * @param {HTMLElement} description
- * @param {{agents?: ReadonlyArray<Record<string, any>>, heraldry?: boolean,
+ * @param {{agents?: ReadonlyArray<Record<string, any>>,
  *   subjectChip?: SubjectChipFactory}} [options]
  */
 export function renderMetricRows(
@@ -680,14 +680,13 @@ export function renderMetricRows(
     }
     const tr = doc.createElement("tr");
     tr.dataset.metric = row.name;
-    const chips =
-      options.heraldry === false || !options.agents
-        ? null
-        : createMetricSubjectChips(doc, metricSubjectParts(row, options.agents), {
-            join: row.scope === "ally_pair" ? "↔" : "→",
-            withClass: true,
-            subjectChip: options.subjectChip,
-          });
+    const chips = !options.agents
+      ? null
+      : createMetricSubjectChips(doc, metricSubjectParts(row, options.agents), {
+          join: row.scope === "ally_pair" ? "↔" : "→",
+          withClass: true,
+          subjectChip: options.subjectChip,
+        });
     const subject = element("td", chips ? "" : row.subject);
     if (chips) {
       subject.className = "ledger-subject";

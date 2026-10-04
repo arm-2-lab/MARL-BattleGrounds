@@ -62,7 +62,11 @@ import {
   NOT_OBSERVED_LABEL,
 } from "./authorized-presentation-adapter.js";
 import { beatView } from "./choreography-plan.js";
-import { controllerNameNode } from "./controller-names.js";
+import {
+  controllerNameNode,
+  controllerOfChampion,
+  publishedControllerRoster,
+} from "./controller-names.js";
 import {
   classAbilityNameV1,
   classLoreV1,
@@ -158,23 +162,21 @@ export const FALLBACK_MOVEMENT_NAMES = Object.freeze([
 /**
  * How the docked panels draw names and actions for one frame.
  *
- * tokens: champions show as token chips (Panel Tokens on and, in the Replay
- * Viewer, Ledger Heraldry on); false gives plain "Agent ID N" text. words:
- * actions read in words with the codes under them (always in the BattleClient
- * and DevClient; Actions In Words in the Replay Viewer); false gives today's
- * Submitted and Accepted boxes. Pure.
+ * tokens: champions show as token chips, with each team's crest, while Panel
+ * Tokens is on (every client); false gives plain "Agent ID N" text. Actions
+ * always read in words with the recorded codes under them, so there is no
+ * style for them. Pure.
  *
- * @param {unknown} presentation The installed presentation (only viewer_mode is
- *   read; "replay" means the Replay Viewer).
+ * @param {unknown} _presentation The installed presentation. Not read: every
+ *   client uses the same rule. Kept so the callers stay unchanged.
  * @param {unknown} [visualFilterState] The page's complete switch state.
  *   Absent or invalid means DEFAULT_VISUAL_FILTER_STATE.
- * @returns {Readonly<{tokens: boolean, words: boolean}>}
+ * @returns {Readonly<{tokens: boolean}>}
  */
 export function panelDisplayStyle(
-  presentation,
+  _presentation,
   visualFilterState = DEFAULT_VISUAL_FILTER_STATE,
 ) {
-  const replay = isRecord(presentation) && presentation.viewer_mode === "replay";
   /** @param {string} id */
   const on = (id) => {
     try {
@@ -184,8 +186,7 @@ export function panelDisplayStyle(
     }
   };
   return Object.freeze({
-    tokens: on("panel_tokens") && (!replay || on("ledger_heraldry")),
-    words: !replay || on("plain_actions"),
+    tokens: on("panel_tokens"),
   });
 }
 
@@ -584,11 +585,13 @@ function addFact(container, label, value) {
 }
 
 /**
- * Create an unattached action card labelled Submitted, Accepted or Pending.
- * Read move_action, target_action and use_ultimate_action from action without
+ * Create the unattached "Pending" card of a staged Manual order: its recorded
+ * codes, read from move_action, target_action and use_ultimate_action without
  * recomputing acceptance. Return the section; inputs must be authorized rows.
+ * (Submitted and Accepted rows read in words instead; see
+ * authorizedTransitionList.)
  *
- * @param {"Submitted" | "Accepted" | "Pending"} label
+ * @param {"Pending"} label
  * @param {Record<string, any>} action
  */
 function authorizedTransitionTuple(label, action) {
@@ -622,7 +625,6 @@ function authorizedTransitionTuple(label, action) {
  *
  * @typedef {{
  *   pending?: boolean,
- *   words: boolean,
  *   tokens: boolean,
  *   identityByPublicId: ReadonlyMap<string, Readonly<Record<string, any>>>,
  *   movementNames: ReadonlyArray<string> | null,
@@ -652,15 +654,14 @@ function championName(agent, tokens, onPick, label = null) {
 /**
  * Create an unattached ordered list of action rows.
  *
- * Words mode (options.words): each row shows the actor (chip or plain name,
- * with its class), the action in words with the target as a chip, the recorded
- * codes underneath, and "Changed By The Game" with the submitted codes when
- * the game changed the order. With pending true the codes are the staged
- * Manual order and the row keeps one "Pending" box. A row marked notObserved
- * reads "Not Observed" (in BattleClient and DevClient Agent POV: a teammate's
- * last action, or another team's staged Manual order) with no codes. Plain
- * mode keeps today's Submitted and Accepted boxes (or the one Pending box).
- * Input order and labels are kept; rows are not changed.
+ * Each row shows the actor (chip or plain name, with its class), the action
+ * in words with the target as a chip, the recorded codes underneath, and
+ * "Changed By The Game" with the submitted codes when the game changed the
+ * order. With pending true the codes are the staged Manual order and the row
+ * keeps one "Pending" box. A row marked notObserved reads "Not Observed" (in
+ * BattleClient and DevClient Agent POV: a teammate's last action, or another
+ * team's staged Manual order) with no codes. Input order and labels are kept;
+ * rows are not changed.
  *
  * @param {ReadonlyArray<ActionRowView>} rows
  * @param {ActionListOptions} options
@@ -695,83 +696,66 @@ function authorizedTransitionList(rows, options) {
       continue;
     }
     const action = pending ? transition.pending_action : transition.accepted_action;
-    if (options.words) {
-      const described = describeRecordedAction(
-        action,
-        view.actor?.class_id ?? null,
-        view.targetMap,
-        view.actor?.public_agent_id ?? null,
-        options.movementNames,
+    const described = describeRecordedAction(
+      action,
+      view.actor?.class_id ?? null,
+      view.targetMap,
+      view.actor?.public_agent_id ?? null,
+      options.movementNames,
+    );
+    const words = htmlElement("p", "accepted-action-row__words");
+    const lead = described.noCombat
+      ? `${described.move} · No Combat`
+      : `${described.move} · ${described.ability ?? "Ability"}`;
+    words.append(htmlElement("span", "accepted-action-row__lead", lead));
+    const target =
+      described.targetPublicId === null
+        ? null
+        : (options.identityByPublicId.get(described.targetPublicId) ?? null);
+    if (target !== null) {
+      words.append(
+        htmlElement("span", "accepted-action-row__arrow", " → "),
+        championName(
+          target,
+          options.tokens,
+          options.onPick,
+          described.itself ? "Itself" : null,
+        ),
       );
-      const words = htmlElement("p", "accepted-action-row__words");
-      const lead = described.noCombat
-        ? `${described.move} · No Combat`
-        : `${described.move} · ${described.ability ?? "Ability"}`;
-      words.append(htmlElement("span", "accepted-action-row__lead", lead));
-      const target =
-        described.targetPublicId === null
-          ? null
-          : (options.identityByPublicId.get(described.targetPublicId) ?? null);
-      if (target !== null) {
-        words.append(
-          htmlElement("span", "accepted-action-row__arrow", " → "),
-          championName(
-            target,
-            options.tokens,
-            options.onPick,
-            described.itself ? "Itself" : null,
-          ),
-        );
-      } else if (described.targetCode !== null) {
-        words.append(
-          htmlElement(
-            "span",
-            "accepted-action-row__arrow",
-            ` → Target ${described.targetCode}`,
-          ),
-        );
-      }
-      const codes = htmlElement("p", "accepted-action-row__codes", described.codes);
-      item.append(words, codes);
-      if (pending) {
-        const comparison = htmlElement("div", "accepted-action-row__comparison");
-        comparison.dataset.layout = "single";
-        comparison.append(authorizedTransitionTuple("Pending", action));
-        item.append(comparison);
-      } else {
-        const submitted = transition.submitted_action;
-        const changed =
-          submitted.move_action !== action.move_action ||
-          submitted.target_action !== action.target_action ||
-          submitted.use_ultimate_action !== action.use_ultimate_action;
-        if (changed) {
-          item.dataset.changed = "true";
-          item.append(
-            htmlElement("span", "accepted-action-row__changed", "Changed By The Game"),
-            htmlElement(
-              "p",
-              "accepted-action-row__submitted",
-              `Submitted: Move ${submitted.move_action} · Target ${submitted.target_action} · Ultimate ${submitted.use_ultimate_action}`,
-            ),
-          );
-        }
-      }
-      list.append(item);
-      continue;
+    } else if (described.targetCode !== null) {
+      words.append(
+        htmlElement(
+          "span",
+          "accepted-action-row__arrow",
+          ` → Target ${described.targetCode}`,
+        ),
+      );
     }
-    const comparison = htmlElement("div", "accepted-action-row__comparison");
-    comparison.dataset.layout = pending ? "single" : "comparison";
+    const codes = htmlElement("p", "accepted-action-row__codes", described.codes);
+    item.append(words, codes);
     if (pending) {
-      comparison.append(
-        authorizedTransitionTuple("Pending", transition.pending_action),
-      );
+      const comparison = htmlElement("div", "accepted-action-row__comparison");
+      comparison.dataset.layout = "single";
+      comparison.append(authorizedTransitionTuple("Pending", action));
+      item.append(comparison);
     } else {
-      comparison.append(
-        authorizedTransitionTuple("Submitted", transition.submitted_action),
-        authorizedTransitionTuple("Accepted", transition.accepted_action),
-      );
+      const submitted = transition.submitted_action;
+      const changed =
+        submitted.move_action !== action.move_action ||
+        submitted.target_action !== action.target_action ||
+        submitted.use_ultimate_action !== action.use_ultimate_action;
+      if (changed) {
+        item.dataset.changed = "true";
+        item.append(
+          htmlElement("span", "accepted-action-row__changed", "Changed By The Game"),
+          htmlElement(
+            "p",
+            "accepted-action-row__submitted",
+            `Submitted: Move ${submitted.move_action} · Target ${submitted.target_action} · Ultimate ${submitted.use_ultimate_action}`,
+          ),
+        );
+      }
     }
-    item.append(comparison);
     list.append(item);
   }
   return list;
@@ -1400,6 +1384,39 @@ function statusLine(owner, status) {
 }
 
 /**
+ * Write a champion count for the roster: "1 Champion", "5 Champions". Pure.
+ *
+ * @param {number} count Whole number of champions, 0 or more.
+ * @returns {string}
+ */
+function championsText(count) {
+  return `${count} ${count === 1 ? "Champion" : "Champions"}`;
+}
+
+/**
+ * Return who played one champion in a saved game, for the Replay Viewer
+ * roster's "Played by" line: the recorded controller name from the page's
+ * one controller model (controller-names.js publishedControllerRoster, which
+ * the HUD publishes from every installed replay frame), shown verbatim.
+ * Live play keeps its launch configuration (authorizedPresentationController)
+ * and never reaches this. Reads the document's published roster only.
+ *
+ * @param {string} publicAgentId The champion's public agent ID.
+ * @returns {Readonly<{manual: boolean, label: string}> | null} The recorded
+ *   name and whether a person played it, or null when no roster lists the
+ *   champion (old replays without names, unit tests without a document).
+ */
+function recordedController(publicAgentId) {
+  if (typeof document === "undefined") return null;
+  const found = controllerOfChampion(publishedControllerRoster(document), {
+    publicAgentId,
+  });
+  return found === null
+    ? null
+    : Object.freeze({ manual: found.controller.manual, label: found.controller.name });
+}
+
+/**
  * Keep debugger panel DOM nodes in sync with installed presentations.
  * Reuse roster rows by display identity to preserve focus where possible.
  * The caller supplies all DOM bindings and an activation command handler.
@@ -1524,10 +1541,10 @@ export class DebuggerPanels {
     element.setAttribute("aria-label", team.accessibleName);
     const heading = htmlElement("div", "roster-team__heading");
     const title = htmlElement("h3", null, team.label);
-    const count = htmlElement("span", "count-badge", "0 authorized");
+    const count = htmlElement("span", "count-badge", "0 Champions");
     heading.append(title, count);
     const rows = htmlElement("div", "roster-team__rows");
-    const empty = htmlElement("p", "empty-copy", "No authorized agents.");
+    const empty = htmlElement("p", "empty-copy", "No champions.");
     rows.append(empty);
     element.append(heading, rows);
     this.roster.append(element);
@@ -1606,10 +1623,14 @@ export class DebuggerPanels {
    * to wait for its Fall beat, and a returning champion's facts for its Return
    * beat (data-beat-hold; see the file description).
    *
-   * Each live row's "Controller: <name>" names the slot's controller from
-   * the combat configuration; the name is a controller-names.js name node
-   * (cut with "…" past the fixed name width, its team's controller list on
-   * hover while cut).
+   * Each row's "Played by <name>" names who played the champion: in live
+   * play the slot's controller from the combat configuration, in the Replay
+   * Viewer the recorded name from the page's one controller model
+   * (recordedController), shown verbatim; no line when neither knows it. The
+   * name is a controller-names.js name node (cut with "…" past the fixed name
+   * width, its team's controller list on hover while cut). Counts read "5
+   * Champions" (Agent POV in the Replay Viewer: "10 Champions · 4 Seen · 6
+   * Not Seen").
    *
    * Also refreshes activationByPublicId, which chip clicks use to pick a
    * champion. This changes DOM/cache state only and assumes a branded
@@ -1672,8 +1693,8 @@ export class DebuggerPanels {
       (identity) => identity.visible_in_snapshot,
     ).length;
     this.rosterCount.textContent = visibilityGroupedRoster
-      ? `${identities.length} agents · ${visibleCount} visible · ${identities.length - visibleCount} not visible`
-      : `${identities.length} ${identities.length === 1 ? "actor" : "actors"}`;
+      ? `${championsText(identities.length)} · ${visibleCount} Seen · ${identities.length - visibleCount} Not Seen`
+      : championsText(identities.length);
     /** @type {Map<number, HTMLElement[]>} */
     const desiredByTeam = new Map();
     /** @type {Map<string, HTMLElement[]>} */
@@ -1700,11 +1721,9 @@ export class DebuggerPanels {
         this.rosterRows.set(identity.display_key, row);
       }
       const publicId = String(agent.public_agent_id);
-      const controller = authorizedPresentationController(
-        presentation,
-        combatConfiguration,
-        publicId,
-      );
+      const controller =
+        authorizedPresentationController(presentation, combatConfiguration, publicId) ??
+        recordedController(publicId);
       const displayIdentity = canonicalAgentIdentity(agent).publicIdentity;
       const classToken = classTokenFromId(agent.class_id);
       const teamToken = teamTokenFromId(agent.team_id);
@@ -1808,7 +1827,7 @@ export class DebuggerPanels {
         ...(controller === null
           ? []
           : [
-              "Controller: ",
+              "Played by ",
               controllerNameNode(
                 document,
                 controller.label,
@@ -1872,7 +1891,7 @@ export class DebuggerPanels {
     for (const [teamId, group] of this.rosterTeamGroups) {
       group.element.hidden = visibilityGroupedRoster;
       const desired = desiredByTeam.get(teamId) ?? [];
-      group.count.textContent = `${desired.length} authorized`;
+      group.count.textContent = championsText(desired.length);
       this.reconcileChildren(group.rows, desired.length > 0 ? desired : [group.empty]);
     }
     for (const [visibility, group] of this.rosterVisibilityGroups) {
@@ -1963,7 +1982,6 @@ export class DebuggerPanels {
     const onPick = replay ? (/** @type {string} */ id) => this.pickAgent(id) : null;
     /** @type {ActionListOptions} */
     const listOptions = {
-      words: style.words,
       tokens: style.tokens,
       identityByPublicId,
       movementNames: frameMovementNames(presentation),
@@ -2199,7 +2217,7 @@ export class DebuggerPanels {
    * @param {Record<string, any>} presentation
    * @param {Readonly<Record<string, any>> | null} inspector authorizedInspectorView result.
    * @param {string | null | undefined} activatedAgentPublicId
-   * @param {Readonly<{tokens: boolean, words: boolean}>} style
+   * @param {Readonly<{tokens: boolean}>} style panelDisplayStyle result.
    * @param {ReturnType<typeof beatView>} beats
    * @param {ReadonlyMap<string, Readonly<Record<string, any>>>} identityByPublicId
    * @returns {void}
@@ -2384,7 +2402,7 @@ export class DebuggerPanels {
     this.rosterRows.clear();
     for (const group of this.rosterTeamGroups.values()) {
       group.element.hidden = false;
-      group.count.textContent = "0 authorized";
+      group.count.textContent = championsText(0);
       this.reconcileChildren(group.rows, [group.empty]);
     }
     for (const group of this.rosterVisibilityGroups.values()) {

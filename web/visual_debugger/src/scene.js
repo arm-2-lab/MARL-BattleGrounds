@@ -11,7 +11,9 @@
  * stones over the Standing Stones), atmosphere, Red Zone, spawn waystones,
  * Homeland Brackets, aura Ward Circles (with their played-tick moments, Aura
  * Glints and the Barrier Held stud flash), movement marks, reach rings and the
- * selection moonlight, the next-action thread (or the live hotbar), the Agent POV
+ * selection moonlight, the next-action thread (or the live hotbar) with the
+ * Replay Viewer's All Staged Orders and Next Step Ghost (from the frame's own
+ * top-level upcoming transition rows and next_end_spots), the Agent POV
  * sight veil, obstacles, Death Dimming, champions, corpse marks, Rune Zones and
  * the recipient rim (both inside each body's glide wrapper) and the hotbar
  * (in the body layer's plan-marks group, under every body). It
@@ -1307,22 +1309,55 @@ export class BattlefieldRenderer {
     const hotbarDrawsCommand = hotbarRecords.some(
       (record) => record.kind === "command-ring" || record.kind === "order-thread",
     );
+    const threadRecords = hotbarDrawsCommand
+      ? []
+      : championFrame.records({
+          part: "next-action-route",
+          scene,
+          transform,
+          showNextActionThread: isVisualPaintPartEnabled(visualFilterState, {
+            surface: "durable",
+            kind: "next_action_thread",
+          }),
+        });
+    // Replay Viewer only: All Staged Orders and Next Step Ghost read the
+    // frame's own top-level next-tick facts (never researcher_space). In Agent
+    // POV the upcoming rows hold only the recipient's own order and the host
+    // names a ghost only for a champion the team sees now and next tick. The
+    // selected champion's order stays the Next Action Thread's, so its line
+    // is never drawn twice.
+    const replayFrame = !liveProduct && isAuthorizedPresentationFrame(frame);
+    const stagedRecords = championFrame.records({
+      part: "staged-orders",
+      scene,
+      transform,
+      showStagedOrders:
+        replayFrame &&
+        isVisualPaintPartEnabled(visualFilterState, {
+          surface: "durable",
+          kind: "staged_order",
+        }),
+      actionRows:
+        replayFrame && isRecord(frame.upcoming_transition)
+          ? frame.upcoming_transition.action_rows
+          : [],
+      skipActorIds: threadRecords.map((record) => record.sourceAgentId),
+    });
+    const ghostRecords = championFrame.records({
+      part: "next-step-ghosts",
+      scene,
+      transform,
+      showNextStepGhost:
+        replayFrame &&
+        isVisualPaintPartEnabled(visualFilterState, {
+          surface: "durable",
+          kind: "next_step_ghost",
+        }),
+      spots: replayFrame ? frame.next_end_spots : [],
+    });
     replaceLayer(
       this.layers.pendingRoute,
-      hotbarDrawsCommand
-        ? []
-        : championFrame.build(
-            championFrame.records({
-              part: "next-action-route",
-              scene,
-              transform,
-              showNextActionThread: isVisualPaintPartEnabled(visualFilterState, {
-                surface: "durable",
-                kind: "next_action_thread",
-              }),
-            }),
-            doc,
-          ),
+      championFrame.build([...ghostRecords, ...threadRecords, ...stagedRecords], doc),
     );
     const fogInput = {
       scene,

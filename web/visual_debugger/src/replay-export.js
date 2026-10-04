@@ -8,9 +8,9 @@
  *
  * The PNG shows what is on screen: the current camera (Whole Map, Everyone In
  * View or Battle Cam) and the switches that draw on the battlefield. New
- * exports write provenance version 3, which records those switches and the
+ * exports write provenance version 4, which records those switches and the
  * camera frame as a world rectangle (Whole Map when the caller gives none).
- * Versions 1 and 2 still read. The backdrop is locked to #111827 with its grid;
+ * Versions 1, 2 and 3 still read. The backdrop is locked to #111827 with its grid;
  * the `--export-backdrop` token in styles.css owns `.battlefield-shell`'s
  * background, and capture refuses any other backdrop (a palette such as High
  * Contrast must not change it). Agent POV exports record only public facts:
@@ -29,8 +29,9 @@ const PNG_SIGNATURE = Object.freeze([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_PROVENANCE_KEYWORD = "MARL-BattleGrounds Replay Provenance";
 const PROVENANCE_SCHEMA_ID = "marl_battlegrounds.replay_battlefield_png_provenance";
 // New exports write this provenance version. Version 2 added red_zone_floors;
-// version 3 records the V5 battlefield switches and the camera frame.
-const CURRENT_PROVENANCE_SCHEMA_VERSION = 3;
+// version 3 records the V5 battlefield switches and the camera frame; version 4
+// adds the Replay Viewer's Next Step Ghost and All Staged Orders.
+const CURRENT_PROVENANCE_SCHEMA_VERSION = 4;
 // The 19 filter IDs of version-1 provenance, frozen so saved PNGs stay readable
 // when the live registry grows.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V1 = Object.freeze([
@@ -59,12 +60,13 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V2 = Object.freeze([
   ...REPLAY_PNG_VISUAL_FILTER_IDS_V1,
   "red_zone_floors",
 ]);
-// The filter IDs of version-3 provenance: every switch that draws on the
-// battlefield in the Replay Viewer (surface "arena", product "replay_viewer"),
-// in registry order. Interface switches and live-only marks cannot change the
-// PNG, so they are not recorded. This list is frozen here on purpose: a test
-// checks it still equals the registry, so a registry change must add version 4
-// rather than silently change what version 3 means.
+// The filter IDs of version-3 provenance: every switch that drew on the
+// battlefield in the Replay Viewer (surface "arena", product "replay_viewer")
+// while version 3 was current, in registry order. Interface switches and
+// live-only marks cannot change the PNG, so they are not recorded. Each
+// version's list is frozen here on purpose: a test checks that the current
+// version's list still equals the registry, so a registry change must add a
+// new version rather than silently change what an old version means.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V3 = Object.freeze([
   "aura_fields",
   "aura_modifier_badges",
@@ -137,23 +139,32 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V3 = Object.freeze([
   "selection_moonlight",
   "focus_fire",
 ]);
+// The filter IDs of version-4 provenance: version 3's list, then the two
+// Replay Tools switches that draw the recorded next tick on the battlefield.
+// Frozen for the same reason as version 3.
+const REPLAY_PNG_VISUAL_FILTER_IDS_V4 = Object.freeze([
+  ...REPLAY_PNG_VISUAL_FILTER_IDS_V3,
+  "next_step_ghost",
+  "all_staged_orders",
+]);
 // Exact filter IDs each provenance version records.
 const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
   new Map([
     [1, REPLAY_PNG_VISUAL_FILTER_IDS_V1],
     [2, REPLAY_PNG_VISUAL_FILTER_IDS_V2],
     [3, REPLAY_PNG_VISUAL_FILTER_IDS_V3],
+    [4, REPLAY_PNG_VISUAL_FILTER_IDS_V4],
   ]),
 );
-// The camera names a version-3 camera frame may carry.
+// The camera names a version-3 or version-4 camera frame may carry.
 const REPLAY_PNG_CAMERAS = new Set(["whole_map", "everyone_in_view", "battle_cam"]);
 
 /**
- * The switch IDs a new export records (provenance version 3), in registry
+ * The switch IDs a new export records (provenance version 4), in registry
  * order: every switch that can change the battlefield picture in the Replay
  * Viewer.
  */
-export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V3;
+export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V4;
 
 /**
  * Return the switch IDs the live registry would record today: surface
@@ -406,7 +417,7 @@ function finiteNumber(value, label) {
 }
 
 /**
- * Validate a stored version-3 camera frame and return a frozen copy.
+ * Validate a stored camera frame (version 3 and later) and return a frozen copy.
  *
  * The frame is exactly {camera, min_x, min_y, max_x, max_y}: camera is
  * "whole_map", "everyone_in_view" or "battle_cam"; the four numbers are world
@@ -444,7 +455,7 @@ function normalizeStoredCameraFrame(frame) {
 }
 
 /**
- * Turn the caller's camera frame into the stored version-3 form.
+ * Turn the caller's camera frame into the stored form (version 3 and later).
  *
  * cameraFrame is undefined or null (the camera is on Whole Map), or exactly
  * {camera, minX, minY, maxX, maxY} with camera "whole_map",
@@ -511,14 +522,17 @@ function projectCameraFrame(cameraFrame, paintedScene) {
 }
 
 /**
- * Validate a version-1, version-2 or version-3 Replay Viewer provenance object
- * and return a deeply frozen plain copy with the same version. The versions
- * differ only in the presentation record: version 1 holds the 19 filter IDs of
- * REPLAY_PNG_VISUAL_FILTER_IDS_V1, version 2 the 20 IDs of
- * REPLAY_PNG_VISUAL_FILTER_IDS_V2 (adding red_zone_floors), and version 3 the
- * battlefield switches of REPLAY_PNG_VISUAL_FILTER_IDS_V3 plus a camera_frame
- * (see normalizeStoredCameraFrame). A mixed form (wrong filter list for the
- * version, a camera frame before version 3 or none in version 3) is rejected.
+ * Validate a version-1, version-2, version-3 or version-4 Replay Viewer
+ * provenance object and return a deeply frozen plain copy with the same
+ * version. The versions differ only in the presentation record: version 1
+ * holds the 19 filter IDs of REPLAY_PNG_VISUAL_FILTER_IDS_V1, version 2 the 20
+ * IDs of REPLAY_PNG_VISUAL_FILTER_IDS_V2 (adding red_zone_floors), version 3
+ * the battlefield switches of REPLAY_PNG_VISUAL_FILTER_IDS_V3 plus a
+ * camera_frame (see normalizeStoredCameraFrame), and version 4 the switches of
+ * REPLAY_PNG_VISUAL_FILTER_IDS_V4 (adding next_step_ghost and
+ * all_staged_orders) plus a camera_frame. A mixed form (wrong filter list for
+ * the version, a camera frame before version 3 or none from version 3 on) is
+ * rejected.
  * Require exact root/nested fields, audience-specific
  * source fields, consistent replay kind/observation mode, nonnegative frame
  * counts and an incoming transition exactly when frame_index is nonzero.
@@ -814,7 +828,7 @@ function exactKeysWithOptionalCamera(options, required, label) {
  * "battle_cam") and the world rectangle it shows, in world units with y up.
  * Resolve the painted selection through the authorized scene, then record 2x
  * pixel sizes. Oracle includes artifact references; Agent POV omits those
- * fields. Return deeply frozen validated provenance at the current version 3:
+ * fields. Return deeply frozen validated provenance at the current version 4:
  * it records only the battlefield switches (REPLAY_PNG_RECORDED_FILTER_IDS)
  * and the camera frame in snake_case (Whole Map is the painted map from
  * (0, 0) to (width, height)). Invalid or unresolved inputs throw TypeError.
@@ -892,7 +906,7 @@ export function projectReplayPngProvenanceV1(value) {
   const selectedPublicAgentId = selectedAgent?.public_agent_id ?? null;
   const cameraFrame = projectCameraFrame(options.cameraFrame, paintedScene);
   const recordedFilters = Object.fromEntries(
-    REPLAY_PNG_VISUAL_FILTER_IDS_V3.map((id) => [id, visualFilters[id]]),
+    REPLAY_PNG_VISUAL_FILTER_IDS_V4.map((id) => [id, visualFilters[id]]),
   );
 
   const oracle = presentation.presentation_kind === "replay_oracle";
@@ -1315,8 +1329,8 @@ function provenanceItxtChunk(canonicalProvenanceJson) {
 /**
  * Inspect a PNG with exactly one provenance entry directly after IHDR.
  * Require an uncompressed, untranslated UTF-8 iTXt entry with canonical
- * version-1, version-2 or version-3 provenance (version 3 adds the camera
- * frame), matching PNG dimensions and no duplicate keyword
+ * version-1, version-2, version-3 or version-4 provenance (version 3 adds the
+ * camera frame, version 4 two more switches), matching PNG dimensions and no duplicate keyword
  * in text chunks. Return frozen metadata, chunk types and provenance. Invalid
  * bytes/metadata throw TypeError. This verifies container consistency, not
  * the truth of the picture or the referenced simulator artifacts.

@@ -5,8 +5,12 @@ views. They join recorded current frames with incoming and upcoming transition
 facts, then return immutable presentation models. Actor views preserve their
 information limits. The service's per-view host facts (``champion_streaks``,
 ``match_moments`` and, on the completion frame, ``match_honors``) are copied
-into the frame as given. This module does not load files, run simulator
-steps, or change the saved replay.
+into the frame as given, and so is ``recent_falls`` (the Fallen panel's
+earlier rows). Each builder also fills ``next_end_spots`` (the Next
+Step Ghost) from the recorded frame after the shown one: Oracle View from
+that frame's positions, Agent POV only for champions the recipient's team
+sees alive now and still sees in its next authorized scene. This module does
+not load files, run simulator steps, or change the saved replay.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from marl_battlegrounds.rendering.authorized_pov_scene import (
 )
 from marl_battlegrounds.rendering.authorized_presentation import (
     AcceptedActionTupleV1,
+    AuthorizedBattlefieldSceneV1,
     SubmittedActionTupleV1,
     build_agent_pov_visual_incoming_summary_v1,
     build_replay_oracle_presentation_parts_v1,
@@ -59,7 +64,7 @@ from marl_battlegrounds.rendering.pov_scene import (
     build_actor_pov_analyzer_projection_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2, VisualEventBatchV2
-from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1, RecentFallV1
 from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
 from marl_battlegrounds.viewer.match_summary import (
     MatchHonorsV1,
@@ -68,6 +73,7 @@ from marl_battlegrounds.viewer.match_summary import (
 from marl_battlegrounds.viewer.presentation_protocol import (
     AgentPovActionAxisV1,
     LatestTransitionActionRowV1,
+    NextEndSpotV1,
     NoSharedObsLatestTransitionV1,
     NoSharedObsPresentationAuthorityV1,
     NoSharedObsUpcomingTransitionV1,
@@ -213,6 +219,93 @@ def _oracle_upcoming_transition_v1(
             transition,
             authority_session_id=authority_session_id,
         ),
+    )
+
+
+def _scene_next_end_spots_v1(
+    current_scene: AuthorizedBattlefieldSceneV1,
+    next_scene: AuthorizedBattlefieldSceneV1,
+) -> tuple[NextEndSpotV1, ...]:
+    """Return the Next Step Ghost spots from one view's scene and its next scene.
+
+    Parameters
+    ----------
+    current_scene : AuthorizedBattlefieldSceneV1
+        The shown frame's authorized scene, in this view.
+    next_scene : AuthorizedBattlefieldSceneV1
+        The same view's authorized scene at the recorded next frame.
+
+    Returns
+    -------
+    tuple of NextEndSpotV1
+        One spot per champion alive in current_scene that next_scene also
+        holds (alive or fallen there), at its next_scene position, in
+        next_scene order. In Agent POV both scenes hold only what the
+        recipient's team sees, so a champion seen now but not next tick gets
+        no spot: its next position would leak where it went. Pure.
+    """
+    alive_now = {
+        agent.public_agent_id
+        for agent in current_scene.agents
+        if agent.life_state == "alive"
+    }
+    return tuple(
+        NextEndSpotV1(public_agent_id=agent.public_agent_id, position=agent.position)
+        for agent in next_scene.agents
+        if agent.public_agent_id in alive_now
+    )
+
+
+def _oracle_next_end_spots_v1(
+    context: EvaluationEpisodeContext,
+    current_scene: AuthorizedBattlefieldSceneV1,
+    next_frame: EvaluationFrame | None,
+    *,
+    final: bool,
+) -> tuple[NextEndSpotV1, ...] | None:
+    """Return Oracle View's Next Step Ghost spots for one replay frame.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        The episode context; its roster maps public IDs to global slots.
+    current_scene : AuthorizedBattlefieldSceneV1
+        The shown frame's Oracle scene; it decides who is alive now.
+    next_frame : EvaluationFrame or None
+        The recorded frame after the shown one, or None when the caller
+        gives none.
+    final : bool
+        True on the final captured frame.
+
+    Returns
+    -------
+    tuple of NextEndSpotV1 or None
+        Empty on the final frame. None when next_frame is None on another
+        frame (the producer sends no spots). Otherwise one spot per champion
+        alive in current_scene, at its recorded position in next_frame
+        (snapshot.agent_positions, the same world coordinates as the scene),
+        in scene order. Pure.
+    """
+    if final:
+        return ()
+    if next_frame is None:
+        return None
+    slot_by_id = {
+        row.public_agent_id: row.global_slot
+        for row in context.roster
+        if row.configured_active
+    }
+    positions = next_frame.snapshot.agent_positions
+    return tuple(
+        NextEndSpotV1(
+            public_agent_id=agent.public_agent_id,
+            position=(
+                float(positions[slot_by_id[agent.public_agent_id]][0]),
+                float(positions[slot_by_id[agent.public_agent_id]][1]),
+            ),
+        )
+        for agent in current_scene.agents
+        if agent.life_state == "alive" and agent.public_agent_id in slot_by_id
     )
 
 
@@ -460,6 +553,7 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
 ) -> ReplayNoSharedObsAuthorizedPresentationFrameV1:
     """Build a NoSharedObs replay presentation for one fixed recipient.
 
@@ -517,6 +611,13 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
         recipient's team saw. Copied into the frame's ``match_moments``
         field. None (the default) means not counted; browsers then show no
         First Blood, Comeback, run or Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history from the replay service
+        (viewer.champion_streaks.recent_falls_v1): the falls of the 7 ticks
+        before this one, with the killers this view may name (an old
+        recording without lethal damage contribution events names none).
+        Copied into the frame's ``recent_falls`` field. None (the default)
+        means not sent; browsers then keep their own carry of earlier rows.
 
     Returns
     -------
@@ -536,6 +637,10 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
     Recheck the committed local projection against its source index. Trusted
     global frames authorize paint-only corpse and visual-event data; they do
     not become actor policy inputs.
+    The frame's ``next_end_spots`` (Next Step Ghost) comes from the
+    recipient's own authorized scene at the next recorded frame of source:
+    only champions alive in this scene and still in that one; empty on the
+    final frame.
     This performs host projection and model validation, with no simulator step
     or file write.
     """
@@ -723,6 +828,19 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
         replay_inspection,
         action_axis=endpoint.action_axis,
     )
+    next_end_spots = (
+        ()
+        if frame_index == final_frame_index
+        else _scene_next_end_spots_v1(
+            current.scene,
+            build_no_shared_obs_authorized_scene_v1(
+                source,
+                public_catalog=public_catalog,
+                authority_session_id=raw_frame.viewer_session_id,
+                frame_index=frame_index + 1,
+            ).scene,
+        )
+    )
     return ReplayNoSharedObsAuthorizedPresentationFrameV1(
         match_summary=build_match_summary_v1(
             global_context,
@@ -780,6 +898,8 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
         ),
         replay_inspection=replay_inspection,
         researcher_space=researcher_space,
+        next_end_spots=next_end_spots,
+        recent_falls=recent_falls,
     )
 
 
@@ -808,6 +928,11 @@ def build_replay_shared_obs_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
+    next_recipient_source_material: SharedObsSourceMaterialProjection | None = None,
+    next_active_nonrecipient_source_material: tuple[
+        SharedObsSourceMaterialProjection, ...
+    ] = (),
 ) -> ReplaySharedObsAuthorizedPresentationFrameV1:
     """Build a SharedObs replay visual union for one fixed recipient.
 
@@ -878,6 +1003,26 @@ def build_replay_shared_obs_authorized_presentation_v1(
         recipient's team saw. Copied into the frame's ``match_moments``
         field. None (the default) means not counted; browsers then show no
         First Blood, Comeback, run or Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history from the replay service
+        (viewer.champion_streaks.recent_falls_v1): the falls of the 7 ticks
+        before this one, with the killers this view may name (an old
+        recording without lethal damage contribution events names none).
+        Copied into the frame's ``recent_falls`` field. None (the default)
+        means not sent; browsers then keep their own carry of earlier rows.
+    next_recipient_source_material :
+    SharedObsSourceMaterialProjection | None, optional
+        The recipient's source projection at the recorded next frame, for the
+        Next Step Ghost. The builder makes the recipient's next authorized
+        scene from it and next_active_nonrecipient_source_material, and
+        ``next_end_spots`` names only champions alive in this scene and still
+        in that one. None (the default) on a frame that is not final leaves
+        ``next_end_spots`` None (no ghosts). Ignored on the final frame, whose
+        ``next_end_spots`` is empty.
+    next_active_nonrecipient_source_material :
+    tuple[SharedObsSourceMaterialProjection, ...], optional
+        Every other configured-active slot's source projection at the next
+        frame, as for the current frame. Default empty.
 
     Returns
     -------
@@ -1161,6 +1306,22 @@ def build_replay_shared_obs_authorized_presentation_v1(
         replay_inspection,
         action_axis=endpoint.action_axis,
     )
+    if frame_index == raw_frame.cursor.final_frame_index:
+        next_end_spots: tuple[NextEndSpotV1, ...] | None = ()
+    elif next_recipient_source_material is None:
+        next_end_spots = None
+    else:
+        next_end_spots = _scene_next_end_spots_v1(
+            current.scene,
+            build_shared_obs_authorized_scene_v1(
+                next_recipient_source_material,
+                all_active_nonrecipient_source_material=(
+                    next_active_nonrecipient_source_material
+                ),
+                public_catalog=public_catalog,
+                authority_session_id=raw_frame.viewer_session_id,
+            ).scene,
+        )
     return ReplaySharedObsAuthorizedPresentationFrameV1(
         match_summary=build_match_summary_v1(
             global_context,
@@ -1218,6 +1379,8 @@ def build_replay_shared_obs_authorized_presentation_v1(
         ),
         replay_inspection=replay_inspection,
         researcher_space=researcher_space,
+        next_end_spots=next_end_spots,
+        recent_falls=recent_falls,
     )
 
 
@@ -1235,6 +1398,8 @@ def build_replay_oracle_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
+    next_frame: EvaluationFrame | None = None,
 ) -> ReplayOracleAuthorizedPresentationFrameV1:
     """Build the global current replay display with incoming and outgoing inspection.
 
@@ -1289,6 +1454,19 @@ def build_replay_oracle_authorized_presentation_v1(
         recipient's team saw. Copied into the frame's ``match_moments``
         field. None (the default) means not counted; browsers then show no
         First Blood, Comeback, run or Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history from the replay service
+        (viewer.champion_streaks.recent_falls_v1): the falls of the 7 ticks
+        before this one, with the killers this view may name (an old
+        recording without lethal damage contribution events names none).
+        Copied into the frame's ``recent_falls`` field. None (the default)
+        means not sent; browsers then keep their own carry of earlier rows.
+    next_frame : EvaluationFrame or None, optional, keyword-only
+        The recorded frame after current_frame, for the Next Step Ghost: the
+        frame's ``next_end_spots`` gives each champion alive now its position
+        there. None (the default) on a frame that is not final leaves
+        ``next_end_spots`` None (no ghosts). Ignored on the final frame, whose
+        ``next_end_spots`` is empty.
 
     Returns
     -------
@@ -1453,6 +1631,13 @@ def build_replay_oracle_authorized_presentation_v1(
             ),
         ),
         replay_inspection=inspection,
+        next_end_spots=_oracle_next_end_spots_v1(
+            context,
+            endpoint.scene,
+            next_frame,
+            final=frame_index == raw_frame.cursor.final_frame_index,
+        ),
+        recent_falls=recent_falls,
     )
 
 

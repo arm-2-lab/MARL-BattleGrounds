@@ -2530,9 +2530,12 @@ def test_shared_getter_uses_only_transition_free_active_source_factory(
         if row.configured_active
     )
     per_epoch = (5, *(slot for slot in active_slots if slot != 5))
+    # The current and previous frames' sources, then the next frame's for the
+    # Next Step Ghost (next_end_spots), all from the same per-frame cache.
     assert calls == [
         *((1, slot) for slot in per_epoch),
         *((0, slot) for slot in per_epoch),
+        *((2, slot) for slot in per_epoch),
     ]
     assert service.current_frame() is raw
     assert service.current_frame().model_dump_json() == raw_bytes

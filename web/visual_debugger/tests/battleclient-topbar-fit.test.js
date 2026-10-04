@@ -7,12 +7,13 @@
  *   "Scenario 1" is the part that always shows with the bold name, and
  *   "Team Deathmatch" is the part that may give way; matchPlaceTitle reads
  *   the name and that first part.
- * - The live top-bar styles (src/styles/battleclient/topbar.css): the place
- *   line is a grid whose second column (span.where__more) alone can shrink,
- *   and a cut second part (data-cut, set when placeRestIsCut in
- *   src/shell.js says its text is wider than its box) hides whole; the line
- *   gives way before the brand, whose product name
- *   is the only brand part that can shrink.
+ * - The top-bar styles of every client (src/styles/battleclient/topbar.css,
+ *   shared with the Replay Viewer since 3 Oct 2026): the place line is a grid
+ *   whose second column (span.where__more) alone can shrink, and a cut second
+ *   part (data-cut, set when placeRestIsCut in src/shell.js says its text is
+ *   wider than its box) hides whole; the line gives way before the brand,
+ *   whose product name is the only brand part that can shrink, and a cut
+ *   product name hides whole too.
  * - visualFiltersDrawerTop (src/shell.js) and overlays.css: the Visual
  *   Filters drawer starts at the rail's first card (the rail's top plus its
  *   top padding), so it never covers the scorebug; bad input gives null.
@@ -65,43 +66,41 @@ test("the place line keeps the map name and lets Team Deathmatch give way", () =
   assert.ok(Object.isFrozen(placeLineSplit(parts).lead));
 });
 
-test("the live top bar gives way in order: Team Deathmatch, then the product name", () => {
-  const topbar = css("../src/styles/battleclient/topbar.css");
+test("the top bar gives way in order: Team Deathmatch, then the product name", () => {
+  // Whitespace-insensitive: the formatter may break a long selector over lines.
+  const topbar = css("../src/styles/battleclient/topbar.css").replace(/\s+/gu, " ");
+  const BOTH =
+    'html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])';
   const rule = (/** @type {string} */ selector) => {
-    const start = topbar.indexOf(`${selector} {`);
+    const start = topbar.indexOf(`${selector.replace("SCOPE", BOTH)} {`);
     assert.ok(start >= 0, `rule ${selector}`);
     return topbar.slice(start, topbar.indexOf("}", start));
   };
-  const where = rule('html[data-product-kind="combat_debugger"] .bc .bc-top .where');
+  const where = rule("SCOPE .bc .bc-top .where");
   assert.match(where, /display: grid;/u);
   assert.match(where, /grid-template-columns: auto minmax\(0, auto\);/u);
   assert.match(where, /flex: 0 1000000 auto;/u);
   assert.match(where, /min-width: auto;/u);
   assert.match(where, /overflow: visible;/u);
-  const more = rule(
-    'html[data-product-kind="combat_debugger"] .bc .bc-top .where__more',
-  );
+  const more = rule("SCOPE .bc .bc-top .where__more");
   assert.match(more, /text-overflow: ellipsis;/u);
   assert.match(more, /white-space: pre;/u);
   assert.match(
-    rule(
-      'html[data-product-kind="combat_debugger"] .bc .bc-top .where__more[data-cut]',
-    ),
+    rule("SCOPE .bc .bc-top .where__more[data-cut]"),
     /visibility: hidden;/u,
   );
   assert.equal(placeRestIsCut({ scrollWidth: 130, clientWidth: 80 }), true);
   assert.equal(placeRestIsCut({ scrollWidth: 130.4, clientWidth: 130 }), false);
   assert.equal(placeRestIsCut({ scrollWidth: 0, clientWidth: 0 }), false);
-  assert.match(
-    rule('html[data-product-kind="combat_debugger"] .bc .bc-top .where[hidden]'),
-    /display: none;/u,
-  );
-  const brand = rule('html[data-product-kind="combat_debugger"] .bc .bc-top .brand');
+  assert.match(rule("SCOPE .bc .bc-top .where[hidden]"), /display: none;/u);
+  const brand = rule("SCOPE .bc .bc-top .brand");
   assert.match(brand, /grid-template-columns: auto auto minmax\(0, auto\);/u);
   assert.match(brand, /flex: 0 1 auto;/u);
+  assert.match(rule("SCOPE .bc .bc-top .brand .bprod"), /min-width: 0;/u);
+  // A cut product name hides whole, never cut halfway (owner, 3 Oct 2026).
   assert.match(
-    rule('html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bprod'),
-    /text-overflow: ellipsis;/u,
+    rule("SCOPE .bc .bc-top .brand .bprod[data-cut]"),
+    /visibility: hidden;/u,
   );
   assert.doesNotMatch(topbar, /#camera-tip/u, "the V tip is not in the top bar");
 });
@@ -202,10 +201,8 @@ test("the live V tip covers only the status line's message", () => {
   } finally {
     camera.destroy();
   }
-  const overlays = css("../src/styles/battleclient/overlays.css");
-  assert.match(overlays, /\.bc \.dstatus > #camera-tip \{\n {2}position: absolute;/u);
-  assert.match(
-    overlays,
-    /\.bc \.dstatus > #camera-tip\[hidden\] \{\n {2}display: none;/u,
-  );
+  // Whitespace-insensitive: the formatter may break a long selector over lines.
+  const overlays = css("../src/styles/battleclient/overlays.css").replace(/\s+/gu, " ");
+  assert.match(overlays, /\.bc \.dstatus > #camera-tip \{ position: absolute;/u);
+  assert.match(overlays, /\.bc \.dstatus > #camera-tip\[hidden\] \{ display: none;/u);
 });

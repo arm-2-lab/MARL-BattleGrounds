@@ -4,8 +4,11 @@
  * BattleClient key has a different job in the Replay Viewer); B does nothing
  * outside the Replay Viewer; the arrows, V, B and F are never forwarded to
  * Python from the live battlefield, while N (one tick: Lock In, or the next
- * frame in scripted play) is; V, B and F skip text fields and open
- * dialogs and ignore Ctrl, Alt and Meta; unapproved keys stay unbound; the
+ * frame in scripted play) is; in the Replay Viewer N is the same as +1
+ * ("Forward one tick, the same as +1"); V, B, F, G and N are the rows marked
+ * skipsTextAndDialogs (they work from a focused button but not from a text field
+ * or open dialog); V, B and F skip text fields and open dialogs and ignore Ctrl,
+ * Alt and Meta; unapproved keys stay unbound; the
  * local-handler registry has one owner per handler, passes the call record and
  * honours a "not now" answer; and the help rows and text follow the table.
  */
@@ -75,7 +78,7 @@ const PLAN_TABLE = [
       "python",
       true,
     ],
-    ["one_tick", "Play one tick, then settle", "local", "replay_one_tick"],
+    ["one_tick", "Forward one tick, the same as +1", "local", "replay_one_tick"],
   ],
   [
     "tick_step",
@@ -238,7 +241,10 @@ test("the command table encodes plan section 4.5 exactly", () => {
     assert.equal(Object.isFrozen(row), true);
     assert.equal(Object.isFrozen(row.keys), true);
     assert.equal(Object.isFrozen(row.jobs), true);
-    assert.equal(row.skipsTextAndDialogs, ["v", "b", "f"].includes(row.keys[0]));
+    assert.equal(
+      row.skipsTextAndDialogs,
+      ["v", "b", "f", "g", "n"].includes(row.keys[0]),
+    );
     for (const entry of Object.values(row.jobs)) {
       if (entry === null) continue;
       assert.equal(Object.isFrozen(entry), true);

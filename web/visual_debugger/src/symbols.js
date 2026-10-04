@@ -1079,14 +1079,11 @@ export const SYMBOLS = Object.freeze([
     { aliases: ["more", "overflow"] },
   ),
   symbol(
-    "chronicle_ribbon",
+    "event_track",
     "HUD Marks",
-    "Chronicle",
-    "Each team's points rise as a tide from the centre line, and each small diamond is a fall, at the tick it happened.",
-    {
-      aliases: ["ribbon", "chronicle"],
-      numberSources: [source("MatchSummaryV1", "scores", "Each team's points")],
-    },
+    "Event Track",
+    "The Replay Viewer's timeline. A bar above the line is a Team A fall and a bar below it a Team B fall; a diamond is an Ultimate (filled when it deals damage); a small pip is a return. Click a tick to go there.",
+    { aliases: ["timeline", "track", "scrubber"] },
   ),
   symbol(
     "pov_caption",

@@ -160,6 +160,8 @@ export const CHOREOGRAPHY_PHASES = Object.freeze({
  * - glideEnd: every body has landed (real ms). chargeRushEnd: a charging Warrior's
  *   rush from START to its post-Charge spot ends (real ms).
  * - blowStart: the first blow may start (real ms) when bodies glide first.
+ * - impactBlow: blow time of the Impact moment, when life changes and numbers
+ *   pop; the "impact" beat hold (choreography.js) and beatView's hits use it.
  * - longTickLead: extra real ms per tick while Longer Tick is on.
  * - blowEnd: blow time when the choreography ends (Settle ends).
  * - fallBeat, returnBeat, endHold: beat lengths in ms. fallStagger: extra ms per
@@ -177,6 +179,7 @@ export const BEAT_CLOCK = Object.freeze({
   glideEnd: 260,
   chargeRushEnd: 110,
   blowStart: 280,
+  impactBlow: 260,
   longTickLead: 200,
   blowEnd: 900,
   fallBeat: 1500,
@@ -5108,16 +5111,21 @@ function buildAuthorizedPresentationChoreographyPlan(
  * The plan-wide resource caps.
  *
  * nodes, animations and persistentNodes cap the painter's SVG nodes, its event
- * animations and the nodes a persistent cue keeps after settling (the same 512
- * limits as before the beat clock; the measured worst case of the sample replays and the
- * browser fixture stays well under them, see tests/plan-budget.test.js).
+ * animations and the nodes a persistent cue keeps after settling: 1024 each
+ * (owner, 4 Oct 2026; 512 before). The plan counts each row's largest possible
+ * drawing, so a busy tick could ask for more than 512 while it really draws far
+ * fewer, and the budget then dropped its Herald Card and Fallen rows (map 47
+ * ticks 105, 110, 225 and 245 asked for 535 to 637). At 1024 they keep them; the
+ * measured cost is a few more arena nodes and no slower frames. The recorded worst
+ * case of real recordings and every browser fixture frame fit under the caps, see
+ * tests/plan-budget.test.js.
  * overrideAnimations caps the choreographer's own WAAPI overrides on durable nodes
  * (body glides, beat holds, cue fades and the camera ease).
  */
 export const PLAN_RESOURCE_CAPS = Object.freeze({
-  nodes: 512,
-  animations: 512,
-  persistentNodes: 512,
+  nodes: 1024,
+  animations: 1024,
+  persistentNodes: 1024,
   overrideAnimations: 96,
 });
 
@@ -5412,8 +5420,8 @@ export function buildChoreographyPlan(
  * Tell the HUD and panels which value to show at one moment of the beat clock.
  *
  * beatView is the one owner of held values (the dramatic hold): life reaches 0 at a
- * champion's Fall beat, the score changes at the Fall beat and a returning champion
- * comes back at the Return beat. Everything is read from the current frame only;
+ * champion's Fall beat, any other life change shows at Impact, the score changes at
+ * the Fall beat and a returning champion comes back at the Return beat. Everything is read from the current frame only;
  * there is no memory of an earlier frame, so a seek, a skip or Oracle -> Agent POV
  * -> Oracle gives the same answer as a fresh render.
  *
@@ -5432,6 +5440,13 @@ export function buildChoreographyPlan(
  *   none), after its life after the tick (0 for a fall), at its Fall beat time,
  *   held whether stage is before at, and shown the value to draw now. A death the
  *   team did not see has no entry and no time.
+ * - hits: one entry per other life change the audience saw this tick (a hit or a
+ *   heal that did not end in a fall): a recipient_health_resolution row of its own
+ *   rows whose transition_start_health and health_after_combat_resolution are both
+ *   known and differ. before and after are those two values, at is the Impact beat
+ *   (BEAT_CLOCK.impactBlow on this schedule's clock), held and shown as for life.
+ *   A champion appears once (its first row); a change the audience has no row for
+ *   has no entry, so in Agent POV nothing unseen is ever held.
  * - score: before and after (Team A then Team B; from the adapter's
  *   authorizedPresentationMatchBeatFacts: match_summary.previous_scores and scores,
  *   before equals after when the host sent no previous_scores; both null without a
@@ -5453,6 +5468,7 @@ export function buildChoreographyPlan(
  *   audience: "researcher" | "agent_pov",
  *   schedule: BeatSchedule,
  *   life: ReadonlyArray<HeldLife>,
+ *   hits: ReadonlyArray<HeldLife>,
  *   score: Readonly<{
  *     before: ReadonlyArray<number> | null,
  *     after: ReadonlyArray<number> | null,
@@ -5514,6 +5530,44 @@ export function beatView(frame, stage = "end", options = {}) {
       });
     }),
   );
+  const fallKeys = new Set(schedule.falls.map((entry) => entry.presentationKey));
+  const impactAt = beatRealTime(BEAT_CLOCK.impactBlow, schedule.glide, schedule.lead);
+  /** @type {Set<string>} */
+  const hitKeys = new Set();
+  const hits = Object.freeze(
+    rows.flatMap((row) => {
+      if (row.kind !== "recipient_health_resolution" || row.vocabulary !== "event") {
+        return [];
+      }
+      const anchor = record(row.payload?.recipient_anchor);
+      const presentationKey = identifier(anchor?.presentation_key);
+      const publicAgentId = identifier(anchor?.public_agent_id);
+      if (
+        presentationKey === null ||
+        publicAgentId === null ||
+        fallKeys.has(presentationKey) ||
+        hitKeys.has(presentationKey)
+      ) {
+        return [];
+      }
+      const before = finiteNumber(row.payload?.transition_start_health);
+      const after = finiteNumber(row.payload?.health_after_combat_resolution);
+      if (before === null || after === null || before === after) return [];
+      hitKeys.add(presentationKey);
+      const held = time < impactAt;
+      return [
+        Object.freeze({
+          presentationKey,
+          publicAgentId,
+          before,
+          after,
+          at: impactAt,
+          held,
+          shown: held ? before : after,
+        }),
+      ];
+    }),
+  );
   // The adapter owns reading the held facts for this audience; beatView owns when
   // each one shows.
   const facts = authorizedPresentationMatchBeatFacts(frame);
@@ -5540,6 +5594,7 @@ export function beatView(frame, stage = "end", options = {}) {
     audience,
     schedule,
     life,
+    hits,
     score: Object.freeze({
       before: scoreBefore,
       after: scoreAfter,

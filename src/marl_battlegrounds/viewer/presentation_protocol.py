@@ -21,7 +21,15 @@ viewing team's own champions only, the recipient among them. Every frame
 may carry ``match_moments``, the Herald Cards' history facts for that
 frame's own view (see viewer.match_moments); its check requires each
 rescued champion to be one the view's own incoming events saw at both ends
-of the tick.
+of the tick. Every replay frame may carry ``next_end_spots``, the Next Step
+Ghost host fact: where each champion of the view stands at the end of the
+recorded next tick (see NextEndSpotV1); its check requires each named
+champion to be alive in the frame's own current scene, and the final frame to
+name nobody. Every replay frame may also carry ``recent_falls``, the Fallen
+panel's earlier rows for that frame's own view (see
+viewer.champion_streaks.RecentFallV1); its check requires every row to fall
+on one of the 7 ticks before the shown one, each victim once per tick. An old
+recording without lethal damage contribution events names no killers there.
 """
 
 from __future__ import annotations
@@ -117,7 +125,11 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     oracle_presentation_key_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2
-from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.champion_streaks import (
+    FEED_WINDOW_TICKS,
+    ChampionStreakV1,
+    RecentFallV1,
+)
 from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
 from marl_battlegrounds.viewer.match_summary import MatchHonorsV1, MatchSummaryV1
 
@@ -4364,6 +4376,110 @@ class LiveSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
         return self
 
 
+class NextEndSpotV1(_PresentationProtocolModel):
+    """Say where one champion stands at the end of the recorded next tick.
+
+    The replay service reads it from the recorded frame after the shown one,
+    for the Replay Viewer's Next Step Ghost switch. It is a presentation fact,
+    not a replay field, and not a prediction.
+
+    Attributes
+    ----------
+    public_agent_id : str
+        The champion's public ID, the same ID its body row has in this
+        frame's own scene.
+    position : tuple of float
+        Its center (x, y) in world units at the recorded next frame, in the
+        same coordinates as the scene's body positions. Finite.
+    """
+
+    public_agent_id: _ScientificId
+    position: tuple[float, float]
+
+    @model_validator(mode="after")
+    def _validate_position(self) -> Self:
+        """Require a finite position."""
+        if not all(isfinite(value) for value in self.position):
+            raise ValueError("next end spot position must be finite.")
+        return self
+
+
+def _validate_next_end_spots(
+    spots: tuple[NextEndSpotV1, ...] | None,
+    *,
+    scene: AuthorizedBattlefieldSceneV1,
+    final: bool,
+) -> None:
+    """Check a replay frame's Next Step Ghost spots against its own scene.
+
+    Parameters
+    ----------
+    spots : tuple of NextEndSpotV1 or None
+        The frame's ``next_end_spots``. None means the producer sent none and
+        passes.
+    scene : AuthorizedBattlefieldSceneV1
+        The frame's own current scene (Oracle View: current_endpoint.scene,
+        every body; Agent POV: current_endpoint.parts.scene, only the bodies
+        its team sees).
+    final : bool
+        True on the final captured frame, which has no next tick.
+
+    Raises
+    ------
+    ValueError
+        A spot names a champion twice, names one that is not alive in this
+        scene (so an Agent POV frame can never name a champion its team does
+        not see now), or the final frame names anyone.
+    """
+    if spots is None:
+        return
+    if final and spots:
+        raise ValueError("the final replay frame cannot carry next end spots.")
+    alive = {
+        agent.public_agent_id for agent in scene.agents if agent.life_state == "alive"
+    }
+    names = [spot.public_agent_id for spot in spots]
+    if len(set(names)) != len(names) or not set(names) <= alive:
+        raise ValueError(
+            "next end spots must name, once each, champions alive in this "
+            "frame's own scene"
+        )
+
+
+def _validate_recent_falls(
+    rows: tuple[RecentFallV1, ...] | None,
+    *,
+    tick: int,
+) -> None:
+    """Check a replay frame's Fallen panel history against its own tick.
+
+    Parameters
+    ----------
+    rows : tuple of RecentFallV1 or None
+        The frame's ``recent_falls``. None means the producer sent none and
+        passes.
+    tick : int
+        The shown frame's simulator tick (source_simulator_step_count).
+
+    Raises
+    ------
+    ValueError
+        A row is not on one of the FEED_WINDOW_TICKS - 1 ticks before the
+        shown one, or a victim falls twice on one tick. Who may be named in
+        Agent POV is the producer's rule (viewer.champion_streaks); a past
+        tick's sight cannot be checked from this frame.
+    """
+    if rows is None:
+        return
+    keys = [(row.tick, row.victim_public_agent_id) for row in rows]
+    if len(set(keys)) != len(keys) or any(
+        not tick - FEED_WINDOW_TICKS < row.tick < tick for row in rows
+    ):
+        raise ValueError(
+            "recent falls must lie in the 7 ticks before this one, each victim once"
+        )
+
+
 class _MatchPresentationProtocolModel(_PresentationProtocolModel):
     """Additive match facts tied to the surrounding presentation source epoch.
 
@@ -4790,6 +4906,12 @@ class ReplayOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel)
     upcoming_transition: OracleUpcomingTransitionV1 | None
     technical_frame: ReplayOracleTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: each living champion's spot in the recorded next
+    frame; empty on the final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: every fall of the 7 ticks before this one, with
+    its lethal damage contributors; None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4830,6 +4952,16 @@ class ReplayOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel)
             and self.replay_inspection is not None
         ):
             raise ValueError("the final replay frame cannot carry outgoing intent.")
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         _validate_oracle_inspection(
             source=self.source,
             endpoint=self.current_endpoint,
@@ -4868,6 +5000,14 @@ class ReplayNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolM
     technical_frame: ReplayNoSharedObsTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
     researcher_space: ReplayResearcherSpaceV1
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: the spot in the recorded next frame of each champion
+    the recipient's team sees alive now and still sees then; empty on the
+    final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: the falls of the 7 ticks before this one that
+    the recipient's team saw, naming only killers whose blow it saw land;
+    None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4880,6 +5020,16 @@ class ReplayNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolM
         _validate_replay_agent_technical(self, shared=False)
         _validate_replay_agent_inspection_state(self)
         _validate_replay_researcher_space(self)
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.parts.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -4905,6 +5055,14 @@ class ReplaySharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
     technical_frame: ReplaySharedObsTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
     researcher_space: ReplayResearcherSpaceV1
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: the spot in the recorded next frame of each champion
+    the recipient's team sees alive now and still sees then; empty on the
+    final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: the falls of the 7 ticks before this one that
+    the recipient's team saw, naming only killers whose blow it saw land;
+    None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4932,6 +5090,16 @@ class ReplaySharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
         _validate_replay_agent_technical(self, shared=True)
         _validate_replay_agent_inspection_state(self)
         _validate_replay_researcher_space(self)
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.parts.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -6195,6 +6363,7 @@ __all__ = [
     "LocalOracleCorpseOverlayV1",
     "LocalOracleCorpsePublicFactsV1",
     "MovementActionDisplayRowV1",
+    "NextEndSpotV1",
     "NoSharedObsAuthorizedCurrentEndpointV1",
     "NoSharedObsLatestTransitionV1",
     "NoSharedObsPresentationAuthorityV1",

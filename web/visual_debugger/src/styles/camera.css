@@ -9,11 +9,12 @@
  * covers the arena, the deck, the rail or the HUD. The fixed bottom-right
  * rule below is only a fallback for a page without a status line. It fades
  * in, holds and fades out over the 4 s it is shown (no fade under reduced
- * motion). In the Replay Viewer the change tip and the
- * first-open tip are small popovers just under the switch, over the top of
- * the Chronicle ribbon: they take no dock height, so showing or hiding them
- * never changes the arena's size, and a fresh page and a round trip draw the
- * same arena. Colors come only from the tokens in styles.css (the live tip
+ * motion). In the Replay Viewer the change tip and the first-open tip sit in
+ * the scorebug's #camera-tips box (the empty inner half of the right-hand
+ * score column, placed by battleclient/scorebug.css), so they cover nothing
+ * (owner, 3 Oct 2026, Micro List M7). They take no space, so showing or
+ * hiding them never changes the arena's size, and a fresh page and a round
+ * trip draw the same arena. Colors come only from the tokens in styles.css (the live tip
  * uses the vision tokens on .bc). styles.css imports this file.
  */
 
@@ -126,13 +127,12 @@
 }
 
 /*
- * The first-open tip (BattleClient and DevClient; the Replay Viewer floats it,
- * see below) is an ordinary item of the switch, on its own line just under
+ * The first-open tip (a page without a tip host; the Replay Viewer puts it in
+ * #camera-tips, see below) is an ordinary item of the switch, on its own line just under
  * the three camera buttons. It takes its own space, so it can never
- * cover the transport status, the Chronicle or any other dock text, and it
- * sits in the same place on every frame. "contain: inline-size" stops its
- * words from widening the switch, so showing it never squeezes the Fight
- * caption beside the switch; long words wrap inside the switch width instead.
+ * cover the transport status or any other dock text, and it sits in the
+ * same place on every frame. "contain: inline-size" stops its words from
+ * widening the switch; long words wrap inside the switch width instead.
  * When it hides, the dock closes up again.
  */
 .camera-switch__first-tip {
@@ -162,21 +162,34 @@
 }
 
 /*
- * Replay Viewer: both tips float just under the switch (right-aligned to it)
- * and take no space in the dock. They sit over the ribbon's top edge for a few
- * seconds, never over the arena.
+ * Replay Viewer: the camera switch ends the Rune Scrubber's button row. The
+ * dock (#replay-timeline) is the positioned box for the switch's absolute
+ * parts (the visually hidden Battle Cam words), so the switch itself is not.
  */
-#replay-camera-switch .camera-switch__tip,
-#replay-camera-switch .camera-switch__first-tip {
-  position: absolute;
-  z-index: 3;
-  top: calc(100% + 4px);
-  right: 0;
-  flex: none;
+html[data-product-kind="replay_viewer"] #replay-timeline {
+  position: relative;
+}
+
+html[data-product-kind="replay_viewer"] #replay-camera-switch {
+  position: static;
+}
+
+/*
+ * Replay Viewer: both tips in #camera-tips (the scorebug's empty score half).
+ * They start at the column's inner edge and wrap inside it, at most two lines
+ * at 1366 wide; the box itself is placed by battleclient/scorebug.css.
+ */
+#camera-tips > .camera-switch__tip,
+#camera-tips > .camera-switch__first-tip {
+  flex: 0 1 auto;
   contain: none;
-  inline-size: max-content;
-  max-inline-size: min(24rem, 90vw);
+  inline-size: auto;
+  max-inline-size: 100%;
+  padding: 3px 9px;
+  font-size: 11px;
+  line-height: 1.25;
   white-space: normal;
+  pointer-events: auto;
 }
 
 .camera-inset__floor {

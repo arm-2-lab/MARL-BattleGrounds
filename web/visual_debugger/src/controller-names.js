@@ -37,8 +37,8 @@
  *   team's full list ("Team A Controllers") under it: one shared panel
  *   (#controller-list) kept inside the window at every width.
  *
- * Who calls it: looks/hud.js (the live scorebug lines and the Replay Viewer's
- * Team Rosters strip), match-summary.js (the Replay Viewer's scorebug),
+ * Who calls it: looks/hud.js (the scorebug lines in every client and the
+ * Replay Viewer's Arena Frames headers), match-summary.js (the old score strip),
  * tactics-turn.js (the rail's Policies list, the focus chip, Watch Only and
  * the Class Guide note) and panels.js (the Developer drawer's Roster card).
  * Each caller builds the model with controllerRoster from the same facts
@@ -685,7 +685,7 @@ function pageState(doc) {
  * with controllerRoster from the same facts), after painting its names. An
  * open list keeps its place and its pending hide, and its content is
  * redrawn from the new roster. When its line was replaced by a repaint (the
- * Replay Viewer rebuilds its Team Rosters strip on every frame), the list
+ * Replay Viewer rebuilds its Arena Frames on every frame), the list
  * moves to the marked element of the same team now under the pointer, or,
  * while the pointer is on the list, to the repainted twin of its line (same
  * first class, same team); it closes when there is none or its team has no

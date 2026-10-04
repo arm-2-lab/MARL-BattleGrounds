@@ -147,6 +147,62 @@ view shows anything different. `tests/test_battle_client_presentation_reuse.py`
 checks that one switch builds once, that every reused presentation equals a
 fresh build, and that the join is validated once and a failing join always fails.
 
+The first switch to each Agent POV agent still built that agent's timeline marks
+on demand. Now the Replay Viewer builds every agent's Agent POV work before its
+page opens, the way the BattleClient compiles its first turn before its page
+opens. `ReplayViewerService.prepare_agent_pov` builds each agent's timeline
+marks, Champion Streaks and Herald Cards tables, the SharedObs source rows of
+every frame (in a NoSharedObs replay, each agent's projection) and Oracle View's
+tables. The standalone Replay Viewer prints one line and does this before it
+serves. The BattleClient's Open Replay answers at once and does it on a
+background thread: the new tab shows a dark "Opening Replay" page, and the
+child Viewer holds its page until the work is done. Between small pieces the
+work waits until the BattleClient answers no request
+(`viewer.server.wait_for_quiet_requests`), so the game goes first. That wait is
+bounded: when requests never stop for 0.5 s, the work runs for 0.25 s anyway,
+so it always finishes. The work loads no JAX. Measured on the featured 253-frame SharedObs replay (map 47)
+on CPU, over HTTP, on 3 October 2026:
+
+| Featured replay, CPU, HTTP | Before | After |
+| --- | ---: | ---: |
+| From the launch command to the page's address | about 6 s | 12.8 s |
+| First Agent POV entry, clicked at once after opening | 1.8–2.3 s | 41 ms |
+| First switch to each other agent, clicked at once after that | 0.44–0.59 s | 38–41 ms (one 138 ms) |
+| Switching back to an agent already seen | 61–115 ms | 38–40 ms |
+| Resident memory after opening | — | about 60 MiB more, almost all the source rows of all 253 frames |
+
+In the BattleClient (browser, the same work for a 253-tick game, 3 October 2026):
+
+| BattleClient during Open Replay | No replay opening | While the replay prepares |
+| --- | ---: | ---: |
+| Open Replay answers | — | 0.16 s (about 7 s when the work ran inside the click) |
+| Oracle View | 0.06–0.07 s | 0.06–0.07 s |
+| Agent POV | 0.07–0.08 s | 0.09–0.10 s |
+| Restart | 0.14–0.15 s | 0.17–0.18 s (2.7–2.9 s before the work gave way to requests) |
+| Replay tab ready after the click | — | about 10 s |
+
+When requests never stop, the bound decides how long the tab waits. Right
+after Open Replay, a Restart into a Policies Only game on Run (its page polls
+the game about 6 times a second) left no quiet gaps:
+
+| Longest wait, then work | Replay tab ready | Slowest game request meanwhile |
+| --- | ---: | ---: |
+| No bound | not done after 300 s | — |
+| 1.0 s, then 0.25 s | 40 s | 553 ms |
+| 0.5 s, then 0.25 s (chosen) | 25 s | 457 ms |
+| 0.25 s, then 0.25 s | 17 s | 832 ms |
+
+Run kept its pace in every row. A second Open Replay while the first replay
+plays at 2x opens in about 11 s, because the new child stops the old one first.
+A 5-frame scenario replay needs about 0.25 s for the same work. Every agent's
+prepared marks are byte for byte the marks a request builds, and its tables are
+the same. `tests/test_replay_timeline_marks.py` checks this for SharedObs and
+NoSharedObs replays, checks that a failing piece leaves the rest to build on
+demand, and checks that Open Replay starts its child Viewer only after the
+work is done. The kill-credit calculation still compiles on the first fall
+shown, about 0.35 s once per process, because the Replay Viewer launch must not
+load JAX (`tests/test_visual_debugger_launcher.py`).
+
 A separate browser regression holds the accepted turn's evidence callback open.
 Save remains disabled until it finishes, then succeeds using the settled revision.
 A failed method still permits inspection and saving of the last accepted game.

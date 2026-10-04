@@ -2644,8 +2644,46 @@
             }
           ]
         },
+        "next_end_spots": [
+          {
+            "position": [
+              1.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-0"
+          },
+          {
+            "position": [
+              1.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-1"
+          },
+          {
+            "position": [
+              1.5,
+              6.0
+            ],
+            "public_agent_id": "agent-slot-2"
+          },
+          {
+            "position": [
+              18.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-5"
+          },
+          {
+            "position": [
+              18.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-6"
+          }
+        ],
         "presentation_kind": "replay_oracle",
         "product_kind": "replay_viewer",
+        "recent_falls": [],
         "replay_inspection": {
           "accepted_action": {
             "move_action": 0,
@@ -4849,8 +4887,32 @@
             }
           ]
         },
+        "next_end_spots": [
+          {
+            "position": [
+              1.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-0"
+          },
+          {
+            "position": [
+              1.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-1"
+          },
+          {
+            "position": [
+              1.5,
+              6.0
+            ],
+            "public_agent_id": "agent-slot-2"
+          }
+        ],
         "presentation_kind": "replay_shared_obs_agent_pov",
         "product_kind": "replay_viewer",
+        "recent_falls": [],
         "replay_inspection": {
           "accepted_action": {
             "move_action": 0,
@@ -16959,8 +17021,32 @@
             }
           ]
         },
+        "next_end_spots": [
+          {
+            "position": [
+              1.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-0"
+          },
+          {
+            "position": [
+              1.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-1"
+          },
+          {
+            "position": [
+              1.5,
+              6.0
+            ],
+            "public_agent_id": "agent-slot-2"
+          }
+        ],
         "presentation_kind": "replay_no_shared_obs_agent_pov",
         "product_kind": "replay_viewer",
+        "recent_falls": [],
         "replay_inspection": {
           "accepted_action": {
             "move_action": 0,
@@ -19645,8 +19731,46 @@
             }
           ]
         },
+        "next_end_spots": [
+          {
+            "position": [
+              1.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-0"
+          },
+          {
+            "position": [
+              1.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-1"
+          },
+          {
+            "position": [
+              1.5,
+              6.0
+            ],
+            "public_agent_id": "agent-slot-2"
+          },
+          {
+            "position": [
+              18.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-5"
+          },
+          {
+            "position": [
+              18.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-6"
+          }
+        ],
         "presentation_kind": "replay_oracle",
         "product_kind": "replay_viewer",
+        "recent_falls": [],
         "replay_inspection": null,
         "schema_version": 1,
         "source": {
@@ -21621,8 +21745,32 @@
             }
           ]
         },
+        "next_end_spots": [
+          {
+            "position": [
+              1.5,
+              1.5
+            ],
+            "public_agent_id": "agent-slot-0"
+          },
+          {
+            "position": [
+              1.5,
+              3.75
+            ],
+            "public_agent_id": "agent-slot-1"
+          },
+          {
+            "position": [
+              1.5,
+              6.0
+            ],
+            "public_agent_id": "agent-slot-2"
+          }
+        ],
         "presentation_kind": "replay_shared_obs_agent_pov",
         "product_kind": "replay_viewer",
+        "recent_falls": [],
         "replay_inspection": {
           "accepted_action": {
             "move_action": 0,
@@ -30932,8 +31080,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -33403,8 +33553,10 @@
           }
         ]
       },
+      "next_end_spots": null,
       "presentation_kind": "replay_oracle",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -34742,8 +34894,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -50722,8 +50876,32 @@
           }
         ]
       },
+      "next_end_spots": [
+        {
+          "position": [
+            1.5,
+            1.5
+          ],
+          "public_agent_id": "agent-slot-0"
+        },
+        {
+          "position": [
+            1.5,
+            3.75
+          ],
+          "public_agent_id": "agent-slot-1"
+        },
+        {
+          "position": [
+            1.5,
+            6.0
+          ],
+          "public_agent_id": "agent-slot-2"
+        }
+      ],
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": [],
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -52857,8 +53035,46 @@
           }
         ]
       },
+      "next_end_spots": [
+        {
+          "position": [
+            1.5,
+            1.5
+          ],
+          "public_agent_id": "agent-slot-0"
+        },
+        {
+          "position": [
+            1.5,
+            3.75
+          ],
+          "public_agent_id": "agent-slot-1"
+        },
+        {
+          "position": [
+            1.5,
+            6.0
+          ],
+          "public_agent_id": "agent-slot-2"
+        },
+        {
+          "position": [
+            18.5,
+            1.5
+          ],
+          "public_agent_id": "agent-slot-5"
+        },
+        {
+          "position": [
+            18.5,
+            3.75
+          ],
+          "public_agent_id": "agent-slot-6"
+        }
+      ],
       "presentation_kind": "replay_oracle",
       "product_kind": "replay_viewer",
+      "recent_falls": [],
       "replay_inspection": null,
       "schema_version": 1,
       "source": {
@@ -53947,8 +54163,32 @@
           }
         ]
       },
+      "next_end_spots": [
+        {
+          "position": [
+            1.5,
+            1.5
+          ],
+          "public_agent_id": "agent-slot-0"
+        },
+        {
+          "position": [
+            1.5,
+            3.75
+          ],
+          "public_agent_id": "agent-slot-1"
+        },
+        {
+          "position": [
+            1.5,
+            6.0
+          ],
+          "public_agent_id": "agent-slot-2"
+        }
+      ],
       "presentation_kind": "replay_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": [],
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -61878,8 +62118,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "researcher_space": {
         "class_mechanics": [
@@ -63523,8 +63765,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "researcher_space": {
         "class_mechanics": [
@@ -65109,8 +65353,32 @@
           }
         ]
       },
+      "next_end_spots": [
+        {
+          "position": [
+            1.5,
+            1.5
+          ],
+          "public_agent_id": "agent-slot-0"
+        },
+        {
+          "position": [
+            1.5,
+            3.75
+          ],
+          "public_agent_id": "agent-slot-1"
+        },
+        {
+          "position": [
+            1.5,
+            6.0
+          ],
+          "public_agent_id": "agent-slot-2"
+        }
+      ],
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": [],
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -66887,8 +67155,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "researcher_space": {
         "class_mechanics": [
@@ -68303,8 +68573,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -70051,8 +70323,10 @@
           }
         ]
       },
+      "next_end_spots": [],
       "presentation_kind": "replay_no_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": [],
       "replay_inspection": null,
       "researcher_space": {
         "class_mechanics": [
@@ -71949,8 +72223,10 @@
           }
         ]
       },
+      "next_end_spots": [],
       "presentation_kind": "replay_oracle",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "schema_version": 1,
       "source": {
@@ -73051,8 +73327,10 @@
           }
         ]
       },
+      "next_end_spots": [],
       "presentation_kind": "replay_oracle",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "schema_version": 1,
       "source": {
@@ -73915,8 +74193,10 @@
           }
         ]
       },
+      "next_end_spots": null,
       "presentation_kind": "replay_oracle",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,
@@ -75267,8 +75547,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": null,
       "researcher_space": {
         "class_mechanics": [
@@ -76767,8 +77049,10 @@
       "match_honors": null,
       "match_moments": null,
       "match_summary": null,
+      "next_end_spots": null,
       "presentation_kind": "replay_shared_obs_agent_pov",
       "product_kind": "replay_viewer",
+      "recent_falls": null,
       "replay_inspection": {
         "accepted_action": {
           "move_action": 0,

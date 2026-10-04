@@ -1,9 +1,14 @@
 /**
- * @file Check the Replay Viewer dock readout is plain words, as in the design store:
- * the position line reads "Tick 98 / 122" and the status line reads "Paused · Settled",
- * "Playing", "Seeking…" or "Offline". The status line never shows the frame index, the
- * speed or an incoming transition ID (those belong to the Frame tab's Technical Frame),
- * and data-transport-state keeps the exact transport state for tests and tools.
+ * @file Check the Replay Viewer's keyboard and screen-reader readout is plain words.
+ * The Rune Scrubber keeps these two lines in the page, visually hidden, beside its own
+ * visible "Tick 118 of 204" readout: the position line reads "Tick 98 / 122" and the
+ * status line reads "Paused · Settled", "Playing", "Seeking…" or "Offline". The status
+ * line never shows the frame index, the speed or an incoming transition ID (those
+ * belong to the Frame tab's Technical Frame), and data-transport-state keeps the exact
+ * transport state for tests and tools. The six step buttons and the slider stay
+ * enabled while the controller's own request is in flight (a seek, a step or
+ * autoplay's next frame: a press then waits as its pending target, so nothing
+ * flashes grey) and are disabled while the page is busy with other work.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -102,4 +107,32 @@ test("dock readout says the tick and a plain playback label, with no debug IDs",
   );
   assert.equal(settled.position.textContent, "Tick 98 / 122");
   assert.equal(settled.rateSelect.value, "1.25");
+});
+
+test("step buttons stay enabled during the controller's own request, not while the page is busy", () => {
+  const ids = /** @type {const} */ ([
+    "firstButton",
+    "backTenButton",
+    "previousButton",
+    "nextButton",
+    "forwardTenButton",
+    "lastButton",
+    "slider",
+  ]);
+  for (const playing of [true, false]) {
+    const own = elements();
+    renderReplayTimelineControls(
+      /** @type {any} */ (own),
+      snapshot(REPLAY_TRANSPORT_STATES.ADVANCING, playing),
+    );
+    for (const id of ids) assert.equal(own[id].disabled, false, `${id} ${playing}`);
+  }
+  // main.js reports ADVANCING while the page is busy with other work (a view
+  // change); the controller has no request of its own, so presses would fail.
+  const busy = elements();
+  renderReplayTimelineControls(/** @type {any} */ (busy), {
+    ...snapshot(REPLAY_TRANSPORT_STATES.ADVANCING, false),
+    requestPending: false,
+  });
+  for (const id of ids) assert.equal(busy[id].disabled, true, id);
 });

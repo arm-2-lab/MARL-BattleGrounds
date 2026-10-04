@@ -19,7 +19,9 @@
  * playback the deck's submit controls (Lock In, which reads "Advance scripted
  * frame", and the Watching bar's Play One Turn) both send N. The transport no
  * longer resolves the incoming transition; the Frame tab's Technical Frame
- * shows it (This Frame group, copyable).
+ * shows it (This Frame group, copyable). The playback controller owns the
+ * render after its own commands, and autoplay's next-frame fetch is marked
+ * quiet (state.quietBusy) so the connection pill stays "Connected".
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -349,6 +351,7 @@ test("clear then pending render cannot republish retained Oracle or successor PO
     presentationPending: false,
     atStart: false,
     atEnd: false,
+    targetFrameIndex: null,
   });
   assert.equal(pending.presentation, null);
   assert.equal(pending.transport, null);
@@ -1161,7 +1164,7 @@ test("replay artifact actions snapshot once, fence every await, and never drive 
   );
   assert.match(
     metricErrorSource,
-    /error instanceof DebuggerApiError && error\.status === 404[\s\S]*No metric report is available for this replay\.[\s\S]*level: "warning"/u,
+    /error instanceof DebuggerApiError && error\.status === 404[\s\S]*This replay has no metrics to download\.[\s\S]*level: "warning"/u,
   );
   assert.match(clearSource, /invalidateReplayArtifactAction\(\);/u);
   assert.match(
@@ -1260,7 +1263,12 @@ test("playback controller owns the first installed-successor render", async () =
   );
   assert.match(
     sendSource,
-    /finally \{\s*state\.busy = false;\s*if \(!deferFinalRender \|\| state\.resyncRequired \|\| state\.shuttingDown\) \{\s*render\(\);/u,
+    /finally \{\s*state\.busy = false;\s*state\.quietBusy = false;\s*if \(!deferFinalRender \|\| state\.resyncRequired \|\| state\.shuttingDown\) \{\s*render\(\);/u,
+  );
+  // Autoplay's own next-frame fetch is quiet: the pill stays "Connected".
+  assert.match(
+    sendSource,
+    /state\.quietBusy = deferFinalRender && command\.command_type === "next_frame";/u,
   );
   assert.match(dispatchSource, /const payload = await sendReplayCommand\(command\);/u);
   assert.doesNotMatch(dispatchSource, /deferFinalRender/u);

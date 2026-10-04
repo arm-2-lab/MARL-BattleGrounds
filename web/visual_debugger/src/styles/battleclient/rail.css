@@ -19,10 +19,15 @@
  * cards (Roster, Agent Details, Pending, Latest Transition, Technical
  * Frame), which keep their own shared styles inside it.
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
-html[data-product-kind="combat_debugger"] .bc .rc {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc {
   position: relative;
   padding: 12px;
   border: 1px solid var(--edge);
@@ -30,19 +35,27 @@ html[data-product-kind="combat_debugger"] .bc .rc {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc-head {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc-head h3 {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc-head
+  h3 {
   font-size: 18px;
 }
 
 /* The Guide / Hints / Off switch. */
-html[data-product-kind="combat_debugger"] .bc .rc .seg {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc
+  .seg {
   display: inline-flex;
   flex: none;
   flex-wrap: wrap;
@@ -52,7 +65,11 @@ html[data-product-kind="combat_debugger"] .bc .rc .seg {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc .seg button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc
+  .seg
+  button {
   min-height: 0;
   padding: 3px 8px;
   border: 0;
@@ -65,22 +82,37 @@ html[data-product-kind="combat_debugger"] .bc .rc .seg button {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc .seg button + button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc
+  .seg
+  button
+  + button {
   border-left: 1px solid var(--edge);
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc .seg button:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc
+  .seg
+  button:hover:not(:disabled) {
   color: var(--text);
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .rc .seg button[aria-pressed="true"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .rc
+  .seg
+  button[aria-pressed="true"] {
   color: var(--text);
   background: var(--raise);
   box-shadow: inset 0 -2px 0 var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .setpill {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .setpill {
   display: inline-block;
   margin-top: 4px;
   padding: 2px 8px;
@@ -91,17 +123,23 @@ html[data-product-kind="combat_debugger"] .bc .setpill {
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .setpill:empty {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .setpill:empty {
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .setpill.watch {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .setpill.watch {
   border: 1px solid var(--edge2);
   color: var(--muted);
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .dothis {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .dothis {
   margin-top: 10px;
   padding: 8px 10px;
   border: 1px solid var(--moon);
@@ -109,18 +147,26 @@ html[data-product-kind="combat_debugger"] .bc .dothis {
   background: #131d30;
 }
 
-html[data-product-kind="combat_debugger"] .bc .dothis .eyebrow {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .dothis
+  .eyebrow {
   color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .dothis p.t {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .dothis
+  p.t {
   margin-top: 2px;
   font-size: 15px;
   line-height: 1.4;
 }
 
 /* The four phases: You Plan, Lock In, Policies Choose, All Act. */
-html[data-product-kind="combat_debugger"] .bc .phases {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   margin: 12px 0 4px;
@@ -129,7 +175,10 @@ html[data-product-kind="combat_debugger"] .bc .phases {
   counter-reset: ph;
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li {
   position: relative;
   display: grid;
   justify-items: center;
@@ -140,7 +189,10 @@ html[data-product-kind="combat_debugger"] .bc .phases li {
   text-align: center;
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li::before {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li::before {
   position: relative;
   z-index: 1;
   display: grid;
@@ -157,7 +209,10 @@ html[data-product-kind="combat_debugger"] .bc .phases li::before {
   counter-increment: ph;
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li::after {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li::after {
   position: absolute;
   top: 11px;
   left: calc(50% + 11px);
@@ -167,34 +222,50 @@ html[data-product-kind="combat_debugger"] .bc .phases li::after {
   content: "";
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li:last-child::after {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li:last-child::after {
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li.done::before {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li.done::before {
   border-color: var(--moon);
   color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li.on {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li.on {
   color: var(--text);
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .phases li.on::before {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .phases
+  li.on::before {
   border-color: var(--moon);
   color: var(--ink);
   background: var(--moon);
 }
 
 /* The turn checklist: one row per champion you command, then the policies. */
-html[data-product-kind="combat_debugger"] .bc .cl {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl {
   display: grid;
   gap: 6px;
   margin-top: 10px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-head {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -206,7 +277,9 @@ html[data-product-kind="combat_debugger"] .bc .cl-head {
   text-transform: uppercase;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-row {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -221,27 +294,39 @@ html[data-product-kind="combat_debugger"] .bc .cl-row {
   text-align: left;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-row:hover {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-row:hover {
   border-color: var(--edge2);
   background: var(--panel2);
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-row.focus {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-row.focus {
   border-color: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-row b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-row
+  b {
   display: block;
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-row span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-row
+  span {
   display: block;
   color: var(--muted);
   font-size: 11px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-state {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-state {
   padding: 1px 6px;
   border-radius: 4px;
   color: var(--ink);
@@ -252,7 +337,9 @@ html[data-product-kind="combat_debugger"] .bc .cl-state {
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-state.def {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-state.def {
   border: 1px solid var(--edge2);
   color: var(--muted);
   background: transparent;
@@ -260,13 +347,17 @@ html[data-product-kind="combat_debugger"] .bc .cl-state.def {
 
 /* A fallen champion's row: it takes no orders until it returns, so its tag
    reads Fallen (muted, dashed) instead of Set or Default. */
-html[data-product-kind="combat_debugger"] .bc .cl-state.fallen {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-state.fallen {
   border: 1px dashed var(--edge2);
   color: var(--muted);
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol {
   display: grid;
   gap: 3px;
   margin-top: 2px;
@@ -275,51 +366,78 @@ html[data-product-kind="combat_debugger"] .bc .cl-pol {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol .cl-head {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol
+  .cl-head {
   margin: 0;
 }
 
 /* Policies Only: the line under Nobody Is Yours. */
-html[data-product-kind="combat_debugger"] .bc .cl-note {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-note {
   color: var(--muted);
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol .row {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol
+  .row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol .note {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol
+  .note {
   color: var(--muted);
   font-size: 11px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol .st {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol
+  .st {
   margin-left: auto;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cl-pol .st.busy {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cl-pol
+  .st.busy {
   color: var(--moon);
 }
 
 /* Class Guide. The note under the abilities names who plays the champion. */
-html[data-product-kind="combat_debugger"] .bc .cg .cg-note {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cg
+  .cg-note {
   margin-top: 8px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cg h3 span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cg
+  h3
+  span {
   margin-left: 4px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 400;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cg .lore {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cg
+  .lore {
   margin-top: 4px;
   color: var(--muted);
   font-size: 13px;
@@ -327,13 +445,18 @@ html[data-product-kind="combat_debugger"] .bc .cg .lore {
   text-wrap: pretty;
 }
 
-html[data-product-kind="combat_debugger"] .bc .cg .stats {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .cg
+  .stats {
   margin-top: 6px;
   color: var(--muted);
   font-size: 11px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl {
   display: grid;
   gap: 8px;
   margin: 8px 0 0;
@@ -341,37 +464,54 @@ html[data-product-kind="combat_debugger"] .bc .abl {
   list-style: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl li {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl
+  li {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl svg {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl
+  svg {
   width: 28px;
   height: 28px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl
+  b {
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl em {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl
+  em {
   margin-left: 4px;
   color: var(--muted);
   font-size: 11px;
   font-style: normal;
 }
 
-html[data-product-kind="combat_debugger"] .bc .abl p {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .abl
+  p {
   margin-top: 1px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
 }
 
-html[data-product-kind="combat_debugger"] .bc .now {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .now {
   display: inline-block;
   margin-top: 3px;
   padding: 0 6px;
@@ -380,18 +520,25 @@ html[data-product-kind="combat_debugger"] .bc .now {
   font-weight: 700;
 }
 
-html[data-product-kind="combat_debugger"] .bc .now.ok {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .now.ok {
   color: var(--ink);
   background: var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .now.no {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .now.no {
   border: 1px solid var(--edge2);
   color: var(--muted);
 }
 
 /* The short How To Play card: four numbered steps and Full Guide. */
-html[data-product-kind="combat_debugger"] .bc .htmini ol {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htmini
+  ol {
   display: grid;
   gap: 6px;
   margin-top: 8px;
@@ -400,14 +547,20 @@ html[data-product-kind="combat_debugger"] .bc .htmini ol {
   counter-reset: hm;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htmini li {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htmini
+  li {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 6px;
   font-size: 13px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htmini li::before {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htmini
+  li::before {
   display: grid;
   place-items: center;
   width: 18px;
@@ -421,31 +574,46 @@ html[data-product-kind="combat_debugger"] .bc .htmini li::before {
   counter-increment: hm;
 }
 
-html[data-product-kind="combat_debugger"] .bc .htmini .foot {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .htmini
+  .foot {
   display: flex;
   gap: 6px;
   margin-top: 10px;
 }
 
 /* The Do This Now guide rings the control it names. */
-html[data-product-kind="combat_debugger"] .bc .beacon {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .beacon {
   outline: 2px dashed var(--moon);
   outline-offset: 3px;
 }
 
 /* DevClient only: the closed Developer drawer at the end of the rail. */
-html[data-product-kind="combat_debugger"] .bc .developer-drawer > summary {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .developer-drawer
+  > summary {
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
 
-html[data-product-kind="combat_debugger"] .bc .developer-drawer[open] > summary {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .developer-drawer[open]
+  > summary {
   margin-bottom: 10px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .developer-drawer > :not(summary) + * {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .developer-drawer
+  > :not(summary)
+  + * {
   margin-top: 10px;
 }
 
@@ -456,14 +624,347 @@ html[data-product-kind="combat_debugger"] .bc .developer-drawer > :not(summary) 
    looks after pressing F; every other rail child keeps its markup order.
    The list is dressed like the other rail cards. Its [hidden] flag (closed)
    still wins through the [hidden] rule in base.css. */
-html[data-product-kind="combat_debugger"] .bc .bc-rail > #turn-card {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail
+  > #turn-card {
   order: -2;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-rail > #frame-explanation-list {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail
+  > #frame-explanation-list {
   order: -1;
   padding: 12px;
   border: 1px solid var(--edge);
   border-radius: 8px;
   background: var(--panel);
+}
+
+/*
+ * Replay Viewer rail (owner, 3 Oct 2026: the Arena Stage panels on the
+ * right, in the BattleClient's look). The Fallen panel sits on top; under it
+ * the tab bar (Roster, Agent, Metrics, Actions, Visuals, Frame; built by
+ * src/ledger.js) in the BattleClient's switch style, then the open tab as
+ * one rail card that scrolls on its own, so the rail itself never scrolls.
+ * The cards a tab holds keep their content and lose their own frames; their
+ * headings read as the BattleClient's eyebrows.
+ */
+html[data-product-kind="replay_viewer"] .bc .bc-rail {
+  overflow: hidden;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-rail > #replay-rail:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail .ledger-rail__tabs {
+  display: flex;
+  flex: none;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail .ledger-rail__tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail
+  .ledger-rail__tab
+  + .ledger-rail__tab {
+  border-left: 1px solid var(--edge);
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail .ledger-rail__tab:hover {
+  color: var(--text);
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail
+  .ledger-rail__tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--raise);
+  box-shadow: inset 0 -2px 0 var(--moon);
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail
+  .ledger-rail__panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+  scrollbar-color: var(--edge2) transparent;
+  scrollbar-width: thin;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail .ledger-card {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail .ledger-card > summary {
+  min-height: 0;
+  padding: 0 0 6px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/*
+ * Replay Viewer Actions tab (Scribe's Ledger's content, the BattleClient
+ * look): "This Tick (What Happened)" and "Next Tick (What Happens Next)" are
+ * eyebrow headings; each champion's action is one row under a thin rule,
+ * with its token chip, "Agent 0" and its class, the action in words, then
+ * the recorded codes in small muted numbers. No boxed cards, no team-colored
+ * edge and no class-colored names (the token already shows both). The old
+ * card names under the headings ("Latest Transition") stay for screen
+ * readers only.
+ */
+html[data-product-kind="replay_viewer"] .bc #replay-rail-actions .panel-actions__part {
+  margin: 0 0 14px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-actions .panel-actions__title {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-actions
+  .panel-actions__subtitle {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-actions .accepted-action-list {
+  gap: 0;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-actions .accepted-action-row {
+  gap: 2px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--edge);
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-actions
+  .accepted-action-row__title {
+  color: var(--text);
+  font-size: 13px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-actions
+  .accepted-action-row__class {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-actions
+  .accepted-action-row__words {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-actions
+  :is(.accepted-action-row__codes, .accepted-action-row__submitted) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/*
+ * Replay Viewer Roster tab (the BattleClient look): per team an eyebrow
+ * heading in the team's light color with its champion count, then one row
+ * per champion under a thin rule: its token chip and "Agent 0", the class,
+ * "Played by <name>" (the recorded controller, src/panels.js), the shared
+ * life bar with "Ultimate Ready" or its wait, and the status and modifier
+ * chips. Empty lists ("No persistent statuses") take no room here; the row's
+ * screen-reader description still names every fact. The selected champion
+ * gets a Moon Silver edge.
+ */
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-team {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-team__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+  padding: 0;
+  border: 0;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  .roster-team__heading
+  h3 {
+  margin: 0;
+  color: var(--azureL);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  .roster-team[data-team="team-b"]
+  .roster-team__heading
+  h3 {
+  color: var(--crimsonL);
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  :is(.roster-team__heading .count-badge, #roster-count) {
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-team__rows {
+  gap: 0;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-row {
+  margin: 0;
+  padding: 6px 0 6px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--edge);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  .roster-row[data-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--moon);
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-primary-action {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: start;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  .roster-primary-action:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-id {
+  color: var(--text);
+  font-size: 13px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #replay-rail-roster
+  :is(.roster-class, .roster-controller) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-health {
+  display: grid;
+  gap: 1px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-row__facts {
+  margin-top: 2px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #replay-rail-roster .roster-fact-empty {
+  display: none;
 }

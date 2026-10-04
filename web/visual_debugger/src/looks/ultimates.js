@@ -34,7 +34,10 @@
  * impact and settle windows, and the Charge rush uses its chargeRush window. The
  * DOM always holds the END picture (the settled still). Every movement is a Web
  * Animations override with fill "backwards" handed to the choreographer through
- * mount.animationSpecs; nothing here starts a timer or a CSS animation.
+ * mount.animationSpecs; nothing here starts a timer or a CSS animation. In a
+ * played tick the choreographer keeps a transient mark hidden once a cue that
+ * ends at opacity 0 has finished (choreography.js endsHidden), so the still
+ * does not come back for the rest of the tick.
  *
  * Agent POV boundary: records reads only the one plan event it is given, which
  * the plan already admitted for this audience. It never reads a researcher
@@ -1819,7 +1822,9 @@ function realTime(time, timeClock, beats) {
  * reduced motion (their 220 ms clock is scaled to the plan's reduced
  * choreography length, choreographyEnd x reducedScale), and nothing for "off"
  * or an unknown mode. Before its first frame a node shows the first keyframe;
- * after its last frame the DOM's END value shows again. Cues with no positive
+ * after its last frame the DOM's END value shows again, unless the cue ended at
+ * opacity 0 on a transient event (the choreographer then keeps it hidden until
+ * the tick is replaced). Cues with no positive
  * duration are left out. Pure.
  *
  * @param {LookRecord} record

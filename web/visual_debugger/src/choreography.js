@@ -4,7 +4,14 @@
  * What it owns: CombatChoreographer installs painter-owned SVG, starts and stops
  * every Web Animation of a tick, and suppresses repeated live transitions with a
  * bounded optional storage ledger. Replay can animate a tick, show the settled
- * paused still, or glide one tick (replay_step).
+ * paused still, or glide one tick (replay_step). A played replay tick keeps its
+ * cues, as drawn, after it settles; when the next played tick starts they fade
+ * out over 160 ms (normal motion), so continuous play never shows a cue-less
+ * still between ticks or a one-frame swap. A seek, a step or a view change
+ * clears them at once, so the Settled Still is exact. In every played tick
+ * (live or replay) a transient cue whose own fade has ended stays hidden: its
+ * still picture, which the looks draw for the Settled Still, does not come
+ * back for the rest of the tick (endsHidden), so each blow shows once.
  *
  * The one rule of the beat clock: the DOM always holds the END state. The
  * durable renderer draws every body, life bar and mark where it ends the tick.
@@ -47,6 +54,7 @@ import {
   BEAT_CLOCK,
   beatRealTime,
   buildChoreographyPlan,
+  PLAN_RESOURCE_CAPS,
 } from "./choreography-plan.js";
 import { dimAnimation } from "./looks/atmosphere.js";
 import { sightAnimationSpecs } from "./looks/fog.js";
@@ -57,7 +65,8 @@ import {
 
 const DEFAULT_LEDGER_KEY = "marl-battlegrounds.visual-debugger.consumed-transitions.v1";
 const DEFAULT_LEDGER_LIMIT = 256;
-const MAX_ACTIVE_ANIMATIONS = 512;
+// The most animations one tick may run at once: the plan's own cap (one owner).
+const MAX_ACTIVE_ANIMATIONS = PLAN_RESOURCE_CAPS.animations;
 const REPLAY_TERMINAL_HOLD_MS = 600;
 const SUPPORTED_PLAYBACK_RATES = Object.freeze([
   0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,
@@ -66,6 +75,9 @@ const SUPPORTED_PLAYBACK_RATES = Object.freeze([
 const GLIDE_EASING = "cubic-bezier(0.45, 0, 0.55, 1)";
 // A camera change eases over this many ms (reduced motion and Agent POV changes cut).
 const CAMERA_EASE_MS = 520;
+// How long the previous played tick's kept cues take to fade out when the next
+// played tick starts (normal motion), in ms at 1x.
+const CUE_FADE_OUT_MS = 160;
 // A carried scrub offset larger than this many world units is dropped, so a body is
 // never dragged across the field.
 const STEP_CARRY_LIMIT = 3;
@@ -77,8 +89,6 @@ const BEAT_HOLD_KINDS = new Set([
   "set-down",
   "score",
 ]);
-// Blow time (ms) of the Impact moment, when life changes and numbers pop.
-const IMPACT_BLOW_MS = 260;
 // A champion's shiver on a hit plays only below this playback rate.
 const SHIVER_RATE_LIMIT = 1.5;
 
@@ -365,6 +375,7 @@ export class CombatChoreographer {
    *       },
    *     ) => ChoreographyInstallation,
    *     clear: (installation: any, reason: string) => void,
+   *     releaseForFade?: (installation: any) => Element[],
    *     settle: (installation: any) => void,
    *     reproject: (
    *       installation: any,
@@ -420,6 +431,13 @@ export class CombatChoreographer {
      * @type {Array<{presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, animation: AnimationHandle}>}
      */
     this.stepGlides = [];
+    /**
+     * The previous played tick's kept cues, fading out at the next played tick's
+     * start (#fadeOutCues): each root and its fade. Removed when the fade ends,
+     * and at once by any clear.
+     * @type {Array<{root: Element, animation: AnimationHandle}>}
+     */
+    this.fadingCues = [];
     /** @type {AnimationHandle | null} */
     this.cameraEase = null;
     /**
@@ -501,7 +519,12 @@ export class CombatChoreographer {
    * replay_step request on a new frame installs the paused still and glides each body
    * that appears in both the previous and the new plan with the same audienceKey from
    * where the previous frame showed it (its END spot, or where a still-running step
-   * glide has drawn it) to its new END spot. A body unseen in either Agent POV scene,
+   * glide has drawn it) to its new END spot. When the shown frame has no plan (a
+   * replay's first frame: no tick leads into it), a replay_step glides from the new
+   * tick's START spots instead, which are where that frame showed each body
+   * (stepSourceBefore); a replay_step onto such a frame (a -1 onto the first frame)
+   * clears, then glides each body back from the shown tick's END to its START spot
+   * (#startPlanlessStepGlide). A body unseen in either Agent POV scene,
    * a death, a return or a change of audience or recipient snaps. A replay_step
    * request for the frame already shown is the paused still. Invalid policy, plans,
    * painter bounds or browser animations may throw; a policy-induced identity change
@@ -531,7 +554,15 @@ export class CombatChoreographer {
         )
       : null;
     if (!nextPlan || !surface) {
+      // A -1 onto a replay's first frame (it has no plan): the bodies glide back
+      // from the shown tick's END to its START spots, where that frame shows them.
+      const backFrom =
+        stepRequested && surface && this.plan !== null ? this.plan : null;
+      const carry = backFrom !== null && surface ? this.#stepCarry(surface) : new Map();
       this.clear("absent_scene_or_event_batch");
+      if (backFrom !== null && surface) {
+        this.#startPlanlessStepGlide(backFrom, surface, carry);
+      }
       return this.snapshot();
     }
 
@@ -654,16 +685,33 @@ export class CombatChoreographer {
     const previousPlan = this.plan;
     // Read where running step glides draw each body before they are cancelled.
     const carry = stepRequested ? this.#stepCarry(surface) : new Map();
+    // Continuous play: the settled previous tick kept its cues as drawn; they
+    // fade out over the new tick's first moments instead of vanishing in one
+    // frame. A seek, a step or any other change clears them at once.
+    const fadeFrom =
+      nextPolicy === "replay_animated" &&
+      this.renderPolicy === "replay_animated" &&
+      this.motionMode === "normal" &&
+      this.installation !== null &&
+      this.cleanupClock === null &&
+      typeof this.painter.releaseForFade === "function"
+        ? this.installation
+        : null;
+    if (fadeFrom !== null) this.installation = null;
     this.#clearOwned("new_transition");
     this.plan = nextPlan;
     this.surface = surface;
+    // A replay's first frame has no plan (no tick leads into it), so a +1 from
+    // it glides from the new tick's START spots: where that frame showed them.
+    const stepFrom =
+      stepRequested && nextPolicy === "replay_static"
+        ? (previousPlan ?? stepSourceBefore(nextPlan))
+        : null;
     this.#installForPolicy(nextPlan, surface, nextPolicy, {
       liveSafeRebuild: alreadyConsumed,
-      step:
-        stepRequested && nextPolicy === "replay_static" && previousPlan !== null
-          ? { previousPlan, carry }
-          : null,
+      step: stepFrom !== null ? { previousPlan: stepFrom, carry } : null,
     });
+    if (fadeFrom !== null) this.#fadeOutCues(fadeFrom, nextPlan.epochKey);
     if (nextPolicy === "live_once" && consumedFingerprint !== nextPlan.fingerprint) {
       this.ledger.record(nextPlan.epochKey, nextPlan.fingerprint);
     }
@@ -911,6 +959,10 @@ export class CombatChoreographer {
    * plan and surface are ready for the painter; renderPolicy selects live/replay.
    * options.liveSafeRebuild defaults to false and suppresses repeated live transients
    * when true. replay_static keeps settled explanatory transients and marks paused;
+   * replay_animated keeps them too once its cleanup clock settles the tick, so a
+   * played tick ends as drawn and its cues leave only when the next tick starts
+   * (they fade out then when it is a played tick, see #fadeOutCues; live_once is
+   * unchanged: its transients leave at settle);
    * options.step (default null) adds the replay_step glide and cue fade on top of
    * that still: {previousPlan, carry} where previousPlan is the plan shown before
    * this frame and carry maps a presentation key to the world spot where a running
@@ -944,6 +996,11 @@ export class CombatChoreographer {
       renderPolicy,
       settled: liveSafeRebuild,
       persistentOnly: liveSafeRebuild,
+      // A played replay tick ends like its Settled Still: when its cleanup
+      // clock settles it, the tick's cues stay until the next tick replaces
+      // the installation. Removing them there showed a cue-less still for the
+      // ~80 ms before the next tick (the "paused" flash). Live play unchanged.
+      ...(renderPolicy === "replay_animated" ? { retainTransientOnSettle: true } : {}),
     });
   }
 
@@ -961,7 +1018,8 @@ export class CombatChoreographer {
    * glides (normal motion with Body Glide on: START to END in 0-260 ms, a Charge
    * rush first) and beat holds for every beat-held node whose beat is in the plan
    * (reduced motion scales the hold times by plan.beats.reducedScale). They are
-   * counted against plan.bounds.overrideAnimations and the 512 animation limit; over
+   * counted against plan.bounds.overrideAnimations and the animation limit
+   * (PLAN_RESOURCE_CAPS.animations, 1024); over
    * the limit the extra holds are dropped (never the tick). Settled or
    * persistent-only output has no overrides and no clocks, except the step glide.
    *
@@ -972,6 +1030,9 @@ export class CombatChoreographer {
    * only when the painter animates events; a glide never gates it. Creation failures
    * cancel newly created handles, clear the installation and rethrow. Completion
    * handlers use generation checks so stale clocks cannot settle a later authority.
+   * A painter animation that hides a transient cue for good (endsHidden) sets that
+   * node's opacity attribute to 0 when it finishes, under the same generation and
+   * installation check, so the cue's still picture never shows again this tick.
    * Return undefined.
    *
    * @param {Record<string, any>} plan
@@ -1133,10 +1194,26 @@ export class CombatChoreographer {
     let cleanupClock = null;
     /** @type {AnimationHandle | null} */
     let gateClock = null;
+    const generation = this.generation;
     try {
-      for (const spec of [...animationSpecs, ...keptOverrides]) {
+      for (const [index, spec] of [...animationSpecs, ...keptOverrides].entries()) {
         const animation = this.animationFactory.create(spec);
         ignoreCancellation(animation.finished);
+        if (index < animationSpecs.length && endsHidden(spec)) {
+          // A cue that fades out stays out: the still under it is the Settled
+          // Still's picture, and showing it again for the rest of the tick
+          // made every played tick blink as if paused (see endsHidden).
+          ignoreCancellation(
+            animation.finished.then(() => {
+              if (
+                generation === this.generation &&
+                this.installation === installation
+              ) {
+                spec.element.setAttribute("opacity", "0");
+              }
+            }),
+          );
+        }
         createdAnimations.push(animation);
       }
       cleanupClock = this.animationFactory.createClock(
@@ -1175,7 +1252,6 @@ export class CombatChoreographer {
         animation.pause();
       }
     }
-    const generation = this.generation;
     if (this.gateClock) {
       ignoreCancellation(
         this.gateClock.finished.then(() => {
@@ -1288,6 +1364,85 @@ export class CombatChoreographer {
     const clock = this.cleanupClock;
     ignoreCancellation(
       /** @type {AnimationHandle} */ (clock).finished.then(() => {
+        if (generation !== this.generation) return;
+        this.#cancelAnimations();
+        this.paused = true;
+        this.#publish();
+      }),
+    );
+  }
+
+  /**
+   * Glide the bodies back onto a frame that has no plan (a -1 onto a replay's
+   * first frame).
+   *
+   * previousPlan is the plan of the tick shown before the step, surface the new
+   * frame's surface (the durable renderer already drew that frame's END) and
+   * carry where running step glides drew each body. The landing frame shows
+   * each body where previousPlan's tick started, so the landing is
+   * stepSourceBefore(previousPlan) and stepGlideSpecs runs backward: each body
+   * with a known START spot glides 240 ms from where it was drawn (its END, or
+   * a running glide's spot) to that START spot, a Charge rush back along its
+   * path; deaths and returns snap, as on every step. No painter installation
+   * exists for the landing frame, so there are no cue fades, movement marks or
+   * sight cross-fade. A one-step clock on the battlefield root then cancels the
+   * glides and marks the still paused. Reduced motion, motion off, Step Glide
+   * off or no battlefield root adds nothing. Creation errors cancel what was
+   * created and propagate. Mutates this.animations, this.cleanupClock,
+   * this.stepGlides and this.paused.
+   *
+   * @param {Record<string, any>} previousPlan
+   * @param {ChoreographySurface} surface
+   * @param {Map<string, readonly [number, number]>} carry
+   */
+  #startPlanlessStepGlide(previousPlan, surface, carry) {
+    const landing = stepSourceBefore(previousPlan);
+    const glides = stepGlideSpecs(landing, surface, this.motionMode, {
+      previousPlan,
+      carry,
+    });
+    const root = battlefieldRoot(surface);
+    if (glides === null || glides.length === 0 || !root) return;
+    const specs = boundedOverrides(
+      glides.map(({ spec }) => spec),
+      previousPlan,
+      MAX_ACTIVE_ANIMATIONS - 1,
+    );
+    /** @type {AnimationHandle[]} */
+    const created = [];
+    /** @type {AnimationHandle} */
+    let clock;
+    try {
+      for (const spec of specs) {
+        const animation = this.animationFactory.create(spec);
+        ignoreCancellation(animation.finished);
+        created.push(animation);
+      }
+      clock = this.animationFactory.createClock(
+        root,
+        BEAT_CLOCK.stepGlide,
+        `mbg:${previousPlan.epochKey}:step-back`,
+      );
+      ignoreCancellation(clock.finished);
+    } catch (error) {
+      for (const animation of created) safeCancel(animation);
+      throw error;
+    }
+    this.animations = created;
+    this.cleanupClock = clock;
+    this.stepGlides = glides
+      .map(({ spec, presentationKey, points, offsets }) => {
+        const animation = created[specs.indexOf(spec)];
+        return animation ? { presentationKey, points, offsets, animation } : null;
+      })
+      .filter((glide) => glide !== null);
+    this.paused = false;
+    for (const animation of this.#allAnimations()) {
+      applyPlaybackRate(animation, this.playbackRate);
+    }
+    const generation = this.generation;
+    ignoreCancellation(
+      clock.finished.then(() => {
         if (generation !== this.generation) return;
         this.#cancelAnimations();
         this.paused = true;
@@ -1466,11 +1621,63 @@ export class CombatChoreographer {
     this.generation += 1;
     this.#captureLogicalTime();
     this.#cancelAnimations();
+    this.#clearFadingCues();
     if (this.installation) {
       this.painter.clear(this.installation, reason);
     }
     this.installation = null;
     this.submissionBlocked = false;
+  }
+
+  /**
+   * Fade the previous played tick's kept cues out at the start of the next
+   * played tick, then remove them.
+   *
+   * installation is the previous tick's settled installation, already detached
+   * from this controller. The painter removes its herald root and persistent
+   * nodes at once (the new tick draws those again) and hands back the roots that
+   * hold the kept cues. Each root's END opacity is 0 (the DOM holds END, as
+   * every beat does) and one Web Animation takes it from 1 to 0 over
+   * CUE_FADE_OUT_MS at the playback rate, with fill "backwards"; when it ends
+   * the root is removed. These fades are not part of the tick's settlement, so
+   * they never delay autoplay. Return undefined.
+   *
+   * @param {Record<string, any>} installation
+   * @param {string} epochKey The new tick's epoch, for the animation ids.
+   */
+  #fadeOutCues(installation, epochKey) {
+    const roots = this.painter.releaseForFade?.(installation) ?? [];
+    roots.forEach((root, index) => {
+      root.setAttribute("opacity", "0");
+      const animation = this.animationFactory.create({
+        element: root,
+        keyframes: [{ opacity: 1 }, { opacity: 0 }],
+        options: { duration: CUE_FADE_OUT_MS, fill: "backwards" },
+        id: `mbg:${epochKey}:cue-fade-out:${index}`,
+      });
+      applyPlaybackRate(animation, this.playbackRate);
+      const entry = { root, animation };
+      this.fadingCues.push(entry);
+      ignoreCancellation(
+        animation.finished.then(() => {
+          root.remove();
+          this.fadingCues = this.fadingCues.filter((other) => other !== entry);
+        }),
+      );
+    });
+  }
+
+  /**
+   * Cancel every cue fade-out and remove its roots at once (a seek, a step, a
+   * view change or a new tick: the Settled Still never shows a fading cue).
+   * Return undefined.
+   */
+  #clearFadingCues() {
+    for (const { root, animation } of this.fadingCues) {
+      safeCancel(animation);
+      root.remove();
+    }
+    this.fadingCues = [];
   }
 
   /**
@@ -1800,7 +2007,7 @@ function beatTimeFor(beats, kind, key) {
   }
   if (kind === "impact") {
     return beatRealTime(
-      IMPACT_BLOW_MS,
+      BEAT_CLOCK.impactBlow,
       beats.glide === true,
       Number.isFinite(beats.lead) ? Number(beats.lead) : 0,
     );
@@ -2166,8 +2373,8 @@ function stepCueFadeSpecs(plan, installation) {
  * Keep overrides inside the plan's override budget and the free animation room.
  *
  * specs are glides first, then holds; plan.bounds.overrideAnimations is the plan's
- * allowance (a plan without one uses room); room is how many animations the 512
- * limit still allows. Return the first specs that fit: extra beat holds are dropped,
+ * allowance (a plan without one uses room); room is how many animations the
+ * animation limit (PLAN_RESOURCE_CAPS.animations) still allows. Return the first specs that fit: extra beat holds are dropped,
  * never the tick. Pure.
  *
  * @param {ReadonlyArray<AnimationSpec>} specs
@@ -2301,6 +2508,87 @@ function samePlanIdentity(first, second) {
     second.fingerprint === first.fingerprint &&
     second.paintKey === first.paintKey
   );
+}
+
+/**
+ * Stand in for the plan of a shown frame that had none, for a +1 step glide.
+ *
+ * A replay's first frame has no tick leading into it, so the choreographer
+ * keeps no plan while it shows (planBuilder returns null and presentFrame
+ * clears), and the first +1 from it had nothing to glide from: the bodies
+ * snapped while every later +1 glided. plan is the plan of the frame the step
+ * lands on, one tick later; each of its bodies' START spots (body.start) is
+ * where the first frame showed that body. Return a frozen plan-like record
+ * for stepGlideSpecs: plan's audienceKey, epochKey and beats, simulatorStep
+ * one less (so the step reads as forward), and one body per plan body with a
+ * known START spot: the same presentationKey, publicAgentId and teamId, end
+ * = start, alive true when it stood at the tick's start (alive now or fell
+ * this tick, and not a return), no Charge, not returned. A body with no
+ * START spot is left out, so it snaps; in Agent POV that is every body that
+ * came into sight this tick, so nothing glides out of the dark. Pure.
+ *
+ * @param {Record<string, any>} plan
+ * @returns {Readonly<Record<string, any>>}
+ */
+function stepSourceBefore(plan) {
+  const bodies = (Array.isArray(plan.bodies) ? plan.bodies : [])
+    .filter((body) => Array.isArray(body?.start))
+    .map((body) =>
+      Object.freeze({
+        presentationKey: body.presentationKey,
+        publicAgentId: body.publicAgentId,
+        teamId: body.teamId ?? null,
+        alive: body.returned !== true && (body.alive === true || body.died === true),
+        start: null,
+        postCharge: null,
+        end: body.start,
+        charged: false,
+        died: false,
+        returned: false,
+        glide: false,
+        dimShift: false,
+      }),
+    );
+  return Object.freeze({
+    audienceKey: plan.audienceKey,
+    epochKey: plan.epochKey,
+    beats: plan.beats,
+    simulatorStep: Number(plan.simulatorStep) - 1,
+    bodies: Object.freeze(bodies),
+  });
+}
+
+/**
+ * Report whether a painter animation hides a transient cue for good.
+ *
+ * spec is one AnimationSpec from the painter's installation (a look's own
+ * motion, never a durable-node override). True when its last keyframe sets
+ * opacity 0 (at most 0.01), it has no forward fill (fill "backwards" or
+ * none; a forward fill already keeps the last frame) and its element is not
+ * inside a persistent event group (data-persistent="true"), whose still is
+ * the tick's END picture and must return. The looks draw a transient cue's
+ * still picture in the DOM for the Settled Still and fade it out on top, so
+ * without this rule the still came back when the fade ended and stayed for
+ * the rest of the tick (the end hold in the Replay Viewer, the death beats
+ * live): every Basic and Ultimate showed twice. An element without closest
+ * (a test double) counts as not persistent. Pure.
+ *
+ * @param {AnimationSpec} spec
+ * @returns {boolean}
+ */
+function endsHidden(spec) {
+  const frames = Array.isArray(spec.keyframes) ? spec.keyframes : [];
+  const last = /** @type {Record<string, unknown> | undefined} */ (frames.at(-1));
+  if (last?.opacity === undefined || !(Number(last.opacity) <= 0.01)) return false;
+  const fill = spec.options?.fill;
+  if (fill === "forwards" || fill === "both") return false;
+  const element = /** @type {any} */ (spec.element);
+  if (typeof element?.setAttribute !== "function") return false;
+  const persistent =
+    typeof element.closest === "function"
+      ? element.closest('[data-persistent="true"]')
+      : null;
+  return persistent === null;
 }
 
 /**

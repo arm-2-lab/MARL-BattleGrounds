@@ -1,6 +1,7 @@
 /**
  * @file Check complete paused replay summaries at both supported viewport sizes
- * without relying on animation.
+ * without relying on animation. Every painted event has a tooltip owner and a
+ * hit surface the pointer can reach, the Focus Tally's beads included.
  */
 import { expect, test } from "@playwright/test";
 
@@ -32,7 +33,7 @@ const REPLAY_FILTER_IDS = visualFiltersForProduct("replay_viewer").map(({ id }) 
 // filter proof turns off Ultimates, whose routes and cues are placed here.
 const SELECTIVE_FILTER = "ultimate_ability_effects";
 // Hit surfaces of the V5 looks: Basic strokes and dots, Ultimate hit areas,
-// health numbers, status pulses and the fall ring.
+// health numbers, status pulses, the fall ring and the Focus Tally's hit arc.
 const ACTIVATION_HIT_SELECTOR =
   ".basic-blow__hit, .combat-impact.basic-dot, .ult-hit-area";
 const SPATIAL_HIT_SELECTOR = [
@@ -42,6 +43,7 @@ const SPATIAL_HIT_SELECTOR = [
   ".combat-regeneration__hit",
   ".combat-semantic-pulse__hit",
   ".combat-lifecycle-ring__hit",
+  ".focus-tally__hit",
 ].join(", ");
 // A status lifecycle event has no arena look (the Rune Zones on the body show
 // it), so it has no transient family here.
@@ -938,7 +940,7 @@ function expectBoundedNonOverlap(signature) {
       continue;
     }
     expect(route.path).toMatch(/^M /u);
-    expect(route.path).not.toMatch(/NaN|Infinity|  /u);
+    expect(route.path).not.toMatch(/NaN|Infinity| {2}/u);
     for (const bridge of route.bridges) {
       expect(bridge).toMatchObject({ ariaHidden: "true" });
       expect(bridge.withLayoutKey).toMatch(/^\["event",/u);

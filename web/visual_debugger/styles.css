@@ -60,7 +60,7 @@
 @import url("/src/styles/ledger.css");
 @import url("/src/styles/panels.css");
 @import url("/src/styles/shell.css");
-@import url("/src/styles/chronicle.css");
+@import url("/src/styles/rune-scrubber.css");
 @import url("/src/styles/hotbar.css");
 @import url("/src/styles/champion-frame.css");
 @import url("/src/styles/focus-tally.css");
@@ -2256,74 +2256,4 @@ fieldset.visual-filters__actions {
   color: var(--text-muted);
   font-size: 0.75rem;
   overflow-wrap: anywhere;
-}
-
-/*
- * HUD frames as a compact strip (plan P1, P3): the Replay Viewer's Team Rosters
- * strip under the dock. (Live play shows the portraits in its scorebug, see
- * src/styles/battleclient/scorebug.css.) One row per team (five frames each), so the arena keeps its height: the
- * sigil on the left, the agent's name over its life bar on the right. The class
- * line stays for screen readers; the Life bar's label and number and the
- * status tray hide here (the frame's aria-label and tooltip carry the life,
- * the Rune Zones on the body and the panels carry the statuses).
- */
-#team-rosters.arena-frames {
-  gap: 0.375rem 0.5rem;
-}
-
-#team-rosters .arena-frames__dock {
-  padding: 0.2rem 0.4rem 0.3rem;
-}
-
-#team-rosters .arena-frames__list {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.25rem;
-}
-
-#team-rosters .arena-frame {
-  grid-template-columns: 24px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 0.3rem;
-  row-gap: 1px;
-  height: auto;
-  min-height: 32px;
-  padding: 2px 0.2rem;
-}
-
-#team-rosters .arena-frame__sigil-cell {
-  grid-row: 1 / span 2;
-}
-
-#team-rosters .arena-frame__body {
-  grid-column: 2;
-  min-width: 0;
-}
-
-#team-rosters .arena-frame__agent {
-  font-size: 11px;
-}
-
-#team-rosters .arena-frame__class {
-  position: absolute;
-  overflow: hidden;
-  width: 1px;
-  height: 1px;
-  clip: rect(0, 0, 0, 0);
-}
-
-#team-rosters .arena-frame__alive,
-#team-rosters .arena-frame__life {
-  flex: 1 1 auto;
-  width: 100%;
-}
-
-/* The shared Life bar (src/styles/life-bar.css) keeps only its track here. */
-#team-rosters .arena-frame__life .life-bar {
-  display: block;
-}
-
-#team-rosters .arena-frame__life .life-bar__label,
-#team-rosters .arena-frame__life .life-bar__value,
-#team-rosters .arena-frame__tray {
-  display: none;
 }

@@ -306,7 +306,12 @@
   font-size: 11px;
 }
 
+/* The empty line keeps one row's height, so the panel (and the rail under it)
+ * does not jump when the last row ages out at a tick start. */
 .fallen-feed__empty {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
   margin: 0;
 }
 
@@ -321,7 +326,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 20px;
+  min-height: 26px;
   border-top: 1px solid var(--panel-edge);
   font-size: 11px;
 }

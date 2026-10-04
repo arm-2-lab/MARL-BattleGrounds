@@ -4,7 +4,10 @@
  * shows the shared Champion Card (class and calling, Agent ID, life, sources by
  * class only), the same in Oracle View and Agent POV. A respawned champion's
  * Spawn Shield tip reads the card's words: "Spawn Shield (Invulnerable)", "It
- * can't be seen or hit, and can't strike yet." and one row, "Time Left".
+ * can't be seen or hit, and can't strike yet." and one row, "Time Left". In the
+ * Replay Viewer the Actions tab's This Tick and Next Tick parts hold the action
+ * rows and the Agent tab's Champion Frame stands in for Agent Details; live
+ * play keeps the Pending and Latest Transition cards and their disclosures.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -1162,17 +1165,18 @@ async function expectLatestTransitionDom(page, presentation) {
   const rawRows =
     (researcher?.latest_transition ?? presentation.latest_transition)?.action_rows ??
     [];
-  const rows = page.locator("#accepted-card .accepted-action-row");
+  const host = await actionRowsHost(page, "this");
+  const rows = host.locator(".accepted-action-row");
   await expect(rows).toHaveCount(rawRows.length);
-  await expect(page.locator("#accepted-card")).not.toHaveAttribute(
-    "data-transition-id",
-    /.+/u,
+  await expect(host).not.toHaveAttribute("data-transition-id", /.+/u);
+  await expect(host.locator(".accepted-action-row[data-presentation-key]")).toHaveCount(
+    0,
   );
-  await expect(
-    page.locator("#accepted-card .accepted-action-row[data-presentation-key]"),
-  ).toHaveCount(0);
   if (rawRows.length === 0) {
-    expect((await page.locator("#accepted-card").textContent())?.trim()).toBe("");
+    // The Replay Viewer's This Tick part keeps its heading and an empty line.
+    if (!(await replayRailMounted(page))) {
+      expect((await host.textContent())?.trim()).toBe("");
+    }
     return;
   }
   const scene =
@@ -1273,10 +1277,136 @@ async function expectPendingJointActionDom(page, presentation) {
   }
 }
 
+/**
+ * Show the place that holds details: the Replay Viewer rail tab it sits in
+ * (Roster, Metrics, Visuals, Frame), or live play's Visual Filters drawer,
+ * which its button opens. Anything else needs nothing.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {import("@playwright/test").Locator} details
+ */
+async function showHolderOf(page, details) {
+  const holder = await details.evaluate((node) => ({
+    panelId: node.closest(".ledger-rail__panel")?.id ?? null,
+    closedDrawer:
+      node.closest("#visual-filters-drawer")?.matches(":not(:popover-open)") ?? false,
+  }));
+  if (holder.closedDrawer) {
+    await page.locator("#visual-filters-button").click();
+    return;
+  }
+  if (holder.panelId === null) return;
+  const tab = page.locator(
+    `#${holder.panelId.replace("replay-rail-", "replay-rail-tab-")}`,
+  );
+  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+}
+
+/** The Replay Viewer Actions tab's two parts, by their heading words. */
+const THIS_TICK_TITLE = "This Tick (What Happened)";
+const NEXT_TICK_TITLE = "Next Tick (What Happens Next)";
+
+/**
+ * The Replay Viewer tab that replaces a live disclosure there. The Champion
+ * Frame in the Agent tab replaces Agent Details, and the Actions tab shows This
+ * Tick and Next Tick with no disclosure; the older Actions cards are not on the
+ * Replay Viewer page (owner decisions, 3 October 2026).
+ */
+const REPLAY_TAB_OF_LIVE_DISCLOSURE = Object.freeze({
+  "#agent-details": "agent",
+  "#pending-turn-details": "actions",
+  "#latest-transition-details": "actions",
+});
+
+/**
+ * Whether the page is the Replay Viewer with its rail tabs mounted.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function replayRailMounted(page) {
+  return (await page.locator("#replay-rail-tab-actions").count()) > 0;
+}
+
+/**
+ * Return the element that holds one tick's action rows: in the Replay Viewer
+ * the Actions tab part found by its heading words, in live play the older card
+ * (#accepted-card for This Tick, #pending-card for Next Tick).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {"this" | "next"} tick
+ */
+async function actionRowsHost(page, tick) {
+  if (!(await replayRailMounted(page))) {
+    return page.locator(tick === "this" ? "#accepted-card" : "#pending-card");
+  }
+  return page.locator("#replay-rail-actions .panel-actions__part").filter({
+    has: page.locator(".panel-actions__title", {
+      hasText: tick === "this" ? THIS_TICK_TITLE : NEXT_TICK_TITLE,
+    }),
+  });
+}
+
+/**
+ * Select one Replay Viewer rail tab and wait until it shows.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} tab The tab ID, such as "agent" or "actions".
+ */
+async function selectReplayRailTab(page, tab) {
+  const button = page.locator(`#replay-rail-tab-${tab}`);
+  if ((await button.getAttribute("aria-selected")) !== "true") await button.click();
+  await expect(button).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * Show the Replay Viewer's Roster tab before a roster row is used (the rows
+ * sit in it); live play shows its roster without tabs, so nothing changes.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function showReplayRoster(page) {
+  const rosterTab = page.locator("#replay-rail-tab-roster");
+  if (await rosterTab.isVisible()) await rosterTab.click();
+}
+
+/**
+ * Read the Spawn Ward's parts (the Runefield look that replaced the old
+ * Spawn Shield chip): its pale veil, its dashed team ring, its silver
+ * diamonds (painted, not "none") and data-ticks, the ticks left.
+ *
+ * @param {import("@playwright/test").Locator} shield The `g.agent-spawn-shield`.
+ */
+async function spawnWardParts(shield) {
+  return shield.evaluate((root) => {
+    const diamonds = root.querySelector(".agent-spawn-shield__diamonds");
+    return {
+      veils: root.querySelectorAll(".agent-spawn-shield__veil").length,
+      ringed: root.querySelectorAll(".agent-spawn-shield__ring").length > 0,
+      diamonds: root.querySelectorAll(".agent-spawn-shield__diamonds").length,
+      diamondsPainted:
+        diamonds !== null &&
+        getComputedStyle(diamonds).fill !== "none" &&
+        getComputedStyle(diamonds).stroke !== "none",
+      ticks: root.getAttribute("data-ticks"),
+    };
+  });
+}
+
 /** @param {import("@playwright/test").Page} page @param {string[]} selectors */
 async function openDetails(page, selectors) {
+  const replayRail = await replayRailMounted(page);
   for (const selector of selectors) {
+    const replayTab = replayRail
+      ? REPLAY_TAB_OF_LIVE_DISCLOSURE[
+          /** @type {keyof typeof REPLAY_TAB_OF_LIVE_DISCLOSURE} */ (selector)
+        ]
+      : undefined;
+    if (replayTab !== undefined) {
+      await selectReplayRailTab(page, replayTab);
+      continue;
+    }
     const details = page.locator(selector);
+    await showHolderOf(page, details);
     if ((await details.getAttribute("open")) !== "") {
       await details.locator(":scope > summary").click();
     }
@@ -1286,30 +1416,41 @@ async function openDetails(page, selectors) {
 
 /** @param {import("@playwright/test").Page} page @param {string[]} selectors */
 async function closeDetails(page, selectors) {
+  const replayRail = await replayRailMounted(page);
   for (const selector of selectors) {
+    // A Replay Viewer tab has nothing to close; Agent Details stays shut there.
+    if (
+      replayRail &&
+      selector in REPLAY_TAB_OF_LIVE_DISCLOSURE &&
+      selector !== "#agent-details"
+    ) {
+      continue;
+    }
     const details = page.locator(selector);
     if ((await details.getAttribute("open")) === "") {
+      await showHolderOf(page, details);
       await details.locator(":scope > summary").click();
     }
     await expect(details).not.toHaveAttribute("open", "");
   }
 }
 
+// The Replay Viewer's disclosures. Its Actions tab replaced the two Actions
+// disclosures (owner decision, 3 October 2026) and the Visual Key is a dialog
+// opened by #visual-key-button; the selected rail tab is part of the state.
 const SCIENTIFIC_DISCLOSURE_SELECTORS = Object.freeze([
   "#command-deck",
   "#roster-details",
   "#agent-details",
-  "#pending-turn-details",
-  "#latest-transition-details",
   "#technical-frame-details",
   "#visual-filters",
-  "#visual-key",
 ]);
 
 /** @param {import("@playwright/test").Page} page */
 async function scientificDisclosureState(page) {
   return page.evaluate((selectors) => {
-    return Object.fromEntries(
+    /** @type {Record<string, any>} */
+    const state = Object.fromEntries(
       selectors.map((selector) => {
         const panel = document.querySelector(selector);
         const body = panel?.querySelector(":scope > :not(summary)");
@@ -1319,6 +1460,11 @@ async function scientificDisclosureState(page) {
         return [selector, { open: panel.open, scrollTop: body.scrollTop }];
       }),
     );
+    const tab = document.querySelector(
+      '#replay-rail-tabs [role="tab"][aria-selected="true"]',
+    );
+    state.selectedRailTab = tab?.id ?? null;
+    return state;
   }, SCIENTIFIC_DISCLOSURE_SELECTORS);
 }
 
@@ -1326,6 +1472,7 @@ async function scientificDisclosureState(page) {
  * @param {string} panelSelector
  * @param {number} scrollTop */
 async function installScientificDisclosureScroll(page, panelSelector, scrollTop) {
+  await showHolderOf(page, page.locator(panelSelector));
   const installed = await page.locator(panelSelector).evaluate((panel, top) => {
     const body = panel.querySelector(":scope > :not(summary)");
     if (!(body instanceof HTMLElement)) {
@@ -1534,6 +1681,12 @@ async function enableAllVisualFilters(page) {
   await expect(
     page.locator('#visual-filter-options input[type="checkbox"]:not(:checked)'),
   ).toHaveCount(0);
+  // Live play: close the Visual Filters drawer again, so it covers nothing.
+  const drawer = page.locator("#visual-filters-drawer");
+  if (await drawer.evaluate((node) => node.matches(":popover-open"))) {
+    await page.locator("#visual-filters-button").click();
+    await expect(drawer).toBeHidden();
+  }
   await expect(page.locator("#connection-status")).toHaveText("Connected");
 }
 
@@ -1806,6 +1959,7 @@ async function expectBattlefieldRootCommandFocus(page) {
  *   command: Readonly<Record<string, unknown>> | null,
  * }} options */
 async function expectNativeAgentActivationMatrix(page, { body, row, path, command }) {
+  await showReplayRoster(page);
   const scrollY = () => page.evaluate(() => window.scrollY);
   const cells = [
     () => row.click(),
@@ -1876,6 +2030,7 @@ async function expectTerminalReplayAgentSelection(page) {
     `#roster .roster-primary-action[data-presentation-key="${candidate.presentation_key}"]`,
   );
   await expect(body).toHaveAttribute("role", "button");
+  await showReplayRoster(page);
   await expect(row).toBeEnabled();
   await expectSingleActivationCommand(page, "/api/replay/command", () => body.click(), {
     command_type: "select_agent",
@@ -1997,17 +2152,26 @@ async function expectReplayInspectionDom(
     "aria-label",
     "Selection and exact actor-owned legality",
   );
-  await expect(page.locator("#accepted-heading")).toHaveText("Latest Transition");
-  await expect(page.locator("#visual-key > summary")).toHaveText("Visual Key");
-  await expect(page.locator("#pending-heading")).toHaveText("Upcoming Transition");
+  // The Actions tab shows This Tick and Next Tick, each with the older name as
+  // its subtitle; the Visual Key is a dialog behind its button (owner
+  // decisions, 3 October 2026).
+  const thisTick = await actionRowsHost(page, "this");
+  const nextTick = await actionRowsHost(page, "next");
+  await expect(thisTick.locator(".panel-actions__subtitle")).toHaveText(
+    "Latest Transition",
+  );
+  await expect(page.locator("#visual-key-button")).toHaveText("Visual Key");
+  await expect(nextTick.locator(".panel-actions__subtitle")).toHaveText(
+    "Upcoming Transition",
+  );
   await expect(page.locator("#pending-count")).toBeHidden();
   await expect(page.locator("#pending-scope")).toBeHidden();
   const upcoming = researcher?.upcoming_transition ?? presentation.upcoming_transition;
   const rawUpcomingRows = upcoming?.action_rows ?? [];
-  const upcomingRows = page.locator("#pending-card .accepted-action-row");
+  const upcomingRows = nextTick.locator(".accepted-action-row");
   await expect(upcomingRows).toHaveCount(rawUpcomingRows.length);
   await expect(
-    page.locator("#pending-card .accepted-action-row[data-presentation-key]"),
+    nextTick.locator(".accepted-action-row[data-presentation-key]"),
   ).toHaveCount(0);
   const tupleText = (/** @type {Record<string, any>} */ action) =>
     `Move ${action.move_action} · Target ${action.target_action} · Ultimate ${action.use_ultimate_action}`;
@@ -2045,8 +2209,8 @@ async function expectReplayInspectionDom(
       tupleText(row.accepted_action),
     ]);
   }
-  await expect(page.locator("#pending-card .selected-legality__lane")).toHaveCount(0);
-  await expect(page.locator("#pending-card .selected-outgoing-target")).toHaveCount(0);
+  await expect(nextTick.locator(".selected-legality__lane")).toHaveCount(0);
+  await expect(nextTick.locator(".selected-outgoing-target")).toHaveCount(0);
   if (owner === null) {
     await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
       0,
@@ -2267,8 +2431,9 @@ async function expectAgentAuthoritySurface(
           ),
         ),
     ).toBe(true);
+    // Roster words (owner, 3 Oct 2026): "10 Champions · 4 Seen · 6 Not Seen".
     await expect(page.locator("#roster-count")).toHaveText(
-      `${expectedRosterCount} agents · ${visibleRosterCount} visible · ${notVisibleRosterCount} not visible`,
+      `${expectedRosterCount} ${expectedRosterCount === 1 ? "Champion" : "Champions"} · ${visibleRosterCount} Seen · ${notVisibleRosterCount} Not Seen`,
     );
     expect(expectedRosterCount).toBeGreaterThanOrEqual(bodyKeys.length);
   }
@@ -2315,18 +2480,16 @@ async function expectAgentAuthoritySurface(
     presentation.product_kind === "replay_viewer"
       ? ["#replay-ranges-button", "#replay-clear-reference-button"]
       : ["#live-ranges-button"];
+  // Agent POV tips say, in plain words, that the button only changes this
+  // page: the replay and the view stay as they are, or nothing is sent.
   const localUtilityDescription =
     presentation.product_kind === "replay_viewer"
-      ? /locally authorized|local inspected-agent/u
-      : /fog-authorized/u;
+      ? /The replay and the view do not change\./u
+      : /Nothing is sent to the game\./u;
   for (const selector of agentUtilitySelectors) {
     await expect(page.locator(selector)).toHaveAttribute(
       "aria-description",
       localUtilityDescription,
-    );
-    await expect(page.locator(selector)).toHaveAttribute(
-      "aria-description",
-      /sends no (?:replay )?command/u,
     );
     await expect(page.locator(selector)).not.toHaveAttribute(
       "aria-description",
@@ -2435,12 +2598,17 @@ async function expectPendingAuthorityIsEmpty(
     kind: tooltip.getAttribute("data-tooltip-kind"),
   }));
   expect(pendingTooltip.hidden || pendingTooltip.kind === "control").toBe(true);
+  // The Replay Viewer's Actions tab replaces the two Actions cards and their
+  // disclosures there (owner decision, 3 October 2026).
+  const replayRail = await replayRailMounted(page);
+  const actionSurfaces = replayRail
+    ? ["#replay-rail-actions"]
+    : ["#pending-card", "#accepted-card"];
   const scientificSurfaces = [
     "#battlefield",
     "#roster",
     "#agent-details",
-    "#pending-card",
-    "#accepted-card",
+    ...actionSurfaces,
     "#diagnostics-card",
   ];
   const descendantsWith = (/** @type {string} */ attribute) =>
@@ -2494,16 +2662,14 @@ async function expectPendingAuthorityIsEmpty(
     "#command-deck",
     "#roster-details",
     "#agent-details",
-    "#pending-turn-details",
-    "#latest-transition-details",
+    ...(replayRail ? [] : ["#pending-turn-details", "#latest-transition-details"]),
     "#technical-frame-details",
   ]) {
     await expect(page.locator(selector)).not.toHaveAttribute("open", "");
   }
   for (const selector of [
     "#roster",
-    "#pending-card",
-    "#accepted-card",
+    ...actionSurfaces,
     "#diagnostics-card",
     "#visual-tooltip",
   ]) {
@@ -2759,8 +2925,9 @@ test("all five real service leaves install with safe pending continuity", async 
   const liveNotVisibleRosterCount = await page
     .locator('#roster [data-visibility="not-visible"] .roster-primary-action')
     .count();
+  // Roster words (owner, 3 Oct 2026): "10 Champions · 4 Seen · 6 Not Seen".
   await expect(page.locator("#roster-count")).toHaveText(
-    `${liveResearcher.roster_agents.length} agents · ${liveVisibleRosterCount} visible · ${liveNotVisibleRosterCount} not visible`,
+    `${liveResearcher.roster_agents.length} Champions · ${liveVisibleRosterCount} Seen · ${liveNotVisibleRosterCount} Not Seen`,
   );
   await expect(page.locator("#command-target-select")).toBeEnabled();
   await expect(page.locator("#command-target-select option")).toHaveCount(11);
@@ -2858,6 +3025,7 @@ test("all five real service leaves install with safe pending continuity", async 
   );
   expect(hiddenIdentity).toBeTruthy();
   const hiddenSlot = (hiddenIdentity.team_id - 1) * 5 + hiddenIdentity.team_local_slot;
+  await showReplayRoster(page);
   const hiddenRow = page.locator(
     `#roster .roster-primary-action[data-presentation-key="${hiddenAgent.presentation_key}"]`,
   );
@@ -3534,10 +3702,10 @@ test("all five real service leaves install with safe pending continuity", async 
   const replayTargetSelectionFilter = page.locator(
     '[data-visual-filter-id="target_selection_visuals"]',
   );
-  await expect(replayTargetSelectionFilter).not.toBeChecked();
-  await expect(page.locator("#battlefield .legality-dock")).toHaveCount(0);
-  await replayTargetSelectionFilter.check();
+  // Target Selection Visuals is on by default in the V5 switch list, and the
+  // arena draws no legality dock.
   await expect(replayTargetSelectionFilter).toBeChecked();
+  await expect(page.locator("#battlefield .legality-dock")).toHaveCount(0);
   await enableAllVisualFilters(page);
   await expectReplayInspectionDom(page, replayOracleSelected);
   const replayOracleDocumentationBefore = await page
@@ -5346,6 +5514,7 @@ async function runCp5Slice5Proof(
                 response.request().method() === "POST" &&
                 new URL(response.url()).pathname === "/api/replay/command",
             );
+      await showReplayRoster(page);
       await page
         .locator(
           `#roster .roster-primary-action[data-presentation-key="${agent.presentation_key}"]`,
@@ -5471,6 +5640,7 @@ async function runCp5Slice5Proof(
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/replay/command",
     );
+    await showReplayRoster(page);
     await page
       .locator(
         `#roster .roster-primary-action[data-presentation-key="${selectedAgent.presentation_key}"]`,
@@ -6990,11 +7160,12 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
     throw new Error("Shared replay service is unavailable.");
   }
   await openProduct(page, sharedReplay.url, "replay");
+  // Target Selection Visuals is on by default in the V5 switch list.
   await expect(
     page.locator(
       '#visual-filter-options input[data-visual-filter-id="target_selection_visuals"]',
     ),
-  ).not.toBeChecked();
+  ).toBeChecked();
   await openDetails(page, ["#visual-filters"]);
   await expectZeroCommandInteraction(page, () =>
     page.locator("#enable-all-visual-filters-button").click(),
@@ -7050,7 +7221,10 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
         "#roster-details",
         "#pending-turn-details",
       ]);
-      await installScientificDisclosureScroll(page, "#latest-transition-details", 29);
+      // The Actions tab has no disclosure to scroll, so the Technical Frame
+      // carries the scroll check (owner decision, 3 October 2026).
+      await openDetails(page, ["#technical-frame-details"]);
+      await installScientificDisclosureScroll(page, "#technical-frame-details", 29);
       const disclosureBeforeSwitch = await scientificDisclosureState(page);
       await observeAgentDetailsOpenMutations(page);
       const cursorBeforeSwitch = structuredClone(leaf.transport.cursor);
@@ -7177,15 +7351,13 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
 
   await seekReplay(page, 1);
   const middlePresentation = await authenticatedGet(page, "/api/presentation/frame");
-  await expect(page.locator("#accepted-card .accepted-action-row")).toHaveCount(
+  const middleThisTick = await actionRowsHost(page, "this");
+  await expect(middleThisTick.locator(".accepted-action-row")).toHaveCount(
     middlePresentation.researcher_space.latest_transition.action_rows.length,
   );
-  await expect(page.locator("#accepted-card")).not.toHaveAttribute(
-    "data-transition-id",
-    /.+/u,
-  );
+  await expect(middleThisTick).not.toHaveAttribute("data-transition-id", /.+/u);
   await expect(
-    page.locator("#accepted-card .accepted-action-row[data-presentation-key]"),
+    middleThisTick.locator(".accepted-action-row[data-presentation-key]"),
   ).toHaveCount(0);
   await expectLatestTransitionDom(page, middlePresentation);
 
@@ -7342,9 +7514,9 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   await expect(shield).toBeFocused();
   await expectZeroCommandInteraction(page, () => shield.press("Enter"));
   await expectZeroCommandInteraction(page, () => shield.press(" "));
-  await expectZeroCommandInteraction(page, () =>
-    shield.locator(".agent-spawn-shield__chip").click(),
-  );
+  // The Spawn Ward (veil, dashed ring, diamonds) replaced the old chip; a
+  // click that reaches the ward still sends nothing.
+  await expectZeroCommandInteraction(page, () => shield.dispatchEvent("click"));
   await shield.focus();
   await expect(page.locator("#visual-tooltip")).toBeVisible();
   await expect(page.locator("#visual-tooltip-title")).toHaveText(
@@ -7359,25 +7531,12 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   await expect(page.locator("#visual-tooltip .semantic-explanation__value")).toHaveText(
     ["3 ticks left"],
   );
-  const shieldStyles = await shield.evaluate((root) => {
-    const chip = root.querySelector(".agent-spawn-shield__chip");
-    const ticks = root.querySelector(".agent-spawn-shield__ticks");
-    if (!(chip instanceof SVGElement)) {
-      throw new TypeError("Spawn Shield chip is unavailable.");
-    }
-    if (!(ticks instanceof SVGElement)) {
-      throw new TypeError("Spawn Shield tick label is unavailable.");
-    }
-    return {
-      chipFill: getComputedStyle(chip).fill,
-      chipStroke: getComputedStyle(chip).stroke,
-      tickFill: getComputedStyle(ticks).fill,
-    };
-  });
-  expect(shieldStyles).toEqual({
-    chipFill: "rgb(0, 0, 0)",
-    chipStroke: "rgb(255, 255, 255)",
-    tickFill: "rgb(255, 255, 255)",
+  expect(await spawnWardParts(shield)).toEqual({
+    veils: 1,
+    ringed: true,
+    diamonds: 1,
+    diamondsPainted: true,
+    ticks: "3",
   });
   for (const [frameIndex, remaining] of [
     [3, 3],
@@ -7401,20 +7560,16 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
       "data-spawn-shield-remaining",
       String(remaining),
     );
-    await expect(shield.locator(".agent-spawn-shield__ticks")).toHaveText(
-      String(remaining),
-    );
     if (remaining > 0) {
+      // The Spawn Ward keeps the ticks left in data-ticks (its diamonds show
+      // them; the old chip's number is gone).
+      await expect(shield).toHaveAttribute("data-ticks", String(remaining));
       await expect(shield).toBeVisible();
       await expect(shield).toHaveAttribute("tabindex", "0");
     } else {
-      await expect(shield).toBeHidden();
-      await expect(shield).toHaveAttribute("hidden", "");
-      await expect(shield).toHaveAttribute("tabindex", "-1");
-      await expect(shield).not.toHaveAttribute("data-tooltip-owner", "");
-      await expect(shield).not.toHaveAttribute("aria-describedby", /./u);
-      await expect(shield).not.toHaveAttribute("aria-description", /./u);
-      await expect(shield).not.toBeFocused();
+      // At 0 the ward is dropped (a lift look without identity may fade out),
+      // so no shield, tip or focus is left for this champion.
+      await expect(shield).toHaveCount(0);
       await expect(page.locator("#visual-tooltip")).not.toHaveAttribute(
         "data-tooltip-kind",
         "status",
@@ -7708,22 +7863,11 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     const shield = page.locator(
       `.agent-spawn-shield[data-presentation-key="${subject.presentation_key}"]`,
     );
-    const shieldStyles = await shield.evaluate((root) => {
-      const chip = root.querySelector(".agent-spawn-shield__chip");
-      const ticks = root.querySelector(".agent-spawn-shield__ticks");
-      if (!(chip instanceof SVGElement) || !(ticks instanceof SVGElement)) {
-        throw new Error("Spawn Shield styling is unavailable.");
-      }
-      return {
-        chipFill: getComputedStyle(chip).fill,
-        chipStroke: getComputedStyle(chip).stroke,
-        tickFill: getComputedStyle(ticks).fill,
-      };
-    });
-    expect(shieldStyles).toEqual({
-      chipFill: "rgb(0, 0, 0)",
-      chipStroke: "rgb(255, 255, 255)",
-      tickFill: "rgb(255, 255, 255)",
+    expect(await spawnWardParts(shield)).toMatchObject({
+      veils: 1,
+      ringed: true,
+      diamonds: 1,
+      diamondsPainted: true,
     });
 
     await seekReplay(page, 4);
@@ -8099,6 +8243,7 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
       );
       expect(corpseIdentity).toBeTruthy();
       expect(corpseRosterAgent).toMatchObject({ life_state: "corpse" });
+      await showReplayRoster(page);
       const corpseRosterButton = page.locator(
         `#roster .roster-primary-action[data-presentation-key="${corpseRosterAgent.presentation_key}"]`,
       );
@@ -8162,6 +8307,7 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
             candidate.public_agent_id === identity.public_agent_id,
         );
       expect(switchRosterAgent).toBeTruthy();
+      await showReplayRoster(page);
       const switchButton = page.locator(
         `#roster .roster-primary-action[data-presentation-key="${switchRosterAgent.presentation_key}"]`,
       );

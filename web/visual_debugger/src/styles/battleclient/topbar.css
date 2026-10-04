@@ -1,42 +1,53 @@
 /*
- * BattleClient top bar (.bc-top, the shared header in live play), ported from
- * the approved vision page: brand lockup (emblem, "MARL-BGs", product name),
- * the place line, the View switch, the Connected and Recording pills, then
- * the Visual Key, Visual Filters, How To Play and Exit buttons.
+ * BattleClient top bar (.bc-top, the shared header of every client), ported
+ * from the approved vision page: brand lockup (emblem, "MARL-BGs", product
+ * name), the place line, the View switch, the Connected and Recording pills,
+ * then the Visual Key, Visual Filters, How To Play (Help in the Replay
+ * Viewer) and Exit buttons. The Replay Viewer adds its POV agent chip; its
+ * Frame Explanation button is in the arena's corner, not here (owner, 3 Oct
+ * 2026: one button for each job).
  *
- * The header markup is shared with the Replay Viewer, so this file only
- * restyles it in live play: the rune wordmark, divider and long name give way
- * to the vision's plain "MARL-BGs" (.bname), and the h1 product name becomes
- * the gray .bprod. Order comes from flex `order`, matching the shared scheme
- * the private DevClient relies on (View switch 1, status pills 2, Details 3,
- * toolbar actions 4; the DevClient adds a second line at 5 to 7). Inside the
- * toolbar the buttons are reordered to the vision's order without moving the
- * Replay Viewer's own order. The Details button, the screen-reader audience
- * pill and the Frame Explanation button are not shown in live play (the
- * vision has none; F opens Frame Explanation).
+ * The rune wordmark, divider and long name give way to the vision's plain
+ * "MARL-BGs" (.bname), and the h1 product name becomes the gray .bprod.
+ * Order comes from flex `order`, matching the shared scheme the private
+ * DevClient relies on (View switch 1, status pills 2, Details 3, toolbar
+ * actions 4; the DevClient adds a second line at 5 to 7). Inside the toolbar
+ * the buttons follow the vision's order. The Details button and the
+ * screen-reader audience pill are never shown (the Replay Viewer's replay
+ * facts are in its Frame tab); the top bar's Frame Explanation slot is never
+ * shown (live play: the vision has none and F opens Frame Explanation; the
+ * Replay Viewer: its button is the arena corner's).
  *
  * One row: the bar never wraps in live play, so no message or long place
  * line can push the buttons onto a second row and move the page down. When
  * the bar runs short, things give way in this order: the place line's
- * " · Team Deathmatch" (cut with "…"), then the brand's product name. The
+ * " · Team Deathmatch", then the brand's product name; each hides whole once
+ * it would be cut (src/shell.js marks it data-cut). The
  * map name ("Teutoburg Forest · Map 47"), "MARL-BGs", the pills and the
  * buttons never shrink, so the full map name shows at every supported size
  * (1366 x 768 and up) and in every phase (owner, 3 Oct 2026). At game over
  * src/shell.js writes the short "Game Over" in the terminal pill for the
  * same reason. The private DevClient turns wrapping back on for its own
- * second line (its setup bar). The old #notice pill is not shown in live
- * play: the vision has no notice, and src/main.js setNotice also sends each
- * notice to the deck's status line (#msg).
+ * second line (its setup bar). The old #notice pill is never shown: in live
+ * play the vision has no notice and src/main.js setNotice also sends each
+ * notice to the deck's status line (#msg); in the Replay Viewer setNotice
+ * shows it under the Rune Scrubber's readout (owner, 3 Oct 2026), whose line
+ * is the one screen-reader status.
  *
  * The emblem is the 64 px PNG shown at 26 px (src/shell.js drops the WebP
  * choice in live play). Brand Lockup off leaves only the client name in plain
  * text. The V camera tip is not in the bar (overlays.css places it over the
  * status line's message).
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
-html[data-product-kind="combat_debugger"] .bc .bc-top {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top {
   position: relative;
   z-index: 30;
   top: auto;
@@ -57,7 +68,10 @@ html[data-product-kind="combat_debugger"] .bc .bc-top {
    place line's "Team Deathmatch" is gone, the product name ends in "…";
    the emblem and "MARL-BGs" never shrink. At full width it lays out exactly
    as the vision's flex row (8 px gaps, centered). */
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand {
   display: grid;
   flex: 0 1 auto;
   grid-template-columns: auto auto minmax(0, auto);
@@ -70,9 +84,12 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .brand {
   font-weight: 700;
 }
 
-/* The plain name is for live play only; the Replay Viewer keeps its rune
+/* The plain name "MARL-BGs" is the one brand spelling in every client
+   (owner, 3 Oct 2026); only a page with no known product keeps the rune
    wordmark. */
-html:not([data-product-kind="combat_debugger"]) .brand .bname {
+html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .brand
+  .bname {
   display: none;
 }
 
@@ -80,11 +97,19 @@ html:not([data-product-kind="combat_debugger"]) .brand .bname {
    (applyProductHeader) removes its WebP choice, so the <img> shows the 64 px
    PNG, the same picture the vision draws; CSS cannot change which source a
    <picture> picks. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand picture {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand
+  picture {
   display: contents;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand .logo {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand
+  .logo {
   display: inline-block;
   flex: none;
   width: 26px;
@@ -92,20 +117,37 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .brand .logo {
   object-fit: contain;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bname {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand
+  .bname {
   color: var(--moon);
   letter-spacing: 0.01em;
   line-height: 1.35;
   white-space: nowrap;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand__wordmark,
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand__divider,
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand__plain {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand__wordmark,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand__divider,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand__plain {
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bprod {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand
+  .bprod {
   display: block;
   min-width: 0;
   margin: 0;
@@ -121,9 +163,20 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .brand .bprod {
   white-space: nowrap;
 }
 
+/* A cut product name hides whole (owner, 3 Oct 2026: never cut halfway);
+   src/shell.js marks it data-cut, and visibility keeps its box so it can be
+   measured again when the bar grows. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .brand
+  .bprod[data-cut] {
+  visibility: hidden;
+}
+
 /* Brand Lockup off (src/shell.js writes data-brand-lockup="off" on the bar):
    only the client name, in plain text, with no emblem, "MARL-BGs" or divider. */
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top[data-brand-lockup="off"]
   .brand
@@ -131,11 +184,14 @@ html[data-product-kind="combat_debugger"]
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top[data-brand-lockup="off"] .brand {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top[data-brand-lockup="off"]
+  .brand {
   grid-template-columns: minmax(0, auto);
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top[data-brand-lockup="off"]
   .brand
@@ -156,9 +212,13 @@ html[data-product-kind="combat_debugger"]
    The grid's second column is minmax(0, auto), so the line's smallest width
    is the map name alone; its huge flex shrink factor makes it give way
    before anything else in the bar, then the brand's product name. The
-   shared shell.css rules for .match-place (overflow, max width, the
-   Replay Viewer's shrink order) are undone here. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .where {
+   shared shell.css rules for .match-place (overflow, max width) are undone
+   here; its old shrink order, which let the map name itself shrink, applies
+   to neither client any more. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .where {
   display: grid;
   flex: 0 1000000 auto;
   grid-template-columns: auto minmax(0, auto);
@@ -175,13 +235,19 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .where {
 }
 
 /* display: grid above would beat the hidden attribute's own display: none. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .where[hidden] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .where[hidden] {
   display: none;
 }
 
 /* The part that may give way. white-space: pre keeps its leading space,
    which a grid item would otherwise drop. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .where__more {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .where__more {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
@@ -189,24 +255,37 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .where__more {
 
 /* A cut second part hides whole; visibility keeps its box, so src/shell.js
    can measure it again when the bar grows. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .where__more[data-cut] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .where__more[data-cut] {
   visibility: hidden;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .where b {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .where
+  b {
   color: var(--text);
 }
 
 /* View switch: Agent POV and Oracle View as one segmented control. Its left
    margin is the vision's spacer, so everything after it sits on the right. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .view-switch {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .view-switch {
   display: flex;
   flex: none;
   order: 1;
   margin-left: auto;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg {
   display: inline-flex;
   flex-wrap: wrap;
   margin: 0;
@@ -217,7 +296,11 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .seg {
   background: var(--panel);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg
+  button {
   min-height: 0;
   padding: 6px 11px;
   border: 0;
@@ -231,75 +314,128 @@ html[data-product-kind="combat_debugger"] .bc .bc-top .seg button {
   opacity: 1;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg button + button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg
+  button
+  + button {
   border-left: 1px solid var(--edge);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg button:hover:not(:disabled) {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg
+  button:hover:not(:disabled) {
   color: var(--text);
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg button[aria-pressed="true"] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg
+  button[aria-pressed="true"] {
   color: var(--text);
   background: var(--raise);
   box-shadow: inset 0 -2px 0 var(--moon);
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .seg button:disabled {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .seg
+  button:disabled {
   cursor: default;
 }
 
 /* Status pills: Connected, then Recording. */
-html[data-product-kind="combat_debugger"] .bc .bc-top .header-status {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .header-status {
   gap: 10px;
   margin-left: 0;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top .toolbar-actions {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .toolbar-actions {
   gap: 10px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #visual-key-button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #visual-key-button {
   order: 1;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #visual-filters-button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #visual-filters-button {
   order: 2;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #help-button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #help-button {
   order: 3;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #exit-button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #exit-button {
   order: 4;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #reconnect-button {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #reconnect-button {
   order: 5;
 }
 
-/* The Visual Filters button shows only while its drawer holds the Visual
-   Filters card. A client that moves the card elsewhere (into the DevClient's
-   Developer drawer) loses the button with it. */
+/* Live play: the Visual Filters button shows only while its drawer holds
+   the Visual Filters card. A client that moves the card elsewhere (into the
+   DevClient's Developer drawer) loses the button with it. The Replay Viewer
+   keeps the button: there it opens the rail's Visuals tab, which holds the
+   card. */
 html[data-product-kind="combat_debugger"]
   .bc:not(:has(#visual-filters-drawer > #visual-filters))
   #visual-filters-button {
   display: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #notice,
-html[data-product-kind="combat_debugger"] .bc .bc-top #audience-badge,
-html[data-product-kind="combat_debugger"] .bc .bc-top .session-details-button,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #notice,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #audience-badge,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  .session-details-button,
 html[data-product-kind="combat_debugger"] .bc .bc-top #frame-explanation-button {
   display: none;
 }
 
+/* The Replay Viewer never shows the top bar's Frame Explanation slot: its one
+   Frame Explanation button is in the arena's top-right corner (owner, 3 Oct
+   2026; #arena-buttons, arena.css). */
+
 /* The Connected and Recording pills keep the vision's plain pill in every
    state (the shared shell gives them dashed and tinted variants). A saved
    recording shows a hollow dot; an offline page and a failed save use Alert. */
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   :is(#connection-status, #recording-badge) {
@@ -312,25 +448,31 @@ html[data-product-kind="combat_debugger"]
   line-height: 1.35;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #recording-badge {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #recording-badge {
   cursor: pointer;
 }
 
 /* The Recording pill draws its dot with its own <i>, as the vision does, so the
    shared shell's ::before dot (shell.css) must not draw a second one. */
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   #recording-badge:has(> i)::before {
   content: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-top #recording-badge:hover {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-top
+  #recording-badge:hover {
   border-color: var(--edge2);
   background: var(--raise);
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   :is(#connection-status, #recording-badge:not(:has(> i)))::before {
@@ -344,12 +486,12 @@ html[data-product-kind="combat_debugger"]
   content: "";
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   #recording-badge:is([data-lifecycle="saved"], [data-lifecycle="reviewing"])
   > i,
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   #recording-badge:not(:has(> i)):is(
@@ -360,7 +502,7 @@ html[data-product-kind="combat_debugger"]
   background: transparent;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   :is(
@@ -371,12 +513,12 @@ html[data-product-kind="combat_debugger"]
   color: var(--alert);
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   #recording-badge[data-lifecycle="persistence_failed"]
   > i,
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-top
   :is(

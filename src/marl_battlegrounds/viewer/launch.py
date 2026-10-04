@@ -3,12 +3,14 @@
 Browser launch uses installed package resources and a loopback server. Repository
 launchers may supply their editable frontend directory. Code running from a source
 checkout, which has no packaged page, uses that same checkout's page. Loading and
-validation finish before the server starts. This module does not build simulator
-scenarios.
+validation finish before the server starts, and so does every agent's Agent POV
+work (``ReplayViewerService.prepare_agent_pov``), so the page opens with Agent POV
+ready. This module does not build simulator scenarios.
 """
 
 from __future__ import annotations
 
+import sys
 from contextlib import nullcontext
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -65,7 +67,15 @@ def launch_replay(
     -----
     Browser mode may open a browser and blocks until server shutdown. Static mode
     opens a Matplotlib window. Neither mode advances the environment or changes
-    replay files. Existing requested numerical analysis remains lazy.
+    replay files. Existing requested numerical analysis remains lazy. Browser
+    mode prints one line to standard error and builds every agent's Agent POV work
+    (``ReplayViewerService.prepare_agent_pov``) before the server starts and the
+    browser opens, the way the BattleClient compiles its first turn first, so
+    every switch into Agent POV or between agents is quick from the start.
+    That takes about 7 s for a 246-tick five-against-five replay on CPU and
+    well under a second for a short scenario. If that work fails its
+    validation, the launch prints a second line and goes on: the replay still
+    opens, and the failing part builds on demand, where its error shows.
     """
     validate_playback_options(options)
     if (path is None) == (loaded_bundle is None):
@@ -120,6 +130,18 @@ def launch_replay(
         checkout = checkout_browser_files(packaged)
         resource_context = (
             nullcontext(checkout) if checkout is not None else as_file(packaged)
+        )
+    # Build Agent POV before the page opens, so no switch waits.
+    print(
+        "Replay Viewer: getting Agent POV ready for every agent...",
+        file=sys.stderr,
+        flush=True,
+    )
+    if not service.prepare_agent_pov():
+        print(
+            "Replay Viewer: Agent POV could not be prepared; it builds when opened.",
+            file=sys.stderr,
+            flush=True,
         )
     with resource_context as root:
         return serve_browser_debugger(

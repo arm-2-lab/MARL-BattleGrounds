@@ -144,13 +144,14 @@ test("the live switch writes the tag spot on the arena box", () => {
 });
 
 test("overlays.css puts the tag under the floor and the popover over the rail", () => {
+  // Whitespace-insensitive: the formatter may break a long selector over lines.
   const overlays = readFileSync(
     new URL("../src/styles/battleclient/overlays.css", import.meta.url),
     "utf8",
-  );
+  ).replace(/\s+/gu, " ");
   const tag = overlays.slice(
-    overlays.indexOf(".bc .povtag {\n  --tag-field-w"),
-    overlays.indexOf("}", overlays.indexOf(".bc .povtag {\n  --tag-field-w")),
+    overlays.indexOf(".bc .povtag { --tag-field-w"),
+    overlays.indexOf("}", overlays.indexOf(".bc .povtag { --tag-field-w")),
   );
   assert.match(tag, /--tag-home-end: var\(--left-home-end, 0\.0155\);/u);
   assert.match(tag, /--tag-band: calc\(var\(--floor-band, 0\.0155\) \*/u);
@@ -162,11 +163,11 @@ test("overlays.css puts the tag under the floor and the popover over the rail", 
   );
   assert.match(
     overlays,
-    /\.bc \.pop \{\n {2}position: fixed;\n {2}inset: 144px 12px auto auto;/u,
+    /\.bc \.pop \{ position: fixed; inset: 144px 12px auto auto;/u,
   );
   assert.match(
     overlays,
-    /width: calc\(var\(--rail-w\) - 22px\);\n {2}max-height: calc\(100vh - 156px\);/u,
+    /width: calc\(var\(--rail-w\) - 22px\); max-height: calc\(100vh - 156px\);/u,
   );
   assert.doesNotMatch(overlays, /inset: 52px 130px auto auto;/u);
 });

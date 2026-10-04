@@ -548,10 +548,11 @@ export async function getReplayTimeline(token) {
 }
 
 /**
- * GET the Saga Chronicle's fight marks of the loaded replay for the current
- * audience (Oracle View: every fight; Agent POV: only what that recipient's team
- * saw). token authenticates the request. Return the parsed JSON for
- * chronicle.js normalizeTimelineMarks. Connection failures reject with
+ * GET the Rune Scrubber's timeline marks (falls, Ultimates and returns per tick)
+ * of the loaded replay for the current audience (Oracle View: every recorded
+ * mark; Agent POV: only what that recipient's team saw). token authenticates
+ * the request. Return the parsed JSON for rune-scrubber.js
+ * normalizeTimelineMarks. Connection failures reject with
  * DebuggerApiError; HTTP and invalid replay-error responses reject too. Sends no
  * cursor command and changes nothing on the server.
  *

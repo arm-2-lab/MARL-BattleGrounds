@@ -3,8 +3,10 @@
  * the one owner of the Full Record words ("This Agent" when the POV agent is
  * unknown), and panels.js, ledger.js and the HUD all call it. The HUD tray
  * chips follow the Status Icons From Marks switch (status_marks_icons): sigils
- * when on, outline icons (the mark's shapes as thin lines) when off. The Class Guide switch (class_guide) hides the
- * Class Guide card and the Match Summary switch (ledger_summary) hides the
+ * when on, outline icons (the mark's shapes as thin lines) when off. The
+ * Class Guide switch (class_guide) hides the live Class Guide card and the
+ * Replay Viewer's Agent tab Class Guide, and the Match Summary switch
+ * (ledger_summary) hides the
  * ledger's Match Summary, both wired from main.js. The scorebug draws "/ 20"
  * beside each score, the public wave pips under each bar, and the Wave Chip
  * under a team's name only when this audience saw one of its champions return
@@ -237,7 +239,15 @@ test("the Class Guide and Match Summary switches are wired to their cards", asyn
   );
   assert.match(tactics, /const guideOn = classGuideEnabled\(\);/u);
   assert.match(tactics, /if \(guideCard\) guideCard\.hidden = !guideOn;/u);
-  assert.match(tactics, /if \(!guideOn\) return;\s*const guide = classGuideView\(/u);
+  assert.match(
+    tactics,
+    /if \(!guideOn\) return;\s*if \(classNamesV1\(view\.classId\) === null\)/u,
+  );
+  // The Replay Viewer's Agent tab card obeys the same switch.
+  assert.match(
+    main,
+    /!isVisualFilterEnabled\(visualFilterState, "class_guide"\)\) \{\s*card\.hidden = true;/u,
+  );
   assert.match(
     main,
     /summaryEnabled: isVisualFilterEnabled\(visualFilterState, "ledger_summary"\)/u,

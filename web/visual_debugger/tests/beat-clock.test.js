@@ -7,7 +7,9 @@
  * copy); the beat order; Oracle View timing from latest_events only and Agent POV
  * timing from visual_events only (a death the team did not see changes no time, and
  * the score always changes at the Fall beat start); beatView's held life, score and
- * returns read from the current frame only; and the choreographer's beat holds,
+ * returns read from the current frame only, and its hits (a non-fatal life change
+ * held until Impact, 460 ms with Body Glide and Longer Tick; a fall never counts as
+ * a hit); and the choreographer's beat holds,
  * which use fill "backwards" and never a forward fill, so the paused still shows END
  * and a cancelled, finished or replaced hold shows END too.
  */
@@ -492,6 +494,45 @@ test("beatView holds life, score and returns until their beats from the current 
   assert.equal(beatView(frame, 2599)?.returns[0].back, false);
   assert.deepEqual(beatView(frame, "end"), end);
   assert.equal(beatView({ not: "a frame" }), null);
+});
+
+test("beatView holds a non-fatal hit's life until Impact, and falls keep their own beat", async () => {
+  const raw = structuredClone((await fixture()).presentations.replay_oracle);
+  const row = raw.latest_events.events.find(
+    (/** @type {Record<string, any>} */ event) =>
+      event.event_kind === "recipient_health_resolution",
+  );
+  Object.assign(row, {
+    transition_start_health: 200,
+    health_after_combat_resolution: 176,
+    realized_net_health_change: -24,
+    total_effective_damage: 32,
+    total_effective_healing: 8,
+  });
+  const frame = await normalizeAuthorizedPresentationFrameV1(raw);
+  const impact = beatRealTime(BEAT_CLOCK.impactBlow, true, BEAT_CLOCK.longTickLead);
+  assert.equal(impact, 460);
+  const early = beatView(frame, impact - 1);
+  const late = beatView(frame, impact);
+  assert.ok(early && late);
+  assert.deepEqual(
+    early.hits.map(({ publicAgentId, before, after, at, held, shown }) => [
+      publicAgentId,
+      before,
+      after,
+      at,
+      held,
+      shown,
+    ]),
+    [["agent-slot-1", 200, 176, 460, true, 200]],
+  );
+  assert.equal(late.hits[0].held, false);
+  assert.equal(late.hits[0].shown, 176);
+  assert.deepEqual(early.life, [], "a hit is not a fall");
+  // A tick whose only life change is a fall lists it in life, never in hits.
+  const death = beatView(await oracleDeathFrame());
+  assert.ok(death);
+  assert.deepEqual(death.hits, []);
 });
 
 // Stand-ins for the durable DOM: only the attribute and selector reads the

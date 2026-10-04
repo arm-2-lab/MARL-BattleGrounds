@@ -1,75 +1,32 @@
 /*
- * Scribe's Ledger: the Replay Viewer rail (five tabs, each scrolling on its
- * own; on the fixed Arena Stage screen the rail fills the side column), the Metrics card's ledger look, the Match Summary, the Technical Frame
- * groups and the Full Record chip. Owned by src/ledger.js and
- * src/metrics-panel.js. styles.css imports this file before its own rules, so
- * every rule here is scoped under #replay-rail or #evaluation-metrics to win.
- * Flat night panels with silver lines; colour only in crests and emblems.
+ * The Replay Viewer rail's contents (src/ledger.js and src/metrics-panel.js):
+ * the Metrics card (its sticky header with Scope, Topic, View and Find A
+ * Measurement, the Match Summary and the measurement table), the Technical
+ * Frame groups (This Frame, This Game, This File) with Copy, the Replay File
+ * facts and the Full Record chip. The content is Scribe's Ledger's; the look
+ * is the BattleClient rail's (owner, 3 Oct 2026): the BattleClient's tokens
+ * on #bc (--panel, --edge, --raise, --text, --muted, --moon), eyebrow
+ * headings, plain values, its switch style. The tab bar and the tab panels
+ * themselves are styled in src/styles/battleclient/rail.css. styles.css
+ * imports this file before its own rules, so every rule here is scoped under
+ * #replay-rail or #evaluation-metrics to win.
  */
 
-/* Rail: tabs on top, one scrolling panel below. */
-#replay-rail:not([hidden]) {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 0.5rem;
-}
-
-#replay-rail .ledger-rail__tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border: 1px solid var(--panel-edge);
-  border-radius: 8px;
-  background: var(--panel);
-}
-
-#replay-rail .ledger-rail__tab {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 32px;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ui-muted);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-#replay-rail .ledger-rail__tab[aria-selected="true"] {
-  border-color: rgb(201 212 232 / 45%);
-  background: rgb(201 212 232 / 14%);
-  color: var(--ui-text);
-}
-
+/* Keyboard focus on a tab or a panel (rail.css draws the tabs and panels). */
 #replay-rail .ledger-rail__tab:focus-visible {
-  outline: 2px solid var(--moon-silver);
-  outline-offset: 1px;
-}
-
-#replay-rail .ledger-rail__panel:not([hidden]) {
-  display: grid;
-  align-content: start;
-  gap: 0.5rem;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: var(--ledger-panel-max-height, calc(100dvh - 10rem));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  outline: 2px solid var(--moon);
+  outline-offset: -2px;
 }
 
 #replay-rail .ledger-rail__panel:focus-visible {
-  outline: 1px solid var(--moon-silver);
+  outline: 1px solid var(--moon);
   outline-offset: -1px;
 }
 
 /* Cards inside a tab: one scroll per tab, so the card cap is lifted. */
 #replay-rail .ledger-card {
-  border-color: var(--panel-edge);
-  border-radius: 8px;
-  background: var(--panel);
+  border: 0;
+  background: transparent;
 }
 
 #replay-rail .ledger-card .disclosure-body {
@@ -86,7 +43,7 @@
   border: 1px solid rgb(201 212 232 / 45%);
   border-radius: 999px;
   background: var(--panel);
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
   line-height: 1.5;
@@ -110,7 +67,7 @@
   display: grid;
   gap: 0.45rem;
   padding: 0.5rem 0 0.55rem;
-  border-bottom: 1px solid var(--panel-edge);
+  border-bottom: 1px solid var(--edge);
   background: var(--panel);
 }
 
@@ -129,8 +86,9 @@
 #evaluation-metrics.ledger .ledger-switch {
   display: flex;
   gap: 0;
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
   overflow: hidden;
 }
 
@@ -139,24 +97,25 @@
   flex: 1 1 0;
   align-content: center;
   min-width: 0;
-  min-height: 32px;
-  padding: 0.2rem 0.5rem;
+  min-height: 30px;
+  padding: 3px 8px;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--ui-muted);
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 12px;
   font-weight: 700;
   text-align: center;
 }
 
 #evaluation-metrics.ledger .ledger-switch__part + .ledger-switch__part {
-  border-left: 1px solid var(--panel-edge);
+  border-left: 1px solid var(--edge);
 }
 
 #evaluation-metrics.ledger .ledger-switch__part[aria-checked="true"] {
-  background: rgb(201 212 232 / 14%);
-  color: var(--ui-text);
+  background: var(--raise);
+  box-shadow: inset 0 -2px 0 var(--moon);
+  color: var(--text);
 }
 
 #evaluation-metrics.ledger .ledger-switch__part:disabled {
@@ -164,12 +123,12 @@
 }
 
 #evaluation-metrics.ledger .ledger-switch__part:focus-visible {
-  outline: 2px solid var(--moon-silver);
+  outline: 2px solid var(--moon);
   outline-offset: -2px;
 }
 
 #evaluation-metrics.ledger .ledger-switch__note {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 400;
 }
@@ -180,10 +139,10 @@
 }
 
 #evaluation-metrics.ledger .ledger-eyebrow {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -191,10 +150,10 @@
   width: 100%;
   min-height: 32px;
   margin: 0;
-  border: 1px solid var(--panel-edge);
+  border: 1px solid var(--edge);
   border-radius: 6px;
   background: var(--ink);
-  color: var(--ui-text);
+  color: var(--text);
 }
 
 #evaluation-metrics.ledger #metric-view-field {
@@ -208,23 +167,23 @@
 #evaluation-metrics.ledger #metric-search {
   min-height: 32px;
   margin-block: 0.2rem 0;
-  border: 1px solid var(--panel-edge);
+  border: 1px solid var(--edge);
   border-radius: 6px;
   background: var(--ink);
-  color: var(--ui-text);
+  color: var(--text);
 }
 
 /* Preparing line: a thin Moon Silver progress under the header. */
 #evaluation-metrics.ledger .metrics-progress {
   inline-size: 100%;
   block-size: 2px;
-  accent-color: var(--moon-silver);
+  accent-color: var(--moon);
 }
 
 #evaluation-metrics.ledger #metric-status,
 #evaluation-metrics.ledger #metric-description {
   margin: 0;
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -238,6 +197,14 @@
   overflow: visible;
 }
 
+/* The body no longer scrolls, so it keeps no scrollbar gutter. The header
+   must not keep one either (styles.css gives it overflow: hidden and a
+   stable gutter); otherwise its columns sit left of the values, by up to one
+   scrollbar's width (15 px in Chromium). */
+#evaluation-metrics.ledger .metric-table thead {
+  scrollbar-gutter: auto;
+}
+
 #evaluation-metrics.ledger .metric-table th,
 #evaluation-metrics.ledger .metric-table td {
   min-height: 32px;
@@ -248,17 +215,17 @@
 
 #evaluation-metrics.ledger .metric-table thead th {
   background: var(--panel);
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 #evaluation-metrics.ledger .metric-table td:first-child,
 #evaluation-metrics.ledger .metric-table th:first-child {
   width: 34%;
-  color: var(--ui-text);
+  color: var(--text);
 }
 
 #evaluation-metrics.ledger .metric-table td:nth-child(2),
@@ -269,7 +236,7 @@
 #evaluation-metrics.ledger .metric-table .metric-value,
 #evaluation-metrics.ledger .metric-table th:last-child {
   width: 72px;
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -277,7 +244,7 @@
 }
 
 #evaluation-metrics.ledger .metric-table .metric-value[data-value=""] {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-weight: 400;
 }
 
@@ -285,29 +252,24 @@
   width: auto;
   padding-top: 0.85rem;
   text-align: left;
-  border-bottom: 1px solid rgb(201 212 232 / 35%);
-  color: var(--ui-muted);
+  border-bottom: 1px solid var(--edge);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-#evaluation-metrics.ledger .metric-table .metric-section th::before {
-  content: "◆ ";
-  color: var(--moon-silver);
-}
-
 #evaluation-metrics.ledger .metric-measure {
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
-  text-decoration-color: var(--ui-muted);
+  text-decoration-color: var(--muted);
 }
 
 #evaluation-metrics.ledger .metric-condition,
 #evaluation-metrics.ledger .metric-table small {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -315,7 +277,7 @@
 #evaluation-metrics.ledger .metric-table tr.metric-search-match {
   outline: 0;
   background: rgb(201 212 232 / 14%);
-  box-shadow: inset 2px 0 0 var(--moon-silver);
+  box-shadow: inset 2px 0 0 var(--moon);
 }
 
 /* Subject chips: crest or class emblem in the team ring, then "Agent 3". */
@@ -342,7 +304,7 @@
 }
 
 #evaluation-metrics.ledger .ledger-subject__join {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -351,7 +313,7 @@
   grid-template-columns: 16px auto;
   align-items: center;
   column-gap: 0.25rem;
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.2;
@@ -364,7 +326,7 @@
   padding: 2px;
   border: 1.5px solid var(--team-a);
   border-radius: 50%;
-  color: var(--ui-text);
+  color: var(--text);
 }
 
 #evaluation-metrics.ledger .ledger-chip[data-team="b"] .ledger-chip__emblem {
@@ -375,7 +337,7 @@
 
 #evaluation-metrics.ledger .ledger-chip__class {
   grid-column: 2;
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 400;
 }
@@ -390,46 +352,46 @@
 #evaluation-metrics.ledger .metric-search-results button {
   gap: 0.15rem;
   padding: 0.45rem 0.55rem;
-  border-bottom-color: var(--panel-edge);
+  border-bottom-color: var(--edge);
   background: transparent;
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 13px;
 }
 
 #evaluation-metrics.ledger .metric-search-results button[aria-selected="true"] {
   background: rgb(201 212 232 / 14%);
-  box-shadow: inset 2px 0 0 var(--moon-silver);
+  box-shadow: inset 2px 0 0 var(--moon);
 }
 
 #evaluation-metrics.ledger .metric-search-results small,
 #evaluation-metrics.ledger .metric-search-results code {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
 #evaluation-metrics.ledger .metric-search-results__tag {
   justify-self: start;
   padding: 0 0.35rem;
-  border: 1px solid var(--panel-edge);
+  border: 1px solid var(--edge);
   border-radius: 4px;
 }
 
 #evaluation-metrics.ledger .metric-search-definition {
-  border-color: var(--panel-edge);
+  border-color: var(--edge);
   border-radius: 8px;
   background: var(--panel);
-  color: var(--ui-text);
+  color: var(--text);
 }
 
 /* About These Numbers: the two reading notes folded into one line. */
 #evaluation-metrics.ledger .ledger-notes {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 13px;
 }
 
 #evaluation-metrics.ledger .ledger-notes > summary {
   cursor: pointer;
-  color: var(--ui-muted);
+  color: var(--muted);
   font-weight: 700;
 }
 
@@ -438,12 +400,12 @@
   display: grid;
   gap: 0.35rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgb(201 212 232 / 35%);
+  border-bottom: 1px solid var(--edge);
 }
 
 #evaluation-metrics.ledger .ledger-match__heading {
   margin: 0;
-  color: var(--ui-text);
+  color: var(--text);
   font-size: 15px;
   font-weight: 700;
 }
@@ -458,22 +420,21 @@
 #evaluation-metrics.ledger .ledger-match__values {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.1rem 0.75rem;
+  align-items: baseline;
+  gap: 2px 4px;
   margin: 0;
 }
 
+/* Each label and its value read as one pair ("Score 4"), with room before
+   the next pair. */
 #evaluation-metrics.ledger .ledger-match__values dt {
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
-#evaluation-metrics.ledger .ledger-match__values dt::after {
-  content: " ";
-}
-
 #evaluation-metrics.ledger .ledger-match__values dd {
-  margin: 0 0 0 -0.6rem;
-  color: var(--ui-text);
+  margin: 0 10px 0 0;
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -481,7 +442,7 @@
 
 #evaluation-metrics.ledger .ledger-match__note {
   margin: 0;
-  color: var(--ui-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -497,18 +458,12 @@
 #technical-frame-details .ledger-rune {
   margin: 0 0 0.2rem;
   padding-bottom: 0.2rem;
-  border-bottom: 1px solid rgb(201 212 232 / 35%);
-  color: var(--ui-muted);
+  border-bottom: 1px solid var(--edge);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-
-#replay-rail .ledger-rune::before,
-#technical-frame-details .ledger-rune::before {
-  content: "◆ ";
-  color: var(--moon-silver);
 }
 
 #technical-frame-details .ledger-frame__fact {
@@ -520,58 +475,64 @@
 }
 
 #technical-frame-details .ledger-frame__label {
-  color: var(--ui-muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 #technical-frame-details .ledger-frame__value {
   overflow: hidden;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--ui-text);
-  font-size: 11px;
+  color: var(--text);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 #technical-frame-details .ledger-copy {
-  min-height: 24px;
-  padding: 0 0.45rem;
-  border: 1px solid var(--panel-edge);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ui-text);
+  min-height: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--edge2);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
+  line-height: 1.35;
+}
+
+#technical-frame-details .ledger-copy:hover {
+  border-color: var(--moon);
+}
+
+/* Replay File: the replay's artifact, completion, processing and end reason
+   (moved from the old Details popover), as rows like the Technical Frame's. */
+#replay-rail #replay-details .replay-details__title {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#replay-rail #replay-details .replay-badges div {
+  grid-template-columns: minmax(7rem, 38%) minmax(0, 1fr);
+  gap: 0.4rem;
+  min-height: 24px;
+  align-items: center;
+}
+
+#replay-rail #replay-details .replay-badges dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#replay-rail #replay-details .replay-badges dd {
+  color: var(--text);
+  font-size: 12px;
 }
 
 /* The Metrics tab names the card, so its own folding title is not shown. */
 #replay-rail #evaluation-metrics > summary {
   display: none;
-}
-
-/*
- * Replay Viewer Arena Stage (one fixed screen from 1024 x 640): the rail fills
- * the side column to the bottom of the stage, under the Fallen panel when it
- * shows, and its open tab panel scrolls inside it.
- */
-@media (min-width: 64rem) and (min-height: 40rem) {
-  html[data-product-kind="replay_viewer"] .hud-panel {
-    grid-template-rows: minmax(0, 1fr);
-    align-content: stretch;
-  }
-
-  html[data-product-kind="replay_viewer"] .hud-panel:has(> #fallen-feed:not([hidden])) {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  html[data-product-kind="replay_viewer"]
-    #replay-rail
-    .ledger-rail__panel:not([hidden]) {
-    max-height: none;
-  }
 }

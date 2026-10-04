@@ -1,6 +1,9 @@
 /**
  * @file Check API-configured Team B GAMMA through one accepted step, recording,
- * and separate Replay Viewer inspection. Preserve exact policy and replay identities.
+ * and separate Replay Viewer inspection. Preserve exact policy and replay identities:
+ * the shared scorebug names Team B "tdm-gamma" and Team A "You" in live play or the
+ * recorded "Manual" in the Replay Viewer, and the match summary keeps every policy
+ * reference.
  * Private controller-menu behavior is checked in the local editor test suite.
  */
 import { expect, test } from "@playwright/test";
@@ -100,21 +103,18 @@ async function applyLiveCommand(page, activate) {
   return response;
 }
 
-/** @param {import("@playwright/test").Page} page */
-async function expectGammaScoreboard(page) {
-  const teamB = page.locator("#match-team-b .match-scoreboard__policy");
-  await expect(teamB).toHaveText(GAMMA_LABEL);
-  // The policy references sit on the team label; hovering the name opens the
-  // team's controller list instead (src/controller-names.js).
-  await expect(
-    page.locator("#match-team-b .match-scoreboard__team-label"),
-  ).toHaveAttribute(
-    "title",
-    /^debugger-action-source:tdm_gamma:slot:\d+(?:\ndebugger-action-source:tdm_gamma:slot:\d+)*$/u,
-  );
-  await expect(page.locator("#match-team-a .match-scoreboard__policy")).toHaveText(
-    "Manual",
-  );
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string} teamAName The Manual team's name: "You" in live play, the
+ *   recorded "Manual" in the Replay Viewer.
+ */
+async function expectGammaScoreboard(page, teamAName) {
+  // The shared scorebug (#scorebug) is the one score display in every client;
+  // its controller lines name each team's controllers (src/controller-names.js).
+  // The policy references stay in the match summary, checked below. Live play
+  // writes "You" as plain text (never cut); a name is a span.controller-name.
+  await expect(page.locator("#ctl-b .controller-name")).toHaveText(GAMMA_LABEL);
+  await expect(page.locator("#ctl-a")).toHaveText(teamAName);
   const presentation = await authenticatedGet(page, "/api/presentation/frame");
   const [teamASummary, teamBSummary] = presentation.match_summary.teams;
   expect(teamASummary).toMatchObject({ team_id: 1, display_name: "Manual" });
@@ -200,7 +200,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     captured_transition_count: 0,
   });
   await expect(page.locator("#step-value")).toHaveText("0");
-  await expectGammaScoreboard(page);
+  await expectGammaScoreboard(page, "You");
 
   const priestB = page.locator('#roster .roster-row[data-team="team-b"]').filter({
     has: page.locator(".roster-class", { hasText: "Priest" }),
@@ -249,7 +249,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     "data-product-kind",
     "combat_debugger",
   );
-  await expectGammaScoreboard(page);
+  await expectGammaScoreboard(page, "You");
 
   const saved = await readJsonArtifact(started.replayPath);
   expect(saved.value).toMatchObject({
@@ -270,7 +270,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     "data-product-kind",
     "replay_viewer",
   );
-  await expectGammaScoreboard(reviewPage);
+  await expectGammaScoreboard(reviewPage, "Manual");
   expect(reviewErrors).toEqual([]);
   await reviewPage.close();
   expect(errors).toEqual([]);

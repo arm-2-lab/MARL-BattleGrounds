@@ -13,7 +13,7 @@
  * in two spans so that only "Team Deathmatch" gives way when the top bar
  * runs short and the map name stays whole in live play); the live terminal
  * pill's "Game Over"; the live Visual Filters drawer's top (below the
- * scorebug); the View switch (Agent POV first, its titles kept true) and
+ * scorebug); the View switch (Agent POV first, its hover help kept true) and
  * the hidden View select it drives; the Replay Viewer's POV agent chip and its
  * picker; the notice pill and the status pills (the audience pill is for
  * screen readers; the View switch shows the view); the Details popover (Step,
@@ -81,7 +81,12 @@ import { commandHelpRows } from "./command-set.js";
 import { createSvgIcon } from "./icons.js";
 import { publicRosterIdentities } from "./match-summary.js";
 import { applyPalette } from "./palette.js";
-import { championCardFactsFromAgent, createHoverCard } from "./tooltip.js";
+import {
+  championCardFactsFromAgent,
+  createHoverCard,
+  createSemanticDescriptor,
+  registerTooltipOwner,
+} from "./tooltip.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   isVisualFilterEnabled,
@@ -886,11 +891,17 @@ function isPlainRecord(value) {
 }
 
 /**
- * Return the Agent POV button's title for a product. Only the BattleClient
- * opens in Agent POV (the vision's View row: "Agent POV is the default in the
- * BattleClient"), so only its title adds "and the default here"; the DevClient
- * combat screen and the Replay Viewer open in Oracle View. The title depends
- * on the product only, never on the view the page loaded in. Pure.
+ * The Oracle View button's hover and focus help, in every client.
+ */
+export const ORACLE_VIEW_BUTTON_HELP =
+  "Shows every champion, even those your team cannot see.";
+
+/**
+ * Return the Agent POV button's hover and focus help for a product. Only the
+ * BattleClient opens in Agent POV (the vision's View row: "Agent POV is the
+ * default in the BattleClient"), so only its help adds "and the default here";
+ * the DevClient combat screen and the Replay Viewer open in Oracle View. The
+ * words depend on the product only, never on the view the page loaded in. Pure.
  *
  * @param {{replay: boolean, devClient: boolean}} product replay is true in the
  *   Replay Viewer; devClient is true in the private DevClient (its Developer
@@ -904,19 +915,54 @@ export function agentPovButtonTitle(product) {
 }
 
 /**
+ * Register one View switch button's hover and focus help: a registered
+ * "control" tip (the shared tooltip controller), never a native title. A
+ * second call replaces the first. Side effects: the button's tooltip
+ * registration, aria-description and data-tooltip-owner.
+ *
+ * @param {Element} button A `#view-switch` button.
+ * @param {string} title The tip's heading, the button's own words ("Agent POV").
+ * @param {string} summary The one plain sentence.
+ * @returns {void}
+ */
+function registerViewButtonHelp(button, title, summary) {
+  registerTooltipOwner(
+    button,
+    createSemanticDescriptor({
+      kind: "control",
+      id: `control:view-switch:${title}`,
+      title,
+      tone: "information",
+      accent: "none",
+      summary,
+      rows: [],
+      sections: [],
+      metadata: { compact: true, full: false },
+      anchor: "element",
+    }),
+    { inspectable: false },
+  );
+}
+
+/**
  * Choose the connection pill's words and state.
  *
  * In this order of priority: "Closed" once Exit was accepted (the server is
  * closing and the page stops reading, so the pill never waits on a later
  * answer; the Replay Viewer a BattleClient kept open has its own pill); while
  * a request is in flight "Submit Queued", "Input Queued" or "Command In
- * Flight"; then
+ * Flight", except autoplay's own next-frame fetch (status.quietBusy), which
+ * keeps the pill as it was, so it does not blink before every played tick;
+ * then
  * "Disconnected" (the page lost the local server, so it must reload its
  * frame too), "Resync Required" (the server is there but the page's frame is
  * stale), "Connecting" (no frame yet) and otherwise "Connected". Pure.
  *
- * @param {{busy: boolean, offline: boolean, resyncRequired: boolean,
- *   shuttingDown: boolean, hasFrame: boolean}} status Page flags.
+ * @param {{busy: boolean, quietBusy?: boolean, offline: boolean,
+ *   resyncRequired: boolean, shuttingDown: boolean, hasFrame: boolean}} status
+ *   Page flags. quietBusy (default false): the request in flight is
+ *   autoplay's own fetch; a press the user made always shows "Command In
+ *   Flight".
  * @param {Readonly<{deferredDrafts: ReadonlyArray<unknown>, deferredSubmit: unknown}> | null}
  *   transaction The live command in flight, or null (its queued order keys,
  *   oldest first, and its queued Lock In).
@@ -925,7 +971,7 @@ export function agentPovButtonTitle(product) {
  */
 export function connectionPill(status, transaction) {
   if (status.shuttingDown) return Object.freeze({ label: "Closed", status: "offline" });
-  if (status.busy) {
+  if (status.busy && status.quietBusy !== true) {
     return Object.freeze({
       label: transaction?.deferredSubmit
         ? "Submit Queued"
@@ -1569,6 +1615,9 @@ const TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS =
  * @property {Readonly<Record<string, any>> | null} presentation Installed
  *   authorized presentation, or null while authority is pending.
  * @property {boolean} busy True while one page request is in flight.
+ * @property {boolean} [quietBusy] True while that request is autoplay's own
+ *   next-frame fetch (Replay Viewer play): the connection pill stays
+ *   "Connected" then. Absent means false.
  * @property {boolean} offline True after a connection failure.
  * @property {boolean} resyncRequired True until Reconnect installs fresh authority.
  * @property {boolean} shuttingDown True after Exit was accepted.
@@ -1626,8 +1675,8 @@ const TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS =
  *   Ranges, Clear Selection and actor cycling.
  * @property {() => Readonly<Record<string, boolean>>} [getVisualFilterState]
  *   The current Visual Filters state. Optional; without it every switch reads
- *   its shipped default. The shell reads brand_lockup, title_card,
- *   reference_chip and target_selection_visuals, and in live play
+ *   its shipped default. The shell reads brand_lockup, title_card and
+ *   target_selection_visuals, and in live play
  *   high_contrast and brand_signature.
  * @property {(command: PovAgentChoice["command"]) => void} [activateReplayPovAgent]
  *   Make another agent the Replay Viewer's POV agent, by the same code a
@@ -1722,10 +1771,11 @@ export function createShell(context) {
     arena: byId("arena"),
     battlefield: byId("battlefield"),
     visualKeyButton: byId("visual-key-button"),
+    visualFiltersButton: byId("visual-filters-button"),
     hoverCard: byId("hcard"),
     grid: byId("bc"),
   });
-  // Whether the Agent POV button's title is set (settleAgentPovTitle).
+  // Whether the Agent POV button's live help is set (settleAgentPovTitle).
   let agentPovTitleSettled = false;
   // The view tag is rebuilt only when its words change.
   let viewTagKey = "";
@@ -2068,12 +2118,13 @@ export function createShell(context) {
   /**
    * Show the Replay Viewer's POV agent chip and rebuild its picker when needed.
    *
-   * Shows only in the Replay Viewer, in Agent POV, with the reference_chip
-   * switch on. Reads identity rows from the installed presentation (the
+   * Shows always in the Replay Viewer's Agent POV, and never elsewhere: no
+   * switch hides it, because it is how you choose whose eyes you watch
+   * through. Reads identity rows from the installed presentation (the
    * Replay Viewer's researcher chrome lists every agent). Side effects: the
    * chip's `hidden`, the chip button's content and `aria-label`, the
-   * picker's buttons. When the chip hides (any view but Replay Agent POV, or
-   * the Reference Chip filter off) it closes the picker and empties the
+   * picker's buttons. When the chip hides (any view but Replay Agent POV)
+   * it closes the picker and empties the
    * button, its `aria-label` and the picker, so Oracle -> POV -> Oracle
    * leaves the same chip DOM as a fresh page.
    *
@@ -2090,8 +2141,7 @@ export function createShell(context) {
     const view =
       replay &&
       presentation !== null &&
-      authorizedPresentationAudience(presentation) === "agent_pov" &&
-      filterOn("reference_chip")
+      authorizedPresentationAudience(presentation) === "agent_pov"
         ? povAgentChipView(
             isRecord(presentation.authority)
               ? presentation.authority.recipient_public_agent_id
@@ -2164,11 +2214,24 @@ export function createShell(context) {
 
   /**
    * Bind the shell's own controls once. See createShell for the list.
-   * Side effects: event listeners on the shell's page parts.
+   * Side effects: event listeners on the shell's page parts, and the View
+   * buttons' registered hover help (registerViewButtonHelp).
    *
    * @returns {void}
    */
   function bindShellControls() {
+    // Both View buttons get registered help at once; live play's Agent POV
+    // words settle with the first frame (settleAgentPovTitle).
+    for (const button of shellParts.viewSwitch?.querySelectorAll?.("button") ?? []) {
+      const pov = button.dataset.viewMode === "pov";
+      registerViewButtonHelp(
+        button,
+        pov ? "Agent POV" : "Oracle View",
+        pov
+          ? agentPovButtonTitle({ replay: true, devClient: true })
+          : ORACLE_VIEW_BUTTON_HELP,
+      );
+    }
     shellParts.viewSwitch?.addEventListener("click", (event) => {
       const target =
         event.target instanceof Element ? event.target.closest("button") : null;
@@ -2443,34 +2506,43 @@ export function createShell(context) {
     if (placeRestObserver === null && typeof ResizeObserver === "function") {
       placeRestObserver = new ResizeObserver(markCutPlaceRest);
       placeRestObserver.observe(place);
+      const product = place.ownerDocument.getElementById?.("app-title");
+      if (product) placeRestObserver.observe(product);
     }
   }
 
   /**
-   * Mark the place line's span.where__more with `data-cut` while the top bar
-   * cuts it (placeRestIsCut), so the BattleClient's top-bar styles hide
-   * " · Team Deathmatch" whole instead of showing it cut with "…". Runs after
-   * each place line write and whenever #match-place changes size. Side
-   * effects: the span's `data-cut` attribute only; nothing when the line has
-   * no second part.
+   * Mark the parts of the top bar that may give way with `data-cut` while the
+   * bar cuts them (placeRestIsCut), so the top-bar styles hide them whole
+   * instead of showing them cut with "…" (owner, 3 Oct 2026: a part that does
+   * not fit hides whole, never cut halfway): the place line's
+   * span.where__more (" · Team Deathmatch") and the brand's product name
+   * (h1#app-title, "Replay Viewer" or "BattleClient"). Runs after each place
+   * line write and whenever #match-place or the product name changes size.
+   * Side effects: those elements' `data-cut` attribute only.
    *
    * @returns {void}
    */
   function markCutPlaceRest() {
     const rest = shellParts.matchPlace?.querySelector(".where__more");
-    if (!(rest instanceof HTMLElement)) return;
-    rest.toggleAttribute("data-cut", placeRestIsCut(rest));
+    if (rest instanceof HTMLElement)
+      rest.toggleAttribute("data-cut", placeRestIsCut(rest));
+    const product = shellParts.matchPlace?.ownerDocument?.getElementById?.("app-title");
+    if (product instanceof HTMLElement)
+      product.toggleAttribute("data-cut", placeRestIsCut(product));
   }
 
   /**
-   * Set the Agent POV button's title once a live frame is installed, from
+   * Set the Agent POV button's hover help once a live frame is installed, from
    * the product's own default view (agentPovButtonTitle), never from the
    * view the page happened to load in: the BattleClient opens in Agent POV,
    * the DevClient (its Developer drawer, #developer-drawer, is shown before
    * this module loads) and the Replay Viewer open in Oracle View. So a view
-   * round trip and a reload in either view give the same title.
+   * round trip and a reload in either view give the same help. The Replay
+   * Viewer keeps the help bindShellControls gave it.
    *
-   * Side effects: the button's `title`, set once per page.
+   * Side effects: the button's registered tip (registerViewButtonHelp), set
+   * once per page.
    *
    * @param {Readonly<Record<string, any>> | null} transport The installed
    *   live transport frame, or null (the Replay Viewer, or no frame yet):
@@ -2484,8 +2556,9 @@ export function createShell(context) {
     );
     if (!button) return;
     agentPovTitleSettled = true;
-    button.setAttribute(
-      "title",
+    registerViewButtonHelp(
+      button,
+      "Agent POV",
       agentPovButtonTitle({
         replay: isReplayMode(),
         devClient:
@@ -2511,6 +2584,7 @@ export function createShell(context) {
     const pill = connectionPill(
       {
         busy: state.busy,
+        quietBusy: state.quietBusy === true,
         offline: state.offline,
         resyncRequired: state.resyncRequired,
         shuttingDown: state.shuttingDown,
@@ -2675,15 +2749,18 @@ export function createShell(context) {
    * renderCommandAvailability and registerAuthorityAwareUtilityHelp. It reads
    * the transport and presentation only through `installed`, never through
    * `state.frame` or `state.presentation`. Its own work: Step and Transition
-   * (and whether Copy works), the audience and terminal pills (live play's
-   * terminal pill reads "Game Over" when the game has ended), the scenario
-   * line, the View select and switch, Reconnect, Exit ("Exit Replay Viewer" or
-   * "Exit"), Reset, live Ranges, the place line (renderPlaceLine), the view
+   * (and whether Copy works), the audience and terminal pills (the terminal
+   * pill reads "Game Over" when the game has ended; a replay may instead
+   * read "Time Limit", "Recording Ends" or "Replay End"), the scenario
+   * line, the View select and switch, Reconnect, Exit ("Exit" in every
+   * client, so the top bar has room for the full map name), Reset, live Ranges, the place line (renderPlaceLine), the view
    * tag (renderViewTag; the old Oracle View tag stays hidden), the Agent POV
-   * button's title (settleAgentPovTitle, once), the
+   * button's hover help (settleAgentPovTitle, once), the
    * POV agent chip (Replay Viewer Agent POV only), the header's `data-brand-lockup` ("on" or "off" from the
-   * brand_lockup switch), the always-visible Visual Key button once the
-   * product is known, and the Title Card. Side effects: DOM text, `hidden`,
+   * brand_lockup switch), the always-visible Visual Key and Visual Filters
+   * buttons once the product is known (main.js gives the Replay Viewer's
+   * Visual Filters button its own job: it opens the rail's Visuals tab), and
+   * the Title Card. Side effects: DOM text, `hidden`,
    * `disabled`, `aria-pressed` and the root `data-audience` and `data-preset`
    * attributes; no request is sent. Agent POV: the Transition fact may show the
    * researcher branch's transition ID, an opaque ID that names no champion;
@@ -2730,16 +2807,19 @@ export function createShell(context) {
     if (terminal && replay) {
       const completion = isRecord(frame?.completion) ? frame.completion : {};
       const bases = asArray(completion.completion_bases);
+      // Short plain words, as in live play, so the top bar keeps the whole
+      // map name: the game ended ("Game Over", also when it ended on the
+      // episode limit), the replay stops at the episode limit ("Time
+      // Limit"), the recording stops before the game ended ("Recording
+      // Ends"), or the replay is complete for another reason ("Replay End").
       elements.terminalBadge.textContent =
         completion.completion_state !== "complete"
-          ? "End Of Captured Prefix"
-          : bases.includes("task_terminal") && bases.includes("declared_horizon")
-            ? "Task Terminal · Declared Horizon"
-            : bases.includes("task_terminal")
-              ? "Task Terminal"
-              : bases.includes("declared_horizon")
-                ? "Declared Horizon"
-                : "Complete Replay";
+          ? "Recording Ends"
+          : bases.includes("task_terminal")
+            ? "Game Over"
+            : bases.includes("declared_horizon")
+              ? "Time Limit"
+              : "Replay End";
     } else {
       // Short, so the top bar keeps the whole map name at game over too.
       elements.terminalBadge.textContent = terminal ? "Game Over" : "Terminal";
@@ -2773,8 +2853,7 @@ export function createShell(context) {
     elements.reconnectButton.disabled =
       state.busy || state.shuttingDown || productIdentity === null;
     elements.exitButton.disabled = disabled;
-    elements.exitButton.textContent =
-      productIdentity?.product_kind === "replay_viewer" ? "Exit Replay Viewer" : "Exit";
+    elements.exitButton.textContent = "Exit";
     elements.resetButton.disabled =
       disabled ||
       Boolean(frame?.fresh_launch_required) ||
@@ -2807,6 +2886,9 @@ export function createShell(context) {
     }
     if (shellParts.visualKeyButton !== null && productIdentity !== null) {
       shellParts.visualKeyButton.hidden = false;
+    }
+    if (shellParts.visualFiltersButton !== null && productIdentity !== null) {
+      shellParts.visualFiltersButton.hidden = false;
     }
     syncTitleCard(installed !== null);
     renderRecordingControls(installed);

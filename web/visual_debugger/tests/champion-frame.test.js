@@ -11,7 +11,8 @@
  * only the glyph under the actor, no arrowhead is drawn, the switch turns it
  * off, and every node is export-safe. Reach Rings follow the Ranges button,
  * or with the Reach Rings switch only the selected champion's rings. The look
- * registers the selection paint parts with the visual filters. Agent POV:
+ * registers the selection paint parts, and the Replay Tools parts of All
+ * Staged Orders and Next Step Ghost, with the visual filters. Agent POV:
  * arena marks come only from the POV scene, so an unseen champion gets no
  * marks; the docked frame shows the full record under the Full Record chip,
  * while its Recent Ticks cell reads only the audience's own events ("Not
@@ -22,6 +23,9 @@
  * describeAction helper. The look never reads a frame: the test composes its
  * plain input with the adapter as main.js does. renderChampionFrame builds the
  * hint or the selected frame, with the life drawn as the shared Life bar.
+ * Effective Speed ("Effective Speed 0.85", from effective_movement_speed) ends
+ * the name block for a living champion and is absent for a fallen one or a
+ * record without it.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -381,6 +385,8 @@ test("the selection paint parts are registered with the visual filters", () => {
     ["selection_moonlight", "selection_moonlight"],
     ["next_action_thread", "next_action_thread"],
     ["reach_ring", "reach_rings"],
+    ["staged_order", "all_staged_orders"],
+    ["next_step_ghost", "next_step_ghost"],
   ]);
   for (const row of frame.PAINT_PARTS) {
     assert.equal(classifyVisualPaintPart(row.part), row.filter);
@@ -448,7 +454,7 @@ test("the frame view: hint, full record chip, status rule, Recent Ticks and Next
   const empty = frame.championFrameView(frameInput(oracle, null));
   assert.deepEqual(empty, {
     state: "empty",
-    hint: "Select An Agent To Inspect · Click A Body Or A Team Rosters Chip",
+    hint: "Select A Champion To Inspect · Click Its Body Or Its Arena Frame",
   });
   assert.equal(
     frame.championFrameView(frameInput(oracle, "agent-slot-99")).state,
@@ -516,6 +522,45 @@ test("the frame view: hint, full record chip, status rule, Recent Ticks and Next
   assert.equal(last.nextText, "No Next Tick (Final Frame)");
   assert.equal(last.finalFrame, true);
   assert.equal(last.ultimateText, "Burst · Ready In 29 Ticks");
+});
+
+test("Effective Speed shows the speed now, for a living champion only", async () => {
+  const fx = await fixture();
+  const oracle = await normalizeAuthorizedPresentationFrameV1(
+    structuredClone(fx.presentations.replay_oracle),
+  );
+  const base = frameInput(oracle, "agent-slot-1");
+  /** @param {Record<string, unknown>} change */
+  const withAgent = (change) => ({
+    ...base,
+    agents: base.agents.map((/** @type {any} */ agent) =>
+      agent.public_agent_id === "agent-slot-1" ? { ...agent, ...change } : agent,
+    ),
+  });
+  const slowed = /** @type {any} */ (
+    frame.championFrameView(withAgent({ effective_movement_speed: 0.85 }))
+  );
+  assert.equal(slowed.speedText, "Effective Speed 0.85");
+  assert.equal(
+    /** @type {any} */ (
+      frame.championFrameView(
+        withAgent({ effective_movement_speed: 0.85, alive: false }),
+      )
+    ).speedText,
+    null,
+  );
+  assert.equal(
+    /** @type {any} */ (
+      frame.championFrameView(withAgent({ effective_movement_speed: undefined }))
+    ).speedText,
+    null,
+  );
+  const doc = fakeDocument();
+  const container = doc.createElement("section");
+  frame.renderChampionFrame(container, slowed);
+  const [speed] = byClass(container, "champion-frame__speed");
+  assert.equal(speed.textContent, "Effective Speed 0.85");
+  assert.equal(byClass(container, "champion-frame__name")[0].children.at(-1), speed);
 });
 
 test("renderChampionFrame builds the hint row or the selected frame", async () => {

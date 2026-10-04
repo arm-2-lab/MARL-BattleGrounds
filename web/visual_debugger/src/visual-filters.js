@@ -10,14 +10,15 @@
  * it the same way in every client. That includes the V5 add-ons Class Seals,
  * Aura Glints, Barrier Held (on by default), Saved Beat, Last Breath, Battle
  * Text Detail, Kill Credit Glint, Champion Streaks and Momentum. Replay tools
- * (Battle Cam, timeline marks, bookmarks and the like) are listed only in the
- * Replay Viewer, and the live play marks (Command Marks, Reach Marks, Step
- * Ghost) only in live play. Lore Emblems is
- * listed in both clients: its V5 pick (Heraldic Sigils) draws every live
- * token's class emblem, so the approved parity plan keeps it (P25). Its Off
- * drawing, a plain outline emblem (P26, never today's old glyph), belongs to
- * the Champions look and the other emblem drawers; until they read the switch,
- * Off changes nothing in either client. Live
+ * (Battle Cam, timeline marks, and the Replay Tools group's Next Step Ghost
+ * and All Staged Orders, which show the recorded next tick) are listed only
+ * in the Replay Viewer, and the live play marks (Command Marks, Reach Marks,
+ * Step Ghost) only in live play. Lore Emblems is
+ * listed in both clients: its V5 pick (Heraldic Sigils) draws every token's
+ * class emblem, so the approved parity plan keeps it (P25). Off draws a plain
+ * outline emblem (P26, never today's old glyph) everywhere an emblem shows:
+ * main.js passes the choice to icons.js (setIconStyleDefaults), so bodies,
+ * frames, rail and cards all change. Live
  * play shows the owner's V5 label and group (LIVE_SWITCH_NAMES) where the
  * Replay Viewer still uses its older name. Two V5 switches are live only:
  * Palette: High Contrast (the Full Moon Contrast pick; shell.js applies it as
@@ -152,17 +153,11 @@ import { PAINT_PARTS as VISUAL_KEY_PAINT_PARTS } from "./looks/visual-key.js";
  *   | "selected_agent_frame"
  *   | "event_timeline_marks"
  *   | "beat_label"
- *   | "fight_chapters"
- *   | "bookmarks"
  *   | "freeze_on_pause"
  *   | "hide_marks_ahead"
  *   | "class_guide"
  *   | "ledger_summary"
  *   | "panel_tokens"
- *   | "ledger_heraldry"
- *   | "plain_actions"
- *   | "seen_grouping"
- *   | "reference_chip"
  *   | "brand_lockup"
  *   | "brand_signature"
  *   | "title_card"
@@ -171,6 +166,8 @@ import { PAINT_PARTS as VISUAL_KEY_PAINT_PARTS } from "./looks/visual-key.js";
  *   | "step_ghost"
  *   | "focus_fire"
  *   | "high_contrast"
+ *   | "next_step_ghost"
+ *   | "all_staged_orders"
  * } VisualFilterId
  * @typedef {"combat_debugger" | "replay_viewer"} VisualFilterProduct
  * @typedef {"arena" | "interface"} VisualFilterSurface
@@ -275,7 +272,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     BOTH,
-    "Silver brackets frame the selected champion, and a faint ring and a hover card show the one you point at. In Agent POV the brackets hide while that champion is unseen. Off: no brackets, hover ring or hover card.",
+    "Silver brackets frame the selected champion, and a faint ring and, in live play, a hover card show the one you point at. In Agent POV the brackets hide while that champion is unseen. Off: no brackets, hover ring or hover card.",
   ],
   [
     "basic_ability_effects",
@@ -365,7 +362,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     BOTH,
-    "When champions come back, their waystones light, a 'Team A Returns' chip appears and the field holds still for the return. A wave that brings nobody back shows nothing. In Agent POV the chip counts only the returns your team sees. Off: no light, no chip and no hold.",
+    "When champions come back, their Arena Frames mark the return, their waystones light (with Resurrection Effects on) and the field holds still for the return. A wave that brings nobody back shows nothing. Off: no mark, no light and no hold.",
   ],
   [
     "resurrection_effects",
@@ -636,7 +633,7 @@ const REGISTRY_ROWS = [
     false,
     "arena",
     BOTH,
-    "Thin notches across a champion's life every 20 points, so a full Warrior reads as tough in a still. Off: smooth life with no notches.",
+    "Thin notches across a champion's life ring every 20 points, so a full Warrior reads as tough in a still. Shows only with Life Vessels off, because a vessel has no ring. Off: smooth life with no notches.",
   ],
   [
     "stride_glide",
@@ -997,25 +994,7 @@ const REGISTRY_ROWS = [
     true,
     "interface",
     REPLAY,
-    "The beat under the tick readout, for example 'Paused · Settled'. Off: the tick alone.",
-  ],
-  [
-    "fight_chapters",
-    "Fight Chapters",
-    "HUD",
-    true,
-    "interface",
-    REPLAY,
-    "Fights shown as chapters on the timeline, with a caption such as 'Fight 9 Of 17 · Ticks 118–122'. A viewing aid, not a metric. In Agent POV only fights your team saw. Off: no chapters; Previous Fight and Next Fight still work.",
-  ],
-  [
-    "bookmarks",
-    "Bookmarks",
-    "HUD",
-    true,
-    "interface",
-    REPLAY,
-    "Pins on the timeline for ticks you mark, kept in this browser only. Off: no pins and no Bookmark button; saved pins are kept.",
+    "The beat under the tick readout: 'Settled', 'Playing' or, after a pause in the middle of a tick, 'Paused · Strike'. Off: the tick alone.",
   ],
   [
     "freeze_on_pause",
@@ -1063,49 +1042,13 @@ const REGISTRY_ROWS = [
     "Mini tokens, life bars and status icons in the roster, agent and action panels. Off: plain text rows.",
   ],
   [
-    "ledger_heraldry",
-    "Ledger Heraldry",
-    "Replay Tools",
-    true,
-    "interface",
-    REPLAY,
-    "Every team shows its crest and every champion its token chip beside its numbers, and every target and 'Agent ID N' in the panels is that same chip. Off: plain text, such as 'Team A' and 'Agent ID 3'.",
-  ],
-  [
-    "plain_actions",
-    "Actions In Words",
-    "Replay Tools",
-    true,
-    "interface",
-    REPLAY,
-    "Each action in words, such as 'Moves West · Backstab → Agent 7', with the recorded codes underneath. Off: the recorded codes only.",
-  ],
-  [
-    "seen_grouping",
-    "Seen And Not Seen",
-    "Replay Tools",
-    true,
-    "interface",
-    REPLAY,
-    "In Agent POV the Team Rosters strip lists the champions your team sees first, then those it does not, then the fallen. Off: ID order.",
-  ],
-  [
-    "reference_chip",
-    "Reference Chip",
-    "Replay Tools",
-    true,
-    "interface",
-    REPLAY,
-    "In Agent POV, a chip in the top bar names the agent you picked, with a cross to clear it. Leaving Agent POV clears it. Off: no chip.",
-  ],
-  [
     "brand_lockup",
     "Brand Lockup",
     "HUD",
     true,
     "interface",
     BOTH,
-    "The emblem, 'MARL-BGs' and the client name in the header, and the emblem as the tab icon. Off: the client name in plain text.",
+    "The emblem, 'MARL-BGs' and the client name in the header. Off: the client name in plain text.",
   ],
   [
     "brand_signature",
@@ -1169,6 +1112,24 @@ const REGISTRY_ROWS = [
     "arena",
     LIVE,
     "Brighter rings, clearer stones and crisper text for projectors, bright rooms and low vision. It changes colors only: every mark stays where it is and means the same. Off: the soft Moonlit night colors.",
+  ],
+  [
+    "next_step_ghost",
+    "Next Step Ghost",
+    "Replay Tools",
+    false,
+    "arena",
+    REPLAY,
+    "A dotted circle marks where each living champion stands at the end of the next tick, taken from the recorded next tick. In Agent POV only champions your team sees now and still sees at the end of the next tick. The last tick has none. Off: no circles.",
+  ],
+  [
+    "all_staged_orders",
+    "All Staged Orders",
+    "Replay Tools",
+    false,
+    "arena",
+    REPLAY,
+    "A dashed silver line from every champion to whoever it acts on next, with a dot for a Basic or a diamond for an Ultimate under that body, taken from the recorded next tick. In Agent POV only the order of the champion whose eyes you see through: champions cannot see their teammates' plans, and the other team's orders never show. Off: only the selected champion's Next Action Thread.",
   ],
 ];
 

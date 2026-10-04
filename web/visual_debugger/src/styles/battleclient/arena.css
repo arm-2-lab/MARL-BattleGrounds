@@ -2,7 +2,9 @@
  * BattleClient arena box (#arena), ported from the approved vision page: a
  * bordered box in the Surround color that holds the battlefield SVG, the
  * view tag (#pov-tag; its spot on the frame under the floor is set in
- * overlays.css) and the How To Play overlay (#htp, styled in overlays.css).
+ * overlays.css), the How To Play overlay (#htp, styled in overlays.css) and
+ * the two on-screen keys in its top-right corner (#arena-buttons: Everyone
+ * In View and Frame Explanation; styled at the end of this file).
  *
  * Size: as in the vision, the arena's height follows the stage's width, so
  * the battlefield fills the arena's full width (1074 x 553.6 px inside a
@@ -39,16 +41,22 @@
  * battlefield's --mark-scale (set by scene.js), so they grow with the field
  * as the vision's do. The hotbar's own marks are styled in styles/hotbar.css.
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
-/* Outside live play the arena box adds no box, so the Replay Viewer's arena
-   column is unchanged. */
-html:not([data-product-kind="combat_debugger"]) #arena {
+/* Before a product is known (and in any other product) the arena box adds
+   no box. */
+html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+#arena {
   display: contents;
 }
 
-html[data-product-kind="combat_debugger"] .bc #arena {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #arena {
   --battlefield-aspect: calc(1032 / 532);
 
   position: relative;
@@ -63,12 +71,17 @@ html[data-product-kind="combat_debugger"] .bc #arena {
   container-type: size;
 }
 
-html[data-product-kind="combat_debugger"] .bc #arena.keys-on {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #arena.keys-on {
   outline: 2px solid var(--moon);
   outline-offset: 2px;
 }
 
-html[data-product-kind="combat_debugger"] .bc #arena > #battlefield-shell {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #arena
+  > #battlefield-shell {
   position: relative;
   display: block;
   width: min(100cqw, 100cqh * var(--battlefield-aspect) + 0.5px);
@@ -79,7 +92,9 @@ html[data-product-kind="combat_debugger"] .bc #arena > #battlefield-shell {
   border-radius: 7px;
 }
 
-html[data-product-kind="combat_debugger"] .bc #battlefield {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield {
   display: block;
   width: 100%;
   height: 100%;
@@ -88,13 +103,17 @@ html[data-product-kind="combat_debugger"] .bc #battlefield {
   cursor: crosshair;
 }
 
-html[data-product-kind="combat_debugger"] .bc #battlefield:focus {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield:focus {
   outline: none;
 }
 
 /* The view tag's look ("Agent POV · …" or "Oracle View · …"); overlays.css
    places it. */
-html[data-product-kind="combat_debugger"] .bc .povtag {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag {
   position: absolute;
   z-index: 2;
   display: inline-flex;
@@ -114,27 +133,36 @@ html[data-product-kind="combat_debugger"] .bc .povtag {
   pointer-events: none;
 }
 
-html[data-product-kind="combat_debugger"] .bc .povtag svg {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag
+  svg {
   flex: none;
   width: 14px;
   height: 14px;
 }
 
-html[data-product-kind="combat_debugger"] .bc .povtag span {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .povtag
+  span {
   color: var(--muted);
   font-weight: 400;
 }
 
 /* Reach rings (G) as the vision draws them; on by default in live play.
    Widths and dashes grow with the field through --mark-scale (scene.js). */
-html[data-product-kind="combat_debugger"] .bc #battlefield .range-ring[data-kind] {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .range-ring[data-kind] {
   fill: none;
   stroke: var(--moon);
   stroke-width: calc(1px * var(--mark-scale, 1));
   stroke-opacity: 1;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   #battlefield
   .range-ring[data-kind="basic"] {
@@ -144,7 +172,7 @@ html[data-product-kind="combat_debugger"]
   stroke-linecap: butt;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   #battlefield
   .range-ring[data-kind="ultimate"] {
@@ -155,34 +183,97 @@ html[data-product-kind="combat_debugger"]
 
 /* The target's corner brackets: 2 px Moon Silver over a 4 px Ink keyline at
    50%, grown with the field through --mark-scale. */
-html[data-product-kind="combat_debugger"] .bc #battlefield .selected-reticle {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .selected-reticle {
   stroke: var(--moon);
   stroke-width: calc(2px * var(--mark-scale, 1));
 }
 
-html[data-product-kind="combat_debugger"] .bc #battlefield .selected-reticle-keyline {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .selected-reticle-keyline {
   stroke-opacity: 0.5;
   stroke-width: calc(4px * var(--mark-scale, 1));
 }
 
 /* The Agent POV Night Veil's lines and Lift in the vision's colors, 1 px
    (dashes 4 4 for a teammate's edge) grown with the field (--mark-scale). */
-html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-own,
-html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-allied {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .fog-edge-own,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .fog-edge-allied {
   stroke: var(--moon);
   stroke-width: calc(1px * var(--mark-scale, 1));
 }
 
-html[data-product-kind="combat_debugger"] .bc #battlefield .fog-edge-allied {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .fog-edge-allied {
   stroke-dasharray: calc(4px * var(--mark-scale, 1)) calc(4px * var(--mark-scale, 1));
 }
 
-html[data-product-kind="combat_debugger"] .bc #battlefield .fog-lift-path {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .fog-lift-path {
   fill: #cfdaf2;
 }
 
 /* The hotbar's Command Ring says "whose hands" in live play, so the older
    controlled halo from the selection marks is not drawn here. */
-html[data-product-kind="combat_debugger"] .bc #battlefield .controlled-halo {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #battlefield
+  .controlled-halo {
   display: none;
+}
+
+/* The two on-screen keys in the arena's top-right corner (#arena-buttons,
+   src/arena-buttons.js): small buttons over the Surround, above the
+   battlefield, each with its keycap. A lit key (aria-pressed true: Everyone
+   In View is the camera, or Frame Explanation is open) gets the moon edge. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #arena
+  > .arena-buttons {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #arena
+  > .arena-buttons[hidden],
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .arena-buttons
+  > .sbtn[hidden] {
+  display: none;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .arena-buttons
+  > .sbtn {
+  background: color-mix(in srgb, var(--panel2) 90%, transparent);
+  font-size: 12px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .arena-buttons
+  > .sbtn[aria-pressed="true"] {
+  border-color: var(--moon);
 }

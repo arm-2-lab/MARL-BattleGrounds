@@ -98,7 +98,7 @@ const PLAIN_NAMES = [
   "Out Of Sight",
   "Score",
   "Tick",
-  "Chronicle",
+  "Event Track",
   "Damage",
   "Healing",
   "Team A",

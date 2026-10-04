@@ -13,9 +13,11 @@
  * - The camera switch (createCameraSwitch): a self-contained component the
  *   shell (Replay Viewer, slot #replay-camera-switch) and the BattleClient
  *   screen (slot #live-camera-switch) mount. In the Replay Viewer it owns the
- *   buttons with keycaps V and B, the change tip, the one-time first-open
- *   tip, the Battle Cam words and the Camera Inset picture, and remembers the
- *   last camera in localStorage. In the BattleClient and the DevClient combat
+ *   Whole Map and Battle Cam (B) buttons (Everyone In View's one button is in
+ *   the arena's corner, src/arena-buttons.js), the change tip, the one-time first-open
+ *   tip (both shown in the scorebug's empty score half, #camera-tips, so they
+ *   cover nothing), the Battle Cam words and the Camera Inset picture, and
+ *   remembers the last camera in localStorage. In the BattleClient and the DevClient combat
  *   screen no switch shows (owner, 1 October 2026): V alone toggles Everyone
  *   In View, and the change tip (#camera-tip, "Everyone In View on · V: back
  *   to Whole Map" or "Whole Map on · V: Everyone In View") shows under the
@@ -123,7 +125,7 @@ export const CAMERA_KEYCAPS = Object.freeze({
   battle_cam: "B",
 });
 
-/** The one-time tip under the Replay Viewer's switch (plan 4.4, quoted exactly). */
+/** The Replay Viewer's one-time first-open tip (plan 4.4, quoted exactly). */
 export const FIRST_OPEN_TIP =
   "New: Battle Cam follows the fights for you. Click here or press B.";
 
@@ -928,7 +930,9 @@ export function update(nodes, records) {
 /**
  * Return the hover and focus explanation for a camera button record.
  *
- * record is {kind: "camera-choice", camera, product}. Return a semantic
+ * record is {kind: "camera-choice", camera, product} for a camera button, or
+ * {kind: "camera-first-tip"} for the Replay Viewer's one-time first-open tip
+ * button (FIRST_OPEN_TIP; clicking it turns Battle Cam on). Return a semantic
  * "control" descriptor naming the camera, what it does and its key, or null for
  * any other record. The words never name a champion, so they are the same in
  * Oracle View and Agent POV.
@@ -936,6 +940,20 @@ export function update(nodes, records) {
  * @param {LookRecord} record
  */
 export function tooltip(record) {
+  if (record.kind === "camera-first-tip") {
+    return createSemanticDescriptor({
+      kind: "control",
+      id: "camera-first-tip",
+      title: "Battle Cam",
+      tone: "information",
+      accent: "none",
+      summary: "Turn on Battle Cam: the camera follows the fights for you.",
+      rows: [{ label: "Key", value: "B", metadata: { compact: true, full: true } }],
+      sections: [],
+      metadata: { compact: true, full: true },
+      anchor: "element",
+    });
+  }
   if (record.kind !== "camera-choice") return null;
   const camera = /** @type {CameraName} */ (record.camera);
   const live = record.product !== "replay_viewer";
@@ -978,6 +996,8 @@ export function tooltip(record) {
  *   reducedMotion?: () => boolean,
  *   timers?: CameraTimers,
  *   registerKeys?: boolean,
+ *   switchCameras?: ReadonlyArray<CameraName>,
+ *   tipHost?: HTMLElement | null,
  * }} CameraSwitchOptions
  * @typedef {Readonly<{
  *   camera: () => CameraName,
@@ -997,7 +1017,8 @@ export function tooltip(record) {
  *   Replay Viewer its hidden attribute is removed while camera_framing is on
  *   (set while off). In the BattleClient and the DevClient the slot stays
  *   hidden and empty: there is no switch on screen (owner, 1 October 2026).
- * - product: "replay_viewer" (three buttons, B, remembered camera, first-open
+ * - product: "replay_viewer" (three cameras, a button each unless
+ *   switchCameras leaves one out, B, remembered camera, first-open
  *   tip, Battle Cam words and inset) or "combat_debugger" (Whole Map and
  *   Everyone In View only, by V alone; always opens on Whole Map). For
  *   "combat_debugger" the change tip is one `span#camera-tip.camera-tip`
@@ -1025,6 +1046,19 @@ export function tooltip(record) {
  * - registerKeys: register the V and B handlers with command-set.js (default
  *   true). Only one switch per page may register them (the command set throws
  *   TypeError on a second registration).
+ * - switchCameras: the offered cameras that get a button in the switch, in
+ *   this order (default every offered camera). A camera left out still works
+ *   by its key and its other on-screen button; the slot's data-camera names
+ *   it while it is on, and no switch button is lit then. The Replay Viewer
+ *   passes ["whole_map", "battle_cam"]: Everyone In View has its one button
+ *   in the arena's corner (src/arena-buttons.js; owner, 3 Oct 2026).
+ * - tipHost: Replay Viewer only, the element that holds the change tip and
+ *   the first-open tip (default null: the slot holds them). The Replay
+ *   Viewer passes the scorebug's #camera-tips (index.html), the empty inner
+ *   half of the right-hand score column, so a tip covers nothing (owner,
+ *   3 Oct 2026, Micro List M7). Its children are replaced at mount and its
+ *   hidden attribute is removed; the tips keep their own hidden flags.
+ *   Ignored for "combat_debugger" (its tip goes to the status line).
  *
  * The controller: camera() is the chosen camera; select(camera) picks one
  * (returns false when it is already on, not offered, or camera_framing is
@@ -1033,9 +1067,17 @@ export function tooltip(record) {
  * or B does; update(input) is called after each render with the tick's plan
  * camera, beats, world size, scene and a reason ("play", "step", "seek",
  * "view", "recipient", "resize"; see cameraEase) and returns that tick's
- * records; destroy() removes listeners, timers and the key handlers.
+ * records; destroy() removes listeners, timers and the key handlers. The
+ * Replay Viewer's first-open tip follows the New Camera Tip switch
+ * (camera_tip) live: mounting and every update or camera change repaint the
+ * switch, which shows the tip once while this browser has not seen it and the
+ * switch is on, and hides a showing tip as soon as the switch is off; once
+ * seen it stays seen (storage). The tip is a button (clicking it turns
+ * Battle Cam on) with its own Battle Cam hover help (tooltip, kind
+ * "camera-first-tip").
  * Re-entrant update calls (applyFrame re-renders the page, which calls update
- * again) are ignored. DOM side effects stay inside slot, except in live play:
+ * again) are ignored. DOM side effects stay inside slot (and tipHost when
+ * given), except in live play:
  * the change tip in the status line, and each update writes the view tag's
  * spot (viewTagPlace: --left-home-end and --floor-band, shares of the field's
  * width) as custom properties on #arena, which battleclient/overlays.css
@@ -1061,6 +1103,9 @@ export function createCameraSwitch(options) {
   const reduced = () => options.reducedMotion?.() === true;
   const filters = () => options.getFilters?.() ?? null;
   const offered = camerasFor(product);
+  const switchCameras = (options.switchCameras ?? offered).filter((camera) =>
+    offered.includes(camera),
+  );
   /** @type {CameraName} */
   let chosen =
     product === "replay_viewer" ? readRememberedCamera(storage) : "whole_map";
@@ -1085,7 +1130,7 @@ export function createCameraSwitch(options) {
   group.setAttribute("aria-label", "Camera");
   /** @type {Map<CameraName, HTMLButtonElement>} */
   const buttons = new Map();
-  for (const camera of offered) {
+  for (const camera of switchCameras) {
     const button = /** @type {HTMLButtonElement} */ (
       element(doc, "button", "camera-switch__choice")
     );
@@ -1121,6 +1166,8 @@ export function createCameraSwitch(options) {
   // status line's message under the arena, never over the arena, the HUD,
   // the rail or a control.
   const live = product === "combat_debugger";
+  // Where the Replay Viewer's two tips go: the slot, or the given host.
+  const tipHost = !live && options.tipHost ? options.tipHost : slot;
   const tip = element(doc, "span", live ? "camera-tip" : "camera-switch__tip");
   tip.setAttribute("role", "status");
   tip.setAttribute("aria-live", "polite");
@@ -1140,8 +1187,12 @@ export function createCameraSwitch(options) {
       doc.body ??
       slot
     ).append(tip);
-  } else {
+  } else if (tipHost === slot) {
     slot.append(label, group, words, tip, inset);
+  } else {
+    slot.append(label, group, words, inset);
+    tipHost.replaceChildren(tip);
+    tipHost.hidden = false;
   }
   /** @type {HTMLButtonElement | null} */
   let firstTip = null;
@@ -1151,11 +1202,19 @@ export function createCameraSwitch(options) {
     );
     firstTip.type = "button";
     firstTip.hidden = true;
+    const firstTipHelp = tooltip(Object.freeze({ kind: "camera-first-tip" }));
+    if (firstTipHelp) {
+      try {
+        registerTooltipOwner(firstTip, firstTipHelp);
+      } catch {
+        // A missing tooltip never blocks the tip; its own words say it all.
+      }
+    }
     firstTip.addEventListener("click", (event) => {
       hideFirstTip();
       select("battle_cam", { event });
     });
-    slot.append(firstTip);
+    tipHost.append(firstTip);
   }
 
   /** @param {Event} event */
@@ -1180,20 +1239,37 @@ export function createCameraSwitch(options) {
     unregister.push(registerLocalCommandHandler("camera_battle_cam", handler));
   }
 
-  if (
-    product === "replay_viewer" &&
-    filters()?.camera_tip !== false &&
-    firstOpenTipDue(storage)
-  ) {
+  // Whether this page has shown the first-open tip already (at most once).
+  let firstTipOffered = false;
+  paintSwitch();
+
+  /**
+   * Show or hide the Replay Viewer's first-open tip from the New Camera Tip
+   * switch (camera_tip), read live on every paint. Off hides a showing tip at
+   * once. On shows the tip when this browser has not seen it yet
+   * (firstOpenTipDue) and this page has not shown it: it marks the tip seen in
+   * storage (FIRST_OPEN_TIP_SEEN_KEY), so once seen it stays seen, and hides
+   * it after FIRST_OPEN_TIP_MS. No effect outside the Replay Viewer. Side
+   * effects: the tip's hidden flag, one storage write, one timer.
+   *
+   * @returns {void}
+   */
+  function syncFirstTip() {
+    if (firstTip === null) return;
+    if (filters()?.camera_tip === false) {
+      if (!firstTip.hidden) hideFirstTip();
+      return;
+    }
+    if (firstTipOffered || !firstOpenTipDue(storage)) return;
+    firstTipOffered = true;
     try {
       storage?.setItem(FIRST_OPEN_TIP_SEEN_KEY, "1");
     } catch {
       // Without storage the tip is simply not remembered.
     }
-    if (firstTip) firstTip.hidden = false;
+    firstTip.hidden = false;
     firstTimer = timers.setTimeout(hideFirstTip, FIRST_OPEN_TIP_MS);
   }
-  paintSwitch();
 
   function hideFirstTip() {
     if (firstTimer !== null) timers.clearTimeout(firstTimer);
@@ -1270,6 +1346,7 @@ export function createCameraSwitch(options) {
       button.setAttribute("aria-pressed", String(camera === shown));
     }
     slot.dataset.camera = shown;
+    syncFirstTip();
   }
 
   /**

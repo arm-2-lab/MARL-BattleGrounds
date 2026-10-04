@@ -1,7 +1,8 @@
 /*
  * Styles for the Champion Frame (src/looks/champion-frame.js): the selection
- * and inspection marks on the arena, and the frame under the arena in the
- * Replay Viewer. styles.css imports this file.
+ * and inspection marks on the arena, and the frame in the Replay Viewer
+ * rail's Agent tab (owner, 3 Oct 2026; src/ledger.js moves #champion-frame
+ * there). styles.css imports this file.
  *
  * Colours come only from the :root tokens in styles.css (Moon Silver, Ink,
  * class and team colours), so the High Contrast palette recolours them too.
@@ -163,7 +164,7 @@ svg .next-action-glyph[data-legal="false"] .next-action-glyph__mark {
   fill: var(--ui-muted);
 }
 
-/* The Champion Frame under the arena (Replay Viewer). */
+/* The Champion Frame (Replay Viewer); its rail layout is at the end. */
 .champion-frame {
   --frame-accent: var(--moon-silver);
   display: flex;
@@ -257,6 +258,7 @@ svg .next-action-glyph[data-legal="false"] .next-action-glyph__mark {
 
 .champion-frame__title,
 .champion-frame__ultimate,
+.champion-frame__speed,
 .champion-frame__next {
   margin: 0;
 }
@@ -289,7 +291,8 @@ svg .next-action-glyph[data-legal="false"] .next-action-glyph__mark {
   color: var(--ash);
 }
 
-.champion-frame__ultimate {
+.champion-frame__ultimate,
+.champion-frame__speed {
   color: var(--ui-muted);
   font-size: 11px;
 }
@@ -386,4 +389,48 @@ svg .next-action-glyph[data-legal="false"] .next-action-glyph__mark {
 
 .champion-frame__next[data-final="true"] {
   color: var(--ui-muted);
+}
+
+/*
+ * In the rail's Agent tab the frame sits inside the tab's card (the
+ * BattleClient look): no frame of its own, every status sentence wraps to
+ * its full length instead of ending in "…", and each Recent Ticks cell reads
+ * on one line ("This Tick ● −9 –").
+ */
+#replay-rail-agent .champion-frame {
+  gap: 8px 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+#replay-rail-agent .champion-frame__statuses {
+  flex-basis: 100%;
+  max-height: none;
+  overflow: visible;
+  font-size: 12px;
+}
+
+#replay-rail-agent .champion-frame__status {
+  overflow: visible;
+  white-space: normal;
+}
+
+#replay-rail-agent .champion-frame__recent {
+  flex-basis: 100%;
+}
+
+#replay-rail-agent .champion-frame__cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+#replay-rail-agent .champion-frame__cell-label {
+  grid-column: auto;
+}
+
+#replay-rail-agent .champion-frame__next {
+  flex: 1 1 100%;
+  font-size: 12px;
 }

@@ -12,7 +12,10 @@
  * in Chromium) stays under the caps with margin. A tick over budget drops optional derived families first and never
  * its incoming events, so a busy tick is never blanked. A status-change row that no
  * look draws (every one but the Ward Lift) costs nothing, so a busy tick with many
- * status changes keeps its herald card.
+ * status changes keeps its herald card. The caps are 1024: the four busy ticks of
+ * the map 47 tournament replay (episode 1002, Oracle View: ticks 105, 110, 225 and
+ * 245, whose rows were recorded from the real plan on 4 Oct 2026) ask for 535 to
+ * 637 nodes, more than the old 512, and keep their Herald Card and Fallen rows.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -58,6 +61,124 @@ const RECORDED_WORST_CASE = Object.freeze({
   painterPersistentNodes: 24,
   painterNodesPerDrawnRow: 13.5,
 });
+
+// Map 47 tournament replay (episode 1002), Oracle View: the rows the plan budget
+// saw on the four ticks that lost their Herald Card under the old 512 cap, recorded
+// from the real plan on 4 Oct 2026. Each row is [kind, component, cueSemantic,
+// spatial, persistent, count]; herald is the card's own allowance (rowBudget).
+const BUSY_TICKS = Object.freeze({
+  105: {
+    nodes: 620,
+    herald: {
+      nodesPerRecord: 17,
+      animationsPerRecord: 2,
+      persistentNodesPerRecord: 17,
+    },
+    events: [
+      ["activation", "basic", null, true, false, 9],
+      ["activation", "ultimate", null, true, false, 1],
+      ["feed_only", null, null, false, false, 33],
+      ["net_health", null, null, true, false, 8],
+      ["semantic_pulse", null, "cooldown_started", false, false, 1],
+      ["semantic_pulse", null, "agent_died", true, true, 1],
+      ["status_lifecycle", null, null, true, false, 5],
+      ["status_lifecycle", null, null, false, false, 1],
+      ["semantic_pulse", null, "respawn_wave_occurred", false, true, 2],
+      ["semantic_pulse", null, "death_announcement", false, false, 1],
+    ],
+    derived: [
+      ["fallen_feed_row", null, null, true, false, 1],
+      ["focus_tally", null, null, false, true, 2],
+    ],
+  },
+  110: {
+    nodes: 637,
+    herald: {
+      nodesPerRecord: 22,
+      animationsPerRecord: 2,
+      persistentNodesPerRecord: 22,
+    },
+    events: [
+      ["activation", "basic", null, true, false, 8],
+      ["feed_only", null, null, false, false, 29],
+      ["net_health", null, null, true, false, 5],
+      ["semantic_pulse", null, "cooldown_ready", true, false, 1],
+      ["semantic_pulse", null, "agent_died", true, true, 2],
+      ["status_lifecycle", null, null, false, false, 1],
+      ["status_lifecycle", null, null, true, false, 2],
+      ["semantic_pulse", null, "respawn_wave_occurred", false, true, 2],
+      ["semantic_pulse", null, "agent_respawned", true, true, 2],
+      ["semantic_pulse", null, "death_announcement", false, false, 2],
+    ],
+    derived: [
+      ["fallen_feed_row", null, null, true, false, 2],
+      ["focus_tally", null, null, false, true, 2],
+    ],
+  },
+  225: {
+    nodes: 542,
+    herald: {
+      nodesPerRecord: 17,
+      animationsPerRecord: 2,
+      persistentNodesPerRecord: 17,
+    },
+    events: [
+      ["activation", "ultimate", null, true, false, 2],
+      ["activation", "basic", null, true, false, 5],
+      ["feed_only", null, null, false, false, 23],
+      ["net_health", null, null, true, false, 4],
+      ["status_lifecycle", null, null, true, false, 4],
+      ["semantic_pulse", null, "cooldown_ready", true, false, 2],
+      ["semantic_pulse", null, "cooldown_started", false, false, 2],
+      ["semantic_pulse", null, "agent_died", true, true, 1],
+      ["status_lifecycle", null, null, false, false, 2],
+      ["semantic_pulse", null, "respawn_wave_occurred", false, true, 2],
+      ["semantic_pulse", null, "agent_respawned", true, true, 2],
+      ["semantic_pulse", null, "death_announcement", false, false, 1],
+    ],
+    derived: [
+      ["fallen_feed_row", null, null, true, false, 1],
+      ["focus_tally", null, null, false, true, 2],
+    ],
+  },
+  245: {
+    nodes: 535,
+    herald: {
+      nodesPerRecord: 22,
+      animationsPerRecord: 2,
+      persistentNodesPerRecord: 22,
+    },
+    events: [
+      ["activation", "basic", null, true, false, 7],
+      ["feed_only", null, null, false, false, 29],
+      ["net_health", null, null, true, false, 6],
+      ["semantic_pulse", null, "agent_died", true, true, 2],
+      ["status_lifecycle", null, null, true, false, 4],
+      ["semantic_pulse", null, "respawn_wave_occurred", false, true, 2],
+      ["semantic_pulse", null, "death_announcement", false, false, 2],
+    ],
+    derived: [["fallen_feed_row", null, null, true, false, 2]],
+  },
+});
+
+/**
+ * @param {string} tick
+ * @param {ReadonlyArray<ReadonlyArray<any>>} specs
+ */
+function busyRows(tick, specs) {
+  return specs.flatMap(([kind, component, cueSemantic, spatial, persistent, count]) =>
+    Array.from({ length: count }, (_, index) =>
+      Object.freeze({
+        eventId: `t${tick}-${kind}-${cueSemantic ?? component ?? "row"}-${index}`,
+        kind,
+        ...(component === null ? {} : { component }),
+        ...(cueSemantic === null ? {} : { cueSemantic }),
+        spatial,
+        persistent,
+      }),
+    ),
+  );
+}
 
 const surface = Object.freeze({
   worldToScreen: (/** @type {any} */ point) => ({
@@ -236,9 +357,10 @@ test("the recorded worst case of real recordings stays under the caps with margi
     planEventBudget({ kind: "activation" }).nodesPerRecord >=
       2 * worst.painterNodesPerDrawnRow,
   );
-  // The busiest tick's plan demand is capped; its real nodes are far below the cap.
-  assert.ok(worst.planDemandNodes > PLAN_RESOURCE_CAPS.nodes);
-  assert.ok(worst.painterNodes < PLAN_RESOURCE_CAPS.nodes);
+  // The busiest recorded tick's plan demand fits under the cap, so nothing on it is
+  // dropped; its real nodes are far below the cap.
+  assert.ok(worst.planDemandNodes <= PLAN_RESOURCE_CAPS.nodes);
+  assert.ok(worst.painterNodes < PLAN_RESOURCE_CAPS.nodes / 2);
 });
 
 test("a tick over budget drops optional derived families first and never its incoming events", () => {
@@ -293,6 +415,40 @@ test("a tick over budget drops optional derived families first and never its inc
     capped.events.every((row) => row.spatial === true),
     "never blanks the tick",
   );
+});
+
+test("map 47's four busy ticks keep their Herald Card and Fallen rows", () => {
+  const schedule = beatSchedule();
+  for (const [tick, recorded] of Object.entries(BUSY_TICKS)) {
+    const events = busyRows(tick, recorded.events);
+    const derived = [
+      ...busyRows(tick, recorded.derived),
+      Object.freeze({
+        eventId: `t${tick}-herald`,
+        kind: "herald_card",
+        spatial: true,
+        persistent: true,
+        budget: Object.freeze(recorded.herald),
+      }),
+    ];
+    const demand = planResourceDemand(events, derived, [], schedule);
+    assert.equal(
+      demand.nodes,
+      recorded.nodes,
+      `tick ${tick} rebuilds the recorded demand`,
+    );
+    assert.ok(demand.nodes > 512, `tick ${tick} was over the old cap`);
+    const fitted = applyPlanBudget(events, derived, [], schedule);
+    const isCardOrFallen = (/** @type {Record<string, any>} */ row) =>
+      row.kind === "herald_card" || row.kind === "fallen_feed_row";
+    const kept = fitted.derivedEvents.filter(isCardOrFallen);
+    assert.equal(kept.length, derived.filter(isCardOrFallen).length);
+    for (const row of kept) {
+      assert.equal(row.spatial, true, `tick ${tick} keeps ${row.eventId}`);
+      assert.equal(row.droppedForBudget, undefined, `tick ${tick} drops nothing`);
+    }
+    assert.equal(fitted.bounds.nodes, recorded.nodes);
+  }
 });
 
 test("undrawn status-change rows cost nothing, so a busy tick keeps its herald card", () => {

@@ -5,14 +5,19 @@
  * How To Play card, below the bottom of a 1440 by 900 screen. The rail
  * stylesheet (src/styles/battleclient/rail.css) must therefore order the Your
  * Turn card first and the list right under it, dress the list like a rail
- * card, and scope both rules to the combat page.
+ * card, and scope both rules to the rail shared by live play and the Replay
+ * Viewer (the Replay Viewer never shows #turn-card, so the order only acts in
+ * live play).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
-const rail = await readFile(new URL("src/styles/battleclient/rail.css", root), "utf8");
+// Whitespace-insensitive: the formatter may break a long selector over lines.
+const rail = (
+  await readFile(new URL("src/styles/battleclient/rail.css", root), "utf8")
+).replace(/\s+/gu, " ");
 const main = await readFile(new URL("src/main.js", root), "utf8");
 const page = await readFile(new URL("index.html", root), "utf8");
 
@@ -33,7 +38,8 @@ test("the list still lands after the hidden slot under How To Play", () => {
 });
 
 test("the rail puts Your Turn first and the list right under it", () => {
-  const scope = 'html[data-product-kind="combat_debugger"] .bc .bc-rail';
+  const scope =
+    'html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]) .bc .bc-rail';
   assert.match(ruleBody(`${scope} > #turn-card`), /order: -2;/u);
   const list = ruleBody(`${scope} > #frame-explanation-list`);
   assert.match(list, /order: -1;/u);

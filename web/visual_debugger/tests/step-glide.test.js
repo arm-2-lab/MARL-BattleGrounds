@@ -7,11 +7,16 @@
  * to its new END spot for +1 and -1 (a Charge rush takes the first 100 ms forwards
  * and 140 ms backwards), a quick next step starts from where the running glide draws
  * the body (scrubbing), the tick's cues fade in from 240 ms to 320 ms and the still
- * then settles paused. Jumps, a changed audience or recipient, deaths, returns, a
+ * then settles paused. A replay's first frame has no plan: a +1 from it glides
+ * each body with a known START spot from that spot (where the first frame showed
+ * it) to its END, and a -1 back onto it glides each from its END back to START,
+ * then settles paused; deaths and bodies with no START (came into sight) snap.
+ * Jumps, a changed audience or recipient, deaths, returns, a
  * re-render of the same frame, reduced motion and Agent POV bodies unseen in either
  * frame never glide. The replay controller ends one-tick moves (+1 and -1, the arrow
  * keys, the slider's own keys and a slider drag) with the replay_step intent, snaps
- * jumps, Shift + arrows and slider clicks, plays one tick on N, and sends V, B and F
+ * jumps, Shift + arrows and slider clicks, makes N do exactly what +1 and Arrow
+ * Right do (one gliding tick forward, the same request), and sends V, B and F
  * through the one command set (F pauses play first).
  */
 import assert from "node:assert/strict";
@@ -24,9 +29,7 @@ import { beatSchedule, buildChoreographyPlan } from "../src/choreography-plan.js
 import { registerLocalCommandHandler } from "../src/command-set.js";
 import {
   bindReplayTimelineControls,
-  REPLAY_TRANSPORT_STATES,
   ReplayPlaybackController,
-  replayNavigationCommand,
   replaySeekCommand,
 } from "../src/replay-controls.js";
 import {
@@ -416,6 +419,67 @@ test("a one-tick step glides 240 ms from the previous END to the new END and fad
   controller.dispose();
 });
 
+test("a step off and back onto a first frame with no plan glides from and to START", async () => {
+  const { controller, factory, show, wrappers } = stepHarness();
+  // The first frame: no tick leads into it, so it has no plan.
+  show(/** @type {any} */ (null), "replay_static");
+  const first = stepPlan(1, [
+    body("a", [2, 1], { start: [1, 1] }),
+    body("b", [7, 5], { start: [5, 5] }),
+    body("c", [3, 3], { start: [3, 3], died: true, alive: false }),
+    body("d", [9, 9]),
+  ]);
+  show(first, "replay_step");
+  const forward = factory.matching(":step-glide:");
+  assert.deepEqual(
+    forward.map(({ spec }) => spec.element),
+    [wrappers.get("a"), wrappers.get("b")],
+    "a death and a body with no START snap",
+  );
+  assert.deepEqual(translations(forward[0]), [
+    [0, "translate(-10px, 0px)"],
+    [1, "translate(0px, 0px)"],
+  ]);
+  assert.deepEqual(translations(forward[1]), [
+    [0, "translate(-20px, 0px)"],
+    [1, "translate(0px, 0px)"],
+  ]);
+  factory.created.find(({ id }) => id === "mbg:epoch-1:step")?.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(controller.snapshot().paused, true);
+
+  show(/** @type {any} */ (null), "replay_step");
+  const back = factory
+    .matching(":step-glide:")
+    .filter(({ state }) => state === "running");
+  assert.deepEqual(
+    back.map(({ spec }) => spec.element),
+    [wrappers.get("a"), wrappers.get("b")],
+  );
+  assert.deepEqual(translations(back[0]), [
+    [0, "translate(10px, 0px)"],
+    [1, "translate(0px, 0px)"],
+  ]);
+  assert.deepEqual(translations(back[1]), [
+    [0, "translate(20px, 0px)"],
+    [1, "translate(0px, 0px)"],
+  ]);
+  const clock = factory.created.find(({ id }) => id === "mbg:epoch-1:step-back");
+  assert.equal(clock?.spec.options.duration, 240);
+  assert.equal(controller.snapshot().paused, false);
+  clock?.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(
+    controller.snapshot().paused,
+    true,
+    "the step back settles into the still",
+  );
+  assert.ok(back.every(({ state }) => state === "cancelled"));
+  controller.dispose();
+});
+
 test("scrubbing starts the next step from where the running glide draws the body", () => {
   const { factory, show, controller } = stepHarness();
   show(stepPlan(1, [body("a", [0, 0])]), "replay_static");
@@ -544,50 +608,6 @@ test("the replay controller ends one-tick moves with the replay_step intent and 
   assert.equal(stepOf(), null, "a same-frame move at the start snaps");
   await controller.last();
   assert.equal(stepOf(), null);
-});
-
-test("N plays exactly one tick, then settles into the paused still", async () => {
-  /** @type {(value?: unknown) => void} */
-  let presented = () => {};
-  const { controller, commands } = seekController(3, 4);
-  controller.waitForPresentation = () =>
-    new Promise((resolve) => {
-      presented = resolve;
-    });
-  assert.equal(controller.playOneTick(), true);
-  assert.deepEqual(commands, [replayNavigationCommand("next")]);
-  assert.equal(
-    controller.snapshot().presentationIntent?.renderPolicy,
-    "replay_animated",
-  );
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.PLAYING);
-  assert.equal(controller.playOneTick(), false, "N waits while the tick plays");
-  presented();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.SETTLED);
-  assert.equal(controller.snapshot().pauseReason, "one_tick");
-  assert.equal(commands.length, 1, "no second frame is requested");
-
-  const middle = seekController(1, 9);
-  middle.controller.waitForPresentation = () => Promise.resolve();
-  assert.equal(middle.controller.playOneTick(), true);
-  for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
-  assert.equal(middle.controller.snapshot().pauseReason, "one_tick");
-  assert.equal(
-    middle.controller.snapshot().presentationIntent?.renderPolicy,
-    "replay_static",
-  );
-  assert.equal(middle.commands.length, 1);
-  assert.equal(middle.controller.snapshot().cursor?.frame_index, 2);
-
-  const end = seekController(4, 4);
-  assert.equal(end.controller.playOneTick(), false);
-  assert.equal(end.controller.snapshot().pauseReason, "endpoint");
-  assert.deepEqual(end.commands, []);
 });
 
 class FakeControl {
@@ -724,6 +744,47 @@ test("buttons, arrows and the slider glide one tick and snap clicks and jumps", 
     assert.equal(commands.length, sent + 1, "the drag already reached the value");
   } finally {
     unbind();
+  }
+});
+
+test("N does exactly what +1 and Arrow Right do: one gliding tick forward", async () => {
+  /** @type {Array<{frame: number | undefined, step: string | null, command: Record<string, any> | undefined}>} */
+  const results = [];
+  for (const press of ["button", "arrow", "n", "N"]) {
+    const { controller, commands } = seekController(7, 30);
+    const elements = controls();
+    const unbind = bindReplayTimelineControls(
+      /** @type {any} */ (elements),
+      controller,
+    );
+    try {
+      if (press === "button") elements.nextButton.dispatch("click");
+      else {
+        const event = elements.keyboardTarget.dispatch("keydown", {
+          key: press === "arrow" ? "ArrowRight" : press,
+          shiftKey: press === "N",
+          target: elements.root,
+        });
+        assert.equal(event.defaultPrevented, true, press);
+      }
+      await flush();
+      results.push({
+        frame: controller.snapshot().cursor?.frame_index,
+        step: controller.snapshot().presentationIntent?.stepGlide ?? null,
+        command: commands.at(-1),
+      });
+      assert.equal(commands.length, 1, `${press} sends one request`);
+      assert.equal(controller.snapshot().playing, false);
+    } finally {
+      unbind();
+    }
+  }
+  for (const result of results) {
+    assert.deepEqual(result, {
+      frame: 8,
+      step: "forward",
+      command: replaySeekCommand(8),
+    });
   }
 });
 

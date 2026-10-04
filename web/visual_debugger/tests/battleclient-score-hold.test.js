@@ -10,6 +10,10 @@
  *   are the very same nodes the choreographer is timing, and #score-a stays
  *   the "after" node. A new tick rebuilds them, and a tick without a score
  *   change leaves no "before" node.
+ * - renderMatchSummary in the Replay Viewer (owner, 3 Oct 2026: one score
+ *   display at the top, in the BattleClient's style): a replay frame paints
+ *   the same #scorebug (scores, "/ 20", bars, "Tick N of L") and shows it,
+ *   and leaves the old strip root hidden and empty.
  * - partyPaintKey (src/looks/hud.js): equal portraits and drawing context
  *   give equal text (the party keeps its nodes, and its Fall and Return
  *   holds); a changed life, hold, scene row or switch gives different text
@@ -34,9 +38,10 @@ const fixture = JSON.parse(
 /**
  * @param {[number, number]} scores
  * @param {[number, number]} previous
+ * @param {string} [name] The fixture presentation to start from.
  */
-async function liveFrame(scores, previous) {
-  const raw = structuredClone(fixture.presentations.live_shared_obs_agent_pov);
+async function liveFrame(scores, previous, name = "live_shared_obs_agent_pov") {
+  const raw = structuredClone(fixture.presentations[name]);
   raw.match_summary = {
     ...raw.match_summary,
     task_mode: 1,
@@ -272,6 +277,25 @@ test("a repaint of the same tick keeps the held score nodes", async () => {
   assert.ok(first.before.every((node) => node.parentNode === null));
   assert.equal(later.score.getAttribute("data-beat-side"), null);
   assert.equal(later.score.textContent, "3");
+});
+
+test("the Replay Viewer paints the same scorebug and hides the old strip", async () => {
+  const { scorebug, elements } = mount();
+  scorebug.hidden = true;
+  const frame = await liveFrame([3, 4], [3, 4], "replay_oracle");
+  renderMatchSummary(/** @type {any} */ (elements), frame, {
+    beat: { score: { before: [3, 4], after: [3, 4], changed: false } },
+  });
+  assert.equal(scorebug.hidden, false);
+  assert.equal(elements.root.hidden, true);
+  assert.equal(elements.task.children.length, 0);
+  assert.equal(teamA(scorebug).score.textContent, "3");
+  const box = /** @type {El} */ (scorebug.querySelector(".sb-score.a"));
+  assert.equal(/** @type {El} */ (box.querySelector(".of")).textContent, "/ 20");
+  assert.match(
+    /** @type {El} */ (scorebug.querySelector(".sb-mid")).children[0].textContent,
+    /^Tick \d+/u,
+  );
 });
 
 test("a new score change rebuilds the held nodes", async () => {

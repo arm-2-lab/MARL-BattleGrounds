@@ -20,14 +20,19 @@
   (#visual-filters-drawer) and the Restart dialog
   (#recording-discard-dialog). The DevClient shows the closed Developer
   drawer (#developer-drawer) at the end of the rail. Styles:
-  src/styles/battleclient/*.css, all scoped to
-  html[data-product-kind="combat_debugger"].
+  src/styles/battleclient/*.css; shared rules are scoped to
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]),
+  a rule for one client names its product kind alone, and
+  src/styles/battleclient/deck.css stays live only.
 
-  The Replay Viewer keeps its own layout: #bc and #arena add no box there
-  (display: contents), so its top bar, arena column (match bar, arena, dock,
-  Team Rosters strip) and rail with five tabs are unchanged. Its cards in the
-  Developer and Visual Filters drawers move into its rail tabs at startup.
-  Styles: src/styles/shell.css.
+  The Replay Viewer (owner, 3 Oct 2026) uses the same #bc grid and the same
+  BattleClient styles: the top bar (with its POV agent chip and a Frame
+  Explanation button), the scorebug, the stage (the arena box #arena, the
+  Arena Frames #team-rosters and the Rune Scrubber dock #replay-timeline,
+  which src/rune-scrubber.js fills through the #chronicle slot) and the rail
+  (the Fallen panel, then six tabs: Roster, Agent, Metrics, Actions, Visuals,
+  Frame). Its cards in the Developer and Visual Filters drawers move into
+  its rail tabs at startup (src/ledger.js).
 
   Old live parts kept only for src/main.js: elements it finds by ID but the
   vision does not show (the old match strip, party frames, Details, the
@@ -130,8 +135,8 @@
             class="view-switch__buttons seg"
             aria-labelledby="view-switch-label"
           >
-            <button type="button" data-view-mode="pov" data-view="pov" aria-pressed="false" title="Shows only what your team can see. The fair view for play, and the default here." disabled>Agent POV</button>
-            <button type="button" data-view-mode="researcher" data-view="oracle" aria-pressed="false" title="Shows every champion, even those your team cannot see." disabled>Oracle View</button>
+            <button type="button" data-view-mode="pov" data-view="pov" aria-pressed="false" disabled>Agent POV</button>
+            <button type="button" data-view-mode="researcher" data-view="oracle" aria-pressed="false" disabled>Oracle View</button>
           </fieldset>
           <select
             id="view-select"
@@ -180,6 +185,7 @@
             <button id="copy-transition-button" type="button" disabled>Copy</button>
           </fieldset>
           <div id="replay-details" data-replay-only hidden>
+            <p class="eyebrow replay-details__title">Replay File</p>
             <dl class="replay-badges">
               <div>
                 <dt>Artifact</dt>
@@ -215,20 +221,20 @@
             type="button"
             hidden
           >Visual Key</button>
-          <!-- Live play: opens and closes the Visual Filters drawer. -->
+          <!-- Live play: opens and closes the Visual Filters drawer. The
+               Replay Viewer: opens the rail's Visuals tab (src/main.js). -->
           <button
             id="visual-filters-button"
             class="tbtn"
             type="button"
             popovertarget="visual-filters-drawer"
             aria-haspopup="dialog"
-            data-live-only
             hidden
           >Visual Filters</button>
           <!-- Empty slot: opens the Frame Explanation for the paused tick. -->
           <button
             id="frame-explanation-button"
-            class="button button--quiet"
+            class="button button--quiet tbtn"
             type="button"
             hidden
           >Frame Explanation</button>
@@ -283,13 +289,16 @@
     <!-- Live play: the scorebug. Team hosts, portraits (#party-a, #party-b),
          scores with their segment bars, and the middle (tick, First To,
          Respawn Wave In). The code that fills it sets data-team-a-side. -->
-    <div class="bc-score" id="scorebug" data-live-only hidden>
+    <div class="bc-score" id="scorebug" hidden>
       <div class="sb-host b"><svg class="crest crest--b" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="3"/><circle class="crest__split" cx="11" cy="11" r="9" fill="none" stroke-width="1"/><circle cx="11" cy="11" r="4.05" fill="currentColor" opacity="0.35"/></svg><div><b>Team B<span class="yours" hidden>Yours</span></b><span class="ctl" id="ctl-b"></span></div></div>
       <div class="sb-party b" id="party-b"></div>
       <div class="sb-score b"><div><span class="n num" id="score-b"></span><span class="of"></span></div><span class="segbar" id="seg-b"></span></div>
       <div class="sb-mid"><b class="num"></b><span></span><span class="wave"></span></div>
       <div class="sb-score a"><div><span class="n num" id="score-a"></span><span class="of"></span></div><span class="segbar" id="seg-a"></span></div>
       <div class="sb-party a" id="party-a"></div>
+      <!-- Replay Viewer only: the camera tips (src/looks/camera.js), placed in the
+           empty inner half of the right-hand score column. Hidden elsewhere. -->
+      <div class="sb-tips" id="camera-tips" hidden></div>
       <div class="sb-host a"><svg class="crest crest--a" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="11" cy="11" r="4.05" fill="currentColor" opacity="0.35"/></svg><div><b><span class="yours" hidden>Yours</span>Team A</b><span class="ctl" id="ctl-a"></span></div></div>
     </div>
 
@@ -341,6 +350,12 @@
             Oracle View <span>· You See Everything</span>
           </p>
         </div>
+          <!-- On-screen keys, top right of the arena: each presses its key
+               (src/arena-buttons.js wires and shows them; hidden until then). -->
+          <div id="arena-buttons" class="arena-buttons" role="group" aria-label="Arena Shortcuts" hidden>
+            <button type="button" class="sbtn" id="arena-everyone-in-view-button" aria-keyshortcuts="V" aria-pressed="false">Everyone In View <kbd aria-hidden="true">V</kbd></button>
+            <button type="button" class="sbtn" id="arena-frame-explanation-button" aria-keyshortcuts="F" aria-pressed="false">Frame Explanation <kbd aria-hidden="true">F</kbd></button>
+          </div>
           <!-- Empty slot: the view tag ("Agent POV · …" or "Oracle View · …"). -->
           <p class="povtag" id="pov-tag" hidden></p>
           <!-- How To Play over the arena (never the deck); ? or Close shuts it. -->
@@ -369,7 +384,8 @@
           </fieldset>
         </div>
 
-        <!-- The Replay Viewer dock: transport, Chronicle and export actions. -->
+        <!-- The Replay Viewer dock: the Rune Scrubber (src/rune-scrubber.js) moves the
+             transport, Speed, artifact actions and camera switch below into its rows. -->
         <section
           id="replay-timeline"
           class="replay-timeline"
@@ -463,7 +479,7 @@
               data-transport-state="OFFLINE"
             >Offline</output>
           </fieldset>
-          <!-- Empty slot: the Chronicle (fight chapters and the tick ribbon). -->
+          <!-- Empty slot that src/rune-scrubber.js fills with the Event Track and the button row. -->
           <div id="chronicle" hidden></div>
         </section>
 
@@ -476,7 +492,8 @@
           hidden
         ></section>
 
-        <!-- Empty slot: the Team Rosters strip, one chip per champion. -->
+        <!-- Empty slot: the Replay Viewer's Arena Frames (src/looks/hud.js),
+             both teams' party frames along the bottom of the stage. -->
         <section id="team-rosters" hidden></section>
 
         <!-- The deck: five columns (the champion you command, 1 Step, 2 Target,
@@ -616,9 +633,10 @@
         <section id="how-to-play" hidden></section>
         <!-- Empty slot: the Fallen panel (falls of the last 8 ticks). -->
         <section id="fallen-feed" hidden></section>
-        <!-- Empty slot: the Replay Viewer rail with its five tabs. -->
+        <!-- Empty slot: the Replay Viewer rail with its six tabs (src/ledger.js). -->
         <div id="replay-rail" hidden>
           <div id="replay-rail-tabs" hidden></div>
+          <section id="replay-rail-roster" hidden></section>
           <section id="replay-rail-agent" hidden></section>
           <section id="replay-rail-metrics" hidden></section>
           <section id="replay-rail-actions" hidden></section>
@@ -668,10 +686,10 @@
              cards move into the rail tabs at startup. -->
         <details id="developer-drawer" class="rc developer-drawer" hidden>
           <summary>Developer</summary>
-          <!-- Live play only: the Roster card. The Replay Viewer lists every
-               champion in the Team Rosters strip instead (plan P3), so its rail
-               holds only the five tabs and fills the column. -->
-          <details id="roster-details" class="hud-section" data-live-only open>
+          <!-- The Roster card: the DevClient shows it in this drawer; the
+               Replay Viewer moves it into its rail's Roster tab
+               (src/ledger.js). -->
+          <details id="roster-details" class="hud-section" open>
             <summary class="section-heading">
               <strong id="roster-heading" class="section-title">Roster</strong>
               <span id="roster-count" class="count-badge">0 actors</span>

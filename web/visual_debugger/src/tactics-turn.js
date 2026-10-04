@@ -1731,6 +1731,74 @@ export function classGuideView(classId, mechanics) {
 }
 
 /**
+ * Return one ability's icon markup for a Class Guide row: the vision page's
+ * hidden symbol (`<use href="#ab-…">`) when the page has it, else the
+ * icons.js glyph drawn as markup. Reads the document only to look the
+ * symbol up and to build the glyph; changes nothing on the page.
+ *
+ * @param {Document} doc The page.
+ * @param {string} symbolId Vision symbol id, for example "ab-lance".
+ * @param {string} glyphKey icons.js fallback glyph, for example
+ *   "activation-basic-damage".
+ * @returns {string} Trusted SVG markup with aria-hidden="true".
+ */
+function abilityIconHtml(doc, symbolId, glyphKey) {
+  if (doc.getElementById(symbolId)) {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${symbolId}"/></svg>`;
+  }
+  const icon = createSvgIcon(doc, glyphKey, {});
+  icon.setAttribute("aria-hidden", "true");
+  return icon.outerHTML;
+}
+
+/**
+ * Write the Class Guide card's inner HTML for one class, in the vision
+ * page's words: the "Class Guide" eyebrow, the class name with its calling,
+ * the lore line, the stats line, then the Basic row and the Ultimate row,
+ * each with its icon, name, kind and what it does (classGuideView). One
+ * owner for both clients that show it: the live rail's #class-card
+ * (renderClassGuide adds its Allowed lines and its "Played by" note) and the
+ * Replay Viewer's Agent tab (main.js renders the selected champion's guide).
+ *
+ * @param {Document} doc The page, for the ability icons (abilityIconHtml).
+ * @param {unknown} classId Class ID 1 to 5.
+ * @param {Record<string, any> | null} mechanics The class's class_mechanics
+ *   row from the shown scene, or null (the guide then has names and lore
+ *   but no numbers).
+ * @param {{cooldown?: number | null, basicNow?: string, ultimateNow?: string,
+ *   note?: string}} [extras] cooldown: ticks until the Ultimate is ready (0
+ *   reads "Ultimate · Ready", 3 reads "Ultimate · Ready In 3 Ticks"; null or
+ *   absent reads "Ultimate"). basicNow, ultimateNow: markup the caller has
+ *   already escaped, added after the Basic and the Ultimate words. note:
+ *   escaped markup added at the end of the card. Each defaults to "".
+ * @returns {string} The card's inner HTML. An unknown class gives the short
+ *   "Pick a champion to read its guide." card. Pure apart from the icon
+ *   lookup.
+ */
+export function classGuideCardHtml(doc, classId, mechanics, extras = {}) {
+  const guide = classGuideView(classId, mechanics);
+  if (guide === null) {
+    return '<p class="eyebrow">Class Guide</p><p class="stats">Pick a champion to read its guide.</p>';
+  }
+  const icons =
+    /** @type {Record<string, {basic: string, ultimate: string, basicGlyph: string, ultimateGlyph: string}>} */ (
+      ABILITY_ICONS
+    )[guide.name.toLowerCase()] ?? null;
+  const cooldown = extras.cooldown ?? null;
+  const readiness =
+    cooldown === null
+      ? "Ultimate"
+      : `Ultimate · ${cooldown === 0 ? "Ready" : `Ready In ${ticksText(cooldown, true)}`}`;
+  return `<p class="eyebrow">Class Guide</p><h3>${escapeHtml(guide.name)}<span>${escapeHtml(guide.calling)}</span></h3><p class="lore">${escapeHtml(guide.lore)}</p>${
+    guide.stats === null ? "" : `<p class="stats">${escapeHtml(guide.stats)}</p>`
+  }<ul class="abl"><li>${icons ? abilityIconHtml(doc, icons.basic, icons.basicGlyph) : ""}<div><b>${escapeHtml(guide.basicName)}</b><em>Basic</em>${
+    guide.basicText === null ? "" : `<p>${escapeHtml(guide.basicText)}</p>`
+  }${extras.basicNow ?? ""}</div></li><li>${icons ? abilityIconHtml(doc, icons.ultimate, icons.ultimateGlyph) : ""}<div><b>${escapeHtml(guide.ultimateName)}</b><em>${escapeHtml(readiness)}</em>${
+    guide.ultimateText === null ? "" : `<p>${escapeHtml(guide.ultimateText)}</p>`
+  }${extras.ultimateNow ?? ""}</div></li></ul>${extras.note ?? ""}`;
+}
+
+/**
  * Write the checklist line of one champion you play: "Step: Stay · Action:
  * Charge → Mage 5".
  *
@@ -3454,23 +3522,6 @@ export function createTacticsTurn(context) {
       icon.setAttribute("height", "24");
     }
     parent?.insertBefore(icon, use);
-  }
-
-  /**
-   * Ability icon markup for the Class Guide rows: the vision symbol, or the
-   * icons.js glyph when the page lacks it.
-   *
-   * @param {string} symbolId Vision symbol id.
-   * @param {string} glyphKey icons.js fallback glyph.
-   * @returns {string}
-   */
-  function abilityIconMarkup(symbolId, glyphKey) {
-    if (document.getElementById(symbolId)) {
-      return `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${symbolId}"/></svg>`;
-    }
-    const icon = createSvgIcon(document, glyphKey, {});
-    icon.setAttribute("aria-hidden", "true");
-    return icon.outerHTML;
   }
 
   /**
@@ -5203,19 +5254,10 @@ export function createTacticsTurn(context) {
     const guideCard = parts.classCard;
     if (guideCard) guideCard.hidden = !guideOn;
     if (!guideOn) return;
-    const guide = classGuideView(view.classId, view.mechanics);
-    if (guide === null) {
-      setHtml(
-        parts.classCard,
-        '<p class="eyebrow">Class Guide</p><p class="stats">Pick a champion to read its guide.</p>',
-      );
+    if (classNamesV1(view.classId) === null) {
+      setHtml(parts.classCard, classGuideCardHtml(document, view.classId, null));
       return;
     }
-    const facts = championFacts(data.focusedScene ?? data.focusedRoster);
-    const icons =
-      /** @type {Record<string, {basic: string, ultimate: string, basicGlyph: string, ultimateGlyph: string}>} */ (
-        ABILITY_ICONS
-      )[facts?.classKey ?? ""] ?? null;
     // After game over nothing is allowed, so no "Allowed" line is shown.
     const mine = view.focusedManual && !data.stopped && !data.terminal;
     const pairs = asArray(data.mask?.target_use_ultimate_joint_mask);
@@ -5246,10 +5288,6 @@ export function createTacticsTurn(context) {
           : '<span class="now no">Not allowed on anyone right now</span>';
       }
     }
-    const readiness =
-      view.cooldown === null
-        ? "Ultimate"
-        : `Ultimate · ${view.cooldown === 0 ? "Ready" : `Ready In ${ticksText(view.cooldown, true)}`}`;
     const note = !view.focusedManual
       ? `<p class="stats cg-note">Played by ${view.controllerHtml} ${data.watchMode ? "It chooses each turn" : "It chooses after you lock in"}, from what its own champions may see.</p>`
       : data.stopped
@@ -5257,13 +5295,12 @@ export function createTacticsTurn(context) {
         : "";
     setHtml(
       parts.classCard,
-      `<p class="eyebrow">Class Guide</p><h3>${escapeHtml(guide.name)}<span>${escapeHtml(guide.calling)}</span></h3><p class="lore">${escapeHtml(guide.lore)}</p>${
-        guide.stats === null ? "" : `<p class="stats">${escapeHtml(guide.stats)}</p>`
-      }<ul class="abl"><li>${icons ? abilityIconMarkup(icons.basic, icons.basicGlyph) : ""}<div><b>${escapeHtml(guide.basicName)}</b><em>Basic</em>${
-        guide.basicText === null ? "" : `<p>${escapeHtml(guide.basicText)}</p>`
-      }${basicNow}</div></li><li>${icons ? abilityIconMarkup(icons.ultimate, icons.ultimateGlyph) : ""}<div><b>${escapeHtml(guide.ultimateName)}</b><em>${escapeHtml(readiness)}</em>${
-        guide.ultimateText === null ? "" : `<p>${escapeHtml(guide.ultimateText)}</p>`
-      }${ultimateNow}</div></li></ul>${note}`,
+      classGuideCardHtml(document, view.classId, view.mechanics, {
+        cooldown: view.cooldown,
+        basicNow,
+        ultimateNow,
+        note,
+      }),
     );
   }
 

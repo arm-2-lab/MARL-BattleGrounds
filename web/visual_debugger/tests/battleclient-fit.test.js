@@ -8,14 +8,17 @@
  * least 420 px and takes the rest; the deck and the status line never shrink;
  * only the arena gets shorter, down to 120 px; and the rail adds no height
  * (height 0, min-height 100%) and scrolls on its own, so long rail content
- * never pushes Lock In or the status line off screen. The measured proof at
- * the six sizes is a browser check outside this file.
+ * never pushes Lock In or the status line off screen. The rules use the scope
+ * shared with the Replay Viewer since 3 Oct 2026. The measured proof at the
+ * six sizes is a browser check outside this file.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const SCOPE = 'html[data-product-kind="combat_debugger"]';
+// Live play and the Replay Viewer share these rules since 3 Oct 2026.
+const SCOPE =
+  'html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])';
 
 /** @param {string} name @returns {Promise<string>} */
 async function battleClientCss(name) {

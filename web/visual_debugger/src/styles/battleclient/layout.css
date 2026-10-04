@@ -49,14 +49,19 @@
  *
  * Old live regions the vision does not have stay in the page only because
  * src/main.js still finds them by ID; they are never shown in live play:
- * the old match strip and party frames, the Team Rosters strip, the
+ * the old match strip and party frames, the Arena Frames (shown only in the
+ * Replay Viewer), the
  * Battlefield instructions row, the corner camera switch and the old Your
  * Turn and How To Play slots.
  *
- * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
  */
 
-html[data-product-kind="combat_debugger"] .bc {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+.bc {
   --rail-w: 340px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
@@ -69,11 +74,15 @@ html[data-product-kind="combat_debugger"] .bc {
 }
 
 /* The arena column and the rail are grid items of #bc. */
-html[data-product-kind="combat_debugger"] .bc #workspace {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #workspace {
   display: contents;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-stage {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-stage {
   grid-area: stage;
   display: flex;
   flex-direction: column;
@@ -84,7 +93,7 @@ html[data-product-kind="combat_debugger"] .bc .bc-stage {
   container: stage / inline-size;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .bc-stage
   > :is(#command-deck, #status-line) {
@@ -94,7 +103,9 @@ html[data-product-kind="combat_debugger"]
 /* The rail is as tall as the stage row and adds nothing to its height
    (height 0, min-height 100%, the vision's own rule), so a long rail scrolls
    on its own instead of making the page taller. */
-html[data-product-kind="combat_debugger"] .bc .bc-rail {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail {
   grid-area: rail;
   display: flex;
   flex-direction: column;
@@ -109,16 +120,18 @@ html[data-product-kind="combat_debugger"] .bc .bc-rail {
   scrollbar-width: thin;
 }
 
-html[data-product-kind="combat_debugger"] .bc .bc-rail > * {
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail
+  > * {
   flex: none;
 }
 
-html[data-product-kind="combat_debugger"]
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   :is(
     #match-scoreboard,
     #party-frames,
-    #team-rosters,
     .battlefield-support,
     #live-camera-switch,
     #this-turn,
@@ -127,14 +140,39 @@ html[data-product-kind="combat_debugger"]
   display: none;
 }
 
+html[data-product-kind="combat_debugger"] .bc #team-rosters {
+  display: none;
+}
+
+/* Replay Viewer (owner, 3 Oct 2026): the same grid, top bar, scorebug and
+   rail as live play. The stage holds, top to bottom, the arena, the Arena
+   Frames (#team-rosters, both teams' party frames, League of Legends
+   style) and the Rune Scrubber dock (#replay-timeline); the Arena Frames
+   and the dock keep their height and only the arena gets shorter. */
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #arena {
+  order: 1;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #team-rosters {
+  order: 2;
+  flex: none;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #replay-timeline {
+  order: 3;
+  flex: none;
+}
+
 @media (max-width: 1379px) {
-  html[data-product-kind="combat_debugger"] .bc {
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+    .bc {
     --rail-w: 300px;
   }
 }
 
 @media (max-width: 1299px) {
-  html[data-product-kind="combat_debugger"] .bc {
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+    .bc {
     --rail-w: 290px;
   }
 }

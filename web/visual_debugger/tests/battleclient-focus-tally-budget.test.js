@@ -3,7 +3,7 @@
  * BUDGET) covers what it really draws, counted the way the choreography
  * painter counts a kept row (choreography-painter.js: the event group, every
  * node inside it, and the connector only when it holds something). With the
- * thread kept and five beads, one tally keeps 5 nodes, and the plan's
+ * thread kept, five beads and the hit arc, one tally keeps 6 nodes, and the plan's
  * persistent bound for one focus_tally row (planResourceDemand) is at least
  * that, so turning Focus Fire on never makes the painter refuse the tick
  * ("exceeded the planned persistent node bound").
@@ -85,7 +85,7 @@ test("one drawn Focus Tally fits its budget and the plan's persistent bound", ()
     1 +
     descendants(mount.group) +
     (mount.connector.childElementCount > 0 ? 1 + descendants(mount.connector) : 0);
-  assert.equal(kept, 5);
+  assert.equal(kept, 6);
   assert.equal(tally.BUDGET.persistentNodesPerRecord, kept);
   assert.ok(tally.BUDGET.nodesPerRecord >= kept);
   assert.equal(planEventBudget({ kind: "focus_tally" }), tally.BUDGET);

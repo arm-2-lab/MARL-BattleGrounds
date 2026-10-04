@@ -620,6 +620,7 @@ test("explicit replay policies bypass consumption and static uses zero clocks", 
     renderPolicy: "replay_animated",
     settled: false,
     persistentOnly: false,
+    retainTransientOnSettle: true,
   });
 
   const staticSummary = harness({ ledger: forbiddenReplayLedger });

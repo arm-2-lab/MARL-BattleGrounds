@@ -10,24 +10,17 @@
  * agent picker popovers; the workspace grid; the arena column and its
  * Title Card, live Brand Signature and Oracle View tag; the Replay Viewer
  * dock frame; and the
- * right rail frame. Other lanes style what goes inside the match bar, the
- * dock's transport and Chronicle, the Team Rosters strip and the rail tabs.
+ * right rail frame. Other files style what goes inside the dock (the Rune
+ * Scrubber), the Arena Frames and the rail tabs.
  *
- * Live play (the BattleClient and the DevClient combat screen) follows the
- * approved BattleClient vision page instead: src/styles/battleclient/*.css
- * restyle this shared markup inside #bc with more specific rules, so the
- * rules here are the Replay Viewer's look and the shared base. The live page
- * wraps .battlefield-shell in #arena, which adds no box in the Replay Viewer;
- * the two .battlefield-shell selectors below name both parents.
- *
- * Replay Viewer Arena Stage: from 1024 x 640 the page is one fixed screen
- * (no page scroll): top bar, then the arena column (match bar, arena, dock,
- * Team Rosters strip) beside a rail clamp(320px, 24.5vw, 420px) wide. The
- * arena takes the height the other column parts leave, starting from zero,
- * so its size never depends on its own last drawing; it is never taller than
- * half its column width plus 48 px, and spare height goes below the strip.
- * The other parts keep their content height; if they need more room than the
- * window has, the arena column scrolls. Smaller windows scroll as one column.
+ * Every client follows the approved BattleClient vision page:
+ * src/styles/battleclient/*.css restyle this shared markup inside #bc with
+ * more specific rules, live play since 1 Oct 2026 and the Replay Viewer
+ * since 3 Oct 2026 (its #bc grid: top bar, scorebug, the stage with the
+ * arena, the Arena Frames and the Rune Scrubber dock, and the rail). So the
+ * rules here are the shared base under those, plus the dock frame before the
+ * Rune Scrubber mounts. Every page wraps .battlefield-shell in #arena; the
+ * two .battlefield-shell selectors below name both parents.
  *
  * Colors come only from the :root tokens in styles.css. The chrome stays
  * grayscale with Moon Silver; the emblem is its only color, and amber marks
@@ -281,7 +274,9 @@ kbd {
   display: none;
 }
 
-html:not([data-product-kind="combat_debugger"]) .match-place > .where__name {
+html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .match-place
+  > .where__name {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -289,7 +284,9 @@ html:not([data-product-kind="combat_debugger"]) .match-place > .where__name {
 }
 
 /* white-space: pre keeps the leading space a flex item would drop. */
-html:not([data-product-kind="combat_debugger"]) .match-place > .where__more {
+html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .match-place
+  > .where__more {
   flex: 0 1000000 auto;
   min-width: 0;
   overflow: hidden;
@@ -817,11 +814,11 @@ html:not([data-product-kind="combat_debugger"]) .match-place > .where__more {
 
 /*
  * Replay Viewer dock under the arena: one column, parts in page order. Once
- * src/chronicle.js has docked the transport and the export actions inside
- * #chronicle, the dock is just the Chronicle (caption, ribbon, one button row)
- * and the metrics notice, and the dock adds no padding of its own. Before
- * that (or if the Chronicle cannot mount) the transport, the Chronicle and
- * the export actions stack.
+ * src/rune-scrubber.js has moved the transport and the artifact actions into
+ * #chronicle (its slot), the dock is just the Rune Scrubber (Event Track and
+ * one button row) and the metrics notice, and the dock adds no padding of its
+ * own. Before that (or if the Rune Scrubber cannot mount) the transport and
+ * the artifact actions stack.
  */
 .replay-timeline {
   display: grid;
@@ -1067,72 +1064,6 @@ html:not([data-product-kind="combat_debugger"]) .match-place > .where__more {
 
   .match-place {
     max-width: 14rem;
-  }
-}
-
-/* Replay Viewer Arena Stage: one fixed screen from 1024 x 640. */
-@media (min-width: 64rem) and (min-height: 40rem) {
-  html[data-product-kind="replay_viewer"] body {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-    overflow: hidden;
-  }
-
-  html[data-product-kind="replay_viewer"] .app-header {
-    position: static;
-    flex: none;
-  }
-
-  /* One row that is exactly the space under the top bar, so neither column's
-     content can stretch the stage. */
-  html[data-product-kind="replay_viewer"] .workspace {
-    flex: 1 1 auto;
-    grid-template-rows: minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  /* If the parts under the arena ever need more than the space left, the
-     arena column scrolls; nothing is clipped. */
-  html[data-product-kind="replay_viewer"] .battlefield-panel {
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  /* Every part but the arena keeps its own content height and never shrinks. */
-  html[data-product-kind="replay_viewer"] .battlefield-panel > * {
-    flex: none;
-  }
-
-  /* The arena takes the space left, starting from zero: its size never comes
-     from its own last drawing (an SVG's viewBox gives it a natural height), so
-     a page after a view switch gets the same arena as a fresh page. It is
-     never taller than half the column width plus 48 px. */
-  html[data-product-kind="replay_viewer"] .battlefield-panel > .battlefield-shell,
-  html[data-product-kind="replay_viewer"]
-    .battlefield-panel
-    > .arena
-    > .battlefield-shell {
-    flex: 1 1 0;
-    min-height: 12rem;
-    max-height: calc(50cqi + 3rem);
-  }
-
-  html[data-product-kind="replay_viewer"] .battlefield {
-    height: 100%;
-  }
-
-  html[data-product-kind="replay_viewer"] .battlefield-instructions {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  html[data-product-kind="replay_viewer"] .hud-panel {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
   }
 }
 

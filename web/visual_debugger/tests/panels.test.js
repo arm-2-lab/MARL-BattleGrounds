@@ -5,7 +5,9 @@
  * no longer a disclosure panel. In BattleClient and DevClient Agent POV the
  * Pending Manual Actions card shows only the POV agent's own staged order
  * (from its POV draft) and reads "Not Observed", with no order, for every
- * other row, a teammate's or another team's.
+ * other row, a teammate's or another team's. The roster counts read "N
+ * Champions" and, in researcher-space Agent POV, "N Champions · N Seen · N
+ * Not Seen".
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -701,7 +703,7 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     const liveOracle = await normalizedPresentation("live_oracle");
     panels.renderAuthorizedRoster(liveOracle, false);
     const liveOracleRosterCount = liveOracle.scene.agents.length;
-    assert.equal(rosterCount.textContent, `${liveOracleRosterCount} actors`);
+    assert.equal(rosterCount.textContent, `${liveOracleRosterCount} Champions`);
     const oracleRows = /** @type {Record<string, any>[]} */ (
       [...panels.rosterRows.values()].filter(
         (/** @type {Record<string, any>} */ row) => "primaryButton" in row,
@@ -915,7 +917,7 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     ).length;
     assert.equal(
       rosterCount.textContent,
-      `${liveAgentRows.length} agents · ${liveAgentVisibleCount} visible · ${liveAgentRows.length - liveAgentVisibleCount} not visible`,
+      `${liveAgentRows.length} Champions · ${liveAgentVisibleCount} Seen · ${liveAgentRows.length - liveAgentVisibleCount} Not Seen`,
     );
     assert.equal(
       [...panels.rosterTeamGroups.values()].every(
@@ -980,23 +982,28 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       .descendants(pendingCard)
       .filter((node) => node.className === "accepted-action-row");
     assert.equal(wordRows.length, 5);
-    // Actions In Words (on by default): words first, the recorded codes under.
+    // Actions always read in words first, with the recorded codes under them.
     assert.match(
       dom.textTree(wordRows[0]),
       /Stays · Burst.*Move 0 · Target 0 · Ultimate 1/u,
     );
     assert.doesNotMatch(dom.textTree(wordRows[0]), /Submitted|Accepted/u);
+    // Panel Tokens off: plain names, and the actions still read in words.
     panels.renderAuthorizedInspector(
       replayAgent,
       undefined,
       undefined,
-      setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "plain_actions", false),
+      setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "panel_tokens", false),
     );
     const upcomingRows = dom
       .descendants(pendingCard)
       .filter((node) => node.className === "accepted-action-row");
     assert.equal(upcomingRows.length, 5);
-    assert.match(dom.textTree(upcomingRows[0]), /Submitted.*Accepted/u);
+    assert.match(
+      dom.textTree(upcomingRows[0]),
+      /Stays · Burst.*Move 0 · Target 0 · Ultimate 1/u,
+    );
+    assert.doesNotMatch(dom.textTree(upcomingRows[0]), /Accepted/u);
     assert.equal(
       upcomingRows.every((row) => /^team-[ab]$/u.test(row.dataset.team)),
       true,
@@ -1034,7 +1041,7 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     assert.equal(agentRows.length, 5);
     assert.equal(
       rosterCount.textContent,
-      `${agentRows.length} agents · ${agentRows.filter((row) => row.element.dataset.visibleInSnapshot === "true").length} visible · ${agentRows.filter((row) => row.element.dataset.visibleInSnapshot === "false").length} not visible`,
+      `${agentRows.length} Champions · ${agentRows.filter((row) => row.element.dataset.visibleInSnapshot === "true").length} Seen · ${agentRows.filter((row) => row.element.dataset.visibleInSnapshot === "false").length} Not Seen`,
     );
     assert.match(dom.textTree(roster), /VISIBLE.*NOT VISIBLE/u);
     assert.equal(
@@ -1180,7 +1187,7 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     }
 
     const replayOracle = await normalizedPresentation("replay_oracle");
-    // Default: token chips and Actions In Words, recorded codes underneath.
+    // Default: token chips and actions in words, recorded codes underneath.
     panels.renderAuthorizedInspector(replayOracle);
     const wordTransitionRows = dom
       .descendants(acceptedCard)
@@ -1201,16 +1208,13 @@ test("authorized roster exposes one native key-only action with isolated fact ow
       }),
       true,
     );
-    // Ledger Heraldry and Actions In Words off: today's plain text and boxes.
+    // Panel Tokens off: plain names, and the actions still read in words with
+    // the recorded codes underneath (actions always read in words).
     panels.renderAuthorizedInspector(
       replayOracle,
       undefined,
       undefined,
-      setVisualFilterEnabled(
-        setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "plain_actions", false),
-        "ledger_heraldry",
-        false,
-      ),
+      setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "panel_tokens", false),
     );
     const transitionRows = dom
       .descendants(acceptedCard)
@@ -1221,11 +1225,12 @@ test("authorized roster exposes one native key-only action with isolated fact ow
         const text = dom.textTree(row);
         return (
           /(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+/u.test(text) &&
+          /(?:Stays|Moves \w+) · /u.test(text) &&
+          /Move \d+ · Target \d+ · Ultimate \d+/u.test(text) &&
           !/Team [AB]/u.test(text) &&
-          text.includes("Submitted") &&
-          text.includes("Accepted") &&
+          !text.includes("Accepted") &&
           !/(?:mask|combat result|submission|revision|generation|transition)/iu.test(
-            text.replace("Submitted", ""),
+            text.replaceAll("Submitted", ""),
           )
         );
       }),

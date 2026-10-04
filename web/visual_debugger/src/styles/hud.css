@@ -1,18 +1,17 @@
 /*
- * Styles for the HUD (src/looks/hud.js and src/match-summary.js): the
- * scorebug in #match-scoreboard (class "match-strip": crest, names, a 32 px
- * score with its "/ N" goal, the First To bar under the names, filling toward
- * the center, with Momentum's recent points in the team's light color over a
- * Moon Silver underline, and the wave pips under the bar) and the Arena Frames party
- * frames (class "arena-frames"), including the Replay Viewer's Team Rosters
- * strip held to one 48 px row in both views. Live play (the BattleClient and
- * the DevClient combat screen) hides #match-scoreboard and #party-frames,
- * which then stay empty, and shows the vision page's scorebug instead
- * (src/styles/battleclient/scorebug.css), so these rules now paint the
- * Replay Viewer. styles.css imports
- * this file; its own later rules (the old scoreboard and the compact strip
- * for #team-rosters) win ties, so a few selectors here use
- * two classes on purpose.
+ * Styles for the HUD (src/looks/hud.js and src/match-summary.js): the old
+ * score strip in #match-scoreboard (class "match-strip": crest, names, a 32
+ * px score with its "/ N" goal, the First To bar, Momentum's recent points
+ * and the wave pips), drawn only on a page without the vision scorebug, and
+ * the Arena Frames party frames (class "arena-frames"). Every client now
+ * shows the vision page's scorebug (src/styles/battleclient/scorebug.css)
+ * instead of the strip; live play hides #party-frames too. In the Replay
+ * Viewer (owner, 3 Oct 2026) the Arena Frames sit at the bottom of the
+ * stage, League of Legends style: both docks side by side, the right one
+ * mirrored, the left dock for the team whose home end is on the arena's left
+ * (data-team-a-side), compact 22 px rows (the last section of this file).
+ * styles.css imports this file; its own later rules (the old scoreboard)
+ * win ties, so a few selectors here use two classes on purpose.
  *
  * Quiet heraldic chrome: Panel fill, a 1 px Panel Edge, no glow. Color only
  * carries data: team colors for crests, names and scores, class colors for
@@ -21,9 +20,10 @@
  * "before" nodes (data-beat-side="before") sit on top of their END node in the
  * same grid cell and are drawn at opacity 0; the choreographer shows them
  * until their beat. No CSS animations or transitions on beat-timed elements.
- * Team A is always on the left. Desktop first; at narrow widths the name
- * column and policy names drop out so nothing overflows, and a narrow dock
- * shows each champion as its token alone (a container query on the dock).
+ * In the old strip Team A is always on the left. Desktop first; at narrow
+ * widths the name column and policy names drop out so nothing overflows,
+ * and a narrow dock shows each champion as its token alone (a container
+ * query on the dock).
  */
 
 /* Score strip ----------------------------------------------------------- */
@@ -671,6 +671,18 @@
   min-width: 0;
 }
 
+/* A life change held until Impact (looks/hud.js): the END bar and the bar from
+   before the tick share one place; the choreographer swaps them at the beat. */
+.arena-frame__life-stack {
+  display: grid;
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.arena-frame__life-stack > .arena-frame__life {
+  grid-area: 1 / 1;
+}
+
 .arena-frame__tray {
   display: flex;
   align-items: center;
@@ -789,48 +801,180 @@
 }
 
 /*
- * The Replay Viewer's Team Rosters strip is one 48 px row in Oracle View and
- * in Agent POV alike (Arena Stage rows: top bar, match bar, arena, dock,
- * strip), so changing the view never changes the arena's height. Each banner
- * shows its team by a 3 px Host-color edge on its outer side; the team header
- * stays for screen readers only, and the Full Record chip sits on the strip's
- * top edge where it takes no height.
+ * Replay Viewer (owner, 3 Oct 2026): the Arena Frames sit at the bottom of
+ * the stage, League of Legends style, in the BattleClient's look (#bc panel
+ * tokens). Both teams' docks sit side by side under the arena. The team
+ * whose home end is on the arena's left gets the left dock (data-team-a-side
+ * on #team-rosters, written by src/looks/hud.js from the recorded display
+ * side, the same side the scorebug uses). The right dock is mirrored, so both
+ * sigils sit on the outer edges and the status trays meet in the middle; its
+ * text still reads left to right. Each frame is one compact 22 px row: the
+ * sigil, "Agent 5" beside its class, the life bar with its number, then the
+ * status tray. There is no header line, to keep the band thin (owner, 3 Oct
+ * 2026): the scorebug above names each team on the same side, and hud.js
+ * moves "Standing 4 of 5" under that name. In Agent POV the Full Record chip
+ * sits on the docks' top edge, where it takes no height, so changing the
+ * view never changes the arena's height.
  */
-#team-rosters.arena-frames {
+html[data-product-kind="replay_viewer"] .bc #team-rosters.arena-frames {
   position: relative;
-  grid-template-rows: 48px;
-  block-size: 48px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 10px;
 }
 
-#team-rosters.arena-frames .arena-frames__dock {
-  box-sizing: border-box;
-  block-size: 48px;
-  overflow: hidden;
-  padding: 7px 0.4rem;
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frames__dock {
+  grid-row: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
 }
 
-#team-rosters.arena-frames .arena-frames__dock--a {
-  border-left: 3px solid var(--team-a);
+/* Left dock: Team A unless Team A's home end is on the right. */
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters:not([data-team-a-side="right"])
+  .arena-frames__dock--a,
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters[data-team-a-side="right"]
+  .arena-frames__dock--b {
+  grid-column: 1;
+  border-left: 3px solid var(--dock-team);
 }
 
-#team-rosters.arena-frames .arena-frames__dock--b {
-  border-right: 3px solid var(--team-b);
+/* Right dock: mirrored rows and header. */
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters:not([data-team-a-side="right"])
+  .arena-frames__dock--b,
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters[data-team-a-side="right"]
+  .arena-frames__dock--a {
+  grid-column: 2;
+  border-right: 3px solid var(--dock-team);
+  direction: rtl;
 }
 
-#team-rosters.arena-frames .arena-frames__header {
-  position: absolute;
-  overflow: hidden;
-  width: 1px;
-  height: 1px;
-  clip: rect(0, 0, 0, 0);
+/* In the mirrored dock only words and numbers read left to right; the
+   frame's parts (life bar, number, tray) run from the name outward, and the
+   life bar drains toward the middle. */
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters
+  .arena-frames__dock
+  :is(
+    .arena-frame__names,
+    .life-bar__value,
+    .arena-frame__chip,
+    .arena-frame__more,
+    .arena-frame__ward,
+    .arena-frame__returns-in,
+    .arena-frame__unseen,
+    .arena-frame__credit-join
+  ) {
+  direction: ltr;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frames__dock--a {
+  --dock-team: var(--azure);
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frames__dock--b {
+  --dock-team: var(--crimson);
+}
+
+/* No header row in the Replay Viewer (hud.js placeReplayStanding): each team's
+   "Standing 4 of 5" sits under its name in the scorebug, as a third line like
+   the controller line, in the scorebug's own colors. */
+html[data-product-kind="replay_viewer"] .bc #scorebug .arena-frames__standing {
+  display: grid;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
-#team-rosters.arena-frames .arena-frames__list {
-  margin: 0;
+html[data-product-kind="replay_viewer"] .bc #scorebug .arena-frames__standing > * {
+  background: none;
 }
 
-#team-rosters.arena-frames .arena-frames__full-record {
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frames__list {
+  gap: 1px;
+  margin: 1px 0 0;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame {
+  grid-template-columns: 22px 108px minmax(0, 1fr);
+  gap: 8px;
+  height: 22px;
+  padding: 0 2px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters
+  :is(.arena-frame__sigil, .arena-frame__ring) {
+  width: 22px;
+  height: 22px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__emblem {
+  width: 13px;
+  height: 13px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__names {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters:not([data-team-a-side="right"])
+  .arena-frames__dock--b
+  .arena-frame__names,
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters[data-team-a-side="right"]
+  .arena-frames__dock--a
+  .arena-frame__names {
+  justify-content: flex-end;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__agent {
+  font-size: 12px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__class {
+  font-size: 11px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__life,
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__life-stack {
+  flex: 0 1 190px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__life .life-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  #team-rosters
+  .arena-frame__life
+  .life-bar__label {
+  display: none;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frame__chip {
+  height: 16px;
+}
+
+html[data-product-kind="replay_viewer"] .bc #team-rosters .arena-frames__full-record {
   position: absolute;
   z-index: 1;
   top: -9px;
@@ -846,7 +990,8 @@
     grid-template-columns: 28px minmax(0, 52px) minmax(0, 1fr);
   }
 
-  .arena-frame__life {
+  .arena-frame__life,
+  .arena-frame__life-stack {
     flex-basis: 140px;
   }
 }
@@ -854,12 +999,6 @@
 @media (max-width: 760px) {
   .arena-frames {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* Phone: the two banners stack, so the strip is two 48 px rows. */
-  #team-rosters.arena-frames {
-    grid-template-rows: 48px 48px;
-    block-size: auto;
   }
 
   .arena-frames__dock--b {

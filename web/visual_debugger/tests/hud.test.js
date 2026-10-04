@@ -24,12 +24,24 @@
  *   match_summary in Agent POV; the switches team_rosters, fighters_standing,
  *   death_announcer, respawn_wave and symbol_explanations act as documented.
  * - Beats: a fall this tick gives a "before" node with the life from before the
- *   blow (data-beat-hold="fall"), a return gives a "before" fallen node
+ *   blow (data-beat-hold="fall"), a hit or heal without a fall (beatView hits)
+ *   gives a "before" life bar with the life from before the tick
+ *   (data-beat-hold="impact", so the bar changes at Impact; a fallen champion's
+ *   hit row makes no such hold), a return gives a "before" fallen node
  *   (data-beat-hold="return"), Standing changes with them, and a scoring tick
  *   gives a score "before" node (data-beat-hold="score"); the DOM keeps END.
  * - DOM: the whole HUD is one Tab stop with roving focus (arrows, Home, End,
  *   Escape), Enter selects a frame, unseen frames never select, and the strip
  *   puts Team A in the left container whatever its spawn side.
+ * - Replay Viewer Arena Frames dock side: render writes data-team-a-side
+ *   ("left" or "right", from Team A's recorded display side) on the frames
+ *   container, so the team whose home end is on the arena's left gets the
+ *   left dock, as on the scorebug.
+ * - Replay Viewer thin band: on a page with #scorebug the docks have no
+ *   header row (each dock is named "Team A Arena Frames"), and each team's
+ *   "Standing N of M" moves under its name in the scorebug (#ctl-a's or
+ *   #ctl-b's host), once per render; in Agent POV only the viewing team's
+ *   count moves (hud_view.povTeamId).
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -472,9 +484,13 @@ class FakeElement {
   removeAttribute(name) {
     this.attributes.delete(name);
   }
-  /** @param {...FakeElement} nodes */
+  /** @param {...(FakeElement | string)} nodes */
   append(...nodes) {
-    for (const node of nodes) {
+    for (const item of nodes) {
+      // A string is a text node: an element with only text and no tag match.
+      const node =
+        typeof item === "string" ? new FakeElement(this.ownerDocument, "#text") : item;
+      if (typeof item === "string") node.text = item;
       node.parentNode = this;
       this.children.push(node);
     }
@@ -489,8 +505,17 @@ class FakeElement {
   descendants() {
     return this.children.flatMap((child) => [child, ...child.descendants()]);
   }
+  get parentElement() {
+    return this.parentNode;
+  }
+  remove() {
+    const parent = this.parentNode;
+    if (parent) parent.children = parent.children.filter((child) => child !== this);
+    this.parentNode = null;
+  }
   /** @param {string} selector */
   matches(selector) {
+    if (selector.startsWith("#")) return this.getAttribute("id") === selector.slice(1);
     const attribute = /^\[([a-z-]+)\]$/u.exec(selector);
     if (attribute) return this.attributes.has(attribute[1]);
     const [tag, className] = selector.split(".");
@@ -499,6 +524,10 @@ class FakeElement {
   /** @param {string} selector */
   querySelectorAll(selector) {
     return this.descendants().filter((node) => node.matches(selector));
+  }
+  /** @param {string} selector @returns {FakeElement | null} */
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
   }
   /** @param {string} selector @returns {FakeElement | null} */
   closest(selector) {
@@ -589,6 +618,67 @@ function mount(doc) {
 }
 
 const NO_TIPS = { symbol_explanations: false };
+
+test("a hit without a fall holds the frame's life bar until Impact", () => {
+  const doc = new FakeDocument();
+  const hit = agent({
+    public_agent_id: "agent-slot-6",
+    presentation_key: "key-6",
+    team_id: 2,
+    display_agent_id: "6",
+    current_health: 15,
+    maximum_health: 200,
+  });
+  const fallen = agent({
+    public_agent_id: "agent-slot-1",
+    display_agent_id: "1",
+    life_state: "corpse",
+    alive: false,
+    current_health: 0,
+  });
+  const beat = {
+    life: [],
+    hits: [
+      { publicAgentId: "agent-slot-6", presentationKey: "k6", before: 34, after: 15 },
+      // A fallen champion's hit row never makes a hit hold (its fall owns it).
+      { publicAgentId: "agent-slot-1", presentationKey: "k1", before: 9, after: 0 },
+    ],
+    returns: [],
+    schedule: { returns: [] },
+  };
+  const list = recordsOf(sources({ sceneAgents: [fallen, hit] }), {
+    filters: NO_TIPS,
+    beat,
+  });
+  const byId = new Map(ofKind(list, "champion").map((r) => [r.publicAgentId, r]));
+  assert.equal(byId.get("agent-slot-6")?.hitHold?.beatKey, "k6");
+  assert.equal(byId.get("agent-slot-6")?.hitHold?.life.text, "34");
+  assert.equal(byId.get("agent-slot-6")?.life.text, "15", "the DOM keeps END");
+  assert.equal(byId.get("agent-slot-1")?.hitHold, null);
+  const root = doc.createElement("div");
+  root.append(.../** @type {any[]} */ (build(list, /** @type {any} */ (doc))));
+  const impact = root
+    .querySelectorAll("[data-beat-hold]")
+    .filter((node) => node.getAttribute("data-beat-hold") === "impact");
+  const before = impact.filter(
+    (node) => node.getAttribute("data-beat-side") === "before",
+  );
+  const after = impact.filter(
+    (node) => node.getAttribute("data-beat-side") === "after",
+  );
+  assert.equal(before.length, 1);
+  assert.equal(after.length, 1);
+  assert.match(before[0].textContent, /34/u);
+  assert.equal(before[0].getAttribute("opacity"), "0");
+  assert.equal(before[0].getAttribute("aria-hidden"), "true");
+  assert.match(after[0].textContent, /15/u);
+  // No hit row: the life bar is drawn once, with no hold.
+  const plain = recordsOf(sources({ sceneAgents: [hit] }), {
+    filters: NO_TIPS,
+    beat: { ...beat, hits: [] },
+  });
+  assert.equal(ofKind(plain, "champion")[0].hitHold, null);
+});
 
 test("built frames keep END in the DOM and add hidden before nodes for held beats", () => {
   const doc = new FakeDocument();
@@ -724,4 +814,75 @@ test("the strip puts Team A left and holds a changed score until the Fall beat",
     "Score: 6/20",
   );
   assert.equal(frames.children.length, 0);
+});
+
+test("Replay Viewer frames record which side Team A's dock takes", async () => {
+  for (const side of ["right", "left"]) {
+    const raw = structuredClone(fixture.presentations.replay_oracle);
+    raw.match_summary.teams[0].display_side = side;
+    raw.match_summary.teams[1].display_side = side === "right" ? "left" : "right";
+    const frame = await normalizeAuthorizedPresentationFrameV1(raw);
+    const doc = new FakeDocument();
+    const { frames } = mount(doc);
+    const hud = createHud({ frames: /** @type {any} */ (frames) });
+    hud.render(hudSourcesFromFrame(frame), { filters: NO_TIPS });
+    assert.equal(/** @type {any} */ (frames).dataset.teamASide, side);
+    assert.ok(frames.querySelectorAll("li.arena-frame").length > 0);
+    hud.destroy();
+  }
+});
+
+/** A page with the scorebug's two team hosts, as index.html has them. */
+class ScorebugDocument extends FakeDocument {
+  constructor() {
+    super();
+    this.scorebug = this.createElement("section");
+    this.scorebug.setAttribute("id", "scorebug");
+    /** @type {Record<string, FakeElement>} */
+    this.hosts = {};
+    for (const key of ["b", "a"]) {
+      const host = this.createElement("div");
+      const name = this.createElement("b");
+      const line = this.createElement("span");
+      line.setAttribute("id", `ctl-${key}`);
+      host.append(name, line);
+      this.scorebug.append(host);
+      this.hosts[key] = host;
+    }
+  }
+  /** @param {string} id */
+  getElementById(id) {
+    return id === "scorebug" ? this.scorebug : null;
+  }
+  addEventListener() {}
+  removeEventListener() {}
+}
+
+test("Replay Viewer docks have no header row and Standing moves to the scorebug", async () => {
+  for (const name of ["replay_oracle", "replay_no_shared_obs_agent_pov"]) {
+    const doc = new ScorebugDocument();
+    const { frames } = mount(doc);
+    const hud = createHud({ frames: /** @type {any} */ (frames) });
+    const sources = hudSourcesFromFrame(await frameOf(name));
+    hud.render(sources, { filters: NO_TIPS });
+    hud.render(sources, { filters: NO_TIPS });
+    assert.equal(frames.querySelectorAll("div.arena-frames__header").length, 0);
+    const docks = frames.querySelectorAll("div.arena-frames__dock");
+    assert.equal(docks.length, 2);
+    for (const dock of docks)
+      assert.match(dock.getAttribute("aria-label") ?? "", /^Team [AB] Arena Frames$/u);
+    const view = ofKind(records({ sources }), "hud_view")[0];
+    for (const [key, teamId] of /** @type {const} */ ([
+      ["a", 1],
+      ["b", 2],
+    ])) {
+      const counts = doc.hosts[key].querySelectorAll("span.arena-frames__standing");
+      const shown = view.audience !== "agent_pov" || view.povTeamId === teamId;
+      assert.equal(counts.length, shown ? 1 : 0, `${name}: team ${teamId}`);
+      if (shown) assert.match(counts[0].textContent, /^Standing \d+ of \d+/u);
+    }
+    if (view.audience === "agent_pov")
+      assert.ok(view.povTeamId === 1 || view.povTeamId === 2);
+    hud.destroy();
+  }
 });

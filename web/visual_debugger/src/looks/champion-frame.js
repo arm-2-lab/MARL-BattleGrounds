@@ -22,18 +22,28 @@
  * - the Next Action Thread: a straight dashed line from the actor's rim + 3 px
  *   to 6 px short of the target's rim, and a dot (Basic) or diamond (Ultimate)
  *   at the target's 6 o'clock, R + 9 px below its centre; a self-cast draws only
- *   the glyph under the actor (switch `next_action_thread`).
+ *   the glyph under the actor (switch `next_action_thread`);
+ * - All Staged Orders (Replay Viewer only): the same thread, glyph and tip for
+ *   every champion's recorded next action at once, from the frame's own
+ *   upcoming transition rows, each line carrying `data-staged-order="true"`
+ *   (switch `all_staged_orders`). The selected champion's order is left to the
+ *   Next Action Thread, so no line is drawn twice;
+ * - Next Step Ghost (Replay Viewer only): a dotted circle, the live Step
+ *   Ghost's ring, at the spot where each champion stands at the end of the
+ *   recorded next tick (the frame's `next_end_spots` host fact; switch
+ *   `next_step_ghost`).
  * It draws no Basic or Ultimate lane pills ("0/B", "1/U") on the arena in any
  * client. Runefield shows legality on the deck's Action slots and the Command
  * Ring with its Order Studs (`looks/hotbar.js`), and the read-only Replay
  * Viewer shows none. `scene.js` calls records, then build, and update for the
  * retained marks.
  *
- * Under the arena (DOM, Replay Viewer only, plan P10) it builds the Champion
- * Frame: a hint row ("Select An Agent To Inspect · Click A Body Or A Team
- * Rosters Chip") until a champion is selected, then its token as a portrait (drawn by
- * the Champions look), its label, life, Ultimate, every status by the status
- * rule, Recent Ticks (this tick only) and Next Target. main.js reads the
+ * In the Replay Viewer rail's Agent tab (DOM, Replay Viewer only, plan P10;
+ * src/ledger.js moves #champion-frame there) it builds the Champion Frame: a
+ * hint row ("Select A Champion To Inspect · Click Its Body Or Its Arena
+ * Frame") until a champion is selected, then its token as a portrait (drawn by
+ * the Champions look), its label, life, Ultimate, Effective Speed, every
+ * status by the status rule, Recent Ticks (this tick only) and Next Target. main.js reads the
  * frame's facts with the adapter into a plain ChampionFrameInput, then calls
  * championFrameView and renderChampionFrame (switch `selected_agent_frame`).
  * This file never imports the adapter or reads a frame itself.
@@ -53,6 +63,13 @@
  *   team did not see the champion. Nothing in the frame is drawn on or over
  *   the arena, and the arena marks never use the frame's inputs. The
  *   BattleClient and DevClient never mount it.
+ * - All Staged Orders and Next Step Ghost read only what `scene.js` passes:
+ *   the frame's top-level upcoming transition rows and `next_end_spots`, never
+ *   researcher_space. In Agent POV those rows hold only the recipient's own
+ *   order, so a teammate's or the other team's order is never drawn, and the
+ *   host names a ghost only for a champion the team sees now and still sees at
+ *   the end of the next tick. Both also need the actor (and the target) in the
+ *   POV scene, so nothing is drawn for a champion the team cannot see.
  */
 import { canonicalAgentIdentity, tickCountLabel } from "../agent-identity.js";
 import { classAbilityNameV1 } from "../class-documentation.js";
@@ -103,8 +120,9 @@ export const FOOTPRINT = Object.freeze({});
 
 /**
  * Nodes per record: a reach ring with its hit ring and owner (3), the next-action
- * thread (line, glyph group of three and hit path: 5) or the selection marks
- * (root, halo, keyline, brackets and moonlight: 5).
+ * thread or one staged order (line, glyph group of three and hit path: 5), the
+ * selection marks (root, halo, keyline, brackets and moonlight: 5) or one Next
+ * Step Ghost (its ink ring and dotted ring: 2).
  */
 export const BUDGET = Object.freeze({
   nodesPerRecord: 5,
@@ -114,7 +132,8 @@ export const BUDGET = Object.freeze({
 
 /**
  * Switches for the arena marks: Target Selection Visuals (brackets), Selection
- * Moonlight, Next Action Thread and Reach Rings. The `selected_pair_legality`
+ * Moonlight, Next Action Thread, Reach Rings, and the Replay Viewer's All
+ * Staged Orders and Next Step Ghost. The `selected_pair_legality`
  * part stays registered under Target Selection Visuals so the switch list and
  * `scene.js` keep their names, but it paints nothing now: this look draws no
  * lane pills. The docked frame's switch (`selected_agent_frame`) is an
@@ -126,6 +145,8 @@ export const PAINT_PARTS = paintParts([
   [{ surface: "durable", kind: "selection_moonlight" }, "selection_moonlight"],
   [{ surface: "durable", kind: "next_action_thread" }, "next_action_thread"],
   [{ surface: "durable", kind: "reach_ring" }, "reach_rings"],
+  [{ surface: "durable", kind: "staged_order" }, "all_staged_orders"],
+  [{ surface: "durable", kind: "next_step_ghost" }, "next_step_ghost"],
 ]);
 
 /** Selection Moonlight and the bracket square reach this far past the body (CSS px). */
@@ -226,6 +247,22 @@ export function bracketPath(centerX, centerY, radius, shape = "ladder") {
  *   showReticle, showMoonlight, bracketShape} record per champion.
  *   showMoonlight is true only for the selected living champion with the
  *   switch on.
+ * - "staged-orders" (All Staged Orders, Replay Viewer only): input.scene,
+ *   input.transform, input.actionRows (the frame's top-level
+ *   upcoming_transition.action_rows; [] or absent on the final frame) and
+ *   input.skipActorIds (public IDs whose order the Next Action Thread already
+ *   draws; default none) give one "next-action-route" record per living actor
+ *   with a combat order, built exactly like the thread's and marked
+ *   staged: true (see stagedOrderRecords). [] when input.showStagedOrders is
+ *   not true (switch `all_staged_orders`, default off).
+ * - "next-step-ghosts" (Next Step Ghost, Replay Viewer only): input.scene,
+ *   input.transform and input.spots (the frame's `next_end_spots`: [{
+ *   public_agent_id, position [x, y] in world units}]) give one
+ *   {kind: "next-step-ghost", publicAgentId, presentationKey, cx, cy, r}
+ *   record per spot whose champion is alive in input.scene and whose spot is
+ *   at least 1 px from its body (CSS px; r is the body radius). [] when
+ *   input.showNextStepGhost is not true (switch `next_step_ghost`, default
+ *   off).
  * - "lane-pills" is retired and gives [], whatever the input: the arena shows
  *   no "0/B" or "1/U" pills in any client (the deck's Action slots and the
  *   Command Ring carry legality; the Replay Viewer shows none).
@@ -287,6 +324,21 @@ export function records(input) {
       ? Object.freeze([])
       : nextActionRouteRecords(input.scene, input.transform);
   }
+  if (input.part === "staged-orders") {
+    return input.showStagedOrders === true
+      ? stagedOrderRecords(
+          input.scene,
+          input.transform,
+          input.actionRows,
+          input.skipActorIds,
+        )
+      : Object.freeze([]);
+  }
+  if (input.part === "next-step-ghosts") {
+    return input.showNextStepGhost === true
+      ? nextStepGhostRecords(input.scene, input.transform, input.spots)
+      : Object.freeze([]);
+  }
   if (input.part === "selection-marks") {
     return Object.freeze(
       asArray(input.champions).map((champion) =>
@@ -347,12 +399,7 @@ export function threadSegment(source, target, startGap, endGap) {
  * Return the Next Action Thread record for a scene, or [] without a route.
  *
  * scene.pending_route owns the disclosed source and target anchors, radii,
- * lane and legality; transform projects them. The thread is a straight line
- * from the actor's rim + 3 px to 6 px short of the target's rim (null for a
- * self-cast, or when the rims nearly touch). The glyph sits R + 9 px below the
- * target's centre (the actor's own for a self-cast): a dot for lane 0 (Basic),
- * a diamond for lane 1 (Ultimate). The tooltip input names the route and the
- * matching scene agents (same presentation key and public ID). No target
+ * lane and legality; transform projects them (see routeRecord). No target
  * position, legality or accepted action is inferred. In Agent POV the adapter
  * gives a pending route only for the POV agent's own next action.
  *
@@ -366,6 +413,31 @@ function nextActionRouteRecords(scene, transform) {
   if (!route || !transform || !isRecord(scene)) {
     return Object.freeze([]);
   }
+  return Object.freeze([routeRecord(route, scene, transform, false)]);
+}
+
+/**
+ * Return one "next-action-route" record for a route-shaped order.
+ *
+ * route has the pending-route fields: source and target presentation keys and
+ * public IDs, source_anchor and target_anchor (world [x, y]), source_radius
+ * and target_radius (world units), lane (0 Basic, 1 Ultimate), legal and,
+ * when known, source_global_slot and target_global_slot. The thread is a
+ * straight line from the actor's rim + 3 px to 6 px short of the target's rim
+ * (null for a self-cast, or when the rims nearly touch). The glyph sits
+ * R + 9 px below the target's centre (the actor's own for a self-cast): a dot
+ * for lane 0 (Basic), a diamond for lane 1 (Ultimate). The tooltip input names
+ * the route and the matching scene agents (same presentation key and public
+ * ID). staged is true for an All Staged Orders line (its nodes then carry
+ * data-staged-order and take no Tab stop). Pure.
+ *
+ * @param {Record<string, any>} route
+ * @param {Record<string, any>} scene
+ * @param {LookTransform} transform
+ * @param {boolean} staged
+ * @returns {LookRecord}
+ */
+function routeRecord(route, scene, transform, staged) {
   const source = screenPoint(route.source_anchor, transform);
   const target = screenPoint(route.target_anchor, transform);
   const sourceRadius = transform.worldLengthToScreen(finiteNumber(route.source_radius));
@@ -395,40 +467,180 @@ function nextActionRouteRecords(scene, transform) {
       agent.presentation_key === route.target_presentation_key &&
       agent.public_agent_id === route.target_public_agent_id,
   );
-  return Object.freeze([
-    Object.freeze({
-      kind: "next-action-route",
-      path:
-        segment === null
-          ? null
-          : `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`,
-      glyph: Object.freeze({
-        x: host.x,
-        y: host.y + hostRadius + GLYPH_DROP_PX,
-        shape: route.lane === 1 ? "diamond" : "dot",
-      }),
-      lane: String(route.lane ?? 0),
-      legal: String(Boolean(route.legal)),
-      sourceAgentId: String(route.source_public_agent_id ?? ""),
-      targetAgentId: String(route.target_public_agent_id ?? ""),
-      sourceSlot: Number.isInteger(route.source_global_slot)
-        ? String(route.source_global_slot)
-        : null,
-      targetSlot: Number.isInteger(route.target_global_slot)
-        ? String(route.target_global_slot)
-        : null,
-      sourcePresentationKey:
-        typeof route.source_presentation_key === "string"
-          ? route.source_presentation_key
-          : null,
-      targetPresentationKey:
-        typeof route.target_presentation_key === "string"
-          ? route.target_presentation_key
-          : null,
-      routeKind: selfCast ? "self" : "thread",
-      tooltipInput: Object.freeze({ route, sourceAgent, recipientAgent }),
+  return Object.freeze({
+    kind: "next-action-route",
+    path:
+      segment === null
+        ? null
+        : `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`,
+    glyph: Object.freeze({
+      x: host.x,
+      y: host.y + hostRadius + GLYPH_DROP_PX,
+      shape: route.lane === 1 ? "diamond" : "dot",
     }),
-  ]);
+    lane: String(route.lane ?? 0),
+    legal: String(Boolean(route.legal)),
+    sourceAgentId: String(route.source_public_agent_id ?? ""),
+    targetAgentId: String(route.target_public_agent_id ?? ""),
+    sourceSlot: Number.isInteger(route.source_global_slot)
+      ? String(route.source_global_slot)
+      : null,
+    targetSlot: Number.isInteger(route.target_global_slot)
+      ? String(route.target_global_slot)
+      : null,
+    sourcePresentationKey:
+      typeof route.source_presentation_key === "string"
+        ? route.source_presentation_key
+        : null,
+    targetPresentationKey:
+      typeof route.target_presentation_key === "string"
+        ? route.target_presentation_key
+        : null,
+    routeKind: selfCast ? "self" : "thread",
+    staged,
+    tooltipInput: Object.freeze({ route, sourceAgent, recipientAgent }),
+  });
+}
+
+/**
+ * Return the All Staged Orders records: every champion's recorded next action.
+ *
+ * actionRows are the frame's own top-level upcoming transition rows
+ * ({actor_presentation_key, actor_public_agent_id,
+ * target_action_recipient_public_agent_id_by_id (11 IDs, null at 0),
+ * accepted_action {move_action, target_action, use_ultimate_action}}). Oracle
+ * View lists every actor; Agent POV lists only the recipient, so no other
+ * champion's order can be drawn there. For each row the actor must be a living
+ * body in scene with the same presentation key and public ID, and must not be
+ * in skipActorIds (its order is already the Next Action Thread). The accepted
+ * action decides the mark, as the host's combat lane does: use_ultimate_action
+ * 1 is an Ultimate (a diamond), otherwise target_action 0 is no combat order
+ * (nothing drawn) and any other target is a Basic (a dot). The target is the
+ * axis entry at target_action and must be a body in scene (in Agent POV only
+ * a seen one); an Ultimate with target_action 0 (such as the Mage's Burst) is
+ * drawn as a self-cast, its diamond under the actor. A row that does not
+ * resolve draws nothing. Positions are the bodies' scene positions at this
+ * frame, where the recorded order is chosen. Returns records in row order, each
+ * like routeRecord's with staged true and legal "true" (the recorded accepted
+ * action). Pure.
+ *
+ * @param {unknown} scene
+ * @param {LookTransform | null | undefined} transform
+ * @param {unknown} actionRows
+ * @param {unknown} skipActorIds An iterable of public IDs, or absent.
+ * @returns {ReadonlyArray<LookRecord>}
+ */
+function stagedOrderRecords(scene, transform, actionRows, skipActorIds) {
+  if (!transform || !isRecord(scene)) return Object.freeze([]);
+  const skip = new Set(
+    skipActorIds !== null &&
+      typeof skipActorIds === "object" &&
+      Symbol.iterator in skipActorIds
+      ? /** @type {Iterable<unknown>} */ (skipActorIds)
+      : [],
+  );
+  const agents = asArray(scene.agents).filter(isRecord);
+  /** @type {LookRecord[]} */
+  const out = [];
+  for (const row of asArray(actionRows)) {
+    if (!isRecord(row) || !isRecord(row.accepted_action)) continue;
+    if (skip.has(row.actor_public_agent_id)) continue;
+    const actor = agents.find(
+      (agent) =>
+        agent.presentation_key === row.actor_presentation_key &&
+        agent.public_agent_id === row.actor_public_agent_id &&
+        agent.alive !== false &&
+        agent.life_state !== "corpse",
+    );
+    if (actor === undefined) continue;
+    const targetIndex = row.accepted_action.target_action;
+    const ultimate = row.accepted_action.use_ultimate_action === 1;
+    if (!Number.isInteger(targetIndex) || (targetIndex === 0 && !ultimate)) continue;
+    const targetId =
+      targetIndex === 0
+        ? actor.public_agent_id
+        : asArray(row.target_action_recipient_public_agent_id_by_id)[targetIndex];
+    const target =
+      targetIndex === 0
+        ? actor
+        : agents.find((agent) => agent.public_agent_id === targetId);
+    if (target === undefined) continue;
+    out.push(
+      routeRecord(
+        {
+          source_presentation_key: actor.presentation_key,
+          source_public_agent_id: actor.public_agent_id,
+          source_anchor: actor.position,
+          source_radius: actor.radius,
+          target_presentation_key: target.presentation_key,
+          target_public_agent_id: target.public_agent_id,
+          target_anchor: target.position,
+          target_radius: target.radius,
+          lane: ultimate ? 1 : 0,
+          legal: true,
+        },
+        scene,
+        transform,
+        true,
+      ),
+    );
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * Return the Next Step Ghost records: where each champion ends the next tick.
+ *
+ * spots is the frame's `next_end_spots` host fact ([{public_agent_id,
+ * position [x, y]}] in world units; the host already limits Agent POV to
+ * champions the team sees now and still sees then). A spot draws only when
+ * its champion is a living body in scene and its screen point is at least
+ * 1 px from that body's centre (a champion that stays put gets no ghost on top
+ * of itself). Each record is {kind: "next-step-ghost", publicAgentId,
+ * presentationKey, cx, cy, r}: the spot's screen centre and the body radius,
+ * in CSS px. Pure.
+ *
+ * @param {unknown} scene
+ * @param {LookTransform | null | undefined} transform
+ * @param {unknown} spots
+ * @returns {ReadonlyArray<LookRecord>}
+ */
+function nextStepGhostRecords(scene, transform, spots) {
+  if (!transform || !isRecord(scene)) return Object.freeze([]);
+  const agents = asArray(scene.agents).filter(isRecord);
+  /** @type {LookRecord[]} */
+  const out = [];
+  for (const spot of asArray(spots)) {
+    if (!isRecord(spot)) continue;
+    const agent = agents.find(
+      (candidate) =>
+        candidate.public_agent_id === spot.public_agent_id &&
+        candidate.alive !== false &&
+        candidate.life_state !== "corpse",
+    );
+    if (agent === undefined) continue;
+    const point = screenPoint(spot.position, transform);
+    const body = screenPoint(agent.position, transform);
+    if (
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y) ||
+      Math.hypot(point.x - body.x, point.y - body.y) < 1
+    ) {
+      continue;
+    }
+    out.push(
+      Object.freeze({
+        kind: "next-step-ghost",
+        publicAgentId: String(agent.public_agent_id),
+        presentationKey:
+          typeof agent.presentation_key === "string" ? agent.presentation_key : null,
+        cx: point.x,
+        cy: point.y,
+        r: transform.worldLengthToScreen(finiteNumber(agent.radius)),
+      }),
+    );
+  }
+  return Object.freeze(out);
 }
 
 /**
@@ -442,7 +654,13 @@ function nextActionRouteRecords(scene, transform) {
  * its pad; on any other tick the choreographer finds no such beat and the
  * rings show at once. A
  * next-action route becomes [thread line (none for a self-cast), glyph group,
- * focusable hit path] with its tooltip. Selection marks become one
+ * focusable hit path] with its tooltip; a staged order (All Staged Orders) is
+ * the same with data-staged-order="true" on each node and a hit path that
+ * keeps its tip but takes no Tab stop. A Next Step Ghost becomes two circles,
+ * the live Step Ghost's ink ring and dotted Moon Silver ring
+ * (`circle.hotbar-ghost-ink` and `circle.hotbar-ghost`, styled by
+ * styles/hotbar.css, no pointer input), each with data-next-step-ghost and the
+ * champion's data-public-agent-id. Selection marks become one
  * SelectionNodes bundle's root (see buildSelectionMarks; its separate moonlight
  * node is not returned here). Any other record kind, including an old
  * "lane-pills" record, builds nothing. Return the new top-level nodes in record
@@ -477,6 +695,8 @@ export function build(records, doc) {
       }
     } else if (record.kind === "next-action-route") {
       nodes.push(...buildNextActionRoute(doc, record));
+    } else if (record.kind === "next-step-ghost") {
+      nodes.push(...buildNextStepGhost(doc, record));
     } else if (record.kind === "selection-marks") {
       nodes.push(buildSelectionMarks([record], doc)[0].selectionRoot);
     }
@@ -505,8 +725,10 @@ function diamondPath(x, y, width) {
  * legal, IDs, slots, keys, route kind). The glyph is `g.next-action-glyph`
  * holding an Ink Shadow under-copy and the Moon Silver mark: a 6 px dot or a
  * 9 px diamond. The hit path follows the line, or rings the glyph for a
- * self-cast, and carries the route tooltip. Return [line?, glyph, hit].
- * Registers one tooltip owner. Export-safe SVG only.
+ * self-cast, and carries the route tooltip. A staged order (record.staged)
+ * adds data-staged-order="true" to every node and leaves its hit path out of
+ * the Tab order (no tabindex), so ten lines never add ten Tab stops. Return
+ * [line?, glyph, hit]. Registers one tooltip owner. Export-safe SVG only.
  *
  * @param {Document} doc
  * @param {LookRecord} record
@@ -525,6 +747,7 @@ function buildNextActionRoute(doc, record) {
     "data-source-presentation-key": record.sourcePresentationKey,
     "data-target-presentation-key": record.targetPresentationKey,
     "data-route-kind": record.routeKind,
+    "data-staged-order": record.staged === true ? "true" : null,
   };
   if (record.path !== null) {
     nodes.push(
@@ -569,7 +792,8 @@ function buildNextActionRoute(doc, record) {
       record.path ??
       `M ${x - 8} ${y} A 8 8 0 1 0 ${x + 8} ${y} A 8 8 0 1 0 ${x - 8} ${y} Z`,
     role: "img",
-    tabindex: "0",
+    tabindex: record.staged === true ? null : "0",
+    "data-staged-order": record.staged === true ? "true" : null,
   });
   const routeDescriptor = /** @type {NonNullable<ReturnType<typeof tooltip>>} */ (
     tooltip(record)
@@ -578,6 +802,40 @@ function buildNextActionRoute(doc, record) {
   registerTooltipOwner(hitPath, routeDescriptor);
   nodes.push(hitPath);
   return nodes;
+}
+
+/**
+ * Build one Next Step Ghost's nodes: the live Step Ghost's ink ring under its
+ * dotted Moon Silver ring, both at the spot and 1 px inside the body radius.
+ * Both carry data-next-step-ghost ("ink" or "ring") and the champion's
+ * data-public-agent-id; styles/hotbar.css gives them their look and no pointer
+ * input. Return [ink, ring]. No tooltip. Export-safe SVG only.
+ *
+ * @param {Document} doc
+ * @param {LookRecord} record A "next-step-ghost" record.
+ * @returns {SVGElement[]}
+ */
+function buildNextStepGhost(doc, record) {
+  const r = Math.max(1, record.r - 1);
+  const shared = {
+    cx: record.cx,
+    cy: record.cy,
+    r,
+    "data-public-agent-id": record.publicAgentId,
+    "aria-hidden": "true",
+  };
+  return [
+    svgNode(doc, "circle", {
+      class: "hotbar-ghost-ink",
+      "data-next-step-ghost": "ink",
+      ...shared,
+    }),
+    svgNode(doc, "circle", {
+      class: "hotbar-ghost",
+      "data-next-step-ghost": "ring",
+      ...shared,
+    }),
+  ];
 }
 
 /**
@@ -725,9 +983,9 @@ export function tooltip(record) {
   return null;
 }
 
-/** The hint row shown under the arena while no champion is selected. */
+/** The hint row the Champion Frame (Agent tab) shows while no champion is selected. */
 export const CHAMPION_FRAME_HINT =
-  "Select An Agent To Inspect · Click A Body Or A Team Rosters Chip";
+  "Select A Champion To Inspect · Click Its Body Or Its Arena Frame";
 
 /** Next Target on the last frame of a replay, where no next tick exists. */
 export const FINAL_FRAME_NEXT = "No Next Tick (Final Frame)";
@@ -773,6 +1031,7 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  *   life: import("../life-bar.js").LifeBarModel | null,
  *   ultimateText: string,
  *   ultimateReady: boolean,
+ *   speedText: string | null,
  *   statuses: ReadonlyArray<Readonly<{tokenId: string, line: string}>>,
  *   recent: RecentTickCell,
  *   nextText: string | null,
@@ -782,7 +1041,10 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  *   the Full Record label in the Replay Viewer's Agent POV, else null.
  *   lifeText is the exact life ("43.15 / 80", or "Fallen") for the life tip;
  *   life is the shared Life bar's model (`life-bar.js`), or null for a fallen
- *   champion or a record with no life numbers. nextText is null outside a
+ *   champion or a record with no life numbers. speedText is the champion's
+ *   speed now, after its statuses ("Effective Speed 0.85", from the record's
+ *   effective_movement_speed), or null for a fallen champion or a record
+ *   without it (owner, 4 Oct 2026, Micro List M22). nextText is null outside a
  *   replay.
  * @typedef {EmptyChampionFrameView | SelectedChampionFrameView} ChampionFrameView
  * @typedef {(
@@ -840,7 +1102,8 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  * input is a ChampionFrameInput. No selection, or an ID missing from
  * input.agents, gives the empty view (the hint row). Otherwise the facts come
  * from that agent's record: label "Mage · ID 5", team, life "33.15 / 80" (or
- * "Fallen"), Ultimate ("Ultimate Ready" or "Burst · Ready In 28 Ticks"), every
+ * "Fallen"), Ultimate ("Ultimate Ready" or "Burst · Ready In 28 Ticks"), the
+ * speed now ("Effective Speed 0.85", living champions only), every
  * status in Champion Card order (stuns, then slows, then the rest) by the
  * status rule (statusLineV1: the card row's words, the source named by class
  * only), the Recent Ticks cell (recentTickCell: only the audience's own events) and
@@ -892,6 +1155,10 @@ export function championFrameView(input) {
         ? `${ultimateName} · Ready In ${tickCountLabel(cooldown)}`
         : ultimateName,
     ultimateReady,
+    speedText:
+      alive && Number.isFinite(agent.effective_movement_speed)
+        ? `Effective Speed ${formatDisplayNumber(agent.effective_movement_speed)}`
+        : null,
     statuses: Object.freeze(
       asArray(agent.statuses)
         .filter(isRecord)
@@ -1235,11 +1502,11 @@ function recentCellWords(cell) {
  * empty). The empty view shows the hint row. The selected view shows, left
  * to right: the Full Record chip (when view.chip is set), the portrait
  * (buildPortrait), the name block (label, team, the shared Life bar of
- * `life-bar.js` or "Fallen", Ultimate), the status list (one line per status
+ * `life-bar.js` or "Fallen", Ultimate, Effective Speed when known), the status list (one line per status
  * by the status rule, or "No Statuses"), the Recent Ticks cell and Next
  * Target. Nothing here animates, starts a timer or touches storage.
  * Shows and hides are the caller's job (the `selected_agent_frame` switch).
- * Registers Symbol Tip owners on the life, Ultimate and Recent Ticks parts
+ * Registers Symbol Tip owners on the life, Ultimate, Effective Speed and Recent Ticks parts
  * through tooltip.js. Return undefined.
  *
  * @param {HTMLElement} container
@@ -1301,6 +1568,18 @@ export function renderChampionFrame(container, view) {
     ),
   );
   name.append(heading, life, ultimate);
+  if (view.speedText !== null) {
+    const speed = htmlNode(doc, "p", "champion-frame__speed", view.speedText);
+    registerTooltipOwner(
+      speed,
+      frameTip(
+        "speed",
+        "Effective Speed",
+        "How far this champion moves in one tick right now, after its statuses. Its base speed is in the Class Guide.",
+      ),
+    );
+    name.append(speed);
+  }
   parts.push(name);
 
   const statuses = htmlNode(doc, "ul", "champion-frame__statuses");

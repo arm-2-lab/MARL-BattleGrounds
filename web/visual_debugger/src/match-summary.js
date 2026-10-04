@@ -12,7 +12,7 @@
  * hudSourcesFromFrame with
  * publicRosterIdentities and controllerRosterFromFrame (the one controller
  * model of controller-names.js for a frame; the Replay Viewer's team names,
- * the Team Rosters strip and the live Tactics Turn rail paint from it) (the
+ * the Arena Frames and the live Tactics Turn rail paint from it) (the
  * one place the HUD's party frames read a frame;
  * looks/hud.js draws them from these sources and never reads a frame itself,
  * so the arena looks' import walk never reaches the adapter). main.js calls
@@ -229,12 +229,13 @@ export function matchSummaryView(presentation) {
  * fixed name width, "1 Policy" when it does not fit, and hovering it drops
  * down the team's list ("Team A Controllers") with its champions.
  *
- * Live play (BattleClient and DevClient combat screen): when the presentation
- * is not the Replay Viewer's and the page has the vision scorebug
- * (#scorebug), the strip is not drawn. The root is hidden and the task and
- * team containers are emptied. The scores, bars, tick, First To, wave line
- * and side go into #scorebug instead (liveScorebugView, then
- * renderLiveScorebug; see there for the Fall beat hold). options.waves,
+ * Every client (the BattleClient, the DevClient combat screen and the Replay
+ * Viewer): when the page has the vision scorebug (#scorebug), the strip is
+ * not drawn. The root is hidden and the task and team containers are
+ * emptied. The scorebug is shown (index.html keeps it hidden until the
+ * first call), and the scores, bars, tick, First To, wave line and side go
+ * into it (liveScorebugView, then renderLiveScorebug; see there for the Fall beat
+ * hold). options.waves,
  * options.filters (only "scorebug" and "hud_momentum") and
  * options.beat.score are read; Wave Chips are not drawn there. With
  * "hud_momentum" true the bars mark the points scored since the host's
@@ -249,8 +250,9 @@ export function matchSummaryView(presentation) {
  * marks carry data-hud-symbol and tabindex -1 so the HUD's one Tab stop can
  * move to them with the arrow keys. The team names are fitted to their real
  * width now and again when the strip's width changes (controller-names.js;
- * one ResizeObserver and the hover list's listeners per document). In live
- * play it changes #scorebug's DOM instead (no tooltips). It keeps no state
+ * one ResizeObserver and the hover list's listeners per document). With a
+ * scorebug it changes #scorebug's DOM and hidden flag instead (no tooltips).
+ * It keeps no state
  * between calls. No other timers, no storage or network. The caller
  * must supply matching containers; DOM shape is not validated. Agent POV: the
  * strip shows only public match facts, so it is the same in every view.
@@ -261,9 +263,10 @@ export function matchSummaryView(presentation) {
  */
 export function renderMatchSummary(elements, presentation, options = {}) {
   const summary = matchSummaryView(presentation);
-  const scorebug = liveScorebugRoot(elements.root, presentation);
+  const scorebug = liveScorebugRoot(elements.root);
   if (scorebug !== null) {
-    // Live play draws the vision scorebug instead; the old strip stays empty.
+    // Every client draws the vision scorebug; the old strip stays empty.
+    scorebug.hidden = false;
     elements.root.hidden = true;
     elements.root.classList.remove("match-strip");
     elements.task.replaceChildren();
@@ -705,21 +708,20 @@ export function liveScorebugView(summary, options = {}) {
 }
 
 /**
- * Return the page's live scorebug (#scorebug) when this presentation is
- * drawn in live play, else null.
+ * Return the page's scorebug (#scorebug), else null.
  *
- * anchor is any element of the page (its document is searched); presentation
- * is the installed presentation. Live play is every product except the Replay
- * Viewer (presentation.product_kind "replay_viewer"). A document without an
- * element with id "scorebug", or without getElementById, gives null, so the
- * old strip is drawn instead. Pure apart from the DOM lookup.
+ * anchor is any element of the page (its document is searched). Every client
+ * draws the BattleClient vision's scorebug: the BattleClient, the DevClient
+ * combat screen and, since the Replay Viewer took the BattleClient's look
+ * (owner, 3 Oct 2026: one score display at the top), the Replay Viewer too.
+ * A document without an element with id "scorebug", or without
+ * getElementById (unit tests with a fake DOM), gives null, so the old strip
+ * in #match-scoreboard is drawn instead. Pure apart from the DOM lookup.
  *
  * @param {HTMLElement} anchor
- * @param {unknown} presentation
  * @returns {HTMLElement | null}
  */
-function liveScorebugRoot(anchor, presentation) {
-  if (field(presentation, "product_kind") === "replay_viewer") return null;
+function liveScorebugRoot(anchor) {
   const doc = anchor.ownerDocument;
   if (typeof doc?.getElementById !== "function") return null;
   return doc.getElementById("scorebug");
@@ -1328,7 +1330,7 @@ export function publicRosterIdentities(frame) {
  * the "Unseen" portraits in Agent POV and, in both views, each champion's
  * command slot for the scorebug's "You" marks and controller lines), for the
  * Replay Viewer the one controller model (controllerRosterFromFrame; the
- * Team Rosters strip names its teams from it, as the score strip does) and,
+ * Arena Frames and the scorebug name its teams from it) and,
  * for the Replay Viewer in Agent POV only, the researcher scene view (its
  * docked full record). The product comes from frame.product_kind ("replay_viewer", otherwise
  * "combat_debugger", which includes the DevClient). Pure; the returned

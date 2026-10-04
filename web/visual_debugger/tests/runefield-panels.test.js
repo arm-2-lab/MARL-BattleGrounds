@@ -2,8 +2,9 @@
  * @file Check the V5 docked panel rules in src/panels.js: actions in words
  * (describeRecordedAction: "Moves Northwest", "Stays", the class's Basic or
  * Ultimate name, "No Combat", "Itself", the recorded codes) with the movement
- * fallback pinned to core/axis_mappings.py; panelDisplayStyle (Panel Tokens,
- * Ledger Heraldry and Actions In Words, shipped defaults on bad input); the
+ * fallback pinned to core/axis_mappings.py; panelDisplayStyle (Panel Tokens
+ * alone decides chips in every client, shipped defaults on bad input; actions
+ * always read in words, so it has no action style); the
  * Full Record chip only in Replay Viewer Agent POV; and the BattleClient Agent
  * POV boundary: an unseen champion's roster row reads "Unseen" with no life,
  * status or modifier (a seen row shows the shared Life bar, "Life" and
@@ -245,28 +246,19 @@ test("recorded actions read in words over their codes", () => {
   assert.equal(unmapped.ability, "Serrated Arrows");
 });
 
-test("panel style follows its switches and falls back to the defaults", async () => {
+test("panel style follows Panel Tokens and falls back to the defaults", async () => {
   const replay = await presentation("replay_oracle");
   const live = await presentation("live_oracle");
-  assert.deepEqual(panelDisplayStyle(replay), { tokens: true, words: true });
+  assert.deepEqual(panelDisplayStyle(replay), { tokens: true });
+  assert.deepEqual(panelDisplayStyle(live), { tokens: true });
   const plain = setVisualFilterEnabled(
-    setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "ledger_heraldry", false),
-    "plain_actions",
+    DEFAULT_VISUAL_FILTER_STATE,
+    "panel_tokens",
     false,
   );
-  assert.deepEqual(panelDisplayStyle(replay, plain), { tokens: false, words: false });
-  assert.deepEqual(panelDisplayStyle(live, plain), { tokens: true, words: true });
-  assert.deepEqual(
-    panelDisplayStyle(
-      live,
-      setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "panel_tokens", false),
-    ),
-    { tokens: false, words: true },
-  );
-  assert.deepEqual(panelDisplayStyle(replay, { broken: true }), {
-    tokens: true,
-    words: true,
-  });
+  assert.deepEqual(panelDisplayStyle(replay, plain), { tokens: false });
+  assert.deepEqual(panelDisplayStyle(live, plain), { tokens: false });
+  assert.deepEqual(panelDisplayStyle(replay, { broken: true }), { tokens: true });
 });
 
 test("only the Replay Viewer's Agent POV panels carry the Full Record chip", async () => {

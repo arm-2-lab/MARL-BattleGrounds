@@ -10,7 +10,8 @@ properties and requires every field except named historical additions, the
 scene's optional ``team_sight`` (the live Agent POV merged sight; an Oracle
 scene carries it as null) and the frame's optional host facts
 ``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
-Honors) and ``match_moments`` (the Herald Cards history).
+Honors), ``match_moments`` (the Herald Cards history), ``next_end_spots``
+(the Next Step Ghost) and ``recent_falls`` (the Fallen panel history).
 """
 
 from __future__ import annotations
@@ -1135,11 +1136,14 @@ def test_every_nested_wire_object_forbids_additional_properties() -> None:
             name
         )
     # The host facts are the frame's optional fields: Champion Streaks, the
-    # game-over Honors and the Herald Cards history.
+    # game-over Honors, the Herald Cards history, and on replay frames the
+    # Next Step Ghost spots and the Fallen panel history.
     assert set(cast(dict[str, object], schema["properties"])) - {
         "champion_streaks",
         "match_honors",
         "match_moments",
+        "next_end_spots",
+        "recent_falls",
     } == set(cast(list[str], schema["required"]))
 
 

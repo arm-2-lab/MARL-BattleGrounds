@@ -86,6 +86,9 @@ def test_replay_viewer_serves_the_checkout_page(
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             pass
 
+        def prepare_agent_pov(self) -> bool:
+            return True
+
     def forbidden(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("A checkout page needs no package extraction.")
 

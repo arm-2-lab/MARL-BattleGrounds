@@ -3,8 +3,13 @@
  * rows (src/metrics-panel.js): subject chips come only from the catalog's own
  * IDs and never change which rows, labels, units, values, tooltips or CSV
  * names appear (the before-and-after inventory stays identical, with or
- * without chips); Ledger Heraldry off gives plain host text; the rail builds
- * five tabs, moves today's cards into their panels by ID, keeps live regions
+ * without chips); with no agent list every subject is plain host text with no
+ * chip; the rail builds
+ * six tabs (Roster, Agent, Metrics, Actions, Visuals, Frame), each with its
+ * registered hover help, moves today's
+ * cards into their panels by ID (the roster into Roster, the Champion Frame
+ * into Agent while the long agent details card stays out of the rail, the
+ * Technical Frame and the Replay File facts into Frame), keeps live regions
  * out of hidden tabs, opens the Metrics card only while its tab is shown and
  * moves with Left, Right, Home and End; the Scope and View switches mirror the
  * native selects and fire their change events; the Technical Frame sorts its
@@ -211,7 +216,9 @@ function inspectorPage() {
   add(doc, rail, "div", "replay-rail-tabs").hidden = true;
   for (const tab of LEDGER_TABS) add(doc, rail, "section", tab.panelId).hidden = true;
   add(doc, aside, "details", "roster-details");
+  add(doc, aside, "section", "champion-frame");
   add(doc, aside, "details", "agent-details");
+  add(doc, aside, "div", "replay-details");
   const metrics = add(doc, aside, "details", "evaluation-metrics");
   add(doc, metrics, "summary").textContent = "TDM Evaluation Metrics";
   const body = add(doc, metrics, "div");
@@ -403,10 +410,8 @@ test("subject chips come only from the catalog's own IDs", () => {
 test("the ledger look keeps every row, value, tooltip and CSV name of the table", () => {
   const plain = renderRows({});
   const chips = renderRows({ agents });
-  const off = renderRows({ agents, heraldry: false });
   const expected = inventory(plain.container);
   assert.deepEqual(inventory(chips.container), expected);
-  assert.deepEqual(inventory(off.container), expected);
   assert.equal(
     chips.description.textContent,
     "Damage done. 5 of 6 measurements available.",
@@ -458,11 +463,11 @@ test("the ledger look keeps every row, value, tooltip and CSV name of the table"
     "Agent 0↔Agent 1",
   );
   assert.equal(cell(chips.container, "episode_length").textContent, "Episode");
-  assert.equal(cell(off.container, "team_b_damage").textContent, "Team B");
-  assert.equal(cell(off.container, "team_b_damage").children.length, 0);
+  assert.equal(cell(plain.container, "team_b_damage").textContent, "Team B");
+  assert.equal(cell(plain.container, "team_b_damage").children.length, 0);
 });
 
-test("the rail builds five tabs, moves the cards and keeps live regions shown", () => {
+test("the rail builds six tabs, moves the cards and keeps live regions shown", () => {
   const doc = inspectorPage();
   const rail = mountLedgerRail(doc);
   assert.ok(rail);
@@ -471,8 +476,13 @@ test("the rail builds five tabs, moves the cards and keeps live regions shown", 
   assert.equal(tabs.getAttribute("role"), "tablist");
   assert.deepEqual(
     tabs.children.map((/** @type {any} */ button) => button.textContent),
-    ["Agent", "Metrics", "Actions", "Visuals", "Frame"],
+    ["Roster", "Agent", "Metrics", "Actions", "Visuals", "Frame"],
   );
+  // Each tab button carries its registered hover help.
+  tabs.children.forEach((/** @type {any} */ button, /** @type {number} */ index) => {
+    assert.equal(button.getAttribute("aria-description"), LEDGER_TABS[index].help);
+    assert.equal(button.getAttribute("data-tooltip-owner"), "");
+  });
   assert.equal(doc.getElementById("replay-rail").hidden, false);
   for (const tab of LEDGER_TABS) {
     const panel = doc.getElementById(tab.panelId);
@@ -483,7 +493,6 @@ test("the rail builds five tabs, moves the cards and keeps live regions shown", 
       assert.equal(doc.getElementById(id).parentElement, panel, id);
     }
   }
-  assert.equal(doc.getElementById("roster-details").parentElement.tagName, "ASIDE");
   const announcement = doc.getElementById("accepted-announcement");
   assert.equal(announcement.parentElement.className, "ledger-rail__live");
   assert.equal(announcement.parentElement.parentElement.id, "replay-rail");
@@ -491,20 +500,29 @@ test("the rail builds five tabs, moves the cards and keeps live regions shown", 
   assert.equal(rail.activeTab(), "agent");
   assert.equal(doc.getElementById("replay-rail-agent").hidden, false);
   assert.equal(doc.getElementById("replay-rail-metrics").hidden, true);
-  assert.equal(doc.getElementById("agent-details").open, true);
+  // The long agent details card no longer moves into the Agent tab.
+  assert.equal(doc.getElementById("agent-details").parentElement.tagName, "ASIDE");
+  assert.equal(
+    doc.getElementById("champion-frame").parentElement.id,
+    "replay-rail-agent",
+  );
+  assert.equal(
+    doc.getElementById("replay-details").parentElement.id,
+    "replay-rail-frame",
+  );
   assert.equal(doc.getElementById("evaluation-metrics").open, false);
-  tabs.children[1].click();
+  tabs.children[2].click();
   assert.equal(rail.activeTab(), "metrics");
   assert.equal(doc.getElementById("evaluation-metrics").open, true);
-  assert.equal(tabs.children[1].getAttribute("aria-selected"), "true");
-  assert.equal(tabs.children[1].tabIndex, 0);
-  assert.equal(tabs.children[0].tabIndex, -1);
+  assert.equal(tabs.children[2].getAttribute("aria-selected"), "true");
+  assert.equal(tabs.children[2].tabIndex, 0);
+  assert.equal(tabs.children[1].tabIndex, -1);
   for (const [key, expected] of [
     ["ArrowRight", "actions"],
     ["End", "frame"],
-    ["ArrowRight", "agent"],
+    ["ArrowRight", "roster"],
     ["ArrowLeft", "frame"],
-    ["Home", "agent"],
+    ["Home", "roster"],
   ]) {
     tabs.dispatchEvent({ type: "keydown", key, preventDefault() {} });
     assert.equal(rail.activeTab(), expected, key);
@@ -666,7 +684,7 @@ test("the Full Record chip shows only in Agent POV and names the POV agent", asy
   const chips = LEDGER_TABS.map((tab) => doc.getElementById(tab.panelId).children[0]);
   assert.deepEqual(
     chips.map((node) => node.className === "ledger-full-record" && !node.hidden),
-    [true, true, true, false, true],
+    [true, true, true, true, false, true],
   );
   assert.equal(chips[1].textContent, chip.text);
   assert.equal(chips[1].getAttribute("aria-description"), chip.tooltip);

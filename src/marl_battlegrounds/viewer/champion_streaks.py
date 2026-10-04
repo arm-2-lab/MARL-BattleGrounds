@@ -37,6 +37,13 @@ The rule, per view (one "audience"):
   (an ``ability_activated`` row), the same killers the Agent POV Fallen feed
   names. Only a fall the team saw resets a count.
 
+The same per-tick takedowns also feed the Fallen panel's earlier rows
+(``recent_falls_v1``, the presentation field ``recent_falls``): each fall
+with its killers, its points (2 for a home fall, else 1) and the damaging
+Ultimate caster, so the browser never keeps that history itself. A tick's
+TickTakedownsV1 carries the extra facts for it (``ultimates`` and
+``home_falls``).
+
 Everything is plain Python on small integers: no JAX, file, network or
 simulator work.
 """
@@ -44,18 +51,21 @@ simulator work.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Final, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
 from marl_battlegrounds.evaluation.models import (
+    AbilityActivatedEventV1,
     AgentDiedEventV1,
     LethalDamageContributionEventV1,
 )
 from marl_battlegrounds.evaluation.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.rendering.scene import (
+    AbilityActivatedEventV2,
     AgentDiedEventV2,
     LethalDamageContributionEventV2,
 )
@@ -89,6 +99,11 @@ heals."""
 
 ZERO_COUNTS: Final[tuple[int, ...]] = (0,) * SLOT_COUNT
 """Counts before any takedown: one 0 per global slot."""
+
+FEED_WINDOW_TICKS: Final = 8
+"""The Fallen panel lists the falls of this many ticks: the shown tick and the
+7 before it. Must equal FEED_WINDOW_TICKS in web/visual_debugger/src/looks/
+requiems.js."""
 
 
 class ChampionStreakV1(BaseModel):
@@ -142,6 +157,16 @@ class TickTakedownsV1:
         (source, fallen) global-slot pairs: the source took part in that
         fall. Every fallen slot is in ``falls``; source and fallen champion
         are on opposite teams.
+    ultimates : frozenset of (int, int), default empty
+        (caster, fallen) pairs: the first damaging Ultimate (Charge, Freezing
+        Trap or Crippling Poison) that struck that fallen champion on the
+        tick, in event order, at most one per fall. Each pair is also in
+        ``takedowns``. Empty when only Basics did it, and for producers that
+        do not read Ultimates.
+    home_falls : frozenset of int or None, default None
+        The fallen slots whose fall scored 2 points (a fall in its own Red
+        Zone), a subset of ``falls``; the rest scored 1. None means unknown
+        (the producer did not read it), and the points are then unknown too.
 
     Raises
     ------
@@ -149,17 +174,30 @@ class TickTakedownsV1:
         A slot is not a Python int or a field has the wrong container.
     ValueError
         A slot is outside 0-9, a takedown names a fall that is not in
-        ``falls``, or a champion takes down itself.
+        ``falls``, a champion takes down itself, an Ultimate pair is not a
+        takedown or repeats a fall, or a home fall is not in ``falls``.
     """
 
     falls: frozenset[int]
     takedowns: frozenset[tuple[int, int]]
+    ultimates: frozenset[tuple[int, int]] = frozenset()
+    home_falls: frozenset[int] | None = None
 
     def __post_init__(self) -> None:
         """Check slot ranges and that every takedown joins a fall in ``falls``."""
-        if type(self.falls) is not frozenset or type(self.takedowns) is not frozenset:
+        if (
+            type(self.falls) is not frozenset
+            or type(self.takedowns) is not frozenset
+            or type(self.ultimates) is not frozenset
+            or (self.home_falls is not None and type(self.home_falls) is not frozenset)
+        ):
             raise TypeError("tick takedowns must hold frozensets")
-        slots = (*self.falls, *(slot for pair in self.takedowns for slot in pair))
+        slots = (
+            *self.falls,
+            *(slot for pair in self.takedowns for slot in pair),
+            *(slot for pair in self.ultimates for slot in pair),
+            *(self.home_falls or ()),
+        )
         if any(type(slot) is not int for slot in slots):
             raise TypeError("tick takedown slots must be Python ints")
         if any(not 0 <= slot < SLOT_COUNT for slot in slots):
@@ -167,6 +205,13 @@ class TickTakedownsV1:
         for source, fallen in self.takedowns:
             if fallen not in self.falls or source == fallen:
                 raise ValueError("a takedown must join another champion's fall")
+        fallen_by_ultimate = [fallen for _caster, fallen in self.ultimates]
+        if not self.ultimates <= self.takedowns or len(set(fallen_by_ultimate)) != len(
+            fallen_by_ultimate
+        ):
+            raise ValueError("an Ultimate must be one takedown per fall")
+        if self.home_falls is not None and not self.home_falls <= self.falls:
+            raise ValueError("a home fall must be a fall of the tick")
 
 
 NO_TAKEDOWNS: Final = TickTakedownsV1(falls=frozenset(), takedowns=frozenset())
@@ -174,29 +219,41 @@ NO_TAKEDOWNS: Final = TickTakedownsV1(falls=frozenset(), takedowns=frozenset())
 
 
 def oracle_tick_takedowns_v1(
-    context: EvaluationEpisodeContext, events: Iterable[object]
+    context: EvaluationEpisodeContext,
+    events: Iterable[object],
+    *,
+    start_positions: Sequence[Sequence[float]] | None = None,
 ) -> TickTakedownsV1:
     """Read Oracle View's falls and takedowns from one transition's recorded events.
 
     Parameters
     ----------
     context : EvaluationEpisodeContext
-        The recorded episode context; its roster gives each slot's team.
+        The recorded episode context; its roster gives each slot's team and
+        class.
     events : iterable of object
         The recorded events of one transition: evaluation events (live
         ``EvaluationTransitionV1.events`` or a replay's) or the events of a
-        canonical visual batch. Only agent_died and lethal_damage_contribution
-        events (V1 or V2) are read; others are ignored.
+        canonical visual batch. Only agent_died, lethal_damage_contribution
+        and ability_activated events (V1 or V2) are read; others are ignored.
+    start_positions : sequence of (x, y) or None, optional, keyword-only
+        Every global slot's position at the transition start (usually the
+        start frame's ``snapshot.agent_positions``), for the home-fall rule
+        (``evaluation.events.team_deathmatch_home_fall_slots_v1``). None (the
+        default) leaves ``home_falls`` None (points unknown).
 
     Returns
     -------
     TickTakedownsV1
-        Every recorded fall, and every (source, fallen) pair from a lethal
-        damage contribution on an opposing champion that fell this tick.
+        Every recorded fall; every (source, fallen) pair from a lethal damage
+        contribution on an opposing champion that fell this tick; for each
+        fall, the first damaging Ultimate on it (in event order) whose caster
+        is one of those contributors (the browser's Fallen feed and Ultimate
+        Takedown rule); and the home falls when start_positions is given.
 
     Notes
     -----
-    Pure; reads the events only.
+    Pure; reads the events, the roster and the given positions only.
     """
     rows = tuple(events)
     falls = frozenset(
@@ -213,7 +270,34 @@ def oracle_tick_takedowns_v1(
         and event.recipient_global_slot in falls
         and _opposing(context, event.source_global_slot, event.recipient_global_slot)
     )
-    return TickTakedownsV1(falls=falls, takedowns=takedowns)
+    ultimates: dict[int, int] = {}
+    for event in rows:
+        if (
+            isinstance(event, (AbilityActivatedEventV1, AbilityActivatedEventV2))
+            and event.ability_component == "ultimate"
+            and event.recipient_global_slot is not None
+            and event.recipient_global_slot not in ultimates
+            and (event.source_global_slot, event.recipient_global_slot) in takedowns
+            and context.roster[event.source_global_slot].class_id
+            in DAMAGING_ULTIMATE_CLASS_IDS
+        ):
+            ultimates[event.recipient_global_slot] = event.source_global_slot
+    home_falls = (
+        None
+        if start_positions is None
+        else team_deathmatch_home_fall_slots_v1(
+            context,
+            start_positions,
+            tuple(slot in falls for slot in range(SLOT_COUNT)),
+        )
+        & falls
+    )
+    return TickTakedownsV1(
+        falls=falls,
+        takedowns=takedowns,
+        ultimates=frozenset((caster, fallen) for fallen, caster in ultimates.items()),
+        home_falls=home_falls,
+    )
 
 
 def agent_pov_tick_takedowns_v1(
@@ -241,6 +325,9 @@ def agent_pov_tick_takedowns_v1(
         champion (``ability_activated`` rows, whose source the team saw at
         the start of the tick). A Basic is damaging unless its source is a
         Priest; an Ultimate is damaging for ``DAMAGING_ULTIMATE_CLASS_IDS``.
+        ``ultimates`` names, per fall, the first damaging Ultimate on it in
+        event order; ``home_falls`` holds the seen falls whose row carries
+        home_fall True (a seen fall always carries the flag).
 
     Notes
     -----
@@ -257,22 +344,36 @@ def agent_pov_tick_takedowns_v1(
         for event in visual_events.events
         if event.event_kind == "agent_died"
     )
+    home_falls = frozenset(
+        slot_by_public_id[event.recipient_anchor.public_agent_id]
+        for event in visual_events.events
+        if event.event_kind == "agent_died" and getattr(event, "home_fall", False)
+    )
     takedowns: set[tuple[int, int]] = set()
+    ultimates: dict[int, int] = {}
     for event in visual_events.events:
         if event.event_kind != "ability_activated" or event.recipient_anchor is None:
             continue
         source_id = event.source_anchor.public_agent_id
         fallen = slot_by_public_id[event.recipient_anchor.public_agent_id]
         class_id = class_by_public_id[source_id]
+        ultimate = event.ability_component == "ultimate"
         damaging = (
             class_id in DAMAGING_ULTIMATE_CLASS_IDS
-            if event.ability_component == "ultimate"
+            if ultimate
             else class_id != PRIEST_CLASS_ID
         )
         source = slot_by_public_id[source_id]
         if damaging and fallen in falls and _opposing(context, source, fallen):
             takedowns.add((source, fallen))
-    return TickTakedownsV1(falls=falls, takedowns=frozenset(takedowns))
+            if ultimate and fallen not in ultimates:
+                ultimates[fallen] = source
+    return TickTakedownsV1(
+        falls=falls,
+        takedowns=frozenset(takedowns),
+        ultimates=frozenset((caster, fallen) for fallen, caster in ultimates.items()),
+        home_falls=home_falls,
+    )
 
 
 def advance_takedown_counts_v1(
@@ -507,6 +608,126 @@ class ChampionTakedownsV1:
         return champion_streaks_v1(context, reached)
 
 
+class RecentFallV1(BaseModel):
+    """One fall of an earlier tick still inside the Fallen panel's window.
+
+    The presentation field ``recent_falls`` carries these for the ticks
+    before the shown one, so the panel shows the same rows after a seek, a
+    reload or a view switch as after playing up to the tick. The shown tick's
+    own falls come from the browser's plan, which times them to the Fall beat.
+
+    Attributes
+    ----------
+    tick : int
+        The simulator tick of the frame the fall reached (the frame's
+        ``simulator_step_count``), 0 or more.
+    victim_public_agent_id : str
+        The fallen champion's public ID.
+    killer_public_agent_ids : tuple of str
+        The champions this view credits with the fall, by global slot: Oracle
+        View the lethal damage contributors; Agent POV only those whose
+        damaging blow the team saw land (a source seen at the start of the
+        tick, including one that then left sight). Empty when nobody is
+        named. An old recording with no lethal damage contribution events
+        names nobody here (the browser's plan falls back to the match
+        summary only for the shown tick).
+    points : {1, 2} or None
+        2 for a home fall (in the fallen champion's own Red Zone), else 1;
+        None when unknown.
+    ultimate_public_agent_id : str or None
+        The caster of the first damaging Ultimate that struck the fallen
+        champion on that tick (one of the killers), or None when only Basics
+        did it.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        A field is outside its values, a killer repeats or is the victim, or
+        the Ultimate caster is not a killer.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    tick: Annotated[int, Field(ge=0)]
+    victim_public_agent_id: Annotated[str, Field(min_length=1)]
+    killer_public_agent_ids: tuple[Annotated[str, Field(min_length=1)], ...]
+    points: Literal[1, 2] | None
+    ultimate_public_agent_id: Annotated[str, Field(min_length=1)] | None
+
+    @field_validator("killer_public_agent_ids")
+    @classmethod
+    def _unique_killers(cls, killers: tuple[str, ...]) -> tuple[str, ...]:
+        """Accept each killer once; return the tuple unchanged."""
+        if len(set(killers)) != len(killers):
+            raise ValueError("a recent fall names each killer once")
+        return killers
+
+    @model_validator(mode="after")
+    def _join_killers(self) -> Self:
+        """Require the victim to be no killer and the caster to be a killer."""
+        if self.victim_public_agent_id in self.killer_public_agent_ids or (
+            self.ultimate_public_agent_id is not None
+            and self.ultimate_public_agent_id not in self.killer_public_agent_ids
+        ):
+            raise ValueError("a recent fall's killers and caster do not join")
+        return self
+
+
+def recent_falls_v1(
+    context: EvaluationEpisodeContext,
+    ticks: Sequence[tuple[int, TickTakedownsV1]],
+) -> tuple[RecentFallV1, ...]:
+    """Turn one view's earlier ticks into the ``recent_falls`` field's records.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        The recorded episode context; its roster maps global slots to public
+        IDs.
+    ticks : sequence of (int, TickTakedownsV1)
+        (tick, what this view saw on it) for the ticks to list, oldest first:
+        the caller passes the ticks before the shown one still inside the
+        window (shown tick - FEED_WINDOW_TICKS + 1 to shown tick - 1).
+
+    Returns
+    -------
+    tuple of RecentFallV1
+        One record per fall, by tick, then by the fallen champion's global
+        slot. Killers are in global slot order. points come from
+        ``home_falls`` (None when it is None). Empty when no tick had a fall.
+
+    Notes
+    -----
+    Pure. The view's rules (Oracle View or Agent POV) are already in each
+    TickTakedownsV1 (``oracle_tick_takedowns_v1`` or
+    ``agent_pov_tick_takedowns_v1``), so this adds no rule of its own.
+    """
+    public_by_slot = {row.global_slot: row.public_agent_id for row in context.roster}
+    rows: list[RecentFallV1] = []
+    for tick, takedowns in ticks:
+        caster_by_fallen = {fallen: caster for caster, fallen in takedowns.ultimates}
+        for fallen in sorted(takedowns.falls):
+            killers = sorted(
+                source for source, victim in takedowns.takedowns if victim == fallen
+            )
+            caster = caster_by_fallen.get(fallen)
+            home = takedowns.home_falls
+            rows.append(
+                RecentFallV1(
+                    tick=tick,
+                    victim_public_agent_id=public_by_slot[fallen],
+                    killer_public_agent_ids=tuple(
+                        public_by_slot[slot] for slot in killers
+                    ),
+                    points=None if home is None else 2 if fallen in home else 1,
+                    ultimate_public_agent_id=(
+                        None if caster is None else public_by_slot[caster]
+                    ),
+                )
+            )
+    return tuple(rows)
+
+
 def _opposing(context: EvaluationEpisodeContext, source: int, fallen: int) -> bool:
     """Return whether two global slots are on different configured teams."""
     return (
@@ -528,14 +749,17 @@ def _require_counts(counts: object) -> None:
 
 __all__ = [
     "DAMAGING_ULTIMATE_CLASS_IDS",
+    "FEED_WINDOW_TICKS",
     "NO_TAKEDOWNS",
     "STREAK_EVERY",
     "ZERO_COUNTS",
     "ChampionStreakV1",
     "ChampionTakedownsV1",
+    "RecentFallV1",
     "TickTakedownsV1",
     "advance_takedown_counts_v1",
     "agent_pov_tick_takedowns_v1",
     "champion_streaks_v1",
     "oracle_tick_takedowns_v1",
+    "recent_falls_v1",
 ]

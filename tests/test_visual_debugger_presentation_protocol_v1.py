@@ -1726,20 +1726,28 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         },
         # The Champion Streaks host fact and the game-over Honors host fact;
         # None from producers that do not count them and before game over.
+        # Replay frames add the Next Step Ghost spots and the Fallen panel
+        # history; None from producers that do not send them.
         "root.$defs.ReplayOracleAuthorizedPresentationFrameV1": {
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "next_end_spots",
+            "recent_falls",
         },
         "root.$defs.ReplayNoSharedObsAuthorizedPresentationFrameV1": {
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "next_end_spots",
+            "recent_falls",
         },
         "root.$defs.ReplaySharedObsAuthorizedPresentationFrameV1": {
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "next_end_spots",
+            "recent_falls",
         },
         "root.$defs.MatchSummaryV1": {
             "deaths",

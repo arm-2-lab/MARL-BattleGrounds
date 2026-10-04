@@ -5520,6 +5520,90 @@ function validateChampionStreaks(frame, oracle) {
 }
 
 /**
+ * Check the Next Step Ghost host fact (next_end_spots) of a replay frame, as the
+ * Python protocol does: where each champion of this frame's own view stands at
+ * the end of the recorded next tick. The schema has already checked each
+ * record's types (a public ID and a finite world position); an absent or null
+ * field (live frames, older producers) passes. Each champion must be named once
+ * and be alive in this frame's own current scene (current_endpoint.scene in Oracle
+ * View, current_endpoint.parts.scene in Agent POV), so an Agent POV frame can
+ * never name a champion its team does not see now, and the final replay frame
+ * must name nobody. The host owns the rest of the rule: in
+ * Agent POV it also drops a champion its team will not see at the next frame.
+ * Throws TypeError through invalid() otherwise. Pure check: no DOM, storage or
+ * timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @returns {void}
+ */
+function validateNextEndSpots(frame) {
+  const spots = frame.next_end_spots ?? null;
+  if (spots === null) return;
+  if (
+    spots.length > 0 &&
+    frame.source.source_frame_index === frame.source.source_final_frame_index
+  ) {
+    invalid("The final replay frame cannot carry next end spots.");
+  }
+  // Oracle View keeps its scene at current_endpoint.scene, Agent POV at
+  // current_endpoint.parts.scene.
+  const scene = frame.current_endpoint?.scene ?? frame.current_endpoint?.parts?.scene;
+  const alive = new Set(
+    (scene?.agents ?? [])
+      .filter(
+        (/** @type {Record<string, any>} */ agent) => agent.life_state === "alive",
+      )
+      .map((/** @type {Record<string, any>} */ agent) => agent.public_agent_id),
+  );
+  const names = spots.map(
+    (/** @type {Record<string, any>} */ spot) => spot.public_agent_id,
+  );
+  if (
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !alive.has(name))
+  ) {
+    invalid(
+      "Next end spots must name, once each, champions alive in this frame's own scene.",
+    );
+  }
+}
+
+/**
+ * Check the Fallen panel history host fact (recent_falls) of a replay frame, as
+ * the Python protocol does. The schema has already checked each record's types;
+ * an absent or null field (live frames, older producers) passes. Every row must
+ * fall on one of the 7 ticks before the shown one (source_simulator_step_count
+ * minus 7 to minus 1; FEED_WINDOW_TICKS is 8), and a victim may fall only once
+ * per tick. Who may be named in Agent POV is the host's rule
+ * (viewer/champion_streaks.py); a past tick's sight cannot be checked from this
+ * frame. Throws TypeError through invalid() otherwise. Pure check: no DOM,
+ * storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @returns {void}
+ */
+function validateRecentFalls(frame) {
+  const rows = frame.recent_falls ?? null;
+  if (rows === null) return;
+  const tick = frame.source.source_simulator_step_count;
+  const keys = rows.map(
+    (/** @type {Record<string, any>} */ row) =>
+      `${row.tick}:${row.victim_public_agent_id}`,
+  );
+  if (
+    new Set(keys).size !== keys.length ||
+    rows.some(
+      (/** @type {Record<string, any>} */ row) =>
+        !(row.tick < tick && row.tick > tick - 8),
+    )
+  ) {
+    invalid(
+      "Recent falls must lie in the 7 ticks before this one, each victim once per tick.",
+    );
+  }
+}
+
+/**
  * Check the game-over Honors host fact (match_honors) against this frame's own
  * view, as the Python protocol does. The schema has already checked its types;
  * an absent or null field means no Honors and passes. Oracle View must count
@@ -5752,6 +5836,8 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
   validateChampionStreaks(frame, semantic.oracle);
   validateMatchHonors(frame, semantic.oracle);
   validateMatchMoments(frame, semantic.oracle);
+  validateNextEndSpots(frame);
+  validateRecentFalls(frame);
   await Promise.all([
     verifyPresentationKeyDerivation(frame, semantic.presentationKeyPairs),
     verifyPresentationKeyPairs(

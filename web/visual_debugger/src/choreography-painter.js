@@ -386,7 +386,11 @@ export class SvgChoreographyPainter {
    * (defaults to layer), optional heraldLayer (defaults to layer), viewportKey and,
    * for the looks, optional lookTransform, visualFilters and scene (all of the
    * plan's audience). options supplies motionMode, renderPolicy, settled and
-   * persistentOnly; retainTransientOnSettle is honored only when initially settled.
+   * persistentOnly. retainTransientOnSettle true keeps transient event nodes when
+   * the installation settles: at once for a settled install (the replay Settled
+   * Still), or when the controller later settles an animated install (a played
+   * replay tick, so it ends like its Settled Still). Default false: transients
+   * are removed at settle (live play).
    *
    * Paint plan.events, then the held row carried from this audience's previous
    * tick (a held Herald Card; see carryFromEarlierTicks), then the drawn derived
@@ -586,14 +590,45 @@ export class SvgChoreographyPainter {
       carry,
       motionMode: options.motionMode,
       renderPolicy: options.renderPolicy,
-      retainTransientOnSettle:
-        options.settled && options.retainTransientOnSettle === true,
+      retainTransientOnSettle: options.retainTransientOnSettle === true,
     };
     if (options.settled) {
       this.settle(installation);
     }
     this.#tickMemory = memory;
     return installation;
+  }
+
+  /**
+   * Hand a settled played tick's cues over to a short fade-out at the next
+   * tick's start, and return the roots to fade.
+   *
+   * installation is the previous tick's installation (a played replay tick
+   * whose transients were retained at settle). Its herald root and every
+   * persistent event node (with connector and underlay) are removed at once,
+   * because the next tick's installation draws them again (a held Herald Card,
+   * a persistent mark), so nothing is doubled. The roots that still hold the
+   * retained cues (root, connector root, route root) stay in place and are
+   * returned for the caller to fade and then remove. Return a new array; the
+   * caller owns those roots from now on. DOM change only.
+   *
+   * @param {PainterInstallation} installation
+   * @returns {Element[]}
+   */
+  releaseForFade(installation) {
+    installation.heraldRoot?.remove();
+    for (const [eventId, record] of installation.eventNodes) {
+      if (record.group.dataset.persistent !== "true") continue;
+      record.group.remove();
+      record.connector?.remove();
+      record.underlay?.remove();
+      installation.eventNodes.delete(eventId);
+    }
+    return [
+      installation.root,
+      installation.connectorRoot,
+      installation.routeRoot,
+    ].filter((node) => node?.isConnected === true);
   }
 
   /**
@@ -617,9 +652,14 @@ export class SvgChoreographyPainter {
    * Mark this installation settled and remove its nonretained transient nodes.
    *
    * installation is the mutable result of install. Persistent events, or all events
-   * when retainTransientOnSettle is true, become fully opaque with settled metadata.
-   * Other event groups/connectors/underlays are removed from DOM and eventNodes.
-   * Return undefined; animation handles and original count/spec fields are unchanged.
+   * when retainTransientOnSettle is true, get settled metadata. They become fully
+   * opaque, except the transient events of a played replay tick
+   * (renderPolicy "replay_animated" with retainTransientOnSettle): those keep the
+   * opacity the tick left them at, so its end looks exactly as drawn (a held cue
+   * stays, a number that already faded stays faded) until the next tick's
+   * installation replaces this one. Other event groups/connectors/underlays are
+   * removed from DOM and eventNodes. Return undefined; animation handles and
+   * original count/spec fields are unchanged.
    *
    * @param {PainterInstallation} installation
    */
@@ -627,19 +667,21 @@ export class SvgChoreographyPainter {
     installation.root.dataset.state = "settled";
     installation.connectorRoot.dataset.state = "settled";
     installation.routeRoot.dataset.state = "settled";
+    const playedTick = installation.renderPolicy === "replay_animated";
     for (const [eventId, record] of installation.eventNodes) {
       const group = record.group;
       const persistent = group.dataset.persistent === "true";
       if (persistent || installation.retainTransientOnSettle) {
+        const opaque = persistent || !playedTick;
         group.dataset.settled = "true";
-        group.setAttribute("opacity", "1");
+        if (opaque) group.setAttribute("opacity", "1");
         if (record.connector) {
           record.connector.dataset.settled = "true";
-          record.connector.setAttribute("opacity", "1");
+          if (opaque) record.connector.setAttribute("opacity", "1");
         }
         if (record.underlay) {
           record.underlay.dataset.settled = "true";
-          record.underlay.setAttribute("opacity", "1");
+          if (opaque) record.underlay.setAttribute("opacity", "1");
         }
       } else {
         group.remove();
