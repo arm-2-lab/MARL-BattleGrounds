@@ -318,7 +318,10 @@ optional measurement parsing. Selected full reports and replays remain separate
 requests; their presence does not upgrade the whole run. Select them with logical
 `full_metrics_episodes` and `replay_episodes`, or use `save_replays=N` for the first
 N scheduled games. Conflicting selections fail. Missing reused replay/full
-coverage requires preparation or an explicit fresh run.
+coverage requires preparation or an explicit fresh run. A fresh run on a GPU may
+play a few games differently from earlier records of the same games. That is
+ordinary floating-point noise, not a simulator defect; see
+[Same Seed, Same Game](repeatability.md).
 
 Ratings are fitted jointly from all qualifying game records. Old Elo supplies
 no prior credit. The existing estimator, weighting and bootstrap rules remain

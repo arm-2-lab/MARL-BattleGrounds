@@ -461,6 +461,21 @@ run produce no capture. Automatic reset allocation may leave unused IDs, so a
 numeric range does not promise a particular number of completed games. Metrics
 consume authoritative transition facts without needing a replay or second game.
 
+### Recording, Metrics And Exact Repeats
+
+Choosing `metrics="none"`, `"priority"` or `"full"`, and recording replays or
+not, does not change which games are played. We checked this game by game on a
+7,200-game tournament with the GPU's run-to-run noise switched off. On a GPU, two separate runs can still disagree on a few
+percent of games that involve neural networks, because the GPU may round
+floating-point math slightly differently from run to run (XLA's
+[GPU determinism documentation](https://openxla.org/xla/determinism) describes
+why). This is ordinary noise, not a simulator defect: in that test it moved the median Elo by about 2
+points, several times less than choosing another seed. To watch the exact games
+of a run, record them in that run. For game-for-game repeats between runs, set
+`XLA_FLAGS=--xla_gpu_deterministic_ops=true`. See
+[Same Seed, Same Game](repeatability.md) for the measurements, the cause and
+the setting.
+
 ## Train and record
 
 The basic explicit-reset workflow needs no researcher-written spawn or ID logic:
@@ -1327,6 +1342,12 @@ identities. Opaque providers remain unknown. Resume and game reuse read verified
 facts belonging to the original games; missing or conflicting facts stay unknown.
 Facts are never guessed from a method name. Already completed historical summaries
 are returned with their original meaning and are not rewritten.
+
+A tournament run again on a GPU in normal mode may play a few games differently
+and move ratings by a few points. That run-to-run noise comes from GPU
+floating-point rounding, not from the simulator, and it is several times smaller
+than the effect of choosing another seed. [Same Seed, Same Game](repeatability.md)
+has the measurements and the setting for exact game-for-game repeats.
 
 These intervals describe repeated evaluation of fixed Systems. Variation between
 separately trained Systems uses whole training-run vectors, with shared seeds

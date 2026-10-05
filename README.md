@@ -452,6 +452,9 @@ require Matplotlib.
 - [Standard replay format](docs/evaluation/replay_format.md) defines the
   versioned semantic replay normal form, whole-artifact validation boundary,
   companion artifacts, and canonical bounded local persistence.
+- [Same seed, same game](docs/evaluation/repeatability.md) explains why two GPU
+  runs can differ in a few games, why that is ordinary floating-point noise and
+  not a simulator defect, and how to get exact game-for-game repeats.
 - [Dependency policy](docs/dev/dependency_policy.md) separates researcher
   runtime requirements from optional and contributor-only tooling.
 

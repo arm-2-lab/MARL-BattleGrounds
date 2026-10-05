@@ -82,6 +82,20 @@ existing target and syncs the directory. An error must not overwrite another
 artifact. Recovery uses the versioned prepared-byte contract; it does not grant
 permission to replace scientifically different content at the same path.
 
+### Recording Does Not Change The Game
+
+Recording itself does not change which game is played. With the GPU's
+run-to-run noise switched off, a tournament run that recorded replays played
+exactly the same 7,200 games as a run that recorded none. A saved replay is a
+fixed record and never changes when it is loaded. On a GPU in its normal mode, a
+separate run can still play a few games differently from an earlier run,
+recorded or not, because the GPU may round floating-point math slightly
+differently from run to run, as XLA's
+[GPU determinism documentation](https://openxla.org/xla/determinism) explains.
+This is ordinary noise, not a simulator defect. To watch the exact games of a run, record them in that run, or use XLA's
+deterministic GPU mode so a later run repeats them. See
+[Same Seed, Same Game](repeatability.md) for the measurements and the setting.
+
 ### Actor Inputs and Viewer Analysis
 
 Current records bind `EvaluationEpisodeContextV4` to `EvaluationFrameV3`

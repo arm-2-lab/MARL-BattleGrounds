@@ -700,6 +700,12 @@ selection implies the other. Finite integer iterables include `range(...)` and
 lists. Resolve selections before compiled transitions. Metric computation needs
 authoritative transition facts, not replay files.
 
+The metric mode does not change which games are played: in a game-by-game check
+of a 7,200-game tournament with the GPU's run-to-run noise switched off, metrics
+off, priority and full gave the same games and ratings. Two separate GPU runs can still differ in a few games because of
+floating-point rounding; [Same Seed, Same Game](repeatability.md) explains this
+noise and how to remove it.
+
 Priority records episode length; both teams' win/draw/loss indicators; canonical
 agent/team returns; Team A/B scores and A-minus-B difference; team kills/deaths.
 Team return de-broadcasts Core's per-agent team reward, so adding active teammates
