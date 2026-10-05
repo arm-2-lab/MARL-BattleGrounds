@@ -143,6 +143,7 @@ import {
   keyboardCommand,
   recordingCommandDecision,
   targetSelectionCommand,
+  WAITING_FOR_PLAYERS,
 } from "./controls.js";
 import { explainLegality } from "./explanations.js";
 import { createSvgIcon } from "./icons.js";
@@ -714,6 +715,24 @@ export function effectiveLane(draft) {
   if (record.armed_lane === "ultimate") return "ultimate";
   if (record.armed_lane === "basic" && Number(record.target_action) > 0) return "basic";
   return "none";
+}
+
+/**
+ * Return an ability name as the deck's Action slot shows it: a two-word name
+ * on two lines, one word per line ("Shield\nBash"), as the 86 px slot already
+ * wraps "Arcane Blast". So every class whose names fill two lines keeps the
+ * deck the same height, and the Warrior's "Shield Bash" no longer makes it
+ * shorter when you focus the Warrior. One word ("Charge") and three or more
+ * words ("Holy Word: Salvation", which wraps by itself) are returned
+ * unchanged. The slot's name element keeps the line break (CSS white-space:
+ * pre-line in styles/battleclient/deck.css).
+ *
+ * @param {string} name An ability name ("Arcane Blast", "Charge").
+ * @returns {string}
+ */
+export function stackedSlotName(name) {
+  const words = String(name).trim().split(/\s+/u);
+  return words.length === 2 ? words.join("\n") : String(name);
 }
 
 /**
@@ -1412,8 +1431,8 @@ export function howToPlayLines(input) {
  *
  * terminal: the new tick ended the game; then the sentence is the game-over
  * step for the replay's save state (gameOverStep(recording)), whoever played
- * the tick, so the Lock In or Run sentence ("Orders sent. The policies choose
- * next.") never outlives the game. mine: this page's own Lock In or Play One
+ * the tick, so the Lock In or Run sentence ("Waiting for all players to
+ * submit their actions…") never outlives the game. mine: this page's own Lock In or Play One
  * Turn played the tick. watchMode: Policies Only (nobody is yours). A tick
  * this page did not ask for (Run, another tab) before the end gives null.
  * Pure.
@@ -1442,7 +1461,9 @@ export function tickPlayedAnnouncement(input) {
  * is allowed now). At game over it says gameOverStep(recording). Once Exit
  * was accepted (closed) it says closedSentence(recording) ("The match is
  * closed. ..."), whatever else is true, because no control on the page works
- * any more.
+ * any more. While a turn waits for its actions (phase "sent" or "choosing")
+ * it starts with WAITING_FOR_PLAYERS and says the policies never see your
+ * orders.
  *
  * @param {{
  *   closed?: boolean,
@@ -1494,7 +1515,7 @@ export function doThisNow(input) {
   }
   if (input.phase === "sent" || input.phase === "choosing") {
     return step(
-      "The policies are choosing now, from what their own champions may see. They never see your orders.",
+      `${WAITING_FOR_PLAYERS} The policies choose from what their own champions may see. They never see your orders.`,
       null,
     );
   }
@@ -1676,7 +1697,9 @@ export function deckRefusal(input) {
 /**
  * Write the message-line sentence for an accepted order input, in the vision
  * page's words. The deck shows it at once, before the host answers; a host
- * refusal replaces it.
+ * refusal replaces it. Lock In (and Play One Turn in Policies Only) says
+ * WAITING_FOR_PLAYERS ("Waiting for all players to submit their actions…"),
+ * which stays until the turn plays.
  *
  * Pure.
  *
@@ -1702,9 +1725,7 @@ export function deckAnnouncement(input) {
       : `Step: ${MOVE_NAMES[intent.moveAction]}.`;
   }
   if (intent.kind === "lock") {
-    return input.watchMode
-      ? "Playing one turn."
-      : "Orders sent. The policies choose next.";
+    return WAITING_FOR_PLAYERS;
   }
   if (intent.kind === "clear") {
     if (!intent.viaKey) return "Target cleared.";
@@ -4861,9 +4882,9 @@ export function createTacticsTurn(context) {
         setText(tag, shown ?? "");
       }
     }
-    setText(parts.basicName, slots[1].name);
+    setText(parts.basicName, stackedSlotName(slots[1].name));
     setText(parts.basicSub, slots[1].sub);
-    setText(parts.ultName, slots[2].name);
+    setText(parts.ultName, stackedSlotName(slots[2].name));
     setText(parts.ultSub, slots[2].sub);
     setText(parts.ultReady, slots[2].ready ?? "");
     if (icons) {

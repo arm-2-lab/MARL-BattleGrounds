@@ -4,7 +4,10 @@
  * What it owns: CombatChoreographer installs painter-owned SVG, starts and stops
  * every Web Animation of a tick, and suppresses repeated live transitions with a
  * bounded optional storage ledger. Replay can animate a tick, show the settled
- * paused still, or glide one tick (replay_step). A played replay tick keeps its
+ * paused still, or step one tick (replay_step): a +1 plays its tick as Play
+ * does and then settles into the paused still; a -1 rewinds the tick (fallen
+ * champions rise where they fell, every body glides back, then the earlier
+ * frame's cues fade in), so nothing shows ahead of a champion. A played replay tick keeps its
  * cues, as drawn, after it settles; when the next played tick starts they fade
  * out over 160 ms (normal motion), so continuous play never shows a cue-less
  * still between ticks or a one-frame swap. A seek, a step or a view change
@@ -36,6 +39,19 @@
  *   data-beat-pulse="p" on an "after" node drawn at opacity 0 makes a flash instead:
  *   0 to p and back to 0 over the fade (normal motion only). A key with no beat in
  *   this plan (for example a death the Agent POV team did not see) gets no hold.
+ * - Glide riders: elements with data-glide-follow (a champion's presentation
+ *   key: its selection marks and reach rings, the live Command Ring, Order
+ *   Studs and Reach Marks) take that body's glide too, in a played tick and a
+ *   rewind, so they never wait at its landing spot; one that a repaint
+ *   replaced mid-glide joins the glide at its moment (#reattachRiders).
+ * - Landing waits: elements with data-landing-wait (presentation keys: the
+ *   what-comes-next marks, the Next Action Thread, All Staged Orders, Next Step
+ *   Ghost, the live Order Thread and Step Ghost) fade in once the bodies have
+ *   landed when one of those champions glides.
+ * - Rewind copies: a -1 puts inert copies (data-rewind-copy) of a rising
+ *   champion's corpse, an unreturning champion on its pad and the old Agent
+ *   POV veil back in the page to fade them out; they are removed when the
+ *   rewind ends or anything replaces it.
  * - Shiver nodes: elements with data-beat-shiver (pixels) and
  *   data-beat-shiver-at="impact" shake sideways once at Impact plus data-beat-delay
  *   over data-beat-fade ms (normal motion, playback below 1.5x).
@@ -97,9 +113,10 @@ const SHIVER_RATE_LIMIT = 1.5;
  * @typedef {"live_once" | "replay_animated" | "replay_static"} RenderPolicy
  * @typedef {RenderPolicy | "replay_step"} RenderRequest
  *   What a caller may ask presentFrame for. "replay_step" is the one-tick step
- *   intent: install the paused still (replay_static), glide each body 240 ms from
- *   where the previous frame showed it to its new END spot, fade the tick's cues in
- *   from 240 ms to 320 ms, then settle into the paused still.
+ *   intent: a +1 plays the new tick as replay_animated and then settles into the
+ *   paused still (replay_static); a -1 installs the paused still and rewinds the
+ *   tick on top of it (a rise, a 240 ms glide back, then the cues fade in over
+ *   80 ms), then settles.
  * @typedef {{
  *   element: Element,
  *   keyframes: Keyframe[] | PropertyIndexedKeyframes,
@@ -116,6 +133,7 @@ const SHIVER_RATE_LIMIT = 1.5;
  *   finish: () => void,
  *   cancel: () => void,
  *   updatePlaybackRate?: (rate: number) => void,
+ *   ready?: Promise<unknown>,
  * }} AnimationHandle
  * @typedef {{
  *   create: (spec: AnimationSpec) => AnimationHandle,
@@ -158,17 +176,38 @@ const SHIVER_RATE_LIMIT = 1.5;
  *   persistentNodeCount?: number,
  *   heldNodeCount?: number,
  *   heldPersistentNodeCount?: number,
+ *   eventNodes?: Map<string, {group: Element, event: Record<string, any>}>,
+ *   carry?: {heldRows?: ReadonlyArray<Record<string, any>>},
  * }} ChoreographyInstallation
  *   What the painter returns. root, routeRoot and connectorRoot (the last two
  *   optional) are the painter's groups that carry the plan's
  *   data-authorization-key. nodeCount and persistentNodeCount (checked
  *   against the plan's bounds) leave out held rows carried from the previous
  *   tick; heldNodeCount and heldPersistentNodeCount (optional, information
- *   only) count those held rows.
+ *   only) count those held rows. eventNodes (optional) maps each painted
+ *   event ID to its group and plan row, and carry.heldRows (optional) lists
+ *   the rows held from the tick before; the step cue fade reads both to fade
+ *   in this tick's Herald Cards and leave a held card alone.
  * @typedef {{
  *   getItem: (key: string) => string | null,
  *   setItem: (key: string, value: string) => void,
  * }} PresentationStorage
+ * @typedef {{
+ *   bodies: Map<string, {copy: Element, parent: Element | null, dead: boolean}>,
+ *   veil: Array<{copy: Element, parent: Element | null}>,
+ * }} StepSnapshot
+ *   Inert copies of the arena before a -1 step's frame was drawn
+ *   (takeStepSnapshot): each champion's glide wrapper by presentation key,
+ *   with the group it sat in and whether it was fallen, and each Agent POV
+ *   sight group (g.fog-sight) with the fog layer that holds it.
+ * @typedef {{
+ *   previousPlan: Record<string, any>,
+ *   carry: Map<string, readonly [number, number]>,
+ *   snapshot?: StepSnapshot | null,
+ * }} StepRequest
+ *   A -1 rewind: previousPlan is the plan shown before the step, carry where
+ *   running step glides drew each body, snapshot the copies taken before the
+ *   new frame was drawn (none for a planless step).
  */
 
 /**
@@ -319,11 +358,14 @@ export class BrowserAnimationFactory {
   }
 
   /**
-   * Create a timer animation whose two opacity values are both one.
+   * Create a timer animation that changes nothing on screen.
    *
    * element hosts the clock, duration is browser animation time in milliseconds,
-   * and id names it for inspection. Return the live Animation with fill both.
-   * Browser animation errors propagate; the caller owns its lifetime.
+   * and id names it for inspection. The clock has no keyframes, so it never
+   * paints: an earlier clock with opacity 1 sat on the painter's event root and,
+   * created after the step cue fade, overrode it, so a step showed its landings
+   * and numbers before the bodies landed. Return the live Animation with fill
+   * both. Browser animation errors propagate; the caller owns its lifetime.
    *
    * @param {Element} element
    * @param {number} duration
@@ -332,7 +374,7 @@ export class BrowserAnimationFactory {
   createClock(element, duration, id) {
     return this.create({
       element,
-      keyframes: [{ opacity: 1 }, { opacity: 1 }],
+      keyframes: [],
       options: { duration, fill: "both" },
       id,
     });
@@ -342,9 +384,10 @@ export class BrowserAnimationFactory {
 /**
  * Own one authorized combat explanation and its presentation clocks.
  *
- * The controller mutates only its painter installation under the supplied surface
- * and the temporary Web Animations overrides it puts on durable nodes (body glides,
- * beat holds, the step cue fade and the camera ease). It tracks pause, rate and
+ * The controller mutates only its painter installation under the supplied surface,
+ * the temporary Web Animations overrides it puts on durable nodes (body glides,
+ * beat holds, the step cue fade and the camera ease) and, during a -1 rewind, the
+ * inert copies it puts back in the page and removes again. It tracks pause, rate and
  * settlement and reports immutable state snapshots. New authority clears old nodes
  * and cancels every override (END shows) before installing replacements. It never
  * submits an action. Call dispose when the owner no longer needs the controller.
@@ -357,7 +400,7 @@ export class CombatChoreographer {
    * to buildChoreographyPlan, animationFactory to BrowserAnimationFactory, ledger to
    * a memory-only ConsumedTransitionLedger, and onStateChange to a no-op. planBuilder
    * always receives an installed policy: a replay_step request is planned as
-   * replay_static. motionMode defaults to normal and playbackRate to 1. Missing
+   * replay_static, and a +1 again as replay_animated. motionMode defaults to normal and playbackRate to 1. Missing
    * painter throws TypeError; unknown modes or unsupported rates throw RangeError. No
    * frame is installed yet.
    *
@@ -428,9 +471,73 @@ export class CombatChoreographer {
     /**
      * Running step glides, kept so a quick next step can start from where each
      * body is drawn (a smooth scrub) instead of jumping back to its last END spot.
-     * @type {Array<{presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, animation: AnimationHandle}>}
+     * delay is how long the glide waits (a rise first), in ms.
+     * @type {Array<{presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, delay: number, animation: AnimationHandle}>}
      */
     this.stepGlides = [];
+    /**
+     * Copies of the arena taken just before a -1 step's frame was drawn
+     * (captureStepSnapshot), or null: the champions and the visible Agent POV
+     * veil as the page showed them. The next presentFrame takes it (and drops
+     * it); a rewind puts some copies back in the page to fade them out.
+     * @type {StepSnapshot | null}
+     */
+    this.stepSnapshot = null;
+    /**
+     * The copies a running rewind put in the page; removed with its animations
+     * (#cancelAnimations), so none outlives the step.
+     * @type {Element[]}
+     */
+    this.rewindCopies = [];
+    /**
+     * The +1 step whose tick is playing now, or null: the frame and switch
+     * snapshot it was asked for, so the paused still can be built when the
+     * tick ends (#settleStepPlay). Any clear or new install ends it.
+     * @type {{frame: unknown, visualFilters: Record<string, boolean> | undefined} | null}
+     */
+    this.stepPlay = null;
+    /**
+     * Running body glides of this tick (played or step), each with its
+     * champion's presentation key and spec, so a mark that rides that champion
+     * and was replaced by a repaint mid-glide joins the glide at the same
+     * moment (#reattachRiders).
+     * @type {Array<{key: string, spec: AnimationSpec, animation: AnimationHandle}>}
+     */
+    this.glideSources = [];
+    /**
+     * The riding marks that already have their glide this tick.
+     * @type {WeakSet<Element>}
+     */
+    this.ridingElements = new WeakSet();
+    /**
+     * This tick's landing waits (#install, #startStepGlide): which champions
+     * glide, when they land and how long a mark takes to fade in, in ms; null
+     * when none. A what-comes-next mark a repaint replaced mid-tick gets its
+     * wait back from it (#reattachRiders).
+     * @type {{gliding: ReadonlySet<string>, at: number, fade: number, epochKey: string} | null}
+     */
+    this.waitPlan = null;
+    /**
+     * This rewind's rise (#startStepGlide): the champions whose life changes
+     * and how long the rise takes, in ms; null when none. A riding mark of such
+     * a champion that a repaint replaced mid-rise fades in with it again
+     * (#reattachRiders).
+     * @type {{keys: ReadonlySet<string>, riseMs: number, epochKey: string} | null}
+     */
+    this.risePlan = null;
+    /**
+     * The marks that already have their landing wait or rise fade this tick.
+     * @type {WeakSet<Element>}
+     */
+    this.fadingElements = new WeakSet();
+    /**
+     * The animations #reattachRiders added, with their mark, so the ones whose
+     * mark a later repaint replaced again are cancelled.
+     * @type {Array<{animation: AnimationHandle, element: Element}>}
+     */
+    this.rejoins = [];
+    /** How many animations #reattachRiders has made (unique id suffixes). */
+    this.rejoinCount = 0;
     /**
      * The previous played tick's kept cues, fading out at the next played tick's
      * start (#fadeOutCues): each root and its fade. Removed when the fade ends,
@@ -455,7 +562,8 @@ export class CombatChoreographer {
    *
    * The result includes active installation, animation count (painter animations,
    * overrides, clocks and a running camera ease), nullable plan identity, render
-   * policy (the installed one: a replay_step request reports replay_static), logical
+   * policy (the installed one: a -1 reports replay_static, a +1 replay_animated
+   * while its tick plays and replay_static once it settles), logical
    * milliseconds, motion mode, pause/rate and submission gate. It reports the last
    * captured logical time; it does not sample the clock itself.
    */
@@ -494,6 +602,27 @@ export class CombatChoreographer {
   }
 
   /**
+   * Copy the arena as it is now, just before a -1 step's frame is drawn.
+   *
+   * surface is the current choreography surface (its battlefield SVG), or
+   * null. main.js calls this right before the durable renderer draws the
+   * frame a -1 step lands on, because that render changes the champions in
+   * place and replaces the veil. The copies (takeStepSnapshot: each
+   * champion's glide wrapper with its life state, and the Agent POV sight
+   * group, all made inert) wait in this.stepSnapshot; the next
+   * presentFrame takes them, and only a rewind for the same audience puts
+   * any back in the page (to fade out a corpse that rises, a champion that
+   * leaves its pad, or the old veil). So in Agent POV a copy only ever shows
+   * what that audience was already shown. Return undefined; reads the DOM.
+   *
+   * @param {ChoreographySurface | null} surface
+   */
+  captureStepSnapshot(surface) {
+    const root = battlefieldRoot(surface);
+    this.stepSnapshot = root ? takeStepSnapshot(root) : null;
+  }
+
+  /**
    * Install or reconcile an already-authorized frame after durable rendering.
    *
    * frame is passed to the plan builder; surface supplies the transient SVG layer and
@@ -515,20 +644,29 @@ export class CombatChoreographer {
    *
    * Beat clock: a new tick cancels every running override, so the previous tick's
    * beats end at END. A played tick (live_once or replay_animated) glides bodies
-   * START to END and holds beat-timed nodes until their beat (see #install). A
-   * replay_step request on a new frame installs the paused still and glides each body
-   * that appears in both the previous and the new plan with the same audienceKey from
-   * where the previous frame showed it (its END spot, or where a still-running step
-   * glide has drawn it) to its new END spot. When the shown frame has no plan (a
-   * replay's first frame: no tick leads into it), a replay_step glides from the new
-   * tick's START spots instead, which are where that frame showed each body
-   * (stepSourceBefore); a replay_step onto such a frame (a -1 onto the first frame)
-   * clears, then glides each body back from the shown tick's END to its START spot
-   * (#startPlanlessStepGlide). A body unseen in either Agent POV scene,
-   * a death, a return or a change of audience or recipient snaps. A replay_step
-   * request for the frame already shown is the paused still. Invalid policy, plans,
-   * painter bounds or browser animations may throw; a policy-induced identity change
-   * throws Error.
+   * START to END and holds beat-timed nodes until their beat (see #install).
+   *
+   * A replay_step request (a one-tick move) depends on its direction:
+   * - +1 (one tick forward for the same audience, or from a frame with no plan,
+   *   motion not off, Step Glide on): the new tick plays exactly as Play plays it
+   *   (replay_animated, with no end hold), then settles into the paused still
+   *   (#settleStepPlay). Later still requests for the same frame (repaints)
+   *   let it play on; Play pressed meanwhile lets it finish as a played tick
+   *   (still without the end hold) that does not settle into the still. A
+   *   further step jumps the playing tick to its END and starts the next.
+   *   presentationControl.stepDirection "backward" (main.js passes the
+   *   playback intent's direction) never plays: a -1 from a frame with no
+   *   plan shows the still.
+   * - -1 (one tick back for the same audience): the paused still is installed
+   *   and the tick is rewound on top of it (#startStepGlide): fallen
+   *   champions rise first, then bodies glide back, then the cues fade in. It
+   *   uses the copies captureStepSnapshot took before the frame was drawn.
+   *   A -1 onto a replay's first frame (no plan) clears, then glides each body
+   *   back from the shown tick's END to its START spot (#startPlanlessStepGlide).
+   * A body unseen in either Agent POV scene or a change of audience or
+   * recipient snaps. A replay_step request for the frame already shown is the
+   * paused still. Invalid policy, plans, painter bounds or browser animations
+   * may throw; a policy-induced identity change throws Error.
    *
    * @param {unknown} frame
    * @param {ChoreographySurface | null} surface
@@ -536,6 +674,7 @@ export class CombatChoreographer {
    *   renderPolicy?: RenderRequest,
    *   visualFilters?: Record<string, boolean>,
    *   restartAnimated?: boolean,
+   *   stepDirection?: "forward" | "backward",
    * }} [presentationControl]
    */
   presentFrame(frame, surface, presentationControl = {}) {
@@ -543,16 +682,37 @@ export class CombatChoreographer {
       presentationControl.renderPolicy ?? "live_once",
     );
     const stepRequested = request === "replay_step";
-    const requestedPolicy = stepRequested ? "replay_static" : request;
-    const initialPolicy = requestedPolicy;
+    const stepSnapshot = stepRequested ? this.stepSnapshot : null;
+    this.stepSnapshot = null;
+    let requestedPolicy = stepRequested ? "replay_static" : request;
     let nextPlan = surface
       ? this.planBuilder(
           frame,
           surface,
           presentationControl.visualFilters,
-          initialPolicy,
+          requestedPolicy,
         )
       : null;
+    // A +1 step plays its tick as Play does, then settles into the paused
+    // still (#settleStepPlay); a -1 step rewinds (the step glide).
+    const stepPlays =
+      stepRequested &&
+      presentationControl.stepDirection !== "backward" &&
+      nextPlan !== null &&
+      surface !== null &&
+      this.motionMode !== "off" &&
+      nextPlan.beats?.stepGlide !== false &&
+      oneTickForward(this.plan, nextPlan);
+    if (stepPlays && surface) {
+      requestedPolicy = "replay_animated";
+      nextPlan = this.planBuilder(
+        frame,
+        surface,
+        presentationControl.visualFilters,
+        requestedPolicy,
+      );
+    }
+    const initialPolicy = requestedPolicy;
     if (!nextPlan || !surface) {
       // A -1 onto a replay's first frame (it has no plan): the bodies glide back
       // from the shown tick's END to its START spots, where that frame shows them.
@@ -562,6 +722,7 @@ export class CombatChoreographer {
       this.clear("absent_scene_or_event_batch");
       if (backFrom !== null && surface) {
         this.#startPlanlessStepGlide(backFrom, surface, carry);
+        this.#publish();
       }
       return this.snapshot();
     }
@@ -605,7 +766,15 @@ export class CombatChoreographer {
       }
       nextPlan = policyPlan;
     }
-    const samePolicy = this.renderPolicy === nextPolicy;
+    // While a +1 step plays its tick, the page asks again for the still it
+    // will settle into (any repaint); the tick keeps playing. Play pressed
+    // meanwhile makes it an ordinary played tick (no settle into the still).
+    const stepPlayRunning =
+      this.stepPlay !== null &&
+      !stepRequested &&
+      this.renderPolicy === "replay_animated" &&
+      (nextPolicy === "replay_static" || nextPolicy === "replay_animated");
+    const samePolicy = this.renderPolicy === nextPolicy || stepPlayRunning;
     // A new live server revision of the same tick for the same audience: only
     // the authority epoch (the server's frame revision) moved, for example when
     // policy work starts or ends. Same transition, same audience, same events
@@ -638,8 +807,17 @@ export class CombatChoreographer {
           node?.setAttribute?.("data-authorization-key", nextPlan.authorizationKey);
         }
       }
+      if (stepPlayRunning && request === "replay_animated") this.stepPlay = null;
+      if (this.renderPolicy !== nextPolicy && stepPlayRunning) {
+        // Keep the played plan the tick is running on.
+        this.surface = surface;
+        this.#reattachRiders(surface);
+        this.#publish();
+        return this.snapshot();
+      }
       this.plan = nextPlan;
       this.surface = surface;
+      this.#reattachRiders(surface);
       this.#publish();
       return this.snapshot();
     }
@@ -701,16 +879,20 @@ export class CombatChoreographer {
     this.#clearOwned("new_transition");
     this.plan = nextPlan;
     this.surface = surface;
-    // A replay's first frame has no plan (no tick leads into it), so a +1 from
-    // it glides from the new tick's START spots: where that frame showed them.
+    // A -1 rewinds from the plan shown before; a +1 plays its tick instead.
     const stepFrom =
-      stepRequested && nextPolicy === "replay_static"
-        ? (previousPlan ?? stepSourceBefore(nextPlan))
-        : null;
+      stepRequested && nextPolicy === "replay_static" ? previousPlan : null;
     this.#installForPolicy(nextPlan, surface, nextPolicy, {
       liveSafeRebuild: alreadyConsumed,
-      step: stepFrom !== null ? { previousPlan: stepFrom, carry } : null,
+      step:
+        stepFrom !== null
+          ? { previousPlan: stepFrom, carry, snapshot: stepSnapshot }
+          : null,
+      stepPlay: stepPlays,
     });
+    if (stepPlays && this.cleanupClock !== null) {
+      this.stepPlay = { frame, visualFilters: presentationControl.visualFilters };
+    }
     if (fadeFrom !== null) this.#fadeOutCues(fadeFrom, nextPlan.epochKey);
     if (nextPolicy === "live_once" && consumedFingerprint !== nextPlan.fingerprint) {
       this.ledger.record(nextPlan.epochKey, nextPlan.fingerprint);
@@ -785,8 +967,14 @@ export class CombatChoreographer {
       }
     }
     this.painter.reproject(this.installation, nextPlan, surface);
+    if (this.surface?.viewportKey !== surface.viewportKey) {
+      // A rewind's copies keep the old projection: drop them on a resize.
+      for (const copy of this.rewindCopies) copy.remove();
+      this.rewindCopies = [];
+    }
     this.plan = nextPlan;
     this.surface = surface;
+    this.#reattachRiders(surface);
     this.#publish();
     return this.snapshot();
   }
@@ -963,18 +1151,21 @@ export class CombatChoreographer {
    * played tick ends as drawn and its cues leave only when the next tick starts
    * (they fade out then when it is a played tick, see #fadeOutCues; live_once is
    * unchanged: its transients leave at settle);
-   * options.step (default null) adds the replay_step glide and cue fade on top of
-   * that still: {previousPlan, carry} where previousPlan is the plan shown before
-   * this frame and carry maps a presentation key to the world spot where a running
-   * step glide drew that body. Mutate controller installation state; return
-   * undefined. Installation errors propagate.
+   * options.step (default null) adds the -1 rewind on top of that still: a
+   * StepRequest (the plan shown before, where running step glides drew each
+   * body, and the copies taken before the frame was drawn). options.stepPlay (default false) marks a played
+   * tick that a +1 step started: it has no 600 ms end hold, because it settles
+   * into the paused still as soon as its last beat ends (#settleStepPlay).
+   * Mutate controller installation state; return undefined. Installation errors
+   * propagate.
    *
    * @param {Record<string, any>} plan
    * @param {ChoreographySurface} surface
    * @param {RenderPolicy} renderPolicy
    * @param {{
    *   liveSafeRebuild?: boolean,
-   *   step?: {previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>} | null,
+   *   step?: StepRequest | null,
+   *   stepPlay?: boolean,
    * }} [options]
    */
   #installForPolicy(plan, surface, renderPolicy, options = {}) {
@@ -996,6 +1187,7 @@ export class CombatChoreographer {
       renderPolicy,
       settled: liveSafeRebuild,
       persistentOnly: liveSafeRebuild,
+      endHold: options.stepPlay !== true,
       // A played replay tick ends like its Settled Still: when its cleanup
       // clock settles it, the tick's cues stay until the next tick replaces
       // the installation. Removing them there showed a cue-less still for the
@@ -1022,13 +1214,18 @@ export class CombatChoreographer {
    * (reduced motion scales the hold times by plan.beats.reducedScale). They are
    * counted against plan.bounds.overrideAnimations and the animation limit
    * (PLAN_RESOURCE_CAPS.animations, 1024); over
-   * the limit the extra holds are dropped (never the tick). Settled or
-   * persistent-only output has no overrides and no clocks, except the step glide.
+   * the limit the extra holds are dropped (never the tick). The marks that ride
+   * a gliding body, the landing waits (from 260 ms over BEAT_CLOCK.landingFade),
+   * the movement marks and the Agent POV veil's beats come after them, bounded
+   * by the animation limit only, so a busy tick's holds never crowd them out
+   * (they keep anything from showing ahead of a champion). Settled or
+   * persistent-only output has no overrides and no clocks, except a -1 rewind.
    *
    * Clocks: animated replay lasts its whole tick: the later of the event windows and
    * the beats (plan.beats.explanationEnd) plus the 600 ms end hold, so a tick with
    * Longer Tick lasts 1700 ms (3200 ms with a death); a plan without beats keeps the
-   * old total plus 600 ms. Normal motion gates submission until the 450 ms release
+   * old total plus 600 ms. options.endHold false (a tick a +1 step plays) leaves
+   * the end hold out. Normal motion gates submission until the 450 ms release
    * only when the painter animates events; a glide never gates it. Creation failures
    * cancel newly created handles, clear the installation and rethrow. Completion
    * handlers use generation checks so stale clocks cannot settle a later authority.
@@ -1044,7 +1241,8 @@ export class CombatChoreographer {
    *   settled: boolean,
    *   persistentOnly: boolean,
    *   retainTransientOnSettle?: boolean,
-   *   step?: {previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>} | null,
+   *   step?: StepRequest | null,
+   *   endHold?: boolean,
    * }} options
    */
   #install(plan, surface, options) {
@@ -1100,20 +1298,44 @@ export class CombatChoreographer {
       animationSpecs.length === 0 &&
       !settled &&
       !persistentOnly;
-    const overrides =
-      settled || persistentOnly || this.motionMode === "off"
-        ? []
-        : [
-            ...playedGlideSpecs(plan, surface, this.motionMode),
-            ...beatHoldSpecs(plan, surface, this.motionMode),
-            ...playedLookSpecs(
-              plan,
-              surface,
-              this.motionMode,
-              this.playbackRate,
-              options.renderPolicy,
-            ),
-          ];
+    const still = settled || persistentOnly || this.motionMode === "off";
+    /** @type {ReturnType<typeof playedGlideSpecs>} */
+    const played = still
+      ? { bodies: [], riders: [], keys: new Set(), sources: [] }
+      : playedGlideSpecs(plan, surface, this.motionMode);
+    /** @type {ReturnType<typeof playedLookSpecs>} */
+    const looks = still
+      ? { motion: [], accents: [] }
+      : playedLookSpecs(
+          plan,
+          surface,
+          this.motionMode,
+          this.playbackRate,
+          options.renderPolicy,
+        );
+    const playedRoot = battlefieldRoot(surface);
+    // What keeps a mark from showing early (the riders, the landing waits, the
+    // movement marks and the Agent POV veil's beats) is kept apart from the
+    // plan's override allowance and bounded by the animation limit only: a
+    // busy tick holds many durable nodes, and those holds must never crowd
+    // these out. They also depend on switches the allowance does not count.
+    const waitSpecs = playedRoot
+      ? landingWaitSpecs(
+          String(plan.epochKey),
+          playedRoot,
+          played.keys,
+          BEAT_CLOCK.glideEnd,
+          BEAT_CLOCK.landingFade,
+        )
+      : [];
+    const extraOverrides = [...played.riders, ...looks.motion];
+    const overrides = still
+      ? []
+      : [
+          ...played.bodies,
+          ...beatHoldSpecs(plan, surface, this.motionMode),
+          ...looks.accents,
+        ];
     const clockBudget =
       settled || persistentOnly
         ? 0
@@ -1138,11 +1360,23 @@ export class CombatChoreographer {
       this.painter.clear(installation, "animation_bound_exceeded");
       throw new RangeError("choreography painter exceeded the animation bound.");
     }
-    const keptOverrides = boundedOverrides(
+    const plannedOverrides = boundedOverrides(
       overrides,
       plan,
       MAX_ACTIVE_ANIMATIONS - activeAnimationCount,
     );
+    const room = Math.max(
+      0,
+      MAX_ACTIVE_ANIMATIONS - activeAnimationCount - plannedOverrides.length,
+    );
+    const keptWaits = waitSpecs.slice(0, room);
+    // The waits are created before the beat holds, so a hold on the same mark
+    // (the hotbar's set-down on a return tick) comes later and wins.
+    const keptOverrides = [
+      ...keptWaits,
+      ...plannedOverrides,
+      ...extraOverrides.slice(0, room - keptWaits.length),
+    ];
     this.installation = installation;
     this.renderPolicy = options.renderPolicy;
     this.logicalTime =
@@ -1189,7 +1423,8 @@ export class CombatChoreographer {
     );
     const duration =
       options.renderPolicy === "replay_animated"
-        ? Math.max(eventEnd, beatEnd, overrideEnd) + REPLAY_TERMINAL_HOLD_MS
+        ? Math.max(eventEnd, beatEnd, overrideEnd) +
+          (options.endHold === false ? 0 : REPLAY_TERMINAL_HOLD_MS)
         : Math.max(eventEnd, overrideEnd);
     const gated =
       this.motionMode === "normal" &&
@@ -1250,6 +1485,29 @@ export class CombatChoreographer {
       throw error;
     }
     this.animations = createdAnimations;
+    this.glideSources = played.sources
+      .map(({ key, spec }) => ({
+        key,
+        spec,
+        animation:
+          createdAnimations[animationSpecs.length + keptOverrides.indexOf(spec)],
+      }))
+      .filter(({ spec, animation }) => keptOverrides.includes(spec) && animation);
+    this.ridingElements = new WeakSet(
+      played.riders
+        .filter((spec) => keptOverrides.includes(spec))
+        .map((spec) => spec.element),
+    );
+    this.waitPlan =
+      played.keys.size > 0
+        ? {
+            gliding: played.keys,
+            at: BEAT_CLOCK.glideEnd,
+            fade: BEAT_CLOCK.landingFade,
+            epochKey: String(plan.epochKey),
+          }
+        : null;
+    this.fadingElements = new WeakSet(keptWaits.map((spec) => spec.element));
     this.cleanupClock = cleanupClock;
     this.gateClock = gateClock;
     this.submissionBlocked = gated;
@@ -1281,6 +1539,16 @@ export class CombatChoreographer {
           this.painter.settle(this.installation);
           this.#cancelAnimations();
           this.submissionBlocked = false;
+          if (this.stepPlay !== null) {
+            try {
+              this.#settleStepPlay();
+            } catch {
+              // The still could not be built: clear (it publishes and frees
+              // every settlement waiter) rather than leave the tick hanging.
+              this.clear("step_settle_failed");
+              return;
+            }
+          }
           this.#publish();
         }),
       );
@@ -1288,55 +1556,112 @@ export class CombatChoreographer {
   }
 
   /**
-   * Start the replay_step glide on top of an already settled paused still.
+   * Rewind one tick (a -1 step) on top of the already settled paused still.
    *
-   * plan is the new frame's plan, surface its surface, installation the settled
-   * painter installation and step {previousPlan, carry}. In normal motion with Step
-   * Glide on (plan.beats.stepGlide, default on) and the same audienceKey, each body
-   * present in both plans glides 240 ms from where the previous frame showed it (a
-   * running step glide's drawn spot when carry has one, otherwise its previous END
-   * spot) to its new END spot; a Charge rush takes the first 100 ms forwards or the
-   * first 140 ms backwards. The painter's cue roots fade in from 240 ms to 320 ms,
-   * the movement marks fade in over the step glide and, on a +1 step in Agent POV,
-   * the sight veil cross-fades. A one-step clock then marks the still paused again. Reduced motion, motion off, a
-   * different audience or a move of more than one tick adds nothing. Creation errors
-   * cancel what was created and propagate. Mutates this.animations,
-   * this.cleanupClock, this.stepGlides and this.paused.
+   * plan is the new (earlier) frame's plan, surface its surface, installation
+   * the settled painter installation and step the StepRequest. It runs only in
+   * normal motion with Step Glide on (plan.beats.stepGlide, default on), for
+   * the same audienceKey and exactly one tick back (rewindAllowed); a +1 step
+   * plays its tick instead (presentFrame), and anything else adds nothing.
+   *
+   * The rewind is the tick played backwards, in three parts:
+   * - Rise (only when a champion's life changes, BEAT_CLOCK.stepRise, 200 ms):
+   *   a champion that fell in the tick being undone rises where it fell (the
+   *   copy of its corpse fades out while its living body fades in there), and
+   *   a champion that came back to its pad in that tick returns to its corpse
+   *   (the copy of it on the pad fades out while the corpse fades in).
+   * - Glide (240 ms): every body present in both plans and alive in the new
+   *   one glides from where the previous frame showed it (a running step
+   *   glide's drawn spot when carry has one, its corpse for a rising
+   *   champion, otherwise its previous END spot) back to its new END spot; a
+   *   Charge rush runs back along its path in the first 140 ms. Its selection
+   *   marks and reach rings ride it (data-glide-follow). In Agent POV the copy
+   *   of the old veil fades out while the new one fades in over the rise and
+   *   the glide, so the light moves back with the champions.
+   * - Landing (80 ms): the tick's cues (stepCueFadeSpecs), the movement marks
+   *   and the what-comes-next marks of gliding champions (data-landing-wait)
+   *   fade in.
+   * Overrides are bounded by the animation limit, bodies first
+   * (boundedStepOverrides). A one-step clock (it paints nothing) then cancels
+   * them, removes the copies and marks the still paused again. Every spec
+   * uses fill "backwards", so cancelling shows the new frame's END. Creation
+   * errors cancel what was created and propagate. Mutates this.animations,
+   * this.cleanupClock, this.stepGlides, this.rewindCopies, this.paused and the
+   * page (copies inserted).
    *
    * @param {Record<string, any>} plan
    * @param {ChoreographySurface} surface
    * @param {ChoreographyInstallation} installation
-   * @param {{previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>}} step
+   * @param {StepRequest} step
    */
   #startStepGlide(plan, surface, installation, step) {
-    const glides = stepGlideSpecs(plan, surface, this.motionMode, step);
-    if (glides === null) return;
-    const fades = stepCueFadeSpecs(plan, installation);
+    if (!rewindAllowed(plan, step.previousPlan, this.motionMode)) return;
     const root = battlefieldRoot(surface);
-    const forward =
-      Number(plan.simulatorStep) - Number(step.previousPlan?.simulatorStep) === 1;
+    const changes = rewindLifeChanges(step.previousPlan, plan);
+    const riseMs = changes.size > 0 ? BEAT_CLOCK.stepRise : 0;
+    const landed = riseMs + BEAT_CLOCK.stepGlide;
+    const fadeMs = BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide;
+    const glides = stepGlideSpecs(plan, surface, this.motionMode, step, riseMs) ?? [];
+    const copies =
+      root && step.snapshot ? placeRewindCopies(step.snapshot, changes) : null;
+    this.rewindCopies = copies
+      ? [...copies.veil, ...copies.bodies.map(({ copy }) => copy)]
+      : [];
+    const life = root
+      ? rewindLifeSpecs(
+          String(plan.epochKey),
+          root,
+          surface,
+          changes,
+          copies?.bodies ?? [],
+          riseMs,
+        )
+      : [];
+    const fades = stepCueFadeSpecs(plan, installation, landed);
+    const waits = root
+      ? landingWaitSpecs(
+          String(plan.epochKey),
+          root,
+          new Set(glides.map(({ presentationKey }) => presentationKey)),
+          landed,
+          fadeMs,
+        )
+      : [];
     const lookSpecs = root
       ? [
+          ...sightAnimationSpecs(root, plan, {
+            motionMode: this.motionMode,
+            renderPolicy: "replay_step",
+            outgoing: copies?.veil ?? [],
+            duration: landed,
+          }),
           ...movementAnimationSpecs(root, {
             epochKey: String(plan.epochKey),
             mode: "step",
             motionMode: this.motionMode,
             beats: plan.beats,
-            stepMs: BEAT_CLOCK.stepGlide,
-          }),
-          ...sightAnimationSpecs(root, plan, {
-            motionMode: this.motionMode,
-            renderPolicy: "replay_step",
-            step: forward ? "forward" : "backward",
+            stepMs: landed,
+            stepCueFadeMs: fadeMs,
           }),
         ]
       : [];
-    const specs = boundedOverrides(
-      [...glides.map(({ spec }) => spec), ...fades, ...lookSpecs],
-      plan,
-      MAX_ACTIVE_ANIMATIONS - 1,
-    );
-    if (specs.length === 0) return;
+    // Bodies first, then the riders and the rise fades (created after the
+    // glides, so a rise's opacity wins over a Dim Shift's held one), then what
+    // keeps a mark from showing early: the cue fades and the waits; the look
+    // marks last.
+    const specs = boundedStepOverrides([
+      ...glides.filter(({ follower }) => !follower).map(({ spec }) => spec),
+      ...glides.filter(({ follower }) => follower).map(({ spec }) => spec),
+      ...life,
+      ...fades,
+      ...waits,
+      ...lookSpecs,
+    ]);
+    if (specs.length === 0) {
+      for (const copy of this.rewindCopies) copy.remove();
+      this.rewindCopies = [];
+      return;
+    }
     /** @type {AnimationHandle[]} */
     const created = [];
     try {
@@ -1347,22 +1672,33 @@ export class CombatChoreographer {
       }
       const clock = this.animationFactory.createClock(
         installation.root,
-        BEAT_CLOCK.stepCueFadeEnd,
+        riseMs + BEAT_CLOCK.stepCueFadeEnd,
         `mbg:${plan.epochKey}:step`,
       );
       ignoreCancellation(clock.finished);
       this.cleanupClock = clock;
     } catch (error) {
       for (const animation of created) safeCancel(animation);
+      for (const copy of this.rewindCopies) copy.remove();
+      this.rewindCopies = [];
       throw error;
     }
     this.animations = created;
-    this.stepGlides = glides
-      .map(({ spec, presentationKey, points, offsets }) => {
-        const animation = created[specs.indexOf(spec)];
-        return animation ? { presentationKey, points, offsets, animation } : null;
-      })
-      .filter((glide) => glide !== null);
+    this.#trackStepGlides(glides, specs, created);
+    const gliding = new Set(glides.map(({ presentationKey }) => presentationKey));
+    this.waitPlan =
+      gliding.size > 0
+        ? { gliding, at: landed, fade: fadeMs, epochKey: String(plan.epochKey) }
+        : null;
+    this.risePlan =
+      riseMs > 0
+        ? { keys: new Set(changes.keys()), riseMs, epochKey: String(plan.epochKey) }
+        : null;
+    this.fadingElements = new WeakSet(
+      [...waits, ...life]
+        .filter((spec) => specs.includes(spec))
+        .map((spec) => spec.element),
+    );
     this.paused = false;
     for (const animation of this.#allAnimations()) {
       applyPlaybackRate(animation, this.playbackRate);
@@ -1390,10 +1726,15 @@ export class CombatChoreographer {
    * stepSourceBefore(previousPlan) and stepGlideSpecs runs backward: each body
    * with a known START spot glides 240 ms from where it was drawn (its END, or
    * a running glide's spot) to that START spot, a Charge rush back along its
-   * path; deaths and returns snap, as on every step. No painter installation
-   * exists for the landing frame, so there are no cue fades, movement marks or
-   * sight cross-fade. A one-step clock on the battlefield root then cancels the
-   * glides and marks the still paused. Reduced motion, motion off, Step Glide
+   * path; a body that came back to its pad snaps, and one that fell in the
+   * first tick glides back from its corpse (no rise: the first frame has no
+   * plan to rise from). Selection marks and reach
+   * rings ride their champion's glide and its what-comes-next marks wait for
+   * the landing (240-320 ms), as on every step. No painter installation exists
+   * for the landing frame, so there are no cue fades, movement marks or sight
+   * cross-fade. A one-step clock on the battlefield root (240 ms, or 320 ms when
+   * a mark waits; it paints nothing) then cancels the glides and marks the
+   * still paused. Reduced motion, motion off, Step Glide
    * off or no battlefield root adds nothing. Creation errors cancel what was
    * created and propagate. Mutates this.animations, this.cleanupClock,
    * this.stepGlides and this.paused.
@@ -1410,11 +1751,18 @@ export class CombatChoreographer {
     });
     const root = battlefieldRoot(surface);
     if (glides === null || glides.length === 0 || !root) return;
-    const specs = boundedOverrides(
-      glides.map(({ spec }) => spec),
-      previousPlan,
-      MAX_ACTIVE_ANIMATIONS - 1,
+    const waits = landingWaitSpecs(
+      `${previousPlan.epochKey}:back`,
+      root,
+      new Set(glides.map(({ presentationKey }) => presentationKey)),
+      BEAT_CLOCK.stepGlide,
+      BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide,
     );
+    const specs = boundedStepOverrides([
+      ...glides.filter(({ follower }) => !follower).map(({ spec }) => spec),
+      ...waits,
+      ...glides.filter(({ follower }) => follower).map(({ spec }) => spec),
+    ]);
     /** @type {AnimationHandle[]} */
     const created = [];
     /** @type {AnimationHandle} */
@@ -1427,7 +1775,7 @@ export class CombatChoreographer {
       }
       clock = this.animationFactory.createClock(
         root,
-        BEAT_CLOCK.stepGlide,
+        waits.length > 0 ? BEAT_CLOCK.stepCueFadeEnd : BEAT_CLOCK.stepGlide,
         `mbg:${previousPlan.epochKey}:step-back`,
       );
       ignoreCancellation(clock.finished);
@@ -1437,12 +1785,20 @@ export class CombatChoreographer {
     }
     this.animations = created;
     this.cleanupClock = clock;
-    this.stepGlides = glides
-      .map(({ spec, presentationKey, points, offsets }) => {
-        const animation = created[specs.indexOf(spec)];
-        return animation ? { presentationKey, points, offsets, animation } : null;
-      })
-      .filter((glide) => glide !== null);
+    this.#trackStepGlides(glides, specs, created);
+    const gliding = new Set(glides.map(({ presentationKey }) => presentationKey));
+    this.waitPlan =
+      gliding.size > 0
+        ? {
+            gliding,
+            at: BEAT_CLOCK.stepGlide,
+            fade: BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide,
+            epochKey: `${previousPlan.epochKey}:back`,
+          }
+        : null;
+    this.fadingElements = new WeakSet(
+      waits.filter((spec) => specs.includes(spec)).map((spec) => spec.element),
+    );
     this.paused = false;
     for (const animation of this.#allAnimations()) {
       applyPlaybackRate(animation, this.playbackRate);
@@ -1463,8 +1819,10 @@ export class CombatChoreographer {
    *
    * surface is the new frame's surface (unused for the math; world spots do not
    * depend on the camera). Return a Map from presentation key to the drawn world
-   * spot for glides whose animation reports a finite currentTime inside the glide.
-   * Pure read of animation state; called just before those glides are cancelled.
+   * spot for glides whose animation reports a finite currentTime before the
+   * glide ends: a glide still waiting for a rise (time before its delay) gives
+   * its first spot. Pure read of animation state; called just before those
+   * glides are cancelled.
    *
    * @param {ChoreographySurface} surface
    * @returns {Map<string, readonly [number, number]>}
@@ -1476,10 +1834,11 @@ export class CombatChoreographer {
     for (const glide of this.stepGlides) {
       const time = glide.animation.currentTime;
       if (typeof time !== "number" || !Number.isFinite(time)) continue;
-      if (time <= 0 || time >= BEAT_CLOCK.stepGlide) continue;
+      const progress = (time - glide.delay) / BEAT_CLOCK.stepGlide;
+      if (progress >= 1 || time <= 0) continue;
       carry.set(
         glide.presentationKey,
-        pointAlongGlide(glide.points, glide.offsets, time / BEAT_CLOCK.stepGlide),
+        pointAlongGlide(glide.points, glide.offsets, Math.max(0, progress)),
       );
     }
     return carry;
@@ -1626,6 +1985,7 @@ export class CombatChoreographer {
    */
   #clearOwned(reason) {
     this.generation += 1;
+    this.stepPlay = null;
     this.#captureLogicalTime();
     this.#cancelAnimations();
     this.#clearFadingCues();
@@ -1733,9 +2093,217 @@ export class CombatChoreographer {
     }
     this.animations = [];
     this.stepGlides = [];
+    this.glideSources = [];
+    this.ridingElements = new WeakSet();
+    this.waitPlan = null;
+    this.risePlan = null;
+    this.fadingElements = new WeakSet();
+    this.rejoins = [];
+    for (const copy of this.rewindCopies) copy.remove();
+    this.rewindCopies = [];
     this.gateClock = null;
     this.cleanupClock = null;
     this.cameraLean = null;
+  }
+
+  /**
+   * Turn a +1 step's finished tick into the paused still.
+   *
+   * Called when the played tick a +1 step started has ended (its last beat,
+   * no end hold). The tick's own frame is planned again as replay_static and
+   * installed as the settled paused still, exactly as a seek to that frame
+   * shows it: every cue's still picture, a Herald Card at once. So a +1 plays
+   * the tick as Play does and then pauses on the same picture the step showed
+   * before. Without a surface it does nothing more; when the plan builder
+   * gives no plan it clears the installation and sets plan to null (the
+   * previous renderPolicy stays). Mutates the installation, plan,
+   * renderPolicy and paused; errors from the plan builder or painter
+   * propagate (the caller clears then).
+   */
+  #settleStepPlay() {
+    const step = this.stepPlay;
+    const surface = this.surface;
+    this.stepPlay = null;
+    if (step === null || surface === null) return;
+    const plan = this.planBuilder(
+      step.frame,
+      surface,
+      step.visualFilters,
+      "replay_static",
+    );
+    this.#clearOwned("step_played");
+    if (!plan) {
+      this.plan = null;
+      return;
+    }
+    this.plan = plan;
+    this.surface = surface;
+    this.#installForPolicy(plan, surface, "replay_static");
+  }
+
+  /**
+   * Remember a step's running glides for the next step and for repaints.
+   *
+   * glides are stepGlideSpecs' entries, specs the specs that were started (in
+   * order) and created their animations, index for index. Body entries (not
+   * follower) become this.stepGlides (where a quick next step starts from,
+   * #stepCarry) and this.glideSources (#reattachRiders); follower entries'
+   * elements join ridingElements. Entries whose spec was not started are
+   * skipped. Mutates those three fields only.
+   *
+   * @param {ReadonlyArray<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, delay?: number, follower?: boolean}>} glides
+   * @param {ReadonlyArray<AnimationSpec>} specs
+   * @param {ReadonlyArray<AnimationHandle>} created
+   */
+  #trackStepGlides(glides, specs, created) {
+    /** @type {typeof this.stepGlides} */
+    const bodies = [];
+    /** @type {typeof this.glideSources} */
+    const sources = [];
+    /** @type {Element[]} */
+    const riding = [];
+    for (const { spec, presentationKey, points, offsets, delay, follower } of glides) {
+      const animation = created[specs.indexOf(spec)];
+      if (!animation) continue;
+      if (follower) {
+        riding.push(spec.element);
+        continue;
+      }
+      bodies.push({ presentationKey, points, offsets, delay: delay ?? 0, animation });
+      sources.push({ key: presentationKey, spec, animation });
+    }
+    this.stepGlides = bodies;
+    this.glideSources = sources;
+    this.ridingElements = new WeakSet(riding);
+  }
+
+  /**
+   * Give the marks a repaint replaced mid-tick their timing back.
+   *
+   * surface is the current surface. A durable repaint during a running tick (a
+   * new server revision, a deck click, a camera move or a resize) keeps nodes
+   * that did not change, but replaces changed ones and always replaces a node
+   * with a hover card, such as a reach ring; the new node has no animation and
+   * would show at once. So, on the new nodes only (not yet in ridingElements or
+   * fadingElements):
+   * - a mark with a gliding champion's data-glide-follow gets that body's
+   *   glide (glideSources), at the body glide's current time;
+   * - a mark with data-landing-wait naming a gliding champion gets its wait
+   *   (waitPlan), at the tick clock's current time;
+   * - a rising champion's riding mark (risePlan, a -1 rewind) fades in with it,
+   *   at the tick clock's current time.
+   * A glide, wait or rise that has already ended adds nothing. Each added
+   * animation gets the playback rate, a unique id (suffix ":rejoin:<n>"), is
+   * paused when the tick is, and is synced again once it and its clock are
+   * ready (a rate change can still be pending). Added animations whose mark a
+   * later repaint replaced again are cancelled. Mutates this.animations,
+   * this.rejoins and the two sets; animation errors propagate.
+   *
+   * @param {ChoreographySurface} surface
+   */
+  #reattachRiders(surface) {
+    const root = battlefieldRoot(surface);
+    if (!root) return;
+    const generation = this.generation;
+    // Drop earlier rejoins whose mark has left the page.
+    const stale = this.rejoins.filter(({ element }) => element.isConnected === false);
+    if (stale.length > 0) {
+      for (const { animation } of stale) safeCancel(animation);
+      const gone = new Set(stale.map(({ animation }) => animation));
+      this.animations = this.animations.filter((animation) => !gone.has(animation));
+      this.rejoins = this.rejoins.filter(({ animation }) => !gone.has(animation));
+    }
+    /**
+     * Start one added animation at clock's current time.
+     * @param {Element} element @param {Keyframe[] | PropertyIndexedKeyframes} keyframes
+     * @param {KeyframeAnimationOptions} options @param {string} id
+     * @param {AnimationHandle} clock
+     */
+    const join = (element, keyframes, options, id, clock) => {
+      const animation = this.animationFactory.create({
+        element,
+        keyframes,
+        options,
+        id,
+      });
+      ignoreCancellation(animation.finished);
+      applyPlaybackRate(animation, this.playbackRate);
+      animation.currentTime = clock.currentTime;
+      if (this.paused) animation.pause();
+      if (animation.ready && clock.ready) {
+        ignoreCancellation(
+          Promise.all([animation.ready, clock.ready]).then(() => {
+            if (generation === this.generation)
+              animation.currentTime = clock.currentTime;
+          }),
+        );
+      }
+      this.animations.push(animation);
+      this.rejoins.push({ animation, element });
+      this.rejoinCount += 1;
+    };
+    const riders = glideRiders(root);
+    /** @type {Element[]} */
+    const riding = [];
+    for (const source of this.glideSources) {
+      const time = source.animation.currentTime;
+      const end =
+        Number(source.spec.options.delay ?? 0) +
+        Number(source.spec.options.duration ?? 0);
+      if (typeof time !== "number" || !Number.isFinite(time) || time >= end) continue;
+      for (const element of riders.get(source.key) ?? []) {
+        if (this.ridingElements.has(element)) continue;
+        join(
+          element,
+          source.spec.keyframes,
+          source.spec.options,
+          `${source.spec.id}:rejoin:${this.rejoinCount}`,
+          source.animation,
+        );
+        riding.push(element);
+      }
+    }
+    for (const element of riding) this.ridingElements.add(element);
+    const clock = this.cleanupClock;
+    const now = clock?.currentTime;
+    if (!clock || typeof now !== "number" || !Number.isFinite(now)) return;
+    /** @param {Element} element */
+    const endOpacity = (element) => {
+      const value = Number(element.getAttribute("opacity"));
+      return element.hasAttribute("opacity") && Number.isFinite(value) ? value : 1;
+    };
+    const wait = this.waitPlan;
+    if (wait !== null && now < wait.at + wait.fade) {
+      for (const element of root.querySelectorAll("[data-landing-wait]")) {
+        if (this.fadingElements.has(element)) continue;
+        const keys = String(element.getAttribute("data-landing-wait") ?? "").split(" ");
+        if (!keys.some((key) => wait.gliding.has(key))) continue;
+        join(
+          element,
+          [{ opacity: 0 }, { opacity: endOpacity(element) }],
+          { delay: wait.at, duration: wait.fade, fill: "backwards" },
+          `mbg:${wait.epochKey}:landing-wait:rejoin:${this.rejoinCount}`,
+          clock,
+        );
+        this.fadingElements.add(element);
+      }
+    }
+    const rise = this.risePlan;
+    if (rise !== null && now < rise.riseMs) {
+      for (const key of rise.keys) {
+        for (const element of riders.get(key) ?? []) {
+          if (this.fadingElements.has(element)) continue;
+          join(
+            element,
+            [{ opacity: 0 }, { opacity: endOpacity(element) }],
+            { delay: 0, duration: rise.riseMs, fill: "backwards" },
+            `mbg:${rise.epochKey}:rise:rejoin:${this.rejoinCount}`,
+            clock,
+          );
+          this.fadingElements.add(element);
+        }
+      }
+    }
   }
 
   /**
@@ -1937,7 +2505,8 @@ function sameSpot(left, right) {
 }
 
 /**
- * Build the body glides of a played tick.
+ * Build the body glides of a played tick, and the glides of the marks that ride
+ * them.
  *
  * plan carries beats (glide: Body Glide on) and bodies (planBodies records);
  * surface supplies projection and the durable DOM; motionMode is the controller's.
@@ -1945,21 +2514,35 @@ function sameSpot(left, right) {
  * moves START to END over 0-260 ms; a body that charged reaches its post-Charge spot
  * at 110 ms first. A body whose path cuts a stone (body.dimShift, from the plan)
  * takes the Movement look's Dim Shift (move plus fade) instead of a plain glide.
- * Bodies with no wrapper in the DOM are skipped. Return a new array
- * of specs (ids mbg:<epoch>:glide:<public ID>). Reads the DOM only.
+ * Bodies with no wrapper in the DOM are skipped. Every element under the
+ * battlefield whose data-glide-follow is a gliding body's presentation key (its
+ * selection marks and reach rings) rides the same glide (id suffix
+ * ":follow:<n>"), so it never waits at the landing spot. Return
+ * {bodies, riders, keys, sources}: the body specs (ids
+ * mbg:<epoch>:glide:<public ID>), the rider specs, the presentation keys of
+ * the bodies that glide (for landingWaitSpecs) and each body spec with its key
+ * (for #reattachRiders). Reads the DOM only.
  *
  * @param {Record<string, any>} plan
  * @param {ChoreographySurface} surface
  * @param {MotionMode} motionMode
- * @returns {AnimationSpec[]}
+ * @returns {{bodies: AnimationSpec[], riders: AnimationSpec[], keys: Set<string>, sources: Array<{key: string, spec: AnimationSpec}>}}
  */
 function playedGlideSpecs(plan, surface, motionMode) {
-  if (motionMode !== "normal" || plan.beats?.glide !== true) return [];
-  const root = battlefieldRoot(surface);
-  if (!root) return [];
-  const wrapperFor = bodyWrapperLookup(surface, root);
   /** @type {AnimationSpec[]} */
-  const specs = [];
+  const bodies = [];
+  /** @type {AnimationSpec[]} */
+  const riders = [];
+  /** @type {Set<string>} */
+  const keys = new Set();
+  /** @type {Array<{key: string, spec: AnimationSpec}>} */
+  const sources = [];
+  const empty = { bodies, riders, keys, sources };
+  if (motionMode !== "normal" || plan.beats?.glide !== true) return empty;
+  const root = battlefieldRoot(surface);
+  if (!root) return empty;
+  const wrapperFor = bodyWrapperLookup(surface, root);
+  const riderLookup = glideRiders(root);
   for (const body of Array.isArray(plan.bodies) ? plan.bodies : []) {
     if (body?.glide !== true || !body.start) continue;
     const element = wrapperFor(body.presentationKey);
@@ -1972,24 +2555,63 @@ function playedGlideSpecs(plan, surface, motionMode) {
       ? [0, BEAT_CLOCK.chargeRushEnd / BEAT_CLOCK.glideEnd, 1]
       : [0, 1];
     const id = `mbg:${plan.epochKey}:glide:${body.publicAgentId}`;
-    if (body.dimShift === true) {
+    keys.add(body.presentationKey);
+    for (const [index, target] of [
+      element,
+      ...(riderLookup.get(body.presentationKey) ?? []),
+    ].entries()) {
+      const targetId = index > 0 ? `${id}:follow:${index - 1}` : id;
       // A path through stone dims out and back in instead of sliding over it.
-      specs.push(
-        ...dimShiftSpecs(
-          element,
-          points,
-          offsets,
-          surface.worldToScreen,
-          BEAT_CLOCK.glideEnd,
-          id,
-        ),
-      );
-      continue;
+      const specs =
+        body.dimShift === true
+          ? dimShiftSpecs(
+              target,
+              points,
+              offsets,
+              surface.worldToScreen,
+              BEAT_CLOCK.glideEnd,
+              targetId,
+            )
+          : [
+              glideSpec(
+                target,
+                points,
+                offsets,
+                surface,
+                BEAT_CLOCK.glideEnd,
+                targetId,
+              ),
+            ];
+      for (const spec of specs) {
+        if (!spec) continue;
+        (index > 0 ? riders : bodies).push(spec);
+        if (index === 0) sources.push({ key: body.presentationKey, spec });
+      }
     }
-    const spec = glideSpec(element, points, offsets, surface, BEAT_CLOCK.glideEnd, id);
-    if (spec) specs.push(spec);
   }
-  return specs;
+  return empty;
+}
+
+/**
+ * Map each champion's presentation key to the marks that ride its glide.
+ *
+ * root is the battlefield SVG. Every element with a nonempty data-glide-follow
+ * (looks/champion-frame.js: the selection moonlight, brackets and halo, the
+ * reach rings) is listed under that key, in document order. Return a new Map.
+ * Reads the DOM only.
+ *
+ * @param {Element} root
+ * @returns {Map<string, Element[]>}
+ */
+function glideRiders(root) {
+  /** @type {Map<string, Element[]>} */
+  const riders = new Map();
+  for (const element of root.querySelectorAll("[data-glide-follow]")) {
+    const key = element.getAttribute("data-glide-follow");
+    if (!key) continue;
+    riders.set(key, [...(riders.get(key) ?? []), element]);
+  }
+  return riders;
 }
 
 /**
@@ -2218,162 +2840,534 @@ function deathDimSpecs(plan, surface, motionMode) {
 }
 
 /**
- * Build the look-owned overrides of a played tick: movement marks, the Agent POV
- * sight veil, hit shivers and Death Dimming.
+ * Build the look-owned overrides of a played tick.
  *
  * plan, surface and renderPolicy describe the tick; motionMode and playbackRate are
- * the controller's. Return a new array of specs in that order. Reads the DOM only.
+ * the controller's. Return {motion, accents}: motion holds the movement marks
+ * (Start Spots, afterimages, the Focus Trail's dots) and the Agent POV sight
+ * veil's beats, which keep a mark or the light from showing ahead of a
+ * champion, so #install bounds them by the animation limit only; accents holds
+ * the hit shivers and Death Dimming, which share the plan's override allowance.
+ * Both are new arrays ([] without a battlefield or with motion off). Reads the
+ * DOM only.
  *
  * @param {Record<string, any>} plan
  * @param {ChoreographySurface} surface
  * @param {MotionMode} motionMode
  * @param {number} playbackRate
  * @param {RenderPolicy} renderPolicy
- * @returns {AnimationSpec[]}
+ * @returns {{motion: AnimationSpec[], accents: AnimationSpec[]}}
  */
 function playedLookSpecs(plan, surface, motionMode, playbackRate, renderPolicy) {
   const root = battlefieldRoot(surface);
-  if (!root || motionMode === "off") return [];
-  return [
-    ...movementAnimationSpecs(root, {
-      epochKey: String(plan.epochKey),
-      mode: "played",
-      motionMode,
-      beats: plan.beats,
-    }),
-    ...sightAnimationSpecs(root, plan, { motionMode, renderPolicy }),
-    ...shiverSpecs(plan, surface, motionMode, playbackRate),
-    ...deathDimSpecs(plan, surface, motionMode),
-  ];
+  if (!root || motionMode === "off") return { motion: [], accents: [] };
+  return {
+    motion: [
+      ...movementAnimationSpecs(root, {
+        epochKey: String(plan.epochKey),
+        mode: "played",
+        motionMode,
+        beats: plan.beats,
+      }),
+      ...sightAnimationSpecs(root, plan, { motionMode, renderPolicy }),
+    ],
+    accents: [
+      ...shiverSpecs(plan, surface, motionMode, playbackRate),
+      ...deathDimSpecs(plan, surface, motionMode),
+    ],
+  };
 }
 
 /**
- * Build the body glides of a one-tick step (replay_step).
+ * Build the body glides of a -1 rewind (replay_step).
  *
- * plan is the new frame's plan; surface its surface; motionMode the controller's;
- * step {previousPlan, carry}. Return null when the step does not glide: motion is
- * not normal, Step Glide is off (plan.beats.stepGlide false), the audience changed
- * (audienceKey differs: another view or recipient) or the frames are not exactly
- * one tick apart. Otherwise return a new array (possibly empty) of
- * {spec, presentationKey, points, offsets}: one 240 ms glide per body present in
- * both plans, alive or fallen at both ends, that did not just return to a pad
- * (forwards) or leave one (backwards), from carry's drawn spot (when within 3 world
- * units of its previous END spot) or its previous END spot, to its new END spot.
- * Forwards, a Charge passes its post-Charge spot at 100 ms; backwards, the left
- * tick's Charge is reversed with its post-Charge spot at 140 ms. A body whose path
- * cuts a stone (dimShift on the new body forwards, on the earlier body backwards)
- * gets the Movement look's Dim Shift pair instead (two entries with the same key).
- * In Agent POV the plans hold only seen bodies, so a body unseen in either frame
- * never glides.
- * Reads the DOM only.
+ * plan is the new (earlier) frame's plan; surface its surface; motionMode the
+ * controller's; step the StepRequest; riseMs (default 0) how long the glides
+ * wait while fallen champions rise first. Return null when the step does not
+ * rewind (rewindAllowed: motion not normal, Step Glide off, another audience,
+ * or not exactly one tick back). Otherwise return a new array (possibly empty)
+ * of {spec, presentationKey, points, offsets, delay, follower?}: one 240 ms
+ * glide, starting at riseMs, per body that is in both plans, alive in the new
+ * (earlier) one and did not come back to its pad in the tick being undone
+ * (earlier.returned). A fallen body in the new frame never glides, and one
+ * that came back to its pad does not either (rewindLifeSpecs cross-fades it
+ * to its corpse); a body that fell in the undone tick glides from its corpse
+ * after the rise. A body glides from carry's drawn spot (when within 3 world units of
+ * its previous END spot), else its previous END spot (a rising champion's
+ * corpse), to its new END spot; the left tick's Charge is reversed with its
+ * post-Charge spot at 140 ms; a body whose left path cut a stone
+ * (earlier.dimShift) gets the Movement look's Dim Shift pair instead (two
+ * entries with the same key). The glide holds its first spot until it starts
+ * (fill "backwards"). Every element under the battlefield whose
+ * data-glide-follow is that body's presentation key rides the same glide
+ * (id suffix ":follow:<n>", follower: true). In Agent POV the plans hold only
+ * seen bodies, so a body unseen in either frame never glides. Reads the DOM
+ * only.
  *
  * @param {Record<string, any>} plan
  * @param {ChoreographySurface} surface
  * @param {MotionMode} motionMode
- * @param {{previousPlan: Record<string, any>, carry: Map<string, readonly [number, number]>}} step
- * @returns {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>}> | null}
+ * @param {StepRequest} step
+ * @param {number} [riseMs]
+ * @returns {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, delay: number, follower?: boolean}> | null}
  */
-function stepGlideSpecs(plan, surface, motionMode, step) {
+function stepGlideSpecs(plan, surface, motionMode, step, riseMs = 0) {
   const previous = step.previousPlan;
-  if (motionMode !== "normal" || plan.beats?.stepGlide === false) return null;
-  if (
-    typeof plan.audienceKey !== "string" ||
-    previous?.audienceKey !== plan.audienceKey
-  ) {
-    return null;
-  }
-  const direction = Number(plan.simulatorStep) - Number(previous.simulatorStep);
-  if (direction !== 1 && direction !== -1) return null;
+  if (!rewindAllowed(plan, previous, motionMode)) return null;
   const root = battlefieldRoot(surface);
   if (!root) return [];
   const wrapperFor = bodyWrapperLookup(surface, root);
+  const riders = glideRiders(root);
   const before = new Map(
     (Array.isArray(previous.bodies) ? previous.bodies : []).map((body) => [
       body.presentationKey,
       body,
     ]),
   );
-  /** @type {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>}>} */
+  /** @type {Array<{spec: AnimationSpec, presentationKey: string, points: ReadonlyArray<readonly [number, number]>, offsets: ReadonlyArray<number>, delay: number, follower?: boolean}>} */
   const glides = [];
   for (const body of Array.isArray(plan.bodies) ? plan.bodies : []) {
     const earlier = before.get(body.presentationKey);
-    if (!earlier || earlier.alive !== body.alive) continue;
-    if ((direction === 1 && body.returned) || (direction === -1 && earlier.returned)) {
-      continue;
-    }
-    const carried = step.carry.get(body.presentationKey);
+    if (!earlier || !body.alive || earlier.returned) continue;
+    const carried = earlier.alive ? step.carry.get(body.presentationKey) : undefined;
     const from =
       carried &&
       Math.hypot(carried[0] - earlier.end[0], carried[1] - earlier.end[1]) <=
         STEP_CARRY_LIMIT
         ? carried
         : earlier.end;
-    const forwardCharge = direction === 1 && body.charged === true && body.postCharge;
-    const backwardCharge =
-      direction === -1 && earlier.charged === true && earlier.postCharge;
+    const charge = earlier.charged === true && earlier.postCharge;
     /** @type {ReadonlyArray<readonly [number, number]>} */
-    const points = forwardCharge
-      ? [from, body.postCharge, body.end]
-      : backwardCharge
-        ? [from, earlier.postCharge, body.end]
-        : [from, body.end];
+    const points = charge ? [from, earlier.postCharge, body.end] : [from, body.end];
     /** @type {ReadonlyArray<number>} */
-    const offsets = forwardCharge
-      ? [0, BEAT_CLOCK.stepChargeRushForward / BEAT_CLOCK.stepGlide, 1]
-      : backwardCharge
-        ? [0, BEAT_CLOCK.stepChargeRushBackward / BEAT_CLOCK.stepGlide, 1]
-        : [0, 1];
+    const offsets = charge
+      ? [0, BEAT_CLOCK.stepChargeRushBackward / BEAT_CLOCK.stepGlide, 1]
+      : [0, 1];
     if (points.every((spot) => sameSpot(spot, body.end))) continue;
     const element = wrapperFor(body.presentationKey);
     if (!element) continue;
     const id = `mbg:${plan.epochKey}:step-glide:${body.publicAgentId}`;
-    if (direction === 1 ? body.dimShift === true : earlier.dimShift === true) {
-      for (const spec of dimShiftSpecs(
-        element,
-        points,
-        offsets,
-        surface.worldToScreen,
-        BEAT_CLOCK.stepGlide,
-        id,
-      )) {
-        glides.push({ spec, presentationKey: body.presentationKey, points, offsets });
+    for (const [index, target] of [
+      element,
+      ...(riders.get(body.presentationKey) ?? []),
+    ].entries()) {
+      const follower = index > 0;
+      const targetId = follower ? `${id}:follow:${index - 1}` : id;
+      const specs =
+        earlier.dimShift === true
+          ? dimShiftSpecs(
+              target,
+              points,
+              offsets,
+              surface.worldToScreen,
+              BEAT_CLOCK.stepGlide,
+              targetId,
+            )
+          : [
+              glideSpec(
+                target,
+                points,
+                offsets,
+                surface,
+                BEAT_CLOCK.stepGlide,
+                targetId,
+              ),
+            ];
+      for (const spec of specs) {
+        if (!spec) continue;
+        glides.push({
+          spec: delayedSpec(spec, riseMs),
+          presentationKey: body.presentationKey,
+          points,
+          offsets,
+          delay: riseMs,
+          ...(follower ? { follower: true } : {}),
+        });
       }
-      continue;
-    }
-    const spec = glideSpec(element, points, offsets, surface, BEAT_CLOCK.stepGlide, id);
-    if (spec) {
-      glides.push({ spec, presentationKey: body.presentationKey, points, offsets });
     }
   }
   return glides;
 }
 
 /**
- * Build the cue fade of a one-tick step: the painter's roots fade in late.
+ * Return whether a step from previous to plan is a -1 rewind the choreographer
+ * animates.
+ *
+ * plan is the new (earlier) frame's plan and previous the plan shown before
+ * the step (or null); motionMode is the controller's. True only in normal
+ * motion, with Step Glide on (plan.beats.stepGlide not false), when both plans
+ * have the same string audienceKey and plan.simulatorStep is exactly one less
+ * than previous.simulatorStep. Pure.
+ *
+ * @param {Record<string, any>} plan
+ * @param {Record<string, any> | null | undefined} previous
+ * @param {MotionMode} motionMode
+ */
+function rewindAllowed(plan, previous, motionMode) {
+  return (
+    motionMode === "normal" &&
+    plan.beats?.stepGlide !== false &&
+    typeof plan.audienceKey === "string" &&
+    previous?.audienceKey === plan.audienceKey &&
+    Number(plan.simulatorStep) - Number(previous?.simulatorStep) === -1
+  );
+}
+
+/**
+ * Return the champions whose life changes when a tick is rewound.
+ *
+ * previous is the plan shown before a -1 step, plan the earlier frame's plan.
+ * A champion in both plans that is fallen in previous and alive in plan
+ * "rises" (it fell in the tick being undone); one alive in previous and fallen
+ * in plan "unreturns" (it came back to its pad in that tick). Return a new Map
+ * from presentation key to "rise" or "unreturn". Pure.
+ *
+ * @param {Record<string, any>} previous
+ * @param {Record<string, any>} plan
+ * @returns {Map<string, "rise" | "unreturn">}
+ */
+function rewindLifeChanges(previous, plan) {
+  const before = new Map(
+    (Array.isArray(previous?.bodies) ? previous.bodies : []).map((body) => [
+      body.presentationKey,
+      body,
+    ]),
+  );
+  /** @type {Map<string, "rise" | "unreturn">} */
+  const changes = new Map();
+  for (const body of Array.isArray(plan.bodies) ? plan.bodies : []) {
+    const earlier = before.get(body.presentationKey);
+    if (!earlier || earlier.alive === body.alive) continue;
+    changes.set(body.presentationKey, body.alive ? "rise" : "unreturn");
+  }
+  return changes;
+}
+
+/** Attributes a rewind copy drops, so no code or selector mistakes it for the real node. */
+const REWIND_COPY_DROPPED_ATTRIBUTES = Object.freeze([
+  "id",
+  "tabindex",
+  "role",
+  "aria-label",
+  "aria-description",
+  "aria-describedby",
+  "data-tooltip-owner",
+  "data-glide-key",
+  "data-glide-follow",
+  "data-landing-wait",
+  "data-presentation-key",
+  "data-beat-hold",
+  "data-beat-key",
+  "data-beat-side",
+  "data-beat-from",
+  "data-beat-fade",
+  "data-beat-pulse",
+  "data-beat-shiver",
+  "data-beat-shiver-at",
+  "data-beat-delay",
+  "data-fog-state",
+  "data-fog-arrive-kind",
+  "data-fog-arrive-key",
+  "data-fog-leave-kind",
+  "data-fog-leave-key",
+]);
+
+/**
+ * Make an inert copy of an arena node for a rewind.
+ *
+ * element is a champion's glide wrapper or a veil path. Return a deep clone
+ * without ids, focus, hover cards, roles, labels, glide, beat or veil-state
+ * attributes (REWIND_COPY_DROPPED_ATTRIBUTES), marked aria-hidden,
+ * data-rewind-copy and pointer-events none; a wrapper's agent-glide class
+ * becomes rewind-copy. Classes and other data attributes stay, so it looks
+ * the same. The clone is detached; its look is the END the page drew.
+ *
+ * @param {Element} element
+ * @returns {Element}
+ */
+function rewindCopy(element) {
+  const copy = /** @type {Element} */ (element.cloneNode(true));
+  for (const node of [copy, ...copy.querySelectorAll("*")]) {
+    for (const name of REWIND_COPY_DROPPED_ATTRIBUTES) node.removeAttribute(name);
+  }
+  copy.setAttribute("aria-hidden", "true");
+  copy.setAttribute("data-rewind-copy", "");
+  copy.setAttribute("pointer-events", "none");
+  if (copy.classList?.contains("agent-glide")) {
+    copy.classList.replace("agent-glide", "rewind-copy");
+  }
+  return copy;
+}
+
+/**
+ * Copy the champions and the visible veil before a -1 step's frame is drawn.
+ *
+ * root is the battlefield SVG. Each `g.agent-glide` wrapper with a
+ * data-glide-key (its last JSON entry is the presentation key) is copied
+ * (rewindCopy) with its parent group and whether that group is the fallen
+ * one (data-body-state "dead"); each Agent POV sight group (`g.fog-sight`:
+ * the veil, lift and edge paths, only the END one visible in a still) is
+ * copied with the fog layer that holds it, because the durable render
+ * replaces the whole group while the layer stays. Return a StepSnapshot.
+ * Reads the DOM only.
+ *
+ * @param {Element} root
+ * @returns {StepSnapshot}
+ */
+function takeStepSnapshot(root) {
+  /** @type {StepSnapshot["bodies"]} */
+  const bodies = new Map();
+  for (const wrapper of root.querySelectorAll("g.agent-glide[data-glide-key]")) {
+    let key = null;
+    try {
+      const parsed = JSON.parse(String(wrapper.getAttribute("data-glide-key")));
+      key = Array.isArray(parsed) ? parsed.at(-1) : null;
+    } catch {
+      key = null;
+    }
+    if (typeof key !== "string" || key === "") continue;
+    const parent = wrapper.parentElement;
+    bodies.set(key, {
+      copy: rewindCopy(wrapper),
+      parent,
+      dead: parent?.getAttribute("data-body-state") === "dead",
+    });
+  }
+  /** @type {StepSnapshot["veil"]} */
+  const veil = [];
+  for (const group of root.querySelectorAll("g.fog-sight")) {
+    // The redraw replaces the whole sight group, so the copy is anchored to
+    // the layer that holds it, which stays.
+    const layer = group.parentElement;
+    if (!layer) continue;
+    veil.push({ copy: rewindCopy(group), parent: layer });
+  }
+  return { bodies, veil };
+}
+
+/**
+ * Put the copies a rewind fades out back into the page.
+ *
+ * snapshot is the StepSnapshot taken before the new frame was drawn; changes
+ * the rewindLifeChanges map. Each sight group copy goes back into its fog
+ * layer (which the render keeps) just before the new frame's sight group, so
+ * it paints under it; a corpse copy (a rising
+ * champion, fallen in the snapshot) and a pad copy (an unreturning champion,
+ * alive in the snapshot) go back into their group. Every copy gets opacity 0
+ * as its END, so it is gone once its fade ends even before it is removed.
+ * Return {veil, bodies} (bodies: {key, copy}); copies whose group left the
+ * page are skipped. Mutates the page.
+ *
+ * @param {StepSnapshot} snapshot
+ * @param {Map<string, "rise" | "unreturn">} changes
+ * @returns {{veil: Element[], bodies: Array<{key: string, copy: Element}>}}
+ */
+function placeRewindCopies(snapshot, changes) {
+  /** @type {Element[]} */
+  const veil = [];
+  for (const { copy, parent } of snapshot.veil) {
+    if (!parent?.isConnected) continue;
+    copy.setAttribute("opacity", "0");
+    parent.insertBefore(copy, parent.querySelector(":scope > g.fog-sight"));
+    veil.push(copy);
+  }
+  /** @type {Array<{key: string, copy: Element}>} */
+  const bodies = [];
+  for (const [key, change] of changes) {
+    const shot = snapshot.bodies.get(key);
+    if (!shot?.parent?.isConnected || shot.dead !== (change === "rise")) continue;
+    shot.copy.setAttribute("opacity", "0");
+    shot.parent.append(shot.copy);
+    bodies.push({ key, copy: shot.copy });
+  }
+  return { veil, bodies };
+}
+
+/**
+ * Build the rise part of a -1 rewind: champions whose life changes.
+ *
+ * epochKey names the ids (mbg:<epochKey>:rise:<n>); root is the battlefield
+ * SVG; surface finds body wrappers; changes is rewindLifeChanges; copies the
+ * placed body copies; riseMs the rise length (0 adds nothing). Each copy fades
+ * from 1 to 0 over riseMs. Each changed champion's own wrapper in the new
+ * frame (its living body for a rise, its corpse for an unreturn) and every
+ * mark riding it fade from 0 to their END opacity (opacity attribute, default
+ * 1) over riseMs, so a fallen champion rises where it fell before gliding
+ * back, and a champion leaves its pad for its corpse. Fill "backwards". Return
+ * a new array of specs. Reads the DOM only.
+ *
+ * @param {string} epochKey
+ * @param {Element} root
+ * @param {ChoreographySurface} surface
+ * @param {Map<string, "rise" | "unreturn">} changes
+ * @param {ReadonlyArray<{key: string, copy: Element}>} copies
+ * @param {number} riseMs
+ * @returns {AnimationSpec[]}
+ */
+function rewindLifeSpecs(epochKey, root, surface, changes, copies, riseMs) {
+  if (!(riseMs > 0) || changes.size === 0) return [];
+  const wrapperFor = bodyWrapperLookup(surface, root);
+  const riders = glideRiders(root);
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  const fade = (
+    /** @type {Element} */ element,
+    /** @type {number} */ from,
+    /** @type {number} */ to,
+  ) =>
+    specs.push({
+      element,
+      keyframes: [{ opacity: from }, { opacity: to }],
+      options: { delay: 0, duration: riseMs, fill: "backwards" },
+      id: `mbg:${epochKey}:rise:${specs.length}`,
+    });
+  for (const { copy } of copies) fade(copy, 1, 0);
+  for (const key of changes.keys()) {
+    const wrapper = wrapperFor(key);
+    for (const element of wrapper ? [wrapper, ...(riders.get(key) ?? [])] : []) {
+      const value = Number(element.getAttribute("opacity"));
+      fade(
+        element,
+        0,
+        element.hasAttribute("opacity") && Number.isFinite(value) ? value : 1,
+      );
+    }
+  }
+  return specs;
+}
+
+/**
+ * Return a copy of spec whose animation starts delay ms later.
+ *
+ * spec is any AnimationSpec; delay is in ms (0 returns spec itself). The
+ * copy's options.delay is the old delay (default 0) plus delay; with fill
+ * "backwards" it holds its first keyframe until then. Pure.
+ *
+ * @param {AnimationSpec} spec
+ * @param {number} delay
+ * @returns {AnimationSpec}
+ */
+function delayedSpec(spec, delay) {
+  if (!(delay > 0)) return spec;
+  return {
+    ...spec,
+    options: { ...spec.options, delay: Number(spec.options.delay ?? 0) + delay },
+  };
+}
+
+/**
+ * Build the landing waits: what-comes-next marks of a gliding champion fade in
+ * once the bodies have landed.
+ *
+ * epochKey names the tick for the ids (mbg:<epochKey>:landing-wait:<n>); root
+ * is the battlefield SVG; gliding holds the presentation keys of the champions
+ * that glide; at is when the bodies have landed and fade how long the marks
+ * take to appear, in ms (a played tick: 260 and 80; a one-tick step: 240 and
+ * 80, later when a rewind first raises a fallen champion). Each element under
+ * root with data-landing-wait (space-separated presentation keys, see
+ * looks/champion-frame.js: a next-action line and glyph, an All Staged Orders
+ * line, a Next Step Ghost) that names a gliding champion gets opacity 0 until
+ * at, then fades to its END opacity (its opacity attribute, default 1), fill
+ * "backwards". A mark whose champions all stay put is left alone, so it does
+ * not blink. Return a new array of specs. Reads the DOM only.
+ *
+ * @param {string} epochKey
+ * @param {Element} root
+ * @param {ReadonlySet<string>} gliding
+ * @param {number} at
+ * @param {number} fade
+ * @returns {AnimationSpec[]}
+ */
+function landingWaitSpecs(epochKey, root, gliding, at, fade) {
+  if (gliding.size === 0) return [];
+  /** @type {AnimationSpec[]} */
+  const specs = [];
+  for (const element of root.querySelectorAll("[data-landing-wait]")) {
+    const keys = String(element.getAttribute("data-landing-wait") ?? "").split(" ");
+    if (!keys.some((key) => gliding.has(key))) continue;
+    const value = Number(element.getAttribute("opacity"));
+    const end = element.hasAttribute("opacity") && Number.isFinite(value) ? value : 1;
+    specs.push({
+      element,
+      keyframes: [{ opacity: 0 }, { opacity: end }],
+      options: { delay: at, duration: fade, fill: "backwards" },
+      id: `mbg:${epochKey}:landing-wait:${specs.length}`,
+    });
+  }
+  return specs;
+}
+
+/**
+ * Keep a one-tick step's overrides inside the animation limit.
+ *
+ * specs are the step's overrides in priority order (a -1 rewind: bodies,
+ * riders, rise fades, cue fades, waits, look marks; onto a first frame:
+ * bodies, waits, riders). A step runs no beat holds, and its riders and waits
+ * depend on switches (Ranges, All Staged Orders, Next Step Ghost) that the
+ * plan's played-tick override allowance does not count, so the step is bounded
+ * by the animation limit (PLAN_RESOURCE_CAPS.animations, less its one clock)
+ * instead; the worst case (ten champions, every switch on) is about 140. Return
+ * the first specs that fit. Pure.
+ *
+ * @param {ReadonlyArray<AnimationSpec>} specs
+ * @returns {AnimationSpec[]}
+ */
+function boundedStepOverrides(specs) {
+  return specs.slice(0, MAX_ACTIVE_ANIMATIONS - 1);
+}
+
+/**
+ * Build the cue fade of a -1 rewind: the tick's cues fade in once the bodies
+ * have landed.
  *
  * plan names the epoch; installation holds the painter roots (root, connectorRoot,
- * routeRoot). Each present root gets opacity 0 until 240 ms, then fades to its END
- * opacity by 320 ms (fill "backwards", no forward fill), so a stroke never stretches
- * between moving bodies. Return a new array of specs (ids mbg:<epoch>:step-cue:<n>).
+ * routeRoot), its eventNodes and its carry; at is when the bodies have landed,
+ * in ms (default 240; later when fallen champions rise first). Each present
+ * root gets opacity 0 until at, then fades to 1 over 80 ms, so a stroke never
+ * stretches between moving bodies and a landing, a number or a mark never
+ * shows where a body is still going. Each Herald Card of this tick (an eventNodes entry of kind herald_card
+ * that is not one of carry.heldRows) does the same, to its opacity attribute
+ * (default 1); a card held from the tick before stays as it was. Every spec uses
+ * fill "backwards" and no forward fill. Return a new array of specs (ids
+ * mbg:<epoch>:step-cue:<n>). Reads the installation only.
  *
  * @param {Record<string, any>} plan
  * @param {ChoreographyInstallation} installation
+ * @param {number} [at]
  * @returns {AnimationSpec[]}
  */
-function stepCueFadeSpecs(plan, installation) {
+function stepCueFadeSpecs(plan, installation, at = BEAT_CLOCK.stepGlide) {
   const record = /** @type {Record<string, any>} */ (installation);
-  return [record.routeRoot, record.connectorRoot, record.root]
+  const heldIds = new Set(
+    (Array.isArray(record.carry?.heldRows) ? record.carry.heldRows : []).map(
+      (/** @type {Record<string, any>} */ row) => row?.eventId,
+    ),
+  );
+  /** @type {Array<{element: Element, end: number}>} */
+  const targets = [record.routeRoot, record.connectorRoot, record.root]
     .filter((element) => element && typeof element === "object")
-    .map((element, index) => ({
-      element,
-      keyframes: [{ opacity: 0 }, { opacity: 1 }],
-      options: {
-        delay: BEAT_CLOCK.stepGlide,
-        duration: BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide,
-        fill: "backwards",
-      },
-      id: `mbg:${plan.epochKey}:step-cue:${index}`,
-    }));
+    .map((element) => ({ element, end: 1 }));
+  if (record.eventNodes instanceof Map) {
+    for (const [eventId, entry] of record.eventNodes) {
+      if (entry?.event?.kind !== "herald_card" || heldIds.has(eventId)) continue;
+      const element = entry.group;
+      if (!element || typeof element !== "object") continue;
+      const value = Number(element.getAttribute?.("opacity"));
+      const end =
+        element.hasAttribute?.("opacity") && Number.isFinite(value) ? value : 1;
+      targets.push({ element, end });
+    }
+  }
+  return targets.map(({ element, end }, index) => ({
+    element,
+    keyframes: [{ opacity: 0 }, { opacity: end }],
+    options: {
+      delay: at,
+      duration: BEAT_CLOCK.stepCueFadeEnd - BEAT_CLOCK.stepGlide,
+      fill: "backwards",
+    },
+    id: `mbg:${plan.epochKey}:step-cue:${index}`,
+  }));
 }
 
 /**
@@ -2518,16 +3512,38 @@ function samePlanIdentity(first, second) {
 }
 
 /**
- * Stand in for the plan of a shown frame that had none, for a +1 step glide.
+ * Return whether a step from the shown plan to the next plan is one tick
+ * forward for the same audience.
+ *
+ * previous is the plan shown now, or null when the shown frame has none (a
+ * replay's first frame: any one-tick step from it is forward); next is the
+ * plan the step lands on. True when previous is null, or when both have the
+ * same string audienceKey and next.simulatorStep is previous.simulatorStep + 1.
+ * Pure.
+ *
+ * @param {Record<string, any> | null} previous
+ * @param {Record<string, any>} next
+ */
+function oneTickForward(previous, next) {
+  if (previous === null) return true;
+  return (
+    typeof next.audienceKey === "string" &&
+    previous.audienceKey === next.audienceKey &&
+    Number(next.simulatorStep) - Number(previous.simulatorStep) === 1
+  );
+}
+
+/**
+ * Stand in for the plan of a shown frame that has none, for a -1 onto it.
  *
  * A replay's first frame has no tick leading into it, so the choreographer
  * keeps no plan while it shows (planBuilder returns null and presentFrame
- * clears), and the first +1 from it had nothing to glide from: the bodies
- * snapped while every later +1 glided. plan is the plan of the frame the step
- * lands on, one tick later; each of its bodies' START spots (body.start) is
- * where the first frame showed that body. Return a frozen plan-like record
- * for stepGlideSpecs: plan's audienceKey, epochKey and beats, simulatorStep
- * one less (so the step reads as forward), and one body per plan body with a
+ * clears). plan is the plan of the frame shown before a -1 onto it, one tick
+ * later; each of its bodies' START spots (body.start) is where the first
+ * frame shows that body. Return a frozen plan-like record for stepGlideSpecs
+ * (the landing of #startPlanlessStepGlide): plan's audienceKey, epochKey and
+ * beats, simulatorStep one less (so the step reads as one tick back), and one
+ * body per plan body with a
  * known START spot: the same presentationKey, publicAgentId and teamId, end
  * = start, alive true when it stood at the tick's start (alive now or fell
  * this tick, and not a return), no Charge, not returned. A body with no

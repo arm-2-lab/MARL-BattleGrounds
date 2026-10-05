@@ -540,7 +540,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     BOTH,
-    "In Agent POV, darkens the floor outside how far your team's living champions can see. It shows reach, not true sight: stone also blocks sight inside the circle, and champions just back on their pads stay hidden. Off: the floor at full light; unseen champions stay hidden either way.",
+    "In Agent POV, darkens every spot your team cannot see: beyond its living champions' sight reach and in the shadow behind each stone. Enemies just back on their pads stay hidden even in the light. Off: the floor at full light; unseen champions stay hidden either way.",
   ],
   [
     "pov_recipient_rim",
@@ -658,7 +658,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     REPLAY,
-    "Stepping exactly one tick (+1, -1, the Left and Right arrows, or scrubbing tick by tick) glides the champions for a quarter second, then the blows appear between their end spots. Bigger jumps snap. Off: every step snaps.",
+    "Stepping exactly one tick: +1 (Right arrow, N) plays that tick as Play does, then pauses on it; -1 (Left arrow) rewinds it: a champion that fell stands up first, then everyone glides back and the earlier tick's blows appear. Bigger jumps snap. Off: every step snaps.",
   ],
   [
     "last_move_ghosts",

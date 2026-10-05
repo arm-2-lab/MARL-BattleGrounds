@@ -8,8 +8,9 @@
  * class-only source sentence each), a two-cause mark listing both names (the
  * stun stars: Charge (Stun) and Crippling Poison (Stun)) and no old flavor
  * word (Sapped, Snagged, Moon Dew and the rest) left; class, Basic and
- * Ultimate names read from their owners; the keys V, B and F; the Sight Reach
- * veil sentence; explanations with no tuning numbers; number sources that name
+ * Ultimate names read from their owners; the keys V, B and F; the sight veil
+ * sentence (every blind spot is dark: beyond reach and behind stone; shielded
+ * enemies stay hidden even in the light); explanations with no tuning numbers; number sources that name
  * real fields of the generated host schema; no retired or banned names; and
  * the lookup helpers, including the "Spawn Shield 3" chip text.
  */
@@ -306,13 +307,12 @@ test("the camera and explanation symbols carry the keys V, B and F", () => {
   );
 });
 
-test("the Sight Reach veil states that stone and fresh returns still hide champions", () => {
+test("the sight veil says it darkens every blind spot, stone shadows included", () => {
   const veil = symbolById("sight_veil");
   assert.equal(veil?.name, "Out Of Sight");
-  assert.ok(
-    veil?.eli5.endsWith(
-      "Stone also blocks sight inside the circle, and champions just back on their pads stay hidden.",
-    ),
+  assert.equal(
+    veil?.eli5,
+    "In Agent POV the ground is dark wherever your team cannot see: beyond each champion's sight reach and in the shadow behind every stone. Enemies just back on their pads stay hidden even in the light.",
   );
   assert.equal(symbolById("sight_reach"), veil);
 });

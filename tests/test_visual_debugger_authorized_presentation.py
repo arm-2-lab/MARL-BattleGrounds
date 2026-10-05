@@ -7,8 +7,9 @@ V1 or V2 map; build_authorized_map_v2 records depth 0 as red_zone=None and
 refuses bad bases, depths and pad shapes; an Oracle scene from a context whose
 resolved config is V1 keeps AuthorizedMapV1. Every wire object forbids extra
 properties and requires every field except named historical additions, the
-scene's optional ``team_sight`` (the live Agent POV merged sight; an Oracle
-scene carries it as null) and the frame's optional host facts
+scene's optional ``team_sight`` (the Agent POV merged sight, live and
+replayed, whose ``turn_shapes`` are required; an Oracle scene carries it as
+null) and the frame's optional host facts
 ``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
 Honors), ``match_moments`` (the Herald Cards history), ``next_end_spots``
 (the Next Step Ghost) and ``recent_falls`` (the Fallen panel history).

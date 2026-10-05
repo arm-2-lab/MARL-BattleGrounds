@@ -16,7 +16,10 @@
  * each plan through the choreographer's beforeBeatHolds hook, hides every painter
  * herald card (a plate: data-herald-moments) while the Verdict card or its
  * tucked plate shows, and draws no state chip (no countdown, no "Match Point ·
- * Needs 1"; owner, 4 Oct 2026).
+ * Needs 1"; owner, 4 Oct 2026). In the Replay Viewer a click on an
+ * Arena Frame (selectAgentFromHud) sends that champion's Roster row command
+ * through panels.pickAgent, so in Agent POV it moves the view to any
+ * champion, as the roster does.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -355,4 +358,16 @@ test("main.js mounts the Fallen panel from each plan and hides plates under the 
   // "Match Point · Needs 1"; only the Lineup and Verdict are drawn here.
   assert.doesNotMatch(main, /herald-state|part: "state"/u);
   assert.match(main, /if \(records\.length === 0\) return;/u);
+});
+
+test("a Replay Viewer Arena Frame click sends that champion's Roster row command", async () => {
+  const main = await source("main.js");
+  assert.match(
+    main,
+    /function selectAgentFromHud\(publicAgentId\) \{\s*if \(isReplayMode\(\)\) \{\s*panels\.pickAgent\(publicAgentId\);\s*return;\s*\}/u,
+  );
+  assert.match(
+    main,
+    /onSelect: \(publicAgentId\) => selectAgentFromHud\(publicAgentId\),/u,
+  );
 });

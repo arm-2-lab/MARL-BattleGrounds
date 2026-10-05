@@ -5,7 +5,10 @@
  * 12) px with arms 0.38 of it, and become one ring at R + 4 px under R 10 px;
  * Selection Moonlight shows only for the selected living champion with its
  * switch on, as a separate floor node at R + 12 px; brackets carry
- * data-fallen on a fallen champion. The Next Action Thread is a straight line
+ * data-fallen on a fallen champion. The brackets, the moonlight and each
+ * reach ring carry data-glide-follow (the champion's key, so they ride its
+ * glide), and the Next Action Thread's line and glyph carry data-landing-wait
+ * (the source and target keys, so they wait for the landing). The Next Action Thread is a straight line
  * from the actor's rim + 3 px to 6 px short of the target's rim, with a dot
  * (Basic) or diamond (Ultimate) R + 9 px below the target, a self-cast draws
  * only the glyph under the actor, no arrowhead is drawn, the switch turns it
@@ -267,6 +270,9 @@ test("selection marks show moonlight only for the selected living champion", () 
   const doc = fakeDocument();
   const [bundle] = frame.buildSelectionMarks([lit], doc);
   frame.updateSelectionMarks([bundle], [lit]);
+  // Both ride the champion's glide (choreography.js).
+  assert.equal(bundle.selectionRoot.getAttribute("data-glide-follow"), "k");
+  assert.equal(bundle.moonlight.getAttribute("data-glide-follow"), "k");
   assert.equal(bundle.moonlight.getAttribute("r"), "35");
   assert.equal(bundle.moonlight.getAttribute("hidden"), null);
   assert.equal(
@@ -337,6 +343,9 @@ test("the Next Action Thread is a straight line with a 6 o'clock glyph", () => {
     ["pending-route", "next-action-glyph", "pending-route-hit"],
   );
   assert.equal(nodes[0].getAttribute("data-route-kind"), "thread");
+  // The line and glyph wait for both champions to land; the hit path has no paint.
+  assert.equal(nodes[0].getAttribute("data-landing-wait"), "key-a key-b");
+  assert.equal(nodes[1].getAttribute("data-landing-wait"), "key-a key-b");
   assert.equal(nodes.flatMap((node) => byClass(node, "pending-route-arrow")).length, 0);
   const selfNodes = frame.build([self], doc);
   assert.deepEqual(
@@ -375,6 +384,21 @@ test("reach rings follow Ranges, or the Reach Rings switch for the selection", (
   });
   assert.equal(selected.length, 1);
   assert.equal(selected[0].identity.presentation_key, "a");
+});
+
+test("each reach ring rides its own champion's glide", async () => {
+  const raw = (await fixture()).presentations.replay_oracle;
+  const normalized = await normalizeAuthorizedPresentationFrameV1(structuredClone(raw));
+  const scene = /** @type {Record<string, any>} */ (
+    authorizedPresentationSceneView(normalized)
+  );
+  const records = frame.records({ part: "reach-rings", scene, transform });
+  const nodes = frame.build(records, fakeDocument());
+  assert.ok(nodes.length > 0);
+  assert.deepEqual(
+    nodes.map((node) => node.getAttribute("data-glide-follow")),
+    records.map((record) => record.identity.presentation_key),
+  );
 });
 
 test("the selection paint parts are registered with the visual filters", () => {

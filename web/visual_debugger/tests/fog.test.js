@@ -10,13 +10,19 @@
  * fixture frame every living body other than the recipient sits in the lit
  * area of the END state; NoSharedObs uses only the recipient's circle and
  * SharedObs only living authorized sensors (dead sensors give no light); the
- * light states follow the Stride, Fall and Return beats with END last; the
+ * light states follow the Stride, Fall and Return beats with END last; with
+ * the host's `team_sight` each state paints the host's exact shape (the
+ * turn_start shape first, then the turn_end shape whose champion IDs match,
+ * the frame's own shape last and on a still; a state with no exact shape takes
+ * the nearest one, the frame's own on a tie), with an even-odd fill; the
  * rim steps aside when the recipient is shielded, controlled, dead or too
  * small; glints mark only opponents that came into sight; Last Seen rings come
  * from derived `last_seen` rows, sit at 0.93R and name no unseen champion;
  * build() is export-safe (no url(), gradient, mask, filter, clip path, image,
  * pattern or id; fill-rule as an attribute); and sightAnimationSpecs gives
- * fill "backwards" overrides only for played ticks and +1 steps.
+ * fill "backwards" overrides only for played ticks and -1 rewinds (the copies
+ * of the old veil fade out while the new END fades in over the rewind; with
+ * no copies, or not in normal motion, nothing).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -420,6 +426,173 @@ test("light states follow the Stride, Fall and Return beats and end at END", () 
   assert.equal(still.states[0].arrive, null);
 });
 
+test("with the host's team sight each beat paints the host's shape for its lit champions", () => {
+  /** @param {number} x0 @returns {number[][]} */
+  const square = (x0) => [
+    [x0, 2],
+    [x0 + 3, 2],
+    [x0 + 3, 5],
+    [x0, 5],
+  ];
+  /** @param {number[][]} ring */
+  const sight = (ring) => ({ lit_rings: [ring], own_edges: [], allied_edges: [] });
+  const dyingAlly = agent({
+    public_agent_id: "a1",
+    position: [14, 6],
+    life_state: "dead",
+  });
+  const returner = agent({ public_agent_id: "a2", position: [1, 1] });
+  const trajectories = [
+    {
+      agent_presentation_key: "pov_a0",
+      transition_start: { position: [3, 4] },
+      successor: { position: [4, 4] },
+    },
+    {
+      agent_presentation_key: "pov_a1",
+      transition_start: { position: [14, 6] },
+      successor: { position: [14, 6] },
+    },
+  ];
+  const schedule = {
+    falls: [{ presentationKey: "pov_a1", at: 900 }],
+    returns: [{ presentationKey: "pov_a2", at: 2500 }],
+  };
+  const sensorSources = ["a0", "a1", "a2"].map((id) => ({
+    source_public_agent_id: id,
+  }));
+  const teamSight = {
+    ...sight(square(1)),
+    turn_shapes: [
+      { stage: "turn_start", lit_public_agent_ids: ["a0", "a1"], ...sight(square(5)) },
+      { stage: "turn_end", lit_public_agent_ids: ["a0", "a1"], ...sight(square(9)) },
+      { stage: "turn_end", lit_public_agent_ids: ["a0"], ...sight(square(13)) },
+      {
+        stage: "turn_end",
+        lit_public_agent_ids: ["a0", "a1", "a2"],
+        ...sight(square(16)),
+      },
+    ],
+  };
+  const agents = [SELF, dyingAlly, returner];
+  const [veil] = fog.records({
+    scene: { ...scene(agents), team_sight: teamSight },
+    transform: TRANSFORM,
+    sensorSources,
+    trajectories,
+    schedule,
+  });
+  // The lift path of a scene whose own sight is just one square.
+  /** @param {number} x0 */
+  const lift = (x0) =>
+    fog.records({
+      scene: { ...scene(agents), team_sight: sight(square(x0)) },
+      transform: TRANSFORM,
+      sensorSources,
+    })[0].states[0].liftPath;
+  assert.deepEqual(
+    veil.states.map((/** @type {any} */ state) => [
+      state.arrive?.kind ?? null,
+      state.endOpacity,
+      state.fillRule,
+      state.liftPath,
+    ]),
+    [
+      [null, 0, "evenodd", lift(5)],
+      ["stride", 0, "evenodd", lift(9)],
+      ["fall", 0, "evenodd", lift(13)],
+      ["return", 1, "evenodd", lift(1)],
+    ],
+  );
+  // A seek or still has one state: the frame's own (END) shape.
+  const [still] = fog.records({
+    scene: { ...scene(agents), team_sight: teamSight },
+    transform: TRANSFORM,
+    sensorSources,
+  });
+  assert.deepEqual(
+    still.states.map((/** @type {any} */ state) => state.liftPath),
+    [lift(1)],
+  );
+  // A beat whose shape the host left out keeps the frame's own shape.
+  const [missing] = fog.records({
+    scene: {
+      ...scene(agents),
+      team_sight: { ...teamSight, turn_shapes: teamSight.turn_shapes.slice(0, 1) },
+    },
+    transform: TRANSFORM,
+    sensorSources,
+    trajectories,
+    schedule,
+  });
+  assert.deepEqual(
+    missing.states.map((/** @type {any} */ state) => state.liftPath),
+    [lift(5), lift(1), lift(1), lift(1)],
+  );
+  // A beat with no exact shape takes the nearest one. a1 and a3 fall (a1
+  // first, by public ID) and a2 returns. With no {a0, a3} shape, the beat
+  // after a1's fall takes the glide shape {a0, a1, a3} (one champion away;
+  // the frame's own {a0, a2} is two away); after a3's fall {a0} is one away
+  // from the frame's own shape and two from the glide shape.
+  const secondFaller = agent({
+    public_agent_id: "a3",
+    position: [8, 8],
+    life_state: "dead",
+  });
+  const [nearest] = fog.records({
+    scene: {
+      ...scene([SELF, dyingAlly, returner, secondFaller]),
+      team_sight: {
+        ...sight(square(1)),
+        turn_shapes: [
+          {
+            stage: "turn_start",
+            lit_public_agent_ids: ["a0", "a1", "a3"],
+            ...sight(square(5)),
+          },
+          {
+            stage: "turn_end",
+            lit_public_agent_ids: ["a0", "a1", "a3"],
+            ...sight(square(9)),
+          },
+        ],
+      },
+    },
+    transform: TRANSFORM,
+    sensorSources: ["a0", "a1", "a2", "a3"].map((id) => ({
+      source_public_agent_id: id,
+    })),
+    trajectories: [
+      ...trajectories,
+      {
+        agent_presentation_key: "pov_a3",
+        transition_start: { position: [8, 8] },
+        successor: { position: [8, 8] },
+      },
+    ],
+    schedule: {
+      falls: [
+        { presentationKey: "pov_a1", at: 900 },
+        { presentationKey: "pov_a3", at: 960 },
+      ],
+      returns: [{ presentationKey: "pov_a2", at: 2500 }],
+    },
+  });
+  assert.deepEqual(
+    nearest.states.map((/** @type {any} */ state) => [
+      state.arrive?.kind ?? null,
+      state.liftPath,
+    ]),
+    [
+      [null, lift(5)],
+      ["stride", lift(9)],
+      ["fall", lift(9)],
+      ["fall", lift(1)],
+      ["return", lift(1)],
+    ],
+  );
+});
+
 test("the rim marks the recipient at 0.98R and steps aside when it should", () => {
   const radius = TRANSFORM.worldLengthToScreen(0.5);
   const over = (/** @type {any[]} */ agents, selection = {}) =>
@@ -582,7 +755,7 @@ test("build() is export-safe and records each veil state's beats", () => {
   );
 });
 
-test("sightAnimationSpecs times played ticks and +1 steps only", () => {
+test("sightAnimationSpecs times played ticks and -1 rewinds only", () => {
   const doc = fakeDocument();
   const trajectories = [
     {
@@ -637,16 +810,38 @@ test("sightAnimationSpecs times played ticks and +1 steps only", () => {
     }),
     [],
   );
-  const step = fog.sightAnimationSpecs(root, plan, {
+  // A -1 rewind: the copies of the old veil fade out while the new END fades in.
+  const outgoing = [doc.node("path"), doc.node("path")];
+  const rewind = fog.sightAnimationSpecs(root, plan, {
     renderPolicy: "replay_step",
-    step: "forward",
+    outgoing: /** @type {any} */ (outgoing),
+    duration: 440,
   });
-  assert.equal(step.length, 6);
-  assert.ok(step.every((spec) => spec.options.duration === 200));
+  const visible = [...root.querySelectorAll("[data-fog-state]")].filter(
+    (node) => Number(node.getAttribute("opacity")) > 0,
+  );
+  assert.deepEqual(
+    rewind.map((spec) => [spec.element, spec.keyframes, spec.options.duration]),
+    [
+      ...outgoing.map((node) => [node, [{ opacity: 1 }, { opacity: 0 }], 440]),
+      ...visible.map((node) => [
+        node,
+        [{ opacity: 0 }, { opacity: Number(node.getAttribute("opacity")) }],
+        440,
+      ]),
+    ],
+  );
+  assert.ok(rewind.every((spec) => spec.options.fill === "backwards"));
+  assert.deepEqual(
+    fog.sightAnimationSpecs(root, plan, { renderPolicy: "replay_step" }),
+    [],
+    "without copies of the old veil a rewind changes at once",
+  );
   assert.deepEqual(
     fog.sightAnimationSpecs(root, plan, {
+      motionMode: "reduced",
       renderPolicy: "replay_step",
-      step: "backward",
+      outgoing: /** @type {any} */ (outgoing),
     }),
     [],
   );

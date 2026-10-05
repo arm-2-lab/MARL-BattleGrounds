@@ -32,6 +32,12 @@
  *   Ghost's ring, at the spot where each champion stands at the end of the
  *   recorded next tick (the frame's `next_end_spots` host fact; switch
  *   `next_step_ghost`).
+ * On a one-tick replay step the moonlight, the brackets and halo and the reach
+ * rings ride their champion's glide (each carries data-glide-follow, read by
+ * choreography.js), so none of them waits at the champion's landing spot; the
+ * Next Action Thread, All Staged Orders and Next Step Ghost show what comes
+ * next, so a mark of a gliding champion fades in once the bodies have landed
+ * (data-landing-wait).
  * It draws no Basic or Ultimate lane pills ("0/B", "1/U") on the arena in any
  * client. Runefield shows legality on the deck's Action slots and the Command
  * Ring with its Order Studs (`looks/hotbar.js`), and the read-only Replay
@@ -652,7 +658,8 @@ function nextStepGhostRecords(scene, transform, spots) {
  * key (data-beat-hold, data-beat-key, data-beat-side "after", a 1 ms cut), so
  * on the tick a champion returns its rings appear only when it is set down on
  * its pad; on any other tick the choreographer finds no such beat and the
- * rings show at once. A
+ * rings show at once. Each owner also carries data-glide-follow with the same
+ * key, so on a one-tick replay step the rings ride the champion's glide. A
  * next-action route becomes [thread line (none for a self-cast), glyph group,
  * focusable hit path] with its tooltip; a staged order (All Staged Orders) is
  * the same with data-staged-order="true" on each node and a hit path that
@@ -684,8 +691,10 @@ export function build(records, doc) {
       })) {
         // A returning champion's rings wait for its set-down on the pad, as
         // its token, ward ring and Command Ring do; the choreographer applies
-        // this only on a tick when that champion returns.
+        // this only on a tick when that champion returns. On a one-tick
+        // replay step the rings ride the champion's glide (data-glide-follow).
         if (typeof key === "string" && key !== "") {
+          node.setAttribute("data-glide-follow", key);
           node.setAttribute("data-beat-hold", "set-down");
           node.setAttribute("data-beat-key", key);
           node.setAttribute("data-beat-side", "after");
@@ -722,7 +731,10 @@ function diamondPath(x, y, width) {
  * group and the focusable hit path.
  *
  * The line is `path.pending-route` with the route's data attributes (lane,
- * legal, IDs, slots, keys, route kind). The glyph is `g.next-action-glyph`
+ * legal, IDs, slots, keys, route kind, and data-landing-wait: the source and
+ * target presentation keys, so on a one-tick replay step the line and glyph
+ * wait for the landing when either champion glides; see landingWaitKeys). The
+ * glyph is `g.next-action-glyph`
  * holding an Ink Shadow under-copy and the Moon Silver mark: a 6 px dot or a
  * 9 px diamond. The hit path follows the line, or rings the glyph for a
  * self-cast, and carries the route tooltip. A staged order (record.staged)
@@ -748,6 +760,10 @@ function buildNextActionRoute(doc, record) {
     "data-target-presentation-key": record.targetPresentationKey,
     "data-route-kind": record.routeKind,
     "data-staged-order": record.staged === true ? "true" : null,
+    "data-landing-wait": landingWaitKeys([
+      record.sourcePresentationKey,
+      record.targetPresentationKey,
+    ]),
   };
   if (record.path !== null) {
     nodes.push(
@@ -805,10 +821,34 @@ function buildNextActionRoute(doc, record) {
 }
 
 /**
+ * Return the data-landing-wait value of a mark that shows what happens next.
+ *
+ * keys are the presentation keys of the champions the mark touches (a
+ * next-action line's source and target, a Next Step Ghost's champion);
+ * anything that is not a nonempty string is skipped, and a repeated key is
+ * kept once. Return the keys joined by single spaces, or null (no attribute)
+ * when none is left. The choreographer reads it on a one-tick replay step: a
+ * mark whose champion glides fades in once the bodies have landed, so it never
+ * shows at a landing spot early; a mark of champions that stay put is left
+ * alone. Pure.
+ *
+ * @param {ReadonlyArray<unknown>} keys
+ * @returns {string | null}
+ */
+function landingWaitKeys(keys) {
+  const kept = [
+    ...new Set(keys.filter((key) => typeof key === "string" && key !== "")),
+  ];
+  return kept.length > 0 ? kept.join(" ") : null;
+}
+
+/**
  * Build one Next Step Ghost's nodes: the live Step Ghost's ink ring under its
  * dotted Moon Silver ring, both at the spot and 1 px inside the body radius.
- * Both carry data-next-step-ghost ("ink" or "ring") and the champion's
- * data-public-agent-id; styles/hotbar.css gives them their look and no pointer
+ * Both carry data-next-step-ghost ("ink" or "ring"), the champion's
+ * data-public-agent-id and data-landing-wait (its presentation key, so on a
+ * one-tick replay step the ghost waits for the landing when the champion
+ * glides); styles/hotbar.css gives them their look and no pointer
  * input. Return [ink, ring]. No tooltip. Export-safe SVG only.
  *
  * @param {Document} doc
@@ -822,6 +862,7 @@ function buildNextStepGhost(doc, record) {
     cy: record.cy,
     r,
     "data-public-agent-id": record.publicAgentId,
+    "data-landing-wait": landingWaitKeys([record.presentationKey]),
     "aria-hidden": "true",
   };
   return [
@@ -847,7 +888,9 @@ function buildNextStepGhost(doc, record) {
  * keyline (`path.selected-reticle-keyline`) and the Silver Brackets
  * (`path.selected-reticle`), plus a separate `circle.selection-moonlight` with
  * the same identity attributes, not yet in any layer: `scene.js` puts it in a
- * floor layer. Nodes have no geometry until updateSelectionMarks runs. Return
+ * floor layer. Both carry data-glide-follow (the champion's presentation key,
+ * when it has one), so on a one-tick replay step they ride its glide
+ * (choreography.js). Nodes have no geometry until updateSelectionMarks runs. Return
  * the bundles in record order. No tooltip, storage or timer.
  *
  * @param {ReadonlyArray<LookRecord>} records
@@ -857,9 +900,15 @@ function buildNextStepGhost(doc, record) {
 export function buildSelectionMarks(records, doc) {
   return records.map((record) => {
     const agent = record.agent;
+    // On a one-tick replay step both nodes ride the champion's glide.
+    const follow =
+      typeof agent?.presentation_key === "string" && agent.presentation_key !== ""
+        ? { "data-glide-follow": agent.presentation_key }
+        : {};
     const selectionRoot = svgNode(doc, "g", {
       class: "agent-selection",
       ...displayIdentityAttributes(agent),
+      ...follow,
       "data-zone": "selection",
       "aria-hidden": "true",
     });
@@ -876,6 +925,7 @@ export function buildSelectionMarks(records, doc) {
     const moonlight = svgNode(doc, "circle", {
       class: "selection-moonlight",
       ...displayIdentityAttributes(agent),
+      ...follow,
       "data-zone": "selection-moonlight",
       "aria-hidden": "true",
     });

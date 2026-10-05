@@ -40,7 +40,10 @@
  *   dark ring. Hidden while a Warrior Charge is armed (the Charge decides
  *   where the Warrior lands) and while the step is Stay. Switch `step_ghost`.
  * The marks are a still picture of the current plan: nothing here animates,
- * so the DOM always holds the END state. Each mark names the champion it
+ * so the DOM always holds the END state. While a tick plays, the choreographer
+ * moves the marks on a champion with its glide and fades the thread and Step
+ * Ghost in once the champions have landed (glideTiming), so no mark shows at
+ * a landing spot before its champion gets there. Each mark names the champion it
  * belongs to (returnKey) through a "set-down" beat hold: on the tick that
  * champion returns, the choreographer keeps the mark hidden until the
  * champion is set down on its waystone, so no Command Ring, stud, thread,
@@ -649,7 +652,8 @@ function studsRecords(champion, center, lane, legal, away) {
  * whose path d draws all four diamonds, or four `shape: "dot"` records {cx,
  * cy, x, y, r, style, classKey, away}, one circle each; see studsRecords),
  * `reach-mark` ({identityKey, cx, cy, r}), `order-thread-ink` and
- * `order-thread` (both {x1, y1, x2, y2, ultimate}), then `step-ghost-disc`,
+ * `order-thread` (both {x1, y1, x2, y2, ultimate, targetKey}, targetKey the
+ * thread's target's presentation key), then `step-ghost-disc`,
  * `step-ghost-ink` and `step-ghost` (each {cx, cy, r, moveAction}). A dead
  * champion keeps an ashen ring and no other mark. No controlled champion in
  * the scene gives [].
@@ -872,6 +876,7 @@ export function records(input) {
         y2: round(target.y - uy * endGap),
         ultimate: lane === "ultimate",
         returnKey: controlledKey,
+        targetKey: String(route.target_presentation_key),
       };
       if (filters.next_action_thread !== false) {
         out.push(Object.freeze({ kind: "order-thread-ink", ...line }));
@@ -908,8 +913,9 @@ export function records(input) {
 }
 
 /**
- * Return the SVG tag and attributes for one record: its mark (markSpec) plus
- * its Return hold (returnHold). Null for an unknown kind.
+ * Return the SVG tag and attributes for one record: its mark (markSpec), its
+ * Return hold (returnHold) and its glide timing (glideTiming). Null for an
+ * unknown kind.
  *
  * @param {LookRecord} record One hotbar record.
  * @returns {{tag: string, attributes: Record<string, unknown>} | null}
@@ -918,7 +924,50 @@ function nodeSpec(record) {
   const spec = markSpec(record);
   return spec === null
     ? null
-    : { tag: spec.tag, attributes: { ...spec.attributes, ...returnHold(record) } };
+    : {
+        tag: spec.tag,
+        attributes: {
+          ...spec.attributes,
+          ...returnHold(record),
+          ...glideTiming(record),
+        },
+      };
+}
+
+/** The marks that show what comes next; they wait for the landing. */
+const LANDING_WAIT_KINDS = new Set([
+  "order-thread",
+  "order-thread-ink",
+  "step-ghost",
+  "step-ghost-ink",
+  "step-ghost-disc",
+]);
+
+/**
+ * Return the attributes that time a mark against its champions' glides.
+ *
+ * While a tick plays, each body glides from where it started to where it
+ * ends, but the marks are drawn where the plan stands at the end. So a mark
+ * on a champion (Command Ring, Look Ring, Order Studs, Reach Mark) carries
+ * data-glide-follow with record.returnKey and rides that champion's glide,
+ * and a mark that shows what comes next (Order Thread and its underlay, Step
+ * Ghost and its disc and ink) carries data-landing-wait with the keys it
+ * touches (returnKey, and the thread's targetKey) and fades in once those
+ * champions have landed (choreography.js). Neither shows at a landing spot
+ * before its champion arrives. A record without returnKey gets {}. Pure.
+ *
+ * @param {LookRecord} record One hotbar record.
+ * @returns {Record<string, string>}
+ */
+function glideTiming(record) {
+  if (typeof record.returnKey !== "string" || record.returnKey === "") return {};
+  if (!LANDING_WAIT_KINDS.has(record.kind)) {
+    return { "data-glide-follow": record.returnKey };
+  }
+  const keys = [record.returnKey, record.targetKey].filter(
+    (key) => typeof key === "string" && key !== "",
+  );
+  return { "data-landing-wait": [...new Set(keys)].join(" ") };
 }
 
 /**

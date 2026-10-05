@@ -7,11 +7,11 @@ presentation models. They do not step the simulator, save history, read replay
 files, or perform HTTP I/O.
 
 Agent POV scenes also carry the team's merged sight (``team_sight``) for the
-BattleClient's Night Veil: the floor the team's living sensors see, with stones
-blocking sight as in Core, computed here from the POV scene's own sensors and
-stones with numpy (_merged_team_sight_v1). numpy is imported inside those
-helpers, only when a frame is built, so importing this module loads no array
-runtime. The browser only paints it.
+Night Veil: the floor the team's living sensors see, with stones blocking
+sight as in Core, and the shapes the veil passes through while the incoming
+turn plays. rendering.team_sight computes it from the POV scenes' own sensors
+and stones (the Replay Viewer uses the same owner). The browser only paints
+it.
 
 ``advance_live_match_history_v1`` advances the session's Champion Streaks
 counts (every view's takedowns without falling) and its Herald Cards history
@@ -28,13 +28,7 @@ service) into the completion frame.
 
 from __future__ import annotations
 
-import math
-from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import numpy as np
 
 from marl_battlegrounds._battle_client.model import PendingAction
 from marl_battlegrounds._battle_client.protocol import (
@@ -92,8 +86,6 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     AcceptedActionTupleV1,
     AgentPovVisualIncomingSummaryV1,
     AuthorizedBattlefieldSceneV1,
-    AuthorizedObstacleV1,
-    AuthorizedTeamSightV1,
     SubmittedActionTupleV1,
     build_agent_pov_visual_incoming_summary_v1,
     build_replay_oracle_presentation_parts_v1,
@@ -113,6 +105,7 @@ from marl_battlegrounds.rendering.scene import (
     ResearcherAnalyzerProjectionV2,
     VisualEventBatchV2,
 )
+from marl_battlegrounds.rendering.team_sight import with_team_sight_v1
 from marl_battlegrounds.viewer.champion_streaks import (
     NO_TAKEDOWNS,
     ChampionStreakV1,
@@ -166,451 +159,6 @@ from marl_battlegrounds.viewer.presentation_protocol import (
     build_shared_obs_authorized_current_endpoint_v1,
     build_shared_obs_latest_transition_v1,
 )
-
-# The team-sight sweep (Agent POV Night Veil). One ray every 1.5 degrees plus a
-# pair of rays just either side of every stone corner, pillar tangent and point
-# where a reach circle meets a stone or the floor edge, as the approved vision
-# page's sweep does (vision_build.py, sight_shape).
-_SIGHT_RAY_STEP_DEGREES = 1.5
-_SIGHT_CRITICAL_NUDGE = 1e-4
-# Each sensor's shape is pulled toward its sensor by a different tiny fraction,
-# so two shapes never share a stone face or floor edge exactly (no degenerate
-# overlap in the union). 1e-7 of a 6-unit reach is far below a pixel.
-_SIGHT_SHRINK_STEP = 1e-7
-_SIGHT_DECIMALS = 4
-
-type _Polygon = tuple[np.ndarray, np.ndarray]
-
-
-def _sight_critical_angles(
-    ox: float,
-    oy: float,
-    reach: float,
-    width: float,
-    height: float,
-    obstacles: Sequence[AuthorizedObstacleV1],
-) -> list[float]:
-    """Return the ray angles (radians) where one sensor's lit shape changes.
-
-    Parameters
-    ----------
-    ox, oy : float
-        The sensor's place in world units (y up).
-    reach : float
-        Its sight reach in world units.
-    width, height : float
-        The floor size in world units; the floor spans [0, width] x [0, height].
-    obstacles : Sequence[AuthorizedObstacleV1]
-        The map's stones: pillars (center, radius) and walls (center, width,
-        height, theta in radians, width along the rotated x axis).
-
-    Returns
-    -------
-    list[float]
-        Angles of pillar tangents, wall corners, and points where the reach
-        circle meets a stone edge or the floor edge. Unsorted, may repeat.
-    """
-    angles: list[float] = []
-    for obstacle in obstacles:
-        cx, cy = obstacle.center
-        if obstacle.kind == "pillar" and obstacle.radius is not None:
-            r = obstacle.radius
-            dx, dy = cx - ox, cy - oy
-            distance = math.hypot(dx, dy)
-            if distance > r:
-                bearing, half = math.atan2(dy, dx), math.asin(r / distance)
-                angles += [bearing - half, bearing + half]
-            if abs(reach - r) < distance < reach + r and distance > 1e-9:
-                a = (reach * reach - r * r + distance * distance) / (2 * distance)
-                base = math.atan2(dy, dx)
-                spread = math.acos(max(-1.0, min(1.0, a / reach)))
-                angles += [base - spread, base + spread]
-        elif obstacle.width is not None and obstacle.height is not None:
-            c, sn = math.cos(obstacle.theta), math.sin(obstacle.theta)
-            hw, hh = obstacle.width / 2, obstacle.height / 2
-            corners = [
-                (cx + sx * hw * c - sy * hh * sn, cy + sx * hw * sn + sy * hh * c)
-                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
-            ]
-            for index, (px, py) in enumerate(corners):
-                qx, qy = corners[(index + 1) % 4]
-                angles.append(math.atan2(py - oy, px - ox))
-                ex, ey, fx, fy = qx - px, qy - py, px - ox, py - oy
-                a2 = ex * ex + ey * ey
-                b2 = 2 * (fx * ex + fy * ey)
-                c2 = fx * fx + fy * fy - reach * reach
-                disc = b2 * b2 - 4 * a2 * c2
-                if a2 > 1e-12 and disc > 0:
-                    for t in (
-                        (-b2 - math.sqrt(disc)) / (2 * a2),
-                        (-b2 + math.sqrt(disc)) / (2 * a2),
-                    ):
-                        if 0 < t < 1:
-                            angles.append(
-                                math.atan2(py + ey * t - oy, px + ex * t - ox)
-                            )
-    for x in (0.0, width):
-        dx = x - ox
-        if abs(dx) < reach:
-            dy = math.sqrt(reach * reach - dx * dx)
-            angles += [
-                math.atan2(y - oy, dx) for y in (oy - dy, oy + dy) if 0 <= y <= height
-            ]
-    for y in (0.0, height):
-        dy = y - oy
-        if abs(dy) < reach:
-            dx = math.sqrt(reach * reach - dy * dy)
-            angles += [
-                math.atan2(dy, x - ox) for x in (ox - dx, ox + dx) if 0 <= x <= width
-            ]
-    return angles
-
-
-def _sight_polygon(
-    ox: float,
-    oy: float,
-    reach: float,
-    width: float,
-    height: float,
-    obstacles: Sequence[AuthorizedObstacleV1],
-) -> _Polygon:
-    """Return one sensor's lit shape as a star polygon around the sensor.
-
-    Each ray runs from the sensor until it meets a stone, the floor edge or its
-    reach, the same test Core's line of sight makes between two centers
-    (stones block sight; champions do not). Points where three non-reach
-    points lie on one straight line are dropped, as the vision does.
-
-    Parameters
-    ----------
-    ox, oy, reach, width, height, obstacles
-        As in _sight_critical_angles.
-
-    Returns
-    -------
-    tuple[numpy.ndarray, numpy.ndarray]
-        Points (n, 2) float64 in world units, sorted by angle (counterclockwise),
-        and full (n,) bool: True where the ray ran its whole reach (the point
-        lies on the reach circle).
-    """
-    import numpy as np  # lazy: importing this module loads no array runtime
-
-    tau = 2 * math.pi
-    base = [math.radians(i * _SIGHT_RAY_STEP_DEGREES) for i in range(240)]
-    critical = _sight_critical_angles(ox, oy, reach, width, height, obstacles)
-    raw = np.array(
-        base
-        + [a - _SIGHT_CRITICAL_NUDGE for a in critical]
-        + [a + _SIGHT_CRITICAL_NUDGE for a in critical]
-    )
-    raw = np.sort(np.mod(raw, tau))
-    keep = np.concatenate(([True], np.diff(raw) >= 1e-7))
-    angles = raw[keep]
-    dx, dy = np.cos(angles), np.sin(angles)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        tx = np.where(
-            dx > 1e-12, (width - ox) / dx, np.where(dx < -1e-12, -ox / dx, np.inf)
-        )
-        ty = np.where(
-            dy > 1e-12, (height - oy) / dy, np.where(dy < -1e-12, -oy / dy, np.inf)
-        )
-    floor = np.minimum(tx, ty)
-    hit = np.full(angles.shape, np.inf)
-    for obstacle in obstacles:
-        cx, cy = obstacle.center
-        if obstacle.kind == "pillar" and obstacle.radius is not None:
-            px, py = cx - ox, cy - oy
-            b = px * dx + py * dy
-            cc = px * px + py * py - obstacle.radius**2
-            disc = b * b - cc
-            with np.errstate(invalid="ignore"):
-                t = np.where(cc > 0, b - np.sqrt(np.maximum(disc, 0.0)), 0.0)
-            t = np.where((disc >= 0) & (t >= 0), t, np.inf)
-        elif obstacle.width is not None and obstacle.height is not None:
-            c, sn = math.cos(obstacle.theta), math.sin(obstacle.theta)
-            lx = (ox - cx) * c + (oy - cy) * sn
-            ly = -(ox - cx) * sn + (oy - cy) * c
-            ldx, ldy = dx * c + dy * sn, -dx * sn + dy * c
-            low = np.full(angles.shape, -np.inf)
-            high = np.full(angles.shape, np.inf)
-            for p0, dp, half in (
-                (lx, ldx, obstacle.width / 2),
-                (ly, ldy, obstacle.height / 2),
-            ):
-                parallel = np.abs(dp) < 1e-12
-                safe = np.where(parallel, 1.0, dp)
-                t1, t2 = (-half - p0) / safe, (half - p0) / safe
-                outside = parallel & (abs(p0) > half)
-                low = np.where(
-                    parallel,
-                    np.where(outside, np.inf, low),
-                    np.maximum(low, np.minimum(t1, t2)),
-                )
-                high = np.where(
-                    parallel,
-                    np.where(outside, -np.inf, high),
-                    np.minimum(high, np.maximum(t1, t2)),
-                )
-            t = np.where((low <= high) & (high >= 0), np.maximum(low, 0.0), np.inf)
-        else:
-            continue
-        hit = np.minimum(hit, t)
-    best = np.minimum(np.minimum(floor, hit), reach)
-    full = np.minimum(floor, hit) >= reach
-    points = np.stack((ox + dx * best, oy + dy * best), axis=1)
-    previous, following = np.roll(points, 1, axis=0), np.roll(points, -1, axis=0)
-    flat = (
-        ~full
-        & ~np.roll(full, 1)
-        & ~np.roll(full, -1)
-        & (
-            np.abs(
-                (points[:, 0] - previous[:, 0]) * (following[:, 1] - previous[:, 1])
-                - (points[:, 1] - previous[:, 1]) * (following[:, 0] - previous[:, 0])
-            )
-            <= 1e-7
-        )
-        & (np.hypot(*(following - previous).T) >= 1e-9)
-    )
-    points, full = points[~flat], full[~flat]
-    # Two rays may end on the same point (for example both sides of a corner
-    # on the floor edge); keep one, so every outline piece has a length.
-    distinct = np.hypot(*(points - np.roll(points, 1, axis=0)).T) > 1e-9
-    if not distinct.any():
-        distinct[0] = True
-    return points[distinct], full[distinct]
-
-
-def _inside_polygon(points: np.ndarray, polygon: np.ndarray) -> np.ndarray:
-    """Return which points lie inside a polygon (even-odd ray test).
-
-    Parameters
-    ----------
-    points : numpy.ndarray
-        (k, 2) float64 query points.
-    polygon : numpy.ndarray
-        (n, 2) float64 closed polygon (last point joins the first).
-
-    Returns
-    -------
-    numpy.ndarray
-        (k,) bool.
-    """
-    import numpy as np  # lazy: importing this module loads no array runtime
-
-    x0, y0 = polygon[:, 0][None, :], polygon[:, 1][None, :]
-    x1 = np.roll(polygon[:, 0], -1)[None, :]
-    y1 = np.roll(polygon[:, 1], -1)[None, :]
-    px, py = points[:, 0][:, None], points[:, 1][:, None]
-    spans = (y0 > py) != (y1 > py)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        cross_x = (x1 - x0) * (py - y0) / (y1 - y0) + x0
-    return (np.count_nonzero(spans & (px < cross_x), axis=1) % 2) == 1
-
-
-def _merged_team_sight_v1(
-    scene: AuthorizedBattlefieldSceneV1,
-    *,
-    sensor_public_agent_ids: Sequence[str],
-    own_public_agent_id: str,
-) -> AuthorizedTeamSightV1 | None:
-    """Return the floor the viewing team sees now, merged, for the Night Veil.
-
-    Parameters
-    ----------
-    scene : AuthorizedBattlefieldSceneV1
-        The Agent POV scene being built. Only its map (size and stones) and the
-        rows of the named sensors (place, life, ``observation_radius``) are
-        read, so nothing the team cannot see is used.
-    sensor_public_agent_ids : Sequence[str]
-        Public IDs whose sight the team shares: every SharedObs sensor source,
-        or the recipient alone under NoSharedObs. Rows that are missing or not
-        alive give no light.
-    own_public_agent_id : str
-        The recipient (the champion you order); its Reach Edge is the solid one.
-
-    Returns
-    -------
-    AuthorizedTeamSightV1 | None
-        The lit rings and Reach Edges in world units, rounded to 4 decimals.
-        Empty rings when no sensor is alive (the whole floor is dark). None
-        when the merged outline cannot be traced cleanly (a degenerate touch);
-        the page then keeps its reach-circle veil.
-
-    Notes
-    -----
-    Host display work only: no simulator step, no JAX, no file or network
-    access. Each sensor's shape is the vision page's ray sweep; the union keeps
-    each shape's edge pieces that lie inside no other shape and joins them into
-    closed rings. Cost: about 11 ms per frame on CPU (numpy), measured on the
-    Vision Moment with five sensors; the result is about 10 KB of JSON.
-    """
-    import numpy as np  # lazy: importing this module loads no array runtime
-
-    width, height = scene.map.width, scene.map.height
-    obstacles = scene.map.obstacles
-    wanted = set(sensor_public_agent_ids)
-    sensors = [
-        row
-        for row in scene.agents
-        if row.public_agent_id in wanted and row.life_state == "alive"
-    ]
-    polygons: list[np.ndarray] = []
-    fulls: list[np.ndarray] = []
-    owners: list[str] = []
-    for index, row in enumerate(sensors):
-        ox, oy = row.position
-        points, full = _sight_polygon(
-            ox, oy, row.observation_radius, width, height, obstacles
-        )
-        shrink = 1 - _SIGHT_SHRINK_STEP * (index + 1)
-        polygons.append(np.array((ox, oy)) + (points - np.array((ox, oy))) * shrink)
-        fulls.append(full)
-        owners.append(row.public_agent_id)
-    # Split every edge where it crosses an edge of another shape.
-    splits: list[list[list[tuple[float, tuple[float, float]]]]] = [
-        [[] for _ in polygon] for polygon in polygons
-    ]
-    for i in range(len(polygons)):
-        a0 = polygons[i]
-        d1 = np.roll(a0, -1, axis=0) - a0
-        for j in range(i + 1, len(polygons)):
-            b0 = polygons[j]
-            d2 = np.roll(b0, -1, axis=0) - b0
-            denom = (
-                d1[:, 0][:, None] * d2[:, 1][None, :]
-                - d1[:, 1][:, None] * d2[:, 0][None, :]
-            )
-            ex = b0[:, 0][None, :] - a0[:, 0][:, None]
-            ey = b0[:, 1][None, :] - a0[:, 1][:, None]
-            with np.errstate(divide="ignore", invalid="ignore"):
-                t = (ex * d2[:, 1][None, :] - ey * d2[:, 0][None, :]) / denom
-                u = (ex * d1[:, 1][:, None] - ey * d1[:, 0][:, None]) / denom
-            crossing = (np.abs(denom) > 1e-15) & (t > 0) & (t < 1) & (u > 0) & (u < 1)
-            for ia, jb in zip(*np.nonzero(crossing), strict=True):
-                ta, ub = float(t[ia, jb]), float(u[ia, jb])
-                point = (
-                    float(a0[ia, 0] + ta * d1[ia, 0]),
-                    float(a0[ia, 1] + ta * d1[ia, 1]),
-                )
-                splits[i][int(ia)].append((ta, point))
-                splits[j][int(jb)].append((ub, point))
-    # Cut each shape's edges into pieces and keep the pieces inside no other shape.
-    pieces: list[tuple[int, int, tuple[float, float], tuple[float, float]]] = []
-    for i, polygon in enumerate(polygons):
-        count = len(polygon)
-        for k in range(count):
-            start = (float(polygon[k, 0]), float(polygon[k, 1]))
-            end_index = (k + 1) % count
-            end = (float(polygon[end_index, 0]), float(polygon[end_index, 1]))
-            stops = [start, *(point for _, point in sorted(splits[i][k])), end]
-            pieces.extend(
-                (i, k, stops[n], stops[n + 1])
-                for n in range(len(stops) - 1)
-                if stops[n] != stops[n + 1]
-            )
-    if not pieces:
-        return AuthorizedTeamSightV1(lit_rings=(), own_edges=(), allied_edges=())
-    middles = np.array(
-        [((p[0] + q[0]) / 2, (p[1] + q[1]) / 2) for _, _, p, q in pieces]
-    )
-    owner_index = np.array([piece[0] for piece in pieces])
-    covered = np.zeros(len(pieces), dtype=bool)
-    for j, polygon in enumerate(polygons):
-        others = owner_index != j
-        covered[others] |= _inside_polygon(middles[others], polygon)
-    kept = [piece for piece, hidden in zip(pieces, covered, strict=True) if not hidden]
-    # Join the kept pieces into closed rings.
-    outgoing: dict[tuple[float, float], list[int]] = {}
-    for index, (_, _, start, _) in enumerate(kept):
-        outgoing.setdefault(start, []).append(index)
-    used = [False] * len(kept)
-    rings: list[tuple[tuple[float, float], ...]] = []
-    for first in range(len(kept)):
-        if used[first]:
-            continue
-        ring: list[tuple[float, float]] = []
-        index = first
-        while not used[index]:
-            used[index] = True
-            _, _, start, end = kept[index]
-            ring.append(start)
-            following = [n for n in outgoing.get(end, ()) if not used[n]]
-            if not following:
-                if end != kept[first][2]:
-                    return None
-                break
-            if len(following) > 1:
-                return None
-            index = following[0]
-        if len(ring) >= 3:
-            rings.append(tuple(ring))
-    # Reach Edges: kept pieces of reach-circle edges, joined along each shape.
-    own: list[tuple[tuple[float, float], ...]] = []
-    allied: list[tuple[tuple[float, float], ...]] = []
-    run: list[tuple[float, float]] = []
-    run_owner = -1
-    for i, k, start, end in [*kept, (-1, -1, (0.0, 0.0), (0.0, 0.0))]:
-        arc = i >= 0 and bool(fulls[i][k]) and bool(fulls[i][(k + 1) % len(fulls[i])])
-        if run and (not arc or i != run_owner or start != run[-1]):
-            (own if owners[run_owner] == own_public_agent_id else allied).append(
-                tuple(run)
-            )
-            run = []
-        if arc:
-            if not run:
-                run = [start]
-                run_owner = i
-            run.append(end)
-
-    def rounded(
-        runs: list[tuple[tuple[float, float], ...]],
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Round every point to _SIGHT_DECIMALS decimals (world units)."""
-        return tuple(
-            tuple(
-                (round(x, _SIGHT_DECIMALS), round(y, _SIGHT_DECIMALS))
-                for x, y in points
-            )
-            for points in runs
-        )
-
-    return AuthorizedTeamSightV1(
-        lit_rings=rounded(rings),
-        own_edges=rounded(own),
-        allied_edges=rounded(allied),
-    )
-
-
-def _with_team_sight_v1(
-    scene: AuthorizedBattlefieldSceneV1,
-    *,
-    sensor_public_agent_ids: Sequence[str],
-    own_public_agent_id: str,
-) -> AuthorizedBattlefieldSceneV1:
-    """Return the Agent POV scene with its merged team sight attached.
-
-    Parameters
-    ----------
-    scene : AuthorizedBattlefieldSceneV1
-        The POV scene the live builder just made (team_sight None).
-    sensor_public_agent_ids : Sequence[str]
-        As in _merged_team_sight_v1.
-    own_public_agent_id : str
-        As in _merged_team_sight_v1.
-
-    Returns
-    -------
-    AuthorizedBattlefieldSceneV1
-        A copy with ``team_sight`` set, or the same scene when the outline
-        could not be traced (see _merged_team_sight_v1).
-    """
-    sight = _merged_team_sight_v1(
-        scene,
-        sensor_public_agent_ids=sensor_public_agent_ids,
-        own_public_agent_id=own_public_agent_id,
-    )
-    return scene if sight is None else replace(scene, team_sight=sight)
 
 
 def _require_live_header(
@@ -1875,13 +1423,27 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         public_catalog=public_catalog,
         authority_session_id=raw_frame.session_id,
     )
+    # The recipient's scene at the start of the incoming turn (None on frame
+    # zero): the Night Veil's turn shapes and the visual events both read it.
+    previous = (
+        None
+        if carrier is None
+        else build_no_shared_obs_authorized_scene_v1(
+            carrier,
+            public_catalog=public_catalog,
+            authority_session_id=raw_frame.session_id,
+            frame_index=carrier.start_frame.frame_index,
+        )
+    )
     # The Night Veil's merged sight: under NoSharedObs the recipient alone.
     parts = replace(
         parts,
-        scene=_with_team_sight_v1(
+        scene=with_team_sight_v1(
             parts.scene,
             sensor_public_agent_ids=(parts.recipient_public_agent_id,),
             own_public_agent_id=parts.recipient_public_agent_id,
+            turn_start_scene=None if previous is None else previous.scene,
+            turn_start_sensor_public_agent_ids=(parts.recipient_public_agent_id,),
         ),
     )
     endpoint = build_no_shared_obs_authorized_current_endpoint_v1(
@@ -1921,12 +1483,8 @@ def build_live_no_shared_obs_authorized_presentation_v1(
             raise TypeError(
                 "non-initial live NoSharedObs frames require exact visual events."
             )
-        previous = build_no_shared_obs_authorized_scene_v1(
-            carrier,
-            public_catalog=public_catalog,
-            authority_session_id=raw_frame.session_id,
-            frame_index=carrier.start_frame.frame_index,
-        )
+        if previous is None:  # pragma: no cover - built above with the carrier.
+            raise AssertionError("live NoSharedObs start scene disappeared")
         if (
             type(previous_global_frame) is not EvaluationFrameV1
             and type(previous_global_frame) is not EvaluationFrameV2
@@ -2226,16 +1784,41 @@ def build_live_shared_obs_authorized_presentation_v1(
         public_catalog=context.static_mechanics_catalog,
         authority_session_id=raw_frame.session_id,
     )
+    # The recipient's SharedObs scene at the start of the incoming turn (None
+    # on frame zero): the Night Veil's turn shapes and the visual events both
+    # read it.
+    previous: SharedObsAuthorizedScenePartsV1 | None = None
+    if view is not None:
+        previous_recipient, previous_nonrecipient = _shared_obs_source_materials(
+            context,
+            view.start_frame,
+            recipient_global_slot=authorized_recipient_global_slot,
+        )
+        previous = build_shared_obs_authorized_scene_v1(
+            previous_recipient,
+            all_active_nonrecipient_source_material=previous_nonrecipient,
+            public_catalog=context.static_mechanics_catalog,
+            authority_session_id=raw_frame.session_id,
+        )
     # The Night Veil's merged team sight, from the team's own sensors.
     current = replace(
         current,
-        scene=_with_team_sight_v1(
+        scene=with_team_sight_v1(
             current.scene,
             sensor_public_agent_ids=tuple(
                 source.source_public_agent_id
                 for source in current.authorized_sensor_sources
             ),
             own_public_agent_id=current.recipient_public_agent_id,
+            turn_start_scene=None if previous is None else previous.scene,
+            turn_start_sensor_public_agent_ids=(
+                ()
+                if previous is None
+                else tuple(
+                    source.source_public_agent_id
+                    for source in previous.authorized_sensor_sources
+                )
+            ),
         ),
     )
     endpoint = build_shared_obs_authorized_current_endpoint_v1(
@@ -2284,20 +1867,10 @@ def build_live_shared_obs_authorized_presentation_v1(
         living_sensor_public_agent_ids=current_sensor_ids,
     )
 
-    previous: SharedObsAuthorizedScenePartsV1 | None = None
     visual_events = None
     if view is not None:
-        previous_recipient, previous_nonrecipient = _shared_obs_source_materials(
-            context,
-            view.start_frame,
-            recipient_global_slot=authorized_recipient_global_slot,
-        )
-        previous = build_shared_obs_authorized_scene_v1(
-            previous_recipient,
-            all_active_nonrecipient_source_material=previous_nonrecipient,
-            public_catalog=context.static_mechanics_catalog,
-            authority_session_id=raw_frame.session_id,
-        )
+        if previous is None:  # pragma: no cover - built above with the view.
+            raise AssertionError("live SharedObs start scene disappeared")
         previous_living_ids = {
             roster.public_agent_id
             for roster in context.roster

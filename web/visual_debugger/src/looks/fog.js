@@ -4,19 +4,20 @@
  * nothing.
  *
  * What it draws (store part "Fog And Vision", plan P18 and P19):
- * - Sight Reach veil (`pov_sight_veil`): the floor OUTSIDE the sight reach
- *   circles of the frame's living sensors is darkened with Ink at 45%. The lit
- *   floor gets a faint 4% Lift and a thin Reach Edge where a circle is not
- *   inside another one. In live play (input.live) the numbers are the
- *   BattleClient vision's: Ink at 52%, a 5% Lift, the own edge at 45%
- *   (FOG_LOOK_LIVE). The vision also darkens the sight shadows that stones
- *   cast; this look never tests stone (amendment A17 keeps line of sight out
- *   of the browser), so in live play it paints the host's merged team sight
- *   (`scene.team_sight`, stone shadows included) when the scene carries it,
- *   and the reach circles otherwise (the Replay Viewer). The veil is made of exact pieces cut where the shape
- *   changes, with straight floor sides and SVG arc circle sides, so its edge
- *   is smooth with no row steps (no masks, clip paths, gradients or filters).
- *   It sits in the `fog` layer, under the stones.
+ * - Sight veil (`pov_sight_veil`, the Stone Shadows look): every blind spot
+ *   of the viewing team is darkened with Ink at 45%: the floor beyond its
+ *   living sensors' sight reach and the shadows that stones cast. The lit
+ *   floor gets a faint 4% Lift and a thin Reach Edge. In live play
+ *   (input.live) the numbers are the BattleClient vision's: Ink at 52%, a 5%
+ *   Lift, the own edge at 45% (FOG_LOOK_LIVE). This look never tests stone
+ *   (amendment A17 keeps line of sight out of the browser): it paints the
+ *   host's merged team sight (`scene.team_sight`, rendering/team_sight.py),
+ *   which every Agent POV frame of the three clients carries, picking the
+ *   host's shape for each beat of the tick (hostSightFor). Only a scene
+ *   without one falls back to the reach circles, cut into exact pieces with
+ *   straight floor sides and SVG arc circle sides. Either way the veil is one
+ *   even-odd path (no masks, clip paths, gradients or filters). It sits in
+ *   the `fog` layer, under the stones.
  * - Recipient Rim (`pov_recipient_rim`): a thin silver ring at 0.98R on the
  *   champion whose eyes the view uses (the scene row with relation "self").
  * - Spotted Glint (`sight_change_marks`, play only): a ring that shrinks onto
@@ -46,10 +47,11 @@
  * Boundary (Agent POV): records read only the audience's own arena scene, the
  * frame's authorized sensor list (`current_endpoint.parts.authorized_sensor_sources`),
  * the audience's own visual-event trajectories and the audience's own beat
- * schedule. They never read a researcher view or a match summary. The veil is
- * a reach display, NOT a line-of-sight shape: stone is never tested here
- * (amendment A17 forbids rebuilding line of sight in the browser). Only living
- * sensors give light; dead ones give none. Hidden champions are never drawn:
+ * schedule. They never read a researcher view or a match summary. Stone is
+ * never tested here (amendment A17 forbids rebuilding line of sight in the
+ * browser): the exact shape is the host's team_sight, which holds only the
+ * team's own lit floor and names no enemy. Only living sensors give light;
+ * dead ones give none. Hidden champions are never drawn:
  * the rim, glint and Last Seen ring use only bodies and positions this
  * audience saw.
  */
@@ -85,6 +87,16 @@ import {
  *   A named beat that changes the veil: "stride" (the glide at the start of a
  *   tick, key null), "fall" or "return" (keyed by the champion's presentation
  *   key, as in the plan's beat schedule).
+ * @typedef {{
+ *   circles: SightCircle[],
+ *   arrive: SightBeat | null,
+ *   stage: "start" | "end",
+ *   litIds: string[],
+ * }} LightState
+ *   One light state of a tick (lightStates): the lit sensors' reach circles,
+ *   the beat it arrives on (null for the first state), its stage ("start":
+ *   START spots, "end": END spots) and the sorted public IDs of the sensors
+ *   giving light.
  */
 
 /**
@@ -678,11 +690,14 @@ function beatRows(rows) {
  * spots), then the glide (Stride) to END spots, then each sensor's Fall beat
  * (its light goes out) and Return beat (its light opens on its pad), in beat
  * order. The last state always equals END (living sensors at END spots).
- * Neighbouring identical states are merged.
+ * Neighbouring identical states are merged. Each state also says its stage
+ * ("start": START spots, "end": END spots) and the sorted public IDs of the
+ * sensors giving light, so a host sight shape can be picked for it
+ * (hostSightFor).
  *
  * @param {LookInput} input
  * @param {JsonRecord[]} sensors
- * @returns {Array<{circles: SightCircle[], arrive: SightBeat | null}>}
+ * @returns {Array<LightState>}
  */
 function lightStates(input, sensors) {
   const schedule = isRecord(input.schedule) ? input.schedule : {};
@@ -736,14 +751,27 @@ function lightStates(input, sensors) {
         .map((agent) => circleFor(agent, stage))
         .filter((circle) => circle !== null)
     );
-  /** @type {Array<{circles: SightCircle[], arrive: SightBeat | null}>} */
+  /** @param {(agent: JsonRecord) => boolean} lit */
+  const litIds = (lit) =>
+    sensors
+      .filter(lit)
+      .map((agent) => String(agent.public_agent_id))
+      .sort();
+  /** @type {Array<LightState>} */
   const states = [];
   if (trajectories.size > 0) {
-    states.push({ circles: circles(aliveAtStart, "start"), arrive: null });
+    states.push({
+      circles: circles(aliveAtStart, "start"),
+      arrive: null,
+      stage: "start",
+      litIds: litIds(aliveAtStart),
+    });
   }
   states.push({
     circles: circles(aliveAtStart, "end"),
     arrive: states.length > 0 ? { kind: "stride", key: null } : null,
+    stage: "end",
+    litIds: litIds(aliveAtStart),
   });
   const lit = new Set(
     sensors.filter(aliveAtStart).map((agent) => String(agent.presentation_key)),
@@ -762,16 +790,25 @@ function lightStates(input, sensors) {
     if (beat.kind === "fall") lit.delete(beat.key);
     else if (aliveAtEnd(agent)) lit.add(beat.key);
     else continue;
+    const isLit = (/** @type {JsonRecord} */ row) =>
+      lit.has(String(row.presentation_key));
     states.push({
-      circles: circles((row) => lit.has(String(row.presentation_key)), "end"),
+      circles: circles(isLit, "end"),
       arrive: { kind: beat.kind, key: beat.key },
+      stage: "end",
+      litIds: litIds(isLit),
     });
   }
   // The last state is END by definition.
-  states[states.length - 1].circles = circles(aliveAtEnd, "end");
+  const last = states[states.length - 1];
+  last.circles = circles(aliveAtEnd, "end");
+  last.litIds = litIds(aliveAtEnd);
+  // Two neighbours with the same lit circles paint the same light (a host
+  // shape depends only on the lit sensors' spots and reaches), so the later
+  // one is dropped.
   /** @param {SightCircle[]} list */
   const signature = (list) => JSON.stringify(list.map((c) => [c.x, c.y, c.r, c.own]));
-  /** @type {Array<{circles: SightCircle[], arrive: SightBeat | null}>} */
+  /** @type {Array<LightState>} */
   const merged = [];
   for (const state of states) {
     const previous = merged[merged.length - 1];
@@ -807,16 +844,17 @@ function runPath(points, transform, closed) {
 /**
  * Return the veil, lift and edge paths of the host's merged team sight.
  *
- * teamSight is the live Agent POV scene's `team_sight` (world units): its
- * `lit_rings` are closed outlines of the lit floor; `own_edges` and
- * `allied_edges` are Reach Edge polylines. The veil path is the floor
+ * teamSight is an Agent POV scene's `team_sight` (BattleClient, DevClient or
+ * Replay Viewer) or one of its `turn_shapes` rows (hostSightFor picks which),
+ * in world units: its `lit_rings` are closed outlines of the lit floor;
+ * `own_edges` and `allied_edges` are Reach Edge polylines. The veil path is the floor
  * rectangle (corners rounded as the vision's veil, 6 of its 50-per-unit
  * pixels) plus every ring, and the lift path is the rings alone; both are
  * filled even-odd, so the veil covers exactly the unseen floor, stone
  * shadows included, with flat export-safe shapes (no mask). Nothing here
  * tests stone: the host did (amendment A17).
  *
- * @param {JsonRecord} teamSight The scene's team_sight row.
+ * @param {JsonRecord} teamSight The scene's team_sight row or a turn shape row.
  * @param {number} width Floor width in world units.
  * @param {number} height Floor height in world units.
  * @param {LookTransform} transform This render's projection.
@@ -852,6 +890,57 @@ function teamSightGeometry(teamSight, width, height, transform) {
 }
 
 /**
+ * Return the host shape that paints one light state of a tick.
+ *
+ * teamSight is the scene's `team_sight`: its own rings are this frame's END
+ * light (the last state), and its `turn_shapes` hold the turn's other shapes,
+ * each keyed by stage ("turn_start" or "turn_end") and the sorted public IDs
+ * of the champions giving light (rendering/team_sight.py builds the turn
+ * start, the glide and the set left after each Fall beat). A "start" state
+ * takes the turn_start shape; an "end" state takes the shape whose IDs match
+ * its own exactly. A state with no exact match (a moment that lasts no time,
+ * such as one Return of several at the same instant, or an outline the host
+ * could not trace) takes the nearest shape: the fewest champions lit in one
+ * and not the other, the frame's own shape on a tie. The last state always
+ * takes the frame's own shape, so a still picture is the true END light.
+ *
+ * @param {JsonRecord} teamSight The scene's team_sight row.
+ * @param {LightState} state One state from lightStates.
+ * @param {boolean} last True for the tick's last (END) state.
+ * @param {ReadonlyArray<string>} endIds The sorted public IDs lit at END (the
+ *   last state's litIds), which the frame's own shape lights.
+ * @returns {JsonRecord} A row with lit_rings, own_edges and allied_edges.
+ */
+function hostSightFor(teamSight, state, last, endIds) {
+  if (last) return teamSight;
+  const shapes = asArray(teamSight.turn_shapes).filter(isRecord);
+  if (state.stage === "start") {
+    const start = shapes.find((row) => row.stage === "turn_start");
+    if (start) return start;
+  }
+  const wanted = new Set(state.litIds);
+  /** @param {ReadonlyArray<unknown>} ids */
+  const distance = (ids) => {
+    const have = new Set(ids.map(String));
+    let count = 0;
+    for (const id of have) if (!wanted.has(id)) count += 1;
+    for (const id of wanted) if (!have.has(id)) count += 1;
+    return count;
+  };
+  let best = teamSight;
+  let bestDistance = distance(endIds);
+  for (const row of shapes) {
+    if (row.stage !== "turn_end") continue;
+    const d = distance(asArray(row.lit_public_agent_ids));
+    if (d < bestDistance) {
+      best = row;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/**
  * Return the Sight Reach veil record of an Agent POV scene, or null.
  *
  * @param {LookInput} input
@@ -872,27 +961,39 @@ function veilRecord(input, agents, scene, transform) {
     ownEdge: look.ownEdgeOpacity,
     alliedEdge: look.alliedEdgeOpacity,
   });
-  if (input.live === true && isRecord(scene.team_sight)) {
+  const sensors = sensorAgents(agents, input.sensorSources);
+  const states = lightStates(input, sensors);
+  const teamSight = isRecord(scene.team_sight) ? scene.team_sight : null;
+  if (teamSight !== null) {
+    const endIds = states[states.length - 1]?.litIds ?? [];
+    // The host's exact sight (stone shadows included), one shape per light
+    // state, so the veil changes on the same beats as the circles would.
     return Object.freeze({
       kind: "sight-veil",
       part: "under",
       width,
       height,
       opacities,
-      states: Object.freeze([
-        Object.freeze({
-          index: 0,
-          circles: Object.freeze([]),
-          arrive: null,
-          leave: null,
-          endOpacity: 1,
-          ...teamSightGeometry(scene.team_sight, width, height, transform),
+      states: Object.freeze(
+        states.map((state, index) => {
+          const next = states[index + 1];
+          return Object.freeze({
+            index,
+            circles: Object.freeze([...state.circles]),
+            arrive: state.arrive === null ? null : Object.freeze({ ...state.arrive }),
+            leave: next?.arrive ? Object.freeze({ ...next.arrive }) : null,
+            endOpacity: index === states.length - 1 ? 1 : 0,
+            ...teamSightGeometry(
+              hostSightFor(teamSight, state, index === states.length - 1, endIds),
+              width,
+              height,
+              transform,
+            ),
+          });
         }),
-      ]),
+      ),
     });
   }
-  const sensors = sensorAgents(agents, input.sensorSources);
-  const states = lightStates(input, sensors);
   return Object.freeze({
     kind: "sight-veil",
     part: "under",
@@ -1088,11 +1189,16 @@ function lastSeenRecord(input, event) {
  *
  * input.live (optional, default false): true in the BattleClient and the
  * DevClient combat screen, where the veil takes the vision's opacities
- * (FOG_LOOK_LIVE); otherwise FOG_LOOK's. In live play, when the scene
- * carries the host's merged team sight (`scene.team_sight`), the veil is that
- * shape, stone shadows included, as one END state (no beat states; the light
- * changes with the next frame), with fillRule "evenodd" on the state.
- * Otherwise it is built from the sensors' reach circles as before.
+ * (FOG_LOOK_LIVE); otherwise FOG_LOOK's (the Replay Viewer).
+ *
+ * When the scene carries the host's merged team sight (`scene.team_sight`;
+ * every Agent POV frame of the three clients does), each light state paints
+ * the host's exact shape for that moment (hostSightFor), stone shadows
+ * included, with fillRule "evenodd" on the state: the turn-start shape until
+ * the glide, then the shape of the champions still giving light after each
+ * Fall and Return beat, ending on the frame's own shape. Only a scene without
+ * it (an older producer, or an outline the host could not trace) falls back
+ * to the sensors' reach circles.
  *
  * The "sight-veil" record is {kind, part, width, height, opacities, states}:
  * width and height in world units; opacities {veil, lift, ownEdge,
@@ -1577,7 +1683,7 @@ export function tooltip(record) {
   const copy = {
     "sight-veil": [
       "Sight Reach",
-      "In Agent POV the dark floor is beyond the sight reach of your team's living champions. It shows reach, not true sight: stone also blocks sight inside the circle, and champions just back on their pads stay hidden.",
+      "In Agent POV the dark floor is everywhere your team cannot see: beyond its living champions' sight reach and in the shadow behind every stone. Enemies just back on their pads stay hidden even in the light.",
     ],
     "recipient-rim": ["Agent POV", "You see through this champion's eyes."],
     "spotted-glint": ["Came Into Sight", "This champion came into sight this tick."],
@@ -1651,8 +1757,10 @@ function fadeIn(beats, kind, reduced) {
  * over layer); plan is the choreography plan (epochKey and beats, a
  * BeatSchedule); options.motionMode is "normal", "reduced" or "off";
  * options.renderPolicy is "live_once", "replay_animated", "replay_static" or
- * "replay_step"; options.step is "forward" for a +1 step (anything else counts
- * as no glide).
+ * "replay_step"; for a replay_step (a -1 rewind; a +1 step plays its tick and
+ * uses "replay_animated"), options.outgoing lists the copies of the veil the
+ * page showed before the step (the choreographer took them and put them back
+ * in the page) and options.duration is how long the rewind takes in ms.
  *
  * Played tick (live_once or replay_animated, motion on): each veil state
  * shows from its arrive beat to its leave beat. The new state fades in (half
@@ -1661,15 +1769,17 @@ function fadeIn(beats, kind, reduced) {
  * example Death Effects off) changes at once. Reduced motion scales beat
  * times by beats.reducedScale and uses 110 ms fades. Each Spotted Glint plays
  * over the Settle window: opacity 0 to 50% to 0 while it shrinks from 1.35R
- * to R (reduced: one 110 ms blink, no shrink). A +1 step (replay_step with
- * step "forward", normal motion): the first state fades out and the END state
- * fades in over 200 ms; the rest snaps. Anything else returns []. Every
- * override uses fill "backwards", so cancelling or finishing it shows END.
- * Reads the DOM only; changes nothing.
+ * to R (reduced: one 110 ms blink, no shrink). A -1 rewind (replay_step,
+ * normal motion, with outgoing copies): the copies of the old veil fade from 1
+ * to 0 and the new END state fades from 0 to its END opacity, both over
+ * options.duration, so the light moves back with the champions instead of
+ * cutting; the copies' END opacity is 0. Without copies a rewind changes at
+ * once. Anything else returns []. Every override uses fill "backwards", so
+ * cancelling or finishing it shows END. Reads the DOM only; changes nothing.
  *
  * @param {ParentNode | null} root
  * @param {JsonRecord | null} plan
- * @param {{motionMode?: string, renderPolicy?: string, step?: string | null}} [options]
+ * @param {{motionMode?: string, renderPolicy?: string, outgoing?: ReadonlyArray<Element>, duration?: number}} [options]
  * @returns {AnimationSpec[]}
  */
 export function sightAnimationSpecs(root, plan, options = {}) {
@@ -1697,23 +1807,15 @@ export function sightAnimationSpecs(root, plan, options = {}) {
   };
   const states = [...root.querySelectorAll("[data-fog-state]")];
   if (policy === "replay_step") {
-    if (motion !== "normal" || options.step !== "forward") return [];
-    const indexes = states.map((element) =>
-      Number(element.getAttribute("data-fog-state")),
-    );
-    const last = Math.max(-1, ...indexes);
-    if (last < 1) return [];
+    const outgoing = options.outgoing ?? [];
+    if (motion !== "normal" || outgoing.length === 0) return [];
+    const duration = Math.max(1, finiteNumber(options.duration, FOG_LOOK.stepFadeMs));
+    for (const element of outgoing) {
+      push(element, [{ opacity: 1 }, { opacity: 0 }], { duration });
+    }
     for (const element of states) {
-      const index = Number(element.getAttribute("data-fog-state"));
-      if (index === 0) {
-        push(element, [{ opacity: 1 }, { opacity: 0 }], {
-          duration: FOG_LOOK.stepFadeMs,
-        });
-      } else if (index === last) {
-        push(element, [{ opacity: 0 }, { opacity: 1 }], {
-          duration: FOG_LOOK.stepFadeMs,
-        });
-      }
+      const end = finiteNumber(Number(element.getAttribute("opacity")), 0);
+      if (end > 0) push(element, [{ opacity: 0 }, { opacity: end }], { duration });
     }
     return specs;
   }

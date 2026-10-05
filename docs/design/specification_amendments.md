@@ -3498,7 +3498,7 @@ Those need learning evidence.
 **Classification:** approved presentation change (owner, 30 September and
 1 October 2026). No Core change.
 **Revises:** the BattleClient's starting view, the Replay Viewer's starting
-speed and keyboard, A17's drawing of the SharedObs view (it adds a reach
+speed and keyboard, A17's drawing of the SharedObs view (it adds a sight
 veil; the union itself is unchanged) and A44's Viewer paragraph (visual
 switches and PNG provenance). Simulator rules, observations, action masks,
 policy inputs, metrics, scores and replay files keep their meaning.
@@ -3578,14 +3578,20 @@ can look longer than the ability's real reach. A faint imprint ring and
 hairline keep the true spot where the blow was decided. A Warrior's Charge
 is the one exception: its path runs from its start to its landing.
 
-**Sight Reach veil.** In Agent POV the floor outside the observation-reach
-circles of the frame's authorized living sensors is darkened. Under
+**Sight veil (Stone Shadows).** In Agent POV every blind spot of the
+viewing team is darkened: the floor beyond the observation reach of the
+frame's authorized living sensors and the shadow behind every stone. Under
 NoSharedObs only the recipient counts; under SharedObs its team's sensors
-count. It uses the same recorded data as the range rings. It shows reach,
-not sight: stone also blocks sight inside a circle, and champions just back
-on their pads stay hidden. The browser does not work out line of sight, as
-A17 requires. A true sight shape would need a new host producer and a new
-amendment.
+count. A trusted host producer, `rendering.team_sight`, builds the shape for
+the BattleClient, DevClient and Replay Viewer alike, from the authorized POV
+scene only (the sensors' own places and reaches and the public map), with
+Core's line-of-sight rule: stones block sight, champions do not. It names no
+enemy. The browser only paints it and never works out line of sight, as A17
+requires. While a tick plays, the veil keeps the start-of-tick shape until the
+glide, then changes at each Fall and Return beat; a paused frame shows the
+true shape at the end of the tick. Enemies under a Spawn Shield stay hidden
+even in the light. Saved replays need no change: the server builds the shape
+from recorded positions.
 
 **Host additions (no Core change).** Each recorded death row carries
 `home_fall`, true when the death scored double in its own Red Zone. The rule

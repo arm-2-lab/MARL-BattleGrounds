@@ -76,6 +76,10 @@ POV ready" and builds every agent's Agent POV view first, so entering Agent POV
 and switching agents are quick from the first click. That takes a few seconds
 for a full game (about 7 s for a 246-tick five-against-five game on CPU) and
 well under a second for a short scenario. `--no-open` leaves browser opening to you.
+The viewer opens your computer's default browser. As for the
+[BattleClient](../battle_client.md), we recommend an up-to-date desktop
+Firefox; Chrome and Edge work too (the full automated browser tests run on
+Chromium), and Safari should work but is not tested.
 The process reads the replay; it does not change that file or run simulator turns.
 
 For a static frame, install the optional plotting extra and choose a frame:
@@ -274,10 +278,28 @@ Its one button row holds, in order: Start, −10, −1, Play/Pause, +1, +10, End
 the readout ("Tick 118 of 204" with the beat under it: Settled, Playing or
 Paused · Strike), Speed, an Export menu (Export PNG, Download Metrics CSV and
 Episode Details) and the camera switch. In Agent POV the marks come only from
-what the viewing team saw, so an event it never saw is never marked. A Replay
-Viewer notice (for example "Exported …" or a failed request) shows under the
-readout for about 4 seconds, whole, then the beat label comes back; there is no
-notice in the top bar.
+what the viewing team saw, so an event it never saw is never marked.
+
+A Replay Viewer notice (for example "Exported …" or a failed request) shows
+under the readout for about 4 seconds, whole, then the beat label comes back;
+there is no notice in the top bar.
+
+**Stepping one tick.** +1 (and the Right arrow, N, or a slider move of one
+tick) plays that tick exactly as Play does: the champions move, the blows
+land, the numbers pop and a champion that falls falls after its move. Then the
+replay pauses on the tick's still, the same picture a seek to it shows. A
+further +1 while the tick plays skips it to its end and plays the next one.
+−1 (and the Left arrow) rewinds the tick you are leaving: a champion that fell
+in it stands up where it fell, and one that came back to its pad goes back to
+its corpse; then every champion glides back to where the earlier tick ended
+(240 ms), and the earlier tick's strokes, landings, numbers and marks fade in
+once they have landed. In Agent POV the dark veil fades back with them. During
+a played tick or a rewind nothing shows ahead of a champion: the selected
+champion's moonlight, brackets and reach rings move with it, its Focus Trail's
+dots appear as it passes them, and its next action line, All Staged Orders and
+Next Step Ghost appear once it has landed.
+Every speed (0.25× to 2×) scales all of this together. With the **Step
+Glide** switch off, +1 and −1 show the paused tick at once.
 
 Playback sends at most one replay request at a time, with one presentation in
 flight. A press made during a request (a button, a key or the track) is not
@@ -365,9 +387,13 @@ attacker's class, or the timing of its events. Hover tips, Frame Explanation
 (F), the camera and the Rune Scrubber marks follow the same rule. The docked
 Agent, Metrics, Actions and Frame tabs are researcher panels: they show the
 full recorded game under a **Full Record** chip. The **Sight Reach Veil**
-darkens the floor outside the observation-reach circles of the frame's
-authorized living sensors. It shows reach, not sight: stone also blocks sight
-inside a circle, and champions just back on their pads stay hidden. Where a
+darkens every blind spot of the viewing team: the floor beyond the sight reach
+of the frame's authorized living sensors and the shadow behind every stone.
+The server builds the shape from the recorded positions with the game's own
+line-of-sight rule, the same shape the BattleClient draws; while a tick plays
+it keeps the start-of-tick shape until the glide and changes at each Fall and
+Return beat. Enemies just back on their pads stay hidden even in the light.
+Where a
 champion left sight this tick, a dotted **Last Seen** ring with a hollow
 outline of its class emblem marks where it started the tick. A returning
 champion's waystone stays plain until its return beat; its token, ward and
@@ -871,7 +897,10 @@ to 4 still read. Exported PNGs carry no brand mark. Export does not navigate the
 replay frame.
 
 The scoreboard derives the task, participant identities, current scores and
-configured target from the captured episode. Recordings made from 2 October
+configured target from the captured episode. Its tick line reads "Tick 40 of
+156": the second number is the replay's last recorded tick (where the game
+ended, or where it was saved from the BattleClient), the same number the
+transport readout shows, not the 300-tick draw limit. Recordings made from 2 October
 2026, by `evaluate` or saved from the BattleClient or DevClient, keep each
 champion's controller name, and the scoreboard shows exactly those names. An
 older recording keeps its fixed scenario title for Team B of a fixed scenario

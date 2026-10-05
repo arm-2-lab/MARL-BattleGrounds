@@ -207,8 +207,14 @@ test("accepted inputs announce themselves in the vision's words", () => {
     say({ kind: "clear", viaKey: false, editable: true }),
     "Target cleared.",
   );
-  assert.equal(say({ kind: "lock" }), "Orders sent. The policies choose next.");
-  assert.equal(say({ kind: "lock" }, { watchMode: true }), "Playing one turn.");
+  assert.equal(
+    say({ kind: "lock" }),
+    "Waiting for all players to submit their actions…",
+  );
+  assert.equal(
+    say({ kind: "lock" }, { watchMode: true }),
+    "Waiting for all players to submit their actions…",
+  );
 });
 
 test("titles and Lock In labels follow the phase", () => {

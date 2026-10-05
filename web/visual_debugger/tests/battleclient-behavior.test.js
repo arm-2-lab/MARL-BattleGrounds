@@ -195,8 +195,14 @@ test("status sentences use the vision page's exact words", () => {
       { kind: "stopped" },
       "A fresh start is needed, so orders cannot change. You can look around, save or exit.",
     ],
-    [{ kind: "lock_in", watch: false }, "Orders sent. The policies choose next."],
-    [{ kind: "lock_in", watch: true }, "Playing one turn."],
+    [
+      { kind: "lock_in", watch: false },
+      "Waiting for all players to submit their actions…",
+    ],
+    [
+      { kind: "lock_in", watch: true },
+      "Waiting for all players to submit their actions…",
+    ],
     [
       { kind: "view", view: "oracle", unseen: 0, viewers: "your team", watch: false },
       "Oracle View: every champion is shown, even those your team cannot see.",
@@ -442,10 +448,13 @@ test("main.js runs Policies Only turns one at a time in the vision's words", () 
     MAIN,
     /mixed presentation candidate was discarded, and one fresh GET pair was installed\."\s*: \(notice \?\? "Duplicate command recognized/u,
   );
-  assert.equal(statusSentence({ kind: "lock_in", watch: true }), "Playing one turn.");
+  assert.equal(
+    statusSentence({ kind: "lock_in", watch: true }),
+    "Waiting for all players to submit their actions…",
+  );
   assert.equal(
     statusSentence({ kind: "lock_in", watch: false }),
-    "Orders sent. The policies choose next.",
+    "Waiting for all players to submit their actions…",
   );
   assert.equal(statusSentence({ kind: "paused" }), "Paused after the current turn.");
 });

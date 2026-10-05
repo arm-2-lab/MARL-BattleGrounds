@@ -956,8 +956,9 @@ export function projectCertifiedInspectionRoute(
  * visible scene body locally and null clears it. This local selection does not take
  * ownership of another actor's outgoing action or reveal a hidden target.
  * Return a frozen view with audience, map, adapted agents/auras, class/spawn mechanics,
- * spawn pads/waves, the host's merged team sight (`team_sight`, live Agent POV only,
- * else null), selection keys, ranges, pending route, and selected legality.
+ * spawn pads/waves, the host's merged team sight (`team_sight`, with its turn
+ * shapes: every Agent POV frame, live or replayed; null in Oracle View and from
+ * older producers), selection keys, ranges, pending route, and selected legality.
  * Unavailable routes/legality are null; no selected body gives empty ranges. Nested
  * approved source values are shared. No global slot or command field is added.
  *
@@ -1108,8 +1109,8 @@ export function authorizedPresentationSceneView(
     spawn_shield_mechanics: value.scene.spawn_shield_mechanics,
     spawn_pads: value.scene.spawn_pads,
     respawn_waves: value.scene.respawn_waves,
-    // Live Agent POV: the host's merged team sight for the Night Veil (null
-    // in Oracle View, replays and older producers).
+    // Agent POV, live or replayed: the host's merged team sight for the Night
+    // Veil, with its turn shapes (null in Oracle View and older producers).
     team_sight: isRecord(value.scene.team_sight) ? value.scene.team_sight : null,
     selection: Object.freeze({
       controlled_presentation_key: value.viewer_mode === "live" ? ownerKey : null,

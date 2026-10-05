@@ -4,7 +4,8 @@
  * They follow the beat clock: the painter's roots sit in the transient-events
  * layer and the Strike Band (routes and connectors; the earlier transient-route
  * layer is still matched), and the choreographer's overrides on durable nodes (body
- * glides, beat holds, step cue fades, the camera ease) carry "mbg:" ids too.
+ * glides and the marks that ride a step glide, beat holds, step cue fades and
+ * waits, the camera ease) carry "mbg:" ids too.
  */
 import { expect } from "@playwright/test";
 
@@ -16,10 +17,13 @@ export const CHOREOGRAPHY_CONNECTOR_ROOT = `#battlefield ${ROUTE_LAYER} > .comba
 export const CHOREOGRAPHY_ROUTE_ROOT = `#battlefield ${ROUTE_LAYER} > .combat-choreography-routes`;
 
 // Ids of the choreographer's overrides on durable nodes (not painter animations):
-// body glides, step glides, beat holds, step cue fades, the step clock and the
-// camera ease.
+// body glides and step glides (with a Dim Shift's ":dim-shift:move|fade" pair),
+// the marks that ride them (":follow:<n>"), catch-ups a repaint needed
+// (":rejoin:<n>", also for landing waits and rise fades), beat holds, step cue
+// fades, landing waits, a rewind's rise fades, the movement marks, veil beats
+// and hit shivers, the step clocks and the camera ease.
 const OVERRIDE_ID_PATTERN =
-  /:(?:glide|step-glide):[^:]+$|:hold:[a-z-]+:\d+$|:step-cue:\d+$|:step$|^mbg:camera:\d+$/u;
+  /:(?:glide|step-glide):[^:]+(?::follow:\d+)?(?::dim-shift:(?:move|fade))?(?::rejoin:\d+)?$|:hold:[a-z-]+:\d+$|:step-cue:\d+$|:landing-wait:(?:rejoin:)?\d+$|:rise:(?:rejoin:)?\d+$|:step(?:-back)?$|:(?:movement|fog|shiver):\d+$|:death-dim$|^mbg:camera:\d+$/u;
 
 /** @param {string} id */
 export function isChoreographyOverrideId(id) {
@@ -289,15 +293,16 @@ export async function assertBoundedChoreography(page) {
   );
   expect(nodeCount).toBeLessThanOrEqual(Math.min(effectIds.length * 30 + 3, 512));
   // Painter animations and clocks keep the per-event bound; the choreographer's
-  // overrides on durable nodes (glides, beat holds, step fades) have their own
-  // budget (the plan's overrideAnimations, at most 96), and all stay under 512.
+  // overrides on durable nodes (glides, beat holds, step fades) have the plan's
+  // allowance (at most 96) plus the riders, landing waits, movement marks and
+  // veil beats bounded by the animation limit only, and all stay under 512.
   const overrideIds = snapshot.animationIds.filter(({ id }) =>
     isChoreographyOverrideId(id),
   );
   expect(snapshot.animationIds.length - overrideIds.length).toBeLessThanOrEqual(
     Math.min(effectIds.length * 4 + 3, 512),
   );
-  expect(overrideIds.length).toBeLessThanOrEqual(96);
+  expect(overrideIds.length).toBeLessThanOrEqual(512);
   expect(snapshot.animationIds.length).toBeLessThanOrEqual(512);
   expect(new Set(snapshot.animationIds.map(({ id }) => id)).size).toBe(
     snapshot.animationIds.length,

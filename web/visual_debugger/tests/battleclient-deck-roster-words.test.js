@@ -18,7 +18,10 @@
  *   step, and no notice in developer words ("action mask",
  *   "Agent g5", "fenced", "coherent latest pair", "Debugger") reaches the
  *   status line.
- * - doThisNow: it never asks for a target when no target is allowed.
+ * - doThisNow: it never asks for a target when no target is allowed, and
+ *   while a turn waits for its actions (after Lock In, or Play One Turn in
+ *   Policies Only) it starts with "Waiting for all players to submit their
+ *   actions…", so a slow method never looks like a frozen game.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -214,4 +217,30 @@ test("Do This Now never asks for a target when none is allowed", () => {
     doThisNow({ ...base, allowedCount: 2 }).text,
     /^Pick a target: hold Shift/u,
   );
+});
+
+test("Do This Now says the turn waits for every player's actions", () => {
+  const base = /** @type {const} */ ({
+    stopped: false,
+    terminal: false,
+    watchMode: false,
+    running: false,
+    focusedManual: true,
+    lastManualName: "Priest",
+    fallen: null,
+    targetSet: true,
+    lane: "basic",
+    ultimateOkOnTarget: false,
+    ultimateNeedsNoTarget: false,
+    ultimateName: "Holy Word: Salvation",
+    untouchedOther: null,
+  });
+  for (const phase of /** @type {const} */ (["sent", "choosing"])) {
+    for (const watchMode of [false, true]) {
+      const step = doThisNow({ ...base, phase, watchMode });
+      assert.match(step.text, /^Waiting for all players to submit their actions… /u);
+      assert.equal(step.beacon, null);
+    }
+  }
+  assert.doesNotMatch(doThisNow({ ...base, phase: "plan" }).text, /^Waiting/u);
 });

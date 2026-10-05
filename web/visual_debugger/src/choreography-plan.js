@@ -170,10 +170,15 @@ export const CHOREOGRAPHY_PHASES = Object.freeze({
  *   pad while Resurrection Effects is on. returnWithoutBeat: blow time of a return
  *   when Respawn Wave is off (no Return beat).
  * - reducedChoreography: real ms the blows take in reduced motion.
- * - stepGlide, stepChargeRushForward, stepChargeRushBackward, stepCueFadeEnd: the
- *   one-tick step glide (replay_step): bodies glide 240 ms, a Charge rush takes the
- *   first 100 ms forwards or the first 140 ms backwards, and the tick's cues fade in
- *   from 240 ms to 320 ms.
+ * - stepGlide, stepChargeRushBackward, stepRise, stepCueFadeEnd: the -1 rewind
+ *   (replay_step; a +1 step plays its tick on this clock instead): bodies glide
+ *   back 240 ms, a Charge rush taking the first 140 ms; when a champion's life
+ *   changes, the rise (a fallen champion stands up, a returned one goes back to
+ *   its corpse) comes first and takes 200 ms, so everything after it waits that
+ *   long; the tick's cues fade in from 240 ms to 320 ms after the rise.
+ * - landingFade: how long a what-comes-next mark of a gliding champion (its next
+ *   action line, staged order or Next Step Ghost) takes to fade in once the bodies
+ *   have landed, in ms (from glideEnd in a played tick).
  */
 export const BEAT_CLOCK = Object.freeze({
   glideEnd: 260,
@@ -190,9 +195,10 @@ export const BEAT_CLOCK = Object.freeze({
   endHold: 600,
   reducedChoreography: 220,
   stepGlide: 240,
-  stepChargeRushForward: 100,
   stepChargeRushBackward: 140,
+  stepRise: 200,
   stepCueFadeEnd: 320,
+  landingFade: 80,
 });
 
 /**
@@ -368,7 +374,8 @@ function msPair(start, end) {
  *
  * Return a frozen schedule in real ms at playback rate 1 for normal motion:
  * - glide (Body Glide on: played ticks glide bodies first), stepGlide (Step Glide,
- *   switch step_glide, default on: a one-tick step glides), longTick and lead (200
+ *   switch step_glide, default on: a +1 plays its tick and a -1 rewinds it; off,
+ *   both show the paused tick at once), longTick and lead (200
  *   ms with Longer Tick, else 0), blowSpeed (1, or 1.32 when blows are squeezed).
  * - windows: stride and glide (null when Body Glide is off), chargeRush, strike,
  *   impact and settle. choreographyEnd is when Settle ends (900 + lead).
@@ -5182,7 +5189,9 @@ const OPTIONAL_FAMILY_DROP_ORDER = Object.freeze([
  * perBodyLook covers each body's look-owned overrides (a Dim Shift's second
  * animation, its Start Spot or afterimage, its hit flash and shiver, its Impact
  * life change); sightAndDim covers the Agent POV sight veil states and glints and
- * Death Dimming.
+ * Death Dimming. The choreographer bounds the movement marks and the sight
+ * veil's beats by the animation limit instead (choreography.js #install), so
+ * these two lines are spare room for the holds of a busy tick.
  */
 const OVERRIDE_BUDGET = Object.freeze({
   perFall: 6,

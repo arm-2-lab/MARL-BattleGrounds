@@ -22,7 +22,11 @@
  *   images or id attributes), END opacities in attributes, the afterimage at
  *   opacity 0, reprojection in place.
  * - animationSpecs() and dimShiftSpecs(): beat-clock timing, fill "backwards"
- *   only, and no specs when motion is off.
+ *   only, and no specs when motion is off. In a played tick each Focus Trail
+ *   dot (it knows its leg and share of the path) appears over 60 ms as the
+ *   gliding body passes it, oldest first, never ahead. A -1 rewind ("step") fades every
+ *   mark in once the bodies have landed (from stepMs over stepCueFadeMs), with
+ *   no afterimage.
  * - tooltip(): the "Start Spot" descriptor, null for other kinds.
  *
  * FakeElement is a tiny SVG DOM, just enough for build, update,
@@ -366,6 +370,27 @@ test("the Focus Trail draws eight dots on this tick's own path for the selected 
     { x: chargeTrail.dots[4].x, y: chargeTrail.dots[4].y },
     transform.worldToScreen([10.5, 5]),
   );
+  // Each dot knows its leg (rush 0, stride 1) and how far along it sits.
+  assert.equal(chargeTrail.legs, 2);
+  assert.equal(trail.legs, 1);
+  assert.deepEqual(
+    trail.dots.map((/** @type {Record<string, number>} */ dot) => [dot.leg, dot.share]),
+    trail.dots.map((/** @type {unknown} */ _dot, /** @type {number} */ k) => [
+      0,
+      k / 8,
+    ]),
+  );
+  const chargeLegs = chargeTrail.dots.map(
+    (/** @type {Record<string, number>} */ dot) => dot.leg,
+  );
+  assert.equal(chargeLegs[0], 0);
+  assert.equal(chargeLegs.at(-1), 1);
+  assert.ok(
+    chargeLegs.every(
+      (/** @type {number} */ leg, /** @type {number} */ k) =>
+        k === 0 || leg >= chargeLegs[k - 1],
+    ),
+  );
   // No selection, no trail; a fallen champion's trail waits for its Fall beat.
   const none = input();
   none.scene.selection = { selected_presentation_key: null };
@@ -652,6 +677,36 @@ test("animationSpecs follow the beat clock with fill backwards only", () => {
   assert.equal(chargeStride.length, 1);
   const pin = byClass("movement-pin")[0];
   assert.equal(pin.options.duration, 110);
+  // Each Focus Trail dot appears as the gliding body passes it: dot k at k/8
+  // of a plain path waits until the eased glide has covered that share.
+  const dots = played.filter(
+    (spec) =>
+      /** @type {FakeElement} */ (/** @type {unknown} */ (spec.element)).getAttribute(
+        "class",
+      ) === "movement-trail-dot",
+  );
+  assert.equal(dots.length, 8);
+  const delays = dots.map((spec) => Number(spec.options.delay));
+  assert.equal(delays[0], 0);
+  assert.ok(
+    delays.every((delay, k) => k === 0 || delay > delays[k - 1]),
+    "oldest first",
+  );
+  assert.ok(
+    delays.every((delay) => delay < 260),
+    "each dot is passed during the glide",
+  );
+  assert.ok(dots.every((spec) => spec.options.duration === 60));
+  assert.equal(
+    played.some(
+      (spec) =>
+        /** @type {FakeElement} */ (/** @type {unknown} */ (spec.element)).getAttribute(
+          "class",
+        ) === "movement-focus-trail",
+    ),
+    false,
+    "the trail is not faded in as a whole while the body glides",
+  );
   const smoke = played.filter((spec) =>
     /** @type {FakeElement} */ (/** @type {unknown} */ (spec.element)).hasAttribute(
       "data-afterimage",
@@ -666,23 +721,30 @@ test("animationSpecs follow the beat clock with fill backwards only", () => {
     MOVEMENT.smoke.rimHold / MOVEMENT.smoke.rimEnd,
   );
 
-  const step = animationSpecs(/** @type {any} */ (root), {
-    epochKey: "e2",
+  // A -1 rewind fades every mark in once the bodies have landed: at 240 ms,
+  // or later when fallen champions rise first (440 ms here).
+  const back = animationSpecs(/** @type {any} */ (root), {
+    epochKey: "e2b",
     mode: "step",
     motionMode: "normal",
     beats,
-    stepMs: 240,
+    stepMs: 440,
+    stepCueFadeMs: 80,
   });
-  assert.ok(step.length > 0);
-  assert.ok(step.every((spec) => spec.options.duration === 240));
+  assert.ok(back.length > 0);
   assert.equal(
-    step.some((spec) =>
+    back.some((spec) =>
       /** @type {FakeElement} */ (/** @type {unknown} */ (spec.element)).hasAttribute(
         "data-afterimage",
       ),
     ),
     false,
   );
+  for (const spec of back) {
+    assert.equal(spec.options.delay, 440);
+    assert.equal(spec.options.duration, 80);
+    assert.equal(/** @type {Keyframe[]} */ (spec.keyframes)[0].opacity, 0);
+  }
   const reduced = animationSpecs(/** @type {any} */ (root), {
     epochKey: "e3",
     mode: "played",

@@ -53,6 +53,16 @@ opened the saved replay with **Open Replay**, Exit closes only the game: the cal
 then prints the Replay Viewer's address and waits until you press Exit in the
 Replay Viewer or Ctrl-C (see [Save And Continue](#save-and-continue)).
 
+**Which browser.** We recommend an up-to-date desktop Firefox: the
+maintainers play and review the BattleClient in it, and it gets a smaller
+automated check of play, steps and Agent POV. Chrome and Edge work too: the
+full automated browser tests run on Chromium, their engine. The client uses
+only standard web features, so Safari should work as well, but it is not
+tested. The client does not choose a browser: it opens your computer's default
+browser (Python's `webbrowser` module). To use a different one, pass
+`open_browser=False` and paste the printed URL into it. The client is made for
+desktop and laptop screens, not phones or tablets.
+
 Choose exactly one `map_id` or `scenario_id`. `list_tdm_maps()` and
 `list_tdm_scenarios()` list the packaged choices. Ordinary maps default to the
 canonical five classes per team, both teams Manual, seed 0, 300 steps, score
@@ -185,7 +195,9 @@ it says so and points to Step and Lock In.
 
 The top bar shows the brand, the place ("**Teutoburg Forest** · Map 47 · Team
 Deathmatch", or a scenario's tale title), the **Agent POV** and **Oracle View**
-switch, a **Connected** pill (it reads **Disconnected** when the page loses the
+switch (in Agent POV the floor is dark wherever your team cannot see: beyond
+its champions' sight reach and in the shadow behind every stone), a
+**Connected** pill (it reads **Disconnected** when the page loses the
 local server), the **Recording** pill, then **Visual Filters** (a drawer of
 display switches, closed until you open it), **How To Play ?**, **Finish And
 Save**, **Restart R** and **Exit**. Finish And Save reads **Saving Replay…**
@@ -405,7 +417,10 @@ that target is allowed; the target also gets silver corner brackets. A dotted
 blocks it (it uses your champion's current speed, so a slow shortens it and a
 stun removes it); it is hidden while a Warrior Charge is armed, because the
 Charge decides where the Warrior lands. A policy's champion you only look at
-gets a soft silver ring and no plan marks. The reach rings of the focused
+gets a soft silver ring and no plan marks. While a turn plays, the rings,
+studs, brackets and reach rings move with their champions, and the Order
+Thread and Step Ghost for the next turn appear once the champions have landed,
+so no mark shows where a champion is going before it gets there. The reach rings of the focused
 champion (Basic dashed, Ultimate dotted) are shown from the start; **G** hides
 or shows them. **V** (or the arena's **Everyone In View** key, lit while it is
 on) zooms to keep every champion your view shows in frame and back to the
@@ -567,9 +582,12 @@ screen and a turn already requested still finish; Play One Turn and Lock In
 come back once they have.
 A dead Manual agent still prevents automatic Run because it can respawn. With
 Manual slots, the client always waits for Lock In. Lock In also advances one
-turn when every agent is policy controlled. While a slow method works, the deck
-says the policies are choosing and offers **Cancel Policy Work**; Lock In stays
-disabled until that turn finishes. After a cancel the deck shows **Stopped · A
+turn when every agent is policy controlled. A turn plays only once every
+player's actions are in, however long a method (an LLM, for example) takes.
+While it waits, the message line says **Waiting for all players to submit
+their actions…**, the Lock In button says **Policies Choosing…** and the deck
+offers **Cancel Policy Work**; Lock In stays disabled until that turn
+finishes. After a cancel the deck shows **Stopped · A
 Fresh Start Is Needed**: the game so far is kept, you may look around, **Finish
 And Save** or exit, and a fresh match starts from Python. Refreshes and other
 tabs read the same game.

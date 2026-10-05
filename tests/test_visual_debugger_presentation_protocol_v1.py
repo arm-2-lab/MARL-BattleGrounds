@@ -1766,7 +1766,7 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         "root.$defs.MatchDeathV1": {"killing_team_id", "contributors", "home_fall"},
         "root.$defs.MatchTeamV1": {"display_side"},
         "root.$defs.ReplayIncomingAgentDiedEventV1": {"home_fall"},
-        # Live Agent POV merged team sight; other scenes leave it None.
+        # Agent POV merged team sight (live and replayed); Oracle View leaves it None.
         "root.$defs.AuthorizedBattlefieldSceneV1": {"team_sight"},
     }
     team_properties = cast(

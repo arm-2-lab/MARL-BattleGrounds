@@ -1,7 +1,9 @@
 /**
  * @file Check captured team names, scores and outcomes, including missing summaries
- * and wrong-episode facts, and the score strip's numbers: the tick line ("Tick N
- * of L", or "Tick N" with no episode limit), the points to win and each team's
+ * and wrong-episode facts, and the score strip's numbers: the tick line (in a
+ * replay "Tick N of E", E its last recorded tick, as the Rune Scrubber shows,
+ * never the draw limit; live "Tick N of L", L the draw limit, or "Tick N" with
+ * no limit), the points to win and each team's
  * numeric score (TDM only). The strip's DOM and beat holds are checked in
  * hud.test.js.
  */
@@ -200,6 +202,8 @@ test("match summary gives the tick line and numeric scores for the score strip",
   raw.match_summary.score_threshold = 20;
   raw.match_summary.scores = [7, 3];
   raw.match_summary.outcome = "in_progress";
+  // The fixture game is 3 ticks long; a 300-tick draw limit tells the two apart.
+  raw.match_summary.episode_limit = 300;
   const view = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(raw));
   assert.ok(view);
   assert.equal(view.threshold, 20);
@@ -207,14 +211,33 @@ test("match summary gives the tick line and numeric scores for the score strip",
     view.teams.map((/** @type {Record<string, any>} */ team) => team.scoreValue),
     [7, 3],
   );
+  // A replay reads "of" its last recorded tick (as the Rune Scrubber does),
+  // never the draw limit; the limit stays for the Draw At tip.
+  const current = raw.match_summary.simulator_step_count;
+  const last =
+    current + raw.source.source_final_frame_index - raw.source.source_frame_index;
+  assert.notEqual(last, raw.match_summary.episode_limit);
   assert.deepEqual(view.tick, {
-    current: raw.match_summary.simulator_step_count,
+    current,
     limit: raw.match_summary.episode_limit,
-    text: `Tick ${raw.match_summary.simulator_step_count} of ${raw.match_summary.episode_limit}`,
+    last,
+    text: `Tick ${current} of ${last}`,
   });
   delete raw.match_summary.episode_limit;
   const open = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(raw));
-  assert.equal(open?.tick?.text, `Tick ${raw.match_summary.simulator_step_count}`);
+  assert.equal(open?.tick?.text, `Tick ${current} of ${last}`);
+  // Live play does not know its end yet: "of" the draw limit, or no "of".
+  const live = structuredClone(fixture.presentations.live_shared_obs_agent_pov);
+  const liveView = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(live));
+  assert.deepEqual(liveView?.tick, {
+    current: live.match_summary.simulator_step_count,
+    limit: live.match_summary.episode_limit,
+    last: null,
+    text: `Tick ${live.match_summary.simulator_step_count} of ${live.match_summary.episode_limit}`,
+  });
+  delete live.match_summary.episode_limit;
+  const liveOpen = matchSummaryView(await normalizeAuthorizedPresentationFrameV1(live));
+  assert.equal(liveOpen?.tick?.text, `Tick ${live.match_summary.simulator_step_count}`);
   const diagnostic = structuredClone(fixture.presentations.replay_oracle);
   const plain = matchSummaryView(
     await normalizeAuthorizedPresentationFrameV1(diagnostic),

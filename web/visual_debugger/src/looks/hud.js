@@ -30,7 +30,11 @@
  * header row (owner, 3 Oct 2026: keep the bottom band thin; the scorebug
  * above already names each team on the same side): render moves each
  * team's "Standing 4 of 5" under that team's name in the scorebug, and in
- * Agent POV only the viewing team's (placeReplayStanding).
+ * Agent POV only the viewing team's (placeReplayStanding). The Replay
+ * Viewer's frames list the full record, so none is "unseen": a click on any
+ * frame calls onSelect, and the page sends what that champion's Roster row
+ * sends (in Agent POV it moves the view to that champion, even one the
+ * viewing team cannot see now).
  *
  * What it draws (plan P1, P12, P15, P21, P23): per team, Team A on the left,
  * a header (crest, "Team A" or "Team B", the policy name as a controller

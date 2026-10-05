@@ -451,10 +451,14 @@ html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] .pick em
 
 /* 3 Action: three 86 px slots with a key, a kind, an icon, a name and a tag
    that hangs under the slot (Armed, Auto or Not Allowed), 100 px tall
-   (owner, 4 Oct 2026: shorter than the vision's 116 px). */
+   (owner, 4 Oct 2026: shorter than the vision's 116 px). The row keeps 9 px
+   under the slots for the hanging tag (.slot .tag, bottom: -9px), so the
+   column's height holds the tag and the deck grows to fit it rather than
+   letting it hang out of the deck body. */
 html[data-product-kind="combat_debugger"] .bc .slots {
   display: flex;
   gap: 6px;
+  padding-bottom: 9px;
 }
 
 html[data-product-kind="combat_debugger"] .bc .slot {
@@ -468,8 +472,9 @@ html[data-product-kind="combat_debugger"] .bc .slot {
   min-height: 100px;
   /* 10 px at the bottom: the Armed, Auto or Not Allowed tag hangs 7 px into
      the slot, so it never covers the last line, for example the Priest's
-     "In 11 Ticks" under a two-line Holy Word: Salvation. Only a two-line
-     name makes the slots taller (about 117 px). */
+     "In 11 Ticks" under a two-line Holy Word: Salvation. A two-line name
+     makes the slots taller (about 117 px); every class has one, because a
+     two-word name always stacks (the Warrior's "Shield / Bash"). */
   padding: 19px 3px 10px;
   border: 1px solid var(--edge);
   border-radius: 8px;
@@ -507,9 +512,13 @@ html[data-product-kind="combat_debugger"] .bc .slot .ic-none-dot {
   fill: var(--moon);
 }
 
+/* A two-word ability name comes one word per line (stackedSlotName in
+   tactics-turn.js), so every class fills two lines and the deck keeps one
+   height when the focus moves to the Warrior ("Shield / Bash"). */
 html[data-product-kind="combat_debugger"] .bc .slot b {
   font-size: 13px;
   line-height: 1.15;
+  white-space: pre-line;
 }
 
 html[data-product-kind="combat_debugger"] .bc .slot .sub {

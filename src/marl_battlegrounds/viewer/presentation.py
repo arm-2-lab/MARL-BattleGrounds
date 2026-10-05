@@ -9,12 +9,16 @@ into the frame as given, and so is ``recent_falls`` (the Fallen panel's
 earlier rows). Each builder also fills ``next_end_spots`` (the Next
 Step Ghost) from the recorded frame after the shown one: Oracle View from
 that frame's positions, Agent POV only for champions the recipient's team
-sees alive now and still sees in its next authorized scene. This module does
+sees alive now and still sees in its next authorized scene. The Agent POV
+builders attach the team's merged sight to the scene (``team_sight``, the
+Night Veil's exact blind spots, with the incoming turn's shapes) through
+rendering.team_sight, the same owner the BattleClient uses. This module does
 not load files, run simulator steps, or change the saved replay.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
 from marl_battlegrounds.evaluation.models import (
@@ -64,6 +68,7 @@ from marl_battlegrounds.rendering.pov_scene import (
     build_actor_pov_analyzer_projection_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2, VisualEventBatchV2
+from marl_battlegrounds.rendering.team_sight import with_team_sight_v1
 from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1, RecentFallV1
 from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
 from marl_battlegrounds.viewer.match_summary import (
@@ -644,6 +649,9 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
     recipient's own authorized scene at the next recorded frame of source:
     only champions alive in this scene and still in that one; empty on the
     final frame.
+    The scene's ``team_sight`` (the Night Veil) is the recipient's own sight
+    (rendering.team_sight.with_team_sight_v1), with the incoming turn's
+    shapes from the recipient's scene at the frame before; none on frame zero.
     This performs host projection and model validation, with no simulator step
     or file write.
     """
@@ -723,6 +731,29 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
         authority_session_id=raw_frame.viewer_session_id,
         frame_index=frame_index,
     )
+    # The recipient's scene at the start of the incoming turn (None on frame
+    # zero): the Night Veil's turn shapes and the visual events both read it.
+    previous = (
+        None
+        if frame_index == 0
+        else build_no_shared_obs_authorized_scene_v1(
+            source,
+            public_catalog=public_catalog,
+            authority_session_id=raw_frame.viewer_session_id,
+            frame_index=frame_index - 1,
+        )
+    )
+    # The Night Veil's merged sight: under NoSharedObs the recipient alone.
+    current = replace(
+        current,
+        scene=with_team_sight_v1(
+            current.scene,
+            sensor_public_agent_ids=(current.recipient_public_agent_id,),
+            own_public_agent_id=current.recipient_public_agent_id,
+            turn_start_scene=None if previous is None else previous.scene,
+            turn_start_sensor_public_agent_ids=(current.recipient_public_agent_id,),
+        ),
+    )
     endpoint = build_no_shared_obs_authorized_current_endpoint_v1(
         parts=current,
         axis_mapping=content.axis_mapping,
@@ -760,12 +791,8 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
             raise TypeError(
                 "non-initial NoSharedObs frames require exact visual events."
             )
-        previous = build_no_shared_obs_authorized_scene_v1(
-            source,
-            public_catalog=public_catalog,
-            authority_session_id=raw_frame.viewer_session_id,
-            frame_index=frame_index - 1,
-        )
+        if previous is None:  # pragma: no cover - built above for frame > 0.
+            raise AssertionError("NoSharedObs start scene disappeared")
         if (
             type(previous_global_frame) is not EvaluationFrameV1
             and type(previous_global_frame) is not EvaluationFrameV2
@@ -1048,6 +1075,10 @@ def build_replay_shared_obs_authorized_presentation_v1(
     Current and previous source sets stay at their own frame epochs. Allowed
     sensor evidence determines the visual union. This display does not provide
     an exact actor-input export.
+    The scene's ``team_sight`` (the Night Veil) merges the sight of the
+    team's sensor sources (rendering.team_sight.with_team_sight_v1), with the
+    incoming turn's shapes from the previous sources' scene; none on frame
+    zero.
     This performs host projection and model validation, with no simulator step
     or file write.
     """
@@ -1224,6 +1255,27 @@ def build_replay_shared_obs_authorized_presentation_v1(
             public_catalog=public_catalog,
             authority_session_id=raw_frame.viewer_session_id,
         )
+    # The Night Veil's merged team sight, from the team's own sensors, with the
+    # incoming turn's shapes.
+    current = replace(
+        current,
+        scene=with_team_sight_v1(
+            current.scene,
+            sensor_public_agent_ids=tuple(
+                row.source_public_agent_id for row in current.authorized_sensor_sources
+            ),
+            own_public_agent_id=current.recipient_public_agent_id,
+            turn_start_scene=None if previous is None else previous.scene,
+            turn_start_sensor_public_agent_ids=(
+                ()
+                if previous is None
+                else tuple(
+                    row.source_public_agent_id
+                    for row in previous.authorized_sensor_sources
+                )
+            ),
+        ),
+    )
     if previous is None:
         if incoming_visual_events is not None:
             raise ValueError("SharedObs frame zero cannot carry visual events.")

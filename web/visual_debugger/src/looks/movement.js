@@ -75,7 +75,8 @@ import {
  * - trailDots: Focus Trail dot count; trailWorldRadius its newest dot's radius
  *   in world units (never under trailMinRadius CSS pixels), shrinking by
  *   trailRadiusDecay and fading by trailOpacityDecay per older dot from
- *   trailOpacity.
+ *   trailOpacity; trailDotFadeMs how long a dot takes to appear once the
+ *   gliding body has passed it in a played tick.
  * - waymarkRingFrom, waymarkHairlineFrom, waymarkMs: with Body Glide off, a
  *   played tick's ring and hairline arrive brighter and settle over 400 ms.
  * - markFadeMs: reduced motion and the played glide fade marks in over 120 ms.
@@ -102,6 +103,7 @@ export const MOVEMENT = Object.freeze({
   trailRadiusDecay: 0.88,
   trailOpacity: 0.5,
   trailOpacityDecay: 0.8,
+  trailDotFadeMs: 60,
   waymarkRingFrom: 0.48,
   waymarkHairlineFrom: 0.5,
   waymarkMs: 400,
@@ -343,9 +345,11 @@ function teamLetter(teamId) {
  * - {kind: "phantom_afterimage", presentationKey, center, radius}: a Rogue
  *   that moved at least 0.95 world units, with phantom_afterimage and
  *   stride_glide on.
- * - {kind: "focus_trail", presentationKey, team, fallen, dots: [{x, y, r,
- *   opacity}]}: the selected champion's eight dots, oldest (at the start spot)
- *   first, with focus_trail on and a move of at least 0.25 world units.
+ * - {kind: "focus_trail", presentationKey, team, fallen, legs, dots: [{leg,
+ *   share, x, y, r, opacity}]}: the selected champion's eight dots, oldest (at
+ *   the start spot) first, with focus_trail on and a move of at least 0.25
+ *   world units; legs is 2 for a Charge (rush, then stride) and 1 otherwise,
+ *   and each dot's leg and share say where on the path it sits (trailDots).
  *   fallen says the champion fell this tick (its trail is hidden at END and
  *   fades at its Fall beat in play).
  * Pure data: no DOM, inputs unchanged. Agent POV: only bodies in the POV scene
@@ -454,6 +458,7 @@ export function records(input) {
           presentationKey: key,
           team,
           fallen: agent.life_state !== undefined && agent.life_state !== "alive",
+          legs: post === null ? 1 : 2,
           dots: trailDots(post === null ? [start, end] : [start, post, end], transform),
         }),
       );
@@ -491,8 +496,10 @@ function hairlineLeg(from, to, transform, cut, leg) {
  * first dot is on the start spot and none is on the end spot (the body is
  * there). Its age i = 7 - k sets its look: radius max(1.5 px, 0.12 world units
  * x 0.88^i) and opacity 0.5 x 0.8^i, so the newest dot is the biggest and
- * brightest. Return a frozen array of frozen {x, y, r, opacity}, oldest first,
- * in CSS pixels. Pure.
+ * brightest. Return a frozen array of frozen {leg, share, x, y, r, opacity},
+ * oldest first: leg is the index of the path leg the dot is on (0 the first,
+ * 1 a Charge's stride after its rush), share how far along that leg (0..1), and
+ * x, y, r in CSS pixels. Pure.
  *
  * @param {ReadonlyArray<WorldPoint>} points
  * @param {LookTransform} transform
@@ -520,6 +527,8 @@ function trailDots(points, transform) {
     const age = count - 1 - k;
     dots.push(
       Object.freeze({
+        leg: index,
+        share,
         x: screen.x,
         y: screen.y,
         r: Math.max(
@@ -550,7 +559,8 @@ function trailDots(points, transform) {
  *   opacity 0 (fill, core ring, rim); only an animation shows them.
  * - focus_trail: g.movement-focus-trail-hold (for a champion that fell this
  *   tick it carries the Fall beat hold: data-beat-hold "fall", side "before",
- *   END opacity 0) holding g.movement-focus-trail and its dots.
+ *   END opacity 0) holding g.movement-focus-trail (data-trail-legs) and its
+ *   dots (circle.movement-trail-dot with data-trail-leg and data-trail-share).
  * Each top node carries data-movement-kind and data-presentation-key, which
  * animationSpecs reads. Return the new detached nodes. Side effects: registers
  * tooltip owners through tooltip.js. Agent POV: draws only what records gave.
@@ -643,10 +653,18 @@ export function build(records, doc) {
             }
           : {}),
       });
-      const inner = svgNode(doc, "g", { class: "movement-focus-trail" });
+      const inner = svgNode(doc, "g", {
+        class: "movement-focus-trail",
+        "data-trail-legs": record.legs,
+      });
       for (const dot of record.dots) {
         inner.append(
-          svgNode(doc, "circle", { class: "movement-trail-dot", opacity: dot.opacity }),
+          svgNode(doc, "circle", {
+            class: "movement-trail-dot",
+            opacity: dot.opacity,
+            "data-trail-leg": dot.leg,
+            "data-trail-share": dot.share,
+          }),
         );
       }
       group.append(inner);
@@ -780,6 +798,33 @@ export function tooltip(record) {
 }
 
 /**
+ * Return when, as a share of a glide leg's time, the shared glide curve
+ * (cubic-bezier(0.45, 0, 0.55, 1), choreography.js GLIDE_EASING) has covered
+ * progress (0..1, clamped) of the leg's distance.
+ *
+ * Solves the curve's y polynomial for progress by bisection (to about 1e-6)
+ * and returns its x. Used to show a Focus Trail dot just as the body passes
+ * it. Pure.
+ *
+ * @param {number} progress
+ * @returns {number}
+ */
+function glideTimeShare(progress) {
+  const target = Math.min(1, Math.max(0, progress));
+  /** @param {number} t @param {number} a @param {number} b */
+  const cubic = (t, a, b) =>
+    3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  let low = 0;
+  let high = 1;
+  for (let step = 0; step < 40; step += 1) {
+    const middle = (low + high) / 2;
+    if (cubic(middle, 0, 1) < target) low = middle;
+    else high = middle;
+  }
+  return cubic((low + high) / 2, 0.45, 0.55);
+}
+
+/**
  * Read a node's END opacity from its opacity attribute (default 1). Pure.
  *
  * @param {Element} element
@@ -801,20 +846,26 @@ function endOpacity(element) {
  * - beats: the plan's beat schedule (plan.beats). Played ticks read
  *   beats.glide (Body Glide on) and beats.windows.glide and
  *   beats.windows.chargeRush (real ms); missing windows use 0-260 and 0-110.
- * - stepMs: the step glide length in ms (BEAT_CLOCK.stepGlide, 240), for
- *   mode "step".
+ * - stepMs: for mode "step" (a -1 rewind), when the bodies have landed, in ms
+ *   after the step begins (default 240; later when fallen champions rise first).
+ * - stepCueFadeMs: for mode "step", how long the marks take to fade in from
+ *   stepMs, in ms (default 80, as the tick's cues).
  * Rules (store Scholar's Step numbers):
  * - Played, normal motion, Body Glide on: rings fade in over 0-120 ms; solid
  *   hairline legs unroll with the body (a Charge's rush leg during the rush,
  *   the stride leg after it, to the glide's end); a dotted (stone) leg appears
  *   when the Dim Shift cuts over (0.4 of its leg); a Charge pin appears when
- *   the rush ends; the Focus Trail fades in over 0-120 ms; a Rogue's
+ *   the rush ends; each Focus Trail dot fades in over 60 ms from the moment the
+ *   gliding body passes it (its leg's window, the shared glide curve), so no
+ *   dot shows ahead of the body; a Rogue's
  *   afterimage fill holds 0.7 until 130 ms and fades by 290 ms, its core ring
  *   (0.56) likewise, its rim holds 0.8 until 180 ms and fades by 340 ms.
  * - Played, normal motion, Body Glide off: bodies snap, so rings arrive at
  *   0.48 and hairlines at 0.5 and settle to END over 400 ms; no afterimage.
  * - Reduced motion (played or step): marks fade in over 120 ms; no afterimage.
- * - Step, normal motion: marks fade in over the step glide (stepMs); no
+ * - Step (a -1 rewind; a +1 step plays its tick and uses "played"): every
+ *   mark traces a move the bodies are not making, near where they land, so
+ *   each fades in over stepCueFadeMs from stepMs, once they have landed. No
  *   afterimage.
  * Every spec uses fill "backwards" and no forward fill, so ending or
  * cancelling it shows the END look the DOM holds. Return a new array of
@@ -829,6 +880,7 @@ function endOpacity(element) {
  *   motionMode: "normal" | "reduced" | "off",
  *   beats?: Record<string, any> | null,
  *   stepMs?: number,
+ *   stepCueFadeMs?: number,
  * }} options
  * @returns {AnimationSpec[]}
  */
@@ -843,6 +895,9 @@ export function animationSpecs(root, options) {
   const rushEnd = finiteNumber(rushWindow[1], 110);
   const stepMs = finiteNumber(options.stepMs, 240);
   const played = mode === "played";
+  const stepCueFadeMs = finiteNumber(options.stepCueFadeMs, 80);
+  // A rewind's marks wait for the landing: they fade in from stepMs.
+  const landingDelay = played || motionMode !== "normal" ? 0 : stepMs;
   const glideOn = beats?.glide !== false;
   /** @type {AnimationSpec[]} */
   const specs = [];
@@ -858,20 +913,25 @@ export function animationSpecs(root, options) {
       id: `mbg:${epochKey}:movement:${specs.length}`,
     });
   };
-  const fadeIn = (/** @type {Element} */ element, /** @type {number} */ duration) =>
+  const fadeIn = (
+    /** @type {Element} */ element,
+    /** @type {number} */ duration,
+    delay = 0,
+  ) =>
     push(element, [{ opacity: 0 }, { opacity: endOpacity(element) }], {
-      delay: 0,
+      delay,
       duration,
     });
   const simpleFade =
-    motionMode === "reduced" ? MOVEMENT.markFadeMs : !played ? stepMs : null;
+    motionMode === "reduced" ? MOVEMENT.markFadeMs : !played ? stepCueFadeMs : null;
   for (const node of root.querySelectorAll("[data-movement-kind]")) {
     const kind = node.getAttribute("data-movement-kind");
     if (kind === "start_spot") {
       const marks = [...node.querySelectorAll(".movement-hairline, .movement-pin")];
       const ring = node.querySelector(".movement-start-ring");
       if (simpleFade !== null) {
-        for (const mark of [...marks, ring]) if (mark) fadeIn(mark, simpleFade);
+        for (const mark of [...marks, ring])
+          if (mark) fadeIn(mark, simpleFade, landingDelay);
         continue;
       }
       if (!glideOn) {
@@ -920,7 +980,23 @@ export function animationSpecs(root, options) {
         push(pin, [{ opacity: 0 }, { opacity: 0 }], { delay: 0, duration: rushEnd });
     } else if (kind === "focus_trail") {
       const inner = node.querySelector(".movement-focus-trail");
-      if (inner) fadeIn(inner, simpleFade ?? MOVEMENT.markFadeMs);
+      if (!inner) continue;
+      if (played && motionMode === "normal" && glideOn) {
+        // Each dot appears as the gliding body passes it, so none shows ahead.
+        const legs = Number(inner.getAttribute("data-trail-legs")) === 2 ? 2 : 1;
+        for (const dot of inner.querySelectorAll(".movement-trail-dot")) {
+          const leg = Number(dot.getAttribute("data-trail-leg")) || 0;
+          const share = finiteNumber(Number(dot.getAttribute("data-trail-share")), 0);
+          const legStart = legs === 2 && leg === 1 ? rushEnd : 0;
+          const legEnd = legs === 2 && leg === 0 ? rushEnd : glideEnd;
+          push(dot, [{ opacity: 0 }, { opacity: endOpacity(dot) }], {
+            delay: Math.round(legStart + (legEnd - legStart) * glideTimeShare(share)),
+            duration: MOVEMENT.trailDotFadeMs,
+          });
+        }
+        continue;
+      }
+      fadeIn(inner, simpleFade ?? MOVEMENT.markFadeMs, landingDelay);
     } else if (kind === "phantom_afterimage") {
       if (!played || motionMode !== "normal" || !glideOn) continue;
       const { fillHold, fillEnd, rimHold, rimEnd } = MOVEMENT.smoke;

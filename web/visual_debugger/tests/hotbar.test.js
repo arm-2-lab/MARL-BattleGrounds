@@ -14,8 +14,12 @@
  * `next_action_thread` off drops the Order Thread; a Stay step draws
  * no Step Ghost (battleclient-arena.test.js checks the ghost itself); a
  * replay frame (no controlled champion) gives no records; built nodes are
- * export-safe (no url(), gradient, filter, mask or image); and every mark has
- * a plain hover card.
+ * export-safe (no url(), gradient, filter, mask or image); every mark has
+ * a plain hover card; and a mark on a champion (ring, studs, Reach Mark)
+ * carries data-glide-follow with its champion's key, while the Order Thread
+ * and the Step Ghost carry data-landing-wait with the keys they touch (the
+ * thread also its target's), so a played tick never shows them at a landing
+ * spot early.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -383,4 +387,73 @@ test("built nodes are export-safe and every mark has a plain hover card", () => 
     }
   }
   assert.equal(hotbar.tooltip({ kind: "anything" }), null);
+});
+
+test("marks on a champion ride its glide and the thread and Step Ghost wait for the landing", () => {
+  const frame = live.find((candidate) => inputFor(candidate).audience === "researcher");
+  assert.ok(frame);
+  const input = inputFor(frame);
+  const key = input.scene.selection.controlled_presentation_key;
+  const source = input.scene.agents.find(
+    (/** @type {any} */ agent) => agent.presentation_key === key,
+  );
+  const target = input.scene.agents.find(
+    (/** @type {any} */ agent) => agent.presentation_key !== key,
+  );
+  const records = hotbar.records({
+    ...input,
+    scene: {
+      ...input.scene,
+      pending_route: {
+        source_presentation_key: key,
+        source_anchor: source.position,
+        source_radius: source.radius,
+        target_presentation_key: target.presentation_key,
+        target_anchor: target.position,
+        target_radius: target.radius,
+      },
+      selected_legality: { armed_lane: 0, armed_pair_legal: true },
+    },
+    inspection: withDraft(input.inspection, { armed_lane: "basic", move_action: 3 }),
+  });
+  /** @type {Array<Map<string, string>>} */
+  const made = [];
+  const doc = /** @type {any} */ ({
+    createElementNS(/** @type {string} */ _ns, /** @type {string} */ tag) {
+      const attributes = new Map();
+      made.push(attributes);
+      return {
+        localName: tag,
+        attributes,
+        setAttribute(/** @type {string} */ name, /** @type {string} */ value) {
+          attributes.set(name, value);
+        },
+        removeAttribute(/** @type {string} */ name) {
+          attributes.delete(name);
+        },
+      };
+    },
+  });
+  hotbar.build(records, doc);
+  const kinds = new Set(records.map((record) => record.kind));
+  for (const kind of ["command-ring", "order-thread", "step-ghost"]) {
+    assert.ok(kinds.has(kind), kind);
+  }
+  for (const [index, record] of records.entries()) {
+    const attributes = made[index];
+    if (/^(order-thread|step-ghost)/u.test(record.kind)) {
+      const waits = String(attributes.get("data-landing-wait")).split(" ");
+      assert.ok(waits.includes(key), record.kind);
+      if (record.kind.startsWith("order-thread")) {
+        assert.ok(
+          waits.includes(target.presentation_key),
+          "the thread waits for its target too",
+        );
+      }
+      assert.equal(attributes.has("data-glide-follow"), false);
+    } else {
+      assert.equal(attributes.get("data-glide-follow"), record.returnKey, record.kind);
+      assert.equal(attributes.has("data-landing-wait"), false);
+    }
+  }
 });

@@ -7,7 +7,8 @@
  * arena drawing in Oracle View), renderMatchSummary (the DOM of the slim
  * strip in #match-scoreboard in the Replay Viewer, or, in live play, the
  * match facts of the vision scorebug #scorebug: scores, "/ 20", the First To
- * bars, "Tick 91 of 300", "First To 20", "Respawn Wave In N Ticks" and the
+ * bars, "Tick 91 of 300" (in a replay, "of" its last recorded tick), "First
+ * To 20", "Respawn Wave In N Ticks" and the
  * side Team A sits on, through the pure liveScorebugView) and
  * hudSourcesFromFrame with
  * publicRosterIdentities and controllerRosterFromFrame (the one controller
@@ -25,8 +26,8 @@
  * beside it, a First To N bar of segments (N = match_summary.score_threshold)
  * with "+N" when a team goes past it, the team's wave pips (the public respawn
  * clock, when the caller passes the scene's respawn_waves), and in the
- * center "Tick N of 300" (from
- * simulator_step_count and episode_limit). With the Scorebug switch off it falls back to a plain text
+ * center "Tick N of E" (simulator_step_count, and E the replay's last recorded
+ * tick; see tickLine). With the Scorebug switch off it falls back to a plain text
  * score line. Combat diagnostics show names and the tick, never scores.
  *
  * Momentum (switch hud_momentum, off by default; the V5 Arena Frames pick,
@@ -92,17 +93,47 @@ export function matchTeamSide(match, teamId) {
 }
 
 /**
+ * Return the last recorded tick of a replay presentation, or null.
+ *
+ * A replay frame's source names the shown frame (source_frame_index) and the
+ * replay's last frame (source_final_frame_index); each recorded frame is one
+ * tick later than the one before, so the last tick is the shown tick plus the
+ * frames still to come. This is the length the Rune Scrubber shows ("Tick 118
+ * of 204"), also for a replay saved part way through a BattleClient game.
+ * Live frames (the game's end is not known yet) and frames without these
+ * indices give null. Pure.
+ *
+ * @param {unknown} presentation A normalized presentation frame.
+ * @param {number} current The shown tick (match_summary.simulator_step_count).
+ * @returns {number | null}
+ */
+function replayLastTick(presentation, current) {
+  const frame = /** @type {Record<string, any>} */ (presentation);
+  if (frame?.viewer_mode !== "replay") return null;
+  const at = frame.source?.source_frame_index;
+  const last = frame.source?.source_final_frame_index;
+  if (!Number.isInteger(at) || !Number.isInteger(last) || last < at) return null;
+  return current + (last - at);
+}
+
+/**
  * Format the tick line from a match summary.
  *
  * match supplies simulator_step_count (the current tick, an integer 0 or more)
  * and optional episode_limit (the tick at which the game ends in a draw).
- * Return "Tick N of L" when both are known integers, "Tick N" when the limit is
- * missing, or null when the tick itself is missing. Pure.
+ * presentation is the frame the summary came from. In the Replay Viewer the
+ * line reads "Tick N of E", E being the replay's last recorded tick
+ * (replayLastTick: where this game actually ended or was saved). In live play
+ * it reads "Tick N of L", L being the draw limit, because the end is not known
+ * yet; "Tick N" when neither is known. The draw limit is kept as `limit`
+ * either way (the Draw At tip and the time-running-out cards read it). Return
+ * null when the tick itself is missing. Pure.
  *
  * @param {Record<string, any>} match
- * @returns {{current: number, limit: number | null, text: string} | null}
+ * @param {unknown} presentation
+ * @returns {{current: number, limit: number | null, last: number | null, text: string} | null}
  */
-function tickLine(match) {
+function tickLine(match, presentation) {
   const current = Number.isInteger(match.simulator_step_count)
     ? match.simulator_step_count
     : null;
@@ -111,10 +142,13 @@ function tickLine(match) {
     Number.isInteger(match.episode_limit) && match.episode_limit > 0
       ? match.episode_limit
       : null;
+  const last = replayLastTick(presentation, current);
+  const shownEnd = last ?? limit;
   return {
     current,
     limit,
-    text: limit === null ? `Tick ${current}` : `Tick ${current} of ${limit}`,
+    last,
+    text: shownEnd === null ? `Tick ${current}` : `Tick ${current} of ${shownEnd}`,
   };
 }
 
@@ -133,7 +167,9 @@ function tickLine(match) {
  *
  * Fields: task ("TDM" or "Combat diagnostic"), taskMode (0 or 1), map (display
  * name with "(Test Map)" style split, or null), threshold (TDM points to win,
- * or null), tick ({current, limit, text} or null; see tickLine) and teams, in
+ * or null), tick ({current, limit, last, text} or null; see tickLine: a
+ * replay reads "Tick N of" its last recorded tick, live play "of" the draw
+ * limit) and teams, in
  * recorded order (Team A first). Each team has teamId, side (the recorded spawn
  * side, "left" or "right"), label, name, score ("6/7" text or null),
  * scoreValue (the number after this tick, or null), result ("VICTORY",
@@ -157,7 +193,7 @@ export function matchSummaryView(presentation) {
       ? `${match.map.display_name}${match.map.split ? ` (${match.map.split[0].toUpperCase()}${match.map.split.slice(1)} Map)` : ""}`
       : null,
     threshold: tdm ? match.score_threshold : null,
-    tick: tickLine(match),
+    tick: tickLine(match, presentation),
     teams: match.teams.map(
       (/** @type {Record<string, any>} */ team, /** @type {number} */ index) =>
         Object.freeze({
@@ -597,7 +633,8 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   so the sides swap too.
  * - teams: Team A then Team B (see LiveScoreTeam). Scores at or above the
  *   threshold light every segment.
- * - tickText: "Tick 91 of 300" (summary.tick.text; "" when unknown).
+ * - tickText: "Tick 91 of 300" live, or "Tick 91 of 156" in a replay that
+ *   ended at tick 156 (summary.tick.text; "" when unknown).
  * - firstToText: "First To 20" ("" for a combat diagnostic).
  * - waveText: "Respawn Wave In 4 Ticks": the next wave of either team. Core
  *   brings champions back on the transition that starts with a countdown of
@@ -918,7 +955,7 @@ function appendResult(root, team) {
 /**
  * Write the center of the strip: the tick line and the map name.
  *
- * task receives span.match-strip__tick ("Tick 118 of 300", a HUD symbol with
+ * task receives span.match-strip__tick ("Tick 118 of 204", a HUD symbol with
  * the Tick tip) and span.match-strip__map (the map name, muted), or "Tick
  * unavailable" when the summary has no tick. Replaces task's children.
  *

@@ -1017,7 +1017,7 @@ export const SYMBOLS = Object.freeze([
     "sight_veil",
     "Zones",
     "Out Of Sight",
-    "In Agent POV the ground is dark outside the reach of your team's sight. Stone also blocks sight inside the circle, and champions just back on their pads stay hidden.",
+    "In Agent POV the ground is dark wherever your team cannot see: beyond each champion's sight reach and in the shadow behind every stone. Enemies just back on their pads stay hidden even in the light.",
     {
       aliases: ["fog", "veil", "sight_reach", "pov_sight_veil"],
       numberSources: [

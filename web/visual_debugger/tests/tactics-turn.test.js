@@ -10,7 +10,10 @@
  * POV); the action slots carry the real Basic and Ultimate names, reach,
  * "Ready" or "In 3 Ticks", the lit Rune Ring ticks and the Armed, Auto and Not
  * Allowed tags (after game over an unarmed Basic and Ultimate read Not Allowed
- * even when the last mask allowed them); the order sentence in the vision's words; the turn phase from
+ * even when the last mask allowed them); every class's slot names fill two
+ * lines, because a two-word name stacks one word per line (stackedSlotName:
+ * the Warrior's "Shield / Bash" as "Arcane / Blast", one-word and three-word
+ * names unchanged), so the deck keeps one height; the order sentence in the vision's words; the turn phase from
  * real states; Do This Now with its beacon; the checklist line and the
  * Policies list rows (policyListRows of the one controller model in
  * src/controller-names.js: every policy of both teams with its full name and
@@ -41,6 +44,7 @@ import {
   orderSentence,
   runeRingLit,
   runeRingText,
+  stackedSlotName,
   targetChipView,
   turnPhase,
 } from "../src/tactics-turn.js";
@@ -459,4 +463,32 @@ test("the deck reads no raw HUD or match summary, and the researcher space only 
   );
   assert.match(code, /authorizedPresentationSceneView\(/u);
   assert.match(code, /authorizedPresentationInspectionState\(presentation\)/u);
+});
+
+test("two-word slot names stack, so every class fills two lines", () => {
+  assert.equal(stackedSlotName("Shield Bash"), "Shield\nBash");
+  assert.equal(stackedSlotName("Arcane Blast"), "Arcane\nBlast");
+  assert.equal(stackedSlotName("Charge"), "Charge");
+  assert.equal(stackedSlotName("Holy Word: Salvation"), "Holy Word: Salvation");
+  // Every class has a name of two lines: a stacked two-word name, or the
+  // Priest's Holy Word: Salvation, which wraps in the 86 px slot by itself.
+  for (const classId of [1, 2, 3, 4, 5]) {
+    const names = actionSlotViews({
+      classId,
+      mechanics: null,
+      cooldown: 0,
+      lane: "none",
+      autoArmed: false,
+      basicOk: true,
+      ultimateOk: true,
+    })
+      .slice(1)
+      .map((slot) => slot.name);
+    assert.ok(
+      names.some(
+        (name) => stackedSlotName(name).includes("\n") || name.split(" ").length > 2,
+      ),
+      String(names),
+    );
+  }
 });

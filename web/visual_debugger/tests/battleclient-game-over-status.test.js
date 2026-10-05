@@ -3,7 +3,7 @@
  * (src/tactics-turn.js tickPlayedAnnouncement): the tick that ends the game
  * always says the game-over step for the replay's save state (gameOverStep),
  * the same words as the rail's Do This Now at game over (doThisNow), whoever
- * played it, so "Orders sent. The policies choose next." never stays on
+ * played it, so "Waiting for all players to submit their actions…" never stays on
  * screen after the game; your own Lock In says the tick played; your Play One
  * Turn in Policies Only says the turn played; and a tick you did not ask for
  * before the end keeps the line (null).

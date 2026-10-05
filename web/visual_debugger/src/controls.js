@@ -713,6 +713,14 @@ export const STEP_NAMES = Object.freeze([
 ]);
 
 /**
+ * The status line's sentence while a turn waits for every player's actions:
+ * after Lock In or Play One Turn, until the turn plays. A slow method (an LLM)
+ * can take many seconds to answer, and the game steps only once every
+ * champion's action is in, so the page says so instead of looking frozen.
+ */
+export const WAITING_FOR_PLAYERS = "Waiting for all players to submit their actions…";
+
+/**
  * @typedef {(
  *   | {kind: "step", move: number}
  *   | {kind: "no_combat"}
@@ -755,7 +763,9 @@ export const STEP_NAMES = Object.freeze([
  * right now. Your order is unchanged."; a readyIn above 0 adds "It is ready in
  * N ticks." ("1 tick" for one). {kind: "view", view: "pov", unseen: 2,
  * viewers: "your team", watch: false} gives "Agent POV: you see only what your
- * team sees. 2 enemy champions are out of sight." The game's first sentence
+ * team sees. 2 enemy champions are out of sight." {kind: "lock_in"} (Lock
+ * In, or Play One Turn in Policies Only; watch is no longer read) gives
+ * WAITING_FOR_PLAYERS. The game's first sentence
  * and the closed page's words are not here: tactics-turn.js owns them
  * (startGreeting, closedSentence), because they depend on the roster and the
  * replay's save state.
@@ -812,9 +822,7 @@ export function statusSentence(event) {
     case "stopped":
       return "A fresh start is needed, so orders cannot change. You can look around, save or exit.";
     case "lock_in":
-      return event.watch
-        ? "Playing one turn."
-        : "Orders sent. The policies choose next.";
+      return WAITING_FOR_PLAYERS;
     case "view": {
       if (event.view === "oracle") {
         return `Oracle View: every champion is shown, even those ${event.viewers} cannot see.`;

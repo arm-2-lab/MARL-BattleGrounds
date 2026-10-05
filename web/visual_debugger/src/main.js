@@ -3082,19 +3082,27 @@ function updateRuneScrubber(playback) {
 /**
  * Select a champion from its HUD frame, as a click on its Roster row does.
  *
- * publicAgentId names a champion drawn in the shown audience's arena scene,
- * or (live play) your own Manual champion that this view cannot see, for
- * example yours on the other team in One On Each Team (other unseen frames
- * never call this). A drawn champion: find its presentation key in that scene
- * and route activate_authorized_agent through dispatchPanelCommand. Your
- * unseen Manual champion: send roster_selection (role "control") for its
- * command slot, as Back To Your Champion does; the host then shows its view.
- * Any other champion not in the scene does nothing. Side effects: the same as
- * a Roster click.
+ * Replay Viewer (any frame, seen or unseen): send exactly the command that
+ * champion's Roster row sends (panels.pickAgent), so in Agent POV a click
+ * moves the view to that champion, enemy or teammate, and in Oracle View it
+ * selects it; nothing happens while the roster is disabled (busy).
+ *
+ * Live play: publicAgentId names a champion drawn in the shown audience's
+ * arena scene, or your own Manual champion that this view cannot see, for
+ * example yours on the other team in One On Each Team. A drawn champion:
+ * find its presentation key in that scene and route activate_authorized_agent
+ * through dispatchPanelCommand. Your unseen Manual champion: send
+ * roster_selection (role "control") for its command slot, as Back To Your
+ * Champion does; the host then shows its view. Any other champion not in the
+ * scene does nothing. Side effects: the same as a Roster click.
  *
  * @param {string} publicAgentId
  */
 function selectAgentFromHud(publicAgentId) {
+  if (isReplayMode()) {
+    panels.pickAgent(publicAgentId);
+    return;
+  }
   const scene = installedAuthorizedPresentationSceneView(state.presentation);
   const agent = asArray(scene?.agents).find(
     (candidate) => isRecord(candidate) && candidate.public_agent_id === publicAgentId,
@@ -3474,9 +3482,9 @@ function setActiveRangesVisible(visible) {
  * replay_step: when the current replay intent is the paused still
  * (replay_static) and carries stepGlide "forward" or "backward" (the playback
  * controller sets it only when a one-tick move landed exactly one frame away),
- * the first consuming call for that intent generation returns "replay_step", so
- * the choreographer glides each body from where the previous frame showed it.
- * Every later call returns replay_static (the settled still). The renderer and
+ * the first consuming call for that intent generation returns "replay_step"
+ * with stepDirection set to it, so the choreographer plays a +1's tick or
+ * rewinds a -1's. Every later call returns replay_static (the settled still). The renderer and
  * the PNG export still see replay_static: render() maps replay_step to
  * replay_static for the battlefield, and the export reads the controller's
  * intent, never this request.
@@ -3488,6 +3496,7 @@ function setActiveRangesVisible(visible) {
  *   renderPolicy: "live_once" | "replay_animated" | "replay_static" | "replay_step",
  *   visualFilters: typeof visualFilterState,
  *   restartAnimated?: true,
+ *   stepDirection?: "forward" | "backward",
  * }>}
  */
 function installedChoreographyControl(
@@ -3540,6 +3549,7 @@ function installedChoreographyControl(
     renderPolicy: stepGlide ? "replay_step" : renderPolicy,
     visualFilters,
     ...(restartAnimated ? { restartAnimated: true } : {}),
+    ...(stepGlide ? { stepDirection: intent.stepGlide } : {}),
   });
 }
 
@@ -5611,8 +5621,8 @@ function laneRefusal(command, facts) {
  * Say three host notices in the vision page's words; every other notice is
  * shown as the host wrote it. Python's "The Systems are choosing this turn."
  * (its answer to Lock In and Play One Turn) keeps the page's own Lock In
- * sentence: "Orders sent. The policies choose next.", or "Playing one turn."
- * in Policies Only. Python's "This actor is controlled by a policy.
+ * sentence: "Waiting for all players to submit their actions…"
+ * (WAITING_FOR_PLAYERS, the same in Policies Only). Python's "This actor is controlled by a policy.
  * Select a Manual actor to edit actions." becomes "This champion is played by
  * a policy. You can look, not command. Pick one of yours to give orders."
  * ("Nobody is yours this game. You can look, not command." in Policies Only),
@@ -6946,9 +6956,11 @@ function settleLiveAudienceSwitch(nextPlan) {
  *
  * The durable renderer always draws the END of the tick at the current camera
  * frame (cameraRenderFrame; Whole Map when null) and records the installed
- * policy: a one-tick replay_step request reaches the choreographer (which
- * glides bodies and fades cues in over 320 ms, then settles) while the
- * battlefield itself records replay_static. Beat timing (the Fall and Return
+ * policy: a one-tick replay_step request reaches the choreographer (a +1
+ * plays its tick as Play does, then settles into the paused still; a -1
+ * rewinds it, from copies of the arena the choreographer takes just before
+ * this render, captureStepSnapshot) while the battlefield itself records
+ * replay_static. Beat timing (the Fall and Return
  * beats, Longer Tick) comes from the choreography plan, which reads only this
  * audience's own events and the switch snapshot passed here.
  *
@@ -6988,6 +7000,13 @@ function renderPage() {
   renderVisualFilterControls(visualFilterSnapshot, visualFilterPresetId);
   renderConnection();
   renderSessionToolbar(installed);
+  // A -1 rewinds from the arena as it is now: copy it before it is redrawn.
+  if (
+    choreographyControl.renderPolicy === "replay_step" &&
+    choreographyControl.stepDirection === "backward"
+  ) {
+    choreographer.captureStepSnapshot(battlefieldRenderer.choreographySurface());
+  }
   battlefieldRenderer.render(presentationFrame, {
     offline: state.offline,
     showRanges: installedPresentationRangesVisible(presentationFrame),
@@ -7743,8 +7762,9 @@ function acceptExit(payload) {
  * refuses is refused here, before sending ("Charge needs a target first. Your
  * order is unchanged.", or "... is not allowed on this target right now."),
  * and its slot shakes; an edit of a policy's champion or after a stop gets the
- * vision's refusal; Lock In shows "Orders sent. The policies choose next."
- * (Policies Only: "Playing one turn.") while the turn is out; an accepted edit,
+ * vision's refusal; Lock In (and Play One Turn in Policies Only) shows
+ * "Waiting for all players to submit their actions…" while the turn is out,
+ * so a slow method never looks like a frozen game; an accepted edit,
  * view change, focus change or G shows what changed. When the command's own
  * answer was overtaken (the policies finished the turn first, so one fresh
  * read was installed instead), Lock In still says its sentence and any other

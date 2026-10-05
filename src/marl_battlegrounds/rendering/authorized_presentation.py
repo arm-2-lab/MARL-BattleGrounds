@@ -15,9 +15,11 @@ build_authorized_map_v2 builds it for the Oracle and Agent POV scenes alike.
 Each incoming agent_died row carries home_fall (the death scored double);
 ``visual_batch_home_fall_slots_v1`` feeds the shared rule in
 evaluation.events, and an Agent POV summary carries the flag only for falls
-that audience saw. A live Agent POV scene may carry AuthorizedTeamSightV1,
-the merged floor the viewing team sees, which the BattleClient's Night Veil
-paints; the live builder computes it, and every other scene leaves it None.
+that audience saw. An Agent POV scene, live or replayed, carries
+AuthorizedTeamSightV1: the merged floor the viewing team sees, with the shapes
+the veil passes through while the incoming turn plays
+(AuthorizedTeamSightTurnShapeV1). rendering.team_sight computes it; Oracle View
+scenes leave it None.
 Class docstrings also feed Pydantic schema descriptions; the compact browser
 schema strips that prose.
 """
@@ -2501,19 +2503,96 @@ def _require_point_runs(
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class AuthorizedTeamSightTurnShapeV1:
+    """Store the lit floor at one moment of the turn that led to this frame.
+
+    While a turn plays, the Agent POV veil changes in step with the picture:
+    first the floor the team saw at the start of the turn, then, after the
+    glide, the floor its champions light from their end spots, losing one
+    champion's light at its Fall beat and gaining one at its Return beat.
+    ``rendering.team_sight`` computes one shape per set of lighting champions
+    the browser may need, so the browser only picks and paints (it never tests
+    stone; amendment A17). The geometry rules are those of AuthorizedTeamSightV1.
+
+    All constructor fields are required keyword arguments; instances are frozen.
+
+    Attributes
+    ----------
+    stage : {"turn_start", "turn_end"}
+        "turn_start": the champions alive at the start of the turn, at their
+        start spots (what the team saw before the turn). "turn_end": the named
+        champions at their end-of-turn spots (a champion that falls this turn
+        stands where it fell; one that returns stands on its pad).
+    lit_public_agent_ids : tuple[str, ...]
+        Public IDs of the champions giving light in this shape, sorted and
+        unique. Empty means no light: the whole floor is dark.
+    lit_rings, own_edges, allied_edges : tuple[tuple[Point2D, ...], ...]
+        As in AuthorizedTeamSightV1, for this moment.
+
+    Raises
+    ------
+    ValueError
+        The stage is unknown, the IDs are not sorted unique nonempty strings,
+        or a container, run length or point is invalid.
+    """
+
+    __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
+    """Strict Pydantic wire settings: forbid extra fields, nonfinite numbers, and
+    coercion."""
+
+    stage: Literal["turn_start", "turn_end"]
+    """turn_start (start spots) or turn_end (end-of-turn spots)."""
+    lit_public_agent_ids: tuple[str, ...]
+    """Sorted unique public IDs of the champions giving light."""
+    lit_rings: tuple[tuple[Point2D, ...], ...]
+    """Closed lit-floor boundary rings in world units (even-odd with the floor)."""
+    own_edges: tuple[tuple[Point2D, ...], ...]
+    """The recipient's Reach Edge polylines outside its teammates' shapes."""
+    allied_edges: tuple[tuple[Point2D, ...], ...]
+    """The other sensors' Reach Edge polylines outside their teammates' shapes."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+
+        Raises
+        ------
+        ValueError
+            The stage is unknown, the IDs are not sorted unique nonempty
+            strings, a container is not a tuple, a ring has fewer than 3
+            points, a polyline fewer than 2, or a point is not two finite
+            floats.
+        """
+        if self.stage not in ("turn_start", "turn_end"):
+            raise ValueError("stage must be turn_start or turn_end.")
+        ids = self.lit_public_agent_ids
+        if (
+            type(ids) is not tuple
+            or any(type(item) is not str or not item for item in ids)
+            or list(ids) != sorted(set(ids))
+        ):
+            raise ValueError(
+                "lit_public_agent_ids must be sorted unique nonempty strings."
+            )
+        _require_point_runs(self.lit_rings, name="lit_rings", minimum=3)
+        _require_point_runs(self.own_edges, name="own_edges", minimum=2)
+        _require_point_runs(self.allied_edges, name="allied_edges", minimum=2)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AuthorizedTeamSightV1:
     """Store the merged floor a team can see now, for the Agent POV Night Veil.
 
-    The host computes it (``_battle_client.live_presentation``) from the POV
-    scene alone: each living sensor's place and sight reach
-    (``observation_radius``) and the map's stones, with rays stopped by stones
-    and the floor edge, as Core's line of sight is. Stones block sight; other
-    champions do not. The browser only paints it, so line of sight is never
-    rebuilt there (amendment A17). Live Agent POV frames carry it; Oracle View
-    and replay scenes carry None and the browser keeps its reach-circle veil.
-    It names no champion and holds no enemy position.
+    The host computes it (``rendering.team_sight``) from the POV scene alone:
+    each living sensor's place and sight reach (``observation_radius``) and the
+    map's stones, with rays stopped by stones and the floor edge, as Core's
+    line of sight is. Stones block sight; other champions do not. So the dark
+    floor is every blind spot: beyond reach and behind stone. The browser only
+    paints it, so line of sight is never rebuilt there (amendment A17). Agent
+    POV frames carry it, live and replayed; Oracle View scenes carry None. It
+    names no enemy and holds no enemy position.
 
-    All constructor fields are required keyword arguments; instances are frozen.
+    All constructor fields are required keyword arguments; instances are
+    frozen.
 
     Attributes
     ----------
@@ -2528,11 +2607,19 @@ class AuthorizedTeamSightV1:
         lie outside every teammate's lit shape (the solid Reach Edge).
     allied_edges : tuple[tuple[Point2D, ...], ...]
         The same for the other sensors (the dashed Reach Edges).
+    turn_shapes : tuple[AuthorizedTeamSightTurnShapeV1, ...]
+        The other shapes the veil passes through while the turn that led to
+        this frame plays: the turn-start shape, then one turn_end shape for
+        every other set of lighting champions a Fall or Return beat can leave
+        (this frame's own set is the shape above). Empty on a first frame.
+        At most one turn_start shape, and no two shapes with the same stage
+        and IDs.
 
     Raises
     ------
     ValueError
-        A container, run length or point is invalid.
+        A container, run length or point is invalid, or turn_shapes is not a
+        tuple of exact turn shapes with distinct stage and ID pairs.
     """
 
     __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
@@ -2545,6 +2632,8 @@ class AuthorizedTeamSightV1:
     """The recipient's Reach Edge polylines outside its teammates' shapes."""
     allied_edges: tuple[tuple[Point2D, ...], ...]
     """The other sensors' Reach Edge polylines outside their teammates' shapes."""
+    turn_shapes: tuple[AuthorizedTeamSightTurnShapeV1, ...]
+    """The turn-start shape and the other Fall or Return beat shapes."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.
@@ -2553,11 +2642,24 @@ class AuthorizedTeamSightV1:
         ------
         ValueError
             A container is not a tuple, a ring has fewer than 3 points, a
-            polyline fewer than 2, or a point is not two finite floats.
+            polyline fewer than 2, a point is not two finite floats, or
+            turn_shapes holds a row that is not an exact turn shape, two
+            turn_start shapes, or two shapes with the same stage and IDs.
         """
         _require_point_runs(self.lit_rings, name="lit_rings", minimum=3)
         _require_point_runs(self.own_edges, name="own_edges", minimum=2)
         _require_point_runs(self.allied_edges, name="allied_edges", minimum=2)
+        if type(self.turn_shapes) is not tuple or any(
+            type(shape) is not AuthorizedTeamSightTurnShapeV1
+            for shape in self.turn_shapes
+        ):
+            raise ValueError("turn_shapes must be a tuple of exact turn shapes.")
+        keys = [(shape.stage, shape.lit_public_agent_ids) for shape in self.turn_shapes]
+        if (
+            len(set(keys)) != len(keys)
+            or sum(shape.stage == "turn_start" for shape in self.turn_shapes) > 1
+        ):
+            raise ValueError("turn_shapes needs distinct shapes, one turn_start.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -2592,8 +2694,9 @@ class AuthorizedBattlefieldSceneV1:
     respawn_waves : tuple[AuthorizedRespawnWaveV1, ...]
         Team A then Team B lifecycle countdowns.
     team_sight : AuthorizedTeamSightV1 | None, default None
-        The merged floor the viewing team sees now, for the live Agent POV
-        Night Veil; None in Oracle View, in replays and in older producers.
+        The merged floor the viewing team sees now, with the turn's shapes, for
+        the Agent POV Night Veil (live and replayed); None in Oracle View and
+        from older producers.
     Raises
     ------
     ValueError
@@ -2622,7 +2725,7 @@ class AuthorizedBattlefieldSceneV1:
     respawn_waves: tuple[AuthorizedRespawnWaveV1, ...]
     """Team A then Team B lifecycle countdowns."""
     team_sight: AuthorizedTeamSightV1 | None = None
-    """Live Agent POV merged team sight for the Night Veil, else None."""
+    """Agent POV merged team sight for the Night Veil, else None."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.

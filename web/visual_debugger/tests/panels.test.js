@@ -7,7 +7,9 @@
  * (from its POV draft) and reads "Not Observed", with no order, for every
  * other row, a teammate's or another team's. The roster counts read "N
  * Champions" and, in researcher-space Agent POV, "N Champions · N Seen · N
- * Not Seen".
+ * Not Seen". In the Replay Viewer's Agent POV, pickAgent (an Arena Frame or
+ * token chip click) sends exactly the command of that champion's Roster row,
+ * for seen and not-seen champions alike.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -1086,6 +1088,17 @@ test("authorized roster exposes one native key-only action with isolated fact ow
     assert.equal(latestCommand.command_type, "activate_replay_pov_agent");
     assert.equal(latestCommand.global_slot, 0);
     assert.equal(latestCommand.public_agent_id, "agent-slot-0");
+    // pickAgent (an Arena Frame or token chip click) sends exactly the row's
+    // command for every champion, seen or not seen.
+    assert.ok(
+      agentRows.some((row) => row.element.dataset.visibleInSnapshot === "false"),
+    );
+    for (const row of agentRows) {
+      row.primaryButton.click();
+      const rowCommand = /** @type {Record<string, any>} */ (commands.at(-1));
+      panels.pickAgent(rowCommand.public_agent_id);
+      assert.deepEqual(commands.at(-1), rowCommand);
+    }
     panels.renderAuthorizedRoster(replayAgent, true);
     assert.equal(
       agentRows.every((row) => row.primaryButton.disabled === true),
