@@ -187,7 +187,8 @@ def test_validation_maps_default_checks_and_old_saved_configs() -> None:
     assert default.validation_maps is None
     assert validation.VALIDATION_MAPS == (42, 43, 44, 45, 46)
     assert "validation_maps" not in config_to_dict(default)
-    chosen = TrainConfig(validation_maps=[46, 42, 44, 43])
+    # A list, as YAML gives it; the field's documented contract accepts lists.
+    chosen = TrainConfig(validation_maps=[46, 42, 44, 43])  # pyright: ignore[reportArgumentType]
     assert chosen.validation_maps == (42, 43, 44, 46)
     assert config_to_dict(chosen)["validation_maps"] == [42, 43, 44, 46]
     assert config_from_dict(config_to_dict(chosen)) == chosen

@@ -503,6 +503,7 @@ def test_both_recipe_identities_bind_the_shared_combat_helper(name: str) -> None
         f"marl_battlegrounds.training.reward_recipes:{name}"
     )
     assert reward is not None and identity is not None
-    assert identity["reference"].endswith(name)
+    reference = identity["reference"]
+    assert isinstance(reference, str) and reference.endswith(name)
     assert isinstance(identity["combat_source_digest"], str)
     assert identity["call_contract"] == "producing_config_keyword_v1"

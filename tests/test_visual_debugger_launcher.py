@@ -3,7 +3,8 @@
 Replay arguments, shell forwarding, lazy imports and sample integrity keep their
 public checks. A browser launch builds every agent's Agent POV work before it
 serves and still loads no JAX, Core or live stack; a NoSharedObs sample may load
-NumPy there, for the Agent POV corpses any Agent POV request draws. Real episode assignments show whether either team runs a policy.
+NumPy there, for the Agent POV corpses any Agent POV request draws. Real episode
+assignments show whether either team runs a policy.
 Private DevClient launcher and authoring tests live with the local toolkit.
 """
 
