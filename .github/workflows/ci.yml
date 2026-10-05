@@ -2,10 +2,14 @@
 # The Python shard plugin and browser profile manifest own test membership.
 # Keep nineteen Python shards, one browser profile and stable aggregate names.
 # Local GPU qualification is separate; see docs/dev/quality_gates.md.
+# Runs on pull requests and on pushes to main. A feature branch is tested only
+# through its pull request, so one push starts one run, not two. The summary
+# jobs report after a failure but not after a cancel (!cancelled()).
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -59,7 +63,7 @@ jobs:
 
   quality-gates:
     name: Quality gates
-    if: always()
+    if: ${{ !cancelled() }}
     needs:
       - python-test-gates
     runs-on: ubuntu-latest
@@ -135,7 +139,7 @@ jobs:
 
   frontend-gates:
     name: Frontend and browser gates
-    if: always()
+    if: ${{ !cancelled() }}
     needs:
       - frontend-browser-gates
     runs-on: ubuntu-24.04
