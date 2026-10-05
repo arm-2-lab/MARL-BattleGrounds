@@ -1,10 +1,9 @@
 # Study 3 of the six-method hyperparameter search: continue each method's
-# strongest run from 40,108,032 to 250,675,200 transitions. These six policies
-# enter the tournament.
+# tournament run from 40,108,032 to 250,675,200 transitions. The six selected
+# checkpoints play in the tournament (tournament_250m.json).
 #
-# Each case continues the run's full learner checkpoint at 40,108,032 (the only
-# full learner state a run keeps) with extend_training; it is one lineage with
-# its parent, not a new seed. Everything not listed under changes is inherited
+# Each case continues the run's full learner checkpoint at 40,108,032 with
+# extend_training; it is one lineage with its parent, not a new seed. Everything not listed under changes is inherited
 # from the parent: reward, opponents, exploration, validation panel and maps,
 # seed pairs and actor retention.
 #
@@ -20,6 +19,8 @@
 #   - Parents: each method's strongest single run of studies 1 and 2, judged by
 #     confirmation point margin, kills and deaths together, not by its recipe's
 #     three-seed mean (docs/training/hyperparameter_search.md, Final Recipes).
+#     Feedforward MAPPO's parent is its 40M team-reward run
+#     (ff_mappo_team_reward.yaml, prepared into <search root>/ff-mappo-levers).
 #   - Validation: 20 routine checks, one every 5% of the added budget
 #     (about every 10.5M transitions), the last at 250,675,200. Parent
 #     candidates stay eligible, so a run's selected checkpoint can be a parent
@@ -32,8 +33,8 @@
 #     the rate a run planned for 250M from the start would have at 40,108,032
 #     (16% of 250,675,200), so 40M-250M follows that run's schedule.
 #
-# Longest runs first. Planned cost about 24 GPU-hours, about 12 hours on two
-# cards (from study 1 and 2 speeds; validation not yet measured at this length).
+# Longest runs first. Measured cost 23.4 GPU-hours on RTX 5090s, one run per
+# card at a time.
 schema_version: 1
 name: Hyperparameter Search 250M Continuations
 failure_policy: continue
@@ -118,9 +119,9 @@ cases:
     runtime: *runtime
     changes:
       validation: *validation
-  # Feedforward MAPPO, actor_lr 0.0003 (-8.1, 8.0 kills, 15.2 deaths; its selected checkpoint is at 24.1M)
-  - id: ff_mappo-actor-lr-3e-4--seed-20261002
-    checkpoint: ../../shapes-and-ppo/study/cases/ff_mappo-actor-lr-3e-4--seed-20261002/run/checkpoints/ff_mappo_checkpoint_step_000040108032_ae6a5914b33b1986291c4c04d3b89e7d310c5d147150489e48a63bbe67c18f39
+  # Feedforward MAPPO, team reward, actor_lr 0.0003 (-8.7, 9.2 kills, 15.2 deaths)
+  - id: ff_mappo-team-reward--seed-12259871
+    checkpoint: ../../ff-mappo-levers/study/cases/ff_mappo-team-reward--seed-12259871/run/checkpoints/ff_mappo_checkpoint_step_000040108032_c7eee621ff31b28c528505e54f55dd21bc909719d200b742621c900fcc742ff9
     additional_env_steps: 210567168
     runtime: *runtime
     changes:

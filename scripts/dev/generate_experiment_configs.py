@@ -4,9 +4,10 @@ Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or
 add ``--check`` to reject drift without writing. Requires the hydra extra.
 Only packaged YAML changes. This tool starts no numerical backend or training;
 software_check values exercise wiring and are not paper hyperparameters.
-The default recipe holds the settings of each method's strongest run, the one
-continued to 250M (study 3 of the six-method hyperparameter search;
-SELECTED_RECIPES). The dataclass defaults are unchanged.
+The default recipe holds the settings of each method's tournament policy run
+(SELECTED_RECIPES; docs/training/hyperparameter_search.md, Final Policies): its
+seed, learner settings, games, reward and 250,675,200-transition budget, and the
+search's training and validation settings. The dataclass defaults are unchanged.
 """
 
 from __future__ import annotations
@@ -47,39 +48,64 @@ _PPO_SELECTED = {
 }
 _PER_AGENT_REWARD = "marl_battlegrounds.training.reward_recipes:combat_support_reward"
 _TEAM_REWARD = "marl_battlegrounds.training.reward_recipes:combat_support_team_reward"
-# The settings of each method's strongest run, the one continued to 250M
-# (study 3, docs/training/hyperparameter_search.md). For QMIX and feedforward
-# MAPPO that run comes from outside the method's final recipe. recipe=default
+# Training and validation settings shared by every tournament policy run. Each
+# ran 250,675,200 transitions: 40,108,032 with routine checks every 10%, then
+# a continuation with 20 checks, one every 5% of the added budget. As shares of
+# the whole budget those are 0.016 to 0.16 in steps of 0.016, then 0.202 to 1.0
+# in steps of 0.042 (30 checks). The six fixed recurrent MAPPO training models
+# and the pooled 250M validation model are not packaged, so the opponents and
+# the validation panel keep the API defaults.
+_TOURNAMENT_PROTOCOL: dict[str, Any] = {
+    "total_env_steps": 250675200,
+    "keep_past": 12,
+    "past_capture_interval": 1376256,
+    "validation_maps": [42, 43, 44, 46],
+    "validation_fractions": [
+        *(round(0.016 * i, 3) for i in range(1, 11)),
+        *(round(0.16 + 0.042 * i, 3) for i in range(1, 21)),
+    ],
+    "routine_seed_pairs": 4,
+    "confirmation_seed_pairs": 8,
+    "retain_all_actors": True,
+}
+# The settings of each method's tournament policy run, with its seed
+# (docs/training/hyperparameter_search.md, Final Policies). recipe=default
 # applies them over the dataclass defaults; every value is that run's saved
-# one, including the search's 40,108,032-transition budget.
+# one. For QMIX that run's recipe differs from the method's final recipe
+# (target copies every 128 updates instead of reward scale 10).
 SELECTED_RECIPES: dict[str, dict[str, Any]] = {
     "mappo": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 20261002,
         "num_envs": 512,
-        "total_env_steps": 40108032,
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
     },
     "ippo": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 20261001,
         "num_envs": 512,
-        "total_env_steps": 40108032,
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
     },
     "ff_mappo": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 12259871,
         "num_envs": 512,
-        "total_env_steps": 40108032,
-        "reward": _PER_AGENT_REWARD,
+        "reward": _TEAM_REWARD,
         "ppo": {**_PPO_SELECTED, "actor_lr": 0.0003},
     },
     "ff_ippo": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 20261001,
         "num_envs": 512,
-        "total_env_steps": 40108032,
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
     },
     "qmix": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 12259871,
         "num_envs": 768,
-        "total_env_steps": 40108032,
         "reward": _TEAM_REWARD,
         "qmix": {
             "rollout_length": 32,
@@ -100,8 +126,9 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
         },
     },
     "pqn_vdn": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 12259871,
         "num_envs": 768,
-        "total_env_steps": 40108032,
         "reward": _TEAM_REWARD,
         "pqn": {
             "rollout_length": 128,
@@ -115,7 +142,10 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
             "td_lambda": 0.85,
             "eps_start": 1.0,
             "eps_finish": 0.01,
-            "eps_decay_fraction": 0.05,
+            # The tournament run explored over 5% of its 40M run's 407 planned
+            # learning blocks (20.35 blocks, about 2M transitions); this is the
+            # share of a 250M run's 2,549 blocks that gives the same span.
+            "eps_decay_fraction": 0.00798352295017654,
             "input_scale": 1.0,
             "reward_scale": 10.0,
             "normalization": "batch_norm",

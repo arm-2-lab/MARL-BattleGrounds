@@ -1,9 +1,11 @@
 """Check packaged settings and previews against the existing public config API.
 
-The default recipe applies the settings of each method's strongest run, the
-one continued to 250M (study 3 of the six-method hyperparameter search), over
-the API defaults; the expected values below are those runs' saved settings,
-written out independently of the generator.
+The default recipe applies the settings of each method's tournament policy run
+(the six-method hyperparameter search) over the API defaults: its seed, learner
+settings, games, reward, the 250,675,200-transition budget with the lineage's
+30 check steps, and the search's past-copy, validation-map, seed-pair and
+actor-retention settings. The expected values below are those runs' saved
+settings, written out independently of the generator.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
 PQN normalization and validation_maps, whose default is left out of saved
 configs), six method groups, complete pool replacement, ordinary
@@ -51,13 +53,14 @@ PPO_SELECTED = {
     "gamma": 0.999,
     "input_scale": 0.01,
 }
-# Method -> (games, learner settings that differ from the API defaults).
-SELECTED: dict[str, tuple[int, dict[str, Any]]] = {
-    "mappo": (512, PPO_SELECTED),
-    "ippo": (512, PPO_SELECTED),
-    "ff_mappo": (512, {**PPO_SELECTED, "actor_lr": 0.0003}),
-    "ff_ippo": (512, PPO_SELECTED),
+# Method -> (seed, games, learner settings that differ from the API defaults).
+SELECTED: dict[str, tuple[int, int, dict[str, Any]]] = {
+    "mappo": (20261002, 512, PPO_SELECTED),
+    "ippo": (20261001, 512, PPO_SELECTED),
+    "ff_mappo": (12259871, 512, {**PPO_SELECTED, "actor_lr": 0.0003}),
+    "ff_ippo": (20261001, 512, PPO_SELECTED),
     "qmix": (
+        12259871,
         768,
         {
             "rollout_length": 32,
@@ -71,14 +74,68 @@ SELECTED: dict[str, tuple[int, dict[str, Any]]] = {
         },
     ),
     "pqn_vdn": (
+        12259871,
         768,
-        {"num_minibatches": 12, "eps_decay_fraction": 0.05, "reward_scale": 10.0},
+        # 5% of the 40M run's 407 blocks, as a share of a 250M run's 2,549.
+        {
+            "num_minibatches": 12,
+            "eps_decay_fraction": 0.00798352295017654,
+            "reward_scale": 10.0,
+        },
     ),
 }
+PER_AGENT = "marl_battlegrounds.training.reward_recipes:combat_support_reward"
+TEAM = "marl_battlegrounds.training.reward_recipes:combat_support_team_reward"
 REWARD = {
-    "ppo": "marl_battlegrounds.training.reward_recipes:combat_support_reward",
-    "qmix": "marl_battlegrounds.training.reward_recipes:combat_support_team_reward",
-    "pqn": "marl_battlegrounds.training.reward_recipes:combat_support_team_reward",
+    "mappo": PER_AGENT,
+    "ippo": PER_AGENT,
+    "ff_mappo": TEAM,
+    "ff_ippo": PER_AGENT,
+    "qmix": TEAM,
+    "pqn_vdn": TEAM,
+}
+# Every tournament run: 40,108,032 transitions with a check every 10%, then a
+# continuation to 250,675,200 with a check every 5% of the added budget.
+PROTOCOL: dict[str, Any] = {
+    "total_env_steps": 250675200,
+    "keep_past": 12,
+    "past_capture_interval": 1376256,
+    "validation_maps": [42, 43, 44, 46],
+    "validation_fractions": [
+        0.016,
+        0.032,
+        0.048,
+        0.064,
+        0.08,
+        0.096,
+        0.112,
+        0.128,
+        0.144,
+        0.16,
+        0.202,
+        0.244,
+        0.286,
+        0.328,
+        0.37,
+        0.412,
+        0.454,
+        0.496,
+        0.538,
+        0.58,
+        0.622,
+        0.664,
+        0.706,
+        0.748,
+        0.79,
+        0.832,
+        0.874,
+        0.916,
+        0.958,
+        1.0,
+    ],
+    "routine_seed_pairs": 4,
+    "confirmation_seed_pairs": 8,
+    "retain_all_actors": True,
 }
 
 
@@ -93,13 +150,13 @@ def test_default_recipe_is_the_selected_search_recipe(
         (ROOT / "tests/fixtures/training_config_defaults.json").read_text()
     )[method]
     block = method_settings_field(method)
-    games, settings = SELECTED[method]
+    seed, games, settings = SELECTED[method]
     assert actual == {
         **defaults,
-        "retain_all_actors": False,
+        **PROTOCOL,
+        "seed": seed,
         "num_envs": games,
-        "total_env_steps": 40108032,
-        "reward": REWARD[block],
+        "reward": REWARD[method],
         block: {**defaults[block], **settings},
     }
 
@@ -124,9 +181,14 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
         selected = composed(f"method={'qmix' if field == 'qmix' else 'pqn_vdn'}")
         assert field in selected
     elif field == "validation_maps":
-        # The default (all five maps) is left out of saved configs.
-        assert cfg[field] is None and resolved.validation_maps is None
-        assert field not in effective
+        # The default recipe uses the search's maps; the API default (all five
+        # maps) is left out of saved configs.
+        assert config_to_dict(resolved)[field] == [42, 43, 44, 46]
+        api = resolve_training_config(
+            composed(f"method={method}", "recipe=software_check"), base_dir=tmp_path
+        )
+        assert api.validation_maps is None
+        assert field not in config_to_dict(api)
         chosen = resolve_training_config(
             composed("validation_maps=[46,42,43,44]"), base_dir=tmp_path
         )

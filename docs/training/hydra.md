@@ -73,25 +73,48 @@ The method YAML follows the API defaults, including method-dependent save
 cadence. See `TrainConfig` and the learner config docstrings for field meanings.
 
 `recipe=default`, used when no recipe is named, applies the settings of each
-method's strongest run, the one continued to 250M (study 3 of the
-[six-method hyperparameter search](hyperparameter_search.md#decisions-during-the-search)):
-its learner settings, number of games, reward and the search's budget of
-40,108,032 transitions. For QMIX and feedforward MAPPO that run comes from
-outside the method's final recipe. Everything else keeps the API default.
+method's tournament policy run in the
+[six-method hyperparameter search](hyperparameter_search.md#final-policies):
+its seed, learner settings, number of games and reward, the whole lineage's
+budget of 250,675,200 transitions, and the search's training and validation
+settings. Everything else keeps the API default.
 
-| Method | Games | Reward | Settings that differ from the API defaults |
-| --- | ---: | --- | --- |
-| `mappo`, `ippo`, `ff_ippo` | 512 | `combat_support_reward` | `actor_lr=0.0001`, `critic_lr=0.00025`, `rollout_length=32`, `gamma=0.999`, `input_scale=0.01` |
-| `ff_mappo` | 512 | `combat_support_reward` | As above with `actor_lr=0.0003` |
-| `qmix` | 768 | `combat_support_team_reward` | `rollout_length=32`, `buffer_size=172`, `epochs=48`, `q_lr=0.0001`, `update_period=128`, `eps_decay=2000000`, `input_scale=0.01` |
-| `pqn_vdn` | 768 | `combat_support_team_reward` | `num_minibatches=12`, `eps_decay_fraction=0.05`, `reward_scale=10` |
+| Method | Seed | Games | Reward | Learner settings that differ from the API defaults |
+| --- | ---: | ---: | --- | --- |
+| `mappo` | 20261002 | 512 | `combat_support_reward` | `actor_lr=0.0001`, `rollout_length=32`, `gamma=0.999`, `input_scale=0.01` |
+| `ippo`, `ff_ippo` | 20261001 | 512 | `combat_support_reward` | As for `mappo` |
+| `ff_mappo` | 12259871 | 512 | `combat_support_team_reward` | As for `mappo`, with `actor_lr=0.0003` |
+| `qmix` | 12259871 | 768 | `combat_support_team_reward` | `rollout_length=32`, `buffer_size=172`, `epochs=48`, `q_lr=0.0001`, `update_period=128`, `eps_decay=2000000`, `input_scale=0.01` |
+| `pqn_vdn` | 12259871 | 768 | `combat_support_team_reward` | `num_minibatches=12`, `eps_decay_fraction=0.00798352295017654`, `reward_scale=10` |
+
+Every method also gets the search's settings: `total_env_steps=250675200`,
+`keep_past=12`, `past_capture_interval=1376256`,
+`validation_maps=[42,43,44,46]`, `routine_seed_pairs=4`,
+`confirmation_seed_pairs=8`, `retain_all_actors=true`, and 30
+`validation_fractions` that place the checks where the tournament runs had
+them: every 1.6% of the budget (about 4M transitions) up to 40,108,032, then
+every 4.2% (about 10.5M). The tournament runs reached 250M as a 40M run
+continued from its saved state; a default run trains the same length in one
+go. For PPO and QMIX, whose learning rates are constant, that is the same
+schedule. PQN-VDN's exploration and learning rate follow shares of the
+planned learning blocks. Its `eps_decay_fraction` is set so exploration falls
+over the same 20.35 blocks (about 2M transitions) as in the tournament run,
+5% of that run's 40M budget. Its learning rate falls linearly over the whole
+run, which from 40M on matches its continued run's schedule; only its first
+40M differ.
+With `retain_all_actors=true` a 250M run keeps every exported actor, several
+gigabytes per run; set it to `false` to keep only the actors validation needs.
 
 The search also trained against a pool of six fixed recurrent MAPPO models and
-validated against the pooled 250M model on maps 42, 43, 44 and 46. Those models
-are not packaged, so the default recipe keeps the API's opponent and validation
-defaults; set `opponents` and `validation_opponents` to reproduce the search.
-Direct Python calls (`TrainConfig`, `PPOConfig`, `QMIXConfig`, `PQNConfig`)
-keep the API defaults.
+validated against the pooled 250M model. Those models are not packaged, so the
+default recipe keeps the API's opponent and validation-panel defaults; set
+`opponents` and `validation_opponents` to the declarations in
+[`ff_mappo_team_reward.yaml`](../../scripts/paper_experiments/hyperparameter_search/ff_mappo_team_reward.yaml)
+(or any study declaration) to train with the search's opponents and panel. A
+rerun is not bit-identical: training used XLA's normal GPU mode, and a default
+run trains 250M in one go rather than as a 40M run plus a continuation. Direct Python
+calls (`TrainConfig`, `PPOConfig`, `QMIXConfig`, `PQNConfig`) keep the API
+defaults.
 
 `recipe=software_check` provides small settings for checking the software: 32
 environments and 20,480 transitions. It is **not a paper experiment or a claim

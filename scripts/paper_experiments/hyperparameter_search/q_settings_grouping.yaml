@@ -1,0 +1,220 @@
+# Study 2's analysis grouping: its 30 runs plus the six study 1 runs of its two
+# bases (pqn_vdn-b768-t128, qmix-b768-t32-lr-1e-4) on the same seeds, with the
+# picks of q_settings_picks.yaml. Paths are relative to
+# <search root>/q-settings/protocol/; copy this file there before analysis.
+# panel_digest is the identity of the validation panel both studies used.
+schema_version: 2
+measure: point_margin
+maps:
+- 42
+- 43
+- 44
+- 46
+opponents:
+- Recurrent MAPPO
+- tdm-alpha
+- tdm-beta
+- tdm-gamma
+panel_digest: 244ac3fbc9ad3ea5edd9a75780833284e8c2a745c3965d11e36d7d49184ea1e4
+red_zone_depth: 5.0
+runs:
+- run_dir: ../../shapes-and-ppo/study/cases/pqn_vdn-b768-t128--seed-12259871/run
+  group: pqn_vdn-b768-t128
+  unit: seed-12259871
+- run_dir: ../../shapes-and-ppo/study/cases/pqn_vdn-b768-t128--seed-20261001/run
+  group: pqn_vdn-b768-t128
+  unit: seed-20261001
+- run_dir: ../../shapes-and-ppo/study/cases/pqn_vdn-b768-t128--seed-20261002/run
+  group: pqn_vdn-b768-t128
+  unit: seed-20261002
+- run_dir: ../../shapes-and-ppo/study/cases/qmix-b768-t32-lr-1e-4--seed-12259871/run
+  group: qmix-b768-t32-lr-1e-4
+  unit: seed-12259871
+- run_dir: ../../shapes-and-ppo/study/cases/qmix-b768-t32-lr-1e-4--seed-20261001/run
+  group: qmix-b768-t32-lr-1e-4
+  unit: seed-20261001
+- run_dir: ../../shapes-and-ppo/study/cases/qmix-b768-t32-lr-1e-4--seed-20261002/run
+  group: qmix-b768-t32-lr-1e-4
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-explore-20pct--seed-12259871/run
+  group: pqn_vdn-b768-t128-explore-20pct
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-explore-20pct--seed-20261001/run
+  group: pqn_vdn-b768-t128-explore-20pct
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-explore-20pct--seed-20261002/run
+  group: pqn_vdn-b768-t128-explore-20pct
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-reward-x10--seed-12259871/run
+  group: pqn_vdn-b768-t128-reward-x10
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-reward-x10--seed-20261001/run
+  group: pqn_vdn-b768-t128-reward-x10
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-reward-x10--seed-20261002/run
+  group: pqn_vdn-b768-t128-reward-x10
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-layer-norm--seed-12259871/run
+  group: pqn_vdn-b768-t128-layer-norm
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-layer-norm--seed-20261001/run
+  group: pqn_vdn-b768-t128-layer-norm
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-layer-norm--seed-20261002/run
+  group: pqn_vdn-b768-t128-layer-norm
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lr-1e-4--seed-12259871/run
+  group: pqn_vdn-b768-t128-lr-1e-4
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lr-1e-4--seed-20261001/run
+  group: pqn_vdn-b768-t128-lr-1e-4
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lr-1e-4--seed-20261002/run
+  group: pqn_vdn-b768-t128-lr-1e-4
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-gamma-0995--seed-12259871/run
+  group: pqn_vdn-b768-t128-gamma-0995
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-gamma-0995--seed-20261001/run
+  group: pqn_vdn-b768-t128-gamma-0995
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-gamma-0995--seed-20261002/run
+  group: pqn_vdn-b768-t128-gamma-0995
+  unit: seed-20261002
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lambda-095--seed-12259871/run
+  group: pqn_vdn-b768-t128-lambda-095
+  unit: seed-12259871
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lambda-095--seed-20261001/run
+  group: pqn_vdn-b768-t128-lambda-095
+  unit: seed-20261001
+- run_dir: ../study/cases/pqn_vdn-b768-t128-lambda-095--seed-20261002/run
+  group: pqn_vdn-b768-t128-lambda-095
+  unit: seed-20261002
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reuse-x2--seed-12259871/run
+  group: qmix-b768-t32-lr-1e-4-reuse-x2
+  unit: seed-12259871
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reuse-x2--seed-20261001/run
+  group: qmix-b768-t32-lr-1e-4-reuse-x2
+  unit: seed-20261001
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reuse-x2--seed-20261002/run
+  group: qmix-b768-t32-lr-1e-4-reuse-x2
+  unit: seed-20261002
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-gamma-0995--seed-12259871/run
+  group: qmix-b768-t32-lr-1e-4-gamma-0995
+  unit: seed-12259871
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-gamma-0995--seed-20261001/run
+  group: qmix-b768-t32-lr-1e-4-gamma-0995
+  unit: seed-20261001
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-gamma-0995--seed-20261002/run
+  group: qmix-b768-t32-lr-1e-4-gamma-0995
+  unit: seed-20261002
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reward-x10--seed-12259871/run
+  group: qmix-b768-t32-lr-1e-4-reward-x10
+  unit: seed-12259871
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reward-x10--seed-20261001/run
+  group: qmix-b768-t32-lr-1e-4-reward-x10
+  unit: seed-20261001
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-reward-x10--seed-20261002/run
+  group: qmix-b768-t32-lr-1e-4-reward-x10
+  unit: seed-20261002
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-12259871/run
+  group: qmix-b768-t32-lr-1e-4-target-faster
+  unit: seed-12259871
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-20261001/run
+  group: qmix-b768-t32-lr-1e-4-target-faster
+  unit: seed-20261001
+- run_dir: ../study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-20261002/run
+  group: qmix-b768-t32-lr-1e-4-target-faster
+  unit: seed-20261002
+comparisons: []
+recipe_selection:
+- name: PQN-VDN Exploration Over 20% Of The Run
+  groups: &id001
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-explore-20pct
+  direction: maximize
+  tie_order: *id001
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: PQN-VDN Reward Scale 10
+  groups: &id002
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-reward-x10
+  direction: maximize
+  tie_order: *id002
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: PQN-VDN LayerNorm
+  groups: &id003
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-layer-norm
+  direction: maximize
+  tie_order: *id003
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: PQN-VDN Learning Rate 1e-4
+  groups: &id004
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-lr-1e-4
+  direction: maximize
+  tie_order: *id004
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: PQN-VDN Gamma 0.995
+  groups: &id005
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-gamma-0995
+  direction: maximize
+  tie_order: *id005
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: PQN-VDN Lambda 0.95
+  groups: &id006
+  - pqn_vdn-b768-t128
+  - pqn_vdn-b768-t128-lambda-095
+  direction: maximize
+  tie_order: *id006
+  base: pqn_vdn-b768-t128
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: QMIX Twice The Training Per New Step
+  groups: &id007
+  - qmix-b768-t32-lr-1e-4
+  - qmix-b768-t32-lr-1e-4-reuse-x2
+  direction: maximize
+  tie_order: *id007
+  base: qmix-b768-t32-lr-1e-4
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: QMIX Gamma 0.995
+  groups: &id008
+  - qmix-b768-t32-lr-1e-4
+  - qmix-b768-t32-lr-1e-4-gamma-0995
+  direction: maximize
+  tie_order: *id008
+  base: qmix-b768-t32-lr-1e-4
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: QMIX Reward Scale 10
+  groups: &id009
+  - qmix-b768-t32-lr-1e-4
+  - qmix-b768-t32-lr-1e-4-reward-x10
+  direction: maximize
+  tie_order: *id009
+  base: qmix-b768-t32-lr-1e-4
+  min_margin_gain: 2.0
+  min_units_won: 2
+- name: QMIX Faster Target Copies
+  groups: &id010
+  - qmix-b768-t32-lr-1e-4
+  - qmix-b768-t32-lr-1e-4-target-faster
+  direction: maximize
+  tie_order: *id010
+  base: qmix-b768-t32-lr-1e-4
+  min_margin_gain: 2.0
+  min_units_won: 2
