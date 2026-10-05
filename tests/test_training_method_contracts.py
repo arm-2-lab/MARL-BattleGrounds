@@ -1,4 +1,4 @@
-"""Check approved Red Zone and M11.5 changes against frozen method contracts.
+"""Check approved additions against frozen method contracts.
 
 The fixture ``tests/fixtures/method_contracts.json`` was captured on CPU before
 PQN-VDN existed, for MAPPO, IPPO, feedforward MAPPO, feedforward IPPO and QMIX,
@@ -25,9 +25,12 @@ dictionary
 only actor_input and training_state go from 1 to 2, and the frozen
 pre-Red-Zone dictionary equals the recorded one. The schema-1 actor template
 equals the old actor layout exactly. Historical method settings gain only
-explicit parameter_sharing="all". The default ``config_to_dict`` equals the
-recorded one plus the explicitly listed M11.5 defaults and "red_zone_depth": 5.0,
-placed right after score_threshold_curriculum. Older settings remain exact.
+explicit parameter_sharing="all" (and QMIX reward_scale=1.0, which saved
+configs leave out at that value). The default ``config_to_dict`` equals the
+recorded one plus the explicitly listed history/partner defaults,
+retain_all_actors=False and "red_zone_depth": 5.0, placed right after
+score_threshold_curriculum. Older settings remain exact. The original fixture
+is not rewritten when an approved optional setting is added.
 Unchanged exactly: the dependency names
 (Flashbax for QMIX only), the inference identity of one fixed synthetic actor
 description in the left frame, the System registration IDs of all-ones
@@ -257,6 +260,7 @@ def test_the_capture_settings_are_the_recorded_ones() -> None:
     assert asdict(QMIXConfig(**settings["qmix"])) == {
         **settings["qmix"],
         "parameter_sharing": "all",
+        "reward_scale": 1.0,
     }
 
 
@@ -297,6 +301,7 @@ def test_an_older_method_keeps_its_saved_contracts(method: TrainingMethod) -> No
         "past_capture_interval": None,
         "history_capture_env_steps": None,
         "initial_actor": None,
+        "retain_all_actors": False,
     }
     settings_field = "qmix" if method == "qmix" else "ppo"
     expected_config[settings_field] = {

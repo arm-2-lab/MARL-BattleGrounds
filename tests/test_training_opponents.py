@@ -3,7 +3,11 @@
 CPU proofs cover independent opponent streams, the 80/20 reset distribution,
 the separate permanent pin, rolling-copy retirement and stable capture IDs,
 actual capture spacing, dynamic copy weights, zero-capacity play, immutable
-complete actor variables, shared result normalization, selected memory resets,
+complete actor variables, one full-batch call for current-weight lanes with
+length-one calls only for frozen-copy lanes (past copies and the permanent
+pin, through vmap or lax.map, including a partly filled last group), no
+current-weight call when every lane is frozen, shared result normalization,
+selected memory resets,
 stochastic initialization limits and untrained MAPPO on public inputs. These
 tests do not train a learner or establish GPU cost or learned competence.
 """
@@ -512,6 +516,34 @@ def test_wrapper_forms_match_independent_selected_application_and_initialization
         _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
 
 
+@pytest.mark.parametrize("vectorize_lanes", [True, False])
+def test_frozen_lanes_and_permanent_pin_use_their_own_weights_in_groups(
+    public_setup: tuple[Environment, Observations, EnvironmentState],
+    vectorize_lanes: bool,
+) -> None:
+    env, observations, state = public_setup
+    inputs = env.policy_inputs(observations, state, team=1)
+    keys = jax.random.split(jax.random.key(503), 4)
+    assignment = (-2, 1, -1, 0)
+    wrapped = make_opponent_system(_actor(), vectorize_lanes=vectorize_lanes)
+    history = _bank(pin=True)._replace(lane_snapshot=jnp.asarray(assignment, jnp.int32))
+    memory = jnp.arange(20, dtype=jnp.int32).reshape(4, 5)
+    actual = _jit(wrapped.apply)(history, memory, inputs, keys)
+    for lane, slot in enumerate(assignment):
+        variables = (
+            history.current_variables
+            if slot == -1
+            else history.pinned_variables
+            if slot == -2
+            else _stored(history.historical_variables, slot)
+        )
+        expected = _apply(
+            variables, _row(memory, lane), _row(inputs, lane), keys[lane : lane + 1]
+        )
+        _tree_equal(_row(actual.actions, lane), expected.actions)
+        _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
+
+
 def test_current_refresh_preserves_frozen_inference_state_and_continuing_memory(
     public_setup: tuple[Environment, Observations, EnvironmentState],
 ) -> None:
@@ -619,7 +651,62 @@ def test_all_current_executes_one_full_batch_call_and_mixed_executes_assigned_la
     history = history._replace(lane_snapshot=jnp.asarray((0, -1, 1, 2), jnp.int32))
     jax.block_until_ready(run(history, memory, inputs, keys))
     jax.effects_barrier()
+    # Current-weight lanes share one full-batch call; frozen lanes run alone.
+    assert calls == [4, 1, 1, 1]
+    calls.clear()
+    history = history._replace(lane_snapshot=jnp.asarray((0, 2, 1, 0), jnp.int32))
+    jax.block_until_ready(run(history, memory, inputs, keys))
+    jax.effects_barrier()
+    # With every lane frozen, the unused current-weight call is skipped.
     assert calls == [1, 1, 1, 1]
+
+
+def test_partly_filled_frozen_group_writes_back_only_real_lanes() -> None:
+    env = make(
+        "tdm",
+        env_config=evaluation_env_config(team_sizes=(2, 2), max_steps=20),
+        num_envs=12,
+        metrics="none",
+    )
+    observations, state = env.reset(jax.random.key(41))
+    inputs = env.policy_inputs(observations, state, team=1)
+    keys = jax.random.split(jax.random.key(504), 12)
+    # Groups hold ceil(12 / 4) = 3 lanes, so four frozen lanes leave the second
+    # group with two padding rows that must never be written back.
+    assignment = (-1, 0, -1, -1, 2, -1, -2, -1, -1, 1, -1, -1)
+    wrapped = make_opponent_system(_actor())
+    history = init_opponent_history(
+        _variables(), num_envs=12, pin_first_update=True
+    )._replace(
+        count=jnp.int32(3),
+        eligible=jnp.arange(21) < 3,
+        captured_ids=jnp.where(jnp.arange(21) < 3, jnp.arange(21), -1).astype(
+            jnp.int32
+        ),
+        next_capture_id=jnp.int32(3),
+        pinned_variables=_variables(99, 7),
+        pinned_update=jnp.int32(1),
+        historical_variables={
+            "weight": jnp.arange(21, dtype=jnp.int32),
+            "inference": jnp.arange(21, dtype=jnp.int32) + 5,
+        },
+        lane_snapshot=jnp.asarray(assignment, jnp.int32),
+    )
+    memory = jnp.arange(60, dtype=jnp.int32).reshape(12, 5)
+    actual = _jit(wrapped.apply)(history, memory, inputs, keys)
+    for lane, slot in enumerate(assignment):
+        variables = (
+            history.current_variables
+            if slot == -1
+            else history.pinned_variables
+            if slot == -2
+            else _stored(history.historical_variables, slot)
+        )
+        expected = _apply(
+            variables, _row(memory, lane), _row(inputs, lane), keys[lane : lane + 1]
+        )
+        _tree_equal(_row(actual.actions, lane), expected.actions)
+        _tree_equal(_row(actual.next_memory, lane), expected.next_memory)
 
 
 def test_public_death_and_respawn_keep_frozen_assignment_and_recurrent_memory() -> None:
@@ -1254,3 +1341,48 @@ def test_all_external_games_skip_native_actor_work(
     _tree_equal(output.next_memory[0], memory[0])
     expected = pinned.apply(pinned.variables, memory[1], inputs, keys)
     _tree_equal(output.actions, expected.actions)
+
+
+def test_eleven_fixed_members_enumerate_and_share_history_fallback() -> None:
+    from marl_battlegrounds.training.opponents import (
+        configure_opponent_selection,
+        select_opponents,
+    )
+
+    names = tuple(f"member-{index}" for index in range(11))
+    history = init_opponent_history(
+        _variables(),
+        num_envs=14,
+        keep_past=1,
+        capture_interval_rounds=1,
+    )
+    shares = {"self": 0.6, "past": 0.2, **dict.fromkeys(names, 0.2 / 11)}
+    weighted = configure_opponent_selection(names, history, shares)
+    np.testing.assert_allclose(weighted.shares, [0.6, 0.2, *([0.2 / 11] * 11)])
+    sequence = configure_opponent_selection(names, history, ["self", "past", *names])
+    keys = jax.random.split(jax.random.key(12), 14)
+    choose = _jit(select_opponents)
+    chosen, sequence = choose(history, sequence, jnp.ones(14, jnp.bool_), keys)
+    np.testing.assert_array_equal(chosen.lane_snapshot, [-1, -1, *([-2] * 11), -1])
+    np.testing.assert_array_equal(sequence.choices[2:13], np.arange(11))
+    # Every fixed member is also reachable through the ordinary weighted route.
+    for index, name in enumerate(names):
+        selected = configure_opponent_selection(names, chosen, {name: 1})
+        actual, selected = choose(chosen, selected, jnp.ones(14, jnp.bool_), keys)
+        np.testing.assert_array_equal(actual.lane_snapshot, -2)
+        np.testing.assert_array_equal(selected.choices, index)
+    saved = chosen, sequence
+    unchanged = choose(chosen, sequence, jnp.zeros(14, jnp.bool_), keys)
+    _tree_equal(saved, unchanged)
+    schedule = make_training_schedule(total_env_steps=140, num_envs=14).arrays
+    captured, event = refresh_opponents(
+        history,
+        _variables(1),
+        completed_rounds=jnp.int32(1),
+        update_index=jnp.int32(1),
+        schedule=schedule,
+    )
+    assert bool(event.created)
+    past = configure_opponent_selection(names, captured, {"past": 1})
+    selected, _ = choose(captured, past, jnp.ones(14, jnp.bool_), keys)
+    np.testing.assert_array_equal(selected.captured_ids[selected.lane_snapshot], 0)

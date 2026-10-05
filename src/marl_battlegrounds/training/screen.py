@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from marl_battlegrounds.training import _launch
+from marl_battlegrounds.training import _launch  # pyright: ignore[reportPrivateUsage]
 from marl_battlegrounds.training._run_io import (
     atomic_json,
     duration,
@@ -83,8 +83,8 @@ def screen_declaration() -> Record:
     default to 5.0. This preserves the screen's original numerical settings
     and scoring. This function writes no files.
     """
-    from marl_battlegrounds.baselines.ppo import PPOConfig
-    from marl_battlegrounds.training.runner import TrainConfig, config_to_dict
+    from marl_battlegrounds.baselines.config import PPOConfig
+    from marl_battlegrounds.training.config import TrainConfig, config_to_dict
 
     cases = [
         {"name": f"b{batch}-t{length}", "num_envs": batch, "rollout_length": length}
@@ -876,14 +876,17 @@ def _worker(
 ) -> None:
     """Call the public trainer, then record calibration-only timing evidence.
 
-    Configuration is already frozen in job/config.json. Calibration never
-    becomes a scientific prefix. A single calibration actor may time 40 Random
-    games under the config's red_zone_depth; these are engineering games and
-    are excluded from the study results.
+    Configuration is already frozen in job/config.json. A fresh job trains
+    into job/run; resume=True passes only resume_from (job/run's latest saved
+    checkpoint), because train refuses output_dir and resume_from together.
+    Calibration never becomes a scientific prefix. A single calibration actor
+    may time 40 Random games under the config's red_zone_depth; these are
+    engineering games and are excluded from the study results.
     """
     import jax
 
-    from marl_battlegrounds.training.runner import read_config, train
+    from marl_battlegrounds.training.config import read_config
+    from marl_battlegrounds.training.runner import train
 
     if (
         jax.default_backend() != "gpu"
@@ -894,7 +897,7 @@ def _worker(
     config = read_config(job / "config.json")
     result = train(
         None if resume else config,
-        output_dir=job / "run",
+        output_dir=None if resume else job / "run",
         resume_from=_launch._checkpoint(job, None) if resume else None,
     )
     if mode != "calibration":

@@ -1,0 +1,65 @@
+/* Styles for the Fog And Vision look (src/looks/fog.js): the Agent POV Sight Reach veil, its Lift and Reach Edge, the recipient rim, the Spotted Glint and the Last Seen mark. styles.css imports this file. Colours come only from the :root tokens. Opacities live on the nodes as attributes (the beat fades read them), so no rule here sets opacity. */
+
+.fog-sight,
+.fog-rim,
+.fog-glint {
+  pointer-events: none;
+}
+
+.fog-veil-path {
+  fill: var(--ink);
+  stroke: none;
+}
+
+/* The Lift is Moon Mote #CFDAF2; until :root has --moon-mote it falls back to Moon Silver. */
+.fog-lift-path {
+  fill: var(--moon-mote, var(--moon-silver));
+  stroke: none;
+}
+
+.fog-edge-own,
+.fog-edge-allied {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+}
+
+.fog-edge-allied {
+  stroke-dasharray: 4 4;
+}
+
+.fog-rim,
+.fog-glint {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1px;
+}
+
+/* The glint shrinks about its own centre. */
+.fog-glint {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.fog-last-seen-ring {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1.5px;
+  stroke-dasharray: 0.1 5.4;
+  stroke-linecap: round;
+}
+
+.fog-last-seen[data-team="1"] .fog-last-seen-ring {
+  stroke: var(--team-a-light);
+}
+
+.fog-last-seen[data-team="2"] .fog-last-seen-ring {
+  stroke: var(--team-b-light);
+}
+
+.fog-last-seen-emblem {
+  color: var(--moon-silver);
+  fill: none;
+  pointer-events: none;
+}

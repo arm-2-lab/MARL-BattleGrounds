@@ -1,18 +1,20 @@
-"""Collect an exact experience budget with an untrained recurrent MAPPO actor.
+"""Collect learner-ready rows with public curriculum and shaping settings.
 
-Install the training extra. For a small CPU check, run::
+Install training and hydra, then run a small CPU check::
 
     JAX_PLATFORMS=cpu python examples/training_collection.py \
-        --mode Plain --num-envs 2 --total-env-steps 4 --length 4
+        num_envs=2 total_env_steps=4 length=4
+
+Use --help or --cfg job to inspect settings; import run for plain Python.
 
 The ordinary defaults use 32 games and blocks of 128 rounds. Select Plain, C,
 RS or C-RS to enable neither option, curriculum, shaping or both. Printed counts
 separate requested stages from the distributions actually played. No optimizer
 update, historical snapshot, learner checkpoint or learning claim is made.
-Only --output-dir enables files, through the existing training RunWriter.
+Only output_dir enables game records, through the existing training RunWriter.
+Hydra separately saves its launch settings beside the requested output.
 """
 
-import argparse
 from contextlib import nullcontext
 from pathlib import Path
 from typing import cast
@@ -172,42 +174,12 @@ def _print_summary(summary: dict[str, object]) -> None:
         print(f"Saved Run: {summary['run_dir']}")
 
 
-def main() -> None:
-    """Parse collection options, call run and print its exposure summary.
+def main() -> int:
+    """Compose packaged YAML, call the Python lesson and return its exit status."""
+    from marl_battlegrounds.experiments.hydra import example_main
 
-    The CLI uses the same function as Python callers. Invalid arguments fail
-    before collection where possible. Files are opt-in through --output-dir.
-    """
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument(
-        "--mode",
-        choices=_MODES,
-        default="Plain",
-        help="Select curriculum (C), score shaping (RS), both, or neither.",
-    )
-    parser.add_argument(
-        "--num-envs", type=int, default=32, help="Positive even number of games."
-    )
-    parser.add_argument(
-        "--total-env-steps",
-        type=int,
-        default=4096,
-        help="Real transitions across all games; must divide by --num-envs.",
-    )
-    parser.add_argument(
-        "--length", type=int, default=128, help="Positive output capacity in rounds."
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for this run."
-    )
-    parser.add_argument(
-        "--output-dir", type=Path, help="Save a training run; omit to create no files."
-    )
-    args = parser.parse_args()
-    _print_summary(run(**vars(args)))
+    return example_main("training_collection", run, report=_print_summary)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

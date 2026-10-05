@@ -9,7 +9,6 @@ world actions reproduce full trajectories from both spawn ends without requests.
 """
 
 import json
-import sys
 from contextlib import ExitStack
 from importlib import import_module
 from pathlib import Path
@@ -19,7 +18,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from examples.llm import main, parse_words, prompt_for_words
+from examples.llm import parse_words, prompt_for_words, run
 from tests.llm_fixtures import FakeModel, server
 
 import marl_battlegrounds as marl_bgs
@@ -129,32 +128,17 @@ def test_example_command_runs_and_closes_its_supplied_client(
 
     monkeypatch.setattr(llm.Client, "close", close)
     with server(model.serve) as url:
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            [
-                "examples/llm.py",
-                "--model",
-                "fake",
-                "--server-url",
-                url,
-                "--format",
-                format_name,
-                "--history-turns",
-                "2",
-                "--llm-slots",
-                "4",
-                "--games",
-                "2",
-                "--num-envs",
-                "2",
-                "--max-steps",
-                "2",
-                "--output-dir",
-                str(tmp_path),
-            ],
+        run(
+            model="fake",
+            server_url=url,
+            format=format_name,
+            history_turns=2,
+            llm_slots=[4],
+            games=2,
+            num_envs=2,
+            max_steps=2,
+            output_dir=tmp_path,
         )
-        main()
     assert len(model.generations()) == 4
     assert len(closed) == 1
     with pytest.raises(RuntimeError, match="closed"):
@@ -191,8 +175,11 @@ def test_managed_system_reopens_after_each_evaluation_and_shares_two_team_lease(
                 client.request("chat/completions", {})
 
 
+@pytest.mark.parametrize("custom", [False, True])
 def test_managed_client_closes_after_model_failure(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    custom: bool,
 ) -> None:
     closed: list[llm.Client] = []
     original_close = llm.Client.close
@@ -202,14 +189,33 @@ def test_managed_client_closes_after_model_failure(
         closed.append(client)
 
     monkeypatch.setattr(llm.Client, "close", close)
-    model = FakeModel("invalid reply")
+    model = FakeModel("move=stay combat=no_combat" if custom else "invalid reply")
     with server(model.serve) as url:
-        method = llm.make_system("fake", url)
+        method = llm.make_system(
+            "fake",
+            url,
+            prompt_builder=prompt_for_words if custom else None,
+            reply_parser=parse_words if custom else None,
+            custom_version="test-v1" if custom else None,
+            records="full",
+        )
         with pytest.raises(llm.ReplyFormatError):
             marl_bgs.evaluate(
-                method, "random", num_episodes=2, maps=[0], num_envs=2, max_steps=1
+                method,
+                "random",
+                num_episodes=2,
+                maps=[0],
+                num_envs=2,
+                max_steps=1,
+                output_dir=tmp_path,
             )
     assert len(closed) == 1
+    saved = marl_bgs.load_results(next(tmp_path.glob("*/run_details.json")).parent)
+    assert saved.status == "failed"
+    assert len(saved.table("episodes").get("episode_id", ())) == 0
+    assert saved.run_dir is not None
+    calls = list(llm.read_calls(saved.run_dir))
+    assert calls and all(call["outcome"] == "abandoned" for call in calls)
 
 
 def test_recording_custom_method_requires_identity_before_output_creation(

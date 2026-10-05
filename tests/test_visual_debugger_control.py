@@ -15,9 +15,12 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import pytest
-import scripts.dev.visual_debugger.control as control
 from jax import Array
-from scripts.dev.visual_debugger.control import (
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control
+from marl_battlegrounds._battle_client.control import (
     DebuggerTransitionFailureV1,
     arm_basic,
     arm_ultimate,
@@ -39,11 +42,11 @@ from scripts.dev.visual_debugger.control import (
     submit_next_script_frame,
     switch_scenario,
 )
-from scripts.dev.visual_debugger.evaluation_bridge import (
+from marl_battlegrounds._battle_client.evaluation_bridge import (
     DebuggerCaptureProfileV1,
     build_debugger_evaluation_launch_specification_v1,
 )
-from scripts.dev.visual_debugger.model import (
+from marl_battlegrounds._battle_client.model import (
     ActorCommand,
     DebuggerScenario,
     DebuggerSession,
@@ -52,9 +55,6 @@ from scripts.dev.visual_debugger.model import (
     ScenarioFrame,
     TeamController,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.types import (
     MAGE_CLASS_ID,
@@ -178,6 +178,9 @@ def test_every_debugger_structure_has_the_exact_audited_field_schema() -> None:
             "default_controlled_slot",
             "audience",
             "provenance",
+            "scenario_specification",
+            "packaged_map",
+            "spawn_banks_exchanged",
         ),
         DebuggerSession: (
             "scenario",
@@ -207,6 +210,14 @@ def test_every_debugger_structure_has_the_exact_audited_field_schema() -> None:
             "environment_state",
             "system_memory",
             "system_ids",
+            "system_registrations",
+            "numeric_episode_id",
+            "borrow_systems",
+            "manual_slots",
+            "slot_labels",
+            "recent_scores",
+            "champion_takedowns",
+            "match_moments",
         ),
     }
 
@@ -1435,6 +1446,25 @@ def test_policy_team_remains_selectable_but_pending_edits_are_fenced(
     assert select_no_combat(selected) is selected
 
 
+def _submit_pending_joint(session: DebuggerSession) -> DebuggerSession:
+    slots = tuple(
+        row.global_slot
+        for row in session.evaluation_context.roster
+        if row.configured_active
+    )
+    action = build_interactive_joint_action(
+        session.evaluation_context,
+        session.pending_actions,
+        actor_global_slots=slots,
+    )
+    return submit_joint_action(
+        session,
+        action,
+        submission_kind="interactive",
+        report_actor_slots=slots,
+    )
+
+
 def test_post_submit_rebuilds_every_draft_from_the_successor_mask() -> None:
     scenario, session = (
         get_scenario("basic_support"),
@@ -1447,7 +1477,7 @@ def test_post_submit_rebuilds_every_draft_from_the_successor_mask() -> None:
     session = select_clicked_target(session, 5)
     session = set_pending_movement(session, MOVE_WEST)
     before_pending = session.pending_actions
-    submitted = submit_interactive(session)
+    submitted = _submit_pending_joint(session)
 
     for actor_slot in (0, 1, 2, 5, 6, 7):
         pending = submitted.pending_actions[actor_slot]
@@ -1484,7 +1514,7 @@ def test_mage_burst_can_be_explicitly_rearmed_on_cooldown_for_rejection() -> Non
     assert armed.pending_action.armed_lane == 1
     assert not lane_availability(armed.action_mask, 0, 0, 1).armed_pair_legal
 
-    submitted = submit_interactive(armed)
+    submitted = _submit_pending_joint(armed)
     view = submitted.incoming_evaluation_view
     assert view is not None
     acceptance = view.transition.facts.action_acceptance_facts
@@ -1502,7 +1532,7 @@ def test_successor_illegal_basic_disarms_but_preserves_target() -> None:
     session = select_clicked_target(session, 5)
     assert session.pending_action.armed_lane == 0
     session = set_pending_movement(session, MOVE_WEST)
-    submitted = submit_interactive(session)
+    submitted = _submit_pending_joint(session)
 
     assert submitted.pending_action.selected_global_target_slot == 5
     assert submitted.pending_action.move_action == MOVE_STAY

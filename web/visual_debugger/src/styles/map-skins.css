@@ -1,0 +1,70 @@
+/*
+ * Styles for the Map Skins look (src/looks/map-skins.js): the arena floor and
+ * its realm and tale skins. styles.css imports this file first, so a later old
+ * rule there wins on equal specificity; the floor edge therefore uses a
+ * two-class selector. Realm and tale colours come from the generated data
+ * (map-skin-data.js) as attributes; only the token colours live here. Nothing
+ * here animates: the floor is static in play, in a still and in reduced motion.
+ */
+
+/* The Night Surround apron around the floor. */
+.map-skin-apron {
+  fill: var(--battlefield);
+}
+
+/* The floor vignette: ink bands just inside the edge. */
+.map-skin-vignette {
+  fill: var(--ink);
+}
+
+/* Home Gates: the pad team's colour just outside the floor; Team B split by ink. */
+.map-skin-gate--a {
+  stroke: var(--team-a);
+}
+
+.map-skin-gate--b {
+  stroke: var(--team-b);
+}
+
+.map-skin-gate-split,
+.map-skin-rim-lip {
+  stroke: var(--ink);
+}
+
+/* The floor edge line. Two classes, so the old single-class .map-boundary rule
+   in styles.css cannot repaint the floor under the tale. */
+.map-boundary.map-skin-edge {
+  fill: none;
+}
+
+/* The combat debugger's one-unit grid (live clients only). */
+.map-grid-line {
+  stroke: var(--ui-muted);
+  stroke-opacity: 0.08;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.map-grid-line.map-grid-line--major {
+  stroke-opacity: 0.14;
+}
+
+.map-grid-line.map-grid-line--mid {
+  stroke-opacity: 0.22;
+}
+
+/* Survey Frame: world coordinates around the floor, haloed in the apron colour. */
+.map-skin-ruler-ticks {
+  stroke: var(--ui-muted);
+}
+
+.map-skin-ruler-label {
+  fill: var(--ui-muted);
+  stroke: var(--battlefield);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+  font-weight: 400;
+  dominant-baseline: central;
+}

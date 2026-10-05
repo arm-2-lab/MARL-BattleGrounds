@@ -1,0 +1,424 @@
+/*
+ * Styles for the Herald Cards look (src/looks/heralds.js): herald plates
+ * (with their glyphs: medallions, the Ultimate rune diamond, crests, the
+ * Rescue medallion's Dawn Gold ring and the Ticks Left crescent) and a tier-1 card's Herald Rule, one-line bands, the Scores
+ * Level and Ultimate Combo chips, the lineup card, the verdict card (with its
+ * Honors and buttons) and its band plate, the state chip, and the verdict's
+ * working buttons (page chrome laid over the card).
+ * styles.css imports this file at its top. Colors come only from the :root
+ * tokens. Opacity and geometry are set on the nodes; nothing here animates.
+ */
+
+.herald {
+  pointer-events: none;
+}
+
+.herald__panel {
+  fill: var(--panel);
+  fill-opacity: 0.96;
+  stroke: var(--panel-edge);
+  stroke-width: 1px;
+}
+
+.herald__tail {
+  fill: var(--panel-edge);
+}
+
+.herald__rule {
+  fill: var(--moon-silver);
+}
+
+.herald--team-a .herald__rule {
+  fill: var(--team-a);
+}
+
+.herald--team-b .herald__rule {
+  fill: var(--team-b);
+}
+
+.herald__line {
+  fill: var(--panel-edge);
+}
+
+.herald__divider {
+  fill: none;
+  stroke: var(--panel-edge);
+}
+
+.herald__eyebrow,
+.herald__title,
+.herald__band-text,
+.herald__rules,
+.herald__score,
+.herald__band-score,
+.herald__name,
+.herald__result,
+.herald__honour-label,
+.herald__honour-value,
+.herald__honour-more,
+.herald__button-text {
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.herald__eyebrow {
+  fill: var(--ui-muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.herald__title {
+  fill: var(--ui-text);
+  font-size: 18px;
+}
+
+.herald__title--large {
+  font-size: 24px;
+}
+
+.herald__band-text {
+  fill: var(--ui-text);
+  font-size: 13px;
+  dominant-baseline: central;
+}
+
+.herald__rules {
+  fill: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.herald__score {
+  font-size: 32px;
+}
+
+.herald__band-score {
+  font-size: 18px;
+}
+
+.herald__score--team-a {
+  fill: var(--team-a);
+}
+
+.herald__score--team-b {
+  fill: var(--team-b);
+}
+
+/* The controller name under a verdict column's team word (Host Light). */
+.herald__name {
+  font-size: 15px;
+}
+
+/* A long controller name shrinks before it is cut (heralds.js VERDICT_NAME_SIZES). */
+.herald__name--13 {
+  font-size: 13px;
+}
+
+.herald__name--11 {
+  font-size: 11px;
+}
+
+.herald__name--team-a {
+  fill: var(--team-a-light);
+}
+
+.herald__name--team-b {
+  fill: var(--team-b-light);
+}
+
+/* A horizon draw's lead line, and the "–" between the band plate's scores. */
+.herald__lead {
+  fill: var(--moon-silver);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.herald__dash {
+  fill: var(--ui-muted);
+  font-size: 13px;
+}
+
+.herald__result {
+  fill: var(--ui-text);
+  font-size: 18px;
+}
+
+.herald__result--draw {
+  fill: var(--moon-silver);
+}
+
+.herald__honour-label {
+  fill: var(--ui-muted);
+  font-size: 11px;
+}
+
+.herald__honour-value {
+  fill: var(--ui-text);
+  font-size: 15px;
+}
+
+.herald__honour-more {
+  fill: var(--ui-muted);
+  font-size: 11px;
+}
+
+/* The Verdict card's Match Summary and Show Arena buttons, as drawn. */
+.herald__button-frame {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-opacity: 0.45;
+  stroke-width: 1px;
+}
+
+.herald__button-text {
+  fill: var(--moon-silver);
+  font-size: 13px;
+}
+
+/* The working buttons laid over the drawn ones (page chrome, HTML): clear,
+ * with a visible focus ring and a faint hover wash. */
+.herald-verdict-actions {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.herald-verdict-actions__button {
+  position: absolute;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Three classes, so the page's own button hover fill (shell.css) never
+ * covers the words the card draws under these buttons. */
+.herald-verdict-actions .herald-verdict-actions__button:hover:not(:disabled) {
+  border: 0;
+  background: color-mix(in srgb, var(--moon-silver) 10%, transparent);
+}
+
+.herald-verdict-actions .herald-verdict-actions__button:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 1px;
+}
+
+.herald__centre {
+  text-anchor: middle;
+}
+
+.herald__end {
+  text-anchor: end;
+}
+
+/* Team crests: one ring for Team A, two for Team B. */
+.herald__crest {
+  fill: none;
+}
+
+.herald__crest--team-a {
+  stroke: var(--team-a);
+}
+
+.herald__crest--team-b {
+  stroke: var(--team-b);
+}
+
+/* Medallions: one path per medallion, its fill the field and its stroke the
+ * team ring; living (team field) or fallen (Grave Stone, ring at 55%). The
+ * emblem sigil is painted by icons.css (class colour, or ash when fallen). */
+.herald__medallion--team-a {
+  fill: var(--team-a-field);
+  stroke: var(--team-a);
+}
+
+.herald__medallion--team-b {
+  fill: var(--team-b-field);
+  stroke: var(--team-b);
+}
+
+.herald__medallion--fallen {
+  fill: var(--grave-stone);
+  stroke-opacity: 0.55;
+}
+
+.herald__medallion-ink {
+  fill: none;
+  stroke: var(--ink);
+}
+
+/* The rune diamond of an Ultimate Takedown, in the caster's class colour. */
+.herald__diamond--mage {
+  fill: var(--class-mage);
+}
+
+.herald__diamond--warrior {
+  fill: var(--class-warrior);
+}
+
+.herald__diamond--hunter {
+  fill: var(--class-hunter);
+}
+
+.herald__diamond--rogue {
+  fill: var(--class-rogue);
+}
+
+.herald__diamond--priest {
+  fill: var(--class-priest);
+}
+
+/* The tier-1 Herald Rule (Team Wiped, First Blood, Match Point): a 1 px line
+ * across the band behind the card, in its rule color (the node sets 35%). */
+.herald__tier-rule {
+  fill: none;
+  stroke: var(--moon-silver);
+}
+
+.herald--team-a .herald__tier-rule {
+  stroke: var(--team-a);
+}
+
+.herald--team-b .herald__tier-rule {
+  stroke: var(--team-b);
+}
+
+/* Rescue: the living medallion's 1.5 px Dawn Gold ring and its small "+".
+ * Dawn Gold appears only on Rescue, because Rescue is healing. */
+.herald__rescue-ring {
+  fill: none;
+  stroke: var(--dawn-gold, var(--class-priest));
+}
+
+.herald__rescue-plus {
+  fill: var(--dawn-gold, var(--class-priest));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Ticks Left: the setting moon in Moon Silver (its rim at 50%). */
+.herald__crescent {
+  fill: var(--moon-silver);
+}
+
+.herald__crescent-rim {
+  fill: none;
+  stroke: var(--moon-silver);
+}
+
+/* The Match Summary sheet (page chrome below the arena, never over it): Panel
+ * card, 11 px Title Case labels in UI Muted, 12 px values in tabular figures,
+ * one row per metric and one column per team total and champion. In the
+ * BattleClient deck it takes the deck's whole box (the deck is inert at game
+ * over), and in the Replay Viewer the timeline dock's box; it scrolls inside
+ * that box if it must. */
+.match-summary-sheet {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+}
+
+.deck > .match-summary-sheet,
+.replay-timeline > .match-summary-sheet {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  overflow: auto;
+}
+
+/* The Replay Viewer's dock under the arena holds the sheet over itself. */
+.replay-timeline:has(> .match-summary-sheet) {
+  position: relative;
+}
+
+.match-summary-sheet__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Three classes, so the BattleClient's own h3 size (base.css) never wins. */
+.match-summary-sheet .match-summary-sheet__head .match-summary-sheet__title {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.match-summary-sheet__scope,
+.match-summary-sheet__empty {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.match-summary-sheet .match-summary-sheet__close {
+  min-height: 0;
+  margin-left: auto;
+  padding: 1px 10px;
+  border: 1px solid color-mix(in srgb, var(--moon-silver) 45%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--moon-silver);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.match-summary-sheet__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-summary-sheet__table thead th {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+  vertical-align: bottom;
+}
+
+.match-summary-sheet__table tbody th {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.match-summary-sheet__table td {
+  text-align: right;
+}
+
+.match-summary-sheet__table tr > * {
+  padding: 1px 6px;
+  border-top: 1px solid var(--panel-edge);
+  line-height: 1.2;
+}
+
+.match-summary-sheet__table td.match-summary-sheet__team {
+  font-weight: 700;
+}
+
+.match-summary-sheet__table thead th.match-summary-sheet__team--a {
+  color: var(--team-a);
+}
+
+.match-summary-sheet__table thead th.match-summary-sheet__team--b {
+  color: var(--team-b);
+}

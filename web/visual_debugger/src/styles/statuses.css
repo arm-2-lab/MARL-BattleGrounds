@@ -1,0 +1,197 @@
+/*
+ * Rune Zones (src/looks/statuses.js): status marks inside each champion's
+ * token, the Rune Ring (Ultimate charge), Thaw and Shatter echoes, the Ash of
+ * Status Clear On Death, the Barrier Held collar, the Ward Circles of the
+ * Warrior's and Mage's auras with their Aura Glints and Barrier Held flash,
+ * and the Ward Lift ring. Every color is a token from styles.css.
+ * Beat-timed pieces (data-beat-hold) get no CSS animation or transition; the
+ * choreographer times them. styles.css imports this file first, so its later
+ * rules win on a clash.
+ */
+.status-marks {
+  pointer-events: none;
+}
+
+.rune-piece {
+  fill: none;
+  stroke: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rune-fill--mage {
+  fill: var(--class-mage);
+}
+
+.rune-fill--warrior {
+  fill: var(--class-warrior);
+}
+
+.rune-fill--hunter {
+  fill: var(--class-hunter);
+}
+
+.rune-fill--rogue {
+  fill: var(--class-rogue);
+}
+
+.rune-fill--priest {
+  fill: var(--class-priest);
+}
+
+.rune-fill--neutral {
+  fill: var(--ward-silver);
+}
+
+.rune-fill--ink {
+  fill: var(--ink);
+}
+
+.rune-fill--starcore {
+  fill: var(--starcore);
+}
+
+.rune-fill--rime {
+  fill: var(--rime);
+}
+
+.rune-fill--frostglass {
+  fill: var(--frostglass);
+}
+
+.rune-fill--amber {
+  fill: var(--amber-deep);
+}
+
+.rune-fill--ash {
+  fill: var(--ash);
+}
+
+.rune-stroke--mage {
+  stroke: var(--class-mage);
+}
+
+.rune-stroke--warrior {
+  stroke: var(--class-warrior);
+}
+
+.rune-stroke--hunter {
+  stroke: var(--class-hunter);
+}
+
+.rune-stroke--rogue {
+  stroke: var(--class-rogue);
+}
+
+.rune-stroke--priest {
+  stroke: var(--class-priest);
+}
+
+.rune-stroke--neutral {
+  stroke: var(--ward-silver);
+}
+
+.rune-stroke--ink {
+  stroke: var(--ink);
+}
+
+.rune-stroke--starcore {
+  stroke: var(--starcore);
+}
+
+.rune-stroke--rime {
+  stroke: var(--rime);
+}
+
+.rune-stroke--frostglass {
+  stroke: var(--frostglass);
+}
+
+.rune-stroke--amber {
+  stroke: var(--amber-deep);
+}
+
+.rune-stroke--ash {
+  stroke: var(--ash);
+}
+
+.rune-stroke--ice-crack {
+  stroke: var(--ice-crack);
+}
+
+/* Ward Circles: exactly the aura's reach (2.0 units), solid, in the class color. */
+.ward-circle,
+.ward-circle__marks {
+  --ward-paint: var(--ward-silver);
+}
+
+.ward-circle[data-class="mage"],
+.ward-circle__marks[data-class="mage"] {
+  --ward-paint: var(--class-mage);
+}
+
+.ward-circle[data-class="warrior"],
+.ward-circle__marks[data-class="warrior"] {
+  --ward-paint: var(--class-warrior);
+}
+
+.ward-circle {
+  fill: transparent;
+  stroke: var(--ward-paint);
+  stroke-width: 1.25;
+  stroke-opacity: 0.4;
+  pointer-events: fill;
+}
+
+.ward-circle__marks {
+  pointer-events: none;
+}
+
+.ward-circle__inner {
+  fill: none;
+  stroke: var(--ward-paint);
+  stroke-width: 1;
+  stroke-opacity: 0.4;
+}
+
+.ward-circle__studs--warrior {
+  fill: none;
+  stroke: var(--ward-paint);
+  stroke-width: 1.5;
+  stroke-opacity: 0.4;
+}
+
+.ward-circle__studs--mage,
+.ward-circle__studs--neutral {
+  fill: var(--ward-paint);
+  fill-opacity: 0.55;
+  stroke: none;
+}
+
+/* Aura Glints and the Barrier Held stud flash: play-only flashes at Impact. */
+.ward-circle__glint--warrior,
+.ward-circle__barrier-flash {
+  fill: none;
+  stroke: var(--forge-white);
+  stroke-linecap: round;
+}
+
+.ward-circle__glint--warrior {
+  stroke-width: 2;
+}
+
+.ward-circle__barrier-flash {
+  stroke-width: 1.8;
+}
+
+.ward-circle__glint--mage {
+  fill: var(--starcore);
+  stroke: none;
+}
+
+/* The Ward Lift: a dashed Ward Silver ring that lifts off when a Spawn Shield ends. */
+.ward-lift {
+  fill: none;
+  stroke: var(--ward-silver);
+  pointer-events: none;
+}

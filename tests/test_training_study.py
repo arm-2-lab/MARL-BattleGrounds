@@ -2,9 +2,13 @@
 
 Real trainer configs cover six methods and eighteen plain/treatment settings.
 Small fake workers cover fixed case order, ordinary trainer dispatch, visible
-failures, immutable clocks, explicit recovery, linked continuation identities,
+failures, immutable clocks, explicit recovery (an unwritten case restarts when
+its run folder is missing, empty or holds only the trainer's lock file), linked
+continuation identities,
 backend-free status, duplicate owners and detached launch parity. They prove
 host orchestration, not learner correctness, learning or device throughput.
+Runtime bindings cover every input role, retain aliases and zero-weight members,
+and reach fresh/resumed workers. Panel members and factory code are pinned too.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ from marl_battlegrounds.training import study
 from marl_battlegrounds.training._run_io import atomic_json
 
 _REAL_SUPERVISE = study._launch.supervise_command
+_SAVED_ID = "a" * 64
+_CHILD_ID = "b" * 64
 
 
 def _declaration() -> dict[str, Any]:
@@ -45,7 +51,9 @@ def _declaration() -> dict[str, Any]:
 
 @pytest.fixture
 def host_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    def config(value: object, base: Path, seed: int) -> dict[str, Any]:
+    def config(
+        value: object, base: Path, seed: int, *, runtime: object = None
+    ) -> dict[str, Any]:
         return copy.deepcopy(cast(dict[str, Any], value))
 
     def identities(methods: Sequence[str]) -> dict[str, Any]:
@@ -82,16 +90,24 @@ def _fake_worker(
             {
                 "status": "complete" if code == 0 else "interrupted",
                 "env_steps": 32 if code == 0 else 16,
+                "run_id": "fixture-run",
+                "attempt_id": f"runner-{request['attempt']}",
+                "study_attempt": {
+                    "study_attempt_id": request["study_attempt_id"],
+                    "request_sha256": study._digest(request),
+                    "number": request["attempt"],
+                    "case_id": request["job"]["id"],
+                },
             },
         )
         if checkpoints:
-            (run / "checkpoints" / "saved").mkdir(parents=True, exist_ok=True)
+            (run / "checkpoints" / _SAVED_ID).mkdir(parents=True, exist_ok=True)
             atomic_json(
                 run / "latest_checkpoint.json",
                 {
                     "schema_version": 1,
-                    "checkpoint_id": "saved",
-                    "relative_path": "checkpoints/saved",
+                    "checkpoint_id": _SAVED_ID,
+                    "relative_path": f"checkpoints/{_SAVED_ID}",
                 },
             )
         if analysis:
@@ -236,7 +252,6 @@ def test_config_seed_and_bad_method_are_checked_by_trainer(tmp_path: Path) -> No
 def test_declaration_paths_resolve_beside_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import marl_battlegrounds.training.runner as runner
 
     def inputs(case: dict[str, Any]) -> dict[str, Any]:
         return {}
@@ -251,8 +266,12 @@ def test_declaration_paths_resolve_beside_file(
     def config_save(value: dict[str, Any]) -> dict[str, Any]:
         return dict(value)
 
-    monkeypatch.setattr(runner, "config_from_dict", config_read)
-    monkeypatch.setattr(runner, "config_to_dict", config_save)
+    monkeypatch.setattr(
+        "marl_battlegrounds.training.config.config_from_dict", config_read
+    )
+    monkeypatch.setattr(
+        "marl_battlegrounds.training.config.config_to_dict", config_save
+    )
     declared = _declaration()
     declared["cases"][0]["config"].update(
         validation_panel="panel.json",
@@ -308,12 +327,12 @@ def test_explicit_resume_uses_saved_checkpoint_without_replacement_seed(
     assert result["status"] == "complete"
     assert [row["job"]["config"]["seed"] for row in calls] == [9, 9, 4]
     assert calls[1]["resume_from"] == str(
-        root / "cases/small--seed-9/run/checkpoints/saved"
+        root / f"cases/small--seed-9/run/checkpoints/{_SAVED_ID}"
     )
     assert [row["exit_code"] for row in result["cases"][0]["attempts"]] == [1, 0]
 
 
-@pytest.mark.parametrize("run_folder", ["missing", "empty"])
+@pytest.mark.parametrize("run_folder", ["missing", "empty", "lock-only"])
 def test_explicit_resume_restarts_only_an_unwritten_case_with_original_deadlines(
     host_only: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -332,8 +351,10 @@ def test_explicit_resume_restarts_only_an_unwritten_case_with_original_deadlines
     def before_training(directory: Path, command: list[str], **kwargs: object) -> int:
         if not failed:
             failed.append(study._read(directory / "request.json"))
-            if run_folder == "empty":
+            if run_folder != "missing":
                 (directory / "run").mkdir()
+            if run_folder == "lock-only":
+                (directory / "run" / ".training.lock").touch()
             return 1
         return finish(directory, command, **kwargs)
 
@@ -417,11 +438,11 @@ def test_linked_finalist_pins_parent_and_leaves_discovery_unchanged(
     discovery = tmp_path / "discovery"
     study.run_study(_declaration(), output_dir=discovery)
     original = (discovery / "declaration.json").read_bytes()
-    parent = discovery / "cases/small--seed-9/run/checkpoints/saved"
+    parent = discovery / f"cases/small--seed-9/run/checkpoints/{_SAVED_ID}"
 
     def parent_identity(path: str) -> dict[str, Any]:
         return {
-            "checkpoint_id": "saved",
+            "checkpoint_id": _SAVED_ID,
             "description_sha256": "parent",
             "method": "ff_ippo",
         }
@@ -445,7 +466,9 @@ def test_linked_finalist_pins_parent_and_leaves_discovery_unchanged(
         study._read(discovery / "declaration.json")
     )
     assert (discovery / "declaration.json").read_bytes() == original
-    finalist["cases"][0]["checkpoint"] = str(tmp_path / "elsewhere/checkpoints/saved")
+    finalist["cases"][0]["checkpoint"] = str(
+        tmp_path / f"elsewhere/checkpoints/{_SAVED_ID}"
+    )
     with pytest.raises(ValueError, match="linked study"):
         study._normalize(finalist)
 
@@ -477,7 +500,9 @@ def test_worker_calls_ordinary_train_and_checks_frozen_request(
             selected_actor=None,
         )
 
-    monkeypatch.setattr(runner, "config_from_dict", config_read)
+    monkeypatch.setattr(
+        "marl_battlegrounds.training.config.config_from_dict", config_read
+    )
     monkeypatch.setattr(runner, "train", train)
     assert study._worker(root, job["id"]) == 0
     assert called[0][0] == job["config"]
@@ -674,7 +699,7 @@ def test_continuation_worker_calls_existing_extension_and_pins_parent(
     import marl_battlegrounds.training.runner as runner
 
     identity = {
-        "checkpoint_id": "saved",
+        "checkpoint_id": _SAVED_ID,
         "description_sha256": "fixed",
         "method": "ff_ippo",
     }
@@ -688,7 +713,7 @@ def test_continuation_worker_calls_existing_extension_and_pins_parent(
         "cases": [
             {
                 "id": "child",
-                "checkpoint": str(tmp_path / "parent/checkpoints/saved"),
+                "checkpoint": str(tmp_path / f"parent/checkpoints/{_SAVED_ID}"),
                 "additional_env_steps": 32,
             }
         ],
@@ -742,7 +767,7 @@ def test_finalist_relative_parent_link_matches_absolute_checkpoint(
 
     def parent_identity(path: str) -> dict[str, str]:
         return {
-            "checkpoint_id": "saved",
+            "checkpoint_id": _SAVED_ID,
             "description_sha256": "fixed",
             "method": "ff_ippo",
         }
@@ -755,7 +780,7 @@ def test_finalist_relative_parent_link_matches_absolute_checkpoint(
             {
                 "id": "child",
                 "checkpoint": str(
-                    discovery / "cases/small--seed-9/run/checkpoints/saved"
+                    discovery / f"cases/small--seed-9/run/checkpoints/{_SAVED_ID}"
                 ),
                 "additional_env_steps": 32,
             }
@@ -1035,7 +1060,9 @@ def test_different_valid_panel_refused_before_pending_seed_or_resume(
             selected_actor=None,
         )
 
-    monkeypatch.setattr(runner, "config_from_dict", config_read)
+    monkeypatch.setattr(
+        "marl_battlegrounds.training.config.config_from_dict", config_read
+    )
     monkeypatch.setattr(runner, "train", train)
     for job in jobs:
         directory = root / "cases" / job["id"]
@@ -1053,26 +1080,43 @@ def test_different_valid_panel_refused_before_pending_seed_or_resume(
     assert study._worker(root, jobs[1]["id"]) == 1
     second = root / "cases" / jobs[1]["id"]
     run = second / "run"
-    (run / "checkpoints/saved").mkdir(parents=True)
+    (run / f"checkpoints/{_SAVED_ID}").mkdir(parents=True)
     atomic_json(
         run / "latest_checkpoint.json",
-        {"checkpoint_id": "saved", "relative_path": "checkpoints/saved"},
+        {
+            "schema_version": 1,
+            "checkpoint_id": _SAVED_ID,
+            "relative_path": f"checkpoints/{_SAVED_ID}",
+        },
     )
     atomic_json(
         second / "request.json",
-        {"job": jobs[1], "resume_from": str(run / "checkpoints/saved"), "attempt": 2},
+        {
+            "job": jobs[1],
+            "resume_from": str(run / f"checkpoints/{_SAVED_ID}"),
+            "attempt": 2,
+        },
     )
     assert study._worker(root, jobs[1]["id"]) == 1
     assert len(calls) == 1
     panel.path.write_bytes(original)
     assert study._worker(root, jobs[1]["id"]) == 0
-    assert calls[-1] == {"resume_from": str(run / "checkpoints/saved")}
+    assert calls[-1] == {"resume_from": str(run / f"checkpoints/{_SAVED_ID}")}
 
 
 def test_external_actor_and_result_inputs_use_existing_description_owner(
     host_only: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds import _method_loading
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
+
+    def factory() -> object:
+        pytest.fail("Declaration binding must not call the factory")
+
+    def installed(reference: str) -> Callable[[], object]:
+        return factory
+
+    monkeypatch.setattr(_method_loading, "installed_callable", installed)
 
     actor = tmp_path / "actor"
     actor.mkdir()
@@ -1085,7 +1129,7 @@ def test_external_actor_and_result_inputs_use_existing_description_owner(
     reads: list[str] = []
 
     def read_description(path: str) -> dict[str, Any]:
-        reads.append(path)
+        reads.append(str(path))
         return dict(description)
 
     monkeypatch.setattr(checkpoints, "read_checkpoint_description", read_description)
@@ -1099,7 +1143,8 @@ def test_external_actor_and_result_inputs_use_existing_description_owner(
     }
     first = study._file_inputs(case)
     assert reads == [str(actor)]
-    assert set(first) == {str(actor), str(random_result)}
+    assert set(first) == {str(actor), str(random_result), "module:factory", "tdm-alpha"}
+    assert first["module:factory"]["external_state"] == "unknown"
     description["checkpoint_id"] = "second"
     second = study._file_inputs(case)
     assert first[str(actor)] != second[str(actor)]
@@ -1111,14 +1156,19 @@ def test_external_actor_and_result_inputs_use_existing_description_owner(
 def test_continuation_replacement_panel_is_bound_before_extension(
     host_only: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from marl_battlegrounds.training import runner
+    from marl_battlegrounds.training import runner, validation
 
     panel = tmp_path / "future-panel.json"
-    atomic_json(panel, {"panel_digest": "first"})
+    content: dict[str, Any] = {
+        "schema_version": 2,
+        "members": [{"reference": "random"}],
+    }
+    content["panel_digest"] = validation._panel_digest(content)
+    atomic_json(panel, content)
 
     def parent_identity(path: str) -> dict[str, str]:
         return {
-            "checkpoint_id": "saved",
+            "checkpoint_id": _SAVED_ID,
             "description_sha256": "fixed",
             "method": "ff_ippo",
         }
@@ -1133,7 +1183,7 @@ def test_continuation_replacement_panel_is_bound_before_extension(
         "cases": [
             {
                 "id": "child",
-                "checkpoint": str(tmp_path / "parent/checkpoints/saved"),
+                "checkpoint": str(tmp_path / f"parent/checkpoints/{_SAVED_ID}"),
                 "additional_env_steps": 32,
                 "changes": {"validation": {"panel": str(panel)}},
             }
@@ -1146,7 +1196,9 @@ def test_continuation_replacement_panel_is_bound_before_extension(
     atomic_json(
         directory / "request.json", {"job": job, "resume_from": None, "attempt": 1}
     )
-    atomic_json(panel, {"panel_digest": "second"})
+    content["members"] = [{"reference": "tdm-alpha"}]
+    content["panel_digest"] = validation._panel_digest(content)
+    atomic_json(panel, content)
     assert study._worker(root, "child") == 1
     assert "external file input" in study._read(directory / "outcome.json")["error"]
 
@@ -1185,11 +1237,15 @@ def test_worker_passes_frozen_config_to_ordinary_resume_guard(
     job = study._jobs(frozen)[0]
     directory = root / "cases" / job["id"]
     run = directory / "run"
-    checkpoint = run / "checkpoints/saved"
+    checkpoint = run / f"checkpoints/{_SAVED_ID}"
     checkpoint.mkdir(parents=True)
     atomic_json(
         run / "latest_checkpoint.json",
-        {"checkpoint_id": "saved", "relative_path": "checkpoints/saved"},
+        {
+            "schema_version": 1,
+            "checkpoint_id": _SAVED_ID,
+            "relative_path": f"checkpoints/{_SAVED_ID}",
+        },
     )
     atomic_json(
         directory / "request.json",
@@ -1204,7 +1260,9 @@ def test_worker_passes_frozen_config_to_ordinary_resume_guard(
         supplied.append(config)
         raise ValueError("Saved config differs from the supplied frozen seed")
 
-    monkeypatch.setattr(runner, "config_from_dict", config_read)
+    monkeypatch.setattr(
+        "marl_battlegrounds.training.config.config_from_dict", config_read
+    )
     monkeypatch.setattr(runner, "train", train)
     assert study._worker(root, job["id"]) == 1
     assert supplied == [job["config"]]
@@ -1240,11 +1298,15 @@ def test_continuation_resume_refuses_another_declared_child(
     job = study._jobs(frozen)[0]
     directory = root / "cases/child"
     run = directory / "run"
-    checkpoint = run / "checkpoints/child"
+    checkpoint = run / f"checkpoints/{_CHILD_ID}"
     checkpoint.mkdir(parents=True)
     atomic_json(
         run / "latest_checkpoint.json",
-        {"checkpoint_id": "child", "relative_path": "checkpoints/child"},
+        {
+            "schema_version": 1,
+            "checkpoint_id": _CHILD_ID,
+            "relative_path": f"checkpoints/{_CHILD_ID}",
+        },
     )
     atomic_json(
         directory / "request.json",
@@ -1304,7 +1366,7 @@ def test_worker_refuses_linked_run_before_ordinary_resume(
         directory / "request.json",
         {
             "job": job,
-            "resume_from": str(directory / "run/checkpoints/saved"),
+            "resume_from": str(directory / f"run/checkpoints/{_SAVED_ID}"),
             "attempt": 2,
         },
     )
@@ -1325,19 +1387,23 @@ def test_latest_checkpoint_cannot_follow_an_external_directory_link(
     (run / "checkpoints").mkdir(parents=True)
     external = tmp_path / "external"
     external.mkdir()
-    (run / "checkpoints/saved").symlink_to(external, target_is_directory=True)
+    (run / f"checkpoints/{_SAVED_ID}").symlink_to(external, target_is_directory=True)
     atomic_json(
         run / "latest_checkpoint.json",
-        {"checkpoint_id": "saved", "relative_path": "checkpoints/saved"},
+        {
+            "schema_version": 1,
+            "checkpoint_id": _SAVED_ID,
+            "relative_path": f"checkpoints/{_SAVED_ID}",
+        },
     )
     with pytest.raises(ValueError, match="link"):
         study._latest(run)
 
 
-def test_colon_folder_is_bound_before_factory_grammar_and_builtin_stays_builtin(
+def test_explicit_colon_folder_is_bound_and_factory_and_builtin_stay_named(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
 
     actor = tmp_path / "model:version"
     actor.mkdir()
@@ -1345,11 +1411,12 @@ def test_colon_folder_is_bound_before_factory_grammar_and_builtin_stays_builtin(
     called: list[str] = []
 
     def description(path: str) -> dict[str, Any]:
-        called.append(path)
+        called.append(str(path))
         return {"checkpoint_id": "fixed", "files": {}}
 
     monkeypatch.setattr(checkpoints, "read_checkpoint_description", description)
-    assert study._reference("model:version", tmp_path) == str(actor)
+    assert study._reference("./model:version", tmp_path) == str(actor)
+    assert study._reference("model:version", tmp_path) == "model:version"
     assert study._reference(str(actor), tmp_path) == str(actor)
     assert study._reference("module:factory", tmp_path) == "module:factory"
     assert study._reference("random", tmp_path) == "random"
@@ -1360,11 +1427,27 @@ def test_colon_folder_is_bound_before_factory_grammar_and_builtin_stays_builtin(
 def test_continuation_binding_folders_resolve_beside_declaration(
     host_only: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds import _method_loading
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
+
+    def factory() -> object:
+        pytest.fail("Declaration binding must not call the factory")
+
+    def installed(reference: str) -> Callable[[], object]:
+        return factory
+
+    monkeypatch.setattr(_method_loading, "installed_callable", installed)
 
     actor = tmp_path / "model:version"
     actor.mkdir()
-    atomic_json(tmp_path / "panel.json", {"panel_digest": "frozen"})
+    from marl_battlegrounds.training import validation
+
+    panel: dict[str, Any] = {
+        "schema_version": 2,
+        "members": [{"reference": "random"}, {"reference": "tdm-alpha"}],
+    }
+    panel["panel_digest"] = validation._panel_digest(panel)
+    atomic_json(tmp_path / "panel.json", panel)
 
     def parent_identity(path: str) -> dict[str, str]:
         return {
@@ -1374,7 +1457,7 @@ def test_continuation_binding_folders_resolve_beside_declaration(
         }
 
     def description(path: str) -> dict[str, Any]:
-        assert path == str(actor)
+        assert str(path) == str(actor)
         return {"checkpoint_id": "actor", "files": {}}
 
     monkeypatch.setattr(study, "_checkpoint_identity", parent_identity)
@@ -1384,12 +1467,12 @@ def test_continuation_binding_folders_resolve_beside_declaration(
         "cases": [
             {
                 "id": "child",
-                "checkpoint": "parent/checkpoints/saved",
+                "checkpoint": f"parent/checkpoints/{_SAVED_ID}",
                 "additional_env_steps": 32,
                 "changes": {
                     "validation": {
                         "panel": "panel.json",
-                        "bindings": ["model:version", "example:factory"],
+                        "bindings": ["./model:version", "example:factory"],
                     }
                 },
             }
@@ -1400,4 +1483,482 @@ def test_continuation_binding_folders_resolve_beside_declaration(
     frozen = study._normalize(path)
     child = frozen["cases"][0]
     assert child["changes"]["validation"]["bindings"] == [str(actor), "example:factory"]
-    assert set(child["external_inputs"]) == {str(actor), str(tmp_path / "panel.json")}
+    assert set(child["external_inputs"]) == {
+        str(actor),
+        str(tmp_path / "panel.json"),
+        "example:factory",
+    }
+
+
+def test_runtime_bindings_preserve_aliases_and_all_input_roles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marl_battlegrounds import _method_loading
+
+    (tmp_path / "friend").mkdir()
+    runtime = study._runtime_paths(
+        {
+            "opponents": {"friend": "./actor one", "unused": "tdm-gamma"},
+            "partners": {"helper": "./actor two"},
+            "validation_partners": {"fresh": "client:make"},
+            "validation_opponents": ["./validator", "tdm-beta"],
+        },
+        tmp_path,
+    )
+    config = study._config_paths(
+        {
+            "initial_actor": "./initial",
+            "opponents": {"self": 0.6, "past": 0.2, "friend": 0.2, "unused": 0.0},
+            "partners": ["helper", "helper"],
+            "validation_partners": {"extra": "./extra"},
+        },
+        tmp_path,
+        runtime=runtime,
+    )
+    assert config["opponents"] == {
+        "self": 0.6,
+        "past": 0.2,
+        "friend": 0.2,
+        "unused": 0.0,
+    }
+    assert config["partners"] == ["helper", "helper"]
+    assert runtime["opponents"]["friend"] == str(tmp_path / "actor one")
+    called: list[str] = []
+
+    def identity(reference: str) -> dict[str, str]:
+        called.append(reference)
+        return {"checked": reference}
+
+    monkeypatch.setattr(_method_loading, "_reference_identity", identity)
+    inputs = study._file_inputs({"config": config, "runtime": runtime})
+    expected = {
+        str(tmp_path / name)
+        for name in ("initial", "actor one", "actor two", "validator", "extra")
+    }
+    expected |= {"client:make", "tdm-beta", "tdm-gamma"}
+    assert set(inputs) == expected and len(called) == len(expected)
+
+
+@pytest.mark.parametrize(
+    "key", ["opponents", "partners", "validation_partners", "validation_opponents"]
+)
+def test_runtime_rejects_opaque_or_malformed_bindings(key: str, tmp_path: Path) -> None:
+    for value in ("random", 3, [object()]):
+        with pytest.raises((ValueError, TypeError)):
+            study._runtime_paths({key: value}, tmp_path)
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_worker_forwards_runtime_bindings_on_fresh_and_resumed_training(
+    host_only: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, resume: bool
+) -> None:
+    from marl_battlegrounds.training import runner
+
+    declared = _declaration()
+    runtime = {
+        "opponents": {"bot": "random"},
+        "validation_partners": {"partner": "tdm-alpha"},
+    }
+    declared["cases"][0]["runtime"] = runtime
+
+    # This test isolates worker dispatch; ordinary config and method bindings
+    # have separate real-parser proofs.
+    def config(
+        value: object, base: Path, seed: int, **kwargs: object
+    ) -> dict[str, Any]:
+        return copy.deepcopy(cast(dict[str, Any], value))
+
+    monkeypatch.setattr(study, "_config", config)
+    root, frozen, _ = study._prepare(declared, tmp_path / "study", None)
+    job = study._jobs(frozen)[0]
+    directory = root / "cases" / job["id"]
+    directory.mkdir()
+    checkpoint = directory / f"run/checkpoints/{_SAVED_ID}"
+    if resume:
+        checkpoint.mkdir(parents=True)
+        atomic_json(
+            directory / "run/latest_checkpoint.json",
+            {
+                "schema_version": 1,
+                "checkpoint_id": _SAVED_ID,
+                "relative_path": f"checkpoints/{_SAVED_ID}",
+            },
+        )
+    atomic_json(
+        directory / "request.json",
+        {"job": job, "resume_from": str(checkpoint) if resume else None, "attempt": 1},
+    )
+    calls: list[dict[str, Any]] = []
+
+    def train(config: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status="complete",
+            run_dir=directory / "run",
+            completed_env_steps=32,
+            completed_updates=1,
+            final_actor=directory / "actor",
+            selected_actor=None,
+        )
+
+    monkeypatch.setattr(runner, "train", train)
+    assert study._worker(root, job["id"]) == 0
+    assert calls == [
+        {
+            **runtime,
+            **(
+                {"resume_from": str(checkpoint)}
+                if resume
+                else {"output_dir": directory / "run"}
+            ),
+        }
+    ]
+
+
+@pytest.mark.parametrize("field", ["opponents", "partners"])
+@pytest.mark.parametrize("weighted", [False, True])
+def test_population_control_names_survive_same_named_folders(
+    tmp_path: Path, field: str, weighted: bool
+) -> None:
+    from marl_battlegrounds.experiments.hydra import resolve_training_config
+
+    (tmp_path / "self").mkdir()
+    (tmp_path / "past").mkdir()
+    names = (
+        ["self", "past", "tdm-alpha"] if field == "opponents" else ["self", "tdm-alpha"]
+    )
+    declaration = dict.fromkeys(names, 1.0) if weighted else names
+    supplied = {field: declaration}
+    assert study._config_paths(supplied, tmp_path) == supplied
+    if field == "partners":
+        with pytest.raises(ValueError, match="Partner names cannot be self or past"):
+            resolve_training_config(supplied, base_dir=tmp_path)
+        return
+    actual = resolve_training_config(supplied, base_dir=tmp_path)
+    assert getattr(actual, field) == (declaration if weighted else tuple(declaration))
+    normalized = study._config(
+        {"method": "ff_ippo", "total_env_steps": 32_768, **supplied}, tmp_path, 1
+    )
+    assert normalized[field] == declaration
+
+
+@pytest.mark.parametrize("field", ["opponents", "partners"])
+def test_population_path_alias_collision_does_not_drop_a_share(
+    tmp_path: Path, field: str
+) -> None:
+    from marl_battlegrounds.experiments.hydra import resolve_training_config
+
+    actor = tmp_path / "actor"
+    actor.mkdir()
+    supplied = {field: {"./actor": 0.1, str(actor): 0.2, "self": 0.7}}
+    before = copy.deepcopy(supplied)
+    with pytest.raises(ValueError, match="same resolved member"):
+        study._config_paths(supplied, tmp_path)
+    with pytest.raises(ValueError, match="same resolved member"):
+        resolve_training_config(supplied, base_dir=tmp_path)
+    assert supplied == before
+    # Lists deliberately preserve repeated entries and their sampling shares.
+    assert study._config_paths({field: ["./actor", str(actor)]}, tmp_path)[field] == [
+        str(actor),
+        str(actor),
+    ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "validation",
+        "learning_rate",
+        "exploration",
+        "history_capture_env_steps",
+        "past_capture_interval",
+        "keep_past",
+        "retain_all_actors",
+        "opponents",
+        "reward",
+        "partners",
+        "shaping",
+        "shaping_coefficient",
+        "shaping_mode",
+        "seed",
+        "curriculum",
+        "ppo",
+        "qmix",
+        "pqn",
+    ],
+)
+def test_study_admits_every_shared_continuation_change(
+    host_only: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    from marl_battlegrounds.training._continuation_schedules import (
+        CONTINUATION_CHANGE_KEYS,
+    )
+
+    values: dict[str, Any] = {
+        "validation": {},
+        "learning_rate": 0.0003,
+        "exploration": 0.05,
+        "history_capture_env_steps": [64],
+        "past_capture_interval": 64,
+        "keep_past": 2,
+        "retain_all_actors": True,
+        "opponents": {"self": 1.0},
+        "reward": None,
+        "partners": None,
+        "shaping": False,
+        "shaping_coefficient": 0.25,
+        "shaping_mode": "potential",
+        "seed": 17,
+        "curriculum": False,
+        "ppo": {"gamma": 0.99},
+        "qmix": {"gamma": 0.99},
+        "pqn": {"gamma": 0.99},
+    }
+    assert set(values) == CONTINUATION_CHANGE_KEYS
+
+    def identity(path: str) -> dict[str, str]:
+        return {
+            "checkpoint_id": "parent",
+            "description_sha256": "fixed",
+            "method": "ff_ippo",
+        }
+
+    monkeypatch.setattr(study, "_checkpoint_identity", identity)
+    frozen = study._normalize(
+        {
+            "name": "Continuation adapter",
+            "cases": [
+                {
+                    "id": "child",
+                    "checkpoint": str(tmp_path / "parent"),
+                    "additional_env_steps": 32,
+                    "changes": {name: values[name]},
+                }
+            ],
+        }
+    )
+    assert frozen["cases"][0]["changes"] == {name: values[name]}
+    # Method-specific validity still belongs to extend_training; the study must
+    # not silently filter any of the direct API's declared change names.
+
+
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("binding", ["explicit", "omitted", "null", "unchanged_panel"])
+def test_child_worker_keeps_future_live_panel_bindings_separate_from_lineage(
+    host_only: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    resume: bool,
+    binding: str,
+) -> None:
+    from marl_battlegrounds.training import checkpoints, runner, validation
+
+    panel = tmp_path / "future.json"
+    content: dict[str, Any] = {
+        "schema_version": 2,
+        "members": [{"reference": None if binding == "explicit" else "random"}],
+    }
+    content["panel_digest"] = validation._panel_digest(content)
+    atomic_json(panel, content)
+    parent = {
+        "checkpoint_id": "parent",
+        "description_sha256": "fixed",
+        "method": "ff_ippo",
+    }
+
+    def identity(path: str) -> dict[str, str]:
+        return parent
+
+    monkeypatch.setattr(study, "_checkpoint_identity", identity)
+    changes: dict[str, Any] = {"validation": {"panel": str(panel)}}
+    if binding == "explicit":
+        changes["validation"]["bindings"] = ["random"]
+    elif binding == "null":
+        changes["validation"]["bindings"] = None
+    elif binding == "unchanged_panel":
+        changes = {"validation": {"every_env_steps": 32}}
+    declaration = {
+        "name": "Live child panel",
+        "cases": [
+            {
+                "id": "child",
+                "checkpoint": str(tmp_path / "parent/checkpoints/parent"),
+                "additional_env_steps": 32,
+                "changes": changes,
+                "runtime": {"validation_opponents": ["tdm-alpha"]},
+            }
+        ],
+    }
+    root, frozen, _ = study._prepare(declaration, tmp_path / "study", None)
+    job = study._jobs(frozen)[0]
+    before = copy.deepcopy(job)
+    directory = root / "cases/child"
+    directory.mkdir()
+    checkpoint = directory / "run" / "checkpoints" / _CHILD_ID
+    if resume:
+        checkpoint.mkdir(parents=True)
+        atomic_json(
+            directory / "run/latest_checkpoint.json",
+            {
+                "schema_version": 1,
+                "checkpoint_id": _CHILD_ID,
+                "relative_path": f"checkpoints/{_CHILD_ID}",
+            },
+        )
+        context = {
+            "parent_checkpoint": job["checkpoint"],
+            "parent_checkpoint_id": "parent",
+            "additional_env_steps": 32,
+            "changes": {
+                "validation": {
+                    key: value
+                    for key, value in changes["validation"].items()
+                    if key != "bindings"
+                }
+            },
+        }
+
+        def description(path: str) -> dict[str, Any]:
+            return {"metadata": {"continuation": context}}
+
+        monkeypatch.setattr(checkpoints, "read_checkpoint_description", description)
+    atomic_json(
+        directory / "request.json",
+        {
+            "job": job,
+            "resume_from": str(checkpoint) if resume else None,
+            "attempt": 2 if resume else 1,
+        },
+    )
+    received: list[dict[str, Any]] = []
+
+    def run(*args: object, **kwargs: object) -> None:
+        received.append(kwargs)
+        raise RuntimeError("Reached ordinary trainer")
+
+    monkeypatch.setattr(runner, "train", run)
+    monkeypatch.setattr(runner, "extend_training", run)
+    assert study._worker(root, "child") == 1
+    assert len(received) == 1
+    expected_binding = ["tdm-alpha"]
+    if resume and binding != "unchanged_panel":
+        expected_binding = ["random"] if binding == "explicit" else None
+    assert received[0]["validation_opponents"] == expected_binding
+    if not resume:
+        assert received[0]["changes"] == changes
+    assert job == before
+    assert (
+        "Reached ordinary trainer" in study._read(directory / "outcome.json")["error"]
+    )
+
+
+@pytest.mark.parametrize("decorated", [False, True])
+def test_changed_callback_factory_is_rejected_before_call_or_training(
+    host_only: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decorated: bool
+) -> None:
+    from marl_battlegrounds.training import runner
+
+    module = tmp_path / "study_callback_fixture.py"
+    prefix = (
+        "from contextlib import contextmanager\n@contextmanager\n" if decorated else ""
+    )
+    suffix = "    yield print\n" if decorated else ""
+    module.write_text(
+        prefix
+        + "def make():\n    raise AssertionError('Factory must not run')\n"
+        + suffix
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        declaration = _declaration()
+        declaration["cases"][0]["runtime"] = {
+            "on_update": {"factory": "study_callback_fixture:make", "kwargs": {}},
+        }
+        root, frozen, _ = study._prepare(declaration, tmp_path / "study", None)
+        job = study._jobs(frozen)[0]
+        directory = root / "cases" / job["id"]
+        directory.mkdir()
+        atomic_json(
+            directory / "request.json", {"job": job, "resume_from": None, "attempt": 1}
+        )
+        module.write_text(
+            prefix
+            + "def make():\n    raise AssertionError('Changed provider must not run')\n"
+            + suffix
+        )
+
+        sys.modules.pop("study_callback_fixture", None)
+
+        def forbidden(*args: object, **kwargs: object) -> None:
+            pytest.fail("Changed callback reached the trainer")
+
+        monkeypatch.setattr(runner, "train", forbidden)
+        assert study._worker(root, job["id"]) == 1
+        assert "external file input" in study._read(directory / "outcome.json")["error"]
+        assert not (directory / "run").exists()
+    finally:
+        sys.modules.pop("study_callback_fixture", None)
+
+
+def test_preflight_failure_cannot_borrow_prior_run_attempt_costs(
+    host_only: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls = _fake_worker(monkeypatch, [1], checkpoints=True)
+    root = tmp_path / "study"
+    study.run_study(_declaration(), output_dir=root)
+    directory = root / "cases/small--seed-9"
+    previous = study._read(directory / "run/status.json")
+    previous.update(status="complete", training_seconds=123, elapsed_seconds=456)
+    atomic_json(directory / "run/status.json", previous)
+    before = (directory / "run/status.json").read_bytes()
+
+    def fail_before_runner(
+        directory: Path, command: list[str], **kwargs: object
+    ) -> int:
+        request = study._read(directory / "request.json")
+        atomic_json(
+            directory / "outcome.json",
+            {
+                "status": "failed",
+                "request_sha256": study._digest(request),
+                "error": "Factory failed before runner admission",
+            },
+        )
+        return 1
+
+    monkeypatch.setattr(study._launch, "supervise_command", fail_before_runner)
+    report = study.run_study(resume_from=root)
+    case = report["cases"][0]
+    assert case["status"] == "failed" and case["run_status"] == {}
+    first, second = case["attempts"]
+    assert first["run_attempt_id"] == "runner-1"
+    assert first["study_attempt_id"] != second["study_attempt_id"]
+    assert second["request_sha256"] != first["request_sha256"]
+    assert "run_attempt_id" not in second and "run_status" not in second
+    assert (directory / "run/status.json").read_bytes() == before
+    assert len(calls) == 1
+
+
+def test_study_attempt_scope_copies_restores_and_excludes_nested_runs(
+    tmp_path: Path,
+) -> None:
+    from marl_battlegrounds.training._run_io import (
+        study_attempt_binding,
+        study_attempt_scope,
+    )
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    binding = {"study_attempt_id": "first"}
+    assert study_attempt_binding(first) is None
+    with study_attempt_scope(first, binding):
+        binding["study_attempt_id"] = "mutated"
+        assert study_attempt_binding(first) == {"study_attempt_id": "first"}
+        assert study_attempt_binding(second) is None
+        with (
+            pytest.raises(RuntimeError),
+            study_attempt_scope(second, {"study_attempt_id": "second"}),
+        ):
+            assert study_attempt_binding(first) is None
+            raise RuntimeError("Interrupted inner call")
+        assert study_attempt_binding(first) == {"study_attempt_id": "first"}
+    assert study_attempt_binding(first) is None

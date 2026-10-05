@@ -1,21 +1,21 @@
 """Run small league, population-based training and response-population examples.
 
-From an installed checkout, run ``JAX_PLATFORMS=cpu python
-examples/competitive_training.py --output-dir artifacts/competitive_demo``.
-The default performs real short FF-IPPO updates, common-panel checkpoint
-selection, full-checkpoint continuation and measured response-population games.
-Two-step evaluation games are an explicit software-demo condition; confirmation
-uses normal 300-step games. None of these tiny budgets proves learned skill.
+Install training and hydra, then use JAX_PLATFORMS=cpu::
 
-Python callers may supply named Systems, Policies or ordinary method references
-to run(). The loops below belong to the researcher. Training, persistence,
-validation and games use their existing library owners; no league manager or
-new learner framework is introduced. Output folders must be new.
+    python examples/competitive_training.py output_dir=artifacts/competitive-demo
+
+The lesson performs short FF-IPPO updates, common-panel checkpoint selection,
+full-checkpoint continuation and response-population games. Two-step games are
+software checks; confirmation uses normal 300-step games. None proves skill.
+Python run accepts named live Systems, Policies or method references. Hydra uses
+named reference mappings. The loops belong to the researcher; existing public
+owners handle training, persistence, validation and games. No league manager or
+new learner framework is introduced. Choose a new output folder. Use --help or
+--cfg job to inspect settings.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -23,9 +23,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
+from marl_battlegrounds.experiments.callbacks import pfsp as pfsp
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from marl_battlegrounds import Policy, System
 
 
@@ -55,39 +57,6 @@ def history_recipe(checkpoints: Sequence[str]) -> tuple[dict[str, Any], dict[str
     }, bindings
 
 
-def pfsp(stats: dict[str, Any], env_steps: int) -> dict[str, object]:
-    """Give harder named opponents more future games, keeping 20% current self.
-
-    stats is the public matchmaking callback record. Each named member has
-    cumulative games/wins/draws/losses. A draw counts as half a win; an unseen
-    member starts at an explicitly chosen 50% prior, not an observed result.
-    Named weight is 0.01 + (1 - win fraction)**2, normalized into the remaining
-    80%. With no named members, return all self-play. env_steps is the completed
-    transition count and is unused by this simple rule. Return only the next
-    opponent rule; running games and the member pool stay unchanged.
-    """
-    del env_steps
-    weights: dict[str, float] = {}
-    for member in stats["members"]:
-        if member["kind"] != "named":
-            continue
-        result = member["cumulative"]
-        games = result["games"]
-        win_fraction = (
-            (result["wins"] + 0.5 * result["draws"]) / games if games else 0.5
-        )
-        weights[member["name"]] = 0.01 + (1.0 - win_fraction) ** 2
-    total = sum(weights.values())
-    return {
-        "opponents": {
-            "self": 0.2,
-            **{name: 0.8 * value / total for name, value in weights.items()},
-        }
-        if total
-        else {"self": 1.0}
-    }
-
-
 def empirical_mixture(payoffs: np.ndarray, *, iterations: int = 200) -> np.ndarray:
     """Return a small finite fictitious-play opponent mixture on measured games.
 
@@ -100,6 +69,8 @@ def empirical_mixture(payoffs: np.ndarray, *, iterations: int = 200) -> np.ndarr
     This finite calculation is neither an equilibrium certificate nor a claim
     that a neural response is a best response. Inputs are not changed.
     """
+    import numpy as np
+
     values = np.asarray(payoffs, dtype=np.float64)
     if (
         values.ndim != 2
@@ -154,6 +125,8 @@ def measured_payoffs(
     are measured, not assigned zero. All games, exact system IDs and actual
     spawn records remain in ordinary evaluator folders; payoffs.json links them.
     """
+    import numpy as np
+
     import marl_battlegrounds as marl_bgs
 
     if not population:
@@ -280,9 +253,10 @@ def run(
     full-checkpoint extension demonstrates appending the new opponent; only new
     games use the updated mixture. The script is not an automatic search service.
     """
+    output_dir = Path(output_dir)
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds import training
-    from marl_battlegrounds.baselines.ppo import PPOConfig
+    from marl_battlegrounds.baselines.config import PPOConfig
     from marl_battlegrounds.training.analysis import select_checkpoint
     from marl_battlegrounds.training.validation import create_panel, validate_checkpoint
 
@@ -418,44 +392,12 @@ def run(
     return report
 
 
-def main() -> None:
-    """Parse the small example's command line and print its saved decision paths."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument(
-        "--opponent", action="append", default=[], metavar="NAME=REFERENCE"
-    )
-    parser.add_argument("--num-envs", type=int, default=2)
-    parser.add_argument("--updates", type=int, default=2)
-    parser.add_argument("--rollout-length", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--evaluation-max-steps", type=int, default=2)
-    args = parser.parse_args()
-    opponents: dict[str, str] = {}
-    for item in args.opponent:
-        if "=" not in item:
-            parser.error("Each --opponent needs NAME=REFERENCE")
-        name, reference = item.split("=", 1)
-        if not name or not reference or name in opponents:
-            parser.error(
-                "Opponent names must be nonempty and distinct, with a reference"
-            )
-        opponents[name] = reference
-    print(
-        json.dumps(
-            run(
-                args.output_dir,
-                opponents=opponents or None,
-                num_envs=args.num_envs,
-                updates=args.updates,
-                rollout_length=args.rollout_length,
-                seed=args.seed,
-                evaluation_max_steps=args.evaluation_max_steps,
-            ),
-            indent=2,
-        )
-    )
+def main() -> int:
+    """Compose packaged YAML, call the Python lesson and return its exit status."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("competitive_training", run)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

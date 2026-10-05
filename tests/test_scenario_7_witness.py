@@ -1,5 +1,6 @@
 """Check Scenario 7's coordinated retreat and four matched healing omissions."""
 
+import json
 from collections.abc import Callable
 from typing import NamedTuple, cast
 from unittest.mock import Mock, patch
@@ -8,11 +9,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev.visual_debugger.authoring_compiler import CompiledDevScenarioV1
 from tests.scenario_controller_fixtures import (
+    SCENARIO_7_FIXTURE_PATH,
     SCENARIO_7_SEMANTIC_DIGEST,
+    ControllerScenario,
     load_scenario_7,
-    load_scenario_7_draft,
 )
 
 from marl_battlegrounds.core.env import step
@@ -71,12 +72,12 @@ class WitnessTransition(NamedTuple):
 
 
 @pytest.fixture(scope="module")
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     return load_scenario_7()
 
 
 def _run_witness(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     omit_heal_tick: int | None = None,
 ) -> list[WitnessTransition]:
     assert omit_heal_tick is None or 1 <= omit_heal_tick <= 4
@@ -174,18 +175,18 @@ def _run_witness(
 
 
 @pytest.fixture(scope="module")
-def trajectory(scenario: CompiledDevScenarioV1) -> list[WitnessTransition]:
+def trajectory(scenario: ControllerScenario) -> list[WitnessTransition]:
     return _run_witness(scenario)
 
 
 def test_scenario_7_fixture_binds_the_approved_revision_25(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
-    draft = load_scenario_7_draft()
-    assert draft.asset_id == "scenario_7"
-    assert draft.revision == 25
-    assert draft.content.description == draft.content.notes == ""
-    assert len(draft.content.embedded_map.obstacles) == 11
+    draft = json.loads(SCENARIO_7_FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert draft["asset_id"] == "scenario_7"
+    assert draft["revision"] == 25
+    assert draft["content"]["description"] == draft["content"]["notes"] == ""
+    assert len(draft["content"]["embedded_map"]["obstacles"]) == 11
     assert scenario.semantic_digest == SCENARIO_7_SEMANTIC_DIGEST
     np.testing.assert_array_equal(
         scenario.initial_state.team_deathmatch_scores, [17, 19]
@@ -199,7 +200,7 @@ def test_scenario_7_fixture_binds_the_approved_revision_25(
 
 
 def test_witness_repeats_and_wins_on_tick_4_without_a_team_a_death(
-    scenario: CompiledDevScenarioV1, trajectory: list[WitnessTransition]
+    scenario: ControllerScenario, trajectory: list[WitnessTransition]
 ) -> None:
     repeated = _run_witness(scenario)
     for first, second in zip(
@@ -305,7 +306,7 @@ def test_charge_and_burst_control_subsequent_decisions_not_accepted_combat(
     ),
 )
 def test_omitting_one_heal_changes_the_matched_sequence_outcome(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     trajectory: list[WitnessTransition],
     omit_heal_tick: int,
     score: tuple[int, int],
@@ -352,7 +353,7 @@ def test_omitting_one_heal_changes_the_matched_sequence_outcome(
 
 
 def test_each_decision_has_one_current_bank_policy_assembly_and_transition(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     calls = Mock()
     for name, original in (

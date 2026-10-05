@@ -1,0 +1,945 @@
+/*
+ * BattleClient deck (#command-deck) and its header line (#status-line),
+ * ported from the approved vision page and compressed by the owner's
+ * decisions of 4 Oct 2026: the status line under the deck is gone (Finish
+ * And Save and Restart moved to the top bar, topbar.css; its sentence moved
+ * into the deck's header line), the Lock In column lost its order list (the
+ * rail's This Turn checklist lists every order) and the columns are
+ * shorter, so the arena gets the room.
+ *
+ * The deck is its header line, then one row of five columns under it: the
+ * champion you command (.dk-agent, with its life as the shared Life bar in
+ * #ag-life), 1 Step (the nine-key #pad; the chosen step's name, #pad-note,
+ * sits in the column's heading), 2 Target (#tchip, its life bar under the
+ * name, and the Allowed Now buttons in #command-target-select), 3 Action
+ * (the No Combat, Basic and Ultimate slots) and 4 Lock In (Lock In Turn and,
+ * while the policies choose, Cancel Policy Work). The header line holds the
+ * one message line (#msg, one line; a sentence too long for it ends in "…",
+ * Alert edge for a refusal) and Keys On or Off. Its overlays: Watch Only
+ * (#watch-only) covers every column but Lock In, and Stopped (#stopped)
+ * covers the whole deck; with nobody Manual (data-state="watching") the Run
+ * and Play One Turn bar (.watchwrap) replaces the columns. #command-deck
+ * stays a <details> element because src/main.js keeps it in its disclosure
+ * list, so the box is the <details> and the five columns are a grid inside
+ * #command-deck-body.
+ *
+ * Under 956 px of stage width (narrower than this client supports) the deck
+ * folds to two rows.
+ *
+ * One height from turn to turn (owner, 3 Oct 2026: the arena never changes
+ * size when Allowed Now grows): the row is as tall as its fixed columns
+ * (Your Champion, 1 Step and 3 Action). 2 Target and 4 Lock In never add
+ * height (contain: size). When the stage is at least 1230 px wide (1920 px
+ * windows), Your Champion takes two short columns, 1 Step and 3 Action set
+ * the row (about 130 px) and 2 Target puts the target chip and Allowed Now
+ * side by side, so three rows of Allowed Now fit; in a narrower stage
+ * (laptops) Your Champion's one column sets the row (about 148 px) and the
+ * chip sits above Allowed Now, so two rows fit. The deck's height depends
+ * only on the window's width: about 176 px at 1920 x 1080 and 194 px on
+ * laptops (it was about 205 px plus the 52 px status line). Allowed Now keeps the vision's
+ * pills while they fit, and three or more that would scroll become a
+ * two-column grid of short buttons (#command-target-select[data-count="many"],
+ * set by src/tactics-turn.js fitPicks) that scrolls when longer.
+ *
+ * src/tactics-turn.js fills this markup and sets #command-deck's
+ * data-state: "play", "watchonly" (Watch Only overlay), "stopped" (Stopped
+ * overlay) or "watching" (nobody Manual: the Run bar replaces the columns).
+ * One bridge rule stays: src/main.js still writes an <option> into the
+ * Allowed Now group when the connection is lost, and it is hidden. A token's
+ * class glyph falls back to the icons.js emblem (.tok-glyph) when the page
+ * has no vision #sig-<class> symbol.
+ *
+ * Every rule is scoped to html[data-product-kind="combat_debugger"].
+ */
+
+html[data-product-kind="combat_debugger"] .bc .deck {
+  position: relative;
+  display: block;
+  min-height: 150px;
+  margin: 0;
+  padding: 6px 12px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+  column-gap: 14px;
+  row-gap: 14px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .deck > summary {
+  display: none;
+}
+
+/* At game over the Match Summary sheet (heralds.css) covers the deck's box;
+   while it is open the deck is at least as tall as the sheet's six rows
+   (about 177 px at 1280 px wide), so the sheet never has to scroll. Only
+   the arena gets that much shorter, and only while the sheet is open. */
+html[data-product-kind="combat_debugger"] .bc .deck:has(> .match-summary-sheet) {
+  min-height: 182px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .deck-body {
+  display: grid;
+  grid-template-areas:
+    "head head head head head"
+    "agent step target action lock";
+  grid-template-columns: 158px auto minmax(160px, 1fr) auto minmax(150px, 170px);
+  align-items: start;
+  gap: 8px 14px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .deck-body > div {
+  position: relative;
+  min-width: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .dk-agent {
+  grid-area: agent;
+}
+
+/* Wide enough for the heading with the longest step name ("North-West"), so
+   the column never changes width when the step changes. */
+html[data-product-kind="combat_debugger"] .bc .dk-step {
+  grid-area: step;
+  width: 128px;
+}
+
+/* 2 Target is as tall as the deck row and never makes it taller: Allowed
+   Now shrinks and scrolls inside it instead. */
+html[data-product-kind="combat_debugger"] .bc .dk-target {
+  display: flex;
+  flex-direction: column;
+  grid-area: target;
+  align-self: stretch;
+  contain: size;
+}
+
+/* The three 86 px slots never squeeze, even at 1280 px wide. */
+html[data-product-kind="combat_debugger"] .bc .dk-action {
+  grid-area: action;
+  min-width: max-content;
+}
+
+/* 4 Lock In is as tall as the deck row and never makes it taller (see the
+   order list rules below). */
+html[data-product-kind="combat_debugger"] .bc .dk-lock {
+  display: flex;
+  flex-direction: column;
+  grid-area: lock;
+  align-self: stretch;
+  contain: size;
+}
+
+/* Column headings: a numbered ring, the name, then a gray hint. */
+html[data-product-kind="combat_debugger"] .bc .dh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .dh i {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--moon);
+  border-radius: 50%;
+  color: var(--moon);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .dh span {
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+}
+
+/* The champion you command. */
+html[data-product-kind="combat_debugger"] .bc .ag-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .ag-top b {
+  display: block;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .ag-top em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+}
+
+html[data-product-kind="combat_debugger"] .bc .ag-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  :is(.ag-meta, .hcard, .wmeta, .order)
+  .crest {
+  margin-right: 4px;
+  vertical-align: -3px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .chip:empty {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc .chip.you {
+  color: var(--ink);
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .chip.pol {
+  border: 1px solid var(--edge2);
+  color: var(--muted);
+}
+
+/* The champion in view's life (#ag-life): the shared Life bar
+   (src/styles/life-bar.css), or its words ("Fallen · Returns In 3 Ticks",
+   "Out Of Sight"). The Watch Only overlay (#wo-life) and the target chip
+   (.tchip-life) show the same bar. */
+html[data-product-kind="combat_debugger"] .bc .ag-life {
+  margin-top: 6px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .wo-life {
+  max-width: 260px;
+  margin-top: 6px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tchip-life {
+  margin-top: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .life-words {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .ag-nav {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* 1 Step: three rows of three 32 px keys, X in the middle. */
+html[data-product-kind="combat_debugger"] .bc .pad {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 4px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .key {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel2);
+  opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .key svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .key b {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .key:hover {
+  border-color: var(--edge2);
+  background: var(--panel2);
+}
+
+html[data-product-kind="combat_debugger"] .bc .key[aria-pressed="true"] {
+  border-color: var(--moon);
+  color: var(--moon);
+  background: #1d2944;
+}
+
+/* The chosen step's name, in the Step heading (owner, 4 Oct 2026: it was a
+   two-line note under the pad). */
+html[data-product-kind="combat_debugger"] .bc .dh .pad-note b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* 2 Target: the target chip, then the Allowed Now buttons. */
+html[data-product-kind="combat_debugger"] .bc .tchip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+
+/* Child selectors, so the Life bar's parts inside .tchip-life keep their
+   own look. */
+html[data-product-kind="combat_debugger"] .bc .tchip > div > b {
+  display: block;
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tchip > div > span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tchip.none {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-product-kind="combat_debugger"] .bc .xbtn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 38px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--raise);
+  font-size: 15px;
+  line-height: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .xbtn:hover:not(:disabled) {
+  border-color: var(--edge2);
+  background: var(--raise);
+}
+
+html[data-product-kind="combat_debugger"] .bc .xbtn small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks-h {
+  margin: 6px 0 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Bridge: today's deck code still writes <option> rows here. */
+html[data-product-kind="combat_debugger"] .bc .picks > option {
+  display: none;
+}
+
+/* One or two buttons: the vision's pills, never wrapping inside. */
+html[data-product-kind="combat_debugger"] .bc .pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 0;
+  padding: 3px 8px 3px 4px;
+  white-space: nowrap;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--panel2);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pick:hover:not(:disabled) {
+  border-color: var(--edge2);
+  background: var(--panel2);
+}
+
+html[data-product-kind="combat_debugger"] .bc .pick em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+html[data-product-kind="combat_debugger"] .bc .pick[aria-pressed="true"] {
+  border-color: var(--moon);
+  background: #1d2944;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks .none {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Three or more Allowed Now buttons that would scroll as pills (fitPicks
+   sets data-count="many"): a two-column grid of short 24 px buttons (token
+   and "Warrior · ID 1"; the abilities are in each button's hover help), so six
+   fit in the column without making the deck taller. */
+html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 4px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] .pick {
+  gap: 4px;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+  padding: 0 6px 0 3px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] .pick svg.tok {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] .pick em {
+  display: none;
+}
+
+/* 3 Action: three 86 px slots with a key, a kind, an icon, a name and a tag
+   that hangs under the slot (Armed, Auto or Not Allowed), 100 px tall
+   (owner, 4 Oct 2026: shorter than the vision's 116 px). The row keeps 9 px
+   under the slots for the hanging tag (.slot .tag, bottom: -9px), so the
+   column's height holds the tag and the deck grows to fit it rather than
+   letting it hang out of the deck body. */
+html[data-product-kind="combat_debugger"] .bc .slots {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 9px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot {
+  position: relative;
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: start;
+  gap: 1px;
+  width: 86px;
+  min-height: 100px;
+  /* 10 px at the bottom: the Armed, Auto or Not Allowed tag hangs 7 px into
+     the slot, so it never covers the last line, for example the Priest's
+     "In 11 Ticks" under a two-line Holy Word: Salvation. A two-line name
+     makes the slots taller (about 117 px); every class has one, because a
+     two-word name always stacks (the Warrior's "Shield / Bash"). */
+  padding: 19px 3px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel2);
+  text-align: center;
+  opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot:hover {
+  border-color: var(--edge2);
+  background: var(--panel2);
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot kbd {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .ic {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 2px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .ic-none {
+  fill: none;
+  stroke: var(--moon);
+  stroke-width: 1.4;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .ic-none-dot {
+  fill: var(--moon);
+}
+
+/* A two-word ability name comes one word per line (stackedSlotName in
+   tactics-turn.js), so every class fills two lines and the deck keeps one
+   height when the focus moves to the Warrior ("Shield / Bash"). */
+html[data-product-kind="combat_debugger"] .bc .slot b {
+  font-size: 13px;
+  line-height: 1.15;
+  white-space: pre-line;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .sub {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .sub.ready {
+  color: var(--moon);
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .kind {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot .tag {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.armed {
+  border-color: var(--moon);
+  box-shadow: inset 0 0 0 1px var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.armed::before {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  left: 12px;
+  height: 3px;
+  border-radius: 0 0 2px 2px;
+  background: var(--moon);
+  content: "";
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.armed .tag {
+  color: var(--ink);
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.no > :not(.tag) {
+  opacity: 0.38;
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.no .tag {
+  border: 1px solid var(--edge2);
+  color: var(--text);
+  background: var(--panel);
+}
+
+html[data-product-kind="combat_debugger"] .bc .slot.shake {
+  animation: bc-shake 0.24s linear;
+}
+
+@keyframes bc-shake {
+  25% {
+    transform: translateX(-3px);
+  }
+
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+/* 4 Lock In: the big Moon Silver button under the heading (owner, 4 Oct
+   2026: no order list; the rail's This Turn checklist lists every order). */
+html[data-product-kind="combat_debugger"] .bc .lockbtn {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  width: 100%;
+  min-height: 64px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--moon);
+  opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .lockbtn:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .lockbtn b {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .lockbtn span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+html[data-product-kind="combat_debugger"] .bc .lockbtn:disabled {
+  cursor: default;
+  color: var(--muted);
+  background: #2c3850;
+  opacity: 1;
+}
+
+html[data-product-kind="combat_debugger"] .bc .lockbtn.sweep::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: rgb(255 255 255 / 40%);
+  content: "";
+  transform: translateX(-110%);
+  animation: bc-sweep 0.45s linear;
+}
+
+@keyframes bc-sweep {
+  to {
+    transform: translateX(260%);
+  }
+}
+
+html[data-product-kind="combat_debugger"] .bc .cancel {
+  flex: none;
+  justify-content: center;
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* Overlays over the whole deck: Watch Only and Stopped. */
+html[data-product-kind="combat_debugger"] .bc .deck-body > div.overlay {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--edge2);
+  border-radius: 8px;
+  background: rgb(15 22 36 / 97%);
+}
+
+/*
+ * Watch Only never covers Lock In (owner, 3 October 2026). While the deck
+ * shows it (data-state="watchonly"), the deck body is the overlay's box and
+ * the overlay spans its grid from agent-start to action-end, so the Lock In
+ * column stays visible and clickable. The negative insets reach half of the
+ * 8 px gap under the header line, the deck's side and bottom padding (12 px)
+ * and half of the 14 px column gap, so the header line's message stays in
+ * view. Stopped still covers the whole deck.
+ */
+html[data-product-kind="combat_debugger"] .bc .deck[data-state="watchonly"] .deck-body {
+  position: relative;
+}
+
+html[data-product-kind="combat_debugger"] .bc .deck-body > div#watch-only {
+  grid-row: agent-start / agent-end;
+  grid-column: agent-start / action-end;
+  inset: -4px -7px -12px -12px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .overlay .eyebrow {
+  color: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .overlay .eyebrow.alert {
+  color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"] .bc .overlay b {
+  display: block;
+  font-size: 18px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .overlay .meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .deck-body > .overlay p {
+  max-width: 70ch;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+/* Nobody Manual: the Run and Play One Turn bar replaces the columns. */
+html[data-product-kind="combat_debugger"] .bc .watchbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .watchbar .state b {
+  font-size: 18px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .watchbar .state p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html[data-product-kind="combat_debugger"] .bc .watchwrap {
+  grid-column: 1 / -1;
+}
+
+html[data-product-kind="combat_debugger"]
+  .bc
+  .deck:not([data-state="watching"])
+  .watchwrap,
+html[data-product-kind="combat_debugger"]
+  .bc
+  .deck[data-state="watching"]
+  .deck-body
+  > div:not(.watchwrap, .dstatus) {
+  display: none;
+}
+
+/* A wide stage (1920 px windows): Your Champion takes two short columns
+   (name and Agent ID at the left; who controls it, its life and ‹ Prev and
+   Next › at the right), and 2 Target puts the target chip at the left and
+   Allowed Now beside it, so Allowed Now gets the column's full height (three
+   rows of buttons). 1 Step and 3 Action then set the row's height. */
+@container stage (min-width: 1230px) {
+  html[data-product-kind="combat_debugger"] .bc .deck-body {
+    grid-template-columns: auto auto minmax(160px, 1fr) auto minmax(150px, 170px);
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent {
+    display: grid;
+    grid-template-areas:
+      "top chip"
+      "top life"
+      "meta nav";
+    grid-template-columns: max-content 150px;
+    align-content: start;
+    gap: 6px 14px;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent > .ag-top {
+    grid-area: top;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent > .ag-meta {
+    grid-area: meta;
+    align-self: center;
+    margin-top: 0;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent > .chip {
+    grid-area: chip;
+    justify-self: start;
+    margin-top: 0;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent > .ag-life {
+    grid-area: life;
+    margin-top: 0;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-agent > .ag-nav {
+    grid-area: nav;
+    margin-top: 0;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-target {
+    display: grid;
+    grid-template-areas:
+      "head head"
+      "chip label"
+      "chip picks";
+    grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 12px;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-target > .dh {
+    grid-area: head;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-target > .tchip {
+    grid-area: chip;
+    align-self: start;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-target > .picks-h {
+    grid-area: label;
+    margin-top: 0;
+  }
+
+  html[data-product-kind="combat_debugger"] .bc .dk-target > .picks {
+    grid-area: picks;
+  }
+}
+
+@container stage (max-width: 955px) {
+  html[data-product-kind="combat_debugger"] .bc .deck-body {
+    grid-template-areas:
+      "head head head"
+      "agent step target"
+      "action action lock";
+    grid-template-columns: 158px auto minmax(0, 1fr);
+  }
+
+  /* Folded, 4 Lock In shares its row with 3 Action only, which is shorter,
+     so the column keeps its own height there. */
+  html[data-product-kind="combat_debugger"] .bc .dk-lock {
+    contain: none;
+  }
+}
+
+/* The deck's header line, the first row across every column: the message,
+   then Keys On or Off at the right. */
+html[data-product-kind="combat_debugger"] .bc .deck-body > .dstatus {
+  position: relative;
+  display: flex;
+  grid-area: head;
+  align-items: center;
+  gap: 10px;
+  min-height: 18px;
+}
+
+/* One line: a new message changes the words but never the deck's height. A
+   sentence too long for the line ends in "…" (main.js gives the line hover
+   help with the whole sentence). */
+html[data-product-kind="combat_debugger"] .bc .msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 8px;
+  border-left: 2px solid var(--edge2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .msg.refuse {
+  border-left-color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"] .bc .msg.refuse .why {
+  margin-right: 6px;
+  color: var(--alert);
+  font-weight: 700;
+}
+
+html[data-product-kind="combat_debugger"] .bc .keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+html[data-product-kind="combat_debugger"] .bc .keys i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--moon);
+}
+
+html[data-product-kind="combat_debugger"] .bc .keys.off {
+  color: var(--alert);
+}
+
+html[data-product-kind="combat_debugger"] .bc .keys.off i {
+  background: var(--alert);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-product-kind="combat_debugger"] .bc .slot.shake,
+  html[data-product-kind="combat_debugger"] .bc .lockbtn.sweep::after {
+    animation: none;
+  }
+}
+
+/* The icons.js class emblem drawn in a token when the vision symbol is absent. */
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph {
+  overflow: visible;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph--mage {
+  color: #b99cff;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph--warrior {
+  color: #d8904f;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph--hunter {
+  color: #8cc84b;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph--rogue {
+  color: #3fd0a0;
+}
+
+html[data-product-kind="combat_debugger"] .bc .tok .tok-glyph--priest {
+  color: #f5c95a;
+}

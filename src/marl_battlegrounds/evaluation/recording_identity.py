@@ -5,13 +5,16 @@ Descriptions contain labels and available numerical/code evidence, never live
 memory, sessions or learning outputs. A content hash identifies these recorded
 facts; missing code or external-state evidence does not become a verified
 controller merely because its description has a hash. Source-bank identities use
-the existing configuration serialization and preserve source order. These helpers
-perform no recording or method execution; the writer owns verified-content caches.
+the existing configuration serialization and preserve source order.
+``team_controller_names`` names the method that plays each of a team's five
+slots (looking inside ``team(...)`` Systems); the live clients and replay
+recording use it. These helpers perform no recording or method execution; the
+writer owns verified-content caches.
 """
 
 import json
 import marshal
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from hashlib import sha256
 from numbers import Number
 from operator import itemgetter
@@ -26,7 +29,7 @@ from marl_battlegrounds.evaluation.models import canonical_digest_sha256
 
 if TYPE_CHECKING:
     from marl_battlegrounds.core.types import EnvConfig
-    from marl_battlegrounds.evaluation.policy_execution import Policy
+    from marl_battlegrounds.evaluation.policy_execution import Policy, System
 
 
 @jax.jit
@@ -414,3 +417,158 @@ def normalize_system_registration(
     registration["parameter_status"] = status
     registration["variables_frozen"] = status == "frozen"
     return canonical_digest_sha256(registration), registration
+
+
+def team_controller_names(
+    method: Policy | System, class_ids: Sequence[int]
+) -> tuple[str, str, str, str, str]:
+    """Name the controller that chooses each of one team's five slots.
+
+    The live clients show these names beside each champion, and new replays
+    record them, so a team built from several methods still says which method
+    plays which champion. Each name is a method's own display name, kept
+    exactly as it was given ("tdm-beta" stays "tdm-beta").
+
+    Parameters
+    ----------
+    method : Policy or System
+        The method that plays the team. A Policy, a ``shared_policy`` adapter
+        or an ordinary System names every slot with its own name. An
+        ``independent_policies`` System names slot k with its k-th Policy. A
+        ``team(...)`` System names each slot with the member that owns it,
+        looking inside nested teams; class selectors (``slots=["Mage"]``) use
+        ``class_ids``. A ``pool(...)`` System picks its member anew for each
+        game, so every slot gets the pool's own name.
+    class_ids : sequence of int
+        The team's five class IDs in team-local slot order (slot 0 first):
+        1 Mage, 2 Warrior, 3 Hunter, 4 Rogue, 5 Priest, and 0 for an unused
+        slot. Only class selectors read them.
+
+    Returns
+    -------
+    tuple of five str
+        One nonempty name for each team-local slot 0 to 4. A slot that no
+        team member owns (an unused slot, or a class selector that matches
+        nothing there) gets the whole method's name.
+
+    Raises
+    ------
+    TypeError
+        method is neither a Policy nor a System.
+    ValueError
+        class_ids does not hold exactly five entries.
+
+    Notes
+    -----
+    Host-only. It reads the method's names, its component table and a team's
+    small Boolean slot table (which may copy that table from the device). It
+    never calls the method, reads weights, or changes anything. Names are
+    display text, not identities: policy IDs and digests stay in the recorded
+    policy assignments.
+
+    Examples
+    --------
+    >>> import marl_battlegrounds as marl_bgs
+    >>> from marl_battlegrounds.evaluation.recording_identity import (
+    ...     team_controller_names,
+    ... )
+    >>> mixed = marl_bgs.team(
+    ...     marl_bgs.load_method("tdm-alpha"),
+    ...     marl_bgs.load_method("tdm-beta"),
+    ...     slots=[[0, 1, 2], [3, 4]],
+    ... )
+    >>> team_controller_names(mixed, [1, 2, 3, 4, 5])
+    ('tdm-alpha', 'tdm-alpha', 'tdm-alpha', 'tdm-beta', 'tdm-beta')
+    """
+    from marl_battlegrounds.evaluation.policy_execution import (
+        Policy,
+        System,
+        _execution,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    classes = tuple(int(value) for value in class_ids)
+    if len(classes) != 5:
+        raise ValueError("class_ids must hold the team's five class IDs")
+    if isinstance(method, Policy):
+        name = method.name
+        return name, name, name, name, name
+    if not isinstance(cast(object, method), System):
+        raise TypeError("team_controller_names needs a Policy or a System")
+    _, names = _slot_names(
+        _execution(method),
+        method.variables,
+        tuple(method.components or ()),
+        method.name,
+        classes,
+    )
+    return cast(tuple[str, str, str, str, str], names)
+
+
+def _slot_names(
+    execution: object,
+    variables: object,
+    components: tuple[dict[str, object], ...],
+    name: str | None,
+    classes: tuple[int, ...],
+) -> tuple[str, tuple[str, ...]]:
+    """Return one System's display name and the names of its five slots.
+
+    execution is the System's static call structure (``_execution``),
+    variables its numerical values and components its own component table
+    (for a team member: just that member's block). name is the System's
+    display name, or None for a nested adapter or team, whose name this
+    rebuilds the way ``shared_policy``, ``independent_policies``, ``team``
+    and ``pool`` build it. classes holds the team's five class IDs. Reads only;
+    recurses once per nested team.
+    """
+    from marl_battlegrounds.evaluation.policy_execution import (
+        _composition,  # pyright: ignore[reportPrivateUsage]
+        _CompositionVariables,  # pyright: ignore[reportPrivateUsage]
+        _SystemExecution,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    execution = cast(_SystemExecution, execution)
+    if execution.policies:
+        policy_names = [str(component["name"]) for component in components]
+        if name is None:
+            name = policy_names[0] if execution.shared else " / ".join(policy_names)
+        if execution.shared:
+            return name, (name,) * 5
+        return name, tuple(
+            policy_names[slot] if slot < len(policy_names) else name
+            for slot in range(5)
+        )
+    owner = _composition(execution)
+    if owner is None:
+        name = "Unknown controller" if name is None else name
+        return name, (name,) * 5
+    values = cast(_CompositionVariables, variables)
+    members: list[tuple[str, tuple[str, ...]]] = []
+    for index, member in enumerate(owner.members):
+        start = owner.offsets[index]
+        fallback = owner.fallback_ids[index]
+        members.append(
+            _slot_names(
+                member,
+                values.members[index],
+                components[start : start + member.component_count],
+                None if fallback < 0 else str(components[fallback]["name"]),
+                classes,
+            )
+        )
+    if name is None:
+        name = ("Pool: " if owner.pooled else "Team: ") + " / ".join(
+            member_name for member_name, _ in members
+        )
+    if owner.pooled:
+        return name, (name,) * 5
+    table = np.asarray(jax.device_get(values.slots), dtype=np.bool_)
+    names: list[str] = []
+    for slot, class_id in enumerate(classes):
+        owners = [
+            index
+            for index in range(len(members))
+            if table[index, slot] or (1 <= class_id <= 5 and table[index, 4 + class_id])
+        ]
+        names.append(members[owners[0]][1][slot] if owners else name)
+    return name, tuple(names)

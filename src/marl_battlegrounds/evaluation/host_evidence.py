@@ -92,6 +92,20 @@ class HostRun:
         return self.observers[name]
 
     @contextmanager
+    def bind(self) -> Generator[None]:
+        """Make this run current, then restore its parent without closing observers.
+
+        Enter and exit on the same thread and Python context. This allows a local
+        client to return to its caller between callbacks while keeping one match's
+        evidence alive. The owner must call close after the match is finished.
+        """
+        token = _CURRENT.set(self)
+        try:
+            yield
+        finally:
+            _CURRENT.reset(token)
+
+    @contextmanager
     def scope(self) -> Generator[None]:
         """Bind this run on its execution thread and close all observers on exit."""
         token = _CURRENT.set(self)

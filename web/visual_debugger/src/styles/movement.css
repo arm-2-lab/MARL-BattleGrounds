@@ -1,0 +1,85 @@
+/*
+ * Styles for the Movement look (src/looks/movement.js, Scholar's Step): the
+ * Start Spot ring, hairline and Charge pin, the Rogue's Phantom Afterimage and
+ * the Focus Trail, all in the arena's imprints layer under the bodies.
+ * styles.css imports this file. Colours come only from the :root tokens: each
+ * team's Light colour (data-team "a" or "b"; no team gives neutral Moon
+ * Silver), Smoke and Blade Silver. Opacity lives in SVG attributes (the END
+ * look); no CSS animations or transitions here, because the beat clock owns
+ * all timing. Every rule is export-safe: flat fills and strokes only.
+ */
+.movement-start-spot,
+.movement-focus-trail-hold {
+  --movement-light: var(--moon-silver);
+}
+
+.movement-start-spot[data-team="a"],
+.movement-focus-trail-hold[data-team="a"] {
+  --movement-light: var(--team-a-light);
+}
+
+.movement-start-spot[data-team="b"],
+.movement-focus-trail-hold[data-team="b"] {
+  --movement-light: var(--team-b-light);
+}
+
+/* A faint solid ring: a dashed ring always means reach, so this one is solid. */
+.movement-start-ring {
+  fill: none;
+  stroke: var(--movement-light);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+/* A paintless circle over the start spot: it only catches the pointer for the tooltip. */
+.movement-start-hit {
+  fill: none;
+  stroke: none;
+  pointer-events: all;
+}
+
+.movement-hairline {
+  fill: none;
+  stroke: var(--movement-light);
+  stroke-width: 1;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* A leg through stone is a Dim Shift: the body did not travel along it. */
+.movement-hairline[data-cut="true"] {
+  stroke-dasharray: 1 3;
+}
+
+.movement-pin {
+  fill: var(--movement-light);
+  stroke: none;
+  pointer-events: none;
+}
+
+.movement-afterimage circle {
+  pointer-events: none;
+}
+
+.movement-afterimage-fill {
+  fill: var(--smoke);
+  stroke: none;
+}
+
+.movement-afterimage-core {
+  fill: none;
+  stroke: color-mix(in srgb, var(--smoke) 78%, var(--blade-silver));
+  stroke-width: 1.2;
+}
+
+.movement-afterimage-rim {
+  fill: none;
+  stroke: color-mix(in srgb, var(--smoke) 60%, var(--blade-silver));
+  stroke-width: 1.5;
+}
+
+.movement-trail-dot {
+  fill: var(--movement-light);
+  stroke: none;
+  pointer-events: none;
+}

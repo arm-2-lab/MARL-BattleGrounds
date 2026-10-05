@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "meaning": "Selected historical opponents for software workflow checks; not the paper search declaration",
+  "validation_member": "recurrent-mappo-combat-support-pooled-step-250675200",
+  "members": [
+    {
+      "name": "recurrent-mappo-combat-support-low-amounts-step-30081024",
+      "kind": "actor",
+      "actor_export_id": "a413b3fd85a2c907886891a76db357601dbf1692ef23ed39a1e0ee6374bec83a",
+      "inference_digest": "191fbd238f940ef22345ea4a06ba2b31d7efa72e1d03a3b15bfaa122490288e9",
+      "source_checkpoint_id": "5cc3109609d53abec4a1dfe0f0d2fc9c042f4db4ae3cd91de8203eda765830ad"
+    },
+    {
+      "name": "recurrent-mappo-combat-support-step-35094528",
+      "kind": "actor",
+      "actor_export_id": "350ce0124edfa55183c929b29cd4b60a34c1cca5305c7e9002cba58520be5dc4",
+      "inference_digest": "aa7f4e9b86b892223a14c18a82860496b53d8dbf0e7f1ee7a98350b0142376a2",
+      "source_checkpoint_id": "337d58cd52ec74461ae50f4e330e886319594ab5e8a61e83385e6dc7f61c39d0"
+    },
+    {
+      "name": "recurrent-mappo-tactical-support-step-40108032",
+      "kind": "actor",
+      "actor_export_id": "6621a1de6e12c701d461a871aa77d1c4ee7be571e4e4dfd7e230cefd75cbc663",
+      "inference_digest": "27f87e9aff1a26ccfa76a29a497ff7833fe0060a50c2ed9502a5147f62d4ff8e",
+      "source_checkpoint_id": "13a23aa878b48dc418fe973457ea1ef6020ec0b002739979f1a63facbbef269e"
+    },
+    {
+      "name": "recurrent-mappo-tactical-support-high-amounts-step-25067520",
+      "kind": "actor",
+      "actor_export_id": "e7b7604acbfa60deff440b67ff5b8d3bd96093aff9ac7fef9947c2b83ac2ed64",
+      "inference_digest": "3b93a90024cedda122fb79cb8acc9d9d45469c7858e7099af38c0d05c9fd0c36",
+      "source_checkpoint_id": "38d7a0f9b29a663efec254396a563fd30129b2d246cfa84fb064e19ac34a631b"
+    },
+    {
+      "name": "recurrent-mappo-tactical-support-zero-sum-step-35094528",
+      "kind": "actor",
+      "actor_export_id": "934755418a8066275bd14ba1badbefec976aea49d10f059d1bf0423c1ff9bc3e",
+      "inference_digest": "641db49ab523583456cff267cda65c0455c70782879702cdfb7018fb8d738f14",
+      "source_checkpoint_id": "fec16904190253dcb69c8ec57adde6fd31b8f5e23f240907ccb5b4d4e8efebb7"
+    },
+    {
+      "name": "recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032",
+      "kind": "actor",
+      "actor_export_id": "2a1936d5fb95961548745a3e1a3c6beebbbb78da142b4614013c2fc10d0e4179",
+      "inference_digest": "aca49d3d8356d7654a976b28b8fa1240e7f9fe2d1e97132d02ff47f18e5b324b",
+      "source_checkpoint_id": "af5d7aadbbc74983183d564f572078f9fcd4e458cff5000f119f6576072d3216"
+    },
+    {
+      "name": "recurrent-mappo-combat-support-pooled-step-250675200",
+      "kind": "actor",
+      "actor_export_id": "16099fe10d202ed0cf868034cccb2829724e02b2e2117f899fe2260bb5ecf625",
+      "inference_digest": "c072dd9959e42a07249e5d4bcacdc6b8f25e6056ccd2dd6210a1fb95aecb275e",
+      "source_checkpoint_id": "140946aa4834c373f76fdcf251acc426619f6e793c3a0542099f3ecf18981e95"
+    },
+    {
+      "name": "recurrent-mappo-tactical-support-high-amounts-zero-sum-pooled-step-213073920",
+      "kind": "actor",
+      "actor_export_id": "c0e3755807587e16a7b310a6532ab8c72196e7a26086aa62450a14a045447b6b",
+      "inference_digest": "c22443e6c637e1b24671d05ebe9a2344bb6350e40b1490c143db488cdae46e31",
+      "source_checkpoint_id": "4153d4ca06fd2fd97fec5d7631910ae04789b21a1b6cfc3735cce6601837b665"
+    },
+    {
+      "name": "tdm-alpha",
+      "kind": "scripted"
+    },
+    {
+      "name": "tdm-beta",
+      "kind": "scripted"
+    },
+    {
+      "name": "tdm-gamma",
+      "kind": "scripted"
+    }
+  ]
+}

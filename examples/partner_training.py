@@ -1,19 +1,19 @@
-"""Train repeated-class teams, select an actor, and evaluate each frozen partner.
+"""Train a partial team beside frozen partners, then load and evaluate it.
 
-Run ``JAX_PLATFORMS=cpu python examples/partner_training.py --output-dir
-artifacts/partner_demo`` from an installed checkout. The small default trains
-FF-IPPO Mage slots 0 and 2 alongside ALPHA or a local custom idle System. The
-runner selects on the deployed teams against a fixed Random validation panel.
-Each partner then gets a separate paired evaluation after the selected learner
-is loaded and reassembled with team(). Use --method for any of the six built-ins
-and --parameter-sharing
-for shared, per-class or per-slot actor weights. These short games and updates
-check the workflow; they do not establish skill or zero-shot coordination.
+Install training and hydra, then use JAX_PLATFORMS=cpu::
+
+    python examples/partner_training.py output_dir=artifacts/partner-demo
+
+The default learner owns physical slots 0 and 2. Frozen partners own the other
+active slots; actor inputs and recurrent memory retain their information limits.
+All six built-in learners use the same public training route. The repeated-class
+roster and short default budget are software checks, not learned coordination.
+Python run accepts live named partners. Hydra accepts ordinary reference mappings.
+Use --help or --cfg job to inspect all settings and choose a new output folder.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from collections.abc import Mapping
@@ -102,12 +102,12 @@ def run(
     member; saved training assignments provide that evidence. This function
     writes files and uses the public runner/evaluator, with no custom train loop.
     """
+    output_dir = Path(output_dir)
+    learner_slots = tuple(learner_slots)
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds import training
+    from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
     from marl_battlegrounds.baselines.methods import validate_training_method
-    from marl_battlegrounds.baselines.ppo import PPOConfig
-    from marl_battlegrounds.baselines.pqn import PQNConfig
-    from marl_battlegrounds.baselines.qmix import QMIXConfig
     from marl_battlegrounds.training.validation import create_panel
 
     chosen = validate_training_method(method)
@@ -231,38 +231,12 @@ def run(
     return report
 
 
-def main() -> None:
-    """Parse example settings and print the saved learner and partner game paths."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument(
-        "--method",
-        choices=("mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"),
-        default="ff_ippo",
-    )
-    parser.add_argument(
-        "--parameter-sharing", choices=("all", "class", "none"), default="all"
-    )
-    parser.add_argument("--num-envs", type=int, default=2)
-    parser.add_argument("--updates", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--evaluation-max-steps", type=int, default=2)
-    args = parser.parse_args()
-    print(
-        json.dumps(
-            run(
-                args.output_dir,
-                method=args.method,
-                parameter_sharing=args.parameter_sharing,
-                num_envs=args.num_envs,
-                updates=args.updates,
-                seed=args.seed,
-                evaluation_max_steps=args.evaluation_max_steps,
-            ),
-            indent=2,
-        )
-    )
+def main() -> int:
+    """Compose packaged YAML, call the Python lesson and return its exit status."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("partner_training", run)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

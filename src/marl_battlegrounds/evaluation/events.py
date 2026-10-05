@@ -6,11 +6,15 @@ order is a serialization convention: ranks group related events and stable slot
 coordinates break ties. The order does not create extra policy decision epochs.
 Team Deathmatch points are re-derived from the recorded start positions and the
 recorded configuration (the Red Zone rule, when the record holds a depth): a
-rule check, not physics. Renderers read recorded facts and never re-run it.
+rule check, not physics. ``team_deathmatch_home_fall_slots_v1`` is the one owner
+of which new deaths scored double ("home falls"); the score check here, match
+summaries, presentation events and replay timeline marks all call it on
+recorded positions instead of copying the rule.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -959,6 +963,82 @@ def _append_respawn_candidates(
         )
 
 
+def team_deathmatch_home_fall_slots_v1(
+    context: EvaluationEpisodeContext,
+    start_positions: Sequence[Sequence[float]],
+    newly_dead_by_recipient: Sequence[bool],
+) -> frozenset[int]:
+    """Name the new deaths that scored double because they fell at home.
+
+    A "home fall" is a new death whose recorded start position lies inside the
+    victim's own team's Red Zone. Team Deathmatch then gives the other team 2
+    points (TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH) instead of 1. This is the
+    one owner of that rule: the score check in this module, match summaries,
+    presentation events and replay timeline marks all call it.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Recorded context. Its roster gives each slot's team. Its resolved
+        configuration gives the task mode, map width, spawn pads and Red Zone
+        depth.
+    start_positions : sequence of (x, y)
+        Positions at the transition start, one per global slot 0-9, in map
+        units. Usually ``start_frame.snapshot.agent_positions``. Only rows of
+        newly dead slots are read.
+    newly_dead_by_recipient : sequence of bool
+        Ten flags, one per global slot; True marks a death in this transition.
+        Inactive slots are ignored even when flagged.
+
+    Returns
+    -------
+    frozenset of int
+        Global slots (0-9) whose fall scored double. Empty when the task is not
+        Team Deathmatch, the record is older than ``ResolvedEnvConfigV2``, the
+        Red Zone depth is 0, or no new death started inside its own zone.
+
+    Raises
+    ------
+    ValueError
+        A newly dead configured-active slot has a team other than 1 or 2 while
+        the Red Zone rule is active.
+
+    Notes
+    -----
+    Both strip bounds are inclusive, matching Core. The strip side comes from
+    ``red_zone_team_on_right`` on the recorded pads. This is a rule check on
+    recorded facts; it runs no physics and reads no file.
+    """
+    config = context.resolved_env_config
+    if (
+        config.task_mode != _TEAM_DEATHMATCH_TASK_MODE
+        or not isinstance(config, ResolvedEnvConfigV2)
+        or config.team_deathmatch_red_zone_depth <= 0.0
+    ):
+        return frozenset()
+    red_zone_ranges = tuple(
+        red_zone_x_range(
+            config.map_width,
+            config.team_deathmatch_red_zone_depth,
+            red_zone_team_on_right(config.map_width, [pad[0] for pad in team_pads]),
+        )
+        for team_pads in config.team_spawn_pad_positions
+    )
+    home_falls: set[int] = set()
+    for slot, (is_newly_dead, roster_row) in enumerate(
+        zip(newly_dead_by_recipient, context.roster, strict=True)
+    ):
+        if not is_newly_dead or not roster_row.configured_active:
+            continue
+        team_id = roster_row.configured_team_id
+        if team_id not in (1, 2):
+            raise ValueError("configured active TDM roster slots require team 1 or 2")
+        low, high = red_zone_ranges[team_id - 1]
+        if low <= start_positions[slot][0] <= high:
+            home_falls.add(slot)
+    return frozenset(home_falls)
+
+
 def _derive_team_deathmatch_authority_v1(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
@@ -969,7 +1049,8 @@ def _derive_team_deathmatch_authority_v1(
 
     Each newly dead configured recipient gives the other team points: 2
     (TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH) when its recorded start position
-    is inside its own team's Red Zone, else 1. The depth is the recorded float32
+    is inside its own team's Red Zone, else 1. team_deathmatch_home_fall_slots_v1
+    decides which deaths are inside. The depth is the recorded float32
     depth when the context holds ResolvedEnvConfigV2 and 0.0 for older records
     (one point per death, their original rule). The side comes from
     red_zone_team_on_right on the recorded pads and the strip from
@@ -1014,39 +1095,26 @@ def _derive_team_deathmatch_authority_v1(
     ):
         raise ValueError("Team Deathmatch transitions cannot start after completion")
 
-    config = context.resolved_env_config
-    red_zone_ranges: tuple[tuple[float, float], ...] | None = None
-    if (
-        isinstance(config, ResolvedEnvConfigV2)
-        and config.team_deathmatch_red_zone_depth > 0.0
-    ):
-        red_zone_ranges = tuple(
-            red_zone_x_range(
-                config.map_width,
-                config.team_deathmatch_red_zone_depth,
-                red_zone_team_on_right(config.map_width, [pad[0] for pad in team_pads]),
-            )
-            for team_pads in config.team_spawn_pad_positions
-        )
-    start_positions = start_frame.snapshot.agent_positions
+    newly_dead = facts.death_facts.is_newly_dead_by_recipient
+    home_falls = team_deathmatch_home_fall_slots_v1(
+        context,
+        start_frame.snapshot.agent_positions,
+        newly_dead,
+    )
     expected_score_increments = [0, 0]
     for slot, (is_newly_dead, roster_row) in enumerate(
-        zip(
-            facts.death_facts.is_newly_dead_by_recipient,
-            context.roster,
-            strict=True,
-        )
+        zip(newly_dead, context.roster, strict=True)
     ):
         if not is_newly_dead or not roster_row.configured_active:
             continue
         team_id = roster_row.configured_team_id
         if team_id not in (1, 2):
             raise ValueError("configured active TDM roster slots require team 1 or 2")
-        points = TEAM_DEATHMATCH_POINTS_PER_DEATH
-        if red_zone_ranges is not None:
-            low, high = red_zone_ranges[team_id - 1]
-            if low <= start_positions[slot][0] <= high:
-                points = TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH
+        points = (
+            TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH
+            if slot in home_falls
+            else TEAM_DEATHMATCH_POINTS_PER_DEATH
+        )
         # A Team A victim scores for Team B (index 1), and the reverse.
         expected_score_increments[2 - team_id] += points
 
@@ -1239,4 +1307,4 @@ def decode_evaluation_events_v1(
     return tuple(events)
 
 
-__all__ = ["decode_evaluation_events_v1"]
+__all__ = ["decode_evaluation_events_v1", "team_deathmatch_home_fall_slots_v1"]

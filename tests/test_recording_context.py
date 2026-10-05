@@ -2,6 +2,8 @@
 
 Old recordings retain their declared names and layouts. New evaluations require
 the current catalog; unknown sources never gain an ID from matching geometry.
+A map's readable name may differ from its technical name (map 19 shows
+"Whispers of Nzoth"); that changes only the label, never the stored name.
 New recording contexts are context V4 with the NoSharedObs V4 projection; the
 old-map records here are resolved config V1 at Red Zone depth 0.0, as recorded
 before the rule.
@@ -426,6 +428,30 @@ def test_map_history_is_complete_cached_and_immutable() -> None:
             alias.semantic_digest
             == history[alias.current_map_id].info.source.semantic_digest
         )
+
+
+def test_readable_map_name_changes_only_the_label() -> None:
+    from marl_battlegrounds.evaluation import map_identity
+    from marl_battlegrounds.tasks import list_tdm_maps
+
+    stored = "tdm-map-id-19-nzoth-the-corruptor-training"
+    assert list_tdm_maps()[19].name == stored
+    assert _tdm_assets.map_history()[19].info.name == stored
+    for name, map_id in (
+        (stored, 19),
+        ("tdm-map-id-7-nzoth-the-corruptor-training", 7),
+    ):
+        shown, current_id = map_identity._registered_map_by_name(name)  # pyright: ignore[reportPrivateUsage]
+        assert (shown.map_id, current_id) == (map_id, 19)
+        assert shown.technical_name == name
+        assert shown.display_name == "Whispers of Nzoth"
+    labels = {
+        info.map_id: map_identity._registered_map(info.map_id).display_name  # pyright: ignore[reportPrivateUsage]
+        for info in list_tdm_maps()
+    }
+    assert labels[12] == "Foxhole" and labels[47] == "Teutoburg Forest"
+    assert labels[13] == "Pyramids Of Giza"
+    assert sum(label == "Whispers of Nzoth" for label in labels.values()) == 1
 
 
 @pytest.mark.parametrize("corruption", ["missing", "duplicate", "name", "geometry"])

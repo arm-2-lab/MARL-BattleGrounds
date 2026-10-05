@@ -4,7 +4,7 @@ Run ``scripts/dev/run_replay_viewer.sh --help`` for source and display options.
 The viewer reads one validated immutable replay, then serves a loopback browser
 view or displays a static frame. A requested scripted demonstration is generated
 in a separate process before viewing. Listing metadata avoids simulator imports.
-Manual control and live recording belong to the separate DevClient launcher.
+Manual control and live recording belong to the public BattleClient Python API.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 type _ViewMode = Literal["researcher", "pov"]
 
-_DEBUGGER_LAUNCHER = "scripts/dev/run_dev_client.sh"
+_DEBUGGER_LAUNCHER = "marl_bgs.battle_client(map_id=0)"
 _PRIVATE_MATERIALIZE_OPTION = "--_materialize-scripted-scenario"
 _RATE_SUFFIX = "\N{MULTIPLICATION SIGN}"
 
@@ -82,8 +82,8 @@ read-only replay controls:
   Tick current / final  show the exact captured cursor and terminal tick
 
 The Replay Viewer is read-only and always uses fixed Analysis presentation.
-The DevClient developer workspace and Combat Debugger remain available through:
-  scripts/dev/run_dev_client.sh
+Live play and recording use BattleClient:
+  marl_bgs.battle_client(map_id=0)
 """
 
 
@@ -278,8 +278,7 @@ def _validate_option_matrix(
     """Enforce one replay source and reject options that belong to another mode."""
     if "record_replay" in options.supplied or "controlled_slot" in options.supplied:
         parser.error(
-            "manual control and recording use the Combat Debugger; "
-            f"run {_DEBUGGER_LAUNCHER}."
+            f"manual control and recording use BattleClient; run {_DEBUGGER_LAUNCHER}."
         )
 
     selectors = {
@@ -425,6 +424,25 @@ def _materializer_main(argv: Sequence[str]) -> int:
     options = parser.parse_args(argv)
 
     try:
+        from marl_battlegrounds._battle_client.control import create_session
+        from marl_battlegrounds._battle_client.evaluation_bridge import (
+            build_debugger_evaluation_launch_specification_v1,
+        )
+        from marl_battlegrounds._battle_client.protocol import (
+            CommandRequestV1,
+            CommandResponseV2,
+            KeyboardCommandV1,
+        )
+        from marl_battlegrounds._battle_client.recording import (
+            build_debugger_recording_specification_v1,
+        )
+        from marl_battlegrounds._battle_client.recording_coordinator import (
+            RecordingDebuggerCoordinator,
+        )
+        from marl_battlegrounds._battle_client.replay_recorder import (
+            DebuggerReplayRecorder,
+        )
+        from marl_battlegrounds._battle_client.service import DebuggerService
         from marl_battlegrounds.evaluation.replay_io import (
             preflight_replay_destination,
         )
@@ -434,24 +452,7 @@ def _materializer_main(argv: Sequence[str]) -> int:
         from marl_battlegrounds.evaluation.runtime_provenance import (
             capture_debugger_runtime_provenance_v1,
         )
-        from scripts.dev.visual_debugger.control import create_session
-        from scripts.dev.visual_debugger.evaluation_bridge import (
-            build_debugger_evaluation_launch_specification_v1,
-        )
-        from scripts.dev.visual_debugger.protocol import (
-            CommandRequestV1,
-            CommandResponseV2,
-            KeyboardCommandV1,
-        )
-        from scripts.dev.visual_debugger.recording import (
-            build_debugger_recording_specification_v1,
-        )
-        from scripts.dev.visual_debugger.recording_coordinator import (
-            RecordingDebuggerCoordinator,
-        )
-        from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
-        from scripts.dev.visual_debugger.scenarios import get_scenario
-        from scripts.dev.visual_debugger.service import DebuggerService
+        from scripts.dev.visual_debugger.scenarios import get_scenario, list_scenarios
 
         scenario = get_scenario(options._materialize_scripted_scenario)
         if scenario.mode != "scripted":
@@ -495,9 +496,11 @@ def _materializer_main(argv: Sequence[str]) -> int:
                 view_mode="researcher",
                 preset="analysis",
                 include_stress=options.include_stress,
+                scenario_catalog=list_scenarios(include_stress=True),
                 session_id=f"scripted-replay-materializer-{scenario.name}",
                 recorder=recorder,
-            )
+            ),
+            asset_root=_REPOSITORY_ROOT / "web" / "visual_debugger",
         )
         for frame_index in range(len(scenario.frames)):
             result = coordinator.apply_command(

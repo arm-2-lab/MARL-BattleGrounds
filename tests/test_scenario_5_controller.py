@@ -10,8 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from scripts.dev.visual_debugger.authoring_compiler import CompiledDevScenarioV1
-from tests.scenario_controller_fixtures import load_scenario_1
+from tests.scenario_controller_fixtures import ControllerScenario, load_scenario_1
 
 from marl_battlegrounds.core.geometry import GEOMETRY_TOLERANCE
 from marl_battlegrounds.core.types import (
@@ -68,7 +67,7 @@ _BYPASS = cast(Callable[..., Array], jax.jit(_body_bypass_moves))
 
 
 @pytest.fixture(scope="module")
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     # Reuse an existing approved shape/template fixture, never the authoring store.
     return load_scenario_1()
 
@@ -102,7 +101,7 @@ def _row(
     )
 
 
-def _observation(scenario: CompiledDevScenarioV1) -> Observation:
+def _observation(scenario: ControllerScenario) -> Observation:
     base = cast(Observation, _scalar(scenario.observation))
     own = (
         _row(base.self_features, (10, 5), class_id=ROGUE_CLASS_ID)
@@ -152,7 +151,7 @@ def _mask(*pairs: tuple[int, int], moves: tuple[int, ...] | None = None) -> Acti
     return ActionMask(movement, joint.any(axis=1), joint.any(axis=0), joint)
 
 
-def _bank(scenario: CompiledDevScenarioV1) -> SharedObsSensorSourceBankV2:
+def _bank(scenario: ControllerScenario) -> SharedObsSensorSourceBankV2:
     def zeros(leaf: Array) -> Array:
         return jnp.zeros_like(leaf[1])
 
@@ -162,7 +161,7 @@ def _bank(scenario: CompiledDevScenarioV1) -> SharedObsSensorSourceBankV2:
 
 
 def _act(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     obs: Observation,
     mask: ActionMask | None = None,
     *,
@@ -191,7 +190,7 @@ def _exact(actual: object, expected: object) -> None:
     "condition", ["ordinary", "no_combat", "stunned", "dead", "inactive"]
 )
 def test_nonrogue_actions_are_exactly_inherited(
-    scenario: CompiledDevScenarioV1, class_id: int, condition: str
+    scenario: ControllerScenario, class_id: int, condition: str
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (11.2, 5), 10, PRIEST_CLASS_ID)
     own = obs.self_features.at[AGENT_FEATURE_CLASS_ID].set(class_id)
@@ -213,7 +212,7 @@ def test_nonrogue_actions_are_exactly_inherited(
     "prey_class", [PRIEST_CLASS_ID, MAGE_CLASS_ID, HUNTER_CLASS_ID]
 )
 def test_priority_pursuit_and_nearby_low_health_combat_are_independent(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     prey_class: int,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (9, 5), 1)
@@ -227,7 +226,7 @@ def test_priority_pursuit_and_nearby_low_health_combat_are_independent(
     "prey_class", [PRIEST_CLASS_ID, MAGE_CLASS_ID, HUNTER_CLASS_ID]
 )
 def test_priority_health_slot_ties_and_reselection_have_no_memory(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     prey_class: int,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (13, 5), 30, prey_class)
@@ -247,7 +246,7 @@ def test_priority_health_slot_ties_and_reselection_have_no_memory(
 )
 @pytest.mark.parametrize("kind", ["hidden", "dead", "inactive", "zero_health"])
 def test_ineligible_priority_enemy_is_neither_prey_nor_blocker(
-    scenario: CompiledDevScenarioV1, prey_class: int, kind: str
+    scenario: ControllerScenario, prey_class: int, kind: str
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (13, 5), 20, prey_class)
     expected = _act(scenario, obs)
@@ -269,7 +268,7 @@ def test_ineligible_priority_enemy_is_neither_prey_nor_blocker(
 
 
 def test_priest_priority_returns_after_hunter_fallback(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (7, 5), 1, HUNTER_CLASS_ID)
     obs = _enemy(obs, 4, (13, 5), 40, PRIEST_CLASS_ID)
@@ -286,7 +285,7 @@ def test_priest_priority_returns_after_hunter_fallback(
 
 
 def test_priest_mage_hunter_priority_overrides_health_and_reselects_each_epoch(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (6, 5), 20, MAGE_CLASS_ID)
     obs = _enemy(obs, 2, (10, 8), 1, HUNTER_CLASS_ID)
@@ -307,7 +306,7 @@ def test_priest_mage_hunter_priority_overrides_health_and_reselects_each_epoch(
 
 
 def test_no_priority_prey_movement_uses_tdm_without_body_screening(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (13, 5), 20)
     obs = obs._replace(
@@ -327,7 +326,7 @@ def test_no_priority_prey_movement_uses_tdm_without_body_screening(
     "prey_class", [PRIEST_CLASS_ID, MAGE_CLASS_ID, HUNTER_CLASS_ID]
 )
 def test_prey_contact_is_permitted_but_an_attacked_blocker_is_avoided(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     prey_class: int,
 ) -> None:
     obs = _enemy(_observation(scenario), 4, (11, 5), 40, prey_class)
@@ -353,7 +352,7 @@ def test_prey_contact_is_permitted_but_an_attacked_blocker_is_avoided(
 
 @pytest.mark.parametrize("overlap", [0.0, 0.5 * GEOMETRY_TOLERANCE])
 def test_glancing_contact_has_an_inclusive_45_degree_boundary(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     overlap: float,
 ) -> None:
     own = _observation(scenario).self_features
@@ -371,7 +370,7 @@ def test_glancing_contact_has_an_inclusive_45_degree_boundary(
 
 @pytest.mark.parametrize("speed", [1.0, 1e-3, 1e-6, 1e-8])
 def test_tiny_head_on_moves_do_not_acquire_angle_tolerance(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     speed: float,
 ) -> None:
     own = _observation(scenario).self_features
@@ -384,7 +383,7 @@ def test_tiny_head_on_moves_do_not_acquire_angle_tolerance(
 
 @pytest.mark.parametrize("speed,allowed", [(1e-6, True), (1e-5, False)])
 def test_a_tiny_positive_gap_is_clear_until_the_segment_reaches_contact(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     speed: float,
     allowed: bool,
 ) -> None:
@@ -398,7 +397,7 @@ def test_a_tiny_positive_gap_is_clear_until_the_segment_reaches_contact(
 
 @pytest.mark.parametrize("body_y,allowed", [(0.6, False), (0.8, True), (1.1, True)])
 def test_new_contact_uses_first_contact_normal_and_clear_paths_pass(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     body_y: float,
     allowed: bool,
 ) -> None:
@@ -414,7 +413,7 @@ def test_new_contact_uses_first_contact_normal_and_clear_paths_pass(
 
 @pytest.mark.parametrize("overlap", [2 * GEOMETRY_TOLERANCE, 0.25])
 def test_existing_overlap_requires_a_nondeepening_outward_escape(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     overlap: float,
 ) -> None:
     own = _observation(scenario).self_features
@@ -440,7 +439,7 @@ def test_existing_overlap_requires_a_nondeepening_outward_escape(
 
 
 def test_every_admitted_body_must_allow_the_candidate(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     own = _observation(scenario).self_features
     bodies = jnp.stack([_row(own, (2, 0.8)), _row(own, (2, 0))])
@@ -458,7 +457,7 @@ def test_every_admitted_body_must_allow_the_candidate(
 
 
 def test_body_aware_movement_admits_glancing_contact(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario)
     bodies = jnp.stack([_row(obs.self_features, (11, 5))])
@@ -474,7 +473,7 @@ def test_body_aware_movement_admits_glancing_contact(
 
 @pytest.mark.parametrize("own_y,expected", [(5.0, MOVE_NORTHEAST), (9.5, MOVE_STAY)])
 def test_glancing_screen_uses_wall_projected_displacement(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     own_y: float,
     expected: int,
 ) -> None:
@@ -495,7 +494,7 @@ def test_glancing_screen_uses_wall_projected_displacement(
 
 @pytest.mark.parametrize("distance,legal", [(1.49, True), (1.5, True), (1.51, False)])
 def test_combat_is_basic_radius_bounded_even_without_a_priest(
-    scenario: CompiledDevScenarioV1, distance: float, legal: bool
+    scenario: ControllerScenario, distance: float, legal: bool
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (10 + distance, 5), 1)
     result = _act(scenario, obs, _mask((6, 0), (6, 1)))
@@ -504,7 +503,7 @@ def test_combat_is_basic_radius_bounded_even_without_a_priest(
 
 
 def test_combat_health_slot_ties_ultimate_priority_and_exact_mask(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (11.4, 5), 10)
     obs = _enemy(obs, 1, (8.6, 5), 10)
@@ -517,7 +516,7 @@ def test_combat_health_slot_ties_ultimate_priority_and_exact_mask(
 
 @pytest.mark.parametrize("field", [AGENT_FEATURE_ACTIVE, AGENT_FEATURE_ALIVE])
 def test_rogue_lifecycle_and_stun_force_canonical_noops(
-    scenario: CompiledDevScenarioV1, field: int
+    scenario: ControllerScenario, field: int
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (11, 5), 1, PRIEST_CLASS_ID)
     stopped = obs._replace(self_features=obs.self_features.at[field].set(0))
@@ -535,7 +534,7 @@ def test_rogue_lifecycle_and_stun_force_canonical_noops(
     "prey_class", [PRIEST_CLASS_ID, MAGE_CLASS_ID, HUNTER_CLASS_ID]
 )
 def test_shared_priority_sighting_guides_movement_without_bypassing_own_mask(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     prey_class: int,
 ) -> None:
     obs = _enemy(_observation(scenario), 0, (9, 5), 1)
@@ -579,7 +578,7 @@ def test_shared_priority_sighting_guides_movement_without_bypassing_own_mask(
 
 
 def test_determinism_eager_jit_team_parity_and_descriptor_freshness(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs, mask = scenario.observation, scenario.action_mask
     bank = build_shared_obs_sensor_source_bank(obs)

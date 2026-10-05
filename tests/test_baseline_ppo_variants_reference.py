@@ -10,9 +10,11 @@ frame here; BG padding, frame and ValueNorm adaptations have separate tests.
 A compact-versus-repeated critic check also verifies equal masked gradients and
 updates while the compact path sends fewer rows through its dense layers.
 
-Float comparisons use the established 2e-6 absolute and relative tolerances;
-integer state, parameter paths, shapes and dtypes are exact. These checks prove
-numerical agreement, not learning performance, GPU cost or new information rights.
+Float comparisons use 1e-5 absolute and relative tolerances, because float32
+reduction order differs between CPU models (the hosted runner's feedforward
+MAPPO actor loss differed by 2.03e-6); integer state, parameter paths, shapes
+and dtypes are exact. These checks prove numerical agreement, not learning
+performance, GPU cost or new information rights.
 """
 
 # Runtime donor types cannot be imported into the repository's type environment.
@@ -76,7 +78,7 @@ def _compare(actual: Tree, expected: Tree, *, exact: bool = False) -> float:
             np.testing.assert_array_equal(value, target, err_msg=name)
         else:
             np.testing.assert_allclose(
-                value, target, atol=2e-6, rtol=2e-6, err_msg=name
+                value, target, atol=1e-5, rtol=1e-5, err_msg=name
             )
         maximum = max(
             maximum,

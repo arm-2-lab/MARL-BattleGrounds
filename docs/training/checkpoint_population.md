@@ -42,16 +42,16 @@ archive; V1 names the 41 actors in the latest comparison table.
 
 | What You Need | Where To Open |
 | --- | --- |
-| Exact membership and identities | [V1 JSON record](../../artifacts/m9-m10/packet-4/model-catalog/development_population_v1.json) |
-| One row per member: settings, scores, times and model paths | [V1 CSV](../../artifacts/m9-m10/packet-4/model-catalog/development_population_v1.csv) |
-| Readable ranked checkpoint table | [All checkpoint results](../../artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/all_checkpoints.md) |
-| Learning curves for all three runs | [PNG](../../artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/checkpoint_comparison.png) · [SVG](../../artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/checkpoint_comparison.svg) |
-| Why we chose B512/T32 | [Decision](baseline_methods.md#current-mappo-standard) · [All 17 B/T results](../../artifacts/m9-m10/packet-4/bt-extra-5min/reports/combined_results.md) |
+| Exact membership and identities | V1 JSON record (historical local evidence: `artifacts/m9-m10/packet-4/model-catalog/development_population_v1.json`) |
+| One row per member: settings, scores, times and model paths | V1 CSV (historical local evidence: `artifacts/m9-m10/packet-4/model-catalog/development_population_v1.csv`) |
+| Readable ranked checkpoint table | All checkpoint results (historical local evidence: `artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/all_checkpoints.md`) |
+| Learning curves for all three runs | PNG (historical local evidence: `artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/checkpoint_comparison.png`) · SVG (historical local evidence: `artifacts/m9-m10/packet-4/curriculum-vs-rs-30min/reports/checkpoint_comparison.svg`) |
+| Why we chose B512/T32 | [Decision](baseline_methods.md#current-mappo-standard) · All 17 B/T results (historical local evidence: `artifacts/m9-m10/packet-4/bt-extra-5min/reports/combined_results.md`) |
 | Curriculum versus reward shaping only | [Methods and results](baseline_methods.md#curriculum-and-dense-reward-comparison) |
-| All twenty versions of the old ten-hour model | [History results](../../artifacts/m9-m10/packet-4/c-rs-10h-history-validation/README.md) |
-| Earlier diagnosis, input scaling and reward trials | [Diagnosis](../../artifacts/m9-m10/packet-4/learning-diagnosis/README.md) · [Task reachability](../../artifacts/m9-m10/packet-4/learning-diagnosis/task_reachability_bounds.md) |
-| Why we run one learner at a time | [GPU sharing measurements](../../artifacts/m9-m10/packet-4/b512-t32-concurrency/README.md) |
-| Earlier models outside V1 | [Dated model inventory](../../artifacts/m9-m10/packet-4/model-catalog/README.md) |
+| All twenty versions of the old ten-hour model | History results (historical local evidence: `artifacts/m9-m10/packet-4/c-rs-10h-history-validation/README.md`) |
+| Earlier diagnosis, input scaling and reward trials | Diagnosis (historical local evidence: `artifacts/m9-m10/packet-4/learning-diagnosis/README.md`) · Task reachability (historical local evidence: `artifacts/m9-m10/packet-4/learning-diagnosis/task_reachability_bounds.md`) |
+| Why we run one learner at a time | GPU sharing measurements (historical local evidence: `artifacts/m9-m10/packet-4/b512-t32-concurrency/README.md`) |
+| Earlier models outside V1 | Dated model inventory (historical local evidence: `artifacts/m9-m10/packet-4/model-catalog/README.md`) |
 
 The JSON record binds each model's weights, input scale, export, originating
 checkpoint, source run, seed and step. It includes run settings, dependencies,
@@ -105,7 +105,7 @@ earlier old-final check, so its recorded time is not fully isolated.
 
 The old final actor was inspected on test maps 47–51 against Alpha, Beta and the
 20-million-step actor. Keep this exposure in the
-[replay record](../../artifacts/m9-m10/packet-4/c-rs-10h-test-replays/README.md).
+replay record (historical local evidence: `artifacts/m9-m10/packet-4/c-rs-10h-test-replays/README.md`).
 Do not use those test results to choose membership or sampling weights. No
 individual test evaluation of the other nineteen history actors is recorded in
 the reviewed evidence. This development archive does not replace the official

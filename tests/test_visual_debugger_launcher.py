@@ -1,12 +1,11 @@
-"""Check Python and shell launch commands, including dependency isolation.
+"""Check public Replay Viewer launch commands and shared recording metadata.
 
-The recording launch metadata reads a session's action source and says that a
-policy plays whenever either team is not manual. It accepts ALPHA
-(``reactive_tdm``) and Random (``random_valid``) on Team A; ALPHA and BETA
-(``scenario_5``) on Team B; BETA and GAMMA (``tdm_gamma``) on Team A against a
-manual Team B; and BETA against GAMMA in both team orders, so GAMMA also plays
-Team B. It rejects the retired IDs ``scripted_tdm``, ``scenario_1`` and
-``scenario_3`` on Team A and ``scenario_3`` on Team B.
+Replay arguments, shell forwarding, lazy imports and sample integrity keep their
+public checks. A browser launch builds every agent's Agent POV work before it
+serves and still loads no JAX, Core or live stack; a NoSharedObs sample may load
+NumPy there, for the Agent POV corpses any Agent POV request draws. Real episode
+assignments show whether either team runs a policy.
+Private DevClient launcher and authoring tests live with the local toolkit.
 """
 
 import argparse
@@ -17,26 +16,10 @@ import sys
 from collections.abc import Callable
 from importlib.util import find_spec
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from scripts.dev.debug_renderer import (
-    _recording_action_source_kind,  # pyright: ignore[reportPrivateUsage]
-    _recording_policy_execution_included,  # pyright: ignore[reportPrivateUsage]
-)
-from scripts.dev.debug_renderer import (
-    build_parser as build_debugger_parser,
-)
-from scripts.dev.debug_renderer import (
-    main as debug_main,
-)
 from scripts.dev.replay_viewer import build_parser, main
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    DebuggerEvaluationLaunchSpecificationV1,
-)
-from scripts.dev.visual_debugger.model import DebuggerScenario
-from scripts.dev.visual_debugger.protocol import SharedObsAgentPovLiveDebuggerFrameV2
 from scripts.dev.visual_debugger.sample_replays import (
     SAMPLE_REPLAY_DEMO_PROVENANCE_NOTICE,
     SAMPLE_REPLAYS,
@@ -44,8 +27,20 @@ from scripts.dev.visual_debugger.sample_replays import (
 from scripts.dev.visual_debugger.scenarios import (
     RESEARCHER_SCENARIOS,
     STRESS_SCENARIOS,
+    get_scenario,
 )
-from scripts.dev.visual_debugger.service import DebuggerService
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    build_debugger_evaluation_context_v1,
+)
+from marl_battlegrounds._battle_client.model import (
+    team_controller_action_source,
+)
+from marl_battlegrounds._battle_client.recording import (
+    recording_action_source,
+    recording_policy_execution_included,
+)
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _DEBUGGER_PYTHON_ENTRYPOINT = _REPOSITORY_ROOT / "scripts" / "dev" / "debug_renderer.py"
@@ -81,31 +76,23 @@ _HAS_PYPLOT = _HAS_MATPLOTLIB and find_spec("matplotlib.pyplot") is not None
 def test_recording_launch_metadata_accepts_installed_policy_execution(
     team_a: str, team_b: str
 ) -> None:
-    session = SimpleNamespace(
-        evaluation_context=SimpleNamespace(
-            aggregation_keys=(SimpleNamespace(name="action_source", value="policy"),)
-        ),
+    scenario = get_scenario("arena_5v5")
+    config, _state = scenario.build_scenario()
+    context = build_debugger_evaluation_context_v1(
+        debugger_test_launch_specification(),
+        scenario=scenario,
+        config=config,
+        run_generation=0,
+        action_source_kind=team_controller_action_source(team_a, team_b),
         team_a_controller=team_a,
         team_b_controller=team_b,
+        execution_information_mode="shared_obs",
     )
 
-    assert _recording_action_source_kind(session) == "policy"
-    assert _recording_policy_execution_included(session)
-
-
-@pytest.mark.parametrize("retired", ("scripted_tdm", "scenario_1", "scenario_3"))
-def test_recording_launch_rejects_retired_team_a_controllers(retired: str) -> None:
-    with pytest.raises(ValueError, match="exact team controllers"):
-        _recording_policy_execution_included(
-            SimpleNamespace(team_a_controller=retired, team_b_controller="manual")
-        )
-
-
-def test_recording_launch_rejects_retired_team_b_controller() -> None:
-    with pytest.raises(ValueError, match="exact team controllers"):
-        _recording_policy_execution_included(
-            SimpleNamespace(team_a_controller="manual", team_b_controller="scenario_3")
-        )
+    assert recording_action_source(context) == team_controller_action_source(
+        team_a, team_b
+    )
+    assert recording_policy_execution_included(context)
 
 
 def _write_valid_replay(tmp_path: Path) -> Path:
@@ -152,52 +139,6 @@ def _write_valid_replay(tmp_path: Path) -> Path:
     replay_path = tmp_path / "launcher.marlbg-replay.json"
     replay_path.write_bytes(canonical_replay_json_bytes_v1(bundle.replay))
     return replay_path
-
-
-def test_debugger_parser_exposes_live_arena_contract_and_hidden_compatibility() -> None:
-    from scripts.dev.debug_renderer import (
-        _resolve_launch_options,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    parser = build_debugger_parser()
-    for flags, expected in (
-        ((), False),
-        (("--ranges",), True),
-        (("--no-ranges",), False),
-    ):
-        assert _resolve_launch_options(parser.parse_args(flags)).ranges is expected
-    assert "ranges (default: hide)" in " ".join(parser.format_help().split())
-    args = parser.parse_args(
-        (
-            "--seed",
-            "41",
-            "--controlled-slot",
-            "5",
-            "--static",
-            "--no-open",
-            "--port",
-            "8123",
-            "--view",
-            "researcher",
-            "--preset",
-            "debug",
-            "--verbose",
-            "--no-ranges",
-            "--execution-information-mode",
-            "no_shared_obs",
-        )
-    )
-
-    assert args.seed == 41
-    assert args.controlled_slot == 5
-    assert args.static
-    assert args.no_open
-    assert args.port == 8123
-    assert args.view == "researcher"
-    assert args.preset == "analysis"
-    assert args.verbose is False
-    assert args.ranges is False
-    assert args.execution_information_mode == "no_shared_obs"
 
 
 def test_replay_parser_exposes_narrow_static_replay_contract() -> None:
@@ -266,104 +207,7 @@ def test_replay_parser_exposes_complete_browser_replay_contract() -> None:
     assert not hasattr(args, "scenario")
 
 
-def test_debugger_parser_exposes_opt_in_live_recording_target() -> None:
-    parser = build_debugger_parser()
-    args = parser.parse_args(
-        (
-            "--record-replay",
-            "episode.marlbg-replay.json",
-            "--seed",
-            "7",
-            "--no-open",
-        )
-    )
-
-    assert args.record_replay == Path("episode.marlbg-replay.json")
-    assert args.seed == 7
-    assert args.no_open
-    assert not hasattr(args, "replay")
-
-
-def test_recording_rejects_static_mode(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(("--record-replay", "episode.marlbg-replay.json", "--static"))
-
-    assert exc_info.value.code == 2
-    assert "--record-replay" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize(
-    "moved",
-    (
-        ("--replay", "other.marlbg-replay.json"),
-        ("--scenario", "status_stack"),
-        ("--list-scenarios",),
-        ("--list-sample-replays",),
-        ("--frame-index", "0"),
-        ("--pov-slot", "0"),
-    ),
-)
-def test_debugger_rejects_moved_replay_options_with_migration_message(
-    moved: tuple[str, ...],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(moved)
-
-    assert exc_info.value.code == 2
-    error = capsys.readouterr().err
-    assert moved[0] in error
-    assert "scripts/dev/run_replay_viewer.sh" in error
-
-
-def test_debugger_rejects_moved_authority_before_runtime_imports() -> None:
-    code = """
-import sys
-from scripts.dev.debug_renderer import main
-
-for argv in (
-    ('--scenario', 'status_stack'),
-    ('--replay', 'episode.marlbg-replay.json'),
-):
-    try:
-        main(argv)
-    except SystemExit as exc:
-        assert exc.code == 2
-    else:
-        raise AssertionError('moved option unexpectedly launched')
-
-forbidden = (
-    'jax',
-    'jaxlib',
-    'numpy',
-    'marl_battlegrounds.core',
-    'scripts.dev.visual_debugger',
-)
-loaded = sorted(
-    name
-    for name in sys.modules
-    if any(name == prefix or name.startswith(prefix + '.') for prefix in forbidden)
-)
-assert loaded == [], loaded
-print('moved options rejected before runtime imports')
-"""
-    result = subprocess.run(
-        (sys.executable, "-c", code),
-        cwd=_REPOSITORY_ROOT,
-        env={**os.environ, "JAX_PLATFORMS": "cuda"},
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "moved options rejected before runtime imports"
-    assert result.stderr.count("scripts/dev/run_replay_viewer.sh") == 2
-
-
-@pytest.mark.parametrize("parser_factory", (build_debugger_parser, build_parser))
+@pytest.mark.parametrize("parser_factory", (build_parser,))
 @pytest.mark.parametrize(
     ("token", "expected"),
     (("oracle", "researcher"), ("pov", "pov"), ("researcher", "researcher")),
@@ -376,7 +220,7 @@ def test_view_tokens_canonicalize_without_advertising_legacy_authority(
     assert parser_factory().parse_args(("--view", token)).view == expected
 
 
-@pytest.mark.parametrize("parser_factory", (build_debugger_parser, build_parser))
+@pytest.mark.parametrize("parser_factory", (build_parser,))
 @pytest.mark.parametrize("token", ("presentation", "analysis", "debug", "technical"))
 def test_legacy_preset_and_verbose_inputs_are_fixed_compatibility_no_ops(
     parser_factory: Callable[[], argparse.ArgumentParser],
@@ -562,6 +406,8 @@ def test_browser_replay_loads_resolves_then_injects_exact_server_binding(
     bundle = object()
 
     class FakeReplayService:
+        show_ranges = False
+
         def current_frame(self) -> object:
             raise AssertionError("server should not request a frame in this test")
 
@@ -594,9 +440,17 @@ def test_browser_replay_loads_resolves_then_injects_exact_server_binding(
                 "server should not request episode details in this test"
             )
 
+        def timeline_marks(self) -> bytes:
+            raise AssertionError(
+                "server should not request timeline marks in this test"
+            )
+
         def apply_command(self, request: object) -> object:
             del request
             raise AssertionError("server should not apply a command in this test")
+
+        def prepare_agent_pov(self) -> bool:
+            return True
 
     service = FakeReplayService()
 
@@ -793,13 +647,13 @@ forbidden = (
     'jaxlib',
     'numpy',
     'marl_battlegrounds.core',
-    'scripts.dev.visual_debugger.control',
-    'scripts.dev.visual_debugger.evaluation_bridge',
-    'scripts.dev.visual_debugger.protocol',
+    'marl_battlegrounds._battle_client.control',
+    'marl_battlegrounds._battle_client.evaluation_bridge',
+    'marl_battlegrounds._battle_client.protocol',
     'marl_battlegrounds.evaluation.revision',
     'marl_battlegrounds.evaluation.runtime_provenance',
     'scripts.dev.visual_debugger.scenarios',
-    'scripts.dev.visual_debugger.service',
+    'marl_battlegrounds._battle_client.service',
 )
 loaded = sorted(
     name
@@ -840,18 +694,19 @@ status = main([
     '--sample-replay', {sample_name!r}, '--no-open',
 ])
 assert status == 41
+# Agent POV work before serving draws this NoSharedObs sample's corpses with
+# NumPy, as any Agent POV request does; JAX and Core stay unloaded.
 forbidden = (
     'jax',
     'jaxlib',
-    'numpy',
     'marl_battlegrounds.core',
-    'scripts.dev.visual_debugger.control',
-    'scripts.dev.visual_debugger.evaluation_bridge',
-    'scripts.dev.visual_debugger.protocol',
+    'marl_battlegrounds._battle_client.control',
+    'marl_battlegrounds._battle_client.evaluation_bridge',
+    'marl_battlegrounds._battle_client.protocol',
     'marl_battlegrounds.evaluation.revision',
     'marl_battlegrounds.evaluation.runtime_provenance',
     'scripts.dev.visual_debugger.scenarios',
-    'scripts.dev.visual_debugger.service',
+    'marl_battlegrounds._battle_client.service',
 )
 loaded = sorted(
     name
@@ -875,7 +730,7 @@ print('isolated checked sample browser')
     assert result.stdout.rstrip().endswith("isolated checked sample browser")
 
 
-@pytest.mark.parametrize("parser_factory", (build_debugger_parser, build_parser))
+@pytest.mark.parametrize("parser_factory", (build_parser,))
 def test_parsers_reject_abbreviated_options(
     parser_factory: Callable[[], argparse.ArgumentParser],
 ) -> None:
@@ -883,84 +738,6 @@ def test_parsers_reject_abbreviated_options(
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(("--stat",))
     assert exc_info.value.code == 2
-
-
-def test_debugger_help_is_live_only_and_hides_legacy_tokens() -> None:
-    result = subprocess.run(
-        (sys.executable, str(_DEBUGGER_PYTHON_ENTRYPOINT), "--help"),
-        cwd="/tmp",
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "MARL-BattleGrounds DevClient" in result.stdout
-    assert "18x12" not in result.stdout
-    for option in (
-        "--record-replay",
-        "--seed",
-        "--controlled-slot",
-        "--static",
-        "--no-open",
-        "--port",
-        "--view",
-        "--ranges",
-        "--no-ranges",
-        "--execution-information-mode",
-    ):
-        assert option in result.stdout
-    assert "--ui" not in result.stdout
-    for control in (
-        "Tab / Shift+Tab",
-        "left click",
-        "Shift+left click",
-        "Escape",
-        "arrow keys",
-        "X",
-        "Space / Enter",
-        "Reconnect",
-    ):
-        assert control in result.stdout
-    assert "right click" not in result.stdout
-    assert "every staged action as one joint turn" in result.stdout
-    assert "submit only the controlled actor" not in result.stdout
-    assert "left click            control the clicked authorized actor" in result.stdout
-    assert "Shift+left click      select the clicked active target" in result.stdout
-    for inspector in (
-        "SELECTED TARGET",
-        "PENDING JOINT ACTION",
-        "TECHNICAL FRAME",
-    ):
-        assert inspector in result.stdout
-    assert "exact authority-safe facts permitted by the active leaf" in result.stdout
-    for technical_fact in (
-        "Episode or Artifact digest prefix",
-        "Frame",
-        "Simulator step",
-        "conditional Incoming transition",
-        "replay-only movement scale",
-    ):
-        assert technical_fact in result.stdout
-    assert "raw actor/target indices" not in result.stdout
-    assert "same-epoch mask values" not in result.stdout
-    for moved_option in (
-        "--scenario",
-        "--replay",
-        "--sample-replay",
-        "--frame-index",
-        "--pov-slot",
-        "--list-scenarios",
-        "--list-sample-replays",
-        "--include-stress",
-    ):
-        assert moved_option not in result.stdout
-    assert "geometry_debug_renderer" not in result.stdout
-    assert "--preset" not in result.stdout
-    assert "--verbose" not in result.stdout
-    assert "researcher" not in result.stdout
-    assert "{oracle,pov}" in result.stdout
-    assert "scripts/dev/run_replay_viewer.sh" in result.stdout
 
 
 def test_replay_help_is_read_only_and_hides_live_and_legacy_tokens() -> None:
@@ -973,7 +750,7 @@ def test_replay_help_is_read_only_and_hides_live_and_legacy_tokens() -> None:
     )
 
     assert result.returncode == 0
-    assert "DevClient developer workspace" in result.stdout
+    assert "Live play and recording use BattleClient:" in result.stdout
     assert "manual 18x12 combat laboratory" not in result.stdout
     for option in (
         "--replay",
@@ -1178,6 +955,8 @@ def test_sample_replay_injects_verified_bundle_without_reopening_source_path(
     observed: dict[str, object] = {}
 
     class FakeReplayService:
+        show_ranges = False
+
         def current_frame(self) -> object:
             raise AssertionError("server should not request a frame in this test")
 
@@ -1210,9 +989,17 @@ def test_sample_replay_injects_verified_bundle_without_reopening_source_path(
                 "server should not request episode details in this test"
             )
 
+        def timeline_marks(self) -> bytes:
+            raise AssertionError(
+                "server should not request timeline marks in this test"
+            )
+
         def apply_command(self, request: object) -> object:
             del request
             raise AssertionError("server should not apply a command in this test")
+
+        def prepare_agent_pov(self) -> bool:
+            return True
 
     service = FakeReplayService()
 
@@ -1355,7 +1142,7 @@ def test_lazy_rendering_and_debugger_models_are_backend_free() -> None:
     code = (
         "import sys; "
         "import marl_battlegrounds.rendering; "
-        "import scripts.dev.visual_debugger.model; "
+        "import marl_battlegrounds._battle_client.model; "
         "forbidden=('jax','jaxlib','numpy','marl_battlegrounds.core','matplotlib'); "
         "loaded=sorted(n for n in sys.modules if any(n == p or n.startswith(p + '.') "
         "for p in forbidden)); "
@@ -1371,388 +1158,6 @@ def test_lazy_rendering_and_debugger_models_are_backend_free() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "[]"
-
-
-def test_missing_matplotlib_is_actionable_and_returns_two(tmp_path: Path) -> None:
-    fake_package = tmp_path / "matplotlib"
-    fake_package.mkdir()
-    (fake_package / "__init__.py").write_text(
-        "raise ImportError('blocked by launcher test')\n",
-        encoding="utf-8",
-    )
-    environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join((str(tmp_path), str(_REPOSITORY_ROOT)))
-    result = subprocess.run(
-        (
-            sys.executable,
-            str(_DEBUGGER_PYTHON_ENTRYPOINT),
-            "--static",
-        ),
-        cwd=_REPOSITORY_ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 2
-    assert (
-        "error: Matplotlib is required for static Visual Debugger and Analyzer "
-        "snapshots. "
-        "Run pip install 'marl-battlegrounds[viz]'."
-    ) in result.stderr
-
-
-@pytest.mark.parametrize(
-    "argv",
-    (
-        ("--controlled-slot", "-1"),
-        ("--seed", "not-an-int"),
-        ("--view", "researcher-visible-typo"),
-        ("--execution-information-mode", "partially_shared"),
-    ),
-)
-def test_invalid_cli_inputs_use_argparse_exit_two(argv: tuple[str, ...]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(argv)
-    assert exc_info.value.code == 2
-
-
-@pytest.mark.parametrize(
-    "argv",
-    (("--controlled-slot", "-1"),),
-)
-def test_semantic_cli_validation_precedes_runtime_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-    argv: tuple[str, ...],
-) -> None:
-    import scripts.dev.visual_debugger.server as server_module
-    import scripts.dev.visual_debugger.static_renderer as static_module
-
-    def fail_if_dispatched(*_args: object, **_kwargs: object) -> int:
-        raise AssertionError("runtime must not start before CLI validation")
-
-    monkeypatch.setattr(server_module, "serve_browser_debugger", fail_if_dispatched)
-    monkeypatch.setattr(static_module, "run_static_renderer", fail_if_dispatched)
-
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(argv)
-
-    assert exc_info.value.code == 2
-
-
-def test_browser_default_builds_service_and_forwards_lifecycle_options(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import scripts.dev.visual_debugger.server as server_module
-
-    observed: dict[str, object] = {}
-
-    def fake_serve(
-        service: object,
-        *,
-        asset_root: Path,
-        port: int,
-        open_browser: bool,
-        authoring: object,
-    ) -> int:
-        observed.update(
-            service=service,
-            asset_root=asset_root,
-            port=port,
-            open_browser=open_browser,
-            authoring=authoring,
-        )
-        return 17
-
-    monkeypatch.setattr(server_module, "serve_browser_debugger", fake_serve)
-    result = debug_main(
-        (
-            "--no-open",
-            "--port",
-            "8123",
-            "--view",
-            "pov",
-            "--preset",
-            "debug",
-            "--no-ranges",
-        )
-    )
-
-    assert result == 17
-    assert observed["asset_root"] == _REPOSITORY_ROOT / "web" / "visual_debugger"
-    assert observed["port"] == 8123
-    assert observed["open_browser"] is False
-    assert observed["authoring"] is not None
-    service = cast(DebuggerService, observed["service"])
-    frame = service.current_frame()
-    assert type(frame) is SharedObsAgentPovLiveDebuggerFrameV2
-    assert frame.view_mode == "pov"
-    assert frame.preset == "analysis"
-    assert service.session.show_ranges is False
-    assert "projection" not in frame.model_dump(mode="json")
-
-
-def test_recording_preflights_before_scenario_provenance_session_or_server(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from scripts.dev.visual_debugger import scenarios as scenarios_module
-    from scripts.dev.visual_debugger import server as server_module
-    from scripts.dev.visual_debugger import service as service_module
-
-    from marl_battlegrounds.evaluation import replay_io as replay_io_module
-    from marl_battlegrounds.evaluation import revision as revision_module
-    from marl_battlegrounds.evaluation import runtime_provenance as runtime_module
-    from marl_battlegrounds.evaluation.replay_io import ReplaySaveError
-
-    target = tmp_path / "missing" / "episode.marlbg-replay.json"
-
-    def fail_preflight(path: Path) -> object:
-        raise ReplaySaveError(
-            "missing_parent",
-            path=path.parent,
-            detail="injected missing parent",
-        )
-
-    def forbidden(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("recording preflight must precede runtime construction")
-
-    monkeypatch.setattr(
-        replay_io_module,
-        "preflight_replay_destination",
-        fail_preflight,
-    )
-    monkeypatch.setattr(scenarios_module, "get_scenario", forbidden)
-    monkeypatch.setattr(
-        revision_module,
-        "discover_code_revision_v1",
-        forbidden,
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "capture_debugger_runtime_provenance_v1",
-        forbidden,
-    )
-    monkeypatch.setattr(service_module, "DebuggerService", forbidden)
-    monkeypatch.setattr(server_module, "serve_browser_debugger", forbidden)
-
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(("--record-replay", str(target), "--no-open"))
-
-    assert exc_info.value.code == 2
-    error = capsys.readouterr().err
-    assert "Replay recording target is unavailable" in error
-    assert "missing_parent" in error
-
-
-def test_recording_runtime_provenance_failure_exits_before_router_or_browser(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from scripts.dev.visual_debugger import (
-        recording_coordinator as coordinator_module,
-    )
-    from scripts.dev.visual_debugger import replay_recorder as recording_module
-    from scripts.dev.visual_debugger import server as server_module
-
-    from marl_battlegrounds.evaluation import runtime_provenance as runtime_module
-
-    def fail_provenance(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("private device discovery detail")
-
-    def forbidden(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("runtime provenance must precede binding and browser open")
-
-    monkeypatch.setattr(
-        runtime_module,
-        "capture_debugger_runtime_provenance_v1",
-        fail_provenance,
-    )
-    monkeypatch.setattr(recording_module, "DebuggerReplayRecorder", forbidden)
-    monkeypatch.setattr(coordinator_module, "RecordingDebuggerCoordinator", forbidden)
-    monkeypatch.setattr(server_module, "serve_browser_debugger", forbidden)
-    monkeypatch.setattr(server_module.webbrowser, "open", forbidden)
-
-    with pytest.raises(SystemExit) as exc_info:
-        debug_main(
-            (
-                "--record-replay",
-                str(tmp_path / "episode.marlbg-replay.json"),
-            )
-        )
-
-    assert exc_info.value.code == 2
-    error = capsys.readouterr().err
-    assert "Replay recording runtime provenance is unavailable" in error
-    assert "private device discovery detail" not in error
-
-
-def test_recording_launch_injects_retaining_recorder_router_and_graceful_close(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from scripts.dev.visual_debugger import server as server_module
-    from scripts.dev.visual_debugger.recording_coordinator import (
-        RecordingDebuggerCoordinator,
-    )
-    from scripts.dev.visual_debugger.server import HttpCoordinatorRouter
-
-    from marl_battlegrounds.evaluation import runtime_provenance as runtime_module
-    from marl_battlegrounds.evaluation.models import CodeRevisionV1
-    from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
-
-    target = tmp_path / "recorded.marlbg-replay.json"
-    observed: dict[str, object] = {}
-    capture_count = 0
-
-    def fake_runtime(
-        code_revision: CodeRevisionV1,
-        *,
-        policy_execution_included: bool,
-    ) -> RuntimeProvenanceV1:
-        nonlocal capture_count
-        capture_count += 1
-        assert not policy_execution_included
-        return RuntimeProvenanceV1(
-            python_version="3.14.0",
-            package_version=code_revision.package_version,
-            jax_version="0.7.0",
-            jaxlib_version="0.7.0",
-            numpy_version="2.3.0",
-            pydantic_version="2.11.0",
-            platform="linux",
-            machine="x86_64",
-            backend="cpu",
-            device="generic-cpu",
-            precision="float32",
-            environment_count=1,
-            batch_shape=(1,),
-            policy_execution_included=False,
-        )
-
-    def fake_serve(
-        service: object | None = None,
-        *,
-        asset_root: Path,
-        port: int,
-        open_browser: bool,
-        coordinator_router: HttpCoordinatorRouter,
-        graceful_close: object,
-    ) -> int:
-        observed.update(
-            service=service,
-            asset_root=asset_root,
-            port=port,
-            open_browser=open_browser,
-            router=coordinator_router,
-            graceful_close=graceful_close,
-        )
-        return 43
-
-    monkeypatch.setattr(
-        runtime_module,
-        "capture_debugger_runtime_provenance_v1",
-        fake_runtime,
-    )
-    monkeypatch.setattr(server_module, "serve_browser_debugger", fake_serve)
-
-    result = debug_main(
-        (
-            "--record-replay",
-            str(target),
-            "--view",
-            "pov",
-            "--preset",
-            "debug",
-            "--no-ranges",
-            "--port",
-            "0",
-            "--no-open",
-        )
-    )
-
-    assert result == 43
-    assert capture_count == 1
-    assert observed["service"] is None
-    assert observed["asset_root"] == _REPOSITORY_ROOT / "web" / "visual_debugger"
-    assert observed["port"] == 0
-    assert observed["open_browser"] is False
-    router = cast(HttpCoordinatorRouter, observed["router"])
-    snapshot = router.snapshot()
-    service = cast(DebuggerService, snapshot.service)
-    assert snapshot.binding.mode == "live"
-    assert service.session.evaluation_context.capture_profile == (
-        "evaluation_metric_complete"
-    )
-    assert service.current_frame().recording == service.recording_status
-    assert service.current_frame().view_mode == "pov"
-    assert service.current_frame().preset == "analysis"
-    assert getattr(observed["graceful_close"], "__self__", None).__class__ is (
-        RecordingDebuggerCoordinator
-    )
-
-
-def test_static_flag_uses_only_the_stateless_snapshot_adapter(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import scripts.dev.visual_debugger.server as server_module
-    import scripts.dev.visual_debugger.static_renderer as static_module
-
-    observed: dict[str, object] = {}
-
-    def fake_static(
-        *,
-        scenario: object,
-        seed: int,
-        evaluation_launch_specification: object,
-        controlled_global_slot: int | None,
-        verbose: bool,
-        show_ranges: bool,
-    ) -> int:
-        observed.update(
-            scenario=scenario,
-            seed=seed,
-            evaluation_launch_specification=evaluation_launch_specification,
-            controlled_global_slot=controlled_global_slot,
-            verbose=verbose,
-            show_ranges=show_ranges,
-        )
-        return 19
-
-    def fail_if_served(*_args: object, **_kwargs: object) -> int:
-        raise AssertionError("static mode must not start the browser server")
-
-    monkeypatch.setattr(static_module, "run_static_renderer", fake_static)
-    monkeypatch.setattr(server_module, "serve_browser_debugger", fail_if_served)
-
-    result = debug_main(
-        (
-            "--static",
-            "--seed",
-            "13",
-            "--controlled-slot",
-            "5",
-            "--verbose",
-            "--no-ranges",
-        )
-    )
-
-    assert result == 19
-    assert cast(DebuggerScenario, observed["scenario"]).name == "arena_5v5"
-    assert observed["seed"] == 13
-    assert (
-        cast(
-            DebuggerEvaluationLaunchSpecificationV1,
-            observed["evaluation_launch_specification"],
-        ).root_seed
-        == 13
-    )
-    assert observed["controlled_global_slot"] == 5
-    assert observed["verbose"] is False
-    assert observed["show_ranges"] is False
 
 
 def test_stress_browser_launch_requires_and_accepts_explicit_opt_in(
@@ -1977,72 +1382,6 @@ def _write_fake_uv(
     return fake_bin, record
 
 
-def test_debugger_launcher_resolves_root_and_forwards_live_arguments(
-    tmp_path: Path,
-) -> None:
-    fake_bin, record = _write_fake_uv(tmp_path, exit_code=0)
-    environment = os.environ.copy()
-    environment["PATH"] = os.pathsep.join((str(fake_bin), "/usr/bin", "/bin"))
-    environment["UV_RECORD"] = str(record)
-    result = subprocess.run(
-        (
-            str(_DEBUGGER_SHELL_LAUNCHER),
-            "--seed",
-            "19",
-            "--verbose",
-            "--no-ranges",
-        ),
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert record.read_text(encoding="utf-8").splitlines() == [
-        "run",
-        "--project",
-        str(_REPOSITORY_ROOT),
-        "python",
-        str(_DEBUGGER_PYTHON_ENTRYPOINT),
-        "--seed",
-        "19",
-        "--verbose",
-        "--no-ranges",
-    ]
-
-
-def test_debugger_launcher_activates_viz_extra_only_for_static_snapshots(
-    tmp_path: Path,
-) -> None:
-    fake_bin, record = _write_fake_uv(tmp_path, exit_code=0)
-    environment = os.environ.copy()
-    environment["PATH"] = os.pathsep.join((str(fake_bin), "/usr/bin", "/bin"))
-    environment["UV_RECORD"] = str(record)
-
-    result = subprocess.run(
-        (str(_DEBUGGER_SHELL_LAUNCHER), "--static"),
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert record.read_text(encoding="utf-8").splitlines() == [
-        "run",
-        "--project",
-        str(_REPOSITORY_ROOT),
-        "--extra",
-        "viz",
-        "python",
-        str(_DEBUGGER_PYTHON_ENTRYPOINT),
-        "--static",
-    ]
-
-
 def test_replay_launcher_resolves_root_and_forwards_replay_arguments(
     tmp_path: Path,
 ) -> None:
@@ -2119,34 +1458,9 @@ def test_replay_launcher_activates_viz_extra_for_static_artifacts(
     ]
 
 
-@pytest.mark.skipif(
-    not _HAS_PYPLOT,
-    reason="the optional viz extra is not installed",
-)
-def test_static_cli_completes_with_a_headless_matplotlib_backend() -> None:
-    environment = os.environ.copy()
-    environment["MPLBACKEND"] = "Agg"
-
-    result = subprocess.run(
-        (
-            sys.executable,
-            str(_DEBUGGER_PYTHON_ENTRYPOINT),
-            "--static",
-            "--no-ranges",
-        ),
-        cwd="/tmp",
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
 @pytest.mark.parametrize(
     "launcher",
-    (_DEBUGGER_SHELL_LAUNCHER, _REPLAY_SHELL_LAUNCHER),
+    (_REPLAY_SHELL_LAUNCHER,),
 )
 def test_launchers_propagate_uv_exit_code(tmp_path: Path, launcher: Path) -> None:
     fake_bin, record = _write_fake_uv(tmp_path, exit_code=23)
@@ -2165,10 +1479,7 @@ def test_launchers_propagate_uv_exit_code(tmp_path: Path, launcher: Path) -> Non
 
 @pytest.mark.parametrize(
     ("launcher", "product"),
-    (
-        (_DEBUGGER_SHELL_LAUNCHER, "DevClient"),
-        (_REPLAY_SHELL_LAUNCHER, "Replay Viewer"),
-    ),
+    ((_REPLAY_SHELL_LAUNCHER, "Replay Viewer"),),
 )
 def test_launchers_report_missing_uv(launcher: Path, product: str) -> None:
     environment = os.environ.copy()
@@ -2187,89 +1498,13 @@ def test_launchers_report_missing_uv(launcher: Path, product: str) -> None:
 
 
 def test_launchers_are_executable() -> None:
-    assert _DEBUGGER_SHELL_LAUNCHER.stat().st_mode & stat.S_IXUSR
-    assert _COMPAT_DEBUGGER_SHELL_LAUNCHER.stat().st_mode & stat.S_IXUSR
     assert _REPLAY_SHELL_LAUNCHER.stat().st_mode & stat.S_IXUSR
 
 
 def test_launcher_split_has_both_products_and_no_old_compatibility_wrapper() -> None:
-    assert _DEBUGGER_PYTHON_ENTRYPOINT.is_file()
-    assert _DEBUGGER_SHELL_LAUNCHER.is_file()
+    assert not _DEBUGGER_PYTHON_ENTRYPOINT.exists()
+    assert not _DEBUGGER_SHELL_LAUNCHER.exists()
     assert _REPLAY_PYTHON_ENTRYPOINT.is_file()
     assert _REPLAY_SHELL_LAUNCHER.is_file()
     assert not _OLD_PYTHON_ENTRYPOINT.exists()
     assert not _OLD_SHELL_LAUNCHER.exists()
-
-
-@pytest.mark.parametrize("initialized", [None, False, True])
-@pytest.mark.parametrize("setting", [None, "true"])
-def test_devclient_allocation_setup_is_lazy_and_respects_caller_settings(
-    initialized: bool | None, setting: str | None
-) -> None:
-    program = f"""
-import os, sys
-from scripts.dev.debug_renderer import _configure_allocation
-assert 'jax' not in sys.modules
-if {initialized!r} is not None:
-    import jax
-    if {initialized!r}:
-        jax.devices('cpu')
-before = dict(os.environ)
-_configure_allocation()
-assert os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] == {setting or "false"!r}
-exclude = 'XLA_PYTHON_CLIENT_PREALLOCATE'
-assert {{k:v for k,v in os.environ.items() if k != exclude}} == {{
-    k:v for k,v in before.items() if k != exclude
-}}
-if {initialized!r} is None:
-    assert 'jax' not in sys.modules
-else:
-    from jax._src import xla_bridge
-    assert xla_bridge.backends_are_initialized() == {initialized!r}
-"""
-    environment = dict(os.environ, JAX_PLATFORMS="cpu")
-    environment.pop("XLA_PYTHON_CLIENT_PREALLOCATE", None)
-    if setting is not None:
-        environment["XLA_PYTHON_CLIENT_PREALLOCATE"] = setting
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        cwd=_REPOSITORY_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert ("existing memory reservations" in result.stderr) is (initialized is True)
-
-
-def test_devclient_sets_allocation_before_first_numerical_import() -> None:
-    program = """
-import builtins, os, sys
-from scripts.dev.debug_renderer import main
-original = builtins.__import__
-def importing(name, *args, **kwargs):
-    if name.startswith(('marl_battlegrounds', 'jax')):
-        assert os.environ.get('XLA_PYTHON_CLIENT_PREALLOCATE') == 'false'
-        assert 'jax' not in sys.modules
-        raise RuntimeError('allocation-before-import-proved')
-    return original(name, *args, **kwargs)
-builtins.__import__ = importing
-try:
-    main(['--no-open'])
-except RuntimeError as exc:
-    assert str(exc) == 'allocation-before-import-proved'
-else:
-    raise AssertionError('Expected a numerical import')
-"""
-    environment = dict(os.environ, JAX_PLATFORMS="cpu")
-    environment.pop("XLA_PYTHON_CLIENT_PREALLOCATE", None)
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        cwd=_REPOSITORY_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr

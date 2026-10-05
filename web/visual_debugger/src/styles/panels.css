@@ -1,0 +1,391 @@
+/*
+ * Styles for the docked panels (src/panels.js), the token chips
+ * (src/token-chip.js), the Visuals tab (src/filter-controls.js) and the Replay
+ * Viewer's Full Class Details under the Agent tab's Class Guide (src/main.js).
+ * styles.css imports this file. Colours come only from the :root tokens in
+ * styles.css; this file never paints the battlefield or the export backdrop.
+ */
+
+/* Token chip: class emblem in the team ring, then "Agent N". */
+.token-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text, var(--text));
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+button.token-chip {
+  cursor: pointer;
+  border-radius: 0.3rem;
+}
+
+button.token-chip:focus-visible {
+  outline: 2px solid var(--moon-silver, var(--ward-silver));
+  outline-offset: 2px;
+}
+
+.token-chip__token {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--text-muted);
+}
+
+.token-chip__emblem {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.token-chip[data-token-class="mage"] .token-chip__token {
+  color: var(--class-mage);
+}
+
+.token-chip[data-token-class="warrior"] .token-chip__token {
+  color: var(--class-warrior);
+}
+
+.token-chip[data-token-class="hunter"] .token-chip__token {
+  color: var(--class-hunter);
+}
+
+.token-chip[data-token-class="rogue"] .token-chip__token {
+  color: var(--class-rogue);
+}
+
+.token-chip[data-token-class="priest"] .token-chip__token {
+  color: var(--class-priest);
+}
+
+/* Team A: one ring. Team B: a double ring, so the team never rests on hue alone. */
+.token-chip[data-token-ring="single"] .token-chip__token {
+  box-shadow: 0 0 0 1.5px var(--team-a);
+}
+
+.token-chip[data-token-ring="double"] .token-chip__token {
+  box-shadow:
+    0 0 0 1.5px var(--team-b),
+    0 0 0 3px var(--ink),
+    0 0 0 4.5px var(--team-b);
+}
+
+.token-chip[data-token-ring="double"] {
+  padding-left: 0.2rem;
+}
+
+/* Out Of Sight: no ring, muted words, never a life. */
+.token-chip[data-chip-mode="out_of_sight"] .token-chip__token {
+  box-shadow: inset 0 0 0 1px var(--ash);
+}
+
+.token-chip[data-chip-mode="out_of_sight"] .token-chip__text {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+button.token-chip:hover .token-chip__text {
+  text-decoration: underline;
+}
+
+.token-chip[data-chip-mode="plain"] {
+  font-weight: 700;
+}
+
+/* Full Record chip: the docked panels are the full record in Agent POV. */
+.panel-full-record {
+  display: inline-block;
+  margin: 0 0 0.5rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--ward-silver);
+  border-radius: 999px;
+  color: var(--ward-silver);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.panel-full-record[hidden] {
+  display: none;
+}
+
+/* Beat holds: before and after share one cell; the choreographer fades them. */
+.panel-beat {
+  display: inline-grid;
+}
+
+.panel-beat > * {
+  grid-area: 1 / 1;
+}
+
+.panel-beat__before {
+  opacity: 0;
+}
+
+.roster-row[data-seen="false"] .roster-health {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Agent details. */
+
+/* The Replay Viewer's Full Class Details (main.js renderReplayClassDetails):
+   a closed disclosure under the Class Guide in the Agent tab that holds the
+   old Agent card's class facts (owner, 4 Oct 2026). Its summary reads like the
+   rail's eyebrows; the body reuses the semantic inspector's own styles. */
+.replay-class-details {
+  margin: 0.5rem 0 0;
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 0.4rem;
+}
+
+.replay-class-details[hidden] {
+  display: none;
+}
+
+.replay-class-details__summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.replay-class-details__order {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+}
+
+.replay-class-details__order span {
+  color: var(--text-muted);
+}
+
+.agent-details__section {
+  margin: 0 0 0.75rem;
+}
+
+.agent-details__heading {
+  margin: 0 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agent-details__facts {
+  display: grid;
+  gap: 0.25rem;
+}
+
+/* The Life fact holds the shared Life bar (src/styles/life-bar.css); the
+   fact's own "Life" heading names it, so the bar's label is not repeated. */
+.agent-details__life .life-bar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 2px;
+}
+
+.agent-details__life .life-bar .life-bar__label {
+  display: none;
+}
+
+.agent-details__statuses {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.agent-details__lore {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.agent-details__unseen {
+  display: grid;
+  gap: 0.4rem;
+}
+
+/* Actions: words first, the recorded codes underneath. */
+.accepted-action-row__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.accepted-action-row__class {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.accepted-action-row__words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.25rem 0 0;
+  font-weight: 700;
+}
+
+.accepted-action-row[data-observed="false"] .accepted-action-row__words {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.accepted-action-row__codes,
+.accepted-action-row__submitted {
+  margin: 0.1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.accepted-action-row__changed {
+  display: inline-block;
+  margin-top: 0.2rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--ward-silver);
+  border-radius: 999px;
+  color: var(--ward-silver);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.accepted-action-fallen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.accepted-action-fallen .token-chip {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.panel-actions__part {
+  margin: 0 0 1rem;
+}
+
+.panel-actions__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.panel-actions__subtitle {
+  margin: 0 0 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+/* Visuals tab: grouped switches, each with its help line and its default. */
+.visual-filters__group {
+  margin: 0 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.visual-filters__group > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.visual-filters__group-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.visual-filters__group-body {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0 0.4rem 0.4rem;
+}
+
+.visual-filters__option-help {
+  display: block;
+  margin: 0 0 0.3rem 1.75rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.visual-filters__option-default {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* The details card is a two-column grid; each V5 section spans the card. */
+.agent-details__section,
+.agent-details__class,
+.agent-details__unseen,
+.fact-card > .panel-full-record {
+  grid-column: 1 / -1;
+}
+
+.panel-full-record {
+  justify-self: start;
+  width: fit-content;
+}
+
+/* Chips inside fact rows keep their own layout, case and size. */
+.fact .token-chip {
+  display: flex;
+  margin-top: 0.15rem;
+}
+
+.fact .token-chip .token-chip__token {
+  display: inline-grid;
+  font-size: 0.85rem;
+}
+
+.fact .token-chip .token-chip__text {
+  display: inline;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-transform: none;
+}
+
+.accepted-action-row__title {
+  margin: 0;
+}
+
+/* Groups stack in one column; each switch row is checkbox, name, default. */
+.visual-filters__options:has(> .visual-filters__group) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.visual-filters__group-body > .visual-filters__option {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}

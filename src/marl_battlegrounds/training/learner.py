@@ -22,6 +22,11 @@ from marl_battlegrounds.baselines.actions import (
     categorical_action_mask,
     encode_actions,
 )
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_PPO_CONFIG,
+    PPOConfig,
+    validate_ppo_batch_size,
+)
 from marl_battlegrounds.baselines.inputs import (
     TRAINING_STATE_FEATURE_SIZE,
     encode_actor_inputs,
@@ -29,26 +34,23 @@ from marl_battlegrounds.baselines.inputs import (
     team_obstacle_partners,
 )
 from marl_battlegrounds.baselines.ppo import (
-    DEFAULT_PPO_CONFIG,
     HIDDEN_SIZE,
     FeedForwardValueNet,
     PPOBatch,
-    PPOConfig,
     PPOLearningOutputs,
     PPOMetrics,
     PPOTrainState,
     RecurrentValueNet,
     ValueNormState,
-    _check_value_norm,
-    _critic_network_values,
-    _denormalize_values,
-    _owned_ppo_batch,
+    _check_value_norm,  # pyright: ignore[reportPrivateUsage]
+    _critic_network_values,  # pyright: ignore[reportPrivateUsage]
+    _denormalize_values,  # pyright: ignore[reportPrivateUsage]
+    _owned_ppo_batch,  # pyright: ignore[reportPrivateUsage]
     initialize_ppo,
     is_recurrent_method,
     make_ppo_system,
     update_ppo,
     uses_local_critic,
-    validate_ppo_batch_size,
     validate_ppo_method,
 )
 from marl_battlegrounds.core.types import (
@@ -64,6 +66,9 @@ from marl_battlegrounds.policies.input import (
     build_team_actor_input,
     mirror_team_view,
 )
+from marl_battlegrounds.training._compilation import (
+    _place_training_state,  # pyright: ignore[reportPrivateUsage]
+)
 from marl_battlegrounds.training._content import PreparedTrainingContent
 from marl_battlegrounds.training._continuation_schedules import (
     LearnerContinuation,
@@ -78,8 +83,8 @@ from marl_battlegrounds.training.collection import (
     TrainingCarry,
     TrainingCollection,
     TrainingRollout,
-    _failed,
-    _validate_training_continuation,
+    _failed,  # pyright: ignore[reportPrivateUsage]
+    _validate_training_continuation,  # pyright: ignore[reportPrivateUsage]
     init_training_collection,
     learner_memory,
 )
@@ -180,6 +185,14 @@ class UpdateSummary(NamedTuple):
     opponent-row order. Only real completed games count. Accumulate both on
     the host so lifetime totals do not overflow device int32.
 
+    per_member_length_sum is int32 (R,) summed completed-game lengths. The
+    optional default supports older manually constructed summaries; all learner
+    results fill it. PPO also fills used_policy_by_source/used_value_by_source
+    int32 (source bank,) and used_policy_by_opponent/used_value_by_opponent
+    int32 (R,). They count optimizer-used actor/value samples, including every
+    epoch. Minibatches partition samples and do not add another multiplier.
+    Non-PPO and collection-only summaries leave these four fields None.
+
     custom_reward_sum is a separate float32 sum over valid owned active slots,
     or None when custom rewards are disabled. Native task rewards remain separate.
 
@@ -199,6 +212,11 @@ class UpdateSummary(NamedTuple):
     per_member_completed: Array
     per_member_score_sums: Array
     custom_reward_sum: Array | None = None
+    per_member_length_sum: Array | None = None
+    used_policy_by_source: Array | None = None
+    used_value_by_source: Array | None = None
+    used_policy_by_opponent: Array | None = None
+    used_value_by_opponent: Array | None = None
 
 
 class UpdateResult(NamedTuple):
@@ -454,7 +472,9 @@ def init_learner(
         initialized. PPO takes actor parameters; QMIX takes online Q parameters
         (also used for its targets); PQN takes parameters and running statistics.
         Critic, mixer, optimizer, memory and counters start fresh. Initial
-        exploration and collection keep this method's normal rules.
+        exploration and collection keep this method's normal rules. Loaded arrays
+        and fresh learner arrays receive one device placement before return;
+        already resident buffers are reused.
     prepared : PreparedTrainingContent or None, default=None
         Existing verified content, or None to perform the collection preflight.
     shaping : bool, default=False
@@ -599,6 +619,7 @@ def init_learner(
         initialized.value_norm,
     )
     _state_shapes(state, method=method)
+    state = _place_training_state(state, sharding=state.carry.root_key.sharding)
     return collection, state
 
 
@@ -933,6 +954,11 @@ def _absent_result(state: LearnerState, ppo: PPOConfig) -> UpdateResult:
             jnp.zeros((state.carry.progress.opponent_steps.shape[0], 3), jnp.int32),
             jnp.zeros((state.carry.progress.opponent_steps.shape[0], 2), jnp.int32),
             jnp.float32(0) if state.carry.env.training_facts else None,
+            jnp.zeros(state.carry.progress.opponent_steps.shape[0], jnp.int32),
+            jnp.zeros(_source_rows(state.carry), jnp.int32),
+            jnp.zeros(_source_rows(state.carry), jnp.int32),
+            jnp.zeros(state.carry.progress.opponent_steps.shape[0], jnp.int32),
+            jnp.zeros(state.carry.progress.opponent_steps.shape[0], jnp.int32),
         ),
     )
 
@@ -1006,15 +1032,28 @@ def _behavior_valid(rollout: TrainingRollout) -> Array:
     )
 
 
+def _source_rows(carry: TrainingCarry) -> int:
+    """Read the fixed source-bank row count without transferring its arrays."""
+    assert carry.tracking.source_configs is not None
+    return int(jax.tree.leaves(carry.tracking.source_configs)[0].shape[0])
+
+
 def _summary(
     rollout: TrainingRollout,
     opponent_rows: int = 22,
     capture_capacity: int | Array = 20,
+    *,
+    ppo_epochs: int | None = None,
+    source_rows: int = 0,
 ) -> UpdateSummary:
     """Reduce only real transition rows to compact unrepeated learning-log facts.
 
     Shared by PPO updates, every accepted QMIX block (warmup included) and
     every nonempty PQN-VDN block (initial chunks and rejections included).
+    PPO supplies its epoch count and bank size to count the exact masks used by
+    update_ppo: valid owned active rows for values, also alive for policy loss.
+    Every accepted epoch visits every eligible row once. Other callers omit both
+    arguments and incur no grouped PPO reduction or output arrays.
     """
     rows = rollout.transitions
     owned = (
@@ -1057,6 +1096,18 @@ def _summary(
             .add(value.reshape((-1, *tail)))
         )
 
+    def used_counts(mask: Array, ids: Array, size: int) -> Array | None:
+        """Count actual eligible slots per category, including accepted epochs."""
+        if ppo_epochs is None:
+            return None
+        counts = jnp.sum(mask, axis=-1, dtype=jnp.int32).reshape(-1)
+        return (
+            jnp.zeros(size, jnp.int32)
+            .at[jnp.where(rows.valid, ids, 0).reshape(-1)]
+            .add(counts)
+        ) * jnp.int32(ppo_epochs)
+
+    member_ids = member_rows.reshape(rows.valid.shape)
     return UpdateSummary(
         jnp.sum(jnp.where(active, rows.task_rewards, 0.0)),
         jnp.sum(jnp.where(rows.valid, rows.shaping_reward, 0.0)),
@@ -1074,6 +1125,11 @@ def _summary(
         None
         if rows.custom_rewards is None
         else jnp.sum(jnp.where(active, rows.custom_rewards, 0.0)),
+        member_sum(jnp.where(completed, rows.episode_length, 0)),
+        used_counts(active & rows.alive, rows.source_index, source_rows),
+        used_counts(active, rows.source_index, source_rows),
+        used_counts(active & rows.alive, member_ids, opponent_rows),
+        used_counts(active, member_ids, opponent_rows),
     )
 
 
@@ -1203,6 +1259,8 @@ def update_learner(
                         rollout,
                         collected.progress.opponent_steps.shape[0],
                         collected.history.capture_capacity,
+                        ppo_epochs=ppo.epochs,
+                        source_rows=_source_rows(collected),
                     ),
                 )
                 return _cond(

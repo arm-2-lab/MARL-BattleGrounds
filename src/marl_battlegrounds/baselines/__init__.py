@@ -1,5 +1,6 @@
 """Load optional baseline components without adding cost to environment imports.
 
+The config module provides settings without numerical dependencies.
 The inputs and actions modules use base JAX dependencies. The ppo, qmix and
 pqn modules need the training extra. Importing this package alone loads neither
 JAX nor Flax. Use ppo.make_ppo_system, qmix.make_qmix_system or
@@ -13,7 +14,7 @@ from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
 
-__all__ = ["actions", "inputs", "ppo", "pqn", "qmix"]
+__all__ = ["actions", "config", "inputs", "ppo", "pqn", "qmix"]
 
 
 def __getattr__(name: str) -> ModuleType:
@@ -22,7 +23,7 @@ def __getattr__(name: str) -> ModuleType:
     Parameters
     ----------
     name : str
-        One of actions, inputs, ppo, qmix or pqn. Other names raise
+        One of actions, config, inputs, ppo, qmix or pqn. Other names raise
         AttributeError.
 
     Returns

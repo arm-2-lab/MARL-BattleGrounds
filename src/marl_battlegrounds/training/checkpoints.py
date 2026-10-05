@@ -21,69 +21,158 @@ and their learner checkpoints cannot resume training in this version.
 
 from __future__ import annotations
 
+# Shared private metadata owners retain their historical aliases here.
+# pyright: reportPrivateUsage=false
 import json
 import math
 import os
-import re
 import shutil
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from functools import lru_cache, partial
 from hashlib import sha256
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint as ocp  # pyright: ignore[reportMissingTypeStubs]
 
-from marl_battlegrounds.baselines.actions import ACTION_SCHEMA_VERSION
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_PPO_CONFIG,
+    DEFAULT_PQN_CONFIG,
+    DEFAULT_QMIX_CONFIG,
+    PPOConfig,
+    PQNConfig,
+    QMIXConfig,
+    _pqn_normalization,  # pyright: ignore[reportPrivateUsage]
+    with_later_settings,
+)
 from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_SIZE,
     ACTOR_FEATURE_SIZES,
     ACTOR_INPUT_SCHEMA_VERSION,
-    TRAINING_STATE_SCHEMA_VERSION,
 )
 from marl_battlegrounds.baselines.methods import (
     is_ppo_method,
-    method_settings_field,
     validate_training_method,
 )
 from marl_battlegrounds.baselines.ppo import (
-    DEFAULT_PPO_CONFIG,
-    PPOConfig,
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
     initialize_ppo,
     make_ppo_system,
     validate_ppo_method,
 )
 from marl_battlegrounds.baselines.pqn import (
-    DEFAULT_PQN_CONFIG,
-    PQN_KEY_SCHEMA_VERSION,
-    PQN_NORMALIZATION_SCHEMA_VERSION,
-    PQN_RECENT_WINDOW_SCHEMA_VERSION,
-    PQN_TIE_RULE,
-    PQNConfig,
     PQNInferenceVariables,
     _nonnegative_variances,  # pyright: ignore[reportPrivateUsage]
     make_pqn_system,
     pqn_actor_template,
 )
 from marl_battlegrounds.baselines.qmix import (
-    DEFAULT_QMIX_CONFIG,
-    QMIX_KEY_SCHEMA_VERSION,
-    QMIX_REPLAY_SCHEMA_VERSION,
     QMIX_TIE_RULE,
-    QMIXConfig,
     make_qmix_system,
     qmix_actor_template,
 )
 from marl_battlegrounds.evaluation.recording_identity import tree_digest
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _ACTOR_DESCRIPTION as _ACTOR_DESCRIPTION,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _ACTOR_INPUT_1_SCHEMAS as _ACTOR_INPUT_1_SCHEMAS,
+)
+from marl_battlegrounds.training._checkpoint_metadata import _CONTEXT as _CONTEXT
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _DESCRIPTION as _DESCRIPTION,
+)
+from marl_battlegrounds.training._checkpoint_metadata import _MODELS as _MODELS
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _PQN_COUNTERS as _PQN_COUNTERS,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _PQN_SCHEMAS as _PQN_SCHEMAS,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _QMIX_COUNTERS as _QMIX_COUNTERS,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _QMIX_SCHEMAS as _QMIX_SCHEMAS,
+)
+from marl_battlegrounds.training._checkpoint_metadata import _SCHEMAS as _SCHEMAS
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_input_scale as _actor_input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_normalization as _actor_normalization,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_parameter_sharing as _actor_parameter_sharing,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_spawn_frame as _actor_spawn_frame,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _artifact_identity as _artifact_identity,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _check_actor_origin as _check_actor_origin,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _check_context as _check_context,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_input_scale as _config_input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_method as _config_method,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_spawn_frame as _config_spawn_frame,
+)
+from marl_battlegrounds.training._checkpoint_metadata import _digest as _digest
+from marl_battlegrounds.training._checkpoint_metadata import _directory as _directory
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _inference_digest as _inference_digest,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _input_scale as _input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import _json_bytes as _json_bytes
+from marl_battlegrounds.training._checkpoint_metadata import _object as _object
+from marl_battlegrounds.training._checkpoint_metadata import _read_json as _read_json
+from marl_battlegrounds.training._checkpoint_metadata import _relative as _relative
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _require_current_schemas as _require_current_schemas,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _schema_method as _schema_method,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _settings_block as _settings_block,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _spawn_frame as _spawn_frame,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    artifact_directory as artifact_directory,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    artifact_name as artifact_name,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    checkpoint_schemas as checkpoint_schemas,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    read_checkpoint_description as read_checkpoint_description,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    saved_training_config as saved_training_config,
+)
 from marl_battlegrounds.training._compilation import execution_identity
-from marl_battlegrounds.training.distributions import TRAINING_KEY_SCHEMA_VERSION
 
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.policy_execution import System
@@ -95,93 +184,10 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.qmix_learner import QMIXLearnerState
 
 type Tree = Any
-_DESCRIPTION = "checkpoint_details.json"
-_ACTOR_DESCRIPTION = "actor_details.json"
 _COPY_BYTES = 1024 * 1024
-_SCHEMAS = {
-    "checkpoint": 1,
-    "model": "recurrent_mappo_128",
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
-    "training_state": TRAINING_STATE_SCHEMA_VERSION,
-    "action": ACTION_SCHEMA_VERSION,
-    "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
-    "learner_keys": 1,
-}
-_MODELS = {
-    "mappo": "recurrent_mappo_128",
-    "ippo": "recurrent_ippo_128",
-    "ff_mappo": "feedforward_mappo_128x128",
-    "ff_ippo": "feedforward_ippo_128x128",
-    "qmix": "recurrent_qmix_256",
-    "pqn_vdn": "recurrent_pqn_vdn_512",
-}
-_QMIX_SCHEMAS = {
-    "checkpoint": 1,
-    "model": _MODELS["qmix"],
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
-    "training_state": TRAINING_STATE_SCHEMA_VERSION,
-    "action": ACTION_SCHEMA_VERSION,
-    "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
-    "qmix_keys": QMIX_KEY_SCHEMA_VERSION,
-    "replay": QMIX_REPLAY_SCHEMA_VERSION,
-}
-_QMIX_COUNTERS = {"updates", "env_steps", "completed_blocks", "learning_blocks"}
-_PQN_SCHEMAS = {
-    "checkpoint": 1,
-    "model": _MODELS["pqn_vdn"],
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
-    "action": ACTION_SCHEMA_VERSION,
-    "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
-    "pqn_keys": PQN_KEY_SCHEMA_VERSION,
-    "recent_window": PQN_RECENT_WINDOW_SCHEMA_VERSION,
-    "normalization": PQN_NORMALIZATION_SCHEMA_VERSION,
-}
-_PQN_COUNTERS = _QMIX_COUNTERS
 # The exact schema dictionaries artifacts carried before Red Zone (actor input
 # schema 1, and training state schema 1 where present), frozen. load_system
 # still reads them; export and resume refuse them.
-_ACTOR_INPUT_1_SCHEMAS: dict[str, dict[str, int | str]] = {
-    **{
-        method: {
-            "checkpoint": 1,
-            "model": _MODELS[method],
-            "actor_input": 1,
-            "training_state": 1,
-            "action": 1,
-            "collection_keys": 1,
-            "learner_keys": 1,
-        }
-        for method in ("mappo", "ippo", "ff_mappo", "ff_ippo")
-    },
-    "qmix": {
-        "checkpoint": 1,
-        "model": _MODELS["qmix"],
-        "actor_input": 1,
-        "training_state": 1,
-        "action": 1,
-        "collection_keys": 1,
-        "qmix_keys": 1,
-        "replay": 1,
-    },
-    "pqn_vdn": {
-        "checkpoint": 1,
-        "model": _MODELS["pqn_vdn"],
-        "actor_input": 1,
-        "action": 1,
-        "collection_keys": 1,
-        "pqn_keys": 1,
-        "recent_window": 1,
-        "normalization": 1,
-    },
-}
-_CONTEXT = {
-    "run_id",
-    "attempt_id",
-    "parent_checkpoint",
-    "config",
-    "source",
-    "dependencies",
-}
 
 
 @dataclass(frozen=True)
@@ -203,86 +209,20 @@ class RestoredCheckpoint:
     path: Path
 
 
-def _json_bytes(value: object) -> bytes:
-    """Encode finite JSON deterministically, including one final newline."""
-    return (
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
-    ).encode()
-
-
-def _object(value: object, name: str) -> dict[str, Any]:
-    """Require a JSON object with string keys and copy its finite contents."""
-    if not isinstance(value, dict) or any(
-        not isinstance(k, str) for k in cast(dict[object, object], value)
-    ):
-        raise ValueError(f"{name} must be a JSON object")
-    return cast(dict[str, Any], json.loads(_json_bytes(cast(object, value))))
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    """Read a finite JSON object, rejecting duplicate keys and symbolic links."""
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"Required regular file is missing: {path.name}")
-
-    def pairs(items: list[tuple[str, object]]) -> dict[str, object]:
-        """Reject ambiguous repeated object keys."""
-        result: dict[str, object] = {}
-        for key, value in items:
-            if key in result:
-                raise ValueError(f"Duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    def constant(value: str) -> object:
-        """Reject NaN and Infinity accepted by the default JSON reader."""
-        raise ValueError(f"Nonfinite JSON constant: {value}")
-
-    return _object(
-        json.loads(path.read_bytes(), object_pairs_hook=pairs, parse_constant=constant),
-        path.name,
-    )
-
-
-def _digest(value: object, name: str) -> str:
-    """Require one complete lowercase SHA256 identity."""
-    if not isinstance(value, str) or re.fullmatch("[0-9a-f]{64}", value) is None:
-        raise ValueError(f"{name} must be a SHA256 identity")
-    return value
-
-
-def _input_scale(value: object) -> float:
-    """Validate one finite positive network scale through the PPO owner."""
-    return float(PPOConfig(input_scale=cast(float, value)).input_scale)
-
-
-def _spawn_frame(value: object) -> str:
-    """Validate one spawn frame name ("world" or "left") via the PPO owner."""
-    return PPOConfig(spawn_frame=cast(str, value)).spawn_frame
-
-
-def _settings_block(config: object) -> dict[str, Any]:
-    """Return a saved config's method settings: its "ppo", "qmix" or "pqn" object.
-
-    config must be a JSON learner config; ``methods.method_settings_field``
-    names the block. A missing block is an empty object, so historical PPO
-    configs keep their defaults. Raises ValueError.
-    """
-    value = _object(config, "Learner config")
-    name = method_settings_field(_config_method(value))
-    return _object(value.get(name, {}), f"{name.upper()} config")
-
-
 def _check_qmix_settings(config: object, settings: QMIXConfig) -> None:
     """Require a saved QMIX config's settings to equal the given settings.
 
     config is the saved JSON learner config; settings is the QMIXConfig the
     caller will save or continue with. Compares every field (for example
-    gamma, q_lr, tau, the target rule, T, C, S, M and the exploration clock)
-    after the same JSON round trip that config_to_dict applies. Raises
-    ValueError on any difference. Reads no arrays and writes nothing.
+    gamma, q_lr, tau, the target rule, T, C, S, M, the exploration clock and
+    reward_scale) after the same JSON round trip that config_to_dict applies.
+    ``with_later_settings`` first fills a setting the block omits because it
+    was saved before that setting existed, so an old block matches
+    reward_scale 1.0. Raises ValueError on any difference. Reads no arrays and
+    writes nothing.
     """
     expected = json.loads(json.dumps(asdict(settings)))
-    if _settings_block(config) != expected:
+    if with_later_settings(QMIXConfig, _settings_block(config)) != expected:
         raise ValueError("Checkpoint config QMIX settings differ from the given ones")
 
 
@@ -291,23 +231,16 @@ def _check_pqn_settings(config: object, settings: PQNConfig) -> None:
 
     config is the saved JSON learner config; settings is the PQNConfig the
     caller will save or continue with. Compares every field (T, H, epochs,
-    minibatches, rates, schedules, gamma, lambda, input_scale and
-    spawn_frame) after the same JSON round trip that config_to_dict applies,
-    so a missing or partial "pqn" block fails. Raises ValueError. Reads no
-    arrays and writes nothing.
+    minibatches, rates, schedules, gamma, lambda, input_scale, spawn_frame,
+    reward_scale and normalization) after the same JSON round trip that
+    config_to_dict applies, so a missing or partial "pqn" block fails.
+    ``with_later_settings`` first fills only the settings added later, so a
+    block saved before reward_scale and normalization existed matches 1.0
+    and "batch_norm". Raises ValueError. Reads no arrays and writes nothing.
     """
     expected = json.loads(json.dumps(asdict(settings)))
-    if _settings_block(config) != expected:
+    if with_later_settings(PQNConfig, _settings_block(config)) != expected:
         raise ValueError("Checkpoint config PQN settings differ from the given ones")
-
-
-def _config_spawn_frame(config: object) -> str:
-    """Read a learner's spawn frame; historical configs without it use "world".
-
-    PPO configs keep it in "ppo", QMIX configs in "qmix", PQN-VDN configs in
-    "pqn" (always present there).
-    """
-    return _spawn_frame(_settings_block(config).get("spawn_frame", "world"))
 
 
 def _config_value_normalization(config: object) -> bool:
@@ -320,136 +253,6 @@ def _config_value_normalization(config: object) -> bool:
     return PPOConfig(
         value_normalization=cast(bool, ppo.get("value_normalization", False))
     ).value_normalization
-
-
-def _config_method(config: object) -> str:
-    """Read a saved learner method; only historical absence means MAPPO.
-
-    config must be a JSON object. Reject unknown method values through the
-    shared method check (PPO names, "qmix" and "pqn_vdn"). No saved object is
-    changed and no device work runs. Array shapes never decide which method produced a
-    checkpoint.
-    """
-    value = _object(config, "Learner config")
-    return validate_training_method(value.get("method", "mappo"))
-
-
-def _schema_method(schemas: object) -> str:
-    """Return the method named by one complete supported schema dictionary.
-
-    schemas must exactly match either checkpoint_schemas for a known model
-    (the current dictionary) or that model's frozen pre-Red-Zone dictionary in
-    _ACTOR_INPUT_1_SCHEMAS (actor input 1, and training state 1 where the
-    method has it). A mixed dictionary, such as actor input 2 with training
-    state 1, matches neither and is rejected. Reject unknown models, altered
-    versions/types, missing fields and extra fields with ValueError. Each
-    method's own dictionary sets the types, so Boolean or float versions (such
-    as a forged ``"replay": true``) do not stand in for integers. This
-    host-only check reads no arrays and changes no input. Use
-    _require_current_schemas where only the current dictionary is allowed.
-    """
-    value = _object(schemas, "Checkpoint schemas")
-    for method, model in _MODELS.items():
-        for expected in (checkpoint_schemas(method), _ACTOR_INPUT_1_SCHEMAS[method]):
-            if (
-                value.get("model") == model
-                and value == expected
-                and all(
-                    type(value[key]) is type(item) for key, item in expected.items()
-                )
-            ):
-                return method
-    raise ValueError("Checkpoint model or schema differs from this implementation")
-
-
-def _require_current_schemas(details: dict[str, Any]) -> None:
-    """Refuse to resume training from a checkpoint saved before Red Zone.
-
-    Parameters
-    ----------
-    details : dict
-        A checkpoint description from read_checkpoint_details, whose
-        "schemas" entry is a supported current or historical dictionary.
-
-    Raises
-    ------
-    ValueError
-        The saved schemas are the frozen pre-Red-Zone dictionary (actor input
-        schema 1). The message says that this version cannot resume the run
-        and that the original source environment that created it (for example
-        its launch package) can; load_system still reads its actor. Also
-        raised, by _schema_method, for an unsupported dictionary.
-
-    Notes
-    -----
-    This is the one owner of the historical-resume refusal. restore_checkpoint
-    calls it right after the checkpoint kind check, before any array is read.
-    read_checkpoint_description never calls it, so launch, ancestry and
-    analysis can still read old descriptions. Host-only; reads no files.
-    """
-    schemas = _object(details["schemas"], "Checkpoint schemas")
-    if schemas != checkpoint_schemas(_schema_method(schemas)):
-        raise ValueError(
-            "This checkpoint was saved before Red Zone scoring (historical "
-            "actor input schema 1, 5,164 features). This version cannot resume "
-            "its training. Resuming it needs the original source environment "
-            "that created it, for example its launch package; load_system "
-            "still reads its actor."
-        )
-
-
-def saved_training_config(details: dict[str, Any]) -> dict[str, Any]:
-    """Return a learner checkpoint's saved config with its historical meaning fixed.
-
-    Parameters
-    ----------
-    details : dict
-        A checkpoint description from read_checkpoint_details with
-        metadata.config, the JSON training config saved with the run.
-
-    Returns
-    -------
-    dict
-        A new top-level dictionary. A QMIX or PQN-VDN config keeps its
-        "qmix" or "pqn" block exactly as saved and gains no "ppo" block. For
-        PPO it also returns a new ppo dictionary. Missing method becomes "mappo";
-        missing ppo.input_scale becomes 1.0. ppo.spawn_frame is filled with
-        "world" when the saved config has no ppo block or no such key, because
-        a checkpoint saved before the setting existed trained in raw world
-        coordinates whatever the current PPOConfig default is. Missing
-        ppo.value_normalization is filled with False because historical critics
-        predicted raw reward units. Missing validation_opponents and
-        slot_diagnostic_actor become None, keeping the historical panel route.
-        Missing red_zone_depth becomes 0.0, because a run saved before the
-        Red Zone rule scored one point per death whatever the current
-        TrainConfig default (5.0) is. Every other
-        saved value is returned as saved; absent keys keep taking the current
-        TrainConfig and PPOConfig defaults through config_from_dict.
-
-    Raises
-    ------
-    ValueError, TypeError
-        metadata.config or its ppo block is not a JSON object.
-
-    Notes
-    -----
-    Host-only; reads no file and changes neither details nor the saved config.
-    The runner decodes a resumed run's settings through this function, so an
-    explicit resume config that names a different frame is rejected by the
-    runner's exact-settings comparison rather than silently adopted.
-    """
-    config = _object(details["metadata"]["config"], "Saved training config")
-    if is_ppo_method(_config_method(config)):
-        ppo = dict(_object(config.get("ppo", {}), "Saved ppo settings"))
-        ppo.setdefault("input_scale", 1.0)
-        ppo.setdefault("spawn_frame", "world")
-        ppo.setdefault("value_normalization", False)
-        config["ppo"] = ppo
-        config.setdefault("method", "mappo")
-    config.setdefault("validation_opponents", None)
-    config.setdefault("slot_diagnostic_actor", None)
-    config.setdefault("red_zone_depth", 0.0)
-    return config
 
 
 def _config_red_zone_depth(config: object) -> float | None:  # pyright: ignore[reportUnusedFunction]
@@ -489,173 +292,6 @@ def _config_red_zone_depth(config: object) -> float | None:  # pyright: ignore[r
     return value
 
 
-def _actor_spawn_frame(details: dict[str, Any]) -> str:
-    """Read the saved spawn frame; historical descriptions without it use "world"."""
-    if details["kind"] == "actor":
-        return _spawn_frame(details.get("spawn_frame", "world"))
-    return _config_spawn_frame(details["metadata"]["config"])
-
-
-def _config_input_scale(config: object) -> float:
-    """Read a learner's scale; historical configs without it use 1.0.
-
-    PPO configs keep it in "ppo", QMIX configs in "qmix", PQN-VDN configs in
-    "pqn".
-    """
-    return _input_scale(_settings_block(config).get("input_scale", 1.0))
-
-
-def _actor_input_scale(details: dict[str, Any]) -> float:
-    """Read the saved inference scale without changing historical descriptions."""
-    if details["kind"] == "actor":
-        return _input_scale(details.get("input_scale", 1.0))
-    return _config_input_scale(details["metadata"]["config"])
-
-
-def _actor_parameter_sharing(details: dict[str, Any]) -> str:
-    """Read saved actor weight ownership, with all-shared historical default."""
-    value = (
-        details.get("parameter_sharing", "all")
-        if details["kind"] == "actor"
-        else _settings_block(details["metadata"]["config"]).get(
-            "parameter_sharing", "all"
-        )
-    )
-    if not isinstance(value, str):
-        raise ValueError("Saved parameter_sharing must be all, class or none")
-    return _parameter_sharing(value)
-
-
-def _inference_digest(details: dict[str, Any]) -> str:
-    """Bind weights, scale and spawn frame; keep old identities where unchanged.
-
-    For MAPPO at scale 1.0 in the world frame the identity is the raw weight digest. A
-    non-default scale alone uses the version-1 envelope exactly as before, so
-    every existing scaled identity is unchanged. A "left" frame adds the frame
-    to a version-2 envelope, so equal weights played in different frames are
-    different Systems. Other PPO methods always use the version-1 ppo_inference
-    envelope with model, actor_digest, input_scale and spawn_frame. QMIX uses a
-    version-1 qmix_inference envelope that also binds the greedy rule (epsilon
-    0.0 and the first-legal-maximum tie rule): learner checkpoints supply these
-    constants and exports their saved, checked values, so both routes give one
-    identity for the same Q-network. PQN-VDN uses a version-1
-    pqn_vdn_inference envelope with the same greedy fields; its actor_digest
-    covers the parameters and the BatchNorm statistics, so a statistics-only
-    change is a different System. A synthetic historical MAPPO identity may
-    omit schemas; saved artifacts cannot omit it.
-    """
-    scale = _actor_input_scale(details)
-    frame = _actor_spawn_frame(details)
-    method = _schema_method(details.get("schemas", _SCHEMAS))
-    sharing = _actor_parameter_sharing(details)
-    if sharing != "all":
-        return sha256(
-            _json_bytes(
-                {
-                    "kind": "grouped_actor_inference",
-                    "version": 1,
-                    "model": _MODELS[method],
-                    "actor_digest": details["actor_digest"],
-                    "input_scale": scale,
-                    "spawn_frame": frame,
-                    "parameter_sharing": sharing,
-                    **(
-                        {}
-                        if is_ppo_method(method)
-                        else {"epsilon": 0.0, "tie_rule": QMIX_TIE_RULE}
-                    ),
-                }
-            )
-        ).hexdigest()
-    if method == "pqn_vdn":
-        exported = details["kind"] == "actor"
-        return sha256(
-            _json_bytes(
-                {
-                    "kind": "pqn_vdn_inference",
-                    "version": 1,
-                    "model": _MODELS[method],
-                    "actor_digest": details["actor_digest"],
-                    "input_scale": scale,
-                    "spawn_frame": frame,
-                    "epsilon": details["epsilon"] if exported else 0.0,
-                    "tie_rule": details["tie_rule"] if exported else PQN_TIE_RULE,
-                }
-            )
-        ).hexdigest()
-    if method == "qmix":
-        exported = details["kind"] == "actor"
-        return sha256(
-            _json_bytes(
-                {
-                    "kind": "qmix_inference",
-                    "version": 1,
-                    "model": _MODELS[method],
-                    "actor_digest": details["actor_digest"],
-                    "input_scale": scale,
-                    "spawn_frame": frame,
-                    "epsilon": details["epsilon"] if exported else 0.0,
-                    "tie_rule": details["tie_rule"] if exported else QMIX_TIE_RULE,
-                }
-            )
-        ).hexdigest()
-    if method != "mappo":
-        return sha256(
-            _json_bytes(
-                {
-                    "kind": "ppo_inference",
-                    "version": 1,
-                    "model": _MODELS[method],
-                    "actor_digest": details["actor_digest"],
-                    "input_scale": scale,
-                    "spawn_frame": frame,
-                }
-            )
-        ).hexdigest()
-    if scale == 1.0 and frame == "world":
-        return details["actor_digest"]
-    envelope: dict[str, Any] = {
-        "kind": "recurrent_mappo_inference",
-        "version": 1,
-        "actor_digest": details["actor_digest"],
-        "input_scale": scale,
-    }
-    if frame != "world":
-        envelope["version"] = 2
-        envelope["spawn_frame"] = frame
-    return sha256(_json_bytes(envelope)).hexdigest()
-
-
-def _directory(path: Path) -> Path:
-    """Reject symbolic links along an existing directory's complete path."""
-    absolute = path.absolute()
-    for ancestor in (*reversed(absolute.parents), absolute):
-        if ancestor.is_symlink():
-            raise ValueError("Checkpoint directories must not use symbolic links")
-    if not absolute.is_dir():
-        raise ValueError("Checkpoint directory is missing")
-    return absolute
-
-
-def _relative(root: Path, value: object) -> Path:
-    """Resolve a relative child without traversal or symbolic links."""
-    if not isinstance(value, str):
-        raise ValueError("Saved file path must be a string")
-    relative = Path(value)
-    if (
-        relative.is_absolute()
-        or not relative.parts
-        or any(p in (".", "..") for p in relative.parts)
-    ):
-        raise ValueError("Saved file path must stay below its owner")
-    child = root
-    for part in relative.parts:
-        child /= part
-        if child.is_symlink():
-            raise ValueError("Saved paths must not use symbolic links")
-    return child
-
-
 def _sync_dir(path: Path) -> None:
     """Persist local directory entries; propagate durability failures."""
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
@@ -666,14 +302,173 @@ def _sync_dir(path: Path) -> None:
 
 
 def _atomic_json(path: Path, value: object) -> None:
-    """Durably replace one JSON file on its existing local filesystem."""
+    """Replace JSON durably and remove only this call's unpublished temporary.
+
+    Keep the checkpoint owner's exact canonical bytes. path.parent must exist.
+    After replacement, a later directory-sync failure leaves the complete new
+    file visible; never roll it back. Serialization and filesystem errors
+    propagate. This call does not remove or replace any other temporary file.
+    """
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    with temporary.open("xb") as stream:
-        stream.write(_json_bytes(value))
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
-    _sync_dir(path.parent)
+    owned = False
+    try:
+        with temporary.open("xb") as stream:
+            owned = True
+            stream.write(_json_bytes(value))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        _sync_dir(path.parent)
+    finally:
+        if owned:
+            temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def _pending_write(
+    directory: Path, *, kind: str, attempt_id: object = None
+) -> Generator[Path]:
+    """Own one unpublished payload tree until its caller renames or rejects it.
+
+    directory is an existing checked local folder; kind is learner or actor.
+    attempt_id is optional provenance, outside the immutable artifact. Record
+    this process's PID, start and boot identity in a sibling receipt before any
+    payload write. The receipt never enters the payload inventory or digest.
+    The caller closes all array writers before leaving this context. Remove
+    only our temporary tree and receipt on exit; an already renamed artifact
+    remains untouched. Errors propagate. If cleanup fails, name the remaining
+    path and preserve the original exception as context. No lock is acquired:
+    the runner/library caller retains its existing single-writer contract.
+    """
+    from marl_battlegrounds.training._run_io import process_identity
+
+    temporary = directory / f".pending-{uuid4().hex}"
+    receipt = directory / f"{temporary.name}.owner.json"
+    owns_tree = owns_receipt = False
+    try:
+        temporary.mkdir()
+        owns_tree = True
+        with receipt.open("xb"):
+            owns_receipt = True
+        _atomic_json(
+            receipt,
+            {
+                "schema_version": 1,
+                "temporary_name": temporary.name,
+                "kind": kind,
+                "attempt_id": attempt_id,
+                "writer": process_identity(),
+            },
+        )
+        yield temporary
+    finally:
+        try:
+            if owns_tree and (temporary.exists() or temporary.is_symlink()):
+                shutil.rmtree(temporary)
+            if owns_receipt:
+                receipt.unlink(missing_ok=True)
+            if owns_tree or owns_receipt:
+                _sync_dir(directory)
+        except OSError as error:
+            raise OSError(
+                f"Could not finish cleanup for unpublished write at {temporary}: "
+                f"{error}"
+            ) from error
+
+
+def _pending_writer_status(writer: Mapping[str, Any]) -> str:
+    """Check a saved process identity without signalling or changing a process.
+
+    The caller has checked the receipt fields. A different Linux boot or start
+    identity proves the original writer is gone even if its PID was reused.
+    A missing /proc read alone proves nothing; signal zero checks existence
+    only. Return dead, alive or unknown. Permission/read failures preserve data.
+    """
+    from marl_battlegrounds.training._run_io import process_identity
+
+    current = process_identity(writer["pid"])
+    if current["start_ticks"] is not None and current["boot_id"] is not None:
+        return "alive" if current == writer else "dead"
+    try:
+        os.kill(writer["pid"], 0)
+    except ProcessLookupError:
+        return "dead"
+    except PermissionError, OSError:
+        pass
+    return "unknown"
+
+
+def _cleanup_pending_writes(directory: Path) -> Generator[dict[str, str]]:  # pyright: ignore[reportUnusedFunction]
+    """Remove recognized abandoned writes under an already-held owner lock.
+
+    directory is a run's checkpoints, actors or past_copies folder, or a library
+    folder held by its existing owner. Missing folders need no work. Check direct
+    children only. Receipt fields, sibling names and original writer death must
+    all be known before deletion. Never follow links or remove published models.
+    Live/unknown writers, old unowned temporaries and malformed receipts remain
+    with a plain-English reason in the returned records. The caller saves these
+    records through its existing event/report writer before requesting the next
+    item. This keeps earlier removals recorded if a later cleanup fails.
+    Cleanup errors name their
+    path and propagate; no broad glob deletion or new lock is introduced.
+    """
+    if not directory.exists():
+        return
+    _directory(directory)
+    names = {
+        entry.name.removesuffix(".owner.json")
+        for entry in directory.iterdir()
+        if entry.name.startswith(".pending-") or entry.name.endswith(".tmp")
+    }
+    for name in sorted(names):
+        path = directory / name
+        receipt = directory / f"{name}.owner.json"
+        reason = "No recognized ownership receipt; preserved for inspection"
+        token = name.removeprefix(".pending-")
+        known_name = (
+            name.startswith(".pending-")
+            and len(token) == 32
+            and all(character in "0123456789abcdef" for character in token)
+        )
+        status, original = "preserved", "unknown"
+        if known_name and not path.is_symlink() and not receipt.is_symlink():
+            try:
+                value = _object(
+                    json.loads(receipt.read_text()), "Pending write receipt"
+                )
+                writer = _object(value.get("writer"), "Pending writer")
+                if (
+                    type(value["schema_version"]) is not int
+                    or value["schema_version"] != 1
+                    or value["temporary_name"] != name
+                    or value["kind"] not in ("learner", "actor")
+                    or set(writer) != {"pid", "start_ticks", "boot_id"}
+                    or type(writer["pid"]) is not int
+                    or not 0 < writer["pid"] <= 2**31 - 1
+                    or not isinstance(writer["start_ticks"], str)
+                    or not writer["start_ticks"].isdigit()
+                    or not isinstance(writer["boot_id"], str)
+                    or str(UUID(writer["boot_id"])) != writer["boot_id"]
+                ):
+                    raise ValueError("Incomplete write ownership")
+                if path.exists() and not path.is_dir():
+                    raise ValueError("Pending payload is not a directory")
+                original = _pending_writer_status(writer)
+                reason = f"Original writer is {original}; temporary data preserved"
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                reason = f"Ownership could not be checked; preserved: {error}"
+        if original == "dead":
+            try:
+                if path.exists():
+                    shutil.rmtree(path)
+                receipt.unlink()
+                _sync_dir(directory)
+            except OSError as error:
+                raise OSError(
+                    f"Could not clean abandoned write at {path}: {error}"
+                ) from error
+            status, reason = "removed", "Original writer is gone"
+        yield {"path": str(path), "status": status, "reason": reason}
 
 
 def _file_hash(path: Path) -> str:
@@ -1005,35 +800,6 @@ def _restore_arrays(path: Path, template: Tree, device: object | None) -> Tree:
         )
 
 
-def _check_context(
-    metadata: object, *, require_execution: bool = False
-) -> dict[str, Any]:
-    """Check scientific metadata and, for new saves, the current execution policy.
-
-    require_execution defaults to False so historical descriptions remain
-    readable. True requires the current compilation/runtime identity. Missing
-    old execution metadata never receives the current policy implicitly.
-    """
-    value = _object(metadata, "Checkpoint metadata")
-    if not value.keys() >= _CONTEXT:
-        raise ValueError(f"Checkpoint metadata needs {sorted(_CONTEXT)}")
-    for key in ("run_id", "attempt_id"):
-        if not isinstance(value[key], str) or not value[key]:
-            raise ValueError(f"{key} must be a nonempty string")
-    if value["parent_checkpoint"] is not None:
-        _digest(value["parent_checkpoint"], "Parent checkpoint")
-    for key in ("config", "source", "dependencies"):
-        if not _object(value[key], key):
-            raise ValueError(f"{key} must not be empty")
-    if "selection_rule" in value and value["selection_rule"] != "point_margin":
-        raise ValueError("Unknown recorded checkpoint selection rule")
-    if "execution" in value:
-        _object(value["execution"], "Execution identity")
-    if require_execution and value.get("execution") != execution_identity():
-        raise ValueError("Checkpoint needs the current execution identity")
-    return value
-
-
 def _collection_details(collection: TrainingCollection) -> dict[str, Any]:
     """Record reconstructible static settings and verified content identities.
 
@@ -1081,6 +847,94 @@ def _collection_details(collection: TrainingCollection) -> dict[str, Any]:
             collection.actor_variables_at_step.identity, "Variables hook identity"
         )
     return details
+
+
+def _checked_member_binding(saved: object, current: object) -> dict[str, Any] | None:
+    """Check a frozen member while allowing a proved artifact to move.
+
+    Both records must retain exact names, registration, variable digest and
+    execution rules. A matching artifact-description identity permits a new
+    reload path and keeps already checked historical exposure, even if the old
+    sibling learner is no longer nearby. Missing old input receipts permit only
+    the original reference and evidence; they do not authorize relocation.
+    Factory and live-method identity fields still compare exactly. Return a
+    fresh current record or None. Invalid or changed identities raise ValueError.
+    """
+    if saved is None or current is None:
+        if saved != current:
+            raise ValueError("Checkpoint member binding differs")
+        return None
+    previous = _object(saved, "Saved member binding")
+    chosen = _object(current, "Current member binding")
+    checked = dict(chosen)
+    before = previous.get("input_identity")
+    after = chosen.get("input_identity")
+    same_artifact = (
+        isinstance(before, dict)
+        and cast(dict[str, Any], before).get("kind") == "artifact"
+        and before == after
+    )
+    if same_artifact:
+        # The receipt identifies the exact saved description; the remaining
+        # registration/variable comparison below proves inference is unchanged.
+        checked["reference"] = previous.get("reference")
+        checked["evidence"] = previous.get("evidence")
+        chosen["evidence"] = previous.get("evidence")
+    if "input_identity" not in previous:
+        checked.pop("input_identity", None)
+    if previous != checked:
+        raise ValueError("Checkpoint member binding differs")
+    return chosen
+
+
+def _check_collection_compatibility(
+    details: dict[str, Any], collection: TrainingCollection
+) -> TrainingCollection:
+    """Check bound members and collection rules without arrays, hashes or writes.
+
+    details is an already checked learner description. Preserve historical
+    defaults and compare all collection settings. Only identical saved artifacts
+    may change their reload path; checked saved exposure stays attached to those
+    members. Return a collection carrying the current paths and preserved facts.
+    Reuse this preflight before output setup and inside numerical restore so both
+    routes enforce the same rule. No member is loaded or called here.
+    """
+    from dataclasses import replace
+
+    saved = _object(details["collection"], "Saved collection settings")
+    saved.setdefault("shaping_mode", "potential")
+    saved.setdefault("score_threshold_curriculum", False)
+    saved.setdefault("pinned_opponent_share", 0.0)
+    saved.setdefault("history_capture_capacity", saved.get("opponent_rows", 22) - 2)
+    try:
+        pinned = _checked_member_binding(
+            saved.get("pinned_opponent"), collection.pinned_opponent
+        )
+    except ValueError as error:
+        raise ValueError("Checkpoint pinned opponent differs") from error
+    current = _collection_details(collection)
+    replacements: dict[str, Any] = {"pinned_opponent": pinned}
+    for key, field in (
+        ("opponent_members", "opponent_records"),
+        ("partner_members", "partner_records"),
+    ):
+        previous = saved.get(key, [])
+        present = current.get(key, [])
+        if not isinstance(previous, list) or len(cast(list[object], previous)) != len(
+            present
+        ):
+            raise ValueError("Checkpoint content or collection settings differ")
+        replacements[field] = tuple(
+            _checked_member_binding(old, new)
+            for old, new in zip(cast(list[object], previous), present, strict=True)
+        )
+        if key in saved:
+            current[key] = previous
+    saved.pop("pinned_opponent", None)
+    current.pop("pinned_opponent", None)
+    if saved != current:
+        raise ValueError("Checkpoint content or collection settings differ")
+    return replace(collection, **replacements)
 
 
 def _check_recording(value: object, root: Path) -> dict[str, Any]:
@@ -1195,8 +1049,22 @@ default="mappo"
     ValueError
         State, context, writer or recorded boundary is incompatible.
     OSError
-        Saving or publication fails. Earlier checkpoints remain intact; an
-        unreferenced complete directory never becomes latest implicitly.
+        Saving or publication fails. Earlier checkpoints remain intact. Caught
+        failures remove this call's unfinished payload and ownership receipt.
+        A renamed complete artifact survives later pointer or sync failures.
+        The old pointer stays unchanged until its atomic replacement; a failure
+        after replacement may leave the new complete checkpoint as latest.
+        Retrying can publish another complete artifact for the same logical
+        boundary: Orbax writes fresh payload filenames and timestamps. Existing
+        published artifacts and their identities remain unchanged.
+
+    Notes
+    -----
+    After an abrupt process exit, the runner checks temporary-write receipts
+    under its existing run lock, after validating recovery inputs. It removes
+    only unfinished writes whose original process is known to have exited.
+    Unrecognized data and live or unknown writers are preserved, with reasons
+    saved in run_events.jsonl. Published artifacts are never removed by cleanup.
     """
     method = validate_training_method(method)
     root = _directory(Path(run_dir))
@@ -1261,110 +1129,56 @@ default="mappo"
     directory = root / "checkpoints"
     directory.mkdir(exist_ok=True)
     _directory(directory)
-    temporary = directory / f".pending-{uuid4().hex}"
-    temporary.mkdir()
-    actor = _actor_payload(state, method)
-    _save_arrays(temporary / "actor", actor)
-    _save_arrays(temporary / "state", _state_payload(state, method))
-    details: dict[str, Any] = {
-        "schema_version": 1,
-        "kind": "learner",
-        "schemas": checkpoint_schemas(method),
-        "metadata": context,
-        "collection": _collection_details(collection),
-        "layout": _layout(state),
-        "actor_layout": _layout(actor),
-        "actor_digest": tree_digest(actor),
-        "recording_token": token,
-        "counters": _counters(state, collection.schedule.num_envs, method),
-        "files": _inventory(temporary),
-    }
-    identifier = sha256(_json_bytes(details)).hexdigest()
-    details["checkpoint_id"] = identifier
-    _atomic_json(temporary / _DESCRIPTION, details)
-    _sync_tree(temporary)
-    existing = artifact_directory(root, "checkpoints", identifier)
-    destination = (
-        existing
-        if existing.exists()
-        else directory
-        / artifact_name(
-            method, "checkpoint", details["counters"]["env_steps"], identifier
-        )
-    )
-    if destination.exists():
-        if read_checkpoint_details(destination) != details:
-            raise ValueError("Checkpoint identity already contains different data")
-        shutil.rmtree(temporary)
-    else:
-        temporary.rename(destination)
-    _sync_dir(directory)
-    _atomic_json(
-        root / "latest_checkpoint.json",
-        {
+    with _pending_write(
+        directory, kind="learner", attempt_id=context.get("attempt_id")
+    ) as temporary:
+        actor = _actor_payload(state, method)
+        _save_arrays(temporary / "actor", actor)
+        _save_arrays(temporary / "state", _state_payload(state, method))
+        details: dict[str, Any] = {
             "schema_version": 1,
-            "checkpoint_id": identifier,
-            "relative_path": str(destination.relative_to(root)),
-        },
-    )
-    for ancestor in (root, *root.parents):
-        _sync_dir(ancestor)
-    return destination
-
-
-def artifact_name(method: str, kind: str, env_steps: int, identifier: str) -> str:
-    """Name one saved boundary by method, purpose, steps and exact identity.
-
-    method is a built-in training method, kind is checkpoint or actor,
-    env_steps is its actual nonnegative transition count, and identifier is its
-    full lowercase SHA-256. Return a lowercase snake_case basename. Keeping the
-    full suffix avoids short-name collisions; publication still verifies bytes
-    before reusing an existing immutable directory. This function writes nothing.
-    """
-    validate_training_method(method)
-    if kind not in ("checkpoint", "actor"):
-        raise ValueError("Saved artifact kind must be checkpoint or actor")
-    if type(env_steps) is not int or env_steps < 0:
-        raise ValueError("Saved environment steps must be a nonnegative integer")
-    _digest(identifier, "Saved artifact identity")
-    return f"{method}_{kind}_step_{env_steps:012d}_{identifier}"
-
-
-def artifact_directory(run_dir: str | Path, kind: str, identifier: str) -> Path:
-    """Find a run's saved checkpoint or actor without equating its name and ID.
-
-    kind is checkpoints or actors. identifier is the full checkpoint identity;
-    an actor stores that origin in its metadata. Accept historical hash-only
-    basenames and readable basenames ending in the full identity. Verify the
-    description and reject links, mismatched identities or multiple candidates.
-    If no artifact exists, return the historical path so the normal reader gives
-    its missing-file error. No files change and numerical payloads are not read.
-    """
-    if kind not in ("checkpoints", "actors"):
-        raise ValueError("Saved artifact directory must be checkpoints or actors")
-    _digest(identifier, "Saved artifact identity")
-    directory = Path(run_dir) / kind
-    legacy = directory / identifier
-    candidates = ([legacy] if legacy.exists() or legacy.is_symlink() else []) + list(
-        directory.glob(f"*_{identifier}")
-    )
-    if len(candidates) > 1:
-        raise ValueError("Multiple saved artifacts claim the same checkpoint identity")
-    if not candidates:
-        return legacy
-    path = candidates[0]
-    details = read_checkpoint_description(path)
-    saved = (
-        details["checkpoint_id"]
-        if kind == "checkpoints"
-        else details["metadata"].get("checkpoint_id")
-    )
-    if (
-        details["kind"] != ("learner" if kind == "checkpoints" else "actor")
-        or saved != identifier
-    ):
-        raise ValueError("Saved artifact name and full identity differ")
-    return path
+            "kind": "learner",
+            "schemas": checkpoint_schemas(method),
+            "metadata": context,
+            "collection": _collection_details(collection),
+            "layout": _layout(state),
+            "actor_layout": _layout(actor),
+            "actor_digest": tree_digest(actor),
+            "recording_token": token,
+            "counters": _counters(state, collection.schedule.num_envs, method),
+            "files": _inventory(temporary),
+        }
+        identifier = sha256(_json_bytes(details)).hexdigest()
+        details["checkpoint_id"] = identifier
+        _atomic_json(temporary / _DESCRIPTION, details)
+        _sync_tree(temporary)
+        existing = artifact_directory(root, "checkpoints", identifier)
+        destination = (
+            existing
+            if existing.exists()
+            else directory
+            / artifact_name(
+                method, "checkpoint", details["counters"]["env_steps"], identifier
+            )
+        )
+        if destination.exists():
+            if read_checkpoint_details(destination) != details:
+                raise ValueError("Checkpoint identity already contains different data")
+            shutil.rmtree(temporary)
+        else:
+            temporary.rename(destination)
+        _sync_dir(directory)
+        _atomic_json(
+            root / "latest_checkpoint.json",
+            {
+                "schema_version": 1,
+                "checkpoint_id": identifier,
+                "relative_path": str(destination.relative_to(root)),
+            },
+        )
+        for ancestor in (root, *root.parents):
+            _sync_dir(ancestor)
+        return destination
 
 
 def validation_directory(
@@ -1410,129 +1224,6 @@ def validation_directory(
             identifier,
         )
     return root / f"{purpose}_{stem}"
-
-
-def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
-    """Verify one immutable description, including a pruned ancestor's record.
-
-    Parameters
-    ----------
-    path : str or Path
-        An actor or learner directory. It must exist, and no part of its path
-        may be a symbolic link. The learner description
-        (checkpoint_details.json) is read when present, otherwise the actor
-        description (actor_details.json).
-
-    Returns
-    -------
-    dict[str, Any]
-        The verified description exactly as saved: schema_version (always the
-        integer 1), checkpoint_id, kind ("learner" or "actor"), schemas,
-        metadata, actor_layout, actor_digest and the files inventory, plus the
-        kind's and method's own fields (for example a learner's collection,
-        layout, recording_token and counters). Payload files are not read or
-        checked.
-
-    Raises
-    ------
-    ValueError
-        The directory is missing or uses a symbolic link; the description is
-        missing, a symbolic link, not a finite JSON object or has a repeated
-        key; its hash differs from checkpoint_id; its schema, kind or field
-        set is not a supported one; a QMIX or PQN-VDN rule below is broken; a
-        learner's saved config names a different method than its model
-        schema; or an inventory path, provenance, layout, digest, input scale
-        or spawn frame is invalid.
-
-    Notes
-    -----
-    This checks the description's own hash, schema, metadata and safe inventory
-    paths without reading payload files. This supports ancestry after retention
-    removes old numerical payloads. It does not make that ancestor restorable or
-    prove its payload still exists. Use read_checkpoint_details before loading
-    or restoring numerical data.
-
-    A QMIX actor export must carry input_scale, epsilon exactly 0.0 (not -0.0),
-    tie_rule "first_legal_maximum" and a nonnegative integer
-    metadata.optimizer_steps; spawn_frame is present when not "world". A
-    PQN-VDN export carries the same fields and always its spawn_frame. QMIX and
-    PQN-VDN learners must carry exactly their four counters. Both the current
-    schema dictionaries and the exact pre-Red-Zone ones (actor input schema 1)
-    are accepted, so old descriptions stay readable for launch, ancestry and
-    analysis. Host-only; no file is changed.
-    """
-    root = _directory(Path(path))
-    name = _DESCRIPTION if (root / _DESCRIPTION).exists() else _ACTOR_DESCRIPTION
-    details = _read_json(root / name)
-    identifier = _digest(details.get("checkpoint_id"), "Checkpoint ID")
-    unsigned = {k: v for k, v in details.items() if k != "checkpoint_id"}
-    if sha256(_json_bytes(unsigned)).hexdigest() != identifier:
-        raise ValueError("Checkpoint description digest differs")
-    if type(details.get("schema_version")) is not int or details["schema_version"] != 1:
-        raise ValueError("Checkpoint model or schema differs from this implementation")
-    method = _schema_method(details.get("schemas"))
-    if details.get("kind") not in ("learner", "actor"):
-        raise ValueError("Unsupported checkpoint kind")
-    required = {
-        "schema_version",
-        "kind",
-        "schemas",
-        "metadata",
-        "actor_layout",
-        "actor_digest",
-        "files",
-        "checkpoint_id",
-    }
-    if details["kind"] == "learner":
-        required |= {"collection", "layout", "recording_token", "counters"}
-    elif method == "qmix":
-        required |= {"input_scale", "epsilon", "tie_rule"}
-        required |= {"spawn_frame"} if "spawn_frame" in details else set()
-    elif method == "pqn_vdn":
-        required |= {"input_scale", "spawn_frame", "epsilon", "tie_rule"}
-    else:
-        # Actor exports carry these optional inference settings only when set.
-        required |= {key for key in ("input_scale", "spawn_frame") if key in details}
-    if details["kind"] == "actor" and "parameter_sharing" in details:
-        required.add("parameter_sharing")
-    if set(details) != required:
-        raise ValueError("Checkpoint description fields differ from its schema")
-    _actor_parameter_sharing(details)
-    if method in ("qmix", "pqn_vdn") and details["kind"] == "actor":
-        steps = _object(details["metadata"], "Actor provenance").get("optimizer_steps")
-        if (
-            type(details["epsilon"]) is not float
-            or details["epsilon"] != 0.0
-            or math.copysign(1.0, details["epsilon"]) < 0
-            or details["tie_rule"] != QMIX_TIE_RULE
-            or type(steps) is not int
-            or steps < 0
-        ):
-            raise ValueError(
-                f"{'QMIX' if method == 'qmix' else 'PQN-VDN'} export must be "
-                "greedy with its optimizer count"
-            )
-    if method in ("qmix", "pqn_vdn") and details["kind"] == "learner":
-        counters = _object(details["counters"], "Checkpoint counters")
-        if set(counters) != _QMIX_COUNTERS:
-            raise ValueError(
-                f"{'QMIX' if method == 'qmix' else 'PQN-VDN'} checkpoint "
-                "counters are malformed"
-            )
-    _object(details["metadata"], "Checkpoint provenance")
-    if not isinstance(details["actor_layout"], list):
-        raise ValueError("Checkpoint actor layout must be an array schema")
-    _digest(details.get("actor_digest"), "Actor digest")
-    files = _object(details.get("files"), "Checkpoint file inventory")
-    for relative in files:
-        _relative(root, relative)
-    if details["kind"] == "learner":
-        _check_context(details.get("metadata"))
-        if _config_method(details["metadata"]["config"]) != method:
-            raise ValueError("Checkpoint config method differs from its model schema")
-    _actor_input_scale(details)
-    _actor_spawn_frame(details)
-    return details
 
 
 def read_checkpoint_details(path: str | Path) -> dict[str, Any]:
@@ -1678,6 +1369,7 @@ default="mappo"
         if isinstance(config_record, dict):
             normalized = dict(cast(dict[str, Any], config_record))
             normalized.setdefault("method", "mappo")
+            normalized.setdefault("retain_all_actors", False)
             normalized.setdefault("pinned_opponent_share", 0.0)
             normalized.setdefault("pinned_opponent", None)
             normalized.setdefault("initial_actor", None)
@@ -1749,19 +1441,7 @@ default="mappo"
             != ppo.value_normalization
         ):
             raise ValueError("Checkpoint value_normalization differs from PPO settings")
-    saved_collection = _object(details["collection"], "Saved collection settings")
-    saved_collection.setdefault("shaping_mode", "potential")
-    saved_collection.setdefault("score_threshold_curriculum", False)
-    saved_collection.setdefault("pinned_opponent_share", 0.0)
-    saved_collection.setdefault(
-        "history_capture_capacity", saved_collection.get("opponent_rows", 22) - 2
-    )
-    if saved_collection.pop("pinned_opponent", None) != collection.pinned_opponent:
-        raise ValueError("Checkpoint pinned opponent differs")
-    current_collection = _collection_details(collection)
-    current_collection.pop("pinned_opponent", None)
-    if saved_collection != current_collection:
-        raise ValueError("Checkpoint content or collection settings differ")
+    collection = _check_collection_compatibility(details, collection)
     recorded = details["metadata"].get("recording")
     if collection.recording != (recorded is not None):
         raise ValueError("Checkpoint recording declaration differs")
@@ -1992,6 +1672,7 @@ def _actor_template(
     method: str = "mappo",
     actor_input_schema: int = ACTOR_INPUT_SCHEMA_VERSION,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> Tree:
     """Cache actor shapes/dtypes for one checked method and actor input schema.
 
@@ -2003,6 +1684,11 @@ def _actor_template(
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         2 for the current 5,165-feature actors, or 1 for actors saved before
         Red Zone (5,164 features).
+    parameter_sharing : {"all", "class", "none"}, default="all"
+        Actor weight ownership; grouped modes add a leading axis of five.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        PQN-VDN hidden-layer normalization, which changes its parameter and
+        statistic layout. Other methods accept only "batch_norm".
 
     Returns
     -------
@@ -2022,8 +1708,9 @@ def _actor_template(
     Raises
     ------
     ValueError
-        The method is unknown, or actor_input_schema is not the int 1 or 2.
-        Raised before tracing.
+        The method is unknown, actor_input_schema is not the int 1 or 2, the
+        sharing or normalization value is unknown, or a non-PQN method names
+        "layer_norm". Raised before tracing.
 
     Notes
     -----
@@ -2038,10 +1725,14 @@ def _actor_template(
         or actor_input_schema not in ACTOR_FEATURE_SIZES
     ):
         raise ValueError("actor_input_schema must be 1 or 2.")
+    if _pqn_normalization(normalization) != "batch_norm" and method != "pqn_vdn":
+        raise ValueError("Only PQN-VDN models have a normalization choice")
     if method == "qmix":
         template = qmix_actor_template(QMIXConfig(parameter_sharing=sharing))
     elif method == "pqn_vdn":
-        template = _pqn_actor_item(pqn_actor_template(parameter_sharing=sharing))
+        template = _pqn_actor_item(
+            pqn_actor_template(parameter_sharing=sharing, normalization=normalization)
+        )
     else:
         template = jax.eval_shape(
             partial(
@@ -2065,90 +1756,13 @@ def _actor_template(
     return jax.tree.map(resize, template)
 
 
-def export_system(
-    actor_variables: Tree,
-    destination: str | Path,
-    *,
-    metadata: dict[str, object],
-    input_scale: float = 1.0,
-    spawn_frame: str,
-    method: str = "mappo",
-    parameter_sharing: str = "all",
-) -> Path:
-    """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
+def _check_actor_provenance(metadata: object, method: str) -> dict[str, Any]:
+    """Validate saved actor counts and its single checkpoint or capture origin.
 
-    Parameters
-    ----------
-    actor_variables : PyTree
-        Finite variables matching the selected method's actor schema. For QMIX
-        this is the Q-network parameters only, never epsilon or a mixer. For
-        PQN-VDN it is the network's PQNInferenceVariables (parameters and
-        BatchNorm statistics), never epsilon, optimizer state or kept rows.
-    destination : str or Path
-        Exact output directory with an existing parent. Matching exports are
-        reused; different weights, scale or provenance at this path are rejected.
-    metadata : dict
-        Finite JSON provenance with run_id, nonnegative integer seed and
-        env_steps, and either the originating checkpoint_id or capture_origin.
-        A capture origin records capture_id, update_index, the content binding
-        and sampled exploration (epsilon, or None for PPO). It does not claim a
-        complete learner checkpoint exists. QMIX and PQN-VDN also need a
-        nonnegative integer optimizer_steps. Extra facts are retained.
-    input_scale : float, default=1.0
-        Finite positive factor applied before the actor's first Dense layer.
-        Use the originating learner config's value. It is part of
-        inference identity; changing it does not rewrite weights or the raw
-        input schema.
-    spawn_frame : str
-        Required. Spawn frame the weights were trained in: "world" or "left".
-        Use the originating learner config's value. There is no default, because
-        an export writes a durable identity: a guessed frame would silently
-        label world weights as left, or the reverse. "left" is written into
-        the description and the inference identity; "world" writes no key, so
-        world exports keep their historical description bytes. PQN-VDN
-        exports always write the frame.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
-default="mappo"
-        Method that trained these weights. Its model schema is the export's
-        sole method authority. Equal actor shapes/bytes do not make different
-        methods interchangeable; an existing different-method path is rejected.
-        QMIX and PQN-VDN exports also record epsilon 0.0 and tie_rule
-        "first_legal_maximum": loading one gives the greedy System.
-
-    Returns
-    -------
-    Path
-        Absolute immutable export directory, after durable publication.
-
-    Raises
-    ------
-    TypeError
-        PQN-VDN variables are not a PQNInferenceVariables record.
-    ValueError
-        Variables, scale, frame or provenance are invalid (for PQN-VDN this
-        includes a negative BatchNorm running variance), or the destination
-        conflicts. Weights shaped for historical actor input schema 1 (5,164
-        features, saved before Red Zone) are refused with a message saying to
-        keep the original artifact, which load_system reads directly.
-    OSError
-        A required directory or payload cannot be read or written.
-
-    Notes
-    -----
-    Host-only. No map preparation, critic, optimizer or game state is required.
-    A PQN-VDN export saves the same actor item, with the same actor_digest, as
-    the learner checkpoint it came from. Every TypeError or ValueError above
-    is raised before any file or directory is written. Exports always record
-    the current schemas.
+    Reuse this admission check for numerical export and anonymous byte copies.
+    Extra finite metadata remains allowed here; anonymous export classifies it
+    separately. This reads no payloads and performs no numerical work.
     """
-    method = validate_training_method(method)
-    sharing = _parameter_sharing(parameter_sharing)
-    if method == "pqn_vdn":
-        if not isinstance(cast(object, actor_variables), PQNInferenceVariables):
-            raise TypeError("A PQN-VDN export takes PQNInferenceVariables")
-        actor_variables = _pqn_actor_item(actor_variables)
-    input_scale = _input_scale(input_scale)
-    spawn_frame = _spawn_frame(spawn_frame)
     context = _object(metadata, "Actor provenance")
     if not {"run_id", "seed", "env_steps"} <= context.keys():
         raise ValueError("Actor provenance needs run_id, seed and env_steps")
@@ -2196,14 +1810,122 @@ default="mappo"
             or not 0 <= epsilon <= 1
         ):
             raise ValueError("A Q capture needs its sampled epsilon within [0, 1]")
+    return context
+
+
+def export_system(
+    actor_variables: Tree,
+    destination: str | Path,
+    *,
+    metadata: dict[str, object],
+    input_scale: float = 1.0,
+    spawn_frame: str,
+    method: str = "mappo",
+    parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
+) -> Path:
+    """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
+
+    Parameters
+    ----------
+    actor_variables : PyTree
+        Finite variables matching the selected method's actor schema. For QMIX
+        this is the Q-network parameters only, never epsilon or a mixer. For
+        PQN-VDN it is the network's PQNInferenceVariables (parameters and
+        BatchNorm statistics), never epsilon, optimizer state or kept rows.
+    destination : str or Path
+        Exact output directory with an existing parent. Matching exports are
+        reused; different weights, scale or provenance at this path are rejected.
+    metadata : dict
+        Finite JSON provenance with run_id, nonnegative integer seed and
+        env_steps, and either the originating checkpoint_id or capture_origin.
+        A capture origin records capture_id, update_index, the content binding
+        and sampled exploration (epsilon, or None for PPO). It does not claim a
+        complete learner checkpoint exists. QMIX and PQN-VDN also need a
+        nonnegative integer optimizer_steps. Extra facts are retained.
+    input_scale : float, default=1.0
+        Finite positive factor applied before the actor's first Dense layer.
+        Use the originating learner config's value. It is part of
+        inference identity; changing it does not rewrite weights or the raw
+        input schema.
+    spawn_frame : str
+        Required. Spawn frame the weights were trained in: "world" or "left".
+        Use the originating learner config's value. There is no default, because
+        an export writes a durable identity: a guessed frame would silently
+        label world weights as left, or the reverse. "left" is written into
+        the description and the inference identity; "world" writes no key, so
+        world exports keep their historical description bytes. PQN-VDN
+        exports always write the frame.
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+default="mappo"
+        Method that trained these weights. Its model schema is the export's
+        sole method authority. Equal actor shapes/bytes do not make different
+        methods interchangeable; an existing different-method path is rejected.
+        QMIX and PQN-VDN exports also record epsilon 0.0 and tie_rule
+        "first_legal_maximum": loading one gives the greedy System.
+    parameter_sharing : {"all", "class", "none"}, default="all"
+        Actor weight ownership used in training. Only grouped modes write a
+        "parameter_sharing" key.
+    normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
+        PQN-VDN hidden-layer normalization used in training
+        (``PQNConfig.normalization``). Only "layer_norm" writes a
+        "normalization" key, so BatchNorm exports keep their historical
+        description bytes. Other methods accept only "batch_norm".
+
+    Returns
+    -------
+    Path
+        Absolute immutable export directory, after durable publication.
+
+    Raises
+    ------
+    TypeError
+        PQN-VDN variables are not a PQNInferenceVariables record.
+    ValueError
+        Variables, scale, frame or provenance are invalid (for PQN-VDN this
+        includes a negative BatchNorm running variance), or the destination
+        conflicts. Weights shaped for historical actor input schema 1 (5,164
+        features, saved before Red Zone) are refused with a message saying to
+        keep the original artifact, which load_system reads directly.
+    OSError
+        A required directory or payload cannot be read or written.
+
+    Notes
+    -----
+    Host-only. No map preparation, critic, optimizer or game state is required.
+    A PQN-VDN export saves the same actor item, with the same actor_digest, as
+    the learner checkpoint it came from. Every TypeError or ValueError above
+    is raised before any file or directory is written. Exports always record
+    the current schemas. Caught write failures remove only this call's
+    unfinished tree and ownership receipt. A renamed complete actor remains
+    after a later directory-sync failure; retrying with identical inputs checks
+    and reuses it. Abrupt process exits may leave unpublished data for the
+    owning run or model collection to check under its existing lock.
+    """
+    method = validate_training_method(method)
+    sharing = _parameter_sharing(parameter_sharing)
+    normalization = _pqn_normalization(normalization)
+    if normalization != "batch_norm" and method != "pqn_vdn":
+        raise ValueError("Only PQN-VDN models have a normalization choice")
+    if method == "pqn_vdn":
+        if not isinstance(cast(object, actor_variables), PQNInferenceVariables):
+            raise TypeError("A PQN-VDN export takes PQNInferenceVariables")
+        actor_variables = _pqn_actor_item(actor_variables)
+    input_scale = _input_scale(input_scale)
+    spawn_frame = _spawn_frame(spawn_frame)
+    context = _check_actor_provenance(metadata, method)
     layout = _layout(actor_variables)
-    if layout == _layout(_actor_template(method, 1, sharing)):
+    if normalization == "batch_norm" and layout == _layout(
+        _actor_template(method, 1, sharing)
+    ):
         raise ValueError(
             "These weights use historical actor input schema 1 (5,164 features). "
             "Export writes current actors only; keep the original artifact, "
             "which load_system reads directly."
         )
-    if layout != _layout(_actor_template(method, parameter_sharing=sharing)):
+    if layout != _layout(
+        _actor_template(method, parameter_sharing=sharing, normalization=normalization)
+    ):
         raise ValueError("Actor variables differ from the selected model schema")
     if not all(
         bool(jnp.all(jnp.isfinite(value))) for value in jax.tree.leaves(actor_variables)
@@ -2225,36 +1947,196 @@ default="mappo"
             and _actor_input_scale(saved) == input_scale
             and _actor_spawn_frame(saved) == spawn_frame
             and _actor_parameter_sharing(saved) == sharing
+            and _actor_normalization(saved) == normalization
             and saved["metadata"] == context
         ):
             return target
         raise ValueError("Actor destination already contains a different artifact")
-    temporary = parent / f".{target.name}.{uuid4().hex}.tmp"
-    temporary.mkdir()
-    _save_arrays(temporary / "actor", actor_variables)
-    details: dict[str, Any] = {
-        "schema_version": 1,
-        "kind": "actor",
-        "schemas": checkpoint_schemas(method),
-        "metadata": context,
-        "actor_layout": _layout(actor_variables),
-        "actor_digest": digest,
-        "input_scale": input_scale,
-        "files": _inventory(temporary),
-    }
-    if sharing != "all":
-        details["parameter_sharing"] = sharing
-    if method in ("qmix", "pqn_vdn"):
-        details["epsilon"] = 0.0
-        details["tie_rule"] = QMIX_TIE_RULE
-    if spawn_frame != "world" or method == "pqn_vdn":
-        details["spawn_frame"] = spawn_frame
-    details["checkpoint_id"] = sha256(_json_bytes(details)).hexdigest()
-    _atomic_json(temporary / _ACTOR_DESCRIPTION, details)
-    _sync_tree(temporary)
-    temporary.rename(target)
-    _sync_dir(parent)
-    return target
+    with _pending_write(
+        parent, kind="actor", attempt_id=context.get("attempt_id")
+    ) as temporary:
+        _save_arrays(temporary / "actor", actor_variables)
+        details: dict[str, Any] = {
+            "schema_version": 1,
+            "kind": "actor",
+            "schemas": checkpoint_schemas(method),
+            "metadata": context,
+            "actor_layout": _layout(actor_variables),
+            "actor_digest": digest,
+            "input_scale": input_scale,
+            "files": _inventory(temporary),
+        }
+        if sharing != "all":
+            details["parameter_sharing"] = sharing
+        if normalization != "batch_norm":
+            details["normalization"] = normalization
+        if method in ("qmix", "pqn_vdn"):
+            details["epsilon"] = 0.0
+            details["tie_rule"] = QMIX_TIE_RULE
+        if spawn_frame != "world" or method == "pqn_vdn":
+            details["spawn_frame"] = spawn_frame
+        details["checkpoint_id"] = sha256(_json_bytes(details)).hexdigest()
+        _atomic_json(temporary / _ACTOR_DESCRIPTION, details)
+        _sync_tree(temporary)
+        temporary.rename(target)
+        _sync_dir(parent)
+        return target
+
+
+def export_actor(
+    checkpoint: str | Path, *, output_dir: str | Path, anonymous: bool = False
+) -> Path:
+    """Copy one saved model into an immutable, standalone actor folder.
+
+    Parameters
+    ----------
+    checkpoint : str or Path
+        Existing actor or complete learner checkpoint. Verify its description
+        and every payload hash first. A pruned learner cannot supply weights.
+    output_dir : str or Path
+        Exact destination, relative to the working directory when needed.
+        Create missing parents after checking the input. Reuse matching immutable
+        bytes; reject a different artifact, symlink or non-directory there.
+    anonymous : bool, default=False
+        True prepares a separately identified copy with unchanged model bytes.
+        Classify saved provenance and scan retained text before any output write.
+        Capture run labels and audit paths may be replaced by stable aliases.
+        Checkpoint origins retain their original opaque run ID and checked
+        description. Unsafe or unclassified required metadata is refused.
+        Ordinary trainer checkpoints often contain private host paths; this
+        narrow route does not silently strip those records or approve release.
+
+    Returns
+    -------
+    Path
+        Absolute standalone actor folder. Ordinary actor copies keep every byte
+        and identity. Learner extraction retains its origin and inference identity.
+        Anonymous current-schema copies receive a new ID and a metadata scan
+        record; derived_from names the input artifact. Historical schema-1 actors
+        are copied unchanged only if their required metadata already passes.
+
+    Raises
+    ------
+    ValueError, OSError
+        Input hashes or metadata differ, source bytes change during copying,
+        destination conflicts, or a file cannot be read or written.
+
+    Notes
+    -----
+    No arrays, optimizer, replay buffer or learner are restored. Full learner
+    verification still reads its payload from disk. Only actor bytes are copied,
+    including PQN running statistics. Q exports play greedily. Schema, sharing,
+    scale, frame and known exposure provenance remain unchanged. Published
+    artifacts survive later sync failures; unpublished writes clean themselves.
+    The caller must serialize writers to the same destination.
+    """
+    if type(anonymous) is not bool:
+        raise TypeError("anonymous must be a boolean")
+    source = _directory(Path(checkpoint).expanduser()).resolve()
+    details = read_checkpoint_details(source)
+    target = Path(output_dir).expanduser().absolute()
+    from marl_battlegrounds.evaluation.revision import (
+        _check_output_path,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    _check_output_path(target)
+    if source in target.resolve().parents:
+        raise ValueError("Actor output cannot be inside its immutable source")
+    exported = details["kind"] == "actor"
+    actor: dict[str, Any]
+    if exported:
+        actor = details
+    else:
+        method = _schema_method(details["schemas"])
+        metadata = details["metadata"]
+        context = {
+            "run_id": metadata["run_id"],
+            "seed": metadata["config"]["seed"],
+            "env_steps": details["counters"]["env_steps"],
+            "checkpoint_id": details["checkpoint_id"],
+            "source": metadata.get("source"),
+            "dependencies": metadata.get("dependencies"),
+            "attempt_id": metadata.get("attempt_id"),
+            "initial_actor": metadata.get("initial_actor"),
+            "opponent_members": metadata.get("used_opponent_members", []),
+            "partner_members": metadata.get("used_partner_members", []),
+            "pinned_opponent": (
+                None
+                if details["collection"].get("opponent_members")
+                else details["collection"].get("pinned_opponent")
+            ),
+        }
+        if method in ("qmix", "pqn_vdn"):
+            context["optimizer_steps"] = details["counters"]["updates"]
+        actor = {
+            "schema_version": details["schema_version"],
+            "kind": "actor",
+            "schemas": details["schemas"],
+            "metadata": context,
+            "actor_layout": details["actor_layout"],
+            "actor_digest": details["actor_digest"],
+            "input_scale": _actor_input_scale(details),
+            "files": {
+                key: value
+                for key, value in details["files"].items()
+                if key.startswith("actor/")
+            },
+        }
+        sharing = _actor_parameter_sharing(details)
+        frame = _actor_spawn_frame(details)
+        if sharing != "all":
+            actor["parameter_sharing"] = sharing
+        if _actor_normalization(details) != "batch_norm":
+            actor["normalization"] = _actor_normalization(details)
+        if method in ("qmix", "pqn_vdn"):
+            actor.update(epsilon=0.0, tie_rule=QMIX_TIE_RULE)
+        if frame != "world" or method == "pqn_vdn":
+            actor["spawn_frame"] = frame
+        actor["checkpoint_id"] = sha256(_json_bytes(actor)).hexdigest()
+        _check_actor_origin(actor, details)
+    extra: dict[str, bytes] = {}
+    if anonymous:
+        from marl_battlegrounds.training._anonymous import prepare_anonymous_actor
+
+        actor, extra = prepare_anonymous_actor(source, actor, details)
+    if target.exists() or target.is_symlink():
+        if read_checkpoint_details(target) == actor:
+            return target.resolve()
+        raise ValueError(f"Actor destination contains a different artifact: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    parent = _directory(target.parent)
+    with _pending_write(
+        parent, kind="actor", attempt_id=actor["metadata"].get("attempt_id")
+    ) as temporary:
+        if exported:
+            shutil.copytree(source, temporary, dirs_exist_ok=True)
+        else:
+            shutil.copytree(source / "actor", temporary / "actor")
+        for name, raw in extra.items():
+            path = temporary / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(raw)
+        if not exported or actor != details:
+            _atomic_json(temporary / _ACTOR_DESCRIPTION, actor)
+        # Recheck copied bytes and descriptions without restoring arrays or
+        # repeating full source-payload verification. Rewriting derivative
+        # metadata must not hide a source edit made during copying.
+        if read_checkpoint_description(source) != details:
+            raise ValueError("Source description changed during actor copying")
+        if anonymous and exported and extra:
+            from marl_battlegrounds.training._checkpoint_metadata import (
+                _actor_origin_directory,
+            )
+
+            origin = _actor_origin_directory(source, details)
+            if (origin / _DESCRIPTION).read_bytes() != next(iter(extra.values())):
+                raise ValueError("Source origin changed during actor copying")
+        if read_checkpoint_details(temporary) != actor:
+            raise ValueError("Copied actor changed before publication")
+        _sync_tree(temporary)
+        temporary.rename(target)
+        _sync_dir(parent)
+    return target.resolve()
 
 
 def artifact_identity(path: str | Path) -> dict[str, Any]:
@@ -2299,30 +2181,7 @@ def artifact_identity(path: str | Path) -> dict[str, Any]:
     scale means 1.0 and a missing frame means "world". Host-only: no array is
     restored and no file is changed.
     """
-    details = read_checkpoint_details(path)
-    metadata = details["metadata"]
-    actor = details["kind"] == "actor"
-    identity: dict[str, Any] = {
-        "actor_digest": _inference_digest(details),
-        "weight_digest": details["actor_digest"],
-        "input_scale": _actor_input_scale(details),
-        "spawn_frame": _actor_spawn_frame(details),
-        "checkpoint_id": details["checkpoint_id"],
-        "schemas": details["schemas"],
-        "metadata": metadata,
-        "run_id": metadata["run_id"],
-        "seed": metadata.get("seed") if actor else metadata["config"].get("seed"),
-        "env_steps": metadata["env_steps"]
-        if actor
-        else details["counters"]["env_steps"],
-    }
-    method = _schema_method(details["schemas"])
-    if method in ("qmix", "pqn_vdn"):
-        identity["method"] = method
-        identity["optimizer_steps"] = (
-            metadata["optimizer_steps"] if actor else details["counters"]["updates"]
-        )
-    return identity
+    return _artifact_identity(read_checkpoint_details(path))
 
 
 def load_system(checkpoint: str | Path) -> System:
@@ -2365,8 +2224,11 @@ def load_system(checkpoint: str | Path) -> System:
     qmix or pqn input_scale;
     actor exports use their explicit saved scale. The saved spawn frame is
     restored the same way and is never inferred from a model's results; a
-    missing frame means "world". Neither route rewrites weights. The saved
-    actor input schema picks the template and the System route: an artifact
+    missing frame means "world". A PQN-VDN model is rebuilt with its saved
+    hidden normalization (an export's "normalization" key or its learner
+    config's ``pqn.normalization``); a missing value means "batch_norm".
+    Neither route rewrites weights. The saved actor input schema picks the
+    template and the System route: an artifact
     saved before Red Zone (schema 1, 5,164 features) is restored with the
     schema-1 template and built with actor_input_schema=1, so it plays
     through the schema-1 hooks exactly as before. Its checkpoint label (the
@@ -2378,7 +2240,8 @@ def load_system(checkpoint: str | Path) -> System:
     method = _schema_method(details["schemas"])
     schema = cast(int, details["schemas"]["actor_input"])
     sharing = _actor_parameter_sharing(details)
-    template = _actor_template(method, schema, sharing)
+    normalization = _actor_normalization(details)
+    template = _actor_template(method, schema, sharing, normalization)
     if details["actor_layout"] != _layout(template):
         raise ValueError("Actor artifact schema differs from the installed model")
     actor = _restore_arrays(root / "actor", template, None)
@@ -2412,6 +2275,7 @@ def load_system(checkpoint: str | Path) -> System:
             spawn_frame=_actor_spawn_frame(details),
             actor_input_schema=schema,
             parameter_sharing=sharing,
+            normalization=normalization,
         )
     return make_ppo_system(
         actor,
@@ -2453,15 +2317,18 @@ def load_initial_actor(
     input_scale: float,
     spawn_frame: str,
     parameter_sharing: str = "all",
+    normalization: str = "batch_norm",
 ) -> tuple[System, dict[str, Any]]:
     """Load compatible built-in weights before a new training run opens files.
 
     ``path`` names an actor export or full learner checkpoint. Only its actor
-    is imported. The method, current actor schema, input scale and spawn frame
-    must match; load_system checks layout, dtypes, payload hashes and values.
+    is imported. The method, current actor schema, input scale, spawn frame,
+    parameter sharing and (for PQN-VDN) hidden normalization must match;
+    load_system checks layout, dtypes, payload hashes and values.
     Return that System and its verified description for provenance. This is a
-    warm start with fresh learner state, not a continuation. Generic Systems
-    remain supported through the opponent and researcher-owned loop APIs.
+    warm start with fresh learner state, not a continuation. Trainer setup reuses
+    the same loaded artifact across roles; ordinary calls load independently.
+    Generic Systems remain supported through opponents and researcher-owned loops.
     """
     details = read_checkpoint_description(path)
     if _schema_method(details["schemas"]) != method:
@@ -2474,42 +2341,12 @@ def load_initial_actor(
         raise ValueError("Initial actor spawn_frame differs from the new learner")
     if _actor_parameter_sharing(details) != _parameter_sharing(parameter_sharing):
         raise ValueError("Initial actor parameter_sharing differs from the new learner")
-    return load_system(path), details
+    if _actor_normalization(details) != _pqn_normalization(normalization):
+        raise ValueError("Initial actor normalization differs from the new learner")
+    from marl_battlegrounds._method_loading import load_method
 
-
-def checkpoint_schemas(method: str = "mappo") -> dict[str, int | str]:
-    """Return the installed checkpoint and selected model format identifiers.
-
-    Parameters
-    ----------
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
-default="mappo"
-        Static method. Unknown values raise ValueError through the shared
-        method check. MAPPO keeps its historical keys, including learner_keys.
-
-    Returns
-    -------
-    dict[str, int or str]
-        A fresh JSON-ready copy of the checkpoint version, model name, actor
-        input (2), training-state (2) and action versions, and collection/learner
-        key versions. QMIX replaces learner_keys with qmix_keys and adds its
-        replay row version. PQN-VDN has no training-state entry (it keeps no
-        physical state) and adds pqn_keys, recent_window and normalization
-        versions. These are the same identifiers checked during restore; new
-        saves and exports write them. Artifacts saved before Red Zone carry
-        the frozen dictionaries with actor input 1 (and training state 1),
-        which load_system reads but export and resume refuse. Changing the
-        returned dictionary does not change the shared authority.
-
-    Notes
-    -----
-    Reads only fixed metadata; no file access or device initialization occurs.
-    """
-    if validate_training_method(method) == "qmix":
-        return dict(_QMIX_SCHEMAS)
-    if method == "pqn_vdn":
-        return dict(_PQN_SCHEMAS)
-    return {**_SCHEMAS, "model": _MODELS[validate_ppo_method(method)]}
+    # Training setup may already hold this same checked actor as a pool member.
+    return cast("System", load_method(str(Path(path).expanduser().absolute()))), details
 
 
 def checkpoint_dependencies(method: str = "mappo") -> dict[str, str]:

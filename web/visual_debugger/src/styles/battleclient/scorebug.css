@@ -1,0 +1,693 @@
+/*
+ * BattleClient scorebug (#scorebug) and party portraits, ported from the
+ * approved vision page: each team's host (crest, name, controller line),
+ * its five portraits (#party-a, #party-b), its score out of the goal with a
+ * segment bar, and the middle (tick, First To, Respawn Wave In).
+ *
+ * Sides follow the arena: the vision's order puts Team B on the left
+ * (its recorded game has Team A on the right end). When Team A starts on the
+ * left end, the code that fills the scorebug sets
+ * #scorebug[data-team-a-side="left"] and the mirrored areas below put Team A
+ * on the left, with each host, score and segment bar facing the middle.
+ *
+ * Host names and controller lines cut with an ellipsis instead of pushing
+ * the row wider, so long controller names never wrap the scorebug at
+ * desktop and laptop widths. The vision's narrow-window stack is not ported.
+ *
+ * Replay Viewer only: #camera-tips (div.sb-tips) holds the camera tips
+ * (src/looks/camera.js). It is placed in the right-hand score column's grid
+ * area as an absolute box, so it takes no grid space, and it leaves the
+ * column's outer 7.5rem to the score and its bar: the tips sit in the empty
+ * inner half next to the middle and cover nothing (owner, 3 Oct 2026, Micro
+ * List M7). Every other client keeps it hidden.
+ *
+ * Who fills it: src/match-summary.js writes the scores, bars, the middle,
+ * data-team-a-side and data-plain (the Scorebug switch off: a plain text
+ * score, no bar); src/looks/hud.js writes the "Yours" tag, the controller
+ * lines and the portraits (button.por: token, life bar, label). Life bars
+ * fill Ivory, or Cinder at 30% life or less (class "low").
+ *
+ * Beat holds (the score and life bars wait for the Fall beat, a returning
+ * champion reappears at its Return beat): an earlier look is drawn in the
+ * same place as its END node and the choreographer swaps them at the beat.
+ * A held portrait pair sits in span.por-stack (both in one grid cell, END
+ * first, the earlier look on top with no pointer events); a held score's old
+ * number sits over #score-a or #score-b, and its old bar shares the bar's
+ * grid cell.
+ *
+ * Momentum (switch hud_momentum, off by default; the Arena Frames pick of
+ * the V5 store, broadcast-hud.js segBar): the points a team scored in the
+ * last 10 ticks (segments with class "recent") fill in its light color
+ * (--azureL, --crimsonL) over a 1.5 px Moon Silver underline 2 px below the
+ * bar (the store spec's size, the same as the Replay Viewer strip in
+ * src/styles/hud.css). The baseline is the host's
+ * match_summary.scores_ten_ticks_ago; the page keeps no score history.
+ * Each recent segment's underline also covers the 1 px gap toward the
+ * next newer segment; the newest one (class "newest") stops at its own
+ * edge, so the line is one unbroken run under exactly the recent points.
+ * --recent-shift says on which side that gap lies: 0px for a bar that
+ * fills rightward (flex row), -1px for one that fills leftward (row-reverse).
+ *
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
+ */
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score {
+  position: relative;
+  grid-area: score;
+  display: grid;
+  grid-template-columns: auto auto minmax(84px, 1fr) auto minmax(84px, 1fr) auto auto;
+  grid-template-areas: "hb pb sb mid sa pa ha";
+  align-items: center;
+  gap: 10px 12px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"] {
+  grid-template-areas: "ha pa sa mid sb pb hb";
+}
+
+/* Replay Viewer: the camera tips' box, in the right-hand score column (sa, or
+   sb when Team A is on the left), inner half only. */
+html[data-product-kind="replay_viewer"] .bc .bc-score > .sb-tips {
+  position: absolute;
+  grid-area: sa;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-inline-end: 7.5rem;
+  pointer-events: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  .bc
+  .bc-score[data-team-a-side="left"]
+  > .sb-tips {
+  grid-area: sb;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-score > .sb-tips[hidden] {
+  display: none;
+}
+
+/* Crests: Team A one ring, Team B a ring split by a thin dark line. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest {
+  flex: none;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest--a {
+  color: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest--b {
+  color: var(--crimson);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .crest__split {
+  stroke: var(--ink);
+}
+
+/* Hosts. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  > div {
+  min-width: 0;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a {
+  grid-area: ha;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.b {
+  grid-area: hb;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-host.a {
+  flex-direction: row;
+  text-align: left;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-host.b {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  b {
+  display: block;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a
+  b {
+  color: var(--azureL);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.b
+  b {
+  color: var(--crimsonL);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  .yours {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--moon);
+  border-radius: 4px;
+  color: var(--moon);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host.a
+  .yours {
+  margin: 0 6px 0 0;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-host
+  span.ctl {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Portraits. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party.a {
+  grid-area: pa;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party.b {
+  grid-area: pb;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-party
+  .plabel {
+  display: none;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: 40px;
+  min-height: 0;
+  padding: 4px 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por:hover {
+  background: var(--panel2);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.focus {
+  border-color: var(--edge2);
+  background: var(--panel2);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .tok {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* A held portrait pair: the END portrait and its earlier look in one cell. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por-stack {
+  display: grid;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por-stack
+  > .por {
+  grid-area: 1 / 1;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por[data-beat-side="before"] {
+  pointer-events: none;
+}
+
+/* An Unseen token: a dark disc, a dashed team ring and an ash class emblem. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__disc {
+  fill: #141a26;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring {
+  fill: none;
+  opacity: 0.6;
+  stroke-dasharray: 2.2 2.6;
+  stroke-width: 2;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring[data-team="team-a"] {
+  stroke: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__ring[data-team="team-b"] {
+  stroke: var(--crimson);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .unseen-tok__emblem {
+  opacity: 0.38;
+  filter: grayscale(1);
+}
+
+/* The plain team ring drawn when the token look cannot draw a champion. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback {
+  fill: #141a26;
+  stroke-width: 3;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback[data-team="team-a"] {
+  stroke: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .tok__fallback[data-team="team-b"] {
+  stroke: var(--crimson);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb {
+  display: block;
+  overflow: hidden;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: #0d1119;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb
+  i {
+  display: block;
+  height: 100%;
+  background: var(--ivory);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb
+  i.low {
+  background: var(--cinder);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .pl {
+  height: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por
+  .pl.you {
+  padding: 0 5px;
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--moon);
+  font-weight: 700;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen {
+  cursor: default;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen:hover {
+  background: transparent;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .por.unseen
+  .pl {
+  color: var(--ash);
+  font-style: italic;
+}
+
+/* An Unseen portrait's empty life slot is exactly as tall as a life bar
+   (3 px), so the party row keeps its height when portraits turn Unseen. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .lb.none {
+  height: 0;
+  margin: 1px 0;
+  border-top: 1px dashed #34425f;
+  background: transparent;
+}
+
+/* Scores. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score {
+  display: grid;
+  gap: 5px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .n {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .n {
+  color: var(--crimson);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .n {
+  color: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .of {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar {
+  display: flex;
+  gap: 1px;
+  --recent-shift: 0px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i {
+  width: 3px;
+  height: 8px;
+  border-radius: 1px;
+  background: #1e2840;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .segbar
+  i.on {
+  background: var(--crimson);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar {
+  flex-direction: row-reverse;
+  --recent-shift: -1px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar
+  i.on {
+  background: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.a
+  .segbar {
+  flex-direction: row;
+  --recent-shift: 0px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.b
+  .segbar {
+  flex-direction: row-reverse;
+  --recent-shift: -1px;
+}
+
+/* Momentum: recent points in the team's light color over one underline. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a
+  .segbar
+  i.on.recent {
+  background: var(--azureL);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b
+  .segbar
+  i.on.recent {
+  background: var(--crimsonL);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent {
+  position: relative;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: var(--recent-shift);
+  width: 4px;
+  height: 1.5px;
+  background: var(--moon);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent.newest {
+  --recent-shift: 0px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .segbar
+  i.recent.newest::after {
+  width: 3px;
+}
+
+/* The number row; a held old number sits over #score-a or #score-b. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  > div {
+  position: relative;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  .n[data-beat-side="before"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* The bar row; a held old bar shares its cell. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  > .segbar {
+  grid-row: 2;
+  grid-column: 1;
+}
+
+/* The Scorebug switch off: a plain text score ("Score: 2/20"), no bar. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-plain="true"]
+  .sb-score
+  .n {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.b {
+  grid-area: sb;
+  justify-items: start;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score.a {
+  grid-area: sa;
+  justify-items: end;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.a {
+  justify-items: start;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-score[data-team-a-side="left"]
+  .sb-score.b {
+  justify-items: end;
+}
+
+/* The middle: tick, First To, Respawn Wave In. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid {
+  grid-area: mid;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid
+  b {
+  font-size: 18px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-mid
+  span {
+  color: var(--muted);
+  font-size: 13px;
+}

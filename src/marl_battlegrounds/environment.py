@@ -231,10 +231,18 @@ class TrainingFacts(NamedTuple):
         Float32 gross effective damage to newly dead recipients, by source.
         It may exceed realized health loss and is not divided among contributors.
 
+    combat_effect_has_recipient_by_source : Array or None, default=None
+        Boolean (10,) valid source routing on this producing action. Environment
+        always supplies it. None keeps older manual constructors usable.
+    health_after_combat_resolution_by_recipient : Array or None, default=None
+        Float32 (10,) health immediately after combat, before regeneration.
+        Environment always supplies it. None means an older manual constructor
+        did not supply this fact; recipes requiring it reject that input.
+
     Notes
     -----
     This immutable tuple selects existing arrays without copying or changing
-    them. It retains 341 numerical bytes per game per step when returned.
+    them. It retains 391 numerical bytes per game per step when returned.
     Padding has recipient IDs -1 and other values zero/False. Terminal facts
     describe the old game even if AutoReset returns a replacement state.
     The normal recording path excludes this optional training-only payload.
@@ -251,6 +259,8 @@ class TrainingFacts(NamedTuple):
     is_newly_dead_by_recipient: Array
     contributed_to_new_death_by_source: Array
     attributed_death_damage_by_source: Array
+    combat_effect_has_recipient_by_source: Array | None = None
+    health_after_combat_resolution_by_recipient: Array | None = None
 
 
 def _training_facts(info: Info) -> TrainingFacts:
@@ -269,6 +279,8 @@ def _training_facts(info: Info) -> TrainingFacts:
         deaths.is_newly_dead_by_recipient,
         deaths.contributed_to_new_death_by_source,
         deaths.attributed_death_damage_by_source,
+        combat.combat_effect_has_recipient_by_source,
+        combat.health_after_combat_resolution_by_recipient,
     )
 
 
@@ -1609,7 +1621,7 @@ def make(
         Retain selected Core combat/death arrays in info.training_facts for
         custom training feedback. These privileged facts never enter actor
         inputs or automatic records. False adds no retained numerical output;
-        True retains 341 bytes per game per step before any caller projection.
+        True retains 391 bytes per game per step before any caller projection.
         This structural choice changes the compiled output tree.
 
     Returns

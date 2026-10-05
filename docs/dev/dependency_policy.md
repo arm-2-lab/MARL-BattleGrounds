@@ -12,19 +12,23 @@ versions used by reproducible installs and qualification.
 
 | Group | Purpose |
 | --- | --- |
-| Base | JAX/NumPy arrays, numerical analysis, configuration and schema validation; base Python also serves the native browser clients |
+| Base | JAX/NumPy arrays, numerical analysis and schema validation; base Python also serves the native browser clients |
 | `cuda13` | CUDA 13 JAX execution |
-| `training` | Optional optimizer, model and checkpoint libraries; not a complete implemented learning workflow |
+| `training` | Optimizers, models, checkpoints, learning replay and Matplotlib reports for complete training runs |
 | `interop` | Optional Gymnasium/PettingZoo libraries; not a promise that all adapters exist |
 | `viz` | Matplotlib for static/headless snapshots |
-| `dev` | Pytest, Ruff, Pyright and pre-commit |
+| `hydra` | Optional Hydra 1.3.6 and OmegaConf 2.3.0 launcher settings |
+| `notebook` | Jupyter kernel and saved notebook execution/export; add `viz` for plots |
+| `wandb` | Optional Weights & Biases SDK; unused unless explicitly enabled |
+| `dev` | Pytest, Ruff, Pyright, pre-commit and Hydra/OmegaConf for donor and launcher tests |
 
 Change dependency intent and the lockfile together. Use locked installation in
 CI and qualification; the check scripts assume dependencies are already prepared.
 Do not move optional tool behavior into Core to avoid a dependency boundary.
 
-DevClient and Replay Viewer use the base environment for their browser mode.
-Their shell launchers select `viz` only with `--static`. Contributor Python CI
+BattleClient and Replay Viewer use the base environment for browser mode with
+Manual or built-in controllers. Native learned checkpoints also need `training`.
+The repository Replay Viewer launcher selects `viz` only with `--static`. Contributor Python CI
 includes `dev`, `viz` and `training` so it can run the complete test inventory,
 including numerical baseline checks. Browser CI includes `dev` only.
 Training libraries remain optional for environment and browser users. A separate
@@ -40,7 +44,8 @@ JavaScript. There is no runtime package manager, framework or application build
 bundle. Researchers do not need Node.js. Bundled assets work without a remote
 asset service.
 
-DevClient owns live debugger commands and local asset authoring. Replay Viewer
+BattleClient owns live match commands. Private authoring tools are not distributed.
+Replay Viewer
 owns read-only artifact navigation plus explicitly requested export/analysis.
 They share rendering code, but keep route and data authority separate. Python
 owns simulator facts, validation, audience projection and metric access. The

@@ -1006,3 +1006,405 @@ def test_pqn_initial_collection_has_its_own_label() -> None:
     )
     assert "Initial Random Collection" in text
     assert "Optimizer Steps: 0 | Learning Blocks: 0" in text
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "missing",
+        "name",
+        "count",
+        "nonfinite",
+        "boolean",
+        "extra",
+        "schema",
+        "zero_count_sum",
+    ],
+)
+def test_named_reward_host_totals_are_checked_before_recovery(
+    tmp_path: Path,
+    fault: str | None,
+) -> None:
+    host = _saved_host()
+    host["collected_reward_components"] = {
+        "real_transitions": 0,
+        "learner_team_transitions": 0,
+        "learner_agent_transitions": 0,
+        "components": {"part": {"recipient_sum": 0.0, "team_mean_sum": 0.0}},
+    }
+    details = _description(tmp_path, host)
+    details["collection"]["reward_identity"] = {
+        "reference": "test:reward",
+        "component_schema": 1,
+        "component_keys": ["part"],
+    }
+    record = cast(dict[str, Any], host["collected_reward_components"])
+    if fault == "missing":
+        del host["collected_reward_components"]
+    elif fault == "name":
+        record["components"] = {"wrong": {"recipient_sum": 0.0, "team_mean_sum": 0.0}}
+    elif fault == "count":
+        record["real_transitions"] = 1
+    elif fault == "nonfinite":
+        record["components"]["part"]["recipient_sum"] = float("nan")
+    elif fault == "boolean":
+        record["learner_agent_transitions"] = False
+    elif fault == "extra":
+        record["unexpected"] = 0
+    elif fault == "schema":
+        details["collection"]["reward_identity"]["component_schema"] = True
+    elif fault == "zero_count_sum":
+        record["components"]["part"]["recipient_sum"] = 1.0
+    before = {
+        p.relative_to(tmp_path).as_posix(): p.read_bytes()
+        for p in tmp_path.rglob("*")
+        if p.is_file()
+    }
+    if fault is None:
+        io_helpers.validate_host_state(tmp_path, details, panel=None)
+    else:
+        with pytest.raises(ValueError, match=r"component|host state|nonnegative"):
+            io_helpers.validate_host_state(tmp_path, details, panel=None)
+    assert {
+        p.relative_to(tmp_path).as_posix(): p.read_bytes()
+        for p in tmp_path.rglob("*")
+        if p.is_file()
+    } == before
+
+
+def _exposure_event(steps: int, event_id: str = "first") -> dict[str, Any]:
+    names = (
+        "starts",
+        "real_transitions",
+        "wins",
+        "draws",
+        "losses",
+        "length_sum",
+        "completed_games",
+        "used_policy_samples",
+        "used_value_samples",
+        "used_td_pairs",
+    )
+    row = {
+        "dimension": "opponent",
+        "group_id": "0",
+        "identity": {"kind": "self"},
+        **dict.fromkeys(names, 0),
+        "unavailable_reasons": {},
+    }
+    row["real_transitions"] = steps
+    return {
+        "event": "exposure_snapshot",
+        "event_id": event_id,
+        "run_id": "run",
+        "attempt_id": "attempt",
+        "boundary_id": f"run:{steps}",
+        "requested_env_steps": [steps],
+        "actual_env_steps": steps,
+        "purposes": ["final"],
+        "training_seconds": 1.0,
+        "elapsed_seconds": 2.0,
+        "wall_seconds": 3.0,
+        "rows": [row],
+    }
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing",
+        "duplicate",
+        "digest",
+        "run",
+        "later",
+        "count",
+        "clock",
+        "groups",
+        "reason",
+        "reason_type",
+        "missing_outcome",
+        "purpose_type",
+    ],
+)
+def test_exposure_mapping_rejects_uncommitted_or_inconsistent_evidence(
+    fault: str,
+) -> None:
+    event = _exposure_event(8)
+    mapping = {
+        "run:8": {
+            "event_id": "first",
+            "digest": io_helpers.exposure_event_digest(event),
+        }
+    }
+    if fault == "run":
+        event["run_id"] = "other"
+    elif fault == "later":
+        event["actual_env_steps"] = 16
+    elif fault == "count":
+        event["rows"][0]["real_transitions"] = -1
+    elif fault == "clock":
+        event["wall_seconds"] = -1
+    elif fault == "groups":
+        event["rows"] *= 2
+    elif fault == "reason":
+        event["rows"][0]["length_sum"] = None
+    elif fault == "reason_type":
+        event["rows"][0]["unavailable_reasons"] = []
+    elif fault == "missing_outcome":
+        event["rows"][0]["wins"] = None
+        event["rows"][0]["unavailable_reasons"]["wins"] = "Unknown"
+    elif fault == "purpose_type":
+        event["purposes"] = [{}]
+    if fault != "digest":
+        mapping["run:8"]["digest"] = io_helpers.exposure_event_digest(event)
+    else:
+        event["rows"][0]["starts"] = 1
+    events = (
+        []
+        if fault == "missing"
+        else [event, event]
+        if fault == "duplicate"
+        else [event]
+    )
+    with pytest.raises(ValueError, match="exposure"):
+        io_helpers.checked_exposure_snapshots(
+            mapping, events, run_id="run", env_steps=8
+        )
+
+
+def test_exposure_history_follows_checkpoint_mapping_and_preserves_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.training import _checkpoint_metadata, analysis
+
+    root = tmp_path / "relocated"
+    root.mkdir()
+    (root / "run_details.json").write_text(json.dumps({"run_id": "run"}))
+    (root / "status.json").write_text(
+        json.dumps({"run_id": "run", "latest_checkpoint": "/old/run/checkpoints/saved"})
+    )
+    earlier, abandoned, accepted = (
+        _exposure_event(0),
+        _exposure_event(8, "abandoned"),
+        _exposure_event(8, "accepted"),
+    )
+    for event in (earlier, abandoned, accepted):
+        io_helpers.append_jsonl(root / "run_events.jsonl", event, durable=True)
+    mapping = {
+        event["boundary_id"]: {
+            "event_id": event["event_id"],
+            "digest": io_helpers.exposure_event_digest(event),
+        }
+        for event in (earlier, accepted)
+    }
+    description: dict[str, Any] = {
+        "kind": "learner",
+        "metadata": {"run_id": "run", "host_state": {"exposure_snapshots": mapping}},
+        "counters": {"env_steps": 8},
+    }
+
+    def read_description(path: Path) -> dict[str, Any]:
+        assert path == root / "checkpoints" / "saved"
+        return description
+
+    monkeypatch.setattr(
+        _checkpoint_metadata, "read_checkpoint_description", read_description
+    )
+    original = (root / "run_events.jsonl").read_bytes()
+    rows = analysis._exposure_history(root)
+    assert [row["event_id"] for row in rows if row["accepted"]] == ["first", "accepted"]
+    assert rows[1]["evidence_status"] == "uncommitted_or_superseded"
+    assert rows[1]["wall_seconds"] == 3.0
+    # Recovering an earlier checkpoint changes accepted history without deleting
+    # the abandoned attempt or pretending its later event was durable state.
+    del mapping["run:8"]
+    description["counters"]["env_steps"] = 0
+    assert [
+        row["event_id"] for row in analysis._exposure_history(root) if row["accepted"]
+    ] == ["first"]
+    (root / "checkpoint_recovery.json").write_text("{}")
+    assert not any(row["accepted"] for row in analysis._exposure_history(root))
+    (root / "checkpoint_recovery.json").unlink()
+    (root / "status.json").unlink()
+    assert not any(row["accepted"] for row in analysis._exposure_history(root))
+    assert (root / "run_events.jsonl").read_bytes() == original
+
+
+def test_exposure_event_append_failure_leaves_no_checkpoint_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.training import runner
+
+    owner = object.__new__(runner._Run)
+    owner.root = tmp_path
+    owner.config = runner.TrainConfig(total_env_steps=8, num_envs=4)
+    owner.host = {
+        "env_steps": 8,
+        "exposure_snapshots": {},
+        "training_seconds": 1.0,
+        "elapsed_seconds": 2.0,
+    }
+    owner.metadata = {"run_id": "run", "attempt_id": "attempt"}
+    owner.validation_steps = {8}
+    owner.validation_declaration = {
+        "points": [{"env_steps": 8, "requested_steps": [6, 8]}]
+    }
+    owner.created_at = 0.0
+    monkeypatch.setattr(owner, "_exposure_rows", lambda: _exposure_event(8)["rows"])
+    real_append = runner.append_jsonl
+
+    def fail_append(*args: object, **kwargs: object) -> None:
+        raise OSError("Injected event append failure")
+
+    monkeypatch.setattr(runner, "append_jsonl", fail_append)
+    with pytest.raises(OSError, match="append failure"):
+        owner._snapshot_exposure()
+    assert not owner.host["exposure_snapshots"]
+    monkeypatch.setattr(runner, "append_jsonl", real_append)
+    owner._snapshot_exposure()
+    owner._snapshot_exposure()
+    events = io_helpers.read_run_events(tmp_path / "run_events.jsonl")
+    assert len(events) == 1
+    assert events[0]["purposes"] == ["routine_validation", "final"]
+    assert events[0]["requested_env_steps"] == [6, 8]
+    assert io_helpers.checked_exposure_snapshots(
+        cast(dict[str, Any], owner.host)["exposure_snapshots"],
+        events,
+        run_id="run",
+        env_steps=8,
+    )
+
+
+def test_legacy_member_lengths_stay_unknown_until_a_new_block(tmp_path: Path) -> None:
+    host = _saved_host(steps=16, pending=None)
+    for name, width in (("member_completed", 3), ("member_score_sums", 2)):
+        host[name] = [[0] * width for _ in range(21)]
+        host["last_" + name] = [[0] * width for _ in range(21)]
+    host["member_completed"][0] = [1, 0, 0]
+    host["last_member_completed"][0] = [1, 0, 0]
+    host["member_length_sum"] = None
+    host["last_member_length_sum"] = None
+    details = _description(tmp_path, host)
+    io_helpers.validate_host_state(tmp_path, details, panel=None)
+    # Zero would invent a length for the completed legacy game and must fail.
+    host["last_member_length_sum"] = [0] * 21
+    with pytest.raises(ValueError, match="lengths disagree"):
+        io_helpers.validate_host_state(tmp_path, details, panel=None)
+    host["last_member_length_sum"][0] = 12
+    io_helpers.validate_host_state(tmp_path, details, panel=None)
+    assert host["member_length_sum"] is None
+
+
+def test_legacy_member_exposure_does_not_invent_missing_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from marl_battlegrounds.training import collection, runner
+
+    owner = object.__new__(runner._Run)
+    owner.collection = cast(
+        Any, SimpleNamespace(binding=SimpleNamespace(source_configurations=("source",)))
+    )
+    owner.state = cast(Any, SimpleNamespace(carry=None))
+    owner.config = runner.TrainConfig()
+    owner.host = {
+        "env_steps": 32,
+        "member_results_start_env_steps": 16,
+        "member_completed": [[1, 0, 0]],
+        "last_member_completed": [[1, 0, 0]],
+        "member_score_sums": [[20, 0]],
+        "last_member_score_sums": [[20, 0]],
+        "member_length_sum": None,
+        "last_member_length_sum": [12],
+        "past_copies": {},
+    }
+
+    def members(*args: object) -> list[dict[str, Any]]:
+        return [{"kind": "self"}]
+
+    def summary(*args: object) -> dict[str, Any]:
+        return {
+            "starts_by_episode_stage": [3],
+            "steps_by_episode_stage": [32],
+            "steps_by_map": [32],
+            "starts_by_opponent": [3],
+            "steps_by_opponent": [32],
+        }
+
+    monkeypatch.setattr(collection, "opponent_member_records", members)
+    monkeypatch.setattr(collection, "training_summary", summary)
+    observed = owner._member_statistics()[0]
+    assert observed["cumulative"]["wins"] == 1
+    assert observed["cumulative"]["start_env_steps"] == 16
+    assert observed["cumulative"]["complete_history"] is False
+    assert observed["last_update"]["length_sum"] == 12
+    assert observed["last_update"]["recorded"] is True
+    owner.host["env_steps"] = 16
+    assert owner._member_statistics()[0]["last_update"]["recorded"] is False
+    rows = owner._exposure_rows()
+    assert rows[0]["unavailable_reasons"]["used_policy_samples"].startswith(
+        "Not recorded"
+    )
+    assert (
+        rows[0]["unavailable_reasons"]["used_td_pairs"]
+        == "Not applicable to this learner"
+    )
+    for row in rows:
+        if row["dimension"] in ("opponent", "opponent_source") and row["group_id"] in (
+            "0",
+            "self",
+        ):
+            assert row["real_transitions"] == 32
+            assert row["wins"] is None and row["completed_games"] is None
+            assert row["length_sum"] is None
+            assert row["unavailable_reasons"]["wins"]
+
+
+def test_child_initial_exposure_boundary_is_saved_and_reused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.training import runner
+
+    owner = object.__new__(runner._Run)
+    owner.root = tmp_path
+    owner.config = runner.TrainConfig(total_env_steps=16, num_envs=4)
+    owner.host = {
+        "env_steps": 8,
+        "exposure_snapshots": {},
+        "training_seconds": 1.0,
+        "elapsed_seconds": 2.0,
+    }
+    owner.metadata = {
+        "run_id": "child",
+        "attempt_id": "first",
+        "continuation": {"start_env_steps": 8},
+    }
+    owner.validation_steps = {16}
+    owner.validation_declaration = {
+        "points": [{"env_steps": 16, "requested_steps": [16]}]
+    }
+    owner.created_at = 0.0
+    monkeypatch.setattr(owner, "_exposure_rows", lambda: _exposure_event(8)["rows"])
+    owner._snapshot_exposure()
+    saved = json.loads(json.dumps(owner.host))
+    owner._snapshot_exposure()
+    owner.host = saved
+    owner.metadata["attempt_id"] = "resumed"
+    owner._snapshot_exposure()
+    events = io_helpers.read_run_events(tmp_path / "run_events.jsonl")
+    assert len(events) == 1
+    assert events[0]["actual_env_steps"] == 8
+    assert events[0]["purposes"] == ["initial"]
+    assert list(
+        io_helpers.checked_exposure_snapshots(
+            saved["exposure_snapshots"],
+            events,
+            run_id="child",
+            env_steps=8,
+        )
+    ) == ["child:8"]

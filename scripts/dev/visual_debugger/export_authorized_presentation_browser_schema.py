@@ -20,7 +20,7 @@ type JsonValue = (
     None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 )
 
-_DOCUMENTATION_KEYS = frozenset({"description", "title"})
+_DOCUMENTATION_KEYS = frozenset({"description", "title", "default"})
 _SCHEMA_KEYWORDS = frozenset(
     {
         "$defs",
@@ -29,6 +29,7 @@ _SCHEMA_KEYWORDS = frozenset(
         "anyOf",
         "const",
         "description",
+        "default",
         "discriminator",
         "enum",
         "exclusiveMaximum",

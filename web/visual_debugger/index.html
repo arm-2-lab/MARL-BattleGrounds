@@ -1,9 +1,60 @@
 <!doctype html>
 <!--
-  Shared native client page for DevClient and Replay Viewer. The server supplies
-  bootstrap.js, which selects the product; src/main.js installs its authorized
-  data and controls. Stable IDs are binding points for that code. Keep scripts,
-  styles and fonts local and preserve the content-security policy below.
+  Shared native client page for the BattleClient, the DevClient combat screen
+  and the Replay Viewer. The server supplies bootstrap.js, which selects the
+  product; src/main.js installs its authorized data and controls, with
+  src/shell.js (top bar, popovers, Title Card, Oracle View tag), src/tactics-turn.js
+  (live command deck) and src/filter-controls.js (Visual Filters). Stable IDs are
+  binding points for that code. Keep scripts, styles and fonts local and preserve
+  the content-security policy below (no inline style attributes).
+
+  Live play (BattleClient and DevClient combat screen) follows the approved
+  BattleClient vision page: one #bc grid with the top bar (.bc-top: brand,
+  place line, View switch, Connected and Recording pills, Visual Filters,
+  How To Play, Finish And Save, Restart, Exit), the scorebug
+  (#scorebug), the stage (#stage: the arena box #arena and the deck
+  #command-deck, whose header line #status-line holds the message and Keys
+  On or Off; owner, 4 Oct 2026: no status line under the deck) and a 340 px
+  rail (#rail: Your Turn #turn-card, Class Guide
+  #class-card, How To Play #howto-card). Floating parts: the hover card
+  (#hcard), the How To Play overlay over the arena (#htp), the Replay
+  Recording popover (#rec-pop), the Visual Filters drawer
+  (#visual-filters-drawer) and the Restart dialog
+  (#recording-discard-dialog). The DevClient shows the closed Developer
+  drawer (#developer-drawer) at the end of the rail. Styles:
+  src/styles/battleclient/*.css; shared rules are scoped to
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]),
+  a rule for one client names its product kind alone, and
+  src/styles/battleclient/deck.css stays live only.
+
+  The Replay Viewer (owner, 3 Oct 2026) uses the same #bc grid and the same
+  BattleClient styles: the top bar (with its POV agent chip and a Frame
+  Explanation button), the scorebug, the stage (the arena box #arena, the
+  Arena Frames #team-rosters and the Rune Scrubber dock #replay-timeline,
+  which src/rune-scrubber.js fills through the #chronicle slot) and the rail
+  (the Fallen panel, then six tabs: Roster, Agent, Metrics, Actions, Visuals,
+  Frame). Its cards in the Developer and Visual Filters drawers move into
+  its rail tabs at startup (src/ledger.js).
+
+  Old live parts kept only for src/main.js: elements it finds by ID but the
+  vision does not show (the old match strip, party frames, Details, the
+  corner camera switch, the old Recording panel, the top-bar notice pill and
+  the hidden legacy deck copy) stay in the page and are never shown in live
+  play.
+
+  Empty slots: elements marked "Empty slot" below start hidden and empty. Each
+  waits for the module that will fill and show it. They carry no data-live-only
+  or data-replay-only marker, because the page shows those for their product.
+
+  Brand: the owner's emblem appears only in the page chrome (the tab icon, the
+  header lockup and the Title Card), never on the battlefield or in an exported
+  PNG. Help key lists (dl data-command-help) are written by src/shell.js from
+  the one command set, so Help always matches what each key does.
+
+  Private tools compose this page by inserting markup before five exact strings:
+  the header status div, the toolbar actions div, the tooltip aside opening with
+  its line break and indentation, the end of the head, and the main.js module
+  script tag. Keep each of them exactly once and unchanged.
 -->
 <html lang="en">
   <head>
@@ -16,130 +67,193 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MARL-BattleGrounds</title>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" type="image/png" sizes="64x64" href="/assets/brand/marl-bgs-emblem-64.png">
+    <link rel="icon" type="image/webp" sizes="32x32" href="/assets/brand/marl-bgs-emblem-32.webp">
     <script src="/bootstrap.js"></script>
     <script type="module" src="/src/main.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#battlefield">Skip to battlefield</a>
 
-    <header class="app-header">
+    <!-- The BattleClient grid. Live play only; it adds no box elsewhere. -->
+    <div id="bc" class="bc">
+    <header class="app-header bc-top">
       <div class="brand">
-        <p class="eyebrow">MARL-BattleGrounds</p>
-        <h1 id="app-title">MARL-BattleGrounds</h1>
+        <picture>
+          <source
+            type="image/webp"
+            srcset="/assets/brand/marl-bgs-emblem-64.webp 1x, /assets/brand/marl-bgs-emblem-128.webp 2x"
+          >
+          <img
+            class="brand__emblem logo"
+            src="/assets/brand/marl-bgs-emblem-64.png"
+            width="28"
+            height="28"
+            alt="MARL-BGs emblem"
+          >
+        </picture>
+        <!-- src/shell.js cuts the rune letters of "MARL-BGs" into this SVG. -->
+        <svg id="brand-wordmark" class="brand__wordmark" role="img" aria-label="MARL-BGs"></svg>
+        <!-- Live play shows the plain everyday name instead of the rune letters. -->
+        <span class="bname">MARL-BGs</span>
+        <span class="brand__divider" aria-hidden="true"></span>
+        <span class="brand__plain">MARL-BattleGrounds</span>
+        <h1 id="app-title" class="bprod">MARL-BattleGrounds</h1>
       </div>
-      <nav
-        id="devclient-nav"
-        class="devclient-nav"
-        aria-label="DevClient areas"
-        data-devclient-only
-        hidden
-      >
-        <button type="button" data-devclient-area="combat" aria-current="page">
-          Combat Debugger
-        </button>
-        <button type="button" data-devclient-area="maps">Maps</button>
-        <button type="button" data-devclient-area="scenarios">Scenarios</button>
-      </nav>
+      <!-- src/shell.js writes the map, or a scenario's tale title, here. -->
+      <p id="match-place" class="match-place where" hidden></p>
+
+      <!-- The one-line notice: a pill in the top bar, so it never moves or covers the arena.
+           The Replay Viewer shows it. Live play never does: the vision has no notice, and
+           src/main.js setNotice also sends the text to the deck's status line (#msg). -->
+      <div id="notice" class="notice" data-level="info" role="status" hidden></div>
+
       <div class="header-status" aria-live="polite">
-        <span id="connection-status" class="status-pill" data-state="loading">
+        <span id="connection-status" class="status-pill pill conn" data-state="loading">
           Connecting
         </span>
         <span id="audience-badge" class="status-pill status-pill--quiet">
-          View unavailable
+          View Unavailable
         </span>
         <span id="terminal-badge" class="status-pill status-pill--warning" hidden>
           Terminal
         </span>
-        <span id="recording-badge" class="status-pill status-pill--recording" hidden>
-          Recording
-        </span>
+        <!-- Opens the Replay Recording popover (#rec-pop); a second click closes it. -->
+        <button
+          id="recording-badge"
+          class="status-pill status-pill--recording pill"
+          type="button"
+          popovertarget="rec-pop"
+          aria-haspopup="dialog"
+          hidden
+        ><i></i><span id="rec-pill-text">Recording</span></button>
       </div>
+
+      <section class="session-toolbar" aria-label="Session controls">
+        <div class="view-switch">
+          <span id="view-switch-label" class="sr-only">View</span>
+          <fieldset
+            id="view-switch"
+            class="view-switch__buttons seg"
+            aria-labelledby="view-switch-label"
+          >
+            <button type="button" data-view-mode="pov" data-view="pov" aria-pressed="false" disabled>Agent POV</button>
+            <button type="button" data-view-mode="researcher" data-view="oracle" aria-pressed="false" disabled>Oracle View</button>
+          </fieldset>
+          <select
+            id="view-select"
+            class="view-switch__select"
+            aria-label="View mode"
+            aria-hidden="true"
+            tabindex="-1"
+            disabled
+          >
+            <option value="pov">Agent POV</option>
+            <option value="researcher">Oracle View</option>
+          </select>
+        </div>
+        <!-- Replay Viewer Agent POV only: whose view the arena shows, and a picker of every agent. -->
+        <div id="pov-agent-chip" class="pov-agent-chip" hidden>
+          <button
+            id="pov-agent-chip-button"
+            class="pov-agent-chip__button"
+            type="button"
+            popovertarget="pov-agent-picker"
+          ></button>
+          <div
+            id="pov-agent-picker"
+            class="shell-popover pov-agent-picker"
+            popover
+            role="dialog"
+            aria-label="Choose Whose View To Watch"
+          ></div>
+        </div>
+        <button
+          id="session-details-button"
+          class="session-details-button"
+          type="button"
+          popovertarget="session-details"
+        >Details</button>
+        <div
+          id="session-details"
+          class="shell-popover session-details"
+          popover
+          role="dialog"
+          aria-label="Details"
+        >
+          <fieldset class="session-facts" aria-label="Session facts">
+            <span>Step <strong id="step-value">—</strong></span>
+            <span>Transition <strong id="transition-value">—</strong></span>
+            <button id="copy-transition-button" type="button" disabled>Copy</button>
+          </fieldset>
+          <div id="replay-details" data-replay-only hidden>
+            <p class="eyebrow replay-details__title">Replay File</p>
+            <dl class="replay-badges">
+              <div>
+                <dt>Artifact</dt>
+                <dd id="replay-artifact-reference" tabindex="0">—</dd>
+              </div>
+              <div>
+                <dt>Completion</dt>
+                <dd id="replay-completion-badge" tabindex="0">—</dd>
+              </div>
+              <div>
+                <dt>Processing</dt>
+                <dd id="replay-processing-badge" tabindex="0">—</dd>
+              </div>
+              <div>
+                <dt>End Reason</dt>
+                <dd id="replay-end-reason">—</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div class="toolbar-actions">
+          <button id="reconnect-button" class="button button--quiet" type="button" hidden>
+            Reconnect
+          </button>
+          <button id="help-button" class="button button--quiet tbtn primary" type="button">
+            Help
+          </button>
+          <!-- Live play: opens and closes the Visual Filters drawer. The
+               Replay Viewer: opens the rail's Visuals tab (src/main.js). -->
+          <button
+            id="visual-filters-button"
+            class="tbtn"
+            type="button"
+            popovertarget="visual-filters-drawer"
+            aria-haspopup="dialog"
+            hidden
+          >Visual Filters</button>
+          <!-- Live play: Finish And Save. It reads Saving Replay… while the
+               server saves and turns into Open Replay once the replay is
+               saved (src/main.js renderRecordingControls); hidden when the
+               match records nothing. Then Restart. Never shown in the Replay
+               Viewer (topbar.css). -->
+          <button id="recording-finish-button" class="tbtn" type="button" hidden disabled>Finish And Save</button>
+          <button id="reset-button" class="tbtn" type="button" data-key="r" data-live-only>Restart <kbd>R</kbd></button>
+          <button id="exit-button" class="button button--quiet tbtn" type="button" disabled>
+            Exit
+          </button>
+        </div>
+      </section>
     </header>
 
-    <section class="session-toolbar" aria-label="Session controls">
-      <label>
-        <span>View</span>
-        <select id="view-select" aria-label="View mode" disabled>
-          <option value="researcher">Oracle View</option>
-          <option value="pov">Agent POV</option>
-        </select>
-      </label>
-      <fieldset class="session-facts" aria-label="Session facts">
-        <span>Step <strong id="step-value">—</strong></span>
-        <span>Transition <strong id="transition-value">—</strong></span>
-      </fieldset>
-      <fieldset
-        id="devclient-combat-config"
-        class="devclient-combat-config"
-        aria-label="DevClient combat configuration"
-        data-devclient-only
-        hidden
-      >
-        <label>
-          <span>Saved asset</span>
-          <select id="devclient-scenario-select" aria-label="Saved valid map or scenario">
-            <option value="">Built-in arena</option>
-          </select>
-        </label>
-        <label>
-          <span>Task</span>
-          <select id="devclient-task-select" aria-label="Task for authored matches" disabled>
-            <option value="tdm">TDM</option>
-          </select>
-        </label>
-        <button id="devclient-scenario-load" type="button" disabled>Load</button>
-        <label>
-          <span>Team A controller</span>
-          <select id="devclient-team-a-controller">
-            <option value="manual" selected>Manual</option>
-            <option value="reactive_tdm" id="devclient-team-a-reactive-option" disabled>Reactive TDM ALPHA</option>
-            <option value="random_valid">Random</option>
-            <option value="scenario_5" id="devclient-team-a-scenario-5-option" disabled>Reactive TDM BETA</option>
-            <option value="tdm_gamma" id="devclient-team-a-tdm-gamma-option" disabled>Reactive TDM GAMMA</option>
-          </select>
-        </label>
-        <label>
-          <span>Team B controller</span>
-          <select id="devclient-team-b-controller">
-            <option value="manual" selected>Manual</option>
-            <option value="reactive_tdm" id="devclient-team-b-reactive-option" disabled>Reactive TDM ALPHA</option>
-            <option value="random_valid">Random</option>
-            <option value="scenario_5" id="devclient-scenario-5-controller-option" disabled>Reactive TDM BETA</option>
-            <option value="tdm_gamma" id="devclient-tdm-gamma-controller-option" disabled>Reactive TDM GAMMA</option>
-          </select>
-        </label>
-        <label>
-          <span>Information</span>
-          <select id="devclient-information-mode">
-            <option value="shared_obs" selected>SharedObs</option>
-            <option value="no_shared_obs" id="devclient-no-shared-option">NoSharedObs</option>
-          </select>
-        </label>
-      </fieldset>
-      <div class="toolbar-actions">
-        <button id="reconnect-button" class="button button--quiet" type="button">
-          Reconnect
-        </button>
-        <button id="help-button" class="button button--quiet" type="button">
-          Help
-        </button>
-        <button id="exit-button" class="button button--danger" type="button" disabled>
-          Exit
-        </button>
-      </div>
-    </section>
-
+    <!-- Old Recording panel: never shown in live play (the Recording pill opens
+         #rec-pop); kept because src/main.js writes these facts by ID. -->
     <section
       id="recording-panel"
       class="recording-panel"
       aria-labelledby="recording-heading"
+      popover
       data-live-only
       hidden
     >
       <div class="recording-panel__summary">
         <div>
-          <p class="eyebrow">Canonical replay capture</p>
-          <h2 id="recording-heading">Replay recording</h2>
+          <p class="eyebrow">Replay Of This Game</p>
+          <h2 id="recording-heading">Replay Recording</h2>
         </div>
         <dl class="recording-facts">
           <div>
@@ -160,48 +274,6 @@
           </div>
         </dl>
       </div>
-      <fieldset class="recording-panel__actions">
-        <legend class="sr-only">Replay recording actions</legend>
-        <button
-          id="recording-finish-button"
-          class="button--primary"
-          type="button"
-          hidden
-          disabled
-        >
-          Finish &amp; Review
-        </button>
-        <button
-          id="recording-review-button"
-          class="button--primary"
-          type="button"
-          hidden
-          disabled
-        >
-          Review replay
-        </button>
-        <button id="recording-retry-button" type="button" hidden disabled>
-          Retry save
-        </button>
-        <div id="recording-save-as-control" class="recording-save-as" hidden>
-          <label for="recording-save-as-input">Save As basename</label>
-          <input
-            id="recording-save-as-input"
-            type="text"
-            minlength="20"
-            maxlength="160"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="episode-copy.marlbg-replay.json"
-            aria-describedby="recording-save-as-help"
-            disabled
-          >
-          <button id="recording-save-as-button" type="button" disabled>Save As</button>
-          <span id="recording-save-as-help" class="sr-only">
-            Enter only a filename ending in .marlbg-replay.json. Paths are not accepted.
-          </span>
-        </div>
-      </fieldset>
       <progress id="recording-metrics-progress" class="metrics-progress" aria-label="Saving replay" aria-describedby="recording-status-note" hidden></progress>
       <p id="recording-status-note" class="recording-panel__note" aria-live="polite">
         Recording authority is supplied by the local Python service.
@@ -209,124 +281,24 @@
       <p id="recording-metrics-help" class="recording-panel__note" hidden>Saving captured frames and provenance. Metrics can be computed separately in Replay Viewer.</p>
     </section>
 
-    <section
-      id="replay-timeline"
-      class="replay-timeline"
-      aria-labelledby="replay-timeline-heading"
-      tabindex="0"
-      hidden
-    >
-      <div class="replay-timeline__summary">
-        <div>
-          <p class="eyebrow">Read-only artifact</p>
-          <h2 id="replay-timeline-heading">Replay timeline</h2>
-        </div>
-        <dl class="replay-badges">
-          <div>
-            <dt>Artifact</dt>
-            <dd id="replay-artifact-reference" tabindex="0">—</dd>
-          </div>
-          <div>
-            <dt>Completion</dt>
-            <dd id="replay-completion-badge" tabindex="0">—</dd>
-          </div>
-          <div>
-            <dt>Processing</dt>
-            <dd id="replay-processing-badge" tabindex="0">—</dd>
-          </div>
-          <div>
-            <dt>End reason</dt>
-            <dd id="replay-end-reason">—</dd>
-          </div>
-        </dl>
-      </div>
-      <fieldset
-        id="replay-artifact-actions"
-        class="replay-artifact-actions"
-        aria-label="Replay artifact actions"
-        data-replay-only
-        hidden
-      >
-        <legend class="sr-only">Replay artifact actions</legend>
-        <button
-          id="replay-export-png-button"
-          type="button"
-          aria-describedby="replay-export-png-help"
-          disabled
-        >Export PNG</button>
-        <span id="replay-export-png-help" class="sr-only">
-          Export the settled battlefield alone at twice its displayed resolution.
-        </span>
-        <button
-          id="replay-download-metrics-button"
-          type="button"
-          aria-describedby="replay-download-metrics-help"
-          disabled
-        >Download Metrics CSV</button>
-        <span id="replay-download-metrics-help" class="sr-only">
-          Download evaluation metrics for the selected Up to Current Tick or Entire Episode scope.
-        </span>
-        <button id="replay-episode-details-button" type="button" disabled>Episode Details</button>
-      </fieldset>
-      <div id="replay-metrics-preparation" class="metric-preparation" role="status" hidden>
-        <progress class="metrics-progress" aria-label="Preparing metric download" aria-describedby="replay-metrics-preparation-text"></progress>
-        <span id="replay-metrics-preparation-text"></span>
-        <small>Metrics summarize the captured game.</small>
-      </div>
-      <fieldset class="replay-timeline__transport">
-        <legend class="sr-only">Replay transport</legend>
-        <button id="replay-first-button" type="button" aria-label="Start replay tick">Start</button>
-        <button id="replay-back-ten-button" type="button" aria-label="Go back ten replay ticks">−10</button>
-        <button id="replay-previous-button" type="button" aria-label="Previous replay tick">−1</button>
-        <button
-          id="replay-play-pause-button"
-          class="button--primary"
-          type="button"
-          aria-label="Play replay"
-          aria-pressed="false"
-        >Play</button>
-        <button id="replay-next-button" type="button" aria-label="Next replay tick">+1</button>
-        <button id="replay-forward-ten-button" type="button" aria-label="Go forward ten replay ticks">+10</button>
-        <button id="replay-last-button" type="button" aria-label="End replay tick">End</button>
-        <label class="replay-timeline__slider">
-          <span>Tick</span>
-          <input
-            id="replay-frame-slider"
-            type="range"
-            min="0"
-            max="0"
-            step="1"
-            value="0"
-            aria-label="Replay tick"
-            disabled
-          >
-        </label>
-        <output id="replay-frame-position" for="replay-frame-slider" aria-live="polite">
-          Tick 0 / 0
-        </output>
-        <label class="replay-timeline__rate">
-          <span>Speed</span>
-          <select id="replay-playback-rate" aria-label="Replay playback speed">
-            <option value="0.25">0.25×</option>
-            <option value="0.5" selected>0.50×</option>
-            <option value="0.75">0.75×</option>
-            <option value="1">1.00×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5">1.50×</option>
-            <option value="1.75">1.75×</option>
-            <option value="2">2.00×</option>
-          </select>
-        </label>
-        <output id="replay-transport-status" aria-live="polite">
-          Frame — / — · Tick — / — · 0.50× · OFFLINE
-        </output>
-      </fieldset>
-    </section>
-
-    <div id="notice" class="notice" data-level="info" role="status" hidden></div>
+    <!-- Live play: the scorebug. Team hosts, portraits (#party-a, #party-b),
+         scores with their segment bars, and the middle (tick, First To,
+         Respawn Wave In). The code that fills it sets data-team-a-side. -->
+    <div class="bc-score" id="scorebug" hidden>
+      <div class="sb-host b"><svg class="crest crest--b" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="3"/><circle class="crest__split" cx="11" cy="11" r="9" fill="none" stroke-width="1"/><circle cx="11" cy="11" r="4.05" fill="currentColor" opacity="0.35"/></svg><div><b>Team B<span class="yours" hidden>Yours</span></b><span class="ctl" id="ctl-b"></span></div></div>
+      <div class="sb-party b" id="party-b"></div>
+      <div class="sb-score b"><div><span class="n num" id="score-b"></span><span class="of"></span></div><span class="segbar" id="seg-b"></span></div>
+      <div class="sb-mid"><b class="num"></b><span></span><span class="wave"></span></div>
+      <div class="sb-score a"><div><span class="n num" id="score-a"></span><span class="of"></span></div><span class="segbar" id="seg-a"></span></div>
+      <div class="sb-party a" id="party-a"></div>
+      <!-- Replay Viewer only: the camera tips (src/looks/camera.js), placed in the
+           empty inner half of the right-hand score column. Hidden elsewhere. -->
+      <div class="sb-tips" id="camera-tips" hidden></div>
+      <div class="sb-host a"><svg class="crest crest--a" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="11" cy="11" r="4.05" fill="currentColor" opacity="0.35"/></svg><div><b><span class="yours" hidden>Yours</span>Team A</b><span class="ctl" id="ctl-a"></span></div></div>
+    </div>
 
     <main id="workspace" class="workspace">
-      <section class="battlefield-panel" aria-labelledby="battlefield-heading">
+      <section id="stage" class="battlefield-panel bc-stage" aria-labelledby="battlefield-heading">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Authoritative snapshot</p>
@@ -343,6 +315,11 @@
           <div id="match-team-b" class="match-scoreboard__team match-scoreboard__team--b"></div>
         </section>
 
+        <!-- Empty slot: party frames, one per champion, for both teams. -->
+        <section id="party-frames" hidden></section>
+
+        <!-- The arena box: the field, its view tag and the How To Play overlay. -->
+        <div id="arena" class="arena">
         <div id="battlefield-shell" class="battlefield-shell" aria-busy="true">
           <svg
             id="battlefield"
@@ -355,6 +332,45 @@
           <p id="battlefield-empty" class="battlefield-empty">
             Connecting to the local product service…
           </p>
+          <!-- Empty slot: the Title Card shown while no frame has arrived. -->
+          <section id="title-card" hidden></section>
+          <!-- Empty slot: live camera switch in the field corner (Whole Map, Everyone In View). -->
+          <div id="live-camera-switch" hidden></div>
+          <!-- Live play in Oracle View only: a reminder that the player sees everything. -->
+          <p id="oracle-view-tag" class="oracle-view-tag" hidden>
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M1 7 C3 3.5 5 2.5 7 2.5 C9 2.5 11 3.5 13 7 C11 10.5 9 11.5 7 11.5 C5 11.5 3 10.5 1 7 Z"></path>
+              <circle cx="7" cy="7" r="2"></circle>
+            </svg>
+            Oracle View <span>· You See Everything</span>
+          </p>
+        </div>
+          <!-- On-screen keys, stacked at the arena's top right, key only (owner,
+               4 Oct 2026; the name is the button's label and its hover card):
+               V Everyone In View, B Battle Cam (Replay Viewer only), F Frame
+               Explanation and Esc Clear Selection (Replay Viewer only). Each
+               does exactly what its key does (src/arena-buttons.js wires and
+               shows them; hidden until then). Match Summary shows only while
+               the game-over Verdict is folded into its plate (src/main.js
+               renderMatchMomentCards) and opens or closes the Match Summary
+               sheet. data-arena-chrome marks it as page chrome over the arena,
+               which moment cards keep clear of (src/scene.js). -->
+          <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of buttons; a fieldset would change how the page styles and disables it. -->
+          <div id="arena-buttons" class="arena-buttons" role="group" aria-label="Arena Shortcuts" data-arena-chrome hidden>
+            <button type="button" class="sbtn arena-key" id="arena-everyone-in-view-button" aria-label="Everyone In View" aria-keyshortcuts="V" aria-pressed="false"><kbd aria-hidden="true">V</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-battle-cam-button" aria-label="Battle Cam" aria-keyshortcuts="B" aria-pressed="false" hidden><kbd aria-hidden="true">B</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-frame-explanation-button" aria-label="Frame Explanation" aria-keyshortcuts="F" aria-pressed="false"><kbd aria-hidden="true">F</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-clear-selection-button" aria-label="Clear Selection" aria-keyshortcuts="Escape" hidden><kbd aria-hidden="true">Esc</kbd></button>
+            <button type="button" class="sbtn" id="arena-match-summary-button" aria-pressed="false" hidden>Match Summary</button>
+          </div>
+          <!-- Empty slot: the view tag ("Agent POV · …" or "Oracle View · …"). -->
+          <p class="povtag" id="pov-tag" hidden></p>
+          <!-- How To Play over the arena (never the deck); ? or Close shuts it. -->
+          <div class="htp" id="htp" role="dialog" aria-label="How To Play" hidden>
+            <header><h3>How To Play</h3><button type="button" class="sbtn" id="help-close-button">Close <kbd>?</kbd></button></header>
+            <div id="htp-body"></div>
+            <div class="foot"><span class="keysrow"><span><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>X</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd> Step</span><span><kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> Action</span><span><kbd>Shift</kbd> + Click Target</span><span><kbd>Space</kbd> Lock In</span><span><kbd>Esc</kbd> Clear Target</span><span><kbd>V</kbd> Everyone In View</span><span><kbd>F</kbd> Frame Explanation</span></span><button type="button" class="linkbtn" id="htp-full">Read The Full Guide</button></div>
+          </div>
         </div>
         <div class="battlefield-support">
           <p id="battlefield-instructions" class="battlefield-instructions">
@@ -375,124 +391,264 @@
           </fieldset>
         </div>
 
-        <details id="command-deck" class="command-deck" data-live-only open>
-          <summary class="command-deck__header">
-            <span class="command-deck__title-group">
-              <span class="command-deck__eyebrow">Joint action composer</span>
-              <strong class="command-deck__title">Stage, inspect, then submit</strong>
-            </span>
-          </summary>
-
-          <div
-            id="command-deck-body"
-            class="disclosure-body command-deck__body"
-            data-disclosure-body="command-deck"
+        <!-- The Replay Viewer dock: the Rune Scrubber (src/rune-scrubber.js) moves the
+             transport, Speed, artifact actions and camera switch below into its rows. -->
+        <section
+          id="replay-timeline"
+          class="replay-timeline"
+          aria-labelledby="replay-timeline-heading"
+          tabindex="0"
+          hidden
+        >
+          <h2 id="replay-timeline-heading" class="sr-only">Replay Timeline</h2>
+          <fieldset
+            id="replay-artifact-actions"
+            class="replay-artifact-actions"
+            aria-label="Replay artifact actions"
+            data-replay-only
+            hidden
           >
-            <div class="command-deck__composer">
-              <div class="command-group command-group--compose command-group--movement">
-                <div class="command-group__heading">
-                  <span class="command-step" aria-hidden="true">01</span>
-                  <div>
-                    <h4>Movement</h4>
-                    <p id="command-controlled-actor" aria-live="polite">
-                      Actor · unavailable
-                    </p>
-                  </div>
-                </div>
-                <div class="movement-grid">
-                  <button type="button" data-key="q" data-move-action="6" data-command-role="draft" aria-label="Move northwest">↖</button>
-                  <button type="button" data-key="w" data-move-action="1" data-command-role="draft" aria-label="Move north">↑</button>
-                  <button type="button" data-key="e" data-move-action="5" data-command-role="draft" aria-label="Move northeast">↗</button>
-                  <button type="button" data-key="a" data-move-action="4" data-command-role="draft" aria-label="Move west">←</button>
-                  <button id="stay-button" type="button" data-key="x" data-move-action="0" data-command-role="draft" aria-label="Stay">•</button>
-                  <button type="button" data-key="d" data-move-action="3" data-command-role="draft" aria-label="Move east">→</button>
-                  <button type="button" data-key="z" data-move-action="8" data-command-role="draft" aria-label="Move southwest">↙</button>
-                  <button type="button" data-key="s" data-move-action="2" data-command-role="draft" aria-label="Move south">↓</button>
-                  <button type="button" data-key="c" data-move-action="7" data-command-role="draft" aria-label="Move southeast">↘</button>
-                </div>
-              </div>
+            <legend class="sr-only">Replay artifact actions</legend>
+            <button
+              id="replay-export-png-button"
+              type="button"
+              aria-describedby="replay-export-png-help"
+              disabled
+            >Export PNG</button>
+            <span id="replay-export-png-help" class="sr-only">
+              Export the settled battlefield alone at twice its displayed resolution.
+            </span>
+            <button
+              id="replay-download-metrics-button"
+              type="button"
+              aria-describedby="replay-download-metrics-help"
+              disabled
+            >Download Metrics CSV</button>
+            <span id="replay-download-metrics-help" class="sr-only">
+              Download evaluation metrics for the selected Up to Current Tick or Entire Episode scope.
+            </span>
+            <button id="replay-episode-details-button" type="button" disabled>Episode Details</button>
+          </fieldset>
+          <div id="replay-metrics-preparation" class="metric-preparation" role="status" hidden>
+            <progress class="metrics-progress" aria-label="Preparing metric download" aria-describedby="replay-metrics-preparation-text"></progress>
+            <span id="replay-metrics-preparation-text"></span>
+            <small>Metrics summarize the captured game.</small>
+          </div>
+          <fieldset class="replay-timeline__transport">
+            <legend class="sr-only">Replay transport</legend>
+            <button id="replay-first-button" type="button" aria-label="Start replay tick">Start</button>
+            <button id="replay-back-ten-button" type="button" aria-label="Go back ten replay ticks">−10</button>
+            <button id="replay-previous-button" type="button" aria-label="Previous replay tick">−1</button>
+            <button
+              id="replay-play-pause-button"
+              class="button--primary"
+              type="button"
+              aria-label="Play replay"
+              aria-pressed="false"
+            >Play</button>
+            <button id="replay-next-button" type="button" aria-label="Next replay tick">+1</button>
+            <button id="replay-forward-ten-button" type="button" aria-label="Go forward ten replay ticks">+10</button>
+            <button id="replay-last-button" type="button" aria-label="End replay tick">End</button>
+            <label class="replay-timeline__slider">
+              <span>Tick</span>
+              <input
+                id="replay-frame-slider"
+                type="range"
+                min="0"
+                max="0"
+                step="1"
+                value="0"
+                aria-label="Replay tick"
+                disabled
+              >
+            </label>
+            <output id="replay-frame-position" for="replay-frame-slider" aria-live="polite">
+              Tick 0 / 0
+            </output>
+            <!-- Empty slot: camera switch (Whole Map, Everyone In View, Battle Cam). -->
+            <div id="replay-camera-switch" hidden></div>
+            <label class="replay-timeline__rate">
+              <span>Speed</span>
+              <select id="replay-playback-rate" aria-label="Replay playback speed">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.50×</option>
+                <option value="0.75">0.75×</option>
+                <option value="1" selected>1.00×</option>
+                <option value="1.25">1.25×</option>
+                <option value="1.5">1.50×</option>
+                <option value="1.75">1.75×</option>
+                <option value="2">2.00×</option>
+              </select>
+            </label>
+            <output
+              id="replay-transport-status"
+              aria-live="polite"
+              data-transport-state="OFFLINE"
+            >Offline</output>
+          </fieldset>
+          <!-- Empty slot that src/rune-scrubber.js fills with the Event Track and the button row. -->
+          <div id="chronicle" hidden></div>
+        </section>
 
-              <div class="command-group command-group--compose command-group--action">
-                <div class="command-group__heading">
-                  <span class="command-step" aria-hidden="true">02</span>
-                  <div>
-                    <h4>Action</h4>
-                    <p>Target and combat lane</p>
-                  </div>
-                </div>
-                <label class="command-target">
-                  <span>Target</span>
-                  <select id="command-target-select" aria-label="Pending target">
-                    <option value="">No target</option>
-                  </select>
-                </label>
-                <div class="button-row command-choice-row">
-                  <button id="no-combat-button" type="button" data-key="0" data-command-role="draft" aria-pressed="false">No combat</button>
-                  <button id="basic-button" type="button" data-key="1" data-command-role="draft" aria-pressed="false">Arm Basic</button>
-                  <button id="ultimate-button" type="button" data-key="2" data-command-role="draft" aria-pressed="false">Arm Ultimate</button>
-                </div>
+        <!-- Replay Viewer only: the Champion Frame of the selected champion. -->
+        <section
+          id="champion-frame"
+          class="champion-frame"
+          aria-label="Selected Agent"
+          data-replay-only
+          hidden
+        ></section>
+
+        <!-- Empty slot: the Replay Viewer's Arena Frames (src/looks/hud.js),
+             both teams' party frames along the bottom of the stage. -->
+        <section id="team-rosters" hidden></section>
+
+        <!-- The deck: five columns (the champion you command, 1 Step, 2 Target,
+             3 Action, 4 Lock In), the Watch Only and Stopped overlays, and the
+             Run bar shown when nobody is Manual. It stays a details element
+             because src/main.js keeps it in its disclosure list. data-tactics-turn
+             marks it as already built, so the old deck builder in
+             src/tactics-turn.js leaves this markup alone; button clicks still
+             reach the host through each button's data-key. Known gap: that old
+             builder also wired parts this markup needs (the Guide, Hints and Off
+             buttons with their stored choice, the Keys On and Keys Off chip, the
+             status line #msg, the Class Guide, Do This Now, the checklist, the
+             set pill and the Your Turn eyebrow), so they stay empty or inert
+             until src/tactics-turn.js installs this markup itself. Remove the
+             marker only then. -->
+        <details id="command-deck" class="command-deck deck" data-state="play" data-tactics-turn="installed" data-live-only open>
+          <summary>Command Deck</summary>
+          <div id="command-deck-body" class="deck-body" data-disclosure-body="command-deck">
+            <!-- The deck's header line across every column: the one message
+                 line (#msg) and Keys On or Off. -->
+            <div class="dstatus" id="status-line" data-live-only hidden>
+              <p class="msg" id="msg" role="status" aria-live="polite"></p>
+              <span class="keys off" id="keys-chip"><i></i><span id="keys-text">Keys Off · Click The Arena</span></span>
+            </div>
+            <div class="dk-agent">
+              <div class="ag-top"><span id="ag-tok"></span><div><b id="ag-name"></b><em id="ag-epi"></em></div></div>
+              <div class="ag-meta" id="ag-meta"></div>
+              <span class="chip you" id="ag-chip"></span>
+              <div class="ag-life" id="ag-life"></div>
+              <div class="ag-nav"><button type="button" class="sbtn" id="prev-actor-button" data-key="Tab" data-shift="true">‹ Prev</button><button type="button" class="sbtn" id="next-actor-button" data-key="Tab">Next › <kbd>Tab</kbd></button></div>
+            </div>
+            <div class="dk-step">
+              <h4 class="dh"><i>1</i>Step <span class="pad-note" id="pad-note"><b>Stay</b></span></h4>
+              <div class="pad" id="pad">
+                <button type="button" class="key" data-key="q" data-move-action="6" data-command-role="draft" aria-label="North-West, key Q" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-45 6 6)"/></svg><b>Q</b></button>
+                <button type="button" class="key" data-key="w" data-move-action="1" data-command-role="draft" aria-label="North, key W" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(0 6 6)"/></svg><b>W</b></button>
+                <button type="button" class="key" data-key="e" data-move-action="5" data-command-role="draft" aria-label="North-East, key E" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(45 6 6)"/></svg><b>E</b></button>
+                <button type="button" class="key" data-key="a" data-move-action="4" data-command-role="draft" aria-label="West, key A" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-90 6 6)"/></svg><b>A</b></button>
+                <button type="button" class="key" id="stay-button" data-key="x" data-move-action="0" data-command-role="draft" aria-label="Stay, key X" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="currentColor"/></svg><b>X</b></button>
+                <button type="button" class="key" data-key="d" data-move-action="3" data-command-role="draft" aria-label="East, key D" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(90 6 6)"/></svg><b>D</b></button>
+                <button type="button" class="key" data-key="z" data-move-action="8" data-command-role="draft" aria-label="South-West, key Z" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-135 6 6)"/></svg><b>Z</b></button>
+                <button type="button" class="key" data-key="s" data-move-action="2" data-command-role="draft" aria-label="South, key S" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 6 6)"/></svg><b>S</b></button>
+                <button type="button" class="key" data-key="c" data-move-action="7" data-command-role="draft" aria-label="South-East, key C" aria-pressed="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.2 V2.4 M2.9 5.4 L6 2.3 L9.1 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" transform="rotate(135 6 6)"/></svg><b>C</b></button>
               </div>
             </div>
-
-            <div class="command-commit">
-              <div class="command-commit__copy">
-                <span>Commit</span>
-                <strong id="command-commit-title">Submit the staged joint turn</strong>
-                <small id="command-commit-summary">One authoritative transition</small>
-              </div>
-              <div class="command-commit__actions">
-                <button id="cancel-system-button" type="button" hidden>Cancel System Work</button>
-                <span id="system-operation-status" role="status"></span>
-                <button id="submit-turn-button" type="button" data-key="Enter" data-command-role="interactive-submit" class="button--primary">
-                  Submit joint turn
-                </button>
+            <div class="dk-target">
+              <h4 class="dh"><i>2</i>Target <span>Shift + Click A Body</span></h4>
+              <div class="tchip none" id="tchip"></div>
+              <p class="picks-h">Allowed Now</p>
+              <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of buttons, as on the vision page; a fieldset would change how script disables it. -->
+              <div class="picks" id="command-target-select" role="group" aria-label="Pick a target the host allows"></div>
+            </div>
+            <div class="dk-action">
+              <h4 class="dh"><i>3</i>Action <span>Pick One</span></h4>
+              <div class="slots">
+                <button type="button" class="slot" id="no-combat-button" data-key="0" data-command-role="draft" aria-pressed="false"><kbd>0</kbd><span class="kind">None</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle class="ic-none" cx="12" cy="12" r="7"/><circle class="ic-none-dot" cx="12" cy="12" r="1.8"/></svg><b>No Combat</b><span class="sub">Only Move</span><span class="sub">&nbsp;</span><em class="tag" hidden></em></button>
+                <button type="button" class="slot" id="basic-button" data-key="1" data-command-role="draft" aria-pressed="false"><kbd>1</kbd><span class="kind">Basic</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use id="basic-icon"/></svg><b id="basic-name"></b><span class="sub" id="basic-sub"></span><span class="sub">&nbsp;</span><em class="tag" hidden></em></button>
+                <button type="button" class="slot" id="ultimate-button" data-key="2" data-command-role="draft" aria-pressed="false"><kbd>2</kbd><span class="kind">Ultimate</span><svg class="ic" viewBox="0 0 48 48" aria-hidden="true"><g id="rune-ring"></g><use id="ult-icon" x="12" y="12" width="24" height="24"/></svg><b id="ult-name"></b><span class="sub" id="ult-sub"></span><span class="sub ready" id="ult-ready"></span><em class="tag" hidden></em></button>
               </div>
             </div>
-
-            <div class="command-deck__utilities">
-              <div class="command-group command-group--utility command-group--inspect">
-                <h4>Inspect</h4>
-                <div class="button-row command-button-row">
-                  <button type="button" data-key="Tab">Next actor</button>
-                  <button type="button" data-key="Tab" data-shift="true">
-                    Previous actor
-                  </button>
-                  <button type="button" data-key="Escape">Clear target</button>
-                </div>
+            <div class="dk-lock">
+              <h4 class="dh"><i>4</i>Lock In</h4>
+              <button type="button" class="lockbtn" id="submit-turn-button" data-key="Enter" data-command-role="interactive-submit"><b id="lock-label">Lock In Turn</b><span>Space or Enter</span></button>
+              <button type="button" class="sbtn cancel" id="cancel-system-button" hidden>Cancel Policy Work</button>
+            </div>
+            <div class="overlay" id="watch-only" hidden>
+              <span id="wo-tok"></span>
+              <div><p class="eyebrow">Watch Only</p><b id="wo-name"></b><span class="meta wmeta" id="wo-meta"></span><div class="wo-life" id="wo-life"></div><p>You can look at this champion, but not command it. Policies never see your orders.</p></div>
+              <button type="button" class="bigbtn" id="wo-back"></button>
+            </div>
+            <div class="overlay" id="stopped" hidden>
+              <span class="eyebrow alert">Stopped</span>
+              <div><b>A Fresh Start Is Needed</b><p>Policy work was cancelled, so this game cannot go on. The game so far is kept. You can still look around, save it, or exit. Start a fresh match from Python to play again.</p></div>
+              <button type="button" class="bigbtn" id="stopped-save">Finish And Save</button>
+            </div>
+            <div class="watchwrap">
+              <div class="watchbar">
+                <span id="wb-tok"></span>
+                <div class="state"><p class="eyebrow">Watching · Nobody Is Yours</p><b id="wb-state">Paused</b><p id="wb-note">Every match starts paused. Run plays one turn at a time. Pause stops after the current turn.</p></div>
+                <button type="button" class="bigbtn" id="live-run-button" hidden disabled>Run</button>
+                <button type="button" class="bigbtn solid" id="watch-submit" data-key="Enter" data-same-as="submit-turn-button">Play One Turn <kbd>Space</kbd></button>
               </div>
-
-              <div class="command-group command-group--utility command-group--session">
-                <h4>Session</h4>
-                <div class="button-row command-button-row">
-                  <button id="reset-button" type="button">Reset</button>
-                </div>
-              </div>
+            </div>
+            <!-- Old deck parts the vision does not show. Never shown; kept
+                 because src/main.js and src/tactics-turn.js write them by ID. -->
+            <div class="deck-legacy" hidden>
+              <p id="live-control-help" class="empty-copy">Choose a Manual agent, stage its action, then Submit. Changing focus keeps other drafts. Escape clears the target.</p>
+              <p id="live-match-rules" class="empty-copy"></p>
+              <p id="command-controlled-actor" aria-live="polite">Actor · unavailable</p>
+              <details id="policy-target-masks" hidden>
+                <summary>Current Policy Target Masks</summary>
+                <p class="empty-copy">These choices are allowed now. The policy has not chosen its action.</p>
+                <ul id="policy-target-mask-rows" class="empty-copy"></ul>
+              </details>
+              <strong id="command-commit-title">Submit the staged joint turn</strong>
+              <small id="command-commit-summary">One authoritative transition</small>
+              <span id="system-operation-status" role="status"></span>
+              <span id="live-run-status" role="status">Paused</span>
             </div>
           </div>
         </details>
+
       </section>
 
-      <aside class="hud-panel" aria-label="Inspector">
-        <details id="roster-details" class="hud-section" open>
-          <summary class="section-heading">
-            <strong id="roster-heading" class="section-title">Roster</strong>
-            <span id="roster-count" class="count-badge">0 actors</span>
-          </summary>
-          <div id="roster-details-body" class="disclosure-body" data-disclosure-body="roster-details">
-            <div id="roster" class="roster">
-              <p class="empty-copy">No authorized agents received yet.</p>
-            </div>
-          </div>
-        </details>
+      <aside id="rail" class="hud-panel bc-rail" aria-label="Inspector">
+        <!-- Live play: the Your Turn card (tick, title, set pill, the Guide /
+             Hints / Off switch, Do This Now, the four phases, the checklist). -->
+        <section class="rc" id="turn-card" aria-label="Your Turn" data-live-only hidden>
+          <div class="rc-head"><div><p class="eyebrow num"></p><h3 id="turn-title">Your Turn</h3><span class="setpill" id="set-pill"></span></div>
+            <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of three buttons, as on the vision page. -->
+            <div class="seg small" id="guide-level" role="group" aria-label="How much help"><button type="button" data-level="guide" aria-pressed="true">Guide</button><button type="button" data-level="hints" aria-pressed="false">Hints</button><button type="button" data-level="off" aria-pressed="false">Off</button></div></div>
+          <div class="dothis" id="do-this"><p class="eyebrow">Do This Now</p><p class="t" id="do-this-text"></p></div>
+          <ol class="phases" id="phases"><li data-p="plan">You Plan</li><li data-p="sent">Lock In</li><li data-p="choosing">Policies Choose</li><li data-p="act">All Act</li></ol>
+          <div class="cl" id="checklist"></div>
+        </section>
+        <!-- Empty slot: the Fallen panel (falls of the last 8 ticks). In live
+             play it sits right under Your Turn, so it shows without scrolling
+             (owner, 4 Oct 2026); in the Replay Viewer the live cards are
+             hidden, so it stays at the top of the rail. -->
+        <section id="fallen-feed" hidden></section>
+        <!-- Live play: the Class Guide of the champion in view. -->
+        <section class="rc cg" id="class-card" aria-label="Class Guide" data-live-only hidden></section>
+        <!-- Live play: the short How To Play card. -->
+        <section class="rc htmini" id="howto-card" aria-label="How To Play" data-live-only hidden>
+          <div class="rc-head"><h3>How To Play</h3></div>
+          <ol>
+            <li><span>The <b>silver ring</b> is your champion. Policies play the rest.</span></li>
+            <li><span>Step with <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd>. <kbd>X</kbd> is Stay.</span></li>
+            <li><span>Hold <kbd>Shift</kbd> and click a body with a <b>dashed ring</b>. Then pick <kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd>.</span></li>
+            <li><span><kbd>Space</kbd> locks in. Everyone acts at once.</span></li>
+          </ol>
+          <div class="foot"><button type="button" class="sbtn" id="full-guide">Full Guide <kbd>?</kbd></button></div>
+        </section>
+        <!-- Empty slot: the Your Turn card (what to do now, turn checklist). -->
+        <section id="this-turn" hidden></section>
+        <!-- Empty slot: the How To Play card. -->
+        <section id="how-to-play" hidden></section>
+        <!-- Empty slot: the Replay Viewer rail with its six tabs (src/ledger.js). -->
+        <div id="replay-rail" hidden>
+          <div id="replay-rail-tabs" hidden></div>
+          <section id="replay-rail-roster" hidden></section>
+          <section id="replay-rail-agent" hidden></section>
+          <section id="replay-rail-metrics" hidden></section>
+          <section id="replay-rail-actions" hidden></section>
+          <section id="replay-rail-visuals" hidden></section>
+          <section id="replay-rail-frame" hidden></section>
+        </div>
 
-        <details id="agent-details" class="hud-section semantic-inspector">
-          <summary><span id="selection-heading">Comprehensive Agent Class Details</span></summary>
-          <div id="agent-details-body" class="disclosure-body" data-disclosure-body="agent-details">
-            <div id="selection-card" class="fact-card">
-              <p class="empty-copy">Select an authorized agent to inspect its details.</p>
-            </div>
-          </div>
-        </details>
 
         <details id="evaluation-metrics" class="hud-section" hidden>
           <summary>TDM Evaluation Metrics</summary>
@@ -509,7 +665,7 @@
               <select id="metric-view"><option value="single">All Measurements</option></select>
             </div>
             <div id="metric-search-area" class="metric-search">
-              <label for="metric-search">Find a Measurement</label>
+              <label for="metric-search">Find A Measurement</label>
               <input id="metric-search" type="search" role="combobox" placeholder="Name, CSV column, or meaning" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="metric-search-results" aria-describedby="metric-search-status" disabled>
               <p id="metric-search-status" class="section-note" role="status">Search includes every numerical CSV column.</p>
               <div id="metric-search-content" hidden>
@@ -527,259 +683,208 @@
           </div>
         </details>
 
-        <details id="pending-turn-details" class="hud-section">
-          <summary class="section-heading">
-            <strong id="pending-heading" class="section-title">Pending Joint Action</strong>
-            <span id="pending-count" class="count-badge">0 actors</span>
-          </summary>
-          <div
-            id="pending-turn-details-body"
-            class="disclosure-body"
-            data-disclosure-body="pending-turn-details"
-          >
-            <p id="pending-scope" class="section-note">
-              Waiting for authoritative submission scope.
-            </p>
-            <article id="pending-card" class="action-card">
-              <p class="empty-copy">No pending action.</p>
-            </article>
-          </div>
-        </details>
 
-        <details id="latest-transition-details" class="hud-section">
-          <summary><span id="accepted-heading">Latest Transition</span></summary>
-          <div
-            id="latest-transition-details-body"
-            class="disclosure-body"
-            data-disclosure-body="latest-transition-details"
-          >
-            <article id="accepted-card" class="action-card">
-              <p class="empty-copy">No transition yet.</p>
-            </article>
-            <p
-              id="accepted-announcement"
-              class="sr-only"
-              aria-live="polite"
-              aria-atomic="true"
-            ></p>
-          </div>
-        </details>
 
-        <details id="visual-filters" class="hud-section visual-filters" open>
-          <summary class="section-heading">
-            <strong class="section-title">Visual Filters</strong>
-            <span id="visual-filter-count" class="count-badge">11 enabled</span>
-          </summary>
-          <div
-            id="visual-filters-body"
-            class="disclosure-body"
-            data-disclosure-body="visual-filters"
-          >
-            <p id="visual-filters-help" class="section-note">
-              These controls change battlefield presentation only. Scientific data
-              remain unchanged.
-            </p>
-            <fieldset class="visual-filters__fieldset">
-              <legend class="sr-only">Battlefield visual filters</legend>
-              <div id="visual-filter-options" class="visual-filters__options"></div>
-              <div class="visual-filters__ranges">
-                <div>
-                  <strong>Ranges</strong>
-                  <span>Show or hide authorized range overlays.</span>
-                </div>
-                <button
-                  id="live-ranges-button"
-                  type="button"
-                  data-live-only
-                  data-key="g"
-                  aria-pressed="false"
-                >Ranges</button>
-                <button
-                  id="replay-ranges-button"
-                  type="button"
-                  data-replay-only
-                  aria-pressed="false"
-                  hidden
-                >Ranges</button>
+
+        <!-- DevClient only: the closed Developer drawer with the old developer
+             cards. The BattleClient never shows it. In the Replay Viewer these
+             cards move into the rail tabs at startup. -->
+        <details id="developer-drawer" class="rc developer-drawer" hidden>
+          <summary>Developer</summary>
+          <!-- The Roster card: the DevClient shows it in this drawer; the
+               Replay Viewer moves it into its rail's Roster tab
+               (src/ledger.js). -->
+          <details id="roster-details" class="hud-section" open>
+            <summary class="section-heading">
+              <strong id="roster-heading" class="section-title">Roster</strong>
+              <span id="roster-count" class="count-badge">0 actors</span>
+            </summary>
+            <div id="roster-details-body" class="disclosure-body" data-disclosure-body="roster-details">
+              <div id="roster" class="roster">
+                <p class="empty-copy">No authorized agents received yet.</p>
               </div>
-            </fieldset>
-            <div class="visual-filters__actions">
-              <button id="enable-all-visual-filters-button" type="button">
-                Enable All
-              </button>
-              <button id="disable-all-visual-filters-button" type="button">
-                Disable All
-              </button>
-              <button id="default-visual-filters-button" type="button">
-                Default Configuration
-              </button>
             </div>
-          </div>
-        </details>
-
-        <details id="visual-key" class="hud-section visual-key">
-          <summary>Visual Key</summary>
-          <div id="visual-key-body" class="disclosure-body" data-disclosure-body="visual-key">
-            <dl id="live-visual-key" class="visual-key__list" data-live-only>
-              <dt><span class="key-swatch key-swatch--team-a"></span>Team A</dt>
-              <dd>Blue solid perimeter</dd>
-              <dt><span class="key-swatch key-swatch--team-b"></span>Team B</dt>
-              <dd>Red solid perimeter with right-edge chevron</dd>
-              <dt><span class="key-swatch key-swatch--controlled"></span>Controlled</dt>
-              <dd>Bright outer halo</dd>
-              <dt><span class="key-swatch key-swatch--selected"></span>Selected target</dt>
-              <dd>Magenta corner reticle</dd>
-            </dl>
-            <dl id="replay-visual-key" class="visual-key__list" data-replay-only hidden>
-              <dt><span class="key-swatch key-swatch--team-a"></span>Team A</dt>
-              <dd>Blue solid perimeter</dd>
-              <dt><span class="key-swatch key-swatch--team-b"></span>Team B</dt>
-              <dd>Red solid perimeter with right-edge chevron</dd>
-              <dt><span class="key-swatch key-swatch--selected"></span>Selected agent</dt>
-              <dd>Magenta corner reticle</dd>
-            </dl>
-          </div>
-        </details>
-
-        <details id="technical-frame-details" class="hud-section diagnostics">
-          <summary>Technical frame</summary>
-          <div
-            id="technical-frame-details-body"
-            class="disclosure-body"
-            data-disclosure-body="technical-frame-details"
-          >
-            <div id="diagnostics-card" class="diagnostics-card">
-              <p class="empty-copy">No frame received.</p>
+          </details>
+          <details id="agent-details" class="hud-section semantic-inspector">
+            <summary><span id="selection-heading">Comprehensive Agent Class Details</span></summary>
+            <div id="agent-details-body" class="disclosure-body" data-disclosure-body="agent-details">
+              <div id="selection-card" class="fact-card">
+                <p class="empty-copy">Select an authorized agent to inspect its details.</p>
+              </div>
             </div>
-          </div>
+          </details>
+          <details id="pending-turn-details" class="hud-section">
+            <summary class="section-heading">
+              <strong id="pending-heading" class="section-title">Pending Joint Action</strong>
+              <span id="pending-count" class="count-badge">0 actors</span>
+            </summary>
+            <div
+              id="pending-turn-details-body"
+              class="disclosure-body"
+              data-disclosure-body="pending-turn-details"
+            >
+              <p id="pending-scope" class="section-note">
+                Waiting for authoritative submission scope.
+              </p>
+              <article id="pending-card" class="action-card">
+                <p class="empty-copy">No pending action.</p>
+              </article>
+            </div>
+          </details>
+          <details id="latest-transition-details" class="hud-section">
+            <summary><span id="accepted-heading">Latest Transition</span></summary>
+            <div
+              id="latest-transition-details-body"
+              class="disclosure-body"
+              data-disclosure-body="latest-transition-details"
+            >
+              <article id="accepted-card" class="action-card">
+                <p class="empty-copy">No transition yet.</p>
+              </article>
+              <p
+                id="accepted-announcement"
+                class="sr-only"
+                aria-live="polite"
+                aria-atomic="true"
+              ></p>
+            </div>
+          </details>
+          <details id="technical-frame-details" class="hud-section diagnostics">
+            <summary>Technical Frame</summary>
+            <div
+              id="technical-frame-details-body"
+              class="disclosure-body"
+              data-disclosure-body="technical-frame-details"
+            >
+              <div id="diagnostics-card" class="diagnostics-card">
+                <p class="empty-copy">No frame received.</p>
+              </div>
+            </div>
+          </details>
         </details>
       </aside>
     </main>
 
-    <section id="authoring-shell" class="authoring-shell" data-devclient-only hidden>
-      <header class="authoring-toolbar">
-        <div>
-          <p id="authoring-eyebrow" class="eyebrow">Map Author</p>
-          <h2 id="authoring-title">Untitled map</h2>
-          <p id="authoring-persistence-status" class="eyebrow" aria-live="polite">
-            Unsaved map draft
-          </p>
-        </div>
-        <div class="authoring-toolbar__actions">
-          <label id="authoring-saved-draft-choice">
-            <span>Saved draft</span>
-            <select id="authoring-saved-draft-select" aria-label="Saved map draft">
-              <option value="">No saved map drafts</option>
-            </select>
-          </label>
-          <button
-            id="authoring-delete-saved"
-            class="button--danger"
-            type="button"
-            disabled
-          >
-            Delete Saved
-          </button>
-          <label id="authoring-new-scenario-choice" hidden>
-            <span>New scenario from</span>
-            <select id="authoring-new-scenario-mode">
-              <option value="blank">Blank scenario</option>
-              <option value="copy_saved_map">Copy saved map</option>
-              <option value="duplicate_saved_scenario">Duplicate saved scenario</option>
-            </select>
-          </label>
-          <label id="authoring-new-scenario-source-choice" hidden>
-            <span>Source asset</span>
-            <select id="authoring-new-scenario-source" aria-label="New scenario source">
-              <option value="">No source required</option>
-            </select>
-          </label>
-          <button id="authoring-new" type="button">New</button>
-          <button id="authoring-open" type="button">Open</button>
-          <button id="authoring-save" type="button">Save</button>
-          <button id="authoring-save-as" type="button">Save As</button>
-          <button id="authoring-validate" type="button">Validate</button>
-          <button id="authoring-open-debug" class="button--primary" type="button">
-            Open in Debug
-          </button>
-        </div>
-      </header>
+    <!-- Live play: the hover card that follows the pointer. -->
+    <div class="hcard" id="hcard" hidden></div>
 
-      <div class="authoring-grid">
-        <aside class="authoring-panel authoring-objects" aria-labelledby="authoring-objects-heading">
-          <div class="section-heading">
-            <h3 id="authoring-objects-heading">Objects</h3>
-            <span id="authoring-object-count" class="count-badge">0</span>
-          </div>
-          <div id="authoring-palette" class="authoring-palette">
-            <button type="button" data-authoring-add="wall">Wall</button>
-            <button type="button" data-authoring-add="pillar">Pillar</button>
-          </div>
-          <span id="authoring-object-list-help" class="sr-only">
-            Select an object for exact editing. Scenario agents can also be dragged onto the map.
-          </span>
-          <ol id="authoring-object-list" class="authoring-object-list"></ol>
-        </aside>
-
-        <section class="authoring-canvas-panel" aria-labelledby="authoring-canvas-heading">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Editable world</p>
-              <h3 id="authoring-canvas-heading">Map</h3>
-            </div>
-            <p class="authoring-hint">
-              Drag centers · wheel zoom · Space/middle-drag pan · Alt bypasses snap
-            </p>
-          </div>
-          <div class="authoring-canvas-shell">
-            <svg
-              id="authoring-canvas"
-              class="authoring-canvas"
-              role="application"
-              aria-label="Map authoring canvas"
-              tabindex="0"
-            ></svg>
-          </div>
-          <div class="authoring-canvas-actions">
-            <button id="authoring-reset" type="button">Reset (R)</button>
-            <button id="authoring-recenter" type="button">Recenter</button>
-            <button id="authoring-undo" type="button" disabled>Undo</button>
-            <button id="authoring-redo" type="button" disabled>Redo</button>
-            <button id="authoring-duplicate" type="button" disabled>Duplicate</button>
-            <button id="authoring-delete" class="button--danger" type="button" disabled>
-              Delete
-            </button>
-            <button id="authoring-order-up" type="button" disabled>Move up</button>
-            <button id="authoring-order-down" type="button" disabled>Move down</button>
-          </div>
-        </section>
-
-        <aside class="authoring-panel authoring-inspector" aria-labelledby="authoring-inspector-heading">
-          <div class="section-heading">
-            <h3 id="authoring-inspector-heading">Numeric Inspector</h3>
-          </div>
-          <span id="authoring-inspector-help" class="sr-only">
-            Edit the selected document, object, or agent with exact typed values.
-          </span>
-          <form id="authoring-inspector-form" novalidate>
-            <p class="empty-copy">Select an object or agent to edit exact values.</p>
-          </form>
-        </aside>
-      </div>
-
-      <section class="authoring-problems" aria-labelledby="authoring-problems-heading">
-        <div class="section-heading">
-          <h3 id="authoring-problems-heading">Linked Problems</h3>
-          <span id="authoring-problem-count" class="count-badge">0</span>
-        </div>
-        <span id="authoring-problem-list-help" class="sr-only">
-          Select a problem to focus its object and exact inspector field.
+    <!-- Live play: the Replay Recording popover, opened and closed by the
+         Recording pill. Retry Save and Save As show only after a failed save. -->
+    <div class="pop" id="rec-pop" popover role="dialog" aria-label="Replay Recording">
+      <p class="eyebrow">Replay Recording</p>
+      <b id="pop-state"></b>
+      <!-- After a failed save: why it failed (saveFailedReason in src/tactics-turn.js). -->
+      <p id="pop-reason" hidden></p>
+      <p>Saves to <b id="pop-folder">./recordings</b> when the game ends, when you press Finish And Save, or when you Exit.</p>
+      <div class="row"><button type="button" class="sbtn" id="pop-finish">Finish And Save</button><button type="button" class="sbtn" id="recording-review-button" disabled>Open Replay</button><button type="button" class="sbtn" id="recording-retry-button" hidden disabled>Retry Save</button></div>
+      <!-- biome-ignore lint/a11y/useValidAnchor: This link stays hidden until the server supplies its separate replay URL. -->
+      <a id="recording-replay-link" target="_blank" rel="noopener noreferrer" hidden>Open Saved Replay In New Tab</a>
+      <div id="recording-save-as-control" class="recording-save-as" hidden>
+        <label for="recording-save-as-input">Save As File Name</label>
+        <input
+          id="recording-save-as-input"
+          type="text"
+          minlength="20"
+          maxlength="160"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="episode-copy.marlbg-replay.json"
+          aria-describedby="recording-save-as-help"
+          disabled
+        >
+        <button id="recording-save-as-button" class="sbtn" type="button" disabled>Save As</button>
+        <span id="recording-save-as-help" class="sr-only">
+          Enter only a filename ending in .marlbg-replay.json. Paths are not accepted.
         </span>
-        <ol id="authoring-problem-list" class="authoring-problem-list">
-          <li class="empty-copy">Validate to inspect host-authoritative errors and warnings.</li>
-        </ol>
-      </section>
-    </section>
+      </div>
+      <p class="m">Open Replay opens the saved game in the Replay Viewer, in a new tab. If a save fails, this shows Save Failed · Retry, with Retry Save and Save As.</p>
+    </div>
+
+    <!-- Live play: the Visual Filters drawer, opened and closed by the Visual
+         Filters button. It stays open while you look at the arena. -->
+    <div id="visual-filters-drawer" class="vf-drawer" popover="manual" role="dialog" aria-label="Visual Filters">
+      <details id="visual-filters" class="hud-section visual-filters" open>
+        <summary class="section-heading">
+          <strong class="section-title">Visual Filters</strong>
+          <span id="visual-filter-count" class="count-badge">0 enabled</span>
+        </summary>
+        <div
+          id="visual-filters-body"
+          class="disclosure-body"
+          data-disclosure-body="visual-filters"
+        >
+          <p id="visual-filters-help" class="section-note">
+            These controls change battlefield presentation only. Scientific data
+            remain unchanged.
+          </p>
+          <fieldset
+            id="visual-filter-presets"
+            class="visual-filters__actions visual-filters__presets"
+            aria-label="Visual Filter Presets"
+          >
+            <button id="default-visual-filters-button" type="button" aria-pressed="true">Default Configuration</button>
+          </fieldset>
+          <div class="visual-filters__actions visual-filters__preset-state">
+            <span id="visual-filter-preset-status" class="section-note" role="status">Every switch as it ships</span>
+            <button id="reset-visual-filters-button" type="button" disabled>Reset To Default Configuration</button>
+          </div>
+          <fieldset class="visual-filters__fieldset">
+            <legend class="sr-only">Battlefield visual filters</legend>
+            <div id="visual-filter-options" class="visual-filters__options"></div>
+            <div class="visual-filters__ranges">
+              <div>
+                <strong>Ranges</strong>
+                <span>Show or hide authorized range overlays.</span>
+              </div>
+              <button
+                id="live-ranges-button"
+                type="button"
+                data-live-only
+                data-key="g"
+                aria-pressed="false"
+              >Ranges</button>
+              <button
+                id="replay-ranges-button"
+                type="button"
+                data-replay-only
+                aria-pressed="false"
+                hidden
+              >Ranges</button>
+            </div>
+          </fieldset>
+          <div class="visual-filters__actions">
+            <button id="enable-all-visual-filters-button" type="button">
+              Enable All
+            </button>
+            <button id="disable-all-visual-filters-button" type="button">
+              Disable All
+            </button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Restart dialog: Save This Game First? It opens only when play is not
+         saved yet. -->
+    <dialog
+      id="recording-discard-dialog"
+      class="restart-dialog"
+      aria-labelledby="recording-discard-heading"
+      aria-describedby="recording-discard-description"
+      data-live-only
+    >
+      <form method="dialog" class="mbox">
+        <h3 id="recording-discard-heading">Save This Game First?</h3>
+        <p id="recording-discard-description">Restart starts a fresh match with the same setup and fresh memory. This game has play that is not saved yet.</p>
+        <p class="restart-dialog__intent" hidden>Requested replacement: <strong id="recording-discard-intent">Unavailable</strong></p>
+        <div class="row">
+          <button id="recording-save-replace-button" class="bigbtn solid" type="button" autofocus>Save</button>
+          <button id="recording-discard-confirm-button" class="bigbtn" type="button">Discard</button>
+          <button id="recording-discard-cancel-button" class="bigbtn" type="submit" value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    </div>
 
     <aside
       id="visual-tooltip"
@@ -799,7 +904,7 @@
             <p class="eyebrow">Browser controls</p>
             <h2 id="help-heading">Controls and help</h2>
           </div>
-          <button id="help-close-button" class="button button--quiet" type="submit" value="close">Close</button>
+          <button id="help-dialog-close-button" class="button button--quiet" type="submit" value="close">Close</button>
         </div>
         <div data-live-only data-live-help-mode="oracle" hidden>
           <p>
@@ -807,19 +912,10 @@
             keep ordinary browser keyboard and Tab behavior.
           </p>
           <dl class="help-grid">
-            <dt>Tab / Shift+Tab</dt><dd>Cycle the controlled actor</dd>
             <dt>Left click</dt><dd>Control the clicked authorized actor</dd>
             <dt>Shift+left click</dt><dd>Select the clicked authorized target</dd>
-            <dt>Escape</dt>
-            <dd>Clear the target and leave battlefield focus</dd>
-            <dt>WASD / QEZC</dt><dd>Choose movement for the controlled actor</dd>
-            <dt>Arrow keys</dt><dd>Cardinal movement aliases</dd>
-            <dt>X</dt><dd>Set the controlled actor to Stay</dd>
-            <dt>0 / 1 / 2</dt><dd>Stage no combat / Basic / Ultimate</dd>
-            <dt>Space / Enter</dt><dd>Submit every staged actor</dd>
-            <dt>R</dt><dd>Deterministically reset the episode</dd>
-            <dt>G</dt><dd>Toggle Oracle View ranges</dd>
           </dl>
+          <dl class="help-grid" data-command-help="combat_debugger"></dl>
           <p class="help-note">
             Actor drafts persist when you cycle or directly control another
             actor.
@@ -832,23 +928,17 @@
             only the battlefield snapshot is fog-limited.
           </p>
           <dl class="help-grid">
-            <dt>Tab / Shift+Tab</dt><dd>Cycle the controlled actor and Agent POV</dd>
-            <dt>Visible agent body</dt><dd>Control that actor and switch Agent POV</dd>
-            <dt>Roster row</dt><dd>Control any active actor and switch Agent POV</dd>
-            <dt>Shift+left click</dt><dd>Select a visible authorized target</dd>
-            <dt>Escape</dt>
-            <dd>Clear the target and leave battlefield focus</dd>
-            <dt>WASD / QEZC</dt><dd>Choose movement for the controlled actor</dd>
-            <dt>Arrow keys</dt><dd>Cardinal movement aliases</dd>
-            <dt>X</dt><dd>Set the controlled actor to Stay</dd>
-            <dt>0 / 1 / 2</dt><dd>Stage no combat / Basic / Ultimate</dd>
-            <dt>Space / Enter</dt><dd>Submit every staged actor</dd>
-            <dt>R</dt><dd>Deterministically reset the episode</dd>
-            <dt>G</dt><dd>Toggle fog-authorized ranges without a command</dd>
+            <dt>Visible champion</dt><dd>Inspect it; one you play also takes your orders, and the view follows it</dd>
+            <dt>Roster row</dt><dd>Inspect that champion the same way; an enemy your team cannot see cannot be picked</dd>
+            <dt>Shift+left click</dt><dd>Select a target you can see</dd>
           </dl>
+          <dl class="help-grid" data-command-help="combat_debugger"></dl>
           <p class="help-note">
             Actor drafts persist when you cycle or directly control another
-            actor. Agent POV changes only the battlefield's fog of war.
+            actor. Agent POV shows only what the champion you play may see
+            (with shared sight, what its whole team sees), never what an enemy
+            you only look at sees. With only policies playing, the view follows
+            the champion you look at.
           </p>
         </div>
         <div data-live-only data-live-help-mode="scripted" hidden>
@@ -879,60 +969,29 @@
             This viewer is read-only. Replay transport changes only the selected
             recorded frame; it cannot submit an action or advance the simulator.
           </p>
+          <dl class="help-grid" data-command-help="replay_viewer"></dl>
           <dl class="help-grid">
-            <dt>LEFT ARROW / RIGHT ARROW</dt>
-            <dd>Go to the previous / next captured tick</dd>
-            <dt>Escape</dt><dd>Clear the selected agent</dd>
-            <dt>Space</dt><dd>Play or pause serialized replay</dd>
-            <dt>Frame slider</dt><dd>Preview without a request; commit one exact seek</dd>
-            <dt>Playback speed</dt><dd>Scale the complete replay presentation clock</dd>
+            <dt>Frame slider</dt><dd>Drag to pick a tick; the replay jumps there when you let go</dd>
+            <dt>Playback speed</dt><dd>Change how fast the replay plays</dd>
           </dl>
           <p class="help-note">
-            Start, −10, −1, +1, +10, End, and committed slider seeks show
-            one complete static transition summary. Play restarts the displayed
-            incoming transition at logical time zero, waits for its scaled
-            presentation to settle, and then continues with one request in flight.
+            +1 (and the Right arrow) plays one tick as Play does, then pauses
+            on it; −1 (and the Left arrow) rewinds one tick: a champion that
+            fell stands up first, then everyone glides back and the earlier
+            tick's marks appear. Start, −10, +10, End and slider jumps show the
+            paused tick at once. Play restarts the displayed incoming transition
+            at logical time zero, waits for its scaled presentation to settle,
+            and then continues with one request in flight.
           </p>
         </div>
       </form>
     </dialog>
 
-    <dialog
-      id="recording-discard-dialog"
-      class="help-dialog recording-discard-dialog"
-      aria-labelledby="recording-discard-heading"
-      aria-describedby="recording-discard-description"
-      data-live-only
-    >
-      <form method="dialog">
-        <p class="eyebrow">Destructive in-memory action</p>
-        <h2 id="recording-discard-heading">Discard captured prefix?</h2>
-        <p id="recording-discard-description">
-          This replaces the active episode and permanently discards its unpublished
-          in-memory recording prefix. No saved replay file is deleted or overwritten.
-        </p>
-        <p class="recording-discard-dialog__intent">
-          Requested replacement: <strong id="recording-discard-intent">Unavailable</strong>
-        </p>
-        <div class="recording-discard-dialog__actions">
-          <button
-            id="recording-discard-cancel-button"
-            class="button button--quiet"
-            type="submit"
-            value="cancel"
-          >
-            Keep recording
-          </button>
-          <button
-            id="recording-discard-confirm-button"
-            class="button button--danger"
-            type="button"
-          >
-            Discard and replace
-          </button>
-        </div>
-      </form>
-    </dialog>
+    <!-- The vision page's class sigils (#sig-<class>) and ability icons
+         (#ab-<ability>), copied unchanged from the approved BattleClient vision
+         page. The deck draws them with <use>; flat, export-safe shapes only.
+         #vision-symbols is kept out of the layout by styles.css. -->
+    <svg id="vision-symbols" width="0" height="0" aria-hidden="true" focusable="false"><defs><symbol id="sig-mage" viewBox="0 0 24 24"><path d="M12 2 L13.09 9.37 L16.17 7.83 L14.63 10.91 L22 12 L14.63 13.09 L16.17 16.17 L13.09 14.63 L12 22 L10.91 14.63 L7.83 16.17 L9.37 13.09 L2 12 L9.37 10.91 L7.83 7.83 L10.91 9.37Z" fill="none" stroke="#0A0D14" stroke-opacity="1" stroke-width="2.77" stroke-linejoin="round"/><path d="M12 2 L13.09 9.37 L16.17 7.83 L14.63 10.91 L22 12 L14.63 13.09 L16.17 16.17 L13.09 14.63 L12 22 L10.91 14.63 L7.83 16.17 L9.37 13.09 L2 12 L9.37 10.91 L7.83 7.83 L10.91 9.37Z" fill="#B99CFF"/><path d="M13.6 12 L13.55 12.41 L13.39 12.8 L13.13 13.13 L12.8 13.39 L12.41 13.55 L12 13.6 L11.59 13.55 L11.2 13.39 L10.87 13.13 L10.61 12.8 L10.45 12.41 L10.4 12 L10.45 11.59 L10.61 11.2 L10.87 10.87 L11.2 10.61 L11.59 10.45 L12 10.4 L12.41 10.45 L12.8 10.61 L13.13 10.87 L13.39 11.2 L13.55 11.59Z" fill="#F3EEFF" stroke="#0A0D14" stroke-width="0.92"/></symbol><symbol id="sig-warrior" viewBox="0 0 24 24"><path d="M5.5 5.4 L5.53 5.19 L5.61 5 L5.73 4.83 L5.9 4.71 L6.09 4.63 L6.3 4.6 L17.7 4.6 L17.91 4.63 L18.1 4.71 L18.27 4.83 L18.39 5 L18.47 5.19 L18.5 5.4 L18.5 6.65 L18.5 7.9 L18.5 9.15 L18.5 10.4 L18.47 11.24 L18.39 12.05 L18.25 12.84 L18.06 13.61 L17.82 14.35 L17.54 15.08 L17.21 15.78 L16.84 16.46 L16.43 17.11 L15.98 17.75 L15.5 18.36 L14.98 18.96 L14.44 19.53 L13.86 20.08 L13.27 20.61 L12.64 21.11 L12 21.6 L11.36 21.11 L10.73 20.61 L10.14 20.08 L9.56 19.53 L9.02 18.96 L8.5 18.36 L8.02 17.75 L7.57 17.11 L7.16 16.46 L6.79 15.78 L6.46 15.08 L6.18 14.35 L5.94 13.61 L5.75 12.84 L5.61 12.05 L5.53 11.24 L5.5 10.4 L5.5 9.15 L5.5 7.9 L5.5 6.65Z" fill="none" stroke="#0A0D14" stroke-opacity="1" stroke-width="2.77" stroke-linejoin="round"/><path d="M5.5 5.4 L5.53 5.19 L5.61 5 L5.73 4.83 L5.9 4.71 L6.09 4.63 L6.3 4.6 L17.7 4.6 L17.91 4.63 L18.1 4.71 L18.27 4.83 L18.39 5 L18.47 5.19 L18.5 5.4 L18.5 6.65 L18.5 7.9 L18.5 9.15 L18.5 10.4 L18.47 11.24 L18.39 12.05 L18.25 12.84 L18.06 13.61 L17.82 14.35 L17.54 15.08 L17.21 15.78 L16.84 16.46 L16.43 17.11 L15.98 17.75 L15.5 18.36 L14.98 18.96 L14.44 19.53 L13.86 20.08 L13.27 20.61 L12.64 21.11 L12 21.6 L11.36 21.11 L10.73 20.61 L10.14 20.08 L9.56 19.53 L9.02 18.96 L8.5 18.36 L8.02 17.75 L7.57 17.11 L7.16 16.46 L6.79 15.78 L6.46 15.08 L6.18 14.35 L5.94 13.61 L5.75 12.84 L5.61 12.05 L5.53 11.24 L5.5 10.4 L5.5 9.15 L5.5 7.9 L5.5 6.65Z" fill="#D8904F"/><path d="M14.5 10.6 L14.44 11.16 L14.25 11.68 L13.95 12.16 L13.56 12.55 L13.08 12.85 L12.56 13.04 L12 13.1 L11.44 13.04 L10.92 12.85 L10.44 12.55 L10.05 12.16 L9.75 11.68 L9.56 11.16 L9.5 10.6 L9.56 10.04 L9.75 9.52 L10.05 9.04 L10.44 8.65 L10.92 8.35 L11.44 8.16 L12 8.1 L12.56 8.16 L13.08 8.35 L13.56 8.65 L13.95 9.04 L14.25 9.52 L14.44 10.04Z" fill="#D8904F" stroke="#0A0D14" stroke-width="0.92"/></symbol><symbol id="sig-hunter" viewBox="0 0 24 24"><path d="M11.21 15.17 L11.44 15.46 L11.55 15.82 L11.51 16.18 L11.33 16.51 L11.04 16.74 L10.68 16.85 L10.32 16.81 L9.7 16.59 L9.09 16.32 L8.51 16 L7.99 15.63 L7.5 15.23 L7.07 14.78 L6.68 14.3 L6.34 13.79 L6.05 13.25 L5.81 12.69 L5.61 12.1 L5.47 11.5 L5.37 10.88 L5.32 10.24 L5.31 9.61 L5.33 8.97 L5.38 8.37 L5.44 7.8 L5.52 7.26 L5.62 6.74 L5.75 6.24 L5.9 5.76 L6.08 5.3 L6.28 4.86 L6.52 4.44 L6.77 4.04 L6.9 3.9 L7.08 3.82 L7.27 3.81 L7.46 3.87 L7.6 4 L7.68 4.18 L7.69 4.37 L7.63 4.56 L7.42 4.94 L7.25 5.31 L7.11 5.7 L6.99 6.1 L6.89 6.52 L6.81 6.96 L6.75 7.43 L6.71 7.92 L6.69 8.45 L6.68 9.01 L6.69 9.59 L6.73 10.14 L6.8 10.66 L6.91 11.16 L7.06 11.64 L7.24 12.09 L7.46 12.52 L7.71 12.91 L7.99 13.28 L8.3 13.62 L8.64 13.93 L9.02 14.21 L9.42 14.45 L9.86 14.66 L10.34 14.84 L10.88 14.99ZM13.12 14.99 L13.66 14.84 L14.14 14.66 L14.58 14.45 L14.98 14.21 L15.36 13.93 L15.7 13.62 L16.01 13.28 L16.29 12.91 L16.54 12.52 L16.76 12.09 L16.94 11.64 L17.09 11.16 L17.2 10.66 L17.27 10.14 L17.31 9.59 L17.32 9.01 L17.31 8.45 L17.29 7.92 L17.25 7.43 L17.19 6.96 L17.11 6.52 L17.01 6.1 L16.89 5.7 L16.75 5.31 L16.58 4.94 L16.37 4.56 L16.31 4.37 L16.32 4.18 L16.4 4 L16.54 3.87 L16.73 3.81 L16.92 3.82 L17.1 3.9 L17.23 4.04 L17.48 4.44 L17.72 4.86 L17.92 5.3 L18.1 5.76 L18.25 6.24 L18.38 6.74 L18.48 7.26 L18.56 7.8 L18.62 8.37 L18.67 8.97 L18.69 9.61 L18.68 10.24 L18.63 10.88 L18.53 11.5 L18.39 12.1 L18.19 12.69 L17.95 13.25 L17.66 13.79 L17.32 14.3 L16.93 14.78 L16.5 15.23 L16.01 15.63 L15.49 16 L14.91 16.32 L14.3 16.59 L13.68 16.81 L13.32 16.85 L12.96 16.74 L12.67 16.51 L12.49 16.18 L12.45 15.82 L12.56 15.46 L12.79 15.17ZM6.17 13.05 L5.87 13.02 L5.62 12.87 L5.43 12.65 L5.35 12.37 L5.38 12.07 L5.53 11.82 L5.75 11.63 L6.08 11.5 L6.4 11.37 L6.71 11.22 L7.02 11.05 L7.32 10.87 L7.62 10.66 L7.92 10.43 L8.22 10.17 L8.52 9.88 L8.81 9.56 L9.11 9.2 L9.21 9.1 L9.34 9.06 L9.48 9.06 L9.6 9.11 L9.7 9.21 L9.74 9.34 L9.74 9.48 L9.69 9.6 L9.44 10.02 L9.17 10.42 L8.9 10.79 L8.62 11.14 L8.33 11.46 L8.03 11.75 L7.72 12.03 L7.41 12.29 L7.09 12.53 L6.77 12.76 L6.45 12.97ZM17.55 12.97 L17.23 12.76 L16.91 12.53 L16.59 12.29 L16.28 12.03 L15.97 11.75 L15.67 11.46 L15.38 11.14 L15.1 10.79 L14.83 10.42 L14.56 10.02 L14.31 9.6 L14.26 9.48 L14.26 9.34 L14.3 9.21 L14.4 9.11 L14.52 9.06 L14.66 9.06 L14.79 9.1 L14.89 9.2 L15.19 9.56 L15.48 9.88 L15.78 10.17 L16.08 10.43 L16.38 10.66 L16.68 10.87 L16.98 11.05 L17.29 11.22 L17.6 11.37 L17.92 11.5 L18.25 11.63 L18.47 11.82 L18.62 12.07 L18.65 12.37 L18.57 12.65 L18.38 12.87 L18.13 13.02 L17.83 13.05ZM6.06 8.87 L5.8 8.84 L5.57 8.72 L5.4 8.51 L5.33 8.26 L5.36 8 L5.48 7.77 L5.69 7.6 L5.96 7.49 L6.22 7.38 L6.47 7.25 L6.72 7.11 L6.96 6.95 L7.21 6.78 L7.45 6.58 L7.69 6.35 L7.93 6.1 L8.17 5.83 L8.41 5.51 L8.5 5.41 L8.63 5.36 L8.76 5.36 L8.89 5.41 L8.99 5.5 L9.04 5.63 L9.04 5.76 L8.99 5.89 L8.79 6.25 L8.58 6.6 L8.36 6.92 L8.13 7.22 L7.89 7.5 L7.64 7.76 L7.39 8 L7.12 8.22 L6.86 8.43 L6.58 8.62 L6.31 8.8ZM17.69 8.8 L17.42 8.62 L17.14 8.43 L16.88 8.22 L16.61 8 L16.36 7.76 L16.11 7.5 L15.87 7.22 L15.64 6.92 L15.42 6.6 L15.21 6.25 L15.01 5.89 L14.96 5.76 L14.96 5.63 L15.01 5.5 L15.11 5.41 L15.24 5.36 L15.37 5.36 L15.5 5.41 L15.59 5.51 L15.83 5.83 L16.07 6.1 L16.31 6.35 L16.55 6.58 L16.79 6.78 L17.04 6.95 L17.28 7.11 L17.53 7.25 L17.78 7.38 L18.04 7.49 L18.31 7.6 L18.52 7.77 L18.64 8 L18.67 8.26 L18.6 8.51 L18.43 8.72 L18.2 8.84 L17.94 8.87ZM14.3 17.2 L14.24 17.71 L14.07 18.2 L13.8 18.63 L13.43 19 L13 19.27 L12.51 19.44 L12 19.5 L11.49 19.44 L11 19.27 L10.57 19 L10.2 18.63 L9.93 18.2 L9.76 17.71 L9.7 17.2 L9.76 16.69 L9.93 16.2 L10.2 15.77 L10.57 15.4 L11 15.13 L11.49 14.96 L12 14.9 L12.51 14.96 L13 15.13 L13.43 15.4 L13.8 15.77 L14.07 16.2 L14.24 16.69Z" fill="none" stroke="#0A0D14" stroke-opacity="1" stroke-width="2.77" stroke-linejoin="round"/><path d="M11.21 15.17 L11.44 15.46 L11.55 15.82 L11.51 16.18 L11.33 16.51 L11.04 16.74 L10.68 16.85 L10.32 16.81 L9.7 16.59 L9.09 16.32 L8.51 16 L7.99 15.63 L7.5 15.23 L7.07 14.78 L6.68 14.3 L6.34 13.79 L6.05 13.25 L5.81 12.69 L5.61 12.1 L5.47 11.5 L5.37 10.88 L5.32 10.24 L5.31 9.61 L5.33 8.97 L5.38 8.37 L5.44 7.8 L5.52 7.26 L5.62 6.74 L5.75 6.24 L5.9 5.76 L6.08 5.3 L6.28 4.86 L6.52 4.44 L6.77 4.04 L6.9 3.9 L7.08 3.82 L7.27 3.81 L7.46 3.87 L7.6 4 L7.68 4.18 L7.69 4.37 L7.63 4.56 L7.42 4.94 L7.25 5.31 L7.11 5.7 L6.99 6.1 L6.89 6.52 L6.81 6.96 L6.75 7.43 L6.71 7.92 L6.69 8.45 L6.68 9.01 L6.69 9.59 L6.73 10.14 L6.8 10.66 L6.91 11.16 L7.06 11.64 L7.24 12.09 L7.46 12.52 L7.71 12.91 L7.99 13.28 L8.3 13.62 L8.64 13.93 L9.02 14.21 L9.42 14.45 L9.86 14.66 L10.34 14.84 L10.88 14.99ZM13.12 14.99 L13.66 14.84 L14.14 14.66 L14.58 14.45 L14.98 14.21 L15.36 13.93 L15.7 13.62 L16.01 13.28 L16.29 12.91 L16.54 12.52 L16.76 12.09 L16.94 11.64 L17.09 11.16 L17.2 10.66 L17.27 10.14 L17.31 9.59 L17.32 9.01 L17.31 8.45 L17.29 7.92 L17.25 7.43 L17.19 6.96 L17.11 6.52 L17.01 6.1 L16.89 5.7 L16.75 5.31 L16.58 4.94 L16.37 4.56 L16.31 4.37 L16.32 4.18 L16.4 4 L16.54 3.87 L16.73 3.81 L16.92 3.82 L17.1 3.9 L17.23 4.04 L17.48 4.44 L17.72 4.86 L17.92 5.3 L18.1 5.76 L18.25 6.24 L18.38 6.74 L18.48 7.26 L18.56 7.8 L18.62 8.37 L18.67 8.97 L18.69 9.61 L18.68 10.24 L18.63 10.88 L18.53 11.5 L18.39 12.1 L18.19 12.69 L17.95 13.25 L17.66 13.79 L17.32 14.3 L16.93 14.78 L16.5 15.23 L16.01 15.63 L15.49 16 L14.91 16.32 L14.3 16.59 L13.68 16.81 L13.32 16.85 L12.96 16.74 L12.67 16.51 L12.49 16.18 L12.45 15.82 L12.56 15.46 L12.79 15.17ZM6.17 13.05 L5.87 13.02 L5.62 12.87 L5.43 12.65 L5.35 12.37 L5.38 12.07 L5.53 11.82 L5.75 11.63 L6.08 11.5 L6.4 11.37 L6.71 11.22 L7.02 11.05 L7.32 10.87 L7.62 10.66 L7.92 10.43 L8.22 10.17 L8.52 9.88 L8.81 9.56 L9.11 9.2 L9.21 9.1 L9.34 9.06 L9.48 9.06 L9.6 9.11 L9.7 9.21 L9.74 9.34 L9.74 9.48 L9.69 9.6 L9.44 10.02 L9.17 10.42 L8.9 10.79 L8.62 11.14 L8.33 11.46 L8.03 11.75 L7.72 12.03 L7.41 12.29 L7.09 12.53 L6.77 12.76 L6.45 12.97ZM17.55 12.97 L17.23 12.76 L16.91 12.53 L16.59 12.29 L16.28 12.03 L15.97 11.75 L15.67 11.46 L15.38 11.14 L15.1 10.79 L14.83 10.42 L14.56 10.02 L14.31 9.6 L14.26 9.48 L14.26 9.34 L14.3 9.21 L14.4 9.11 L14.52 9.06 L14.66 9.06 L14.79 9.1 L14.89 9.2 L15.19 9.56 L15.48 9.88 L15.78 10.17 L16.08 10.43 L16.38 10.66 L16.68 10.87 L16.98 11.05 L17.29 11.22 L17.6 11.37 L17.92 11.5 L18.25 11.63 L18.47 11.82 L18.62 12.07 L18.65 12.37 L18.57 12.65 L18.38 12.87 L18.13 13.02 L17.83 13.05ZM6.06 8.87 L5.8 8.84 L5.57 8.72 L5.4 8.51 L5.33 8.26 L5.36 8 L5.48 7.77 L5.69 7.6 L5.96 7.49 L6.22 7.38 L6.47 7.25 L6.72 7.11 L6.96 6.95 L7.21 6.78 L7.45 6.58 L7.69 6.35 L7.93 6.1 L8.17 5.83 L8.41 5.51 L8.5 5.41 L8.63 5.36 L8.76 5.36 L8.89 5.41 L8.99 5.5 L9.04 5.63 L9.04 5.76 L8.99 5.89 L8.79 6.25 L8.58 6.6 L8.36 6.92 L8.13 7.22 L7.89 7.5 L7.64 7.76 L7.39 8 L7.12 8.22 L6.86 8.43 L6.58 8.62 L6.31 8.8ZM17.69 8.8 L17.42 8.62 L17.14 8.43 L16.88 8.22 L16.61 8 L16.36 7.76 L16.11 7.5 L15.87 7.22 L15.64 6.92 L15.42 6.6 L15.21 6.25 L15.01 5.89 L14.96 5.76 L14.96 5.63 L15.01 5.5 L15.11 5.41 L15.24 5.36 L15.37 5.36 L15.5 5.41 L15.59 5.51 L15.83 5.83 L16.07 6.1 L16.31 6.35 L16.55 6.58 L16.79 6.78 L17.04 6.95 L17.28 7.11 L17.53 7.25 L17.78 7.38 L18.04 7.49 L18.31 7.6 L18.52 7.77 L18.64 8 L18.67 8.26 L18.6 8.51 L18.43 8.72 L18.2 8.84 L17.94 8.87Z" fill="#8CC84B"/><path d="M14.3 17.2 L14.24 17.71 L14.07 18.2 L13.8 18.63 L13.43 19 L13 19.27 L12.51 19.44 L12 19.5 L11.49 19.44 L11 19.27 L10.57 19 L10.2 18.63 L9.93 18.2 L9.76 17.71 L9.7 17.2 L9.76 16.69 L9.93 16.2 L10.2 15.77 L10.57 15.4 L11 15.13 L11.49 14.96 L12 14.9 L12.51 14.96 L13 15.13 L13.43 15.4 L13.8 15.77 L14.07 16.2 L14.24 16.69Z" fill="#8CC84B" stroke="#0A0D14" stroke-width="0.92"/></symbol><symbol id="sig-rogue" viewBox="0 0 24 24"><path d="M12.87 13.96 L10.57 11.13 L8.92 7.6 L7.88 4.19 L10.65 6.43 L13.31 9.29 L15.06 12.48ZM11 15.22 L16.93 11.22 L17.5 12.56 L12.03 16.25ZM14.08 14.87 L15.45 13.94 L17.59 17.01 L16.13 18ZM16.67 17.23 L18.55 17.56 L18.15 19.42 L16.27 19.09ZM8.94 12.48 L10.69 9.29 L13.35 6.43 L16.12 4.19 L15.08 7.6 L13.43 11.13 L11.13 13.96ZM7.07 11.22 L13 15.22 L11.97 16.25 L6.5 12.56ZM8.55 13.94 L9.92 14.87 L7.87 18 L6.41 17.01ZM7.33 17.23 L7.73 19.09 L5.85 19.42 L5.45 17.56Z" fill="none" stroke="#0A0D14" stroke-opacity="1" stroke-width="2.77" stroke-linejoin="round"/><path d="M12.87 13.96 L10.57 11.13 L8.92 7.6 L7.88 4.19 L10.65 6.43 L13.31 9.29 L15.06 12.48ZM11 15.22 L16.93 11.22 L17.5 12.56 L12.03 16.25ZM14.08 14.87 L15.45 13.94 L17.59 17.01 L16.13 18ZM16.67 17.23 L18.55 17.56 L18.15 19.42 L16.27 19.09ZM8.94 12.48 L10.69 9.29 L13.35 6.43 L16.12 4.19 L15.08 7.6 L13.43 11.13 L11.13 13.96ZM7.07 11.22 L13 15.22 L11.97 16.25 L6.5 12.56ZM8.55 13.94 L9.92 14.87 L7.87 18 L6.41 17.01ZM7.33 17.23 L7.73 19.09 L5.85 19.42 L5.45 17.56Z" fill="#3FD0A0"/><path d="M12 8 L12.33 8.45 L12.63 8.88 L12.89 9.27 L13.1 9.64 L13.26 9.99 L13.36 10.32 L13.4 10.65 L13.32 11.17 L13.11 11.57 L12.8 11.86 L12.41 12.04 L12 12.1 L11.59 12.04 L11.2 11.86 L10.89 11.57 L10.68 11.17 L10.6 10.65 L10.64 10.32 L10.74 9.99 L10.9 9.64 L11.11 9.27 L11.37 8.88 L11.67 8.45Z" fill="#3FD0A0" stroke="#0A0D14" stroke-width="0.92"/></symbol><symbol id="sig-priest" viewBox="0 0 24 24"><path d="M19 12 L18.94 12.91 L18.76 13.81 L18.47 14.68 L18.06 15.5 L17.55 16.26 L16.95 16.95 L16.26 17.55 L15.5 18.06 L14.68 18.47 L13.81 18.76 L12.91 18.94 L12 19 L11.09 18.94 L10.19 18.76 L9.32 18.47 L8.5 18.06 L7.74 17.55 L7.05 16.95 L6.45 16.26 L5.94 15.5 L5.53 14.68 L5.24 13.81 L5.06 12.91 L5 12 L5.06 11.09 L5.24 10.19 L5.53 9.32 L5.94 8.5 L6.45 7.74 L7.05 7.05 L7.74 6.45 L8.5 5.94 L9.32 5.53 L10.19 5.24 L11.09 5.06 L12 5 L12.91 5.06 L13.81 5.24 L14.68 5.53 L15.5 5.94 L16.26 6.45 L16.95 7.05 L17.55 7.74 L18.06 8.5 L18.47 9.32 L18.76 10.19 L18.94 11.09ZM12.69 4.39 L12.53 4.63 L12.29 4.79 L12 4.85 L11.71 4.79 L11.47 4.63 L11.31 4.39 L11.25 4.1 L11.36 3.65 L11.47 3.2 L11.59 2.75 L11.7 2.3 L11.72 2.19 L11.79 2.09 L11.89 2.02 L12 2 L12.11 2.02 L12.21 2.09 L12.28 2.19 L12.3 2.3 L12.41 2.75 L12.53 3.2 L12.64 3.65 L12.75 4.1ZM17.87 7.11 L17.59 7.16 L17.3 7.11 L17.06 6.94 L16.89 6.7 L16.84 6.41 L16.89 6.13 L17.06 5.88 L17.45 5.64 L17.85 5.41 L18.25 5.17 L18.65 4.93 L18.74 4.86 L18.86 4.84 L18.97 4.86 L19.07 4.93 L19.14 5.03 L19.16 5.14 L19.14 5.26 L19.07 5.35 L18.83 5.75 L18.59 6.15 L18.36 6.55 L18.12 6.94ZM19.61 12.69 L19.37 12.53 L19.21 12.29 L19.15 12 L19.21 11.71 L19.37 11.47 L19.61 11.31 L19.9 11.25 L20.35 11.36 L20.8 11.47 L21.25 11.59 L21.7 11.7 L21.81 11.72 L21.91 11.79 L21.98 11.89 L22 12 L21.98 12.11 L21.91 12.21 L21.81 12.28 L21.7 12.3 L21.25 12.41 L20.8 12.53 L20.35 12.64 L19.9 12.75ZM16.89 17.87 L16.84 17.59 L16.89 17.3 L17.06 17.06 L17.3 16.89 L17.59 16.84 L17.87 16.89 L18.12 17.06 L18.36 17.45 L18.59 17.85 L18.83 18.25 L19.07 18.65 L19.14 18.74 L19.16 18.86 L19.14 18.97 L19.07 19.07 L18.97 19.14 L18.86 19.16 L18.74 19.14 L18.65 19.07 L18.25 18.83 L17.85 18.59 L17.45 18.36 L17.06 18.12ZM11.31 19.61 L11.47 19.37 L11.71 19.21 L12 19.15 L12.29 19.21 L12.53 19.37 L12.69 19.61 L12.75 19.9 L12.64 20.35 L12.53 20.8 L12.41 21.25 L12.3 21.7 L12.28 21.81 L12.21 21.91 L12.11 21.98 L12 22 L11.89 21.98 L11.79 21.91 L11.72 21.81 L11.7 21.7 L11.59 21.25 L11.48 20.8 L11.36 20.35 L11.25 19.9ZM6.13 16.89 L6.41 16.84 L6.7 16.89 L6.94 17.06 L7.11 17.3 L7.16 17.59 L7.11 17.87 L6.94 18.12 L6.55 18.36 L6.15 18.59 L5.75 18.83 L5.35 19.07 L5.26 19.14 L5.14 19.16 L5.03 19.14 L4.93 19.07 L4.86 18.97 L4.84 18.86 L4.86 18.74 L4.93 18.65 L5.17 18.25 L5.41 17.85 L5.64 17.45 L5.88 17.06ZM4.39 11.31 L4.63 11.47 L4.79 11.71 L4.85 12 L4.79 12.29 L4.63 12.53 L4.39 12.69 L4.1 12.75 L3.65 12.64 L3.2 12.53 L2.75 12.41 L2.3 12.3 L2.19 12.28 L2.09 12.21 L2.02 12.11 L2 12 L2.02 11.89 L2.09 11.79 L2.19 11.72 L2.3 11.7 L2.75 11.59 L3.2 11.48 L3.65 11.36 L4.1 11.25ZM7.11 6.13 L7.16 6.41 L7.11 6.7 L6.94 6.94 L6.7 7.11 L6.41 7.16 L6.13 7.11 L5.88 6.94 L5.64 6.55 L5.41 6.15 L5.17 5.75 L4.93 5.35 L4.86 5.26 L4.84 5.14 L4.86 5.03 L4.93 4.93 L5.03 4.86 L5.14 4.84 L5.26 4.86 L5.35 4.93 L5.75 5.17 L6.15 5.41 L6.55 5.64 L6.94 5.88Z" fill="none" stroke="#0A0D14" stroke-opacity="1" stroke-width="2.77" stroke-linejoin="round"/><path d="M19 12 L18.94 12.91 L18.76 13.81 L18.47 14.68 L18.06 15.5 L17.55 16.26 L16.95 16.95 L16.26 17.55 L15.5 18.06 L14.68 18.47 L13.81 18.76 L12.91 18.94 L12 19 L11.09 18.94 L10.19 18.76 L9.32 18.47 L8.5 18.06 L7.74 17.55 L7.05 16.95 L6.45 16.26 L5.94 15.5 L5.53 14.68 L5.24 13.81 L5.06 12.91 L5 12 L5.06 11.09 L5.24 10.19 L5.53 9.32 L5.94 8.5 L6.45 7.74 L7.05 7.05 L7.74 6.45 L8.5 5.94 L9.32 5.53 L10.19 5.24 L11.09 5.06 L12 5 L12.91 5.06 L13.81 5.24 L14.68 5.53 L15.5 5.94 L16.26 6.45 L16.95 7.05 L17.55 7.74 L18.06 8.5 L18.47 9.32 L18.76 10.19 L18.94 11.09ZM10.8 8.2 L11.08 7.78 L11.5 7.5 L12 7.4 L12.5 7.5 L12.92 7.78 L13.2 8.2 L13.3 8.7 L13.3 10.02 L13.3 11.34 L13.3 12.66 L13.3 13.98 L13.3 15.3 L13.2 15.8 L12.92 16.22 L12.5 16.5 L12 16.6 L11.5 16.5 L11.08 16.22 L10.8 15.8 L10.7 15.3 L10.7 13.98 L10.7 12.66 L10.7 11.34 L10.7 10.02 L10.7 8.7ZM8.2 13.2 L7.78 12.92 L7.5 12.5 L7.4 12 L7.5 11.5 L7.78 11.08 L8.2 10.8 L8.7 10.7 L10.02 10.7 L11.34 10.7 L12.66 10.7 L13.98 10.7 L15.3 10.7 L15.8 10.8 L16.22 11.08 L16.5 11.5 L16.6 12 L16.5 12.5 L16.22 12.92 L15.8 13.2 L15.3 13.3 L13.98 13.3 L12.66 13.3 L11.34 13.3 L10.02 13.3 L8.7 13.3ZM12.69 4.39 L12.53 4.63 L12.29 4.79 L12 4.85 L11.71 4.79 L11.47 4.63 L11.31 4.39 L11.25 4.1 L11.36 3.65 L11.47 3.2 L11.59 2.75 L11.7 2.3 L11.72 2.19 L11.79 2.09 L11.89 2.02 L12 2 L12.11 2.02 L12.21 2.09 L12.28 2.19 L12.3 2.3 L12.41 2.75 L12.53 3.2 L12.64 3.65 L12.75 4.1ZM17.87 7.11 L17.59 7.16 L17.3 7.11 L17.06 6.94 L16.89 6.7 L16.84 6.41 L16.89 6.13 L17.06 5.88 L17.45 5.64 L17.85 5.41 L18.25 5.17 L18.65 4.93 L18.74 4.86 L18.86 4.84 L18.97 4.86 L19.07 4.93 L19.14 5.03 L19.16 5.14 L19.14 5.26 L19.07 5.35 L18.83 5.75 L18.59 6.15 L18.36 6.55 L18.12 6.94ZM19.61 12.69 L19.37 12.53 L19.21 12.29 L19.15 12 L19.21 11.71 L19.37 11.47 L19.61 11.31 L19.9 11.25 L20.35 11.36 L20.8 11.47 L21.25 11.59 L21.7 11.7 L21.81 11.72 L21.91 11.79 L21.98 11.89 L22 12 L21.98 12.11 L21.91 12.21 L21.81 12.28 L21.7 12.3 L21.25 12.41 L20.8 12.53 L20.35 12.64 L19.9 12.75ZM16.89 17.87 L16.84 17.59 L16.89 17.3 L17.06 17.06 L17.3 16.89 L17.59 16.84 L17.87 16.89 L18.12 17.06 L18.36 17.45 L18.59 17.85 L18.83 18.25 L19.07 18.65 L19.14 18.74 L19.16 18.86 L19.14 18.97 L19.07 19.07 L18.97 19.14 L18.86 19.16 L18.74 19.14 L18.65 19.07 L18.25 18.83 L17.85 18.59 L17.45 18.36 L17.06 18.12ZM11.31 19.61 L11.47 19.37 L11.71 19.21 L12 19.15 L12.29 19.21 L12.53 19.37 L12.69 19.61 L12.75 19.9 L12.64 20.35 L12.53 20.8 L12.41 21.25 L12.3 21.7 L12.28 21.81 L12.21 21.91 L12.11 21.98 L12 22 L11.89 21.98 L11.79 21.91 L11.72 21.81 L11.7 21.7 L11.59 21.25 L11.48 20.8 L11.36 20.35 L11.25 19.9ZM6.13 16.89 L6.41 16.84 L6.7 16.89 L6.94 17.06 L7.11 17.3 L7.16 17.59 L7.11 17.87 L6.94 18.12 L6.55 18.36 L6.15 18.59 L5.75 18.83 L5.35 19.07 L5.26 19.14 L5.14 19.16 L5.03 19.14 L4.93 19.07 L4.86 18.97 L4.84 18.86 L4.86 18.74 L4.93 18.65 L5.17 18.25 L5.41 17.85 L5.64 17.45 L5.88 17.06ZM4.39 11.31 L4.63 11.47 L4.79 11.71 L4.85 12 L4.79 12.29 L4.63 12.53 L4.39 12.69 L4.1 12.75 L3.65 12.64 L3.2 12.53 L2.75 12.41 L2.3 12.3 L2.19 12.28 L2.09 12.21 L2.02 12.11 L2 12 L2.02 11.89 L2.09 11.79 L2.19 11.72 L2.3 11.7 L2.75 11.59 L3.2 11.48 L3.65 11.36 L4.1 11.25ZM7.11 6.13 L7.16 6.41 L7.11 6.7 L6.94 6.94 L6.7 7.11 L6.41 7.16 L6.13 7.11 L5.88 6.94 L5.64 6.55 L5.41 6.15 L5.17 5.75 L4.93 5.35 L4.86 5.26 L4.84 5.14 L4.86 5.03 L4.93 4.93 L5.03 4.86 L5.14 4.84 L5.26 4.86 L5.35 4.93 L5.75 5.17 L6.15 5.41 L6.55 5.64 L6.94 5.88ZM17.85 11.23 L17.7 10.47 L17.45 9.74 L17.11 9.05 L16.68 8.41 L16.17 7.83 L15.59 7.32 L14.95 6.89 L14.26 6.55 L13.53 6.3 L12.77 6.15 L12 6.1 L11.23 6.15 L10.47 6.3 L9.74 6.55 L9.05 6.89 L8.41 7.32 L7.83 7.83 L7.32 8.41 L6.89 9.05 L6.55 9.74 L6.3 10.47 L6.15 11.23 L6.1 12 L6.15 12.77 L6.3 13.53 L6.55 14.26 L6.89 14.95 L7.32 15.59 L7.83 16.17 L8.41 16.68 L9.05 17.11 L9.74 17.45 L10.47 17.7 L11.23 17.85 L12 17.9 L12.77 17.85 L13.53 17.7 L14.26 17.45 L14.95 17.11 L15.59 16.68 L16.17 16.17 L16.68 15.59 L17.11 14.95 L17.45 14.26 L17.7 13.53 L17.85 12.77 L17.9 12Z" fill="#F5C95A"/></symbol><symbol id="ab-bash" viewBox="0 0 24 24"><path d="M16.1 15.7 L15.77 15.88 L15.44 16.04 L15.09 16.19 L14.75 16.33 L14.39 16.44 L14.03 16.54 L13.67 16.63 L13.3 16.7 L12.93 16.75 L12.56 16.78 L12.19 16.8 L11.81 16.8 L11.44 16.78 L11.07 16.75 L10.7 16.7 L10.33 16.63 L9.97 16.54 L9.61 16.44 L9.25 16.33 L8.91 16.19 L8.56 16.04 L8.23 15.88 L7.9 15.7 L9 13.8 L9.24 13.93 L9.48 14.05 L9.74 14.16 L9.99 14.25 L10.25 14.34 L10.51 14.41 L10.78 14.47 L11.05 14.52 L11.32 14.56 L11.59 14.59 L11.86 14.6 L12.14 14.6 L12.41 14.59 L12.68 14.56 L12.95 14.52 L13.22 14.47 L13.49 14.41 L13.75 14.34 L14.01 14.25 L14.26 14.16 L14.52 14.05 L14.76 13.93 L15 13.8ZM15.49 16.67 L15.52 16.43 L15.63 16.23 L15.81 16.08 L16.04 16.02 L16.27 16.05 L16.48 16.16 L16.62 16.35 L16.86 16.97 L17.11 17.6 L17.35 18.22 L17.39 18.37 L17.37 18.52 L17.3 18.66 L17.18 18.76 L17.03 18.8 L16.87 18.78 L16.73 18.71 L16.64 18.58 L16.28 18.02 L15.91 17.46 L15.55 16.89ZM11.45 17.37 L11.58 17.18 L11.77 17.05 L12 17 L12.23 17.05 L12.42 17.18 L12.55 17.37 L12.6 17.6 L12.53 18.27 L12.47 18.93 L12.4 19.6 L12.37 19.75 L12.28 19.88 L12.15 19.97 L12 20 L11.85 19.97 L11.72 19.88 L11.63 19.75 L11.6 19.6 L11.53 18.93 L11.47 18.27 L11.4 17.6ZM7.52 16.16 L7.73 16.05 L7.96 16.02 L8.19 16.08 L8.37 16.23 L8.48 16.43 L8.51 16.67 L8.45 16.89 L8.09 17.46 L7.72 18.02 L7.36 18.58 L7.27 18.71 L7.13 18.78 L6.97 18.8 L6.82 18.76 L6.7 18.66 L6.63 18.52 L6.61 18.37 L6.65 18.22 L6.89 17.6 L7.14 16.97 L7.38 16.35Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M17.2 8.6 L17.16 9.28 L17.02 9.95 L16.8 10.59 L16.5 11.2 L16.13 11.77 L15.68 12.28 L15.17 12.73 L14.6 13.1 L13.99 13.4 L13.35 13.62 L12.68 13.76 L12 13.8 L11.32 13.76 L10.65 13.62 L10.01 13.4 L9.4 13.1 L8.83 12.73 L8.32 12.28 L7.87 11.77 L7.5 11.2 L7.2 10.59 L6.98 9.95 L6.84 9.28 L6.8 8.6 L6.84 7.92 L6.98 7.25 L7.2 6.61 L7.5 6 L7.87 5.43 L8.32 4.92 L8.83 4.47 L9.4 4.1 L10.01 3.8 L10.65 3.58 L11.32 3.44 L12 3.4 L12.68 3.44 L13.35 3.58 L13.99 3.8 L14.6 4.1 L15.17 4.47 L15.68 4.92 L16.13 5.43 L16.5 6 L16.8 6.61 L17.02 7.25 L17.16 7.92ZM16.26 8.04 L16.15 7.49 L15.97 6.95 L15.72 6.45 L15.41 5.98 L15.04 5.56 L14.62 5.19 L14.15 4.88 L13.65 4.63 L13.11 4.45 L12.56 4.34 L12 4.3 L11.44 4.34 L10.89 4.45 L10.35 4.63 L9.85 4.88 L9.38 5.19 L8.96 5.56 L8.59 5.98 L8.28 6.45 L8.03 6.95 L7.85 7.49 L7.74 8.04 L7.7 8.6 L7.74 9.16 L7.85 9.71 L8.03 10.25 L8.28 10.75 L8.59 11.22 L8.96 11.64 L9.38 12.01 L9.85 12.32 L10.35 12.57 L10.89 12.75 L11.44 12.86 L12 12.9 L12.56 12.86 L13.11 12.75 L13.65 12.57 L14.15 12.32 L14.62 12.01 L15.04 11.64 L15.41 11.22 L15.72 10.75 L15.97 10.25 L16.15 9.71 L16.26 9.16 L16.3 8.6Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M16.1 15.7 L15.77 15.88 L15.44 16.04 L15.09 16.19 L14.75 16.33 L14.39 16.44 L14.03 16.54 L13.67 16.63 L13.3 16.7 L12.93 16.75 L12.56 16.78 L12.19 16.8 L11.81 16.8 L11.44 16.78 L11.07 16.75 L10.7 16.7 L10.33 16.63 L9.97 16.54 L9.61 16.44 L9.25 16.33 L8.91 16.19 L8.56 16.04 L8.23 15.88 L7.9 15.7 L9 13.8 L9.24 13.93 L9.48 14.05 L9.74 14.16 L9.99 14.25 L10.25 14.34 L10.51 14.41 L10.78 14.47 L11.05 14.52 L11.32 14.56 L11.59 14.59 L11.86 14.6 L12.14 14.6 L12.41 14.59 L12.68 14.56 L12.95 14.52 L13.22 14.47 L13.49 14.41 L13.75 14.34 L14.01 14.25 L14.26 14.16 L14.52 14.05 L14.76 13.93 L15 13.8Z" fill="#D8904F"/><path d="M15.49 16.67 L15.52 16.43 L15.63 16.23 L15.81 16.08 L16.04 16.02 L16.27 16.05 L16.48 16.16 L16.62 16.35 L16.86 16.97 L17.11 17.6 L17.35 18.22 L17.39 18.37 L17.37 18.52 L17.3 18.66 L17.18 18.76 L17.03 18.8 L16.87 18.78 L16.73 18.71 L16.64 18.58 L16.28 18.02 L15.91 17.46 L15.55 16.89ZM11.45 17.37 L11.58 17.18 L11.77 17.05 L12 17 L12.23 17.05 L12.42 17.18 L12.55 17.37 L12.6 17.6 L12.53 18.27 L12.47 18.93 L12.4 19.6 L12.37 19.75 L12.28 19.88 L12.15 19.97 L12 20 L11.85 19.97 L11.72 19.88 L11.63 19.75 L11.6 19.6 L11.53 18.93 L11.47 18.27 L11.4 17.6ZM7.52 16.16 L7.73 16.05 L7.96 16.02 L8.19 16.08 L8.37 16.23 L8.48 16.43 L8.51 16.67 L8.45 16.89 L8.09 17.46 L7.72 18.02 L7.36 18.58 L7.27 18.71 L7.13 18.78 L6.97 18.8 L6.82 18.76 L6.7 18.66 L6.63 18.52 L6.61 18.37 L6.65 18.22 L6.89 17.6 L7.14 16.97 L7.38 16.35Z" fill="#FFEBD6"/></symbol><symbol id="ab-charge" viewBox="0 0 24 24"><path d="M9.4 9.6 L14.6 9.6 L12.8 16.2 L11.2 16.2ZM12 2.3 L12.8 4.71 L15.29 4.2 L13.6 6.1 L15.29 8 L12.8 7.49 L12 9.9 L11.2 7.49 L8.71 8 L10.4 6.1 L8.71 4.2 L11.2 4.71Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M15 18.8 L14.97 19.19 L14.9 19.58 L14.77 19.95 L14.6 20.3 L14.38 20.63 L14.12 20.92 L13.83 21.18 L13.5 21.4 L13.15 21.57 L12.78 21.7 L12.39 21.77 L12 21.8 L11.61 21.77 L11.22 21.7 L10.85 21.57 L10.5 21.4 L10.17 21.18 L9.88 20.92 L9.62 20.63 L9.4 20.3 L9.23 19.95 L9.1 19.58 L9.03 19.19 L9 18.8 L9.03 18.41 L9.1 18.02 L9.23 17.65 L9.4 17.3 L9.62 16.97 L9.88 16.68 L10.17 16.42 L10.5 16.2 L10.85 16.03 L11.22 15.9 L11.61 15.83 L12 15.8 L12.39 15.83 L12.78 15.9 L13.15 16.03 L13.5 16.2 L13.83 16.42 L14.12 16.68 L14.38 16.97 L14.6 17.3 L14.77 17.65 L14.9 18.02 L14.97 18.41ZM14.18 18.51 L14.13 18.23 L14.03 17.96 L13.91 17.7 L13.75 17.46 L13.56 17.24 L13.34 17.05 L13.1 16.89 L12.84 16.77 L12.57 16.67 L12.29 16.62 L12 16.6 L11.71 16.62 L11.43 16.67 L11.16 16.77 L10.9 16.89 L10.66 17.05 L10.44 17.24 L10.25 17.46 L10.09 17.7 L9.97 17.96 L9.87 18.23 L9.82 18.51 L9.8 18.8 L9.82 19.09 L9.87 19.37 L9.97 19.64 L10.09 19.9 L10.25 20.14 L10.44 20.36 L10.66 20.55 L10.9 20.71 L11.16 20.83 L11.43 20.93 L11.71 20.98 L12 21 L12.29 20.98 L12.57 20.93 L12.84 20.83 L13.1 20.71 L13.34 20.55 L13.56 20.36 L13.75 20.14 L13.91 19.9 L14.03 19.64 L14.13 19.37 L14.18 19.09 L14.2 18.8Z" fill="#D8904F" fill-opacity="0.6"/><path d="M9.4 9.6 L14.6 9.6 L12.8 16.2 L11.2 16.2Z" fill="#D8904F"/><path d="M12.23 15.9 L12.18 15.98 L12.1 16.03 L12 16.05 L11.9 16.03 L11.82 15.98 L11.77 15.9 L11.75 15.8 L11.72 14.68 L11.69 13.56 L11.66 12.44 L11.63 11.32 L11.6 10.2 L11.63 10.05 L11.72 9.92 L11.85 9.83 L12 9.8 L12.15 9.83 L12.28 9.92 L12.37 10.05 L12.4 10.2 L12.37 11.32 L12.34 12.44 L12.31 13.56 L12.28 14.68 L12.25 15.8Z" fill="#FFEBD6"/><path d="M12 2.3 L12.8 4.71 L15.29 4.2 L13.6 6.1 L15.29 8 L12.8 7.49 L12 9.9 L11.2 7.49 L8.71 8 L10.4 6.1 L8.71 4.2 L11.2 4.71Z" fill="#FFEBD6"/></symbol><symbol id="ab-lance" viewBox="0 0 24 24"><path d="M13.02 17.82 L12.78 18.18 L12.42 18.42 L12 18.5 L11.58 18.42 L11.22 18.18 L10.98 17.82 L10.9 17.4 L10.9 16.14 L10.9 14.89 L10.9 13.63 L10.9 12.37 L10.9 11.11 L10.9 9.86 L10.9 8.6 L10.98 8.18 L11.22 7.82 L11.58 7.58 L12 7.5 L12.42 7.58 L12.78 7.82 L13.02 8.18 L13.1 8.6 L13.1 9.86 L13.1 11.11 L13.1 12.37 L13.1 13.63 L13.1 14.89 L13.1 16.14 L13.1 17.4ZM12 2.5 L12.66 5.74 L15.9 6.4 L12.66 7.06 L12 10.3 L11.34 7.06 L8.1 6.4 L11.34 5.74Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M16.54 3.13 L16.73 3.09 L16.92 3.12 L17.09 3.22 L17.2 3.37 L17.25 3.56 L17.22 3.76 L17.12 3.92 L16.74 4.34 L16.31 4.73 L15.84 5.09 L15.35 5.4 L14.83 5.67 L14.29 5.9 L13.73 6.07 L13.16 6.2 L12.58 6.27 L12 6.3 L11.42 6.27 L10.84 6.2 L10.27 6.07 L9.71 5.9 L9.17 5.67 L8.65 5.4 L8.16 5.09 L7.69 4.73 L7.26 4.34 L6.88 3.92 L6.78 3.76 L6.75 3.56 L6.8 3.37 L6.91 3.22 L7.08 3.12 L7.27 3.09 L7.46 3.13 L7.62 3.25 L7.97 3.63 L8.34 3.97 L8.73 4.27 L9.15 4.54 L9.59 4.77 L10.05 4.96 L10.52 5.11 L11.01 5.21 L11.5 5.28 L12 5.3 L12.5 5.28 L12.99 5.21 L13.48 5.11 L13.95 4.96 L14.41 4.77 L14.85 4.54 L15.27 4.27 L15.66 3.97 L16.03 3.63 L16.38 3.25Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M7.46 20.87 L7.27 20.91 L7.08 20.88 L6.91 20.78 L6.8 20.63 L6.75 20.44 L6.78 20.24 L6.88 20.08 L7.26 19.66 L7.69 19.27 L8.16 18.91 L8.65 18.6 L9.17 18.33 L9.71 18.1 L10.27 17.93 L10.84 17.8 L11.42 17.73 L12 17.7 L12.58 17.73 L13.16 17.8 L13.73 17.93 L14.29 18.1 L14.83 18.33 L15.35 18.6 L15.84 18.91 L16.31 19.27 L16.74 19.66 L17.12 20.08 L17.22 20.24 L17.25 20.44 L17.2 20.63 L17.09 20.78 L16.92 20.88 L16.73 20.91 L16.54 20.87 L16.38 20.75 L16.03 20.37 L15.66 20.03 L15.27 19.73 L14.85 19.46 L14.41 19.23 L13.95 19.04 L13.48 18.89 L12.99 18.79 L12.5 18.72 L12 18.7 L11.5 18.72 L11.01 18.79 L10.52 18.89 L10.05 19.04 L9.59 19.23 L9.15 19.46 L8.73 19.73 L8.34 20.03 L7.97 20.37 L7.62 20.75Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M13.02 17.82 L12.78 18.18 L12.42 18.42 L12 18.5 L11.58 18.42 L11.22 18.18 L10.98 17.82 L10.9 17.4 L10.9 16.14 L10.9 14.89 L10.9 13.63 L10.9 12.37 L10.9 11.11 L10.9 9.86 L10.9 8.6 L10.98 8.18 L11.22 7.82 L11.58 7.58 L12 7.5 L12.42 7.58 L12.78 7.82 L13.02 8.18 L13.1 8.6 L13.1 9.86 L13.1 11.11 L13.1 12.37 L13.1 13.63 L13.1 14.89 L13.1 16.14 L13.1 17.4Z" fill="#B99CFF"/><path d="M12.37 17.15 L12.28 17.28 L12.15 17.37 L12 17.4 L11.85 17.37 L11.72 17.28 L11.63 17.15 L11.6 17 L11.6 15.86 L11.6 14.71 L11.6 13.57 L11.6 12.43 L11.6 11.29 L11.6 10.14 L11.6 9 L11.63 8.85 L11.72 8.72 L11.85 8.63 L12 8.6 L12.15 8.63 L12.28 8.72 L12.37 8.85 L12.4 9 L12.4 10.14 L12.4 11.29 L12.4 12.43 L12.4 13.57 L12.4 14.71 L12.4 15.86 L12.4 17Z" fill="#F3EEFF"/><path d="M12 2.5 L12.66 5.74 L15.9 6.4 L12.66 7.06 L12 10.3 L11.34 7.06 L8.1 6.4 L11.34 5.74Z" fill="#F3EEFF"/></symbol><symbol id="ab-arrows" viewBox="0 0 24 24"><path d="M12.6 17.85 L12.46 18.06 L12.25 18.2 L12 18.25 L11.75 18.2 L11.54 18.06 L11.4 17.85 L11.35 17.6 L11.35 16.03 L11.35 14.46 L11.35 12.89 L11.35 11.31 L11.35 9.74 L11.35 8.17 L11.35 6.6 L11.4 6.35 L11.54 6.14 L11.75 6 L12 5.95 L12.25 6 L12.46 6.14 L12.6 6.35 L12.65 6.6 L12.65 8.17 L12.65 9.74 L12.65 11.31 L12.65 12.89 L12.65 14.46 L12.65 16.03 L12.65 17.6ZM11.9 15.26 L12.07 15.26 L12.24 15.32 L12.37 15.44 L12.44 15.6 L12.44 15.77 L12.38 15.94 L12.26 16.07 L11.54 16.54 L10.82 17.01 L10.1 17.48 L9.98 17.54 L9.84 17.55 L9.71 17.5 L9.62 17.4 L9.56 17.28 L9.55 17.14 L9.6 17.01 L9.7 16.92 L10.38 16.39 L11.06 15.86 L11.74 15.33ZM11.62 15.94 L11.56 15.77 L11.56 15.6 L11.63 15.44 L11.76 15.32 L11.93 15.26 L12.1 15.26 L12.26 15.33 L12.94 15.86 L13.62 16.39 L14.3 16.92 L14.4 17.01 L14.45 17.14 L14.44 17.28 L14.38 17.4 L14.29 17.5 L14.16 17.55 L14.02 17.54 L13.9 17.48 L13.18 17.01 L12.46 16.54 L11.74 16.07ZM11.9 13.46 L12.07 13.46 L12.24 13.52 L12.37 13.64 L12.44 13.8 L12.44 13.97 L12.38 14.14 L12.26 14.27 L11.54 14.74 L10.82 15.21 L10.1 15.68 L9.98 15.74 L9.84 15.75 L9.71 15.7 L9.62 15.6 L9.56 15.48 L9.55 15.34 L9.6 15.21 L9.7 15.12 L10.38 14.59 L11.06 14.06 L11.74 13.53ZM11.62 14.14 L11.56 13.97 L11.56 13.8 L11.63 13.64 L11.76 13.52 L11.93 13.46 L12.1 13.46 L12.26 13.53 L12.94 14.06 L13.62 14.59 L14.3 15.12 L14.4 15.21 L14.45 15.34 L14.44 15.48 L14.38 15.6 L14.29 15.7 L14.16 15.75 L14.02 15.74 L13.9 15.68 L13.18 15.21 L12.46 14.74 L11.74 14.27ZM11.71 5.08 L11.93 5 L12.16 5.02 L12.37 5.13 L12.52 5.31 L12.6 5.53 L12.58 5.76 L12.47 5.97 L11.9 6.66 L11.33 7.34 L10.76 8.02 L10.19 8.71 L10.05 8.84 L9.86 8.9 L9.67 8.88 L9.49 8.79 L9.36 8.65 L9.3 8.46 L9.32 8.27 L9.41 8.09 L9.94 7.38 L10.47 6.66 L11 5.94 L11.53 5.23ZM11.42 5.76 L11.4 5.53 L11.48 5.31 L11.63 5.13 L11.84 5.02 L12.07 5 L12.29 5.08 L12.47 5.23 L13 5.94 L13.53 6.66 L14.06 7.38 L14.59 8.09 L14.68 8.27 L14.7 8.46 L14.64 8.65 L14.51 8.79 L14.33 8.88 L14.14 8.9 L13.95 8.84 L13.81 8.71 L13.24 8.02 L12.67 7.34 L12.1 6.66 L11.53 5.97Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M16.54 3.13 L16.73 3.09 L16.92 3.12 L17.09 3.22 L17.2 3.37 L17.25 3.56 L17.22 3.76 L17.12 3.92 L16.74 4.34 L16.31 4.73 L15.84 5.09 L15.35 5.4 L14.83 5.67 L14.29 5.9 L13.73 6.07 L13.16 6.2 L12.58 6.27 L12 6.3 L11.42 6.27 L10.84 6.2 L10.27 6.07 L9.71 5.9 L9.17 5.67 L8.65 5.4 L8.16 5.09 L7.69 4.73 L7.26 4.34 L6.88 3.92 L6.78 3.76 L6.75 3.56 L6.8 3.37 L6.91 3.22 L7.08 3.12 L7.27 3.09 L7.46 3.13 L7.62 3.25 L7.97 3.63 L8.34 3.97 L8.73 4.27 L9.15 4.54 L9.59 4.77 L10.05 4.96 L10.52 5.11 L11.01 5.21 L11.5 5.28 L12 5.3 L12.5 5.28 L12.99 5.21 L13.48 5.11 L13.95 4.96 L14.41 4.77 L14.85 4.54 L15.27 4.27 L15.66 3.97 L16.03 3.63 L16.38 3.25Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M7.46 20.87 L7.27 20.91 L7.08 20.88 L6.91 20.78 L6.8 20.63 L6.75 20.44 L6.78 20.24 L6.88 20.08 L7.26 19.66 L7.69 19.27 L8.16 18.91 L8.65 18.6 L9.17 18.33 L9.71 18.1 L10.27 17.93 L10.84 17.8 L11.42 17.73 L12 17.7 L12.58 17.73 L13.16 17.8 L13.73 17.93 L14.29 18.1 L14.83 18.33 L15.35 18.6 L15.84 18.91 L16.31 19.27 L16.74 19.66 L17.12 20.08 L17.22 20.24 L17.25 20.44 L17.2 20.63 L17.09 20.78 L16.92 20.88 L16.73 20.91 L16.54 20.87 L16.38 20.75 L16.03 20.37 L15.66 20.03 L15.27 19.73 L14.85 19.46 L14.41 19.23 L13.95 19.04 L13.48 18.89 L12.99 18.79 L12.5 18.72 L12 18.7 L11.5 18.72 L11.01 18.79 L10.52 18.89 L10.05 19.04 L9.59 19.23 L9.15 19.46 L8.73 19.73 L8.34 20.03 L7.97 20.37 L7.62 20.75Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M12.6 17.85 L12.46 18.06 L12.25 18.2 L12 18.25 L11.75 18.2 L11.54 18.06 L11.4 17.85 L11.35 17.6 L11.35 16.03 L11.35 14.46 L11.35 12.89 L11.35 11.31 L11.35 9.74 L11.35 8.17 L11.35 6.6 L11.4 6.35 L11.54 6.14 L11.75 6 L12 5.95 L12.25 6 L12.46 6.14 L12.6 6.35 L12.65 6.6 L12.65 8.17 L12.65 9.74 L12.65 11.31 L12.65 12.89 L12.65 14.46 L12.65 16.03 L12.65 17.6Z" fill="#8CC84B"/><path d="M11.9 15.26 L12.07 15.26 L12.24 15.32 L12.37 15.44 L12.44 15.6 L12.44 15.77 L12.38 15.94 L12.26 16.07 L11.54 16.54 L10.82 17.01 L10.1 17.48 L9.98 17.54 L9.84 17.55 L9.71 17.5 L9.62 17.4 L9.56 17.28 L9.55 17.14 L9.6 17.01 L9.7 16.92 L10.38 16.39 L11.06 15.86 L11.74 15.33ZM11.62 15.94 L11.56 15.77 L11.56 15.6 L11.63 15.44 L11.76 15.32 L11.93 15.26 L12.1 15.26 L12.26 15.33 L12.94 15.86 L13.62 16.39 L14.3 16.92 L14.4 17.01 L14.45 17.14 L14.44 17.28 L14.38 17.4 L14.29 17.5 L14.16 17.55 L14.02 17.54 L13.9 17.48 L13.18 17.01 L12.46 16.54 L11.74 16.07ZM11.9 13.46 L12.07 13.46 L12.24 13.52 L12.37 13.64 L12.44 13.8 L12.44 13.97 L12.38 14.14 L12.26 14.27 L11.54 14.74 L10.82 15.21 L10.1 15.68 L9.98 15.74 L9.84 15.75 L9.71 15.7 L9.62 15.6 L9.56 15.48 L9.55 15.34 L9.6 15.21 L9.7 15.12 L10.38 14.59 L11.06 14.06 L11.74 13.53ZM11.62 14.14 L11.56 13.97 L11.56 13.8 L11.63 13.64 L11.76 13.52 L11.93 13.46 L12.1 13.46 L12.26 13.53 L12.94 14.06 L13.62 14.59 L14.3 15.12 L14.4 15.21 L14.45 15.34 L14.44 15.48 L14.38 15.6 L14.29 15.7 L14.16 15.75 L14.02 15.74 L13.9 15.68 L13.18 15.21 L12.46 14.74 L11.74 14.27Z" fill="#8CC84B"/><path d="M11.71 5.08 L11.93 5 L12.16 5.02 L12.37 5.13 L12.52 5.31 L12.6 5.53 L12.58 5.76 L12.47 5.97 L11.9 6.66 L11.33 7.34 L10.76 8.02 L10.19 8.71 L10.05 8.84 L9.86 8.9 L9.67 8.88 L9.49 8.79 L9.36 8.65 L9.3 8.46 L9.32 8.27 L9.41 8.09 L9.94 7.38 L10.47 6.66 L11 5.94 L11.53 5.23ZM11.42 5.76 L11.4 5.53 L11.48 5.31 L11.63 5.13 L11.84 5.02 L12.07 5 L12.29 5.08 L12.47 5.23 L13 5.94 L13.53 6.66 L14.06 7.38 L14.59 8.09 L14.68 8.27 L14.7 8.46 L14.64 8.65 L14.51 8.79 L14.33 8.88 L14.14 8.9 L13.95 8.84 L13.81 8.71 L13.24 8.02 L12.67 7.34 L12.1 6.66 L11.53 5.97Z" fill="#8CC84B"/></symbol><symbol id="ab-twin" viewBox="0 0 24 24"><path d="M8.51 9.66 L8.51 9.6 L8.52 9.55 L8.56 9.5 L8.61 9.47 L8.67 9.47 L8.73 9.48 L8.77 9.52 L9.56 9.9 L10.3 10.33 L11 10.79 L11.65 11.29 L12.25 11.82 L12.81 12.4 L13.32 13.01 L13.79 13.66 L14.22 14.35 L14.59 15.08 L14.93 15.84 L15.22 16.65 L15.46 17.49 L15.49 17.54 L15.49 17.6 L15.48 17.65 L15.44 17.7 L15.39 17.73 L15.33 17.73 L15.27 17.72 L15.23 17.68 L14.44 17.3 L13.7 16.87 L13 16.41 L12.35 15.91 L11.75 15.38 L11.19 14.8 L10.68 14.19 L10.21 13.54 L9.78 12.85 L9.41 12.12 L9.07 11.36 L8.78 10.55 L8.54 9.71ZM15.27 9.48 L15.33 9.47 L15.39 9.47 L15.44 9.5 L15.48 9.55 L15.49 9.6 L15.49 9.66 L15.46 9.71 L15.22 10.55 L14.93 11.36 L14.59 12.12 L14.22 12.85 L13.79 13.54 L13.32 14.19 L12.81 14.8 L12.25 15.38 L11.65 15.91 L11 16.41 L10.3 16.87 L9.56 17.3 L8.77 17.68 L8.73 17.72 L8.67 17.73 L8.61 17.73 L8.56 17.7 L8.52 17.65 L8.51 17.6 L8.51 17.54 L8.54 17.49 L8.78 16.65 L9.07 15.84 L9.41 15.08 L9.78 14.35 L10.21 13.66 L10.68 13.01 L11.19 12.4 L11.75 11.82 L12.35 11.29 L13 10.79 L13.7 10.33 L14.44 9.9 L15.23 9.52Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M17 8.2 L16.96 8.85 L16.83 9.49 L16.62 10.11 L16.33 10.7 L15.97 11.24 L15.54 11.74 L15.04 12.17 L14.5 12.53 L13.91 12.82 L13.29 13.03 L12.65 13.16 L12 13.2 L11.35 13.16 L10.71 13.03 L10.09 12.82 L9.5 12.53 L8.96 12.17 L8.46 11.74 L8.03 11.24 L7.67 10.7 L7.38 10.11 L7.17 9.49 L7.04 8.85 L7 8.2 L7.04 7.55 L7.17 6.91 L7.38 6.29 L7.67 5.7 L8.03 5.16 L8.46 4.66 L8.96 4.23 L9.5 3.87 L10.09 3.58 L10.71 3.37 L11.35 3.24 L12 3.2 L12.65 3.24 L13.29 3.37 L13.91 3.58 L14.5 3.87 L15.04 4.23 L15.54 4.66 L15.97 5.16 L16.33 5.7 L16.62 6.29 L16.83 6.91 L16.96 7.55ZM16.06 7.66 L15.96 7.14 L15.79 6.63 L15.55 6.15 L15.25 5.7 L14.9 5.3 L14.5 4.95 L14.05 4.65 L13.57 4.41 L13.06 4.24 L12.54 4.14 L12 4.1 L11.46 4.14 L10.94 4.24 L10.43 4.41 L9.95 4.65 L9.5 4.95 L9.1 5.3 L8.75 5.7 L8.45 6.15 L8.21 6.63 L8.04 7.14 L7.94 7.66 L7.9 8.2 L7.94 8.74 L8.04 9.26 L8.21 9.77 L8.45 10.25 L8.75 10.7 L9.1 11.1 L9.5 11.45 L9.95 11.75 L10.43 11.99 L10.94 12.16 L11.46 12.26 L12 12.3 L12.54 12.26 L13.06 12.16 L13.57 11.99 L14.05 11.75 L14.5 11.45 L14.9 11.1 L15.25 10.7 L15.55 10.25 L15.79 9.77 L15.96 9.26 L16.06 8.74 L16.1 8.2Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M8.51 9.66 L8.51 9.6 L8.52 9.55 L8.56 9.5 L8.61 9.47 L8.67 9.47 L8.73 9.48 L8.77 9.52 L9.56 9.9 L10.3 10.33 L11 10.79 L11.65 11.29 L12.25 11.82 L12.81 12.4 L13.32 13.01 L13.79 13.66 L14.22 14.35 L14.59 15.08 L14.93 15.84 L15.22 16.65 L15.46 17.49 L15.49 17.54 L15.49 17.6 L15.48 17.65 L15.44 17.7 L15.39 17.73 L15.33 17.73 L15.27 17.72 L15.23 17.68 L14.44 17.3 L13.7 16.87 L13 16.41 L12.35 15.91 L11.75 15.38 L11.19 14.8 L10.68 14.19 L10.21 13.54 L9.78 12.85 L9.41 12.12 L9.07 11.36 L8.78 10.55 L8.54 9.71ZM15.27 9.48 L15.33 9.47 L15.39 9.47 L15.44 9.5 L15.48 9.55 L15.49 9.6 L15.49 9.66 L15.46 9.71 L15.22 10.55 L14.93 11.36 L14.59 12.12 L14.22 12.85 L13.79 13.54 L13.32 14.19 L12.81 14.8 L12.25 15.38 L11.65 15.91 L11 16.41 L10.3 16.87 L9.56 17.3 L8.77 17.68 L8.73 17.72 L8.67 17.73 L8.61 17.73 L8.56 17.7 L8.52 17.65 L8.51 17.6 L8.51 17.54 L8.54 17.49 L8.78 16.65 L9.07 15.84 L9.41 15.08 L9.78 14.35 L10.21 13.66 L10.68 13.01 L11.19 12.4 L11.75 11.82 L12.35 11.29 L13 10.79 L13.7 10.33 L14.44 9.9 L15.23 9.52Z" fill="#3FD0A0"/><path d="M9.59 10.87 L9.59 10.83 L9.6 10.8 L9.62 10.77 L9.66 10.75 L9.69 10.74 L9.73 10.75 L9.76 10.78 L10.37 11.31 L10.95 11.87 L11.51 12.45 L12.05 13.04 L12.56 13.65 L13.05 14.28 L13.52 14.93 L13.97 15.6 L14.39 16.29 L14.41 16.33 L14.41 16.37 L14.4 16.4 L14.38 16.43 L14.34 16.45 L14.31 16.46 L14.27 16.45 L14.24 16.42 L13.63 15.89 L13.05 15.33 L12.49 14.75 L11.95 14.16 L11.44 13.55 L10.95 12.92 L10.48 12.27 L10.03 11.6 L9.61 10.91ZM14.27 10.75 L14.31 10.74 L14.34 10.75 L14.38 10.77 L14.4 10.8 L14.41 10.83 L14.41 10.87 L14.39 10.91 L13.97 11.6 L13.52 12.27 L13.05 12.92 L12.56 13.55 L12.05 14.16 L11.51 14.75 L10.95 15.33 L10.37 15.89 L9.76 16.42 L9.73 16.45 L9.69 16.46 L9.66 16.45 L9.62 16.43 L9.6 16.4 L9.59 16.37 L9.59 16.33 L9.61 16.29 L10.03 15.6 L10.48 14.93 L10.95 14.28 L11.44 13.65 L11.95 13.04 L12.49 12.45 L13.05 11.87 L13.63 11.31 L14.24 10.78Z" fill="#C8D3DC"/></symbol><symbol id="ab-mend" viewBox="0 0 24 24"><path d="M13.32 17.54 L13.33 17.99 L13.17 18.41 L12.87 18.74 L12.46 18.92 L12.01 18.93 L11.59 18.77 L11.26 18.47 L10.92 17.98 L10.59 17.41 L10.31 16.81 L10.08 16.18 L9.89 15.54 L9.75 14.89 L9.66 14.23 L9.6 13.56 L9.59 12.89 L9.61 12.22 L9.68 11.56 L9.78 10.91 L9.93 10.28 L10.12 9.66 L10.35 9.07 L10.62 8.5 L10.91 8.01 L11.21 7.68 L11.62 7.48 L12.07 7.46 L12.49 7.61 L12.82 7.91 L13.02 8.32 L13.04 8.77 L12.89 9.19 L12.65 9.59 L12.46 9.98 L12.29 10.41 L12.15 10.87 L12.04 11.36 L11.96 11.86 L11.91 12.38 L11.89 12.91 L11.9 13.44 L11.94 13.97 L12.02 14.48 L12.12 14.99 L12.26 15.47 L12.43 15.92 L12.63 16.35 L12.85 16.74 L13.14 17.13ZM11.21 3.07 L11.4 2.8 L11.67 2.61 L12 2.55 L12.33 2.61 L12.6 2.8 L12.79 3.07 L12.85 3.4 L12.85 5 L12.85 6.6 L12.85 8.2 L12.79 8.53 L12.6 8.8 L12.33 8.99 L12 9.05 L11.67 8.99 L11.4 8.8 L11.21 8.53 L11.15 8.2 L11.15 6.6 L11.15 5 L11.15 3.4ZM9.27 6.59 L9 6.4 L8.81 6.13 L8.75 5.8 L8.81 5.47 L9 5.2 L9.27 5.01 L9.6 4.95 L11.2 4.95 L12.8 4.95 L14.4 4.95 L14.73 5.01 L15 5.2 L15.19 5.47 L15.25 5.8 L15.19 6.13 L15 6.4 L14.73 6.59 L14.4 6.65 L12.8 6.65 L11.2 6.65 L9.6 6.65Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M16.54 3.13 L16.73 3.09 L16.92 3.12 L17.09 3.22 L17.2 3.37 L17.25 3.56 L17.22 3.76 L17.12 3.92 L16.74 4.34 L16.31 4.73 L15.84 5.09 L15.35 5.4 L14.83 5.67 L14.29 5.9 L13.73 6.07 L13.16 6.2 L12.58 6.27 L12 6.3 L11.42 6.27 L10.84 6.2 L10.27 6.07 L9.71 5.9 L9.17 5.67 L8.65 5.4 L8.16 5.09 L7.69 4.73 L7.26 4.34 L6.88 3.92 L6.78 3.76 L6.75 3.56 L6.8 3.37 L6.91 3.22 L7.08 3.12 L7.27 3.09 L7.46 3.13 L7.62 3.25 L7.97 3.63 L8.34 3.97 L8.73 4.27 L9.15 4.54 L9.59 4.77 L10.05 4.96 L10.52 5.11 L11.01 5.21 L11.5 5.28 L12 5.3 L12.5 5.28 L12.99 5.21 L13.48 5.11 L13.95 4.96 L14.41 4.77 L14.85 4.54 L15.27 4.27 L15.66 3.97 L16.03 3.63 L16.38 3.25Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M7.46 20.87 L7.27 20.91 L7.08 20.88 L6.91 20.78 L6.8 20.63 L6.75 20.44 L6.78 20.24 L6.88 20.08 L7.26 19.66 L7.69 19.27 L8.16 18.91 L8.65 18.6 L9.17 18.33 L9.71 18.1 L10.27 17.93 L10.84 17.8 L11.42 17.73 L12 17.7 L12.58 17.73 L13.16 17.8 L13.73 17.93 L14.29 18.1 L14.83 18.33 L15.35 18.6 L15.84 18.91 L16.31 19.27 L16.74 19.66 L17.12 20.08 L17.22 20.24 L17.25 20.44 L17.2 20.63 L17.09 20.78 L16.92 20.88 L16.73 20.91 L16.54 20.87 L16.38 20.75 L16.03 20.37 L15.66 20.03 L15.27 19.73 L14.85 19.46 L14.41 19.23 L13.95 19.04 L13.48 18.89 L12.99 18.79 L12.5 18.72 L12 18.7 L11.5 18.72 L11.01 18.79 L10.52 18.89 L10.05 19.04 L9.59 19.23 L9.15 19.46 L8.73 19.73 L8.34 20.03 L7.97 20.37 L7.62 20.75Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M13.32 17.54 L13.33 17.99 L13.17 18.41 L12.87 18.74 L12.46 18.92 L12.01 18.93 L11.59 18.77 L11.26 18.47 L10.92 17.98 L10.59 17.41 L10.31 16.81 L10.08 16.18 L9.89 15.54 L9.75 14.89 L9.66 14.23 L9.6 13.56 L9.59 12.89 L9.61 12.22 L9.68 11.56 L9.78 10.91 L9.93 10.28 L10.12 9.66 L10.35 9.07 L10.62 8.5 L10.91 8.01 L11.21 7.68 L11.62 7.48 L12.07 7.46 L12.49 7.61 L12.82 7.91 L13.02 8.32 L13.04 8.77 L12.89 9.19 L12.65 9.59 L12.46 9.98 L12.29 10.41 L12.15 10.87 L12.04 11.36 L11.96 11.86 L11.91 12.38 L11.89 12.91 L11.9 13.44 L11.94 13.97 L12.02 14.48 L12.12 14.99 L12.26 15.47 L12.43 15.92 L12.63 16.35 L12.85 16.74 L13.14 17.13Z" fill="#F5C95A"/><path d="M12.59 17.71 L12.59 17.87 L12.54 18.01 L12.43 18.13 L12.29 18.19 L12.13 18.19 L11.99 18.14 L11.87 18.03 L11.55 17.57 L11.25 17.06 L11 16.52 L10.79 15.95 L10.62 15.36 L10.49 14.76 L10.4 14.14 L10.35 13.52 L10.34 12.9 L10.36 12.28 L10.42 11.66 L10.52 11.06 L10.65 10.47 L10.83 9.91 L11.04 9.36 L11.28 8.85 L11.56 8.39 L11.66 8.28 L11.8 8.21 L11.96 8.2 L12.11 8.26 L12.22 8.36 L12.29 8.5 L12.3 8.66 L12.24 8.81 L11.99 9.23 L11.77 9.68 L11.58 10.17 L11.43 10.68 L11.3 11.21 L11.21 11.76 L11.16 12.33 L11.14 12.9 L11.15 13.48 L11.2 14.05 L11.28 14.62 L11.4 15.17 L11.55 15.7 L11.74 16.21 L11.96 16.69 L12.22 17.14 L12.53 17.57Z" fill="#FFF3C4"/><path d="M11.21 3.07 L11.4 2.8 L11.67 2.61 L12 2.55 L12.33 2.61 L12.6 2.8 L12.79 3.07 L12.85 3.4 L12.85 5 L12.85 6.6 L12.85 8.2 L12.79 8.53 L12.6 8.8 L12.33 8.99 L12 9.05 L11.67 8.99 L11.4 8.8 L11.21 8.53 L11.15 8.2 L11.15 6.6 L11.15 5 L11.15 3.4ZM9.27 6.59 L9 6.4 L8.81 6.13 L8.75 5.8 L8.81 5.47 L9 5.2 L9.27 5.01 L9.6 4.95 L11.2 4.95 L12.8 4.95 L14.4 4.95 L14.73 5.01 L15 5.2 L15.19 5.47 L15.25 5.8 L15.19 6.13 L15 6.4 L14.73 6.59 L14.4 6.65 L12.8 6.65 L11.2 6.65 L9.6 6.65Z" fill="#F5C95A"/></symbol><symbol id="ab-burst" viewBox="0 0 24 24"><path d="M21.27 15.19 L21.13 15.55 L20.99 15.91 L20.82 16.26 L20.65 16.61 L20.46 16.95 L20.26 17.27 L20.04 17.6 L19.82 17.91 L19.58 18.21 L19.33 18.51 L19.07 18.79 L18.79 19.07 L18.51 19.33 L18.21 19.58 L17.91 19.82 L17.6 20.04 L17.27 20.26 L16.95 20.46 L16.61 20.65 L16.26 20.82 L15.91 20.99 L15.55 21.13 L15.19 21.27 L14.8 20.13 L15.12 20.01 L15.43 19.89 L15.74 19.74 L16.04 19.59 L16.34 19.42 L16.63 19.25 L16.91 19.06 L17.19 18.86 L17.45 18.65 L17.71 18.43 L17.96 18.2 L18.2 17.96 L18.43 17.71 L18.65 17.45 L18.86 17.19 L19.06 16.91 L19.25 16.63 L19.42 16.34 L19.59 16.04 L19.74 15.74 L19.89 15.43 L20.01 15.12 L20.13 14.8ZM8.81 21.27 L8.45 21.13 L8.09 20.99 L7.74 20.82 L7.39 20.65 L7.05 20.46 L6.73 20.26 L6.4 20.04 L6.09 19.82 L5.79 19.58 L5.49 19.33 L5.21 19.07 L4.93 18.79 L4.67 18.51 L4.42 18.21 L4.18 17.91 L3.96 17.6 L3.74 17.27 L3.54 16.95 L3.35 16.61 L3.18 16.26 L3.01 15.91 L2.87 15.55 L2.73 15.19 L3.87 14.8 L3.99 15.12 L4.11 15.43 L4.26 15.74 L4.41 16.04 L4.58 16.34 L4.75 16.63 L4.94 16.91 L5.14 17.19 L5.35 17.45 L5.57 17.71 L5.8 17.96 L6.04 18.2 L6.29 18.43 L6.55 18.65 L6.81 18.86 L7.09 19.06 L7.37 19.25 L7.66 19.42 L7.96 19.59 L8.26 19.74 L8.57 19.89 L8.88 20.01 L9.2 20.13ZM2.73 8.81 L2.87 8.45 L3.01 8.09 L3.18 7.74 L3.35 7.39 L3.54 7.05 L3.74 6.73 L3.96 6.4 L4.18 6.09 L4.42 5.79 L4.67 5.49 L4.93 5.21 L5.21 4.93 L5.49 4.67 L5.79 4.42 L6.09 4.18 L6.4 3.96 L6.73 3.74 L7.05 3.54 L7.39 3.35 L7.74 3.18 L8.09 3.01 L8.45 2.87 L8.81 2.73 L9.2 3.87 L8.88 3.99 L8.57 4.11 L8.26 4.26 L7.96 4.41 L7.66 4.58 L7.37 4.75 L7.09 4.94 L6.81 5.14 L6.55 5.35 L6.29 5.57 L6.04 5.8 L5.8 6.04 L5.57 6.29 L5.35 6.55 L5.14 6.81 L4.94 7.09 L4.75 7.37 L4.58 7.66 L4.41 7.96 L4.26 8.26 L4.11 8.57 L3.99 8.88 L3.87 9.2ZM15.19 2.73 L15.55 2.87 L15.91 3.01 L16.26 3.18 L16.61 3.35 L16.95 3.54 L17.27 3.74 L17.6 3.96 L17.91 4.18 L18.21 4.42 L18.51 4.67 L18.79 4.93 L19.07 5.21 L19.33 5.49 L19.58 5.79 L19.82 6.09 L20.04 6.4 L20.26 6.73 L20.46 7.05 L20.65 7.39 L20.82 7.74 L20.99 8.09 L21.13 8.45 L21.27 8.81 L20.13 9.2 L20.01 8.88 L19.89 8.57 L19.74 8.26 L19.59 7.96 L19.42 7.66 L19.25 7.37 L19.06 7.09 L18.86 6.81 L18.65 6.55 L18.43 6.29 L18.2 6.04 L17.96 5.8 L17.71 5.57 L17.45 5.35 L17.19 5.14 L16.91 4.94 L16.63 4.75 L16.34 4.58 L16.04 4.41 L15.74 4.26 L15.43 4.11 L15.12 3.99 L14.8 3.87ZM10.4 3.2 L12 5.1 L13.6 3.2 L13.6 4.4 L12 6.5 L10.4 4.4ZM20.8 10.4 L18.9 12 L20.8 13.6 L19.6 13.6 L17.5 12 L19.6 10.4ZM13.6 20.8 L12 18.9 L10.4 20.8 L10.4 19.6 L12 17.5 L13.6 19.6ZM3.2 13.6 L5.1 12 L3.2 10.4 L4.4 10.4 L6.5 12 L4.4 13.6ZM15 12 L14.9 12.78 L14.6 13.5 L14.12 14.12 L13.5 14.6 L12.78 14.9 L12 15 L11.22 14.9 L10.5 14.6 L9.88 14.12 L9.4 13.5 L9.1 12.78 L9 12 L9.1 11.22 L9.4 10.5 L9.88 9.88 L10.5 9.4 L11.22 9.1 L12 9 L12.78 9.1 L13.5 9.4 L14.12 9.88 L14.6 10.5 L14.9 11.22Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M21.27 15.19 L21.13 15.55 L20.99 15.91 L20.82 16.26 L20.65 16.61 L20.46 16.95 L20.26 17.27 L20.04 17.6 L19.82 17.91 L19.58 18.21 L19.33 18.51 L19.07 18.79 L18.79 19.07 L18.51 19.33 L18.21 19.58 L17.91 19.82 L17.6 20.04 L17.27 20.26 L16.95 20.46 L16.61 20.65 L16.26 20.82 L15.91 20.99 L15.55 21.13 L15.19 21.27 L14.8 20.13 L15.12 20.01 L15.43 19.89 L15.74 19.74 L16.04 19.59 L16.34 19.42 L16.63 19.25 L16.91 19.06 L17.19 18.86 L17.45 18.65 L17.71 18.43 L17.96 18.2 L18.2 17.96 L18.43 17.71 L18.65 17.45 L18.86 17.19 L19.06 16.91 L19.25 16.63 L19.42 16.34 L19.59 16.04 L19.74 15.74 L19.89 15.43 L20.01 15.12 L20.13 14.8ZM8.81 21.27 L8.45 21.13 L8.09 20.99 L7.74 20.82 L7.39 20.65 L7.05 20.46 L6.73 20.26 L6.4 20.04 L6.09 19.82 L5.79 19.58 L5.49 19.33 L5.21 19.07 L4.93 18.79 L4.67 18.51 L4.42 18.21 L4.18 17.91 L3.96 17.6 L3.74 17.27 L3.54 16.95 L3.35 16.61 L3.18 16.26 L3.01 15.91 L2.87 15.55 L2.73 15.19 L3.87 14.8 L3.99 15.12 L4.11 15.43 L4.26 15.74 L4.41 16.04 L4.58 16.34 L4.75 16.63 L4.94 16.91 L5.14 17.19 L5.35 17.45 L5.57 17.71 L5.8 17.96 L6.04 18.2 L6.29 18.43 L6.55 18.65 L6.81 18.86 L7.09 19.06 L7.37 19.25 L7.66 19.42 L7.96 19.59 L8.26 19.74 L8.57 19.89 L8.88 20.01 L9.2 20.13ZM2.73 8.81 L2.87 8.45 L3.01 8.09 L3.18 7.74 L3.35 7.39 L3.54 7.05 L3.74 6.73 L3.96 6.4 L4.18 6.09 L4.42 5.79 L4.67 5.49 L4.93 5.21 L5.21 4.93 L5.49 4.67 L5.79 4.42 L6.09 4.18 L6.4 3.96 L6.73 3.74 L7.05 3.54 L7.39 3.35 L7.74 3.18 L8.09 3.01 L8.45 2.87 L8.81 2.73 L9.2 3.87 L8.88 3.99 L8.57 4.11 L8.26 4.26 L7.96 4.41 L7.66 4.58 L7.37 4.75 L7.09 4.94 L6.81 5.14 L6.55 5.35 L6.29 5.57 L6.04 5.8 L5.8 6.04 L5.57 6.29 L5.35 6.55 L5.14 6.81 L4.94 7.09 L4.75 7.37 L4.58 7.66 L4.41 7.96 L4.26 8.26 L4.11 8.57 L3.99 8.88 L3.87 9.2ZM15.19 2.73 L15.55 2.87 L15.91 3.01 L16.26 3.18 L16.61 3.35 L16.95 3.54 L17.27 3.74 L17.6 3.96 L17.91 4.18 L18.21 4.42 L18.51 4.67 L18.79 4.93 L19.07 5.21 L19.33 5.49 L19.58 5.79 L19.82 6.09 L20.04 6.4 L20.26 6.73 L20.46 7.05 L20.65 7.39 L20.82 7.74 L20.99 8.09 L21.13 8.45 L21.27 8.81 L20.13 9.2 L20.01 8.88 L19.89 8.57 L19.74 8.26 L19.59 7.96 L19.42 7.66 L19.25 7.37 L19.06 7.09 L18.86 6.81 L18.65 6.55 L18.43 6.29 L18.2 6.04 L17.96 5.8 L17.71 5.57 L17.45 5.35 L17.19 5.14 L16.91 4.94 L16.63 4.75 L16.34 4.58 L16.04 4.41 L15.74 4.26 L15.43 4.11 L15.12 3.99 L14.8 3.87Z" fill="#B99CFF"/><path d="M10.4 3.2 L12 5.1 L13.6 3.2 L13.6 4.4 L12 6.5 L10.4 4.4ZM20.8 10.4 L18.9 12 L20.8 13.6 L19.6 13.6 L17.5 12 L19.6 10.4ZM13.6 20.8 L12 18.9 L10.4 20.8 L10.4 19.6 L12 17.5 L13.6 19.6ZM3.2 13.6 L5.1 12 L3.2 10.4 L4.4 10.4 L6.5 12 L4.4 13.6Z" fill="#B99CFF"/><path d="M16.4 12 L16.32 12.86 L16.07 13.68 L15.66 14.44 L15.11 15.11 L14.44 15.66 L13.68 16.07 L12.86 16.32 L12 16.4 L11.14 16.32 L10.32 16.07 L9.56 15.66 L8.89 15.11 L8.34 14.44 L7.93 13.68 L7.68 12.86 L7.6 12 L7.68 11.14 L7.93 10.32 L8.34 9.56 L8.89 8.89 L9.56 8.34 L10.32 7.93 L11.14 7.68 L12 7.6 L12.86 7.68 L13.68 7.93 L14.44 8.34 L15.11 8.89 L15.66 9.56 L16.07 10.32 L16.32 11.14Z" fill="#B99CFF" fill-opacity="0.35"/><path d="M15 12 L14.9 12.78 L14.6 13.5 L14.12 14.12 L13.5 14.6 L12.78 14.9 L12 15 L11.22 14.9 L10.5 14.6 L9.88 14.12 L9.4 13.5 L9.1 12.78 L9 12 L9.1 11.22 L9.4 10.5 L9.88 9.88 L10.5 9.4 L11.22 9.1 L12 9 L12.78 9.1 L13.5 9.4 L14.12 9.88 L14.6 10.5 L14.9 11.22Z" fill="#F3EEFF"/></symbol><symbol id="ab-trap" viewBox="0 0 24 24"><path d="M12 2.1 L20.57 7.05 L20.57 16.95 L12 21.9 L3.43 16.95 L3.43 7.05ZM4.38 7.6 L4.38 16.4 L12 20.8 L19.62 16.4 L19.62 7.6 L12 3.2ZM11.49 2.89 L11.61 2.71 L11.79 2.59 L12 2.55 L12.21 2.59 L12.39 2.71 L12.51 2.89 L12.55 3.1 L12.47 3.75 L12.38 4.41 L12.3 5.06 L12.28 5.17 L12.21 5.27 L12.11 5.34 L12 5.36 L11.89 5.34 L11.79 5.27 L11.72 5.17 L11.7 5.06 L11.62 4.41 L11.53 3.75 L11.45 3.1ZM19.64 7 L19.85 7.02 L20.04 7.11 L20.18 7.28 L20.25 7.48 L20.24 7.69 L20.14 7.88 L19.98 8.03 L19.38 8.28 L18.77 8.53 L18.16 8.79 L18.05 8.83 L17.93 8.82 L17.83 8.77 L17.75 8.68 L17.71 8.57 L17.72 8.45 L17.77 8.35 L17.86 8.27 L18.39 7.87 L18.91 7.47 L19.43 7.07ZM20.14 16.12 L20.24 16.31 L20.25 16.52 L20.18 16.73 L20.04 16.89 L19.85 16.98 L19.64 17 L19.43 16.93 L18.91 16.53 L18.39 16.13 L17.86 15.73 L17.77 15.65 L17.72 15.55 L17.71 15.43 L17.75 15.32 L17.83 15.23 L17.93 15.18 L18.05 15.17 L18.16 15.21 L18.77 15.47 L19.38 15.72 L19.98 15.97ZM12.51 21.11 L12.39 21.29 L12.21 21.41 L12 21.45 L11.79 21.41 L11.61 21.29 L11.49 21.11 L11.45 20.9 L11.53 20.25 L11.62 19.59 L11.7 18.94 L11.72 18.83 L11.79 18.73 L11.89 18.66 L12 18.64 L12.11 18.66 L12.21 18.73 L12.28 18.83 L12.3 18.94 L12.38 19.59 L12.47 20.25 L12.55 20.9ZM4.36 17 L4.15 16.98 L3.96 16.89 L3.82 16.73 L3.75 16.52 L3.76 16.31 L3.86 16.12 L4.02 15.97 L4.62 15.72 L5.23 15.47 L5.84 15.21 L5.95 15.17 L6.07 15.18 L6.17 15.23 L6.25 15.32 L6.29 15.43 L6.28 15.55 L6.23 15.65 L6.14 15.73 L5.61 16.13 L5.09 16.53 L4.57 16.93ZM3.86 7.88 L3.76 7.69 L3.75 7.48 L3.82 7.27 L3.96 7.11 L4.15 7.02 L4.36 7 L4.57 7.07 L5.09 7.47 L5.61 7.87 L6.14 8.27 L6.23 8.35 L6.28 8.45 L6.29 8.57 L6.25 8.68 L6.17 8.77 L6.07 8.82 L5.95 8.83 L5.84 8.79 L5.23 8.53 L4.62 8.28 L4.02 8.03ZM12 6.4 L16.85 9.2 L16.85 14.8 L12 17.6 L7.15 14.8 L7.15 9.2Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M12 2.1 L20.57 7.05 L20.57 16.95 L12 21.9 L3.43 16.95 L3.43 7.05ZM4.38 7.6 L4.38 16.4 L12 20.8 L19.62 16.4 L19.62 7.6 L12 3.2Z" fill="#B8F1FF"/><path d="M11.49 2.89 L11.61 2.71 L11.79 2.59 L12 2.55 L12.21 2.59 L12.39 2.71 L12.51 2.89 L12.55 3.1 L12.47 3.75 L12.38 4.41 L12.3 5.06 L12.28 5.17 L12.21 5.27 L12.11 5.34 L12 5.36 L11.89 5.34 L11.79 5.27 L11.72 5.17 L11.7 5.06 L11.62 4.41 L11.53 3.75 L11.45 3.1ZM19.64 7 L19.85 7.02 L20.04 7.11 L20.18 7.28 L20.25 7.48 L20.24 7.69 L20.14 7.88 L19.98 8.03 L19.38 8.28 L18.77 8.53 L18.16 8.79 L18.05 8.83 L17.93 8.82 L17.83 8.77 L17.75 8.68 L17.71 8.57 L17.72 8.45 L17.77 8.35 L17.86 8.27 L18.39 7.87 L18.91 7.47 L19.43 7.07ZM20.14 16.12 L20.24 16.31 L20.25 16.52 L20.18 16.73 L20.04 16.89 L19.85 16.98 L19.64 17 L19.43 16.93 L18.91 16.53 L18.39 16.13 L17.86 15.73 L17.77 15.65 L17.72 15.55 L17.71 15.43 L17.75 15.32 L17.83 15.23 L17.93 15.18 L18.05 15.17 L18.16 15.21 L18.77 15.47 L19.38 15.72 L19.98 15.97ZM12.51 21.11 L12.39 21.29 L12.21 21.41 L12 21.45 L11.79 21.41 L11.61 21.29 L11.49 21.11 L11.45 20.9 L11.53 20.25 L11.62 19.59 L11.7 18.94 L11.72 18.83 L11.79 18.73 L11.89 18.66 L12 18.64 L12.11 18.66 L12.21 18.73 L12.28 18.83 L12.3 18.94 L12.38 19.59 L12.47 20.25 L12.55 20.9ZM4.36 17 L4.15 16.98 L3.96 16.89 L3.82 16.73 L3.75 16.52 L3.76 16.31 L3.86 16.12 L4.02 15.97 L4.62 15.72 L5.23 15.47 L5.84 15.21 L5.95 15.17 L6.07 15.18 L6.17 15.23 L6.25 15.32 L6.29 15.43 L6.28 15.55 L6.23 15.65 L6.14 15.73 L5.61 16.13 L5.09 16.53 L4.57 16.93ZM3.86 7.88 L3.76 7.69 L3.75 7.48 L3.82 7.27 L3.96 7.11 L4.15 7.02 L4.36 7 L4.57 7.07 L5.09 7.47 L5.61 7.87 L6.14 8.27 L6.23 8.35 L6.28 8.45 L6.29 8.57 L6.25 8.68 L6.17 8.77 L6.07 8.82 L5.95 8.83 L5.84 8.79 L5.23 8.53 L4.62 8.28 L4.02 8.03Z" fill="#B8F1FF"/><path d="M12 6.4 L16.85 9.2 L16.85 14.8 L12 17.6 L7.15 14.8 L7.15 9.2Z" fill="#7FD7F0" fill-opacity="0.45"/><path d="M12 6.4 L16.85 9.2 L16.85 14.8 L12 17.6 L7.15 14.8 L7.15 9.2ZM8.02 9.7 L8.02 14.3 L12 16.6 L15.98 14.3 L15.98 9.7 L12 7.4Z" fill="#B8F1FF"/><path d="M11.6 7.55 L11.61 7.4 L11.68 7.26 L11.8 7.15 L11.95 7.1 L12.1 7.11 L12.24 7.18 L12.35 7.3 L13.65 9.55 L14.94 11.8 L16.24 14.05 L16.29 14.2 L16.28 14.35 L16.21 14.49 L16.1 14.6 L15.95 14.65 L15.79 14.64 L15.65 14.57 L15.55 14.45 L14.25 12.2 L12.95 9.95 L11.65 7.7ZM11.76 7.18 L11.9 7.11 L12.05 7.1 L12.2 7.15 L12.32 7.26 L12.39 7.4 L12.4 7.55 L12.35 7.7 L11.05 9.95 L9.75 12.2 L8.45 14.45 L8.35 14.57 L8.21 14.64 L8.05 14.65 L7.9 14.6 L7.79 14.49 L7.72 14.35 L7.71 14.2 L7.76 14.05 L9.06 11.8 L10.35 9.55 L11.65 7.3ZM7.95 10.12 L7.82 10.03 L7.73 9.9 L7.7 9.75 L7.73 9.6 L7.82 9.47 L7.95 9.38 L8.1 9.35 L10.7 9.35 L13.3 9.35 L15.9 9.35 L16.05 9.38 L16.18 9.47 L16.27 9.6 L16.3 9.75 L16.27 9.9 L16.18 10.03 L16.05 10.12 L15.9 10.15 L13.3 10.15 L10.7 10.15 L8.1 10.15Z" fill="#B8F1FF" fill-opacity="0.6"/></symbol><symbol id="ab-poison" viewBox="0 0 24 24"><path d="M15.43 4.32 L15.68 4.27 L15.93 4.32 L16.14 4.46 L16.28 4.67 L16.33 4.92 L16.28 5.17 L16.14 5.38 L15.62 5.72 L15.11 6.05 L14.6 6.39 L14.09 6.73 L14.04 6.76 L13.98 6.77 L13.92 6.76 L13.87 6.73 L13.84 6.68 L13.83 6.62 L13.84 6.56 L13.87 6.51 L14.21 6 L14.55 5.49 L14.88 4.98 L15.22 4.46ZM16.28 12.03 L16.33 12.28 L16.28 12.53 L16.14 12.74 L15.93 12.88 L15.68 12.93 L15.43 12.88 L15.22 12.74 L14.88 12.22 L14.55 11.71 L14.21 11.2 L13.87 10.69 L13.84 10.64 L13.83 10.58 L13.84 10.52 L13.87 10.47 L13.92 10.44 L13.98 10.43 L14.04 10.44 L14.09 10.47 L14.6 10.81 L15.11 11.15 L15.62 11.48 L16.14 11.82ZM8.57 12.88 L8.32 12.93 L8.07 12.88 L7.86 12.74 L7.72 12.53 L7.67 12.28 L7.72 12.03 L7.86 11.82 L8.38 11.48 L8.89 11.15 L9.4 10.81 L9.91 10.47 L9.96 10.44 L10.02 10.43 L10.08 10.44 L10.13 10.47 L10.16 10.52 L10.17 10.58 L10.16 10.64 L10.13 10.69 L9.79 11.2 L9.45 11.71 L9.12 12.22 L8.78 12.74ZM7.72 5.17 L7.67 4.92 L7.72 4.67 L7.86 4.46 L8.07 4.32 L8.32 4.27 L8.57 4.32 L8.78 4.46 L9.12 4.98 L9.45 5.49 L9.79 6 L10.13 6.51 L10.16 6.56 L10.17 6.62 L10.16 6.68 L10.13 6.73 L10.08 6.76 L10.02 6.77 L9.96 6.76 L9.91 6.73 L9.4 6.39 L8.89 6.05 L8.38 5.72 L7.86 5.38ZM10.2 21.4 L10.35 20.27 L10.51 19.15 L10.66 18.02 L10.82 16.89 L10.97 15.76 L11.13 14.64 L11.28 13.51 L11.44 12.38 L11.59 11.25 L11.75 10.13 L11.9 9 L11.91 8.96 L11.93 8.93 L11.96 8.91 L12 8.9 L12.04 8.91 L12.07 8.93 L12.09 8.96 L12.1 9 L12.25 10.13 L12.41 11.25 L12.56 12.38 L12.72 13.51 L12.87 14.64 L13.03 15.76 L13.18 16.89 L13.34 18.02 L13.49 19.15 L13.65 20.27 L13.8 21.4Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M18 8.6 L17.95 9.38 L17.8 10.15 L17.54 10.9 L17.2 11.6 L16.76 12.25 L16.24 12.84 L15.65 13.36 L15 13.8 L14.3 14.14 L13.55 14.4 L12.78 14.55 L12 14.6 L11.22 14.55 L10.45 14.4 L9.7 14.14 L9 13.8 L8.35 13.36 L7.76 12.84 L7.24 12.25 L6.8 11.6 L6.46 10.9 L6.2 10.15 L6.05 9.38 L6 8.6 L6.05 7.82 L6.2 7.05 L6.46 6.3 L6.8 5.6 L7.24 4.95 L7.76 4.36 L8.35 3.84 L9 3.4 L9.7 3.06 L10.45 2.8 L11.22 2.65 L12 2.6 L12.78 2.65 L13.55 2.8 L14.3 3.06 L15 3.4 L15.65 3.84 L16.24 4.36 L16.76 4.95 L17.2 5.6 L17.54 6.3 L17.8 7.05 L17.95 7.82ZM17.06 7.93 L16.93 7.28 L16.71 6.65 L16.42 6.05 L16.05 5.5 L15.61 4.99 L15.1 4.55 L14.55 4.18 L13.95 3.89 L13.32 3.67 L12.67 3.54 L12 3.5 L11.33 3.54 L10.68 3.67 L10.05 3.89 L9.45 4.18 L8.9 4.55 L8.39 4.99 L7.95 5.5 L7.58 6.05 L7.29 6.65 L7.07 7.28 L6.94 7.93 L6.9 8.6 L6.94 9.27 L7.07 9.92 L7.29 10.55 L7.58 11.15 L7.95 11.7 L8.39 12.21 L8.9 12.65 L9.45 13.02 L10.05 13.31 L10.68 13.53 L11.33 13.66 L12 13.7 L12.67 13.66 L13.32 13.53 L13.95 13.31 L14.55 13.02 L15.1 12.65 L15.61 12.21 L16.05 11.7 L16.42 11.15 L16.71 10.55 L16.93 9.92 L17.06 9.27 L17.1 8.6Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M15.43 4.32 L15.68 4.27 L15.93 4.32 L16.14 4.46 L16.28 4.67 L16.33 4.92 L16.28 5.17 L16.14 5.38 L15.62 5.72 L15.11 6.05 L14.6 6.39 L14.09 6.73 L14.04 6.76 L13.98 6.77 L13.92 6.76 L13.87 6.73 L13.84 6.68 L13.83 6.62 L13.84 6.56 L13.87 6.51 L14.21 6 L14.55 5.49 L14.88 4.98 L15.22 4.46ZM16.28 12.03 L16.33 12.28 L16.28 12.53 L16.14 12.74 L15.93 12.88 L15.68 12.93 L15.43 12.88 L15.22 12.74 L14.88 12.22 L14.55 11.71 L14.21 11.2 L13.87 10.69 L13.84 10.64 L13.83 10.58 L13.84 10.52 L13.87 10.47 L13.92 10.44 L13.98 10.43 L14.04 10.44 L14.09 10.47 L14.6 10.81 L15.11 11.15 L15.62 11.48 L16.14 11.82ZM8.57 12.88 L8.32 12.93 L8.07 12.88 L7.86 12.74 L7.72 12.53 L7.67 12.28 L7.72 12.03 L7.86 11.82 L8.38 11.48 L8.89 11.15 L9.4 10.81 L9.91 10.47 L9.96 10.44 L10.02 10.43 L10.08 10.44 L10.13 10.47 L10.16 10.52 L10.17 10.58 L10.16 10.64 L10.13 10.69 L9.79 11.2 L9.45 11.71 L9.12 12.22 L8.78 12.74ZM7.72 5.17 L7.67 4.92 L7.72 4.67 L7.86 4.46 L8.07 4.32 L8.32 4.27 L8.57 4.32 L8.78 4.46 L9.12 4.98 L9.45 5.49 L9.79 6 L10.13 6.51 L10.16 6.56 L10.17 6.62 L10.16 6.68 L10.13 6.73 L10.08 6.76 L10.02 6.77 L9.96 6.76 L9.91 6.73 L9.4 6.39 L8.89 6.05 L8.38 5.72 L7.86 5.38Z" fill="#3FD0A0"/><path d="M10.2 21.4 L10.35 20.27 L10.51 19.15 L10.66 18.02 L10.82 16.89 L10.97 15.76 L11.13 14.64 L11.28 13.51 L11.44 12.38 L11.59 11.25 L11.75 10.13 L11.9 9 L11.91 8.96 L11.93 8.93 L11.96 8.91 L12 8.9 L12.04 8.91 L12.07 8.93 L12.09 8.96 L12.1 9 L12.25 10.13 L12.41 11.25 L12.56 12.38 L12.72 13.51 L12.87 14.64 L13.03 15.76 L13.18 16.89 L13.34 18.02 L13.49 19.15 L13.65 20.27 L13.8 21.4Z" fill="#0F8F6A"/><path d="M11.4 21.4 L11.45 20.42 L11.5 19.44 L11.55 18.45 L11.6 17.47 L11.65 16.49 L11.7 15.51 L11.75 14.53 L11.8 13.55 L11.85 12.56 L11.9 11.58 L11.95 10.6 L12.05 10.6 L12.1 11.58 L12.15 12.56 L12.2 13.55 L12.25 14.53 L12.3 15.51 L12.35 16.49 L12.4 17.47 L12.45 18.45 L12.5 19.44 L12.55 20.42 L12.6 21.4Z" fill="#C8D3DC"/></symbol><symbol id="ab-salvation" viewBox="0 0 24 24"><path d="M13.2 20.7 L12.92 21.12 L12.5 21.4 L12 21.5 L11.5 21.4 L11.08 21.12 L10.8 20.7 L10.7 20.2 L10.7 19.08 L10.7 17.96 L10.7 16.84 L10.7 15.72 L10.7 14.6 L10.8 14.1 L11.08 13.68 L11.5 13.4 L12 13.3 L12.5 13.4 L12.92 13.68 L13.2 14.1 L13.3 14.6 L13.3 15.72 L13.3 16.84 L13.3 17.96 L13.3 19.08 L13.3 20.2ZM8.47 5.16 L8.53 5.43 L8.47 5.7 L8.32 5.92 L8.1 6.07 L7.83 6.13 L7.56 6.07 L7.33 5.92 L7.07 5.48 L6.81 5.03 L6.56 4.58 L6.49 4.48 L6.47 4.37 L6.49 4.25 L6.56 4.16 L6.65 4.09 L6.77 4.07 L6.88 4.09 L6.98 4.16 L7.43 4.41 L7.88 4.67 L8.32 4.93ZM16.44 6.07 L16.17 6.13 L15.9 6.07 L15.68 5.92 L15.53 5.7 L15.47 5.43 L15.53 5.16 L15.68 4.93 L16.12 4.67 L16.57 4.41 L17.02 4.16 L17.12 4.09 L17.23 4.07 L17.35 4.09 L17.44 4.16 L17.51 4.25 L17.53 4.37 L17.51 4.48 L17.44 4.58 L17.19 5.03 L16.93 5.48 L16.67 5.92ZM15.53 14.04 L15.47 13.77 L15.53 13.5 L15.68 13.28 L15.9 13.13 L16.17 13.07 L16.44 13.13 L16.67 13.28 L16.93 13.72 L17.19 14.17 L17.44 14.62 L17.51 14.72 L17.53 14.83 L17.51 14.95 L17.44 15.04 L17.35 15.11 L17.23 15.13 L17.12 15.11 L17.02 15.04 L16.57 14.79 L16.12 14.53 L15.68 14.27ZM7.56 13.13 L7.83 13.07 L8.1 13.13 L8.32 13.28 L8.47 13.5 L8.53 13.77 L8.47 14.04 L8.32 14.27 L7.88 14.53 L7.43 14.79 L6.98 15.04 L6.88 15.11 L6.77 15.13 L6.65 15.11 L6.56 15.04 L6.49 14.95 L6.47 14.83 L6.49 14.72 L6.56 14.62 L6.81 14.17 L7.07 13.72 L7.33 13.28ZM16.8 9.6 L16.76 10.23 L16.64 10.84 L16.43 11.44 L16.16 12 L15.81 12.52 L15.39 12.99 L14.92 13.41 L14.4 13.76 L13.84 14.03 L13.24 14.24 L12.63 14.36 L12 14.4 L11.37 14.36 L10.76 14.24 L10.16 14.03 L9.6 13.76 L9.08 13.41 L8.61 12.99 L8.19 12.52 L7.84 12 L7.57 11.44 L7.36 10.84 L7.24 10.23 L7.2 9.6 L7.24 8.97 L7.36 8.36 L7.57 7.76 L7.84 7.2 L8.19 6.68 L8.61 6.21 L9.08 5.79 L9.6 5.44 L10.16 5.17 L10.76 4.96 L11.37 4.84 L12 4.8 L12.63 4.84 L13.24 4.96 L13.84 5.17 L14.4 5.44 L14.92 5.79 L15.39 6.21 L15.81 6.68 L16.16 7.2 L16.43 7.76 L16.64 8.36 L16.76 8.97ZM15.77 9.1 L15.67 8.62 L15.51 8.15 L15.29 7.7 L15.01 7.29 L14.69 6.91 L14.31 6.59 L13.9 6.31 L13.45 6.09 L12.98 5.93 L12.5 5.83 L12 5.8 L11.5 5.83 L11.02 5.93 L10.55 6.09 L10.1 6.31 L9.69 6.59 L9.31 6.91 L8.99 7.29 L8.71 7.7 L8.49 8.15 L8.33 8.62 L8.23 9.1 L8.2 9.6 L8.23 10.1 L8.33 10.58 L8.49 11.05 L8.71 11.5 L8.99 11.91 L9.31 12.29 L9.69 12.61 L10.1 12.89 L10.55 13.11 L11.02 13.27 L11.5 13.37 L12 13.4 L12.5 13.37 L12.98 13.27 L13.45 13.11 L13.9 12.89 L14.31 12.61 L14.69 12.29 L15.01 11.91 L15.29 11.5 L15.51 11.05 L15.67 10.58 L15.77 10.1 L15.8 9.6Z" fill="#0A0D14" stroke="#0A0D14" stroke-width="1.25" stroke-linejoin="round"/><path d="M7.46 20.87 L7.27 20.91 L7.08 20.88 L6.91 20.78 L6.8 20.63 L6.75 20.44 L6.78 20.24 L6.88 20.08 L7.26 19.66 L7.69 19.27 L8.16 18.91 L8.65 18.6 L9.17 18.33 L9.71 18.1 L10.27 17.93 L10.84 17.8 L11.42 17.73 L12 17.7 L12.58 17.73 L13.16 17.8 L13.73 17.93 L14.29 18.1 L14.83 18.33 L15.35 18.6 L15.84 18.91 L16.31 19.27 L16.74 19.66 L17.12 20.08 L17.22 20.24 L17.25 20.44 L17.2 20.63 L17.09 20.78 L16.92 20.88 L16.73 20.91 L16.54 20.87 L16.38 20.75 L16.03 20.37 L15.66 20.03 L15.27 19.73 L14.85 19.46 L14.41 19.23 L13.95 19.04 L13.48 18.89 L12.99 18.79 L12.5 18.72 L12 18.7 L11.5 18.72 L11.01 18.79 L10.52 18.89 L10.05 19.04 L9.59 19.23 L9.15 19.46 L8.73 19.73 L8.34 20.03 L7.97 20.37 L7.62 20.75Z" fill="#8C97AD" fill-opacity="0.7"/><path d="M13.2 20.7 L12.92 21.12 L12.5 21.4 L12 21.5 L11.5 21.4 L11.08 21.12 L10.8 20.7 L10.7 20.2 L10.7 19.08 L10.7 17.96 L10.7 16.84 L10.7 15.72 L10.7 14.6 L10.8 14.1 L11.08 13.68 L11.5 13.4 L12 13.3 L12.5 13.4 L12.92 13.68 L13.2 14.1 L13.3 14.6 L13.3 15.72 L13.3 16.84 L13.3 17.96 L13.3 19.08 L13.3 20.2Z" fill="#F5C95A"/><path d="M12.37 19.95 L12.28 20.08 L12.15 20.17 L12 20.2 L11.85 20.17 L11.72 20.08 L11.63 19.95 L11.6 19.8 L11.6 18.8 L11.6 17.8 L11.6 16.8 L11.6 15.8 L11.6 14.8 L11.63 14.65 L11.72 14.52 L11.85 14.43 L12 14.4 L12.15 14.43 L12.28 14.52 L12.37 14.65 L12.4 14.8 L12.4 15.8 L12.4 16.8 L12.4 17.8 L12.4 18.8 L12.4 19.8Z" fill="#F3EEFF"/><path d="M8.47 5.16 L8.53 5.43 L8.47 5.7 L8.32 5.92 L8.1 6.07 L7.83 6.13 L7.56 6.07 L7.33 5.92 L7.07 5.48 L6.81 5.03 L6.56 4.58 L6.49 4.48 L6.47 4.37 L6.49 4.25 L6.56 4.16 L6.65 4.09 L6.77 4.07 L6.88 4.09 L6.98 4.16 L7.43 4.41 L7.88 4.67 L8.32 4.93ZM16.44 6.07 L16.17 6.13 L15.9 6.07 L15.68 5.92 L15.53 5.7 L15.47 5.43 L15.53 5.16 L15.68 4.93 L16.12 4.67 L16.57 4.41 L17.02 4.16 L17.12 4.09 L17.23 4.07 L17.35 4.09 L17.44 4.16 L17.51 4.25 L17.53 4.37 L17.51 4.48 L17.44 4.58 L17.19 5.03 L16.93 5.48 L16.67 5.92ZM15.53 14.04 L15.47 13.77 L15.53 13.5 L15.68 13.28 L15.9 13.13 L16.17 13.07 L16.44 13.13 L16.67 13.28 L16.93 13.72 L17.19 14.17 L17.44 14.62 L17.51 14.72 L17.53 14.83 L17.51 14.95 L17.44 15.04 L17.35 15.11 L17.23 15.13 L17.12 15.11 L17.02 15.04 L16.57 14.79 L16.12 14.53 L15.68 14.27ZM7.56 13.13 L7.83 13.07 L8.1 13.13 L8.32 13.28 L8.47 13.5 L8.53 13.77 L8.47 14.04 L8.32 14.27 L7.88 14.53 L7.43 14.79 L6.98 15.04 L6.88 15.11 L6.77 15.13 L6.65 15.11 L6.56 15.04 L6.49 14.95 L6.47 14.83 L6.49 14.72 L6.56 14.62 L6.81 14.17 L7.07 13.72 L7.33 13.28Z" fill="#F5C95A" fill-opacity="0.8"/><path d="M16.8 9.6 L16.76 10.23 L16.64 10.84 L16.43 11.44 L16.16 12 L15.81 12.52 L15.39 12.99 L14.92 13.41 L14.4 13.76 L13.84 14.03 L13.24 14.24 L12.63 14.36 L12 14.4 L11.37 14.36 L10.76 14.24 L10.16 14.03 L9.6 13.76 L9.08 13.41 L8.61 12.99 L8.19 12.52 L7.84 12 L7.57 11.44 L7.36 10.84 L7.24 10.23 L7.2 9.6 L7.24 8.97 L7.36 8.36 L7.57 7.76 L7.84 7.2 L8.19 6.68 L8.61 6.21 L9.08 5.79 L9.6 5.44 L10.16 5.17 L10.76 4.96 L11.37 4.84 L12 4.8 L12.63 4.84 L13.24 4.96 L13.84 5.17 L14.4 5.44 L14.92 5.79 L15.39 6.21 L15.81 6.68 L16.16 7.2 L16.43 7.76 L16.64 8.36 L16.76 8.97ZM15.77 9.1 L15.67 8.62 L15.51 8.15 L15.29 7.7 L15.01 7.29 L14.69 6.91 L14.31 6.59 L13.9 6.31 L13.45 6.09 L12.98 5.93 L12.5 5.83 L12 5.8 L11.5 5.83 L11.02 5.93 L10.55 6.09 L10.1 6.31 L9.69 6.59 L9.31 6.91 L8.99 7.29 L8.71 7.7 L8.49 8.15 L8.33 8.62 L8.23 9.1 L8.2 9.6 L8.23 10.1 L8.33 10.58 L8.49 11.05 L8.71 11.5 L8.99 11.91 L9.31 12.29 L9.69 12.61 L10.1 12.89 L10.55 13.11 L11.02 13.27 L11.5 13.37 L12 13.4 L12.5 13.37 L12.98 13.27 L13.45 13.11 L13.9 12.89 L14.31 12.61 L14.69 12.29 L15.01 11.91 L15.29 11.5 L15.51 11.05 L15.67 10.58 L15.77 10.1 L15.8 9.6Z" fill="#F5C95A"/><path d="M15.8 9.6 L15.73 10.34 L15.51 11.05 L15.16 11.71 L14.69 12.29 L14.11 12.76 L13.45 13.11 L12.74 13.33 L12 13.4 L11.26 13.33 L10.55 13.11 L9.89 12.76 L9.31 12.29 L8.84 11.71 L8.49 11.05 L8.27 10.34 L8.2 9.6 L8.27 8.86 L8.49 8.15 L8.84 7.49 L9.31 6.91 L9.89 6.44 L10.55 6.09 L11.26 5.87 L12 5.8 L12.74 5.87 L13.45 6.09 L14.11 6.44 L14.69 6.91 L15.16 7.49 L15.51 8.15 L15.73 8.86Z" fill="#FFF3C4" fill-opacity="0.95"/></symbol></defs></svg>
 
     <noscript>
       <p class="noscript">

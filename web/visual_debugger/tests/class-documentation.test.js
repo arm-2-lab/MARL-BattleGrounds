@@ -1,6 +1,10 @@
 /**
  * @file Check the five class guides, required profile identity and exact named value
- * substitution.
+ * substitution. Each guide now carries the class name, calling, order, fantasy
+ * line, the lore description as its overview, the lore role as its Role row,
+ * and a named Basic (Arcane Blast with the short form "Blast", Shield Bash,
+ * Serrated Arrows, Backstab, Lesser Heal) beside the Ultimate and passive; the
+ * Hunter's passive is the provisional Far Sight.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -40,12 +44,17 @@ const cases = [
       damageAmplificationCeiling: "<Damage Amplification Ceiling>",
     },
     expected: {
+      className: "Mage",
+      calling: "The Astral Walker",
+      order: "The Council of Caelmont",
+      fantasyLine:
+        "An archmage of Caelmont, the violet city that floats above the clouds, who speaks one word of star-lore and a star answers.",
       overview:
-        "The Mage has the highest Basic damage per tick in the game, which is further enhanced by its own passive and Ultimate (Burst) damage amplification effects. This skill set makes the Mage the game’s ranged “Artillery” class. Despite its high damage output, it is also the most vulnerable: the Mage has the lowest health in the game, making it a “Glass Cannon” that is reliant on strong team formations and allies for protection.",
+        "The Mage is an archmage of the Council of Caelmont, the violet city that floats above the clouds. It has the strongest Basic in the game but the lowest health, so its team must keep it safe. The Mage and allies close to it deal more damage. Its Ultimate, Burst, lights a star inside the Mage, and its own blows hit harder for the next few ticks.",
       tacticalGuideRows: [
         {
           label: "Role",
-          value: "Primary Damage Dealer · Burst Damage · Damage Amplification",
+          value: "Artillery / Glass Cannon",
         },
         {
           label: "Primary Strength",
@@ -56,15 +65,21 @@ const cases = [
           value: "Lowest maximum health; glass cannon.",
         },
       ],
+      basic: {
+        name: "Arcane Blast",
+        shortName: "Blast",
+        description:
+          "Arcane Blast hits one enemy in reach with a bolt of starlight. It is the strongest Basic in the game. Damage bonuses and reductions affect the damage dealt.",
+      },
       ultimate: {
         name: "Burst",
         description:
           "For <Burst Duration>, Burst applies <Burst Damage Effect> to this Mage's damage, starting on the next tick.",
       },
       passive: {
-        name: "Sorcerer's Empowerment (Mage Damage Amplification Aura)",
+        name: "Sorcerer's Empowerment (Damage Boost)",
         description:
-          "While alive and without a spawn shield, the Mage emits Sorcerer's Empowerment. It strengthens the attacks of living teammates within <Aura Radius> who also have no spawn shield, including the Mage itself. Each aura provides <Per-Emitter Damage Amplification Effect>. Overlapping auras multiply their damage bonuses, up to <Damage Amplification Ceiling> times normal damage.",
+          "While alive and without a spawn shield, the Mage gives off Sorcerer's Empowerment. It strengthens the attacks of living teammates within <Aura Radius> who also have no spawn shield, including the Mage itself. Each aura gives <Per-Emitter Damage Amplification Effect>. Overlapping auras multiply their damage bonuses, up to <Damage Amplification Ceiling> times normal damage.",
       },
     },
   },
@@ -80,12 +95,17 @@ const cases = [
       damageMitigationFloor: "<Damage Mitigation Floor>",
     },
     expected: {
+      className: "Warrior",
+      calling: "The Undying",
+      order: "The Knights of Lornhold",
+      fantasyLine:
+        "A knight of fallen Lornhold whose kingdom died but whose oath did not: it plants the line and holds it.",
       overview:
-        "The Warrior has the highest maximum health in the game—twice that of the next-highest classes—so it is the game’s melee “Tank”/“Guardian” class. The Warrior thrives on the front line where it can initiate engagements, provide passive damage mitigation to allies, and body-block or peel aggressors. The Warrior’s Ultimate (Charge) propels it toward an enemy, instantaneously applying considerable damage, a stun, and a slow. With relatively low follow-up damage, the Warrior is reliant on its allies to secure kills.",
+        "The Warrior is a knight of Lornhold, a fallen kingdom whose knights still keep their oath to hold the line. It has the most health in the game, and allies close to it take less damage. Its Basic is weak, so it needs allies to finish fights. Its Ultimate, Charge, rushes it in one straight line up to a visible enemy, then hurts, stuns and slows that enemy without pushing it back.",
       tacticalGuideRows: [
         {
           label: "Role",
-          value: "Tank · Frontline Damage · Damage Mitigation",
+          value: "Tank / Guardian",
         },
         { label: "Primary Strength", value: "Highest maximum health." },
         {
@@ -93,31 +113,43 @@ const cases = [
           value: "Second-lowest Basic damage among damage-dealing classes.",
         },
       ],
+      basic: {
+        name: "Shield Bash",
+        shortName: "Shield Bash",
+        description:
+          "Shield Bash hits one enemy close to the Warrior. Damage bonuses and reductions affect the damage dealt.",
+      },
       ultimate: {
         name: "Charge",
         description:
           "Charge moves the Warrior toward an enemy before normal movement. It deals <Ultimate Raw Damage> base damage, stuns for <Charge Stun Duration>, and applies <Charge Slow Effect> for <Charge Slow Duration>. Damage bonuses and reductions affect the damage dealt.",
       },
       passive: {
-        name: "Guardian's Barrier (Warrior Damage Mitigation Aura)",
+        name: "Guardian's Barrier (Damage Mitigation)",
         description:
-          "While alive and without a spawn shield, the Warrior emits Guardian's Barrier. It protects living teammates within <Aura Radius> who also have no spawn shield, including the Warrior itself. Each barrier reduces incoming damage by <Per-Emitter Damage Mitigation Effect>. When barriers overlap, each reduces the damage left after the others, down to <Damage Mitigation Floor> of the original incoming damage.",
+          "While alive and without a spawn shield, the Warrior gives off Guardian's Barrier. It protects living teammates within <Aura Radius> who also have no spawn shield, including the Warrior itself. Each barrier reduces incoming damage by <Per-Emitter Damage Mitigation Effect>. When barriers overlap, each reduces the damage left after the others, down to <Damage Mitigation Floor> of the original incoming damage.",
       },
     },
   },
   {
     classId: 3,
     values: {
-      ultimateRawDamage: "<Ultimate Raw Damage>",
-      trapStunDuration: "<Trap Stun Duration>",
       hunterBasicMovementEffect: "<Hunter Basic Movement Effect>",
       hunterBasicSlowDuration: "<Hunter Basic Slow Duration>",
+      ultimateRawDamage: "<Ultimate Raw Damage>",
+      trapStunDuration: "<Trap Stun Duration>",
+      observationRadius: "<Observation Radius>",
     },
     expected: {
+      className: "Hunter",
+      calling: "The Sentinel",
+      order: "The Sentinels of the Lunewood",
+      fantasyLine:
+        "A Sentinel of the moonlit Lunewood who sees first, strikes from farthest and seals an enemy in frost.",
       overview:
-        "The Hunter is the game’s ranged “Crowd Controller” class. Its job is to use its superior Basic attack and observation range to scout out and slow or disable enemies to help its allies win engagements. The Hunter’s low damage makes it reliant on allies to secure kills, but its Ultimate (Freezing Trap) is the longest stun in the game and, if timed well, can change the tide of battle—but be careful not to break it!",
+        "The Hunter is a Sentinel of the Lunewood, an ancient moonlit forest whose night folk serve the Moon. It sees the farthest and its Basic reaches the farthest, but its arrows do the least damage and only slow their target a little. Its Ultimate, Freezing Trap, is thrown at one enemy and freezes it in place for the longest stun in the game. Any damage on a later tick breaks the ice early, so allies must choose: wait, or strike.",
       tacticalGuideRows: [
-        { label: "Role", value: "Disabler · Crowd Controller · Scout" },
+        { label: "Role", value: "Crowd Control / Scout" },
         {
           label: "Primary Strength",
           value: "Longest stun duration.",
@@ -127,15 +159,21 @@ const cases = [
           value: "Lowest Basic damage among damage-dealing classes.",
         },
       ],
+      basic: {
+        name: "Serrated Arrows",
+        shortName: "Serrated Arrows",
+        description:
+          "Serrated Arrows hit one enemy in reach. Each hit also slows that enemy, causing <Hunter Basic Movement Effect> for <Hunter Basic Slow Duration>. A new hit starts the slow again.",
+      },
       ultimate: {
         name: "Freezing Trap",
         description:
           "Freezing Trap deals <Ultimate Raw Damage> base damage to one enemy and stuns it for <Trap Stun Duration>. Damage bonuses and reductions affect the damage dealt. Damage breaks an existing trap.",
       },
       passive: {
-        name: "Serrated Arrows",
+        name: "Far Sight",
         description:
-          "Each successful Hunter Basic attack applies Serrated Arrows, causing <Hunter Basic Movement Effect> for <Hunter Basic Slow Duration>. Further Basic attacks refresh the slow.",
+          "Far Sight lets the Hunter see everything within <Observation Radius> around it, farther than any other class. Stone still blocks its sight.",
       },
     },
   },
@@ -152,10 +190,15 @@ const cases = [
       outOfCombatDelay: "<Out-of-Combat Delay>",
     },
     expected: {
+      className: "Rogue",
+      calling: "The Shadowblade",
+      order: "The Nightshade Office",
+      fantasyLine:
+        "An agent of the Nightshade Office, the crown's secret service of spies: a whisper, a cut, and a wound that will not heal.",
       overview:
-        "Having the highest base movement speed in the game—alongside a high-damage Ultimate (Crippling Poison) that also stuns, slows, and applies an anti-heal effect—the Rogue is the melee “Assassin” class. Because it is a melee class and lacks a gap closer like the Warrior’s “Charge” Ultimate, it is heavily reliant on surrounding obstacles and advancing allies to execute flanking maneuvers without being counterattacked.",
+        "The Rogue is an agent of the Nightshade Office, the secret service of spies and assassins who work for the crown of Galehaven. It moves faster than any other class, but it cannot turn invisible, blink or teleport: it wins with speed, stone cover and good timing. Its Ultimate, Crippling Poison, is the biggest single hit in the game; it also stuns, slows, and cuts the healing its target gets for a few ticks. The poison does no damage over time.",
       tacticalGuideRows: [
-        { label: "Role", value: "Ambusher · Flanker · Assassin · Anti-Heal" },
+        { label: "Role", value: "Assassin / Flanker" },
         {
           label: "Primary Strength",
           value: "Highest base movement speed.",
@@ -165,6 +208,12 @@ const cases = [
           value: "Short attack range with no gap closer.",
         },
       ],
+      basic: {
+        name: "Backstab",
+        shortName: "Backstab",
+        description:
+          "Backstab hits one enemy close to the Rogue. Damage bonuses and reductions affect the damage dealt.",
+      },
       ultimate: {
         name: "Crippling Poison",
         description:
@@ -185,16 +234,27 @@ const cases = [
       freedomMovementFloor: "<Freedom Movement Floor>",
     },
     expected: {
+      className: "Priest",
+      calling: "The Lightbringer",
+      order: "The Church of the Morning Light",
+      fantasyLine:
+        "A priest of the Church of the Morning Light, sent to keep one candle lit through the night battle.",
       overview:
-        "The Priest is the game’s ranged “Healer” class. It cannot deal damage, so it relies on strong team formations and allies for protection. Its Ultimate (Holy Word: Salvation) delivers a massive amount of healing in a single tick, allowing it to save allies who would otherwise die in emergency situations.",
+        "The Priest is a Lightbringer of the Church of the Morning Light, sent by the Archbishop of Galehaven to keep a candle lit through the night battle. It is the only class that can heal, and it cannot deal damage at all, so its team must protect it. Its Basic, Lesser Heal, mends one ally or itself and briefly lets that ally shake off most of a strong slow (stuns still hold). Its Ultimate, Holy Word: Salvation, is a huge heal that can save an ally from a killing blow in the same tick, but it never brings back the fallen.",
       tacticalGuideRows: [
-        { label: "Role", value: "Healer · Medic" },
+        { label: "Role", value: "Healer / Medic" },
         {
           label: "Primary Strength",
           value: "Only class with healing abilities.",
         },
         { label: "Primary Weakness", value: "Cannot deal damage." },
       ],
+      basic: {
+        name: "Lesser Heal",
+        shortName: "Lesser Heal",
+        description:
+          "Lesser Heal heals one ally in reach, or the Priest itself, and gives it Blessing of Freedom. Healing reductions and the maximum-health limit affect the healing received.",
+      },
       ultimate: {
         name: "Holy Word: Salvation",
         description:
@@ -203,7 +263,7 @@ const cases = [
       passive: {
         name: "Blessing of Freedom",
         description:
-          "Each successful use of the Priest's Basic healing ability applies Blessing of Freedom to its target for <Freedom Duration>. The Priest can target itself. Freedom prevents slows from reducing movement below <Freedom Movement Floor>, but it does not prevent stuns.",
+          "Each successful Lesser Heal applies Blessing of Freedom to its target for <Freedom Duration>. The Priest can target itself. Freedom prevents slows from reducing movement below <Freedom Movement Floor>, but it does not prevent stuns.",
       },
     },
   },

@@ -1,0 +1,312 @@
+/*
+ * Styles for the Champions look (src/looks/champions.js): Life Vessels tokens,
+ * the Class Seals, the Ashen Token, the Spawn Ward and its lift. styles.css imports this
+ * file at its top.
+ *
+ * Colors come only from the tokens in styles.css :root. Sizes (radii, stroke
+ * widths, dash patterns) and END opacities are SVG presentation attributes set
+ * by champions.js, so this file sets no stroke-width, no non-scaling stroke and
+ * no opacity on beat-timed nodes. No animations, transitions or CSS filters: the
+ * beat clock times everything and the PNG export copies these computed colors.
+ */
+
+.agent {
+  cursor: pointer;
+}
+
+.agent[data-class="mage"] {
+  color: var(--class-mage);
+}
+
+.agent[data-class="warrior"] {
+  color: var(--class-warrior);
+}
+
+.agent[data-class="hunter"] {
+  color: var(--class-hunter);
+}
+
+.agent[data-class="rogue"] {
+  color: var(--class-rogue);
+}
+
+.agent[data-class="priest"] {
+  color: var(--class-priest);
+}
+
+.agent[data-class="unknown"] {
+  color: var(--ui-muted);
+}
+
+/* The hit circle: the groove under a living vessel, or the ash disc. */
+.agent-body {
+  fill: var(--groove);
+  stroke: none;
+}
+
+.agent[data-look="plain"] .agent-body {
+  fill: var(--ink);
+}
+
+.agent[data-alive="false"] .agent-body {
+  fill: var(--grave-stone);
+}
+
+/* The vessel: the groove, the team field below the level, the waterline. */
+.champion-life,
+.champion-life * {
+  pointer-events: none;
+}
+
+.champion-life__groove {
+  fill: var(--groove);
+}
+
+.agent[data-team="team-a"] .champion-life__field {
+  fill: var(--team-a-field);
+}
+
+.agent[data-team="team-b"] .champion-life__field {
+  fill: var(--team-b-field);
+}
+
+.agent[data-team="unknown"] .champion-life__field {
+  fill: var(--smoke);
+}
+
+.champion-life__waterline,
+.champion-life__old-level {
+  fill: none;
+  stroke: var(--life-ivory);
+}
+
+.champion-life__waterline[data-low="true"] {
+  stroke: var(--cinder);
+}
+
+.champion-life__lost {
+  fill: var(--life-ivory);
+}
+
+.champion-life__pour[data-tone="heal"] {
+  fill: var(--dawn-gold, var(--class-priest));
+}
+
+.champion-life__pour[data-tone="rest"] {
+  fill: var(--moon-dew);
+}
+
+/* Agent POV with no authorized life: a dotted ring, never a guessed level. */
+.champion-life__unknown {
+  fill: none;
+  stroke: var(--life-ivory);
+}
+
+/* The ivory life ring (Life Vessels off, or the plain token). */
+.champion-life__track {
+  fill: none;
+  stroke: var(--groove);
+}
+
+.champion-life__arc {
+  fill: none;
+  stroke: var(--life-ivory);
+}
+
+.champion-life__arc[data-low="true"] {
+  stroke: var(--cinder);
+}
+
+.champion-life__notches {
+  fill: none;
+  stroke: var(--ink);
+}
+
+.champion-flash {
+  fill: var(--life-ivory);
+  pointer-events: none;
+}
+
+/* Class halo and the upright emblem in the class color. */
+.champion-inner,
+.champion-inner * {
+  pointer-events: none;
+}
+
+.champion-halo {
+  fill: currentColor;
+}
+
+/*
+ * Class Seals: the plate, engraving and table in the class color
+ * (currentColor), the Warrior's lit rivets in Forge White, the Rogue's dormant
+ * honing line in Blade Silver, the Mage's awakening flare in Starcore and a
+ * fallen champion's cold outline in Ash. Opacities are attributes set by
+ * champions.js.
+ */
+.champion-seal,
+.champion-seal * {
+  pointer-events: none;
+}
+
+.champion-seal__plate {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.champion-seal__table,
+.champion-seal__rivets {
+  fill: currentColor;
+  stroke: none;
+}
+
+.champion-seal__engraving {
+  fill: none;
+  stroke: currentColor;
+}
+
+.champion-seal__rivets-lit {
+  fill: var(--forge-white);
+  stroke: none;
+}
+
+.champion-seal__honing {
+  fill: none;
+  stroke: var(--blade-silver);
+}
+
+.champion-seal__flare {
+  fill: none;
+  stroke: var(--starcore);
+}
+
+.champion-seal__ash {
+  fill: none;
+  stroke: var(--ash);
+}
+
+.agent-class-icon {
+  overflow: visible;
+  color: currentColor;
+  pointer-events: none;
+}
+
+.agent-class-letter {
+  fill: var(--life-ivory);
+  fill-opacity: 0.85;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* The team ring inside the footprint; Team B's ring is split by Ink. */
+.agent-team-ring,
+.champion-ring {
+  fill: none;
+  pointer-events: none;
+}
+
+.agent[data-team="team-a"] .agent-team-ring,
+.agent[data-team="team-a"] .champion-ring {
+  stroke: var(--team-a);
+}
+
+.agent[data-team="team-b"] .agent-team-ring,
+.agent[data-team="team-b"] .champion-ring {
+  stroke: var(--team-b);
+}
+
+.agent[data-team="unknown"] .agent-team-ring,
+.agent[data-team="unknown"] .champion-ring {
+  stroke: var(--ui-muted);
+}
+
+.champion-ring-split {
+  fill: none;
+  stroke: var(--ink);
+  pointer-events: none;
+}
+
+/* A falling champion's held living look (shown until its Fall beat). */
+.champion-falling,
+.champion-falling * {
+  pointer-events: none;
+}
+
+.champion-falling__ground {
+  fill: var(--groove);
+}
+
+/* The Ashen Token: grave stone, a faint team rim and the ash emblem. */
+.champion-fallen,
+.champion-fallen * {
+  pointer-events: none;
+}
+
+.champion-ashen__rim {
+  fill: none;
+}
+
+.agent[data-team="team-a"] .champion-ashen__rim {
+  stroke: var(--team-a);
+}
+
+.agent[data-team="team-b"] .champion-ashen__rim {
+  stroke: var(--team-b);
+}
+
+.agent[data-team="unknown"] .champion-ashen__rim {
+  stroke: var(--ui-muted);
+}
+
+.champion-ashen__emblem {
+  overflow: visible;
+  color: var(--ash);
+}
+
+/* The Spawn Ward: a pale veil, 12 dashes of the team ring and silver diamonds. */
+.agent-spawn-shield {
+  cursor: help;
+}
+
+.agent-spawn-shield__veil {
+  fill: var(--moonward-veil);
+  pointer-events: none;
+}
+
+.agent-spawn-shield__ring,
+.agent-spawn-shield__split {
+  fill: none;
+  pointer-events: stroke;
+}
+
+.agent-spawn-shield[data-team="team-a"] .agent-spawn-shield__ring,
+.agent-ward-lift[data-team="team-a"] .agent-spawn-shield__ring {
+  stroke: var(--team-a);
+}
+
+.agent-spawn-shield[data-team="team-b"] .agent-spawn-shield__ring,
+.agent-ward-lift[data-team="team-b"] .agent-spawn-shield__ring {
+  stroke: var(--team-b);
+}
+
+.agent-spawn-shield__split {
+  stroke: var(--ink);
+}
+
+.agent-spawn-shield__diamonds {
+  fill: var(--ward-silver);
+  stroke: var(--ink);
+}
+
+.agent-spawn-shield:focus-visible .agent-spawn-shield__diamonds {
+  stroke: var(--life-ivory);
+}
+
+/* The lifting ward (g.agent-ward-lift): the same parts, shown only until the
+   band closes at Settle. It takes no pointer input, so the token keeps its
+   hover card. */
+.agent-ward-lift,
+.agent-ward-lift .agent-spawn-shield__ring,
+.agent-ward-lift .agent-spawn-shield__split {
+  pointer-events: none;
+}

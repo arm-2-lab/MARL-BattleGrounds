@@ -11,7 +11,10 @@
  */
 
 import { AUTHORIZED_PRESENTATION_SCHEMA_V1 } from "./authorized-presentation-schema.js";
-import { normalizeLiveDebuggerFrameV2 } from "./frame-normalizer.js";
+import {
+  normalizeCombatConfigurationV1,
+  normalizeLiveDebuggerFrameV2,
+} from "./frame-normalizer.js";
 import {
   joinReplayFrameAndTimeline,
   normalizeReplayArtifactFactsV1,
@@ -20,11 +23,7 @@ import {
   normalizeReplayViewerFrameV1,
   validateReplayFrameContinuity,
 } from "./replay-frame-normalizer.js";
-import {
-  isTeamController,
-  requiresSharedObs,
-  systemTransportKeys,
-} from "./system-controls.js";
+import { systemTransportKeys } from "./system-controls.js";
 import { CANONICAL_STATUS_ORDER, statusTokenIdFromCatalogId } from "./vocabulary.js";
 
 const PRESENTATION_KINDS = new Set([
@@ -1443,11 +1442,10 @@ function validateAcceptedActionTuple(action, label) {
 }
 
 /**
- * Check pending against the full ordered active roster at simulatorStep.
- * draft names the selected editable actor and its armed action. Require one bounded
- * pending action per roster row and exact identity order; the selected row must equal
- * the effective draft, with an unarmed combat lane represented as target-none/no-Ultimate.
- * Return undefined or throw TypeError naming label. Does not submit or simulate actions.
+ * Check Manual pending rows against an ordered subset of the roster at simulatorStep.
+ * The transport join checks exact configured ownership. An editable selected row must equal
+ * its draft, with an unarmed lane represented as target-none/no-Ultimate.
+ * A policy inspection must have no selected pending row. Return undefined or throw TypeError naming label. Does not submit or simulate actions.
  *
  * @param {Record<string, any> | null} pending
  * @param {any[]} roster
@@ -1459,17 +1457,19 @@ function validateLivePendingJointAction(pending, roster, simulatorStep, draft, l
   if (
     pending === null ||
     pending.current_simulator_step_count !== simulatorStep ||
-    !Array.isArray(pending.action_rows) ||
-    pending.action_rows.length !== roster.length
+    !Array.isArray(pending.action_rows)
   ) {
     invalid(`${label} misses its active roster or decision epoch.`);
   }
   const rows = /** @type {any[]} */ (pending.action_rows);
+  const pendingIds = new Set(rows.map((row) => row.actor_public_agent_id));
+  const manualRoster = roster.filter((row) => pendingIds.has(row.public_agent_id));
   if (
+    rows.length !== manualRoster.length ||
     rows.some(
       (row, index) =>
-        row.actor_presentation_key !== roster[index]?.presentation_key ||
-        row.actor_public_agent_id !== roster[index]?.public_agent_id,
+        row.actor_presentation_key !== manualRoster[index]?.presentation_key ||
+        row.actor_public_agent_id !== manualRoster[index]?.public_agent_id,
     )
   ) {
     invalid(`${label} changed active actor identity or order.`);
@@ -1480,6 +1480,10 @@ function validateLivePendingJointAction(pending, roster, simulatorStep, draft, l
   const selected = rows.find(
     (row) => row.actor_public_agent_id === draft.actor_public_agent_id,
   );
+  if (draft.inspection_kind === "policy_read_only") {
+    if (selected) invalid(`${label} cannot invent a pending policy action.`);
+    return;
+  }
   const expected = {
     move_action: draft.draft_action.move_action,
     target_action:
@@ -4452,11 +4456,12 @@ function validateLiveResearcherSpace(frame) {
   if (pending.submission_scope !== source.source_submission_scope) {
     invalid("Live researcher pending scope does not join its source.");
   }
-  if (pending.inspection_kind === "editable_live_draft") {
+  if (["editable_live_draft", "policy_read_only"].includes(pending.inspection_kind)) {
     if (pending.submission_scope !== "joint_turn") {
       invalid("Live researcher editable draft must submit one joint turn.");
     }
-    const draft = pending.draft;
+    const draft =
+      pending.inspection_kind === "policy_read_only" ? pending : pending.draft;
     const owner = roster.find(
       (row) => row.public_agent_id === researcher.selected_public_agent_id,
     );
@@ -4469,6 +4474,7 @@ function validateLiveResearcherSpace(frame) {
       draft.actor_presentation_key !== owner.presentation_key ||
       decision.owner_public_agent_id !== draft.actor_public_agent_id ||
       decision.owner_presentation_key !== draft.actor_presentation_key ||
+      (pending.inspection_kind === "policy_read_only" && draft.actor_anchor !== null) ||
       decision.target_actions[0].target_kind !== "no_target" ||
       /** @type {any[]} */ (decision.target_actions)
         .slice(1)
@@ -4502,41 +4508,45 @@ function validateLiveResearcherSpace(frame) {
       draft,
       "Live researcher Pending Joint Action",
     );
-    if (
-      !structurallyEqual(
-        draft.draft_target,
-        decision.target_actions[action.target_action],
-      ) ||
-      legality.move_action_is_legal !==
-        decision.movement_action_mask[action.move_action] ||
-      legality.target_action_is_legal !==
-        decision.target_action_mask[action.target_action]
-    ) {
-      invalid("Live researcher draft does not join its exact decision row.");
-    }
-    if (action.armed_lane === "none") {
+    if (pending.inspection_kind === "editable_live_draft") {
       if (
-        legality.armed_lane_is_legal !== null ||
-        legality.combat_pair_is_legal !== null
+        !structurallyEqual(
+          draft.draft_target,
+          decision.target_actions[action.target_action],
+        ) ||
+        legality.move_action_is_legal !==
+          decision.movement_action_mask[action.move_action] ||
+        legality.target_action_is_legal !==
+          decision.target_action_mask[action.target_action]
       ) {
-        invalid("Unarmed live researcher draft cannot carry combat legality.");
+        invalid("Live researcher draft does not join its exact decision row.");
       }
-    } else {
-      const lane = action.armed_lane === "basic" ? 0 : 1;
-      if (
-        legality.armed_lane_is_legal !== decision.use_ultimate_action_mask[lane] ||
-        legality.combat_pair_is_legal !==
-          decision.target_use_ultimate_joint_mask[action.target_action][lane]
-      ) {
-        invalid("Live researcher draft joint legality changed.");
+      if (action.armed_lane === "none") {
+        if (
+          legality.armed_lane_is_legal !== null ||
+          legality.combat_pair_is_legal !== null
+        ) {
+          invalid("Unarmed live researcher draft cannot carry combat legality.");
+        }
+      } else {
+        const lane = action.armed_lane === "basic" ? 0 : 1;
+        if (
+          legality.armed_lane_is_legal !== decision.use_ultimate_action_mask[lane] ||
+          legality.combat_pair_is_legal !==
+            decision.target_use_ultimate_joint_mask[action.target_action][lane]
+        ) {
+          invalid("Live researcher draft joint legality changed.");
+        }
       }
     }
-
     const localInspection = frame.live_inspection.inspection;
-    if (localInspection.inspection_kind !== "editable_live_draft") {
+    if (localInspection.inspection_kind !== pending.inspection_kind) {
       invalid("Live researcher and Agent draft modes diverged.");
     }
-    const localDraft = localInspection.draft;
+    const localDraft =
+      localInspection.inspection_kind === "policy_read_only"
+        ? localInspection
+        : localInspection.draft;
     const localDecision = localDraft.decision_mask;
     const researcherTargetIds = /** @type {any[]} */ (decision.target_actions).map(
       (row) => (row.target_kind === "no_target" ? null : row.target_public_agent_id),
@@ -4740,7 +4750,8 @@ function validateInspectionStateMatrix(
       }
       return;
     }
-    inspection = wrapper.draft;
+    inspection =
+      wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft;
   } else {
     if (source.source_frame_index > source.source_final_frame_index) {
       invalid("Replay source frame exceeds its retained prefix.");
@@ -4893,7 +4904,7 @@ function validateInspectionStateMatrix(
     ) {
       invalid("Replay accepted action is not its exact legal decision row.");
     }
-  } else {
+  } else if (inspection.inspection_kind !== "policy_read_only") {
     const action = inspection.draft_action;
     const legality = inspection.draft_legality;
     if (
@@ -5304,12 +5315,12 @@ function validateSemanticFrame(frame) {
   if (actionAxis !== null) validateActionAxis(actionAxis);
   if (live && oracle) {
     const wrapper = frame.live_inspection.inspection;
-    if (wrapper.inspection_kind === "editable_live_draft") {
+    if (["editable_live_draft", "policy_read_only"].includes(wrapper.inspection_kind)) {
       validateLivePendingJointAction(
         frame.pending_joint_action,
         sceneAgents,
         source.source_simulator_step_count,
-        wrapper.draft,
+        wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft,
         "Live Oracle Pending Joint Action",
       );
     } else if (frame.pending_joint_action !== null) {
@@ -5401,13 +5412,316 @@ function validateSemanticFrame(frame) {
 }
 
 /**
+ * Check the match summary facts the beat clock reads: each team's score before this
+ * tick (previous_scores), each team's score 10 ticks ago (scores_ten_ticks_ago, for
+ * the Momentum switch), the champions that return this tick (returned_agent_ids)
+ * and each death's home_fall flag. The schema has already checked their types.
+ * previous_scores and scores_ten_ticks_ago may be absent or null in payloads written
+ * before those fields existed; returned_agent_ids then defaults to an empty list.
+ * Throws TypeError through invalid() when a score went down (a score 10 ticks ago
+ * above the score before this tick, or above the current score when previous_scores
+ * is absent, counts too), a combat diagnostic claims a score or a home fall, or a
+ * returning ID is repeated or missing from roster. Pure check: no DOM, storage or
+ * timers. These are global researcher facts; this check grants no Agent POV access.
+ *
+ * @param {Record<string, any>} match Schema-valid match_summary of one frame.
+ * @param {readonly Record<string, any>[]} roster Researcher roster or scene agents
+ *   used to join public agent IDs.
+ * @returns {void}
+ */
+function validateMatchBeatFacts(match, roster) {
+  const previous = match.previous_scores ?? null;
+  if (
+    previous !== null &&
+    (previous.length !== 2 ||
+      previous.some(
+        (/** @type {number} */ score, /** @type {number} */ index) =>
+          !Number.isInteger(score) || score < 0 || score > match.scores[index],
+      ) ||
+      (match.task_mode === 0 &&
+        previous.some((/** @type {number} */ score) => score !== 0)))
+  ) {
+    invalid("Match previous scores must not exceed the current scores.");
+  }
+  // Scores never go down: 10 ticks ago <= before this tick <= now.
+  const earlier = match.scores_ten_ticks_ago ?? null;
+  const later = previous ?? match.scores;
+  if (
+    earlier !== null &&
+    (earlier.length !== 2 ||
+      earlier.some(
+        (/** @type {number} */ score, /** @type {number} */ index) =>
+          !Number.isInteger(score) ||
+          score < 0 ||
+          score > later[index] ||
+          score > match.scores[index],
+      ))
+  ) {
+    invalid("Match scores ten ticks ago must not exceed the later scores.");
+  }
+  if (
+    match.task_mode === 0 &&
+    (match.deaths ?? []).some(
+      (/** @type {Record<string, any>} */ death) => death.home_fall === true,
+    )
+  ) {
+    invalid("Combat diagnostics cannot claim a home fall.");
+  }
+  const returned = /** @type {string[]} */ (match.returned_agent_ids ?? []);
+  if (
+    new Set(returned).size !== returned.length ||
+    returned.some(
+      (publicAgentId) =>
+        !roster.some(
+          (/** @type {Record<string, any>} */ agent) =>
+            agent.public_agent_id === publicAgentId,
+        ),
+    )
+  ) {
+    invalid("Match returns must join unique identities in the researcher roster.");
+  }
+}
+
+/**
+ * Check the Champion Streaks host fact (champion_streaks): the champions that
+ * reached 5, 10, 15 or 20 takedowns without falling on this tick, counted by the
+ * host for this frame's own view. The schema has already checked each record's
+ * types; an absent or null field means not counted and passes. Each champion must be named
+ * once and have a transition-start trajectory in this frame's own incoming events
+ * (Oracle View: latest_events; Agent POV: visual_events), so an Agent POV frame can
+ * never name a champion its team did not see at the start of the tick, and frame
+ * zero (no incoming events) names nobody. Throws TypeError through invalid()
+ * otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateChampionStreaks(frame, oracle) {
+  const streaks = frame.champion_streaks ?? null;
+  if (streaks === null) return;
+  const incoming = oracle ? frame.latest_events : frame.visual_events;
+  const seen = new Set(
+    (incoming?.agent_phase_trajectories ?? [])
+      .filter((/** @type {Record<string, any>} */ row) => row.transition_start != null)
+      .map((/** @type {Record<string, any>} */ row) => row.agent_public_agent_id),
+  );
+  const names = streaks.map(
+    (/** @type {Record<string, any>} */ row) => row.public_agent_id,
+  );
+  if (
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !seen.has(name))
+  ) {
+    invalid(
+      "Champion streaks must name, once each, champions this view saw at the start of the tick.",
+    );
+  }
+}
+
+/**
+ * Check the Next Step Ghost host fact (next_end_spots) of a replay frame, as the
+ * Python protocol does: where each champion of this frame's own view stands at
+ * the end of the recorded next tick. The schema has already checked each
+ * record's types (a public ID and a finite world position); an absent or null
+ * field (live frames, older producers) passes. Each champion must be named once
+ * and be alive in this frame's own current scene (current_endpoint.scene in Oracle
+ * View, current_endpoint.parts.scene in Agent POV), so an Agent POV frame can
+ * never name a champion its team does not see now, and the final replay frame
+ * must name nobody. The host owns the rest of the rule: in
+ * Agent POV it also drops a champion its team will not see at the next frame.
+ * Throws TypeError through invalid() otherwise. Pure check: no DOM, storage or
+ * timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @returns {void}
+ */
+function validateNextEndSpots(frame) {
+  const spots = frame.next_end_spots ?? null;
+  if (spots === null) return;
+  if (
+    spots.length > 0 &&
+    frame.source.source_frame_index === frame.source.source_final_frame_index
+  ) {
+    invalid("The final replay frame cannot carry next end spots.");
+  }
+  // Oracle View keeps its scene at current_endpoint.scene, Agent POV at
+  // current_endpoint.parts.scene.
+  const scene = frame.current_endpoint?.scene ?? frame.current_endpoint?.parts?.scene;
+  const alive = new Set(
+    (scene?.agents ?? [])
+      .filter(
+        (/** @type {Record<string, any>} */ agent) => agent.life_state === "alive",
+      )
+      .map((/** @type {Record<string, any>} */ agent) => agent.public_agent_id),
+  );
+  const names = spots.map(
+    (/** @type {Record<string, any>} */ spot) => spot.public_agent_id,
+  );
+  if (
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !alive.has(name))
+  ) {
+    invalid(
+      "Next end spots must name, once each, champions alive in this frame's own scene.",
+    );
+  }
+}
+
+/**
+ * Check the Fallen panel history host fact (recent_falls) of a replay frame, as
+ * the Python protocol does. The schema has already checked each record's types;
+ * an absent or null field (live frames, older producers) passes. Every row must
+ * fall on one of the 7 ticks before the shown one (source_simulator_step_count
+ * minus 7 to minus 1; FEED_WINDOW_TICKS is 8), and a victim may fall only once
+ * per tick. Who may be named in Agent POV is the host's rule
+ * (viewer/champion_streaks.py); a past tick's sight cannot be checked from this
+ * frame. Throws TypeError through invalid() otherwise. Pure check: no DOM,
+ * storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @returns {void}
+ */
+function validateRecentFalls(frame) {
+  const rows = frame.recent_falls ?? null;
+  if (rows === null) return;
+  const tick = frame.source.source_simulator_step_count;
+  const keys = rows.map(
+    (/** @type {Record<string, any>} */ row) =>
+      `${row.tick}:${row.victim_public_agent_id}`,
+  );
+  if (
+    new Set(keys).size !== keys.length ||
+    rows.some(
+      (/** @type {Record<string, any>} */ row) =>
+        !(row.tick < tick && row.tick > tick - 8),
+    )
+  ) {
+    invalid(
+      "Recent falls must lie in the 7 ticks before this one, each victim once per tick.",
+    );
+  }
+}
+
+/**
+ * Check the game-over Honors host fact (match_honors) against this frame's own
+ * view, as the Python protocol does. The schema has already checked its types;
+ * an absent or null field means no Honors and passes. Honors come only once
+ * the game is over: the frame's own match_summary must show a finished game
+ * (outcome "team_a_win", "team_b_win" or "draw"), so a mid-game frame (in
+ * Agent POV, one that could name champions the team cannot see) is refused,
+ * and so is a frame without a match summary. Oracle View must count
+ * every champion (team_id null). Agent POV may count every champion too
+ * (team_id null: Honors come only once the game is over, so nothing is left
+ * to hide) or one team (team_id 1 or 2) whose listed champions are all on
+ * that team and include this frame's recipient
+ * (source.source_recipient_public_agent_id), never only the other team.
+ * Every champion is listed once, and
+ * every honor's leaders are listed champions. Throws TypeError through
+ * invalid() otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateMatchHonors(frame, oracle) {
+  const honors = frame.match_honors ?? null;
+  if (honors === null) return;
+  if (!TEAM_DEATHMATCH_OUTCOMES.has(frame.match_summary?.outcome)) {
+    invalid("Match honors come only with a match summary of a finished game.");
+  }
+  const champions = /** @type {ReadonlyArray<Record<string, any>>} */ (
+    honors.champions ?? []
+  );
+  const ids = champions.map((row) => row.public_agent_id);
+  const listed = new Set(ids);
+  if (listed.size !== ids.length) {
+    invalid("Match honors must list each champion once.");
+  }
+  if (
+    (honors.honors ?? []).some((/** @type {Record<string, any>} */ honor) =>
+      (honor.leaders ?? []).some(
+        (/** @type {Record<string, any>} */ leader) =>
+          !listed.has(leader.public_agent_id),
+      ),
+    )
+  ) {
+    invalid("Match honors must name only listed champions as leaders.");
+  }
+  if (oracle) {
+    if (honors.team_id !== null) {
+      invalid("Oracle View match honors must count every champion.");
+    }
+    return;
+  }
+  if (honors.team_id === null) return;
+  const recipient = frame.source?.source_recipient_public_agent_id;
+  if (
+    honors.team_id !== 1 && honors.team_id !== 2
+      ? true
+      : champions.some((row) => row.team_id !== honors.team_id) ||
+        !listed.has(recipient)
+  ) {
+    invalid(
+      "Agent POV match honors must count every champion or the recipient's own team.",
+    );
+  }
+}
+
+/**
+ * Check the Herald Cards history host fact (match_moments) against this frame's
+ * own view, as the Python protocol does. The schema has already checked its
+ * types; an absent or null field passes. Each team may appear once in runs, and
+ * each rescue must name, once, a champion with a transition-start and a
+ * successor trajectory in this frame's own incoming events (Oracle View:
+ * latest_events; Agent POV: visual_events), so an Agent POV frame never names a
+ * rescue its team did not see at both ends of the tick. Throws TypeError through
+ * invalid() otherwise. Pure check: no DOM, storage or timers.
+ *
+ * @param {Record<string, any>} frame Schema-valid presentation frame.
+ * @param {boolean} oracle True for an Oracle View frame, false for Agent POV.
+ * @returns {void}
+ */
+function validateMatchMoments(frame, oracle) {
+  const moments = frame.match_moments ?? null;
+  if (moments === null) return;
+  const teams = moments.runs.map(
+    (/** @type {Record<string, any>} */ row) => row.team_id,
+  );
+  const incoming = oracle ? frame.latest_events : frame.visual_events;
+  const seen = new Set(
+    (incoming?.agent_phase_trajectories ?? [])
+      .filter(
+        (/** @type {Record<string, any>} */ row) =>
+          row.transition_start != null && row.successor != null,
+      )
+      .map((/** @type {Record<string, any>} */ row) => row.agent_public_agent_id),
+  );
+  const names = moments.rescues.map(
+    (/** @type {Record<string, any>} */ row) => row.public_agent_id,
+  );
+  if (
+    new Set(teams).size !== teams.length ||
+    new Set(names).size !== names.length ||
+    names.some((/** @type {string} */ name) => !seen.has(name))
+  ) {
+    invalid(
+      "Match moments must name each team once in runs, and rescues of champions this view saw at both ends of the tick.",
+    );
+  }
+}
+
+/**
  * Validate, copy, and freeze one authorized presentation wire frame.
  *
  * `value` is an untrusted version-1 record for one of the six supported live/replay
  * and Oracle/actor leaves. The record must use plain data properties, the exact
  * schema fields, coherent identities/epochs/scenes/actions/events, and matching
  * endpoint, overlay, and presentation-key hashes. Match-summary facts are checked
- * when present. Hashes establish consistency with supplied identities and data;
+ * when present, including previous_scores, returned_agent_ids and each death's
+ * home_fall (see validateMatchBeatFacts), and the champion streak, Honors and
+ * Herald Cards history host facts are checked against the frame's own view
+ * (validateChampionStreaks, validateMatchHonors, validateMatchMoments). Hashes establish consistency with supplied identities and data;
  * the trusted Python producer remains the authority for permitted information.
  *
  * Resolves to a new deeply frozen record containing the validated wire fields and
@@ -5514,6 +5828,7 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
         }
       }
     }
+    validateMatchBeatFacts(match, roster);
     if (
       match.episode_id !== frame.source.episode_id ||
       match.source_frame_index !== frame.source.source_frame_index ||
@@ -5530,6 +5845,11 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
       invalid("Match summary does not join the current task and source epoch.");
     }
   }
+  validateChampionStreaks(frame, semantic.oracle);
+  validateMatchHonors(frame, semantic.oracle);
+  validateMatchMoments(frame, semantic.oracle);
+  validateNextEndSpots(frame);
+  validateRecentFalls(frame);
   await Promise.all([
     verifyPresentationKeyDerivation(frame, semantic.presentationKeyPairs),
     verifyPresentationKeyPairs(
@@ -5547,6 +5867,12 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
   const normalized = deepFreeze({
     ...frame,
     viewer_mode: semantic.live ? "live" : "replay",
+    ...(semantic.live
+      ? {
+          run_state: frame.run_state ?? "paused",
+          fresh_launch_required: frame.fresh_launch_required ?? false,
+        }
+      : {}),
     session_id: frame.source.source_session_id,
     revision: frame.source.source_revision,
     authority_epoch: frame.source.source_authority_epoch,
@@ -6282,7 +6608,11 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
   );
   requireExactSnapshotKeys(
     presentation,
-    Object.keys(rootSchema.properties),
+    Object.keys(rootSchema.properties).filter(
+      (key) =>
+        !["run_state", "fresh_launch_required"].includes(key) ||
+        Object.hasOwn(presentation, key),
+    ),
     "Authorized presentation candidate",
   );
   validateSchema(source, rootSchema.properties.source, "Presentation source identity");
@@ -6318,7 +6648,7 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
   }
   requireExactSnapshotKeys(
     raw,
-    live
+    raw.frame_kind.endsWith("_live_debugger")
       ? systemTransportKeys(RAW_FRAME_KEYS[raw.frame_kind], raw)
       : RAW_FRAME_KEYS[raw.frame_kind],
     "Raw transport candidate",
@@ -6358,29 +6688,33 @@ function preflightTransportPresentationIdentity(rawValue, presentationValue) {
     "Raw/presentation authority epoch",
   );
   if (live) {
-    const configuration = snapshotRecord(
-      raw.combat_configuration,
-      "Live combat configuration identity",
+    if (!["paused", "running"].includes(presentation.run_state ?? "paused"))
+      invalid("Live presentation run state is malformed.");
+    requireJoinEqual(
+      presentation.run_state ?? "paused",
+      raw.run_state ?? "paused",
+      "Live run state",
     );
-    requireExactSnapshotKeys(
-      configuration,
-      ["execution_information_mode", "team_a_controller", "team_b_controller"],
-      "Live combat configuration identity",
-    );
-    // Both teams accept the same five controllers; the three reactive ones
-    // (ALPHA, BETA and GAMMA) need SharedObs whichever team uses them.
     if (
-      !isTeamController(configuration.team_a_controller) ||
-      !isTeamController(configuration.team_b_controller) ||
-      !["shared_obs", "no_shared_obs"].includes(
-        configuration.execution_information_mode,
-      ) ||
-      ((requiresSharedObs(configuration.team_a_controller) ||
-        requiresSharedObs(configuration.team_b_controller)) &&
-        configuration.execution_information_mode !== "shared_obs") ||
-      (!oracle &&
-        configuration.execution_information_mode !==
-          (shared ? "shared_obs" : "no_shared_obs"))
+      Object.hasOwn(presentation, "fresh_launch_required") &&
+      typeof presentation.fresh_launch_required !== "boolean"
+    )
+      invalid("Live fresh launch state is malformed.");
+    if (
+      Object.hasOwn(raw, "fresh_launch_required") &&
+      typeof raw.fresh_launch_required !== "boolean"
+    )
+      invalid("Live fresh launch state must be a boolean.");
+    if (
+      (presentation.fresh_launch_required ?? false) !==
+      (raw.fresh_launch_required ?? false)
+    )
+      invalid("Live fresh launch state does not match its presentation.");
+    const configuration = normalizeCombatConfigurationV1(raw.combat_configuration);
+    if (
+      !oracle &&
+      configuration.execution_information_mode !==
+        (shared ? "shared_obs" : "no_shared_obs")
     ) {
       invalid("Live combat configuration identity is inconsistent.");
     }
@@ -6670,6 +7004,58 @@ export async function joinTransportAndAuthorizedPresentationV1(
   }
   const presentation = await normalizeAuthorizedPresentationFrameV1(presentationValue);
   validatePairedAgentPrivacy(transport, presentation);
+  if (
+    presentation.viewer_mode === "live" &&
+    Array.isArray(transport.combat_configuration.manual_slots)
+  ) {
+    const researcher = presentation.researcher_space;
+    const directory =
+      researcher?.identity_directory ??
+      presentation.current_endpoint.identity_directory;
+    const manualSlots = transport.combat_configuration.manual_slots;
+    const identities = /** @type {any[]} */ (directory.identities);
+    const manualIds = identities
+      .filter((row) =>
+        manualSlots.includes((row.team_id - 1) * 5 + row.team_local_slot),
+      )
+      .map((row) => row.public_agent_id);
+    const configuredSlots = identities
+      .filter((row) => row.configured_active)
+      .map((row) => (row.team_id - 1) * 5 + row.team_local_slot);
+    const labels = /** @type {(string | null)[]} */ (
+      transport.combat_configuration.slot_labels
+    );
+    if (
+      manualIds.length !== manualSlots.length ||
+      labels.some((label, slot) => (label !== null) !== configuredSlots.includes(slot))
+    ) {
+      invalid("Live controller ownership does not join the configured roster.");
+    }
+    const wrapper =
+      researcher?.pending_inspection ?? presentation.live_inspection.inspection;
+    if (wrapper.submission_scope === "joint_turn") {
+      const pending =
+        researcher?.pending_joint_action ?? presentation.pending_joint_action;
+      if (
+        !structurallyEqual(
+          /** @type {any[]} */ (pending.action_rows).map(
+            (row) => row.actor_public_agent_id,
+          ),
+          manualIds,
+        )
+      ) {
+        invalid("Live pending rows do not exactly join configured Manual ownership.");
+      }
+      const inspected =
+        wrapper.inspection_kind === "policy_read_only" ? wrapper : wrapper.draft;
+      if (
+        (wrapper.inspection_kind === "editable_live_draft") !==
+        manualIds.includes(inspected.actor_public_agent_id)
+      ) {
+        invalid("Live inspection editing does not match configured Manual ownership.");
+      }
+    }
+  }
   const joined = deepFreeze({ transport, presentation });
   JOINED_PRESENTATION_ROOTS.add(joined);
   return joined;

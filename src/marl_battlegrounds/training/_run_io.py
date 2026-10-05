@@ -18,8 +18,9 @@ import sys
 import time
 import uuid
 from collections import deque
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, cast
@@ -27,6 +28,42 @@ from typing import TYPE_CHECKING, Any, TextIO, cast
 if TYPE_CHECKING:
     from marl_battlegrounds.training._continuation_schedules import LearnerContinuation
     from marl_battlegrounds.training.validation import FrozenPanel
+
+
+_STUDY_ATTEMPT: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar(
+    "training_study_attempt", default=None
+)
+
+
+@contextmanager
+def study_attempt_scope(root: Path, binding: Mapping[str, Any]) -> Generator[None]:
+    """Bind one checked worker request to its exact run during the public call.
+
+    root is the admitted run directory; binding holds the study attempt UUID,
+    case/attempt number, declaration hash and final request hash. Copy the small
+    record. Nested calls for another directory receive no binding. Restore the
+    previous context on success or failure; no environment variable or file is
+    changed and direct Python calls need no extra argument.
+    """
+    token = _STUDY_ATTEMPT.set((root.resolve(), dict(binding)))
+    try:
+        yield
+    finally:
+        _STUDY_ATTEMPT.reset(token)
+
+
+def study_attempt_binding(root: Path) -> dict[str, Any] | None:
+    """Copy the current study request identity only for this exact run root.
+
+    None means an ordinary Python call or another nested run. Never inherit a
+    parent's or earlier attempt's identity from checkpoint metadata.
+    """
+    current = _STUDY_ATTEMPT.get()
+    return (
+        dict(current[1])
+        if current is not None and current[0] == root.resolve()
+        else None
+    )
 
 
 def utc_now() -> str:
@@ -200,15 +237,73 @@ def preserve_log_suffix(
         temporary.unlink(missing_ok=True)
 
 
+RUN_LOCK_FILE = ".training.lock"
+"""Name of the empty file inside a run folder that run_lock locks."""
+
+
+def unused_run_folder(path: Path) -> bool:
+    """Say whether a run folder is missing or holds nothing but its lock file.
+
+    Parameters
+    ----------
+    path : Path
+        Folder that a new, restarted or grouped run would use.
+
+    Returns
+    -------
+    bool
+        True when path does not exist, or is a folder whose only entry is a
+        plain ``.training.lock`` file, left by a call that took the run lock
+        and stopped before it saved anything. False for a file, or for a
+        folder holding any other entry, including a folder or link named
+        ``.training.lock``.
+
+    Notes
+    -----
+    This is the one rule for "new or empty" run folders, shared by the
+    trainer, the study runner, the launch package and grouped analysis. It
+    reads folder entries only and writes nothing. It does not decide who may
+    write: a caller that starts a run must check again after taking the run
+    lock, because another call may save files in between.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> folder = Path(tempfile.mkdtemp())
+    >>> unused_run_folder(folder / "missing"), unused_run_folder(folder)
+    (True, True)
+    >>> (folder / RUN_LOCK_FILE).touch()
+    >>> unused_run_folder(folder)
+    True
+    >>> _ = (folder / "run_details.json").write_text("{}")
+    >>> unused_run_folder(folder)
+    False
+    """
+    if not path.exists():
+        return True
+    return path.is_dir() and all(
+        entry.name == RUN_LOCK_FILE and entry.is_file() and not entry.is_symlink()
+        for entry in path.iterdir()
+    )
+
+
 @contextmanager
 def run_lock(run_dir: Path) -> Generator[None]:
     """Hold an exclusive nonblocking local-process lock until context exit.
 
-    run_dir must exist. A second writer raises RuntimeError before changing run
+    run_dir must exist. The lock is taken on run_dir/.training.lock
+    (RUN_LOCK_FILE), which this creates empty when missing and never writes
+    or deletes. A second writer raises RuntimeError before changing run
     records. The persistent lock file is harmless after exit or a process crash;
     kernel ownership, not a stale PID, decides whether another run may start.
+    Never delete the file while a writer may run: a new file would let two
+    writers hold separate locks.
+
+    The lock stops a second writer only while the first one holds it. It does
+    not check what run_dir contains. A caller that starts a new run in run_dir
+    must check the folder again after taking the lock, as the trainer does.
     """
-    with (run_dir / ".training.lock").open("a+b") as stream:
+    with (run_dir / RUN_LOCK_FILE).open("a+b") as stream:
         try:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
@@ -492,7 +587,10 @@ class ProgressReporter:
 
 
 def checkpoint_ancestry(
-    run_dir: Path, checkpoint_details: dict[str, Any]
+    run_dir: Path,
+    checkpoint_details: dict[str, Any],
+    *,
+    record_source: Callable[[Path], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Read one active chain of signed learner descriptions without model arrays.
 
@@ -504,9 +602,10 @@ def checkpoint_ancestry(
     does not follow its child's experience counters. Reject cycles, linked
     paths, malformed IDs or inconsistent ancestry with ValueError; missing files
     raise OSError. Pruned numerical payloads are not needed. No files change and
-    no backend or numerical restore starts.
+    no backend or numerical restore starts. record_source, when supplied, receives
+    each ancestor description path before it is read; callback errors propagate.
     """
-    from marl_battlegrounds.training import checkpoints
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
 
     root = run_dir.resolve()
     metadata = checkpoint_details["metadata"]
@@ -552,6 +651,8 @@ def checkpoint_ancestry(
         directory = checkpoints.artifact_directory(root, "checkpoints", parent)
         if directory.resolve() != directory:
             raise ValueError("Saved ancestry cannot follow a linked directory")
+        if record_source is not None:
+            record_source(directory / "checkpoint_details.json")
         current = checkpoints.read_checkpoint_description(directory)
         if current["checkpoint_id"] != parent:
             raise ValueError("Ancestor directory and description identities differ")
@@ -632,11 +733,392 @@ def _check_validation_interval(result: Mapping[str, Any]) -> None:
             )
 
 
+def selected_checkpoint_description(
+    root: Path,
+    latest: dict[str, Any],
+    identifier: str,
+    *,
+    record_source: Callable[[Path], None] | None = None,
+    _visited: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Find a selected boundary in active or explicitly inherited candidates.
+
+    root/latest identify the checked current run. identifier is the saved
+    selection's original learner ID. Read signed descriptions only; verify each
+    inherited parent ID and run, and require a task explicitly admitted by the
+    child's frozen continuation. Reject orphan choices, cycles and changed parent
+    bindings with ValueError. This does not recompute or qualify selection scores.
+    record_source receives each consumed description path before its read.
+    _visited is private recursion state; callers leave it empty.
+    """
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
+
+    key = latest["checkpoint_id"]
+    if key in _visited:
+        raise ValueError("Selected checkpoint ancestry is cyclic")
+    ancestry = checkpoint_ancestry(root, latest, record_source=record_source)
+    if identifier in ancestry:
+        return ancestry[identifier]
+    references = (
+        latest["metadata"].get("continuation", {}).get("inherited_candidates", [])
+    )
+    for reference in references:
+        if identifier not in {task["checkpoint_id"] for task in reference["tasks"]}:
+            continue
+        path = Path(reference["parent_checkpoint"])
+        if record_source is not None:
+            record_source(path / "checkpoint_details.json")
+        parent = checkpoints.read_checkpoint_description(path)
+        if (
+            parent["checkpoint_id"] != reference["parent_checkpoint_id"]
+            or parent["metadata"]["run_id"] != reference["run_id"]
+        ):
+            raise ValueError("Selected inherited checkpoint identity differs")
+        return selected_checkpoint_description(
+            path.parent.parent,
+            parent,
+            identifier,
+            record_source=record_source,
+            _visited=_visited | {key},
+        )
+    raise ValueError(
+        "Selected checkpoint is outside active or admitted inherited ancestry"
+    )
+
+
+def saved_result_actors(
+    root: Path,
+    latest: dict[str, Any],
+    status: dict[str, Any],
+    *,
+    ancestry: dict[str, dict[str, Any]] | None = None,
+    allow_missing: bool = False,
+    run_details: dict[str, Any] | None = None,
+    record_source: Callable[[Path], None] | None = None,
+) -> tuple[dict[str, Any] | None, Path | None, Path | None]:
+    """Check saved final and selected actor bindings without loading arrays.
+
+    root/latest identify the checked run. status is its saved status object.
+    ancestry optionally reuses the caller's checked active checkpoint chain.
+    Return the saved selection, final actor and selected actor. Incomplete or
+    recovering runs return no final/selected paths. Complete runs must have a
+    final actor and matching selection record/path presence. Resolve moved local
+    actors by basename under actors/, then use the recorded external path.
+    Check origin and inference facts against active or admitted inherited
+    checkpoints. Raise ValueError/OSError for inconsistent or missing records.
+    Read descriptions only; payload verification belongs to loading/exporting.
+    allow_missing is only for relaxed collection: an absent export may keep its
+    checked conventional or saved host binding so its admitted learner can supply
+    the actor. Present but corrupt artifacts never use that fallback.
+    run_details optionally binds the latest description and final counters to the
+    run identity. record_source receives every consumed selection or description
+    path before its read, including inherited and external files. Callback errors
+    propagate. Neither option loads payloads or changes files.
+    """
+    from marl_battlegrounds.training import _checkpoint_metadata as checkpoints
+
+    selection_path = root / "selection.json"
+    if record_source is not None:
+        record_source(selection_path)
+    selection = (
+        json.loads(selection_path.read_text()) if selection_path.exists() else None
+    )
+    if selection is not None and not isinstance(selection, dict):
+        raise ValueError(f"Expected selection to be an object or null: {root}")
+    selection = cast(dict[str, Any] | None, selection)
+    if (
+        status.get("status") != "complete"
+        or (root / "checkpoint_recovery.json").exists()
+    ):
+        return selection, None, None
+    if run_details is not None and (
+        run_details.get("run_id") != status.get("run_id")
+        or run_details.get("run_id") != latest["metadata"]["run_id"]
+        or run_details.get("config") != latest["metadata"]["config"]
+        or status.get("env_steps") != latest["counters"]["env_steps"]
+        or status.get("completed_updates") != latest["counters"]["updates"]
+    ):
+        raise ValueError("Saved run identity or final counters differ")
+    if (status.get("selected_actor") is None) != (selection is None):
+        raise ValueError(f"Complete run selection and status disagree: {root}")
+
+    def actor_path(value: object, identifier: object) -> Path:
+        """Resolve a declared actor path and compare its saved origin facts."""
+        if not isinstance(value, str) or not value or not isinstance(identifier, str):
+            raise ValueError(
+                f"Complete training run has no valid saved actor binding: {root}"
+            )
+        local = root / "actors" / Path(value).name
+        path = local if local.exists() else Path(value)
+        boundary = (
+            latest
+            if identifier == latest["checkpoint_id"]
+            else (ancestry or {}).get(identifier)
+        )
+        if boundary is None:
+            boundary = selected_checkpoint_description(
+                root, latest, identifier, record_source=record_source
+            )
+        if allow_missing and not path.exists() and not path.is_symlink():
+            host_path = (
+                boundary["metadata"]["host_state"].get("actors", {}).get(identifier)
+            )
+            names = {
+                identifier,
+                checkpoints.artifact_name(
+                    boundary["metadata"]["config"].get("method", "mappo"),
+                    "actor",
+                    boundary["counters"]["env_steps"],
+                    identifier,
+                ),
+            }
+            if host_path is not None:
+                names.add(Path(host_path).name)
+            if path.name not in names or path.parent.name != "actors":
+                raise ValueError(f"Missing actor has no matching saved binding: {path}")
+            return path.resolve()
+        if record_source is not None:
+            record_source(path / "actor_details.json")
+        actor = checkpoints.read_checkpoint_description(path)
+        checkpoints._check_actor_origin(actor, boundary)  # pyright: ignore[reportPrivateUsage]
+        return path.resolve()
+
+    final = actor_path(status.get("final_actor"), latest["checkpoint_id"])
+    selected = (
+        None
+        if selection is None
+        else actor_path(status.get("selected_actor"), selection.get("checkpoint_id"))
+    )
+    return selection, final, selected
+
+
+def _check_past_copies(
+    root: Path,
+    details: dict[str, Any],
+    *,
+    capture_count: int | None = None,
+    require_retained: bool = True,
+    verify_payloads: bool = True,
+) -> dict[str, dict[str, Any]]:
+    """Check history catalog entries and available actor payloads before recovery.
+
+    root is the current run folder. details is the verified learner description.
+    capture_count, when supplied, is the restored history's next unused ID; it
+    checks saved catalog coverage without guessing capture times or scanning
+    unrelated directories. past_copies_start_capture_id marks an unknown older
+    prefix when a catalog is first added during legacy recovery. Older
+    checkpoints with no catalog retain unknown
+    history availability. Missing exports remain unavailable for runs that made
+    no complete-retention promise. Present but changed exports fail with their
+    path. New entries bind the export's existing content identity; old entries
+    can check provenance but cannot prove their original actor bytes.
+
+    A same-named export in root/past_copies takes precedence after relocation.
+    Otherwise an inherited path stays usable. No arrays are restored, Systems
+    built, games run, or files changed. One full payload check per present actor
+    occurs here, never per learner update. Raises ValueError for an inconsistent
+    catalog or actor, and propagates read errors with the affected path.
+
+    require_retained=False lets explicit collection report missing promised
+    files; present identities and ancestry still must agree. verify_payloads=False
+    checks descriptions only when collection will verify bytes during copying.
+    Return checked owner descriptions keyed by run ID for inherited local copies.
+    """
+    from marl_battlegrounds.baselines.methods import method_settings_field
+    from marl_battlegrounds.training import checkpoints
+
+    metadata = details["metadata"]
+    host, config = metadata["host_state"], metadata["config"]
+    catalog = host.get("past_copies", {})
+    if not isinstance(catalog, dict):
+        raise ValueError("Saved past copies must be a mapping")
+    catalog = cast(dict[str, Any], catalog)
+    start = host.get("past_copies_start_capture_id", 0)
+    if (
+        type(start) is not int
+        or start < 0
+        or (capture_count is not None and start > capture_count)
+        or ("past_copies_start_capture_id" in host and "past_copies" not in host)
+    ):
+        raise ValueError("Saved history catalog start differs from its captures")
+    if (
+        capture_count is not None
+        and "past_copies" in host
+        and set(catalog) != {str(index) for index in range(start, capture_count)}
+    ):
+        raise ValueError("Saved history catalog is missing or adds capture IDs")
+    method = config.get("method", "mappo")
+    q_method = method in ("qmix", "pqn_vdn")
+    owners = {metadata["run_id"]: details}
+    parent = details
+    while continuation := parent["metadata"].get("continuation"):
+        parent = checkpoints.read_checkpoint_description(
+            continuation["parent_checkpoint"]
+        )
+        run_id = parent["metadata"]["run_id"]
+        if (
+            parent["checkpoint_id"] != continuation["parent_checkpoint_id"]
+            or run_id in owners
+        ):
+            raise ValueError("Saved history continuation ancestry differs or repeats")
+        owners[run_id] = parent
+    capacity = details["collection"].get(
+        "history_capture_capacity", len(host.get("member_completed", [])) - 2
+    )
+    for owner in owners.values():
+        if owner["metadata"]["config"].get("retain_all_actors", False):
+            retention_start = owner["metadata"]["host_state"].get(
+                "retention_start_capture_id"
+            )
+            if (
+                type(retention_start) is not int
+                or retention_start < 0
+                or (
+                    owner is details
+                    and capture_count is not None
+                    and retention_start > capture_count
+                )
+            ):
+                raise ValueError("Saved actor retention has no valid starting capture")
+            if (
+                require_retained
+                and owner is details
+                and capture_count is not None
+                and any(
+                    str(index) not in catalog
+                    for index in range(retention_start, capture_count)
+                )
+            ):
+                raise ValueError(
+                    "Required retained history actor is missing from the catalog"
+                )
+            for capture, inherited in (
+                owner["metadata"]["host_state"].get("past_copies", {}).items()
+            ):
+                if int(capture) < retention_start:
+                    continue
+                if capture not in catalog:
+                    raise ValueError(
+                        "Required inherited history actor is missing from the catalog"
+                    )
+                current = catalog[capture]
+                if not isinstance(inherited, dict) or not isinstance(current, dict):
+                    raise ValueError("Saved inherited capture must be an object")
+                current = cast(dict[str, Any], current)
+                inherited = cast(dict[str, Any], inherited)
+                fixed = {"env_steps", "sampled_epsilon"}
+                if "artifact_id" in inherited:
+                    fixed.add("artifact_id")
+                if any(current.get(key) != inherited.get(key) for key in fixed):
+                    raise ValueError("Saved inherited capture identity or facts differ")
+    for capture, raw in catalog.items():
+        if (
+            not capture.isdecimal()
+            or str(int(capture)) != capture
+            or int(capture) >= capacity
+        ):
+            raise ValueError("Saved capture identity is outside the history counters")
+        if not isinstance(raw, dict):
+            raise ValueError("Saved capture metadata must be an object")
+        entry = cast(dict[str, Any], raw)
+        required = {"env_steps", "path", "sampled_epsilon"}
+        if set(entry) not in (required, required | {"artifact_id"}):
+            raise ValueError("Saved capture metadata fields differ")
+        captured_at = entry["env_steps"]
+        if (
+            type(captured_at) is not int
+            or not 0 < captured_at <= host["env_steps"]
+            or captured_at % config["num_envs"]
+        ):
+            raise ValueError("Saved capture step differs from the training timeline")
+        if not isinstance(entry["path"], str) or not Path(entry["path"]).is_absolute():
+            raise ValueError("Saved capture path must be absolute")
+        epsilon = entry["sampled_epsilon"]
+        if q_method and (
+            isinstance(epsilon, bool)
+            or not isinstance(epsilon, (int, float))
+            or not math.isfinite(epsilon)
+            or not 0 <= epsilon <= 1
+        ):
+            raise ValueError("Saved capture exploration must be in [0, 1]")
+        if not q_method and epsilon is not None:
+            raise ValueError("A PPO capture has no epsilon exploration")
+        if "artifact_id" in entry:
+            checkpoints._digest(entry["artifact_id"], "Saved capture artifact")  # pyright: ignore[reportPrivateUsage]
+        path = Path(entry["path"])
+        local = root / "past_copies" / path.name
+        if local.exists() or local.is_symlink():
+            path = local
+        if not path.exists() and not path.is_symlink():
+            promised = any(
+                owner["metadata"]["config"].get("retain_all_actors", False)
+                and int(capture)
+                >= owner["metadata"]["host_state"]["retention_start_capture_id"]
+                and capture in owner["metadata"]["host_state"].get("past_copies", {})
+                for owner in owners.values()
+            )
+            if promised and require_retained:
+                raise ValueError(
+                    f"Required retained history actor is missing at {path}. "
+                    "Restore its exact export from a saved copy before resuming."
+                )
+            continue
+        try:
+            actor = (
+                checkpoints.artifact_identity(path)
+                if verify_payloads
+                else checkpoints._artifact_identity(  # pyright: ignore[reportPrivateUsage]
+                    checkpoints.read_checkpoint_description(path)
+                )
+            )
+            origin = actor["metadata"].get("capture_origin", {})
+            owner = owners.get(actor["run_id"])
+            if owner is None:
+                raise ValueError("Saved history actor belongs to a different run")
+            settings = owner["metadata"]["config"][method_settings_field(method)]
+            saved_actor = checkpoints.read_checkpoint_description(path)
+            if (
+                actor["schemas"] != details["schemas"]
+                or actor["env_steps"] != captured_at
+                or captured_at > owner["counters"]["env_steps"]
+                or (
+                    q_method and actor["optimizer_steps"] > owner["counters"]["updates"]
+                )
+                or actor["seed"] != owner["metadata"]["config"]["seed"]
+                or origin.get("content_binding")
+                != owner["collection"]["content_binding"]
+                or type(origin.get("update_index")) is not int
+                or not 0
+                <= origin["update_index"]
+                <= owner["counters"]["learning_blocks" if q_method else "updates"]
+                or saved_actor.get("parameter_sharing", "all")
+                != settings.get("parameter_sharing", "all")
+                or origin.get("capture_id") != int(capture)
+                or origin.get("epsilon") != epsilon
+                or actor["input_scale"] != settings.get("input_scale", 1.0)
+                or actor["spawn_frame"] != settings.get("spawn_frame", "world")
+                or (
+                    "artifact_id" in entry
+                    and actor["checkpoint_id"] != entry["artifact_id"]
+                )
+            ):
+                raise ValueError(
+                    "Saved history actor identity or capture provenance differs"
+                )
+        except (ValueError, OSError) as error:
+            raise ValueError(
+                f"Cannot verify saved history actor at {path}: {error}"
+            ) from error
+
+    return owners
+
+
 def validate_host_state(
     run_dir: Path,
     checkpoint_details: dict[str, Any],
     *,
     panel: FrozenPanel | None,
+    history_capture_count: int | None = None,
     validation_options: Mapping[str, Any] | None = None,
 ) -> None:
     """Reject malformed saved runner work before any writer or log rewind.
@@ -650,6 +1132,9 @@ def validate_host_state(
         Its config and numerical counters must already match the resumed state.
     panel : FrozenPanel or None
         Already verified current panel, or None for a run without validation.
+    history_capture_count : int or None, default=None
+        Restored history's next unused capture ID. When supplied, saved catalog
+        rows must cover those captures. Older absent catalogs remain unknown.
     validation_options : mapping or None, default=None
         Already frozen partner bindings from the runner's validation setup.
         Required when saved panel games contain deployed teams. Their recorded
@@ -693,6 +1178,9 @@ def validate_host_state(
     initial rounds, then blocks of T (``_check_pqn_host_counts``); its
     validation points come from the same offset schedule. Existing checkpoint
     and selection owners verify artifact identities and selection rules.
+    Named reward components require finite sums, matching fixed keys and
+    exact nonnegative collection denominators. Legacy array-only records need
+    no component field. These counts describe collected experience, not reuse.
     Saved validation tasks and Random records are rebuilt at the saved
     config's red_zone_depth (checkpoints._config_red_zone_depth), so they must
     carry that depth. System-panel records may require loading an actor to verify its
@@ -788,6 +1276,15 @@ def validate_host_state(
         "selection",
         "recovery_checkpoints",
     }
+    from marl_battlegrounds.training._checkpoint_metadata import (
+        _reward_component_keys,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    reward_keys = _reward_component_keys(
+        checkpoint_details["collection"].get("reward_identity")
+    )
+    if reward_keys:
+        required.add("collected_reward_components")
     if qmix_run:
         required.add("sampled_exposure")
     if pqn_run:
@@ -812,6 +1309,13 @@ def validate_host_state(
     ) - required - stage_shapes.keys() - member_shapes.keys() - {
         "random_results",
         "past_copies",
+        "past_copies_start_capture_id",
+        "retention_start_capture_id",
+        "member_length_sum",
+        "last_member_length_sum",
+        "member_results_start_env_steps",
+        "ppo_exposure",
+        "exposure_snapshots",
     }:
         raise ValueError("Saved host state fields differ from the runner schema")
 
@@ -820,6 +1324,49 @@ def validate_host_state(
         if type(item) is not int or item < 0:
             raise ValueError(f"Saved {name} must be a nonnegative integer")
         return item
+
+    if reward_keys:
+        component_record = host["collected_reward_components"]
+        count_names = {
+            "real_transitions",
+            "learner_team_transitions",
+            "learner_agent_transitions",
+        }
+        if not isinstance(component_record, dict) or set(
+            cast(dict[str, Any], component_record)
+        ) != count_names | {"components"}:
+            raise ValueError("Saved reward component totals have invalid fields")
+        component_record = cast(dict[str, Any], component_record)
+        for name in count_names:
+            integer(component_record[name], name)
+        real = component_record["real_transitions"]
+        teams = component_record["learner_team_transitions"]
+        agents = component_record["learner_agent_transitions"]
+        if not (
+            0 <= teams <= real <= checkpoint_details["counters"]["env_steps"]
+            and teams <= agents <= 5 * teams
+        ):
+            raise ValueError("Saved reward component counts disagree")
+        parts = component_record["components"]
+        if not isinstance(parts, dict) or set(cast(dict[str, Any], parts)) != set(
+            reward_keys
+        ):
+            raise ValueError("Saved reward component names disagree")
+        parts = cast(dict[str, Any], parts)
+        for amounts in parts.values():
+            if not isinstance(amounts, dict) or set(cast(dict[str, Any], amounts)) != {
+                "recipient_sum",
+                "team_mean_sum",
+            }:
+                raise ValueError("Saved reward component sums have invalid fields")
+            amounts = cast(dict[str, Any], amounts)
+            if any(
+                type(value) not in (int, float) or not math.isfinite(value)
+                for value in amounts.values()
+            ):
+                raise ValueError("Saved reward component sums must be finite numbers")
+            if teams == 0 and any(value != 0 for value in amounts.values()):
+                raise ValueError("Saved reward component sums need counted recipients")
 
     def seconds(item: object, name: str) -> float:
         """Require finite nonnegative seconds without accepting a Boolean."""
@@ -943,6 +1490,11 @@ def validate_host_state(
         if sum(sum(row) for row in host["stage_completed"]) > steps:
             raise ValueError("Completed games exceed real transitions")
 
+    if (
+        integer(host.get("member_results_start_env_steps", 0), "Member results start")
+        > steps
+    ):
+        raise ValueError("Saved member results start after their checkpoint")
     member_fields = set(host) & member_shapes.keys()
     if member_fields and member_fields != member_shapes.keys():
         raise ValueError("Saved member-result summaries are incomplete")
@@ -969,39 +1521,95 @@ def validate_host_state(
                 raise ValueError("Last-update member counts exceed cumulative counts")
         if sum(map(sum, host["member_completed"])) > steps:
             raise ValueError("Completed member games exceed real transitions")
-    past_copies = host.get("past_copies", {})
-    if not isinstance(past_copies, dict):
-        raise ValueError("Saved past copies must be a mapping")
-    capacity = checkpoint_details["collection"].get(
-        "history_capture_capacity", member_rows - 2
-    )
-    for capture, raw in cast(dict[str, Any], past_copies).items():
+    length_keys = {"member_length_sum", "last_member_length_sum"}
+    present_lengths = length_keys & host.keys()
+    if present_lengths and present_lengths != length_keys:
+        raise ValueError("Saved member length summaries are incomplete")
+    for name in present_lengths:
+        values = host[name]
+        if values is None:
+            continue
+        if not isinstance(values, list) or len(cast(list[Any], values)) != member_rows:
+            raise ValueError("Saved member length rows differ")
+        values = cast(list[Any], values)
+        for value in values:
+            integer(value, name)
+        outcomes = host[
+            "last_member_completed" if name.startswith("last_") else "member_completed"
+        ]
+        if any(
+            (sum(games) == 0 and length != 0) or length < sum(games)
+            for games, length in zip(outcomes, values, strict=True)
+        ):
+            raise ValueError("Saved member lengths disagree with completed games")
+    if (
+        host.get("member_length_sum") is not None
+        and host.get("last_member_length_sum") is not None
+        and present_lengths
+        and any(
+            last > total
+            for last, total in zip(
+                host["last_member_length_sum"], host["member_length_sum"], strict=True
+            )
+        )
+    ):
+        raise ValueError("Recent member lengths exceed cumulative lengths")
+    if "ppo_exposure" in host:
+        if qmix_run or pqn_run:
+            raise ValueError("PPO sample counts do not belong to a Q learner")
+        exposure = host["ppo_exposure"]
+        names = {
+            "start_env_steps",
+            "policy_offset",
+            "value_offset",
+            "policy_source",
+            "value_source",
+            "policy_opponent",
+            "value_opponent",
+        }
         if (
-            not capture.isdecimal()
-            or str(int(capture)) != capture
-            or int(capture) >= capacity
+            not isinstance(exposure, dict)
+            or set(cast(dict[str, Any], exposure)) != names
         ):
-            raise ValueError("Saved capture identity is outside the history counters")
-        if not isinstance(raw, dict):
-            raise ValueError("Saved capture metadata must be an object")
-        entry = cast(dict[str, Any], raw)
-        if set(entry) != {"env_steps", "path", "sampled_epsilon"}:
-            raise ValueError("Saved capture metadata fields differ")
-        captured_at = integer(entry["env_steps"], "capture env_steps")
-        if not 0 < captured_at <= steps or captured_at % batch:
-            raise ValueError("Saved capture step differs from the training timeline")
-        if not isinstance(entry["path"], str) or not Path(entry["path"]).is_absolute():
-            raise ValueError("Saved capture path must be absolute")
-        epsilon = entry["sampled_epsilon"]
-        if (qmix_run or pqn_run) and (
-            isinstance(epsilon, bool)
-            or not isinstance(epsilon, (int, float))
-            or not math.isfinite(epsilon)
-            or not 0 <= epsilon <= 1
-        ):
-            raise ValueError("Saved capture exploration must be in [0, 1]")
-        if not qmix_run and not pqn_run and epsilon is not None:
-            raise ValueError("A PPO capture has no epsilon exploration")
+            raise ValueError("Saved PPO exposure fields differ")
+        exposure = cast(dict[str, Any], exposure)
+        if integer(exposure["start_env_steps"], "PPO exposure start") > steps:
+            raise ValueError("Saved PPO exposure starts after its checkpoint")
+        for kind in ("policy", "value"):
+            offset = integer(exposure[f"{kind}_offset"], "PPO sample offset")
+            for dimension in ("source", "opponent"):
+                values = exposure[f"{kind}_{dimension}"]
+                if (
+                    not isinstance(values, list)
+                    or not values
+                    or (
+                        dimension == "opponent"
+                        and len(cast(list[Any], values)) != member_rows
+                    )
+                ):
+                    raise ValueError("Saved PPO exposure rows differ")
+                if (
+                    sum(
+                        integer(value, "PPO exposure")
+                        for value in cast(list[Any], values)
+                    )
+                    + offset
+                    != host[f"used_{kind}_samples"]
+                ):
+                    raise ValueError(
+                        "Saved PPO exposure disagrees with optimizer-used samples"
+                    )
+        if len(exposure["policy_source"]) != len(exposure["value_source"]):
+            raise ValueError("Saved PPO source counts differ")
+    checked_exposure_snapshots(
+        host.get("exposure_snapshots", {}),
+        read_run_events(run_dir / "run_events.jsonl")
+        if host.get("exposure_snapshots")
+        else [],
+        run_id=metadata["run_id"],
+        env_steps=steps,
+    )
+    _check_past_copies(root, checkpoint_details, capture_count=history_capture_count)
 
     ancestry = checkpoint_ancestry(root, checkpoint_details)
     if any(ancestor["schemas"] != schemas for ancestor in ancestry.values()):
@@ -1019,6 +1627,16 @@ def validate_host_state(
     if not isinstance(actors, dict):
         raise ValueError("Saved actor paths must be a mapping")
     actors = cast(dict[str, str], actors)
+    if config.get("retain_all_actors", False):
+        missing = set(ancestry) - set(actors) - {checkpoint_details["checkpoint_id"]}
+        if missing:
+            expected = checkpoints.artifact_directory(
+                root, "actors", sorted(missing)[0]
+            )
+            raise ValueError(
+                f"Required retained actor is missing from the catalog at {expected}. "
+                "Restore the exact saved export and catalog before resuming."
+            )
     actor_records: dict[str, dict[str, Any]] = {}
     for key, path in cast(dict[str, Any], actors).items():
         key = identifier(key)
@@ -1745,3 +2363,164 @@ def _check_result_method(
             raise ValueError(f"Saved {label} result differs from its optimizer count")
     elif "method" in result or "optimizer_steps" in result:
         raise ValueError("Saved PPO result carries QMIX or PQN-VDN fields")
+
+
+def read_run_events(path: Path) -> list[dict[str, Any]]:
+    """Read append-only events, marking torn or malformed lines as unknown work.
+
+    Unlike update logs, event history can preserve an interrupted fragment before
+    a resumed attempt. Every invalid line, including a final line without its
+    newline, becomes an incomplete_event marker. No success or score is inferred
+    from that fragment. Original bytes stay untouched; absent files give [].
+    """
+    if not path.exists():
+        return []
+    result: list[dict[str, Any]] = []
+    for index, line in enumerate(path.read_text().splitlines(keepends=True), start=1):
+        try:
+            value: object = json.loads(line)
+            if not line.endswith("\n") or not isinstance(value, dict):
+                raise ValueError("Incomplete event")
+            result.append(cast(dict[str, Any], value))
+        except ValueError:
+            result.append({"event": "incomplete_event", "line": index})
+    return result
+
+
+def exposure_event_digest(event: Mapping[str, Any]) -> str:
+    """Hash one finite exposure event, including its identity and exact rows.
+
+    Use ordinary sorted compact JSON bytes. The digest lives in checkpoint host
+    metadata, not in the event itself. This host helper reads and writes no files.
+    """
+    return hashlib.sha256(
+        json.dumps(
+            dict(event), sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+    ).hexdigest()
+
+
+def checked_exposure_snapshots(
+    mapping: object, events: list[dict[str, Any]], *, run_id: str, env_steps: int
+) -> dict[str, dict[str, Any]]:
+    """Validate checkpoint-accepted exposure rows before recovery or reporting.
+
+    mapping is the saved boundary ID -> event ID/digest mapping, or an empty
+    mapping for legacy metadata. events comes from read_run_events; torn and
+    unrelated rows remain raw attempt evidence. Referenced events must exist
+    exactly once, match their saved digest/run/boundary and contain finite clocks
+    and nonnegative marginal counts. Return the checked boundary-to-event map.
+    Raise ValueError for missing, duplicate, corrupt or later-than-checkpoint
+    evidence. No files or source mappings change.
+    """
+    if not isinstance(mapping, dict):
+        raise ValueError("Saved exposure snapshots must be a mapping")
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        if event.get("event") == "exposure_snapshot":
+            identifier = event.get("event_id")
+            if isinstance(identifier, str):
+                by_id.setdefault(identifier, []).append(event)
+    result: dict[str, dict[str, Any]] = {}
+    for boundary, reference in cast(dict[Any, Any], mapping).items():
+        if not isinstance(boundary, str) or not isinstance(reference, dict):
+            raise ValueError("Saved exposure boundary or reference is invalid")
+        reference = cast(dict[str, Any], reference)
+        if set(reference) != {"event_id", "digest"}:
+            raise ValueError("Saved exposure reference fields are invalid")
+        identifier, digest = reference["event_id"], reference["digest"]
+        if not isinstance(identifier, str) or not isinstance(digest, str):
+            raise ValueError("Saved exposure event identity is invalid")
+        matches = by_id.get(identifier, [])
+        if len(matches) != 1 or exposure_event_digest(matches[0]) != digest:
+            raise ValueError("Saved exposure event is missing, duplicated or changed")
+        event = matches[0]
+        actual = event.get("actual_env_steps")
+        requested = event.get("requested_env_steps")
+        rows = event.get("rows")
+        if (
+            event.get("run_id") != run_id
+            or event.get("boundary_id") != boundary
+            or type(actual) is not int
+            or not 0 <= actual <= env_steps
+            or boundary != f"{run_id}:{actual}"
+            or not isinstance(event.get("attempt_id"), str)
+            or not isinstance(requested, list)
+            or not requested
+            or any(
+                type(value) is not int or not 0 <= value <= actual
+                for value in cast(list[Any], requested)
+            )
+            or not isinstance(rows, list)
+            or not rows
+            or not isinstance(event.get("purposes"), list)
+            or not event["purposes"]
+            or any(
+                purpose not in ("initial", "routine_validation", "final")
+                for purpose in event["purposes"]
+            )
+        ):
+            raise ValueError("Saved exposure event boundary is invalid")
+        for name in ("training_seconds", "elapsed_seconds", "wall_seconds"):
+            value = event.get(name)
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(cast(float, value))
+                or cast(float, value) < 0
+            ):
+                raise ValueError("Saved exposure clock is invalid")
+        seen: set[tuple[str, str]] = set()
+        for row in cast(list[Any], rows):
+            if not isinstance(row, dict):
+                raise ValueError("Saved exposure rows must be objects")
+            row = cast(dict[str, Any], row)
+            dimension, group = row.get("dimension"), row.get("group_id")
+            if (
+                not isinstance(dimension, str)
+                or dimension
+                not in {
+                    "stage",
+                    "source",
+                    "map",
+                    "opponent",
+                    "opponent_source",
+                }
+                or not isinstance(group, str)
+            ):
+                raise ValueError("Saved exposure dimension is invalid")
+            key = (dimension, group)
+            if key in seen:
+                raise ValueError("Saved exposure group is duplicated")
+            seen.add(key)
+            reasons = row.get("unavailable_reasons")
+            if not isinstance(reasons, dict):
+                raise ValueError("Saved exposure missing-data reasons are invalid")
+            for name in (
+                "starts",
+                "real_transitions",
+                "wins",
+                "draws",
+                "losses",
+                "length_sum",
+                "completed_games",
+                "used_policy_samples",
+                "used_value_samples",
+                "used_td_pairs",
+            ):
+                value = row.get(name)
+                if value is not None and (type(value) is not int or value < 0):
+                    raise ValueError(
+                        "Saved exposure counts must be nonnegative integers"
+                    )
+                if value is None and not isinstance(reasons.get(name), str):
+                    raise ValueError("Missing exposure count needs its reason")
+            outcomes = [row.get(name) for name in ("wins", "draws", "losses")]
+            if row.get("completed_games") is not None and (
+                any(value is None for value in outcomes)
+                or row["completed_games"] != sum(cast(list[int], outcomes))
+            ):
+                raise ValueError(
+                    "Saved exposure outcomes disagree with completed games"
+                )
+        result[boundary] = event
+    return result

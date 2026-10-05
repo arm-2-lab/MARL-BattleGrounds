@@ -1,0 +1,507 @@
+/*
+ * The Rune Scrubber: the Replay Viewer's transport dock under the arena.
+ *
+ * Owns: the look of the dock that src/rune-scrubber.js builds in its slot
+ * (#chronicle in index.html, which the script gives the rune-scrubber
+ * class). The dock is about 80 px tall on desktop: Row 1 is the 36 px Event
+ * Track (groove, played tint, Fallen marks, Ultimate runes, return pips, veil,
+ * playhead and thumb ring), Row 2 is one 32 px button row (the moved transport
+ * buttons with a fixed 48 px Play/Pause, the "Tick 118 of 204" readout with
+ * its beat label or, for 4 s, a notice, Speed, the Export menu with the moved
+ * artifact actions, and
+ * the camera switch at the right end; on a stage too narrow for one line it
+ * wraps instead of overflowing). The native Tick slider, the old readout
+ * and the status line stay in the DOM but are visually hidden there
+ * (rune-scrubber.js adds sr-only).
+ *
+ * Look: the BattleClient's small buttons (.sbtn in battleclient/base.css):
+ * 6 px corners, a 1 px Panel Edge border, Panel 2 fill, Raise on hover. The
+ * dock is Panel with a 1 px Panel Edge top rule and 8 px bottom corners.
+ * Colors come from the :root tokens in styles.css (so the High Contrast
+ * palette still applies) and, for the three BattleClient-only shades, the .bc
+ * tokens with their exact values as fallbacks.
+ *
+ * Scope: every rule starts with html[data-product-kind="replay_viewer"]
+ * #replay-timeline, so the id beats the older transport rules in styles.css
+ * and shell.css and nothing changes in live play. The Event Track is never
+ * part of the exported battlefield PNG. No beat-timed element here has a CSS
+ * animation or transition; rune-scrubber.js holds those with Web Animations.
+ * The page's content-security policy allows no style attributes, so all
+ * geometry comes from SVG attributes or these classes.
+ */
+
+/* The dock: two rows, 4 + 36 + 32 + 7 px plus the 1 px top rule = 80 px. It
+   is not a positioned box; #replay-timeline is (camera.css). */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber {
+  display: grid;
+  grid-template-rows: 36px auto;
+  min-width: 0;
+  padding: 4px 0 7px;
+  border-top: 1px solid var(--panel-edge);
+  border-radius: 0 0 8px 8px;
+  background: var(--panel);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber[hidden] {
+  display: none;
+}
+
+/* Row 1: the Event Track. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__track {
+  min-width: 0;
+  height: 36px;
+  cursor: pointer;
+}
+
+/* The hidden native slider has focus: the track shows the focus ring. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__track[data-slider-focus] {
+  border-radius: 6px;
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 0;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__svg {
+  display: block;
+  overflow: visible;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__groove {
+  fill: var(--ink);
+  stroke: var(--panel-edge);
+  stroke-width: 1;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__played {
+  fill: var(--moon-silver);
+  fill-opacity: 0.3;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__fall--a {
+  fill: var(--team-a);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__fall--b {
+  fill: var(--team-b);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__pip {
+  opacity: 0.7;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__pip--a {
+  fill: var(--team-a-light);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__pip--b {
+  fill: var(--team-b-light);
+}
+
+/* Runes: filled for a damaging Ultimate, hollow (1.2 px outline) for Burst or
+   Holy Word: Salvation. Both read in greyscale. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging {
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__rune--support {
+  fill: var(--ink);
+  stroke-width: 1.2;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging.rune-scrubber__rune--mage {
+  fill: var(--class-mage);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging.rune-scrubber__rune--warrior {
+  fill: var(--class-warrior);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging.rune-scrubber__rune--hunter {
+  fill: var(--class-hunter);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging.rune-scrubber__rune--rogue {
+  fill: var(--class-rogue);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--damaging.rune-scrubber__rune--priest {
+  fill: var(--class-priest);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--support.rune-scrubber__rune--mage {
+  stroke: var(--class-mage);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--support.rune-scrubber__rune--warrior {
+  stroke: var(--class-warrior);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--support.rune-scrubber__rune--hunter {
+  stroke: var(--class-hunter);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--support.rune-scrubber__rune--rogue {
+  stroke: var(--class-rogue);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__rune--support.rune-scrubber__rune--priest {
+  stroke: var(--class-priest);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__veil {
+  fill: var(--panel);
+  fill-opacity: 0.45;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__playhead {
+  stroke: var(--moon-silver);
+  stroke-width: 1.5;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__thumb {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1.5;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__hit {
+  fill: transparent;
+}
+
+/* Row 2: one button row with 16 px gutters, like the track. It fits one line
+   from a 1366 px wide window up (about 1008 px inside the gutters there);
+   on a stage too narrow for that, the row wraps instead of overflowing. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+}
+
+/* The BattleClient's small button. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__row button,
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 0;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ui-text);
+  background: var(--panel2, #141d2f);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  button:hover:not(:disabled),
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  button:hover:not(:disabled) {
+  border-color: var(--edge2, #34425f);
+  background: var(--raise, #1a2438);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  button:disabled,
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  button:focus-visible,
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  button:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 1px;
+}
+
+/* Play/Pause: a fixed 48 px, with the Moon Silver edge of a primary button. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  #replay-play-pause-button {
+  inline-size: 48px;
+  min-width: 48px;
+  padding: 0;
+  border-color: var(--moon-silver);
+  font-weight: 700;
+}
+
+/* The readout: "Tick 118 of 204" over the beat label. The tick line keeps a
+   fixed 16ch box; the readout itself takes the row's free space up to Speed,
+   which a notice uses (see below). */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__readout {
+  position: relative;
+  display: grid;
+  flex: 1 1 16ch;
+  align-content: center;
+  min-inline-size: 16ch;
+  margin-inline: 6px 2px;
+  line-height: 1.15;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__tick {
+  inline-size: 16ch;
+  overflow: hidden;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__beat {
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__beat[hidden] {
+  display: none;
+}
+
+/* The line under the tick: the beat label, or a notice for 4 s. It keeps one
+   line of height even when the beat label is switched off, so a notice never
+   moves the tick readout. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__line {
+  position: relative;
+  display: block;
+  min-block-size: calc(11px * 1.15);
+  font-size: 11px;
+}
+
+/* While a notice shows, the beat label keeps its line but hides its words. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__readout[data-notice]
+  .rune-scrubber__beat {
+  visibility: hidden;
+}
+
+/* The notice: the whole sentence, on the beat label's line and the free space
+   beside it up to Speed. A long one wraps upward over the tick line and the
+   track (it is anchored at the line's bottom), never cut with an ellipsis.
+   The BattleClient message look: a 2 px left rule, the alert color for a
+   warning or an error. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__notice {
+  position: absolute;
+  z-index: 4;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 1px 6px;
+  border-left: 2px solid var(--edge2, #34425f);
+  border-radius: 0 4px 4px 0;
+  color: var(--ui-text);
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__notice[hidden] {
+  display: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__notice:is([data-level="warning"], [data-level="error"]) {
+  border-left-color: var(--alert, #ffb547);
+  color: var(--alert, #ffb547);
+}
+
+/* Speed: a small muted label and the compact select. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  .replay-timeline__rate {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  .replay-timeline__rate
+  select {
+  min-width: 0;
+  min-height: 28px;
+  height: 28px;
+  inline-size: 4.5rem;
+  padding-block: 0;
+  /* The native arrow brings its own room, so the right padding stays small
+     and "1.00×" shows whole. */
+  padding-inline: 6px 2px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ui-text);
+  background-color: var(--panel2, #141d2f);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Speed, Export and the camera switch sit together at the right end. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__export {
+  position: relative;
+  flex: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-button[aria-expanded="true"] {
+  border-color: var(--moon-silver);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  #replay-camera-switch {
+  flex: none;
+  gap: 6px;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  .camera-switch__choice {
+  gap: 4px;
+}
+
+/* The camera switch takes no room in the row (owner, 4 Oct 2026: its
+   buttons are the arena's V and B keys; the Camera Inset is gone):
+   - no "CAMERA" eyebrow (the empty button group keeps its name "Camera"
+     through its aria-label);
+   - the Battle Cam words ("Battle Cam · 1.45×", "Slow Motion · 0.50×") stay in
+     the page for screen readers but take no room: the lit B key already
+     names the mode. */
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  .camera-switch__label {
+  display: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__row
+  .camera-switch__words {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The Export menu opens above its button, inside the dock's own layer. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__export-menu {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-inline-size: 13rem;
+  padding: 6px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu[hidden] {
+  display: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  .replay-artifact-actions {
+  display: grid;
+  gap: 4px;
+  justify-content: stretch;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  .replay-artifact-actions[hidden] {
+  display: none;
+}
+
+html[data-product-kind="replay_viewer"]
+  #replay-timeline
+  .rune-scrubber__export-menu
+  button {
+  justify-content: flex-start;
+  inline-size: 100%;
+  text-align: start;
+}

@@ -2578,6 +2578,7 @@ test("recording status accepts only canonical saved and persistence-failed avail
     completion_reason: null,
     finish_available: false,
     review_available: true,
+    restart_fenced: false,
     discard_available: false,
   };
   assert.deepEqual(normalizeRecordingStatusV1(completed, 5), completed);
@@ -2589,6 +2590,8 @@ test("recording status accepts only canonical saved and persistence-failed avail
     completion_state: "partial",
     completion_reason: "user_finish_and_review",
     review_available: false,
+    restart_fenced: true,
+    discard_available: true,
     retry_available: true,
     save_as_available: true,
     persistence_error_code: "verification_failed",
@@ -2649,12 +2652,16 @@ test("recording status accepts every declared lifecycle only with its canonical 
       captured_transition_count: captured,
       completion_state: completionState,
       completion_reason: completionReason,
-      restart_fenced: captured > 0 || lifecycle !== "recording",
+      restart_fenced:
+        !["saved", "reviewing"].includes(lifecycle) &&
+        (captured > 0 || lifecycle !== "recording"),
       finish_available: lifecycle === "recording",
       review_available: lifecycle === "saved",
       retry_available: persistenceFailed,
       save_as_available: persistenceFailed,
-      discard_available: lifecycle === "recording" && captured > 0,
+      discard_available:
+        (lifecycle === "recording" && captured > 0) ||
+        ["sealed", "finalized_unsaved", "persistence_failed"].includes(lifecycle),
       persistence_error_code: persistenceFailed ? "publication_failed" : null,
     };
     assert.deepEqual(normalizeRecordingStatusV1(status, captured), status, lifecycle);

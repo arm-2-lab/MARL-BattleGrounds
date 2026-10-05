@@ -1,6 +1,11 @@
 """Check match summaries against the installed frame's recorded facts.
 
-These match-level values are separate from spatial POV visibility.
+These match-level values are separate from spatial POV visibility. Scores,
+previous scores (before the tick), returns and deaths come from the recorded
+frames and events; beat-specific cases live in test_viewer_match_summary_beats.py.
+Team names are shown exactly as recorded: a new live record names each
+champion's controller (built-ins by their public names), while records without
+controller-name keys keep the proven scenario title and older labels.
 """
 
 from __future__ import annotations
@@ -8,14 +13,12 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from scripts.dev.visual_debugger.control import create_session
 from scripts.dev.visual_debugger.match_summary import (
     MatchAgentV1,
     MatchDeathV1,
     MatchTeamV1,
     build_match_summary_v1,
 )
-from scripts.dev.visual_debugger.model import DebuggerScenarioProvenance
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.evaluation_fixtures import (
     captured_evaluation_trajectory,
@@ -23,6 +26,8 @@ from tests.evaluation_fixtures import (
 )
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.model import DebuggerScenarioProvenance
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     AssignedPolicySlotV1,
@@ -62,6 +67,19 @@ def test_match_summary_uses_captured_task_scores_policy_identity_and_result() ->
         if event.event_type == "agent_died"
     )
     assert before.deaths == ()
+    assert before.previous_scores == before.scores
+    assert before.returned_agent_ids == ()
+    assert after.previous_scores == trajectory.frames[0].snapshot.team_deathmatch_scores
+    joined = build_match_summary_v1(
+        context,
+        trajectory.frames[1],
+        trajectory.transitions[0].events,
+        transition_start_frame=trajectory.frames[0],
+    )
+    assert joined.previous_scores == after.previous_scores
+    assert [death.public_agent_id for death in joined.deaths] == [
+        death.public_agent_id for death in after.deaths
+    ]
     for team in after.teams:
         assignments = tuple(
             assignment
@@ -234,10 +252,28 @@ def test_scenario_pressure_display_name_uses_recorded_controller(
     assert session.evaluation_context.identity.scenario.identifier == (
         "authored-team-deathmatch-scenario"
     )
+    # A new record names each champion's controller exactly as live play does.
+    recorded = build_match_summary_v1(
+        session.evaluation_context, session.current_evaluation_frame
+    )
+    assert recorded.teams[1].display_name == f"tdm-{variant}"
+    assert recorded.slot_controller_names == session.slot_labels
+    assert {name for name in session.slot_labels[5:] if name is not None} == {
+        f"tdm-{variant}"
+    }
+    # Records saved before 2 October 2026 had no controller-name keys; the
+    # proven scenario title still wins over their recorded team name.
+    old_keys = tuple(
+        row
+        for row in session.evaluation_context.aggregation_keys
+        if not row.name.startswith(
+            ("marl_bgs.controller_name.", "marl_bgs.system_name.")
+        )
+    )
     produced = session.evaluation_context.model_copy(
         update={
             "aggregation_keys": (
-                *session.evaluation_context.aggregation_keys,
+                *old_keys,
                 AggregationKeyV1(
                     name="marl_bgs.system_name.team_b",
                     value=f'"tdm_{variant}"',
@@ -275,12 +311,13 @@ def test_scenario_pressure_display_name_uses_recorded_controller(
             ),
         }
     )
-    # A familiar policy name alone is not proof of its controller rules.
+    # A familiar policy name alone is not proof of its controller rules; the
+    # recorded team name is then shown exactly as recorded.
     assert (
         build_match_summary_v1(current, session.current_evaluation_frame)
         .teams[1]
         .display_name
-        == f"Tdm {variant}"
+        == f"tdm_{variant}"
     )
     descriptor = ContentAddressedIdentityV1(
         identifier=policy_id, version=1, canonical_digest="f" * 64
@@ -372,9 +409,8 @@ def test_match_summary_prefers_recorded_name_and_keeps_exact_identity(
         }
     )
     summary = build_match_summary_v1(context, trajectory.frames[0])
-    assert summary.teams[0].display_name == (
-        "Researcher policy" if name == "researcher_policy" else name
-    )
+    # Recorded names are shown exactly as recorded, never rewritten.
+    assert summary.teams[0].display_name == name
     assert summary.teams[0].policy_ids == ("a" * 64,)
     old = context.model_copy(
         update={"aggregation_keys": trajectory.context.aggregation_keys}

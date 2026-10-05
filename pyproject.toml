@@ -17,8 +17,6 @@ dependencies = [
   "numpy",
   "scipy",
   "chex",
-  "omegaconf",
-  "hydra-core>=1.3.4",
   "pydantic",
 ]
 
@@ -32,6 +30,22 @@ training = [
   "flax",
   "orbax-checkpoint",
   "flashbax==0.1.3",
+  "matplotlib",
+]
+
+hydra = [
+  "hydra-core==1.3.6",
+  "omegaconf==2.3.0",
+]
+
+notebook = [
+  "pandas",
+  "ipykernel",
+  "nbconvert",
+]
+
+wandb = [
+  "wandb",
 ]
 
 interop = [
@@ -48,14 +62,19 @@ dev = [
   "ruff",
   "pyright",
   "pre-commit",
+  "hydra-core==1.3.6",
+  "omegaconf==2.3.0",
 ]
 
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["/.local/dev_client/**"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/marl_battlegrounds"]
+packages = ["src/marl_battlegrounds", "src/hydra_plugins"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "web/visual_debugger/index.html" = "marl_battlegrounds/viewer/web/index.html"
@@ -109,8 +128,12 @@ line-ending = "lf"
 include = [
   "src",
   "tests",
+  "examples",
+  "scripts/paper_experiments",
+  "scripts/dev/generate_experiment_configs.py",
+  "scripts/dev/training_distribution_reference.py",
+  "scripts/dev/benchmark_training_distributions.py",
   "scripts/dev/visual_debugger",
-  "scripts/dev/debug_renderer.py",
   "scripts/dev/replay_viewer.py",
 ]
 exclude = [

@@ -634,6 +634,7 @@ def _resume_legacy_tournament(
     episodes_per_pair: int | Omitted = OMITTED,
     seed: int | Omitted = OMITTED,
     num_envs: int = 128,
+    keep_batch_size: bool = False,
     metrics: MetricMode | Omitted = OMITTED,
     full_metrics_episodes: Iterable[int] | Omitted = OMITTED,
     replay_episodes: Iterable[int] | Omitted = OMITTED,
@@ -665,6 +666,9 @@ def _resume_legacy_tournament(
         saved before Red Zone keeps depth 0.0 and historical configuration IDs.
     num_envs : int, default=128
         Positive execution capacity. Changing it does not change planned games.
+    keep_batch_size : bool, default=False
+        True keeps num_envs lanes when a matchup has fewer remaining games.
+        Extra lanes are padding, not recorded games. This may change on resume.
     chunk_size : int, default=16
         Positive number of ticks per evaluator chunk, allowed to change on resume.
 
@@ -769,6 +773,8 @@ def _resume_legacy_tournament(
             [match.episode_id for match in schedule], replay_episodes, save_replays
         )
     validate_opponent_weights(tuple(sorted(frozen)), opponent_weights)
+    if type(keep_batch_size) is not bool:
+        raise TypeError("keep_batch_size must be Boolean")
     num_envs = positive_int(num_envs, "num_envs")
     chunk_size = positive_int(chunk_size, "chunk_size")
     if (
@@ -1053,6 +1059,7 @@ def _resume_legacy_tournament(
             writer=writer,
             run_id=run_id,
             num_envs=num_envs,
+            keep_batch_size=keep_batch_size,
             metrics=metrics,
             chunk_size=chunk_size,
             registered_maps=registered_maps,
@@ -1148,6 +1155,7 @@ def run_tournament(
     maps: Sequence[int | TDMMapInfo] | None | Omitted = OMITTED,
     seed: int | Omitted = OMITTED,
     num_envs: int = 128,
+    keep_batch_size: bool = False,
     metrics: MetricMode | Omitted = OMITTED,
     full_metrics_episodes: Iterable[int] | Omitted = OMITTED,
     replay_episodes: Iterable[int] | Omitted = OMITTED,
@@ -1182,6 +1190,9 @@ def run_tournament(
         Add one method as Team A against each field member, exchanging spawn
         ends between paired games. None means no challenger. Omission on resume
         inherits a saved reloadable challenger; a live one must be supplied again.
+        Current v2 fields retain string references and check the loaded identity
+        before resuming unfinished challenger games. Older opaque records need
+        the matching challenger supplied again.
     games_per_opponent, episodes_per_pair : int, optional
         Total games per unordered pair across all maps and spawn ends. New lists
         default to 100. The total must divide equally over maps and spawn pairs.
@@ -1221,6 +1232,9 @@ def run_tournament(
     rerun_existing : bool, optional
         Explicit fresh execution of a configured field, default False. Reuse
         requires matching conditions and checked evidence; no hidden fallback.
+    keep_batch_size : bool, default=False
+        True keeps num_envs lanes when a matchup has fewer remaining games.
+        Extra lanes are padding, not recorded games. This may change on resume.
     chunk_size : int, default=16
         Decisions per evaluator chunk. An explicit value is honored.
 
@@ -1272,11 +1286,14 @@ def run_tournament(
     from marl_battlegrounds.evaluation.results import _read_manifest
     from marl_battlegrounds.evaluation.tournament_inputs import (
         _prepare_tournament_method,
+        _reference,
         prepare_tournament_inputs,
         read_short_tournament_config,
         resolve_tournament_budget,
     )
 
+    if type(keep_batch_size) is not bool:
+        raise TypeError("keep_batch_size must be Boolean")
     num_envs = positive_int(num_envs, "num_envs")
     chunk_size = positive_int(chunk_size, "chunk_size")
     if output_dir is not None and resume_from is not None:
@@ -1285,6 +1302,7 @@ def run_tournament(
         raise ValueError("Supply policies or config, not competing populations")
     budget = resolve_tournament_budget(games_per_opponent, episodes_per_pair)
     challenger_prepared = False
+    challenger_reference = None
     if resume_from is not None and "tournament_reuse" not in _read_manifest(
         Path(resume_from)
     ):
@@ -1302,6 +1320,7 @@ def run_tournament(
             episodes_per_pair=budget,
             seed=seed,
             num_envs=num_envs,
+            keep_batch_size=keep_batch_size,
             metrics=metrics,
             full_metrics_episodes=full_metrics_episodes,
             replay_episodes=replay_episodes,
@@ -1498,7 +1517,8 @@ def run_tournament(
         selected_config = None if config is None or short is not None else config
     elif policies is not None:
         if isinstance(challenger, str):
-            challenger = _prepare_tournament_method(challenger)
+            challenger_reference = _reference(challenger, Path.cwd())
+            challenger = _prepare_tournament_method(challenger_reference)
             challenger_prepared = True
         defaults: dict[str, Any] = {
             "maps": None,
@@ -1538,12 +1558,14 @@ def run_tournament(
         selected_config,
         challenger=challenger,
         challenger_prepared=challenger_prepared,
+        challenger_reference=challenger_reference,
         games_per_opponent=cast(int | Omitted, rules["games_per_opponent"]),
         rerun_existing=rerun_existing,
         **outputs,
         output_dir=output_dir,
         resume_from=resume_from,
         num_envs=num_envs,
+        keep_batch_size=keep_batch_size,
         chunk_size=chunk_size,
         bindings=bindings,
         input_metadata=input_metadata,

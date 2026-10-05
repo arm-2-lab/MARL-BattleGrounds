@@ -1,10 +1,24 @@
 /**
- * @file Check replay cursor/command validation, keyboard navigation, playback state
- * and selection behavior.
+ * @file Check replay cursor/command validation, keyboard navigation (one-tick arrows,
+ * ten-tick Shift + arrows, N the same as +1 and Arrow Right, held repeats
+ * included), presses that add up (one request in flight and one pending target:
+ * relative presses count from it, absolute presses replace it, a press during
+ * autoplay's fetch pauses first, a failed request drops it, the snapshot's
+ * targetFrameIndex names it), V, B, F, G and N keeping their jobs on a focused
+ * transport button while Space and Enter stay the button's, every key (N, V, B,
+ * F, G, Space and the arrows) typing as usual in a text field, a Tab on the field
+ * (elements.fieldRoot) while the page is busy held (default prevented, nothing
+ * sent; outside the field and while free the browser's Tab stays when the
+ * replay_next_agent handler declines), playback state and its
+ * presentation
+ * intent (with the replay_step stepGlide field), selection behavior, and the dock's
+ * plain-words status line ("Paused · Settled", with the exact transport state kept in
+ * data-transport-state).
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { registerLocalCommandHandler } from "../src/command-set.js";
 import {
   bindReplayTimelineControls,
   normalizeReplayCommand,
@@ -129,8 +143,6 @@ function controlElements(
     rateSelect: new FakeElement(),
     status: new FakeElement(),
     tickForFrameIndex,
-    incomingTransitionForFrameIndex: (/** @type {number} */ frameIndex) =>
-      frameIndex === 0 ? null : `episode:test:transition:${frameIndex - 1}`,
   };
 }
 
@@ -264,8 +276,14 @@ test("keyboard intent is bounded to unmodified replay navigation and edge-trigge
   assert.equal(replayKeyboardIntent({ key: "End" }), null);
   assert.equal(replayKeyboardIntent({ key: "ArrowLeft" }), "previous");
   assert.equal(replayKeyboardIntent({ key: "ArrowRight" }), "next");
-  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", shiftKey: true }), null);
-  assert.equal(replayKeyboardIntent({ key: "ArrowRight", shiftKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", repeat: true }), "previous");
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", shiftKey: true }), "back_ten");
+  assert.equal(
+    replayKeyboardIntent({ key: "ArrowRight", shiftKey: true }),
+    "forward_ten",
+  );
+  assert.equal(replayKeyboardIntent({ key: "ArrowLeft", altKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "ArrowRight", metaKey: true }), null);
   assert.equal(replayKeyboardIntent({ key: " ", repeat: false }), "toggle");
   assert.equal(replayKeyboardIntent({ key: " ", repeat: true }), null);
   assert.equal(
@@ -276,7 +294,15 @@ test("keyboard intent is bounded to unmodified replay navigation and edge-trigge
   assert.equal(replayKeyboardIntent({ key: "Escape", shiftKey: true }), null);
   assert.equal(replayKeyboardIntent({ key: "Spacebar", repeat: false }), null);
   assert.equal(replayKeyboardIntent({ key: "ArrowRight", ctrlKey: true }), null);
-  assert.equal(replayKeyboardIntent({ key: "n" }), null);
+  // N does the same as +1 and Arrow Right, held repeats included.
+  assert.equal(replayKeyboardIntent({ key: "n" }), "next");
+  assert.equal(replayKeyboardIntent({ key: "N", shiftKey: true }), "next");
+  assert.equal(replayKeyboardIntent({ key: "n", repeat: true }), "next");
+  assert.equal(replayKeyboardIntent({ key: "n", ctrlKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: " ", shiftKey: true }), null);
+  assert.equal(replayKeyboardIntent({ key: "v" }), null);
+  assert.equal(replayKeyboardIntent({ key: "b" }), null);
+  assert.equal(replayKeyboardIntent({ key: "f" }), null);
 });
 
 test("replay-owned Escape clears selection once without moving the replay cursor", () => {
@@ -403,6 +429,147 @@ test("replay-owned Space suppresses scroll without repeating toggles or stealing
   }
 });
 
+test("V, B, F, G and N keep their jobs on a focused transport button; Space and Enter stay the button's", async () => {
+  const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: FakeElement,
+  });
+  const elements = controlElements();
+  /** @type {Array<Record<string, any>>} */
+  const commands = [];
+  const controller = new ReplayPlaybackController({
+    onStateChange: () => {},
+    request: async (command) => {
+      commands.push(command);
+      return { frame: { cursor: cursor(2, 3, { cursor: 2, choreography: 1 }) } };
+    },
+  });
+  installConnected(controller, cursor(1));
+  /** @type {string[]} */
+  const calls = [];
+  const removers = [
+    ["camera_everyone_in_view", "v"],
+    ["camera_battle_cam", "b"],
+    ["frame_explanation", "f"],
+    ["ranges", "g"],
+  ].map(([name, key]) =>
+    registerLocalCommandHandler(name, () => {
+      calls.push(key);
+    }),
+  );
+  const unbind = bindReplayTimelineControls(/** @type {any} */ (elements), controller);
+  try {
+    elements.playPauseButton.interactive = true;
+    for (const key of ["v", "b", "f", "g"]) {
+      const event = elements.keyboardTarget.dispatch("keydown", {
+        key,
+        target: elements.playPauseButton,
+      });
+      assert.equal(event.defaultPrevented, true, key);
+    }
+    assert.deepEqual(calls, ["v", "b", "f", "g"]);
+    const step = elements.keyboardTarget.dispatch("keydown", {
+      key: "n",
+      target: elements.playPauseButton,
+    });
+    assert.equal(step.defaultPrevented, true);
+    await Promise.resolve();
+    assert.deepEqual(commands, [replaySeekCommand(2)], "N is +1 from a focused button");
+    for (const key of [" ", "Enter"]) {
+      const event = elements.keyboardTarget.dispatch("keydown", {
+        key,
+        target: elements.playPauseButton,
+      });
+      assert.equal(
+        event.defaultPrevented,
+        false,
+        `${JSON.stringify(key)} stays native`,
+      );
+    }
+    assert.equal(controller.snapshot().playing, false);
+    assert.equal(commands.length, 1);
+  } finally {
+    unbind();
+    for (const remove of removers) remove();
+    if (originalElement) {
+      Object.defineProperty(globalThis, "Element", originalElement);
+    } else {
+      Reflect.deleteProperty(globalThis, "Element");
+    }
+  }
+});
+
+test("keys typed in a text field stay there: N, V, B, F, G, Space and the arrows", async () => {
+  const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: FakeElement,
+  });
+  const elements = controlElements();
+  /** @type {Array<Record<string, any>>} */
+  const commands = [];
+  const controller = new ReplayPlaybackController({
+    onStateChange: () => {},
+    request: async (command) => {
+      commands.push(command);
+      return { frame: { cursor: cursor(2, 3, { cursor: 2, choreography: 1 }) } };
+    },
+  });
+  installConnected(controller, cursor(1));
+  /** @type {string[]} */
+  const calls = [];
+  const removers = [
+    ["camera_everyone_in_view", "v"],
+    ["camera_battle_cam", "b"],
+    ["frame_explanation", "f"],
+    ["ranges", "g"],
+  ].map(([name, key]) =>
+    registerLocalCommandHandler(name, () => {
+      calls.push(key);
+    }),
+  );
+  // A stand-in for the metric search box: a native control that is a text field.
+  const textField = /** @type {any} */ (new FakeElement());
+  textField.interactive = true;
+  /** @param {string} selector */
+  textField.closest = (selector) => (/\binput\b/u.test(selector) ? textField : null);
+  const unbind = bindReplayTimelineControls(/** @type {any} */ (elements), controller);
+  try {
+    for (const [key, shiftKey] of [
+      ["n", false],
+      ["v", false],
+      ["b", false],
+      ["f", false],
+      ["g", false],
+      [" ", false],
+      ["ArrowLeft", false],
+      ["ArrowRight", false],
+      ["ArrowLeft", true],
+      ["ArrowRight", true],
+    ]) {
+      const event = elements.keyboardTarget.dispatch("keydown", {
+        key,
+        shiftKey,
+        target: textField,
+      });
+      assert.equal(event.defaultPrevented, false, `${key} shift ${shiftKey}`);
+    }
+    await Promise.resolve();
+    assert.deepEqual(calls, []);
+    assert.deepEqual(commands, []);
+    assert.equal(controller.snapshot().playing, false);
+  } finally {
+    unbind();
+    for (const remove of removers) remove();
+    if (originalElement) {
+      Object.defineProperty(globalThis, "Element", originalElement);
+    } else {
+      Reflect.deleteProperty(globalThis, "Element");
+    }
+  }
+});
+
 test("timeline binding previews slider input without a request and commits once", async () => {
   const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
   Object.defineProperty(globalThis, "Element", {
@@ -457,7 +624,9 @@ test("timeline binding previews slider input without a request and commits once"
     elements.rateSelect.dispatch("change");
     assert.equal(controller.snapshot().playbackRate, 1.75);
     assert.deepEqual(commands, [replaySeekCommand(2), replaySeekCommand(2)]);
-    assert.match(elements.status.textContent, /1\.75× · SETTLED$/u);
+    assert.equal(elements.rateSelect.value, "1.75");
+    assert.equal(elements.status.textContent, "Paused · Settled");
+    assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
 
     elements.keyboardTarget.dispatch("keydown", {
       key: " ",
@@ -465,25 +634,38 @@ test("timeline binding previews slider input without a request and commits once"
       target: elements.playPauseButton,
     });
     assert.equal(controller.snapshot().playing, false);
-    elements.keyboardTarget.dispatch("keydown", {
+    // Shift + Arrow Right jumps ten ticks (clamped to the last frame) and snaps.
+    const shiftedArrow = elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       shiftKey: true,
       target: elements.root,
     });
-    assert.equal(commands.length, 2);
+    assert.equal(shiftedArrow.defaultPrevented, true);
+    await flushMicrotasks();
+    assert.equal(commands.length, 3);
+    assert.deepEqual(commands.at(-1), replaySeekCommand(3));
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, null);
+    elements.keyboardTarget.dispatch("keydown", {
+      key: "ArrowLeft",
+      target: elements.root,
+    });
+    await flushMicrotasks();
+    assert.deepEqual(commands.at(-1), replaySeekCommand(2));
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, "backward");
     elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       target: elements.root,
     });
     await flushMicrotasks();
     assert.deepEqual(commands.at(-1), replaySeekCommand(3));
-    assert.equal(commands.length, 3);
+    assert.equal(controller.snapshot().presentationIntent?.stepGlide, "forward");
+    assert.equal(commands.length, 5);
     elements.root.hidden = true;
     const hiddenRootArrow = elements.keyboardTarget.dispatch("keydown", {
       key: "ArrowRight",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(hiddenRootArrow.defaultPrevented, false);
     elements.root.hidden = false;
     elements.keyboardEnabled = () => false;
@@ -491,7 +673,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(fencedArrow.defaultPrevented, true);
     elements.keyboardEnabled = () => true;
     elements.keyboardAuthorityInstalled = () => false;
@@ -499,7 +681,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(unownedArrow.defaultPrevented, false);
     elements.keyboardAuthorityInstalled = () => true;
     controller.setHidden(true);
@@ -507,7 +689,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(hiddenControllerArrow.defaultPrevented, false);
     controller.setHidden(false);
     controller.setAuthorityPending("disconnect");
@@ -515,7 +697,7 @@ test("timeline binding previews slider input without a request and commits once"
       key: "ArrowLeft",
       target: elements.root,
     });
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 5);
     assert.equal(pendingArrow.defaultPrevented, false);
   } finally {
     unbind();
@@ -543,16 +725,15 @@ test("timeline rendering publishes bounded controls and accessible cursor text",
     pauseReason: null,
     atStart: false,
     atEnd: false,
+    targetFrameIndex: null,
   });
   assert.equal(elements.slider.value, "2");
   assert.equal(elements.slider.max, "3");
   assert.equal(elements.slider.getAttribute("aria-valuetext"), "Tick 2 of 3");
   assert.equal(elements.position.textContent, "Tick 2 / 3");
   assert.equal(elements.rateSelect.value, "1");
-  assert.equal(
-    elements.status.textContent,
-    "Frame 2 / 3 · Tick 2 / 3 · Incoming Transition episode:test:transition:1 · 1.00× · SETTLED",
-  );
+  assert.equal(elements.status.textContent, "Paused · Settled");
+  assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
   assert.equal(elements.backTenButton.disabled, false);
   assert.equal(elements.previousButton.disabled, false);
   assert.equal(elements.nextButton.disabled, false);
@@ -584,15 +765,14 @@ test("timeline labels use nonzero simulator ticks while slider seeks frame indic
     pauseReason: null,
     atStart: false,
     atEnd: false,
+    targetFrameIndex: null,
   });
   assert.equal(elements.slider.value, "2");
   assert.equal(elements.slider.max, "3");
   assert.equal(elements.slider.getAttribute("aria-valuetext"), "Tick 42 of 43");
   assert.equal(elements.position.textContent, "Tick 42 / 43");
-  assert.equal(
-    elements.status.textContent,
-    "Frame 2 / 3 · Tick 42 / 43 · Incoming Transition episode:test:transition:1 · 1.00× · SETTLED",
-  );
+  assert.equal(elements.status.textContent, "Paused · Settled");
+  assert.equal(elements.status.getAttribute("data-transport-state"), "SETTLED");
   assert.equal(replayTimelineSimulatorStep(timeline, 2), 42);
   assert.equal(replayTimelineSimulatorStep(timeline, 4), null);
   assert.equal(
@@ -733,34 +913,104 @@ test("an interleaved duplicate installs settled authority without retry or anima
   assert.equal(controller.snapshot().pauseReason, "resync");
 });
 
-test("explicit navigation is first-wins while one absolute seek is advancing", async () => {
+test("presses add up while one seek is in flight: one pending target, sent after it lands", async () => {
   /** @type {Array<Record<string, any>>} */
   const commands = [];
-  /** @type {(value: unknown) => void} */
-  let resolveRequest = () => {
-    throw new Error("Request resolver was not installed.");
-  };
-  const requestPending = new Promise((resolve) => {
-    resolveRequest = resolve;
-  });
+  /** @type {Array<(value: unknown) => void>} */
+  const answers = [];
   const controller = new ReplayPlaybackController({
     request: async (command) => {
       commands.push(command);
-      return requestPending;
+      return new Promise((resolve) => {
+        answers.push(resolve);
+      });
     },
   });
-  installConnected(controller, cursor(1));
+  /** @param {number} frame @param {number} generation */
+  const land = (frame, generation) =>
+    answers.shift()?.({
+      frame: { cursor: cursor(frame, 30, { cursor: generation, choreography: 1 }) },
+    });
+  installConnected(controller, cursor(1, 30));
   const first = controller.next();
-  const second = await controller.last();
-  assert.equal(controller.snapshot().playing, false);
+  // Four more quick +1 presses while the first seek is in flight add up.
+  const added = [1, 2, 3, 4].map(() => controller.next());
+  assert.deepEqual(commands, [replaySeekCommand(2)], "one request in flight");
+  assert.equal(controller.snapshot().targetFrameIndex, 6, "k + 5");
   assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.ADVANCING);
   assert.equal(controller.snapshot().pauseReason, "user_seek");
-  assert.equal(second, false);
-  assert.deepEqual(commands, [replaySeekCommand(2)]);
-  resolveRequest({ frame: { cursor: cursor(2, 3, { cursor: 2, choreography: 1 }) } });
+  land(2, 2);
   assert.equal(await first, true);
-  assert.equal(controller.snapshot().cursor?.frame_index, 2);
+  assert.deepEqual(commands.at(-1), replaySeekCommand(6), "the pending target is sent");
+  assert.equal(controller.snapshot().targetFrameIndex, 6);
+  // Absolute presses replace the target: End, then Start, while 6 is in flight.
+  const end = controller.last();
+  assert.equal(controller.snapshot().targetFrameIndex, 30);
+  const start = controller.first();
+  assert.equal(controller.snapshot().targetFrameIndex, 0);
+  land(6, 3);
+  for (const press of added) assert.equal(await press, true);
+  assert.deepEqual(commands.at(-1), replaySeekCommand(0));
+  land(0, 4);
+  assert.equal(await end, true);
+  assert.equal(await start, true);
+  assert.equal(commands.length, 3, "six presses cost three round trips");
+  assert.equal(controller.snapshot().cursor?.frame_index, 0);
+  assert.equal(controller.snapshot().targetFrameIndex, null);
   assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.SETTLED);
+  // A pending target that the landing already reached sends nothing.
+  const forward = controller.next();
+  const further = controller.next();
+  const backAgain = controller.previous();
+  assert.deepEqual(commands.at(-1), replaySeekCommand(1));
+  assert.equal(controller.snapshot().targetFrameIndex, 1);
+  land(1, 5);
+  assert.equal(await forward, true);
+  assert.equal(await further, true);
+  assert.equal(await backAgain, true);
+  assert.equal(commands.length, 4, "no request for a target already reached");
+  assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.SETTLED);
+});
+
+test("a press during autoplay's fetch pauses first, and a failed request drops the pending target", async () => {
+  /** @type {Array<Record<string, any>>} */
+  const commands = [];
+  /** @type {Array<{resolve: (value: unknown) => void, reject: (error: unknown) => void}>} */
+  const answers = [];
+  /** @type {unknown[]} */
+  const errors = [];
+  const controller = new ReplayPlaybackController({
+    request: async (command) => {
+      commands.push(command);
+      return new Promise((resolve, reject) => {
+        answers.push({ resolve, reject });
+      });
+    },
+    waitForPresentation: () => Promise.resolve(),
+    onError: (error) => errors.push(error),
+  });
+  installConnected(controller, cursor(0, 30));
+  assert.equal(controller.play(), true);
+  assert.deepEqual(commands, [replayNavigationCommand("next")]);
+  const step = controller.next();
+  assert.equal(controller.snapshot().playing, false, "the press paused play first");
+  assert.equal(controller.snapshot().targetFrameIndex, 1);
+  answers.shift()?.resolve({
+    frame: { cursor: cursor(1, 30, { cursor: 1, choreography: 1 }) },
+  });
+  assert.equal(await step, true, "the fetched frame was already the target");
+  assert.equal(commands.length, 1);
+  assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.SETTLED);
+
+  const jump = controller.jump(10);
+  const queued = controller.jump(10);
+  assert.equal(controller.snapshot().targetFrameIndex, 21);
+  answers.shift()?.reject(new Error("network down"));
+  assert.equal(await jump, false);
+  assert.equal(await queued, false, "a failed request drops the pending target");
+  assert.equal(controller.snapshot().targetFrameIndex, null);
+  assert.equal(errors.length, 1);
+  assert.equal(commands.length, 2);
 });
 
 test("same-frame and out-of-range destinations each send one clamped absolute seek", async () => {
@@ -959,6 +1209,7 @@ test("Play at frame zero advances privately, animates the successor, then settle
     generation: 2,
     renderPolicy: "replay_animated",
     restartAnimated: false,
+    stepGlide: null,
   });
   presentation.resolve();
   await flushMicrotasks();
@@ -1069,13 +1320,17 @@ test("Pause during a play-owned request settles the arriving successor without c
   assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.ADVANCING);
   assert.equal(controller.snapshot().playing, false);
   assert.equal(controller.snapshot().presentationIntent?.renderPolicy, "replay_static");
-  assert.equal(await controller.next(), false);
+  // A +1 press while the play-owned request is in flight waits as the pending
+  // target (frame 1); the arriving successor already reaches it.
+  const step = controller.next();
+  assert.equal(controller.snapshot().targetFrameIndex, 1);
   assert.deepEqual(requests, [replayNavigationCommand("next")]);
 
   response.resolve({
     frame: { cursor: cursor(1, 3, { cursor: 1, choreography: 1 }) },
   });
   await flushMicrotasks();
+  assert.equal(await step, true);
   assert.equal(controller.snapshot().transportState, REPLAY_TRANSPORT_STATES.SETTLED);
   assert.equal(controller.snapshot().cursor?.frame_index, 1);
   assert.equal(controller.snapshot().playing, false);
@@ -1188,4 +1443,54 @@ test("resuming after a view change advances without replaying the current effect
   successorPresentation.resolve();
   await flushMicrotasks();
   assert.equal(requests.length, 1);
+});
+
+test("a Tab on the field while the page is busy is held, never the browser's walk", () => {
+  const originalElement = Object.getOwnPropertyDescriptor(globalThis, "Element");
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: FakeElement,
+  });
+  const elements = /** @type {any} */ (controlElements());
+  const field = new FakeElement();
+  const wall = new FakeElement();
+  const outside = new FakeElement();
+  elements.fieldRoot = {
+    contains: (/** @type {unknown} */ node) => node === field || node === wall,
+  };
+  const controller = new ReplayPlaybackController({
+    onStateChange: () => {},
+    request: async () => ({ frame: { cursor: cursor(0) } }),
+  });
+  installConnected(controller, cursor(0));
+  /** @type {string[]} */
+  const steps = [];
+  const off = registerLocalCommandHandler(
+    "replay_next_agent",
+    (/** @type {any} */ call) => {
+      steps.push(call.key);
+      return false;
+    },
+  );
+  const unbind = bindReplayTimelineControls(elements, controller);
+  /** @param {any} target @param {boolean} [shiftKey] */
+  const tab = (target, shiftKey = false) =>
+    elements.keyboardTarget.dispatch("keydown", { key: "Tab", shiftKey, target });
+  try {
+    // Free: Tab reaches the handler; it declines, so the browser's Tab stays.
+    assert.equal(tab(wall).defaultPrevented, false);
+    assert.deepEqual(steps, ["Tab"]);
+    elements.keyboardEnabled = () => false;
+    for (const target of [field, wall]) {
+      assert.equal(tab(target).defaultPrevented, true, "held while busy");
+      assert.equal(tab(target, true).defaultPrevented, true, "Shift+Tab too");
+    }
+    assert.deepEqual(steps, ["Tab"], "nothing is sent while busy");
+    assert.equal(tab(outside).defaultPrevented, false, "outside the field");
+  } finally {
+    unbind();
+    off();
+    if (originalElement) Object.defineProperty(globalThis, "Element", originalElement);
+    else Reflect.deleteProperty(globalThis, "Element");
+  }
 });

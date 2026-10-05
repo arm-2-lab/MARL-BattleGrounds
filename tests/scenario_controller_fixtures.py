@@ -1,16 +1,101 @@
-"""Build isolated scenario snapshots for controller tests.
+"""Load fixed historical controller inputs without the private authoring tools.
 
-These helpers use test-owned state and do not open or change the user's
-DevClient authoring store.
+The JSON inputs retain the exact old config, state and source digests. Core builds
+matching observations and masks. Original draft JSON remains unchanged for source
+metadata checks and private authoring tests. No current scenario replaces an old
+fixture, and no expected actions or trajectories are generated here.
 """
 
+import hashlib
+import json
+from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
+from typing import Any, cast
 
-from scripts.dev.visual_debugger.authoring_compiler import (
-    CompiledDevScenarioV1,
-    compile_dev_scenario,
+import jax.numpy as jnp
+from jax import Array
+
+from marl_battlegrounds.core.env import initialize_scenario_state
+from marl_battlegrounds.core.types import (
+    ActionMask,
+    EnvConfig,
+    EnvState,
+    Info,
+    Observation,
+    ResolvedAgentProfile,
 )
-from scripts.dev.visual_debugger.authoring_models import DevScenarioDraftV1
+from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
+from marl_battlegrounds.tasks import (
+    _initial_state_digest,  # pyright: ignore[reportPrivateUsage]
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerScenario:
+    config: EnvConfig
+    initial_state: EnvState
+    observation: Observation
+    action_mask: ActionMask
+    info: Info
+    semantic_digest: str | None = None
+    map_semantic_digest: str | None = None
+    resolved_configuration_digest: str | None = None
+    resolved_initial_state_digest: str | None = None
+
+
+def _array(value: dict[str, Any]) -> Array:
+    return jnp.asarray(value["values"], dtype=value["dtype"]).reshape(value["shape"])
+
+
+@cache
+def load_controller_input(name: str) -> ControllerScenario:
+    path = Path(__file__).parent / "fixtures" / "controller_inputs" / f"{name}.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    source = payload["source"]
+    if "path" in source:
+        original = Path(__file__).parents[1] / source["path"]
+        if hashlib.sha256(original.read_bytes()).hexdigest() != source["sha256"]:
+            raise ValueError("Historical source JSON does not match its saved input")
+    config_values: dict[str, Any] = {
+        name: _array(cast(dict[str, Any], value)) if isinstance(value, dict) else value
+        for name, value in payload["config"].items()
+        if name != "agent_profile"
+    }
+    config_values["agent_profile"] = ResolvedAgentProfile(
+        **{
+            name: _array(value)
+            for name, value in payload["config"]["agent_profile"].items()
+        }
+    )
+    config = EnvConfig(**config_values)
+    authored = EnvState(
+        **{name: _array(value) for name, value in payload["initial_state"].items()}
+    )
+    state, observation, mask, info = initialize_scenario_state(authored, config)
+    if (
+        build_resolved_env_config_v2(config).canonical_digest_sha256
+        != payload["resolved_configuration_digest"]
+        or _initial_state_digest(state) != payload["resolved_initial_state_digest"]
+    ):
+        raise ValueError("Historical controller input does not match its saved digests")
+    return ControllerScenario(
+        config,
+        state,
+        observation,
+        mask,
+        info,
+        **{
+            name: payload[name]
+            for name in (
+                "semantic_digest",
+                "map_semantic_digest",
+                "resolved_configuration_digest",
+                "resolved_initial_state_digest",
+            )
+        },
+    )
+
 
 SCENARIO_1_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "scenario_1_r34.json"
 SCENARIO_1_SEMANTIC_DIGEST = (
@@ -24,14 +109,8 @@ SCENARIO_1_STATE_DIGEST = (
 )
 
 
-def load_scenario_1_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_1_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_1() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_1_draft())
+def load_scenario_1() -> ControllerScenario:
+    return load_controller_input("scenario_1")
 
 
 SCENARIO_3_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "scenario_3_r9.json"
@@ -40,14 +119,8 @@ SCENARIO_3_SEMANTIC_DIGEST = (
 )
 
 
-def load_scenario_3_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_3_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_3() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_3_draft())
+def load_scenario_3() -> ControllerScenario:
+    return load_controller_input("scenario_3")
 
 
 SCENARIO_5_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "scenario_5_r9.json"
@@ -56,14 +129,8 @@ SCENARIO_5_SEMANTIC_DIGEST = (
 )
 
 
-def load_scenario_5_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_5_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_5() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_5_draft())
+def load_scenario_5() -> ControllerScenario:
+    return load_controller_input("scenario_5")
 
 
 # Scenario 6 r10 supplied the geometry and state. Its author-approved correction
@@ -76,14 +143,8 @@ SCENARIO_6_SEMANTIC_DIGEST = (
 )
 
 
-def load_scenario_6_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_6_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_6() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_6_draft())
+def load_scenario_6() -> ControllerScenario:
+    return load_controller_input("scenario_6")
 
 
 SCENARIO_7_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "scenario_7_r25.json"
@@ -92,14 +153,8 @@ SCENARIO_7_SEMANTIC_DIGEST = (
 )
 
 
-def load_scenario_7_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_7_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_7() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_7_draft())
+def load_scenario_7() -> ControllerScenario:
+    return load_controller_input("scenario_7")
 
 
 SCENARIO_8_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "scenario_8_r14.json"
@@ -108,11 +163,5 @@ SCENARIO_8_SEMANTIC_DIGEST = (
 )
 
 
-def load_scenario_8_draft() -> DevScenarioDraftV1:
-    return DevScenarioDraftV1.model_validate_json(
-        SCENARIO_8_FIXTURE_PATH.read_text(encoding="utf-8"),
-    )
-
-
-def load_scenario_8() -> CompiledDevScenarioV1:
-    return compile_dev_scenario(load_scenario_8_draft())
+def load_scenario_8() -> ControllerScenario:
+    return load_controller_input("scenario_8")

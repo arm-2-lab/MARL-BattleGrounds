@@ -60,7 +60,7 @@ export async function removeRecordingArtifacts(outputDirectory) {
   await rm(resolvedDirectory, { force: true, recursive: true });
 }
 
-/** @param {{stem?: string}} options
+/** @param {{stem?: string, extraArgs?: string[]}} options
  * @returns {Promise<{
  *   process: import("node:child_process").ChildProcess,
  *   url: string,
@@ -68,7 +68,10 @@ export async function removeRecordingArtifacts(outputDirectory) {
  *   replayPath: string,
  *   metricReportPath: string,
  * }>} */
-export async function startRecordingDebugger({ stem = "episode" } = {}) {
+export async function startRecordingDebugger({
+  stem = "episode",
+  extraArgs = [],
+} = {}) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(stem)) {
     throw new TypeError("Recording E2E stems must be safe filename components.");
   }
@@ -82,12 +85,13 @@ export async function startRecordingDebugger({ stem = "episode" } = {}) {
       "run",
       "python",
       "-u",
-      "scripts/dev/debug_renderer.py",
+      "tests/battle_client_browser_harness.py",
       "--no-open",
       "--port",
       "0",
       "--record-replay",
       replayPath,
+      ...extraArgs,
     ],
     {
       cwd: REPOSITORY_ROOT,
@@ -120,7 +124,7 @@ export async function startRecordingDebugger({ stem = "episode" } = {}) {
       child.stdout?.on("data", (chunk) => {
         stdout += String(chunk);
         const match = stdout.match(
-          /MARL-BattleGrounds DevClient: (http:\/\/127\.0\.0\.1:\d+\/#token=[A-Za-z0-9_-]+)/,
+          /MARL-BattleGrounds BattleClient: (http:\/\/127\.0\.0\.1:\d+\/#token=[A-Za-z0-9_-]+)/,
         );
         if (match) {
           finish(() => {

@@ -5,8 +5,14 @@ and scripted command sequences. ``get_scenario`` selects a definition;
 ``list_scenarios`` and ``cycle_scenario_name`` support launcher navigation.
 Factories reset through Core with a fixed key, then install authored positions
 or lifecycle state for demonstration. These are debugger scenes, not the
-packaged TDM benchmark tasks. Calling a factory creates JAX arrays but writes
-no files or replay records.
+packaged TDM benchmark tasks, with one exception outside the registry: the
+Vision Moment (``build_vision_moment`` and ``vision_moment_scenario``), a real
+map 47 state equal to the BattleClient vision page's frozen frame (its scene
+declares packaged map 47 with exchanged spawn banks, so the client names the
+map), with eleven other starts built from it (``VISION_MOMENT_STARTS``: four
+near-end starts and seven that make one Visual Filters event happen), which
+the private parity tools launch directly. Calling a factory creates JAX arrays but
+writes no files or replay records.
 """
 
 from collections.abc import Callable
@@ -15,6 +21,12 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+from marl_battlegrounds._battle_client.model import (
+    ActorCommand,
+    DebuggerScenario,
+    ScenarioFrame,
+)
+from marl_battlegrounds.core.combat import OUT_OF_COMBAT_DELAY_STEPS_BY_CLASS
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
     resolve_agent_profile,
@@ -48,14 +60,16 @@ from marl_battlegrounds.core.types import (
     ROGUE_CLASS_ID,
     SLOW_CHANNEL_WARRIOR_CHARGE,
     STUN_CHANNEL_HUNTER_TRAP,
+    STUN_CHANNEL_WARRIOR_CHARGE,
     WARRIOR_CLASS_ID,
     EnvConfig,
     EnvState,
 )
-from scripts.dev.visual_debugger.model import (
-    ActorCommand,
-    DebuggerScenario,
-    ScenarioFrame,
+from marl_battlegrounds.tasks import (
+    _swap_spawn_banks,  # pyright: ignore[reportPrivateUsage]
+    canonical_tournament_rosters,
+    list_tdm_maps,
+    make_standard_team_deathmatch_config,
 )
 from scripts.dev.visual_debugger.scenario_catalog import SCENARIO_CATALOG_BY_NAME
 from scripts.dev.visual_debugger.scenario_catalog import (
@@ -1492,3 +1506,445 @@ def cycle_scenario_name(
         msg = f"unknown current scenario {current_name!r}."
         raise ValueError(msg) from exc
     return names[(current_index + direction) % len(names)]
+
+
+# The Vision Moment: the frozen frame of the approved BattleClient vision page
+# (map 47 Teutoburg Forest, tick 91 of a recorded game whose spawn ends were
+# exchanged, so Team A starts on the right). Values are slot-ordered, Team A
+# slots 0-4 then Team B slots 5-9, each team Mage, Warrior, Hunter, Rogue,
+# Priest. Positions are world units; durations and cooldowns are ticks.
+VISION_MOMENT_MAP_ID = 47
+VISION_MOMENT_TICK = 91
+VISION_MOMENT_POSITIONS = (
+    (11.608, 8.807),
+    (15.853, 4.733),
+    (12.835, 7.227),
+    (19.5, 9.0),
+    (10.552, 8.334),
+    (11.042, 6.471),
+    (8.431, 8.776),
+    (9.298, 6.733),
+    (9.0, 7.702),
+    (8.12, 6.798),
+)
+VISION_MOMENT_HEALTH = (
+    80.0,
+    200.0,
+    100.0,
+    100.0,
+    100.0,
+    77.0,
+    200.0,
+    89.8,
+    100.0,
+    70.0,
+)
+VISION_MOMENT_ULTIMATE_COOLDOWNS = (16, 0, 1, 20, 19, 30, 0, 0, 0, 0)
+VISION_MOMENT_SPAWN_SHIELDS = (0, 0, 0, 2, 0, 0, 0, 0, 0, 0)
+VISION_MOMENT_BURST = (0, 0, 0, 0, 0, 5, 0, 0, 0, 0)
+VISION_MOMENT_FREEDOM = (1, 0, 0, 0, 0, 1, 0, 0, 0, 0)
+VISION_MOMENT_OUT_OF_COMBAT = (0, 0, 0, 0, 0, 5, 0, 1, 0, 5)
+VISION_MOMENT_SCORES = (2, 4)
+# Respawn-wave clocks: (2, 2), one less than the recorded frame's (3, 3). Core
+# brings the fallen back in the transition that starts when a clock reads 0
+# (core/env.py, _build_was_respawned_this_transition_by_agent_array), so a
+# clock of c means "back in c + 1 ticks". The vision page writes "Respawn Wave
+# In 3 Ticks"; the owner's 2 Oct decision sets the clocks so that text is true.
+VISION_MOMENT_RESPAWN_WAVES = (2, 2)
+# The Vision Moment and its other starts, each a small change away from it so
+# the parity tools reach a rare state in one turn instead of a long game:
+# "vision" is the vision page's frame; "fall" leaves the Team B Mage (slot 5)
+# 1 life and the Team B Priest's Ultimate cooling down, so the staged Charge
+# on the Mage makes it fall in the next turn (with the Ultimate ready, the
+# tdm-beta Priest saves it: seen 1 Oct 2026); "own_return" has the Team A
+# Warrior (slot 1, the Manual champion) fallen with Team A's respawn wave
+# due, so it returns in the next turn; "last_tick" is tick 299 of 300, so the
+# next turn ends the game; "trap_break" holds the Team B Mage in a Hunter's
+# Freezing Trap (3 ticks), so the staged Charge's blow breaks the trap in the
+# next turn (Core breaks a Freezing Trap on accepted raw damage; the Mage's
+# 77 life survives the blow). The last four make one event of a Visual
+# Filters switch happen in the next turn, whatever the policies do:
+# "home_fall" (a fall inside the victim's own Red Zone), "step_aside" (your
+# Warrior stands on a fallen ally), "into_sight" (an opponent comes into your
+# team's sight) and "rest" (a champion regains life out of combat). Three more
+# freeze every other champion with a 1-tick stun (Core's longest Charge stun),
+# so only the champions they name can act: "barrier" (another champion's
+# Guardian's Barrier keeps the Team B Mage alive through the staged Charge:
+# Barrier Held, Aura Glints and Last Breath), "saved" (the tdm-beta Priest's
+# Holy Word: Salvation keeps the Mage alive through it: Saved Beat) and
+# "streak" (five turns in which your Warrior fells the five Team B champions,
+# one a turn, its 5th takedown without falling: Champion Streaks).
+VISION_MOMENT_STARTS = (
+    "vision",
+    "fall",
+    "own_return",
+    "last_tick",
+    "trap_break",
+    "home_fall",
+    "step_aside",
+    "into_sight",
+    "rest",
+    "barrier",
+    "saved",
+    "streak",
+)
+# "home_fall": the Team B Mage (slot 5, 1 life) inside Team B's Red Zone
+# (x 0 to 5 after the exchanged banks) and the Team A Warrior (slot 1) 3.16
+# units east of it, so the staged Charge (reach 5.75) has the Mage as its one
+# legal target and the fall is worth 2 points. "step_aside": the fallen Team A
+# Hunter's body (slot 2) 0.45 units from the Warrior, closer than the 0.6-unit
+# Fallen Step Aside distance (looks/champions.js STEP_ASIDE_DISTANCE).
+VISION_MOMENT_HOME_FALL_POSITIONS = ((2.0, 4.0), (5.0, 3.0))
+VISION_MOMENT_STEP_ASIDE_BODY = (15.628, 5.123)
+# "barrier": the Team B Mage's life. The staged Charge deals 20; the Team B
+# Warrior's Guardian's Barrier (x0.85) cuts it to 17, so the Mage keeps 1
+# life, and without the barrier the 20 would fell it.
+VISION_MOMENT_BARRIER_MAGE_LIFE = 18.0
+# "streak": the Team B champions in the order your Warrior fells them (Priest,
+# Rogue, Warrior, Hunter, Mage: the healer first, the Rogue before its shorter
+# out-of-combat delay ends) and their places, each 1.1 units from the Warrior
+# (inside its 1.5-unit Basic reach, at least 1.0 unit from every other body,
+# clear of map 47's stones).
+VISION_MOMENT_STREAK_ORDER = (9, 8, 6, 7, 5)
+VISION_MOMENT_STREAK_POSITIONS = (
+    (16.229, 5.767),
+    (15.161, 5.588),
+    (14.764, 4.580),
+    (15.406, 3.728),
+    (16.484, 3.832),
+)
+
+
+def _stun_all_but(state: EnvState, free: tuple[int, ...]) -> EnvState:
+    """Return the state with every other living champion stunned for 1 tick.
+
+    Parameters
+    ----------
+    state : EnvState
+        A Vision Moment state (not changed; JAX arrays are immutable).
+    free : tuple of int
+        Global slots (0 to 9) that stay free to act.
+
+    Returns
+    -------
+    EnvState
+        The same state, except each living slot not in ``free`` and with no
+        spawn shield gets a Warrior Charge stun of 1 tick
+        (``stun_durations[slot, STUN_CHANNEL_WARRIOR_CHARGE]``, Core's
+        largest allowed value for that channel), so its only legal action in
+        the next tick is to stay with no target, whatever its policy chooses.
+        Spawn-shielded slots are left alone: Core refuses a shield and a stun
+        on one slot, and a shielded champion cannot strike or be struck.
+    """
+    stuns = state.stun_durations
+    for slot in range(MAX_AGENT_SLOTS):
+        if (
+            slot not in free
+            and bool(state.alive_mask[slot])
+            and int(state.spawn_shield_durations[slot]) == 0
+        ):
+            stuns = stuns.at[slot, STUN_CHANNEL_WARRIOR_CHARGE].set(1)
+    return state._replace(stun_durations=stuns)
+
+
+def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
+    """Build the real map 47 game state that the BattleClient vision page shows.
+
+    The vision page (the owner-approved BattleClient design) freezes one moment
+    of a recorded game on map 47, Teutoburg Forest: tick 91 of 300, Team A 2
+    and Team B 4 of 20 points. This factory makes that moment a real, playable
+    simulator state, so the live BattleClient can open on the same screen and
+    Lock In advances it to tick 92 with real controllers.
+
+    Parameters
+    ----------
+    start : str, default "vision"
+        Which start of ``VISION_MOMENT_STARTS``: ``"vision"`` is the vision
+        page's frame. Each other start changes one thing so a rare state comes
+        in the next turn: ``"fall"`` sets the Team B Mage's life to 1 (it falls
+        in the next turn when any blow lands, such as the staged Charge) and
+        puts the Team B Priest's Ultimate on a 30-tick cooldown (when ready,
+        the tdm-beta Priest's Ultimate saves the Mage);
+        ``"own_return"`` makes the Team A Warrior (the Manual champion) fallen
+        (dead, 0 life, its body where it stood) with Team A's respawn clock at
+        0, so the wave brings it back in the next turn; ``"last_tick"`` sets
+        the tick to 299 (the config's ``max_steps`` minus 1), so the next
+        turn reaches the 300-tick limit and ends the game; ``"trap_break"``
+        puts the Team B Mage (slot 5, 77 of 80 life) in a Hunter's Freezing
+        Trap with 3 ticks left (``stun_durations[5, STUN_CHANNEL_HUNTER_TRAP]``),
+        so any blow that lands on it in the next turn, such as the staged
+        Charge, breaks the trap (Core's trap-break rule) while the Mage lives.
+        The last four starts make one event of a Visual Filters switch happen
+        in the next turn, whatever the policies choose: ``"home_fall"`` moves
+        the Team B Mage (1 life) to (2.0, 4.0), inside Team B's Red Zone, and
+        the Team A Warrior to (5.0, 3.0), so the staged Charge on the Mage
+        (its one legal target) fells it at home for 2 points (Red Zone Home
+        Fall), with the Team B Priest's Ultimate cooling down as in
+        ``"fall"``; ``"step_aside"`` makes the Team A Hunter (slot 2) fallen,
+        its body at (15.628, 5.123), 0.45 units from the Warrior, and puts the
+        Warrior's Ultimate on a 5-tick cooldown, so the Warrior has no legal
+        target, stays where it is and stands on the body (Fallen Step Aside);
+        ``"into_sight"`` gives the Team B Mage a 1-tick spawn shield, so Team
+        A cannot see it now (Core hides shielded opponents) and sees it after
+        the next tick (an opponent coming into sight); ``"rest"`` sets the
+        Team A Rogue (slot 3, far from every fight and spawn-shielded) to 60 of
+        100 life, so it regains 4 life out of combat in the next tick (Rest).
+        The last three stun every other living, unshielded champion for 1
+        tick (``_stun_all_but``), so the event cannot depend on what those
+        champions' policies choose: ``"barrier"`` exchanges the places of the
+        Team B Warrior (slot 6) and Hunter (slot 7), so the Warrior stands 1.76
+        units from the Team B Mage, inside its 2.0-unit Guardian's Barrier,
+        and sets the Mage to 18 life (``VISION_MOMENT_BARRIER_MAGE_LIFE``);
+        only your Warrior acts, and its staged Charge (20 damage, cut to 17 by
+        the barrier) leaves the Mage 1 life, which it keeps only because of
+        another champion's barrier (Barrier Held), with the barrier helping
+        an ally of its emitter (Aura Glints) and the Mage losing more than it
+        has left (Last Breath); ``"saved"`` sets the Mage to 1 life and leaves
+        only your Warrior and the Team B Priest (slot 9, its Ultimate ready)
+        free: the staged Charge would fell the Mage, and the tdm-beta Priest
+        answers with Holy Word: Salvation on it, so a heal keeps it alive
+        through a lethal blow (Saved Beat; the choice is tdm-beta's, which is
+        deterministic, and is pinned in the tests); ``"streak"`` is a
+        five-turn start for your Warrior's Champion Streak: Team A's other
+        four champions are fallen (Team A's respawn clock at 4, the largest
+        Core allows, so they are back only in the fifth tick and never act
+        before it), and the five Team B champions stand around your Warrior
+        at ``VISION_MOMENT_STREAK_POSITIONS`` (in ``VISION_MOMENT_STREAK_ORDER``)
+        with 1 life, a 4-tick Freezing Trap each (Core's longest stun), their
+        out-of-combat countdowns at their class's full delay (no Rest before
+        they fall) and Team B's respawn clock at 4; a Basic on each in that
+        order fells one a turn, the fifth whatever the then free Team B Mage
+        does, so your Warrior takes part in its 5th takedown without falling
+        in the fifth tick. Everything else is as for ``"vision"``.
+
+    Returns
+    -------
+    tuple of EnvConfig and EnvState
+        config is the standard map 47 Team Deathmatch config (canonical
+        mirrored rosters, 300 ticks, 20 points, 5.0-unit Red Zones) with the
+        two spawn banks exchanged, so Team A spawns, respawns and has its Red
+        Zone on the right (x 15 to 20), as in the recorded game. state is a
+        Core reset of that config (key 0) with these fields replaced:
+        step_count 91; scores (2, 4); all ten champions alive at
+        VISION_MOMENT_POSITIONS with VISION_MOMENT_HEALTH; Ultimate
+        cooldowns; the Team A Rogue's 2-tick spawn shield (it just respawned);
+        the Team B Mage's 5 ticks of Burst; Blessing of Freedom (1 tick) on
+        both Mages; respawn-wave clocks (2, 2), so the next wave brings the
+        fallen back in 3 ticks, as the vision page says (see Notes); and
+        out-of-combat countdowns. This is the ``"vision"`` start; every other
+        start then changes only what ``start`` above says.
+
+    Notes
+    -----
+    The respawn-wave clocks are the one value set apart from the recording,
+    which reads (3, 3) at tick 91. Core respawns the fallen in the transition
+    that starts when a team's clock reads 0, so a clock of c brings them back
+    in c + 1 ticks. The vision page's "Respawn Wave In 3 Ticks" is therefore
+    true only for clocks of 2; the owner decided on 2 Oct 2026 that the moment
+    must make the vision's text true, so the clocks are (2, 2).
+
+    The event starts exist for the private parity tools: each Visual Filters
+    switch must be judged on a turn where its event really happens. Their
+    events are proven with Core steps in
+    tests/test_battle_client_vision_moment.py (for ``"saved"`` with the
+    tdm-beta Priest's own choice, and for ``"streak"`` over its five turns,
+    the fifth for every action the Team B Mage may take).
+
+    Out-of-combat countdowns come from the recorded combat of ticks 86 to 90
+    (the Team B Mage and Priest 5, the Team B Hunter 1). Slots with no
+    recorded combat there start at 0, which means out of combat; they are at
+    full health, so this only affects later healing rules. Stun, slow and
+    Rogue Poison counters stay at reset's zero, as recorded (only the
+    ``"trap_break"``, ``"barrier"``, ``"saved"`` and ``"streak"`` starts set
+    stun counters, as said above). Accepted-action
+    history stays at reset's neutral values (no previous transition), and
+    each policy starts with fresh memory. This is a debugger start, not a
+    continuation of the recorded game. This config alone has no map identity:
+    a match built from it without a declaration records a custom map. The
+    scene from ``vision_moment_scenario`` declares it as packaged map 47 with
+    exchanged spawn banks, so the live client checks it against the catalog
+    with the banks put back and names it Teutoburg Forest. Calling this
+    creates JAX arrays and runs one Core reset; it writes no files.
+
+    Raises
+    ------
+    ValueError
+        The packaged map 47 content or its Core configuration is invalid, or
+        ``start`` is not one of ``VISION_MOMENT_STARTS``.
+    """
+    if start not in VISION_MOMENT_STARTS:
+        msg = (
+            f"unknown Vision Moment start {start!r}; choose one of "
+            f"{', '.join(VISION_MOMENT_STARTS)}."
+        )
+        raise ValueError(msg)
+    team_a_roster, team_b_roster = canonical_tournament_rosters()
+    config = _swap_spawn_banks(
+        make_standard_team_deathmatch_config(
+            map_id=VISION_MOMENT_MAP_ID,
+            team_a_roster=team_a_roster,
+            team_b_roster=team_b_roster,
+        )
+    )
+    reset_state, _, _, _ = reset(config, jax.random.key(0))
+    burst = jnp.asarray(VISION_MOMENT_BURST, dtype=jnp.int32)
+    alive: list[bool] = [True] * MAX_AGENT_SLOTS
+    health: list[float] = list(VISION_MOMENT_HEALTH)
+    waves: list[int] = list(VISION_MOMENT_RESPAWN_WAVES)
+    tick = VISION_MOMENT_TICK
+    cooldowns: list[int] = list(VISION_MOMENT_ULTIMATE_COOLDOWNS)
+    if start == "fall":
+        health[5] = 1.0
+        cooldowns[9] = 30
+    elif start == "own_return":
+        # Every per-champion counter of the Warrior is already 0 in the vision
+        # frame, as Core requires of a dead row; only life and the clock change.
+        alive[1] = False
+        health[1] = 0.0
+        waves[0] = 0
+    elif start == "last_tick":
+        tick = int(config.max_steps) - 1
+    elif start == "home_fall":
+        health[5] = 1.0
+        cooldowns[9] = 30
+    elif start == "step_aside":
+        # A dead row keeps every per-champion counter at 0 (Core), so the
+        # Hunter's 1-tick Ultimate cooldown goes to 0.
+        alive[2] = False
+        health[2] = 0.0
+        cooldowns[2] = 0
+        cooldowns[1] = 5
+    elif start == "rest":
+        health[3] = 60.0
+    elif start == "barrier":
+        health[5] = VISION_MOMENT_BARRIER_MAGE_LIFE
+    elif start == "saved":
+        health[5] = 1.0
+    freedom: list[int] = list(VISION_MOMENT_FREEDOM)
+    out_of_combat: list[int] = list(VISION_MOMENT_OUT_OF_COMBAT)
+    positions: list[list[float]] = [list(point) for point in VISION_MOMENT_POSITIONS]
+    shields: list[int] = list(VISION_MOMENT_SPAWN_SHIELDS)
+    if start == "streak":
+        # A dead row keeps every per-champion counter at 0 (Core).
+        delays = jnp.asarray(OUT_OF_COMBAT_DELAY_STEPS_BY_CLASS)[
+            config.agent_profile.class_ids
+        ]
+        for slot in (0, 2, 3, 4):
+            alive[slot] = False
+            health[slot] = 0.0
+            cooldowns[slot] = 0
+            freedom[slot] = 0
+            shields[slot] = 0
+            out_of_combat[slot] = 0
+        for slot, point in zip(
+            VISION_MOMENT_STREAK_ORDER, VISION_MOMENT_STREAK_POSITIONS, strict=True
+        ):
+            positions[slot] = list(point)
+            health[slot] = 1.0
+            out_of_combat[slot] = int(delays[slot])
+        waves = [
+            int(period) - 1 for period in config.team_respawn_wave_period_step_count
+        ]
+    if start == "home_fall":
+        positions[5], positions[1] = (
+            list(p) for p in VISION_MOMENT_HOME_FALL_POSITIONS
+        )
+    elif start == "step_aside":
+        positions[2] = list(VISION_MOMENT_STEP_ASIDE_BODY)
+    elif start == "into_sight":
+        shields[5] = 1
+    elif start == "barrier":
+        positions[6], positions[7] = positions[7], positions[6]
+    state = reset_state._replace(
+        team_deathmatch_scores=jnp.asarray(VISION_MOMENT_SCORES, dtype=jnp.int32),
+        step_count=jnp.asarray(tick, dtype=jnp.int32),
+        agent_positions=jnp.asarray(positions, dtype=jnp.float32),
+        alive_mask=jnp.asarray(alive, dtype=jnp.bool_),
+        current_health=jnp.asarray(health, dtype=jnp.float32),
+        ultimate_cooldowns=jnp.asarray(cooldowns, dtype=jnp.int32),
+        mage_burst_damage_amplification_durations=burst,
+        priest_blessing_of_freedom_slow_floor_durations=jnp.asarray(
+            freedom, dtype=jnp.int32
+        ),
+        team_respawn_wave_countdowns=jnp.asarray(waves, dtype=jnp.int32),
+        spawn_shield_durations=jnp.asarray(shields, dtype=jnp.int32),
+        steps_until_out_of_combat=jnp.asarray(out_of_combat, dtype=jnp.int32),
+    )
+    if start == "trap_break":
+        state = state._replace(
+            stun_durations=state.stun_durations.at[5, STUN_CHANNEL_HUNTER_TRAP].set(3)
+        )
+    elif start == "barrier":
+        state = _stun_all_but(state, (1,))
+    elif start == "saved":
+        state = _stun_all_but(state, (1, 9))
+    elif start == "streak":
+        state = state._replace(
+            stun_durations=state.stun_durations.at[
+                jnp.asarray(VISION_MOMENT_STREAK_ORDER), STUN_CHANNEL_HUNTER_TRAP
+            ].set(4)
+        )
+    return config, state
+
+
+def vision_moment_scenario(start: str = "vision") -> DebuggerScenario:
+    """Return the Vision Moment (or one of its other starts) as a live scenario.
+
+    Parameters
+    ----------
+    start : str, default "vision"
+        One of ``VISION_MOMENT_STARTS``; see ``build_vision_moment``.
+
+    Returns
+    -------
+    DebuggerScenario
+        Named "vision_moment" (or "vision_moment_<start>" for another start),
+        titled "Teutoburg Forest", interactive, with build_vision_moment for
+        that start as its factory, no scripted frames and the Team A Warrior
+        (slot 1, the vision's Manual champion) focused at launch. It
+        declares packaged map 47 (the catalog entry, ``packaged_map``) with
+        its spawn banks exchanged (``spawn_banks_exchanged`` True), so the
+        live client checks the config against the catalog with the banks put
+        back and names the map "Teutoburg Forest" (Map 47) in the top bar
+        and the match record, which also records the exchange; if that check
+        failed, the client would record a custom map. It carries no scenario
+        specification or provenance. The factory is not called here.
+
+    Raises
+    ------
+    ValueError
+        ``start`` is not one of ``VISION_MOMENT_STARTS``.
+
+    Notes
+    -----
+    This scene is not in SCENARIOS, so the DevClient's scenario list and
+    cycling do not offer it; the private BattleClient parity tools pass it to
+    the live launch directly.
+    """
+    if start not in VISION_MOMENT_STARTS:
+        msg = (
+            f"unknown Vision Moment start {start!r}; choose one of "
+            f"{', '.join(VISION_MOMENT_STARTS)}."
+        )
+        raise ValueError(msg)
+    description = (
+        "Map 47 at tick 91 of 300, the BattleClient vision page's frozen frame."
+    )
+    if start != "vision":
+        description += f" Start {start!r} (see build_vision_moment)."
+
+    def build() -> tuple[EnvConfig, EnvState]:
+        """Build this start of the Vision Moment (see build_vision_moment)."""
+        return build_vision_moment(start)
+
+    return DebuggerScenario(
+        name="vision_moment" if start == "vision" else f"vision_moment_{start}",
+        title="Teutoburg Forest",
+        description=description,
+        mode="interactive",
+        build_scenario=build_vision_moment if start == "vision" else build,
+        frames=(),
+        default_controlled_slot=1,
+        packaged_map=list_tdm_maps()[VISION_MOMENT_MAP_ID],
+        spawn_banks_exchanged=True,
+    )

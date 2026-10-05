@@ -1,0 +1,89 @@
+/*
+ * Styles for the Palette choice (src/palette.js). styles.css imports this file
+ * last, so its rules win ties. Under :root[data-palette="high-contrast"] the
+ * colour tokens of styles.css (and the stone tokens of obstacles.css) take the
+ * High Contrast values from the store's Full Moon Contrast part: a flat night
+ * floor, lifted stones (3:1 against the floor), brighter team rings, near-white
+ * life and crisper chrome text. It also flattens the Map Skins floor parts
+ * (below). Moonlit (no attribute) keeps every token and rule as is.
+ *
+ * It never sets --export-backdrop or --export-backdrop-grid, and never paints
+ * the .battlefield-shell background, so Export PNG accepts the page's backdrop
+ * (tests/palette-parity.test.js checks this). Its --battlefield does paint the
+ * arena's surround, so a High Contrast PNG shows #0f1522 there, not #111827.
+ */
+
+:root[data-palette="high-contrast"] {
+  /* Arena floor and chrome. */
+  --battlefield: #0f1522;
+  --text: #f0f3f8;
+  --text-muted: #b3bdd0;
+  --ui-text: #f0f3f8;
+  --ui-muted: #b3bdd0;
+  --moon-silver: #e0e7f3;
+  --panel: #0c121e;
+  --panel-edge: #3a4a66;
+  --border: #3a4a66;
+  --ink: #0a0d14;
+  --ash: #8c95a8;
+  --ward-silver: #7d89a3;
+  --smoke: #4a5160;
+  /* Teams. */
+  --team-a: #5ca0ff;
+  --team-a-field: #0b1b38;
+  --team-a-light: #bcd7ff;
+  --team-b: #ff5c5c;
+  --team-b-field: #360a12;
+  --team-b-light: #ffc4bf;
+  /* Life. */
+  --life-ivory: #f7f2ea;
+  --groove: #0a0d14;
+  --cinder: #c0501a;
+  --moon-dew: #a9c4f2;
+  /* Classes and their shades. */
+  --class-mage: #d2bcfa;
+  --class-warrior: #eb9019;
+  --bronze-shade: #b8702a;
+  --class-hunter: #b4e6c1;
+  --class-rogue: #3db892;
+  --venom-deep: #1e7a5e;
+  --class-priest: #f5d565;
+  --amber-deep: #d9a93a;
+  --rime: #d6f6ff;
+  --frostglass: #8fdcf2;
+  --ice-crack: #7fb8e8;
+  --blade-silver: #dce4ec;
+  /* Stones (obstacles.css tokens): lifted fills, dark edges. */
+  --stone-pillar: #5c6983;
+  --stone-cap: #6e7b95;
+  --stone-wall: #56637c;
+  --stone-wall-top: #6a7791;
+  --stone-edge: #0a0d14;
+  --stone-shadow: #0a0d14;
+}
+
+/* The Map Skins look paints its floor parts with each kit's own colours as
+   SVG attributes, which CSS overrides. In High Contrast the floor is one flat
+   night: the moonlight pool, vignette and north shade take the floor colour,
+   the edge is Ward Silver and the seam a clear slate. These class names belong
+   to src/looks/map-skins.js; keep them in step with it. */
+:root[data-palette="high-contrast"]
+:is(.map-skin-floor, .map-skin-moonlight, .map-skin-vignette, .map-skin-north-shade) {
+  fill: var(--battlefield);
+}
+
+:root[data-palette="high-contrast"] .map-skin-edge {
+  stroke: var(--ward-silver);
+}
+
+:root[data-palette="high-contrast"] .map-skin-seam {
+  stroke: #34476a;
+}
+
+/* Forced colours: the battlefield keeps its encoded team and class colours,
+   while the chrome follows the system colours. Holds in every palette. */
+@media (forced-colors: active) {
+  .battlefield-shell svg {
+    forced-color-adjust: none;
+  }
+}

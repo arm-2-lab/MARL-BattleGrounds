@@ -1,6 +1,7 @@
 /**
  * @file Check one-time transition animation, resized layouts and changes in which
- * facts a view may show.
+ * facts a view may show. The painter gets the page clock and the playback rate
+ * for its card queue.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -223,6 +224,15 @@ const surfaceSameSizeProtected = /** @type {any} */ ({
 });
 const surfaceB = /** @type {any} */ ({ viewportKey: "16:12:600:450" });
 
+// The painter also gets the page clock for its card queue; it changes every
+// call, so these checks compare everything else.
+/** @param {any} options @returns {any} */
+function withoutClock(options) {
+  assert.equal(typeof options?.clock, "number");
+  const { clock: _clock, ...rest } = options;
+  return rest;
+}
+
 test("same transition renders once and resize reprojects without replay", async () => {
   const { animationFactory, controller, painter } = harness();
   controller.presentFrame({ plan: plan("epoch-1") }, surfaceA);
@@ -374,11 +384,12 @@ test("live paint-only changes settle locally without replay or ledger mutation",
       ["clear", "install", "settle"],
     );
     const install = painter.calls.at(-2);
-    assert.deepEqual(install?.[3], {
+    assert.deepEqual(withoutClock(install?.[3]), {
       motionMode: "normal",
       renderPolicy: "live_once",
       settled: true,
       persistentOnly: true,
+      playbackRate: 1,
     });
     assert.equal(animationFactory.created.length, createdCount);
     assert.equal(recordCount, recordedCount);
@@ -425,11 +436,12 @@ test("replay paint-only changes pause and reinstall the current static summary",
       ["clear", "install", "settle"],
     );
     const install = painter.calls.at(-2);
-    assert.deepEqual(install?.[3], {
+    assert.deepEqual(withoutClock(install?.[3]), {
       motionMode: "normal",
       renderPolicy: "replay_static",
       settled: true,
       persistentOnly: false,
+      playbackRate: 1,
       retainTransientOnSettle: true,
     });
     assert.equal(animationFactory.created.length, createdCount);
@@ -615,11 +627,13 @@ test("explicit replay policies bypass consumption and static uses zero clocks", 
   });
   assert.equal(animated.controller.snapshot().renderPolicy, "replay_animated");
   assert.ok(animated.controller.snapshot().animationCount > 0);
-  assert.deepEqual(animated.painter.calls[0]?.[3], {
+  assert.deepEqual(withoutClock(animated.painter.calls[0]?.[3]), {
     motionMode: "normal",
     renderPolicy: "replay_animated",
     settled: false,
     persistentOnly: false,
+    playbackRate: 1,
+    retainTransientOnSettle: true,
   });
 
   const staticSummary = harness({ ledger: forbiddenReplayLedger });
@@ -636,11 +650,12 @@ test("explicit replay policies bypass consumption and static uses zero clocks", 
     surfaceA,
     { renderPolicy: "replay_static" },
   );
-  assert.deepEqual(staticSummary.painter.calls[0]?.[3], {
+  assert.deepEqual(withoutClock(staticSummary.painter.calls[0]?.[3]), {
     motionMode: "normal",
     renderPolicy: "replay_static",
     settled: true,
     persistentOnly: false,
+    playbackRate: 1,
     retainTransientOnSettle: true,
   });
   assert.equal(staticSummary.animationFactory.created.length, 0);
@@ -1024,20 +1039,27 @@ test("switching an active explanation Off reinstalls the authorized batch until 
 
   controller.setMotionMode("off");
 
-  assert.deepEqual(painter.calls.slice(callCount), [
-    ["clear", "motion_disabled_static_reinstall"],
+  const calls = painter.calls.slice(callCount);
+  assert.deepEqual(
+    calls.map((call, index) =>
+      index === 1 ? [...call.slice(0, 3), withoutClock(call[3])] : call,
+    ),
     [
-      "install",
-      "epoch-mid-off",
-      surfaceA.viewportKey,
-      {
-        motionMode: "off",
-        renderPolicy: "live_once",
-        settled: false,
-        persistentOnly: false,
-      },
+      ["clear", "motion_disabled_static_reinstall"],
+      [
+        "install",
+        "epoch-mid-off",
+        surfaceA.viewportKey,
+        {
+          motionMode: "off",
+          renderPolicy: "live_once",
+          settled: false,
+          persistentOnly: false,
+          playbackRate: 1,
+        },
+      ],
     ],
-  ]);
+  );
   assert.equal(
     oldAnimations.every(({ playState }) => playState === "idle"),
     true,

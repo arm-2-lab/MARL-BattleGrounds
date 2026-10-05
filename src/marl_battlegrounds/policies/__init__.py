@@ -7,3 +7,6 @@ controllers use those inputs; they do not change simulator rules.
 Policy adapters used by evaluation live in evaluation.policy_execution.
 Importing this package alone does not load the numerical controller modules.
 """
+
+BUILTIN_POLICY_NAMES = ("random", "tdm-alpha", "tdm-beta", "tdm-gamma")
+"""Names accepted by policy() and durable training references, in display order."""

@@ -1,0 +1,97 @@
+/*
+ * Styles for the Spawns And Bases look (src/looks/spawns.js): the Moon
+ * Waystones and the Call. styles.css imports this file at its top. Colours come
+ * from the shared tokens: the team ring colours for the rune circles, the team
+ * light colours for the Call, Ward Silver for the pips and Moonward Veil for the
+ * Moonpool and the Moonward Descent. Stroke widths and state opacities are
+ * written by the look as attributes (they follow the screen scale and the
+ * stone's state); no rule here animates anything.
+ */
+.waystone__rune,
+.waystone__keystone {
+  fill: none;
+  stroke-linecap: butt;
+  pointer-events: none;
+}
+
+.waystone--team-a .waystone__rune,
+.waystone--team-a .waystone__keystone,
+.spawn-pad-plain--team-a {
+  stroke: var(--team-a);
+}
+
+.waystone--team-b .waystone__rune,
+.waystone--team-b .waystone__keystone,
+.spawn-pad-plain--team-b {
+  stroke: var(--team-b);
+}
+
+.waystone__pips {
+  pointer-events: none;
+}
+
+.waystone__pip-lit {
+  fill: var(--ward-silver);
+  fill-opacity: 0.9;
+  stroke: none;
+}
+
+.waystone__pip-hollow,
+.waystone__pip-ring {
+  fill: none;
+  stroke: var(--ward-silver);
+  stroke-opacity: 0.3;
+}
+
+.waystone__pip-arc {
+  fill: none;
+  stroke: var(--ward-silver);
+  stroke-opacity: 0.9;
+}
+
+.waystone__hit {
+  fill: var(--ink);
+  fill-opacity: 0;
+  stroke: none;
+}
+
+/* Spawn Waystones off: a plain thin ring on each pad. */
+.spawn-pad-plain {
+  fill: none;
+  stroke-width: 1;
+  stroke-opacity: 0.4;
+  pointer-events: none;
+}
+
+.waystone-call {
+  pointer-events: none;
+}
+
+.waystone-call__blaze {
+  fill: none;
+  stroke: var(--moonward-veil);
+}
+
+.waystone-call--team-a .waystone-call__blaze {
+  stroke: var(--team-a-light);
+}
+
+.waystone-call--team-b .waystone-call__blaze {
+  stroke: var(--team-b-light);
+}
+
+.waystone-call__moonpool {
+  fill: var(--moonward-veil);
+  stroke: none;
+}
+
+.waystone-call__dash,
+.waystone-call__glow {
+  fill: none;
+  stroke: var(--moonward-veil);
+  vector-effect: non-scaling-stroke;
+}
+
+.waystone-call__glow {
+  stroke-opacity: 0.212;
+}

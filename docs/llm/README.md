@@ -1,5 +1,9 @@
 # LLM Systems, Game Views And Actions
 
+Public experiment scripts use [Hydra settings and overrides](../training/hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 An LLM can act through the ordinary `System` interface. Start a compatible
 model server separately, then create a System:
 
@@ -34,8 +38,8 @@ endpoint is required; this is not a client for every provider's native API.
 Try the complete script:
 
 ```bash
-JAX_PLATFORMS=cpu python examples/llm.py --model my-served-model \
-  --format default --history-turns 2 --output-dir runs/llm-example
+JAX_PLATFORMS=cpu python examples/llm.py model=my-served-model format=default \
+  history_turns=2 output_dir=runs/llm-example
 ```
 
 Use `JAX_PLATFORMS=cuda,cpu` for a GPU simulator with CPU host helpers, after
@@ -427,61 +431,51 @@ requests support audits; temperature zero does not guarantee identical fresh
 model replies. The [qualified recipe](qwen_recipe.md) reports the completed fixed model
 comparison and combined GPU workload.
 
-## Play In DevClient
+## Play In BattleClient
 
-From a source checkout, offer a factory when starting DevClient:
+Use the same LLM System in the local browser. Start your model service using the
+[qualified local recipe](qwen_recipe.md), then run:
 
-```bash
-export MARL_LLM_MODEL=my-served-model
-export MARL_LLM_URL=http://127.0.0.1:8000/v1
-export MARL_LLM_HISTORY=2
-JAX_PLATFORMS=cpu python scripts/dev/debug_renderer.py \
-  --offer-system qwen=examples.llm:make_default_system
+```python
+import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import llm
+
+qwen = llm.make_system(
+    "qwen3.5-4b-fp8",
+    "http://127.0.0.1:8000/v1",
+    history_turns=2,
+)
+marl_bgs.battle_client(map_id=0, team_a=qwen, team_b="tdm-alpha")
 ```
 
-Choose **Qwen** for either team and keep **SharedObs** selected. Each Submit
-asks the Systems for one joint turn. The browser stays usable while they work.
-**Cancel System Work** abandons the pending result and keeps the last accepted
-game state. A cancelled decision requires fresh methods before another turn;
-Reset or choose new controllers. Cleanup never stops the model server.
+No service starts automatically. Use a served model name that matches your
+server, and record its pinned `model_revision` for reproducible evidence.
+`make_system` keeps the API defaults: stop on failure and light records.
+The same object can own selected slots beside other policies or Manual control.
+See the [BattleClient guide](../battle_client.md) for those assignments.
+The page opens in Agent POV. Switching to Oracle View changes only what you
+see; the LLM still receives only its own permitted inputs.
 
-Add `--offer-system words=examples.llm:make_custom_system` for the tutorial's
-non-JSON replies. Only factories named by the host are offered. The browser
-cannot supply a Python import, model URL or credential. Factories load only when
-selected and must return fresh method instances for replacement. Both teams can
-select one declaration: it loads once and keeps separate team memories.
+The browser stays responsive while a method works. Cancellation fences its
+answer; arbitrary Python cannot be forcibly interrupted. A failed or cancelled
+opaque method needs a fresh launch before more play. Its existing HTTP deadlines
+still apply. Supplied clients remain yours; the runner closes only resources it
+owns and never stops the model server.
 
-Loading an authored map or scenario prepares fresh methods in the same worker.
-The old game and source snapshot remain current until the new setup succeeds.
-A failed or cancelled replacement leaves the old methods usable. Cancel pending
-work before retrying a different load. Authored map/scenario loading is available
-only without replay recording. While recording, controller changes and Reset use
-the existing discard confirmation; Finish & Review saves the accepted prefix.
-
-Add `--record-replay artifacts/dev_client/replays/qwen.marlbg-replay.json` to
-save the game. The launcher prints the adjacent model-call directory. Its
-`generation-N/session.json` records full System identities and verified saved
-replay prefixes. `llm.read_calls(generation_directory)` reads the separate call
-rows. A row marked `played` means the service accepted that action; it does not
-by itself mean the replay reached disk. An abandoned or interrupted attempt can
-remain in the call files. Save As keeps the original call directory and adds the
-new verified replay path to its saved-prefix list.
-
-A Python factory or custom hook can block indefinitely. Cancellation fences its
-result immediately, but the worker cannot forcibly interrupt arbitrary Python.
-The single pending slot stays occupied until that work returns and cleanup ends.
-HTTP calls still use the client's deadlines. Cleanup and recording failures are
-reported in the host log; the browser keeps paths and server details private.
-
+Capture starts at frame zero by default. Save the completed match, or finish and
+save an unfinished prefix. The live client stays open. Method call records and
+verified saved replay prefixes remain separate: a played model answer is not
+proof that its replay reached disk. Use `llm.read_calls` on the printed call
+evidence directory. Browser paths and credentials are not method configuration.
 
 ## Give Selected Slots To An LLM
 
 The same `team` helper can combine an LLM with other valid methods. For example,
 `marl_bgs.team(llm_system, "random", slots=[[4], [0, 1, 2, 3]])` gives the fifth
-actor to the LLM. Run the complete example with `--llm-slots 4`:
+actor to the LLM. Run the complete example with `'llm_slots=[4]'`:
 
 ```bash
-python examples/llm.py --model MODEL --server-url URL --llm-slots 4 --games 2
+python examples/llm.py model=MODEL server_url=URL 'llm_slots=[4]' games=2
 ```
 
 Only owned, valid, living actors make model requests. All permitted input rows

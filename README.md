@@ -99,6 +99,45 @@ shows researcher-defined stages.
 
 ## Train, Evaluate and Read Results
 
+Hydra and OmegaConf are the standard project launcher workflow. They compose
+settings; the public API still owns the work. From a checkout:
+
+```bash
+pip install -e '.[training,hydra,notebook,viz]'
+python examples/train.py method=ff_ippo recipe=software_check preview=true \
+  output_dir=/scratch/demo/run
+```
+
+This preview starts no learner. Remove `preview=true` to execute the bounded
+software check; its settings are not a paper search or evidence of learning.
+For an installed package use `python -m marl_battlegrounds.experiments.train`.
+See the [Hydra guide](docs/training/hydra.md) for all six methods, YAML overrides,
+sweeps, resources, paths and resume.
+
+After a completed run, resolve its exact actor with the public API:
+
+```python
+from marl_battlegrounds import training
+
+run = training.load_run("/scratch/demo/run")
+print(run.final_actor)  # Final saved actor; this does not claim it is best.
+```
+
+Use that printed path in the matching method's evaluation command:
+
+```bash
+python scripts/paper_experiments/evaluate_feedforward_ippo.py \
+  checkpoint=EXACT_ACTOR_PATH opponent=tdm-alpha evaluation=full \
+  evaluation.output_dir=/scratch/demo/evaluation
+```
+
+The [checkpoint evaluation guide](docs/evaluation/checkpoints.md) also shows how
+to use a selected actor and resume an evaluation. Open the
+[pandas analysis notebook](docs/evaluation/analysis.md) with the printed saved
+result folder for metric topics, behavioral questions, charts and replays.
+Training stays lean; full metrics and replays belong to this later evaluation.
+The Python and custom-loop routes below remain available without Hydra.
+
 Researchers own their models, sampling and learning update. Use JAX `jit`,
 `vmap` and `lax.scan` around the same `reset`/`step` contract. Configuration,
 current legal-action masks and episode counters travel in environment state.
@@ -175,46 +214,35 @@ paired tournaments, ratings and uncertainty.
 The [workflow guide](docs/evaluation/workflows.md) includes runnable evaluation,
 shared-writer validation, replay and tournament commands.
 
-## DevClient
+## BattleClient
 
-Launch the live development tool:
+Play locally in your browser. Python loads your methods and runs the match:
 
-```bash
-./scripts/dev/run_dev_client.sh
+```python
+import marl_battlegrounds as marl_bgs
+
+marl_bgs.battle_client(map_id=0, team_a="manual", team_b="tdm-alpha")
 ```
 
-Its **Combat Debugger** stages simultaneous actions, shows current legality and
-switches between Oracle and authorized Agent POV views. **Maps** and **Scenarios**
-author reusable local assets. Save is explicit: numbered revisions persist under
-ignored `artifacts/dev_client/` storage. Validation uses existing simulator
-rules. Deletion requires confirmation. A saved map opens as a labelled standard
-5v5 preview; loading it does not change the saved map.
+Use one method for a whole team or give each roster slot its own controller.
+Manual, built-in policies, saved native checkpoints and your own Policy/System
+objects use the same launch. Teams can independently contain one to five agents.
+Fixed packaged scenarios accept Team A controllers only; their opponent and
+starting state stay fixed.
 
-Each team may be Manual, Random, Reactive TDM ALPHA, BETA or GAMMA. BETA's
-Rogues prioritize observed living Priests, then Mages, then Hunters and try
-body-avoidance routes; its other classes use ALPHA behavior. GAMMA
-(`tdm-gamma`) is BETA plus three rules for its Warriors, Mages, Hunters and
-Rogues: with no enemy in view they walk toward the middle of the enemy spawn
-pads; they never damage an enemy with 2 or more Hunter Trap ticks left; and
-Hunters start a new Trap only on an untrapped enemy they can reach now,
-choosing Priest, Mage, Rogue, Warrior, Hunter in that order (see
-[A43](docs/design/specification_amendments.md#a43-reactive-tdm-gamma)).
-Reactive controllers require SharedObs; Random supports both observation modes
-and samples exact current masks. These are diagnostic/pressure controllers, not
-official learned baselines. Their limitations and versioned rules remain explicit.
+Plan Manual actions in the Tactics Turn deck and press Lock In Turn, or use
+Run/Pause when every configured slot has a policy. The page opens in Agent POV,
+which shows only what the viewing team sees; Oracle View shows everything. Save a
+replay, open the separate Viewer and restart. Browser views never expand a
+loaded method's information rights. Recording starts at frame zero by default
+and saves under `./recordings/` in your launch directory.
 
-Record one episode to a new replay file:
-
-```bash
-mkdir -p recordings
-./scripts/dev/run_dev_client.sh \
-  --record-replay recordings/episode.marlbg-replay.json
-```
-
-The [DevClient guide](docs/dev/combat_debugger.md) covers arguments, asset IDs,
-controls, exact starts, recording/recovery and troubleshooting. It explains
-which fields belong to researcher inspection and which may reach an actor.
-Existing replay files belong in the separate Viewer.
+The [BattleClient guide](docs/battle_client.md) covers installation, method
+loading, fixed scenarios, controls and replay recovery. The package includes its
+browser files; no checkout, Node, Docker or hosted service is needed.
+Follow [Play Your Saved Methods](docs/battle_client_tutorial.md) for downloadable
+simple, mixed-policy, ten-controller and fixed-scenario examples, including
+checkpoint preparation and the save/view/restart workflow.
 
 ## Replay Viewer
 
@@ -232,15 +260,16 @@ The Viewer validates saved evidence before serving it. A scripted-demo request
 first materializes its replay in a separate preparation step. The read-only
 Viewer then navigates exact frames, plays recorded transitions and provides
 participant/score summaries, configurable effects and provenance-bearing PNG
-exports. It cannot submit simulator actions.
+exports. It cannot submit simulator actions. It opens in Oracle View at 1x speed;
+press ? in the page for its keys.
 
-Open **TDM Evaluation Metrics** for **Up to Current Tick** or **Entire Episode**.
+Open the **Metrics** tab and choose **Up To Tick N** or **Whole Game**.
 **Download Metrics CSV** exports the selected boundary through the same scalar
 metric authority as evaluation. Current replay files need no metric sidecar;
 historical files keep their readers. Metrics are computed on request. A visual
 POV changes the battlefield view, not the researcher-level metric ownership.
 
-See the [Viewer guide](docs/dev/replay_viewer.md) for transport, keyboard controls,
+See the [Viewer guide](docs/dev/replay_viewer.md) for transport, cameras,
 audience limits, exports and recovery. The
 [migration guide](docs/dev/visual_debugger.md) explains the former combined tool.
 Both clients use local HTML, CSS, SVG and JavaScript served by Python. Researchers
@@ -275,6 +304,9 @@ model framework.
 <a id="planned-scenario-evaluations-and-big-12"></a>
 
 ## Scenario Evaluations And The Official Tournament
+
+[Run any valid System on exact scenarios](docs/evaluation/scenarios.md) with the
+public evaluator and Hydra tutorial, including saved results and replay inspection.
 
 The approved TDM suite contains eight scenarios. Seven use five-transition
 horizons; Scenario 3 uses ten transitions to examine sustained body blocking,
@@ -390,13 +422,10 @@ and the [tournament protocol](docs/evaluation/protocol.md#big-n-tournament-and-b
 
 ## Static Snapshots
 
-The optional `viz` dependency is activated automatically by either shell
-launcher when `--static` is present:
+The optional `viz` dependency is activated automatically by the Replay Viewer
+shell launcher when `--static` is present:
 
 ```bash
-# One manual arena reset snapshot.
-./scripts/dev/run_dev_client.sh --static
-
 # One exact frame from an immutable replay.
 ./scripts/dev/run_replay_viewer.sh \
   --replay episode.marlbg-replay.json --static --frame-index 0
@@ -423,6 +452,9 @@ require Matplotlib.
 - [Standard replay format](docs/evaluation/replay_format.md) defines the
   versioned semantic replay normal form, whole-artifact validation boundary,
   companion artifacts, and canonical bounded local persistence.
+- [Same seed, same game](docs/evaluation/repeatability.md) explains why two GPU
+  runs can differ in a few games, why that is ordinary floating-point noise and
+  not a simulator defect, and how to get exact game-for-game repeats.
 - [Dependency policy](docs/dev/dependency_policy.md) separates researcher
   runtime requirements from optional and contributor-only tooling.
 

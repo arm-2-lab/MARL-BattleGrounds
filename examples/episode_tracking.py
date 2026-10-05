@@ -8,9 +8,10 @@ they do not implement a learner or coordinated learner/writer restart.
 """
 
 import argparse
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -44,7 +45,12 @@ def act(
     one key per lane. Return sampled actions, next counts and weighted old
     counts as learning outputs; this value is not a trained critic or reward.
     """
-    actor_keys = jax.vmap(lambda key: jax.random.split(key, 5))(keys)
+
+    def split_actors(key: Array) -> Array:
+        """Split one lane key into five actor keys without sharing randomness."""
+        return jax.random.split(key, 5)
+
+    actor_keys = jax.vmap(split_actors)(keys)
     actions = jax.vmap(jax.vmap(random_policy))(
         inputs.actors.observation, inputs.action_mask, actor_keys
     )
@@ -78,7 +84,12 @@ def decision(
         indices = jax.random.choice(
             sample_key, probabilities.shape[0], shape=(env.num_envs,), p=probabilities
         )
-        selected = jax.tree.map(lambda values: values[indices], tracker.source_configs)
+
+        def take_rows(values: Array) -> Array:
+            """Select this reset's source rows from one batched config leaf."""
+            return values[indices]
+
+        selected = jax.tree.map(take_rows, tracker.source_configs)
         prepared = marl_bgs.balanced_spawn_configs(selected, num_envs=env.num_envs)
         observations, before = env.reset_done(next_reset_key, before, prepared)
     actions, methods, learning = marl_bgs.apply_systems(
@@ -233,7 +244,7 @@ def run(
             pass_id=f"seed-{seed}",
             details={"metrics": "priority"},
         )
-    summaries = []
+    summaries: list[dict[str, Any]] = []
     with writer_context as writer:
         for stage_number, pool_size in enumerate(
             (1, 1) if automatic else (*range(1, 13), 42)
@@ -243,8 +254,9 @@ def run(
             probabilities = curriculum_probabilities(pool_size)
             weight = jnp.asarray(0.5 + 0.1 * stage_number, jnp.float32)
             if writer is None:
-                carry, learning_data = rollout(
-                    env, carry, probabilities, weight, automatic=automatic
+                carry, learning_data = cast(
+                    tuple[Tree, Tree],
+                    rollout(env, carry, probabilities, weight, automatic=automatic),
                 )
                 jax.block_until_ready(learning_data)
             else:
@@ -277,7 +289,10 @@ def batched_rollout(
     memory and RNG. probabilities and weight are shared dynamic values here.
     Return latest carries and learning data. Stage checks remain host calls.
     """
-    return jax.vmap(partial(rollout, automatic=True), in_axes=(None, 0, None, None))(
+    typed_rollout = cast(Callable[..., tuple[Tree, Tree]], rollout)
+    return jax.vmap(
+        partial(typed_rollout, automatic=True), in_axes=(None, 0, None, None)
+    )(
         env,
         carries,
         probabilities,
@@ -299,17 +314,23 @@ def run_batched() -> list[dict[str, Any]]:
             (rng, obs, state, memory, tracking.begin_stage(state, total_env_steps=512))
         )
     carries = jax.tree.map(lambda *values: jnp.stack(values), *ready)
-    latest, _ = batched_rollout(
-        contexts[0][0],
-        carries,
-        curriculum_probabilities(1),
-        jnp.asarray(0.5, jnp.float32),
+    latest, _ = cast(
+        tuple[Tree, Tree],
+        batched_rollout(
+            contexts[0][0],
+            carries,
+            curriculum_probabilities(1),
+            jnp.asarray(0.5, jnp.float32),
+        ),
     )
-    summaries = []
+    summaries: list[dict[str, Any]] = []
     for index in range(2):
-        _, _, state, _, tracker = jax.tree.map(
-            lambda values, index=index: values[index], latest
-        )
+
+        def take_seed(values: Array, index: int = index) -> Array:
+            """Select one seed's leaf; index defaults to this loop's seed position."""
+            return values[index]
+
+        _, _, state, _, tracker = jax.tree.map(take_seed, latest)
         summaries.append(tracker.stage_summary(state))
     return summaries
 

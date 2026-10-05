@@ -15,10 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from scripts.dev.visual_debugger.authoring_compiler import (
-    CompiledDevScenarioV1,
-)
-from tests.scenario_controller_fixtures import load_scenario_1
+from tests.scenario_controller_fixtures import ControllerScenario, load_scenario_1
 
 from marl_battlegrounds.core.axis_mappings import (
     UNIT_DIRECTION_VECTOR_BY_MOVEMENT_ACTION_ARRAY,
@@ -102,7 +99,7 @@ def _ones(leaf: Array) -> Array:
 
 
 @pytest.fixture(scope="module")
-def scenario() -> CompiledDevScenarioV1:
+def scenario() -> ControllerScenario:
     return load_scenario_1()
 
 
@@ -136,7 +133,7 @@ def _row(
     )
 
 
-def _observation(scenario: CompiledDevScenarioV1, class_id: int) -> Observation:
+def _observation(scenario: ControllerScenario, class_id: int) -> Observation:
     base = cast(Observation, _scalar(scenario.observation, 9))
     own = _row(base.self_features, xy=(10, 5), hp=60)
     own = (
@@ -192,7 +189,7 @@ def _mask(*pairs: tuple[int, int], move: int | None = None) -> ActionMask:
     return ActionMask(moves, joint.any(axis=1), joint.any(axis=0), joint)
 
 
-def _empty_bank(scenario: CompiledDevScenarioV1) -> SharedObsSensorSourceBankV2:
+def _empty_bank(scenario: ControllerScenario) -> SharedObsSensorSourceBankV2:
     def empty_team(leaf: Array) -> Array:
         return _zeros(leaf[1])
 
@@ -203,7 +200,7 @@ def _empty_bank(scenario: CompiledDevScenarioV1) -> SharedObsSensorSourceBankV2:
 
 
 def _act(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     observation: Observation,
     mask: ActionMask | None = None,
 ) -> ActorAction:
@@ -239,7 +236,7 @@ def _assert_exact(actual: object, expected: object) -> None:
     ],
 )
 def test_priest_ordered_movement_branches(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     ally_x: float,
     enemy_x: float | None,
     self_lowest: bool,
@@ -254,7 +251,7 @@ def test_priest_ordered_movement_branches(
 
 @pytest.mark.parametrize("health", [29.0, 30.0, 30.001])
 def test_priest_ultimate_threshold_and_basic_fallback(
-    scenario: CompiledDevScenarioV1, health: float
+    scenario: ControllerScenario, health: float
 ) -> None:
     obs = _visible(
         _observation(scenario, PRIEST_CLASS_ID), "ally", 0, (12, 5), hp=health
@@ -266,7 +263,7 @@ def test_priest_ultimate_threshold_and_basic_fallback(
 
 
 def test_priest_hp_max_hp_and_slot_ties_and_full_health_healing(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, PRIEST_CLASS_ID)
     obs = _visible(obs, "ally", 0, (12, 5), hp=10, max_hp=100)
@@ -286,7 +283,7 @@ def test_priest_hp_max_hp_and_slot_ties_and_full_health_healing(
 
 
 def test_priest_peaceful_spacing_is_independent_of_healing_and_self_health(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, PRIEST_CLASS_ID)
     obs = _visible(obs, "ally", 0, (14, 5), hp=1)
@@ -304,7 +301,7 @@ def test_priest_peaceful_spacing_is_independent_of_healing_and_self_health(
     [(2.999, MOVE_EAST), (3.0, MOVE_EAST), (3.001, MOVE_WEST)],
 )
 def test_priest_enemy_visible_upper_boundary_remains_three(
-    scenario: CompiledDevScenarioV1, distance: float, expected: int
+    scenario: ControllerScenario, distance: float, expected: int
 ) -> None:
     obs = _visible(
         _observation(scenario, PRIEST_CLASS_ID), "ally", 0, (10 - distance, 5)
@@ -318,7 +315,7 @@ def test_priest_enemy_visible_upper_boundary_remains_three(
     [MAGE_CLASS_ID, WARRIOR_CLASS_ID, HUNTER_CLASS_ID, ROGUE_CLASS_ID, PRIEST_CLASS_ID],
 )
 def test_no_enemy_rendezvous_and_exact_center_stay(
-    scenario: CompiledDevScenarioV1, class_id: int
+    scenario: ControllerScenario, class_id: int
 ) -> None:
     obs = _observation(scenario, class_id)
     assert int(_act(scenario, obs).move) == MOVE_STAY
@@ -342,7 +339,7 @@ def test_no_enemy_rendezvous_and_exact_center_stay(
     ],
 )
 def test_hunter_spacing_boundaries(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     distance: float,
     legal_target: bool,
     expected: int,
@@ -355,7 +352,7 @@ def test_hunter_spacing_boundaries(
 
 
 def test_hunter_holds_only_for_the_nearest_enemy_as_target(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _visible(_observation(scenario, HUNTER_CLASS_ID), "enemy", 0, (13.25, 5))
     obs = _visible(obs, "enemy", 1, (10, 8.9))
@@ -365,7 +362,7 @@ def test_hunter_holds_only_for_the_nearest_enemy_as_target(
 
 @pytest.mark.parametrize("distance", [1.999, 2.0, 2.001])
 def test_hunter_defensive_trap_boundary_and_basic_fallback(
-    scenario: CompiledDevScenarioV1, distance: float
+    scenario: ControllerScenario, distance: float
 ) -> None:
     obs = _visible(
         _observation(scenario, HUNTER_CLASS_ID), "enemy", 0, (10 + distance, 5), hp=50
@@ -378,7 +375,7 @@ def test_hunter_defensive_trap_boundary_and_basic_fallback(
 
 
 def test_hunter_trap_nearest_legal_ties_and_independent_lowest_health_basic(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _visible(_observation(scenario, HUNTER_CLASS_ID), "enemy", 0, (11, 5), hp=80)
     obs = _visible(obs, "enemy", 1, (9, 5), hp=70)
@@ -395,7 +392,7 @@ def test_hunter_trap_nearest_legal_ties_and_independent_lowest_health_basic(
 
 @pytest.mark.parametrize("health", [39.999, 40.0, 40.001])
 def test_warrior_charge_strict_threshold_and_basic_fallback(
-    scenario: CompiledDevScenarioV1, health: float
+    scenario: ControllerScenario, health: float
 ) -> None:
     obs = _visible(
         _observation(scenario, WARRIOR_CLASS_ID), "enemy", 0, (11, 5), hp=health
@@ -406,7 +403,7 @@ def test_warrior_charge_strict_threshold_and_basic_fallback(
 
 
 def test_warrior_charge_uses_lowest_legal_health_not_nearest(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _visible(_observation(scenario, WARRIOR_CLASS_ID), "enemy", 0, (11, 5), hp=39)
     obs = _visible(obs, "enemy", 1, (8, 5), hp=20)
@@ -421,7 +418,7 @@ def test_warrior_charge_uses_lowest_legal_health_not_nearest(
     [MAGE_CLASS_ID, WARRIOR_CLASS_ID, HUNTER_CLASS_ID, ROGUE_CLASS_ID, PRIEST_CLASS_ID],
 )
 def test_scalar_policy_is_team_agnostic_for_each_class(
-    scenario: CompiledDevScenarioV1, class_id: int
+    scenario: ControllerScenario, class_id: int
 ) -> None:
     obs = _observation(scenario, class_id)
     own = obs.self_features
@@ -443,7 +440,7 @@ def test_scalar_policy_is_team_agnostic_for_each_class(
 @pytest.mark.parametrize("class_id", [MAGE_CLASS_ID, ROGUE_CLASS_ID])
 @pytest.mark.parametrize("distance", [1.0, 2.0, 3.0])
 def test_enemy_distance_intent_and_no_enemy_stay(
-    scenario: CompiledDevScenarioV1, class_id: int, distance: float
+    scenario: ControllerScenario, class_id: int, distance: float
 ) -> None:
     obs = _observation(scenario, class_id)
     assert int(_act(scenario, obs).move) == MOVE_STAY
@@ -457,7 +454,7 @@ def test_enemy_distance_intent_and_no_enemy_stay(
 
 
 def test_rogue_nearest_movement_but_lowest_health_legal_combat(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, ROGUE_CLASS_ID)
     obs = _visible(obs, "enemy", 0, (11, 5), hp=50)
@@ -470,7 +467,7 @@ def test_rogue_nearest_movement_but_lowest_health_legal_combat(
 
 
 def test_mage_burst_requires_own_legal_basic_target(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _visible(_observation(scenario, MAGE_CLASS_ID), "enemy", 0, (13, 5))
     assert tuple(int(x) for x in _act(scenario, obs, _mask((0, 1)))) == (
@@ -488,7 +485,7 @@ def test_mage_burst_requires_own_legal_basic_target(
 
 @pytest.mark.parametrize("field", [AGENT_FEATURE_ACTIVE, AGENT_FEATURE_ALIVE])
 def test_lifecycle_and_stun_masks_override_preferences(
-    scenario: CompiledDevScenarioV1, field: int
+    scenario: ControllerScenario, field: int
 ) -> None:
     obs = _visible(_observation(scenario, ROGUE_CLASS_ID), "enemy", 0, (12, 5))
     assert tuple(int(x) for x in _act(scenario, obs, _mask(move=MOVE_STAY))) == (
@@ -505,7 +502,7 @@ def test_lifecycle_and_stun_masks_override_preferences(
 
 
 def test_hidden_dead_inactive_and_zero_health_candidates_cannot_win(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, ROGUE_CLASS_ID)
     for row in range(5):
@@ -526,7 +523,7 @@ def test_hidden_dead_inactive_and_zero_health_candidates_cannot_win(
 
 
 def test_unavailable_shared_rows_and_unused_history_cannot_change_action(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, ROGUE_CLASS_ID)
     bank = _empty_bank(scenario)
@@ -552,7 +549,7 @@ def test_unavailable_shared_rows_and_unused_history_cannot_change_action(
 
 
 def test_movement_allows_clipping_rejects_effectively_blocked_and_preserves_stay(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = _observation(scenario, ROGUE_CLASS_ID)
     for start, expected in [(19.0, MOVE_EAST), (19.45, MOVE_STAY), (19.5, MOVE_STAY)]:
@@ -568,7 +565,7 @@ def test_movement_allows_clipping_rejects_effectively_blocked_and_preserves_stay
 
 
 def test_movement_projection_matches_isolated_candidates_and_ignores_bodies(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     obs = cast(Observation, _scalar(scenario.observation, 5))
     own = obs.self_features
@@ -618,7 +615,7 @@ def test_movement_projection_matches_isolated_candidates_and_ignores_bodies(
     ],
 )
 def test_static_obstacle_contact_clipping_and_slide_alternatives(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
     obstacle: list[float],
     direct: int,
     refined: int,
@@ -633,7 +630,7 @@ def test_static_obstacle_contact_clipping_and_slide_alternatives(
 
 
 def _team_b(
-    scenario: CompiledDevScenarioV1 | TDMScenario,
+    scenario: ControllerScenario | TDMScenario,
     obs: Observation,
     mask: ActionMask,
     key: int = 0,
@@ -657,7 +654,7 @@ def _team_b(
 
 
 def test_scalar_eager_jit_team_parity_and_key_invariance(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     profile = scenario.config.agent_profile
     av = build_default_shared_obs_information_availability(
@@ -769,7 +766,7 @@ def test_descriptor_is_fresh_and_contains_frozen_constants() -> None:
 
 
 def test_not_trapping_priest_changes_next_decision_reactively(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     b = _team_b(scenario, scenario.observation, scenario.action_mask)
     # Counterfactual to the witness: Hunter basics Mage instead of trapping Priest.
@@ -792,7 +789,7 @@ def test_not_trapping_priest_changes_next_decision_reactively(
 
 
 def test_rules_continue_to_final_wave_with_dead_class_noops(
-    scenario: CompiledDevScenarioV1,
+    scenario: ControllerScenario,
 ) -> None:
     # Larger K isolates the five-transition lifecycle from early score termination.
     config = scenario.config._replace(team_deathmatch_score_threshold=100)

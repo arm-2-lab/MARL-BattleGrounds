@@ -11,7 +11,9 @@ outer JAX batching. Admission of real transitions belongs to the caller.
 # authority for hypothetical healing without changing Core's public API.
 # pyright: reportPrivateUsage=false
 
-from typing import NamedTuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -34,10 +36,14 @@ from marl_battlegrounds.core.types import (
     PRIEST_CLASS_ID,
     Action,
     ActionMask,
+    CombatTransitionFacts,
     EnvConfig,
     EnvState,
     Info,
 )
+
+if TYPE_CHECKING:
+    from marl_battlegrounds.environment import TrainingFacts
 
 
 class CombatQuantities(NamedTuple):
@@ -165,6 +171,73 @@ def combat_credit(
     return CombatCredit(excess, useful_healing, direct | priest_support)
 
 
+def _observed_combat_quantities(
+    config: EnvConfig,
+    state: EnvState,
+    combat: CombatTransitionFacts | TrainingFacts,
+    contributed_to_death: Array,
+) -> tuple[Array, Array, Array, Array, CombatCredit]:
+    """Share observed routing, damage, healing and credit without rescue work.
+
+    config and state are the scalar producing game and pre-action state. combat
+    is its Core combat facts or compact TrainingFacts with routing validity and
+    post-combat health present. contributed_to_death is bool (10,) source credit
+    from that same transition. Return float32 (10,10) routing, damage, healing,
+    excess healing, then CombatCredit. Matrix axes are source then recipient.
+    Missing optional wrapper facts raise ValueError at setup/tracing. The pure
+    JAX calculation reads no actions/masks, changes no state and performs no
+    hypothetical healing, full-metric collection or host transfer.
+    """
+    if (
+        combat.combat_effect_has_recipient_by_source is None
+        or combat.health_after_combat_resolution_by_recipient is None
+    ):
+        raise ValueError(
+            "Observed combat needs routing validity and post-combat health facts"
+        )
+    routing = (
+        jax.nn.one_hot(
+            combat.combat_effect_recipient_global_slot_by_source,
+            MAX_AGENT_SLOTS,
+            dtype=jnp.float32,
+        )
+        * combat.combat_effect_has_recipient_by_source[:, None]
+    )
+    damage = (
+        routing
+        * (
+            combat.source_modified_damage_output_by_source
+            * combat.recipient_damage_modifier_by_source
+        )[:, None]
+    )
+    healing = (
+        routing
+        * (
+            combat.source_modified_healing_output_by_source
+            * combat.recipient_healing_modifier_by_source
+        )[:, None]
+    )
+
+    total_healing = combat.total_effective_healing_by_recipient
+    total_damage = combat.total_effective_damage_by_recipient
+    credit = combat_credit(
+        config.agent_profile.class_ids,
+        state.current_health,
+        healing,
+        routing,
+        total_healing,
+        total_damage,
+        combat.health_after_combat_resolution_by_recipient,
+        contributed_to_death,
+    )
+    excess_fraction = credit.excess_healing_by_recipient / jnp.where(
+        total_healing > 0, total_healing, 1
+    )
+    excess_healing = healing * excess_fraction[None, :]
+
+    return routing, damage, healing, excess_healing, credit
+
+
 def _available_priest_healing(
     config: EnvConfig, state: EnvState, action_mask: ActionMask
 ) -> Array:
@@ -254,45 +327,11 @@ def combat_quantities(
     """
     facts = info.transition_facts
     combat = facts.combat_transition_facts
-    routing = (
-        jax.nn.one_hot(
-            combat.combat_effect_recipient_global_slot_by_source,
-            MAX_AGENT_SLOTS,
-            dtype=jnp.float32,
-        )
-        * combat.combat_effect_has_recipient_by_source[:, None]
+    routing, damage, healing, excess_healing, credit = _observed_combat_quantities(
+        config, state, combat, facts.death_facts.contributed_to_new_death_by_source
     )
-    damage = (
-        routing
-        * (
-            combat.source_modified_damage_output_by_source
-            * combat.recipient_damage_modifier_by_source
-        )[:, None]
-    )
-    healing = (
-        routing
-        * (
-            combat.source_modified_healing_output_by_source
-            * combat.recipient_healing_modifier_by_source
-        )[:, None]
-    )
-
     total_healing = combat.total_effective_healing_by_recipient
     total_damage = combat.total_effective_damage_by_recipient
-    credit = combat_credit(
-        config.agent_profile.class_ids,
-        state.current_health,
-        healing,
-        routing,
-        total_healing,
-        total_damage,
-        combat.health_after_combat_resolution_by_recipient,
-        facts.death_facts.contributed_to_new_death_by_source,
-    )
-    excess_fraction = credit.excess_healing_by_recipient / jnp.where(
-        total_healing > 0, total_healing, 1
-    )
-    excess_healing = healing * excess_fraction[None, :]
 
     without_healing = _compute_health_after_simultaneous_damage_and_healing(
         total_damage, jnp.zeros_like(total_healing), state, config

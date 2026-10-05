@@ -1,0 +1,118 @@
+/*
+ * Styles for the Health And Combat Text look (src/looks/health-text.js): one
+ * life number per changed body, and the V5 add-ons Saved Beat, Last Breath and
+ * Battle Text Detail. styles.css imports this file at its top.
+ *
+ * Colors come only from the tokens in styles.css :root (and the High Contrast
+ * palette's overrides): Life Ivory for a loss (and every Agent POV number),
+ * Dawn Gold for a heal, "Saved" and its rim flash, Moon Dew for Rest, Cinder
+ * for the Last Breath smolder, the class tokens for the share underline (Rime
+ * for a Freezing Trap, Dawn Gold for healing) and an Ink outline drawn under
+ * every text fill (paint-order is a presentation attribute set by the look).
+ * Size, weight, outline width, stroke widths and opacities (the Beyond Death
+ * tag's 75% fill too) are presentation attributes. No animations or
+ * transitions here: every pop, rise, flash and fade is a Web Animation from the
+ * choreographer's list.
+ */
+
+.combat-number,
+.combat-saved {
+  stroke: var(--ink);
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* A number with extras: the group pops and drifts as one. */
+.combat-number-set {
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.combat-number[data-tone="damage"],
+.combat-number[data-tone="neutral"] {
+  fill: var(--life-ivory);
+}
+
+.combat-number[data-tone="heal"] {
+  fill: var(--dawn-gold, var(--class-priest));
+}
+
+.combat-number[data-tone="rest"] {
+  fill: var(--moon-dew);
+}
+
+.combat-number__hit {
+  fill: transparent;
+  stroke: none;
+  pointer-events: fill;
+}
+
+/* Saved Beat: the word and the rim that flashes twice in play. */
+.combat-saved {
+  fill: var(--dawn-gold, var(--class-priest));
+}
+
+.combat-saved-rim {
+  fill: none;
+  stroke: var(--dawn-gold, var(--class-priest));
+  pointer-events: none;
+}
+
+/* Last Breath: the empty part of the vessel, or of the life ring, smolders. */
+.combat-last-breath {
+  pointer-events: none;
+}
+
+.combat-last-breath[data-style="vessel"] {
+  fill: var(--cinder);
+  stroke: none;
+}
+
+.combat-last-breath[data-style="arc"] {
+  fill: none;
+  stroke: var(--cinder);
+  stroke-linecap: butt;
+}
+
+/* Battle Text Detail: the share underline and the Beyond Death tag. */
+.combat-underline__backing {
+  stroke: var(--ink);
+  fill: none;
+}
+
+.combat-underline__bar {
+  fill: none;
+}
+
+.combat-underline__bar[data-paint="mage"] {
+  stroke: var(--class-mage);
+}
+
+.combat-underline__bar[data-paint="warrior"] {
+  stroke: var(--class-warrior);
+}
+
+.combat-underline__bar[data-paint="hunter"] {
+  stroke: var(--class-hunter);
+}
+
+.combat-underline__bar[data-paint="rogue"] {
+  stroke: var(--class-rogue);
+}
+
+.combat-underline__bar[data-paint="priest"],
+.combat-underline__bar[data-paint="heal"] {
+  stroke: var(--dawn-gold, var(--class-priest));
+}
+
+.combat-underline__bar[data-paint="trap"] {
+  stroke: var(--rime);
+}
+
+.combat-number__tag {
+  fill: var(--life-ivory);
+  stroke: var(--ink);
+  pointer-events: none;
+}

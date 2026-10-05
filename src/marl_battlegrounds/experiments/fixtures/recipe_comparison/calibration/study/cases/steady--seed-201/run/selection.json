@@ -1,0 +1,31 @@
+{
+  "actor_digest": "synthetic-actor-steady--seed-201",
+  "cells": [
+    {
+      "map_id": 42,
+      "mean_team_a_score": 12,
+      "mean_team_b_score": 10,
+      "opponent": "Synthetic opponent",
+      "score": 0.5
+    },
+    {
+      "map_id": 43,
+      "mean_team_a_score": 12,
+      "mean_team_b_score": 10,
+      "opponent": "Synthetic opponent",
+      "score": 0.5
+    }
+  ],
+  "checkpoint_id": "synthetic-steady--seed-201",
+  "complete": true,
+  "env_steps": 8,
+  "maps": [
+    42,
+    43
+  ],
+  "panel_digest": "synthetic-software-panel",
+  "purpose": "confirmation",
+  "qualification": "Synthetic saved rows; no model or game was run",
+  "red_zone_depth": 5.0,
+  "score": 0.5
+}

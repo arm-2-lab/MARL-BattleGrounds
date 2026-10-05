@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds.core.axis_mappings import (
     GLOBAL_RECIPIENT_SLOT_BY_ACTOR_AND_TARGET_ACTION,
     GLOBAL_SLOT_BY_ACTOR_AND_ALLY_OBSERVATION_ROW,
@@ -524,7 +525,7 @@ def build_resolved_env_config_v1(config: EnvConfig) -> ResolvedEnvConfigV1:
     rule) and stays byte-identical for them; a positive depth raises
     ValueError. New records use build_resolved_env_config_v2.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     if config.team_deathmatch_red_zone_depth != 0.0:
         raise ValueError(
             "ResolvedEnvConfigV1 cannot record a Red Zone depth; "
@@ -560,7 +561,7 @@ def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
     device data. This is the builder for every new recording, scenario and
     training identity.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     payload = _resolved_config_payload(config)
     payload["schema_version"] = 2
     payload["team_deathmatch_red_zone_depth"] = float(
@@ -883,7 +884,7 @@ def build_evaluation_episode_context_v1(
     invent policy, seed, reward, or revision provenance. This legacy builder requires V1
     assignments, seeds, and revision facts.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     if len(policy_assignments) != MAX_AGENT_SLOTS:
         raise ValueError("policy_assignments must have length 10")
     return EvaluationEpisodeContextV1(
@@ -983,7 +984,7 @@ def build_evaluation_episode_context_v2(
     invent policy, seed, reward, or revision provenance. V2 assignments allow explicitly
     unknown policy facts; seed and revision records may use V1 or V2.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     if len(policy_assignments) != MAX_AGENT_SLOTS:
         raise ValueError("policy_assignments must have length 10")
     return EvaluationEpisodeContextV2(
@@ -1087,7 +1088,7 @@ def build_evaluation_episode_context_v3(
     invent policy, seed, reward, or revision provenance. V2 assignments allow explicitly
     unknown policy facts; seed and revision records may use V1 or V2.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     if len(policy_assignments) != MAX_AGENT_SLOTS:
         raise ValueError("policy_assignments must have length 10")
     return EvaluationEpisodeContextV3(
@@ -1191,7 +1192,7 @@ def build_evaluation_episode_context_v4(
     invent policy, seed, reward, or revision provenance. V2 assignments allow explicitly
     unknown policy facts; seed and revision records may use V1 or V2.
     """
-    validate_env_config(config)
+    run_config_check(validate_env_config, config)
     if len(policy_assignments) != MAX_AGENT_SLOTS:
         raise ValueError("policy_assignments must have length 10")
     return EvaluationEpisodeContextV4(
@@ -1525,7 +1526,7 @@ def _validate_official_scenario_context(
     config = reconstruct_env_config_v1(context)
     resolved = context.resolved_env_config
     roster = context.roster
-    validate_product_env_config(config)
+    run_config_check(validate_product_env_config, config)
 
     reprojected_config = _build_resolved_env_config_for(config, resolved)
     if reprojected_config != resolved:

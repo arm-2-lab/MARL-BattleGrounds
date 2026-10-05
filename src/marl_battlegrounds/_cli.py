@@ -11,7 +11,7 @@ import argparse
 import json
 import math
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -148,8 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir", help="Exact new or empty run directory"
     )
     training_output.add_argument(
-        "--resume-from", help="Complete learner checkpoint path"
+        "--resume-from", help="Complete learner checkpoint or saved run folder"
     )
+    runs = commands.add_parser(
+        "runs", allow_abbrev=False, help="Find saved training runs and study cases"
+    )
+    runs.add_argument("root", help="Run, study, or parent folder")
+    runs.add_argument("--json", action="store_true", help="Print machine-readable rows")
     analysis = commands.add_parser(
         "analyze-training",
         allow_abbrev=False,
@@ -214,6 +219,25 @@ def build_parser() -> argparse.ArgumentParser:
             action, allow_abbrev=False, help=description
         )
         study_action.add_argument("study_dir", help="Saved study directory")
+        if action == "status":
+            study_action.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the complete saved status as JSON",
+            )
+            for flag, help_text in (
+                (
+                    "progress",
+                    "Show the progress view: one row per case, training windows, "
+                    "results by opponent group, a legend and live logs",
+                ),
+                ("follow", "Refresh the progress view every 20 seconds until Ctrl+C"),
+                ("summary", "Add the point margin at every routine check"),
+                ("shaping", "Show every training window, start to finish"),
+            ):
+                study_action.add_argument(
+                    f"--{flag}", action="store_true", help=help_text
+                )
     evaluate = commands.add_parser(
         "evaluate", allow_abbrev=False, help="Evaluate two frozen methods"
     )
@@ -483,17 +507,21 @@ def build_parser() -> argparse.ArgumentParser:
 def _load_method(reference: str) -> System | Policy | str:
     """Resolve saved actors and trusted factories through the shared loader.
 
-    Bare names stay strings for the evaluator. Existing folders take priority
-    over factory syntax, including folders containing a colon. Both actor exports
-    and complete learner checkpoints load only their actor arrays. Factory errors
-    retain their original cause through _FactoryError. Folder errors retain their
-    loader error type. No action is chosen and no learner is constructed.
+    Bare names stay strings for the evaluator. Bare module:function strings are
+    factories; use ./ or an absolute path for a folder containing a colon.
+    Both actor exports and complete learner checkpoints load only their actor arrays.
+    Factory errors retain their original cause through _FactoryError. Folder errors
+    retain their loader error type. No action is chosen and no learner is constructed.
     """
-    from marl_battlegrounds._method_loading import load_method
+    from marl_battlegrounds._method_loading import (
+        _reference_kind,  # pyright: ignore[reportPrivateUsage]
+        load_method,
+    )
 
-    if Path(reference).is_dir():
+    kind = _reference_kind(reference)
+    if kind == "artifact":
         return load_method(reference)
-    if ":" not in reference:
+    if kind != "factory":
         return reference
     try:
         return load_method(reference)
@@ -627,6 +655,112 @@ def _run_experiment(command: str, arguments: dict[str, Any]) -> None:
     _print_result(result, tournament=command != "evaluate")
 
 
+def _print_rows(
+    rows: Sequence[Mapping[str, object]], columns: Mapping[str, str]
+) -> None:
+    """Print a compact table, preserving complete paths and explicit missing values.
+
+    rows are saved read-only views; columns maps record keys to readable labels.
+    This formats data only and does not infer status, selection or model quality.
+    """
+    values = [
+        list(columns.values()),
+        *[
+            [
+                "Unavailable" if row.get(key) is None else str(row[key])
+                for key in columns
+            ]
+            for row in rows
+        ],
+    ]
+    widths = [max(len(row[index]) for row in values) for index in range(len(columns))]
+    for row in values:
+        print(
+            "  ".join(
+                value.ljust(width) for value, width in zip(row, widths, strict=True)
+            )
+        )
+
+
+def _case_exit_code(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy one saved study case row and fill exit_code from its latest attempt.
+
+    Parameters
+    ----------
+    row : mapping
+        A case row from report.json or study.json. Exit codes are saved per
+        attempt, under ``attempts[-1]["exit_code"]``, not on the row itself.
+
+    Returns
+    -------
+    dict
+        A shallow copy. ``exit_code`` keeps a top-level value when present,
+        otherwise takes the latest attempt's code. It stays None for a case
+        with no attempt or whose latest attempt has not finished, which the
+        table prints as "Unavailable". The input row is not changed.
+    """
+    result = dict(row)
+    attempts = cast(list[dict[str, Any]], row.get("attempts") or [])
+    if result.get("exit_code") is None and attempts:
+        result["exit_code"] = attempts[-1].get("exit_code")
+    return result
+
+
+def _study_progress(
+    study_dir: str, *, follow: bool, summary: bool, shaping: bool, as_json: bool
+) -> int:
+    """Print the study progress view once, or refresh it until Ctrl+C.
+
+    Parameters
+    ----------
+    study_dir : str
+        Saved study folder.
+    follow : bool
+        True clears the screen and prints a fresh view every 20 seconds.
+        Ctrl+C stops only this viewer and returns 0; runs keep going.
+    summary, shaping : bool
+        Passed to study_status: add the margin at every routine check, and
+        show every training window.
+    as_json : bool
+        Print study_status's complete record, including ``runs``,
+        ``live_processes`` and the ``progress`` text, as JSON instead of the
+        text view. Not combined with follow.
+
+    Returns
+    -------
+    int
+        0 after printing or after Ctrl+C in follow mode.
+
+    Notes
+    -----
+    Calls training.study.study_status(..., progress=True), the same function
+    Python users call. It reads files and /proc only, never imports JAX and
+    never queries a GPU.
+    """
+    import time
+
+    from marl_battlegrounds.training import study
+
+    try:
+        while True:
+            result = study.study_status(
+                study_dir, progress=True, summary=summary, shaping=shaping
+            )
+            if as_json:
+                print(json.dumps(result, indent=2, allow_nan=False))
+                return 0
+            if not follow:
+                print(result["progress"])
+                return 0
+            print("\033[2J\033[H" + result["progress"], flush=True)
+            time.sleep(20)
+    except KeyboardInterrupt:
+        if not follow:
+            raise
+        print()
+        return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one command, returning 0, 1 or 130; argparse exits with 0 or 2.
 
@@ -648,8 +782,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if command in {"evaluate", "canonical", "tournament"}:
             _run_experiment(command, arguments)
+        elif command == "runs":
+            from marl_battlegrounds.training import list_runs
+
+            run_rows = list_runs(arguments["root"])
+            if arguments["json"]:
+                print(json.dumps(run_rows, indent=2, allow_nan=False))
+            else:
+                _print_rows(
+                    run_rows,
+                    {
+                        "status": "Status",
+                        "method": "Method",
+                        "seed": "Seed",
+                        "env_steps": "Transitions",
+                        "run_dir": "Run Folder",
+                        "reason": "Reason",
+                    },
+                )
         elif command == "train":
-            from marl_battlegrounds.training.runner import read_config, train
+            from marl_battlegrounds.training.config import read_config
+            from marl_battlegrounds.training.runner import train
 
             if not arguments["resume_from"] and not arguments["config"]:
                 parser.error("train requires --config for a new run")
@@ -663,6 +816,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             from marl_battlegrounds.training import study
 
             action = arguments.pop("study_action")
+            view = action == "status" and any(
+                arguments[flag] for flag in ("progress", "follow", "summary", "shaping")
+            )
+            if view:
+                if arguments["json"] and arguments["follow"]:
+                    parser.error("--follow cannot be combined with --json")
+                return _study_progress(
+                    arguments["study_dir"],
+                    follow=arguments["follow"],
+                    summary=arguments["summary"],
+                    shaping=arguments["shaping"],
+                    as_json=arguments["json"],
+                )
             if action in {"run", "start"}:
                 if not arguments["resume_from"] and not arguments["config"]:
                     parser.error("study requires --config for a new study")
@@ -673,7 +839,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                     study.study_status if action == "status" else study.stop_study
                 )
                 result = function(arguments["study_dir"])
-            print(json.dumps(result, indent=2, allow_nan=False))
+            if action == "status" and not arguments.get("json", False):
+                print(f"Study: {result['study_dir']}")
+                state: dict[str, Any] = result.get("study") or {}
+                print(f"Status: {state.get('status', 'Not Started')}")
+                paused: dict[str, Any] = state.get("paused_devices") or {}
+                for device, reason in paused.items():
+                    if reason.get("case_id") is None:
+                        print(
+                            f"Paused GPU: {device} {reason.get('reason')} "
+                            f"({reason.get('error')})"
+                        )
+                    else:
+                        print(
+                            f"Paused GPU: {device} after {reason.get('case_id')} "
+                            "failed before its first checkpoint "
+                            f"({reason.get('error')})"
+                        )
+                report: dict[str, Any] = result.get("report") or {}
+                rows: list[dict[str, Any]] | None = report.get("cases")
+                if rows is None:
+                    rows = list(state.get("cases", {}).values())
+                _print_rows(
+                    [_case_exit_code(row) for row in rows],
+                    {"id": "Case", "status": "Status", "exit_code": "Exit Code"},
+                )
+            else:
+                print(json.dumps(result, indent=2, allow_nan=False))
             if action == "run":
                 return 0 if result["status"] == "complete" else 1
         elif command == "extend-training":

@@ -25,6 +25,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds.core.config import validate_env_config
 from marl_battlegrounds.core.types import EnvConfig, ResolvedAgentProfile
 from marl_battlegrounds.evaluation.run_writer import (
@@ -353,7 +354,7 @@ def restore_config(content: Mapping[str, Any], *, validate: bool = True) -> EnvC
     )
     config = EnvConfig(**data)
     if validate:
-        validate_env_config(config)
+        run_config_check(validate_env_config, config)
     return config
 
 

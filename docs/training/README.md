@@ -1,5 +1,9 @@
 # Training And Baseline Components
 
+Public experiment scripts use [Hydra settings and overrides](hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 For saved models, results and manuscript evidence, start with the
 [development checkpoint population](checkpoint_population.md). For tuning
 decisions and their limits, use the [baseline methods record](baseline_methods.md).
@@ -184,30 +188,27 @@ state, and System memory. A content binding alone is not an execution checkpoint
 ## Run The Distribution Example
 
 The [sampled-episode example](../../examples/training_distributions.py) uses the
-public environment, Systems, tracker and collector. Random plays both teams by
-default. It needs only base dependencies, creates 32 games, and runs 320 decisions
-per lane so the ordinary 300-transition horizon reaches a reset. It runs no
-learner and writes no files unless recording is requested.
-
-In a prepared checkout:
+public schedule and collector. Random plays both teams by default. It creates
+32 games and runs 320 decisions per lane, enough to reach the ordinary
+300-transition horizon. No learner updates run. Install the `hydra` extra for
+commands; plain Python calls do not require Hydra.
 
 ```bash
-JAX_PLATFORMS=cpu uv run --no-sync python examples/training_distributions.py
-JAX_PLATFORMS=cpu uv run --no-sync python examples/training_distributions.py \
-  --output-dir artifacts/training-distribution-example
+JAX_PLATFORMS=cpu python examples/training_distributions.py
+JAX_PLATFORMS=cpu python examples/training_distributions.py output_dir=artifacts/distributions
 ```
 
-With `--output-dir`, the example saves a continuation in memory and obtains an
-M8 recording token. It runs ahead, verifies the saved content before opening the
-writer, restores the recorded boundary, and repeats the suffix. This checks
-recording and numerical continuation. It creates no learner checkpoint format
-and does not demonstrate recovery after losing that in-memory continuation.
+An explicit `output_dir` saves game records through the public writer. With no
+output folder, game recording stays disabled. Hydra still saves small launch
+records and prints their location. This example does not restore a continuation;
+[recorded_rollout.py](../../examples/recorded_rollout.py) teaches recorded rollout
+recovery, and the developer distribution reference keeps its synthetic rewind
+proof.
 
-After installing the `training` extra shown above, `--mappo` replaces Team A with
-**untrained** recurrent MAPPO weights. Team B remains Random. Weights remain
-dynamic action inputs; the critic never enters the System. Rewards and episode
-outcomes are wiring checks, not evidence of learned skill. `--steps N` changes
-the example length; N must be at least two, and short runs may contain no reset.
+After installing `training`, `mappo=true` replaces Team A with **untrained**
+recurrent MAPPO weights. Team B remains Random. The critic never enters the
+System. `steps=N` sets a positive number of decisions per lane; very short runs
+may contain no reset. Neither reward totals nor short outcomes prove learning.
 
 For recorded sampled episodes, set `record_starts=True` when initializing the
 tracker. The writer persists explicit class rows; absent or all-`-1` declarations
@@ -235,23 +236,24 @@ game once. These are collection examples; no optimizer updates are performed.
 
 ```bash
 # Small CPU check, including a padded final block.
-JAX_PLATFORMS=cpu uv run --no-sync python examples/training_collection.py \
-  --mode Plain --num-envs 2 --total-env-steps 4 --length 4
+JAX_PLATFORMS=cpu uv run --no-sync python examples/training_collection.py mode=Plain \
+  num_envs=2 total_env_steps=4 length=4
 
 # Ordinary batch and block sizes; select the GPU as described in the GPU guide.
 JAX_PLATFORMS=cuda,cpu uv run --no-sync python examples/training_collection.py \
-  --mode C-RS
+  mode=C-RS
 ```
 
-`--mode Plain` enables neither curriculum nor shaping. `C` enables curriculum,
+`mode=Plain` enables neither curriculum nor shaping. `C` enables curriculum,
 `RS` enables shaping, and `C-RS` enables both. All four keep the installed K20
-score threshold and H300 horizon. `--total-env-steps` must divide exactly by the
-positive even `--num-envs`. A curriculum budget must give each of its 17 requested
+score threshold and H300 horizon. `total_env_steps` must divide exactly by the
+positive even `num_envs`. A curriculum budget must give each of its 17 requested
 stages at least one round. The library rejects insufficient budgets.
 
 The example's `run(...)` function is also callable from Python. Its CLI delegates
-to that function. Add `--output-dir artifacts/training-collection` to save a
-training run through the existing `RunWriter`. The default creates no files.
+to that function. Add `output_dir=artifacts/training-collection` to save a
+training run through the existing `RunWriter`. The default saves no game files;
+Hydra keeps its launch settings in the printed launch folder.
 Saved outcomes remain canonical; shaping does not change CSV scores or metrics.
 This example creates no learner checkpoint and offers no restart command.
 
@@ -381,6 +383,105 @@ Both modes log task reward and shaping separately, save the mode for exact
 resume, and evaluate with unmodified native rewards. Compare them with declared
 seeds and budgets. A higher shaped return alone does not show better play.
 
+### Add A Declared Combat And Support Reward
+
+Use the shared reward callback with any built-in learner. For example, preview
+its complete settings without starting a numerical backend:
+
+```bash
+python -m marl_battlegrounds.experiments.train method=ff_ippo recipe=software_check reward=marl_battlegrounds.training.reward_recipes:combat_support_reward shaping=false preview=true
+```
+
+Remove `preview=true` to run the small software check. Set `output_dir` to choose
+the exact trainer run folder. If omitted, the trainer uses `run/` inside
+Hydra's launch folder.
+`recipe=software_check` checks the tools. Its settings are not paper search
+settings. Ordinary Python uses the same callback through
+`TrainConfig(reward="marl_battlegrounds.training.reward_recipes:combat_support_reward",
+shaping=False)` and `train(config, output_dir=...)`.
+
+The callback adds these terms to native task reward. It keeps Team A as the
+learner. It does not change simulator scores or later evaluation metrics.
+
+| Named Part | Amount And Recipient |
+| --- | --- |
+| `enemy_death_credit` | +0.05 to each credited actor per enemy death. |
+| `own_team_deaths` | -0.05 to every configured learner per own-team death. |
+| `enemy_red_zone_death_credit` | Another +0.10 to each credited actor for an enemy death in its own Red Zone. |
+| `own_red_zone_deaths` | Another -0.10 to every configured learner per own Red Zone death. |
+| `enemy_damage_hp` | +0.001 per capped enemy health point damaged, to its source. |
+| `priest_effective_healing_hp` | +0.001 per effective own-team health point healed, to its Priest source. |
+| `priest_heal_range_pairs` | +0.001 to every configured learner per ordered living Priest/ally pair within Basic range, both outside their own zone. Self pairs are excluded. |
+| `own_zone_ticks` | -0.002 to each living learner inside its own zone per tick. |
+
+Death uses alive-before/dead-after state. Death-zone checks use positions before
+the action; occupancy and heal range use positions after it. Kill credit includes
+useful one-hop Priest support. Damage caps account for effective healing on the
+same step. Excess healing earns no healing amount. Heal range can pay even when
+no heal occurs. These choices define this reward; a larger shaped return alone
+does not establish better play. Disable built-in shaping to use this recipe alone.
+
+**Use the team form for QMIX and PQN-VDN.** These two methods learn one team
+value from one team reward. They make it by averaging the Team A slot rewards,
+so an amount paid to one agent is divided by the team size: in 5v5 a kill credit
+would pay the team +0.01 while a teammate's death still costs -0.05. Use
+`reward=marl_battlegrounds.training.reward_recipes:combat_support_team_reward`
+with them. It gives every Team A slot the same amount: the three shared parts
+once plus the team total of the five own-agent parts. After the average, each
+event pays the team what `combat_support_reward` pays the agent it happens to:
+
+| Event In 5v5 | Each PPO Agent | Team Average, Per-Agent Form | Team Average, Team Form |
+| --- | --- | --- | --- |
+| A teammate dies | -0.05 to every agent | -0.05 | -0.05 |
+| Our Mage gets kill credit | +0.05 to the Mage | +0.01 | +0.05 |
+| Our Mage damages 100 enemy health | +0.10 to the Mage | +0.02 | +0.10 |
+| One agent stands in its own zone for one tick | -0.002 to that agent | -0.0004 | -0.002 |
+| One Priest/ally pair is in heal range for one tick | +0.001 to every agent | +0.001 | +0.001 |
+
+The native win reward still counts once. One difference stays by design: with
+one team reward, every agent's value also gains from a teammate's own events.
+The team totals include every configured Team A slot, including slots a fixed
+partner controls. The named parts keep their names and hold the amount each
+slot receives, so they still sum to the adjustment.
+
+Custom callbacks keep their four positional arguments:
+`reward(before, facts, after, progress)`. A callback may also declare keyword-only
+`config` to receive the producing game's configuration. This is privileged
+training input; it must not enter actor inputs or memory. When using AutoReset
+outside collection, pass the completed game's `final.training_state`, not the
+replacement game. `progress` counts completed training rounds, shared across
+lanes; it does not count optimizer updates or reused samples.
+
+An array-only callback still returns float32 `(10,)`. To name its parts, return
+`training.RewardOutput(adjustments, components)`, where each fixed string key maps
+to a float32 `(10,)` array and the parts sum to the adjustment. The shared helper
+checks shape/dtype at setup. Nonfinite or inconsistent real-step parts follow the
+learner's existing failure path, even when the supplied adjustment is finite.
+The sum check uses relative tolerance `1e-5` and absolute tolerance `1e-6`.
+Padding is zero. `reward_adjustments(...)` still returns only the adjustment array.
+
+Saved update rows contain `collected_reward_components` only when parts are named.
+Each part has `recipient_sum` and `team_mean_sum`. The first adds each configured
+learner's amount. The second first averages over those learner slots within a
+game, matching the Q methods' reduction, then adds games. Their denominators are
+`learner_agent_transitions` and `learner_team_transitions`. `real_transitions`
+counts collected games once per step. Configured dead learners count; frozen
+partners, Team B and padding do not. For example, a 0.1 team amount given to two
+learners adds 0.2 to the recipient sum and 0.1 to the team-mean sum.
+
+These records describe collected experience. QMIX replay and PQN reuse do not
+count it again. Add sums and counts before dividing; do not average row means.
+The writer folds each accepted window into host totals after saving its row.
+Checkpoints also save any pending window. Recovery restores those totals and
+rewinds abandoned log rows. Changing the custom reward at a child boundary
+archives the parent's totals and starts a separate component record. Native
+reward, optional built-in shaping and existing learner sample counts remain
+separate. Array-only/disabled callbacks allocate no component window.
+
+Training keeps these small counters and optional compact facts. It does not
+collect full metrics or replays for this reward. Run full behavioral evaluation
+from saved actors afterward.
+
 ### Train With Frozen Partners
 
 Choose the learner's physical slots and name the teammates that fill the other
@@ -422,6 +523,21 @@ existing development maps and native evaluation scoring remain unchanged.
 
 Run [the complete partner example](../../examples/partner_training.py) to train,
 load and evaluate the resulting team. It accepts all six built-in learners.
+
+### Inspect Training Settings Without Starting JAX
+
+Use `from marl_battlegrounds.training import TrainConfig` and
+`from marl_battlegrounds.baselines.config import PPOConfig, QMIXConfig, PQNConfig`.
+These settings validate ordinary Python values without loading JAX, Flax or
+Optax. `training.config.config_from_dict`, `config_to_dict` and `read_config`
+use the same checks for dictionaries and JSON files. Configuration checks do
+not load an actor, call a policy factory or open a training output folder.
+Files and numerical inputs are checked when the corresponding API uses them.
+
+Existing imports from `training.runner` and `baselines.ppo`, `qmix` or `pqn`
+remain valid and refer to the same settings classes. Importing a numerical
+baseline module still requires the training extra. Moving the settings does
+not change defaults, saved configuration values or historical checkpoint rules.
 
 ### Choose Actor Parameter Sharing
 
@@ -542,7 +658,13 @@ exploration rate used by its training copy.
 
 Continuation restores frozen numerical weights and supported memory. A live-only
 method needs its binding again; a saved reference loads through the same method
-loader. `extend_training(..., changes={"opponents": ...}, opponents={...})` may
+loader. A matching artifact receipt allows a replacement reload path under the
+same runtime name without changing weights or historical exposure. Old records
+without that receipt keep their original path checks. The setup loader reuses a
+reference across roles; its cache is released before training. Factories shared
+across roles share their client, while game memory and resource scopes stay with
+each role. See [Hydra bindings](hydra.md#bind-opponents-and-partners).
+`extend_training(..., changes={"opponents": ...}, opponents={...})` may
 append members and change future shares or order. Old names keep their identity;
 use a new name for a different member. An opaque host method with unsaved memory
 cannot resume an unfinished game. Such a resume fails before changing outputs;
@@ -873,6 +995,25 @@ reward plus custom adjustments, averaged over active learner-owned Team A slots,
 plus enabled team shaping once. With no partners or custom reward, this is the
 mean task reward over the configured Team A slots. The donor averages over all
 five slots; smaller rosters, frozen partners and custom feedback are BG changes.
+`qmix.reward_scale` (default 1.0) multiplies this reward inside the TD target
+only, for example 10.0 to make small per-step rewards stand out against early
+Q-value noise. Replay, logged rewards and results stay in game units; mean Q
+and target values in the training log are in scaled units.
+Each QMIX row in `training_updates.jsonl` also logs `grad_norm_mean`,
+`grad_norm_max` and `grad_norm_nonfinite`: the mean and largest global gradient
+norm over the block's optimizer steps, and how many steps had a norm that
+overflowed to infinity or NaN. QMIX does not clip, so these are raw norms. A
+warm-up block logs `null`, `null` and `0`; an overflowed norm is counted, never
+written as infinity, and the run continues.
+Because of the average, give QMIX the team form of a per-agent reward, such
+as `combat_support_team_reward` (see the combat and support reward above).
+
+**Input scale.** Actor features reach about 300, and QMIX's Q-network has no
+input normalization. With the default `qmix.input_scale=1.0` the first layer
+starts with activations about 14 times the intended size, which pushes the
+GRU's gates to their limits. `QMIXConfig(input_scale=0.01)`, the value the PPO
+baselines use, starts them near 0.14. The default stays 1.0 so the donor's
+calculation and old models are unchanged. The mixer normalizes its own state.
 
 **Model and actors.** One shared local Q-network (256 wide, with a 256-wide
 GRU) turns each actor's permitted inputs and own memory into 198 action
@@ -1024,14 +1165,22 @@ C-RS). Shaping uses `pqn.gamma`.
 inputs and own 512-wide memory into 198 action values: BatchNorm on the input,
 two blocks of Dense 512, BatchNorm and ReLU, a GRU and a Dense head, 4,596,512
 parameters. The team value is the sum of the active actors' values (VDN); there
-is no mixer, critic, physical state, target network or replay. Loaded and
-exported PQN-VDN Systems play greedily: epsilon 0 and, among equal best values,
+is no mixer, critic, physical state, target network or replay.
+`pqn.normalization="layer_norm"` swaps the two hidden BatchNorms for LayerNorms
+(the donor's other `NORM_TYPE`); the input BatchNorm stays. The choice is saved
+with the run and every exported actor, which is always rebuilt with it.
+`pqn.reward_scale` (default 1.0) multiplies the team reward inside the lambda
+returns only, like the donor's `REW_SCALE`; logged rewards and results stay in
+game units. PQN-VDN rows log the same `grad_norm_mean`, `grad_norm_max` and
+`grad_norm_nonfinite` as QMIX, measured before `max_grad_norm` clipping, over
+the minibatch steps that ran (`null`, `null` and `0` for an initial chunk). The team reward is the average over Team A slots, so give PQN-VDN
+the team form of a per-agent reward, such as `combat_support_team_reward`. Loaded and exported PQN-VDN Systems play greedily: epsilon 0 and, among equal best values,
 the first legal action in the network's own order (mirrored for left-frame
 games). Details and the donor are in the
 [source ledger](source_reuse.md#recurrent-pqn-vdn).
 
-**Normalization.** BatchNorm normalizes with the statistics of each training
-minibatch, counting only real rows and configured slots (padding and empty
+**Normalization.** With the default `"batch_norm"`, BatchNorm normalizes with
+the statistics of each training minibatch, counting only real rows and configured slots (padding and empty
 roster slots are left out), and keeps running statistics. Choosing an action
 always uses the saved running statistics and never changes them, so every game
 is played by the same fixed function. The statistics are part of the actor:
@@ -1042,6 +1191,9 @@ cancels; it is kept for identity and compatibility, not as a setting to tune.
 At the default 32 games and 16 minibatches each minibatch holds two whole
 games, so statistics come from small batches; see the
 [source ledger](source_reuse.md#deliberate-pqn-vdn-adaptations).
+With `"layer_norm"`, only the input BatchNorm keeps running statistics; each
+hidden LayerNorm normalizes one actor's row on its own, so it uses no batch
+statistics at all.
 
 **Initial random experience.** A run first collects W = `memory_window` +
 `rollout_length` rounds (132 by default) with exploration rate 1, which is a
@@ -1132,7 +1284,7 @@ checkpoint.
 
 **Reports and tournaments.** A report with a PQN-VDN run adds `pqn_curves.png`
 and `pqn_curves.svg` (loss, used TD pairs per transition, the share of used
-pairs that start on kept rows, and exploration), and the summary names the
+pairs that start on kept rows, exploration, and gradient norms), and the summary names the
 optimizer steps, learning blocks, used pairs and the initial transitions never
 learned. A loaded PQN-VDN actor is an ordinary `System`, so evaluation and
 tournaments use it unchanged, as shown for QMIX above. Repeated greedy games
@@ -1250,7 +1402,7 @@ short to show useful learning. With no validation panel, `selected_actor` is `No
 
 ```bash
 JAX_PLATFORMS=cpu uv run --no-sync python examples/mappo_training.py \
-  --output-dir artifacts/mappo-example
+  output_dir=artifacts/mappo-example
 ```
 
 The same route from Python is:
@@ -1320,10 +1472,23 @@ and `curriculum=True`, `shaping=True`, or both in the same config. Set
 `validation_opponents=None` for those small wiring checks. A short check
 does not prove that every curriculum stage received useful experience.
 
-A new run requires a new or empty exact output directory. Resume requires the
-path of a complete learner checkpoint, not an actor export or run directory:
+A new run requires a new or empty exact output directory. A folder holding only
+`.training.lock`, left by a call that stopped before saving anything, counts as
+empty. If two calls are given the same new folder, only one writes there: the
+trainer checks the folder again after it takes the run lock, and the other call
+stops with an error without changing the first run. The same holds for
+`extend_training` child folders.
+
+Resume takes a saved run folder or the exact folder of a complete learner
+checkpoint; an actor export cannot resume. A run folder follows only its
+`latest_checkpoint.json` pointer. The trainer reads that pointer again after it
+takes the run lock: if another call trained the run further in the meantime,
+this call stops with an error instead of rolling the run back. An exact
+checkpoint folder is resumed as named, even an older one:
 
 ```python
+resumed = training.train(resume_from="RUN")  # its newest checkpoint
+# Or name one exact checkpoint folder:
 resumed = training.train(resume_from="RUN/checkpoints/SAVED_CHECKPOINT")
 ```
 
@@ -1368,19 +1533,19 @@ uv run --no-sync python -m marl_battlegrounds analyze-training RUN --output-dir 
 ```
 
 The [complete example](../../examples/mappo_training.py) also accepts
-`--method ippo`, `--method ff_mappo` or `--method ff_ippo` for its tiny new run. Omitting
-`--method` keeps MAPPO; `--method mappo` makes it explicit. For example:
+`method=ippo`, `method=ff_mappo` or `method=ff_ippo` for its tiny new run. Omitting
+`method` keeps MAPPO; `method=mappo` makes it explicit. For example:
 
 ```bash
-JAX_PLATFORMS=cpu uv run --no-sync python examples/mappo_training.py \
-  --method ff_ippo --output-dir artifacts/ff-ippo-example --evaluate
+JAX_PLATFORMS=cpu uv run --no-sync python examples/mappo_training.py method=ff_ippo \
+  output_dir=artifacts/ff-ippo-example evaluate=true
 ```
 
-The example also accepts `--config`
-or `--resume-from`. Adding `--evaluate` loads the saved actor, plays two CPU
+The example also accepts `config`
+or `resume_from`. Adding `evaluate=true` loads the saved actor, plays two CPU
 diagnostic games against Random and saves ordinary M8 results. These are wiring
 checks, not useful-learning evidence or checkpoint-selection results. An explicit
-`--method` cannot accompany `--config` or `--resume-from`; those settings already
+`method` cannot accompany `config` or `resume_from`; those settings already
 name the saved method. The package CLI reads method from the JSON config.
 
 ### Red Zone Depth
@@ -1552,6 +1717,24 @@ update. An immutable checkpoint ID includes its actual
 payload and continuation ancestry; an update number alone is not an identity.
 Ordinary local filesystem rename/fsync semantics are required.
 
+`train` and `extend_training` release unused Python reference cycles after a
+saved state has been replaced and the block's temporary arrays have been
+released. This covers full checkpoints and new actor/history exports for all
+six built-in baselines. Several writes share one cleanup; blocks
+with no pending cleanup skip it. The cleanup runs on the host, outside compiled JAX
+work, and its block-time cost is included in `save_seconds`.
+
+The public training calls also collect unused cycles before setup and on exit.
+Arrays still held by the caller, the current learner or a kept error traceback
+remain live. Checkpoint contents stay complete: QMIX still saves its replay
+buffer for exact recovery. No learning setting or checkpoint format changes.
+
+Custom training loops that call `save_checkpoint` or `export_system` directly
+own this lifetime: drop obsolete state and temporary references, then use host
+`gc.collect()` after saved arrays have been replaced. Collecting while the
+caller still holds those arrays cannot free them. `export_actor` copies saved
+files without loading arrays and does not need this numerical cleanup.
+
 Setup and restore verify the installed training content. Periodic saves reuse
 that checked descriptor instead of rebuilding the installed content each time.
 Starting a child also reuses the check from its required full parent restore;
@@ -1593,8 +1776,12 @@ execution settings. Actor-only loading supports independent deployment.
 Automatic reports include `run_summary.md`, `learning_curve.csv`,
 `learning_curves.png`, `learning_curves.svg` and validation cell results; a
 report with a QMIX run adds `qmix_curves.png` and `qmix_curves.svg` (loss,
-replay rows, used TD pairs per transition and exploration rate), and one with a
-PQN-VDN run adds `pqn_curves.png` and `pqn_curves.svg`. Analysis
+replay rows, used TD pairs per transition, exploration rate and gradient norms),
+and one with a PQN-VDN run adds `pqn_curves.png` and `pqn_curves.svg`. The
+gradient-norm panel draws each update's `grad_norm_mean` (solid) and
+`grad_norm_max` (dashed) on a log scale and marks with a red dotted line every
+update where `grad_norm_nonfinite` is above zero. A missing norm is a gap, not
+zero. Runs saved before these columns existed show a short note. Analysis
 reads saved evidence without changing original scores or checkpoints. Interrupted
 final validation, selection, export and reporting can resume after training has
 used its exact budget, without collecting another transition.
@@ -1603,6 +1790,40 @@ The summary links actual stage/map/opponent exposure in `exposure.json`. It
 separates task reward per active-agent sample from shaping per real environment
 transition. Missing validation stays missing, and plots identify their frozen
 panel. Failure updates the Markdown status without rerunning games or plots.
+
+### Saved Opponent Exposure
+
+`exposure_history.csv` records cumulative exposure at the initial state, each
+routine validation boundary and the final state. A shared boundary gets one
+record. A continued child records its inherited starting boundary as its initial
+state. Read `accepted` before using a row: only events referenced by the active
+checkpoint are accepted. Failed or superseded attempts remain visible with their
+own attempt IDs and times. Recovery never silently counts their experience twice.
+An active recovery marker or missing checkpoint evidence withholds acceptance.
+Older runs without these events have an empty table; analysis does not invent
+past exposure from their final counters.
+
+Each row describes one group: a curriculum stage, task source, map, opponent,
+or opponent source (`self`, `history` or `fixed`). These are separate totals;
+they do not tell you which map and opponent occurred together. `starts` counts
+game starts and `real_transitions` counts environment transitions. Completed
+wins, draws, losses and `length_sum` describe finished games only. Member summaries
+also report `mean_length`, which is missing when no game finished.
+
+PPO's `used_policy_samples` and `used_value_samples` include repeated optimizer
+passes and use the actual actor and value masks. They are not new experience.
+QMIX and PQN-VDN report `used_td_pairs` in their existing units. Their separate
+global agent-utility counts remain available. Missing or inapplicable counts are
+empty with a reason; unknown legacy values are never zero-filled. Source and map
+completion counts are not collected. This adds compact counters and boundary
+records, without full training metrics or Viewer replay capture.
+
+`training_seconds`, `elapsed_seconds` and `wall_seconds` keep their existing
+meanings: measured training work, measured process-attempt time accumulated
+through recovery, and time since the run was created. Raw failed-attempt records
+remain available when comparing complete costs. The checkpoint's boundary map
+grows only with the declared validation and final boundaries. `exposure.json`
+remains the latest summary, and all files stay under the chosen run directory.
 
 ### Validation And Checkpoint Selection
 
@@ -1625,6 +1846,17 @@ config = training.TrainConfig(
 result = training.train(config, output_dir="artifacts/alpha-validation")
 print(result.selected_actor)
 ```
+
+`validation_maps` chooses which held-out validation maps these games use. The
+default, `None`, plays all five maps, 42 through 46. A list such as
+`validation_maps=(42, 43, 44, 46)` must hold distinct maps from those five.
+Routine checks, confirmation games, optional Random diagnostics and checkpoint
+selection then all use exactly those maps, and every saved result names them, so
+selection never mixes results from different map sets. The run saves the choice
+in its config. A resume or `extend_training` child keeps it; a resume config
+that names other maps is refused. Runs saved before the setting existed read as
+`None` and resume unchanged. Custom maps need a panel made with `opponents=`
+(or `validation_opponents`), and the optional slot diagnostic needs the default.
 
 A reference may also be an absolute actor export or complete learner checkpoint
 path, or an installed
@@ -1768,26 +2000,25 @@ Run the four-game CPU demonstration:
 
 ```bash
 JAX_PLATFORMS=cpu uv run --no-sync python examples/cross_play_and_zsc.py \
-  --output-dir artifacts/cross_play_demo
+  output_dir=artifacts/cross_play_demo
 ```
 
 Its two-step games prove the workflow only. For a useful evaluation budget,
-choose real actor exports and a full game horizon. Repeat each method argument
-to play every focal, partner and opponent combination:
+choose real actor exports and a full game horizon. Name each member in its mapping to play every focal, partner and opponent combination:
 
 ```bash
 JAX_PLATFORMS=cpu uv run --no-sync python examples/cross_play_and_zsc.py \
-  --output-dir artifacts/cross_play_study \
-  --focal /absolute/path/to/selected-actor \
-  --partner /absolute/path/to/partner-actor --partner tdm-alpha \
-  --opponent tdm-beta --opponent tdm-gamma \
-  --maps 47 48 49 50 51 --seed-pairs 8 --max-steps 300
+  output_dir=artifacts/cross_play_study 'maps=[47,48,49,50,51]' seed_pairs=8 \
+  max_steps=300 \
+  'focals={Focal:/absolute/path/to/selected-actor}' \
+  'partners={Partner:/absolute/path/to/partner-actor,Alpha:tdm-alpha}' \
+  'opponents={Beta:tdm-beta,Gamma:tdm-gamma}'
 ```
 
 Python callers can pass named live `System` or `Policy` objects to the example's
 `run()` function. A `familiarity` mapping declares exposure for each focal and
 partner: `{"focal": {"partner": "held_out"}}`. The CLI reads the same JSON with
-`--familiarity FILE`, using the method argument strings as names. Allowed labels
+`familiarity=FILE`, using the mapping labels as names. Allowed labels
 are `familiar`, `held_out` and `unknown`; missing pairs are `unknown`. These are
 researcher declarations, not verified training histories.
 
@@ -1869,6 +2100,36 @@ every shortlisted actor. Missing games give `needs_confirmation` and the exact
 them for you. Historical tasks retain their original rules. New confirmation of
 a verified pre–Red Zone actor comparison explicitly uses depth zero.
 
+A request keeps the run's ordered rosters, learner slots, partners and labels.
+`arguments` is a ready-to-use keyword mapping when `ready_to_run` is true:
+
+```python
+missing = decision["runs"][0]["needs_confirmation"][0]
+confirmed = training.validate_checkpoint(**missing["arguments"])
+```
+
+`required_bindings` names any live methods that cannot be recreated from a saved
+reference. Supply those same objects through the ordinary `partners` mapping or
+`training.load_panel(path, bindings=...)`. The printed Python example shows where
+they go. Selection reads saved evidence; it never calls a factory or provider to
+recover a live client. Each request includes `expected_task`. Validation restores its partner order and
+any existing shared-policy wrapper, then checks
+that exact task before writing outputs or playing games, so a changed teammate,
+roster or panel cannot silently become the requested confirmation. Ordinary calls
+may omit this optional guard. Checking identities may still load saved actors.
+
+The selected actor won the declared selection comparison. The final actor is the
+last saved training state; it may differ. Confirmation games help select an actor.
+Use a separately fresh assessment root for the final reported evaluation. An
+opponent that was in the training pool is familiar, even if it is also the routine
+validator; a strong familiar opponent is not a held-out generalization test.
+
+Across-run selection requires matching frozen panels, maps, ordered rosters,
+partner identities and labels, learner slots and scoring rules. Different training
+seeds are allowed. Different validation roots still require the existing explicit
+unpaired declaration. Grouped analysis keeps incompatible run rows and explains
+why it cannot pool them; it does not silently drop them or change the task.
+
 After the calls finish, copy the same declaration into a new file. Add
 `previous_decision` pointing to the pending `selection_decision.json`, and
 `confirmation_results` listing the new `validation_summary.json` paths. Write the
@@ -1927,6 +2188,11 @@ training-validation intervals available is unchanged. Training-group
 independence claim. A missing score alone does not make an otherwise known
 independent run dependent. Old saved reports keep their original meaning and bytes.
 
+Grouped training reports use the selection rule saved in each run's metadata.
+Different rules keep the run rows visible but withhold a pooled estimate. A
+verified `analyze(selection=...)` decision supplies one declared rule for its
+chosen checkpoints; it leaves each original selection unchanged.
+
 To compare training seeds, save a grouping declaration, for example `groups.json`:
 
 ```json
@@ -1949,6 +2215,13 @@ Use the actual panel digest, opponents, depth and all planned runs. Then call
 `training.analyze(["RUN_SEED_1", "RUN_SEED_2"], output_dir="REPORT", grouping="groups.json")`,
 or add `--grouping groups.json` to `analyze-training`. The report adds
 `training_variation.json`, `training_variation.csv` and a separate summary.
+It also adds recipe learning curves: `recipe_curves.png`, `recipe_curves.svg`
+and `recipe_curves.csv`. They show each group's point margin at every saved
+routine validation step, step 0 included: one thin line per run and one thick
+mean line per group, with one panel per method. The margin uses only the
+grouping's maps and opponents; see [Saved Study Data](study_data.md). When no
+saved result has points in every declared cell, the curves are skipped and the
+summary says so.
 It resamples whole run vectors, keeping a run's map/opponent scores together.
 The interval has a declared 95% confidence level. It is unavailable when runs or
 cells are missing, there are too few independent runs, or independence is unknown.
@@ -2111,6 +2384,9 @@ bash /absolute/path/mappo-run-package/resume.sh \
 ```
 
 Resume keeps the same source, environment, settings, panel and run identity.
+`train(resume_from=run_folder)` follows the saved latest checkpoint pointer; an
+exact learner checkpoint path remains supported. The Hydra resume config keeps
+omitted values from the saved run. See [Hydra And OmegaConf](hydra.md).
 It finishes pending output work without adding training transitions after the
 budget. Launch and resume check package files, imports and hardware identity.
 Keep the package in its prepared location, and keep its files unchanged. Its
@@ -2745,7 +3021,10 @@ versions automatically. It also pins external panel/result files and actor
 checkpoint descriptions. Each worker refuses changed inputs or a changed install
 before training. The trainer still checks all checkpoint payloads. Declaration
 checks and report generation use CPU subprocesses. Training workers inherit your
-Python paths and device settings; the study does not select a GPU for you.
+Python paths. Device settings are inherited unless you supply `resources`.
+Use `resources.devices` to name CPU or GPU UUIDs and each device's worker limit;
+optional fractions control the JAX allocator. See [device and worker controls](hydra.md#choose-devices-and-worker-limits)
+for the shared single-run/study settings, recorded facts and memory limits.
 Factory references use the ordinary System loader. A reference cannot freeze a
 remote service or hidden provider state; its repeatability limits still apply.
 
@@ -2762,9 +3041,9 @@ unfinished work from that case's complete saved checkpoint. The saved seed and
 config must still match; an extension must match its declared parent, added
 budget and changes. A checkpoint that changes those settings or points outside
 the case's run folder is refused. Explicit resume may start the same case again
-only when no checkpoint exists and its run folder is missing or empty. It keeps
-the saved config, seed, attempt history and original deadlines. A nonempty run
-without a complete checkpoint is refused; preserve its partial work and restore
+only when no checkpoint exists and its run folder is missing, empty or holds only
+the trainer's `.training.lock`. It keeps the saved config, seed, attempt history
+and original deadlines. Any other run without a complete checkpoint is refused; preserve its partial work and restore
 a complete checkpoint, or declare a new study in another output folder.
 
 The saved `failure_policy` defaults to `stop`. Set it to `continue` in the original
@@ -2820,7 +3099,7 @@ Use `result.final_checkpoint`, `result.final_actor` or the path in
 `latest_checkpoint.json`; the readable filename is not the checkpoint ID.
 Old hash-only folders still load without renaming them.
 
-The DevClient and Replay Viewer show plain-English actor names, including the
+BattleClient and Replay Viewer show plain-English actor names, including the
 method, saved step and run. Exact identities remain in saved metadata. Two
 artifacts may have the same readable name without becoming the same artifact.
 Writers preserve different saved work when names collide. They reuse immutable
@@ -2842,13 +3121,37 @@ copy of each row after `training_updates.jsonl` has been appended and closed.
 The callback runs between collection blocks, including Q-method warmup blocks;
 it adds no per-step call or device work. Changing the copy cannot change saved
 results. Omit it to skip both the copy and call. `extend_training` accepts the
-same callback. Supply it again when resuming; callbacks are not saved in JSON.
+same callback. Supply it again when resuming; the live callable is not saved in
+JSON. Launcher factory declarations keep checked code/kwargs receipts; see
+[callback factories](hydra.md#continue-runs-and-use-callbacks).
 
 If your callback raises an exception, training stops and preserves the saved row.
 Resume from the latest complete checkpoint. The existing writer does not add a
 per-row disk sync for callbacks. Recovery may repeat work, so external loggers
 should use the saved `run_id` and `env_steps` to recognize repeated steps, keeping
 `attempt_id` if they need to distinguish attempts. Delivery is not exactly once.
+
+
+If you already own a W&B run, use the optional small adapter:
+
+```python
+from marl_battlegrounds import training
+
+import wandb
+
+with wandb.init(project="my-project") as logging_run:
+    result = training.train(
+        config, output_dir="/tmp/my-training-run",
+        on_update=training.make_wandb_callback(logging_run),
+    )
+```
+
+This fragment assumes `wandb` is installed/imported and `config` is prepared.
+The adapter sets `env_steps` as the plot axis and logs saved rows. It never owns
+SDK initialization or cleanup; your context does. The Hydra factory linked above
+handles one SDK run per local attempt, including recovery. Disabled logging has
+no SDK import, call, row-copy or per-step work. Provider latency is an optional
+host cost, not part of the compiled learner.
 
 
 ### Validate The System You Deploy
@@ -2945,3 +3248,166 @@ without changing the collected physical trajectory. These tiny runs establish
 correctness and bounded cost for the tested paths, not large-batch speed or
 learned skill. Their settings, source hashes and measurements are under
 `artifacts/m11_5/composed_training_cost/` in the qualification checkout.
+
+### Interrupted Checkpoint Writes
+
+Checkpoint and actor writers first build an unfinished payload, then publish its
+complete directory. A caught error removes only that call's unfinished data.
+Once a complete directory is published, a later error cannot delete it. If the
+latest-checkpoint pointer has not yet been replaced, the old pointer remains
+valid. If replacement has finished, a later sync error may leave the new complete
+checkpoint as latest. Retrying an actor export checks and reuses matching data.
+Retrying a learner save may publish another artifact for the same boundary,
+because Orbax writes fresh payload filenames and timestamps. It preserves the
+previous artifact and its identity.
+
+After an abrupt process exit, resume validates the saved inputs before cleaning
+up. Under the run's existing lock, it removes only recognized unfinished writes
+whose original process is known to have exited. A process ID alone is not enough:
+its start and machine-boot identities are checked too. Data with missing or
+unclear ownership stays in place. `run_events.jsonl` records each removal or
+reason for preservation. Published models and failed-attempt evidence stay
+intact. A cleanup error names the affected path.
+
+### Checked Recovery And History Exports
+
+Resume reads the small checkpoint description to choose settings. The restore
+owner then checks the learner's complete payload once, before recording or logs
+can move back to the saved boundary. Actor-only loading and full learner recovery
+remain separate operations.
+
+New history catalog rows bind the saved actor's exact export ID. Recovery checks
+the available actor files, capture number, step, source content and inference
+settings. Parent captures keep their parent's seed and identity when a child
+uses another seed. A saved catalog must cover every ID from its recorded start
+through the last issued ID. Old checkpoints with no catalog cannot prove that coverage. When resumed, their
+new catalog records its starting capture ID; the older prefix stays unknown
+through later saves and continuations.
+Old rows without an export ID can check present provenance, but cannot establish
+that the bytes are the original ones. Missing historical exports stay unavailable;
+the catalog does not recreate them. Changed present files fail with their path.
+
+A moved local run may find a history actor in its own `past_copies/` folder using
+the recorded name and checked identity. Its original provenance stays unchanged.
+Continuation still needs its recorded parent checkpoint description; this does
+not claim that moving a whole parent-and-child tree rewrites those references.
+
+
+### Keep Every Saved Actor
+
+Set `retain_all_actors=True` in `TrainConfig`, or pass `retain_all_actors=true`
+to the Hydra launcher. The software-check recipe enables it. Each saved learner
+boundary exports its actor to the run's `actors/` folder before older recovery
+payloads can be removed. History captures still go to `past_copies/`. Both use
+readable method, step and identity names. Set `output_dir` to choose the run root.
+
+Actor exports contain inference weights and, for PQN, its running statistics.
+They do not contain the optimizer or QMIX replay buffer. Q actors play greedily;
+a history actor's captured training epsilon remains separate provenance.
+Keeping every actor does not keep every full learner payload: the runner keeps
+the two recent recovery payloads and explicit validation/selection candidates.
+Small checkpoint descriptions remain. More frequent saves mean more actor files;
+choose that cadence with the experiment's storage budget.
+
+If export fails after checkpoint publication, resume from the saved latest
+checkpoint. The runner checks that checkpoint and finishes the missing current
+export before another decision. A missing older promised export stops recovery
+before logs change; restore its exact saved copy and catalog. It cannot be
+recreated from a different model. Published orphan checkpoints from a failed
+pointer update remain intact; ordinary resume does not adopt them automatically.
+
+The default is False, including older saved configurations without this field.
+It adds no per-save actor export to those runs. A child created with
+`extend_training(..., changes={"retain_all_actors": True})` starts retaining its
+own future boundaries and history captures. This does not promise to recover
+pruned parent actors. Turning retention off in a later child does not erase an
+earlier history-retention promise. Existing actor identities and bytes stay fixed.
+
+
+### Find Runs And Collect Models
+
+Find training runs without opening model arrays:
+
+```bash
+marl-bgs runs artifacts/training
+marl-bgs runs artifacts/training --json
+marl-bgs study status artifacts/study
+```
+
+The table includes unfinished runs and declared study cases that have not
+started. Malformed records show a reason. It does not start or repair work.
+Use `training.load_run(path)` to reopen a complete `TrainResult`, including its
+saved selected actor, final actor, reports and exact counts. An unfinished run
+raises an error. No report is regenerated. After moving a run, local actor paths
+are resolved under its new `actors/` folder. External inherited actors must still
+be available. `load_system` checks the actual model bytes when loading them.
+
+```python
+import json
+import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import training
+
+run = training.load_run("artifacts/training/my-run")
+system = training.load_system(run.selected_actor or run.final_actor)
+catalog_path = training.collect_actors(
+    [run.run_dir], output_dir="artifacts/models",
+)
+catalog = json.loads(catalog_path.read_text())
+available = [row for row in catalog["actors"] if row["actor_path"] is not None]
+actor_path = catalog_path.parent / available[0]["actor_path"]
+actor = training.load_system(actor_path)
+```
+
+`collect_actors` accepts any mix of built-in learner methods. Give it explicit
+run folders, including failed runs with useful models. It copies standalone
+actors or extracts them from surviving learner checkpoints. It never loads the
+optimizer or replay buffer. Existing actor bytes and identities stay unchanged;
+extraction retains the original checkpoint and inference identities. Repeating a
+collection reuses matching models. Different checkpoints or history captures
+remain separate entries even when their inference weights match.
+
+The output layout is:
+
+```text
+models/
+  catalog.json                 # Authoritative actor rows and CSV filename
+  actors-<content-hash>.csv     # Matching readable index
+  models/<method>_actor_step_<steps>_<identity>/
+  runs/<content-hash>.json      # Original run, status and selection evidence
+  collection_events.jsonl      # Present when interrupted writes were checked
+```
+
+Move the whole library to keep its relative model paths usable. The catalog also
+keeps original source paths as provenance; loading a collected actor does not
+need those sources. `Initial`, `History`, `Selected` and `Final` mean different
+things. Selected retains the runner's saved rule and evidence; Final is simply
+the completed run's last model. They may name the same actor. A published orphan
+is a saved checkpoint outside active recovery ancestry, not an adopted result.
+No label alone proves that a model is strong.
+
+The default `strict=True` rejects missing promised retained models. Historical
+checkpoints pruned without that promise remain visible as unavailable rows.
+`strict=False` can extract a missing export from its surviving full checkpoint
+into the separate library; it does not repair the source run. Corrupt or partial
+models always fail. A collected model stays available after its source is pruned.
+
+For one actor, use `training.export_actor(checkpoint, output_dir=path)`. This
+requires a complete source artifact and an exact destination. Matching contents
+are reused; conflicting contents fail. Keep output separate from source runs and
+immutable model folders. Collection uses the existing writer lock and atomic
+publication: an interrupted update leaves the old catalog/index pair usable.
+Retry the same call after the other writer has stopped. Verification reads files
+and can cost disk time, but it restores no numerical arrays. Anonymous copies
+are a separate distribution step; this local library keeps full provenance.
+
+See [Saved Study Data](study_data.md) for the complete offline Hydra example,
+recipe means, native-point intervals and checked manuscript tables.
+
+
+## Portable Reproduction
+
+Use [portable model and result bundles](reproduction.md) for checked local ZIP
+files, explicit downloads and anonymous-copy limits. The
+[experiment stage guide](../../scripts/paper_experiments/README.md) connects
+preparation, training, selection, evaluation and saved analysis through our API.
+Its software-check settings are separate from future paper hyperparameters.

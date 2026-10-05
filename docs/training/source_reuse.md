@@ -477,6 +477,7 @@ Target copies and Adam's two moments add three more copies.
 | `tau` | 0.01 | Blend weight when `hard_update` is False |
 | `gamma` | 0.99 | Discount per transition |
 | `eps_min`, `eps_decay` | 0.05, 100000 | Exploration falls from 1 to 0.05 over 100,000 real transitions |
+| `reward_scale` | 1.0 | BG addition: multiplier on the team reward inside the TD target (see below) |
 
 The donor YAML also names `max_grad_norm: 10`, but its optimizer is
 `optax.chain(optax.adam(q_lr))` and never clips, so BG copies no clipping. The
@@ -486,6 +487,13 @@ to that encoder applies to QMIX as well. No burn-in, extra clipping, Q or
 return normalization, or tuning is added.
 
 ### Deliberate QMIX Adaptations
+
+- **Reward scale.** Mava's QMIX has no reward multiplier. BG adds
+  `reward_scale` (default 1.0, which leaves the update unchanged) to match the
+  PQN-VDN switch below. The update multiplies the true-unit team reward by it
+  just before the TD target; replay, logged rewards and results stay in game
+  units. BG's per-step rewards are about 0.001, small next to early Q-value
+  errors, so a larger scale is a learning setting worth testing.
 
 - **Inputs, frame and masks.** Actors read BG's permitted SharedObs encoding in
   the chosen spawn frame (default "left"), with BG's 198-way legality masks.
@@ -510,7 +518,10 @@ return normalization, or tuning is added.
   averaged over active learner-owned Team A slots. Separately stored team shaping
   is added once when the sample is built. Without partners or custom feedback,
   the native reduction agrees with the donor for full 5v5 teams; smaller rosters
-  use only their active slots.
+  use only their active slots. An amount a custom reward pays to one slot is
+  therefore divided by the number of owned slots. The built-in
+  `combat_support_team_reward` gives every slot the same team amount, so the
+  average keeps each event's per-agent price.
 - **Inactive slots and padding.** Smaller rosters pad Team A to five slots.
   Inactive slots add nothing to the team value or its gradient. Invalid padding
   rows are replaced by neutral values before any calculation, keep recurrent
@@ -624,9 +635,13 @@ body.
 ### PQN-VDN Model And Settings
 
 One local Q-network is shared by every Team A actor; each actor keeps its own
-512-wide memory. The layers are the donor's SMAX configuration: BatchNorm on
-the input, then two blocks of Dense 512, BatchNorm and ReLU, a 512-wide GRU
-that resets before a new episode, and a Dense 198 head. Flax's default
+512-wide memory. The default layers are the donor's SMAX configuration:
+BatchNorm on the input, then two blocks of Dense 512, BatchNorm and ReLU, a
+512-wide GRU that resets before a new episode, and a Dense 198 head.
+`normalization="layer_norm"` uses the donor's other `NORM_TYPE`: the input
+BatchNorm stays (the donor's `NORM_INPUT: True`) and the two hidden BatchNorms
+become Flax LayerNorms (epsilon 1e-6), with the same parameter count and only
+the input layer's 10,330 running statistics. Flax's default
 initializers are kept (LeCun-normal Dense and GRU input kernels, orthogonal
 recurrent kernels, zero biases). Parameter paths match the donor, so the same
 key gives exactly the same starting weights (the donor comparison runs at the
@@ -647,13 +662,20 @@ mixer, critic, physical state or target network.
 | `max_grad_norm` | 1.0 | Global gradient-norm clip before RAdam |
 | `gamma`, `td_lambda` | 0.99, 0.85 | Discount and lambda-return weight |
 | `eps_start`, `eps_finish`, `eps_decay_fraction` | 1.0, 0.01, 0.1 | Exploration falls from 1 to 0.01 over the first tenth of the planned learning blocks |
+| `reward_scale` | 1.0 | The donor's `REW_SCALE`: multiplier on the team reward inside the lambda-return targets |
+| `normalization` | "batch_norm" | The donor's `NORM_TYPE` for the two hidden layers: "batch_norm" or "layer_norm" |
 
 BatchNorm keeps the donor's settings (momentum 0.99, epsilon 1e-5). In
 training minibatches it normalizes each feature over all time rows and
 flattened game/actor rows together; action selection uses the saved running
 statistics and never changes them. The donor's `REW_SCALE: 10` is a SMAX
-reward conversion and is not copied. Its 128 games are not copied either;
-BG keeps its own default of 32.
+reward conversion, so the default stays 1.0; `reward_scale` keeps the switch
+for BG experiments. Its 128 games are not copied either; BG keeps its own
+default of 32. The LayerNorm choice matches the donor's own `layer_norm`
+network exactly at initialization and within float tolerance in inference and
+training (`tests/test_baseline_pqn_reference.py`). A LayerNorm actor records
+`"normalization": "layer_norm"` in its export and identity; BatchNorm actors
+keep their earlier bytes and identities.
 
 ### Deliberate PQN-VDN Adaptations
 
@@ -719,7 +741,9 @@ BG keeps its own default of 32.
 - **Team reward and endings.** The donor's SMAX team reward is the first
   agent's reward. BG uses `team_task_reward` to average native rewards plus
   custom adjustments over active learner-owned Team A slots, then adds enabled
-  team shaping once. The value sum and legal maximum use the same owned slots.
+  team shaping once. As for QMIX, use `combat_support_team_reward` so the
+  average does not divide one agent's combat/support amounts by the team size.
+  The value sum and legal maximum use the same owned slots.
   A real ending (win, loss or horizon draw) cuts the return to the
   immediate reward; the end of a block is not an ending and bootstraps from
   the next row, as in the donor.
@@ -913,3 +937,40 @@ terminal value, `1e-10`; using that rate during added optimizer work requires an
 explicit choice. Keeping the terminal rate does not freeze the actor: BatchNorm
 statistics can still change. Each child records its parent, actual source,
 future rules and cumulative counts. Related children are not independent seeds.
+
+## Hydra Parser Compatibility
+
+The optional launcher supports `hydra-core==1.3.6` and `omegaconf==2.3.0` on
+Python 3.14. Hydra's `get_args_parser` passes its nested `LazyCompletionHelp`
+object to argparse. Python 3.14 checks help strings while adding actions; this
+particular lazy object needs to defer that check until help is rendered.
+
+`marl_battlegrounds.experiments.hydra` wraps parser construction, including
+`hydra.main`'s imported reference. During that call only, it skips `_check_help`
+for the exact nested help type and `shell_completion` action. Every other action
+uses the original check. A `finally` block restores argparse after success or
+failure. No installed file changes. The upstream implementation is in
+[Hydra's parser owner](https://github.com/facebookresearch/hydra/blob/main/hydra/_internal/utils.py);
+the qualified source is the installed 1.3.6 distribution recorded in `uv.lock`,
+not a claim about that moving branch. The shim uses our own wrapper; no Hydra
+parser body or completion implementation is copied.
+
+The compatibility tests exercise run, both help routes, configuration display,
+resolution, overrides, finite BasicSweeper jobs, completion help, completion
+script and query, ordinary malformed help and restoration after failure.
+Remove the wrapper when a new pinned upstream release passes that same matrix
+without it. An unqualified Hydra version on Python 3.14 fails with the supported
+installation command instead of silently applying the patch to unknown code.
+
+
+## Finite Hydra Sweeps
+
+The optional `hydra_plugins.marl_battlegrounds_study.StudyLauncher` implements
+Hydra's installed Launcher protocol. It asks Hydra to compose its ordered jobs,
+then calls the existing MARL-BGs study runner once. No upstream scheduler body is
+copied. The study still owns resources, attempts, stop, recovery and case outputs.
+
+The supported sweeper is BasicSweeper with one complete finite batch. Adaptive
+sweepers, partial batches, nested launchers and Hydra job callbacks are rejected
+because they would add another execution owner. Researchers can use the ordinary
+study API for explicit finite declarations and detached execution.

@@ -7,16 +7,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from scripts.dev.visual_debugger import recording
-from scripts.dev.visual_debugger.evaluation_bridge import (
-    DebuggerActionSourceKindV1,
-)
-from scripts.dev.visual_debugger.recording import (
-    DebuggerRecordingCloseCauseV1,
-    DebuggerRecordingSpecificationV1,
-    DebuggerReplayRecorderV1,
-    build_debugger_recording_specification_v1,
-)
 from tests.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
@@ -24,6 +14,16 @@ from tests.evaluation_fixtures import (
     evaluation_env_config,
 )
 
+from marl_battlegrounds._battle_client import recording
+from marl_battlegrounds._battle_client.evaluation_bridge import (
+    DebuggerActionSourceKindV1,
+)
+from marl_battlegrounds._battle_client.recording import (
+    DebuggerRecordingCloseCauseV1,
+    DebuggerRecordingSpecificationV1,
+    DebuggerReplayRecorderV1,
+    build_debugger_recording_specification_v1,
+)
 from marl_battlegrounds.evaluation.metrics import (
     EvaluationEpisodeCompletionV1,
     EvaluationEpisodeObserverV1,

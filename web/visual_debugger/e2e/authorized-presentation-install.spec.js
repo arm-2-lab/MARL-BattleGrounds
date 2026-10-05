@@ -1,6 +1,34 @@
 /**
  * @file Exercise real-service presentation installs, pending views, replay endpoints,
- * forged-root rejection and death/respawn identity.
+ * forged-root rejection and death/respawn identity. A hovered Replay Viewer body
+ * shows the shared Champion Card (class and calling, Agent ID, the shared Life
+ * bar, sources by class only), the same in Oracle View and Agent POV. A
+ * respawned champion's Spawn Shield tip reads the card's words: "Spawn Shield
+ * (Invulnerable)", "It can't be seen or hit, and can't strike yet." and one row,
+ * "Time Left". In the Replay Viewer the Actions tab's This Tick and Next Tick
+ * parts hold the action rows and the Agent tab's Champion Frame stands in for
+ * Agent Details, which stays in the hidden Developer drawer. An action row names
+ * its actor (a token chip reading "Agent ID 0, Mage, Team A"), shows the accepted
+ * codes and, when the game changed the order, "Changed By The Game" with the
+ * submitted codes. The Technical Frame lists its facts in This Frame, This Game
+ * and This File. Agent Details reads Who, Right Now, Statuses, the class card
+ * and Lore.
+ *
+ * Drawn effects join the choreography plan: recorded events, derived rows such
+ * as a Focus Tally, and an earlier tick's carried herald card. A status change
+ * has no off-body mark: the plan keeps its lifecycle event and the recipient's
+ * status plate shows the status. A Charge draws one war-path with its echo. The
+ * selected champion's next action is a thread and a lane glyph under the
+ * target, and the Replay Viewer shows no legality on the arena. A fall draws the
+ * class requiem's Fall Ring in the team color at 1.3 times the body radius; a
+ * return draws the Homecoming; a respawn wave draws nothing on the arena while
+ * the scorebug's wave line counts down; a Spawn Shield expiry keeps its named
+ * mark but draws the Ward Lift only in play. A corpse is an Ashen Token painted
+ * the same in Oracle View and Agent POV. In live play a fall is told by the
+ * herald card in the killing team's color and the Fallen panel naming everyone
+ * who shared the kill, and a view switch shows the tick already played at its
+ * end. A forged root that Reconnect loads after a dropped command leaves no
+ * old identity on the page.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -8,13 +36,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
-import { formatDisplayNumber } from "../src/display.js";
-import { statusLifecyclePresentation } from "../src/semantic-vocabulary.js";
-import {
-  CHOREOGRAPHY_ROOT,
-  finishControllerClock,
-  installWaapiAutopause,
-} from "./support/choreography.js";
+import { classNamesV1 } from "../src/class-documentation.js";
+import { formatLifeNumber } from "../src/display.js";
+import { CHOREOGRAPHY_ROOT, installWaapiAutopause } from "./support/choreography.js";
 import {
   REPOSITORY_ROOT,
   startDebugger,
@@ -447,7 +471,9 @@ async function cp5Slice5PlanAndDomSignature(page, rawPresentation) {
     for (const effect of document.querySelectorAll(
       ".combat-effect--status-lifecycle[data-tooltip-owner]",
     )) {
-      const hit = effect.querySelector(".combat-lifecycle__hit");
+      // The one status change drawn off the marks is the Ward Lift (a Spawn
+      // Shield expiry, looks/statuses.js); its group is its own tip target.
+      const hit = effect.querySelector(".combat-lifecycle__hit") ?? effect;
       if (!(hit instanceof SVGElement)) {
         throw new Error("Installed status lifecycle lost its hit target.");
       }
@@ -517,6 +543,21 @@ async function cp5Slice5PlanAndDomSignature(page, rawPresentation) {
           end: event.end ?? null,
           route: event.route ?? null,
         })),
+        // Rows the plan adds beside the recorded events (Focus Tally, Last
+        // Seen, herald cards, Fallen rows); some of them are drawn too.
+        derived: (plan === null || !Array.isArray(plan.derivedEvents)
+          ? []
+          : /** @type {Array<Record<string, any>>} */ (plan.derivedEvents)
+        ).map((event) => ({
+          eventId: event.eventId,
+          eventType: event.eventType,
+          kind: event.kind,
+          persistent: event.persistent ?? false,
+          sourcePresentationKey: event.sourcePresentationKey ?? null,
+          targetPresentationKey: event.targetPresentationKey ?? null,
+          recipientPresentationKey: event.recipientPresentationKey ?? null,
+          agentPresentationKey: event.agentPresentationKey ?? null,
+        })),
       },
       dom: {
         authority: document.documentElement.dataset.presentationAuthority ?? null,
@@ -542,6 +583,14 @@ async function cp5Slice5PlanAndDomSignature(page, rawPresentation) {
           agentKey: effect.getAttribute("data-agent-presentation-key"),
         })),
         statusLifecycles,
+        // Status plates: one cell per status a body holds at the end of the
+        // tick, keyed by the body and the status token.
+        statusCells: [
+          ...document.querySelectorAll("#battlefield .status-cell[data-token-id]"),
+        ].map((cell) => ({
+          key: cell.getAttribute("data-presentation-key"),
+          token: cell.getAttribute("data-token-id"),
+        })),
         routes: [
           ...document.querySelectorAll(".combat-choreography-routes [data-event-id]"),
         ].map((route) => ({
@@ -565,6 +614,9 @@ async function cp5Slice5PlanAndDomSignature(page, rawPresentation) {
               transform: marker.getAttribute("transform"),
             }),
           ),
+          // The Charge war-path parts (looks/ultimates.js).
+          chargeCores: route.querySelectorAll(".ult-charge__core").length,
+          chargeEchoes: route.querySelectorAll(".ult-charge__echo").length,
         })),
         transition: document.querySelector("#transition-value")?.textContent ?? null,
       },
@@ -757,48 +809,48 @@ function expectedAgentIdentity(agent, presentation) {
  * @param {Record<string, any>} agent
  * @param {unknown} persistentCardBefore
  * @param {Record<string, any>} presentation */
-async function expectCompactAgentTooltip(
+async function expectReplayChampionCard(
   page,
   agent,
   persistentCardBefore,
   presentation,
 ) {
+  // The Replay Viewer's arena body shows the shared Champion Card (the card
+  // the BattleClient's #hcard shows), in Oracle View and Agent POV alike.
   const identity = expectedAgentIdentity(agent, presentation);
-  const expectedLabels = [
-    "Health",
-    "Effective Speed",
-    "Ultimate Status",
-    "Combat Status",
-    ...(agent.steps_until_out_of_combat > 0 ? ["Steps Until Out of Combat"] : []),
-  ];
-  await expect(page.locator("#visual-tooltip")).toBeVisible();
-  await expect(page.locator("#visual-tooltip-title")).toHaveText(identity.title);
-  await expect(page.locator("#visual-tooltip")).toHaveAttribute(
-    "data-tooltip-accent",
-    identity.accent,
+  const names = classNamesV1(agent.class_id);
+  const tooltip = page.locator("#visual-tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveAttribute("data-tooltip-kind", "champion");
+  await expect(tooltip).toHaveAttribute("data-tooltip-accent", identity.accent);
+  await expect(tooltip.locator(".champion-card__title")).toHaveText(
+    `${names?.className} · ${names?.calling}`,
   );
-  await expect(
-    page.locator("#visual-tooltip .semantic-explanation__summary"),
-  ).toHaveCount(0);
-  await expect(page.locator("#visual-tooltip .semantic-explanation__label")).toHaveText(
-    expectedLabels,
+  await expect(tooltip.locator(".champion-card__id")).toHaveText(
+    `Agent ID ${identity.displayId}`,
   );
-  await expect(
-    page.locator("#visual-tooltip .semantic-explanation__value").nth(3),
-  ).toHaveText(agent.steps_until_out_of_combat > 0 ? "In Combat" : "Out of Combat");
-  const tooltipText = await page.locator("#visual-tooltip").innerText();
+  // The card's first bar is the shared Life bar (life-bar.js); the Ultimate
+  // bar follows it.
+  await expect(tooltip.locator(".life-bar__label").first()).toHaveText("Life");
+  await expect(tooltip.locator(".life-bar__value").first()).toHaveText(
+    `${formatLifeNumber(agent.current_health)} / ${formatLifeNumber(
+      agent.maximum_health ?? agent.max_health,
+    )}`,
+  );
+  const tooltipText = await tooltip.innerText();
   for (const forbidden of [
-    "Ultimate Name",
     "Controlled actor",
     "Selected target",
     "Reference",
     "Inspected agent",
-    "Current effect",
-    "Spawn Shield",
-    "Now",
+    "Health",
+    "Effective Speed",
+    "hidden source",
   ]) {
     expect(tooltipText).not.toContain(forbidden);
   }
+  // Sources are named by class only, never by Agent ID.
+  expect(tooltipText).not.toMatch(/ID \d's/u);
   expect(await page.locator("#selection-card").evaluate((node) => node.innerHTML)).toBe(
     persistentCardBefore,
   );
@@ -809,13 +861,30 @@ async function expectCompactAgentTooltip(
  * @param {Record<string, any>} presentation */
 async function expectCertifiedDocumentationCard(page, agent, presentation) {
   const identity = expectedAgentIdentity(agent, presentation);
-  await expect(page.locator("#selection-card > .sr-only")).toHaveText(identity.title);
+  const classLabel = EXPECTED_AGENT_CLASSES[agent.class_id].label;
+  // The card reads Who, Right Now, Statuses, the class card and Lore. Who
+  // names the champion with its chip (accessible name "Agent ID 0, Mage,
+  // Team A") and its team; the class card is titled "Mage · ID 0".
+  await expect(page.locator("#selection-card .agent-details__heading")).toHaveText([
+    "Who",
+    "Right Now",
+    "Statuses",
+    "Lore",
+  ]);
+  const chipName = await page
+    .locator("#selection-card .agent-details__section .token-chip")
+    .first()
+    .getAttribute("aria-label");
+  expect(chipName?.split(", ").join(" · ")).toBe(identity.title);
+  await expect(
+    page.locator("#selection-card .agent-details__class > .sr-only"),
+  ).toHaveText(`${classLabel} · ID ${identity.displayId}`);
   await expect(
     page.locator("#selection-card .semantic-explanation__heading"),
   ).toHaveText(["Class Overview", "Authored Tactical Guide", "Class Mechanics"]);
   await expect(
     page.locator(
-      "#selection-card > .semantic-inspector__details > .semantic-explanation__summary",
+      "#selection-card .agent-details__class > .semantic-inspector__details > .semantic-explanation__summary",
     ),
   ).toHaveCount(0);
   await expect(page.locator("#selection-card .selected-outgoing-target")).toHaveCount(
@@ -917,6 +986,23 @@ const FORBIDDEN_TECHNICAL_FACT_IDS = Object.freeze([
   "presentation_key",
 ]);
 
+// Which Technical Frame group shows each fact (written out independently of
+// src/ledger.js). A fact not listed here shows in This Frame.
+/** @type {Readonly<Record<string, string>>} */
+const TECHNICAL_FRAME_GROUP_OF = Object.freeze({
+  frame: "this-frame",
+  simulator_step: "this-frame",
+  incoming_transition: "this-frame",
+  episode: "this-game",
+  task_mode: "this-game",
+  map: "this-game",
+  observation_mode: "this-game",
+  episode_limit: "this-game",
+  seeds: "this-game",
+  artifact_digest_prefix: "this-file",
+  ordinary_movement_distance_scale: "this-file",
+});
+
 /** @param {import("@playwright/test").Page} page
  * @param {Record<string, any>} presentation */
 async function expectTechnicalFrameDom(page, presentation) {
@@ -931,6 +1017,9 @@ async function expectTechnicalFrameDom(page, presentation) {
   if (!technicalDetailsWasOpen) {
     await openDetails(page, ["#technical-frame-details"]);
   }
+  // In the Replay Viewer the card sits in the rail's Frame tab; show that tab
+  // so its facts can be hovered.
+  await showHolderOf(page, page.locator("#technical-frame-details"));
   /** @type {Record<string, Array<[keyof typeof TECHNICAL_HELP, string]>>} */
   const specifications = {
     live_oracle: [
@@ -1007,20 +1096,33 @@ async function expectTechnicalFrameDom(page, presentation) {
   } else {
     expect(technical[incomingField]).toEqual(expect.any(String));
   }
-  const facts = page.locator("#diagnostics-card .fact[data-technical-fact]");
+  // The card lists its facts in three groups, This Frame, This Game and This
+  // File, each in the facts' own order. A long value is cut in the middle
+  // and keeps its full text in its title.
+  const groupOf = (/** @type {string} */ id) =>
+    TECHNICAL_FRAME_GROUP_OF[id] ?? "this-frame";
+  const groupedExpected = ["this-frame", "this-game", "this-file"].flatMap((group) =>
+    expected.filter(([id]) => groupOf(id) === group),
+  );
+  const facts = page.locator("#diagnostics-card [data-technical-fact]");
   await expect(facts).toHaveCount(expected.length);
   expect(
     await facts.evaluateAll((nodes) =>
-      nodes.map((node) => ({
-        id: node.getAttribute("data-technical-fact"),
-        label: node.querySelector("span")?.textContent,
-        value: node.querySelector("strong")?.textContent,
-        tabindex: node.getAttribute("tabindex"),
-      })),
+      nodes.map((node) => {
+        const value = node.querySelector(".ledger-frame__value");
+        return {
+          id: node.getAttribute("data-technical-fact"),
+          group: node.closest(".ledger-frame__group")?.getAttribute("data-group"),
+          label: node.querySelector(".ledger-frame__label")?.textContent,
+          value: value?.getAttribute("title") || value?.textContent,
+          tabindex: node.getAttribute("tabindex"),
+        };
+      }),
     ),
   ).toEqual(
-    expected.map(([id, value]) => ({
+    groupedExpected.map(([id, value]) => ({
       id,
+      group: groupOf(id),
       label: TECHNICAL_HELP[id].label,
       value,
       tabindex: "0",
@@ -1028,7 +1130,7 @@ async function expectTechnicalFrameDom(page, presentation) {
   );
   for (const forbiddenId of FORBIDDEN_TECHNICAL_FACT_IDS) {
     await expect(
-      page.locator(`#diagnostics-card .fact[data-technical-fact="${forbiddenId}"]`),
+      page.locator(`#diagnostics-card [data-technical-fact="${forbiddenId}"]`),
     ).toHaveCount(0);
   }
   const technicalText = await page.locator("#diagnostics-card").innerText();
@@ -1055,7 +1157,7 @@ async function expectTechnicalFrameDom(page, presentation) {
     expect(technicalText).not.toContain(forbiddenPresentationKey);
   }
   for (const [id] of expected) {
-    const owner = page.locator(`#diagnostics-card .fact[data-technical-fact="${id}"]`);
+    const owner = page.locator(`#diagnostics-card [data-technical-fact="${id}"]`);
     await expect(owner).toHaveAttribute("aria-description", TECHNICAL_HELP[id].summary);
     await owner.hover();
     await expect(page.locator("#visual-tooltip-title")).toHaveText(
@@ -1108,17 +1210,18 @@ async function expectLatestTransitionDom(page, presentation) {
   const rawRows =
     (researcher?.latest_transition ?? presentation.latest_transition)?.action_rows ??
     [];
-  const rows = page.locator("#accepted-card .accepted-action-row");
+  const host = await actionRowsHost(page, "this");
+  const rows = host.locator(".accepted-action-row");
   await expect(rows).toHaveCount(rawRows.length);
-  await expect(page.locator("#accepted-card")).not.toHaveAttribute(
-    "data-transition-id",
-    /.+/u,
+  await expect(host).not.toHaveAttribute("data-transition-id", /.+/u);
+  await expect(host.locator(".accepted-action-row[data-presentation-key]")).toHaveCount(
+    0,
   );
-  await expect(
-    page.locator("#accepted-card .accepted-action-row[data-presentation-key]"),
-  ).toHaveCount(0);
   if (rawRows.length === 0) {
-    expect((await page.locator("#accepted-card").textContent())?.trim()).toBe("");
+    // The Replay Viewer's This Tick part keeps its heading and an empty line.
+    if (!(await replayRailMounted(page))) {
+      expect((await host.textContent())?.trim()).toBe("");
+    }
     return;
   }
   const scene =
@@ -1134,95 +1237,170 @@ async function expectLatestTransitionDom(page, presentation) {
     expect(identity).toBeTruthy();
     const expectedIdentity = expectedAgentIdentity(identity, presentation);
     const rendered = rows.nth(index);
-    await expect(rendered.locator(".accepted-action-row__title")).toHaveText(
-      expectedIdentity.title,
-    );
+    expect(await actionRowIdentity(rendered)).toBe(expectedIdentity.title);
     await expect(rendered.locator(".accepted-action-row__title")).toHaveAttribute(
       "data-class",
       expectedIdentity.accent,
     );
     await expect(rendered).toHaveAttribute("data-team", expectedIdentity.team);
-    await expect(rendered.locator(".accepted-action-tuple")).toHaveCount(2);
-    await expect(rendered.locator(".accepted-action-tuple > h4")).toHaveText([
-      "Submitted",
-      "Accepted",
-    ]);
-    expect(
-      await rendered
-        .locator(".accepted-action-tuple")
-        .evaluateAll((tuples) =>
-          tuples.map((tuple) => tuple.getAttribute("data-kind")),
-        ),
-    ).toEqual(["submitted", "accepted"]);
-    const tupleText = (/** @type {Record<string, any>} */ action) =>
-      `Move ${action.move_action} · Target ${action.target_action} · Ultimate ${action.use_ultimate_action}`;
-    await expect(rendered.locator(".accepted-action-tuple__value")).toHaveText([
-      tupleText(row.submitted_action),
-      tupleText(row.accepted_action),
-    ]);
+    await expectRecordedActionCodes(rendered, row);
   }
 }
 
-/** @param {import("@playwright/test").Page} page
- * @param {Record<string, any>} presentation */
-async function expectPendingJointActionDom(page, presentation) {
-  const researcher = presentation.researcher_space ?? null;
-  const pending = researcher?.pending_joint_action ?? presentation.pending_joint_action;
-  expect(pending).toBeTruthy();
-  const rawRows = pending.action_rows;
-  const rows = page.locator("#pending-card .accepted-action-row");
-  await expect(page.locator("#pending-heading")).toHaveText("Pending Joint Action");
-  await expect(page.locator("#pending-count")).toHaveText(
-    `${rawRows.length} ${rawRows.length === 1 ? "actor" : "actors"}`,
-  );
-  await expect(rows).toHaveCount(rawRows.length);
-  await expect(
-    page.locator(
-      "#pending-card .selected-legality, #pending-card .selected-outgoing-target",
-    ),
-  ).toHaveCount(0);
-  const scene =
-    presentation.current_endpoint.scene ?? presentation.current_endpoint.parts?.scene;
-  const identities = researcher?.roster_agents ?? scene.agents;
+// A recorded action row shows the accepted codes; when the game changed the
+// order it also says "Changed By The Game" and shows the submitted codes.
+/** @param {import("@playwright/test").Locator} rendered
+ * @param {Record<string, any>} row */
+async function expectRecordedActionCodes(rendered, row) {
   const tupleText = (/** @type {Record<string, any>} */ action) =>
     `Move ${action.move_action} · Target ${action.target_action} · Ultimate ${action.use_ultimate_action}`;
-  for (const [index, row] of rawRows.entries()) {
-    const identity = identities.find(
-      (/** @type {Record<string, any>} */ candidate) =>
-        candidate.presentation_key === row.actor_presentation_key &&
-        candidate.public_agent_id === row.actor_public_agent_id,
+  await expect(rendered.locator(".accepted-action-tuple")).toHaveCount(0);
+  await expect(rendered.locator(".accepted-action-row__codes")).toHaveText(
+    tupleText(row.accepted_action),
+  );
+  if (tupleText(row.submitted_action) !== tupleText(row.accepted_action)) {
+    await expect(rendered).toHaveAttribute("data-changed", "true");
+    await expect(rendered.locator(".accepted-action-row__changed")).toHaveText(
+      "Changed By The Game",
     );
-    expect(identity).toBeTruthy();
-    const expectedIdentity = expectedAgentIdentity(identity, presentation);
-    const rendered = rows.nth(index);
-    await expect(rendered).toHaveAttribute("data-team", expectedIdentity.team);
-    await expect(rendered.locator(".accepted-action-row__title")).toHaveText(
-      expectedIdentity.title,
+    await expect(rendered.locator(".accepted-action-row__submitted")).toHaveText(
+      `Submitted: ${tupleText(row.submitted_action)}`,
     );
-    await expect(rendered.locator(".accepted-action-row__title")).toHaveAttribute(
-      "data-class",
-      expectedIdentity.accent,
-    );
-    await expect(rendered.locator(".accepted-action-row__comparison")).toHaveAttribute(
-      "data-layout",
-      "single",
-    );
-    await expect(rendered.locator(".accepted-action-tuple")).toHaveCount(1);
-    await expect(rendered.locator(".accepted-action-tuple")).toHaveAttribute(
-      "data-kind",
-      "pending",
-    );
-    await expect(rendered.locator(".accepted-action-tuple > h4")).toHaveText("Pending");
-    await expect(rendered.locator(".accepted-action-tuple__value")).toHaveText(
-      tupleText(row.pending_action),
-    );
+  } else {
+    await expect(rendered).not.toHaveAttribute("data-changed", /.*/u);
+    await expect(rendered.locator(".accepted-action-row__submitted")).toHaveCount(0);
   }
+}
+
+// The identity an action row names: a token chip's accessible name ("Agent
+// ID 0, Mage, Team A") in the title's words, or the plain title when Panel
+// Tokens is off. A chip row also names the class beside the chip.
+/** @param {import("@playwright/test").Locator} rendered
+ * @returns {Promise<string>} */
+async function actionRowIdentity(rendered) {
+  return rendered.locator(".accepted-action-row__title").evaluate((title) => {
+    const chip = title.querySelector(".token-chip");
+    if (chip === null) return title.textContent ?? "";
+    const named = (chip.getAttribute("aria-label") ?? "").split(", ");
+    const classWords = title.querySelector(".accepted-action-row__class")?.textContent;
+    if (classWords !== named[1]) return `class ${classWords} differs from ${named[1]}`;
+    return named.join(" · ");
+  });
+}
+
+// Show the place that holds details: the Replay Viewer rail tab it sits in
+// (Roster, Metrics, Visuals, Frame), or live play's Visual Filters drawer,
+// which its button opens. Anything else needs nothing.
+/** @param {import("@playwright/test").Page} page
+ * @param {import("@playwright/test").Locator} details
+ */
+async function showHolderOf(page, details) {
+  const holder = await details.evaluate((node) => ({
+    panelId: node.closest(".ledger-rail__panel")?.id ?? null,
+    closedDrawer:
+      node.closest("#visual-filters-drawer")?.matches(":not(:popover-open)") ?? false,
+  }));
+  if (holder.closedDrawer) {
+    await page.locator("#visual-filters-button").click();
+    return;
+  }
+  if (holder.panelId === null) return;
+  const tab = page.locator(
+    `#${holder.panelId.replace("replay-rail-", "replay-rail-tab-")}`,
+  );
+  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+}
+
+// The Replay Viewer Actions tab's two parts, by their heading words.
+const THIS_TICK_TITLE = "This Tick (What Happened)";
+const NEXT_TICK_TITLE = "Next Tick (What Happens Next)";
+
+// The Replay Viewer tab that replaces a live disclosure there. The Champion
+// Frame in the Agent tab replaces Agent Details, and the Actions tab shows This
+// Tick and Next Tick with no disclosure; the older Actions cards are not on the
+// Replay Viewer page (owner decisions, 3 October 2026).
+const REPLAY_TAB_OF_LIVE_DISCLOSURE = Object.freeze({
+  "#agent-details": "agent",
+  "#pending-turn-details": "actions",
+  "#latest-transition-details": "actions",
+});
+
+// Whether the page is the Replay Viewer with its rail tabs mounted.
+/** @param {import("@playwright/test").Page} page */
+async function replayRailMounted(page) {
+  return (await page.locator("#replay-rail-tab-actions").count()) > 0;
+}
+
+// Return the element that holds one tick's action rows: in the Replay Viewer
+// the Actions tab part found by its heading words, in live play the older card
+// (#accepted-card for This Tick, #pending-card for Next Tick).
+/** @param {import("@playwright/test").Page} page
+ * @param {"this" | "next"} tick
+ */
+async function actionRowsHost(page, tick) {
+  if (!(await replayRailMounted(page))) {
+    return page.locator(tick === "this" ? "#accepted-card" : "#pending-card");
+  }
+  return page.locator("#replay-rail-actions .panel-actions__part").filter({
+    has: page.locator(".panel-actions__title", {
+      hasText: tick === "this" ? THIS_TICK_TITLE : NEXT_TICK_TITLE,
+    }),
+  });
+}
+
+// Select one Replay Viewer rail tab and wait until it shows.
+/** @param {import("@playwright/test").Page} page
+ * @param {string} tab The tab ID, such as "agent" or "actions".
+ */
+async function selectReplayRailTab(page, tab) {
+  const button = page.locator(`#replay-rail-tab-${tab}`);
+  if ((await button.getAttribute("aria-selected")) !== "true") await button.click();
+  await expect(button).toHaveAttribute("aria-selected", "true");
+}
+
+// Show the Replay Viewer's Roster tab before a roster row is used (the rows
+// sit in it); live play shows its roster without tabs, so nothing changes.
+/** @param {import("@playwright/test").Page} page */
+async function showReplayRoster(page) {
+  const rosterTab = page.locator("#replay-rail-tab-roster");
+  if (await rosterTab.isVisible()) await rosterTab.click();
+}
+
+// Read the Spawn Ward's parts (the Runefield look that replaced the old
+// Spawn Shield chip): its pale veil, its dashed team ring, its silver
+// diamonds (painted, not "none") and data-ticks, the ticks left.
+/** @param {import("@playwright/test").Locator} shield The `g.agent-spawn-shield`. */
+async function spawnWardParts(shield) {
+  return shield.evaluate((root) => {
+    const diamonds = root.querySelector(".agent-spawn-shield__diamonds");
+    return {
+      veils: root.querySelectorAll(".agent-spawn-shield__veil").length,
+      ringed: root.querySelectorAll(".agent-spawn-shield__ring").length > 0,
+      diamonds: root.querySelectorAll(".agent-spawn-shield__diamonds").length,
+      diamondsPainted:
+        diamonds !== null &&
+        getComputedStyle(diamonds).fill !== "none" &&
+        getComputedStyle(diamonds).stroke !== "none",
+      ticks: root.getAttribute("data-ticks"),
+    };
+  });
 }
 
 /** @param {import("@playwright/test").Page} page @param {string[]} selectors */
 async function openDetails(page, selectors) {
+  const replayRail = await replayRailMounted(page);
   for (const selector of selectors) {
+    const replayTab = replayRail
+      ? REPLAY_TAB_OF_LIVE_DISCLOSURE[
+          /** @type {keyof typeof REPLAY_TAB_OF_LIVE_DISCLOSURE} */ (selector)
+        ]
+      : undefined;
+    if (replayTab !== undefined) {
+      await selectReplayRailTab(page, replayTab);
+      continue;
+    }
     const details = page.locator(selector);
+    await showHolderOf(page, details);
     if ((await details.getAttribute("open")) !== "") {
       await details.locator(":scope > summary").click();
     }
@@ -1232,39 +1410,58 @@ async function openDetails(page, selectors) {
 
 /** @param {import("@playwright/test").Page} page @param {string[]} selectors */
 async function closeDetails(page, selectors) {
+  const replayRail = await replayRailMounted(page);
   for (const selector of selectors) {
+    // A Replay Viewer tab has nothing to close, and Agent Details is not on
+    // the Replay Viewer page (it stays in the hidden Developer drawer; the
+    // Agent tab's Champion Frame took its place).
+    if (replayRail && selector in REPLAY_TAB_OF_LIVE_DISCLOSURE) {
+      continue;
+    }
     const details = page.locator(selector);
     if ((await details.getAttribute("open")) === "") {
+      await showHolderOf(page, details);
       await details.locator(":scope > summary").click();
     }
     await expect(details).not.toHaveAttribute("open", "");
   }
 }
 
+// The Replay Viewer's disclosures. Its Actions tab replaced the two Actions
+// disclosures (owner decision, 3 October 2026) and there is no Visual Key
+// (owner, 4 October 2026); the selected rail tab is part of the state. A card
+// left in the hidden Developer drawer is not on the page, so it is not part
+// of the state: in the Replay Viewer that is Agent Details, whose place the
+// Agent tab's Champion Frame took.
 const SCIENTIFIC_DISCLOSURE_SELECTORS = Object.freeze([
   "#command-deck",
   "#roster-details",
   "#agent-details",
-  "#pending-turn-details",
-  "#latest-transition-details",
   "#technical-frame-details",
   "#visual-filters",
-  "#visual-key",
 ]);
 
 /** @param {import("@playwright/test").Page} page */
 async function scientificDisclosureState(page) {
   return page.evaluate((selectors) => {
-    return Object.fromEntries(
-      selectors.map((selector) => {
+    /** @type {Record<string, any>} */
+    const state = Object.fromEntries(
+      selectors.flatMap((selector) => {
         const panel = document.querySelector(selector);
         const body = panel?.querySelector(":scope > :not(summary)");
         if (!(panel instanceof HTMLDetailsElement) || !(body instanceof HTMLElement)) {
           throw new TypeError(`Scientific disclosure ${selector} is unavailable.`);
         }
-        return [selector, { open: panel.open, scrollTop: body.scrollTop }];
+        const drawer = panel.closest("#developer-drawer");
+        if (drawer instanceof HTMLElement && drawer.hidden) return [];
+        return [[selector, { open: panel.open, scrollTop: body.scrollTop }]];
       }),
     );
+    const tab = document.querySelector(
+      '#replay-rail-tabs [role="tab"][aria-selected="true"]',
+    );
+    state.selectedRailTab = tab?.id ?? null;
+    return state;
   }, SCIENTIFIC_DISCLOSURE_SELECTORS);
 }
 
@@ -1272,6 +1469,7 @@ async function scientificDisclosureState(page) {
  * @param {string} panelSelector
  * @param {number} scrollTop */
 async function installScientificDisclosureScroll(page, panelSelector, scrollTop) {
+  await showHolderOf(page, page.locator(panelSelector));
   const installed = await page.locator(panelSelector).evaluate((panel, top) => {
     const body = panel.querySelector(":scope > :not(summary)");
     if (!(body instanceof HTMLElement)) {
@@ -1283,30 +1481,6 @@ async function installScientificDisclosureScroll(page, panelSelector, scrollTop)
     return body.scrollTop;
   }, scrollTop);
   expect(installed).toBeGreaterThan(0);
-}
-
-/** @param {import("@playwright/test").Page} page */
-async function observeAgentDetailsOpenMutations(page) {
-  await page.locator("#agent-details").evaluate((panel) => {
-    if (!(panel instanceof HTMLDetailsElement)) {
-      throw new TypeError("Agent Details disclosure is unavailable.");
-    }
-    panel.dataset.testOpenMutations = "[]";
-    const observer = new MutationObserver((records) => {
-      const values = JSON.parse(panel.dataset.testOpenMutations ?? "[]");
-      for (const record of records) {
-        if (record.attributeName === "open") {
-          values.push(record.oldValue === null);
-        }
-      }
-      panel.dataset.testOpenMutations = JSON.stringify(values);
-    });
-    observer.observe(panel, {
-      attributes: true,
-      attributeFilter: ["open"],
-      attributeOldValue: true,
-    });
-  });
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -1458,7 +1632,7 @@ async function captureCp4ENativeState(page, options) {
 async function openProduct(page, url, mode, { allVisualFilters = false } = {}) {
   captureBrowserErrors(page);
   await page.goto(url);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -1480,153 +1654,13 @@ async function enableAllVisualFilters(page) {
   await expect(
     page.locator('#visual-filter-options input[type="checkbox"]:not(:checked)'),
   ).toHaveCount(0);
-  await expect(page.locator("#connection-status")).toHaveText("Online");
-}
-
-/** @param {import("@playwright/test").Page} page
- * @param {string} url
- * @param {"live" | "replay"} mode
- * @param {"combat_debugger" | "replay_viewer"} productKind */
-async function openProductWithHeldInitialPresentation(page, url, mode, productKind) {
-  let releasePresentation = () => {};
-  let markPresentationHeld = () => {};
-  const presentationHeld = new Promise((resolve) => {
-    markPresentationHeld = () => resolve(undefined);
-  });
-  const presentationRelease = new Promise((resolve) => {
-    releasePresentation = () => resolve(undefined);
-  });
-  let holdNextPresentation = true;
-  await page.route("**/api/presentation/frame", async (route) => {
-    if (!holdNextPresentation) {
-      await route.continue();
-      return;
-    }
-    holdNextPresentation = false;
-    const response = await route.fetch();
-    markPresentationHeld();
-    await presentationRelease;
-    await route.fulfill({ response });
-  });
-
-  const opening = openProduct(page, url, mode);
-  try {
-    await presentationHeld;
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-product-kind",
-      productKind,
-    );
-    await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", mode);
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "pending",
-    );
-    await expect(page.locator("#battlefield .agent")).toHaveCount(0);
-    await expect(page.locator("[data-presentation-key]")).toHaveCount(0);
-    await expect(page.locator("#step-value")).toHaveText("—");
-    await expect(page.locator("#transition-value")).toHaveText("—");
-    await expect(page.locator("#view-select")).toBeDisabled();
-    await expect(page.locator("#exit-button")).toBeDisabled();
-
-    const oppositeSelector =
-      productKind === "replay_viewer" ? "[data-live-only]" : "[data-replay-only]";
-    const visibleOppositeRoots = await page
-      .locator(oppositeSelector)
-      .evaluateAll((elements) =>
-        elements
-          .filter((element) => getComputedStyle(element).display !== "none")
-          .map((element) => element.id || element.className),
-      );
-    expect(visibleOppositeRoots).toEqual([]);
-    await expect(page.locator("#battlefield")).toHaveAttribute("role", "img");
-    await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
-    await expect(page.locator("#battlefield")).toHaveAttribute(
-      "aria-label",
-      "Read-only live battlefield. Simulator and actor activation controls are unavailable.",
-    );
-    await expect(page.locator("#battlefield-instructions")).toHaveText(
-      "Live battlefield interaction is unavailable while authority is pending, offline, resynchronizing, shutting down, or terminal.",
-    );
-
-    await openDetails(page, ["#visual-filters"]);
-    if (productKind === "replay_viewer") {
-      await expect(page.locator("#replay-timeline")).toBeVisible();
-      await expect(page.locator("#replay-ranges-button")).toBeVisible();
-      await expect(page.locator("#replay-ranges-button")).toBeDisabled();
-      await expect(page.locator("#replay-clear-reference-button")).toBeVisible();
-      await expect(page.locator("#replay-clear-reference-button")).toBeDisabled();
-      expect(
-        await page
-          .locator("#replay-timeline button")
-          .evaluateAll((buttons) =>
-            buttons.every(
-              (button) => button instanceof HTMLButtonElement && button.disabled,
-            ),
-          ),
-      ).toBe(true);
-    } else {
-      await expect(page.locator("#command-deck")).toBeVisible();
-      await expect(page.locator("#live-ranges-button")).toBeDisabled();
-      expect(
-        await page
-          .locator("#command-deck button")
-          .evaluateAll((buttons) =>
-            buttons.every(
-              (button) => button instanceof HTMLButtonElement && button.disabled,
-            ),
-          ),
-      ).toBe(true);
-    }
-  } finally {
-    releasePresentation();
-    await Promise.allSettled([opening]);
-    await page.unroute("**/api/presentation/frame");
+  // Live play: close the Visual Filters drawer again, so it covers nothing.
+  const drawer = page.locator("#visual-filters-drawer");
+  if (await drawer.evaluate((node) => node.matches(":popover-open"))) {
+    await page.locator("#visual-filters-button").click();
+    await expect(drawer).toBeHidden();
   }
-  await opening;
-}
-
-/** @param {import("@playwright/test").Page} page
- * @param {string} selector
- * @param {Readonly<Record<string, unknown>>} expectedCommand */
-async function expectSingleReplayUtilityCommand(page, selector, expectedCommand) {
-  /** @type {import("@playwright/test").Request[]} */
-  const commandRequests = [];
-  const recordCommand = (/** @type {import("@playwright/test").Request} */ request) => {
-    if (
-      request.method() === "POST" &&
-      new URL(request.url()).pathname === "/api/replay/command"
-    ) {
-      commandRequests.push(request);
-    }
-  };
-  page.on("request", recordCommand);
-  let responsePayload;
-  try {
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/api/replay/command",
-    );
-    const presentationPromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" &&
-        new URL(response.url()).pathname === "/api/presentation/frame",
-    );
-    await page.locator(selector).click();
-    const response = await responsePromise;
-    expect(response.status()).toBe(200);
-    responsePayload = await response.json();
-    expect((await presentationPromise).status()).toBe(200);
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "installed",
-    );
-  } finally {
-    page.off("request", recordCommand);
-  }
-  expect(commandRequests).toHaveLength(1);
-  expect(commandRequests[0].postDataJSON().command).toEqual(expectedCommand);
-  return responsePayload;
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -1673,42 +1707,6 @@ async function expectSingleActivationCommand(page, path, activate, expectedComma
 }
 
 /** @param {import("@playwright/test").Page} page
- * @param {"/api/command" | "/api/replay/command"} path
- * @param {() => Promise<void>} activate
- * @param {(command: Record<string, any>) => void} verifyCommand */
-async function expectSingleCommandMatching(page, path, activate, verifyCommand) {
-  /** @type {import("@playwright/test").Request[]} */
-  const requests = [];
-  const record = (/** @type {import("@playwright/test").Request} */ request) => {
-    if (
-      request.method() === "POST" &&
-      ["/api/command", "/api/replay/command"].includes(new URL(request.url()).pathname)
-    ) {
-      requests.push(request);
-    }
-  };
-  page.on("request", record);
-  try {
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname === path,
-    );
-    await activate();
-    expect((await responsePromise).status()).toBe(200);
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "installed",
-    );
-  } finally {
-    page.off("request", record);
-  }
-  expect(requests).toHaveLength(1);
-  expect(new URL(requests[0].url()).pathname).toBe(path);
-  verifyCommand(requests[0].postDataJSON().command);
-}
-
-/** @param {import("@playwright/test").Page} page
  * @param {() => Promise<void>} activate */
 async function expectZeroCommandInteraction(page, activate) {
   /** @type {import("@playwright/test").Request[]} */
@@ -1736,104 +1734,6 @@ async function expectZeroCommandInteraction(page, activate) {
   expect(requests).toEqual([]);
 }
 
-/** @param {import("@playwright/test").Page} page */
-async function expectBattlefieldRootCommandFocus(page) {
-  await expect(page.locator("#battlefield")).toBeFocused();
-  await expect(page.locator("#battlefield .agent:focus-visible")).toHaveCount(0);
-}
-
-/** @param {import("@playwright/test").Page} page
- * @param {{
- *   body: import("@playwright/test").Locator,
- *   row: import("@playwright/test").Locator,
- *   path: "/api/command" | "/api/replay/command" | null,
- *   command: Readonly<Record<string, unknown>> | null,
- * }} options */
-async function expectNativeAgentActivationMatrix(page, { body, row, path, command }) {
-  const scrollY = () => page.evaluate(() => window.scrollY);
-  const cells = [
-    () => row.click(),
-    async () => {
-      await row.focus();
-      await row.press("Enter");
-    },
-    async () => {
-      await row.focus();
-      const before = await scrollY();
-      await row.press(" ");
-      expect(await scrollY()).toBe(before);
-    },
-    () => body.click(),
-    async () => {
-      await body.focus();
-      await body.press("Enter");
-    },
-    async () => {
-      await body.focus();
-      const before = await scrollY();
-      await body.press(" ");
-      expect(await scrollY()).toBe(before);
-    },
-  ];
-  for (const activate of cells) {
-    if (path === null || command === null) {
-      await expectZeroCommandInteraction(page, activate);
-    } else {
-      await expectSingleActivationCommand(page, path, activate, command);
-    }
-  }
-}
-
-/** @param {import("@playwright/test").Page} page
- * @returns {Promise<Record<string, any>>} */
-async function expectTerminalReplayAgentSelection(page) {
-  await expect(page.locator("#battlefield")).toHaveAttribute("role", "group");
-  await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
-  await expect(page.locator("#battlefield")).toHaveAttribute(
-    "aria-label",
-    "Read-only terminal replay battlefield snapshot.",
-  );
-  await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "This replay frame is terminal. Activate an agent to inspect current facts, or use the timeline to review another frame.",
-  );
-  const before = await authenticatedGet(page, "/api/presentation/frame");
-  expect(before.presentation_kind).toBe("replay_oracle");
-  expect(before.source.source_frame_index).toBe(before.source.source_final_frame_index);
-  const selectedKey = await page
-    .locator('#battlefield .agent[data-selected="true"]')
-    .getAttribute("data-presentation-key");
-  const candidate = before.current_endpoint.scene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.presentation_key !== selectedKey,
-  );
-  expect(candidate).toBeTruthy();
-  const identity = before.current_endpoint.identity_directory.identities.find(
-    (/** @type {Record<string, any>} */ row) =>
-      row.public_agent_id === candidate.public_agent_id,
-  );
-  expect(identity).toBeTruthy();
-  const globalSlot = (identity.team_id - 1) * 5 + identity.team_local_slot;
-  const body = page.locator(
-    `#battlefield .agent[data-presentation-key="${candidate.presentation_key}"]`,
-  );
-  const row = page.locator(
-    `#roster .roster-primary-action[data-presentation-key="${candidate.presentation_key}"]`,
-  );
-  await expect(body).toHaveAttribute("role", "button");
-  await expect(row).toBeEnabled();
-  await expectSingleActivationCommand(page, "/api/replay/command", () => body.click(), {
-    command_type: "select_agent",
-    selected_global_slot: globalSlot,
-  });
-  const after = await authenticatedGet(page, "/api/presentation/frame");
-  expect(after.source.source_frame_index).toBe(before.source.source_frame_index);
-  expect(after.current_endpoint.action_axis.owner_public_agent_id).toBe(
-    candidate.public_agent_id,
-  );
-  await expect(body).toHaveAttribute("data-selected", "true");
-  return candidate;
-}
-
 /** @param {import("@playwright/test").Page} page
  * @param {string} path */
 async function authenticatedGet(page, path) {
@@ -1859,7 +1759,7 @@ async function authenticatedGet(page, path) {
  * @param {string} transportKind
  * @param {string} presentationKind */
 async function expectInstalledLeaf(page, transportKind, presentationKind) {
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -1941,20 +1841,27 @@ async function expectReplayInspectionDom(
     "aria-label",
     "Selection and exact actor-owned legality",
   );
-  await expect(page.locator("#accepted-heading")).toHaveText("Latest Transition");
-  await expect(page.locator("#visual-key > summary")).toHaveText("Visual Key");
-  await expect(page.locator("#pending-heading")).toHaveText("Upcoming Transition");
+  // The Actions tab shows This Tick and Next Tick, each with the older name as
+  // its subtitle (owner decisions, 3 October 2026); no client has a Visual
+  // Key (4 October 2026).
+  const thisTick = await actionRowsHost(page, "this");
+  const nextTick = await actionRowsHost(page, "next");
+  await expect(thisTick.locator(".panel-actions__subtitle")).toHaveText(
+    "Latest Transition",
+  );
+  await expect(page.locator("#visual-key-button")).toHaveCount(0);
+  await expect(nextTick.locator(".panel-actions__subtitle")).toHaveText(
+    "Upcoming Transition",
+  );
   await expect(page.locator("#pending-count")).toBeHidden();
   await expect(page.locator("#pending-scope")).toBeHidden();
   const upcoming = researcher?.upcoming_transition ?? presentation.upcoming_transition;
   const rawUpcomingRows = upcoming?.action_rows ?? [];
-  const upcomingRows = page.locator("#pending-card .accepted-action-row");
+  const upcomingRows = nextTick.locator(".accepted-action-row");
   await expect(upcomingRows).toHaveCount(rawUpcomingRows.length);
   await expect(
-    page.locator("#pending-card .accepted-action-row[data-presentation-key]"),
+    nextTick.locator(".accepted-action-row[data-presentation-key]"),
   ).toHaveCount(0);
-  const tupleText = (/** @type {Record<string, any>} */ action) =>
-    `Move ${action.move_action} · Target ${action.target_action} · Ultimate ${action.use_ultimate_action}`;
   for (const [index, row] of rawUpcomingRows.entries()) {
     const identities = researcher?.roster_agents ?? scene.agents;
     const identity = identities.find(
@@ -1965,32 +1872,16 @@ async function expectReplayInspectionDom(
     expect(identity).toBeTruthy();
     const expectedIdentity = expectedAgentIdentity(identity, presentation);
     const rendered = upcomingRows.nth(index);
-    await expect(rendered.locator(".accepted-action-row__title")).toHaveText(
-      expectedIdentity.title,
-    );
+    expect(await actionRowIdentity(rendered)).toBe(expectedIdentity.title);
     await expect(rendered.locator(".accepted-action-row__title")).toHaveAttribute(
       "data-class",
       expectedIdentity.accent,
     );
     await expect(rendered).toHaveAttribute("data-team", expectedIdentity.team);
-    await expect(rendered.locator(".accepted-action-tuple > h4")).toHaveText([
-      "Submitted",
-      "Accepted",
-    ]);
-    expect(
-      await rendered
-        .locator(".accepted-action-tuple")
-        .evaluateAll((tuples) =>
-          tuples.map((tuple) => tuple.getAttribute("data-kind")),
-        ),
-    ).toEqual(["submitted", "accepted"]);
-    await expect(rendered.locator(".accepted-action-tuple__value")).toHaveText([
-      tupleText(row.submitted_action),
-      tupleText(row.accepted_action),
-    ]);
+    await expectRecordedActionCodes(rendered, row);
   }
-  await expect(page.locator("#pending-card .selected-legality__lane")).toHaveCount(0);
-  await expect(page.locator("#pending-card .selected-outgoing-target")).toHaveCount(0);
+  await expect(nextTick.locator(".selected-legality__lane")).toHaveCount(0);
+  await expect(nextTick.locator(".selected-outgoing-target")).toHaveCount(0);
   if (owner === null) {
     await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
       0,
@@ -2009,7 +1900,13 @@ async function expectReplayInspectionDom(
     }
     await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
     await expect(page.locator("#battlefield .legality-dock")).toHaveCount(0);
-    await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
+    // All Staged Orders (Replay Viewer) may draw other champions' orders;
+    // only the selected champion's own next action is absent here.
+    await expect(
+      page.locator(
+        "#battlefield :is(.pending-route, .next-action-glyph):not([data-staged-order])",
+      ),
+    ).toHaveCount(0);
     return;
   }
 
@@ -2057,7 +1954,13 @@ async function expectReplayInspectionDom(
 
   if (inspection === null) {
     await expect(page.locator("#battlefield .legality-dock")).toHaveCount(0);
-    await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
+    // All Staged Orders (Replay Viewer) may draw other champions' orders;
+    // only the selected champion's own next action is absent here.
+    await expect(
+      page.locator(
+        "#battlefield :is(.pending-route, .next-action-glyph):not([data-staged-order])",
+      ),
+    ).toHaveCount(0);
     return;
   }
 
@@ -2074,64 +1977,69 @@ async function expectReplayInspectionDom(
   const targetAction = inspection.accepted_action.target_action;
   const exactRow =
     inspection.decision_mask.target_use_ultimate_joint_mask[targetAction];
-  const legalityDock = page.locator(
-    `#battlefield .legality-dock[data-presentation-key="${owner.presentation_key}"]`,
-  );
-  await expect(legalityDock).toHaveCount(1);
-  await expect(legalityDock).toHaveAttribute(
-    "aria-label",
-    `Exact actor-owned legality for Agent ID ${expectedAgentIdentity(owner, presentation).displayId}`,
-  );
-  expect(
-    await legalityDock.locator(".legality-pill").evaluateAll((pills) =>
-      pills.map((pill) => ({
-        available: pill.getAttribute("data-available"),
-        lane: pill.getAttribute("data-lane"),
-      })),
-    ),
-  ).toEqual([
-    { available: String(targetAction > 0 && exactRow[0]), lane: "0" },
-    { available: String(exactRow[1]), lane: "1" },
-  ]);
+  expect(exactRow).toHaveLength(2);
+  // The read-only Replay Viewer shows no legality on the arena: no legality
+  // dock and no lane pills (looks/champion-frame.js).
+  await expect(
+    page.locator("#battlefield .legality-dock, #battlefield .legality-pill"),
+  ).toHaveCount(0);
   const routeExpected =
     inspection.accepted_target.target_kind === "visible_authorized_agent" &&
     (inspection.combat_lane === "basic" || inspection.combat_lane === "ultimate");
-  await expect(page.locator("#battlefield .pending-route")).toHaveCount(
-    routeExpected ? 1 : 0,
+  // The selected champion's next action: a thread to its target (none for a
+  // self-cast) and a lane glyph 9 px below the target's rim, a dot for a
+  // Basic and a diamond for an Ultimate.
+  const thread = page.locator("#battlefield .pending-route:not([data-staged-order])");
+  const glyph = page.locator(
+    "#battlefield .next-action-glyph:not([data-staged-order])",
   );
-  const pendingArrow = page.locator("#battlefield .pending-route-arrow");
-  await expect(pendingArrow).toHaveCount(routeExpected ? 1 : 0);
-  if (routeExpected) {
+  await expect(glyph).toHaveCount(routeExpected ? 1 : 0);
+  if (!routeExpected) {
+    await expect(thread).toHaveCount(0);
+  } else {
+    const lane = inspection.combat_lane === "ultimate" ? "1" : "0";
+    await expect(glyph).toHaveAttribute("data-lane", lane);
+    await expect(glyph).toHaveAttribute("data-shape", lane === "1" ? "diamond" : "dot");
+    await expect(glyph).toHaveAttribute(
+      "data-source-presentation-key",
+      owner.presentation_key,
+    );
+    const routeKind = await glyph.getAttribute("data-route-kind");
+    await expect(thread).toHaveCount(routeKind === "thread" ? 1 : 0);
     expect(
-      await page.locator('[data-layer="pending-route"]').evaluate((layer) => {
-        const path = layer.querySelector(".pending-route");
-        const arrow = layer.querySelector(".pending-route-arrow");
-        if (!(path instanceof SVGPathElement) || !(arrow instanceof SVGPathElement)) {
-          throw new TypeError("Pending action route geometry is incomplete.");
+      await page.locator("#battlefield").evaluate((battlefield) => {
+        const mark = battlefield.querySelector(
+          ".next-action-glyph:not([data-staged-order])",
+        );
+        const path = battlefield.querySelector(
+          ".pending-route:not([data-staged-order])",
+        );
+        const key = mark?.getAttribute("data-target-presentation-key");
+        const host = battlefield.querySelector(
+          `.agent[data-presentation-key="${key}"] .agent-body`,
+        );
+        if (!(mark instanceof SVGGElement) || !(host instanceof SVGCircleElement)) {
+          throw new TypeError("Next action glyph geometry is incomplete.");
         }
-        const end = path.getPointAtLength(path.getTotalLength());
-        const transform = arrow.transform.baseVal.consolidate()?.matrix;
-        const markerBounds = arrow.getBBox();
-        const arrowTip =
-          transform === undefined
-            ? null
-            : new DOMPoint(0, 0).matrixTransform(transform);
+        const bounds = mark.getBBox();
+        const center = {
+          x: bounds.x + bounds.width / 2,
+          y: bounds.y + bounds.height / 2,
+        };
+        const below = host.cy.baseVal.value + host.r.baseVal.value + 9;
         return {
-          pathData: arrow.getAttribute("d"),
-          markerSize: [markerBounds.width, markerBounds.height],
-          tipEndpointDelta:
-            arrowTip === null
-              ? null
-              : Math.hypot(arrowTip.x - end.x, arrowTip.y - end.y),
-          laneMatches: arrow.dataset.lane === path.dataset.lane,
-          legalityMatches: arrow.dataset.legal === path.dataset.legal,
-          pointerEvents: getComputedStyle(arrow).pointerEvents,
+          glyphUnderTarget:
+            Math.abs(center.x - host.cx.baseVal.value) < 0.01 &&
+            Math.abs(center.y - below) < 0.01,
+          laneMatches:
+            path === null || path.getAttribute("data-lane") === mark.dataset.lane,
+          legalityMatches:
+            path === null || path.getAttribute("data-legal") === mark.dataset.legal,
+          pointerEvents: getComputedStyle(mark).pointerEvents,
         };
       }),
     ).toEqual({
-      pathData: "M -13 -6 L 0 0 L -13 6 L -9 0 Z",
-      markerSize: [13, 12],
-      tipEndpointDelta: 0,
+      glyphUnderTarget: true,
       laneMatches: true,
       legalityMatches: true,
       pointerEvents: "none",
@@ -2211,8 +2119,9 @@ async function expectAgentAuthoritySurface(
           ),
         ),
     ).toBe(true);
+    // Roster words (owner, 3 Oct 2026): "10 Champions · 4 Seen · 6 Not Seen".
     await expect(page.locator("#roster-count")).toHaveText(
-      `${expectedRosterCount} agents · ${visibleRosterCount} visible · ${notVisibleRosterCount} not visible`,
+      `${expectedRosterCount} ${expectedRosterCount === 1 ? "Champion" : "Champions"} · ${visibleRosterCount} Seen · ${notVisibleRosterCount} Not Seen`,
     );
     expect(expectedRosterCount).toBeGreaterThanOrEqual(bodyKeys.length);
   }
@@ -2259,18 +2168,16 @@ async function expectAgentAuthoritySurface(
     presentation.product_kind === "replay_viewer"
       ? ["#replay-ranges-button", "#replay-clear-reference-button"]
       : ["#live-ranges-button"];
+  // Agent POV tips say, in plain words, that the button only changes this
+  // page: the replay and the view stay as they are, or nothing is sent.
   const localUtilityDescription =
     presentation.product_kind === "replay_viewer"
-      ? /locally authorized|local inspected-agent/u
-      : /fog-authorized/u;
+      ? /The replay and the view do not change\./u
+      : /Nothing is sent to the game\./u;
   for (const selector of agentUtilitySelectors) {
     await expect(page.locator(selector)).toHaveAttribute(
       "aria-description",
       localUtilityDescription,
-    );
-    await expect(page.locator(selector)).toHaveAttribute(
-      "aria-description",
-      /sends no (?:replay )?command/u,
     );
     await expect(page.locator(selector)).not.toHaveAttribute(
       "aria-description",
@@ -2281,56 +2188,6 @@ async function expectAgentAuthoritySurface(
       /Oracle View|server-authored/u,
     );
   }
-}
-
-/** @param {import("@playwright/test").Page} page */
-async function expectAuthorizedRosterColors(page) {
-  const colors = await page.locator("#roster").evaluate((roster) => {
-    const resolvedColor = (/** @type {string} */ variable) => {
-      const probe = document.createElement("span");
-      probe.style.color = `var(${variable})`;
-      document.body.append(probe);
-      const color = getComputedStyle(probe).color;
-      probe.remove();
-      return color;
-    };
-    const classColors = Object.fromEntries(
-      [...roster.querySelectorAll(".roster-id[data-class]")].map((element) => [
-        element.getAttribute("data-class"),
-        getComputedStyle(element).color,
-      ]),
-    );
-    const expectedClassColors = Object.fromEntries(
-      ["mage", "warrior", "hunter", "rogue", "priest"].map((className) => [
-        className,
-        resolvedColor(`--class-${className}`),
-      ]),
-    );
-    const teamBorders = Object.fromEntries(
-      [...roster.querySelectorAll(".roster-row--authorized[data-team]")].map(
-        (element) => [
-          element.getAttribute("data-team"),
-          getComputedStyle(element).borderLeftColor,
-        ],
-      ),
-    );
-    return {
-      classColors,
-      expectedClassColors,
-      teamBorders,
-      expectedTeamBorders: {
-        "team-a": resolvedColor("--team-a"),
-        "team-b": resolvedColor("--team-b"),
-      },
-      mutedClassLabels: [
-        ...roster.querySelectorAll(".roster-row--authorized .roster-class"),
-      ].map((element) => getComputedStyle(element).color),
-      expectedMuted: resolvedColor("--text-muted"),
-    };
-  });
-  expect(colors.classColors).toEqual(colors.expectedClassColors);
-  expect(colors.teamBorders).toEqual(colors.expectedTeamBorders);
-  expect(new Set(colors.mutedClassLabels)).toEqual(new Set([colors.expectedMuted]));
 }
 
 /** @param {import("@playwright/test").Page} page
@@ -2352,7 +2209,7 @@ async function seekReplay(page, frameIndex) {
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   await expect(page.locator("#replay-frame-slider")).toHaveValue(String(frameIndex));
-  await expect(page.locator("#connection-status")).toHaveText("Online");
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "installed",
@@ -2379,12 +2236,17 @@ async function expectPendingAuthorityIsEmpty(
     kind: tooltip.getAttribute("data-tooltip-kind"),
   }));
   expect(pendingTooltip.hidden || pendingTooltip.kind === "control").toBe(true);
+  // The Replay Viewer's Actions tab replaces the two Actions cards and their
+  // disclosures there (owner decision, 3 October 2026).
+  const replayRail = await replayRailMounted(page);
+  const actionSurfaces = replayRail
+    ? ["#replay-rail-actions"]
+    : ["#pending-card", "#accepted-card"];
   const scientificSurfaces = [
     "#battlefield",
     "#roster",
     "#agent-details",
-    "#pending-card",
-    "#accepted-card",
+    ...actionSurfaces,
     "#diagnostics-card",
   ];
   const descendantsWith = (/** @type {string} */ attribute) =>
@@ -2398,7 +2260,28 @@ async function expectPendingAuthorityIsEmpty(
   await expect(page.locator("#replay-artifact-reference")).not.toHaveAttribute(
     "aria-description",
   );
-  await expect(page.locator("[data-authoritative-available]")).toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-authoritative-available]:not([data-authoritative-available="false"])',
+    ),
+  ).toHaveCount(0);
+  expect(
+    await page
+      .locator("[data-authoritative-available]")
+      .evaluateAll((buttons) =>
+        buttons.every(
+          (button) =>
+            button instanceof HTMLButtonElement &&
+            button.disabled &&
+            button.getAttribute("aria-disabled") === "true" &&
+            button.getAttribute("aria-pressed") === "false" &&
+            button.getAttribute("data-selected") !== "true" &&
+            !button.hasAttribute("aria-description") &&
+            !button.hasAttribute("data-tooltip-owner") &&
+            !button.hasAttribute("data-tooltip-text"),
+        ),
+      ),
+  ).toBe(true);
   await expect(page.locator("#battlefield")).not.toHaveAttribute(
     "aria-activedescendant",
   );
@@ -2417,16 +2300,14 @@ async function expectPendingAuthorityIsEmpty(
     "#command-deck",
     "#roster-details",
     "#agent-details",
-    "#pending-turn-details",
-    "#latest-transition-details",
+    ...(replayRail ? [] : ["#pending-turn-details", "#latest-transition-details"]),
     "#technical-frame-details",
   ]) {
     await expect(page.locator(selector)).not.toHaveAttribute("open", "");
   }
   for (const selector of [
     "#roster",
-    "#pending-card",
-    "#accepted-card",
+    ...actionSurfaces,
     "#diagnostics-card",
     "#visual-tooltip",
   ]) {
@@ -2450,1547 +2331,6 @@ async function expectPendingAuthorityIsEmpty(
   }
 }
 
-test("all five real service leaves install with safe pending continuity", async ({
-  page,
-}) => {
-  if (!liveDebugger || !noSharedReplay) {
-    throw new Error("Authorized-presentation test services are unavailable.");
-  }
-
-  await openProductWithHeldInitialPresentation(
-    page,
-    liveDebugger.url,
-    "live",
-    "combat_debugger",
-  );
-  await enableAllVisualFilters(page);
-  const liveOracle = await expectInstalledLeaf(
-    page,
-    "researcher_live_debugger",
-    "live_oracle",
-  );
-  await expectAuthorizedRosterColors(page);
-  await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Live Oracle View is interactive. Activate an authorized actor to control it; Shift-click selects an authorized target; Escape clears the target and leaves battlefield focus. Battlefield keyboard commands apply only while this surface has focus.",
-  );
-  await expect(page.locator("#pending-scope")).toHaveText(
-    "This panel shows the complete researcher-space joint action staged for the next submission.",
-  );
-  await expect(
-    page.locator("#visual-filters .visual-filters__ranges > #live-ranges-button"),
-  ).toHaveCount(1);
-  await expect(page.locator("#live-ranges-button")).toHaveAttribute(
-    "aria-description",
-    "Toggle server-authored Oracle View range presentation.",
-  );
-  await expect(
-    page.locator('#command-deck button[data-key="Tab"]:not([data-shift])'),
-  ).toHaveAttribute(
-    "aria-description",
-    "Move Oracle View control to the next active actor.",
-  );
-  await expect(page.locator("#command-deck #live-ranges-button")).toHaveCount(0);
-  await expect(page.locator("#battlefield-shell #live-ranges-button")).toHaveCount(0);
-  await expect(page.locator("#live-visual-key > dt")).toHaveText([
-    "Team A",
-    "Team B",
-    "Controlled",
-    "Selected target",
-  ]);
-  await expect(page.locator("#live-visual-key")).not.toHaveAttribute("hidden", "");
-  await expect(page.locator("#replay-visual-key")).toHaveAttribute("hidden", "");
-  const oldScientificSentinel = `Agent ID ${expectedAgentIdentity(liveOracle.presentation.current_endpoint.scene.agents[0], liveOracle.presentation).displayId}`;
-  const oldPresentationKey =
-    liveOracle.presentation.current_endpoint.scene.agents[0].presentation_key;
-  const controlledAgent = page.locator('#battlefield .agent[data-controlled="true"]');
-  await expect(controlledAgent).toHaveCount(1);
-  const controlledKey = await controlledAgent.getAttribute("data-presentation-key");
-  const controlledAgentFacts =
-    liveOracle.presentation.current_endpoint.scene.agents.find(
-      (/** @type {Record<string, any>} */ agent) =>
-        agent.presentation_key === controlledKey,
-    );
-  expect(controlledAgentFacts).toBeTruthy();
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("data-accent");
-  await expect(page.locator("#selection-card")).toContainText(
-    "Activate an agent to inspect its comprehensive class details.",
-  );
-  const controlledIdentity =
-    liveOracle.presentation.current_endpoint.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === controlledAgentFacts.public_agent_id,
-    );
-  expect(controlledIdentity).toBeTruthy();
-  const controlledSlot =
-    (controlledIdentity.team_id - 1) * 5 + controlledIdentity.team_local_slot;
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => controlledAgent.click(),
-    {
-      command_type: "roster_selection",
-      role: "control",
-      global_slot: controlledSlot,
-    },
-  );
-  await expectCertifiedDocumentationCard(
-    page,
-    controlledAgentFacts,
-    liveOracle.presentation,
-  );
-  const liveOracleDocumentationBefore = await page
-    .locator("#selection-card")
-    .evaluate((node) => node.innerHTML);
-  await controlledAgent.hover();
-  await expectCompactAgentTooltip(
-    page,
-    controlledAgentFacts,
-    liveOracleDocumentationBefore,
-    liveOracle.presentation,
-  );
-  await expectTechnicalFrameDom(page, liveOracle.presentation);
-  await expectLatestTransitionDom(page, liveOracle.presentation);
-  await expectPendingJointActionDom(page, liveOracle.presentation);
-  await expectRetiredMetadataAbsent(page);
-  await openDetails(page, [
-    "#agent-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await controlledAgent.hover();
-  await expectCompactAgentTooltip(
-    page,
-    controlledAgentFacts,
-    liveOracleDocumentationBefore,
-    liveOracle.presentation,
-  );
-  await captureCp4ENativeState(page, {
-    filename: "live-oracle-1440x900.png",
-    width: 1440,
-    height: 900,
-    presentation: liveOracle.presentation,
-    selectedAgent: controlledAgentFacts,
-  });
-  await cleanupAfterCp4ECapture(page, [
-    "#agent-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  const installedScientificBytes = JSON.stringify(await authorityDomSnapshot(page));
-  expect(installedScientificBytes).toContain(oldScientificSentinel);
-  expect(installedScientificBytes).toContain(oldPresentationKey);
-
-  let releasePresentation = () => {};
-  let markPresentationHeld = () => {};
-  const presentationHeld = new Promise((resolve) => {
-    markPresentationHeld = () => resolve(undefined);
-  });
-  const presentationRelease = new Promise((resolve) => {
-    releasePresentation = () => resolve(undefined);
-  });
-  let holdNextPresentation = true;
-  await page.route("**/api/presentation/frame", async (route) => {
-    if (!holdNextPresentation) {
-      await route.continue();
-      return;
-    }
-    holdNextPresentation = false;
-    const response = await route.fetch();
-    markPresentationHeld();
-    await presentationRelease;
-    await route.fulfill({ response });
-  });
-
-  const switchAction = page.locator("#view-select").selectOption("pov");
-  await presentationHeld;
-  await expectPendingAuthorityIsEmpty(page, oldScientificSentinel, oldPresentationKey);
-  releasePresentation();
-  await switchAction;
-  await page.unroute("**/api/presentation/frame");
-
-  const liveAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-  await expectTechnicalFrameDom(page, liveAgent.presentation);
-  await expectLatestTransitionDom(page, liveAgent.presentation);
-  await expectPendingJointActionDom(page, liveAgent.presentation);
-  await expectRetiredMetadataAbsent(page);
-  await expectAgentAuthoritySurface(page, liveAgent.presentation, [oldPresentationKey]);
-  await expect(page.locator("#battlefield")).not.toHaveAttribute(
-    "aria-description",
-    /.+/u,
-  );
-  await expect(page.locator("#battlefield")).toHaveAttribute(
-    "aria-describedby",
-    "battlefield-instructions",
-  );
-  await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Live Agent POV is interactive. Activate a visible authorized actor or choose any active actor in Roster to control it and switch POV; Shift-click selects a visible authorized target; Escape clears the target and leaves battlefield focus.",
-  );
-  await expect(page.locator("#pending-scope")).toHaveText(
-    "This panel shows the complete researcher-space joint action staged for the next submission.",
-  );
-  await page.locator("#help-button").click();
-  await expect(page.locator("#help-dialog")).toBeVisible();
-  const visibleLiveHelp = page.locator(
-    "#help-dialog [data-live-help-mode]:not([hidden])",
-  );
-  await expect(visibleLiveHelp).toHaveCount(1);
-  await expect(visibleLiveHelp).toHaveAttribute("data-live-help-mode", "agent");
-  const agentHelpText = await visibleLiveHelp.innerText();
-  expect(agentHelpText).not.toContain("fixed recipient");
-  expect(agentHelpText).toContain("Toggle fog-authorized ranges without a command");
-  expect(agentHelpText).toContain("Cycle the controlled actor and Agent POV");
-  expect(agentHelpText).toContain("Control that actor and switch Agent POV");
-  expect(agentHelpText).not.toContain("Toggle Oracle View ranges");
-  expect(agentHelpText).toContain("drafts persist when you cycle");
-  await page.locator("#help-close-button").click();
-  await expect(page.locator("#help-dialog")).toBeHidden();
-
-  const initialAgentRecipientKey =
-    liveAgent.presentation.authority.recipient_presentation_key;
-  const agentBodyKeys = await page
-    .locator("#battlefield .agent")
-    .evaluateAll((agents) =>
-      agents.map((agent) => agent.getAttribute("data-presentation-key")),
-    );
-  const liveAgentScene =
-    liveAgent.presentation.current_endpoint.scene ??
-    liveAgent.presentation.current_endpoint.parts?.scene;
-  const liveResearcher = liveAgent.presentation.researcher_space;
-  expect(liveResearcher.researcher_space_kind).toBe("global_live_researcher_space");
-  expect(liveResearcher.latest_transition).toBeNull();
-  expect(liveAgent.presentation.latest_transition).toBeNull();
-  expect(liveResearcher.technical_frame.technical_kind).toBe(
-    "live_oracle_technical_frame",
-  );
-  expect(liveResearcher.pending_inspection.submission_scope).toBe("joint_turn");
-  await expect(page.locator("#roster .roster-row--authorized")).toHaveCount(
-    liveResearcher.roster_agents.length,
-  );
-  await expect(page.locator('#roster [data-visibility="visible"]')).toBeVisible();
-  await expect(page.locator('#roster [data-visibility="not-visible"]')).toBeVisible();
-  await expect(page.locator("#roster .roster-team[data-team-id]")).toHaveCount(2);
-  await expect(page.locator("#roster .roster-team[data-team-id]:visible")).toHaveCount(
-    0,
-  );
-  const liveVisibleRosterCount = await page
-    .locator('#roster [data-visibility="visible"] .roster-primary-action')
-    .count();
-  const liveNotVisibleRosterCount = await page
-    .locator('#roster [data-visibility="not-visible"] .roster-primary-action')
-    .count();
-  await expect(page.locator("#roster-count")).toHaveText(
-    `${liveResearcher.roster_agents.length} agents · ${liveVisibleRosterCount} visible · ${liveNotVisibleRosterCount} not visible`,
-  );
-  await expect(page.locator("#command-target-select")).toBeEnabled();
-  await expect(page.locator("#command-target-select option")).toHaveCount(11);
-  await expect(page.locator("#submit-turn-button")).toHaveText("Submit joint turn");
-  await expect(page.locator("#submit-turn-button")).toBeEnabled();
-
-  const recipientBody = page.locator(
-    `#battlefield .agent[data-presentation-key="${initialAgentRecipientKey}"]`,
-  );
-  const recipientAgent = liveAgentScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.presentation_key === initialAgentRecipientKey,
-  );
-  expect(recipientAgent).toBeTruthy();
-  await page.setViewportSize({ width: 960, height: 600 });
-  await expectCertifiedDocumentationCard(page, recipientAgent, liveAgent.presentation);
-  const liveAgentDocumentationBefore = await page
-    .locator("#selection-card")
-    .evaluate((node) => node.innerHTML);
-  await recipientBody.hover();
-  await expectCompactAgentTooltip(
-    page,
-    recipientAgent,
-    liveAgentDocumentationBefore,
-    liveAgent.presentation,
-  );
-  await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
-  await openDetails(page, [
-    "#agent-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await recipientBody.hover();
-  await expectCompactAgentTooltip(
-    page,
-    recipientAgent,
-    liveAgentDocumentationBefore,
-    liveAgent.presentation,
-  );
-  await captureCp4ENativeState(page, {
-    filename: "live-no-shared-agent-960x600.png",
-    width: 960,
-    height: 600,
-    presentation: liveAgent.presentation,
-    selectedAgent: recipientAgent,
-  });
-  await cleanupAfterCp4ECapture(page, [
-    "#agent-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await expectAgentAuthoritySurface(page, liveAgent.presentation, [oldPresentationKey]);
-
-  await openDetails(page, ["#visual-filters"]);
-  const liveAgentRanges = page.locator("#live-ranges-button");
-  if ((await liveAgentRanges.getAttribute("aria-pressed")) === "false") {
-    await expectZeroCommandInteraction(page, () => liveAgentRanges.click());
-  }
-  await expect(liveAgentRanges).toHaveAttribute("aria-pressed", "true");
-  await expectZeroCommandInteraction(page, () => liveAgentRanges.click());
-  await expect(liveAgentRanges).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-  await expectZeroCommandInteraction(page, () => liveAgentRanges.click());
-  await expect(liveAgentRanges).toHaveAttribute("aria-pressed", "true");
-
-  const agentTabButtons = page.locator('#command-deck button[data-key="Tab"]');
-  await expect(agentTabButtons).toHaveCount(2);
-  expect(
-    await agentTabButtons.evaluateAll((buttons) =>
-      buttons.every(
-        (button) => button instanceof HTMLButtonElement && !button.disabled,
-      ),
-    ),
-  ).toBe(true);
-  for (const button of await agentTabButtons.all()) {
-    await expect(button).toHaveAttribute(
-      "aria-description",
-      /Move Agent POV control[\s\S]*Staged drafts are preserved/u,
-    );
-  }
-
-  const visiblePublicIds = new Set(
-    liveAgentScene.agents.map(
-      (/** @type {Record<string, any>} */ agent) => agent.public_agent_id,
-    ),
-  );
-  const hiddenAgent = liveResearcher.roster_agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      !visiblePublicIds.has(agent.public_agent_id),
-  );
-  expect(hiddenAgent).toBeTruthy();
-  const hiddenIdentity = liveResearcher.identity_directory.identities.find(
-    (/** @type {Record<string, any>} */ identity) =>
-      identity.public_agent_id === hiddenAgent.public_agent_id,
-  );
-  expect(hiddenIdentity).toBeTruthy();
-  const hiddenSlot = (hiddenIdentity.team_id - 1) * 5 + hiddenIdentity.team_local_slot;
-  const hiddenRow = page.locator(
-    `#roster .roster-primary-action[data-presentation-key="${hiddenAgent.presentation_key}"]`,
-  );
-  await expect(hiddenRow).toBeEnabled();
-
-  let releaseAgentPresentation = () => {};
-  let markAgentPresentationHeld = () => {};
-  const agentPresentationHeld = new Promise((resolve) => {
-    markAgentPresentationHeld = () => resolve(undefined);
-  });
-  const agentPresentationRelease = new Promise((resolve) => {
-    releaseAgentPresentation = () => resolve(undefined);
-  });
-  await page.route("**/api/presentation/frame", async (route) => {
-    const response = await route.fetch();
-    markAgentPresentationHeld();
-    await agentPresentationRelease;
-    await route.fulfill({ response });
-  });
-  const hiddenSwitch = expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => hiddenRow.click(),
-    {
-      command_type: "roster_selection",
-      role: "control",
-      global_slot: hiddenSlot,
-    },
-  );
-  try {
-    await agentPresentationHeld;
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "retained",
-    );
-    expect(
-      await page
-        .locator("#battlefield .agent")
-        .evaluateAll((agents) =>
-          agents.map((agent) => agent.getAttribute("data-presentation-key")),
-        ),
-    ).toEqual(agentBodyKeys);
-    await expect(page.locator("#battlefield-empty")).toBeHidden();
-    await expect(page.locator("#command-target-select")).toBeDisabled();
-  } finally {
-    releaseAgentPresentation();
-  }
-  await hiddenSwitch;
-  await page.unroute("**/api/presentation/frame");
-  let switchedAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-  expect(switchedAgent.presentation.authority.recipient_public_agent_id).toBe(
-    hiddenAgent.public_agent_id,
-  );
-  expect(switchedAgent.presentation.source.source_simulator_step_count).toBe(
-    liveAgent.presentation.source.source_simulator_step_count,
-  );
-
-  const switchedScene =
-    switchedAgent.presentation.current_endpoint.scene ??
-    switchedAgent.presentation.current_endpoint.parts?.scene;
-  const visibleControl = switchedScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.public_agent_id !==
-      switchedAgent.presentation.authority.recipient_public_agent_id,
-  );
-  expect(visibleControl).toBeTruthy();
-  const visibleControlIdentity =
-    switchedAgent.presentation.researcher_space.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === visibleControl.public_agent_id,
-    );
-  expect(visibleControlIdentity).toBeTruthy();
-  const visibleControlSlot =
-    (visibleControlIdentity.team_id - 1) * 5 + visibleControlIdentity.team_local_slot;
-  const visibleControlBody = page.locator(
-    `#battlefield .agent[data-presentation-key="${visibleControl.presentation_key}"]`,
-  );
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => visibleControlBody.click(),
-    {
-      command_type: "roster_selection",
-      role: "control",
-      global_slot: visibleControlSlot,
-    },
-  );
-  await expectBattlefieldRootCommandFocus(page);
-  switchedAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-  expect(switchedAgent.presentation.authority.recipient_public_agent_id).toBe(
-    visibleControl.public_agent_id,
-  );
-
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => page.keyboard.press("Tab"),
-    {
-      command_type: "keyboard",
-      key: "Tab",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  await expectBattlefieldRootCommandFocus(page);
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => page.keyboard.press("Shift+Tab"),
-    {
-      command_type: "keyboard",
-      key: "Tab",
-      shift_key: true,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  switchedAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-
-  const targetScene =
-    switchedAgent.presentation.current_endpoint.scene ??
-    switchedAgent.presentation.current_endpoint.parts?.scene;
-  const visibleTarget = targetScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.public_agent_id !==
-      switchedAgent.presentation.authority.recipient_public_agent_id,
-  );
-  expect(visibleTarget).toBeTruthy();
-  const visibleTargetBody = page.locator(
-    `#battlefield .agent[data-presentation-key="${visibleTarget.presentation_key}"]`,
-  );
-  await expectSingleCommandMatching(
-    page,
-    "/api/command",
-    () => visibleTargetBody.click({ modifiers: ["Shift"] }),
-    (command) => {
-      expect(command).toMatchObject({
-        command_type: "battlefield_pointer",
-        button: "primary",
-        shift_key: true,
-        ctrl_key: false,
-        alt_key: false,
-        meta_key: false,
-      });
-      expect(Number.isFinite(command.world_x)).toBe(true);
-      expect(Number.isFinite(command.world_y)).toBe(true);
-    },
-  );
-
-  switchedAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-  const selectedTargetScene =
-    switchedAgent.presentation.current_endpoint.scene ??
-    switchedAgent.presentation.current_endpoint.parts?.scene;
-  expect(selectedTargetScene).toBeTruthy();
-  const visibleTargetAfterSelection = selectedTargetScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.public_agent_id === visibleTarget.public_agent_id,
-  );
-  expect(visibleTargetAfterSelection).toBeTruthy();
-  await expect(
-    page.locator(
-      `#battlefield .agent[data-presentation-key="${visibleTargetAfterSelection.presentation_key}"]`,
-    ),
-  ).toHaveAttribute("data-selected", "true");
-  await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
-    1,
-  );
-  await expect(
-    page.locator('#battlefield .agent[data-controlled="true"]'),
-  ).toHaveAttribute("data-selected", "false");
-
-  const targetSelect = page.locator("#command-target-select");
-  expect(await targetSelect.inputValue()).toMatch(/^(0|[1-9])$/u);
-  const switchedVisibleIds = new Set(
-    selectedTargetScene.agents.map(
-      (/** @type {Record<string, any>} */ agent) => agent.public_agent_id,
-    ),
-  );
-  const fogHiddenTarget =
-    switchedAgent.presentation.researcher_space.roster_agents.find(
-      (/** @type {Record<string, any>} */ agent) =>
-        !switchedVisibleIds.has(agent.public_agent_id),
-    );
-  expect(fogHiddenTarget).toBeTruthy();
-  const fogHiddenIdentity =
-    switchedAgent.presentation.researcher_space.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === fogHiddenTarget.public_agent_id,
-    );
-  expect(fogHiddenIdentity).toBeTruthy();
-  const fogHiddenSlot =
-    (fogHiddenIdentity.team_id - 1) * 5 + fogHiddenIdentity.team_local_slot;
-  await expect(targetSelect.locator(`option[value="${fogHiddenSlot}"]`)).toHaveCount(1);
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    async () => {
-      await targetSelect.selectOption(String(fogHiddenSlot));
-    },
-    {
-      command_type: "roster_selection",
-      role: "target",
-      global_slot: fogHiddenSlot,
-    },
-  );
-  switchedAgent = await expectInstalledLeaf(
-    page,
-    "shared_obs_agent_pov_live_debugger",
-    "live_shared_obs_agent_pov",
-  );
-  const parityStep = switchedAgent.presentation.source.source_simulator_step_count;
-  const parityActor = switchedAgent.presentation.authority.recipient_public_agent_id;
-  await expect(targetSelect).toHaveValue(String(fogHiddenSlot));
-  await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
-    0,
-  );
-  await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
-
-  for (let cycle = 0; cycle < 3; cycle += 1) {
-    await page.locator("#view-select").selectOption("researcher");
-    const cycleOracle = await expectInstalledLeaf(
-      page,
-      "researcher_live_debugger",
-      "live_oracle",
-    );
-    expect(cycleOracle.presentation.source.source_simulator_step_count).toBe(
-      parityStep,
-    );
-    const oracleControlled =
-      cycleOracle.presentation.current_endpoint.scene.agents.find(
-        (/** @type {Record<string, any>} */ agent) =>
-          agent.public_agent_id === parityActor,
-      );
-    const oracleTarget = cycleOracle.presentation.current_endpoint.scene.agents.find(
-      (/** @type {Record<string, any>} */ agent) =>
-        agent.public_agent_id === fogHiddenTarget.public_agent_id,
-    );
-    expect(oracleControlled).toBeTruthy();
-    expect(oracleTarget).toBeTruthy();
-    await expect(
-      page.locator(
-        `#battlefield .agent[data-presentation-key="${oracleControlled.presentation_key}"]`,
-      ),
-    ).toHaveAttribute("data-controlled", "true");
-    await expect(
-      page.locator(
-        `#battlefield .agent[data-presentation-key="${oracleTarget.presentation_key}"]`,
-      ),
-    ).toHaveAttribute("data-selected", "true");
-    await expect(targetSelect).toHaveValue(String(fogHiddenSlot));
-    await expect(page.locator("#battlefield-empty")).toBeHidden();
-
-    await page.locator("#view-select").selectOption("pov");
-    const cycleAgent = await expectInstalledLeaf(
-      page,
-      "shared_obs_agent_pov_live_debugger",
-      "live_shared_obs_agent_pov",
-    );
-    expect(cycleAgent.presentation.source.source_simulator_step_count).toBe(parityStep);
-    expect(cycleAgent.presentation.authority.recipient_public_agent_id).toBe(
-      parityActor,
-    );
-    await expect(targetSelect).toHaveValue(String(fogHiddenSlot));
-    await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
-      0,
-    );
-    await expect(page.locator("#battlefield .pending-route")).toHaveCount(0);
-    await expect(page.locator("#battlefield-empty")).toBeHidden();
-    await expect(page.locator("#connection-status")).toHaveText("Online");
-  }
-
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    async () => {
-      await targetSelect.selectOption("");
-    },
-    {
-      command_type: "keyboard",
-      key: "Escape",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  await expect(targetSelect).toHaveValue("");
-  await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
-    0,
-  );
-  await page.locator("#battlefield").focus();
-  await expectBattlefieldRootCommandFocus(page);
-
-  const agentStepBeforeW = await page.locator("#step-value").innerText();
-  await expect(
-    page.locator('#command-deck button[data-move-action="1"]'),
-  ).toBeEnabled();
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => page.keyboard.press("w"),
-    {
-      command_type: "keyboard",
-      key: "w",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  await expect(
-    page.locator('#command-deck button[data-move-action="1"]'),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#step-value")).toHaveText(agentStepBeforeW);
-  const recipientBeforeSubmit = (
-    await authenticatedGet(page, "/api/presentation/frame")
-  ).authority.recipient_public_agent_id;
-  await expect(page.locator("#submit-turn-button")).toHaveText("Submit joint turn");
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => page.locator("#submit-turn-button").click(),
-    {
-      command_type: "keyboard",
-      key: "Enter",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  const agentPresentationAfterSubmit = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  expect(
-    agentPresentationAfterSubmit.researcher_space.latest_transition.action_rows.length,
-  ).toBe(agentPresentationAfterSubmit.researcher_space.roster_agents.length);
-  expect(agentPresentationAfterSubmit.latest_transition.action_rows).toHaveLength(1);
-  expect(
-    agentPresentationAfterSubmit.source.source_simulator_step_count,
-  ).toBeGreaterThan(Number(agentStepBeforeW));
-  expect(agentPresentationAfterSubmit.authority.recipient_public_agent_id).toBe(
-    recipientBeforeSubmit,
-  );
-  await expectTechnicalFrameDom(page, agentPresentationAfterSubmit);
-
-  await page.locator("#view-select").selectOption("researcher");
-  const restoredOracle = await expectInstalledLeaf(
-    page,
-    "researcher_live_debugger",
-    "live_oracle",
-  );
-  await expectTechnicalFrameDom(page, restoredOracle.presentation);
-  const oracleCandidate = page
-    .locator('#battlefield .agent:not([data-controlled="true"])')
-    .first();
-  const oracleKey = await oracleCandidate.getAttribute("data-presentation-key");
-  if (oracleKey === null) {
-    throw new Error("Oracle activation candidate has no presentation key.");
-  }
-  const oracleBody = page.locator(
-    `#battlefield .agent[data-presentation-key="${oracleKey}"]`,
-  );
-  const oracleAgent = restoredOracle.presentation.current_endpoint.scene.agents.find(
-    (/** @type {Record<string, any>} */ agent) => agent.presentation_key === oracleKey,
-  );
-  const oracleIdentity =
-    restoredOracle.presentation.current_endpoint.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === oracleAgent.public_agent_id,
-    );
-  const oracleSlot = (oracleIdentity.team_id - 1) * 5 + oracleIdentity.team_local_slot;
-  const expectedOracleActivation = {
-    command_type: "roster_selection",
-    role: "control",
-    global_slot: oracleSlot,
-  };
-  const oracleRow = page.locator(
-    `#roster .roster-primary-action[data-presentation-key="${oracleKey}"]`,
-  );
-  await expectNativeAgentActivationMatrix(page, {
-    body: oracleBody,
-    row: oracleRow,
-    path: "/api/command",
-    command: expectedOracleActivation,
-  });
-  const oracleStepBeforePointerSelections = await page
-    .locator("#step-value")
-    .innerText();
-  const pointerAgents = restoredOracle.presentation.current_endpoint.scene.agents.slice(
-    0,
-    3,
-  );
-  for (const pointerAgent of pointerAgents) {
-    const pointerIdentity =
-      restoredOracle.presentation.current_endpoint.identity_directory.identities.find(
-        (/** @type {Record<string, any>} */ identity) =>
-          identity.public_agent_id === pointerAgent.public_agent_id,
-      );
-    if (!pointerIdentity) {
-      throw new Error("Oracle pointer candidate has no authorized identity row.");
-    }
-    const pointerSlot =
-      (pointerIdentity.team_id - 1) * 5 + pointerIdentity.team_local_slot;
-    const pointerBody = page.locator(
-      `#battlefield .agent[data-presentation-key="${pointerAgent.presentation_key}"]`,
-    );
-    await expectSingleActivationCommand(
-      page,
-      "/api/command",
-      () => pointerBody.click(),
-      {
-        command_type: "roster_selection",
-        role: "control",
-        global_slot: pointerSlot,
-      },
-    );
-    await expectBattlefieldRootCommandFocus(page);
-    await expect(pointerBody).toHaveAttribute("data-controlled", "true");
-    await expect(page.locator("#step-value")).toHaveText(
-      oracleStepBeforePointerSelections,
-    );
-  }
-  const oracleStepBeforeW = oracleStepBeforePointerSelections;
-  await expect(
-    page.locator('#command-deck button[data-move-action="1"]'),
-  ).toBeEnabled();
-  await expectSingleActivationCommand(
-    page,
-    "/api/command",
-    () => page.keyboard.press("w"),
-    {
-      command_type: "keyboard",
-      key: "w",
-      shift_key: false,
-      ctrl_key: false,
-      alt_key: false,
-      meta_key: false,
-      repeat: false,
-    },
-  );
-  await expect(
-    page.locator('#command-deck button[data-move-action="1"]'),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#step-value")).toHaveText(oracleStepBeforeW);
-  const modifierTokens = await page
-    .locator("#battlefield .modifier-cell")
-    .evaluateAll((cells) =>
-      [
-        ...new Set(
-          cells.map((cell) => {
-            const icon = cell.querySelector(".modifier-cell__icon");
-            return JSON.stringify({
-              tokenId: cell.getAttribute("data-token-id"),
-              token: cell.getAttribute("data-token"),
-              glyph: icon?.getAttribute("data-icon") ?? null,
-            });
-          }),
-        ),
-      ]
-        .map((value) => JSON.parse(value))
-        .sort((left, right) => left.tokenId.localeCompare(right.tokenId)),
-    );
-  expect(modifierTokens).toEqual([
-    {
-      tokenId: "mage_amplification",
-      token: "mage-amplification",
-      glyph: "modifier-amplification",
-    },
-    {
-      tokenId: "warrior_mitigation",
-      token: "warrior-mitigation",
-      glyph: "modifier-mitigation",
-    },
-  ]);
-  await expect(
-    page.locator('#battlefield .modifier-cell[data-token="unknown"]'),
-  ).toHaveCount(0);
-  await expect(
-    page.locator('#battlefield .modifier-cell__icon[data-icon="unknown"]'),
-  ).toHaveCount(0);
-  const beforeScientificOwnerInput = await authenticatedGet(page, "/api/frame");
-  const selectedKeysBeforeScientificOwnerInput = await page
-    .locator('#battlefield .agent[data-selected="true"]')
-    .evaluateAll((agents) =>
-      agents.map((agent) => agent.getAttribute("data-presentation-key")),
-    );
-  const rangeOwner = page.locator("#battlefield .range-ring-owner").first();
-  await expect(rangeOwner).toBeVisible();
-  const scientificOwnerPoint = await page.locator("#battlefield").evaluate(() => {
-    const owners = [
-      ...document.querySelectorAll("#battlefield [data-tooltip-owner]"),
-    ].filter((owner) => owner.closest(".agent") !== owner);
-    for (const owner of owners) {
-      const bounds = owner.getBoundingClientRect();
-      for (const xRatio of [0.1, 0.25, 0.5, 0.75, 0.9]) {
-        for (const yRatio of [0.1, 0.25, 0.5, 0.75, 0.9]) {
-          const x = bounds.left + bounds.width * xRatio;
-          const y = bounds.top + bounds.height * yRatio;
-          const topOwner = document
-            .elementsFromPoint(x, y)
-            .map((element) => element.closest("[data-tooltip-owner]"))
-            .find((candidate) => candidate !== null);
-          if (topOwner === owner) {
-            return { x, y };
-          }
-        }
-      }
-    }
-    return null;
-  });
-  expect(scientificOwnerPoint).not.toBeNull();
-  if (scientificOwnerPoint === null) {
-    throw new Error("No exposed scientific tooltip owner was hit-testable.");
-  }
-  await expectZeroCommandInteraction(page, () =>
-    page.mouse.click(scientificOwnerPoint.x, scientificOwnerPoint.y),
-  );
-  await rangeOwner.focus();
-  await expectZeroCommandInteraction(page, () => rangeOwner.press("Enter"));
-  await expectZeroCommandInteraction(page, () => rangeOwner.press(" "));
-  await rangeOwner.focus();
-  await expectZeroCommandInteraction(page, () => rangeOwner.press("Tab"));
-  expect(
-    await page
-      .locator('#battlefield .agent[data-selected="true"]')
-      .evaluateAll((agents) =>
-        agents.map((agent) => agent.getAttribute("data-presentation-key")),
-      ),
-  ).toEqual(selectedKeysBeforeScientificOwnerInput);
-  const afterScientificOwnerInput = await authenticatedGet(page, "/api/frame");
-  expect(afterScientificOwnerInput.revision).toBe(beforeScientificOwnerInput.revision);
-  const stalePresentation = restoredOracle.presentation;
-  let commandCount = 0;
-  let frameGetCount = 0;
-  let presentationGetCount = 0;
-  const countRaceRequests = (
-    /** @type {import("@playwright/test").Request} */ request,
-  ) => {
-    const path = new URL(request.url()).pathname;
-    if (request.method() === "POST" && path === "/api/command") {
-      commandCount += 1;
-    }
-    if (request.method() === "GET" && path === "/api/frame") {
-      frameGetCount += 1;
-    }
-  };
-  page.on("request", countRaceRequests);
-  await page.route("**/api/presentation/frame", async (route) => {
-    presentationGetCount += 1;
-    const response = await route.fetch();
-    if (presentationGetCount === 1) {
-      await route.fulfill({ response, json: stalePresentation });
-      return;
-    }
-    await route.fulfill({ response });
-  });
-  await page.locator("#live-ranges-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Online");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-presentation-authority",
-    "installed",
-  );
-  await expect(page.locator("#notice")).toContainText("command completed once");
-  expect(commandCount).toBe(1);
-  expect(frameGetCount).toBe(1);
-  expect(presentationGetCount).toBe(2);
-  await page.unroute("**/api/presentation/frame");
-  page.off("request", countRaceRequests);
-
-  await openProductWithHeldInitialPresentation(
-    page,
-    noSharedReplay.url,
-    "replay",
-    "replay_viewer",
-  );
-  const replayOracle = await expectInstalledLeaf(
-    page,
-    "researcher_replay_viewer",
-    "replay_oracle",
-  );
-  await expectTechnicalFrameDom(page, replayOracle.presentation);
-  await expectLatestTransitionDom(page, replayOracle.presentation);
-  await expectRetiredMetadataAbsent(page);
-  await expect(page.locator("#events-details, #event-feed, #event-count")).toHaveCount(
-    0,
-  );
-  await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Replay is read-only. Upcoming Transition shows the authorized recorded joint action out of this frame; activate an agent to inspect current facts, or use the timeline to change frames.",
-  );
-  await expect(
-    page.locator("#visual-filters .visual-filters__ranges > #replay-ranges-button"),
-  ).toHaveCount(1);
-  await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
-    "aria-description",
-    "Toggle recorded Oracle View range presentation.",
-  );
-  await expect(
-    page.locator("#battlefield-utilities > #replay-clear-reference-button"),
-  ).toHaveCount(1);
-  await expect(page.locator("#replay-clear-reference-button")).toHaveAttribute(
-    "aria-description",
-    "Clear the selected Oracle View agent and its inspection highlight.",
-  );
-  await expect(page.locator("#replay-clear-reference-button")).toHaveText(
-    "Clear Selection",
-  );
-  await expect(page.locator("#replay-timeline #replay-ranges-button")).toHaveCount(0);
-  await expect(
-    page.locator("#replay-timeline #replay-clear-reference-button"),
-  ).toHaveCount(0);
-  await expect(page.locator("#battlefield-shell #replay-ranges-button")).toHaveCount(0);
-  await expect(page.locator("#replay-visual-key > dt")).toHaveText([
-    "Team A",
-    "Team B",
-    "Selected agent",
-  ]);
-  await expect(page.locator("#live-visual-key")).toHaveAttribute("hidden", "");
-  await expect(page.locator("#replay-visual-key")).not.toHaveAttribute("hidden", "");
-
-  const replaySelectedBody = page.locator('#battlefield .agent[role="button"]').first();
-  const replaySelectedKey = await replaySelectedBody.getAttribute(
-    "data-presentation-key",
-  );
-  const replaySelectedAgent =
-    replayOracle.presentation.current_endpoint.scene.agents.find(
-      (/** @type {Record<string, any>} */ agent) =>
-        agent.presentation_key === replaySelectedKey,
-    );
-  const replaySelectedIdentity =
-    replayOracle.presentation.current_endpoint.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === replaySelectedAgent.public_agent_id,
-    );
-  const replaySelectedSlot =
-    (replaySelectedIdentity.team_id - 1) * 5 + replaySelectedIdentity.team_local_slot;
-  const replaySelectedRow = page.locator(
-    `#roster .roster-primary-action[data-presentation-key="${replaySelectedKey}"]`,
-  );
-  await expectNativeAgentActivationMatrix(page, {
-    body: replaySelectedBody,
-    row: replaySelectedRow,
-    path: "/api/replay/command",
-    command: {
-      command_type: "select_agent",
-      selected_global_slot: replaySelectedSlot,
-    },
-  });
-  await expect(page.locator("#replay-clear-reference-button")).toBeEnabled();
-  const replayOracleSelected = await authenticatedGet(page, "/api/presentation/frame");
-  const replayTargetSelectionFilter = page.locator(
-    '[data-visual-filter-id="target_selection_visuals"]',
-  );
-  await expect(replayTargetSelectionFilter).not.toBeChecked();
-  await expect(page.locator("#battlefield .legality-dock")).toHaveCount(0);
-  await replayTargetSelectionFilter.check();
-  await expect(replayTargetSelectionFilter).toBeChecked();
-  await enableAllVisualFilters(page);
-  await expectReplayInspectionDom(page, replayOracleSelected);
-  const replayOracleDocumentationBefore = await page
-    .locator("#selection-card")
-    .evaluate((node) => node.innerHTML);
-  await page.locator('#battlefield .agent[data-selected="true"]').hover();
-  await expectCompactAgentTooltip(
-    page,
-    replaySelectedAgent,
-    replayOracleDocumentationBefore,
-    replayOracleSelected,
-  );
-
-  await expectAuthorizedIncomingTransitionDom(page, replayOracle.presentation);
-  expect(replayOracle.presentation.latest_events).toBeNull();
-  await page.locator("#technical-frame-details > summary").click();
-  await expect(page.locator("#technical-frame-details")).toHaveAttribute("open", "");
-  if ((await page.locator("#agent-details").getAttribute("open")) === "") {
-    await page.locator("#agent-details > summary").click();
-  }
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-  await replaySelectedRow.focus();
-  let replaySeekRequestCount = 0;
-  const countReplaySeek = (
-    /** @type {import("@playwright/test").Request} */ request,
-  ) => {
-    if (
-      request.method() === "POST" &&
-      new URL(request.url()).pathname === "/api/replay/command"
-    ) {
-      replaySeekRequestCount += 1;
-    }
-  };
-  page.on("request", countReplaySeek);
-  try {
-    await seekReplay(page, 1);
-  } finally {
-    page.off("request", countReplaySeek);
-  }
-  expect(replaySeekRequestCount).toBe(1);
-  await expect(page.locator("#technical-frame-details")).toHaveAttribute("open", "");
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        surface: document.activeElement?.closest("#roster")?.id ?? null,
-        presentationKey:
-          document.activeElement
-            ?.closest("[data-presentation-key]")
-            ?.getAttribute("data-presentation-key") ?? null,
-      })),
-    )
-    .toEqual({ surface: "roster", presentationKey: replaySelectedKey });
-  const replayOracleMiddle = await authenticatedGet(page, "/api/presentation/frame");
-  expect(replayOracleMiddle.presentation_kind).toBe("replay_oracle");
-  await expectAuthorizedIncomingTransitionDom(page, replayOracleMiddle);
-  await expectReplayInspectionDom(page, replayOracleMiddle);
-  await expectTechnicalFrameDom(page, replayOracleMiddle);
-  await expectLatestTransitionDom(page, replayOracleMiddle);
-  await expectRetiredMetadataAbsent(page);
-  expect(replayOracleMiddle.latest_events.incoming_transition_id).toBe(
-    await page.locator("#transition-value").textContent(),
-  );
-  const replayOracleMiddleScene = replayOracleMiddle.current_endpoint.scene;
-  const replayOracleMiddleOwner = replayOracleMiddleScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.presentation_key ===
-        replayOracleMiddle.replay_inspection.actor_presentation_key &&
-      agent.public_agent_id ===
-        replayOracleMiddle.replay_inspection.actor_public_agent_id,
-  );
-  expect(replayOracleMiddleOwner).toBeTruthy();
-  const replayOracleMiddleDocumentation = await page
-    .locator("#selection-card")
-    .evaluate((node) => node.innerHTML);
-  await openDetails(page, [
-    "#agent-details",
-    "#pending-turn-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await page
-    .locator(
-      `#battlefield .agent[data-presentation-key="${replayOracleMiddleOwner.presentation_key}"]`,
-    )
-    .hover();
-  await expectCompactAgentTooltip(
-    page,
-    replayOracleMiddleOwner,
-    replayOracleMiddleDocumentation,
-    replayOracleMiddle,
-  );
-  await captureCp4ENativeState(page, {
-    filename: "replay-oracle-960x600.png",
-    width: 960,
-    height: 600,
-    presentation: replayOracleMiddle,
-    selectedAgent: replayOracleMiddleOwner,
-  });
-  await cleanupAfterCp4ECapture(page, [
-    "#agent-details",
-    "#pending-turn-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await seekReplay(page, replayOracle.presentation.source.source_final_frame_index);
-  const replayOracleFinal = await authenticatedGet(page, "/api/presentation/frame");
-  expect(replayOracleFinal.replay_inspection).toBeNull();
-  await expectReplayInspectionDom(page, replayOracleFinal);
-  await expectTechnicalFrameDom(page, replayOracleFinal);
-  await expectLatestTransitionDom(page, replayOracleFinal);
-  const terminalActivatedAgent = await expectTerminalReplayAgentSelection(page);
-  const terminalTransport = await authenticatedGet(page, "/api/frame");
-  const nextShowRanges = terminalTransport.show_ranges !== true;
-  await expectSingleReplayUtilityCommand(page, "#replay-ranges-button", {
-    command_type: "set_ranges",
-    show_ranges: nextShowRanges,
-  });
-  await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
-    "aria-pressed",
-    String(nextShowRanges),
-  );
-  const replayOracleBeforeEscape = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  await expectSingleActivationCommand(
-    page,
-    "/api/replay/command",
-    async () => {
-      await page.locator("#battlefield").focus();
-      await page.keyboard.press("Escape");
-    },
-    {
-      command_type: "select_agent",
-      selected_global_slot: null,
-    },
-  );
-  const replayOracleFinalUnselected = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  expect(replayOracleFinalUnselected.source.source_frame_index).toBe(
-    replayOracleBeforeEscape.source.source_frame_index,
-  );
-  expect(replayOracleFinalUnselected.source.source_simulator_step_count).toBe(
-    replayOracleBeforeEscape.source.source_simulator_step_count,
-  );
-  expect(replayOracleFinalUnselected.presentation_kind).toBe(
-    replayOracleBeforeEscape.presentation_kind,
-  );
-  expect(replayOracleFinalUnselected.authority).toEqual(
-    replayOracleBeforeEscape.authority,
-  );
-  await expect(page.locator("#battlefield")).toBeFocused();
-  await expect(page.locator("#battlefield-empty")).toBeHidden();
-  await expectReplayInspectionDom(page, replayOracleFinalUnselected, {
-    retainedAgent: terminalActivatedAgent,
-  });
-  await seekReplay(page, 0);
-  await expectSingleActivationCommand(
-    page,
-    "/api/replay/command",
-    () => replaySelectedRow.click(),
-    {
-      command_type: "select_agent",
-      selected_global_slot: replaySelectedSlot,
-    },
-  );
-  const oracleOnlyValues = [
-    replayOracle.presentation.source.source_artifact_id,
-    replayOracle.presentation.source.source_artifact_digest_sha256,
-    replayOracle.presentation.source.source_trajectory_content_digest_sha256,
-    replayOracle.presentation.source.source_context_digest_sha256,
-    ...replayOracle.presentation.current_endpoint.scene.agents.map(
-      (/** @type {Record<string, any>} */ agent) => agent.presentation_key,
-    ),
-  ].filter((value) => typeof value === "string");
-
-  let releaseViewPresentation = () => {};
-  let markViewPresentationHeld = () => {};
-  const viewPresentationHeld = new Promise((resolve) => {
-    markViewPresentationHeld = () => resolve(undefined);
-  });
-  const viewPresentationRelease = new Promise((resolve) => {
-    releaseViewPresentation = () => resolve(undefined);
-  });
-  await page.route("**/api/presentation/frame", async (route) => {
-    const response = await route.fetch();
-    markViewPresentationHeld();
-    await viewPresentationRelease;
-    await route.fulfill({ response });
-  });
-  await page.locator("#view-select").selectOption("pov");
-  try {
-    await viewPresentationHeld;
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "retained",
-    );
-    await expect(page.locator("#battlefield-empty")).toBeHidden();
-    await expect(page.locator("#battlefield .agent")).not.toHaveCount(0);
-  } finally {
-    releaseViewPresentation();
-  }
-  const replayAgent = await expectInstalledLeaf(
-    page,
-    "actor_pov_replay_viewer",
-    "replay_no_shared_obs_agent_pov",
-  );
-  await page.unroute("**/api/presentation/frame");
-  const replayAgentRanges = page.locator("#replay-ranges-button");
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "false");
-  await expectZeroCommandInteraction(page, () => replayAgentRanges.click());
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "true");
-  const replayAgentArtifactReference =
-    replayAgent.transport.artifact_facts.artifact_summary.replay_reference;
-  const replayAgentArtifactShellValues = new Set([
-    replayAgentArtifactReference.artifact_id,
-    replayAgentArtifactReference.canonical_digest_sha256,
-  ]);
-  const replayAgentBattlefieldForbiddenValues = oracleOnlyValues.filter(
-    (value) => !replayAgentArtifactShellValues.has(value),
-  );
-  await expectAgentAuthoritySurface(
-    page,
-    replayAgent.presentation,
-    replayAgentBattlefieldForbiddenValues,
-  );
-  await expectReplayInspectionDom(page, replayAgent.presentation);
-  await expectTechnicalFrameDom(page, replayAgent.presentation);
-  await expectLatestTransitionDom(page, replayAgent.presentation);
-  await expectRetiredMetadataAbsent(page);
-  expect(replayAgent.presentation.authority.recipient_public_agent_id).toBe(
-    replaySelectedAgent.public_agent_id,
-  );
-  const replayAgentSelectedBody = page.locator(
-    '#battlefield .agent[data-selected="true"]',
-  );
-  const replayAgentSelectedKey = await replayAgentSelectedBody.getAttribute(
-    "data-presentation-key",
-  );
-  const replayAgentInitialScene =
-    replayAgent.presentation.current_endpoint.scene ??
-    replayAgent.presentation.current_endpoint.parts?.scene;
-  const replayAgentSelected = replayAgentInitialScene.agents.find(
-    (/** @type {Record<string, any>} */ agent) =>
-      agent.presentation_key === replayAgentSelectedKey,
-  );
-  expect(replayAgentSelected).toBeTruthy();
-  const replayAgentInitialDocumentation = await page
-    .locator("#selection-card")
-    .evaluate((node) => node.innerHTML);
-  await replayAgentSelectedBody.hover();
-  await expectCompactAgentTooltip(
-    page,
-    replayAgentSelected,
-    replayAgentInitialDocumentation,
-    replayAgent.presentation,
-  );
-  await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Replay Agent POV is read-only. Activate a visible body or choose any agent in the roster to switch to that agent's fog-of-war view at the same replay tick.",
-  );
-  const replayAgentRecipientKey =
-    replayAgent.presentation.authority.recipient_presentation_key;
-
-  await openDetails(page, [
-    "#roster-details",
-    "#latest-transition-details",
-    "#technical-frame-details",
-  ]);
-  await closeDetails(page, ["#pending-turn-details"]);
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-  await installScientificDisclosureScroll(page, "#roster-details", 37);
-  const replayAgentDisclosureBeforeSwitch = await scientificDisclosureState(page);
-  await observeAgentDetailsOpenMutations(page);
-
-  const replayAgentBodies = page.locator("#battlefield .agent[role=button]");
-  const replayAgentBodyKeys = await replayAgentBodies.evaluateAll((agents) =>
-    agents.map((agent) => agent.getAttribute("data-presentation-key")),
-  );
-  const replayAgentScene =
-    replayAgent.presentation.current_endpoint.scene ??
-    replayAgent.presentation.current_endpoint.parts?.scene;
-  const replayAgentVisibleIds = new Set(
-    replayAgentScene.agents.map(
-      (/** @type {Record<string, any>} */ agent) => agent.public_agent_id,
-    ),
-  );
-  const replayAgentNotVisible =
-    replayAgent.presentation.researcher_space.roster_agents.find(
-      (/** @type {Record<string, any>} */ agent) =>
-        !replayAgentVisibleIds.has(agent.public_agent_id),
-    );
-  expect(replayAgentNotVisible).toBeTruthy();
-  const replayAgentNotVisibleIdentity =
-    replayAgent.presentation.researcher_space.identity_directory.identities.find(
-      (/** @type {Record<string, any>} */ identity) =>
-        identity.public_agent_id === replayAgentNotVisible.public_agent_id,
-    );
-  expect(replayAgentNotVisibleIdentity).toBeTruthy();
-  const replayAgentNotVisibleSlot =
-    (replayAgentNotVisibleIdentity.team_id - 1) * 5 +
-    replayAgentNotVisibleIdentity.team_local_slot;
-  const replayAgentNotVisibleRow = page.locator(
-    `#roster [data-visibility="not-visible"] .roster-primary-action[data-presentation-key="${replayAgentNotVisible.presentation_key}"]`,
-  );
-  await expect(replayAgentNotVisibleRow).toBeEnabled();
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "true");
-  await expectZeroCommandInteraction(page, () => replayAgentRanges.click());
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-  const replayAgentCursorBeforeSwitch = structuredClone(replayAgent.transport.cursor);
-  let releasePovPresentation = () => {};
-  let markPovPresentationHeld = () => {};
-  const povPresentationHeld = new Promise((resolve) => {
-    markPovPresentationHeld = () => resolve(undefined);
-  });
-  const povPresentationRelease = new Promise((resolve) => {
-    releasePovPresentation = () => resolve(undefined);
-  });
-  await page.route("**/api/presentation/frame", async (route) => {
-    const response = await route.fetch();
-    markPovPresentationHeld();
-    await povPresentationRelease;
-    await route.fulfill({ response });
-  });
-  const povSwitch = expectSingleActivationCommand(
-    page,
-    "/api/replay/command",
-    () =>
-      replayAgentNotVisibleRow.evaluate((element) => {
-        if (!(element instanceof HTMLButtonElement)) {
-          throw new TypeError("Replay recipient control is unavailable.");
-        }
-        // Exercise application continuity without Playwright's locator-click
-        // auto-scroll changing the disclosure preference before the command.
-        element.click();
-      }),
-    {
-      command_type: "set_pov_actor",
-      global_slot: replayAgentNotVisibleSlot,
-    },
-  );
-  try {
-    await povPresentationHeld;
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-presentation-authority",
-      "retained",
-    );
-    await expect(page.locator("#battlefield .agent")).toHaveCount(
-      replayAgentBodyKeys.length,
-    );
-    expect(
-      await page
-        .locator("#battlefield .agent")
-        .evaluateAll((agents) =>
-          agents.map((agent) => agent.getAttribute("data-presentation-key")),
-        ),
-    ).toEqual(replayAgentBodyKeys);
-    await expect(page.locator("#battlefield-empty")).toBeHidden();
-    await expect(page.locator("#replay-frame-slider")).toBeDisabled();
-    expect(
-      await page
-        .locator("#replay-timeline button")
-        .evaluateAll((buttons) =>
-          buttons.every(
-            (button) => button instanceof HTMLButtonElement && button.disabled,
-          ),
-        ),
-    ).toBe(true);
-    expect(await scientificDisclosureState(page)).toEqual(
-      replayAgentDisclosureBeforeSwitch,
-    );
-    await page.keyboard.press("ArrowRight");
-    expect(await scientificDisclosureState(page)).toEqual(
-      replayAgentDisclosureBeforeSwitch,
-    );
-    await expect(page.locator("#agent-details")).toHaveAttribute(
-      "data-test-open-mutations",
-      "[]",
-    );
-  } finally {
-    releasePovPresentation();
-  }
-  await povSwitch;
-  await page.unroute("**/api/presentation/frame");
-  const switchedReplayAgent = await expectInstalledLeaf(
-    page,
-    "actor_pov_replay_viewer",
-    "replay_no_shared_obs_agent_pov",
-  );
-  expect(switchedReplayAgent.transport.cursor).toEqual(replayAgentCursorBeforeSwitch);
-  expect(switchedReplayAgent.presentation.authority.recipient_public_agent_id).toBe(
-    replayAgentNotVisible.public_agent_id,
-  );
-  expect(
-    switchedReplayAgent.presentation.authority.recipient_presentation_key,
-  ).not.toBe(replayAgentRecipientKey);
-  const replayAgentDisclosureAfterSwitch = structuredClone(
-    replayAgentDisclosureBeforeSwitch,
-  );
-  replayAgentDisclosureAfterSwitch["#agent-details"].open = true;
-  await expect
-    .poll(() => scientificDisclosureState(page))
-    .toEqual(replayAgentDisclosureAfterSwitch);
-  await expect(page.locator("#agent-details")).toHaveAttribute(
-    "data-test-open-mutations",
-    "[true]",
-  );
-  await expect(page.locator("#selection-heading")).toHaveText(
-    "Comprehensive Agent Class Details",
-  );
-  await expectCertifiedDocumentationCard(
-    page,
-    replayAgentNotVisible,
-    switchedReplayAgent.presentation,
-  );
-  await expect(
-    page.locator(`#battlefield [data-presentation-key="${replayAgentRecipientKey}"]`),
-  ).toHaveCount(0);
-  await expectAgentAuthoritySurface(
-    page,
-    switchedReplayAgent.presentation,
-    replayAgentBattlefieldForbiddenValues,
-  );
-  await expect(page.locator("#battlefield")).toBeFocused();
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-  const replayAgentPresentationAfterLocalActions = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  expect(
-    replayAgentPresentationAfterLocalActions.authority.recipient_presentation_key,
-  ).toBe(switchedReplayAgent.presentation.authority.recipient_presentation_key);
-  await expect(page.locator("#view-select")).toHaveValue("pov");
-  expect(switchedReplayAgent.presentation.source.source_frame_index).toBe(0);
-  await expectAuthorizedIncomingTransitionDom(page, switchedReplayAgent.presentation);
-  for (const frameIndex of [
-    1,
-    replayAgent.presentation.source.source_final_frame_index,
-  ]) {
-    await seekReplay(page, frameIndex);
-    const presentation = await authenticatedGet(page, "/api/presentation/frame");
-    expect(presentation.presentation_kind).toBe("replay_no_shared_obs_agent_pov");
-    expect(presentation.source.source_frame_index).toBe(frameIndex);
-    await expectAuthorizedIncomingTransitionDom(page, presentation);
-    await expectReplayInspectionDom(page, presentation, { rangesVisible: false });
-    await expectTechnicalFrameDom(page, presentation);
-    await expectLatestTransitionDom(page, presentation);
-    await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "false");
-    await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-    expect(presentation.researcher_space.latest_transition.incoming_transition_id).toBe(
-      await page.locator("#transition-value").textContent(),
-    );
-    if (frameIndex === replayAgent.presentation.source.source_final_frame_index) {
-      await expect(page.locator("#battlefield .agent[role=button]")).not.toHaveCount(0);
-      await expect(page.locator("#battlefield-instructions")).toContainText(
-        "switch the fog-of-war recipient",
-      );
-    }
-  }
-  const terminalAgent = await expectInstalledLeaf(
-    page,
-    "actor_pov_replay_viewer",
-    "replay_no_shared_obs_agent_pov",
-  );
-  await page.locator("#view-select").selectOption("researcher");
-  const roundTripOracle = await expectInstalledLeaf(
-    page,
-    "researcher_replay_viewer",
-    "replay_oracle",
-  );
-  expect(roundTripOracle.transport.cursor).toEqual(terminalAgent.transport.cursor);
-  expect(
-    roundTripOracle.presentation.current_endpoint.action_axis.owner_public_agent_id,
-  ).toBe(replayAgentNotVisible.public_agent_id);
-  await page.locator("#view-select").selectOption("pov");
-  const roundTripAgent = await expectInstalledLeaf(
-    page,
-    "actor_pov_replay_viewer",
-    "replay_no_shared_obs_agent_pov",
-  );
-  expect(roundTripAgent.transport.cursor).toEqual(terminalAgent.transport.cursor);
-  expect(roundTripAgent.presentation.authority.recipient_public_agent_id).toBe(
-    replayAgentNotVisible.public_agent_id,
-  );
-  await expect(replayAgentRanges).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-  const replayAgentBeforeEscape = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  await expectZeroCommandInteraction(page, async () => {
-    await page.locator("#battlefield").focus();
-    await page.keyboard.press("Escape");
-  });
-  await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
-    0,
-  );
-  await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(0);
-  await expect(page.locator("#agent-details")).not.toHaveAttribute("open", "");
-  await expect(page.locator("#replay-clear-reference-button")).toBeDisabled();
-  const replayAgentPresentationAfterClear = await authenticatedGet(
-    page,
-    "/api/presentation/frame",
-  );
-  expect(replayAgentPresentationAfterClear.authority.recipient_presentation_key).toBe(
-    roundTripAgent.presentation.authority.recipient_presentation_key,
-  );
-  expect(replayAgentPresentationAfterClear.source.source_frame_index).toBe(
-    replayAgentBeforeEscape.source.source_frame_index,
-  );
-  expect(replayAgentPresentationAfterClear.source.source_simulator_step_count).toBe(
-    replayAgentBeforeEscape.source.source_simulator_step_count,
-  );
-  expect(replayAgentPresentationAfterClear.presentation_kind).toBe(
-    replayAgentBeforeEscape.presentation_kind,
-  );
-  expect(replayAgentPresentationAfterClear.authority).toEqual(
-    replayAgentBeforeEscape.authority,
-  );
-  await expect(page.locator("#battlefield")).toBeFocused();
-  await expect(page.locator("#battlefield-empty")).toBeHidden();
-  expect(browserErrors.get(page) ?? []).toEqual([]);
-});
-
 test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
   test.skip(
     cp4C3ShieldOnly || cp4ECaptureDirectory !== null,
@@ -4011,10 +2351,12 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
       scenario: "recovery_refresh_cycle",
     });
 
+    // Three distinct supported Replay Viewer sizes (its smallest supported
+    // screen is 1366 x 768; owner, 2 Oct 2026).
     const combatMatrixViewports = [
-      { width: 800, height: 600 },
-      { width: 1200, height: 800 },
+      { width: 1440, height: 900 },
       { width: 1600, height: 1000 },
+      { width: 1920, height: 1080 },
     ];
     const classTokenById = new Map([
       [1, "mage"],
@@ -4110,7 +2452,10 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
                 dedicatedCombatIconCount: agent.querySelectorAll(
                   ".agent-combat-state-icon",
                 ).length,
-                classCentered: Math.abs(classX + classWidth / 2 - bodyCenter) < 0.001,
+                // The token writes x, width and cx rounded to 0.001 px, so the
+                // centers may differ by up to 0.00125 px.
+                classCentered:
+                  Math.abs(classX + classWidth / 2 - bodyCenter) <= 0.00125 + 1e-9,
                 inCombatStatusCount: inCombatStatusCells.length,
                 inCombatDuration:
                   inCombatStatus === null
@@ -4257,7 +2602,7 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
     for (const state of frameZeroStates) {
       expect(state.status).toBe("OOC");
       expect(state.countdown).toBe("0");
-      expect(state.ariaLabel).toContain("Inspect this authorized agent.");
+      expect(state.ariaLabel).toContain("Click to look at it.");
       expect(state.ariaLabel).not.toMatch(/combat|steps until out/iu);
     }
 
@@ -4490,13 +2835,13 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
       await expect(regeneration).toHaveCount(1);
       regenerationDom = await regeneration.evaluate((effect) => {
         const eventId = effect.getAttribute("data-event-id");
+        // A rest heal is one life number in the Rest tone (looks/health-text.js).
+        const number = effect.querySelector("text.combat-number");
         return {
           eventId,
           dataValue: effect.getAttribute("data-value"),
-          valueText:
-            effect.querySelector(".combat-regeneration__value")?.textContent ?? null,
-          plusLineCount: effect.querySelectorAll(".combat-regeneration__plus > line")
-            .length,
+          valueText: number?.textContent ?? null,
+          tone: number?.getAttribute("data-tone") ?? null,
           onionCount: effect.querySelectorAll(
             ".combat-semantic-pulse__ring, .combat-semantic-pulse__core",
           ).length,
@@ -4540,7 +2885,7 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
       eventId: regenerationEvents[0].event_id,
       dataValue: "4",
       valueText: "+4",
-      plusLineCount: 2,
+      tone: "rest",
       onionCount: 0,
       sourceAttributeCount: 0,
       resetEffectCount: 0,
@@ -4575,73 +2920,29 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
       leftCombatFinding.frameIndex,
     );
 
-    const expirationOwner = page.locator(
-      `.combat-effect--status-lifecycle[data-event-id="${leftCombatFinding.event.event_id}"][data-event-type="agent_left_combat"][data-token-id="in_combat"][data-lifecycle="expired"]`,
-    );
-    await expect(expirationOwner).toHaveCount(1);
-    const expirationDom = await expirationOwner.evaluate(async (effect) => {
-      const hit = effect.querySelector(".combat-lifecycle__hit");
-      const icon = effect.querySelector(".combat-lifecycle__status-icon");
-      if (!(hit instanceof SVGElement) || !(icon instanceof SVGElement)) {
-        throw new Error("In-combat expiration lost its lifecycle paint.");
-      }
-      hit.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-      await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame));
-      return {
-        ariaLabel: effect.getAttribute("aria-label"),
-        role: effect.getAttribute("role"),
-        glyph: icon.getAttribute("data-icon"),
-        color: getComputedStyle(icon).color,
-        durationBefore: effect.getAttribute("data-duration-before"),
-        durationAfter: effect.getAttribute("data-duration-after"),
-        atomicEventIds: JSON.parse(
-          effect.getAttribute("data-atomic-event-ids") ?? "null",
-        ),
-        applicationEventIds: JSON.parse(
-          effect.getAttribute("data-application-event-ids") ?? "null",
-        ),
-        reapplicationPaintCount: effect.querySelectorAll(".combat-lifecycle__reapply")
-          .length,
-        otherInCombatLifecyclePaintCount: document.querySelectorAll(
-          '.combat-effect--status-lifecycle[data-token-id="in_combat"]:not([data-lifecycle="expired"])',
-        ).length,
-        resetEffectCount: document.querySelectorAll(
-          '.combat-effect[data-event-type="combat_countdown_reset"]',
-        ).length,
-        resetPulseCount: document.querySelectorAll(
-          ".combat-semantic-pulse--combat-countdown-reset",
-        ).length,
-        tooltipTitle:
-          document.querySelector("#visual-tooltip-title")?.textContent ?? null,
-        tooltipSummary:
-          document.querySelector("#visual-tooltip .semantic-explanation__summary")
-            ?.textContent ?? null,
-      };
-    });
-    const inCombatExpiry = statusLifecyclePresentation("in_combat", "expired");
-    if (inCombatExpiry === null) {
-      throw new Error("In Combat expiry copy is unavailable.");
-    }
-    expect(expirationDom).toEqual({
-      ariaLabel: inCombatExpiry.title,
-      role: "img",
-      glyph: "combat-in-progress",
-      color: "rgb(255, 255, 255)",
-      durationBefore: "1",
-      durationAfter: "0",
-      atomicEventIds: [leftCombatFinding.event.event_id],
-      applicationEventIds: [],
-      reapplicationPaintCount: 0,
-      otherInCombatLifecyclePaintCount: 0,
-      resetEffectCount: 0,
-      resetPulseCount: 0,
-      tooltipTitle: inCombatExpiry.title,
-      tooltipSummary:
-        "This agent can regenerate up to 4 health per tick while it remains out of combat.",
-    });
-    expect(
-      `${expirationDom.ariaLabel} ${expirationDom.tooltipTitle} ${expirationDom.tooltipSummary}`,
-    ).not.toMatch(/_|semantic pulse/iu);
+    // Leaving combat is a status change, and a status change has no off-body
+    // mark (src/looks/statuses.js): the page draws no lifecycle group and no
+    // countdown-reset pulse. The body itself shows the change: it reads OOC
+    // and its In Combat plate is gone.
+    const leftAnchor =
+      leftCombatFinding.event.agent_anchor ?? leftCombatFinding.event.recipient_anchor;
+    const leftKey = leftAnchor?.presentation_key;
+    expect(typeof leftKey).toBe("string");
+    await expect(page.locator(".combat-effect--status-lifecycle")).toHaveCount(0);
+    await expect(
+      page.locator('.combat-effect[data-event-type="combat_countdown_reset"]'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".combat-semantic-pulse--combat-countdown-reset"),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(`#battlefield .agent[data-presentation-key="${leftKey}"]`),
+    ).toHaveAttribute("data-combat-status", "OOC");
+    await expect(
+      page.locator(
+        `#battlefield .status-cell[data-token-id="in_combat"][data-presentation-key="${leftKey}"]`,
+      ),
+    ).toHaveCount(0);
 
     expect(browserErrors.get(page) ?? []).toEqual([]);
   } catch (error) {
@@ -5098,6 +3399,13 @@ async function runCp5Slice5Proof(
   /** @param {Record<string, any>} signature */
   const signaturePlanEvents = (signature) =>
     /** @type {Record<string, any>[]} */ (signature.plan.events);
+  const STATUS_EVENT_KINDS = new Set([
+    "status_applied",
+    "status_refreshed_or_extended",
+    "status_aged_to_zero",
+    "status_broken_by_damage",
+    "status_cleared_by_new_death",
+  ]);
   /** @param {{presentation: Record<string, any>, signature: Record<string, any>}} frame
    * @param {string} label
    * @param {Array<[number, string, number | null, number | null, number | null, number | null, boolean?]>} effectRows
@@ -5145,13 +3453,38 @@ async function runCp5Slice5Proof(
         agentKey: keyForSlot(agentSlot),
       }),
     );
-    expect(signature.dom.effects, `${label} exact installed effects`).toEqual(
-      expectedEffects,
+    // A status change has no off-body mark: the painter draws no group for a
+    // status event, and the recipient's status plate shows the status instead
+    // (src/looks/statuses.js). Rows the plan derives, such as a Focus Tally,
+    // are joined to the plan in the frame loop, not listed here.
+    const derivedIds = new Set(
+      /** @type {Record<string, any>[]} */ (signature.plan.derived).map(
+        ({ eventId }) => eventId,
+      ),
     );
+    expect(
+      /** @type {Record<string, any>[]} */ (signature.dom.effects).filter(
+        ({ id }) => !derivedIds.has(id),
+      ),
+      `${label} exact installed effects`,
+    ).toEqual(expectedEffects.filter(({ type }) => !STATUS_EVENT_KINDS.has(type)));
 
     const planById = new Map(
       signaturePlanEvents(signature).map((event) => [event.eventId, event]),
     );
+    for (const expected of expectedEffects) {
+      if (
+        expected.type !== "status_applied" &&
+        expected.type !== "status_refreshed_or_extended"
+      ) {
+        continue;
+      }
+      const planned = planById.get(expected.id);
+      expect(
+        signature.dom.statusCells,
+        `${label} ${expected.id} shows on its recipient's status plate`,
+      ).toContainEqual({ key: expected.recipientKey, token: planned?.tokenId });
+    }
     const expectedPlanSurface = expectedEffects.map((expected) => {
       const planned = planById.get(expected.id);
       if (!planned) {
@@ -5271,6 +3604,7 @@ async function runCp5Slice5Proof(
                 response.request().method() === "POST" &&
                 new URL(response.url()).pathname === "/api/replay/command",
             );
+      await showReplayRoster(page);
       await page
         .locator(
           `#roster .roster-primary-action[data-presentation-key="${agent.presentation_key}"]`,
@@ -5396,6 +3730,7 @@ async function runCp5Slice5Proof(
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/replay/command",
     );
+    await showReplayRoster(page);
     await page
       .locator(
         `#roster .roster-primary-action[data-presentation-key="${selectedAgent.presentation_key}"]`,
@@ -5498,11 +3833,35 @@ async function runCp5Slice5Proof(
           }
         }
         const planById = new Map(planEvents.map((event) => [event.eventId, event]));
+        // A drawn derived row (such as a Focus Tally) joins its plan row the
+        // same way a recorded event does.
+        const derivedById = new Map(
+          /** @type {Record<string, any>[]} */ (signature.plan.derived).map((event) => [
+            event.eventId,
+            event,
+          ]),
+        );
         expect(new Set(signature.dom.effects.map(({ id }) => id)).size).toBe(
           signature.dom.effects.length,
         );
         for (const effect of signature.dom.effects) {
-          const planned = planById.get(effect.id);
+          // The painter may draw an earlier tick's herald card again (held or
+          // waiting its turn, looks/heralds.js); such a card must come from a
+          // herald row an earlier frame planned.
+          const carried = /^(.*):herald:(?:held|queued)$/u.exec(effect.id ?? "");
+          if (carried !== null && carried[1] === incoming.incoming_transition_id) {
+            const earlierCards = frames.flatMap(({ signature: earlier }) =>
+              /** @type {Record<string, any>[]} */ (earlier.plan.derived).filter(
+                ({ kind }) => kind === "herald_card",
+              ),
+            );
+            expect(
+              earlierCards.map(({ eventType }) => eventType),
+              `${contract.name} F${frameIndex} carried herald card`,
+            ).toContain(effect.type);
+            continue;
+          }
+          const planned = planById.get(effect.id) ?? derivedById.get(effect.id);
           if (!planned) {
             throw new Error(`${contract.name} installed unknown effect ${effect.id}.`);
           }
@@ -6192,19 +4551,25 @@ async function runCp5Slice5Proof(
          *     variant: string | null,
          *     transform: string | null,
          *   }>,
+         *   chargeCores: number,
+         *   chargeEchoes: number,
          * }>} */ (frames[1].signature.dom.routeMarkers).filter(
           ({ tokenId }) => tokenId === "warrior_charge",
         );
+        // Each Charge route draws one tapered war-path and no arrow markers;
+        // every Warrior here travels more than 1.25 units, so each path also
+        // leaves its Bronze Shade echo (looks/ultimates.js).
         expect(chargeRouteMarkers).toHaveLength(3);
-        expect(chargeRouteMarkers.map(({ markers }) => markers.length)).toEqual([
-          2, 1, 2,
-        ]);
-        expect(chargeRouteMarkers[1].markers).toEqual([
-          expect.objectContaining({
-            index: "0",
-            variant: "compact",
-            transform: expect.any(String),
-          }),
+        expect(
+          chargeRouteMarkers.map(({ markers, chargeCores, chargeEchoes }) => [
+            markers.length,
+            chargeCores,
+            chargeEchoes,
+          ]),
+        ).toEqual([
+          [0, 1, 1],
+          [0, 1, 1],
+          [0, 1, 1],
         ]);
         const startAgents = new Map(
           oracleSceneAgents(start).map((agent) => [
@@ -6629,12 +4994,13 @@ async function runCp5Slice5Proof(
         ];
         for (const [frameIndex, frame] of frames.entries()) {
           const expectedLifecycle = expectedLifecycleByFrame[frameIndex];
-          if (expectedLifecycle.length > 0) {
-            expect(
-              frame.signature.dom.statusLifecycles.length,
-              `recovery F${frameIndex} installs lifecycle DOM`,
-            ).toBeGreaterThan(0);
-          }
+          // A status change has no off-body mark (src/looks/statuses.js): the
+          // page installs no lifecycle group or tip for it. The status plates
+          // show the statuses each body holds at the end of the tick.
+          expect(
+            frame.signature.dom.statusLifecycles,
+            `recovery F${frameIndex} installs no off-body lifecycle mark`,
+          ).toEqual([]);
           expect(
             signaturePlanEvents(frame.signature)
               .filter(({ kind }) => kind === "status_lifecycle")
@@ -6672,53 +5038,7 @@ async function runCp5Slice5Proof(
             expect(
               expectedLifecycle.flatMap(({ atomicEventIds }) => atomicEventIds),
             ).toEqual(expect.arrayContaining(refreshEventIds));
-            expect(
-              frame.signature.dom.statusLifecycles.filter(
-                (/** @type {Record<string, any>} */ { type }) =>
-                  type === "status_refreshed_or_extended",
-              ),
-            ).toEqual([]);
           }
-          expect(
-            frame.signature.dom.statusLifecycles,
-            `recovery F${frameIndex} installed lifecycle DOM/copy`,
-          ).toEqual(
-            expectedLifecycle.map((event) => {
-              const lifecycleCopy = statusLifecyclePresentation(
-                event.tokenId,
-                event.lifecycle,
-              );
-              if (lifecycleCopy === null) {
-                throw new Error(
-                  `Lifecycle copy is unavailable for ${event.tokenId}/${event.lifecycle}.`,
-                );
-              }
-              const plannedLifecycle = signaturePlanEvents(frame.signature).find(
-                ({ eventId }) => eventId === event.eventId,
-              );
-              const regenerationPerTick = Number(
-                plannedLifecycle?.outOfCombatRegenerationPerTick,
-              );
-              const tooltipSummary =
-                event.tokenId === "in_combat" &&
-                event.lifecycle === "expired" &&
-                Number.isFinite(regenerationPerTick)
-                  ? `This agent can regenerate up to ${formatDisplayNumber(regenerationPerTick)} health per tick while it remains out of combat.`
-                  : lifecycleCopy.summary;
-              return {
-                id: event.eventId,
-                type: event.eventType,
-                tokenId: event.tokenId,
-                lifecycle: event.lifecycle,
-                persistent: false,
-                atomicEventIds: event.atomicEventIds,
-                applicationEventIds: event.applicationEventIds,
-                tooltipKind: "event",
-                tooltipTitle: lifecycleCopy.title,
-                tooltipSummary,
-              };
-            }),
-          );
           const frameSlots = slotDirectory(frame.presentation);
           const frameKeysBySlot = new Map(
             oracleSceneAgents(frame.presentation).map((agent) => [
@@ -6726,35 +5046,51 @@ async function runCp5Slice5Proof(
               agent.presentation_key,
             ]),
           );
-          const lifecycleEffectsById = new Map(
-            /** @type {Record<string, any>[]} */ (frame.signature.dom.effects).map(
-              (effect) => [effect.id, effect],
-            ),
+          const plannedLifecycleById = new Map(
+            signaturePlanEvents(frame.signature).map((event) => [event.eventId, event]),
+          );
+          const expectedOwners = expectedLifecycleOwnerSlotsByFrame[frameIndex].map(
+            ([sourceSlot, recipientSlot], index) => ({
+              id: expectedLifecycle[index].eventId,
+              sourceKey: sourceSlot === null ? null : frameKeysBySlot.get(sourceSlot),
+              recipientKey: frameKeysBySlot.get(recipientSlot),
+            }),
           );
           expect(
             expectedLifecycle.map(({ eventId }) => {
-              const effect = lifecycleEffectsById.get(eventId);
-              if (!effect) {
+              const planned = plannedLifecycleById.get(eventId);
+              if (!planned) {
                 throw new Error(
                   `recovery F${frameIndex} lost lifecycle owner ${eventId}.`,
                 );
               }
               return {
-                id: effect.id,
-                sourceKey: effect.sourceKey,
-                recipientKey: effect.recipientKey,
+                id: planned.eventId,
+                sourceKey: planned.sourcePresentationKey,
+                recipientKey: planned.recipientPresentationKey,
               };
             }),
             `recovery F${frameIndex} authorized lifecycle owners`,
-          ).toEqual(
-            expectedLifecycleOwnerSlotsByFrame[frameIndex].map(
-              ([sourceSlot, recipientSlot], index) => ({
-                id: expectedLifecycle[index].eventId,
-                sourceKey: sourceSlot === null ? null : frameKeysBySlot.get(sourceSlot),
-                recipientKey: frameKeysBySlot.get(recipientSlot),
-              }),
-            ),
-          );
+          ).toEqual(expectedOwners);
+          // An applied status shows on its recipient's plate; an ended one is
+          // gone from it.
+          for (const [index, event] of expectedLifecycle.entries()) {
+            const plate = {
+              key: expectedOwners[index].recipientKey,
+              token: event.tokenId,
+            };
+            if (event.lifecycle === "applied") {
+              expect(
+                frame.signature.dom.statusCells,
+                `recovery F${frameIndex} ${event.eventId} plate`,
+              ).toContainEqual(plate);
+            } else {
+              expect(
+                frame.signature.dom.statusCells,
+                `recovery F${frameIndex} ${event.eventId} plate`,
+              ).not.toContainEqual(plate);
+            }
+          }
         }
         const fullMove = indexedMask(9, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
         await proveOutgoingOwnerSet(contract.name, 0, [
@@ -6915,11 +5251,12 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
     throw new Error("Shared replay service is unavailable.");
   }
   await openProduct(page, sharedReplay.url, "replay");
+  // Target Selection Visuals is on by default in the V5 switch list.
   await expect(
     page.locator(
       '#visual-filter-options input[data-visual-filter-id="target_selection_visuals"]',
     ),
-  ).not.toBeChecked();
+  ).toBeChecked();
   await openDetails(page, ["#visual-filters"]);
   await expectZeroCommandInteraction(page, () =>
     page.locator("#enable-all-visual-filters-button").click(),
@@ -6975,9 +5312,14 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
         "#roster-details",
         "#pending-turn-details",
       ]);
-      await installScientificDisclosureScroll(page, "#latest-transition-details", 29);
+      // The Actions tab has no disclosure to scroll, so the Technical Frame
+      // carries the scroll check (owner decision, 3 October 2026).
+      await openDetails(page, ["#technical-frame-details"]);
+      await installScientificDisclosureScroll(page, "#technical-frame-details", 29);
       const disclosureBeforeSwitch = await scientificDisclosureState(page);
-      await observeAgentDetailsOpenMutations(page);
+      // Agent Details is not on the Replay Viewer page (it stays in the hidden
+      // Developer drawer); the shown cards and the selected rail tab must stay.
+      expect(Object.keys(disclosureBeforeSwitch)).not.toContain("#agent-details");
       const cursorBeforeSwitch = structuredClone(leaf.transport.cursor);
       await expectSingleActivationCommand(
         page,
@@ -7000,21 +5342,30 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
       await expect
         .poll(() => scientificDisclosureState(page))
         .toEqual(disclosureBeforeSwitch);
-      await expect(page.locator("#agent-details")).toHaveAttribute(
-        "data-test-open-mutations",
-        "[]",
-      );
       await expect(
         page.locator(`#battlefield [data-presentation-key="${localKey}"]`),
       ).toHaveCount(0);
       await expectAgentAuthoritySurface(page, leaf.presentation, []);
       await expect(page.locator("#battlefield")).toBeFocused();
+      // Ranges sits in the rail's Visuals tab.
       const rangesButton = page.locator("#replay-ranges-button");
+      await showHolderOf(page, rangesButton);
       await expectZeroCommandInteraction(page, () => rangesButton.click());
       await expect(rangesButton).toHaveAttribute("aria-pressed", "false");
-      await expect(page.locator('[data-layer="debug-range"] .range-ring')).toHaveCount(
-        0,
-      );
+      // With Ranges off, only the selected champion's Reach Rings stay (the
+      // reach_rings switch, on by default); every other range ring goes.
+      const selectedKey = await page
+        .locator('#battlefield .agent[data-selected="true"]')
+        .evaluateAll(
+          (agents) => agents[0]?.getAttribute("data-presentation-key") ?? null,
+        );
+      expect(
+        await page
+          .locator('[data-layer="debug-range"] .range-ring')
+          .evaluateAll((rings) => [
+            ...new Set(rings.map((ring) => ring.getAttribute("data-presentation-key"))),
+          ]),
+      ).toEqual(selectedKey === null ? [] : [selectedKey]);
       await expectZeroCommandInteraction(page, () => rangesButton.click());
       await expect(rangesButton).toHaveAttribute("aria-pressed", "true");
       const afterLocalActions = await authenticatedGet(page, "/api/presentation/frame");
@@ -7048,7 +5399,7 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
           `#battlefield .agent[data-presentation-key="${owner.presentation_key}"]`,
         )
         .hover();
-      await expectCompactAgentTooltip(
+      await expectReplayChampionCard(
         page,
         owner,
         documentationBefore,
@@ -7070,16 +5421,21 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
     }
     if (frameIndex === 2) {
       await expect(page.locator("#battlefield .agent[role=button]")).not.toHaveCount(0);
+      // The last tick's instructions say how to switch whose view is shown.
       await expect(page.locator("#battlefield-instructions")).toContainText(
-        "switch the fog-of-war recipient",
+        "Click a champion you can see, or pick any champion in the roster, to see what its team saw",
       );
     }
     installed.push(leaf);
   }
 
-  await expectZeroCommandInteraction(page, () =>
-    page.locator("#replay-clear-reference-button").click(),
-  );
+  // Clear Selection is the arena's Esc key button; the older utility button
+  // stays hidden and only mirrors whether anything is left to clear.
+  const clearSelection = page.locator("#arena-buttons #arena-clear-selection-button");
+  await expect(clearSelection).toBeVisible();
+  await expect(clearSelection).toHaveAttribute("aria-label", "Clear Selection");
+  await expect(page.locator("#replay-clear-reference-button")).toBeEnabled();
+  await expectZeroCommandInteraction(page, () => clearSelection.click());
   await expect(page.locator('#battlefield .agent[data-selected="true"]')).toHaveCount(
     0,
   );
@@ -7102,17 +5458,24 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
 
   await seekReplay(page, 1);
   const middlePresentation = await authenticatedGet(page, "/api/presentation/frame");
-  await expect(page.locator("#accepted-card .accepted-action-row")).toHaveCount(
+  const middleThisTick = await actionRowsHost(page, "this");
+  await expect(middleThisTick.locator(".accepted-action-row")).toHaveCount(
     middlePresentation.researcher_space.latest_transition.action_rows.length,
   );
-  await expect(page.locator("#accepted-card")).not.toHaveAttribute(
-    "data-transition-id",
-    /.+/u,
-  );
+  await expect(middleThisTick).not.toHaveAttribute("data-transition-id", /.+/u);
   await expect(
-    page.locator("#accepted-card .accepted-action-row[data-presentation-key]"),
+    middleThisTick.locator(".accepted-action-row[data-presentation-key]"),
   ).toHaveCount(0);
   await expectLatestTransitionDom(page, middlePresentation);
+
+  // Reconnect shows only while the page is offline or needs a resync
+  // (src/shell.js), so the connection drops first: one replay command fails.
+  const reconnect = page.locator("#reconnect-button");
+  await expect(reconnect).toBeHidden();
+  await page.route("**/api/replay/command", (route) => route.abort(), { times: 1 });
+  await page.locator("#replay-next-button").click();
+  await expect(reconnect).toBeVisible();
+  await page.unroute("**/api/replay/command");
 
   let frameRequestCount = 0;
   let presentationRequestCount = 0;
@@ -7143,8 +5506,10 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
       },
     });
   });
-  await page.locator("#reconnect-button").click();
-  await expect(page.locator("#connection-status")).toHaveText("Resync required");
+  await reconnect.click();
+  // A frame the page cannot accept marks it offline as well as stale; the
+  // pill reads "Disconnected" before "Resync Required" (shell.js connectionPill).
+  await expect(page.locator("#connection-status")).toHaveText("Disconnected");
   await expect(page.locator("html")).toHaveAttribute(
     "data-presentation-authority",
     "pending",
@@ -7183,7 +5548,10 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
   );
   await page.unroute("**/api/frame");
   page.off("request", countRetiredRequests);
-  expect(browserErrors.get(page) ?? []).toEqual([]);
+  // The one dropped replay command is the only browser error.
+  expect(browserErrors.get(page) ?? []).toEqual([
+    "console: Failed to load resource: net::ERR_FAILED",
+  ]);
 });
 
 test("real death and respawn keep one opaque Oracle body identity", async ({
@@ -7251,10 +5619,13 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   ).toEqual({ contains: false, sameParent: true });
   await expect(shield).toBeVisible();
   await expect(shield).toHaveAttribute("tabindex", "0");
-  await expect(shield).toHaveAttribute("aria-label", "Spawn Shield");
+  // The shield's tip is the Champion Card's Spawn Shield row in a normal-size
+  // tip: the approved name with its effect, the card's sentence (no class gives
+  // the shield, so no source) and one row, Time Left.
+  await expect(shield).toHaveAttribute("aria-label", "Spawn Shield (Invulnerable)");
   await expect(shield).toHaveAttribute(
     "aria-description",
-    "While the spawn shield is active, this agent is protected, concealed from opponents, untargetable, excluded from aura effects, and limited to movement. It can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
+    "It can't be seen or hit, and can't strike yet.",
   );
   expect(await page.locator(subjectSelector).getAttribute("aria-label")).not.toMatch(
     /Spawn Shield|invulnerable|concealed|untargetable/iu,
@@ -7264,64 +5635,29 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   await expect(shield).toBeFocused();
   await expectZeroCommandInteraction(page, () => shield.press("Enter"));
   await expectZeroCommandInteraction(page, () => shield.press(" "));
-  await expectZeroCommandInteraction(page, () =>
-    shield.locator(".agent-spawn-shield__chip").click(),
-  );
+  // The Spawn Ward (veil, dashed ring, diamonds) replaced the old chip; a
+  // click that reaches the ward still sends nothing.
+  await expectZeroCommandInteraction(page, () => shield.dispatchEvent("click"));
   await shield.focus();
   await expect(page.locator("#visual-tooltip")).toBeVisible();
-  await expect(page.locator("#visual-tooltip-title")).toHaveText("Spawn Shield");
+  await expect(page.locator("#visual-tooltip-title")).toHaveText(
+    "Spawn Shield (Invulnerable)",
+  );
   await expect(
     page.locator("#visual-tooltip .semantic-explanation__summary"),
-  ).toHaveText(
-    "While the spawn shield is active, this agent is protected, concealed from opponents, untargetable, excluded from aura effects, and limited to movement. It can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
-  );
+  ).toHaveText("It can't be seen or hit, and can't strike yet.");
   await expect(page.locator("#visual-tooltip .semantic-explanation__label")).toHaveText(
-    [
-      "Protection Effect",
-      "Movement Speed",
-      "Visibility Effect",
-      "Targetability Effect",
-      "Action Effect",
-      "Aura Effect",
-      "Agent Collision Effect",
-      "Effect Duration",
-      "Duration Remaining",
-      "Recipient",
-    ],
+    ["Time Left"],
   );
   await expect(page.locator("#visual-tooltip .semantic-explanation__value")).toHaveText(
-    [
-      "Invulnerable",
-      "2",
-      "Concealed from opponents",
-      "Untargetable",
-      "Movement only",
-      "Excluded as emitter and beneficiary",
-      "The agent can move through other agents while shielded; collision resumes at the end of the shield's final transition.",
-      "3 ticks",
-      "3 ticks",
-      "Agent ID 5 · Rogue · Team B",
-    ],
+    ["3 ticks left"],
   );
-  const shieldStyles = await shield.evaluate((root) => {
-    const chip = root.querySelector(".agent-spawn-shield__chip");
-    const ticks = root.querySelector(".agent-spawn-shield__ticks");
-    if (!(chip instanceof SVGElement)) {
-      throw new TypeError("Spawn Shield chip is unavailable.");
-    }
-    if (!(ticks instanceof SVGElement)) {
-      throw new TypeError("Spawn Shield tick label is unavailable.");
-    }
-    return {
-      chipFill: getComputedStyle(chip).fill,
-      chipStroke: getComputedStyle(chip).stroke,
-      tickFill: getComputedStyle(ticks).fill,
-    };
-  });
-  expect(shieldStyles).toEqual({
-    chipFill: "rgb(0, 0, 0)",
-    chipStroke: "rgb(255, 255, 255)",
-    tickFill: "rgb(255, 255, 255)",
+  expect(await spawnWardParts(shield)).toEqual({
+    veils: 1,
+    ringed: true,
+    diamonds: 1,
+    diamondsPainted: true,
+    ticks: "3",
   });
   for (const [frameIndex, remaining] of [
     [3, 3],
@@ -7345,20 +5681,16 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
       "data-spawn-shield-remaining",
       String(remaining),
     );
-    await expect(shield.locator(".agent-spawn-shield__ticks")).toHaveText(
-      String(remaining),
-    );
     if (remaining > 0) {
+      // The Spawn Ward keeps the ticks left in data-ticks (its diamonds show
+      // them; the old chip's number is gone).
+      await expect(shield).toHaveAttribute("data-ticks", String(remaining));
       await expect(shield).toBeVisible();
       await expect(shield).toHaveAttribute("tabindex", "0");
     } else {
-      await expect(shield).toBeHidden();
-      await expect(shield).toHaveAttribute("hidden", "");
-      await expect(shield).toHaveAttribute("tabindex", "-1");
-      await expect(shield).not.toHaveAttribute("data-tooltip-owner", "");
-      await expect(shield).not.toHaveAttribute("aria-describedby", /./u);
-      await expect(shield).not.toHaveAttribute("aria-description", /./u);
-      await expect(shield).not.toBeFocused();
+      // At 0 the ward is dropped (a lift look without identity may fade out),
+      // so no shield, tip or focus is left for this champion.
+      await expect(shield).toHaveCount(0);
       await expect(page.locator("#visual-tooltip")).not.toHaveAttribute(
         "data-tooltip-kind",
         "status",
@@ -7374,14 +5706,55 @@ test("real death and respawn keep one opaque Oracle body identity", async ({
   expect(browserErrors.get(page) ?? []).toEqual([]);
 });
 
+/** @param {import("@playwright/test").Page} page
+ * @param {Record<string, any>} frame
+ * @param {number} worldRadius
+ * @returns {Promise<number>} */
+async function livingBodyRadius(page, frame, worldRadius) {
+  // A living champion's body circle has the champion's full radius on screen.
+  const living = /** @type {Record<string, any>[]} */ (
+    frame.current_endpoint.scene.agents
+  ).find(
+    (agent) =>
+      agent.life_state !== "corpse" &&
+      agent.current_health > 0 &&
+      agent.radius === worldRadius,
+  );
+  if (!living) {
+    throw new Error("No living champion shares the body radius.");
+  }
+  return page
+    .locator(
+      `#battlefield .agent[data-presentation-key="${living.presentation_key}"] .agent-body`,
+    )
+    .evaluate((body) =>
+      body instanceof SVGCircleElement ? body.r.baseVal.value : NaN,
+    );
+}
+
+/** @param {Record<string, any>} frame */
+function expectedWaveLine(frame) {
+  // The scorebug's wave line counts down to the next wave of either team; the
+  // wave comes in countdown + 1 ticks (src/match-summary.js).
+  const ticks =
+    Math.min(
+      .../** @type {Record<string, any>[]} */ (
+        frame.current_endpoint.scene.respawn_waves
+      ).map(({ countdown_steps }) => countdown_steps),
+    ) + 1;
+  return `Respawn Wave In ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`;
+}
+
 test("real death cycle retains truthful outward lifecycle cues at both review viewports", async ({
   page,
 }) => {
   if (!deathReplay) {
     throw new Error("Death replay service is unavailable.");
   }
+  // The Replay Viewer's smallest supported screen and its usual one (owner,
+  // 2 Oct 2026).
   for (const viewport of [
-    { width: 960, height: 600 },
+    { width: 1366, height: 768 },
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
@@ -7399,8 +5772,15 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       throw new Error("Death replay subject is absent from frame zero.");
     }
     const subjectSelector = `.agent[data-presentation-key="${subject.presentation_key}"]`;
+    const subjectClass = EXPECTED_AGENT_CLASSES[subject.class_id].accent;
+    const subjectTeam = subject.team_id === 1 ? "a" : "b";
+    // A respawn wave draws nothing on the arena (looks/requiems.js); the
+    // scorebug's wave line counts down to the next wave instead.
+    const waveEffects = page.locator(
+      '.combat-effect[data-event-type="respawn_wave_occurred"]',
+    );
     await expect(page.locator(".combat-lifecycle-ring")).toHaveCount(0);
-    await expect(page.locator(".combat-respawn-wave")).toHaveCount(0);
+    await expect(waveEffects).toHaveCount(0);
 
     await seekReplay(page, 1);
     const deathFrame = await authenticatedGet(page, "/api/presentation/frame");
@@ -7433,60 +5813,86 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       ),
     ).toEqual([]);
     await expect(deathEffect.locator(".combat-cue__leader--semantic")).toHaveCount(0);
-    const deathGeometry = await deathEffect.evaluate((effect, selector) => {
-      const ringGroup = effect.querySelector(".combat-lifecycle-ring--death");
-      const ring = effect.querySelector(".combat-lifecycle-ring__ring");
-      const hit = effect.querySelector(".combat-lifecycle-ring__hit");
-      const body = document.querySelector(`${selector} .agent-body`);
-      if (
-        !(ringGroup instanceof SVGGraphicsElement) ||
-        !(ring instanceof SVGCircleElement) ||
-        !(hit instanceof SVGCircleElement) ||
-        !(body instanceof SVGCircleElement)
-      ) {
-        throw new Error("Settled death geometry is unavailable.");
-      }
-      const matrix = ringGroup.getScreenCTM();
-      const bodyMatrix = body.getScreenCTM();
-      if (matrix === null || bodyMatrix === null) {
-        throw new Error("Settled death transform is unavailable.");
-      }
-      const center = new DOMPoint(0, 0).matrixTransform(matrix);
-      const bodyCenter = new DOMPoint(
-        body.cx.baseVal.value,
-        body.cy.baseVal.value,
-      ).matrixTransform(bodyMatrix);
-      const centerElements = document.elementsFromPoint(bodyCenter.x, bodyCenter.y);
-      return {
-        color: getComputedStyle(ringGroup).color,
-        radius: ring.getAttribute("r"),
-        strokeOpacity: getComputedStyle(ring).strokeOpacity,
-        hitPointerEvents: getComputedStyle(hit).pointerEvents,
-        hitFill: getComputedStyle(hit).fill,
-        hitOwnsBodyCenter: centerElements.includes(hit),
-        center: [center.x, center.y],
-        bodyCenter: [bodyCenter.x, bodyCenter.y],
-      };
-    }, subjectSelector);
-    expect(deathGeometry.color).toBe("rgb(251, 113, 133)");
-    expect(deathGeometry.radius).toBe("32");
-    expect(deathGeometry.strokeOpacity).toBe("0.5");
+    // The Fall Ring (looks/requiems.js): the fallen champion's class requiem
+    // in its team color, at 1.3 times its body radius R and 35% in the settled
+    // still, around a stroke-only hit ring of 1.3R + 4 px (at least 18 px)
+    // that leaves the body's center to the body.
+    const deathBodyRadius = await livingBodyRadius(page, deathFrame, subject.radius);
+    const deathGeometry = await deathEffect.evaluate(
+      (effect, { selector, team }) => {
+        const ringGroup = effect.querySelector(".combat-lifecycle-ring--death");
+        const ring = effect.querySelector(".requiem__fall-ring");
+        const hit = effect.querySelector(".combat-lifecycle-ring__hit");
+        const body = document.querySelector(`${selector} .agent-body`);
+        if (
+          !(ringGroup instanceof SVGGElement) ||
+          !(ring instanceof SVGPathElement) ||
+          !(hit instanceof SVGCircleElement) ||
+          !(body instanceof SVGCircleElement)
+        ) {
+          throw new Error("Settled death geometry is unavailable.");
+        }
+        const matrix = ringGroup.getScreenCTM();
+        const bodyMatrix = body.getScreenCTM();
+        if (matrix === null || bodyMatrix === null) {
+          throw new Error("Settled death transform is unavailable.");
+        }
+        const center = new DOMPoint(0, 0).matrixTransform(matrix);
+        const bodyCenter = new DOMPoint(
+          body.cx.baseVal.value,
+          body.cy.baseVal.value,
+        ).matrixTransform(bodyMatrix);
+        const centerElements = document.elementsFromPoint(bodyCenter.x, bodyCenter.y);
+        // The team color, resolved where the ring is drawn.
+        const swatch = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        swatch.style.stroke = `var(--team-${team})`;
+        ringGroup.append(swatch);
+        const teamColor = getComputedStyle(swatch).stroke;
+        swatch.remove();
+        return {
+          requiemClass: ringGroup.getAttribute("data-requiem-class"),
+          teamClass: ringGroup.classList.contains(`requiem--team-${team}`),
+          ringStroke: getComputedStyle(ring).stroke,
+          teamColor,
+          ringOpacity: ring.getAttribute("opacity"),
+          ringRadius: ring.getBBox().width / 2,
+          hitRadius: hit.r.baseVal.value,
+          hitPointerEvents: getComputedStyle(hit).pointerEvents,
+          hitFill: getComputedStyle(hit).fill,
+          hitOwnsBodyCenter: centerElements.includes(hit),
+          center: [center.x, center.y],
+          bodyCenter: [bodyCenter.x, bodyCenter.y],
+        };
+      },
+      { selector: subjectSelector, team: subjectTeam },
+    );
+    expect(deathGeometry.requiemClass).toBe(subjectClass);
+    expect(deathGeometry.teamClass).toBe(true);
+    expect(deathGeometry.ringStroke).toBe(deathGeometry.teamColor);
+    expect(deathGeometry.ringOpacity).toBe("0.35");
+    // requiems.js writes its sizes rounded to 0.01 px.
+    expect(
+      Math.abs(deathGeometry.ringRadius - 1.3 * deathBodyRadius),
+    ).toBeLessThanOrEqual(0.01);
+    expect(
+      Math.abs(deathGeometry.hitRadius - Math.max(1.3 * deathBodyRadius + 4, 18)),
+    ).toBeLessThanOrEqual(0.01);
     expect(deathGeometry.hitPointerEvents).toBe("stroke");
     expect(deathGeometry.hitFill).toBe("none");
     expect(deathGeometry.hitOwnsBodyCenter).toBe(false);
     expect(deathGeometry.center.every(Number.isFinite)).toBe(true);
     expect(
       Math.abs(deathGeometry.center[0] - deathGeometry.bodyCenter[0]),
-    ).toBeLessThanOrEqual(0.001);
+    ).toBeLessThanOrEqual(0.01);
     expect(
       Math.abs(deathGeometry.center[1] - deathGeometry.bodyCenter[1]),
-    ).toBeLessThanOrEqual(0.001);
-    await expect(deathEffect).toHaveAttribute("aria-label", "Agent Died");
+    ).toBeLessThanOrEqual(0.01);
+    await expect(deathEffect).toHaveAttribute("aria-label", "Fallen");
     await deathEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText("Agent Died");
+    await expect(page.locator("#visual-tooltip-title")).toHaveText("Fallen");
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This agent died on the incoming transition.");
+    ).toHaveText("This champion fell this tick.");
     expect(await deathEffect.getAttribute("aria-label")).not.toMatch(
       /_|semantic pulse/iu,
     );
@@ -7496,7 +5902,7 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     expect(waitFrame.latest_events.events).toEqual([]);
     await expect(page.locator(subjectSelector)).toHaveAttribute("data-alive", "false");
     await expect(page.locator(".combat-lifecycle-ring")).toHaveCount(0);
-    await expect(page.locator(".combat-respawn-wave")).toHaveCount(0);
+    await expect(waveEffects).toHaveCount(0);
 
     await seekReplay(page, 3);
     const respawnFrame = await authenticatedGet(page, "/api/presentation/frame");
@@ -7512,64 +5918,13 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       "respawn_wave_occurred",
       "agent_respawned",
     ]);
-    const waveEvent = respawnEvents[2];
     const respawnEvent = respawnEvents[3];
-    const waveEffect = page.locator(
-      '.combat-effect[data-event-type="respawn_wave_occurred"]',
+    // Team B's wave draws nothing on the arena; the scorebug's wave line
+    // shows the next wave.
+    await expect(waveEffects).toHaveCount(0);
+    await expect(page.locator("#scorebug span.wave")).toHaveText(
+      expectedWaveLine(respawnFrame),
     );
-    const wave = waveEffect.locator(".combat-respawn-wave");
-    await expect(waveEffect).toHaveCount(1);
-    await expect(waveEffect).toHaveAttribute("data-event-id", waveEvent.event_id);
-    await expect(waveEffect).toHaveAttribute("data-persistent", "true");
-    await expect(waveEffect).toHaveAttribute("data-settled", "true");
-    await expect(waveEffect).toHaveAttribute("data-team-index", "1");
-    await expect(waveEffect).toHaveAttribute("data-team-id", "2");
-    await expect(waveEffect).toHaveAttribute("data-team-side", "right");
-    await expect(wave).toHaveAttribute(
-      "data-layout-key",
-      JSON.stringify(["event", waveEvent.event_id, "cue"]),
-    );
-    await expect(wave).toHaveAttribute("data-layout-disposition", "perimeter_callout");
-    await expect(wave).toHaveAttribute("data-layout-collision-free", "true");
-    await expect(wave.locator(".combat-respawn-wave__label")).toHaveText(
-      "EVENT: Team B Respawn",
-    );
-    await expect(waveEffect).toHaveAttribute("aria-label", "EVENT: Team B Respawn");
-    await waveEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText(
-      "EVENT: Team B Respawn",
-    );
-    await expect(
-      page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This team respawn occurred on the incoming transition.");
-    const waveGeometry = await wave.evaluate((node) => {
-      const map = document.querySelector(".map-boundary");
-      const label = node.querySelector(".combat-respawn-wave__label");
-      if (!(map instanceof SVGGraphicsElement) || !(label instanceof SVGTextElement)) {
-        throw new Error("Settled wave geometry is unavailable.");
-      }
-      const waveBounds = node.getBoundingClientRect();
-      const mapBounds = map.getBoundingClientRect();
-      return {
-        color: getComputedStyle(node).color,
-        label: label.textContent,
-        withinMap:
-          waveBounds.left >= mapBounds.left &&
-          waveBounds.top >= mapBounds.top &&
-          waveBounds.right <= mapBounds.right &&
-          waveBounds.bottom <= mapBounds.bottom,
-        rightSided:
-          waveBounds.left + waveBounds.width / 2 > mapBounds.left + mapBounds.width / 2,
-        childTooltipOwners: node.querySelectorAll("[data-tooltip-owner]").length,
-      };
-    });
-    expect(waveGeometry).toEqual({
-      color: "rgb(240, 90, 103)",
-      label: "EVENT: Team B Respawn",
-      withinMap: true,
-      rightSided: true,
-      childTooltipOwners: 0,
-    });
 
     const respawnEffect = page.locator(
       '.combat-effect[data-event-type="agent_respawned"]',
@@ -7592,82 +5947,82 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       ),
     ).toEqual([]);
     await expect(respawnEffect.locator(".combat-cue__leader--semantic")).toHaveCount(0);
-    const respawnGeometry = await respawnEffect.evaluate((effect, selector) => {
-      const ringGroup = effect.querySelector(".combat-lifecycle-ring--resurrection");
-      const ring = effect.querySelector(".combat-lifecycle-ring__ring");
-      const hit = effect.querySelector(".combat-lifecycle-ring__hit");
-      const body = document.querySelector(`${selector} .agent-body`);
-      if (
-        !(ringGroup instanceof SVGGraphicsElement) ||
-        !(ring instanceof SVGCircleElement) ||
-        !(hit instanceof SVGCircleElement) ||
-        !(body instanceof SVGCircleElement)
-      ) {
-        throw new Error("Settled resurrection geometry is unavailable.");
-      }
-      const matrix = ringGroup.getScreenCTM();
-      const bodyMatrix = body.getScreenCTM();
-      if (matrix === null || bodyMatrix === null) {
-        throw new Error("Settled resurrection transform is unavailable.");
-      }
-      const center = new DOMPoint(0, 0).matrixTransform(matrix);
-      const bodyCenter = new DOMPoint(
-        body.cx.baseVal.value,
-        body.cy.baseVal.value,
-      ).matrixTransform(bodyMatrix);
-      const centerElements = document.elementsFromPoint(bodyCenter.x, bodyCenter.y);
-      return {
-        color: getComputedStyle(ringGroup).color,
-        radius: ring.getAttribute("r"),
-        strokeOpacity: getComputedStyle(ring).strokeOpacity,
-        hitPointerEvents: getComputedStyle(hit).pointerEvents,
-        hitFill: getComputedStyle(hit).fill,
-        hitOwnsBodyCenter: centerElements.includes(hit),
-        center: [center.x, center.y],
-        bodyCenter: [bodyCenter.x, bodyCenter.y],
-      };
-    }, subjectSelector);
-    expect(respawnGeometry.color).toBe("rgb(255, 255, 255)");
-    expect(respawnGeometry.radius).toBe("32");
-    expect(respawnGeometry.strokeOpacity).toBe("0.5");
+    // The Homecoming (looks/requiems.js): its moonlight ring plays only at the
+    // Return beat, so the settled still holds it at 0, around a stroke-only
+    // hit ring of R + 4 px (at least 18 px) on the returned body.
+    const respawnGeometry = await respawnEffect.evaluate(
+      (effect, { selector, team }) => {
+        const ringGroup = effect.querySelector(".combat-lifecycle-ring--resurrection");
+        const rings = effect.querySelector(".homecoming__rings");
+        const hit = effect.querySelector(".combat-lifecycle-ring__hit");
+        const body = document.querySelector(`${selector} .agent-body`);
+        if (
+          !(ringGroup instanceof SVGGElement) ||
+          !(rings instanceof SVGGElement) ||
+          !(hit instanceof SVGCircleElement) ||
+          !(body instanceof SVGCircleElement)
+        ) {
+          throw new Error("Settled resurrection geometry is unavailable.");
+        }
+        const matrix = ringGroup.getScreenCTM();
+        const bodyMatrix = body.getScreenCTM();
+        if (matrix === null || bodyMatrix === null) {
+          throw new Error("Settled resurrection transform is unavailable.");
+        }
+        const center = new DOMPoint(0, 0).matrixTransform(matrix);
+        const bodyCenter = new DOMPoint(
+          body.cx.baseVal.value,
+          body.cy.baseVal.value,
+        ).matrixTransform(bodyMatrix);
+        const centerElements = document.elementsFromPoint(bodyCenter.x, bodyCenter.y);
+        return {
+          teamClass: ringGroup.classList.contains(`homecoming--team-${team}`),
+          ringsOpacity: rings.getAttribute("opacity"),
+          hitRadius: hit.r.baseVal.value,
+          bodyRadius: body.r.baseVal.value,
+          hitPointerEvents: getComputedStyle(hit).pointerEvents,
+          hitFill: getComputedStyle(hit).fill,
+          hitOwnsBodyCenter: centerElements.includes(hit),
+          center: [center.x, center.y],
+          bodyCenter: [bodyCenter.x, bodyCenter.y],
+        };
+      },
+      { selector: subjectSelector, team: subjectTeam },
+    );
+    expect(respawnGeometry.teamClass).toBe(true);
+    expect(respawnGeometry.ringsOpacity).toBe("0");
+    expect(
+      Math.abs(
+        respawnGeometry.hitRadius - Math.max(respawnGeometry.bodyRadius + 4, 18),
+      ),
+    ).toBeLessThanOrEqual(0.01);
     expect(respawnGeometry.hitPointerEvents).toBe("stroke");
     expect(respawnGeometry.hitFill).toBe("none");
     expect(respawnGeometry.hitOwnsBodyCenter).toBe(false);
     expect(respawnGeometry.center.every(Number.isFinite)).toBe(true);
     expect(
       Math.abs(respawnGeometry.center[0] - respawnGeometry.bodyCenter[0]),
-    ).toBeLessThanOrEqual(0.001);
+    ).toBeLessThanOrEqual(0.01);
     expect(
       Math.abs(respawnGeometry.center[1] - respawnGeometry.bodyCenter[1]),
-    ).toBeLessThanOrEqual(0.001);
-    await expect(respawnEffect).toHaveAttribute("aria-label", "Agent Respawned");
+    ).toBeLessThanOrEqual(0.01);
+    await expect(respawnEffect).toHaveAttribute("aria-label", "Returned");
     await respawnEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText("Agent Respawned");
+    await expect(page.locator("#visual-tooltip-title")).toHaveText("Returned");
     await expect(
       page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This agent respawned on the incoming transition.");
+    ).toHaveText("This champion came back at its waystone this tick.");
     expect(await respawnEffect.getAttribute("aria-label")).not.toMatch(
       /_|semantic pulse/iu,
     );
     const shield = page.locator(
       `.agent-spawn-shield[data-presentation-key="${subject.presentation_key}"]`,
     );
-    const shieldStyles = await shield.evaluate((root) => {
-      const chip = root.querySelector(".agent-spawn-shield__chip");
-      const ticks = root.querySelector(".agent-spawn-shield__ticks");
-      if (!(chip instanceof SVGElement) || !(ticks instanceof SVGElement)) {
-        throw new Error("Spawn Shield styling is unavailable.");
-      }
-      return {
-        chipFill: getComputedStyle(chip).fill,
-        chipStroke: getComputedStyle(chip).stroke,
-        tickFill: getComputedStyle(ticks).fill,
-      };
-    });
-    expect(shieldStyles).toEqual({
-      chipFill: "rgb(0, 0, 0)",
-      chipStroke: "rgb(255, 255, 255)",
-      tickFill: "rgb(255, 255, 255)",
+    expect(await spawnWardParts(shield)).toMatchObject({
+      veils: 1,
+      ringed: true,
+      diamonds: 1,
+      diamondsPainted: true,
     });
 
     await seekReplay(page, 4);
@@ -7681,7 +6036,7 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       "2",
     );
     await expect(page.locator(".combat-lifecycle-ring")).toHaveCount(0);
-    await expect(page.locator(".combat-respawn-wave")).toHaveCount(0);
+    await expect(waveEffects).toHaveCount(0);
 
     await seekReplay(page, 5);
     const teamAFrame = await authenticatedGet(page, "/api/presentation/frame");
@@ -7695,72 +6050,12 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
       "action_rejected",
       "respawn_wave_occurred",
     ]);
-    const teamAWaveEvent = teamAEvents[1];
-    const teamAWaveEffect = page.locator(
-      '.combat-effect[data-event-type="respawn_wave_occurred"]',
+    // Team A's wave brings nobody back; it too draws nothing on the arena,
+    // and the scorebug's wave line moves on to the next wave.
+    await expect(waveEffects).toHaveCount(0);
+    await expect(page.locator("#scorebug span.wave")).toHaveText(
+      expectedWaveLine(teamAFrame),
     );
-    const teamAWave = teamAWaveEffect.locator(".combat-respawn-wave");
-    await expect(teamAWaveEffect).toHaveCount(1);
-    await expect(teamAWaveEffect).toHaveAttribute(
-      "data-event-id",
-      teamAWaveEvent.event_id,
-    );
-    await expect(teamAWaveEffect).toHaveAttribute("data-persistent", "true");
-    await expect(teamAWaveEffect).toHaveAttribute("data-settled", "true");
-    await expect(teamAWaveEffect).toHaveAttribute("data-team-index", "0");
-    await expect(teamAWaveEffect).toHaveAttribute("data-team-id", "1");
-    await expect(teamAWaveEffect).toHaveAttribute("data-team-side", "left");
-    await expect(teamAWave).toHaveAttribute(
-      "data-layout-key",
-      JSON.stringify(["event", teamAWaveEvent.event_id, "cue"]),
-    );
-    await expect(teamAWave).toHaveAttribute(
-      "data-layout-disposition",
-      "perimeter_callout",
-    );
-    await expect(teamAWave).toHaveAttribute("data-layout-collision-free", "true");
-    await expect(teamAWave.locator(".combat-respawn-wave__label")).toHaveText(
-      "EVENT: Team A Respawn",
-    );
-    await expect(teamAWaveEffect).toHaveAttribute(
-      "aria-label",
-      "EVENT: Team A Respawn",
-    );
-    await teamAWaveEffect.focus();
-    await expect(page.locator("#visual-tooltip-title")).toHaveText(
-      "EVENT: Team A Respawn",
-    );
-    await expect(
-      page.locator("#visual-tooltip .semantic-explanation__summary"),
-    ).toHaveText("This team respawn occurred on the incoming transition.");
-    const teamAGeometry = await teamAWave.evaluate((node) => {
-      const map = document.querySelector(".map-boundary");
-      const label = node.querySelector(".combat-respawn-wave__label");
-      if (!(map instanceof SVGGraphicsElement) || !(label instanceof SVGTextElement)) {
-        throw new Error("Settled Team A wave geometry is unavailable.");
-      }
-      const waveBounds = node.getBoundingClientRect();
-      const mapBounds = map.getBoundingClientRect();
-      return {
-        color: getComputedStyle(node).color,
-        label: label.textContent,
-        withinMap:
-          waveBounds.left >= mapBounds.left &&
-          waveBounds.top >= mapBounds.top &&
-          waveBounds.right <= mapBounds.right &&
-          waveBounds.bottom <= mapBounds.bottom,
-        leftSided:
-          waveBounds.left + waveBounds.width / 2 < mapBounds.left + mapBounds.width / 2,
-        childTooltipOwners: node.querySelectorAll("[data-tooltip-owner]").length,
-      };
-    });
-    expect(teamAGeometry).toEqual({
-      color: "rgb(59, 130, 246)",
-      label: "EVENT: Team A Respawn",
-      withinMap: true,
-      leftSided: true,
-      childTooltipOwners: 0,
-    });
     const teamASubject = teamAFrame.current_endpoint.scene.agents.find(
       (/** @type {Record<string, any>} */ agent) => agent.public_agent_id === "5",
     );
@@ -7799,18 +6094,15 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     await expect(expiryEffect).toHaveAttribute("data-settled", "true");
     await expect(expiryEffect).toHaveAttribute("data-token-id", "spawn_shield");
     await expect(expiryEffect).toHaveAttribute("data-lifecycle", "expired");
-    const expiryPulse = expiryEffect.locator(".combat-lifecycle");
-    await expect(expiryPulse).toHaveAttribute(
-      "data-layout-key",
-      JSON.stringify(["event", expiryEvent.event_id, "cue"]),
+    // The Ward Lift ring plays only while a tick plays; the settled still
+    // keeps the named, focusable expiry with no ring (looks/statuses.js).
+    await expect(expiryEffect.locator(".ward-lift")).toHaveCount(0);
+    await expect(expiryEffect).toHaveAttribute(
+      "aria-label",
+      "Expired Spawn Shield (Invulnerable)",
     );
-    await expect(expiryPulse).toHaveAttribute(
-      "data-layout-disposition",
-      "recipient_stack",
-    );
-    await expect(expiryPulse).toHaveAttribute("data-layout-collision-free", "true");
     await expect(page.locator(".combat-lifecycle-ring")).toHaveCount(0);
-    await expect(page.locator(".combat-respawn-wave")).toHaveCount(0);
+    await expect(waveEffects).toHaveCount(0);
 
     await seekReplay(page, 7);
     const unshieldedFrame = await authenticatedGet(page, "/api/presentation/frame");
@@ -7829,10 +6121,19 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
     ).toBe(false);
     await expect(expiryEffect).toHaveCount(0);
     await expect(page.locator(".combat-lifecycle-ring")).toHaveCount(0);
-    await expect(page.locator(".combat-respawn-wave")).toHaveCount(0);
+    await expect(waveEffects).toHaveCount(0);
     expect(browserErrors.get(page) ?? []).toEqual([]);
   }
 });
+
+// Agent Details names its champion with a token chip whose accessible name
+// starts "Agent ID <shown ID>, ".
+/** @param {import("@playwright/test").Page} page @param {number} displayId */
+async function expectAgentDetailsNames(page, displayId) {
+  await expect(
+    page.locator("#selection-card .agent-details__section .token-chip").first(),
+  ).toHaveAttribute("aria-label", new RegExp(`^Agent ID ${displayId}, `, "u"));
+}
 
 /** @param {import("@playwright/test").Page} page */
 async function corpsePresentationState(page) {
@@ -7850,20 +6151,29 @@ async function corpseBodyPaint(page, presentationKey) {
     `#battlefield .agent[data-presentation-key="${presentationKey}"]`,
   );
   await expect(body).toHaveCount(1);
+  // A fallen champion is an Ashen Token (looks/champions.js): its ash disc,
+  // two ash rims and an ash emblem, with its life drawing hidden.
   return body.evaluate((agent) => {
     const circle = agent.querySelector(".agent-body");
-    const health = agent.querySelector(".agent-health");
-    if (!(circle instanceof SVGElement) || !(health instanceof SVGElement)) {
+    const life = agent.querySelector(".champion-life");
+    const rims = [...agent.querySelectorAll(".champion-fallen .champion-ashen__rim")];
+    const emblem = agent.querySelector(".champion-fallen .champion-ashen__emblem");
+    if (
+      !(circle instanceof SVGElement) ||
+      !(life instanceof SVGElement) ||
+      rims.length !== 2 ||
+      !(emblem instanceof SVGElement)
+    ) {
       throw new TypeError("Rendered corpse paint is incomplete.");
     }
     return {
       alive: agent.getAttribute("data-alive"),
-      publicAgentId: agent.getAttribute("data-public-agent-id"),
+      state: agent.getAttribute("data-state"),
       ariaLabel: agent.getAttribute("aria-label"),
       circle: ["cx", "cy", "r"].map((name) => circle.getAttribute(name)),
-      health: ["cx", "cy", "r", "stroke-dasharray", "stroke-dashoffset"].map((name) =>
-        health.getAttribute(name),
-      ),
+      lifeDisplay: life.getAttribute("display"),
+      rims: rims.map((rim) => ["cx", "cy", "r"].map((name) => rim.getAttribute(name))),
+      emblem: ["x", "y", "width", "height"].map((name) => emblem.getAttribute(name)),
     };
   });
 }
@@ -8011,6 +6321,12 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
           `#battlefield [data-public-agent-id="${unauthorizedCorpse.public_agent_id}"]`,
         ),
       ).toHaveCount(0);
+      // Bodies carry no public ID attribute; each names its Agent ID instead.
+      await expect(
+        page.locator(
+          `#battlefield .agent[aria-label^="Agent ID ${expectedAgentIdentity(unauthorizedCorpse, oracle.presentation).displayId}."]`,
+        ),
+      ).toHaveCount(0);
 
       const authorizedBody = page.locator(
         `#battlefield .agent[data-presentation-key="${authorizedCorpse.presentation_key}"]`,
@@ -8019,8 +6335,11 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
       const stepBeforeInspection =
         agent.presentation.source.source_simulator_step_count;
       await expectNoCorpseCommands(page, () => authorizedBody.click());
-      await expect(page.locator("#selection-card")).toContainText(
-        `Agent ID ${expectedAgentIdentity(authorizedCorpse, agent.presentation).displayId}`,
+      // Agent Details names the champion with its chip ("Agent ID 5, Hunter,
+      // Team B"); with Panel Tokens on the chip itself reads "Agent 5".
+      await expectAgentDetailsNames(
+        page,
+        expectedAgentIdentity(authorizedCorpse, agent.presentation).displayId,
       );
       await expectNoCorpseCommands(page, () =>
         authorizedBody.click({ modifiers: ["Shift"] }),
@@ -8043,6 +6362,7 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
       );
       expect(corpseIdentity).toBeTruthy();
       expect(corpseRosterAgent).toMatchObject({ life_state: "corpse" });
+      await showReplayRoster(page);
       const corpseRosterButton = page.locator(
         `#roster .roster-primary-action[data-presentation-key="${corpseRosterAgent.presentation_key}"]`,
       );
@@ -8072,8 +6392,11 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
         `#battlefield .agent[data-presentation-key="${baseCorpse.presentation_key}"]`,
       );
       await expectNoCorpseCommands(page, () => baseCorpseBody.click());
-      await expect(page.locator("#selection-card")).toContainText(
-        `Agent ID ${expectedAgentIdentity(baseCorpse, corpseRecipient.presentation).displayId}`,
+      // Agent Details names the champion with its chip ("Agent ID 5, Hunter,
+      // Team B"); with Panel Tokens on the chip itself reads "Agent 5".
+      await expectAgentDetailsNames(
+        page,
+        expectedAgentIdentity(baseCorpse, corpseRecipient.presentation).displayId,
       );
       const afterBaseCorpseInspection = await corpsePresentationState(page);
       expect(afterBaseCorpseInspection.transport.cursor).toEqual(
@@ -8106,6 +6429,7 @@ test("real Agent replay paints only locally authorized Oracle corpses without ch
             candidate.public_agent_id === identity.public_agent_id,
         );
       expect(switchRosterAgent).toBeTruthy();
+      await showReplayRoster(page);
       const switchButton = page.locator(
         `#roster .roster-primary-action[data-presentation-key="${switchRosterAgent.presentation_key}"]`,
       );
@@ -8170,7 +6494,9 @@ test("real Live NoShared paints a locally visible corpse as inspection-only Orac
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/command",
     );
-    await page.locator("#submit-turn-button").click();
+    // Nobody is Manual in a scripted scene, so the deck shows the Watching
+    // bar: its Play One Turn plays the next scripted tick.
+    await page.locator("#watch-submit").click();
     expect((await advanceResponse).status()).toBe(200);
     await expect(page.locator("#step-value")).toHaveText("1");
 
@@ -8185,45 +6511,44 @@ test("real Live NoShared paints a locally visible corpse as inspection-only Orac
     expect(deaths).toHaveLength(1);
     expect(deaths[0].public_agent_id).toBe(oracleCorpse.public_agent_id);
     expect(deaths[0].contributors.length).toBeGreaterThan(0);
-    const deathCard = page.locator(".combat-death-announcement");
-    await expect(deathCard).toHaveCount(1);
-    await expect(deathCard).toHaveClass(
-      new RegExp(`--team-${deaths[0].killing_team_id === 1 ? "a" : "b"}`, "u"),
+    // A fall is told by the herald card in the killing team's color and by
+    // the Fallen panel under Your Turn, which names everyone who shared the
+    // kill (looks/heralds.js, looks/requiems.js); the old death announcement
+    // card draws nothing on the arena.
+    await expect(page.locator(".combat-death-announcement")).toHaveCount(0);
+    const killingTeam = deaths[0].killing_team_id === 1 ? "a" : "b";
+    const herald = page.locator(".combat-effect--herald-card .herald");
+    await expect(herald).toHaveCount(1);
+    await expect(herald).toHaveClass(
+      new RegExp(`(^| )herald--team-${killingTeam}( |$)`, "u"),
     );
-    await deathCard.evaluate(async (card) => {
-      const battlefield = card.closest("svg");
-      const animation = card.parentElement?.getAnimations()[0];
-      if (!battlefield || !animation?.effect)
-        throw new Error("Live death presentation clock is unavailable.");
-      const timing = animation.effect.getTiming();
-      const time = Number(timing.delay) + Number(timing.duration) / 2;
-      const animations = battlefield
-        .getAnimations({ subtree: true })
-        .filter(({ id }) => id.startsWith("mbg:"));
-      for (const owned of animations) {
-        owned.pause();
-        owned.currentTime = time;
-      }
-      await Promise.all(animations.map(({ ready }) => ready));
-    });
-    const victim = deathCard.locator(".combat-death-announcement__victim");
-    const victimTitle = expectedAgentIdentity(oracleCorpse, oracle.presentation).title;
-    await expect(victim).toHaveText(victimTitle);
-    await victim.locator("rect").hover();
-    await expect(page.locator("#visual-tooltip")).toContainText(victimTitle);
-    for (const contributor of deaths[0].contributors) {
-      await expect(page.locator("#visual-tooltip")).toContainText(
-        expectedAgentIdentity(contributor, oracle.presentation).title,
-      );
-    }
-    await page.mouse.move(0, 0);
-    await victim.focus();
-    await expect(page.locator("#visual-tooltip")).toContainText("Kill Contributors");
+    /** @param {Record<string, any>} named */
+    const shortTitle = (named) =>
+      `${EXPECTED_AGENT_CLASSES[named.class_id].label} · ID ${expectedAgentIdentity(named, oracle.presentation).displayId}`;
+    const fallenRow = page.locator("#fallen-feed .fallen-feed__row");
+    await expect(fallenRow).toHaveCount(1);
+    await expect(fallenRow).toBeVisible();
+    const fallenLabel = (await fallenRow.getAttribute("aria-label")) ?? "";
+    const [credit, victimName] = fallenLabel
+      .replace(/^Tick \d+: /u, "")
+      .split(" took down ");
+    expect(victimName).toBe(shortTitle(oracleCorpse));
+    expect(credit.split(" + ").sort()).toEqual(
+      deaths[0].contributors
+        .map((/** @type {Record<string, any>} */ contributor) =>
+          shortTitle(contributor),
+        )
+        .sort(),
+    );
+    await expect(fallenRow).toHaveAttribute(
+      "aria-description",
+      /^Credit is shared by every champion that hit it on that tick/u,
+    );
     await page.screenshot({
       path: testInfo.outputPath("live-death-contributors.png"),
       fullPage: true,
     });
-    await page.locator("#view-select").focus();
+    await page.locator('#view-switch button[data-view-mode="pov"]').focus();
     await page.screenshot({
       path: testInfo.outputPath("live-compact-death.png"),
       fullPage: true,
@@ -8237,16 +6562,25 @@ test("real Live NoShared paints a locally visible corpse as inspection-only Orac
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/command",
     );
-    await page.locator("#view-select").selectOption("pov");
+    await page.locator('#view-switch button[data-view-mode="pov"]').click();
     expect((await viewResponse).status()).toBe(200);
     await expect(page.locator("html")).toHaveAttribute(
       "data-presentation-authority",
       "installed",
     );
 
-    // The HUD proof freezes the clock. Finish the rebuilt transition before
-    // the existing corpse-body checks, as ordinary playback would do.
-    await finishControllerClock(page, "cleanup");
+    // A view switch shows the tick already played at its end instead of
+    // replaying it (main.js settleLiveAudienceSwitch), so no tick clock runs.
+    expect(
+      await page
+        .locator(CHOREOGRAPHY_ROOT)
+        .evaluate(
+          (root) =>
+            root
+              .getAnimations({ subtree: true })
+              .filter(({ id }) => id.endsWith(":cleanup")).length,
+        ),
+    ).toBe(0);
     let agent = await corpsePresentationState(page);
     expect(agent.transport.frame_kind).toBe("actor_pov_live_debugger");
     expect(agent.presentation.presentation_kind).toBe("live_no_shared_obs_agent_pov");
@@ -8283,8 +6617,11 @@ test("real Live NoShared paints a locally visible corpse as inspection-only Orac
     const revisionBeforeInspection = agent.transport.revision;
     const stepBeforeInspection = agent.transport.simulator_step_count;
     await expectNoCorpseCommands(page, () => corpseBody.click());
-    await expect(page.locator("#selection-card")).toContainText(
-      `Agent ID ${expectedAgentIdentity(authorizedCorpse, agent.presentation).displayId}`,
+    // Agent Details names the champion with its chip ("Agent ID 5, Hunter,
+    // Team B"); with Panel Tokens on the chip itself reads "Agent 5".
+    await expectAgentDetailsNames(
+      page,
+      expectedAgentIdentity(authorizedCorpse, agent.presentation).displayId,
     );
     await expectNoCorpseCommands(page, () =>
       corpseBody.click({ modifiers: ["Shift"] }),

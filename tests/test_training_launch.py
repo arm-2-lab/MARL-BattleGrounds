@@ -1,7 +1,8 @@
 """Check fixed source preparation and unattended process ownership on CPU.
 
 These small fixtures test source/config/panel identity, isolated imports,
-explicit GPU selection without GPU allocation, durable failure status, detached
+explicit GPU selection without GPU allocation, a declared compilation cache that
+also keeps sub-second programs, durable failure status, detached
 stdin/log behavior, duplicate launch rejection and recovery marker precedence.
 Status distinguishes live ownership, clean completion, failed exit and a killed
 process without treating an older run record as the current process's result.
@@ -183,12 +184,14 @@ def test_environment_applies_only_explicit_memory_and_cache_settings(
     assert env["XLA_PYTHON_CLIENT_PREALLOCATE"] == "false"
     assert env["JAX_COMPILATION_CACHE_DIR"] == str(cache)
     assert env["JAX_ENABLE_COMPILATION_CACHE"] == "true"
+    assert env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] == "0"
     assert env["CUDA_VISIBLE_DEVICES"] == "GPU-internal"
     assert not cache.exists()
     default = launch._environment(None)
     assert "XLA_PYTHON_CLIENT_MEM_FRACTION" not in default
     assert "JAX_COMPILATION_CACHE_DIR" not in default
     assert "JAX_ENABLE_COMPILATION_CACHE" not in default
+    assert "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS" not in default
     assert os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] == "0.1"
     with pytest.raises(ValueError, match="absolute"):
         launch._environment(None, compilation_cache=Path("relative"))
@@ -407,6 +410,7 @@ def test_resume_requires_marker_checkpoint_and_never_falls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import marl_battlegrounds.training.checkpoints as checkpoints
+    from marl_battlegrounds.training import _checkpoint_metadata
 
     run = tmp_path / "run"
     run.mkdir()
@@ -438,7 +442,7 @@ def test_resume_requires_marker_checkpoint_and_never_falls_back(
         seen.append(path)
         return describe(path)
 
-    monkeypatch.setattr(checkpoints, "read_checkpoint_description", describe)
+    monkeypatch.setattr(_checkpoint_metadata, "read_checkpoint_description", describe)
     monkeypatch.setattr(checkpoints, "read_checkpoint_details", read)
     assert launch._checkpoint(tmp_path, None) == recovering
     assert seen == [recovering]

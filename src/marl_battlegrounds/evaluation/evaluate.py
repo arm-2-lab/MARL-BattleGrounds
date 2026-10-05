@@ -25,6 +25,7 @@ import numpy as np
 from jax import Array
 from numpy.typing import NDArray
 
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.config import (
@@ -84,6 +85,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
 from marl_battlegrounds.evaluation.recording_context import (
     build_recording_context,
     capture_recording_provenance,
+    controller_names_by_slot,
 )
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
@@ -959,6 +961,8 @@ def _run_evaluation(
         Episode IDs selected for replay capture, default empty.
         Every selected ID must appear in episodes. Without a writer, replay
         objects are returned in memory; capture does not require a folder.
+        Each replay records each team's name and the name of the method that
+        plays each champion slot (a ``team(...)`` names its members per slot).
     output_dir : str | Path | None
         Optional parent folder for a new run. RunWriter creates a
         run folder below it. This call closes the writer it creates.
@@ -1005,7 +1009,10 @@ def _run_evaluation(
     _verify_only : bool, default=False
         Private read-only check of an existing saved pass. True returns empty
         result rows after the writer's shared identity/start checks, before any
-        writer creation, method initialization or environment execution.
+        writer creation, method initialization or environment execution. The
+        check keeps the saved pass's recorded code_revision (or its absence),
+        so games saved by older source still verify; ordinary writer recovery
+        still checks the current source identity.
 
     Returns
     -------
@@ -1083,7 +1090,7 @@ def _run_evaluation(
                 validate_scenario_initial_state(spec.env_config, spec.initial_state)
                 validated_starts.add(start_identity)
         if id(spec.env_config) not in validated:
-            validate_env_config(spec.env_config)
+            run_config_check(validate_env_config, spec.env_config)
             if int(spec.env_config.task_mode) != 1:
                 raise ValueError("evaluate currently supports TDM configurations")
             validated.add(id(spec.env_config))
@@ -1203,6 +1210,16 @@ def _run_evaluation(
             if "method_sampling" in previous_details:
                 metadata["method_sampling"] = previous_details["method_sampling"]
         metadata.update(capture_recording_provenance(num_envs=batch_size))
+        if _verify_only and saved_sampling_pass is not None:
+            # Old games keep their original source evidence during inspection.
+            # Ordinary writer recovery still checks the current source identity.
+            saved_details = cast(
+                Mapping[str, object], saved_sampling_pass[1]["details"]
+            )
+            if "code_revision" in saved_details:
+                metadata["code_revision"] = saved_details["code_revision"]
+            else:
+                metadata.pop("code_revision", None)
         if device is not None:
             runtime = cast(dict[str, object], metadata["runtime_provenance"])
             metadata["runtime_provenance"] = {
@@ -1449,6 +1466,11 @@ def _run_evaluation(
                     details=pass_details,
                 )
         batch_size = effective_batch_size
+        if writer is not None:
+            # Replays name each champion's controller from the live methods.
+            writer._name_replay_controllers(  # pyright: ignore[reportPrivateUsage]
+                team_a, team_b
+            )
         env = make(
             "tdm",
             num_envs=batch_size,
@@ -1470,7 +1492,8 @@ def _run_evaluation(
                 packet: ReplayPackets,
             ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
                 """Build known context for the first packet of one selected in-memory
-                replay.
+                replay, naming each champion slot's controller from the live
+                team_a and team_b methods.
                 """
                 return build_recording_context(
                     packet.config,
@@ -1480,6 +1503,9 @@ def _run_evaluation(
                     episode=schedule[int(packet.episode_id)],
                     policies=policies,
                     details=metadata,
+                    slot_controller_names=controller_names_by_slot(
+                        team_a, team_b, packet.config
+                    ),
                 )
 
             collector = ReplayCollector(context)
@@ -1762,6 +1788,166 @@ def _run_evaluation(
         )
 
 
+def evaluate_scenarios(
+    system: str | System | Policy = "tdm-alpha",
+    scenario_ids: Sequence[int] = (1,),
+    *,
+    opponent: str | System | Policy | None = None,
+    num_episodes: int = 1,
+    seed: int | None = None,
+    num_envs: int = 32,
+    metrics: MetricMode | None = None,
+    replay_episodes: Sequence[int] | None = None,
+    output_dir: str | Path | None = None,
+    resume_from: str | Path | None = None,
+) -> tuple[EvaluationResult, ...]:
+    """Run each exact scenario and return its ordinary evaluation result.
+
+    Parameters
+    ----------
+    system : str or System or Policy, default='tdm-alpha'
+        Team A method. Strings use load_method: a built-in policy, saved actor
+        directory or trusted module:function factory. Live methods keep their
+        normal information limits; caller-owned external sessions stay open.
+    scenario_ids : tuple or list of int, default=(1,)
+        Distinct packaged scenario IDs from 1 through 8, in execution order.
+        Preserve all five configured slots, including dead agents, and every
+        authored state field. Do not reset, mirror or shorten these starts.
+    opponent : str or System or Policy or None, default=None
+        None uses each scenario's prescribed pressure. An explicit Team B method
+        makes this a custom comparison. It does not change the authored start.
+    num_episodes : int, default=1
+        Positive trial count per scenario, at most 2**31 - 1. IDs and seed IDs
+        are 1 through this count. Each trial uses the authored state and fresh
+        method memory. Repeat this count when resuming an exact saved schedule.
+    seed : int or None, default=None
+        Evaluator random root. None uses its default on a fresh run and inherits
+        the saved root on resume. An explicit value asserts equality on resume.
+    num_envs : int, default=32
+        Parallel worker count. Keep the batch shape when there are fewer trials;
+        padded lanes perform no games. This changes no transition budget.
+    metrics : {'priority', 'full', 'none'} or None, default=None
+        None uses priority on a fresh run and inherits the saved choice on resume.
+        Full metrics are for later analysis, not training.
+    replay_episodes : tuple or list of int or None, default=None
+        Trial IDs to record. None records none on a fresh run and inherits the
+        saved selection on resume. IDs are local to each scenario result.
+    output_dir : str or Path or None, default=None
+        Optional parent for scenario-<id>/<generated-run> outputs. None creates
+        no result files. Each result.run_dir contains its actual child path.
+    resume_from : str or Path or None, default=None
+        Exact saved result folder for one scenario. Omit output_dir and pass
+        that same scenario, methods and trial count. Completed games stay saved;
+        an unfinished game restarts at the authored state with fresh memory.
+
+    Returns
+    -------
+    tuple of EvaluationResult
+        One result per scenario, in requested order. Use result.run_dir and
+        load_results to read all saved rows, including earlier resumed episodes.
+
+    Raises
+    ------
+    ValueError, TypeError, OSError
+        Invalid IDs, conflicting paths, method/schedule mismatch or input/output
+        errors. Shared owners reject invalid inputs before their result writes.
+        Execution errors retain completed result paths as exception notes.
+
+    Notes
+    -----
+    Methods receive no invented history before the starting tick. Death and
+    respawn do not start a new episode. Normal result files describe behavior;
+    they do not certify protected evaluation, skill, or unseen training content.
+    Each resolved method reference is loaded once. No method-family restriction
+    or alternate evaluator is added. Paths use the caller's working folder.
+    Use evaluate_episodes for custom starts, writers and other scheduling choices.
+    """
+    from marl_battlegrounds._method_loading import (
+        _method_loading_scope,
+        _method_output_paths,
+        load_method,
+    )
+    from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
+    from marl_battlegrounds.tasks import load_tdm_scenario
+
+    if not scenario_ids or any(
+        type(identifier) is not int for identifier in scenario_ids
+    ):
+        raise ValueError("scenario_ids must list distinct integers from 1 through 8")
+    if len(set(scenario_ids)) != len(scenario_ids):
+        raise ValueError("scenario_ids must not repeat a scenario")
+    if (
+        type(num_episodes) is not int
+        or num_episodes < 1
+        or num_episodes > np.iinfo(np.int32).max
+    ):
+        raise ValueError("num_episodes must fit positive int32 IDs")
+    if resume_from is not None and (output_dir is not None or len(scenario_ids) != 1):
+        raise ValueError("Resume one scenario result and omit output_dir")
+    output_dir, resume_from = _method_output_paths(
+        [system, opponent],
+        output_dir=output_dir,
+        resume_from=resume_from,
+        result_children=[f"scenario-{identifier}" for identifier in scenario_ids],
+    )
+    scenarios = [load_tdm_scenario(identifier) for identifier in scenario_ids]
+    with _method_loading_scope():
+        challenger = load_method(system) if isinstance(system, str) else system
+        opponents: list[System | Policy] = []
+        for identifier in scenario_ids:
+            reference = (
+                opponent
+                if opponent is not None
+                else (
+                    "tdm-beta" if identifier in TDM_BETA_SCENARIO_IDS else "tdm-alpha"
+                )
+            )
+            opponents.append(
+                load_method(reference) if isinstance(reference, str) else reference
+            )
+    options: dict[str, Any] = {}
+    if seed is not None:
+        options["seed"] = seed
+    if metrics is not None:
+        options["metrics"] = metrics
+    if replay_episodes is not None:
+        options["replay_episodes"] = replay_episodes
+    results: list[EvaluationResult] = []
+    try:
+        for identifier, scenario, pressure in zip(
+            scenario_ids, scenarios, opponents, strict=True
+        ):
+            schedule = [
+                EpisodeSpec(
+                    trial,
+                    scenario.config,
+                    seed_id=trial,
+                    initial_state=scenario.initial_state,
+                )
+                for trial in range(1, num_episodes + 1)
+            ]
+            result = evaluate_episodes(
+                challenger,
+                pressure,
+                schedule,
+                num_envs=num_envs,
+                keep_batch_size=True,
+                chunk_size=2,
+                output_dir=None
+                if output_dir is None
+                else Path(output_dir).expanduser() / f"scenario-{identifier}",
+                resume_from=resume_from,
+                **options,
+            )
+            results.append(result)
+    except BaseException as error:
+        for result in results:
+            if result.run_dir is not None:
+                error.add_note(f"Completed scenario result: {result.run_dir}")
+        raise
+    return tuple(results)
+
+
 def evaluate_episodes(
     system: System | Policy | str,
     opponent: System | Policy | str,
@@ -1813,7 +1999,8 @@ def evaluate_episodes(
     save_replays : int, default=0
         Select the first N scheduled IDs. Must not exceed the schedule length.
         Nonempty shorthand and explicit replay selections must identify the same
-        set; conflicting selections fail instead of being combined.
+        set; conflicting selections fail instead of being combined. Each replay
+        records each team's name and each champion's controller name.
     output_dir : str | Path | None, default=None
         Parent directory for a newly created run. No path means no files unless
         writer or resume_from is supplied. In-memory replays remain available.
@@ -2055,6 +2242,10 @@ def evaluate(
     save_replays : int, default=0
         First N scheduled games to capture. Nonempty explicit replay IDs and this
         shorthand must agree. Zero leaves only the explicit selection active.
+        Every replay records each team's name and, for each champion, the
+        name of the method that plays it, exactly as given (a ``team(...)``
+        of several methods names each member's champions); the Replay
+        Viewer shows these names.
     output_dir, resume_from : str | Path | None, default=None
         New-run parent or exact existing run, respectively. Use at most one.
         No output options create no files. Resume skips durable completed games.

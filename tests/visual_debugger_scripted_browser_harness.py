@@ -22,13 +22,14 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     options = _parser().parse_args(argv)
 
-    from scripts.dev.visual_debugger.control import create_session
     from scripts.dev.visual_debugger.scenarios import get_scenario
     from scripts.dev.visual_debugger.server import serve_browser_debugger
-    from scripts.dev.visual_debugger.service import DebuggerService
     from tests.visual_debugger_fixtures import (
         debugger_test_launch_specification,
     )
+
+    from marl_battlegrounds._battle_client.control import create_session
+    from marl_battlegrounds._battle_client.service import DebuggerService
 
     session = create_session(
         get_scenario(options.scenario),

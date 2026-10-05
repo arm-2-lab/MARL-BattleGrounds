@@ -158,3 +158,17 @@ def reward_one(*_args: object) -> jax.Array:
 
 def reward_seven(*_args: object) -> jax.Array:
     return jax.numpy.full((10,), 7.0, jax.numpy.float32)
+
+
+def reward_named_one(*_args: object, config: object) -> object:
+    from marl_battlegrounds.training.shaping import RewardOutput
+
+    value = jax.numpy.ones(10, jax.numpy.float32)
+    return RewardOutput(value, {"first": value})
+
+
+def reward_named_seven(*_args: object, config: object) -> object:
+    from marl_battlegrounds.training.shaping import RewardOutput
+
+    value = jax.numpy.full(10, 7.0, jax.numpy.float32)
+    return RewardOutput(value, {"second": value})

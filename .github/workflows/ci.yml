@@ -36,7 +36,7 @@ jobs:
         run: uv python install
 
       - name: Sync environment
-        run: uv sync --locked --extra dev --extra viz --extra training
+        run: uv sync --locked --extra dev --extra viz --extra training --extra notebook
 
       - name: Check formatting
         if: matrix.shard == 17

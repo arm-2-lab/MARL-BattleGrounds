@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import csv
 import json
+import math
+from collections import defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,6 +80,8 @@ _TEXT = frozenset(
         "opponent",
         "determinism",
         "conditional_interval_assumption",
+        "sampling_unit",
+        "unavailable_reason",
     }
 )
 _INTS = frozenset(
@@ -97,6 +101,9 @@ _INTS = frozenset(
         "games_played",
         "games",
         "completed_pairs",
+        "independent_units",
+        "bootstrap_draws",
+        "bootstrap_seed",
         "total_steps_played",
         "episode_length_min",
         "episode_length_max",
@@ -921,6 +928,261 @@ class _View:
                     )
         return names
 
+    def point_margin_summary(self, by: str, draws: int, seed: int) -> list[Row]:
+        """Summarize Team A points using complete declared spawn-pair evidence.
+
+        by, draws and seed are checked by the public accessor. Read narrow saved
+        outcomes once and retain their narrow rows and per-game declarations.
+        Exact identities group rows; the declared schedule keeps missing games
+        visible. Pair keys are pass-local; explicit larger block keys span passes
+        within this saved run. Unknown sampling or incomplete evidence keeps
+        descriptive means but withholds intervals. No model or file is changed.
+        """
+        from marl_battlegrounds.evaluation.sampling_evidence import (
+            combine_sampling_facts,
+        )
+
+        completed = {
+            (row["phase"], row["pass_id"], str(row["episode_id"])): row
+            for row in self.iter_rows("episodes", 128)
+        }
+        groups: dict[tuple[str, str, str | None], Row] = {}
+        for entry in self.selected.values():
+            schedule = _mapping(entry.get("episodes"))
+            if not schedule:
+                continue
+            details = _mapping(entry.get("details"))
+            pass_complete = _state(entry, self.manifest)[0] == "complete"
+            root_seed = details.get("seed")
+            root_known = (
+                type(root_seed) is int
+                and 0 <= root_seed < 2**32
+                and details.get("rng_protocol")
+                in ("episode-fold-in-v1", "evaluation-systems-v1")
+            )
+            facts = _mapping(details.get("method_sampling"))
+            sampling = combine_sampling_facts(
+                [facts[team] for team in ("team_a", "team_b")]
+                if all(
+                    isinstance(facts.get(team), Mapping)
+                    for team in ("team_a", "team_b")
+                )
+                else []
+            )
+            for identifier, raw in schedule.items():
+                declared = _mapping(raw)
+                identity = (entry["phase"], entry["pass_id"], str(identifier))
+                row = completed.get(identity)
+                probe = row or {
+                    "phase": entry["phase"],
+                    "pass_id": entry["pass_id"],
+                    "episode_id": identifier,
+                }
+                a, b, name_a, name_b, spawn = self._match_context(probe)
+                map_id = declared.get("map_id")
+                config_id = (
+                    declared.get("source_config_id")
+                    or declared.get("configuration_digest")
+                    or declared.get("config_id")
+                )
+                cell = json.dumps([map_id, config_id], separators=(",", ":"))
+                map_key = (
+                    f"map:{map_id}" if map_id is not None else f"config:{config_id}"
+                )
+                key = (a, b, map_key if by == "map" else None)
+                group = groups.setdefault(
+                    key,
+                    {
+                        "system_id": a,
+                        "opponent_id": b,
+                        "system_name": name_a,
+                        "opponent_name": name_b,
+                        "map_id": map_id if by == "map" else None,
+                        "config_id": config_id
+                        if by == "map" and map_id is None
+                        else None,
+                        "scheduled_games": 0,
+                        "games": 0,
+                        "values": [],
+                        "pairs": {},
+                        "reasons": [],
+                    },
+                )
+                group["scheduled_games"] += 1
+                if not pass_complete:
+                    group["reasons"].append("Requested pass is incomplete or failed")
+                if not root_known:
+                    group["reasons"].append("Random root coordinates are unavailable")
+                if sampling["determinism"] != "stochastic":
+                    group["reasons"].append(
+                        "Sampling mechanism unknown"
+                        if sampling["determinism"] == "unknown"
+                        else "No random sampling variation"
+                    )
+                margin = None
+                if row is None:
+                    group["reasons"].append("Requested games are incomplete")
+                else:
+                    group["games"] += 1
+                    points = (row.get("team_a_score"), row.get("team_b_score"))
+                    if all(
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                        and math.isfinite(value)
+                        for value in points
+                    ):
+                        margin = float(cast(float, points[0])) - float(
+                            cast(float, points[1])
+                        )
+                        if not math.isfinite(margin):
+                            margin = None
+                    else:
+                        margin = None
+                    if margin is None:
+                        group["reasons"].append("Native points are missing")
+                    else:
+                        group["values"].append(margin)
+                pair = declared.get(
+                    "paired_comparison_key", declared.get("comparison_key")
+                )
+                if (
+                    declared.get("comparison_kind") != "verified_spawn_pair"
+                    or pair is None
+                ):
+                    group["reasons"].append(
+                        "Verified exchanged-spawn pairs are unavailable"
+                    )
+                    continue
+                pair_key = (entry["phase"], entry["pass_id"], str(pair))
+                block = declared.get("bootstrap_group")
+                unit = ("pair", *pair_key) if block is None else ("block", str(block))
+                group["pairs"].setdefault(pair_key, []).append(
+                    {
+                        "cell": cell,
+                        "spawn": spawn,
+                        "unit": unit,
+                        # Both supported protocols use the same actor-key
+                        # coordinates; their labels do not create independence.
+                        "seed": (root_seed, declared.get("seed_id")),
+                        "margin": margin if row is not None else None,
+                    }
+                )
+        result: list[Row] = []
+        for group in groups.values():
+            units: dict[tuple[str, ...], list[Row]] = defaultdict(list)
+            complete_pairs = 0
+            seed_units: dict[tuple[object, ...], set[tuple[str, ...]]] = defaultdict(
+                set
+            )
+            for pair in group["pairs"].values():
+                if (
+                    len(pair) != 2
+                    or {row["spawn"] for row in pair} != {0, 1}
+                    or len({row["cell"] for row in pair}) != 1
+                    or len({row["unit"] for row in pair}) != 1
+                    or len({row["seed"] for row in pair}) != 1
+                    or pair[0]["seed"][-1] is None
+                    or any(row["margin"] is None for row in pair)
+                ):
+                    group["reasons"].append(
+                        "An exchanged-spawn pair is incomplete or inconsistent"
+                    )
+                    continue
+                complete_pairs += 1
+                units[pair[0]["unit"]].extend(pair)
+                seed_units[pair[0]["seed"]].add(pair[0]["unit"])
+            if any(len(value) > 1 for value in seed_units.values()):
+                group["reasons"].append(
+                    "Repeated seed coordinates need one declared sampling block"
+                )
+            # Resample whole blocks with the same covered cells together.
+            # Counts may differ: use their sampled point sums/game counts, then
+            # preserve the original cell weights when combining means.
+            strata: dict[tuple[str, ...], list[dict[str, tuple[float, int]]]] = (
+                defaultdict(list)
+            )
+            for rows in units.values():
+                by_cell: dict[str, list[float]] = defaultdict(list)
+                for row in rows:
+                    by_cell[row["cell"]].append(row["margin"])
+                summary = {
+                    cell: (math.fsum(values), len(values))
+                    for cell, values in by_cell.items()
+                }
+                strata[tuple(sorted(by_cell))].append(summary)
+            if not strata or any(len(values) < 2 for values in strata.values()):
+                group["reasons"].append(
+                    "Fewer than two independent complete units in a condition stratum"
+                )
+            if complete_pairs * 2 != group["scheduled_games"]:
+                group["reasons"].append("Requested pair evidence is incomplete")
+            reasons = list(dict.fromkeys(group["reasons"]))
+            low, high = None, None
+            if not reasons:
+                random = np.random.default_rng(seed)
+                sampled = np.zeros(draws, np.float64)
+                for cells, blocks in sorted(strata.items()):
+                    columns = [
+                        (
+                            np.asarray(
+                                [block[cell][0] for block in blocks], np.float64
+                            ),
+                            np.asarray(
+                                [block[cell][1] for block in blocks], np.float64
+                            ),
+                        )
+                        for cell in cells
+                    ]
+                    for start in range(0, draws, 64):
+                        size = min(64, draws - start)
+                        indices = random.integers(len(blocks), size=(size, len(blocks)))
+                        for sums, counts in columns:
+                            weight = counts.sum() / group["games"]
+                            means = sums[indices].sum(axis=1) / counts[indices].sum(
+                                axis=1
+                            )
+                            sampled[start : start + size] += means * weight
+                bounds = np.percentile(sampled, (2.5, 97.5), method="linear")
+                low, high = float(bounds[0]), float(bounds[1])
+            values = group.pop("values")
+            group.pop("pairs")
+            group.pop("reasons")
+            result.append(
+                {
+                    **group,
+                    "completed_pairs": complete_pairs,
+                    "independent_units": (
+                        0
+                        if "No random sampling variation" in reasons
+                        else None
+                        if any(
+                            reason in reasons
+                            for reason in (
+                                "Sampling mechanism unknown",
+                                "Random root coordinates are unavailable",
+                                "Repeated seed coordinates need "
+                                "one declared sampling block",
+                            )
+                        )
+                        else len(units)
+                    ),
+                    "mean_point_margin": math.fsum(
+                        value / len(values) for value in values
+                    )
+                    if values and len(values) == group["games"]
+                    else None,
+                    "ci_low": low,
+                    "ci_high": high,
+                    "confidence": 0.95,
+                    "interval_status": "Available" if not reasons else "Unavailable",
+                    "unavailable_reason": "; ".join(reasons) or None,
+                    "sampling_unit": "Whole declared blocks of exchanged-spawn pairs",
+                    "bootstrap_draws": draws,
+                    "bootstrap_seed": seed,
+                }
+            )
+        return result
+
     def head_to_head(self, by: str) -> list[Row]:
         """Reduce narrow saved outcomes once into directed descriptive matchup rows.
 
@@ -1444,6 +1706,68 @@ class _ResultAccess:
             raise ValueError("by must be overall, map or spawn")
         return _columns(
             self._view.head_to_head(by), table="head_to_head", current=False
+        )
+
+    def point_margin_summary(
+        self,
+        *,
+        by: str = "overall",
+        bootstrap_draws: int = 2000,
+        bootstrap_seed: int = 19044001,
+    ) -> Columns:
+        """Report native Team A point margins and fixed-method game intervals.
+
+        Parameters
+        ----------
+        by : {"overall", "map"}, default="overall"
+            One row per recorded Team A/System and Team B/opponent identity,
+            optionally split by map. Spawn exchange does not reverse Team A.
+            Every completed game has equal weight, including across maps.
+        bootstrap_draws : int, default=2000
+            At least two whole-unit resampling draws. Booleans are rejected.
+        bootstrap_seed : int, default=19044001
+            Integer seed from 0 through 2**63 - 1 for a private NumPy generator.
+            Global random state is unchanged. Booleans are rejected.
+
+        Returns
+        -------
+        dict[str, numpy.ndarray]
+            Exact identities, planned/completed games and pairs, mean native
+            Team A minus Team B points, and 95% percentile interval columns.
+            Bounds use linear 2.5/97.5 percentiles. Whole verified spawn pairs
+            stay together; declared larger blocks use one draw across linked
+            maps. Each condition stratum needs two independent complete units.
+            Incomplete games/pairs, unknown sampling, deterministic repetition
+            or missing points keep descriptive rows but yield NaN bounds and an
+            unavailable_reason. Empty declared scope returns {}. These intervals
+            describe fixed methods, not uncertainty across training seeds.
+
+        Raises
+        ------
+        ValueError
+            Arguments, saved identities, sampling facts or snapshots are invalid.
+        OSError
+            A saved outcome file cannot be read.
+
+        Notes
+        -----
+        Works with metrics="none". Reads narrow outcomes only, on the host,
+        without JAX, policy calls or file writes. Memory holds narrow game rows
+        and the saved schedule; bootstrap draw batches are bounded. Calling
+        head_to_head does not perform this resampling work.
+        """
+        if by not in ("overall", "map"):
+            raise ValueError("by must be overall or map")
+        if type(bootstrap_draws) is not int or bootstrap_draws < 2:
+            raise ValueError("bootstrap_draws must be an integer of at least two")
+        if type(bootstrap_seed) is not int or not 0 <= bootstrap_seed <= 2**63 - 1:
+            raise ValueError(
+                "bootstrap_seed must be an integer from 0 through 2**63 - 1"
+            )
+        return _columns(
+            self._view.point_margin_summary(by, bootstrap_draws, bootstrap_seed),
+            table="point_margin_summary",
+            current=False,
         )
 
     def opponent_matrix(self, metric: str = "mean_point_margin") -> dict[str, Any]:

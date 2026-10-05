@@ -1,7 +1,17 @@
 /**
  * @file Check PNG/export provenance, audience-specific source facts and rejection of
- * forged or extra fields. New exports write provenance version 2 with all 20 filters;
- * version-1 provenance with its 19 filters still reads; mixed forms are rejected.
+ * forged or extra fields. New exports write provenance version 5: the switches that
+ * draw on the Replay Viewer battlefield (a frozen list that must still match the
+ * registry, now with High Contrast, Next Step Ghost and All Staged Orders) and the camera frame, a
+ * world rectangle that is the painted map for Whole Map when no camera is given;
+ * Everyone In View and Battle Cam frames are recorded as given and malformed frames
+ * are rejected. Version-4 provenance (version 5 without High Contrast),
+ * version-3 provenance with its 70 filters and a camera frame,
+ * version-2 provenance with its 20 filters and version-1 provenance with its 19
+ * filters still read; mixed forms (wrong filter list for the version, a camera frame
+ * before version 3 or none from version 3 on) are rejected. A capture leaves the
+ * match moment cards out of the exported picture (the painter's herald root and the
+ * page's Lineup and Verdict group) while the page keeps them on screen.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -22,13 +32,14 @@ import {
   projectReplayPngProvenanceV1,
   REPLAY_BATTLEFIELD_BACKGROUND_V1,
   REPLAY_PNG_PROVENANCE_KEYWORD,
+  REPLAY_PNG_RECORDED_FILTER_IDS,
+  replayPngExportableFilterIds,
   sanitizeReplayEpisodeForPngFilenameV1,
   sanitizeReplayRecipientForPngFilenameV1,
 } from "../src/replay-export.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   setVisualFilterEnabled,
-  VISUAL_FILTER_IDS,
 } from "../src/visual-filters.js";
 
 const fixtureUrl = new URL(
@@ -209,11 +220,19 @@ test("provenance projector accepts exactly three branded replay leaves", () => {
     assert.equal(provenance.presentation.pixel_height, 720);
     assert.deepEqual(
       Object.keys(provenance.presentation.visual_filters),
-      VISUAL_FILTER_IDS,
+      REPLAY_PNG_RECORDED_FILTER_IDS,
     );
+    assert.deepEqual(provenance.presentation.camera_frame, {
+      camera: "whole_map",
+      min_x: 0,
+      min_y: 0,
+      max_x: presentation.scene.map.width,
+      max_y: presentation.scene.map.height,
+    });
     assert.equal(Object.isFrozen(provenance), true);
     assert.equal(Object.isFrozen(provenance.presentation), true);
     assert.equal(Object.isFrozen(provenance.presentation.visual_filters), true);
+    assert.equal(Object.isFrozen(provenance.presentation.camera_frame), true);
   }
   for (const name of liveNames) {
     assert.throws(
@@ -371,26 +390,105 @@ test("canonical provenance recursively sorts keys and preserves exact UTF-8", ()
   assert.throws(() => canonicalReplayPngProvenanceV1(nonfinite), /safe integer/u);
 });
 
-test("new exports write provenance 2 while version-1 PNG provenance stays readable", () => {
+test("new exports write provenance 5 while versions 1 to 4 stay readable", () => {
   const current = projectReplayPngProvenanceV1(
     projectionOptions(presentations.replay_oracle),
   );
-  assert.equal(current.schema_version, 2);
-  assert.equal(Object.keys(current.presentation.visual_filters).length, 20);
+  assert.equal(current.schema_version, 5);
+  assert.equal(
+    Object.keys(current.presentation.visual_filters).length,
+    REPLAY_PNG_RECORDED_FILTER_IDS.length,
+  );
   assert.equal(current.presentation.visual_filters.red_zone_floors, true);
+  assert.equal(current.presentation.visual_filters.map_skins, true);
+  assert.equal(current.presentation.visual_filters.moon_motes, true);
+  assert.equal(current.presentation.visual_filters.high_contrast, true);
+  assert.equal(current.presentation.visual_filters.next_step_ghost, false);
+  assert.equal(current.presentation.visual_filters.all_staged_orders, false);
+  for (const notRecorded of [
+    "scorebug",
+    "camera_framing",
+    "command_marks",
+    "title_card",
+  ]) {
+    assert.equal(
+      Object.hasOwn(current.presentation.visual_filters, notRecorded),
+      false,
+    );
+  }
+  assert.equal(canonicalReplayPngProvenanceV1(current).provenance.schema_version, 5);
 
-  const historical = /** @type {Record<string, any>} */ (structuredClone(current));
+  // Version 4: the same camera frame and every switch but High Contrast.
+  const v4Ids = REPLAY_PNG_RECORDED_FILTER_IDS.filter((id) => id !== "high_contrast");
+  const versionFour = /** @type {Record<string, any>} */ (structuredClone(current));
+  versionFour.schema_version = 4;
+  versionFour.presentation.visual_filters = Object.fromEntries(
+    v4Ids.map((id) => [id, current.presentation.visual_filters[id]]),
+  );
+  const readFour = canonicalReplayPngProvenanceV1(versionFour).provenance;
+  assert.equal(readFour.schema_version, 4);
+  assert.deepEqual(Object.keys(readFour.presentation.visual_filters), v4Ids);
+  const versionFiveOldFilters = /** @type {Record<string, any>} */ (
+    structuredClone(versionFour)
+  );
+  versionFiveOldFilters.schema_version = 5;
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionFiveOldFilters),
+    /unknown or missing fields/u,
+  );
+
+  // Version 3: the same camera frame and the 70 switches before High Contrast
+  // and the two Replay Tools switches.
+  const v3Ids = REPLAY_PNG_RECORDED_FILTER_IDS.filter(
+    (id) =>
+      id !== "high_contrast" && id !== "next_step_ghost" && id !== "all_staged_orders",
+  );
+  const versionThree = /** @type {Record<string, any>} */ (structuredClone(current));
+  versionThree.schema_version = 3;
+  versionThree.presentation.visual_filters = Object.fromEntries(
+    v3Ids.map((id) => [id, current.presentation.visual_filters[id]]),
+  );
+  const readThree = canonicalReplayPngProvenanceV1(versionThree).provenance;
+  assert.equal(readThree.schema_version, 3);
+  assert.equal(v3Ids.length, 70);
+  assert.deepEqual(Object.keys(readThree.presentation.visual_filters), v3Ids);
+  assert.deepEqual(
+    readThree.presentation.camera_frame,
+    current.presentation.camera_frame,
+  );
+  const versionFourOldFilters = /** @type {Record<string, any>} */ (
+    structuredClone(versionThree)
+  );
+  versionFourOldFilters.schema_version = 4;
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionFourOldFilters),
+    /unknown or missing fields/u,
+  );
+
+  const v2Ids = REPLAY_PNG_RECORDED_FILTER_IDS.slice(0, 20);
+  const versionTwo = /** @type {Record<string, any>} */ (structuredClone(current));
+  versionTwo.schema_version = 2;
+  delete versionTwo.presentation.camera_frame;
+  versionTwo.presentation.visual_filters = Object.fromEntries(
+    v2Ids.map((id) => [id, current.presentation.visual_filters[id]]),
+  );
+  const readTwo = canonicalReplayPngProvenanceV1(versionTwo).provenance;
+  assert.equal(readTwo.schema_version, 2);
+  assert.deepEqual(Object.keys(readTwo.presentation.visual_filters), v2Ids);
+  assert.equal(Object.hasOwn(readTwo.presentation, "camera_frame"), false);
+
+  const historical = /** @type {Record<string, any>} */ (structuredClone(versionTwo));
   historical.schema_version = 1;
   delete historical.presentation.visual_filters.red_zone_floors;
   const readBack = canonicalReplayPngProvenanceV1(historical).provenance;
   assert.equal(readBack.schema_version, 1);
   assert.deepEqual(
     Object.keys(readBack.presentation.visual_filters),
-    VISUAL_FILTER_IDS.filter((id) => id !== "red_zone_floors"),
+    v2Ids.filter((id) => id !== "red_zone_floors"),
   );
 
   const oldVersionNewFilters = /** @type {Record<string, any>} */ (
-    structuredClone(current)
+    structuredClone(versionTwo)
   );
   oldVersionNewFilters.schema_version = 1;
   assert.throws(
@@ -405,12 +503,185 @@ test("new exports write provenance 2 while version-1 PNG provenance stays readab
     () => canonicalReplayPngProvenanceV1(newVersionOldFilters),
     /unknown or missing fields/u,
   );
+  const versionTwoWithCamera = /** @type {Record<string, any>} */ (
+    structuredClone(versionTwo)
+  );
+  versionTwoWithCamera.presentation.camera_frame = structuredClone(
+    current.presentation.camera_frame,
+  );
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionTwoWithCamera),
+    /unknown or missing fields/u,
+  );
+  const versionThreeWithoutCamera = /** @type {Record<string, any>} */ (
+    structuredClone(current)
+  );
+  delete versionThreeWithoutCamera.presentation.camera_frame;
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionThreeWithoutCamera),
+    /unknown or missing fields/u,
+  );
+  const versionThreeOldFilters = /** @type {Record<string, any>} */ (
+    structuredClone(versionTwo)
+  );
+  versionThreeOldFilters.schema_version = 3;
+  versionThreeOldFilters.presentation.camera_frame = structuredClone(
+    current.presentation.camera_frame,
+  );
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionThreeOldFilters),
+    /unknown or missing fields/u,
+  );
   const futureVersion = /** @type {Record<string, any>} */ (structuredClone(current));
-  futureVersion.schema_version = 3;
+  futureVersion.schema_version = 6;
   assert.throws(
     () => canonicalReplayPngProvenanceV1(futureVersion),
     /root identity is invalid/u,
   );
+});
+
+test("version 5 records exactly the registry's battlefield switches", () => {
+  assert.deepEqual(REPLAY_PNG_RECORDED_FILTER_IDS, replayPngExportableFilterIds());
+  assert.equal(Object.isFrozen(REPLAY_PNG_RECORDED_FILTER_IDS), true);
+  assert.equal(REPLAY_PNG_RECORDED_FILTER_IDS.length, 73);
+  assert.deepEqual(REPLAY_PNG_RECORDED_FILTER_IDS.slice(-3), [
+    "high_contrast",
+    "next_step_ghost",
+    "all_staged_orders",
+  ]);
+  assert.deepEqual(REPLAY_PNG_RECORDED_FILTER_IDS.slice(0, 20), [
+    "aura_fields",
+    "aura_modifier_badges",
+    "duration_status_badges",
+    "spawn_shield",
+    "target_selection_visuals",
+    "basic_ability_effects",
+    "ultimate_ability_effects",
+    "regeneration_effects",
+    "cooldown_effects",
+    "status_application",
+    "natural_status_expiry",
+    "freezing_trap_break",
+    "status_clear_on_death",
+    "death_effects",
+    "respawn_wave",
+    "resurrection_effects",
+    "spawn_shield_expiry",
+    "scrolling_battle_text",
+    "death_announcer",
+    "red_zone_floors",
+  ]);
+  // A projection needs the complete live state, but records only these.
+  const missing = { ...DEFAULT_VISUAL_FILTER_STATE };
+  delete missing.scorebug;
+  assert.throws(
+    () =>
+      projectReplayPngProvenanceV1({
+        ...projectionOptions(presentations.replay_oracle),
+        visualFilters: missing,
+      }),
+    /unknown or missing fields/u,
+  );
+});
+
+test("the camera frame records the camera on screen as a world rectangle", () => {
+  const presentation = presentations.replay_shared_obs_agent_pov;
+  const { width, height } = presentation.scene.map;
+  const framed = projectReplayPngProvenanceV1({
+    ...projectionOptions(presentation),
+    cameraFrame: {
+      camera: "everyone_in_view",
+      minX: 2.5,
+      minY: -0.75,
+      maxX: 12,
+      maxY: 8.25,
+    },
+  });
+  assert.deepEqual(framed.presentation.camera_frame, {
+    camera: "everyone_in_view",
+    min_x: 2.5,
+    min_y: -0.75,
+    max_x: 12,
+    max_y: 8.25,
+  });
+  assert.equal(
+    canonicalReplayPngProvenanceV1(framed).json.includes('"camera":"everyone_in_view"'),
+    true,
+  );
+  const battleCam = projectReplayPngProvenanceV1({
+    ...projectionOptions(presentations.replay_oracle),
+    cameraFrame: { camera: "battle_cam", minX: 0, minY: 0, maxX: 10, maxY: 6 },
+  });
+  assert.equal(battleCam.presentation.camera_frame.camera, "battle_cam");
+  for (const wholeMap of [
+    undefined,
+    null,
+    { camera: "whole_map", minX: 0, minY: 0, maxX: width, maxY: height },
+  ]) {
+    const projected = projectReplayPngProvenanceV1({
+      ...projectionOptions(presentation),
+      cameraFrame: wholeMap,
+    });
+    assert.deepEqual(projected.presentation.camera_frame, {
+      camera: "whole_map",
+      min_x: 0,
+      min_y: 0,
+      max_x: width,
+      max_y: height,
+    });
+  }
+  for (const [cameraFrame, message] of [
+    [
+      { camera: "whole_map", minX: 1, minY: 0, maxX: width, maxY: height },
+      /must equal the painted map/u,
+    ],
+    [{ camera: "director", minX: 0, minY: 0, maxX: 4, maxY: 4 }, /unknown camera/u],
+    [
+      { camera: "everyone_in_view", minX: 4, minY: 0, maxX: 4, maxY: 4 },
+      /positive width and height/u,
+    ],
+    [
+      { camera: "everyone_in_view", minX: 0, minY: 5, maxX: 4, maxY: 1 },
+      /positive width and height/u,
+    ],
+    [
+      { camera: "everyone_in_view", minX: Number.NaN, minY: 0, maxX: 4, maxY: 4 },
+      /finite number/u,
+    ],
+    [
+      { camera: "everyone_in_view", minX: "0", minY: 0, maxX: 4, maxY: 4 },
+      /finite number/u,
+    ],
+    [
+      { camera: "everyone_in_view", minX: 0, minY: 0, maxX: 4 },
+      /unknown or missing fields/u,
+    ],
+    [
+      { camera: "everyone_in_view", minX: 0, minY: 0, maxX: 4, maxY: 4, zoom: 2 },
+      /unknown or missing fields/u,
+    ],
+    [
+      { camera: "everyone_in_view", min_x: 0, min_y: 0, max_x: 4, max_y: 4 },
+      /unknown or missing fields/u,
+    ],
+    [[0, 0, 4, 4], /plain object/u],
+  ]) {
+    assert.throws(
+      () =>
+        projectReplayPngProvenanceV1({
+          ...projectionOptions(presentation),
+          cameraFrame,
+        }),
+      message,
+      JSON.stringify(cameraFrame),
+    );
+  }
+  const stored = /** @type {Record<string, any>} */ (structuredClone(framed));
+  stored.presentation.camera_frame.max_y = Number.POSITIVE_INFINITY;
+  assert.throws(() => canonicalReplayPngProvenanceV1(stored), /finite number/u);
+  const forgedCamera = /** @type {Record<string, any>} */ (structuredClone(framed));
+  forgedCamera.presentation.camera_frame.camera = "Battle Director";
+  assert.throws(() => canonicalReplayPngProvenanceV1(forgedCamera), /unknown camera/u);
 });
 
 test("safe PNG filenames are bounded ASCII and authority-disjoint", () => {
@@ -514,6 +785,41 @@ test("artifact builder inserts one canonical uncompressed iTXt after IHDR", asyn
   assert.equal(inspected.provenanceKeywordCount, 1);
   assert.equal(inspected.canonicalProvenanceJson, first.canonicalProvenanceJson);
   assert.deepEqual(inspected.provenance, first.provenance);
+});
+
+test("artifact builder carries the camera frame into the embedded version-5 provenance", async () => {
+  const cameraFrame = { camera: "battle_cam", minX: 3, minY: 1.5, maxX: 15, maxY: 9 };
+  const artifact = buildReplayBattlefieldPngArtifactV1({
+    ...projectionOptions(presentations.replay_oracle),
+    cameraFrame,
+    canvasPngBytes: syntheticCanvasPng(),
+  });
+  const inspected = inspectReplayBattlefieldPngV1(
+    new Uint8Array(await artifact.blob.arrayBuffer()),
+  );
+  assert.equal(inspected.provenance.schema_version, 5);
+  assert.deepEqual(inspected.provenance.presentation.camera_frame, {
+    camera: "battle_cam",
+    min_x: 3,
+    min_y: 1.5,
+    max_x: 15,
+    max_y: 9,
+  });
+  assert.deepEqual(inspected.provenance, artifact.provenance);
+  const withoutCamera = buildReplayBattlefieldPngArtifactV1({
+    ...projectionOptions(presentations.replay_oracle),
+    canvasPngBytes: syntheticCanvasPng(),
+  });
+  assert.equal(withoutCamera.provenance.presentation.camera_frame.camera, "whole_map");
+  assert.throws(
+    () =>
+      buildReplayBattlefieldPngArtifactV1({
+        ...projectionOptions(presentations.replay_oracle),
+        canvasPngBytes: syntheticCanvasPng(),
+        camera: cameraFrame,
+      }),
+    /unknown or missing fields/u,
+  );
 });
 
 test("PNG validation rejects corruption, truncation, duplicates, and dimension drift", async () => {
@@ -721,15 +1027,17 @@ test("deferred font loading cannot relabel the detached export snapshot", async 
       this.children.unshift(...children);
     }
 
-    cloneNode() {
-      cloneCount += 1;
+    /** @param {boolean} [_deep] @param {boolean} [counted] */
+    cloneNode(_deep = true, counted = true) {
+      // Only the capture's own clone call counts; its children are part of it.
+      if (counted) cloneCount += 1;
       const clone = new FakeSvgElement(this.localName);
       clone.dataset = { ...this.dataset };
       clone.clientWidth = this.clientWidth;
       clone.clientHeight = this.clientHeight;
       clone.textContent = this.textContent;
       clone.attributeMap = new Map(this.attributeMap);
-      for (const child of this.children) clone.append(child.cloneNode());
+      for (const child of this.children) clone.append(child.cloneNode(true, false));
       return clone;
     }
 
@@ -753,6 +1061,23 @@ test("deferred font loading cannot relabel the detached export snapshot", async 
       return this.querySelectorAll("*").find(
         (element) => element.localName === selector,
       );
+    }
+
+    /** @param {string} selector */
+    matches(selector) {
+      assert.equal(selector, ".combat-choreography-heralds, [data-match-moment-cards]");
+      return (
+        (this.getAttribute("class") ?? "")
+          .split(" ")
+          .includes("combat-choreography-heralds") ||
+        this.getAttribute("data-match-moment-cards") !== null
+      );
+    }
+
+    remove() {
+      const parent = this.parentElement;
+      if (parent) parent.children = parent.children.filter((child) => child !== this);
+      this.parentElement = null;
     }
   }
 
@@ -823,6 +1148,13 @@ test("deferred font loading cannot relabel the detached export snapshot", async 
   battlefield.dataset.renderPolicy = "replay_static";
   battlefield.clientWidth = 640;
   battlefield.clientHeight = 360;
+  // A moment plate and the page's Verdict group: never exported.
+  const heraldRoot = new FakeSvgElement("g");
+  heraldRoot.setAttribute("class", "combat-choreography-heralds");
+  heraldRoot.append(new FakeSvgElement("text"));
+  const verdictCards = new FakeSvgElement("g");
+  verdictCards.setAttribute("data-match-moment-cards", "herald-verdict");
+  battlefield.append(new FakeSvgElement("circle"), heraldRoot, verdictCards);
   const shell = new FakeSvgElement("div");
   shell.id = "battlefield-shell";
   shell.setAttribute("aria-busy", "false");
@@ -985,6 +1317,10 @@ test("deferred font loading cannot relabel the detached export snapshot", async 
       [...serializedCapture.matchAll(/url\(data:font\/woff2;base64,/gu)].length,
       2,
     );
+    // The arena body is exported; the cards are not, and the page keeps them.
+    assert.match(serializedCapture, /<circle /u);
+    assert.doesNotMatch(serializedCapture, /<g |<text /u);
+    assert.equal(battlefield.children.length, 3);
   } finally {
     /** @type {Array<[string, PropertyDescriptor | undefined]>} */
     const globalDescriptors = [

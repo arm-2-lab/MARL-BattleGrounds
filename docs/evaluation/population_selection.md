@@ -1,5 +1,9 @@
 # Select A Population
 
+Public experiment scripts use [Hydra settings and overrides](../training/hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 Declare the candidates and selection rule **before** their validation tournament.
 The tool then selects the requested number of entrants from that complete field.
 It writes the chosen members before refitting their ratings or running test games.
@@ -142,7 +146,7 @@ For a complete small CPU demonstration, including the test stage:
 
 ```bash
 python examples/population_selection.py --help
-python examples/population_selection.py --output-dir artifacts/population-demo
+python examples/population_selection.py output_dir=artifacts/population-demo
 ```
 
 The example defaults to CPU, two concurrent games and two ticks per game. These

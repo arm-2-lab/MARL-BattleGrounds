@@ -9,14 +9,10 @@ import json
 from pathlib import Path
 
 import pytest
-from scripts.dev.visual_debugger.recording import (
-    build_debugger_recording_specification_v1,
-)
 from scripts.dev.visual_debugger.replay_protocol import (
     ReplayCommandRequestV1,
     ReplaySetViewCommandV1,
 )
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
 from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from tests.evaluation_fixtures import (
     captured_team_deathmatch_threshold_trajectory,
@@ -24,6 +20,10 @@ from tests.evaluation_fixtures import (
 )
 from tests.test_evaluation_replay import runtime_provenance
 
+from marl_battlegrounds._battle_client.recording import (
+    build_debugger_recording_specification_v1,
+)
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 from marl_battlegrounds.evaluation.metrics import EvaluationEpisodeObserverV1
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
@@ -296,7 +296,7 @@ def test_current_recorder_retries_same_bytes_after_uncertain_publication(
     runtime_provenance: RuntimeProvenanceV1,
     conflicting_bytes: bool,
 ) -> None:
-    import scripts.dev.visual_debugger.replay_recorder as module
+    import marl_battlegrounds._battle_client.replay_recorder as module
 
     trajectory = current_captured_evaluation_trajectory(
         aggregation_keys=(AggregationKeyV1(name="action_source", value="manual"),)
@@ -386,21 +386,23 @@ def test_current_recording_live_command_hands_off_to_v2_viewer(
 ) -> None:
     from typing import Literal, cast
 
-    from scripts.dev.visual_debugger.control import create_session
-    from scripts.dev.visual_debugger.evaluation_bridge import (
+    from scripts.dev.visual_debugger.scenarios import get_scenario
+    from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+    from marl_battlegrounds._battle_client.control import create_session
+    from marl_battlegrounds._battle_client.evaluation_bridge import (
         build_debugger_evaluation_launch_specification_v1,
     )
-    from scripts.dev.visual_debugger.protocol import (
+    from marl_battlegrounds._battle_client.protocol import (
         CommandRequestV1,
         FinishAndReviewCommandV1,
         KeyboardCommandV1,
+        ReviewReplayCommandV1,
     )
-    from scripts.dev.visual_debugger.recording_coordinator import (
+    from marl_battlegrounds._battle_client.recording_coordinator import (
         RecordingDebuggerCoordinator,
     )
-    from scripts.dev.visual_debugger.scenarios import get_scenario
-    from scripts.dev.visual_debugger.service import DebuggerService
-    from tests.visual_debugger_fixtures import debugger_test_launch_specification
+    from marl_battlegrounds._battle_client.service import DebuggerService
 
     launch = debugger_test_launch_specification()
     launch = build_debugger_evaluation_launch_specification_v1(
@@ -443,7 +445,8 @@ def test_current_recording_live_command_hands_off_to_v2_viewer(
             preset="analysis",
             include_stress=False,
             recorder=recorder,
-        )
+        ),
+        asset_root=Path(__file__).resolve().parents[1] / "web" / "visual_debugger",
     )
     coordinator.apply_command(
         CommandRequestV1(
@@ -461,7 +464,18 @@ def test_current_recording_live_command_hands_off_to_v2_viewer(
             command=FinishAndReviewCommandV1(),
         )
     )
+    assert handoff.replay_handoff is None
+    handoff = coordinator.apply_command(
+        CommandRequestV1(
+            client_id="v2-live",
+            command_id="open",
+            base_revision=2,
+            command=ReviewReplayCommandV1(),
+        )
+    )
     assert handoff.replay_handoff is not None
+    coordinator.close()
+    coordinator.service.close()
     assert recorder.saved_bundle is not None
     assert recorder.begin_review().replay.schema_version == 4
     viewer = handoff.replay_handoff

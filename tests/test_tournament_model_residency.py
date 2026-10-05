@@ -367,9 +367,19 @@ def test_public_challenger_copies_host_parameters_once(
     def load(reference: str) -> System | Policy:
         return live if reference == "research:challenger" else policy(reference)
 
+    participant = tournament_inputs._participant
+
+    def reference_identity(
+        method: System | Policy, reference: str | None, assets: dict[str, Any]
+    ) -> dict[str, Any]:
+        if reference == "research:challenger":
+            identity(method)
+        return participant(method, reference, assets)
+
     monkeypatch.setattr(tournament_inputs, "load_method", load)
     monkeypatch.setattr(tournament_inputs, "freeze_evaluation_method", tracked)
     monkeypatch.setattr(canonical, "_local_challenger", identity)
+    monkeypatch.setattr(tournament_inputs, "_participant", reference_identity)
     challenger = "research:challenger" if by_reference else live
     with pytest.raises(ReachedIdentityError):
         if route == "list":

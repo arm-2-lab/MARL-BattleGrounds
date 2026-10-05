@@ -15,8 +15,10 @@ output remains privileged, and narrower authority builders have separate
 input contracts for authorized inspection.
 """
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from math import isfinite
+from threading import Lock
 from typing import Literal, TypedDict, cast, overload
 
 from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
@@ -3139,6 +3141,53 @@ def build_shared_obs_source_material_projection_v1(
     )
 
 
+# Joins already validated, by object identity. Holding the objects keeps their
+# ids from being reused while they are remembered. Bounded and thread safe.
+_VALIDATED_JOINS: OrderedDict[
+    tuple[int, int], tuple[EvaluationEpisodeContext, EvaluationFrame]
+] = OrderedDict()
+_VALIDATED_JOINS_LIMIT = 64
+_VALIDATED_JOINS_LOCK = Lock()
+
+
+def _validate_join_once(
+    context: EvaluationEpisodeContext, frame: EvaluationFrame
+) -> None:
+    """Validate one context/frame join once per pair of objects.
+
+    Every Agent POV request builds source material for each of the ten slots
+    from the same context and frame. Full validation of the join costs about
+    5 ms, nearly all of a source build, so repeating it per slot made Agent
+    POV ten to twenty times slower than needed. Context and frame records are
+    frozen, so a pair that passed once passes again; this remembers the last
+    64 validated pairs by identity and skips only their repeat checks.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Exact recorded episode context.
+    frame : EvaluationFrame
+        Frame to check against it.
+
+    Raises
+    ------
+    ValueError, TypeError
+        From validate_context_joined_evaluation_frame_v1, every time a pair
+        fails (failures are never remembered).
+    """
+    key = (id(context), id(frame))
+    with _VALIDATED_JOINS_LOCK:
+        held = _VALIDATED_JOINS.get(key)
+        if held is not None and held[0] is context and held[1] is frame:
+            _VALIDATED_JOINS.move_to_end(key)
+            return
+    validate_context_joined_evaluation_frame_v1(context, frame)
+    with _VALIDATED_JOINS_LOCK:
+        _VALIDATED_JOINS[key] = (context, frame)
+        while len(_VALIDATED_JOINS) > _VALIDATED_JOINS_LIMIT:
+            _VALIDATED_JOINS.popitem(last=False)
+
+
 @overload
 def build_shared_obs_authority_source_material_projection_v1(
     context: EvaluationEpisodeContext,
@@ -3340,12 +3389,13 @@ def build_shared_obs_authority_source_material_projection_v1(
 
     Notes
     -----
-    Revalidate the context/frame join, then use the same source-material builder
-    as the full-record diagnostic route. This narrower authority is for visual
-    union construction and does not claim composed actor-input export. It does
-    not require a transition view, read history files or execute a policy.
+    Validate the context/frame join (once per pair of objects, see
+    _validate_join_once), then use the same source-material builder as the
+    full-record diagnostic route. This narrower authority is for visual union
+    construction and does not claim composed actor-input export. It does not
+    require a transition view, read history files or execute a policy.
     """
-    validate_context_joined_evaluation_frame_v1(context, frame)
+    _validate_join_once(context, frame)
     incoming_transition_id = (
         None
         if frame.frame_index == 0

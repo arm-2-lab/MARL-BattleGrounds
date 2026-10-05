@@ -320,7 +320,11 @@ def method_sampling_fact(method: object) -> Record:
     family = module_name.rsplit(".", 1)[-1]
     hooks = {
         "qmix": ("_q_actor_apply", "_schema_1_q_actor_apply"),
-        "pqn": ("_pqn_actor_apply", "_schema_1_pqn_actor_apply"),
+        "pqn": (
+            "_pqn_actor_apply",
+            "_schema_1_pqn_actor_apply",
+            "_layer_norm_pqn_actor_apply",
+        ),
         "ppo": (
             "_scaled_actor_apply",
             "_schema_1_actor_apply",

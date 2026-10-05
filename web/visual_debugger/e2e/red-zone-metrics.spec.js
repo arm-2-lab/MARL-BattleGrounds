@@ -5,7 +5,7 @@
  * point). The catalog is scalar schema 15 with 44 applicable Red Zone rows in one
  * Red Zone topic right after Respawning. The table shows team totals, helpers,
  * then victims under three headings; tick-0 counts are 0 and shares are dashes;
- * Entire Episode shows the counts and 0.5 shares. Episode Results keep kills (2
+ * Whole Game shows the counts and 0.5 shares. Episode Results keep kills (2
  * and 1) apart from points (4 and 1). Keyboard search finds Red Zone kills
  * without the ordinary kill count, and focus shows the share help. This spec
  * sets no time limits; the Playwright configuration waits without limit.
@@ -64,13 +64,13 @@ test("Red Zone metrics separate kills from points with keyboard search and help"
       await route.fulfill({ response });
     });
     await page.goto(viewer.url);
-    await expect(page.locator("#connection-status")).toHaveText("Online");
+    await expect(page.locator("#connection-status")).toHaveText("Connected");
     await expect(page.locator("html")).toHaveAttribute("data-viewer-mode", "replay");
     const firstPrefix = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === "/api/replay/metrics/0/cursor.json",
     );
-    await page.locator("#evaluation-metrics > summary").click();
+    await page.locator("#replay-rail-tab-metrics").click();
     expect((await firstPrefix).status()).toBe(200);
     const catalog = await catalogLoaded;
     expect(catalog.metric_schema_version).toBe(15);
@@ -105,12 +105,10 @@ test("Red Zone metrics separate kills from points with keyboard search and help"
       ["red_zone", "Red Zone"],
     ]);
 
-    // Up to Current Tick at tick 0: counts are real zeros, shares are dashes.
+    // Up To Tick 0: counts are real zeros, shares are dashes.
     await page.locator("#metric-selection").selectOption("red_zone");
     await expect(page.locator("#metric-view-field")).toBeHidden();
-    await expect(page.locator("#metric-status")).toContainText(
-      "Up to Current Tick · tick 0",
-    );
+    await expect(page.locator("#metric-status")).toHaveText("Up To Tick 0");
     expect(
       await page
         .locator("#metric-rows tr[data-metric]")
@@ -136,11 +134,10 @@ test("Red Zone metrics separate kills from points with keyboard search and help"
       }
     }
 
-    // Entire Episode: two Red Zone kills, one ordinary kill and 0.5 shares.
-    await page.locator("#metric-scope").selectOption("final");
-    await expect(page.locator("#metric-status")).toContainText(
-      "Entire Episode · tick 1",
-    );
+    // Whole Game: two Red Zone kills, one ordinary kill and 0.5 shares.
+    await page.locator('#metric-scope-switch [data-value="final"]').click();
+    await expect(page.locator("#metric-scope")).toHaveValue("final");
+    await expect(page.locator("#metric-status")).toHaveText("Whole Game · Tick 1");
     /** @type {Record<string, string>} */
     const finalValues = {
       team_a_red_zone_kills: "2",

@@ -1,26 +1,31 @@
-"""Evaluate an LLM with default JSON or ordinary custom prompt/parser functions.
+"""Evaluate a served LLM with standard, note or word-based prompts and replies.
 
-Run ``python examples/llm.py --model MODEL --server-url URL`` with an independently
-running vLLM server. Add ``--format words`` to use a two-word reply. This script
-owns its explicitly supplied Client and closes it on success or failure. It never
-starts/stops a server or downloads weights. Add ``--llm-slots 4`` to give only
-the fifth actor to the LLM; Random controls the other actors. Optional game output
-includes separate model-call evidence. Both teams' failure and cost totals are
-printed with outcomes.
+Install the hydra extra and start a compatible provider separately::
+
+    python examples/llm.py model=MODEL server_url=URL output_dir=runs/llm
+    python examples/llm.py model=MODEL format=words 'llm_slots=[4]'
+
+The lesson never downloads weights or starts a server. Every model call uses
+only its actor's permitted input and history. Unowned slots use Random when a
+slot list is given. The client closes even if evaluation fails. Model-call
+records are distinct from game metrics. Use --help or --cfg job for settings;
+import run and the prompt/parser functions for ordinary Python use.
 """
 
-import argparse
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import marl_battlegrounds as marl_bgs
-from marl_battlegrounds import llm
-from marl_battlegrounds.core.types import ActionMask
-from marl_battlegrounds.llm.actions import COMBAT_NAMES, MOVE_NAMES
-from marl_battlegrounds.llm.system import History
-from marl_battlegrounds.policies.actor import ActorAction
-from marl_battlegrounds.policies.input import ActorInput
+
+if TYPE_CHECKING:
+    from marl_battlegrounds.core.types import ActionMask
+    from marl_battlegrounds.llm.system import History
+    from marl_battlegrounds.policies.actor import ActorAction
+    from marl_battlegrounds.policies.input import ActorInput
 
 
 def _view_and_history(
@@ -36,6 +41,10 @@ def _view_and_history(
     this actor's earlier living turns. Historical menus never govern the current
     reply. No own scheduler, memory store or native action rules are needed.
     """
+
+    from marl_battlegrounds import llm
+    from marl_battlegrounds.llm.actions import COMBAT_NAMES, MOVE_NAMES
+
     parts = ["You control the actor described by Self."]
     for entry in history:
         parts.extend(
@@ -82,7 +91,11 @@ def prompt_for_words(actor: ActorInput, masks: ActionMask, history: History) -> 
         actor,
         masks,
         history,
-        reply_instruction="Reply with two names on one line: <move> <combat>.",
+        reply_instruction=(
+            "Reply with two names on one line: <move> <combat>. "
+            "Copy each name from the current legal lists. Use one space, with no "
+            "move= or combat= labels, JSON, extra punctuation or explanation."
+        ),
     )
 
 
@@ -95,6 +108,9 @@ def parse_words(
     needs only masks. Bad text raises ReplyFormatError. make_system checks the
     returned native ActorAction again and owns world-frame conversion.
     """
+
+    from marl_battlegrounds import llm
+
     del actor, history
     words = reply.split()
     if len(words) != 2:
@@ -105,13 +121,16 @@ def parse_words(
 
 
 def _factory(*, custom: bool) -> marl_bgs.System:
-    """Build a lazy CLI/DevClient System from the example's environment settings.
+    """Build a lazy CLI/BattleClient System from the example's environment settings.
 
     MARL_LLM_MODEL is the required served model name. MARL_LLM_URL defaults to
     http://127.0.0.1:8000/v1. MARL_LLM_REVISION optionally records pinned model
     content; omission means unknown. MARL_LLM_HISTORY defaults to 0 earlier turns.
     custom selects the two-word tutorial functions. No request or server starts.
     """
+
+    from marl_battlegrounds import llm
+
     model = os.environ.get("MARL_LLM_MODEL")
     if not model:
         raise ValueError("Set MARL_LLM_MODEL to the model name served by your server")
@@ -146,60 +165,108 @@ def make_custom_system() -> marl_bgs.System:
     return _factory(custom=True)
 
 
-def main() -> None:
-    """Parse example settings, evaluate through the public API and print outcomes."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True)
-    parser.add_argument("--server-url", default="http://127.0.0.1:8000/v1")
-    parser.add_argument(
-        "--format", choices=("default", "note", "words"), default="default"
-    )
-    parser.add_argument("--history-turns", type=int, default=0)
-    parser.add_argument("--records", choices=("none", "light", "full"), default="light")
-    parser.add_argument("--games", type=int, default=2)
-    parser.add_argument("--num-envs", type=int, default=2)
-    parser.add_argument("--map-id", type=int, default=0)
-    parser.add_argument("--max-steps", type=int, default=300)
-    parser.add_argument("--output-dir", type=Path)
-    parser.add_argument(
-        "--llm-slots",
-        nargs="+",
-        type=int,
-        choices=range(5),
-        help="give these physical slots to the LLM and the rest to Random",
-    )
-    args = parser.parse_args()
+def run(
+    *,
+    model: str,
+    server_url: str = "http://127.0.0.1:8000/v1",
+    format: str = "default",
+    history_turns: int = 0,
+    records: Literal["none", "light", "full"] = "light",
+    games: int = 2,
+    num_envs: int = 2,
+    map_id: int = 0,
+    max_steps: int = 300,
+    output_dir: str | Path | None = None,
+    llm_slots: list[int] | None = None,
+) -> None:
+    """Evaluate a served language model using permitted actor inputs.
+
+    Parameters
+    ----------
+    model : str
+        Served model name sent to the existing compatible provider. This lesson does
+        not download or launch a model.
+    server_url : str, default='http://127.0.0.1:8000/v1'
+        Base URL of the running compatible HTTP provider, including its /v1 prefix.
+    format : str, default='default'
+        default uses the standard structured reply; note adds a prompt note; words
+        uses this module's word parser.
+    history_turns : int, default=0
+        Number of earlier per-actor turns included in each prompt. Zero uses the
+        current permitted input only.
+    records : Literal['none', 'light', 'full'], default='light'
+        none, light or full model-call records. Full can include prompts and
+        replies. These are separate from game metrics.
+    games : int, default=2
+        Total evaluation games against Random, including both spawn ends in the
+        paired schedule.
+    num_envs : int, default=2
+        Number of parallel games. This changes batching, not the declared game or
+        transition budget.
+    map_id : int, default=0
+        Installed development map ID for these example games.
+    max_steps : int, default=300
+        Game horizon in transitions. A short horizon is a software check, not
+        evidence of learned skill.
+    output_dir : str | Path | None, default=None
+        Optional parent for a new saved evaluation run, including selected model-
+        call records. None returns results in memory. The client closes on success
+        and failure.
+    llm_slots : list[int] | None, default=None
+        Physical Team A slots from 0 through 4 assigned to the LLM. None assigns the
+        whole team. Other slots use Random; ownership grants no extra information.
+
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
+    """
+
+    from marl_battlegrounds import llm
+
+    output_dir = None if output_dir is None else Path(output_dir)
+    if format not in ("default", "note", "words"):
+        raise ValueError("format must be default, note or words")
+    if llm_slots is not None and any(
+        type(slot) is not int or not 0 <= slot < 5 for slot in llm_slots
+    ):
+        raise ValueError("llm_slots must contain physical slots 0 through 4")
     builder = (
         prompt_with_note
-        if args.format == "note"
+        if format == "note"
         else prompt_for_words
-        if args.format == "words"
+        if format == "words"
         else None
     )
-    decoder = parse_words if args.format == "words" else None
-    with llm.Client(args.server_url) as client:
+    decoder = parse_words if format == "words" else None
+    with llm.Client(server_url) as client:
         system = llm.make_system(
-            args.model,
+            model,
             client=client,
-            history_turns=args.history_turns,
-            records=args.records,
+            history_turns=history_turns,
+            records=records,
             prompt_builder=builder,
             reply_parser=decoder,
             custom_version="tutorial-v1" if builder else None,
-            custom_settings={"format": args.format},
+            custom_settings={"format": format},
         )
-        if args.llm_slots is not None:
-            selected = sorted(set(args.llm_slots))
+        if llm_slots is not None:
+            selected = sorted(set(llm_slots))
             remaining = [slot for slot in range(5) if slot not in selected]
             system = marl_bgs.team(system, "random", slots=[selected, remaining])
         result = marl_bgs.evaluate(
             system,
             "random",
-            num_episodes=args.games,
-            maps=[args.map_id],
-            num_envs=args.num_envs,
-            max_steps=args.max_steps,
-            output_dir=args.output_dir,
+            num_episodes=games,
+            maps=[map_id],
+            num_envs=num_envs,
+            max_steps=max_steps,
+            output_dir=output_dir,
         )
     episodes = result.table("episodes")
     print(
@@ -219,5 +286,12 @@ def main() -> None:
         print("Game files:", result.paths)
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("llm", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

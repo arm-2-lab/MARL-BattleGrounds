@@ -5,6 +5,12 @@ signature and editor hover text. Use simple, direct English. Say who does what.
 Explain needed technical words, and keep every fact needed for correct use.
 Short wording must not hide limits, defaults or side effects.
 
+**USE AMERICAN ENGLISH.** Use American spelling in every word: documentation,
+docstrings, comments, interface text, tests and commit messages. Write modeling,
+behavior, color, organize, analyze, center and defense, never modelling or
+behaviour. Keep existing identifiers, file names and quoted text exactly as they
+are.
+
 This is the shared standard for all existing and new project documentation:
 Python, JavaScript, shell tools, examples, guides and in-file comments. It covers
 public interfaces, private helpers, classes, records and source files. Accurate

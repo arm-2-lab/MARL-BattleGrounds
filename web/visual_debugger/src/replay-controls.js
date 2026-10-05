@@ -1,10 +1,41 @@
 /**
  * @file Validate replay commands and own browser playback/navigation state.
- * The controller sends at most one request at a time and advances playback after
- * the current presentation completes. Frame indices select captured states;
- * simulator ticks come from the joined timeline. DOM helpers bind controls and
- * render availability without changing recorded replay data.
+ *
+ * What it owns: ReplayPlaybackController sends at most one request at a time,
+ * advances playback after the current presentation completes and publishes the
+ * presentation intent main.js passes to the choreographer. Frame indices select
+ * captured states; simulator ticks come from the joined timeline. Presses add up:
+ * a navigation press made while a request is in flight waits as the one pending
+ * target (relative presses count from it, absolute presses replace it), so five
+ * quick +1 presses become one seek to k+5 and the buttons never grey out while
+ * the controller's own request runs.
+ *
+ * Moves and how they look (the one-tick rule): a move of exactly one tick glides.
+ * The +1 and -1 buttons, Arrow Right and Arrow Left, a one-tick move of the
+ * timeline slider by its own arrow keys, and dragging the slider tick by tick end
+ * with the replay_step intent (a static intent whose stepGlide says "forward" or
+ * "backward"). Every other move snaps: +10 and -10, Shift + arrows, first, last, a
+ * click on the slider track and any jump of more than one tick. N does the same as
+ * +1 (Arrow Right): one tick forward, gliding. Space plays or pauses; Escape
+ * clears the selection.
+ *
+ * Keys: bindReplayTimelineControls registers this module's Replay Viewer handlers
+ * in the one command set (command-set.js: replay_play_pause, replay_one_tick,
+ * replay_tick_step, replay_tick_jump, replay_escape) and dispatches every Replay
+ * Viewer key through runLocalCommand, so V (Everyone In View), B (Battle Cam) and F
+ * (Frame Explanation; in play it pauses first) reach the handlers their owners
+ * register. DOM helpers bind controls and render availability without changing
+ * recorded replay data. The dock readout is plain words ("Tick 98 / 122" and
+ * "Paused · Settled"); technical IDs stay in the Frame tab. Nothing here reads a frame, so it cannot show anything an
+ * Agent POV team did not see.
  */
+import {
+  isTextOrDialogTarget,
+  registerLocalCommandHandler,
+  resolveCommandKey,
+  runLocalCommand,
+} from "./command-set.js";
+
 /** @type {Readonly<Record<string, string>>} */
 const REPLAY_NAVIGATION_COMMAND_TYPES = Object.freeze({
   first: "first_frame",
@@ -70,6 +101,41 @@ function replayTickText(elements, frameIndex, finalFrameIndex) {
     aria: `Tick ${currentTick ?? "—"} of ${finalTick ?? "—"}`,
     visible: `Tick ${currentTick ?? "—"} / ${finalTick ?? "—"}`,
   });
+}
+
+/**
+ * Build the dock's plain-words playback label, the small line under the tick
+ * readout. It says what the replay is doing, never which frame or transition it
+ * is on: the technical IDs belong to the Frame tab's Technical Frame.
+ *
+ * Labels, checked in this order:
+ * - "Offline": no cursor yet, or the server connection is gone (OFFLINE).
+ * - "Playing": playback is running, even while the next tick is still loading.
+ * - "Seeking…": a paused request is still loading (ADVANCING).
+ * - "Paused · Settled": the replay is paused and the frame is fully drawn.
+ *
+ * The playback speed is not repeated here; the Speed select shows it. This
+ * formats text only, changes no DOM and reads no frame, so it shows nothing an
+ * Agent POV team did not see.
+ *
+ * @param {ReturnType<ReplayPlaybackController["snapshot"]>} state Playback
+ *   snapshot; reads cursor, transportState and playing only.
+ * @returns {"Offline" | "Playing" | "Seeking…" | "Paused · Settled"} The label.
+ */
+function replayPlaybackLabel(state) {
+  if (
+    state.cursor === null ||
+    state.transportState === REPLAY_TRANSPORT_STATES.OFFLINE
+  ) {
+    return "Offline";
+  }
+  if (state.playing) {
+    return "Playing";
+  }
+  if (state.transportState === REPLAY_TRANSPORT_STATES.ADVANCING) {
+    return "Seeking…";
+  }
+  return "Paused · Settled";
 }
 
 /**
@@ -554,6 +620,15 @@ export function validateReplayCommandOutcome(command, result, previous) {
  * A cursor belongs to one installed authority generation. Late callbacks cannot
  * replace newer authority. Snapshot booleans derive from the transport state and
  * active request, so they are not independent state-machine authorities.
+ *
+ * Presses add up (the Rune Scrubber rule): at most one request is in flight and
+ * one target is pending. A navigation press made while a request is in flight is
+ * not dropped: it pauses autoplay and becomes the pending target. A relative press
+ * (previous, next, jump) counts from the pending target, else the in-flight seek's
+ * target, else the cursor, so five quick +1 presses become one target k+5. An
+ * absolute press (first, last, seek) replaces the target. When the request in
+ * flight lands, the pending target is sent as one seek (or dropped when the cursor
+ * is already there); five presses cost at most two round trips.
  */
 export class ReplayPlaybackController {
   /**
@@ -593,17 +668,40 @@ export class ReplayPlaybackController {
     this.generation = 0;
     this.authorityGeneration = 0;
     this.presentationGeneration = 0;
-    /** @type {Readonly<{generation: number, renderPolicy: "replay_static" | "replay_animated", restartAnimated: boolean}> | null} */
+    /**
+     * The intent main.js reads to choose how the choreographer shows the frame.
+     * renderPolicy is replay_static (the paused still) or replay_animated (play).
+     * restartAnimated asks for the current tick's animation again. stepGlide is the
+     * replay_step intent: "forward" or "backward" after a one-tick move that
+     * should glide, otherwise null.
+     * @type {Readonly<{generation: number, renderPolicy: "replay_static" | "replay_animated", restartAnimated: boolean, stepGlide: "forward" | "backward" | null}> | null}
+     */
     this.presentationIntent = null;
-    /** @type {{generation: number, authorityGeneration: number, playback: boolean} | null} */
+    /** @type {{generation: number, authorityGeneration: number, playback: boolean, glide: boolean} | null} */
     this.activeRequest = null;
+    /**
+     * The frame the seek in flight goes to, or null (no request, or an autoplay
+     * next_frame request). Set when the seek is published as ADVANCING and
+     * cleared when it lands or fails. @type {number | null}
+     */
+    this.inFlightTarget = null;
+    /**
+     * The one pending target of presses made while a request was in flight: its
+     * frame, whether a one-tick landing glides, and the promises of the presses
+     * it holds (each resolves with the pending seek's acceptance). Null when
+     * nothing waits.
+     * @type {{frameIndex: number, glide: boolean, resolvers: Array<(accepted: boolean) => void>} | null}
+     */
+    this.pendingTarget = null;
     this.disposed = false;
   }
 
   /**
    * Return a frozen view of cursor, connection, playback, pause reason, and derived
-   * control flags. No request or state change occurs; retained cursor and presentation
-   * intent are already immutable.
+   * control flags. targetFrameIndex is the frame the pending target or the seek in
+   * flight goes to (pending first), or null when no seek is queued or in flight; the
+   * Rune Scrubber draws its thumb there. No request or state change occurs; retained
+   * cursor and presentation intent are already immutable.
    */
   snapshot() {
     const playing = this.#playbackIsActive();
@@ -624,6 +722,7 @@ export class ReplayPlaybackController {
       atEnd:
         this.cursor === null ||
         this.cursor.frame_index === this.cursor.final_frame_index,
+      targetFrameIndex: this.pendingTarget?.frameIndex ?? this.inFlightTarget,
     });
   }
 
@@ -639,6 +738,8 @@ export class ReplayPlaybackController {
     this.authorityGeneration += 1;
     this.generation += 1;
     this.activeRequest = null;
+    this.inFlightTarget = null;
+    this.#dropPendingTarget();
     this.cursor = normalizeReplayCursor(value);
     this.pauseReason = null;
     this.transportState = this.connected
@@ -686,6 +787,8 @@ export class ReplayPlaybackController {
     this.connected = false;
     this.cursor = null;
     this.activeRequest = null;
+    this.inFlightTarget = null;
+    this.#dropPendingTarget();
     this.transportState = REPLAY_TRANSPORT_STATES.OFFLINE;
     this.pauseReason = reason;
     this.presentationIntent = null;
@@ -821,18 +924,22 @@ export class ReplayPlaybackController {
   /**
    * Request one clamped absolute seek to the preceding captured frame. Return a
    * promise for acceptance; this is a frame offset, not a recomputed simulator step.
+   * When the move is exactly one tick it ends with the replay_step intent
+   * (stepGlide "backward"), so the bodies glide back; at frame zero it is a
+   * same-frame seek and snaps.
    */
   previous() {
-    return this.#userNavigation("previous");
+    return this.#userNavigation("previous", { glide: true });
   }
 
   /**
    * Request one clamped absolute seek to the next captured frame for manual navigation.
-   * Return a promise for acceptance. Manual navigation remains static; autoplay uses
-   * the distinct next_frame command to request incoming animation.
+   * Return a promise for acceptance. The arriving frame shows the paused still with
+   * the replay_step intent (stepGlide "forward") when the move is exactly one tick;
+   * autoplay uses the distinct next_frame command to request incoming animation.
    */
   next() {
-    return this.#userNavigation("next");
+    return this.#userNavigation("next", { glide: true });
   }
 
   /**
@@ -847,7 +954,9 @@ export class ReplayPlaybackController {
    * Move by the nonzero integer tickDelta using one clamped absolute-seek request.
    * Despite the retained argument name, the offset counts captured frame indices.
    * Return a promise for acceptance; invalid offsets reject with TypeError. No
-   * sequence of repeated next/previous requests is created.
+   * sequence of repeated next/previous requests is created. A jump always snaps
+   * (no step glide), even when the last frame cuts it to one tick: +10, -10 and
+   * Shift + arrows use it.
    *
    * @param {unknown} tickDelta
    */
@@ -855,9 +964,9 @@ export class ReplayPlaybackController {
     if (!Number.isInteger(tickDelta) || Number(tickDelta) === 0) {
       return Promise.reject(new TypeError("Replay jump must be a non-zero integer."));
     }
-    const frameIndex = this.cursor?.frame_index;
+    const frameIndex = this.#baseFrame();
     return this.#navigateTo(
-      frameIndex === undefined ? undefined : frameIndex + Number(tickDelta),
+      frameIndex === null ? undefined : frameIndex + Number(tickDelta),
     );
   }
 
@@ -865,12 +974,16 @@ export class ReplayPlaybackController {
    * Request a clamped absolute seek to nonnegative integer frameIndex. Invalid input
    * throws TypeError before a promise is returned; unavailable navigation resolves
    * false. Navigation publishes ADVANCING and a static presentation intent.
+   * options.glide (default false) asks for the replay_step intent: it applies only
+   * when the arriving frame is exactly one tick from the current one (the timeline
+   * slider's one-tick moves and drag scrubbing use it); otherwise the move snaps.
    *
    * @param {unknown} frameIndex
+   * @param {{glide?: boolean}} [options]
    */
-  seek(frameIndex) {
+  seek(frameIndex, options = {}) {
     const index = nonNegativeInteger(frameIndex, "frame_index");
-    return this.#navigateTo(index);
+    return this.#navigateTo(index, { glide: options.glide === true });
   }
 
   /**
@@ -883,44 +996,123 @@ export class ReplayPlaybackController {
   }
 
   /**
-   * Resolve the named first/previous/next/last destination from the current cursor
-   * and delegate to the single absolute-seek route. Return its acceptance promise.
+   * Resolve the named first/previous/next/last destination and delegate to the
+   * single absolute-seek route. previous and next count from #baseFrame (the
+   * pending target, else the in-flight seek's target, else the cursor), so quick
+   * presses add up; first and last are absolute. options.glide (default false)
+   * asks for the replay_step intent when the move turns out to be one tick. Return
+   * its acceptance promise.
    *
    * @param {"first" | "previous" | "next" | "last"} intent
+   * @param {{glide?: boolean}} [options]
    */
-  #userNavigation(intent) {
-    const frameIndex = this.cursor?.frame_index;
+  #userNavigation(intent, options = {}) {
+    const frameIndex = this.#baseFrame();
     const destination =
       intent === "first"
         ? 0
         : intent === "previous"
-          ? frameIndex === undefined
+          ? frameIndex === null
             ? undefined
             : frameIndex - 1
           : intent === "next"
-            ? frameIndex === undefined
+            ? frameIndex === null
               ? undefined
               : frameIndex + 1
             : this.cursor?.final_frame_index;
-    return this.#navigateTo(destination);
+    return this.#navigateTo(destination, options);
+  }
+
+  /**
+   * Return the frame a relative press counts from: the pending target, else the
+   * in-flight seek's target, else the cursor's frame; null with no cursor.
+   *
+   * @returns {number | null}
+   */
+  #baseFrame() {
+    if (!this.cursor) return null;
+    return (
+      this.pendingTarget?.frameIndex ?? this.inFlightTarget ?? this.cursor.frame_index
+    );
+  }
+
+  /**
+   * Make frameIndex the one pending target, replacing an older one, and return a
+   * promise that resolves with the pending seek's acceptance once it is sent (or
+   * false when it is dropped). A press during autoplay's next-frame fetch pauses
+   * playback first (pause reason user_seek), so the fetched frame settles as a
+   * still. Publishes the new snapshot (its targetFrameIndex).
+   *
+   * @param {number} frameIndex A clamped frame index.
+   * @param {boolean} glide Whether a one-tick landing glides.
+   * @returns {Promise<boolean>}
+   */
+  #queueTarget(frameIndex, glide) {
+    if (this.#playbackIsActive()) {
+      this.generation += 1;
+      this.pauseReason = "user_seek";
+      this.#setPresentationIntent("replay_static", false);
+    }
+    const resolvers = this.pendingTarget?.resolvers ?? [];
+    const promise = new Promise((resolve) => {
+      resolvers.push(resolve);
+    });
+    this.pendingTarget = { frameIndex, glide, resolvers };
+    this.#publish();
+    return /** @type {Promise<boolean>} */ (promise);
+  }
+
+  /**
+   * Send the pending target once no request is in flight: one seek, or nothing
+   * when the cursor is already on it. Its presses' promises resolve with the
+   * seek's acceptance (true when nothing was needed, false when navigation is no
+   * longer available). Return undefined.
+   */
+  #flushPendingTarget() {
+    const pending = this.pendingTarget;
+    if (pending === null || this.activeRequest !== null) return;
+    this.pendingTarget = null;
+    /** @param {boolean} accepted */
+    const settle = (accepted) => {
+      for (const resolve of pending.resolvers) resolve(accepted);
+    };
+    if (this.disposed || !this.cursor || !this.connected || this.hidden) {
+      settle(false);
+      return;
+    }
+    if (pending.frameIndex === this.cursor.frame_index) {
+      settle(true);
+      return;
+    }
+    this.#navigateTo(pending.frameIndex, { glide: pending.glide }).then(settle, () =>
+      settle(false),
+    );
+  }
+
+  /**
+   * Drop the pending target (authority changed, the controller went offline or a
+   * request failed); its presses' promises resolve false. Return undefined.
+   */
+  #dropPendingTarget() {
+    const pending = this.pendingTarget;
+    this.pendingTarget = null;
+    for (const resolve of pending?.resolvers ?? []) resolve(false);
   }
 
   /**
    * Reject unavailable navigation with a resolved false promise. Otherwise convert
-   * and clamp destination to a retained integer frame, pause autoplay, publish
-   * ADVANCING, and send one static absolute-seek command. Nonfinite destinations
+   * and clamp destination to a retained integer frame. While a request is in
+   * flight, make it the one pending target (#queueTarget; it is sent when that
+   * request lands). Otherwise pause autoplay, publish ADVANCING, and send one
+   * static absolute-seek command. options.glide (default false) marks the request
+   * so a one-tick result ends with the replay_step intent. Nonfinite destinations
    * resolve false; input conversion errors can propagate.
    *
    * @param {unknown} destination
+   * @param {{glide?: boolean}} [options]
    */
-  #navigateTo(destination) {
-    if (
-      this.disposed ||
-      this.transportState === REPLAY_TRANSPORT_STATES.ADVANCING ||
-      !this.cursor ||
-      !this.connected ||
-      this.hidden
-    ) {
+  #navigateTo(destination, options = {}) {
+    if (this.disposed || !this.cursor || !this.connected || this.hidden) {
       return Promise.resolve(false);
     }
     const numericDestination = Number(destination);
@@ -931,19 +1123,29 @@ export class ReplayPlaybackController {
       0,
       Math.min(this.cursor.final_frame_index, Math.trunc(numericDestination)),
     );
+    if (
+      this.transportState === REPLAY_TRANSPORT_STATES.ADVANCING ||
+      this.activeRequest !== null
+    ) {
+      return this.#queueTarget(frameIndex, options.glide === true);
+    }
     this.generation += 1;
     const generation = this.generation;
     this.pauseReason = "user_seek";
     this.transportState = REPLAY_TRANSPORT_STATES.ADVANCING;
+    this.inFlightTarget = frameIndex;
     this.#setPresentationIntent("replay_static", false);
     this.#publish();
-    return this.#sendCommand(replaySeekCommand(frameIndex), generation, false);
+    return this.#sendCommand(replaySeekCommand(frameIndex), generation, false, {
+      glide: options.glide === true,
+    });
   }
 
   /**
    * Await presentation completion for the exact generation and cursor that began playing.
-   * Ignore stale completion, hidden/disconnected state, or changed cursor. At the end
-   * settle playback; otherwise send one next_frame request. Current-generation errors
+   * Ignore stale completion, hidden/disconnected state, or changed cursor. At the end,
+   * settle playback (pause reason "endpoint"); otherwise send one next_frame
+   * request. Current-generation errors
    * pause and call onError. Return whether further navigation was accepted.
    *
    * @param {number} generation
@@ -992,14 +1194,22 @@ export class ReplayPlaybackController {
    * Own one command transaction and await its checked result. Ignore callbacks after
    * authority replacement. Successful current playback continues only after its
    * presentation completes; duplicates or handled resync settle without replaying.
-   * Return true for an accepted ordinary result or false for stale/rejected work.
-   * Current errors clear request ownership, publish a pause, and call onError.
+   * A successful navigation marked options.glide (default false) whose new cursor is
+   * exactly one frame from the previous one settles with the replay_step intent
+   * (stepGlide "forward" or "backward"); any other navigation settles with the plain
+   * static intent. The intent is set only when the new frame's cursor is in hand, so
+   * the old frame never receives a step. When a settled result lands, a pending
+   * target (presses made meanwhile) is sent next (#flushPendingTarget); an error
+   * drops it. Return true for an accepted ordinary result or false for
+   * stale/rejected work. Current errors clear request ownership, publish a pause,
+   * and call onError.
    *
    * @param {Readonly<Record<string, any>>} command
    * @param {number} generation
    * @param {boolean} playback
+   * @param {{glide?: boolean}} [options]
    */
-  async #sendCommand(command, generation, playback) {
+  async #sendCommand(command, generation, playback, options = {}) {
     if (this.activeRequest !== null || !this.cursor) {
       return false;
     }
@@ -1008,6 +1218,7 @@ export class ReplayPlaybackController {
       generation,
       authorityGeneration: this.authorityGeneration,
       playback,
+      glide: options.glide === true,
     };
     this.activeRequest = transaction;
     try {
@@ -1023,17 +1234,20 @@ export class ReplayPlaybackController {
       if (isRecord(result) && result.handled_resync === true) {
         const resynchronized = cursorFromResult(result);
         this.activeRequest = null;
+        this.inFlightTarget = null;
         this.cursor = resynchronized;
         this.generation += 1;
         this.transportState = REPLAY_TRANSPORT_STATES.SETTLED;
         this.pauseReason = "resync";
         this.#setPresentationIntent("replay_static", false);
         this.#publish();
+        this.#flushPendingTarget();
         return false;
       }
       const next = cursorFromResult(result);
       validateReplayCommandOutcome(command, result, previous);
       this.activeRequest = null;
+      this.inFlightTarget = null;
       this.cursor = next;
       if (isRecord(result) && result.result === "duplicate") {
         this.generation += 1;
@@ -1041,6 +1255,7 @@ export class ReplayPlaybackController {
         this.pauseReason = "resync";
         this.#setPresentationIntent("replay_static", false);
         this.#publish();
+        this.#flushPendingTarget();
         return false;
       }
       if (
@@ -1055,10 +1270,21 @@ export class ReplayPlaybackController {
         void this.#waitForPlaybackCompletion(generation, next);
       } else {
         this.transportState = REPLAY_TRANSPORT_STATES.SETTLED;
-        if (this.presentationIntent?.renderPolicy !== "replay_static") {
-          this.#setPresentationIntent("replay_static", false);
+        const moved = next.frame_index - previous.frame_index;
+        const stepGlide =
+          transaction.glide && !playback && (moved === 1 || moved === -1)
+            ? moved === 1
+              ? "forward"
+              : "backward"
+            : null;
+        if (
+          stepGlide !== null ||
+          this.presentationIntent?.renderPolicy !== "replay_static"
+        ) {
+          this.#setPresentationIntent("replay_static", false, stepGlide);
         }
         this.#publish();
+        this.#flushPendingTarget();
       }
       return true;
     } catch (error) {
@@ -1067,6 +1293,8 @@ export class ReplayPlaybackController {
         transaction.authorityGeneration === this.authorityGeneration
       ) {
         this.activeRequest = null;
+        this.inFlightTarget = null;
+        this.#dropPendingTarget();
         this.generation += 1;
         this.transportState = this.connected
           ? REPLAY_TRANSPORT_STATES.SETTLED
@@ -1094,18 +1322,24 @@ export class ReplayPlaybackController {
   }
 
   /**
-   * Increase presentation generation and store a frozen renderPolicy/restartAnimated
-   * request. This changes local render intent only and does not publish by itself.
+   * Increase presentation generation and store a frozen renderPolicy,
+   * restartAnimated and stepGlide request. stepGlide (default null) is the
+   * replay_step intent: "forward" or "backward" for a one-tick move that glides; it
+   * is only meaningful with replay_static. main.js forwards it once per generation
+   * to the choreographer as the replay_step render request. This changes local
+   * render intent only and does not publish by itself.
    *
    * @param {"replay_static" | "replay_animated"} renderPolicy
    * @param {boolean} restartAnimated
+   * @param {"forward" | "backward" | null} [stepGlide]
    */
-  #setPresentationIntent(renderPolicy, restartAnimated) {
+  #setPresentationIntent(renderPolicy, restartAnimated, stepGlide = null) {
     this.presentationGeneration += 1;
     this.presentationIntent = Object.freeze({
       generation: this.presentationGeneration,
       renderPolicy,
       restartAnimated,
+      stepGlide,
     });
   }
 
@@ -1118,36 +1352,105 @@ export class ReplayPlaybackController {
 }
 
 /**
- * Map unmodified arrow keys to navigation, fresh Space to toggle, and fresh Escape
- * to clear_selection. Repeated arrows are allowed; modifiers and other keys return
- * null. This only classifies input and does not prevent browser defaults.
+ * Classify one Replay Viewer key for the transport.
+ *
+ * event supplies key, repeat and the modifier flags (missing flags count as up).
+ * Return:
+ * - "previous" / "next" for Arrow Left / Arrow Right without Shift (one tick,
+ *   glides; held keys repeat), and "next" for N (n or N, with or without Shift;
+ *   held keys repeat), which does the same as +1;
+ * - "back_ten" / "forward_ten" for Shift + Arrow Left / Right (ten ticks, snaps);
+ * - "toggle" for a fresh Space without Shift (play or pause);
+ * - "clear_selection" for a fresh Escape without Shift;
+ * - null for anything else, and for every key with Ctrl, Alt or Meta held, so
+ *   browser shortcuts stay native.
+ * This only classifies input; it does not prevent browser defaults and matches
+ * the one command set (command-set.js) rows for the Replay Viewer.
  *
  * @param {{key?: string, repeat?: boolean, shiftKey?: boolean, ctrlKey?: boolean, altKey?: boolean, metaKey?: boolean}} event
+ * @returns {"previous" | "next" | "back_ten" | "forward_ten" | "toggle" | "clear_selection" | null}
  */
 export function replayKeyboardIntent(event) {
-  if (!event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-    if (event.key === "Escape" && !event.repeat) {
-      return "clear_selection";
-    }
-    if (event.key === "ArrowLeft") {
-      return "previous";
-    }
-    if (event.key === "ArrowRight") {
-      return "next";
-    }
-    if (event.key === " " && !event.repeat) {
-      return "toggle";
-    }
+  if (event.ctrlKey || event.altKey || event.metaKey) {
+    return null;
+  }
+  if (event.key === "ArrowLeft") {
+    return event.shiftKey ? "back_ten" : "previous";
+  }
+  if (event.key === "ArrowRight") {
+    return event.shiftKey ? "forward_ten" : "next";
+  }
+  if (event.key === "n" || event.key === "N") {
+    return "next";
+  }
+  if (event.shiftKey) {
+    return null;
+  }
+  if (event.key === "Escape" && !event.repeat) {
+    return "clear_selection";
+  }
+  if (event.key === " " && !event.repeat) {
+    return "toggle";
   }
   return null;
 }
 
 /**
- * Attach timeline buttons, slider, rate, and keyboard handlers to controller.
- * elements supplies required DOM controls plus current authority/keyboard checks.
- * clock defaults to globalThis but is retained unused; slider input previews locally
- * and change commits one seek. Return a cleanup function removing every installed
- * listener. No simulator data or replay file is changed.
+ * Return whether value is a DOM Element. Outside a browser (no Element global) it
+ * returns false, so key handling still works in plain JavaScript tests.
+ *
+ * @param {unknown} value
+ * @returns {value is Element}
+ */
+function isElement(value) {
+  return typeof Element !== "undefined" && value instanceof Element;
+}
+
+// Native controls keep their own keys; replay shortcuts never fire on them.
+const NATIVE_CONTROL_SELECTOR =
+  'button, input, select, textarea, a[href], summary, dialog, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="menuitem"]';
+
+/**
+ * Attach timeline buttons, slider, rate and keyboard handlers to controller.
+ *
+ * elements supplies the DOM controls plus the current authority and keyboard
+ * checks. clock defaults to globalThis but is retained unused.
+ *
+ * Buttons: First and Last seek; -10 and +10 jump (snap); -1 and +1 move one tick
+ * with the replay_step intent (glide); Play toggles.
+ *
+ * Slider: input previews the tick labels locally. While the pointer drags the
+ * thumb (pressed and moved), an input exactly one tick from the current frame
+ * sends a one-tick seek with the replay_step intent, so dragging scrubs +1 +1 +1
+ * with glides. change commits one seek to the slider value: it glides when it is
+ * one tick away and came from the keyboard or a drag, and snaps for a click on the
+ * track or a longer move. A drag that already reached the value sends nothing more.
+ *
+ * Keys: the Replay Viewer handlers of the one command set are registered here
+ * (replay_play_pause, replay_one_tick, replay_tick_step, replay_tick_jump,
+ * replay_escape; registering a name twice throws TypeError). The keydown listener
+ * ignores a hidden root, native controls (except Escape, which still clears the
+ * selection unless a dialog or text field has focus, and the keys the command set
+ * marks skipsTextAndDialogs: V, B, F, G and N, which skip only text fields and
+ * dialogs, so a focused transport button does not swallow them; Space and Enter
+ * still activate the focused button) and keys without replay authority. It
+ * prevents page scrolling for Space, the arrows and N whenever this replay owns
+ * the keyboard, even while navigation is fenced, but never in a text field or
+ * dialog (isTextOrDialogTarget), where every key, N included, types or works
+ * as usual. When elements keyboardEnabled() is
+ * true, or for a step key (arrows, Shift + arrows, N) while the controller's own
+ * request is in flight (the step then waits as its pending target), it dispatches
+ * the key through runLocalCommand, so V, B, F and G reach the handlers their owners
+ * registered; F while playing pauses first. Tab on the battlefield
+ * (elements.fieldRoot holds the event's target) while the page is busy is
+ * held: its default is prevented and nothing is sent, so a quick second Tab
+ * during an agent step never walks focus out into the walls and pillars.
+ * While the page is free, Tab goes to the replay_next_agent handler as
+ * usual, and keeps its normal focus move when that handler declines, so
+ * focus is never trapped in the field.
+ *
+ * Return a cleanup function that removes every listener and handler registration.
+ * No simulator data or replay file is changed.
  *
  * @param {{
  *   root: HTMLElement,
@@ -1167,7 +1470,7 @@ export function replayKeyboardIntent(event) {
  *   rateSelect: HTMLSelectElement,
  *   status: HTMLOutputElement,
  *   tickForFrameIndex?: (frameIndex: number) => unknown,
- *   incomingTransitionForFrameIndex?: (frameIndex: number) => unknown,
+ *   fieldRoot?: Element | null,
  * }} elements
  * @param {ReplayPlaybackController} controller
  * @param {ReplayClock} [clock]
@@ -1175,16 +1478,22 @@ export function replayKeyboardIntent(event) {
 export function bindReplayTimelineControls(elements, controller, clock = globalThis) {
   void clock;
   /**
-   * Read the slider value and send one seek only when it converts to an integer.
+   * The slider pointer gesture: pressed, moved since the press, and whether a
+   * drag already scrubbed (sent a one-tick seek). null when no pointer is involved
+   * (keyboard).
+   * @type {{down: boolean, moved: boolean, scrubbed: boolean} | null}
    */
-  const seekSlider = () => {
-    const intendedIndex = Number(elements.slider.value);
-    if (Number.isInteger(intendedIndex)) {
-      void controller.seek(intendedIndex);
-    }
+  let gesture = null;
+  /**
+   * Read the slider value; return it when it is an integer, otherwise null.
+   */
+  const sliderIndex = () => {
+    const value = Number(elements.slider.value);
+    return Number.isInteger(value) ? value : null;
   };
   /**
-   * Preview the slider's current/final tick labels and accessible text without a request.
+   * Preview the slider's current/final tick labels and accessible text, and scrub one
+   * tick while the pointer drags the thumb.
    */
   const onSliderInput = () => {
     const previewIndex = Number(elements.slider.value);
@@ -1197,11 +1506,46 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     elements.slider.setAttribute("aria-valuetext", tickText.aria);
     elements.position.value = tickText.visible;
     elements.position.textContent = elements.position.value;
+    const current = controller.snapshot().cursor?.frame_index;
+    if (
+      gesture?.down === true &&
+      gesture.moved &&
+      Number.isInteger(previewIndex) &&
+      current !== undefined &&
+      Math.abs(previewIndex - current) === 1 &&
+      controller.snapshot().transportState !== REPLAY_TRANSPORT_STATES.ADVANCING
+    ) {
+      gesture.scrubbed = true;
+      void controller.seek(previewIndex, { glide: true });
+    }
   };
   /**
-   * Commit the slider's chosen frame through the shared seek helper.
+   * Commit the slider's chosen frame: glide for a one-tick keyboard or drag move,
+   * snap otherwise; skip when a drag already reached the value.
    */
-  const onSliderChange = () => seekSlider();
+  const onSliderChange = () => {
+    const index = sliderIndex();
+    const finished = gesture;
+    gesture = null;
+    if (index === null) return;
+    const current = controller.snapshot().cursor?.frame_index;
+    if (finished?.scrubbed === true && index === current) return;
+    const oneTick = current !== undefined && Math.abs(index - current) === 1;
+    const glide = oneTick && (finished === null || finished.moved);
+    void controller.seek(index, { glide });
+  };
+  /** Start a slider pointer gesture. */
+  const onSliderPointerDown = () => {
+    gesture = { down: true, moved: false, scrubbed: false };
+  };
+  /** Mark the slider gesture as a drag once the pressed pointer moves. */
+  const onSliderPointerMove = () => {
+    if (gesture?.down === true) gesture.moved = true;
+  };
+  /** End the press; the gesture is kept until change reads it. */
+  const onSliderPointerUp = () => {
+    if (gesture) gesture.down = false;
+  };
   /**
    * Read the rate selector and apply the controller's supported-speed validation.
    */
@@ -1209,9 +1553,8 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     controller.setPlaybackRate(Number(elements.rateSelect.value));
   };
   /**
-   * Handle replay shortcuts only when this visible control set owns installed authority.
-   * Respect editable controls and dialog focus. Prevent scrolling defaults for owned
-   * Space/arrows even while navigation is fenced; dispatch only when keyboardEnabled.
+   * Handle Replay Viewer shortcuts when this visible control set owns installed
+   * authority, through the one command set (see the function description).
    *
    * @param {Event} event
    */
@@ -1223,34 +1566,45 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     const target = event.target;
     const intent = replayKeyboardIntent(keyboardEvent);
     const clearsSelection = intent === "clear_selection";
+    const match = resolveCommandKey("replay_viewer", keyboardEvent);
+    // V, B, F, G and N work from a focused button too; their own check skips text
+    // fields and dialogs (runLocalCommand).
+    const fieldWideKey = match?.row.skipsTextAndDialogs === true;
     if (
-      target instanceof Element &&
+      isElement(target) &&
       !clearsSelection &&
-      (target.closest?.(
-        'button, input, select, textarea, a[href], summary, dialog, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="menuitem"]',
-      ) ??
-        target.matches(
-          'button, input, select, textarea, a[href], summary, dialog, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="menuitem"]',
-        ))
+      !fieldWideKey &&
+      (target.closest?.(NATIVE_CONTROL_SELECTOR) ??
+        target.matches(NATIVE_CONTROL_SELECTOR))
     ) {
       return;
     }
     if (
       clearsSelection &&
-      target instanceof Element &&
+      isElement(target) &&
       (target.closest?.(
         'dialog, input, select, textarea, [contenteditable]:not([contenteditable="false"])',
       ) ?? null) !== null
     ) {
       return;
     }
+    // A text field or dialog keeps its own keys: N passes the native-control
+    // check above (its row skips only text fields and dialogs), so it must not
+    // take the default there, or the typed "n" is lost.
+    const textTarget = isTextOrDialogTarget(target);
     const ownsSpaceDefault =
+      !textTarget &&
       keyboardEvent.key === " " &&
       !keyboardEvent.shiftKey &&
       !keyboardEvent.ctrlKey &&
       !keyboardEvent.altKey &&
       !keyboardEvent.metaKey;
-    const ownsArrowDefault = intent === "previous" || intent === "next";
+    const ownsArrowDefault =
+      !textTarget &&
+      (intent === "previous" ||
+        intent === "next" ||
+        intent === "back_ten" ||
+        intent === "forward_ten");
     const state = controller.snapshot();
     const ownsReplayKeyboardDefault =
       elements.keyboardAuthorityInstalled() &&
@@ -1264,21 +1618,91 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     if (ownsReplayKeyboardDefault && (ownsSpaceDefault || ownsArrowDefault)) {
       event.preventDefault();
     }
-    if (!ownsReplayKeyboardDefault || !elements.keyboardEnabled()) {
+    // Steps (arrows, Shift + arrows, N) also run while the controller's own
+    // request is in flight: they wait as its one pending target and add up.
+    // Other keys wait until the page is free.
+    const queuesStep =
+      state.requestPending &&
+      (match?.entry.handler === "replay_tick_step" ||
+        match?.entry.handler === "replay_tick_jump" ||
+        match?.entry.handler === "replay_one_tick");
+    // Tab on the field while a step loads: hold it, never the browser's walk.
+    if (
+      ownsReplayKeyboardDefault &&
+      !elements.keyboardEnabled() &&
+      !textTarget &&
+      match?.entry.handler === "replay_next_agent" &&
+      isElement(target) &&
+      elements.fieldRoot?.contains(target) === true
+    ) {
+      event.preventDefault();
       return;
     }
-    if (!intent) {
+    if (!ownsReplayKeyboardDefault || (!elements.keyboardEnabled() && !queuesStep)) {
       return;
     }
-    event.preventDefault();
-    if (intent === "clear_selection") {
-      elements.clearSelection();
-    } else if (intent === "toggle") {
-      controller.toggle();
-    } else {
-      void controller[intent]();
+    if (match === null) {
+      return;
+    }
+    if (match.entry.job === "frame_explanation" && controller.snapshot().playing) {
+      controller.pause("frame_explanation");
+    }
+    if (runLocalCommand("replay_viewer", keyboardEvent, { source: "replay_viewer" })) {
+      event.preventDefault();
     }
   };
+  /**
+   * This transport's handlers in the one command set, each called with the
+   * resolved key call (command-set.js LocalCommandCall). Returning false means "not
+   * now" (the key was not handled):
+   * - replay_play_pause (Space): a fresh unshifted press toggles play.
+   * - replay_one_tick (N): one tick forward, exactly as +1 and Arrow Right
+   *   (glides; held keys repeat).
+   * - replay_tick_step (Arrow Left / Right): one tick back or forward with the
+   *   replay_step intent (glides).
+   * - replay_tick_jump (Shift + Arrow Left / Right): ten ticks back or forward (snaps).
+   * - replay_escape (Escape): a fresh unshifted press clears the selection.
+   * Each sends at most one replay request through the controller.
+   *
+   * @type {Array<[string, (call: import("./command-set.js").LocalCommandCall) => boolean | void]>}
+   */
+  const localHandlers = [
+    [
+      "replay_play_pause",
+      (call) => {
+        if (call.shiftKey || call.repeat) return false;
+        controller.toggle();
+      },
+    ],
+    [
+      "replay_one_tick",
+      () => {
+        void controller.next();
+      },
+    ],
+    [
+      "replay_tick_step",
+      (call) => {
+        void (call.key === "ArrowLeft" ? controller.previous() : controller.next());
+      },
+    ],
+    [
+      "replay_tick_jump",
+      (call) => {
+        void controller.jump(call.key === "ArrowLeft" ? -10 : 10);
+      },
+    ],
+    [
+      "replay_escape",
+      (call) => {
+        if (call.shiftKey || call.repeat) return false;
+        elements.clearSelection();
+      },
+    ],
+  ];
+  const unregister = localHandlers.map(([name, handler]) =>
+    registerLocalCommandHandler(name, handler),
+  );
   /** @type {Array<[EventTarget, string, EventListener]>} */
   const handlers = [
     [elements.firstButton, "click", () => void controller.first()],
@@ -1288,6 +1712,10 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     [elements.nextButton, "click", () => void controller.next()],
     [elements.forwardTenButton, "click", () => void controller.jump(10)],
     [elements.lastButton, "click", () => void controller.last()],
+    [elements.slider, "pointerdown", onSliderPointerDown],
+    [elements.slider, "pointermove", onSliderPointerMove],
+    [elements.slider, "pointerup", onSliderPointerUp],
+    [elements.slider, "pointercancel", onSliderPointerUp],
     [elements.slider, "input", onSliderInput],
     [elements.slider, "change", onSliderChange],
     [elements.rateSelect, "change", onRateChange],
@@ -1300,14 +1728,34 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
     for (const [target, type, handler] of handlers) {
       target.removeEventListener(type, handler);
     }
+    for (const remove of unregister) {
+      remove();
+    }
   };
 }
 
 /**
- * Render cursor, tick labels, rate, transport status, and button availability from state.
- * elements supplies DOM controls and optional authoritative tick/transition resolvers.
- * Pending navigation disables seek buttons; speed can remain editable. Return
- * undefined and perform no network work. Missing scientific ticks display an em dash.
+ * Render cursor, tick labels, rate, playback label, and button availability from state.
+ * elements supplies DOM controls and the optional authoritative tick resolver.
+ * The seek buttons and the slider never grey out while the controller's own
+ * request is in flight (state.requestPending: a seek, a step or autoplay's next
+ * frame): a press then waits as the controller's one pending target and adds up
+ * with the presses after it. They are disabled with no cursor, offline, hidden,
+ * or while the page is busy with other work (main.js reports ADVANCING while
+ * state.requestPending is false). Speed can remain editable. Return undefined and
+ * perform no network work. Missing scientific ticks display an em dash.
+ *
+ * The dock readout is plain words, as in the design: elements.position shows
+ * "Tick 98 / 122" and elements.status shows the playback label from
+ * replayPlaybackLabel ("Paused · Settled", "Playing", "Seeking…" or "Offline").
+ * The status line never shows the frame index, the speed or the incoming
+ * transition ID; the Frame tab's Technical Frame owns those. For tests and tools,
+ * elements.status also carries the exact transport state ("OFFLINE", "SETTLED",
+ * "PLAYING" or "ADVANCING") in its data-transport-state attribute.
+ *
+ * Side effects: writes DOM properties, text and attributes on the given elements
+ * only. Agent POV: reads only the playback snapshot and the tick resolver, never a
+ * frame, so it draws nothing an Agent POV team did not see.
  *
  * @param {{
  *   firstButton: HTMLButtonElement,
@@ -1322,7 +1770,6 @@ export function bindReplayTimelineControls(elements, controller, clock = globalT
  *   rateSelect: HTMLSelectElement,
  *   status: HTMLOutputElement,
  *   tickForFrameIndex?: (frameIndex: number) => unknown,
- *   incomingTransitionForFrameIndex?: (frameIndex: number) => unknown,
  * }} elements
  * @param {ReturnType<ReplayPlaybackController["snapshot"]>} state
  */
@@ -1332,7 +1779,9 @@ export function renderReplayTimelineControls(elements, state) {
     cursor === null ||
     state.transportState === REPLAY_TRANSPORT_STATES.OFFLINE ||
     state.hidden ||
-    state.transportState === REPLAY_TRANSPORT_STATES.ADVANCING;
+    (state.transportState === REPLAY_TRANSPORT_STATES.ADVANCING &&
+      !state.playing &&
+      !state.requestPending);
   const frameIndex = cursor?.frame_index ?? 0;
   const finalFrameIndex = cursor?.final_frame_index ?? 0;
   elements.slider.min = "0";
@@ -1349,21 +1798,9 @@ export function renderReplayTimelineControls(elements, state) {
     cursor === null ||
     state.transportState === REPLAY_TRANSPORT_STATES.OFFLINE ||
     state.hidden;
-  const incomingTransition =
-    cursor !== null && typeof elements.incomingTransitionForFrameIndex === "function"
-      ? elements.incomingTransitionForFrameIndex(frameIndex)
-      : null;
-  const statusParts = [
-    cursor === null ? "Frame — / —" : `Frame ${frameIndex} / ${finalFrameIndex}`,
-    tickText.visible,
-    ...(typeof incomingTransition === "string" && incomingTransition.length > 0
-      ? [`Incoming Transition ${incomingTransition}`]
-      : []),
-    `${state.playbackRate.toFixed(2)}×`,
-    state.transportState,
-  ];
-  elements.status.value = statusParts.join(" · ");
+  elements.status.value = replayPlaybackLabel(state);
   elements.status.textContent = elements.status.value;
+  elements.status.setAttribute("data-transport-state", state.transportState);
   elements.firstButton.disabled = unavailable;
   elements.backTenButton.disabled = unavailable;
   elements.previousButton.disabled = unavailable;

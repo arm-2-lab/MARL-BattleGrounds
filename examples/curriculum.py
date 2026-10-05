@@ -1,49 +1,57 @@
-"""Train with declared curriculum stages, then inspect actual play and evaluate.
+"""Train an explicit map and roster curriculum, then load and evaluate its actor.
 
-Install the training extra. The default CPU run checks the complete workflow::
+Install training and hydra, then run a small CPU software check::
 
-    JAX_PLATFORMS=cpu python examples/curriculum.py --output-dir artifacts/curriculum
+    python examples/curriculum.py output_dir=artifacts/curriculum
 
-It uses 32 real transitions across four games. That is too short for learning,
-so the run may end before any game starts under the second requested stage.
-Read the actual exposure printed below; stage shares describe requested work.
-For a separately authorized real run, set both the batch and experience budget,
-for example --num-envs 512 --total-env-steps 10240000. No budget is changed for you.
-The example uses no past-copy bank; its capture spacing does not limit a smoke run.
-
-Each stage names training maps, a share, explicit class rosters and a victory
-score. Repeated classes remain distinct agents. Evaluation uses held-out map 42
-and the second roster under a declared K20/H300 setup. Evaluation plays one
-game per evaluation lane, using min(num_envs, 32) lanes and both spawn ends.
-This evaluation budget is separate from the requested training transitions.
-A smoke result is not proof of competence, fairness or useful curriculum learning.
+The Python run function builds real CurriculumStage values through the public
+API. Requested stage lengths and observed episode exposure stay separate.
+Default four-game, 32-transition training establishes workflow behavior only.
+Use --help or --cfg job to inspect settings; import run to keep using Python.
 """
 
-import argparse
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
 
-def main() -> None:
-    """Run a declared stage list, load its frozen actor and show actual results.
+def run(
+    *, output_dir: str | Path, num_envs: int = 4, total_env_steps: int = 32
+) -> None:
+    """Train the declared roster/map curriculum, then load and evaluate its actor.
 
-    --output-dir must name a new run directory. --num-envs and --total-env-steps
-    use the ordinary training configuration and validation rules. Errors are
-    reported without retrying or changing the requested experiment.
+    Parameters
+    ----------
+    output_dir : str | Path
+        Exact new training-run folder. Analysis and final evaluation live below that
+        run.
+    num_envs : int, default=4
+        Number of parallel games. This changes batching, not the declared game or
+        transition budget.
+    total_env_steps : int, default=32
+        Total real training transitions across all games. Must form whole learner
+        rounds for the configured batch.
+
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--num-envs", type=int, default=4)
-    parser.add_argument("--total-env-steps", type=int, default=32)
-    args = parser.parse_args()
+    output_dir = Path(output_dir)
 
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds import training
-    from marl_battlegrounds.baselines.ppo import PPOConfig
+    from marl_battlegrounds.baselines.config import PPOConfig
 
     config = training.TrainConfig(
-        num_envs=args.num_envs,
-        total_env_steps=args.total_env_steps,
+        num_envs=num_envs,
+        total_env_steps=total_env_steps,
         seed=42,
         keep_past=0,
         curriculum=[
@@ -65,11 +73,11 @@ def main() -> None:
         ],
         ppo=PPOConfig(rollout_length=4, epochs=1),
     )
-    result = training.train(config, output_dir=args.output_dir)
+    result = training.train(config, output_dir=output_dir)
     actor_path = result.selected_actor or result.final_actor
     actor = training.load_system(actor_path)
     evaluation_dir = result.run_dir / "curriculum_evaluation"
-    evaluation_batch = min(args.num_envs, 32)
+    evaluation_batch = min(num_envs, 32)
     evaluation = marl_bgs.evaluate(
         actor,
         "random",
@@ -91,5 +99,12 @@ def main() -> None:
     print(f"Evaluation: {evaluation.run_dir}")
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("curriculum", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

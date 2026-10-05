@@ -1,15 +1,34 @@
 /**
  * @file Provide browser-test helpers for observing transition animation and its
  * settled state. These support assertions without becoming simulator authorities.
+ * They follow the beat clock: the painter's roots sit in the transient-events
+ * layer and the Strike Band (routes and connectors; the earlier transient-route
+ * layer is still matched), and the choreographer's overrides on durable nodes (body
+ * glides and the marks that ride a step glide, beat holds, step cue fades and
+ * waits, the camera ease) carry "mbg:" ids too.
  */
 import { expect } from "@playwright/test";
 
+const ROUTE_LAYER = ':is([data-layer="strike-band"], [data-layer="transient-route"])';
+
 export const CHOREOGRAPHY_ROOT =
   '#battlefield [data-layer="transient-events"] > .combat-choreography';
-export const CHOREOGRAPHY_CONNECTOR_ROOT =
-  '#battlefield [data-layer="transient-route"] > .combat-choreography-connectors';
-export const CHOREOGRAPHY_ROUTE_ROOT =
-  '#battlefield [data-layer="transient-route"] > .combat-choreography-routes';
+export const CHOREOGRAPHY_CONNECTOR_ROOT = `#battlefield ${ROUTE_LAYER} > .combat-choreography-connectors`;
+export const CHOREOGRAPHY_ROUTE_ROOT = `#battlefield ${ROUTE_LAYER} > .combat-choreography-routes`;
+
+// Ids of the choreographer's overrides on durable nodes (not painter animations):
+// body glides and step glides (with a Dim Shift's ":dim-shift:move|fade" pair),
+// the marks that ride them (":follow:<n>"), catch-ups a repaint needed
+// (":rejoin:<n>", also for landing waits and rise fades), beat holds, step cue
+// fades, landing waits, a rewind's rise fades, the movement marks, veil beats
+// and hit shivers, the step clocks and the camera ease.
+const OVERRIDE_ID_PATTERN =
+  /:(?:glide|step-glide):[^:]+(?::follow:\d+)?(?::dim-shift:(?:move|fade))?(?::rejoin:\d+)?$|:hold:[a-z-]+:\d+$|:step-cue:\d+$|:landing-wait:(?:rejoin:)?\d+$|:rise:(?:rejoin:)?\d+$|:step(?:-back)?$|:(?:movement|fog|shiver):\d+$|:death-dim$|^mbg:camera:\d+$/u;
+
+/** @param {string} id */
+export function isChoreographyOverrideId(id) {
+  return OVERRIDE_ID_PATTERN.test(id);
+}
 
 /** @param {import("@playwright/test").Page} page */
 export async function installWaapiAutopause(page) {
@@ -17,9 +36,11 @@ export async function installWaapiAutopause(page) {
     const nativeAnimate = Element.prototype.animate;
     Element.prototype.animate = function animateAndPause(keyframes, options) {
       const animation = nativeAnimate.call(this, keyframes, options);
+      // Every arena animation (painter cues, body glides, beat holds, the camera
+      // ease) and every beat-held HUD node outside the arena pauses at once.
       if (
         this.closest(
-          ".combat-choreography, .combat-choreography-connectors, .combat-choreography-routes",
+          "#battlefield, .combat-choreography, .combat-choreography-connectors, .combat-choreography-routes, [data-beat-hold]",
         )
       ) {
         animation.pause();
@@ -48,9 +69,17 @@ export async function pauseAtLogicalTime(page, logicalMs) {
     if (!battlefield) {
       throw new Error("Missing choreography battlefield.");
     }
-    const animations = battlefield
-      .getAnimations({ subtree: true })
-      .filter(({ id }) => id.startsWith("mbg:"));
+    // The camera ease is not tick time: finish it so the picture is the exact frame.
+    for (const camera of document
+      .getAnimations()
+      .filter(({ id }) => id.startsWith("mbg:camera:"))) {
+      camera.finish();
+    }
+    // Tick-time animations: painter cues and clocks, glides and beat holds (also on
+    // HUD nodes outside the battlefield).
+    const animations = document
+      .getAnimations()
+      .filter(({ id }) => id.startsWith("mbg:") && !id.startsWith("mbg:camera:"));
     await document.fonts.ready;
     await Promise.all(animations.map(({ ready }) => ready));
     for (const animation of animations) {
@@ -202,14 +231,14 @@ export async function choreographySnapshot(page) {
       ...(root
         .closest("svg")
         ?.querySelectorAll(
-          '[data-layer="transient-route"] > .combat-choreography-connectors > .combat-connector-effect',
+          ':is([data-layer="strike-band"], [data-layer="transient-route"]) > .combat-choreography-connectors > .combat-connector-effect',
         ) ?? []),
     ].map((effect) => effect.getAttribute("data-event-id")),
     routeEffectIds: [
       ...(root
         .closest("svg")
         ?.querySelectorAll(
-          '[data-layer="transient-route"] > .combat-choreography-routes > .combat-route-effect',
+          ':is([data-layer="strike-band"], [data-layer="transient-route"]) > .combat-choreography-routes > .combat-route-effect',
         ) ?? []),
     ].map((effect) => effect.getAttribute("data-event-id")),
     epochKey: root.getAttribute("data-epoch-key"),
@@ -250,20 +279,31 @@ export async function assertBoundedChoreography(page) {
       (root
         .closest("svg")
         ?.querySelector(
-          '[data-layer="transient-route"] > .combat-choreography-connectors',
+          ':is([data-layer="strike-band"], [data-layer="transient-route"]) > .combat-choreography-connectors',
         )
         ?.querySelectorAll("*").length ?? 0) +
       1 +
       (root
         .closest("svg")
-        ?.querySelector('[data-layer="transient-route"] > .combat-choreography-routes')
+        ?.querySelector(
+          ':is([data-layer="strike-band"], [data-layer="transient-route"]) > .combat-choreography-routes',
+        )
         ?.querySelectorAll("*").length ?? 0) +
       1,
   );
   expect(nodeCount).toBeLessThanOrEqual(Math.min(effectIds.length * 30 + 3, 512));
-  expect(snapshot.animationIds.length).toBeLessThanOrEqual(
+  // Painter animations and clocks keep the per-event bound; the choreographer's
+  // overrides on durable nodes (glides, beat holds, step fades) have the plan's
+  // allowance (at most 96) plus the riders, landing waits, movement marks and
+  // veil beats bounded by the animation limit only, and all stay under 512.
+  const overrideIds = snapshot.animationIds.filter(({ id }) =>
+    isChoreographyOverrideId(id),
+  );
+  expect(snapshot.animationIds.length - overrideIds.length).toBeLessThanOrEqual(
     Math.min(effectIds.length * 4 + 3, 512),
   );
+  expect(overrideIds.length).toBeLessThanOrEqual(512);
+  expect(snapshot.animationIds.length).toBeLessThanOrEqual(512);
   expect(new Set(snapshot.animationIds.map(({ id }) => id)).size).toBe(
     snapshot.animationIds.length,
   );

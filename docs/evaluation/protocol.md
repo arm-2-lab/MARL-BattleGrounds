@@ -1141,6 +1141,60 @@ maps, this is the lowest eleven of fifty-five cell means. A thirteen-system
 field has sixty such cells and uses its lowest twelve. The same worst-20% rule
 applies; it remains outside the compact main report.
 
+### Leaderboard tiers
+
+**Status: accepted design, not yet built.** No tool prints tiers today. When the
+official leaderboard is built, this section is the one source for the tier
+table, and one small function will turn an Elo into its tier and division.
+
+The official leaderboard gives every policy a named tier, such as Gold or
+Diamond, taken from its Elo. Elo comes from one tournament's field only, and
+the fit always puts that field's average at 1,200 (see the rating contract
+above). So a tier says how far a policy sits above or below the average of the
+field it played in. When a much stronger policy joins the field, the others can
+drop a tier. That movement is intended: it shows who now leads.
+
+| Tier | Elo | Distance From Field Average | Wins Against An Average Policy |
+| --- | --- | --- | --- |
+| Grandmaster | 2000 and above | 800 or more above | 99.0% or more |
+| Master | 1800-1999 | 600-799 above | 96.9-99.0% |
+| Diamond | 1600-1799 | 400-599 above | 90.9-96.9% |
+| Platinum | 1400-1599 | 200-399 above | 76.0-90.9% |
+| Gold | 1200-1399 | 0-199 above | 50-76.0% |
+| Silver | 1000-1199 | 1-200 below | 24.0-50% |
+| Bronze | 800-999 | 201-400 below | 9.1-24.0% |
+| Iron | Below 800 | More than 400 below | Under 9.1% |
+
+- **Edges.** The fitted Elo is not a whole number. The leaderboard decides the
+  tier from the Elo it displays, rounded to a whole number, so a row never shows
+  an Elo outside its tier. Each lower edge belongs to its tier: 1,200 is Gold.
+- **Divisions.** Each tier from Iron to Master splits into five divisions of
+  40 Elo, numbered 5 (lowest) to 1 (highest). Example: Silver 5 is 1,000-1,039
+  and Silver 1 is 1,160-1,199. Grandmaster has no divisions. Iron counts down
+  from its top: Iron 1 is 760-799, Iron 2 720-759, Iron 3 680-719, Iron 4
+  640-679, and Iron 5 is every Elo below 640. Divisions make progress easy to
+  state, for example "method X took the policy from Silver 5 to Silver 1".
+- **What the last column means.** An "average policy" has the field's average
+  strength, Elo 1,200. It is not a real entrant. The column is the chance of
+  winning a decisive game against it, `1 / (1 + 10^(-d/400))`, where `d` is Elo
+  minus 1,200. Draws are modelled separately. This is not the policy's record
+  against its real opponents: a policy that always beats weak entrants can lose
+  some games to strong ones and still rate high.
+- **Display.** Each leaderboard row shows the tier and division beside the Elo
+  and its interval, for example "Master 5 · 1,806 (1,762-1,855)".
+- **Tiers never change the result.** Rank stays by Elo. A tier never feeds the
+  rating fit, admission or ranking.
+- **Reporting a gain.** When a report claims that a method moved a policy up a
+  division or tier, it also gives the Elo gain with its interval.
+- **Fixed games per pair.** The fit's small penalty pulls extreme ratings
+  toward the average, so the highest reachable Elo depends on games per pair and
+  field size. In a field of 10 where the other nine are equal and split their
+  games with each other without draws, a policy that wins every game rates
+  about 1,941 at 10 games per pair, 2,245 at 100 and 2,340 at 200. In that
+  field, Grandmaster is out of reach at 10 games per pair. The official
+  leaderboard therefore uses one fixed games-per-pair setting; if it changes,
+  check the top lines again.
+
 ### One-day training claim
 
 The predeclared target is a frozen learned policy trained within 24 hours on one

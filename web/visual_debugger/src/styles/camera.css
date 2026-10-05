@@ -1,0 +1,228 @@
+/*
+ * Styles for the Camera look (src/looks/camera.js): the camera switch, the
+ * change tip, the one-time first-open tip and the Battle Cam words. The
+ * switch slot is #replay-camera-switch (Replay Viewer transport); since 4 Oct
+ * 2026 it shows no buttons (the arena's V and B keys are the camera's
+ * buttons, src/arena-buttons.js), only the words for screen readers. The BattleClient
+ * and DevClient show no switch (#live-camera-switch stays hidden; their
+ * on-screen V is the arena's Everyone In View key, src/arena-buttons.js);
+ * their change tip, #camera-tip, sits over the message of the deck's header
+ * line (#status-line), placed there by src/looks/camera.js and styled in
+ * battleclient/overlays.css, so it never covers the arena, the rail or the
+ * HUD. The fixed bottom-right rule below is only a fallback for a page
+ * without that line. It fades
+ * in, holds and fades out over the 4 s it is shown (no fade under reduced
+ * motion). In the Replay Viewer the change tip and the first-open tip sit in
+ * the scorebug's #camera-tips box (the empty inner half of the right-hand
+ * score column, placed by battleclient/scorebug.css), so they cover nothing
+ * (owner, 3 Oct 2026, Micro List M7). They take no space, so showing or
+ * hiding them never changes the arena's size, and a fresh page and a round
+ * trip draw the same arena. Colors come only from the tokens in styles.css (the live tip
+ * uses the vision tokens on .bc). styles.css imports this file.
+ */
+
+.camera-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+  color: var(--ui-text);
+  font-size: 0.75rem;
+}
+
+.camera-switch[hidden] {
+  display: none;
+}
+
+.camera-switch__label {
+  color: var(--ui-muted);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+}
+
+.camera-switch__choices {
+  display: flex;
+  gap: 4px;
+}
+
+.camera-switch__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 35%, transparent);
+  color: var(--ui-muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.camera-switch__choice:hover {
+  color: var(--ui-text);
+  border-color: color-mix(in srgb, var(--moon-silver) 40%, transparent);
+}
+
+.camera-switch__choice:focus-visible {
+  outline: 2px solid var(--moon-silver);
+  outline-offset: 2px;
+}
+
+.camera-switch__choice[aria-pressed="true"] {
+  color: var(--ui-text);
+  border-color: color-mix(in srgb, var(--moon-silver) 55%, transparent);
+  background: color-mix(in srgb, var(--moon-silver) 12%, transparent);
+}
+
+.camera-switch__keycap {
+  min-width: 1.35em;
+  padding: 1px 4px 0;
+  border: 1px solid color-mix(in srgb, var(--moon-silver) 42%, transparent);
+  border-radius: 4px;
+  color: var(--moon-silver);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.camera-switch__words {
+  color: var(--ui-muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.camera-switch__words:empty,
+.camera-switch__words[hidden] {
+  display: none;
+}
+
+.camera-switch__words--slow {
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--moon-silver) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--moon-silver) 24%, transparent);
+}
+
+.camera-switch__tip {
+  padding: 3px 9px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ui-text);
+  white-space: nowrap;
+}
+
+.camera-switch__tip[hidden],
+.camera-switch__first-tip[hidden] {
+  display: none;
+}
+
+/*
+ * The first-open tip (a page without a tip host; the Replay Viewer puts it in
+ * #camera-tips, see below) is an ordinary item of the switch, on its own line just under
+ * the three camera buttons. It takes its own space, so it can never
+ * cover the transport status or any other dock text, and it sits in the
+ * same place on every frame. "contain: inline-size" stops its words from
+ * widening the switch; long words wrap inside the switch width instead.
+ * When it hides, the dock closes up again.
+ */
+.camera-switch__first-tip {
+  flex: 1 0 100%;
+  contain: inline-size;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--moon-silver) 42%, transparent);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/*
+ * Replay Viewer: the camera switch ends the Rune Scrubber's button row. The
+ * dock (#replay-timeline) is the positioned box for the switch's absolute
+ * parts (the visually hidden Battle Cam words), so the switch itself is not.
+ */
+html[data-product-kind="replay_viewer"] #replay-timeline {
+  position: relative;
+}
+
+html[data-product-kind="replay_viewer"] #replay-camera-switch {
+  position: static;
+}
+
+/*
+ * Replay Viewer: both tips in #camera-tips (the scorebug's empty score half).
+ * They start at the column's inner edge and wrap inside it, at most two lines
+ * at 1366 wide; the box itself is placed by battleclient/scorebug.css.
+ */
+#camera-tips > .camera-switch__tip,
+#camera-tips > .camera-switch__first-tip {
+  flex: 0 1 auto;
+  contain: none;
+  inline-size: auto;
+  max-inline-size: 100%;
+  padding: 3px 9px;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: normal;
+  pointer-events: auto;
+}
+
+/* BattleClient and DevClient: the V tip (no switch). Live play places it
+   over the status line's message (looks/camera.js, battleclient/overlays.css);
+   this fixed bottom-right card is only the fallback for a page without one. */
+html[data-product-kind="combat_debugger"] #camera-tip {
+  position: fixed;
+  z-index: 5;
+  right: 12px;
+  bottom: 12px;
+  box-sizing: border-box;
+  max-width: 318px;
+  padding: 8px 12px;
+  border: 1px solid var(--edge2);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  pointer-events: none;
+  animation: camera-tip-life 4s linear both;
+}
+
+html[data-product-kind="combat_debugger"] #camera-tip[hidden] {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] #camera-tip.camera-switch__tip--still {
+  animation: none;
+}
+
+@keyframes camera-tip-life {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

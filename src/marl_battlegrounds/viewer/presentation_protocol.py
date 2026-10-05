@@ -10,6 +10,29 @@ action axes. Digest helpers validate and hash their content. These are host
 model and serialization operations; they run no simulator, write no files,
 and grant no policy access to researcher-only panels. Local corpse overlays
 are paint-only data whose source authority the service must verify.
+
+Every frame may carry ``champion_streaks``, the Champion Streaks host fact
+for that frame's own view (see viewer.champion_streaks); its check requires
+each named champion to be one the view's own incoming events saw at the
+start of the tick. A completion frame may carry ``match_honors``, the
+game-over Honors and Match Summary rows of that frame's own view (see
+viewer.match_summary.match_honors_v1); its check requires the frame's own
+match summary to show a finished game; Oracle View lists every champion, and
+Agent POV lists every champion (the game is over, so nothing is left to hide)
+or, from an older producer, its own team with the recipient among them, never
+only the other team. Every frame
+may carry ``match_moments``, the Herald Cards' history facts for that
+frame's own view (see viewer.match_moments); its check requires each
+rescued champion to be one the view's own incoming events saw at both ends
+of the tick. Every replay frame may carry ``next_end_spots``, the Next Step
+Ghost host fact: where each champion of the view stands at the end of the
+recorded next tick (see NextEndSpotV1); its check requires each named
+champion to be alive in the frame's own current scene, and the final frame to
+name nobody. Every replay frame may also carry ``recent_falls``, the Fallen
+panel's earlier rows for that frame's own view (see
+viewer.champion_streaks.RecentFallV1); its check requires every row to fall
+on one of the 7 ticks before the shown one, each victim once per tick. An old
+recording without lethal damage contribution events names no killers there.
 """
 
 from __future__ import annotations
@@ -105,7 +128,13 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     oracle_presentation_key_v1,
 )
 from marl_battlegrounds.rendering.scene import BattlefieldSceneV2
-from marl_battlegrounds.viewer.match_summary import MatchSummaryV1
+from marl_battlegrounds.viewer.champion_streaks import (
+    FEED_WINDOW_TICKS,
+    ChampionStreakV1,
+    RecentFallV1,
+)
+from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
+from marl_battlegrounds.viewer.match_summary import MatchHonorsV1, MatchSummaryV1
 
 PRESENTATION_PROTOCOL_SCHEMA_VERSION = 1
 PRESENTATION_TECHNICAL_DIGEST_PREFIX_LENGTH_V1 = 12
@@ -117,6 +146,8 @@ _OpaqueId = Annotated[
     str,
     StringConstraints(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
 ]
+# Built once, like _AUTHORIZED_PRESENTATION_FRAME_ADAPTER below.
+_OPAQUE_ID_ADAPTER: TypeAdapter[str] = TypeAdapter(_OpaqueId)
 _ScientificId = Annotated[
     str,
     StringConstraints(
@@ -1976,10 +2007,7 @@ def build_oracle_authorized_current_endpoint_v1(
     evaluation_context_type(context)
     if type(source_scene) is not BattlefieldSceneV2:
         raise TypeError("source_scene must use the exact BattlefieldSceneV2 root.")
-    session = cast(
-        str,
-        TypeAdapter(_OpaqueId).validate_python(authority_session_id),
-    )
+    session = _OPAQUE_ID_ADAPTER.validate_python(authority_session_id)
     scene = build_oracle_authorized_scene_v1(
         context,
         source_scene,
@@ -2274,9 +2302,7 @@ class LivePendingActionTupleV1(_PresentationProtocolModel):
 
 
 class LivePendingJointActionRowV1(_PresentationProtocolModel):
-    """Pair one active actor's identity with the action tuple prepared for
-    submission.
-    """
+    """Pair one configured Manual actor with its staged action, even when dead."""
 
     actor_presentation_key: _ScientificId
     actor_public_agent_id: _ScientificId
@@ -2294,7 +2320,11 @@ class LivePendingJointActionRowV1(_PresentationProtocolModel):
 
 
 class LivePendingJointActionV1(_PresentationProtocolModel):
-    """Hold ordered pending actor actions for one current simulator step."""
+    """Hold staged Manual rows for one step; no Manual slots means an empty tuple.
+
+    Rows follow configured roster order. Policy choices are unknown until submit
+    and never appear here. The paired raw frame supplies exact Manual ownership.
+    """
 
     current_simulator_step_count: _NonNegativeInt
     action_rows: tuple[LivePendingJointActionRowV1, ...]
@@ -2302,7 +2332,7 @@ class LivePendingJointActionV1(_PresentationProtocolModel):
     @model_validator(mode="after")
     def _validate_rows(self) -> Self:
         """Require exact rows and unique ordered actor identities."""
-        if not self.action_rows or any(
+        if any(
             type(row) is not LivePendingJointActionRowV1 for row in self.action_rows
         ):
             raise ValueError("Pending Joint Action requires exact action rows.")
@@ -2930,6 +2960,7 @@ _KEY_PUBLIC_FIELD_BY_KEY_FIELD = {
 _WIRE_MODEL_MODULE_NAMES = (
     __name__,
     "marl_battlegrounds.viewer.match_summary",
+    "marl_battlegrounds.viewer.match_moments",
     "marl_battlegrounds.evaluation.pov",
     "marl_battlegrounds.rendering.authorized_incoming",
     "marl_battlegrounds.rendering.authorized_inspection",
@@ -3701,6 +3732,7 @@ def _validate_oracle_inspection(
     | ReplayOraclePresentationSourceIdentityV1,
     endpoint: OracleAuthorizedCurrentEndpointV1,
     inspection: LiveDraftInspectionPresentationV1
+    | LivePolicyInspectionV1
     | ReplayInspectionPresentationV1
     | None,
     replay: bool,
@@ -3708,7 +3740,7 @@ def _validate_oracle_inspection(
     """Bind global inspection to the current actor, mask, and live or replay epoch."""
     if inspection is None:
         if not replay:
-            raise ValueError("a live Oracle endpoint requires its draft inspection.")
+            raise ValueError("a live Oracle endpoint requires its action inspection.")
         replay_source = cast(ReplayOraclePresentationSourceIdentityV1, source)
         is_final = (
             replay_source.source_frame_index == replay_source.source_final_frame_index
@@ -3719,7 +3751,13 @@ def _validate_oracle_inspection(
             )
         return
     expected = (
-        ReplayInspectionPresentationV1 if replay else LiveDraftInspectionPresentationV1
+        ReplayInspectionPresentationV1
+        if replay
+        else (
+            LivePolicyInspectionV1
+            if isinstance(inspection, LivePolicyInspectionV1)
+            else LiveDraftInspectionPresentationV1
+        )
     )
     _require_exact_type(inspection, expected, name="inspection")
     if endpoint.action_axis is None:
@@ -3767,12 +3805,20 @@ def _validate_agent_inspection(
     | ReplaySharedObsPresentationSourceIdentityV1,
     endpoint: NoSharedObsAuthorizedCurrentEndpointV1
     | SharedObsAuthorizedCurrentEndpointV1,
-    inspection: LiveDraftInspectionPresentationV1 | ReplayInspectionPresentationV1,
+    inspection: LiveDraftInspectionPresentationV1
+    | LivePolicyInspectionV1
+    | ReplayInspectionPresentationV1,
     replay: bool,
 ) -> None:
     """Bind recipient inspection to its own decision mask and allowed local targets."""
     expected = (
-        ReplayInspectionPresentationV1 if replay else LiveDraftInspectionPresentationV1
+        ReplayInspectionPresentationV1
+        if replay
+        else (
+            LivePolicyInspectionV1
+            if isinstance(inspection, LivePolicyInspectionV1)
+            else LiveDraftInspectionPresentationV1
+        )
     )
     _require_exact_type(inspection, expected, name="inspection")
     parts = endpoint.parts
@@ -3830,6 +3876,40 @@ def _validate_agent_inspection(
             or replay_inspection.outgoing_transition_index != source.source_frame_index
         ):
             raise ValueError("Agent replay inspection is not outgoing T_n.")
+
+
+class LivePolicyInspectionV1(_PresentationProtocolModel):
+    """Show a policy actor's current legal choices without inventing its next action.
+
+    The policy runs only when a turn is submitted. This record has no draft and
+    grants no editing permission. Researcher panels set actor_anchor to None and
+    remove all target positions; battlefield inspection keeps authorized anchors.
+    """
+
+    inspection_kind: Literal["policy_read_only"]
+    submission_scope: Literal["joint_turn"]
+    current_simulator_step_count: _NonNegativeInt
+    actor_presentation_key: _ScientificId
+    actor_public_agent_id: _ScientificId
+    actor_anchor: tuple[float, float] | None
+    decision_mask: AuthorizedDecisionMaskV1
+
+    @model_validator(mode="after")
+    def _validate_policy(self) -> Self:
+        """Require the exact mask, matching actor identity, and finite anchors."""
+        _require_exact_type(
+            self.decision_mask, AuthorizedDecisionMaskV1, name="decision_mask"
+        )
+        if (
+            self.decision_mask.owner_presentation_key != self.actor_presentation_key
+            or self.decision_mask.owner_public_agent_id != self.actor_public_agent_id
+        ):
+            raise ValueError("policy inspection mask must belong to its actor.")
+        if self.actor_anchor is not None and not all(
+            isfinite(value) for value in self.actor_anchor
+        ):
+            raise ValueError("policy inspection anchor must be finite.")
+        return self
 
 
 class LiveEditableDraftInspectionV1(_PresentationProtocolModel):
@@ -3963,7 +4043,9 @@ class LiveResearcherEditableDraftInspectionV1(_PresentationProtocolModel):
 
 
 type LiveResearcherInputInspectionV1 = Annotated[
-    LiveResearcherEditableDraftInspectionV1 | LiveScriptedPlaybackInspectionV1,
+    LiveResearcherEditableDraftInspectionV1
+    | LivePolicyInspectionV1
+    | LiveScriptedPlaybackInspectionV1,
     Field(discriminator="inspection_kind"),
 ]
 
@@ -4099,7 +4181,18 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
             raise ValueError("live researcher Technical Frame misses its epoch.")
 
         inspection = self.pending_inspection
-        if type(inspection) is LiveResearcherEditableDraftInspectionV1:
+        if type(inspection) not in (
+            LiveResearcherEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
+            LiveScriptedPlaybackInspectionV1,
+        ):
+            raise ValueError(
+                "live researcher inspection uses an unknown strict variant."
+            )
+        if isinstance(
+            inspection,
+            (LiveResearcherEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             pending_joint = self.pending_joint_action
             _require_exact_type(
                 pending_joint,
@@ -4107,6 +4200,9 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
                 name="pending_joint_action",
             )
             checked_pending = cast(LivePendingJointActionV1, pending_joint)
+            pending_ids = {
+                row.actor_public_agent_id for row in checked_pending.action_rows
+            }
             if (
                 checked_pending.current_simulator_step_count
                 != self.simulator_step_count
@@ -4117,20 +4213,39 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
                 != tuple(
                     (row.presentation_key, row.public_agent_id)
                     for row in self.roster_agents
+                    if row.public_agent_id in pending_ids
                 )
             ):
                 raise ValueError(
                     "live researcher Pending Joint Action misses its roster or epoch."
                 )
-            draft = inspection.draft
-            selected_pending = next(
-                row
-                for row in checked_pending.action_rows
-                if row.actor_public_agent_id == self.selected_public_agent_id
+            draft = (
+                inspection
+                if isinstance(inspection, LivePolicyInspectionV1)
+                else inspection.draft
             )
-            if not _pending_action_matches_live_draft(
+            selected_pending = next(
+                (
+                    row
+                    for row in checked_pending.action_rows
+                    if row.actor_public_agent_id == self.selected_public_agent_id
+                ),
+                None,
+            )
+            if isinstance(inspection, LivePolicyInspectionV1):
+                if selected_pending is not None or inspection.actor_anchor is not None:
+                    raise ValueError(
+                        "policy researcher inspection cannot carry a Manual draft "
+                        "or geometry."
+                    )
+                if any(
+                    type(row) is not AuthorizedAxisOnlyTargetActionV1
+                    for row in draft.decision_mask.target_actions[1:]
+                ):
+                    raise ValueError("policy researcher targets must omit geometry.")
+            elif selected_pending is None or not _pending_action_matches_live_draft(
                 selected_pending.pending_action,
-                draft.draft_action,
+                inspection.draft.draft_action,
             ):
                 raise ValueError(
                     "live researcher Pending Joint Action changed the selected draft."
@@ -4173,7 +4288,9 @@ class LiveResearcherSpaceV1(_PresentationProtocolModel):
 
 
 type LiveInputInspectionV1 = Annotated[
-    LiveEditableDraftInspectionV1 | LiveScriptedPlaybackInspectionV1,
+    LiveEditableDraftInspectionV1
+    | LivePolicyInspectionV1
+    | LiveScriptedPlaybackInspectionV1,
     Field(discriminator="inspection_kind"),
 ]
 
@@ -4197,6 +4314,7 @@ class LiveOracleInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact editable-draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live Oracle inspection uses an unknown strict variant.")
@@ -4225,6 +4343,7 @@ class LiveNoSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact actor draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live Agent inspection uses an unknown strict variant.")
@@ -4253,22 +4372,267 @@ class LiveSharedObsInspectionEnvelopeV1(_PresentationProtocolModel):
         """Require an exact SharedObs draft or scripted-playback inspection variant."""
         if type(self.inspection) not in (
             LiveEditableDraftInspectionV1,
+            LivePolicyInspectionV1,
             LiveScriptedPlaybackInspectionV1,
         ):
             raise ValueError("live SharedObs inspection uses an unknown variant.")
         return self
 
 
+class NextEndSpotV1(_PresentationProtocolModel):
+    """Say where one champion stands at the end of the recorded next tick.
+
+    The replay service reads it from the recorded frame after the shown one,
+    for the Replay Viewer's Next Step Ghost switch. It is a presentation fact,
+    not a replay field, and not a prediction.
+
+    Attributes
+    ----------
+    public_agent_id : str
+        The champion's public ID, the same ID its body row has in this
+        frame's own scene.
+    position : tuple of float
+        Its center (x, y) in world units at the recorded next frame, in the
+        same coordinates as the scene's body positions. Finite.
+    """
+
+    public_agent_id: _ScientificId
+    position: tuple[float, float]
+
+    @model_validator(mode="after")
+    def _validate_position(self) -> Self:
+        """Require a finite position."""
+        if not all(isfinite(value) for value in self.position):
+            raise ValueError("next end spot position must be finite.")
+        return self
+
+
+def _validate_next_end_spots(
+    spots: tuple[NextEndSpotV1, ...] | None,
+    *,
+    scene: AuthorizedBattlefieldSceneV1,
+    final: bool,
+) -> None:
+    """Check a replay frame's Next Step Ghost spots against its own scene.
+
+    Parameters
+    ----------
+    spots : tuple of NextEndSpotV1 or None
+        The frame's ``next_end_spots``. None means the producer sent none and
+        passes.
+    scene : AuthorizedBattlefieldSceneV1
+        The frame's own current scene (Oracle View: current_endpoint.scene,
+        every body; Agent POV: current_endpoint.parts.scene, only the bodies
+        its team sees).
+    final : bool
+        True on the final captured frame, which has no next tick.
+
+    Raises
+    ------
+    ValueError
+        A spot names a champion twice, names one that is not alive in this
+        scene (so an Agent POV frame can never name a champion its team does
+        not see now), or the final frame names anyone.
+    """
+    if spots is None:
+        return
+    if final and spots:
+        raise ValueError("the final replay frame cannot carry next end spots.")
+    alive = {
+        agent.public_agent_id for agent in scene.agents if agent.life_state == "alive"
+    }
+    names = [spot.public_agent_id for spot in spots]
+    if len(set(names)) != len(names) or not set(names) <= alive:
+        raise ValueError(
+            "next end spots must name, once each, champions alive in this "
+            "frame's own scene"
+        )
+
+
+def _validate_recent_falls(
+    rows: tuple[RecentFallV1, ...] | None,
+    *,
+    tick: int,
+) -> None:
+    """Check a replay frame's Fallen panel history against its own tick.
+
+    Parameters
+    ----------
+    rows : tuple of RecentFallV1 or None
+        The frame's ``recent_falls``. None means the producer sent none and
+        passes.
+    tick : int
+        The shown frame's simulator tick (source_simulator_step_count).
+
+    Raises
+    ------
+    ValueError
+        A row is not on one of the FEED_WINDOW_TICKS - 1 ticks before the
+        shown one, or a victim falls twice on one tick. Who may be named in
+        Agent POV is the producer's rule (viewer.champion_streaks); a past
+        tick's sight cannot be checked from this frame.
+    """
+    if rows is None:
+        return
+    keys = [(row.tick, row.victim_public_agent_id) for row in rows]
+    if len(set(keys)) != len(keys) or any(
+        not tick - FEED_WINDOW_TICKS < row.tick < tick for row in rows
+    ):
+        raise ValueError(
+            "recent falls must lie in the 7 ticks before this one, each victim once"
+        )
+
+
 class _MatchPresentationProtocolModel(_PresentationProtocolModel):
-    """Additive match facts tied to the surrounding presentation source epoch."""
+    """Additive match facts tied to the surrounding presentation source epoch.
+
+    Attributes
+    ----------
+    match_summary : MatchSummaryV1 or None
+        Global researcher match facts for this frame (see MatchSummaryV1);
+        in Agent POV only docked researcher panels may read it.
+    champion_streaks : tuple of ChampionStreakV1 or None
+        The champions that reached 5, 10, 15 or 20 takedowns (every 5th)
+        without falling on this tick, in this frame's own view, for the
+        Champion Streaks switch (see
+        viewer.champion_streaks). Oracle View counts every recorded fall; an
+        Agent POV frame counts only what its recipient's team saw, so each
+        named champion is one this frame's visual events saw at the start of
+        the tick. Empty on most ticks and on frame zero. None (the default)
+        for producers that do not count streaks; browsers then show none.
+    match_honors : MatchHonorsV1 or None
+        The game-over Honors and Match Summary rows of this frame's own view
+        (viewer.match_summary.match_honors_v1), sent only on the completion
+        frame and refused unless match_summary shows a finished game (outcome
+        "team_a_win", "team_b_win" or "draw"). Oracle View lists every
+        champion (team_id None). An Agent POV
+        frame lists every champion too (team_id None: the game is over, so
+        nothing is left to hide), or its own team with the recipient among
+        them (team_id that team), never only the other team. None (the
+        default) before the game ends, and when the host has no complete
+        history; browsers then show no Honors.
+    match_moments : MatchMomentFactsV1 or None
+        The Herald Cards' history facts for this frame's own view
+        (viewer.match_moments): whether the match began fresh, the largest
+        earlier lead, the unanswered runs reached on this tick and the
+        rescues. Oracle View reads every recorded fact; an Agent POV frame
+        names only rescues its recipient's team saw whole, so each rescued
+        champion is one this frame's visual events saw at both ends of the
+        tick. None (the default) for producers that do not count them;
+        browsers then show no First Blood, Comeback, run or Rescue card.
+    """
 
     match_summary: MatchSummaryV1 | None
+    champion_streaks: tuple[ChampionStreakV1, ...] | None = None
+    match_honors: MatchHonorsV1 | None = None
+    match_moments: MatchMomentFactsV1 | None = None
 
     @model_validator(mode="after")
     def _validate_match_source(self) -> Self:
-        """Require optional match facts to share the surrounding source episode and
-        step.
+        """Require optional match facts to fit this frame and its view.
+
+        Optional match facts must share the surrounding source episode and
+        step. Every champion streak must name a champion this view's own
+        incoming events saw at the start of the tick (Agent POV:
+        visual_events; Oracle View: latest_events), each once. Every rescue in
+        match_moments must name, once, a champion this view's own incoming
+        events saw at both ends of the tick (a trajectory with a start and a
+        successor anchor). Honors are game-over facts: they need this frame's
+        own match_summary to show a finished game (outcome "team_a_win",
+        "team_b_win" or "draw"), so a frame from the middle of a game can never
+        carry them. Oracle View Honors list every champion (team_id None);
+        Agent POV Honors list every champion too (the game is over, so nothing
+        is left to hide) or, from an older producer, the recipient's own team
+        (team_id set, the recipient among its champions), never only the other
+        team.
+
+        Returns
+        -------
+        Self
+            This model, unchanged.
+
+        Raises
+        ------
+        ValueError
+            When a streak, rescue, Honors or the match summary breaks one of
+            the rules above.
         """
+        moments = self.match_moments
+        if moments is not None and moments.rescues:
+            pov = "visual_events" in type(self).model_fields
+            seen = cast(
+                ReplayIncomingSummaryV1 | AgentPovVisualIncomingSummaryV1 | None,
+                self.__dict__["visual_events" if pov else "latest_events"],
+            )
+            seen_both_ends: set[str] = (
+                set()
+                if seen is None
+                else {
+                    row.agent_public_agent_id
+                    for row in seen.agent_phase_trajectories
+                    if row.transition_start is not None and row.successor is not None
+                }
+            )
+            if not {row.public_agent_id for row in moments.rescues} <= seen_both_ends:
+                raise ValueError(
+                    "match moment rescues must name champions this view saw at "
+                    "both ends of the tick"
+                )
+        honors = self.match_honors
+        if honors is not None:
+            # Honors come only once the game is over: a mid-game frame must
+            # never carry them (in Agent POV they name champions the team
+            # cannot see).
+            if self.match_summary is None or self.match_summary.outcome not in (
+                "team_a_win",
+                "team_b_win",
+                "draw",
+            ):
+                raise ValueError(
+                    "match honors need this frame's match summary to show a "
+                    "finished game"
+                )
+            agent_pov = "visual_events" in type(self).model_fields
+            if not agent_pov and honors.team_id is not None:
+                raise ValueError("Oracle View honors must count every champion")
+            # Agent POV may show every champion (the game is over) or its own
+            # team, never only the other team.
+            if agent_pov and honors.team_id is not None:
+                pov_source = cast(
+                    LiveNoSharedObsPresentationSourceIdentityV1
+                    | LiveSharedObsPresentationSourceIdentityV1
+                    | ReplayNoSharedObsPresentationSourceIdentityV1
+                    | ReplaySharedObsPresentationSourceIdentityV1,
+                    self.__dict__["source"],
+                )
+                recipient = pov_source.source_recipient_public_agent_id
+                if recipient not in {row.public_agent_id for row in honors.champions}:
+                    raise ValueError(
+                        "Agent POV honors must count every champion or the "
+                        "recipient's own team"
+                    )
+        streaks = self.champion_streaks
+        if streaks is not None:
+            agent_pov = "visual_events" in type(self).model_fields
+            incoming = cast(
+                ReplayIncomingSummaryV1 | AgentPovVisualIncomingSummaryV1 | None,
+                self.__dict__["visual_events" if agent_pov else "latest_events"],
+            )
+            seen_at_start: set[str] = (
+                set()
+                if incoming is None
+                else {
+                    row.agent_public_agent_id
+                    for row in incoming.agent_phase_trajectories
+                    if row.transition_start is not None
+                }
+            )
+            names = [row.public_agent_id for row in streaks]
+            if len(set(names)) != len(names) or not set(names) <= seen_at_start:
+                raise ValueError(
+                    "champion streaks must name, once each, champions this view "
+                    "saw at the start of the tick"
+                )
         if self.match_summary is not None:
             source = cast(
                 LiveOraclePresentationSourceIdentityV1
@@ -4300,6 +4664,8 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
     schema_version: Literal[1]
     presentation_kind: Literal["live_oracle"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveOraclePresentationSourceIdentityV1
     authority: OraclePresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4343,7 +4709,10 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             pending_joint = self.pending_joint_action
             _require_exact_type(
                 pending_joint,
@@ -4351,6 +4720,9 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
                 name="pending_joint_action",
             )
             checked_pending = cast(LivePendingJointActionV1, pending_joint)
+            pending_ids = {
+                row.actor_public_agent_id for row in checked_pending.action_rows
+            }
             if (
                 checked_pending.current_simulator_step_count
                 != self.source.source_simulator_step_count
@@ -4361,20 +4733,33 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
                 != tuple(
                     (row.presentation_key, row.public_agent_id)
                     for row in self.current_endpoint.scene.agents
+                    if row.public_agent_id in pending_ids
                 )
             ):
                 raise ValueError(
                     "live Oracle Pending Joint Action misses its scene or epoch."
                 )
-            selected_pending = next(
-                row
-                for row in checked_pending.action_rows
-                if row.actor_public_agent_id
-                == self.live_inspection.inspection.draft.actor_public_agent_id
+            wrapper = self.live_inspection.inspection
+            inspection = (
+                wrapper
+                if isinstance(wrapper, LivePolicyInspectionV1)
+                else wrapper.draft
             )
-            if not _pending_action_matches_live_draft(
-                selected_pending.pending_action,
-                self.live_inspection.inspection.draft.draft_action,
+            selected_pending = next(
+                (
+                    row
+                    for row in checked_pending.action_rows
+                    if row.actor_public_agent_id == inspection.actor_public_agent_id
+                ),
+                None,
+            )
+            if isinstance(wrapper, LivePolicyInspectionV1):
+                if selected_pending is not None:
+                    raise ValueError(
+                        "policy inspection cannot also have a Manual pending action."
+                    )
+            elif selected_pending is None or not _pending_action_matches_live_draft(
+                selected_pending.pending_action, wrapper.draft.draft_action
             ):
                 raise ValueError(
                     "live Oracle Pending Joint Action changed the selected draft."
@@ -4382,7 +4767,13 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
             _validate_oracle_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         elif self.pending_joint_action is not None:
@@ -4410,6 +4801,8 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
     schema_version: Literal[1]
     presentation_kind: Literal["live_no_shared_obs_agent_pov"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveNoSharedObsPresentationSourceIdentityV1
     authority: NoSharedObsPresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4435,11 +4828,20 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             _validate_agent_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         _validate_live_researcher_space(self)
@@ -4457,6 +4859,8 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
     schema_version: Literal[1]
     presentation_kind: Literal["live_shared_obs_agent_pov"]
     product_kind: Literal["combat_debugger"]
+    run_state: Literal["paused", "running"] = "paused"
+    fresh_launch_required: bool = False
     source: LiveSharedObsPresentationSourceIdentityV1
     authority: SharedObsPresentationAuthorityV1
     analysis_mode: Literal["analysis"]
@@ -4501,11 +4905,20 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
             self.current_endpoint,
             self.live_inspection,
         )
-        if type(self.live_inspection.inspection) is LiveEditableDraftInspectionV1:
+        if isinstance(
+            self.live_inspection.inspection,
+            (LiveEditableDraftInspectionV1, LivePolicyInspectionV1),
+        ):
             _validate_agent_inspection(
                 source=self.source,
                 endpoint=self.current_endpoint,
-                inspection=self.live_inspection.inspection.draft,
+                inspection=(
+                    self.live_inspection.inspection
+                    if isinstance(
+                        self.live_inspection.inspection, LivePolicyInspectionV1
+                    )
+                    else self.live_inspection.inspection.draft
+                ),
                 replay=False,
             )
         _validate_live_researcher_space(self)
@@ -4531,6 +4944,12 @@ class ReplayOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel)
     upcoming_transition: OracleUpcomingTransitionV1 | None
     technical_frame: ReplayOracleTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: each living champion's spot in the recorded next
+    frame; empty on the final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: every fall of the 7 ticks before this one, with
+    its lethal damage contributors; None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4571,6 +4990,16 @@ class ReplayOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel)
             and self.replay_inspection is not None
         ):
             raise ValueError("the final replay frame cannot carry outgoing intent.")
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         _validate_oracle_inspection(
             source=self.source,
             endpoint=self.current_endpoint,
@@ -4609,6 +5038,14 @@ class ReplayNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolM
     technical_frame: ReplayNoSharedObsTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
     researcher_space: ReplayResearcherSpaceV1
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: the spot in the recorded next frame of each champion
+    the recipient's team sees alive now and still sees then; empty on the
+    final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: the falls of the 7 ticks before this one that
+    the recipient's team saw, naming only killers whose blow it saw land;
+    None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4621,6 +5058,16 @@ class ReplayNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolM
         _validate_replay_agent_technical(self, shared=False)
         _validate_replay_agent_inspection_state(self)
         _validate_replay_researcher_space(self)
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.parts.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -4646,6 +5093,14 @@ class ReplaySharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
     technical_frame: ReplaySharedObsTechnicalFrameV1
     replay_inspection: ReplayInspectionPresentationV1 | None
     researcher_space: ReplayResearcherSpaceV1
+    next_end_spots: tuple[NextEndSpotV1, ...] | None = None
+    """Next Step Ghost: the spot in the recorded next frame of each champion
+    the recipient's team sees alive now and still sees then; empty on the
+    final frame; None when the producer sends none."""
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: the falls of the 7 ticks before this one that
+    the recipient's team saw, naming only killers whose blow it saw land;
+    None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4673,6 +5128,16 @@ class ReplaySharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
         _validate_replay_agent_technical(self, shared=True)
         _validate_replay_agent_inspection_state(self)
         _validate_replay_researcher_space(self)
+        _validate_next_end_spots(
+            self.next_end_spots,
+            scene=self.current_endpoint.parts.scene,
+            final=(
+                self.source.source_frame_index == self.source.source_final_frame_index
+            ),
+        )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -5156,13 +5621,20 @@ def _validate_live_researcher_space(
         raise ValueError(
             "live researcher space does not join its Agent presentation epoch."
         )
-    if type(researcher.pending_inspection) is LiveResearcherEditableDraftInspectionV1:
+    if isinstance(
+        researcher.pending_inspection,
+        (LiveResearcherEditableDraftInspectionV1, LivePolicyInspectionV1),
+    ):
         self_actor = next(
             row
             for row in frame.current_endpoint.parts.scene.agents
             if row.relation == "self"
         )
-        draft = researcher.pending_inspection.draft
+        draft = (
+            researcher.pending_inspection
+            if isinstance(researcher.pending_inspection, LivePolicyInspectionV1)
+            else researcher.pending_inspection.draft
+        )
         if (
             draft.actor_public_agent_id != self_actor.public_agent_id
             or draft.current_simulator_step_count
@@ -5170,9 +5642,19 @@ def _validate_live_researcher_space(
         ):
             raise ValueError("live researcher draft does not join the Agent self row.")
         local_inspection = frame.live_inspection.inspection
-        if type(local_inspection) is not LiveEditableDraftInspectionV1:
+        if (
+            local_inspection.inspection_kind
+            != researcher.pending_inspection.inspection_kind
+        ):
             raise ValueError("live researcher and Agent draft modes diverged.")
-        local_draft = local_inspection.draft
+        assert isinstance(
+            local_inspection, (LiveEditableDraftInspectionV1, LivePolicyInspectionV1)
+        )
+        local_draft = (
+            local_inspection
+            if isinstance(local_inspection, LivePolicyInspectionV1)
+            else local_inspection.draft
+        )
         researcher_mask = draft.decision_mask
         local_mask = local_draft.decision_mask
         researcher_target_ids = tuple(
@@ -5204,8 +5686,10 @@ def _validate_live_researcher_space(
             != local_mask.use_ultimate_action_mask
             or researcher_mask.target_use_ultimate_joint_mask
             != local_mask.target_use_ultimate_joint_mask
-            or draft.draft_action != local_draft.draft_action
-            or draft.draft_legality != local_draft.draft_legality
+            or getattr(draft, "draft_action", None)
+            != getattr(local_draft, "draft_action", None)
+            or getattr(draft, "draft_legality", None)
+            != getattr(local_draft, "draft_legality", None)
         ):
             raise ValueError("live researcher draft changed Agent action semantics.")
 
@@ -5429,6 +5913,9 @@ def _validate_live_oracle_inspection_envelope(
             or inspection.draft.actor_public_agent_id != axis.owner_public_agent_id
         ):
             raise ValueError("editable Oracle draft does not join its actor/scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live Oracle inspection variant.")
 
@@ -5472,6 +5959,9 @@ def _validate_live_no_shared_inspection_envelope(
             or inspection.draft.actor_public_agent_id != parts.recipient_public_agent_id
         ):
             raise ValueError("editable Agent draft does not join its joint scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live Agent inspection variant.")
 
@@ -5515,6 +6005,9 @@ def _validate_live_shared_inspection_envelope(
             or inspection.draft.actor_public_agent_id != parts.recipient_public_agent_id
         ):
             raise ValueError("editable SharedObs draft does not join its joint scope.")
+    elif isinstance(inspection, LivePolicyInspectionV1):
+        if inspection.submission_scope != "joint_turn":
+            raise ValueError("policy inspection requires joint-turn scope.")
     elif type(inspection) is not LiveScriptedPlaybackInspectionV1:
         raise ValueError("unknown live SharedObs inspection variant.")
 
@@ -5908,6 +6401,7 @@ __all__ = [
     "LocalOracleCorpseOverlayV1",
     "LocalOracleCorpsePublicFactsV1",
     "MovementActionDisplayRowV1",
+    "NextEndSpotV1",
     "NoSharedObsAuthorizedCurrentEndpointV1",
     "NoSharedObsLatestTransitionV1",
     "NoSharedObsPresentationAuthorityV1",

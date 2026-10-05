@@ -52,7 +52,9 @@ Recurrent QMIX (`TrainConfig(method="qmix")`) uses the donor's starting
 settings: 1,000 replay rows per game, learning from 32 rows, sequences of 20,
 batches of 128, 4 epochs, Adam learning rate 0.00003, hard target copies every
 200 optimizer steps, and exploration falling to 0.05 over 100,000 real
-transitions. No QMIX setting has been tuned for MARL-BGs. See the
+transitions. `reward_scale` (default 1.0) multiplies the team reward inside
+the learner's TD targets only; logged rewards and results stay in game units.
+No QMIX setting has been tuned for MARL-BGs. See the
 [training guide](README.md#recurrent-qmix) for the workflow, counts and costs,
 and the [source ledger](source_reuse.md#recurrent-qmix) for the donor match.
 Tiny integration runs check software only; they establish no learning, sample
@@ -65,7 +67,10 @@ starting settings: blocks of 128 rounds, a memory window of 4 kept rows, 4
 epochs of 16 minibatches, RAdam learning rate 0.00025 falling linearly to
 1e-10, gradient clipping at 1.0, gamma 0.99 and lambda 0.85, and exploration
 falling from 1 to 0.01 over the first tenth of the learning blocks. The donor's
-128 games and its SMAX reward multiplier of 10 are not copied. No PQN-VDN
+128 games are not copied, and its SMAX reward multiplier of 10 is not the
+default: `reward_scale` stays 1.0 unless a run sets it. `normalization`
+chooses the donor's hidden-layer BatchNorm (the default) or its LayerNorm
+option (`"layer_norm"`), which the PQN paper reports as more stable. No PQN-VDN
 setting has been tuned for MARL-BGs. The first 132 rounds of every run are
 random initial collection, counted in the budget. See the
 [training guide](README.md#recurrent-pqn-vdn) for the workflow, counts and
@@ -570,7 +575,7 @@ especially c16's three 2-4M-step checkpoints, scored better on the routine check
 than their final models. The cause remains unresolved; noisy checks and selection
 of observed peaks must be considered.
 
-The [completed assessment](../../artifacts/m9-m10/packet-4/mappo-tuning-20m/reports/assessment.md)
+The completed assessment (historical local evidence: `artifacts/m9-m10/packet-4/mappo-tuning-20m/reports/assessment.md`)
 contains the ranked table, costs, matched-setting comparisons, limits and links
 to all 48 model identities, raw games, learning curves and threshold exposure.
 The leading mean remains far below the near-100% Random win goal. Three seeds
@@ -935,6 +940,58 @@ speedup; final calibration must price the actual source. Raw results, source
 identities, the explicit paired engineering state transfer and limits are in
 `qualification/adaptive-capacity-report.md` under the study artifact root.
 
+## Opponent Pool And Past-Copy Speed
+
+A training pool gives each new game one member. A member that acts game by
+game now runs only on the games it owns. That covers JAX Policy adapters such
+as tdm-alpha and the built-in PPO, QMIX and PQN-VDN actors. Their games are
+gathered in groups of ceil(B / 16), 48 at B768. Each group runs, and its rows
+are written back into the member's unchanged memory; a member with no games
+is not called. Policy members use their whole-team route, so each scripted bot
+is compiled once, not six times. This route applies when the pool controls
+whole teams and learner outputs are dropped, as for training opponents and
+`evaluate()`. Pools inside a team, such as fixed partners, keep the earlier
+route, which skips unowned Policy slots. Other Systems keep the full batch,
+because a System may look across games. A cheap member that owns most of a
+pool's games runs a few groups one after another, a small extra cost.
+
+The learner's own past copies follow the same rule. Current weights run once
+on the full batch, or not at all when no live game uses them. Per-game weight
+copies are made only for games against a past copy or the permanent pin. Before, every game got its own copy on every
+tick once the first past copy existed. Setup also remembers Core config checks
+that passed, keyed by the exact config bytes, so restore does not repeat them.
+A failed check is never remembered. There is no new setting.
+
+Measured on 30 September and 1 October 2026 on one RTX 5090. QMIX and PQN-VDN
+used B768/T32; the four PPO methods used B512/T32. The recipe was the
+60/20/20 pool with eight saved recurrent MAPPO actors and tdm-alpha, tdm-beta
+and tdm-gamma. Each run was a fresh 50-block `train()` call with a past copy
+every 300 rounds and no compile cache. The host was quiet except where noted.
+
+| Run | Setup | Rollout Compile | Warm Block After Past Copies | Transitions Per Second | Peak GPU Memory |
+|---|---:|---:|---:|---:|---:|
+| QMIX, before | 65.9 s | 109.9 s | 2.998 s | 8,197 | 12.10 GB |
+| QMIX, after | 29.9 s | 51.5 s | 1.866 s | 13,169 | 12.14 GB |
+| PQN-VDN, before | 67.6 s | 109.7 + 105.7 s | 4.020 s | 6,114 | 11.56 GB |
+| PQN-VDN, after | 28.1 s | 41.7 + 35.8 s | 2.549 s | 9,641 | 5.40 GB |
+| Recurrent MAPPO, before | 157.8 s (busy host) | 151.9 s | 1.434 s | 11,422 | 3.22 GB |
+| Recurrent MAPPO, after | 30.7 s | 44.4 s | 0.828 s | 19,799 | 3.22 GB |
+| Recurrent IPPO, before | 75.7 s | 117.0 s | 1.510 s | 10,851 | 3.01 GB |
+| Recurrent IPPO, after | 29.4 s | 37.5 s | 0.914 s | 17,917 | 3.01 GB |
+| Feedforward MAPPO, before | 66.1 s | 107.6 s | 1.346 s | 12,170 | 3.08 GB |
+| Feedforward MAPPO, after | 24.8 s | 36.6 s | 0.757 s | 21,634 | 2.80 GB |
+| Feedforward IPPO, before | 61.9 s | 107.0 s | 1.539 s | 10,646 | 3.00 GB |
+| Feedforward IPPO, after | 26.7 s | 36.7 s | 0.864 s | 18,959 | 2.76 GB |
+
+PQN-VDN compiles two rollout shapes: its first memory-window chunk and its
+ordinary block. With the same inputs, keys and memory, all 11 pool members
+chose the same actions through the old and new routes. Bot memory matched
+exactly. Recurrent MAPPO memory differed by at most 0.00017, which is float
+rounding from a smaller matrix batch. Whole training runs therefore follow
+the same rules but are not bit-identical to runs on the old code. These are
+cost measurements, not learning results. A busy host still slows startup and
+warmed blocks, because the host drives each compiled loop step.
+
 ## Start A New Learner From Saved Actor Weights
 
 Set `TrainConfig(initial_actor="run/actors/saved_actor", ...)` to start a fresh
@@ -970,7 +1027,8 @@ PPO retains individual reward adjustments. QMIX and PQN use one team objective:
 the native team reward plus the mean custom adjustment over learner-owned active
 slots, plus enabled team shaping. Frozen partners supply actions, not trainable
 utilities. This supports mixed teams without claiming independent per-agent
-objectives for a team-reward method.
+objectives for a team-reward method. Because of that mean, give QMIX and PQN
+the team form of a per-agent reward, such as `combat_support_team_reward`.
 
 Set `parameter_sharing="all"`, `"class"` or `"none"` in the method's normal config.
 The default shares actor weights across the team. Class mode shares by class;

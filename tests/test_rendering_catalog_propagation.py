@@ -6,7 +6,6 @@ import json
 from typing import cast
 
 import pytest
-from scripts.dev.visual_debugger.control import create_session
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.catalog_propagation_fixture import (
     CatalogPropagationExpectationV1,
@@ -17,6 +16,7 @@ from tests.catalog_propagation_fixture import (
 )
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds.rendering.scene import to_jsonable
 
 

@@ -50,6 +50,7 @@ if TYPE_CHECKING:
         EpisodeSpec,
         evaluate,
         evaluate_episodes,
+        evaluate_scenarios,
     )
     from marl_battlegrounds.evaluation.events import decode_evaluation_events_v1
     from marl_battlegrounds.evaluation.metrics import (
@@ -915,6 +916,7 @@ __all__ = [
     "decode_evaluation_events_v1",
     "evaluate",
     "evaluate_episodes",
+    "evaluate_scenarios",
     "export_actor_pov_replay_v1",
     "export_actor_pov_replay_v2",
     "export_actor_pov_replay_v3",
@@ -1050,7 +1052,7 @@ _register_lazy_exports(
 
 _register_lazy_exports(
     "marl_battlegrounds.evaluation.evaluate",
-    ("EpisodeSpec", "evaluate", "evaluate_episodes"),
+    ("EpisodeSpec", "evaluate", "evaluate_episodes", "evaluate_scenarios"),
 )
 _register_lazy_exports(
     "marl_battlegrounds.evaluation.results",

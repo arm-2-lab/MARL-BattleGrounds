@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Integral
 from operator import itemgetter
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -25,6 +25,19 @@ import numpy as np
 from jax import Array
 from jax.core import Tracer
 
+from marl_battlegrounds._config_checks import run_config_check
+from marl_battlegrounds._task_settings import (
+    DEFAULT_TDM_RED_ZONE_DEPTH as DEFAULT_TDM_RED_ZONE_DEPTH,
+)
+from marl_battlegrounds._task_settings import (
+    AgentClassName as AgentClassName,
+)
+from marl_battlegrounds._task_settings import (
+    _validate_roster as _validate_roster,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds._task_settings import (
+    canonical_tournament_rosters as canonical_tournament_rosters,
+)
 from marl_battlegrounds._tdm_assets import (
     MapGeometry,
     ScenarioContent,
@@ -64,8 +77,6 @@ from marl_battlegrounds.core.types import (
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
 
-type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
-
 _CLASS_IDS: dict[AgentClassName, int] = {
     "mage": MAGE_CLASS_ID,
     "warrior": WARRIOR_CLASS_ID,
@@ -73,12 +84,10 @@ _CLASS_IDS: dict[AgentClassName, int] = {
     "rogue": ROGUE_CLASS_ID,
     "priest": PRIEST_CLASS_ID,
 }
-_CANONICAL_ROSTER: tuple[AgentClassName, ...] = tuple(_CLASS_IDS)
 CANONICAL_TDM_EVALUATION_MAP_IDS = (47, 48, 49, 50, 51)
 # The one default Team Deathmatch Red Zone depth, in map units. Fresh map
 # configs, default evaluation, new training runs and new DevClient drafts use it;
 # 0.0 keeps one point per death. Saved records keep the depth they recorded.
-DEFAULT_TDM_RED_ZONE_DEPTH = 5.0
 
 # These describe Core's array layout only; Core still owns value/geometry checks.
 _CONFIG_ARRAY_SHAPES = {
@@ -162,25 +171,6 @@ def list_tdm_scenarios() -> tuple[TDMScenarioInfo, ...]:
     return asset_manifest().scenarios
 
 
-def canonical_tournament_rosters() -> tuple[
-    tuple[AgentClassName, ...], tuple[AgentClassName, ...]
-]:
-    """Return the default ordered five-agent roster for each team.
-
-    Takes no arguments and performs no device work or configuration validation.
-    Factories use this same order when the caller does not supply rosters.
-
-    Returns
-    -------
-    tuple[tuple[AgentClassName, ...], tuple[AgentClassName, ...]]
-        Two immutable tuples, for Team A and Team B. Each contains ``mage``,
-        ``warrior``, ``hunter``, ``rogue`` and ``priest`` in that order. Order
-        assigns the first five team slots and their matching ordered spawn pads.
-        The tuples are shared constants and can be reused safely.
-    """
-    return _CANONICAL_ROSTER, _CANONICAL_ROSTER
-
-
 def _config_has_batch(env_config: EnvConfig, num_envs: int | None) -> bool:
     """Check every configuration leaf's scalar or native-batch shape.
 
@@ -261,9 +251,11 @@ def _validate_config_choices(
     -----
     Tracer inputs are skipped: compiled callers must select from a pool validated
     during setup. Concrete inputs are copied to the host once, and identical rows
-    are checked once. Validation prefers CPU vectors for Core's host checks; a
-    CUDA-only installation uses its available device. No new physical validator
-    or per-step host callback is introduced.
+    are checked once. A Core check that already passed for byte-identical values
+    earlier in this process is not repeated (marl_battlegrounds._config_checks);
+    a failure is never remembered. Validation prefers CPU vectors for Core's host
+    checks; a CUDA-only installation uses its available device. No new physical
+    validator or per-step host callback is introduced.
     """
     if any(isinstance(leaf, Tracer) for leaf in jax.tree.leaves(env_config)):
         return
@@ -310,10 +302,10 @@ def _validate_config_choices(
         # Its validation stays in setup rather than tracing Core's host checks.
         with jax.ensure_compile_time_eval(), jax.default_device(validation_device):
             source = jax.tree.map(validation_value, source)
-            validate_env_config(source)
+            run_config_check(validate_env_config, source)
             if both_spawn_choices:
                 try:
-                    validate_env_config(_swap_spawn_banks(source))
+                    run_config_check(validate_env_config, _swap_spawn_banks(source))
                 except (TypeError, ValueError) as error:
                     raise type(error)(
                         f"swapped spawn locations in source {index}: {error}"
@@ -654,15 +646,7 @@ def _roster_ids(roster: Sequence[AgentClassName], *, name: str) -> tuple[int, ..
     Unsupported containers raise TypeError; invalid length or class names raise
     ValueError. No placement or class-based reordering happens here.
     """
-    if isinstance(roster, (str, bytes)) or not isinstance(
-        cast(object, roster), Sequence
-    ):
-        raise TypeError(f"{name} must be an ordered sequence of class names")
-    if not 1 <= len(roster) <= MAX_AGENTS_PER_TEAM:
-        raise ValueError(f"{name} must contain one through five agents")
-    for value in roster:
-        if type(value) is not str or value not in _CLASS_IDS:
-            raise ValueError(f"{name} has unsupported class {value!r}")
+    _validate_roster(roster, name=name)
     return tuple(_CLASS_IDS[value] for value in roster) + (NEUTRAL_CLASS_ID,) * (
         MAX_AGENTS_PER_TEAM - len(roster)
     )
@@ -739,7 +723,7 @@ def _make_config(
         spawn_shield_movement_speed=shield_speed,
         team_respawn_wave_period_step_count=jnp.asarray(wave_periods, dtype=jnp.int32),
     )
-    validate_product_env_config(config)
+    run_config_check(validate_product_env_config, config)
     return config
 
 

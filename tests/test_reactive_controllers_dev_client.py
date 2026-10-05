@@ -34,41 +34,28 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 import pytest
-import scripts.dev.visual_debugger.control as control
-import scripts.dev.visual_debugger.evaluation_bridge as evaluation_bridge
 from pydantic import ValidationError
-from scripts.dev.visual_debugger.authoring_models import (
-    new_map_draft,
-    new_scenario_draft,
-)
-from scripts.dev.visual_debugger.authoring_service import (
-    DevAuthoringCommandRequestV1,
-    DevClientAuthoringBinding,
-    DevScenarioLoadService,
-    LoadedDevScenarioSnapshotV1,
-    debugger_scenario_from_snapshot,
-)
-from scripts.dev.visual_debugger.authoring_store import DevAssetStore
-from scripts.dev.visual_debugger.evaluation_bridge import (
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.scenario_controller_fixtures import load_scenario_1
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control
+import marl_battlegrounds._battle_client.evaluation_bridge as evaluation_bridge
+from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_launch_specification_v1,
 )
-from scripts.dev.visual_debugger.model import (
+from marl_battlegrounds._battle_client.model import (
     DebuggerScenario,
     DebuggerSession,
     TeamBController,
     TeamController,
     team_controller_action_source,
 )
-from scripts.dev.visual_debugger.protocol import CombatConfigurationV1
-from scripts.dev.visual_debugger.recording import (
+from marl_battlegrounds._battle_client.protocol import CombatConfigurationV1
+from marl_battlegrounds._battle_client.recording import (
     build_debugger_recording_specification_v1,
 )
-from scripts.dev.visual_debugger.replay_recorder import DebuggerReplayRecorder
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService
-from tests.scenario_controller_fixtures import load_scenario_1
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
-
+from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 from marl_battlegrounds.core.types import TEAM_A_ID, TEAM_B_ID, EnvConfig, EnvState
 from marl_battlegrounds.evaluation import policy_execution
 from marl_battlegrounds.evaluation.models import (
@@ -100,7 +87,6 @@ from marl_battlegrounds.policies.shared_obs import (
     build_shared_obs_sensor_source_bank,
     execute_shared_obs_team_policy,
 )
-from marl_battlegrounds.tasks import DEFAULT_TDM_RED_ZONE_DEPTH
 
 
 def _scenario(
@@ -494,69 +480,6 @@ def test_scenario_controller_cannot_replace_registered_scripted_frames(
             scenario=replace(_scenario(), mode="scripted"),
             team_b=scenario_controller,
         )
-
-
-@pytest.mark.parametrize("asset_kind", ("map", "scenario"))
-def test_controller_selected_in_default_arena_survives_current_and_saved_loads(
-    tmp_path: Path,
-    asset_kind: str,
-    scenario_controller: TeamBController,
-) -> None:
-    initial = _session(scenario=get_scenario("arena_5v5"), team_b=scenario_controller)
-    assert initial.evaluation_context.identity.task.identifier == (
-        "visual-debugger-analysis-task"
-    )
-    service = DebuggerService(
-        initial,
-        view_mode="researcher",
-        preset="analysis",
-        include_stress=False,
-    )
-
-    def install(snapshot: LoadedDevScenarioSnapshotV1) -> None:
-        service.load_scenario(debugger_scenario_from_snapshot(snapshot))
-
-    store = DevAssetStore(tmp_path)
-    binding = DevClientAuthoringBinding(
-        store,
-        scenario_loader=DevScenarioLoadService(store, install_snapshot=install),
-    )
-    draft = (
-        new_map_draft("renamed_arena")
-        if asset_kind == "map"
-        else new_scenario_draft(
-            "renamed_scenario", red_zone_depth=DEFAULT_TDM_RED_ZONE_DEPTH
-        )
-    )
-    saved = store.save_draft(draft, expected_revision=0)
-    for source in (
-        {
-            "source_kind": "current_buffer",
-            "asset_kind": asset_kind,
-            "draft": draft.model_dump(mode="json", by_alias=True),
-        },
-        {
-            "source_kind": "saved_draft",
-            "asset_kind": asset_kind,
-            "asset_id": saved.asset_id,
-            "revision": saved.revision,
-        },
-    ):
-        response = binding.apply_command(
-            DevAuthoringCommandRequestV1.model_validate_json(
-                json.dumps({"command_type": "open_in_debug", "source": source})
-            ),
-        )
-        assert response.ok
-        loaded = service.session
-        assert loaded.team_b_controller == scenario_controller
-        assert loaded.team_a_controller == "manual"
-        assert loaded.seed == initial.seed
-        assert loaded.evaluation_context.expected_horizon == 300
-        assert loaded.evaluation_context.identity.task.identifier == "team_deathmatch"
-        if asset_kind == "map":
-            assert loaded.scenario.title == "Default TDM map preview"
-        assert not service.faulted
 
 
 def test_scenario_controller_can_be_selected_after_terminal_and_reset(

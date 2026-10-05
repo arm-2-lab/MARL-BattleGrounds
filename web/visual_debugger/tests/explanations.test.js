@@ -1,6 +1,24 @@
 /**
  * @file Check immutable explanation records, exact vocabulary and public agent
- * identity in browser help.
+ * identity in browser help: champion labels read "Mage · ID 5" (with the chip,
+ * source and Out Of Sight forms beside them), statuses use the approved names
+ * such as "Serrated Arrows (Slow)" and "Spawn Shield (Invulnerable)", auras
+ * read "Sorcerer's Empowerment (Damage Boost)", ability titles read "Burst
+ * (Mage Ultimate)" and
+ * "Arcane Blast (Mage Basic)", the class card lists the named Basic, and
+ * statuses that do not fit in a row are "More Statuses", not hidden ones. A
+ * status card's summary is the Champion Card row's second line (the exact
+ * number, then the source by class only), it never names a source by Agent
+ * ID, and the researcher and Agent POV status cards are the same card. The
+ * Spawn Shield tip says the card's words too: "Spawn Shield (Invulnerable)",
+ * the card's sentence ("It can't be seen or hit, and can't strike yet.") and
+ * one tip-only row, "Time Left", while the long rules, effects, speed,
+ * length, Duration Remaining and recipient stay on the full surface only; V1
+ * and unavailable mechanics keep the plain title and get no sentence. Every
+ * durable status tip is the card's row the same way (title, sentence, "Time
+ * Left" in the tip; magnitude, durations, break rule, rules and recipient on
+ * the full surface), and a "More Statuses" overflow row reads each hidden
+ * status in those tip words.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -15,7 +33,6 @@ import {
   explainLegality,
   explainModifier,
   explainNetHealth,
-  explainObstacle,
   explainOverflow,
   explainPendingRoute,
   explainPovAgent,
@@ -95,7 +112,7 @@ test("all semantic descriptors and nested projections are recursively immutable"
   assert.equal(Object.isFrozen(descriptor.rows[0].metadata), true);
   assert.equal(Object.isFrozen(descriptor.sections), true);
   assert.equal(descriptor.summary, null);
-  assert.equal(descriptor.title, "Agent ID arbitrary-public-id · Mage · Team B");
+  assert.equal(descriptor.title, "Mage · ID arbitrary-public-id");
   assert.deepEqual(
     descriptor.rows.map((row) => row.label),
     [
@@ -195,14 +212,17 @@ test("canonical agent identity covers every class and team without slot fallback
         presentation_key: `private-slot-${classId}`,
       });
       assert.deepEqual(identity, {
-        title: `Agent ID ${publicId} · ${classLabel} · ${teamLabel}`,
+        title: `${classLabel} · ID ${publicId}`,
         publicIdentity: `Agent ID ${publicId}`,
+        chipText: `Agent ${publicId}`,
+        sourceName: `${classLabel} ID ${publicId}`,
+        outOfSightLabel: `${classLabel} · ID ${publicId} · Out Of Sight`,
         classLabel,
         teamLabel,
         accent,
       });
       assert.equal(Object.isFrozen(identity), true);
-      assert.doesNotMatch(identity.title, /private-slot|70[1-5]/u);
+      assert.doesNotMatch(identity.title, /private-slot|70[1-5]|Team/u);
     }
   }
 
@@ -225,7 +245,10 @@ test("canonical agent identity covers every class and team without slot fallback
     },
   ]) {
     const identity = canonicalAgentIdentity(malformed);
-    assert.equal(identity.title, "Agent ID unavailable · Unknown · Unknown");
+    assert.equal(identity.title, "Unknown · ID unavailable");
+    assert.equal(identity.publicIdentity, "Agent ID unavailable");
+    assert.equal(identity.chipText, "Agent unavailable");
+    assert.equal(identity.teamLabel, "Unknown");
     assert.equal(identity.accent, "none");
     assert.doesNotMatch(JSON.stringify(identity), /42|secret|slot/u);
   }
@@ -238,8 +261,11 @@ test("canonical agent identity covers every class and team without slot fallback
         team_id: 1,
       }),
       {
-        title: "Agent ID unavailable · Mage · Team A",
+        title: "Mage · ID unavailable",
         publicIdentity: "Agent ID unavailable",
+        chipText: "Agent unavailable",
+        sourceName: "Mage ID unavailable",
+        outOfSightLabel: "Mage · ID unavailable · Out Of Sight",
         classLabel: "Mage",
         teamLabel: "Team A",
         accent: "mage",
@@ -334,9 +360,10 @@ test("compact agent facts have one exact in-combat and out-of-combat allowlist",
 const STATUS_CASES = Object.freeze([
   {
     statusId: "priest_blessing_of_freedom_movement_floor",
-    title: "Priest (Basic: Heal): Blessing of Freedom",
+    line: "Slows can't drop it below 85% speed. From a Priest.",
+    title: "Blessing of Freedom (Slow Resistance)",
     effect:
-      "Freedom is applied when a Priest heals a same-team target, including itself where same-team targeting permits it. It prevents slow effects from reducing this agent's ordinary movement below the authorized floor; it does not override stun.",
+      "A Priest's Lesser Heal on a teammate, or on the Priest itself, gives Blessing of Freedom: until it ends, slows cannot pull this agent's movement below a set floor. It does not stop a stun.",
     magnitudeKind: "movement_floor",
     magnitude: 0.85,
     magnitudeLabel: "Movement Floor",
@@ -345,9 +372,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "rogue_poison_stun",
-    title: "Rogue (Ultimate: Crippling Poison): Stun",
+    line: "It can't move or act. From a Rogue.",
+    title: "Crippling Poison (Stun)",
     effect:
-      "A Rogue's Crippling Poison prevents this agent's voluntary movement and combat for its duration. Physics may still displace the body.",
+      "A Rogue's Crippling Poison stops this agent from moving or acting until the stun ends. Collisions can still push its body.",
     magnitudeKind: "none",
     magnitude: null,
     magnitudeLabel: null,
@@ -356,8 +384,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "rogue_poison_slow",
-    title: "Rogue (Ultimate: Crippling Poison): Slow",
-    effect: "A Rogue's Crippling Poison slows this agent's movement for its duration.",
+    line: "It moves at ×0.5 speed. From a Rogue.",
+    title: "Crippling Poison (Slow)",
+    effect:
+      "A Rogue's Crippling Poison slows this agent's movement until the slow ends.",
     magnitudeKind: "movement_multiplier",
     magnitude: 0.5,
     magnitudeLabel: "Movement Effect",
@@ -366,9 +396,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "rogue_poison_anti_heal",
-    title: "Rogue (Ultimate: Crippling Poison): Anti-Heal",
+    line: "Heals and rest give it ×0.5 healing. From a Rogue.",
+    title: "Crippling Poison (Healing Reduction)",
     effect:
-      "A Rogue's Crippling Poison reduces incoming healing and out-of-combat regeneration for its duration.",
+      "A Rogue's Crippling Poison cuts the healing this agent receives, and its out-of-combat regeneration, until it ends.",
     magnitudeKind: "healing_multiplier",
     magnitude: 0.5,
     magnitudeLabel: "Healing Effect",
@@ -377,8 +408,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "hunter_basic_slow",
-    title: "Hunter (Basic: Attack): Slow",
-    effect: "A Hunter's Serrated Arrows slow this agent's movement for their duration.",
+    line: "It moves at ×0.85 speed. From a Hunter.",
+    title: "Serrated Arrows (Slow)",
+    effect:
+      "A Hunter's Serrated Arrows slow this agent's movement until the slow ends. A new hit starts it again.",
     magnitudeKind: "movement_multiplier",
     magnitude: 0.85,
     magnitudeLabel: "Movement Effect",
@@ -387,9 +420,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "hunter_trap_stun",
-    title: "Hunter (Ultimate: Freezing Trap): Stun",
+    line: "It can't move or act. Damage breaks the ice. From a Hunter.",
+    title: "Freezing Trap (Stun)",
     effect:
-      "A Hunter's Freezing Trap prevents this agent's voluntary movement and combat for its duration. Physics may still displace the body.",
+      "A Hunter's Freezing Trap stops this agent from moving or acting until the stun ends. Collisions can still push its body. Damage on a later tick breaks it early.",
     magnitudeKind: "none",
     magnitude: null,
     magnitudeLabel: null,
@@ -398,20 +432,20 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "mage_burst_damage_amplification",
-    title: "Mage (Ultimate: Burst): Damage Amplification",
-    effect:
-      "This Mage's Burst increases its outgoing damage for the authorized duration.",
+    line: "Its attacks deal ×1.5 damage. From its own Ultimate.",
+    title: "Burst (Damage Boost)",
+    effect: "This Mage's own Burst makes its outgoing damage higher until it ends.",
     magnitudeKind: "damage_multiplier",
     magnitude: 1.5,
-    magnitudeLabel: "Damage Amplification Effect",
+    magnitudeLabel: "Damage Effect",
     magnitudeValue: "50% more damage dealt (×1.5)",
     duration: 5,
   },
   {
     statusId: "warrior_charge_slow",
-    title: "Warrior (Ultimate: Charge): Slow",
-    effect:
-      "A Warrior's concussive Charge slows this agent's movement for its duration.",
+    line: "It moves at ×0.5 speed. From a Warrior.",
+    title: "Charge (Slow)",
+    effect: "A Warrior's Charge slows this agent's movement until the slow ends.",
     magnitudeKind: "movement_multiplier",
     magnitude: 0.5,
     magnitudeLabel: "Movement Effect",
@@ -420,9 +454,10 @@ const STATUS_CASES = Object.freeze([
   },
   {
     statusId: "warrior_charge_stun",
-    title: "Warrior (Ultimate: Charge): Stun",
+    line: "It can't move or act. From a Warrior.",
+    title: "Charge (Stun)",
     effect:
-      "A Warrior's concussive Charge prevents this agent's voluntary movement and combat for its duration. Physics may still displace the body.",
+      "A Warrior's Charge stops this agent from moving or acting until the stun ends. Collisions can still push its body.",
     magnitudeKind: "none",
     magnitude: null,
     magnitudeLabel: null,
@@ -472,12 +507,19 @@ test("all nine durable statuses preserve exact facts across audience and source 
       AUTHORIZED_RECIPIENT,
     );
 
+    // The summary is the Champion Card row's second line: the exact number
+    // and the source by class only; the long rules text is a full-only row.
     assert.equal(researcher.title, statusCase.title);
-    assert.equal(researcher.summary, statusCase.effect);
+    assert.equal(researcher.summary, statusCase.line);
     assert.equal(absent.title, statusCase.title);
-    assert.equal(absent.summary, statusCase.effect);
+    assert.equal(absent.summary, statusCase.line);
     assert.equal(pov.title, statusCase.title);
-    assert.equal(pov.summary, statusCase.effect);
+    assert.equal(pov.summary, statusCase.line);
+    assert.equal(rowValue(researcher, "Rules"), statusCase.effect);
+    assert.deepEqual(researcher.rows.find((row) => row.label === "Rules")?.metadata, {
+      compact: false,
+      full: true,
+    });
     assert.equal(
       rowValue(researcher, "Effect Duration"),
       `${statusCase.duration} ${statusCase.duration === 1 ? "tick" : "ticks"}`,
@@ -492,7 +534,7 @@ test("all nine durable statuses preserve exact facts across audience and source 
           [
             "Movement Effect",
             "Healing Effect",
-            "Damage Amplification Effect",
+            "Damage Effect",
             "Movement Floor",
           ].includes(row.label),
         ),
@@ -505,32 +547,42 @@ test("all nine durable statuses preserve exact facts across audience and source 
       );
     }
     assert.equal(
-      rowValue(researcher, "Source"),
-      "Agent ID alpha/9001 · Hunter · Team A",
-    );
-    assert.equal(
       rowValue(researcher, "Recipient"),
-      "Agent ID recipient:<unsafe>&42 · Priest · Team B",
+      "Priest · ID recipient:<unsafe>&42",
     );
-    assert.equal(rowValue(absent, "Source"), "Unavailable in this artifact");
-    assert.equal(
-      pov.rows.some((row) => row.label === "Source"),
-      false,
-    );
-    assert.equal(
-      rowValue(pov, "Recipient"),
-      "Agent ID recipient:<unsafe>&42 · Priest · Team B",
-    );
+    // No view names a source by Agent ID: no Source row, and the researcher,
+    // absent-source and Agent POV cards are the same card.
+    for (const descriptor of [researcher, absent, pov]) {
+      assert.equal(
+        descriptor.rows.some((row) => row.label === "Source"),
+        false,
+      );
+      assert.doesNotMatch(fullText(descriptor), /alpha\/9001|Unavailable in this/u);
+    }
+    assert.equal(rowValue(pov, "Recipient"), "Priest · ID recipient:<unsafe>&42");
     assert.deepEqual(
       researcher.rows.slice(-2).map((row) => row.label),
-      ["Source", "Recipient"],
+      ["Rules", "Recipient"],
     );
-    assert.deepEqual(
-      researcher.rows.filter((row) => row.label !== "Source"),
-      pov.rows,
-    );
+    assert.deepEqual(researcher.rows, pov.rows);
+    assert.deepEqual(absent.rows, pov.rows);
     assert.deepEqual(researcher.sections, []);
     assert.deepEqual(pov.sections, []);
+    // The tip (compact surface) is the card's row: the title, the sentence
+    // and the time left only; the full surface keeps every other row.
+    const left = Math.max(1, statusCase.duration - 1);
+    const compact = projectSemanticDescriptor(pov, "compact");
+    assert.equal(compact.summary, statusCase.line);
+    assert.deepEqual(
+      compact.rows.map(({ label, value }) => [label, value]),
+      [["Time Left", `${left} ${left === 1 ? "tick" : "ticks"} left`]],
+    );
+    assert.equal(
+      projectSemanticDescriptor(pov, "full").rows.some(
+        (row) => row.label === "Time Left",
+      ),
+      false,
+    );
 
     const hasBreak = statusCase.statusId === "hunter_trap_stun";
     assert.equal(
@@ -578,13 +630,13 @@ test("In Combat status omits Source while retaining its authorized recipient", (
     );
     assert.equal(
       rowValue(descriptor, "Recipient"),
-      "Agent ID recipient:<unsafe>&42 · Priest · Team B",
+      "Priest · ID recipient:<unsafe>&42",
     );
     assert.equal(descriptor.rows.at(-1)?.label, "Recipient");
   }
 });
 
-test("status source integration authorizes only exact presentation-key and public-ID joins", () => {
+test("a status card names its source by class only, whatever direct sources say", () => {
   const statusCase = STATUS_CASES.find(
     (candidate) => candidate.statusId === "hunter_basic_slow",
   );
@@ -617,10 +669,15 @@ test("status source integration authorizes only exact presentation-key and publi
     [SOURCE_A],
   );
 
-  assert.equal(rowValue(exact, "Source"), "Agent ID alpha/9001 · Hunter · Team A");
-  assert.equal(rowValue(wrongKey, "Source"), "Unavailable in this artifact");
-  assert.equal(rowValue(slotFallback, "Source"), "Unavailable in this artifact");
-  assert.doesNotMatch(fullText(slotFallback), /global.slot|id_1/u);
+  for (const descriptor of [exact, wrongKey, slotFallback]) {
+    assert.equal(descriptor.summary, "It moves at ×0.85 speed. From a Hunter.");
+    assert.doesNotMatch(
+      fullText(descriptor),
+      /alpha\/9001|Unavailable in this|global.slot|id_1/u,
+    );
+  }
+  assert.deepEqual(wrongKey, exact);
+  assert.deepEqual(slotFallback, exact);
 });
 
 test("Freezing Trap refresh and reapplication preserve configured duration and exact break copy", () => {
@@ -709,9 +766,10 @@ test("aggregate aura cards use exact copy, one effect row, and no source", () =>
       aura_id: "mage_damage_amplification",
       token_id: "mage_amplification",
       multiplier: 1.23456,
-      title: "Sorcerer's Empowerment · Mage Damage Amplification Aura",
-      summary: "This agent benefits from authorized Mage aura coverage.",
-      label: "Aggregated Damage Amplification Effect",
+      title: "Sorcerer's Empowerment (Damage Boost)",
+      summary:
+        "This agent is within reach of at least one Mage's Sorcerer's Empowerment.",
+      label: "Total Damage Bonus",
       value: "23.46% more damage dealt",
       accent: "mage",
     },
@@ -719,9 +777,10 @@ test("aggregate aura cards use exact copy, one effect row, and no source", () =>
       aura_id: "warrior_damage_mitigation",
       token_id: "warrior_mitigation",
       multiplier: 0.763,
-      title: "Guardian's Barrier · Warrior Damage Mitigation Aura",
-      summary: "This agent benefits from authorized Warrior aura coverage.",
-      label: "Aggregated Damage Mitigation Effect",
+      title: "Guardian's Barrier (Damage Mitigation)",
+      summary:
+        "This agent is within reach of at least one Warrior's Guardian's Barrier.",
+      label: "Total Damage Reduction",
       value: "23.7% less damage received",
       accent: "warrior",
     },
@@ -795,8 +854,11 @@ test("aggregate aura cards require one exact authorized recipient identity", () 
 });
 
 test("spawn shield view is exact across V1/V2/unavailable and every audience", () => {
-  const v2Summary =
-    "While the spawn shield is active, this agent is protected, concealed from opponents, untargetable, excluded from aura effects, and limited to movement. It can move through other agents while shielded; collision resumes at the end of the shield's final transition.";
+  // The tip says the Champion Card's words (owner, 2 October 2026); the long
+  // rules stay on the full surface only.
+  const v2Summary = "It can't be seen or hit, and can't strike yet.";
+  const v2Rules =
+    "While the Spawn Shield lasts, this agent cannot be hurt, enemies cannot see or target it, auras skip it, and it can only move. It can move through other agents; it collides with them again at the end of the shield's last tick.";
   const v2Mechanics = {
     availability_kind: "available_v2",
     configured_duration_steps: 3,
@@ -816,6 +878,8 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
       mechanics: v2Mechanics,
       summary: v2Summary,
       rows: /** @param {string} owner */ (owner) => [
+        ["Time Left", "3 ticks left"],
+        ["Rules", v2Rules],
         ["Protection Effect", "Invulnerable"],
         ["Movement Speed", "2"],
         ["Visibility Effect", "Concealed from opponents"],
@@ -840,6 +904,7 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
       },
       summary: null,
       rows: /** @param {string} owner */ (owner) => [
+        ["Time Left", "3 ticks left"],
         ["Movement Speed", "2"],
         ["Effect Duration", "3 ticks"],
         ["Duration Remaining", "3 ticks"],
@@ -851,6 +916,7 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
       mechanics: { availability_kind: "unavailable" },
       summary: null,
       rows: /** @param {string} owner */ (owner) => [
+        ["Time Left", "3 ticks left"],
         ["Duration Remaining", "3 ticks"],
         ["Recipient", owner],
       ],
@@ -867,7 +933,7 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
       spawn_shield_remaining: 3,
       audience_sentinel: audience,
     };
-    const owner = `Agent ID ${publicAgentId} · Mage · Team A`;
+    const owner = `Mage · ID ${publicAgentId}`;
     for (const variant of variants) {
       const view = createSpawnShieldView(agent, variant.mechanics);
       const descriptor = view.descriptor;
@@ -880,9 +946,11 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
         "Spawn Shield active, 3 ticks remaining",
         `${audience}/${variant.name}`,
       );
-      assert.equal(view.shieldAriaLabel, "Spawn Shield");
+      const shieldTitle =
+        variant.name === "V2" ? "Spawn Shield (Invulnerable)" : "Spawn Shield";
+      assert.equal(view.shieldAriaLabel, shieldTitle);
       assert.equal(descriptor.kind, "status");
-      assert.equal(descriptor.title, "Spawn Shield");
+      assert.equal(descriptor.title, shieldTitle);
       assert.equal(descriptor.summary, variant.summary, `${audience}/${variant.name}`);
       assert.equal(
         spawnShieldStatusSummary(variant.mechanics),
@@ -892,6 +960,23 @@ test("spawn shield view is exact across V1/V2/unavailable and every audience", (
       assert.deepEqual(
         descriptor.rows.map(({ label, value }) => [label, value]),
         variant.rows(owner),
+        `${audience}/${variant.name}`,
+      );
+      // The tip itself (compact) is normal size: the time left only, and the
+      // full surface keeps every other row but not that one.
+      assert.deepEqual(
+        projectSemanticDescriptor(descriptor, "compact").rows.map(
+          ({ label, value }) => [label, value],
+        ),
+        [["Time Left", "3 ticks left"]],
+        `${audience}/${variant.name}`,
+      );
+      assert.deepEqual(
+        projectSemanticDescriptor(descriptor, "full").rows.map(({ label }) => label),
+        variant
+          .rows(owner)
+          .slice(1)
+          .map(([label]) => label),
         `${audience}/${variant.name}`,
       );
       assert.equal(
@@ -984,8 +1069,7 @@ test("five cooldown cards use canonical owners, Ultimate tokens, and exact rows"
       owner,
     );
     assert.ok(descriptor);
-    const team = owner.team_id === 1 ? "Team A" : "Team B";
-    const canonical = `Agent ID ${owner.public_agent_id} · ${className} · ${team}`;
+    const canonical = `${className} · ID ${owner.public_agent_id}`;
     assert.equal(descriptor.title, `${ultimateName} Cooldown · ${canonical}`);
     assert.equal(descriptor.summary, null);
     assert.equal(descriptor.accent, accent);
@@ -1018,13 +1102,10 @@ test("five cooldown cards use canonical owners, Ultimate tokens, and exact rows"
 test("three range cards require exact owner joins and one canonical Source", () => {
   for (const [kind, title] of [
     ["observation", "Observation Range"],
-    [
-      "basic",
-      `Basic Range · Agent ID ${AUTHORIZED_RECIPIENT.public_agent_id} · Priest · Team B`,
-    ],
+    ["basic", `Basic Range · Priest · ID ${AUTHORIZED_RECIPIENT.public_agent_id}`],
     [
       "ultimate",
-      `Ultimate Range · Agent ID ${AUTHORIZED_RECIPIENT.public_agent_id} · Priest · Team B`,
+      `Ultimate Range · Priest · ID ${AUTHORIZED_RECIPIENT.public_agent_id}`,
     ],
   ]) {
     const descriptor = explainRange(
@@ -1044,7 +1125,7 @@ test("three range cards require exact owner joins and one canonical Source", () 
       descriptor.rows.map(({ label, value }) => [label, value]),
       [
         ["Radius", "3.14"],
-        ["Source", "Agent ID recipient:<unsafe>&42 · Priest · Team B"],
+        ["Source", "Priest · ID recipient:<unsafe>&42"],
       ],
     );
   }
@@ -1072,41 +1153,6 @@ test("three range cards require exact owner joins and one canonical Source", () 
   }
 });
 
-test("wall and pillar cards retain exact IDs, centers, and shape dimensions", () => {
-  const wall = explainObstacle({
-    obstacle_id: "wall:<north>&1",
-    kind: "wall",
-    center: [1.234, 9.876],
-    width: 4.567,
-    height: 0.25,
-    theta: 1.5,
-  });
-  assert.deepEqual(
-    wall.rows.map(({ label, value }) => [label, value]),
-    [
-      ["Obstacle ID", "wall:<north>&1"],
-      ["Width", "4.57"],
-      ["Height", "0.25"],
-      ["Rotation", "1.5"],
-      ["Center", "(1.23, 9.88)"],
-    ],
-  );
-  assert.equal(wall.title, "Wall");
-  const pillar = explainObstacle({
-    obstacle_id: "pillar-900",
-    kind: "pillar",
-    center: [3, 4],
-    radius: 0.75,
-  });
-  assert.equal(rowValue(pillar, "Radius"), "0.75");
-  assert.equal(pillar.title, "Pillar");
-  assert.equal(rowValue(pillar, "Center"), "(3, 4)");
-  assert.equal(
-    pillar.rows.some((row) => row.label === "Width"),
-    false,
-  );
-});
-
 test("aura fields use exact copy and key-plus-public-ID source joins only", () => {
   const cases = [
     {
@@ -1120,10 +1166,10 @@ test("aura fields use exact copy and key-plus-public-ID source joins only", () =
       },
       radius: 4.567,
       multiplier: 1.2,
-      title: "Sorcerer's Empowerment · Mage Damage Amplification Aura",
+      title: "Sorcerer's Empowerment (Damage Boost)",
       summary:
-        "This Mage radiates arcane magic, amplifying outgoing damage for eligible unshielded same-team agents in its radius, including itself.",
-      label: "Damage Amplification Effect",
+        "This Mage's aura makes the Mage itself, and teammates in its reach without a spawn shield, deal more damage.",
+      label: "Damage Bonus",
       value: "20% more damage dealt per emitter",
       accent: "mage",
     },
@@ -1138,10 +1184,10 @@ test("aura fields use exact copy and key-plus-public-ID source joins only", () =
       },
       radius: 3,
       multiplier: 0.8,
-      title: "Guardian's Barrier · Warrior Damage Mitigation Aura",
+      title: "Guardian's Barrier (Damage Mitigation)",
       summary:
-        "This Warrior emanates a defensive aura, mitigating incoming damage for eligible unshielded same-team agents in its radius, including itself.",
-      label: "Damage Mitigation Effect",
+        "This Warrior's aura makes the Warrior itself, and teammates in its reach without a spawn shield, take less damage.",
+      label: "Damage Reduction",
       value: "20% less damage received per emitter",
       accent: "warrior",
     },
@@ -1171,7 +1217,7 @@ test("aura fields use exact copy and key-plus-public-ID source joins only", () =
         ["Effect Radius", format(auraCase.radius)],
         [
           "Source",
-          `Agent ID ${auraCase.owner.public_agent_id} · ${auraCase.accent === "mage" ? "Mage · Team A" : "Warrior · Team B"}`,
+          `${auraCase.accent === "mage" ? "Mage" : "Warrior"} · ID ${auraCase.owner.public_agent_id}`,
         ],
       ],
     );
@@ -1317,7 +1363,7 @@ test("C2 helpers snapshot every consumed field and fail closed on accessors", ()
   );
   assert.ok(aggregateDescriptor);
   assert.equal(
-    rowValue(aggregateDescriptor, "Aggregated Damage Amplification Effect"),
+    rowValue(aggregateDescriptor, "Total Damage Bonus"),
     "Effect unavailable",
   );
 
@@ -1365,7 +1411,7 @@ test("C2 helpers snapshot every consumed field and fail closed on accessors", ()
   assert.equal(explainLegality(legalityAccessor, 0, owner), null);
   const untouchedOtherLane = explainLegality(legalityAccessor, 1, owner);
   assert.ok(untouchedOtherLane);
-  assert.equal(rowValue(untouchedOtherLane, "Status"), "True");
+  assert.equal(rowValue(untouchedOtherLane, "Allowed Now"), "Yes");
   assert.equal(scalarReads, 0);
 
   let vocabularyReads = 0;
@@ -1530,7 +1576,7 @@ test("POV status overflow is byte-noninterfering and discloses no source identit
     { ...AUTHORIZED_RECIPIENT, global_slot: 999, life_state: "secret" },
   );
   assert.equal(JSON.stringify(injected), JSON.stringify(baseline));
-  assert.equal(baseline.title, "2 Hidden Statuses");
+  assert.equal(baseline.title, "2 More Statuses");
   assert.equal(baseline.rows.length, 2);
   assert.doesNotMatch(fullText(baseline), /not disclosed/iu);
   assert.doesNotMatch(
@@ -1553,7 +1599,7 @@ test("researcher status explanation ignores an injected POV discriminator", () =
   assert.match(fullText(injected), /Source.*alpha\/9001|Damage|Duration/u);
 });
 
-test("legality is owner-bound, class-accented, and Status-only", () => {
+test("legality is owner-bound, class-accented, and Allowed Now-only", () => {
   const owner = {
     presentation_key: "legality:owner",
     public_agent_id: "owner/42",
@@ -1583,13 +1629,13 @@ test("legality is owner-bound, class-accented, and Status-only", () => {
       owner,
     );
     assert.ok(descriptor);
-    assert.equal(descriptor.title, `${laneName} Legality · Agent ID owner/42`);
+    assert.equal(descriptor.title, `${laneName} · Agent ID owner/42`);
     assert.equal(descriptor.summary, null);
     assert.equal(descriptor.accent, "rogue");
-    assert.equal(rowValue(descriptor, "Status"), available ? "True" : "False");
+    assert.equal(rowValue(descriptor, "Allowed Now"), available ? "Yes" : "No");
     assert.deepEqual(
       descriptor.rows.map((row) => row.label),
-      ["Status"],
+      ["Allowed Now"],
     );
     assert.doesNotMatch(fullText(descriptor), /mask|armed|pair|target|Python|99/iu);
   }
@@ -1604,7 +1650,7 @@ test("legality is owner-bound, class-accented, and Status-only", () => {
     owner,
   );
   assert.ok(targetNoneBasic);
-  assert.equal(rowValue(targetNoneBasic, "Status"), "False");
+  assert.equal(rowValue(targetNoneBasic, "Allowed Now"), "No");
   assert.equal(explainLegality({ lane_0_available: true }, 0, owner), null);
   assert.equal(
     explainLegality(
@@ -1660,16 +1706,16 @@ test("action route uses epoch-neutral copy and exact Source and Recipient identi
     },
     { sourceAgent: source, recipientAgent: recipient },
   );
-  assert.equal(descriptor.title, "Ultimate Action Route");
+  assert.equal(descriptor.title, "Planned Ultimate");
   assert.equal(
     descriptor.summary,
-    "Authorized action route; no physical path is implied.",
+    "The order set for this turn: who will act on whom. It is not a path anyone walks.",
   );
   assert.deepEqual(
     descriptor.rows.map(({ label, value }) => [label, value]),
     [
-      ["Source", "Agent ID source::<x> · Warrior · Team A"],
-      ["Recipient", "Agent ID target&y · Rogue · Team B"],
+      ["Source", "Warrior · ID source::<x>"],
+      ["Recipient", "Rogue · ID target&y"],
     ],
   );
   assert.doesNotMatch(fullText(descriptor), /currently selected|Selected Target/iu);
@@ -1689,7 +1735,7 @@ test("attribution builders never manufacture slot identities", () => {
     sourceIdentity: SOURCE_A,
     source: { x: 10, y: 10 },
   });
-  assert.equal(rowValue(activation, "Source"), "Agent ID alpha/9001 · Hunter · Team A");
+  assert.equal(rowValue(activation, "Source"), "Hunter · ID alpha/9001");
   assert.equal(
     activation.rows.some(({ label }) => label === "Recipient"),
     false,
@@ -1707,7 +1753,8 @@ test("attribution builders never manufacture slot identities", () => {
     eventId: "secret-researcher-event-id",
     netDelta: -0.004,
   });
-  assert.equal(rowValue(net, "NET"), "−<0.01");
+  assert.equal(rowValue(net, "Life Change"), "−<0.01");
+  assert.equal(net.title, "Net Life Change");
   assert.equal(rowValue(net, "Recipient"), "Unavailable in this view");
   assert.doesNotMatch(JSON.stringify(net), /secret-researcher-event-id/u);
 });
@@ -1731,16 +1778,22 @@ test("overflow projects every hidden semantic item without slot-derived identity
     [SOURCE_A],
   );
   assert.equal(descriptor.rows.length, 2);
-  assert.equal(descriptor.title, "2 Hidden Statuses");
-  assert.match(descriptor.rows[0].value, /Effect Duration: 9 ticks/u);
-  assert.match(descriptor.rows[0].value, /Duration Remaining: 7 ticks/u);
+  assert.equal(descriptor.title, "2 More Statuses");
+  // Each row is that status's tip in the card's words: name, sentence, then
+  // the time left.
+  assert.match(descriptor.rows[0].value, /Time Left: 7 ticks left/u);
+  assert.doesNotMatch(descriptor.rows[0].value, /Effect Duration|Recipient/u);
+  // Each overflow row names its source by class only, never by Agent ID.
+  assert.match(descriptor.rows[0].value, /It moves at ×0\.8 speed\. From a Hunter\./u);
+  assert.match(descriptor.rows[1].value, /Time Left: 3 ticks left/u);
   assert.match(
-    descriptor.rows[0].value,
-    /Source: Agent ID alpha\/9001 · Hunter · Team A/u,
+    descriptor.rows[1].value,
+    /It can't move or act\. Damage breaks the ice\. From a Hunter\./u,
   );
-  assert.match(descriptor.rows[1].value, /Duration Remaining: 3 ticks/u);
-  assert.match(descriptor.rows[1].value, /Source: Unavailable in this artifact/u);
-  assert.doesNotMatch(fullText(descriptor), /id_8|global.slot/u);
+  assert.doesNotMatch(
+    fullText(descriptor),
+    /id_8|global.slot|alpha\/9001|Unavailable in this/u,
+  );
 });
 
 function researcherStatus(overrides = {}) {

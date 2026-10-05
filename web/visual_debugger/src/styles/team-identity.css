@@ -1,0 +1,65 @@
+/*
+ * Styles for the Team Identity look (src/looks/team-identity.js): the Homeland
+ * Brackets and their lettered crests. styles.css imports this file at its top.
+ * Colours come from the shared team tokens, Ink and Moon Silver. Line widths are
+ * written by the look as attributes (Team A one 2 px line, Team B two 1 px
+ * lines).
+ */
+.home-crest__ring,
+.home-crest__gap,
+.home-crest__pov {
+  fill: none;
+}
+
+.homeland-bracket__line {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-opacity: 0.7;
+  pointer-events: none;
+}
+
+.homeland-bracket--team-a .homeland-bracket__line,
+.homeland-bracket--team-a .home-crest__ring {
+  stroke: var(--team-a);
+}
+
+.homeland-bracket--team-b .homeland-bracket__line,
+.homeland-bracket--team-b .home-crest__ring {
+  stroke: var(--team-b);
+}
+
+.home-crest__keyline {
+  fill: var(--ink);
+  stroke: none;
+}
+
+.homeland-bracket--team-a .home-crest__field {
+  fill: var(--team-a-field);
+}
+
+.homeland-bracket--team-b .home-crest__field {
+  fill: var(--team-b-field);
+}
+
+.home-crest__gap {
+  stroke: var(--ink);
+}
+
+.home-crest__pov {
+  stroke: var(--moon-silver);
+}
+
+.home-crest__text {
+  font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+  font-weight: 700;
+  stroke: none;
+}
+
+.homeland-bracket--team-a .home-crest__text {
+  fill: var(--team-a-light);
+}
+
+.homeland-bracket--team-b .home-crest__text {
+  fill: var(--team-b-light);
+}

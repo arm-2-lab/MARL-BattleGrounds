@@ -1,0 +1,436 @@
+/*
+ * Styles for the Champion Frame (src/looks/champion-frame.js): the selection
+ * and inspection marks on the arena, and the frame in the Replay Viewer
+ * rail's Agent tab (owner, 3 Oct 2026; src/ledger.js moves #champion-frame
+ * there). styles.css imports this file.
+ *
+ * Colours come only from the :root tokens in styles.css (Moon Silver, Ink,
+ * class and team colours), so the High Contrast palette recolours them too.
+ * Arena rules start with `svg` so they win over the older one-class rules
+ * further down styles.css until those are removed. Arena marks are flat
+ * strokes and fills with opacity only (export-safe): no filters or gradients.
+ */
+
+/* Selection Moonlight: a flat 6% disc on the floor around the selected body. */
+svg .selection-moonlight {
+  fill: var(--moon-silver);
+  fill-opacity: 0.06;
+  stroke: none;
+  pointer-events: none;
+}
+
+/* Silver Brackets over their Ink Shadow keyline; 45% around a fallen body. */
+svg .selected-reticle,
+svg .selected-reticle-keyline {
+  fill: none;
+  stroke-linecap: square;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .selected-reticle {
+  stroke: var(--moon-silver);
+  stroke-width: 2;
+}
+
+svg .selected-reticle-keyline {
+  stroke: var(--ink);
+  stroke-width: 4;
+  stroke-opacity: 0.55;
+}
+
+/* Live play: the BattleClient vision's brackets (silver 2 px over ink 4 px at
+   50%), scaled with the field like the vision's own drawing. */
+svg .selected-reticle[data-shape="vision"] {
+  stroke-width: calc(2px * var(--mark-scale, 1));
+}
+
+svg .selected-reticle-keyline[data-shape="vision"] {
+  stroke-width: calc(4px * var(--mark-scale, 1));
+  stroke-opacity: 0.5;
+}
+
+svg .selected-reticle[data-fallen="true"],
+svg .selected-reticle-keyline[data-fallen="true"] {
+  opacity: 0.45;
+}
+
+/* The controlled champion's halo: a plain Moon Silver ring, no glow. */
+svg .controlled-halo {
+  stroke: var(--moon-silver);
+  stroke-width: 2;
+  filter: none;
+}
+
+svg .selected-reticle-keyline[hidden],
+svg .selection-moonlight[hidden] {
+  display: none;
+}
+
+/* Reach Rings: sight dotted in Moon Silver, Basic and Ultimate in class colour. */
+svg .range-ring[data-kind="observation"] {
+  stroke: var(--moon-silver);
+  stroke-width: 1.25;
+  stroke-dasharray: 0.5 5;
+  stroke-opacity: 0.35;
+}
+
+svg .range-ring[data-kind="basic"] {
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  stroke-opacity: 0.45;
+}
+
+svg .range-ring[data-kind="ultimate"] {
+  stroke: var(--ui-muted);
+  stroke-width: 1.25;
+  stroke-dasharray: 12 3 2 3;
+  stroke-opacity: 0.35;
+}
+
+svg .range-ring[data-kind="ultimate"][data-class="mage"] {
+  stroke: var(--class-mage);
+}
+
+svg .range-ring[data-kind="ultimate"][data-class="warrior"] {
+  stroke: var(--class-warrior);
+}
+
+svg .range-ring[data-kind="ultimate"][data-class="hunter"] {
+  stroke: var(--class-hunter);
+}
+
+svg .range-ring[data-kind="ultimate"][data-class="rogue"] {
+  stroke: var(--class-rogue);
+}
+
+svg .range-ring[data-kind="ultimate"][data-class="priest"] {
+  stroke: var(--class-priest);
+}
+
+/* Next Action Thread: dashed Moon Silver, heavier for an Ultimate, muted dots
+   for a DevClient draft the game's mask marks as not legal. */
+svg .pending-route {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1.5;
+  stroke-linecap: butt;
+  stroke-dasharray: 5 4;
+  stroke-opacity: 0.75;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+svg .pending-route[data-lane="1"] {
+  stroke: var(--moon-silver);
+  stroke-width: 2.5;
+  stroke-dasharray: 9 4;
+  stroke-opacity: 0.85;
+}
+
+svg .pending-route[data-legal="false"] {
+  stroke: var(--ui-muted);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-dasharray: 1 4;
+  stroke-opacity: 1;
+}
+
+/* The next-action glyph at 6 o'clock: a dot (Basic) or diamond (Ultimate). */
+svg .next-action-glyph {
+  pointer-events: none;
+}
+
+svg .next-action-glyph[data-shape="dot"] .next-action-glyph__under {
+  fill: var(--ink);
+  fill-opacity: 0.6;
+  stroke: none;
+}
+
+svg .next-action-glyph[data-shape="diamond"] .next-action-glyph__under {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-opacity: 0.6;
+  stroke-linejoin: round;
+}
+
+svg .next-action-glyph__mark {
+  fill: var(--moon-silver);
+  stroke: none;
+}
+
+svg .next-action-glyph[data-legal="false"] .next-action-glyph__mark {
+  fill: var(--ui-muted);
+}
+
+/* The Champion Frame (Replay Viewer); its rail layout is at the end. */
+.champion-frame {
+  --frame-accent: var(--moon-silver);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ui-text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.champion-frame[data-state="selected"],
+.champion-frame[data-state="fallen"] {
+  min-height: 64px;
+}
+
+.champion-frame[data-class="mage"] {
+  --frame-accent: var(--class-mage);
+}
+
+.champion-frame[data-class="warrior"] {
+  --frame-accent: var(--class-warrior);
+}
+
+.champion-frame[data-class="hunter"] {
+  --frame-accent: var(--class-hunter);
+}
+
+.champion-frame[data-class="rogue"] {
+  --frame-accent: var(--class-rogue);
+}
+
+.champion-frame[data-class="priest"] {
+  --frame-accent: var(--class-priest);
+}
+
+.champion-frame__hint {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.champion-frame__chip {
+  flex-basis: 100%;
+  align-self: flex-start;
+  width: fit-content;
+  padding: 1px 8px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  color: var(--moon-silver);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.champion-frame__portrait {
+  flex: none;
+  width: 46px;
+  height: 46px;
+}
+
+.champion-frame__portrait-token {
+  display: block;
+  overflow: visible;
+}
+
+.champion-frame__portrait-fallback {
+  fill: var(--groove);
+  stroke-width: 3;
+}
+
+.champion-frame__portrait-fallback[data-team="team-a"] {
+  stroke: var(--team-a);
+}
+
+.champion-frame__portrait-fallback[data-team="team-b"] {
+  stroke: var(--team-b);
+}
+
+.champion-frame__name {
+  display: grid;
+  flex: none;
+  gap: 3px;
+  width: 190px;
+}
+
+.champion-frame__title,
+.champion-frame__ultimate,
+.champion-frame__speed,
+.champion-frame__next {
+  margin: 0;
+}
+
+.champion-frame__label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.champion-frame__team {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.champion-frame__team[data-team="team-a"] {
+  color: var(--team-a-light);
+}
+
+.champion-frame__team[data-team="team-b"] {
+  color: var(--team-b-light);
+}
+
+/* The life row holds the shared Life bar (src/styles/life-bar.css) or, for a
+   fallen champion, "Fallen". */
+.champion-frame__life {
+  font-size: 11px;
+}
+
+.champion-frame[data-state="fallen"] .champion-frame__life-text {
+  color: var(--ash);
+}
+
+.champion-frame__ultimate,
+.champion-frame__speed {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.champion-frame__ultimate[data-ready="true"] {
+  color: var(--frame-accent);
+  font-weight: 700;
+}
+
+.champion-frame__statuses {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+  max-height: 52px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 11px;
+}
+
+.champion-frame__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.champion-frame__status-none {
+  color: var(--ui-muted);
+}
+
+.champion-frame__recent {
+  display: grid;
+  flex: none;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.champion-frame__eyebrow {
+  color: var(--ui-muted);
+}
+
+.champion-frame__cell {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 6px;
+  align-items: baseline;
+}
+
+.champion-frame__cell-label {
+  grid-column: 1 / -1;
+  font-weight: 700;
+}
+
+.champion-frame__cell[data-state="not-visible"] .champion-frame__cell-label,
+.champion-frame__cell[data-state="no-tick"] .champion-frame__cell-label {
+  padding: 0 6px;
+  border: 1px dashed var(--ui-muted);
+  border-radius: 999px;
+  color: var(--ui-muted);
+  font-weight: 400;
+}
+
+.champion-frame__cell-glyph {
+  grid-row: span 2;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.champion-frame__cell-glyph[data-ability="basic"],
+.champion-frame__cell-glyph[data-ability="ultimate"] {
+  color: var(--frame-accent);
+}
+
+.champion-frame__cell-damage {
+  color: var(--life-ivory);
+}
+
+.champion-frame__cell-heal {
+  color: var(--class-priest);
+}
+
+.champion-frame__cell-heal[data-rest="true"] {
+  color: var(--moon-dew);
+}
+
+.champion-frame__next {
+  flex: 0 1 240px;
+  min-width: 0;
+  color: var(--ui-text);
+  font-size: 11px;
+}
+
+.champion-frame__next[data-final="true"] {
+  color: var(--ui-muted);
+}
+
+/*
+ * In the rail's Agent tab the frame sits inside the tab's card (the
+ * BattleClient look): no frame of its own, every status sentence wraps to
+ * its full length instead of ending in "…", and each Recent Ticks cell reads
+ * on one line ("This Tick ● −9 –").
+ */
+#replay-rail-agent .champion-frame {
+  gap: 8px 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+#replay-rail-agent .champion-frame__statuses {
+  flex-basis: 100%;
+  max-height: none;
+  overflow: visible;
+  font-size: 12px;
+}
+
+#replay-rail-agent .champion-frame__status {
+  overflow: visible;
+  white-space: normal;
+}
+
+#replay-rail-agent .champion-frame__recent {
+  flex-basis: 100%;
+}
+
+#replay-rail-agent .champion-frame__cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+#replay-rail-agent .champion-frame__cell-label {
+  grid-column: auto;
+}
+
+#replay-rail-agent .champion-frame__next {
+  flex: 1 1 100%;
+  font-size: 12px;
+}

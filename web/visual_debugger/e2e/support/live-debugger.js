@@ -47,6 +47,11 @@
  * and `workerExitCleanupResult` also exist only for unit tests. The worker `exit`
  * hook is a fallback only: when the worker ends, it kills any owned process still
  * left, but it cannot run when the worker itself is killed with SIGKILL.
+ *
+ * `openRecordingPanel` and `closeRecordingPanel` open and close the top bar's
+ * Replay Recording popover (#rec-pop, opened by the #recording-badge pill), so
+ * tests can reach Finish And Save, Open Replay, Retry Save and Save As. Opening
+ * leaves an open panel alone; closing leaves a closed panel alone.
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -56,11 +61,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPOSITORY_ROOT = resolve(HERE, "../../../..");
-export const COMBAT_DEBUGGER_ENTRYPOINT = "scripts/dev/debug_renderer.py";
+export const COMBAT_DEBUGGER_ENTRYPOINT = "tests/battle_client_browser_harness.py";
 export const SCRIPTED_DEBUGGER_HARNESS =
   "tests/visual_debugger_scripted_browser_harness.py";
-export const DEVCLIENT_BROWSER_HARNESS =
-  "tests/visual_debugger_dev_client_browser_harness.py";
 
 export const SERVER_OWNER_VARIABLE = "MARL_BG_E2E_SERVER_OWNER";
 
@@ -636,47 +639,18 @@ export function startScriptedDebugger({ scenario = "aura_crossfire" } = {}) {
   ]);
 }
 
-/** @param {{artifactRoot: string, seedMapCount?: number, seedScenarioCount?: number, offeredSystems?: string[]}} options */
-export function startIsolatedDevClient({
-  artifactRoot,
-  seedMapCount = 0,
-  seedScenarioCount = 0,
-  offeredSystems = [],
-}) {
-  if (typeof artifactRoot !== "string" || artifactRoot.length === 0) {
-    throw new TypeError("Isolated DevClient tests require an artifact root.");
-  }
-  if (!Number.isSafeInteger(seedMapCount) || seedMapCount < 0) {
-    throw new TypeError("seedMapCount must be a nonnegative safe integer.");
-  }
-  if (!Number.isSafeInteger(seedScenarioCount) || seedScenarioCount < 0) {
-    throw new TypeError("seedScenarioCount must be a nonnegative safe integer.");
-  }
-  return startDebuggerProcess([
-    "run",
-    "python",
-    "-u",
-    DEVCLIENT_BROWSER_HARNESS,
-    "--artifact-root",
-    artifactRoot,
-    "--seed-map-count",
-    String(seedMapCount),
-    "--seed-scenario-count",
-    String(seedScenarioCount),
-    ...offeredSystems.flatMap((value) => ["--offer-system", value]),
-    "--port",
-    "0",
-  ]);
-}
-
 /**
  * @param {string[]} arguments_
+ * @param {{productTitle?: string}} [options] Printed product name.
  * @returns {Promise<{
  *   process: import("node:child_process").ChildProcess,
  *   url: string,
  * }>}
  */
-function startDebuggerProcess(arguments_) {
+export function startDebuggerProcess(
+  arguments_,
+  { productTitle = "BattleClient" } = {},
+) {
   return new Promise((resolveUrl, reject) => {
     const token = createServerOwnerToken();
     const child = spawn("uv", arguments_, {
@@ -707,7 +681,9 @@ function startDebuggerProcess(arguments_) {
     child.stdout?.on("data", (chunk) => {
       stdout += String(chunk);
       const match = stdout.match(
-        /MARL-BattleGrounds DevClient: (http:\/\/127\.0\.0\.1:\d+\/#token=[A-Za-z0-9_-]+)/,
+        new RegExp(
+          `MARL-BattleGrounds ${productTitle.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}: (http://127\\.0\\.0\\.1:\\d+/#token=[A-Za-z0-9_-]+)`,
+        ),
       );
       if (!match || settled) {
         return;
@@ -866,5 +842,25 @@ export function captureServerFailure(child) {
   }
   return new Promise((resolveFailure) => {
     record.capture = resolveFailure;
+  });
+}
+
+// The Recording pill opens the Replay Recording popover (#rec-pop); the old
+// #recording-panel stays hidden in the page.
+/** @param {import("@playwright/test").Page} page */
+export async function openRecordingPanel(page) {
+  const open = await page
+    .locator("#rec-pop")
+    .evaluate((node) => node.matches(":popover-open"));
+  if (!open) await page.locator("#recording-badge").click();
+  await page.locator("#rec-pop").waitFor({ state: "visible" });
+}
+
+/** @param {import("@playwright/test").Page} page */
+export async function closeRecordingPanel(page) {
+  // An open popover sits on top of the page, so close it before later clicks.
+  await page.locator("#rec-pop").evaluate((node) => {
+    if (node instanceof HTMLElement && node.matches(":popover-open"))
+      node.hidePopover();
   });
 }

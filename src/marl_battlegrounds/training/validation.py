@@ -35,18 +35,24 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from marl_battlegrounds._task_settings import DEFAULT_TDM_RED_ZONE_DEPTH, AgentClassName
 from marl_battlegrounds.evaluation.sampling_evidence import (
     combine_sampling_facts,
     method_sampling_fact,
     summarize_sampling_evidence,
 )
-from marl_battlegrounds.tasks import DEFAULT_TDM_RED_ZONE_DEPTH, AgentClassName
 from marl_battlegrounds.training.analysis import (
     _KILL_COLUMNS,  # pyright: ignore[reportPrivateUsage]
     _atomic_text,  # pyright: ignore[reportPrivateUsage]
     _integer,  # pyright: ignore[reportPrivateUsage]
     summarize_slot_diagnostic,
     summarize_validation,
+)
+from marl_battlegrounds.training.config import (
+    VALIDATION_MAPS as VALIDATION_MAPS,
+)
+from marl_battlegrounds.training.config import (
+    _collection_boundary as _collection_boundary,  # pyright: ignore[reportPrivateUsage]
 )
 
 if TYPE_CHECKING:
@@ -56,7 +62,6 @@ if TYPE_CHECKING:
 
 Record = dict[str, Any]
 EventCallback = Callable[[Record], None]
-VALIDATION_MAPS = (42, 43, 44, 45, 46)
 _ROOTS = {
     "routine": 19_043_002,
     "initialization": 19_043_002,
@@ -197,77 +202,6 @@ class ValidationPoint:
     requested_steps: tuple[int, ...]
     env_steps: int
     update_index: int
-
-
-def _collection_boundary(
-    requested_steps: int,
-    *,
-    total_env_steps: int,
-    num_envs: int,
-    rollout_length: int,
-    initial_rounds: int = 0,
-) -> tuple[int, int]:
-    """Return the first reachable collection boundary at or above a request.
-
-    Parameters
-    ----------
-    requested_steps : int
-        Nonnegative requested experience in environment transitions.
-    total_env_steps : int
-        Positive declared budget, divisible by num_envs; its round count is
-        R = total_env_steps / num_envs.
-    num_envs : int
-        Positive number of game lanes (B).
-    rollout_length : int
-        Positive rounds in a normal collection block (T).
-    initial_rounds : int, default=0
-        Nonnegative rounds collected before normal blocks start (W). Zero is the
-        PPO and QMIX rule. PQN passes W = memory_window + rollout_length; W must
-        then be less than R.
-
-    Returns
-    -------
-    tuple[int, int]
-        ``(steps, ordinal)``. In rounds, reachable boundaries are: zero; before
-        W, multiples of T capped at W; after W, ``W + j * T`` capped at R.
-        steps is the first reachable boundary at or above the request, capped at
-        the total, times B. ordinal is the number of collection blocks that
-        reach it (``ceil(W / T) + ceil((r - W) / T)`` after W, ``ceil(r / T)``
-        before). A request of zero gives ``(0, 0)``.
-
-    Raises
-    ------
-    ValueError
-        A count is not a plain integer in range, the total is not divisible by
-        num_envs, or a positive initial_rounds is not below R.
-
-    Notes
-    -----
-    Integer ceil division only, so results are exact for any Python integer.
-    With ``initial_rounds=0`` this equals the earlier rule
-    ``min(total, ceil(requested / (B * T)) * B * T)``. One helper serves
-    explicit save checks, fraction resolution, learner validation and host
-    recovery; no list of every block is built. Host-only; no I/O.
-    """
-    requested = _integer(requested_steps, "requested_steps", minimum=0)
-    total = _integer(total_env_steps, "total_env_steps", minimum=1)
-    batch = _integer(num_envs, "num_envs", minimum=1)
-    length = _integer(rollout_length, "rollout_length", minimum=1)
-    initial = _integer(initial_rounds, "initial_rounds", minimum=0)
-    if total % batch:
-        raise ValueError("total_env_steps must be divisible by num_envs")
-    budget = total // batch
-    if initial and initial >= budget:
-        raise ValueError("initial_rounds must be below the total rounds")
-    wanted = -(-requested // batch)
-    if wanted <= 0:
-        return 0, 0
-    if initial and wanted <= initial:
-        rounds = min(initial, -(-wanted // length) * length)
-        return rounds * batch, -(-rounds // length)
-    rounds = min(budget, initial + -(-(wanted - initial) // length) * length)
-    ordinal = -(-initial // length) + -(-(rounds - initial) // length)
-    return rounds * batch, ordinal
 
 
 def resolve_validation_schedule(
@@ -719,6 +653,51 @@ def selection_validation_results(
     return routine, list(confirmed.values()), candidates
 
 
+def validation_conditions(row: Mapping[str, Any]) -> Record:
+    """Describe comparable scientific conditions in one saved task or summary.
+
+    Keep exact frozen panel identity, ordered maps/rosters, native scoring,
+    learner slots, partner registrations/labels and selection protocol. Omitted
+    rosters mean the historical canonical roster; absent depth remains unknown,
+    distinct from explicit zero. Task roots, training seeds, candidate identity,
+    paths and pair counts stay outside this description: their own identity,
+    freshness and uncertainty checks still apply. This helper reads no files,
+    loads no model and does not change the row. Panel membership is already bound
+    by panel_digest; roots alone never replace that integrity check.
+    """
+    from marl_battlegrounds._task_settings import canonical_tournament_rosters
+
+    first, second = canonical_tournament_rosters()
+    return {
+        "panel_digest": row.get("panel_digest"),
+        "selection_schema_version": row.get("selection_schema_version", 1),
+        "maps": list(row.get("maps", ())),
+        "system_roster": list(row.get("system_roster", first)),
+        "opponent_roster": list(row.get("opponent_roster", second)),
+        "red_zone_depth": row.get("red_zone_depth"),
+        "learner_slots": list(row.get("learner_slots") or ()),
+        "partners": [
+            {key: partner[key] for key in ("name", "label", "registration_id")}
+            for partner in row.get("partners") or ()
+        ],
+        "spawn_mode": row.get("spawn_mode", "paired"),
+        "selection_rule": row.get("selection_rule", "saved"),
+        "cell_weights": row.get("cell_weights", "equal"),
+    }
+
+
+def _check_requested_task(
+    task: Mapping[str, Any], expected_task: Mapping[str, Any] | None
+) -> None:
+    """Refuse changed confirmation inputs before output or policy calls.
+
+    None keeps ordinary validation behavior. Otherwise the complete saved task
+    must equal the newly built task, including its identity and ordered bindings.
+    """
+    if expected_task is not None and task != expected_task:
+        raise ValueError("Validation inputs differ from the requested task identity")
+
+
 def validation_root_comparison(
     records: Sequence[Mapping[str, Any]], *, allow_different_roots: bool
 ) -> str:
@@ -1023,6 +1002,7 @@ def freeze_validation_partners(
     *,
     learner_slots: Sequence[int],
     partner_labels: Mapping[str, str] | None = None,
+    expected: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], Record]:
     """Freeze named partners once and return bindings plus their JSON declaration.
 
@@ -1030,8 +1010,21 @@ def freeze_validation_partners(
     Team A slots; each partner fills their complement through ordinary team().
     Labels are declared familiarity, not inferred training exposure. Missing
     labels mean unknown. Factories resolve once and opaque methods stay in this
-    process. No policy decision, environment step or file write occurs here.
+    process. expected optionally names saved ordered partner registrations.
+    Reloaded Policies regain an existing shared-policy System wrapper only when
+    its exact registration matches that saved identity. Different names or
+    identities fail. No policy decision, environment step or file write occurs.
     """
+    if expected is not None:
+        names = [row["name"] for row in expected]
+        if len(set(names)) != len(names) or set(names) != set(partners):
+            raise ValueError(
+                "Validation partners differ from the requested task identity"
+            )
+        partners = {name: partners[name] for name in names}
+    expected_by_name = (
+        {} if expected is None else {row["name"]: row for row in expected}
+    )
     labels = {} if partner_labels is None else dict(partner_labels)
     if set(labels) - set(partners):
         raise ValueError("Partner labels name a missing validation partner")
@@ -1039,6 +1032,21 @@ def freeze_validation_partners(
     rows: list[Record] = []
     for name, value in partners.items():
         method, identifier, registration, _ = _method_snapshot(value)
+        previous = expected_by_name.get(name)
+        if previous is not None and identifier != previous["registration_id"]:
+            from marl_battlegrounds.evaluation.policy_execution import (
+                Policy,
+                shared_policy,
+            )
+
+            if isinstance(method, Policy):
+                method, identifier, registration, _ = _method_snapshot(
+                    shared_policy(method)
+                )
+            if identifier != previous["registration_id"]:
+                raise ValueError(
+                    "Validation partner differs from the requested task identity"
+                )
         bindings[name] = method
         rows.append(
             {
@@ -1433,6 +1441,53 @@ def _ranked_depth(evidence: object) -> float | None:
     return depth
 
 
+def _panel_input_references(
+    target: Path, content: Record, bindings: Sequence[Any] | None = None
+) -> tuple[Any, ...]:
+    """Resolve a frozen panel's ordered reload inputs without loading methods.
+
+    target is panel.json and content is its parsed record. Explicit bindings may
+    replace schema-2 references in the same order; the loading owner still checks
+    their registrations. Historical schema-1 paths resolve beside panel.json and
+    admit no replacement bindings. Check the schema, digest, member shapes and
+    binding count before returning. Live values stay live; nothing is written.
+    """
+    version = content.get("schema_version")
+    entries = content.get("members")
+    if (
+        type(version) is not int
+        or version not in (1, 2)
+        or content.get("panel_digest") != _panel_digest(content)
+        or not isinstance(entries, list)
+        or not entries
+        or any(not isinstance(row, dict) for row in cast(list[object], entries))
+    ):
+        raise ValueError("Invalid frozen-panel schema or content digest")
+    entries = cast(list[Record], entries)
+    if version == 1 and bindings is not None:
+        raise ValueError("Historical panels use their saved actor paths")
+    if bindings is not None and len(bindings) != len(entries):
+        raise ValueError("Bindings must cover every frozen panel member in order")
+    values: list[Any] = []
+    for index, row in enumerate(entries):
+        value = (
+            bindings[index]
+            if bindings is not None
+            else row.get("reference" if version == 2 else "path")
+        )
+        if (
+            bindings is None
+            and value is not None
+            and (version == 1 or row.get("export_relative"))
+        ):
+            if not isinstance(value, str):
+                raise ValueError("Panel actor paths must be strings")
+            # Keep links visible until the artifact owner checks the full path.
+            value = str(target.parent / value)
+        values.append(value)
+    return tuple(values)
+
+
 def _load_system_panel(
     target: Path,
     content: Record,
@@ -1468,14 +1523,12 @@ def _load_system_panel(
         raise ValueError("Bindings must cover every frozen panel member in order")
     methods: list[Any] = []
     members: list[PanelMember] = []
-    for index, row in enumerate(entries):
-        value = bindings[index] if bindings is not None else row.get("reference")
+    references = _panel_input_references(target, content, bindings)
+    for row, value in zip(entries, references, strict=True):
         if value is None:
             raise ValueError(
                 "This panel contains a live-only method; supply its original bindings"
             )
-        if bindings is None and isinstance(value, str) and row.get("export_relative"):
-            value = str((target.parent / value).resolve())
         method, identifier, registration, _ = _method_snapshot(value)
         if (
             identifier != row.get("registration_id")
@@ -2112,6 +2165,7 @@ def _validate_system_panel(
     partners: Mapping[str, System | Policy | str] | None = None,
     learner_slots: Sequence[int] | None = None,
     partner_labels: Mapping[str, str] | None = None,
+    expected_task: Mapping[str, Any] | None = None,
 ) -> Record:
     """Run retained methods in stable batches using the ordinary M8 evaluator.
 
@@ -2134,17 +2188,17 @@ def _validate_system_panel(
     _integer(chunk_size, "chunk_size", minimum=1)
     if jax.default_backend() != "cpu" and num_envs != 32:
         raise ValueError("Training validation on GPU requires num_envs=32")
-    from marl_battlegrounds.evaluation.policy_execution import Policy, System, policy
+    from marl_battlegrounds.evaluation.policy_execution import Policy, System
 
     # Keep artifact metadata for saved learners. Built-ins, factories and live
     # objects use the same registration as ordinary evaluation instead.
     live = isinstance(checkpoint, (System, Policy))
     if isinstance(checkpoint, str):
-        try:
-            policy(checkpoint)
-            live = True
-        except ValueError:
-            live = not Path(checkpoint).is_dir() and ":" in checkpoint
+        from marl_battlegrounds._method_loading import (
+            _reference_kind,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        live = _reference_kind(checkpoint) != "artifact"
     identity: Record = {}
     registration = None
     if live:
@@ -2159,7 +2213,10 @@ def _validate_system_panel(
         if learner_slots is None:
             raise ValueError("Partner validation needs learner_slots")
         bindings, deployment = freeze_validation_partners(
-            partners, learner_slots=learner_slots, partner_labels=partner_labels
+            partners,
+            learner_slots=learner_slots,
+            partner_labels=partner_labels,
+            expected=None if expected_task is None else expected_task.get("partners"),
         )
     elif learner_slots is not None or partner_labels is not None:
         raise ValueError("learner_slots and partner_labels need partners")
@@ -2179,6 +2236,7 @@ def _validate_system_panel(
         opponent_roster=opponent_roster,
         deployment=deployment,
     )
+    _check_requested_task(task, expected_task)
     actors = prepare_validation_teams(
         actor,
         panel.methods,
@@ -2611,10 +2669,10 @@ def load_panel(
     ]:
         raise ValueError("The early panel must contain Halfway then Final")
     members: list[PanelMember] = []
-    for row in entries:
-        member_path = Path(row["path"])
-        if not member_path.is_absolute():
-            member_path = target.parent / member_path
+    for row, reference in zip(
+        entries, _panel_input_references(target, content), strict=True
+    ):
+        member_path = Path(reference)
         identity = _artifact(member_path)
         if any(
             identity.get(key) != row.get(key)
@@ -2982,6 +3040,7 @@ def _validate(
     event_callback: EventCallback | None,
     red_zone_depth: float,
     root_seed: int | None = None,
+    expected_task: Mapping[str, Any] | None = None,
 ) -> Record:
     """Own one exact checkpoint/panel task and reduce its complete saved M8 rows.
 
@@ -2997,21 +3056,19 @@ def _validate(
         _root_seed(root_seed)
     identity = _artifact(checkpoint)
     directory = Path(output_dir).resolve()
-    task = _task(
-        directory,
-        validation_task_description(
-            checkpoint_id=identity["checkpoint_id"],
-            actor_digest=identity["actor_digest"],
-            env_steps=identity["env_steps"],
-            panel_digest=panel_digest,
-            purpose=purpose,
-            seed_pairs=seed_pairs,
-            members=tuple((name, digest) for name, _, digest in members),
-            root_seed=root_seed,
-            red_zone_depth=red_zone_depth,
-        ),
-        event_callback,
+    task = validation_task_description(
+        checkpoint_id=identity["checkpoint_id"],
+        actor_digest=identity["actor_digest"],
+        env_steps=identity["env_steps"],
+        panel_digest=panel_digest,
+        purpose=purpose,
+        seed_pairs=seed_pairs,
+        members=tuple((name, digest) for name, _, digest in members),
+        root_seed=root_seed,
+        red_zone_depth=red_zone_depth,
     )
+    _check_requested_task(task, expected_task)
+    task = _task(directory, task, event_callback)
     rows: list[Record] = []
     paths: list[str] = []
     sampling_facts: dict[str, Record] = {}
@@ -3098,6 +3155,7 @@ def validate_checkpoint(
     partners: Mapping[str, System | Policy | str] | None = None,
     learner_slots: Sequence[int] | None = None,
     partner_labels: Mapping[str, str] | None = None,
+    expected_task: Mapping[str, Any] | None = None,
 ) -> Record:
     """Validate a saved actor or any live System through the shared evaluator.
 
@@ -3164,6 +3222,13 @@ def validate_checkpoint(
         before the rule, is refused before any game. A panel chosen from a
         ranking keeps its original depth; its actors may play at this task depth.
 
+    expected_task : mapping or None, default=None
+        Optional complete task from a saved confirmation request. Its partner
+        order and existing shared-policy wrapper are restored before comparison.
+        Changed actors, partners, rosters, panel or seeds fail before output or
+        games. None keeps ordinary fresh-task behavior. Checking identities may
+        load models or factories, but does not request a policy action.
+
     Returns
     -------
     dict
@@ -3180,7 +3245,8 @@ def validate_checkpoint(
     Raises
     ------
     TypeError
-        red_zone_depth is not a Python float.
+        red_zone_depth is not a Python float, or expected_task is neither a
+        saved task mapping nor None.
     ValueError
         red_zone_depth breaks Core's scalar rules (not finite, negative, -0.0,
         or a positive value that is not a normal float32 number) or is wider
@@ -3196,6 +3262,10 @@ def validate_checkpoint(
     ValueError before any file is written, so the same output_dir can be
     reused with a corrected depth.
     """
+    if expected_task is not None and not isinstance(
+        cast(object, expected_task), Mapping
+    ):
+        raise TypeError("expected_task must be a saved task mapping or None")
     depth = _checked_depth(red_zone_depth)
     frozen = (
         load_panel(
@@ -3227,6 +3297,7 @@ def validate_checkpoint(
             partners=partners,
             learner_slots=learner_slots,
             partner_labels=partner_labels,
+            expected_task=expected_task,
         )
     if any(
         value is not None
@@ -3258,6 +3329,7 @@ def validate_checkpoint(
         chunk_size=chunk_size,
         event_callback=event_callback,
         red_zone_depth=depth,
+        expected_task=expected_task,
     )
 
 

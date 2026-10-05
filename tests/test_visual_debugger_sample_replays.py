@@ -4,9 +4,11 @@ Fresh samples are current records: manifest schema 3 holds complete version-4
 replays (context V4 with resolved config V2, frame V3 with a 20th context
 column). These debugger scenes are neutral, so the recorded Red Zone depth and
 column 19 are 0.0. The V2 config is also the layout identity, so every
-identifier derived from it is new. Apart from that renaming and the named
-schema changes, fresh samples equal the bundled historical samples: the same
-transitions, completion, frames and summary statistics.
+identifier derived from it is new. Fresh contexts also record each
+controller's name ("Scripted" for every configured slot and team). Apart from
+that renaming, those name keys and the named schema changes, fresh samples
+equal the bundled historical samples: the same transitions, completion,
+frames and summary statistics.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from scripts.dev.generate_visual_debugger_sample_replays import (
     generate_sample_replays,
     verify_sample_replays,
 )
-from scripts.dev.visual_debugger.model import DebuggerScenario
 from scripts.dev.visual_debugger.sample_replays import (
     SAMPLE_REPLAY_DIRECTORY,
     SAMPLE_REPLAY_MANIFEST_PATH,
@@ -44,6 +45,7 @@ from scripts.dev.visual_debugger.sample_replays import (
 )
 
 import marl_battlegrounds.evaluation.replay_io as replay_io_module
+from marl_battlegrounds._battle_client.model import DebuggerScenario
 from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
@@ -88,7 +90,7 @@ import sys
 from pathlib import Path
 
 import scripts.dev.generate_visual_debugger_sample_replays as generator
-import scripts.dev.visual_debugger.control as control
+import marl_battlegrounds._battle_client.control as control
 from marl_battlegrounds.evaluation.models import CodeRevisionV1
 from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from scripts.dev.visual_debugger.sample_replays import (
@@ -514,6 +516,24 @@ def test_checked_samples_match_fresh_cpu_generation_scientific_truth(
                 assignment["callable_name"] = None
                 assignment["lifecycle"] = "frozen"
                 assignment["preprocessing"]["version"] = 4
+        # Fresh samples also keep every controller's name: scripted playback
+        # labels each configured slot, and so each team, "Scripted".
+        active = [row["configured_active"] for row in expected_context["roster"]]
+        names = [
+            {"name": f"marl_bgs.controller_name.slot_{slot}", "value": '"Scripted"'}
+            for slot, configured in enumerate(active)
+            if configured
+        ] + [
+            {"name": f"marl_bgs.system_name.team_{team}", "value": '"Scripted"'}
+            for team, start in (("a", 0), ("b", 5))
+            if any(active[start : start + 5])
+        ]
+        expected_context["aggregation_keys"] = tuple(
+            sorted(
+                (*expected_context["aggregation_keys"], *names),
+                key=lambda row: row["name"],
+            )
+        )
         assert (
             current.replay.header.context.model_dump(mode="python") == expected_context
         )

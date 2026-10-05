@@ -1,10 +1,20 @@
 /**
  * @file Check stable display tokens and status lifecycle labels against the current
- * semantic registry.
+ * semantic registry: class and team tokens take their names from the one label
+ * owner (agent-identity.js), status tokens show the approved status names
+ * ("Charge (Stun)") as both the label and the short chip label, aura modifiers
+ * show "Sorcerer's Empowerment (Damage Boost)" and "Guardian's Barrier
+ * (Damage Mitigation)" with the cause's name as the short label, Ultimate
+ * labels come from class-documentation.js, and lifecycle titles read "Applied
+ * Charge (Slow)" or "Freezing Trap (Stun Broken)". The plain glyphs of
+ * icons.js keep today's monoline shapes, except that the Hunter bow has no
+ * arrowhead (no icon shows a facing).
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CLASS_IDENTITIES, TEAM_IDENTITIES } from "../src/agent-identity.js";
+import { classNamesV1 } from "../src/class-documentation.js";
 import { iconDefinition, KNOWN_GLYPH_KEYS } from "../src/icons.js";
 import {
   statusLifecyclePresentation,
@@ -124,9 +134,9 @@ test("durable in-combat status keeps the existing white crossed-swords identity"
   assert.equal(definition.cssKey, "in-combat");
   assert.equal(iconDefinition(definition.glyphKey).glyphKey, "combat-in-progress");
   assert.equal(presentation.title, "In Combat");
-  assert.match(
+  assert.equal(
     presentation.effect,
-    /transitions remain before this agent leaves combat/u,
+    "Shows how many ticks remain before this agent leaves combat. Taking part in combat starts the count again.",
   );
   assert.equal(presentation.accent, "none");
   assert.equal(presentation.magnitudeKind, "none");
@@ -146,20 +156,25 @@ test("status lifecycle copy identifies the exact durable status and applies life
   ]);
   for (const statusTokenId of [...EXPECTED_STATUSES, "in_combat", "spawn_shield"]) {
     const status = statusPresentation(statusTokenId);
-    const subject = status.title.replace("): ", ") ");
+    const subject = status.title;
     for (const [lifecycleTokenId, prefix] of lifecyclePrefixes) {
       const lifecycle = statusLifecyclePresentation(statusTokenId, lifecycleTokenId);
+      const trap = statusTokenId === "stun_hunter_trap";
       const expectedTitle =
-        lifecycleTokenId === "cleared_by_death"
-          ? `Cleared ${subject} On Death`
-          : lifecycleTokenId === "expired" && statusTokenId === "in_combat"
-            ? "Out of Combat"
-            : `${prefix} ${subject}`;
+        trap && lifecycleTokenId === "trap_broken"
+          ? "Freezing Trap (Stun Broken)"
+          : trap && lifecycleTokenId === "trap_broken_and_reapplied"
+            ? "Freezing Trap (Stun Broken), Then Reapplied"
+            : lifecycleTokenId === "cleared_by_death"
+              ? `Cleared ${subject} On Death`
+              : lifecycleTokenId === "expired" && statusTokenId === "in_combat"
+                ? "Out of Combat"
+                : `${prefix} ${subject}`;
       const expectedSummary =
         lifecycleTokenId === "expired" || lifecycleTokenId === "cleared_by_death"
           ? null
-          : lifecycleTokenId === "trap_broken" && statusTokenId === "stun_hunter_trap"
-            ? "The Freezing Trap stun ended early because the recipient received damage."
+          : lifecycleTokenId === "trap_broken" && trap
+            ? "The Freezing Trap stun ended early because this agent took damage."
             : status.effect;
       assert.deepEqual(lifecycle, {
         title: expectedTitle,
@@ -169,9 +184,17 @@ test("status lifecycle copy identifies the exact durable status and applies life
     }
   }
   assert.deepEqual(statusLifecyclePresentation("slow_warrior_charge", "applied"), {
-    title: "Applied Warrior (Ultimate: Charge) Slow",
+    title: "Applied Charge (Slow)",
+    summary: "A Warrior's Charge slows this agent's movement until the slow ends.",
+  });
+  assert.deepEqual(statusLifecyclePresentation("slow_hunter_basic", "applied"), {
+    title: "Applied Serrated Arrows (Slow)",
     summary:
-      "A Warrior's concussive Charge slows this agent's movement for its duration.",
+      "A Hunter's Serrated Arrows slow this agent's movement until the slow ends. A new hit starts it again.",
+  });
+  assert.deepEqual(statusLifecyclePresentation("spawn_shield", "expired"), {
+    title: "Expired Spawn Shield (Invulnerable)",
+    summary: null,
   });
   assert.equal(statusLifecyclePresentation("slow_warrior_charge", "unknown"), null);
 });
@@ -182,7 +205,7 @@ test("death clear is distinct from natural expiry and damage break", () => {
   const damageBreak = resolveVisualToken("lifecycle", "trap_broken");
 
   assert.equal(deathClear.label, "Cleared On Death");
-  assert.match(deathClear.accessibleName, /cleared.*recorded new death/u);
+  assert.match(deathClear.accessibleName, /cleared because the champion fell/u);
   assert.notEqual(deathClear.glyphKey, expired.glyphKey);
   assert.notEqual(deathClear.glyphKey, damageBreak.glyphKey);
   assert.notEqual(deathClear.cssKey, expired.cssKey);
@@ -193,9 +216,9 @@ test("status compositor outcomes use the exact locked lifecycle vocabulary", () 
   const labels = Object.freeze({
     applied: "Applied",
     refreshed: "Refreshed",
-    trap_broken_and_reapplied: "Broken, Then Reapplied",
+    trap_broken_and_reapplied: "Freezing Trap (Stun Broken), Then Reapplied",
     reapplied: "Reapplied",
-    trap_broken: "Broken",
+    trap_broken: "Freezing Trap (Stun Broken)",
     expired: "Expired",
     cleared_by_death: "Cleared On Death",
   });
@@ -222,18 +245,139 @@ test("product vocabulary uses the locked exact ability and aura names", () => {
     [1, 2, 3, 4, 5].map((classId) => ultimateTokenFromClassId(classId).label),
     ["Burst", "Charge", "Freezing Trap", "Crippling Poison", "Holy Word: Salvation"],
   );
-  assert.equal(
-    resolveVisualToken("modifier", "mage_amplification").label,
-    "Sorcerer’s Empowerment",
+  assert.deepEqual(
+    [1, 2, 3, 4, 5].map((classId) => ultimateTokenFromClassId(classId).label),
+    [1, 2, 3, 4, 5].map((classId) => classNamesV1(classId)?.ultimateName),
   );
-  assert.equal(
-    resolveVisualToken("modifier", "warrior_mitigation").label,
-    "Guardian’s Barrier",
+  assert.deepEqual(
+    MODIFIER_TOKEN_IDS.map((tokenId) => {
+      const definition = resolveVisualToken("modifier", tokenId);
+      return [definition.label, definition.shortLabel];
+    }),
+    [
+      ["Sorcerer's Empowerment (Damage Boost)", "Sorcerer's Empowerment"],
+      ["Guardian's Barrier (Damage Mitigation)", "Guardian's Barrier"],
+      ["Crippling Poison (Healing Reduction)", "Crippling Poison"],
+      ["Blessing of Freedom (Slow Resistance)", "Blessing of Freedom"],
+      ["Burst (Damage Boost)", "Burst"],
+    ],
   );
-  assert.equal(
-    resolveVisualToken("modifier", "rogue_anti_heal").label,
-    "Crippling Poison Anti-Heal",
+  assert.equal(resolveVisualToken("activation", "basic_heal").label, "Lesser Heal");
+  assert.equal(resolveVisualToken("activation", "basic_damage").label, "Basic Damage");
+});
+
+test("status tokens show the approved status names on labels and chips alike", () => {
+  assert.deepEqual(
+    [...EXPECTED_STATUSES, "in_combat"].map((tokenId) => {
+      const definition = resolveVisualToken("status", tokenId);
+      return [
+        tokenId,
+        definition.label,
+        definition.shortLabel,
+        definition.accessibleName,
+      ];
+    }),
+    [
+      [
+        "stun_warrior_charge",
+        "Charge (Stun)",
+        "Charge (Stun)",
+        "Charge (Stun) from a Warrior's Charge",
+      ],
+      [
+        "stun_hunter_trap",
+        "Freezing Trap (Stun)",
+        "Freezing Trap (Stun)",
+        "Freezing Trap (Stun) from a Hunter's Freezing Trap",
+      ],
+      [
+        "stun_rogue_poison",
+        "Crippling Poison (Stun)",
+        "Crippling Poison (Stun)",
+        "Crippling Poison (Stun) from a Rogue's Crippling Poison",
+      ],
+      [
+        "slow_warrior_charge",
+        "Charge (Slow)",
+        "Charge (Slow)",
+        "Charge (Slow) from a Warrior's Charge",
+      ],
+      [
+        "slow_hunter_basic",
+        "Serrated Arrows (Slow)",
+        "Serrated Arrows (Slow)",
+        "Serrated Arrows (Slow) from a Hunter's Serrated Arrows",
+      ],
+      [
+        "slow_rogue_poison",
+        "Crippling Poison (Slow)",
+        "Crippling Poison (Slow)",
+        "Crippling Poison (Slow) from a Rogue's Crippling Poison",
+      ],
+      [
+        "anti_heal_rogue_poison",
+        "Crippling Poison (Healing Reduction)",
+        "Crippling Poison (Healing Reduction)",
+        "Crippling Poison (Healing Reduction) from a Rogue's Crippling Poison",
+      ],
+      [
+        "priest_freedom",
+        "Blessing of Freedom (Slow Resistance)",
+        "Blessing of Freedom (Slow Resistance)",
+        "Blessing of Freedom (Slow Resistance) from a Priest's Lesser Heal",
+      ],
+      [
+        "mage_burst",
+        "Burst (Damage Boost)",
+        "Burst (Damage Boost)",
+        "Burst (Damage Boost) from the Mage's own Burst",
+      ],
+      ["in_combat", "In Combat", "In Combat", "In Combat"],
+    ],
   );
+  for (const tokenId of [...EXPECTED_STATUSES, "in_combat", "spawn_shield"]) {
+    const presentation = statusPresentation(tokenId);
+    assert.equal(
+      presentation.title,
+      presentation.subtitle === null
+        ? presentation.name
+        : `${presentation.name} (${presentation.subtitle})`,
+    );
+    assert.doesNotMatch(presentation.effect, /\d/u, tokenId);
+  }
+  assert.equal(statusPresentation("spawn_shield").title, "Spawn Shield (Invulnerable)");
+});
+
+test("class and team tokens read their names from the one label owner", () => {
+  assert.deepEqual(
+    CLASS_TOKEN_IDS,
+    Object.values(CLASS_IDENTITIES).map((identity) => identity.tokenId),
+  );
+  assert.deepEqual(
+    TEAM_TOKEN_IDS,
+    Object.values(TEAM_IDENTITIES).map((identity) => identity.tokenId),
+  );
+  for (const identity of Object.values(CLASS_IDENTITIES)) {
+    const definition = classTokenFromId(identity.classId);
+    assert.equal(definition.label, identity.label);
+    assert.equal(definition.cssKey, identity.tokenId);
+    assert.equal(definition.glyphKey, `class-${identity.tokenId}`);
+    assert.equal(definition.fallback, identity.label[0]);
+  }
+  assert.deepEqual(
+    [1, 2].map((teamId) => {
+      const definition = teamTokenFromId(teamId);
+      return [definition.label, definition.shortLabel, definition.cssKey];
+    }),
+    [
+      ["Team A", "A", "team-a"],
+      ["Team B", "B", "team-b"],
+    ],
+  );
+  const words = JSON.stringify(
+    [...EXPECTED_TEAMS].map((tokenId) => resolveVisualToken("team", tokenId)),
+  );
+  assert.doesNotMatch(words, /azure|crimson|host|blue|red/iu);
 });
 
 test("every CP2 catalog status resolves through an explicit presentation mapping", () => {
@@ -275,11 +419,11 @@ test("numeric class and team identities map only to display vocabulary", () => {
   );
 });
 
-test("class glyphs use the canonical Hunter bow and Priest medic cross", () => {
+test("plain class glyphs use the arrowless Hunter bow and Priest medic cross", () => {
   const hunter = iconDefinition("class-hunter");
   assert.deepEqual(
     hunter.primitives.map((primitive) => primitive.tag),
-    ["path", "line", "line", "polyline"],
+    ["path", "line", "line"],
   );
   assert.deepEqual(hunter.primitives[1].attributes, {
     x1: 6.5,
@@ -293,7 +437,8 @@ test("class glyphs use the canonical Hunter bow and Priest medic cross", () => {
     x2: 21,
     y2: 12,
   });
-  assert.equal(hunter.primitives[3].attributes.points, "17,8 21,12 17,16");
+  // No arrowhead, so the plain Hunter glyph never shows a facing.
+  assert.equal(hunter.primitives.length, 3);
 
   const priest = iconDefinition("class-priest");
   assert.deepEqual(

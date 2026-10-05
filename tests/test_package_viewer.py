@@ -1,7 +1,9 @@
 """Check package Viewer ownership, lazy options and scoped resource launch.
 
-Old developer imports must share exact objects and patched globals. Browser
-resources stay alive until serving ends; invalid inputs cannot start a server.
+Old developer imports must share exact objects and patched globals. Installed
+browser resources stay alive until serving ends; invalid inputs cannot start a server.
+launch_replay builds every agent's Agent POV work (prepare_agent_pov) before it
+takes the browser resources and serves.
 Installed-wheel HTTP/browser evidence is collected separately at packet closeout.
 """
 
@@ -109,8 +111,9 @@ def test_loaded_replay_uses_resources_until_server_returns(
     bundle = cast("LoadedReplayBundle", object())
 
     class Service:
-        def __init__(self, received: object, **_kwargs: object) -> None:
+        def __init__(self, received: object, **kwargs: object) -> None:
             assert received is bundle
+            self.show_ranges = kwargs["show_ranges"]
             calls.append("validate")
 
         def current_frame(self, **_kwargs: object) -> object:
@@ -123,6 +126,11 @@ def test_loaded_replay_uses_resources_until_server_returns(
         metric_analysis = current_frame
         metric_catalog = current_frame
         episode_details = current_frame
+        timeline_marks = current_frame
+
+        def prepare_agent_pov(self) -> bool:
+            calls.append("prepare")
+            return True
 
     @contextmanager
     def scoped_resource(_resource: object) -> Generator[Path]:
@@ -140,16 +148,26 @@ def test_loaded_replay_uses_resources_until_server_returns(
         assert kwargs["asset_root"] == tmp_path
         assert kwargs["port"] == 0
         assert kwargs["open_browser"] is False
+        binding = kwargs["coordinator"]
+        assert isinstance(binding, server.HttpCoordinatorBinding)
+        assert binding.initial_show_ranges is False
         calls.append("serve")
         return 17
 
+    installed = tmp_path / "installed-viewer"
+    (installed / "web").mkdir(parents=True)
+
+    def package_files(_name: str) -> Path:
+        return installed
+
     monkeypatch.setattr(replay_service, "ReplayViewerService", Service)
+    monkeypatch.setattr(launch, "files", package_files)
     monkeypatch.setattr(launch, "as_file", scoped_resource)
     monkeypatch.setattr(server, "serve_browser_debugger", serve)
     options = resolve_playback_options(argparse.Namespace(no_open=True))
     assert launch.launch_replay(None, options=options, loaded_bundle=bundle) == 17
     assert not active
-    assert calls == ["validate", "resource", "serve", "release"]
+    assert calls == ["validate", "prepare", "resource", "serve", "release"]
 
 
 def test_invalid_replay_does_not_resolve_assets_or_serve(

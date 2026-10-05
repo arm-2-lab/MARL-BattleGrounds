@@ -6,6 +6,13 @@
  * Public helpers return frozen display objects, empty arrays, or null when a view is
  * unavailable. They do not send commands, fetch data, run simulation, or grant authority.
  * Helpers named projectCertified require the caller to supply already approved facts.
+ * authorizedPresentationNextActionOwnership (whose next action an audience may show;
+ * teammates read "Not Observed" in Agent POV) and authorizedPresentationMatchBeatFacts
+ * (scores before and after, returns and home falls for the beat clock) read only the
+ * audience's own scene and events in Agent POV, never researcher_space or the global
+ * match deaths and returns. authorizedPresentationEpisodeLimit and
+ * authorizedPresentationCurrentTick give the two public clock numbers (the draw
+ * tick and the tick on screen) that the arena may use in either audience.
  */
 import { exactAuthorizedAgentIdentityV1 } from "./agent-identity.js";
 import { isNormalizedAuthorizedPresentationFrameV1 } from "./authorized-presentation-normalizer.js";
@@ -60,6 +67,59 @@ export function authorizedPresentationAudience(value) {
     value.presentation_kind === "replay_oracle"
     ? "researcher"
     : "agent_pov";
+}
+
+/**
+ * Return the match's episode limit (the draw tick) of an approved value, or null.
+ *
+ * Reads only `match_summary.episode_limit` and returns it when it is a positive
+ * whole number of ticks. Returns null for an unapproved value, a missing match
+ * summary, or a missing, zero, negative or non-integer limit. It reads no other
+ * match summary field.
+ *
+ * Agent POV: the limit is fixed before the game starts and is the same number in
+ * Oracle View and Agent POV, so it reveals no champion, position or timing the
+ * POV team cannot see. That is why arena drawing (the Last Watch Veil) may use
+ * it while it never reads the rest of the match summary.
+ *
+ * @param {unknown} value The installed presentation, or anything else.
+ * @returns {number | null} The limit in ticks, or null.
+ */
+export function authorizedPresentationEpisodeLimit(value) {
+  if (!isAuthorizedPresentationFrame(value)) return null;
+  const summary = /** @type {Record<string, unknown> | null | undefined} */ (
+    /** @type {Record<string, unknown>} */ (value).match_summary
+  );
+  // Allowed under the Agent POV rule: the episode limit is a public match
+  // setting, the same in both views, never a hidden fact about a champion.
+  const limit = isRecord(summary) ? summary.episode_limit : null;
+  return Number.isInteger(limit) && Number(limit) > 0 ? Number(limit) : null;
+}
+
+/**
+ * Return the public tick an approved value shows, or null.
+ *
+ * Reads only `source.source_simulator_step_count`, the tick of the frame the
+ * presentation was built from (the normalizer checks it against the frame's
+ * other tick fields). Every live presentation carries it (Oracle View, Agent
+ * POV with and without shared sight). It is there even on a frame with no
+ * transition into it (a fresh start, or a start such as tick 299 of 300 that
+ * the Vision Moment installs), where the incoming events give no tick.
+ * Returns null for an unapproved value, a missing source, or a missing,
+ * negative or non-integer tick (a replay source without the field).
+ *
+ * Agent POV: the tick is the public game clock, the same number in Oracle View
+ * and Agent POV, so it reveals no champion, position or timing the POV team
+ * cannot see. It reads no other source field and never the match summary.
+ *
+ * @param {unknown} value The installed presentation, or anything else.
+ * @returns {number | null} The tick (0 or more), or null.
+ */
+export function authorizedPresentationCurrentTick(value) {
+  if (!isAuthorizedPresentationFrame(value)) return null;
+  const source = /** @type {Record<string, unknown>} */ (value).source;
+  const tick = isRecord(source) ? source.source_simulator_step_count : null;
+  return Number.isInteger(tick) && Number(tick) >= 0 ? Number(tick) : null;
 }
 
 /**
@@ -391,8 +451,14 @@ export function authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId
         : null;
   const targetActions =
     liveResearcherSpace !== null &&
-    isRecord(liveResearcherSpace.pending_inspection?.draft?.decision_mask)
-      ? liveResearcherSpace.pending_inspection.draft.decision_mask.target_actions
+    isRecord(
+      liveResearcherSpace.pending_inspection?.draft?.decision_mask ??
+        liveResearcherSpace.pending_inspection?.decision_mask,
+    )
+      ? (
+          liveResearcherSpace.pending_inspection.draft?.decision_mask ??
+          liveResearcherSpace.pending_inspection.decision_mask
+        ).target_actions
       : isAuthorizedPresentationFrame(value) &&
           authorizedPresentationAudience(value) === "researcher" &&
           isRecord(value.action_axis)
@@ -424,6 +490,50 @@ export function authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId
 }
 
 /**
+ * Read one actor's configured controller from approved identity and transport facts.
+ * Dead actors keep ownership. Returns null for replay or an unknown actor; this
+ * display helper does not grant permission to send an edit to the server.
+ * @param {unknown} value - Approved live presentation.
+ * @param {unknown} combatConfiguration - Its paired normalized combat configuration.
+ * @param {unknown} publicAgentId - Actor identity from the approved roster.
+ * @returns {Readonly<{manual: boolean, label: string}> | null}
+ */
+export function authorizedPresentationController(
+  value,
+  combatConfiguration,
+  publicAgentId,
+) {
+  if (
+    !isAuthorizedPresentationFrame(value) ||
+    value.viewer_mode !== "live" ||
+    !isRecord(combatConfiguration)
+  )
+    return null;
+  const slot = authorizedOracleCommandSlotForPublicAgentId(value, publicAgentId);
+  if (slot === null) return null;
+  if (
+    Array.isArray(combatConfiguration.manual_slots) &&
+    Array.isArray(combatConfiguration.slot_labels)
+  ) {
+    const label = combatConfiguration.slot_labels[slot];
+    return typeof label === "string"
+      ? Object.freeze({
+          manual: combatConfiguration.manual_slots.includes(slot),
+          label,
+        })
+      : null;
+  }
+  const controller =
+    slot < 5
+      ? combatConfiguration.team_a_controller
+      : combatConfiguration.team_b_controller;
+  return Object.freeze({
+    manual: controller === "manual",
+    label: controller === "manual" ? "Manual" : String(controller),
+  });
+}
+
+/**
  * Return the inspection field from authorizedPresentationInspectionState(value).
  * The result is the approved outgoing inspection or null; unavailable and scripted
  * states remain distinguishable only through the full state helper.
@@ -437,14 +547,15 @@ function presentationInspection(value) {
 /**
  * Return a frozen inspection state for value without guessing from missing data.
  * Unmarked input returns unavailable. A live editable draft returns live_editable,
- * its declared submission_scope, and draft inspection; scripted live playback returns
+ * its declared submission_scope, and draft inspection. Policy inspection returns
+ * live_policy with current masks and no draft; scripted live playback returns
  * live_scripted with no inspection. Replay returns replay_outgoing when an outgoing
  * inspection exists, otherwise replay_none. Replay submission_scope is null.
  * The joint_turn and scripted_playback scopes retain their exact server meaning.
  *
  * @param {unknown} value
  * @returns {Readonly<{
- *   state_kind: "live_editable" | "live_scripted" | "replay_outgoing" | "replay_none" | "unavailable",
+ *   state_kind: "live_editable" | "live_policy" | "live_scripted" | "replay_outgoing" | "replay_none" | "unavailable",
  *   submission_scope: "joint_turn" | "scripted_playback" | null,
  *   inspection: Readonly<Record<string, any>> | null,
  * }>}
@@ -466,6 +577,13 @@ export function authorizedPresentationInspectionState(value) {
         state_kind: "live_editable",
         submission_scope: live.submission_scope,
         inspection: isRecord(live.draft) ? live.draft : null,
+      });
+    }
+    if (isRecord(live) && live.inspection_kind === "policy_read_only") {
+      return Object.freeze({
+        state_kind: "live_policy",
+        submission_scope: live.submission_scope,
+        inspection: live,
       });
     }
     return Object.freeze({
@@ -491,7 +609,8 @@ export function authorizedPresentationInspectionState(value) {
  * Return the inspection state used by researcher panels and live controls.
  * For an approved live Agent POV with a researcher branch, read its global pending
  * inspection. Otherwise delegate to the ordinary inspection-state helper. The frozen
- * state distinguishes editable, scripted, replay-outgoing, replay-none, and unavailable.
+ * state distinguishes editable, policy read-only, scripted, replay-outgoing,
+ * replay-none, and unavailable.
  * The global live draft has no battlefield geometry; SVG consumers must use
  *  authorizedPresentationInspectionState instead.
  *
@@ -512,6 +631,13 @@ export function authorizedPresentationResearcherInspectionState(value) {
       state_kind: "live_editable",
       submission_scope: pending.submission_scope,
       inspection: isRecord(pending.draft) ? pending.draft : null,
+    });
+  }
+  if (isRecord(pending) && pending.inspection_kind === "policy_read_only") {
+    return Object.freeze({
+      state_kind: "live_policy",
+      submission_scope: pending.submission_scope,
+      inspection: pending,
     });
   }
   return Object.freeze({
@@ -830,7 +956,9 @@ export function projectCertifiedInspectionRoute(
  * visible scene body locally and null clears it. This local selection does not take
  * ownership of another actor's outgoing action or reveal a hidden target.
  * Return a frozen view with audience, map, adapted agents/auras, class/spawn mechanics,
- * spawn pads/waves, selection keys, ranges, pending route, and selected legality.
+ * spawn pads/waves, the host's merged team sight (`team_sight`, with its turn
+ * shapes: every Agent POV frame, live or replayed; null in Oracle View and from
+ * older producers), selection keys, ranges, pending route, and selected legality.
  * Unavailable routes/legality are null; no selected body gives empty ranges. Nested
  * approved source values are shared. No global slot or command field is added.
  *
@@ -981,6 +1109,9 @@ export function authorizedPresentationSceneView(
     spawn_shield_mechanics: value.scene.spawn_shield_mechanics,
     spawn_pads: value.scene.spawn_pads,
     respawn_waves: value.scene.respawn_waves,
+    // Agent POV, live or replayed: the host's merged team sight for the Night
+    // Veil, with its turn shapes (null in Oracle View and older producers).
+    team_sight: isRecord(value.scene.team_sight) ? value.scene.team_sight : null,
     selection: Object.freeze({
       controlled_presentation_key: value.viewer_mode === "live" ? ownerKey : null,
       inspection_owner_presentation_key: inspectedOwnerKey,
@@ -1219,7 +1350,8 @@ export function authorizedPresentationLatestTransitionId(value) {
  * Prefer the attached researcher pending_joint_action, then the top-level branch.
  * Rows keep actor title/accent/team and copied integer action triples in source order.
  * Return an empty array for replay, unmarked input, absence, or any identity/action
- * mismatch. This displays the pending joint turn; it neither accepts nor sends actions.
+ * mismatch. These are staged Manual rows, including dead configured actors. Policy
+ * choices remain unknown until submit. This neither accepts nor sends actions.
  *
  * @param {unknown} value
  */
@@ -1294,6 +1426,195 @@ export function authorizedPresentationUpcomingTransitionRows(value) {
     value,
     researcher?.upcoming_transition ?? value.upcoming_transition,
   );
+}
+
+/**
+ * The words shown instead of a teammate's next action in Agent POV. Only the Agent
+ * POV recipient's own next action is known to that audience, as on the host.
+ */
+export const NOT_OBSERVED_LABEL = "Not Observed";
+
+/**
+ * Say whose next action one audience may show, for arena overlays, hover cards and
+ * the BattleClient and DevClient panels. The Replay Viewer's docked researcher panel
+ * keeps the full record through authorizedPresentationUpcomingTransitionRows instead.
+ *
+ * Oracle View: one row per agent in the scene, each observed. Agent POV: the
+ * recipient's row (observed) and one row per teammate in the Agent POV scene with
+ * observed false and status_label "Not Observed". Enemies are never listed in Agent
+ * POV. The rows come only from the audience's own scene and authority; nothing is read
+ * from researcher_space or match_summary. Pure: no DOM, storage or timers.
+ *
+ * @param {unknown} value Approved presentation (live or replay). Anything else gives
+ *   an empty array.
+ * @returns {ReadonlyArray<Readonly<{
+ *   public_agent_id: string,
+ *   presentation_key: string,
+ *   actor_title: string,
+ *   actor_accent: string,
+ *   actor_team: "team-a" | "team-b",
+ *   observed: boolean,
+ *   status_label: string | null,
+ * }>>} Rows in scene order; status_label is null when observed.
+ */
+export function authorizedPresentationNextActionOwnership(value) {
+  if (!isAuthorizedPresentationFrame(value)) {
+    return Object.freeze([]);
+  }
+  const agents = Array.isArray(value.scene.agents) ? value.scene.agents : [];
+  const audience = authorizedPresentationAudience(value);
+  const recipientId =
+    audience === "agent_pov" && isRecord(value.authority)
+      ? value.authority.recipient_public_agent_id
+      : null;
+  const recipient = agents.find(
+    (agent) => isRecord(agent) && agent.public_agent_id === recipientId,
+  );
+  if (audience === "agent_pov" && !isRecord(recipient)) {
+    return Object.freeze([]);
+  }
+  const rows = [];
+  for (const agent of agents) {
+    const identity = exactAuthorizedAgentIdentityV1(agent);
+    if (identity === null) continue;
+    const isRecipient = identity.publicAgentId === recipientId;
+    if (
+      audience === "agent_pov" &&
+      !isRecipient &&
+      identity.teamId !== recipient?.team_id
+    ) {
+      continue;
+    }
+    const observed = audience !== "agent_pov" || isRecipient;
+    rows.push(
+      Object.freeze({
+        public_agent_id: identity.publicAgentId,
+        presentation_key: identity.presentationKey,
+        actor_title: identity.title,
+        actor_accent: identity.accent,
+        actor_team: identity.teamId === 1 ? "team-a" : "team-b",
+        observed,
+        status_label: observed ? null : NOT_OBSERVED_LABEL,
+      }),
+    );
+  }
+  return Object.freeze(rows);
+}
+
+/**
+ * Build the Frame Explanation input of the shown tick for its own audience.
+ *
+ * value is an approved presentation (anything else gives null). Return a frozen
+ * {audience, agents, events, score, tick} for looks/frame-explanation.js
+ * explainTick: audience is "researcher" (Oracle View) or "agent_pov"; agents are
+ * the audience's arena scene agents (Agent POV: only seen champions); events are
+ * the payloads of this audience's incoming event rows (Oracle View:
+ * latest_events; Agent POV: visual_events); score is {changed, after} from the
+ * public scoreboard (authorizedPresentationMatchBeatFacts), or null without a
+ * match summary; tick is the incoming successor tick count of that audience's
+ * summary, or null. Agent POV: nothing here reads researcher_space, and the score
+ * is the public scoreboard both audiences see. Pure.
+ *
+ * @param {unknown} value
+ * @returns {Readonly<{
+ *   audience: "researcher" | "agent_pov",
+ *   agents: ReadonlyArray<unknown>,
+ *   events: ReadonlyArray<unknown>,
+ *   score: Readonly<{changed: boolean, after: readonly number[]}> | null,
+ *   tick: number | null,
+ * }> | null}
+ */
+export function authorizedPresentationFrameExplanationInput(value) {
+  const audience = authorizedPresentationAudience(value);
+  if (audience === null || !isAuthorizedPresentationFrame(value)) return null;
+  const beat = authorizedPresentationMatchBeatFacts(value);
+  const summary = audience === "agent_pov" ? value.visual_events : value.latest_events;
+  const tick = isRecord(summary)
+    ? summary.incoming_successor_simulator_step_count
+    : null;
+  return Object.freeze({
+    audience: /** @type {"researcher" | "agent_pov"} */ (audience),
+    agents: authorizedPresentationSceneView(value)?.agents ?? Object.freeze([]),
+    events: Object.freeze(
+      authorizedPresentationIncomingRows(value)
+        .filter((row) => row.vocabulary === "event")
+        .map((row) => row.payload),
+    ),
+    score:
+      beat === null
+        ? null
+        : Object.freeze({ changed: beat.score_changed, after: beat.scores_after }),
+    tick: Number.isInteger(tick) ? Number(tick) : null,
+  });
+}
+
+/**
+ * Return the facts the beat clock holds back until the Fall and Return beats, scoped
+ * to the audience. Scores are the public scoreboard (both audiences). In Oracle View
+ * the returns come from match_summary.returned_agent_ids and the home falls from the
+ * Oracle latest_events agent_died rows. In Agent POV they come only from the audience's
+ * visual_events (seen agent_respawned and agent_died rows), never from match_summary,
+ * so an unseen return or fall changes nothing. Pure: no DOM, storage or timers.
+ *
+ * @param {unknown} value Approved presentation. Anything else, or a frame without a
+ *   match summary, gives null.
+ * @returns {Readonly<{
+ *   scores_before: readonly [number, number],
+ *   scores_after: readonly [number, number],
+ *   score_changed: boolean,
+ *   returned_public_agent_ids: readonly string[],
+ *   home_fall_public_agent_ids: readonly string[],
+ * }> | null} Team A then Team B scores. scores_before equals scores_after on frame
+ *   zero, on ticks with no score, and for older payloads without previous_scores.
+ */
+export function authorizedPresentationMatchBeatFacts(value) {
+  if (!isAuthorizedPresentationFrame(value) || !isRecord(value.match_summary)) {
+    return null;
+  }
+  const match = value.match_summary;
+  const after = /** @type {readonly [number, number]} */ (
+    Object.freeze([match.scores[0], match.scores[1]])
+  );
+  const previous = Array.isArray(match.previous_scores) ? match.previous_scores : after;
+  const before = /** @type {readonly [number, number]} */ (
+    Object.freeze([previous[0], previous[1]])
+  );
+  const agentPov = authorizedPresentationAudience(value) === "agent_pov";
+  const events = agentPov
+    ? isRecord(value.visual_events) && Array.isArray(value.visual_events.events)
+      ? value.visual_events.events
+      : []
+    : isRecord(value.latest_events) && Array.isArray(value.latest_events.events)
+      ? value.latest_events.events
+      : [];
+  const returned = agentPov
+    ? events.flatMap((event) =>
+        isRecord(event) &&
+        event.event_kind === "agent_respawned" &&
+        isRecord(event.agent_anchor) &&
+        typeof event.agent_anchor.public_agent_id === "string"
+          ? [event.agent_anchor.public_agent_id]
+          : [],
+      )
+    : Array.isArray(match.returned_agent_ids)
+      ? match.returned_agent_ids.filter((id) => typeof id === "string")
+      : [];
+  const homeFalls = events.flatMap((event) =>
+    isRecord(event) &&
+    event.event_kind === "agent_died" &&
+    event.home_fall === true &&
+    isRecord(event.recipient_anchor) &&
+    typeof event.recipient_anchor.public_agent_id === "string"
+      ? [event.recipient_anchor.public_agent_id]
+      : [],
+  );
+  return Object.freeze({
+    scores_before: before,
+    scores_after: after,
+    score_changed: before[0] !== after[0] || before[1] !== after[1],
+    returned_public_agent_ids: Object.freeze([...new Set(returned)]),
+    home_fall_public_agent_ids: Object.freeze([...new Set(homeFalls)]),
+  });
 }
 
 /** @typedef {"nonnegative_integer" | "positive_finite_number" | "scientific_id" | "optional_scientific_id" | "sha256_prefix"} TechnicalFactValueKind */

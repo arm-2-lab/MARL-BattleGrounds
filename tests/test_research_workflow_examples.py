@@ -21,7 +21,6 @@ the actor, reports actual stage exposure and saves held-out paired evaluation.
 These are workflow proofs, not evidence of learned competence.
 """
 
-import sys
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
@@ -224,8 +223,10 @@ def test_independent_updates_and_saved_carries_match_batched_execution(
         ("tournament", 20, 20),
     ),
 )
+@pytest.mark.parametrize("red_zone_depth", [0, 5, 5.0])
 def test_evaluation_example_resolves_valid_workflow_budgets(
     workflow: str,
+    red_zone_depth: float,
     explicit: int | None,
     expected: int,
     tmp_path: Path,
@@ -242,20 +243,21 @@ def test_evaluation_example_resolves_valid_workflow_budgets(
     def writer(_path: Path) -> nullcontext[SimpleNamespace]:
         return nullcontext(SimpleNamespace(paths={}, flush=lambda: None))
 
-    args = ["evaluation.py", workflow]
-    if workflow == "validation":
-        args.extend(("--output-dir", str(tmp_path / "validation")))
-    if explicit is not None:
-        args.extend(("--episodes", str(explicit)))
-    monkeypatch.setattr(sys, "argv", args)
     monkeypatch.setattr(marl_bgs, "evaluate", receive)
     monkeypatch.setattr(marl_bgs, "run_tournament", receive)
     monkeypatch.setattr(marl_bgs, "RunWriter", writer)
-    evaluation_example.main()
+    evaluation_example.run(
+        workflow=workflow,
+        red_zone_depth=red_zone_depth,
+        episodes=explicit,
+        output_dir=tmp_path / "validation" if workflow == "validation" else None,
+    )
     assert len(calls) == (2 if workflow == "validation" else 1)
     name = "episodes_per_pair" if workflow == "tournament" else "num_episodes"
     assert all(call[name] == expected for call in calls)
     assert all(call["num_envs"] == 32 for call in calls)
+    assert all(type(call["red_zone_depth"]) is float for call in calls)
+    assert all(call["red_zone_depth"] == red_zone_depth for call in calls)
     assert not list(tmp_path.iterdir())
 
 
@@ -295,14 +297,10 @@ def test_training_example_passes_method_to_the_shared_public_workflow(
         reviews.append(paths)
         return {"artifacts": {"summary": str(tmp_path / "summary.md")}}
 
-    args = ["mappo_training.py", "--output-dir", str(tmp_path)]
-    if method is not None:
-        args.extend(("--method", method))
-    monkeypatch.setattr(sys, "argv", args)
     monkeypatch.setattr(training, "train", train)
     monkeypatch.setattr(training, "load_system", load)
     monkeypatch.setattr(training, "analyze", analyze)
-    training_example.main()
+    training_example.run(output_dir=tmp_path, method=method)
     assert len(calls) == 1
     config, kwargs = calls[0]
     assert config is not None and config.method == (method or "mappo")
@@ -322,15 +320,13 @@ def test_training_example_rejects_method_override_of_saved_configuration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args = ["mappo_training.py", "--method", "ippo"]
-    if route == "config":
-        args.extend(("--output-dir", str(tmp_path), "--config", "saved.json"))
-    else:
-        args.extend(("--resume-from", str(tmp_path)))
-    monkeypatch.setattr(sys, "argv", args)
-    with pytest.raises(SystemExit) as error:
-        training_example.main()
-    assert error.value.code == 2
+    with pytest.raises(ValueError, match="method"):
+        training_example.run(
+            method="ippo",
+            output_dir=tmp_path if route == "config" else None,
+            config="saved.json" if route == "config" else None,
+            resume_from=tmp_path if route == "resume" else None,
+        )
     assert not list(tmp_path.iterdir())
 
 
@@ -365,13 +361,10 @@ def test_qmix_example_runs_the_shared_public_workflow(
     def analyze(paths: list[Path], **_kwargs: object) -> dict[str, object]:
         return {"artifacts": {"summary": str(tmp_path / "summary.md")}}
 
-    monkeypatch.setattr(
-        sys, "argv", ["qmix_training.py", "--output-dir", str(tmp_path)]
-    )
     monkeypatch.setattr(training, "train", train)
     monkeypatch.setattr(training, "load_system", load)
     monkeypatch.setattr(training, "analyze", analyze)
-    qmix_example.main()
+    qmix_example.run(output_dir=tmp_path)
     config, kwargs = calls[0]
     assert config is not None and config.method == "qmix" and config.qmix is not None
     assert (config.num_envs, config.total_env_steps) == (4, 192)
@@ -419,24 +412,12 @@ def test_pqn_example_runs_the_shared_public_workflow(
     def analyze(paths: list[Path], **_kwargs: object) -> dict[str, object]:
         return {"artifacts": {"summary": str(tmp_path / "summary.md")}}
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "pqn_training.py",
-            "--output-dir",
-            str(tmp_path),
-            "--curriculum",
-            "--shaping",
-            "--evaluate",
-        ],
-    )
     monkeypatch.setattr(training, "train", train)
     monkeypatch.setattr(training, "load_system", load)
     monkeypatch.setattr(training, "analyze", analyze)
     monkeypatch.setattr(marl_bgs, "evaluate", evaluate)
     monkeypatch.setattr(marl_bgs, "run_tournament", tournament)
-    pqn_example.main()
+    pqn_example.run(output_dir=tmp_path, curriculum=True, shaping=True, evaluate=True)
     config, kwargs = calls[0]
     assert config is not None and config.method == "pqn_vdn" and config.pqn is not None
     assert (config.num_envs, config.total_env_steps) == (4, 176)
@@ -450,21 +431,13 @@ def test_pqn_example_runs_the_shared_public_workflow(
         ("evaluate", "tdm-alpha"),
         ("tournament", ("loaded", "tdm-alpha")),
     ]
-    # Curriculum and shaping flags cannot silently vanish into a saved config.
-    for extra in (
-        (
-            "--output-dir",
-            str(tmp_path / "other"),
-            "--config",
-            "saved.json",
-            "--shaping",
-        ),
-        ("--resume-from", str(tmp_path), "--curriculum"),
-    ):
-        monkeypatch.setattr(sys, "argv", ["pqn_training.py", *extra])
-        with pytest.raises(SystemExit) as error:
-            pqn_example.main()
-        assert error.value.code == 2
+    # Explicit lesson switches cannot silently vanish into saved settings.
+    with pytest.raises(ValueError, match=r"curriculum.*shaping"):
+        pqn_example.run(
+            output_dir=tmp_path / "other", config="saved.json", shaping=True
+        )
+    with pytest.raises(ValueError, match=r"curriculum.*shaping"):
+        pqn_example.run(resume_from=tmp_path, curriculum=True)
     assert len(calls) == 1
 
 
@@ -579,26 +552,15 @@ def test_cross_play_cli_forwards_explicit_references_and_budget(
 
     monkeypatch.setattr(example, "run", run)
     assert (
-        example.main(
-            [
-                "--output-dir",
-                str(tmp_path),
-                "--focal",
-                "saved/actor",
-                "--partner",
-                "tdm-alpha",
-                "--opponent",
-                "tdm-beta",
-                "--max-steps",
-                "300",
-                "--seed-pairs",
-                "8",
-                "--maps",
-                "47",
-                "48",
-                "--num-envs",
-                "32",
-            ]
+        example.launch(
+            output_dir=tmp_path,
+            focals={"saved/actor": "saved/actor"},
+            partners={"tdm-alpha": "tdm-alpha"},
+            opponents={"tdm-beta": "tdm-beta"},
+            max_steps=300,
+            seed_pairs=8,
+            maps=[47, 48],
+            num_envs=32,
         )
         == 0
     )
@@ -745,10 +707,7 @@ def test_own_ctde_cli_keeps_training_batch_separate_from_validation(
 
     monkeypatch.setattr(own_learner, "train", train)
     monkeypatch.setattr(own_learner, "validate_and_evaluate", evaluate)
-    monkeypatch.setattr(
-        sys, "argv", ["own_learner", "--output-dir", str(tmp_path), "--num-envs", "128"]
-    )
-    own_learner.main()
+    own_learner.run(output_dir=tmp_path, num_envs=128)
     assert observed == {"training": 128, "validation": 32}
 
 
@@ -764,8 +723,7 @@ def test_declared_curriculum_example_trains_loads_and_evaluates(
     from marl_battlegrounds.training import checkpoints
 
     run_dir = tmp_path / "curriculum"
-    monkeypatch.setattr(sys, "argv", ["curriculum.py", "--output-dir", str(run_dir)])
-    example.main()
+    example.run(output_dir=run_dir)
     printed = capsys.readouterr().out
     details = json.loads((run_dir / "run_details.json").read_text())
     assert details["config"]["total_env_steps"] == 32
@@ -812,3 +770,154 @@ def test_declared_curriculum_example_trains_loads_and_evaluates(
     assert sorted(
         episode["spawn_locations"] for episode in saved_pass["episodes"].values()
     ) == [0, 0, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "depth", [True, False, float("nan"), float("inf"), -1, 10**400]
+)
+def test_evaluation_lesson_rejects_invalid_depth_before_outputs(
+    tmp_path: Path, depth: object
+) -> None:
+    with pytest.raises((TypeError, ValueError), match="red_zone_depth"):
+        evaluation_example.run(red_zone_depth=depth, output_dir=tmp_path / "unused")  # type: ignore[arg-type]
+    assert not list(tmp_path.iterdir())
+
+
+def test_scenario_entry_uses_exact_starts_shared_pressure_and_sparse_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib
+
+    from examples import scenario_evaluation
+
+    from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
+
+    owner = importlib.import_module("marl_battlegrounds.evaluation.evaluate")
+    live = marl_bgs.shared_policy(marl_bgs.policy("tdm-alpha"))
+    calls: list[tuple[object, object, list[Any], dict[str, Any]]] = []
+
+    def evaluate(
+        system: object, opponent: object, schedule: list[Any], **settings: object
+    ) -> SimpleNamespace:
+        calls.append((system, opponent, schedule, settings))
+        return SimpleNamespace(run_dir=settings["output_dir"])
+
+    def array(value: object) -> jax.Array:
+        return jnp.asarray(value)
+
+    monkeypatch.setattr(owner, "evaluate_episodes", evaluate)
+    results = scenario_evaluation.run(
+        system=live,
+        scenario_ids=list(range(1, 9)),
+        num_episodes=2,
+        num_envs=2,
+        output_dir=tmp_path / "chosen",
+    )
+    assert len(results) == len(calls) == 8
+    for identifier, (system, opponent, schedule, settings) in enumerate(calls, 1):
+        assert system is live
+        assert cast(marl_bgs.Policy, opponent).name == (
+            "tdm-beta" if identifier in TDM_BETA_SCENARIO_IDS else "tdm-alpha"
+        )
+        original = marl_bgs.load_tdm_scenario(identifier)
+        assert [episode.episode_id for episode in schedule] == [1, 2]
+        for episode in schedule:
+            _equal(
+                jax.tree.map(array, episode.env_config),
+                jax.tree.map(array, original.config),
+            )
+            _equal(
+                jax.tree.map(array, episode.initial_state),
+                jax.tree.map(array, original.initial_state),
+            )
+        assert settings["keep_batch_size"] is True
+        assert settings["output_dir"] == tmp_path / "chosen" / f"scenario-{identifier}"
+        assert not {"seed", "metrics", "replay_episodes"} & settings.keys()
+    calls.clear()
+    marl_bgs.evaluate_scenarios(
+        live, [1], opponent=live, resume_from=tmp_path / "saved", num_episodes=2
+    )
+    assert calls[0][0] is calls[0][1] is live
+    assert calls[0][3]["resume_from"] == tmp_path / "saved"
+    assert not {"seed", "metrics", "replay_episodes"} & calls[0][3].keys()
+    calls.clear()
+    for identifiers in ([], [1, 1], [9], [True]):
+        with pytest.raises(ValueError):
+            marl_bgs.evaluate_scenarios(
+                live, identifiers, output_dir=tmp_path / "invalid"
+            )
+    assert calls == [] and not (tmp_path / "invalid").exists()
+
+
+def test_scenario_output_guard_precedes_actor_loading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marl_battlegrounds import _method_loading
+
+    actor = tmp_path / "actor"
+    actor.mkdir()
+    (actor / "actor_details.json").write_text("Input must not be read")
+
+    def forbidden(reference: str) -> None:
+        raise AssertionError("Loaded a method before checking output paths")
+
+    monkeypatch.setattr(_method_loading, "load_method", forbidden)
+    with pytest.raises(ValueError, match="outside input artifacts"):
+        marl_bgs.evaluate_scenarios(str(actor), [1], output_dir=actor / "results")
+    assert list(actor.iterdir()) == [actor / "actor_details.json"]
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_scenario_derived_child_cannot_write_into_actor(
+    tmp_path: Path, linked: bool
+) -> None:
+    output = tmp_path / "chosen"
+    output.mkdir()
+    actor = tmp_path / "actor" if linked else output / "scenario-1"
+    actor.mkdir()
+    (actor / "actor_details.json").write_text("No model load is allowed")
+    if linked:
+        (output / "scenario-1").symlink_to(actor, target_is_directory=True)
+    with pytest.raises(ValueError, match=r"symbolic|outside input artifacts"):
+        marl_bgs.evaluate_scenarios(str(actor), [1], output_dir=output)
+    assert list(actor.iterdir()) == [actor / "actor_details.json"]
+
+
+@pytest.mark.parametrize("count", [0, True, 2**31])
+def test_scenario_trial_count_is_checked_before_method_loading(count: int) -> None:
+    with pytest.raises(ValueError, match="positive int32"):
+        marl_bgs.evaluate_scenarios(
+            "nonexistent-module:factory", [1], num_episodes=count
+        )
+
+
+def test_all_exact_scenarios_complete_save_metrics_and_preserve_replay_start(
+    tmp_path: Path,
+) -> None:
+    from marl_battlegrounds.evaluation.capture import (
+        _normalize_snapshot_v1,  # pyright: ignore[reportPrivateUsage]
+    )
+    from marl_battlegrounds.evaluation.replay_io import load_replay
+
+    results = marl_bgs.evaluate_scenarios(
+        "tdm-alpha",
+        list(range(1, 9)),
+        seed=710,
+        num_envs=2,
+        metrics="full",
+        replay_episodes=[1],
+        output_dir=tmp_path,
+    )
+    assert len(results) == 8
+    for identifier, result in enumerate(results, 1):
+        assert result.run_dir is not None and len(result.episodes) == 1
+        saved = marl_bgs.load_results(result.run_dir)
+        assert len(saved.table("episodes")["episode_id"]) == 1
+        assert len(saved.table("full_metrics")) > 1000
+        replay = load_replay(next(iter(saved.replay_paths))).replay
+        scenario = marl_bgs.load_tdm_scenario(identifier)
+        tick, snapshot = _normalize_snapshot_v1(jax.device_get(scenario.initial_state))
+        assert replay.frames[0].simulator_step_count == tick
+        assert replay.frames[0].snapshot == snapshot
+        assert len(snapshot.alive_mask) == 10 and not all(snapshot.alive_mask)
+        assert 1 <= len(replay.transitions) <= int(scenario.config.max_steps) - tick

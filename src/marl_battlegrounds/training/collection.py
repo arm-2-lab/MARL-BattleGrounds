@@ -24,7 +24,11 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
-from marl_battlegrounds._method_loading import load_method
+from marl_battlegrounds._method_loading import (
+    _reference_identity,  # pyright: ignore[reportPrivateUsage]
+    _reference_kind,  # pyright: ignore[reportPrivateUsage]
+    load_method,
+)
 
 # Shared private helpers retain one owner for execution and stage accounting.
 # pyright: reportPrivateUsage=false
@@ -121,10 +125,15 @@ from marl_battlegrounds.training.opponents import (
 )
 from marl_battlegrounds.training.shaping import (
     RewardFunction,
-    reward_adjustments,
+    _add_reward_totals,
+    _empty_reward_totals,
+    _prepare_reward,
+    _reward_config_parameter,
+    _reward_output,
+    _RewardTotals,
+    _validate_reward_totals,
     team_potential_shaping,
     team_score_delta_shaping,
-    validate_reward,
     validate_shaping,
 )
 
@@ -194,6 +203,9 @@ class TrainingCarry(NamedTuple):
     frozen_host_values stores numeric frozen variables/templates for checkpoints,
     first the host opponent if present, then the shared host partner population.
     It does not save opaque host memory or drive live execution.
+    reward_totals is () for array-only/disabled feedback. Named components keep
+    small per-lane sums/counts until a saved row drains the window. Recovery
+    saves pending totals; no component array enters actor inputs or replay.
     """
 
     env: Environment
@@ -215,6 +227,7 @@ class TrainingCarry(NamedTuple):
     partner_values: Tree = ()
     partner_actions: tuple[ActorAction, ActorAction] | None = None
     frozen_host_values: tuple[Tree, ...] = ()
+    reward_totals: _RewardTotals | tuple[()] = ()
 
 
 class TrainingTransition(NamedTuple):
@@ -326,6 +339,8 @@ class TrainingCollection:
     reward is the optional pure scalar callback; reward_identity is its copied
     JSON evidence from shaping.resolve_reward. Both are None when disabled.
     The callback receives privileged training state, never actor state.
+    reward_component_keys names its fixed optional parts in sorted order.
+    Empty keys disable component storage and reduction.
     learner_slots is None for the unchanged full-learner path, otherwise fixed
     physical slots 0..4. learner_actor retains the native learner callbacks;
     actor is the deployed team. partner records and Systems follow the opponent
@@ -370,6 +385,7 @@ class TrainingCollection:
     host_partners: tuple[HostOpponent, HostOpponent] | None = None
     partner_trace_rows: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
     pinned_system: System | None = None
+    reward_component_keys: tuple[str, ...] = ()
 
 
 def _frozen_host_values(
@@ -766,6 +782,12 @@ def _validate_training_continuation(  # pyright: ignore[reportUnusedFunction]
     ):
         raise ValueError("Continuation batch or recording settings changed")
     _check_carry(carry)
+    if collection.reward_component_keys:
+        assert isinstance(carry.reward_totals, _RewardTotals)
+        totals, rounds = jax.device_get((carry.reward_totals, carry.progress.rounds))
+        _validate_reward_totals(
+            totals, collection.reward_component_keys, rounds=int(rounds)
+        )
     selection = carry.opponent_selection
     if selection is not None:
         categories = 2 + len(collection.opponent_names)
@@ -1434,6 +1456,52 @@ def _resize_training_history(  # pyright: ignore[reportUnusedFunction]
     return _opponent_component_table(collection, changed), changed
 
 
+def _prepare_collection_reward(
+    reward: RewardFunction | None,
+    identity: dict[str, object] | None,
+    carry: TrainingCarry,
+    info: EpisodeInfo,
+    successor: EnvironmentState,
+) -> tuple[RewardFunction | None, dict[str, object] | None, tuple[str, ...]]:
+    """Trace one scalar reward and bind its fixed component schema at setup.
+
+    carry and successor may contain values or shape-only leaves. Config comes
+    from the producing carry. Empty components preserve legacy identities and
+    allocate no counter state. Declared saved keys must match the traced keys;
+    a changed schema fails before training or recovery writes.
+    """
+    if reward is None:
+        return None, None, ()
+    assert identity is not None and info.training_facts is not None
+    from marl_battlegrounds.training._checkpoint_metadata import _reward_component_keys
+
+    saved_keys = _reward_component_keys(identity)
+    accepts_config, _ = _reward_config_parameter(reward)
+    prepared = _prepare_reward(reward)
+
+    def scalar(value: Array | jax.ShapeDtypeStruct) -> jax.ShapeDtypeStruct:
+        """Remove the native environment axis without transferring array values."""
+        return jax.ShapeDtypeStruct(value.shape[1:], value.dtype)
+
+    output = jax.eval_shape(
+        partial(_reward_output, prepared),
+        jax.tree.map(scalar, carry.state.core_state),
+        jax.tree.map(scalar, info.training_facts),
+        jax.tree.map(scalar, successor.core_state),
+        carry.progress.rounds,
+        jax.tree.map(scalar, carry.state.config),
+    )
+    keys = tuple(output.components)
+    checked = dict(identity)
+    if "component_keys" in checked and saved_keys != keys:
+        raise ValueError("Reward component keys differ from the saved declaration")
+    if accepts_config:
+        checked["call_contract"] = "producing_config_keyword_v1"
+    if keys:
+        checked.update(component_schema=1, component_keys=list(keys))
+    return prepared, checked, keys
+
+
 def change_training_reward(
     collection: TrainingCollection,
     carry: TrainingCarry,
@@ -1482,19 +1550,14 @@ def change_training_reward(
     shape = jax.eval_shape(
         partial(_apply, actor=collection.actor, opponent=collection.opponent), changed
     )
-    if reward is not None:
-        assert shape[4][4].training_facts is not None
-
-        def scalar_spec(value: Array | jax.ShapeDtypeStruct) -> jax.ShapeDtypeStruct:
-            """Remove the environment axis for the scalar callback contract."""
-            return jax.ShapeDtypeStruct(value.shape[1:], value.dtype)
-
-        validate_reward(
-            reward,
-            jax.tree.map(scalar_spec, changed.state.core_state),
-            jax.tree.map(scalar_spec, shape[4][4].training_facts),
-            jax.tree.map(scalar_spec, shape[4][1].core_state),
-            changed.progress.rounds,
+    reward, reward_identity, component_keys = _prepare_collection_reward(
+        reward, reward_identity, changed, shape[4][4], shape[4][1]
+    )
+    if reward_identity != collection.reward_identity:
+        changed = changed._replace(
+            reward_totals=_empty_reward_totals(
+                changed.state.episode_id.shape[0], len(component_keys)
+            )
         )
     return replace(
         collection,
@@ -1502,6 +1565,7 @@ def change_training_reward(
         shaping_mode=shaping_mode,
         reward=reward,
         reward_identity=reward_identity,
+        reward_component_keys=component_keys,
         reward_settings=(float(changed.discount), float(changed.coefficient)),
         info_spec=shape[4][4],
         carry_spec=jax.eval_shape(_retain, changed),
@@ -1570,8 +1634,12 @@ def _prepare_opponent_member(
         else None,
     }
     export = (
-        Path(reference) if reference is not None and Path(reference).is_dir() else None
+        Path(reference)
+        if reference is not None and _reference_kind(reference) == "artifact"
+        else None
     )
+    if reference is not None:
+        record["input_identity"] = _reference_identity(reference)
     record["evidence"] = pinned_opponent_evidence(binding, method, export=export)
     return system, json.loads(json.dumps(record))
 
@@ -1692,6 +1760,10 @@ def init_training_collection(
         Team A feedback is stored separately; learner masks own its reduction.
         None skips facts and callback work. Setup checks shape/dtype, while the
         learner rejects nonfinite real-step values.
+        May instead return RewardOutput with nonempty named float32 (10,) parts
+        that sum to the adjustments. An explicit keyword-only config argument
+        receives this transition's producing EnvConfig. Four-argument callbacks
+        keep their original call; **kwargs alone does not opt into config.
     reward_identity : dict[str, object] or None, default=None
         Matching JSON evidence from shaping.resolve_reward, copied at setup.
         Supply both callback and identity, or neither. The checked continuation
@@ -1914,7 +1986,7 @@ def init_training_collection(
         )
         export = (
             Path(reference)
-            if reference is not None and Path(reference).is_dir()
+            if reference is not None and _reference_kind(reference) == "artifact"
             else None
         )
         if system.execution == "host":
@@ -1938,6 +2010,11 @@ def init_training_collection(
             json.dumps(
                 {
                     "reference": reference,
+                    **(
+                        {"input_identity": _reference_identity(reference)}
+                        if reference is not None
+                        else {}
+                    ),
                     "name": system.name,
                     "execution": system.execution,
                     "registration_id": canonical_digest_sha256(registration),
@@ -2108,20 +2185,12 @@ def init_training_collection(
     )
     _check_carry(carry)
     shape = jax.eval_shape(partial(_apply, actor=actor, opponent=opponent), carry)
-    if reward is not None:
-        assert shape[4][4].training_facts is not None
-
-        def scalar_spec(value: Array | jax.ShapeDtypeStruct) -> jax.ShapeDtypeStruct:
-            """Drop only the environment axis for a scalar callback shape check."""
-            return jax.ShapeDtypeStruct(value.shape[1:], value.dtype)
-
-        validate_reward(
-            reward,
-            jax.tree.map(scalar_spec, state.core_state),
-            jax.tree.map(scalar_spec, shape[4][4].training_facts),
-            jax.tree.map(scalar_spec, shape[4][1].core_state),
-            jnp.int32(0),
-        )
+    reward, reward_identity, component_keys = _prepare_collection_reward(
+        reward, reward_identity, carry, shape[4][4], shape[4][1]
+    )
+    carry = carry._replace(
+        reward_totals=_empty_reward_totals(schedule.num_envs, len(component_keys))
+    )
     collection = TrainingCollection(
         actor,
         opponent,
@@ -2147,6 +2216,7 @@ def init_training_collection(
         opponent_systems=tuple(frozen_members),
         reward=reward,
         reward_identity=reward_identity,
+        reward_component_keys=component_keys,
         vectorize_opponent_lanes=vectorize_opponent_lanes,
         learner_slots=slots,
         learner_actor=None if slots is None else replace(native_actor, variables=()),
@@ -2510,17 +2580,26 @@ def _real_step(
             coefficient=carry.coefficient,
         )[:, 0]
     custom = None
+    reward_totals = carry.reward_totals
     if collection.reward is not None:
         assert info.training_facts is not None
-        custom = jax.vmap(
-            partial(reward_adjustments, collection.reward),
-            in_axes=(0, 0, 0, None),
+        output = jax.vmap(
+            partial(_reward_output, collection.reward),
+            in_axes=(0, 0, 0, None, 0),
         )(
             before.core_state,
             info.training_facts,
             state.core_state,
             carry.progress.rounds,
-        )[:, :5]
+            before.config,
+        )
+        custom = output.adjustments[:, :5]
+        if collection.reward_component_keys:
+            assert isinstance(reward_totals, _RewardTotals)
+            owned = _learner_active(collection, before)
+            if owned is None:
+                owned = before.config.agent_profile.active_mask[:, :5]
+            reward_totals = _add_reward_totals(reward_totals, output, owned, valid)
     row = TrainingTransition(
         carry.observations,
         _team_mask(before),
@@ -2595,6 +2674,7 @@ def _real_step(
         memory=memory,
         tracking=tracking,
         progress=progress,
+        reward_totals=reward_totals,
     ), (row, info, trace)
 
 
@@ -2898,11 +2978,12 @@ def _bind_opponent_references(  # pyright: ignore[reportUnusedFunction]
             continue
         if not isinstance(cast(object, reference), str) or not reference.strip():
             raise ValueError("Opponent references must be nonempty strings")
-        export = Path(reference) if Path(reference).is_dir() else None
+        export = Path(reference) if _reference_kind(reference) == "artifact" else None
         records.append(
             {
                 **record,
                 "reference": reference,
+                "input_identity": _reference_identity(reference),
                 "evidence": pinned_opponent_evidence(
                     collection.binding, member, export=export
                 ),

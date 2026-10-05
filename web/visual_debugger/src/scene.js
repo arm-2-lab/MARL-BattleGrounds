@@ -1,159 +1,227 @@
 /**
  * @file Render durable, already-authorized battlefield facts into retained SVG layers.
- * BattlefieldRenderer projects disclosed maps/bodies, draws current selection,
- * status/cooldown/modifier/legality cues and exposes a narrow choreographySurface.
- * The transient controller owns animation children in its two designated layers.
- * Researcher reference data can enrich joined tooltip facts, but cannot add hidden
- * body positions to the scene. The browser renders supplied masks and events; it
- * does not decide simulator legality, advance games or fetch data.
+ *
+ * BattlefieldRenderer owns the arena SVG: one camera wrapper group
+ * (`g.battlefield-camera`) holding the fixed layer stack BATTLEFIELD_LAYER_ORDER,
+ * bottom to top. Each render projects the authorized arena scene through one
+ * viewport transform (with the camera frame; Whole Map by default) and asks the
+ * look modules under `src/looks/` for their drawing: records(input) gives plain
+ * data, build(records, doc) gives export-safe SVG nodes, and this renderer puts
+ * them in their layers. Durable looks mounted here: map skins (with tale
+ * stones over the Standing Stones), atmosphere, Red Zone, spawn waystones,
+ * Homeland Brackets, aura Ward Circles (with their played-tick moments, Aura
+ * Glints and the Barrier Held stud flash), movement marks, reach rings and the
+ * selection moonlight, the next-action thread (or the live hotbar) with the
+ * Replay Viewer's All Staged Orders and Next Step Ghost (from the frame's own
+ * top-level upcoming transition rows and next_end_spots), the Agent POV
+ * sight veil, obstacles, Death Dimming, champions, corpse marks, Rune Zones and
+ * the recipient rim (both inside each body's glide wrapper) and the hotbar
+ * (in the body layer's plan-marks group, under every body). It
+ * keeps the retained body nodes (each body inside an animatable `g.agent-glide`
+ * wrapper for the choreographer's glides), lays out the status, modifier and
+ * lane-pill docks with the shared allocator (`layout.js`; the Rune Ring replaced
+ * the old Ultimate cooldown docks) and publishes a narrow choreographySurface
+ * (with the herald layer, this render's transform, switch state, arena scene
+ * and the page chrome over the arena, such as the key stack, for the event
+ * looks).
+ *
+ * Smooth play: a repaint changes only what changed. Each layer keeps every
+ * node that is equal to its new drawing (replaceLayer), and a body already in
+ * its place is never removed and re-inserted (placeGroupsInOrder); a body
+ * that falls or returns moves once, straight between the living and dead
+ * groups, and no other body moves with it. So the running glide and beat
+ * animations of a tick survive any repaint and nothing is torn down between
+ * ticks.
+ *
+ * Live play (`product_kind` "combat_debugger", the BattleClient and the
+ * DevClient combat screen) follows the approved vision page: the field has
+ * the vision's 16/1032 pad, the reach rings are Basic and Ultimate only and
+ * shown only with both Ranges (G) and the Reach Rings switch on, the target
+ * gets the vision's corner brackets (champion-frame bracketPath "vision"), and
+ * the layers stack as the vision draws them (see #arrangeLiveLayers). Its
+ * drawing is sized by the field's exact box (liveFieldSize, so one drawing
+ * unit is one CSS pixel), and the battlefield carries `--mark-scale`
+ * (setMarkScale, hotbar.markScale), which grows the plan, reach, veil-edge and
+ * bracket line widths with the field as the vision's lines grow. The Replay
+ * Viewer keeps its whole-pixel size, 24 px pad, three reach rings and layer
+ * order, and has no `--mark-scale`.
+ *
+ * The transient controller owns the children it installs
+ * in the `strike-band`, `transient-events` and `heralds` layers; the Frame
+ * Explanation controller owns the `explain` layer.
+ *
+ * Boundary: bodies, rings, docks and every tooltip over the arena come only
+ * from the authorized arena scene of the current audience and that audience's
+ * own events (Oracle View: latest_events; Agent POV: visual_events, the POV
+ * trajectories and the authorized sensor sources). In Agent POV that is the POV
+ * scene alone: this file never reads the global researcher space or the match
+ * summary's rows (the adapter scopes the double-scoring fall IDs it uses), so
+ * an aura or status tooltip can name only a champion the team can see, and a POV
+ * status card never borrows a researcher row's source. The browser draws
+ * supplied masks and events; it does not decide legality, advance games or
+ * fetch data.
  */
-import { canonicalAgentIdentity } from "./agent-identity.js";
 import {
-  authorizedPresentationResearcherSceneView,
+  authorizedPresentationCurrentTick,
+  authorizedPresentationEpisodeLimit,
+  authorizedPresentationIncomingRows,
+  authorizedPresentationInspectionState,
+  authorizedPresentationMatchBeatFacts,
   authorizedPresentationSceneView,
   isAuthorizedPresentationFrame,
 } from "./authorized-presentation-adapter.js";
+import { beatView } from "./choreography-plan.js";
 import { formatCompactDisplayNumber, formatDisplayNumber } from "./display.js";
-import {
-  createSpawnShieldView,
-  explainAgent,
-  explainAura,
-  explainCooldown,
-  explainLegality,
-  explainModifier,
-  explainObstacle,
-  explainOverflow,
-  explainPendingRoute,
-  explainPovAgent,
-  explainPovOverflow,
-  explainPovStatus,
-  explainRange,
-  explainStatus,
-} from "./explanations.js";
+import { explainPovAgent } from "./explanations.js";
 import { createSvgIcon } from "./icons.js";
 import {
   createViewportTransform,
   layoutRequiredDocks,
   layoutStatusDocks,
-  redZoneFloorIntervals,
 } from "./layout.js";
-import { createRouteGeometry, routeMarkerPose } from "./routes.js";
+import * as atmosphere from "./looks/atmosphere.js";
+import * as championFrame from "./looks/champion-frame.js";
+import * as champions from "./looks/champions.js";
+import * as fog from "./looks/fog.js";
+import * as hotbar from "./looks/hotbar.js";
+import {
+  agentIdentity,
+  asArray,
+  finiteNumber,
+  isRecord,
+  screenPoint,
+  setNodeAttributes,
+  svgNode,
+} from "./looks/look-support.js";
+import * as mapSkins from "./looks/map-skins.js";
+import * as movement from "./looks/movement.js";
+import * as obstacles from "./looks/obstacles.js";
+import * as redZone from "./looks/red-zone.js";
+import * as requiems from "./looks/requiems.js";
+import * as spawns from "./looks/spawns.js";
+import * as statuses from "./looks/statuses.js";
+import * as teamIdentity from "./looks/team-identity.js";
 import { registerTooltipOwner } from "./tooltip.js";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   isVisualPaintPartEnabled,
 } from "./visual-filters.js";
-import {
-  classTokenFromId,
-  resolveVisualToken,
-  teamTokenFromId,
-  ultimateTokenFromClassId,
-} from "./vocabulary.js";
+import { classTokenFromId, resolveVisualToken, teamTokenFromId } from "./vocabulary.js";
 
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-// Corner radius, in CSS pixels, shared by the floor boundary and the Red Zone tint.
-const MAP_FLOOR_CORNER_RADIUS = 8;
-const STATUS_DOCK_DIMENSIONS = Object.freeze({
-  cellWidth: 28,
-  cellHeight: 18,
-  cellGap: 2,
-});
-const COOLDOWN_DOCK_DIMENSIONS = Object.freeze({
-  cellWidth: 38,
-  cellHeight: 18,
-  cellGap: 2,
-});
-const MODIFIER_DOCK_DIMENSIONS = Object.freeze({
-  cellWidth: 42,
-  cellHeight: 16,
-  cellGap: 2,
-});
-const LEGALITY_DOCK_DIMENSIONS = Object.freeze({
-  cellWidth: 30,
-  cellHeight: 18,
-  cellGap: 3,
-});
+// Dock cell sizes in CSS pixels. The looks that draw the docks own them; this
+// renderer reads them so its dock allocator reserves exactly what is drawn.
+const STATUS_DOCK_DIMENSIONS = statuses.FOOTPRINT.statusDock;
+const COOLDOWN_DOCK_DIMENSIONS = statuses.FOOTPRINT.cooldownDock;
+const MODIFIER_DOCK_DIMENSIONS = statuses.FOOTPRINT.modifierDock;
+
+/**
+ * Return the durable paint-part tag a look module registers for kind.
+ *
+ * look is a look module; kind is a durable part kind such as "aura_field". Each
+ * look owns its PAINT_PARTS, so this renderer asks the same tag the filters use.
+ * Throw TypeError when the look does not register that durable kind.
+ *
+ * @param {{PAINT_PARTS: ReadonlyArray<{part: Readonly<Record<string, string>>, filter: string}>}} look
+ * @param {string} kind
+ * @returns {Readonly<Record<string, string>>}
+ */
+function durablePaintPart(look, kind) {
+  const registration = look.PAINT_PARTS.find(
+    ({ part }) => part.surface === "durable" && part.kind === kind,
+  );
+  if (registration === undefined) {
+    throw new TypeError(`No look registers the durable paint part ${kind}.`);
+  }
+  return registration.part;
+}
+
+// The durable paint-part tags this renderer asks the visual filters about, each
+// read from the look that registers it.
 const DURABLE_VISUAL_PAINT_PARTS = Object.freeze({
-  auraFields: Object.freeze({ surface: "durable", kind: "aura_field" }),
-  auraModifierBadges: Object.freeze({
-    surface: "durable",
-    kind: "aura_modifier_badge",
-  }),
-  durationStatusBadges: Object.freeze({
-    surface: "durable",
-    kind: "duration_status_badge",
-  }),
-  povDurationStatusBadges: Object.freeze({
-    surface: "durable",
-    kind: "pov_duration_status_badge",
-  }),
-  spawnShield: Object.freeze({ surface: "durable", kind: "spawn_shield" }),
-  cooldownBadges: Object.freeze({
-    surface: "durable",
-    kind: "cooldown_badge",
-  }),
-  selectionReticle: Object.freeze({
-    surface: "durable",
-    kind: "selection_reticle",
-  }),
-  selectedPairLegality: Object.freeze({
-    surface: "durable",
-    kind: "selected_pair_legality",
-  }),
-  redZoneFloors: Object.freeze({ surface: "durable", kind: "red_zone_floor" }),
+  auraFields: durablePaintPart(statuses, "aura_field"),
+  auraModifierBadges: durablePaintPart(statuses, "aura_modifier_badge"),
+  durationStatusBadges: durablePaintPart(statuses, "duration_status_badge"),
+  povDurationStatusBadges: durablePaintPart(statuses, "pov_duration_status_badge"),
+  spawnShield: durablePaintPart(champions, "spawn_shield"),
+  cooldownBadges: durablePaintPart(statuses, "cooldown_badge"),
+  selectionReticle: durablePaintPart(championFrame, "selection_reticle"),
+  selectedPairLegality: durablePaintPart(championFrame, "selected_pair_legality"),
+  redZoneFloors: durablePaintPart(redZone, "red_zone_floor"),
 });
 
+/**
+ * The arena layers, bottom to top, inside the camera wrapper group:
+ * map (floor and tale skin), atmosphere (Moon Motes and the Last Watch Veil),
+ * red-zone, spawns, team-identity (brackets outside the floor), aura, imprints
+ * (where bodies started), debug-range (selection moonlight, then reach rings),
+ * pending-route (next action), fog (Agent POV sight veil, under stones),
+ * obstacle, death-dim (Death Dimming over the floor and stones), strike-band
+ * (activation routes: above stones, under bodies), body (selection brackets,
+ * corpses, corpse marks, then living bodies), over (rings and marks on bodies),
+ * selection-legality, transient-events, durable-status-modifier (docks),
+ * heralds (Herald Cards, above every body), explain (Frame Explanation marks)
+ * and accessible-labels.
+ */
 export const BATTLEFIELD_LAYER_ORDER = Object.freeze([
   "map",
+  "atmosphere",
+  "red-zone",
+  "spawns",
+  "team-identity",
   "aura",
+  "imprints",
   "debug-range",
   "pending-route",
-  "transient-route",
+  "fog",
   "obstacle",
+  "death-dim",
+  "strike-band",
   "body",
+  "over",
   "selection-legality",
   "transient-events",
   "durable-status-modifier",
+  "heralds",
+  "explain",
   "accessible-labels",
 ]);
+
+/** Class of the one camera wrapper group that holds every arena layer. */
+export const BATTLEFIELD_CAMERA_CLASS = "battlefield-camera";
 
 /**
  * @typedef {Record<string, any>} JsonRecord
  */
 /**
- * @typedef {{
- *   root: SVGElement,
- *   body: SVGElement,
- *   teamRing: SVGElement,
- *   teamMarker: SVGElement,
- *   healthTrack: SVGElement,
- *   health: SVGElement,
- *   classIcon: SVGSVGElement,
- *   classLetter: SVGElement,
- *   deadMark: SVGElement,
- *   shieldRoot: SVGElement | null,
- *   shieldChip: SVGElement | null,
- *   shieldIcon: SVGSVGElement | null,
- *   shieldText: SVGElement | null,
- *   selectionRoot: SVGElement,
- *   controlledHalo: SVGElement,
- *   selectedReticle: SVGElement,
- * }} AgentNodes
+ * @typedef {import("./looks/champions.js").ChampionNodes &
+ *   import("./looks/champion-frame.js").SelectionNodes} AgentNodes
  */
 
 /**
  * @typedef {ReturnType<typeof createViewportTransform>} ViewportTransform
+ * @typedef {import("./layout.js").CameraFrame} CameraFrame
  * @typedef {{
  *   layer: SVGElement,
  *   routeLayer: SVGElement,
+ *   heraldLayer: SVGElement,
+ *   battlefield: SVGSVGElement,
  *   ownerDocument: Document,
  *   viewportKey: string,
  *   viewportBounds: Rectangle,
  *   protectedRects: ReadonlyArray<ProtectedRegion>,
+ *   chromeRects: ReadonlyArray<Readonly<{
+ *     left: number,
+ *     top: number,
+ *     right: number,
+ *     bottom: number,
+ *   }>>,
  *   worldToScreen: (
  *     point: {x: number, y: number} | readonly [number, number],
  *   ) => {x: number, y: number},
  *   worldLengthToScreen: (length: number) => number,
+ *   lookTransform: ViewportTransform,
+ *   visualFilters: Readonly<Record<string, boolean>>,
+ *   scene: JsonRecord | null,
  * }} ChoreographySurface
  * @typedef {{
  *   agent: JsonRecord,
@@ -192,19 +260,8 @@ export const BATTLEFIELD_LAYER_ORDER = Object.freeze([
  *   showSelectedPairLegality: boolean,
  *   showRedZoneFloors: boolean,
  * }} DurableVisualPolicy
+ * @typedef {import("./looks/statuses.js").DockTooltipInput} DockTooltipInput
  */
-
-/**
- * Return whether value is a non-null object other than an array.
- *
- * This shape check does not validate the complete scene or information rights.
- *
- * @param {unknown} value
- * @returns {value is JsonRecord}
- */
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Package a durable drawing region with an explicit semantic owner.
@@ -242,105 +299,6 @@ function choreographyProtectedRegion(
     ...frozenBounds,
     protectedKind,
     ownerPresentationKey,
-  });
-}
-
-/**
- * Return value unchanged when it is an array, otherwise a new empty array.
- *
- * No element validation, copying or mutation occurs.
- *
- * @param {unknown} value
- * @returns {any[]}
- */
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-/**
- * Read token_id, falling back to status_id when nullish.
- *
- * value may be unknown. Return a nonempty string or null; whitespace is not trimmed
- * and token vocabulary is checked by its later authority.
- *
- * @param {unknown} value
- */
-function statusTokenId(value) {
-  const status = isRecord(value) ? value : {};
-  const candidate = status.token_id ?? status.status_id;
-  return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
-}
-
-/**
- * Read remaining_duration, falling back to duration when nullish.
- *
- * value may be unknown. Return an integer number or null; this helper adds no
- * positivity or configured-duration bound.
- *
- * @param {unknown} value
- */
-function statusRemainingDuration(value) {
-  const status = isRecord(value) ? value : {};
-  const candidate = status.remaining_duration ?? status.duration;
-  return Number.isInteger(candidate) ? Number(candidate) : null;
-}
-
-/**
- * Compare exact facts while allowing one float32 representation step.
- *
- * local/researcher match through Object.is or when finite numbers equal one
- * another's float32 rounding. Return a Boolean without a general epsilon tolerance.
- *
- * @param {unknown} local @param {unknown} researcher
- */
-function sameRecordedPublicValue(local, researcher) {
-  if (Object.is(local, researcher)) return true;
-  return (
-    typeof local === "number" &&
-    Number.isFinite(local) &&
-    typeof researcher === "number" &&
-    Number.isFinite(researcher) &&
-    (local === Math.fround(researcher) || Math.fround(local) === researcher)
-  );
-}
-
-/**
- * Check disclosed local status facts before joining researcher attribution.
- *
- * rawLocal/rawResearcher must be records with matching token and remaining duration.
- * Compare every optional field present locally against its researcher name, including
- * the mechanic_action_component alias. Return a Boolean. Missing local optional
- * fields impose no new requirement; this is a join check, not full schema validation.
- *
- * @param {unknown} rawLocal
- * @param {unknown} rawResearcher
- */
-function samePublicStatusFacts(rawLocal, rawResearcher) {
-  const local = isRecord(rawLocal) ? rawLocal : null;
-  const researcher = isRecord(rawResearcher) ? rawResearcher : null;
-  if (
-    local === null ||
-    researcher === null ||
-    statusTokenId(local) !== statusTokenId(researcher) ||
-    statusRemainingDuration(local) !== statusRemainingDuration(researcher)
-  ) {
-    return false;
-  }
-  const aliases = [
-    ["status_channel", "status_channel"],
-    ["configured_duration_steps", "configured_duration_steps"],
-    ["family", "family"],
-    ["source_class_id", "source_class_id"],
-    ["source_class_name", "source_class_name"],
-    ["source_action_component", "source_action_component"],
-    ["mechanic_action_component", "source_action_component"],
-    ["magnitude_kind", "magnitude_kind"],
-    ["magnitude", "magnitude"],
-    ["breaks_on_positive_damage", "breaks_on_positive_damage"],
-  ];
-  return aliases.every(([localKey, researcherKey]) => {
-    if (local[localKey] === undefined) return true;
-    return sameRecordedPublicValue(local[localKey], researcher[researcherKey]);
   });
 }
 
@@ -396,18 +354,6 @@ function durableVisualPolicy(state) {
 }
 
 /**
- * Return finite numeric value, otherwise fallback (default zero).
- *
- * Numeric strings are not converted. The fallback is used as supplied.
- *
- * @param {unknown} value
- * @param {number} fallback
- */
-function finiteNumber(value, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-/**
  * Read an own enumerable data property without invoking an accessor.
  *
  * value may be unknown and key names the property. Return its stored value, or
@@ -437,18 +383,6 @@ function ownEnumerableDataValue(value, key) {
 }
 
 /**
- * Format the public identity already carried by agent.
- *
- * Return canonicalAgentIdentity(agent).publicIdentity. Internal layout/global slots
- * are never promoted to public display IDs by this helper.
- *
- * @param {unknown} agent
- */
-function agentIdentity(agent) {
-  return canonicalAgentIdentity(agent).publicIdentity;
-}
-
-/**
  * Read the authorized display scene from a recognized presentation frame.
  *
  * frame may be unknown; localInspectedPresentationKey defaults to undefined and is
@@ -466,303 +400,367 @@ function frameScene(frame, localInspectedPresentationKey = undefined) {
 }
 
 /**
- * Choose a stable retained-node key from an accepted display row.
- *
- * agent.display_key takes precedence when nonempty; otherwise use an integer
- * global_slot, or null. This is a DOM join key, not a public label or new slot fact.
- *
- * @param {JsonRecord} agent
- * @returns {number | string | null}
- */
-function agentDisplayIdentity(agent) {
-  if (typeof agent.display_key === "string" && agent.display_key.length > 0) {
-    return agent.display_key;
-  }
-  return Number.isInteger(agent.global_slot) ? Number(agent.global_slot) : null;
-}
-
-/**
- * Return the integer global_slot on agent, otherwise fallback.
- *
- * fallback is a renderer-local layout index. It may position a POV body but must
- * never be published as an undisclosed simulator global slot.
- *
- * @param {JsonRecord} agent @param {number} fallback
- */
-function agentLayoutSlot(agent, fallback) {
-  return Number.isInteger(agent.global_slot) ? Number(agent.global_slot) : fallback;
-}
-
-/**
- * Write only the identity actually present on record into element metadata.
- *
- * Prefer a nonempty presentation_key and remove data-slot; otherwise use integer
- * global_slot and remove data-presentation-key. With neither, do nothing. Return
- * undefined. The caller supplies an accepted display row.
- *
- * @param {SVGElement} element
- * @param {JsonRecord} record
- */
-function setDisplayIdentityData(element, record) {
-  if (
-    typeof record.presentation_key === "string" &&
-    record.presentation_key.length > 0
-  ) {
-    element.dataset.presentationKey = record.presentation_key;
-    element.removeAttribute("data-slot");
-  } else if (Number.isInteger(record.global_slot)) {
-    element.dataset.slot = String(record.global_slot);
-    element.removeAttribute("data-presentation-key");
-  }
-}
-
-/**
- * Return identity attributes from record without inventing a slot.
- *
- * A string presentation_key takes precedence (including empty strings); otherwise
- * an integer global_slot gives data-slot, and neither gives an empty object. The
- * input is unchanged; upstream normalization owns identity validity.
- *
- * @param {JsonRecord} record
- */
-function displayIdentityAttributes(record) {
-  return typeof record.presentation_key === "string"
-    ? { "data-presentation-key": record.presentation_key }
-    : Number.isInteger(record.global_slot)
-      ? { "data-slot": record.global_slot }
-      : {};
-}
-
-/**
- * Copy only the accepted public ID and optional string presentation key.
- *
- * agent supplies those facts. Return a new tooltip input with no layout/global slot,
- * so a renderer-local index cannot become an Agent POV fact.
- *
- * @param {JsonRecord} agent
- */
-function displayIdentityRecord(agent) {
-  return {
-    ...(typeof agent.presentation_key === "string"
-      ? { presentation_key: agent.presentation_key }
-      : {}),
-    public_agent_id: agent.public_agent_id,
-  };
-}
-
-/**
- * Project a coordinate array through the current viewport transform.
- *
- * point is expected to be a world [x,y] array; absent/nonarray coordinates or
- * nonfinite components fall back to zero. transform owns world-to-screen conversion.
- * Return its projected point; this tolerant renderer helper is not source validation.
- *
- * @param {unknown} point
- * @param {ViewportTransform} transform
- */
-function screenPoint(point, transform) {
-  const values = Array.isArray(point) ? point : [0, 0];
-  return transform.worldToScreen([finiteNumber(values[0]), finiteNumber(values[1])]);
-}
-
-/**
- * Create a detached SVG node in the browser document.
- *
- * tagName selects its SVG type; attributes defaults to an empty map and is applied
- * by setAttributes. Return the node. Browser DOM errors propagate.
- *
- * @param {string} tagName
- * @param {Record<string, unknown>} attributes
- * @returns {SVGElement}
- */
-function svgElement(tagName, attributes = {}) {
-  const element = document.createElementNS(SVG_NAMESPACE, tagName);
-  setAttributes(element, attributes);
-  return element;
-}
-
-/**
- * Apply attributes to an existing SVG element.
- *
- * Remove null/undefined entries and stringify every other value, including false.
- * Return undefined. This mutates DOM; callers own safe attribute names and values.
- *
- * @param {SVGElement} element
- * @param {Record<string, unknown>} attributes
- */
-function setAttributes(element, attributes) {
-  for (const [name, value] of Object.entries(attributes)) {
-    if (value === null || value === undefined) {
-      element.removeAttribute(name);
-    } else {
-      element.setAttribute(name, String(value));
-    }
-  }
-}
-
-/**
  * Create a detached named SVG group for the battlefield layer stack.
  *
- * name sets data-layer; attributes defaults to an empty map and can override it.
- * Return the group; the constructor owns insertion order.
+ * doc creates the group; name sets data-layer; attributes (default {}) are
+ * written after it and may override it. Return the group; the constructor
+ * decides the order.
  *
+ * @param {Document} doc
  * @param {string} name
- * @param {Record<string, unknown>} attributes
+ * @param {Record<string, unknown>} [attributes]
+ * @returns {SVGElement}
  */
-function createLayer(name, attributes = {}) {
-  return svgElement("g", {
+function createLayer(doc, name, attributes = {}) {
+  return svgNode(doc, "g", {
     "data-layer": name,
     ...attributes,
   });
 }
 
 /**
- * Return four corner strokes around a selected target body.
+ * Return the live field's exact size in CSS pixels, or null to keep the
+ * whole-pixel size.
  *
- * centerX/centerY and outerRadius are caller-validated screen coordinates/lengths.
- * The open corners avoid covering the separate controlled-actor halo. No collision
- * or target legality is inferred.
+ * `clientWidth` and `clientHeight` round to whole pixels (553.64 becomes 554),
+ * so a viewBox built from them is a hair bigger than the box and the browser
+ * shrinks and shifts the whole drawing to fit (0.9994 times, 0.35 px right at
+ * 1440 x 900), which moves every line off the vision's pixels. The exact box
+ * from `getBoundingClientRect` maps one drawing unit to one CSS pixel. It is
+ * used only when the element can report a positive box (a laid-out page);
+ * test documents and hidden fields get null.
  *
- * @param {number} centerX
- * @param {number} centerY
- * @param {number} outerRadius
+ * @param {SVGSVGElement} battlefield The arena SVG.
+ * @returns {{width: number, height: number} | null} The box size in CSS px,
+ *   or null when the element has no box to read.
  */
-function targetReticlePath(centerX, centerY, outerRadius) {
-  const arm = Math.max(outerRadius * 0.38, 0.12);
-  const left = centerX - outerRadius;
-  const right = centerX + outerRadius;
-  const top = centerY - outerRadius;
-  const bottom = centerY + outerRadius;
-  return [
-    `M ${left + arm} ${top} H ${left} V ${top + arm}`,
-    `M ${right - arm} ${top} H ${right} V ${top + arm}`,
-    `M ${left} ${bottom - arm} V ${bottom} H ${left + arm}`,
-    `M ${right} ${bottom - arm} V ${bottom} H ${right - arm}`,
-  ].join(" ");
+function liveFieldSize(battlefield) {
+  if (typeof battlefield.getBoundingClientRect !== "function") return null;
+  const box = battlefield.getBoundingClientRect();
+  const width = finiteNumber(box?.width);
+  const height = finiteNumber(box?.height);
+  return width > 0 && height > 0 ? { width, height } : null;
 }
 
 /**
- * Replace one layer with authorized aura/range circles and optional hit regions.
+ * Set or clear the live field's `--mark-scale` CSS variable, which
+ * `styles/hotbar.css` and `styles/battleclient/arena.css` multiply every plan
+ * and reach line's stroke width and dash length by (the vision's lines on its
+ * 50 px per unit drawing, grown with the field). It writes only when the value
+ * changes, so an ordinary repaint makes no style mutation (the smooth-play
+ * check counts mutations between ticks). Uses the CSS object model, which the
+ * page's style policy allows. Side effect: changes the element's inline style.
  *
- * layer is the target SVG group; records contains accepted center/radius rows;
- * className and tokenAttribute identify their display grammar; transform maps world
- * to screen. classByIdentity defaults to an empty map. explain defaults to null;
- * when supplied it builds a tooltip or returns null to omit a circle. withStrokeHitRegion
- * defaults to false and adds a separate transparent circular hit surface when true.
- * Skip nonrecord/nonpositive-radius rows. Return undefined after replacing children;
- * no game range or visibility is computed.
- *
- * @param {SVGElement} layer
- * @param {any[]} records
- * @param {string} className
- * @param {"kind" | "token_id"} tokenAttribute
- * @param {ViewportTransform} transform
- * @param {ReadonlyMap<number | string, string>} [classByIdentity]
- * @param {((record: JsonRecord) => Record<string, any> | null) | null} [explain]
- * @param {boolean} [withStrokeHitRegion]
+ * @param {SVGSVGElement} battlefield The arena SVG.
+ * @param {number | null} scale The scale (from hotbar.markScale), or null to
+ *   remove the variable (Replay Viewer, or no scene).
+ * @returns {void}
  */
-function renderCircleLayer(
-  layer,
-  records,
-  className,
-  tokenAttribute,
-  transform,
-  classByIdentity = new Map(),
-  explain = null,
-  withStrokeHitRegion = false,
-) {
-  const circles = [];
-  for (const record of records) {
-    if (!isRecord(record)) {
-      continue;
-    }
-    const center = screenPoint(record.center, transform);
-    const radius = transform.worldLengthToScreen(finiteNumber(record.radius));
-    if (radius <= 0) {
-      continue;
-    }
-    const circle = svgElement("circle", {
-      class: className,
-      cx: center.x,
-      cy: center.y,
-      r: radius,
-      role: explain === null ? null : "img",
-      tabindex: explain === null ? null : "0",
-    });
-    if (typeof record[tokenAttribute] === "string") {
-      if (tokenAttribute === "kind") {
-        circle.dataset.kind = record[tokenAttribute];
-      } else {
-        circle.dataset.token = record[tokenAttribute];
-      }
-    }
-    setDisplayIdentityData(circle, record);
-    const identity =
-      typeof record.presentation_key === "string" ? record.presentation_key : null;
-    const classKey = identity === null ? undefined : classByIdentity.get(identity);
-    if (classKey) {
-      circle.dataset.class = classKey;
-    }
-    if (explain === null) {
-      circles.push(circle);
-      continue;
-    }
-    if (!withStrokeHitRegion) {
-      const descriptor = explain(record);
-      if (descriptor === null) {
-        continue;
-      }
-      circle.setAttribute("aria-label", descriptor.title);
-      registerTooltipOwner(circle, descriptor);
-      circles.push(circle);
-      continue;
-    }
-    const owner = svgElement("g", {
-      class: `${className}-owner`,
-    });
-    const hitRegion = svgElement("circle", {
-      class: `${className}-hit`,
-      cx: center.x,
-      cy: center.y,
-      r: radius,
-      "aria-hidden": "true",
-    });
-    if (typeof record[tokenAttribute] === "string") {
-      hitRegion.dataset[tokenAttribute === "kind" ? "kind" : "token"] =
-        record[tokenAttribute];
-    }
-    setDisplayIdentityData(hitRegion, record);
-    owner.append(circle, hitRegion);
-    const descriptor = explain(record);
-    if (descriptor === null) {
-      continue;
-    }
-    owner.setAttribute("role", "img");
-    owner.setAttribute("tabindex", "0");
-    owner.setAttribute("aria-label", descriptor.title);
-    registerTooltipOwner(owner, descriptor);
-    circles.push(owner);
+function setMarkScale(battlefield, scale) {
+  const style = /** @type {CSSStyleDeclaration | undefined} */ (
+    /** @type {{style?: CSSStyleDeclaration}} */ (battlefield).style
+  );
+  if (style === undefined || typeof style.getPropertyValue !== "function") return;
+  const next = scale === null ? "" : String(scale);
+  if (style.getPropertyValue("--mark-scale") === next) return;
+  if (next === "") style.removeProperty("--mark-scale");
+  else style.setProperty("--mark-scale", next);
+}
+
+/**
+ * Return whether a freshly built node carries a hover card or keyboard focus.
+ *
+ * A look registers its tooltip on the node it builds (`registerTooltipOwner`),
+ * and the registration cannot be copied to another node. Every such owner in
+ * the looks carries an `aria-label` or a `tabindex`, so this test finds them.
+ *
+ * @param {Element} node A node from a look's build().
+ * @returns {boolean} True when the node or a child is a tooltip or focus owner.
+ */
+function carriesTooltipOwner(node) {
+  return (
+    node.hasAttribute("aria-label") ||
+    node.hasAttribute("tabindex") ||
+    node.querySelector("[aria-label], [tabindex]") !== null
+  );
+}
+
+/**
+ * Write the look nodes for one layer, keeping every drawn node that did not
+ * change.
+ *
+ * layer is the target group; nodes are the look's build() result for this
+ * render, in paint order. Each old child that is equal to the new node at the
+ * same place (`isEqualNode`: same tag, attributes and children) stays in the
+ * DOM, so a repaint of the same tick (a deck click, a phase change, a poll)
+ * or an unchanged stone, pad or floor on a new tick never tears the layer
+ * down. That keeps running CSS and Web Animations on those nodes, and it is
+ * the smooth-play rule: between ticks only what changed is replaced. A node
+ * that differs, or that carries a hover card or focus (its registration lives
+ * on the new node only), replaces the old one in place; extra old nodes are
+ * removed and extra new ones appended. Return undefined. DOM change only.
+ *
+ * @param {Element} layer The layer group (`g[data-layer]` or a body group).
+ * @param {ReadonlyArray<Element>} nodes The new nodes, bottom to top.
+ */
+function replaceLayer(layer, nodes) {
+  reconcileNodes(layer, [...layer.children], nodes);
+}
+
+/**
+ * Turn the drawn nodes old into nodes inside parent, keeping unchanged ones.
+ *
+ * old are parent's current nodes for this look, in paint order; nodes are the
+ * new ones. The rules are replaceLayer's: an equal node without a hover card
+ * stays, a different one replaces the old node in place, extra old nodes are
+ * removed and extra new ones appended to parent. Return undefined. DOM change
+ * only.
+ *
+ * @param {Element} parent The group that holds the nodes.
+ * @param {ReadonlyArray<Element>} old The current nodes, bottom to top.
+ * @param {ReadonlyArray<Element>} nodes The new nodes, bottom to top.
+ */
+function reconcileNodes(parent, old, nodes) {
+  if (old.length === 0) {
+    if (nodes.length > 0) parent.append(...nodes);
+    return;
   }
-  layer.replaceChildren(...circles);
+  for (const [index, node] of nodes.entries()) {
+    const current = old[index];
+    if (current === undefined) {
+      parent.append(node);
+    } else if (
+      current !== node &&
+      (carriesTooltipOwner(node) || !current.isEqualNode(node))
+    ) {
+      current.replaceWith(node);
+    }
+  }
+  for (const extra of old.slice(nodes.length)) extra.remove();
 }
 
 /**
- * Own durable SVG layers for an authoritative debugger or replay frame.
+ * Put nodes into a parent in the given order, moving only what is out of
+ * place.
  *
- * The constructor replaces the supplied SVG's children with the fixed layer stack.
- * Later render calls update durable layers while retaining the SVG root and both
- * transient layers for CombatChoreographer. Bodies keep stable node identities where
- * possible. The class owns projection and drawing, not simulator rules or fetching.
+ * Appending a node that is already in place still removes and re-inserts it,
+ * which restarts its CSS animations and shows as a teardown to any observer.
+ * This is placeGroupsInOrder for one group; see there for the rules. Return
+ * undefined. DOM change only.
+ *
+ * @param {Element} parent The group that holds the nodes.
+ * @param {ReadonlyArray<Element>} nodes The wanted children, first to last.
+ */
+function placeInOrder(parent, nodes) {
+  placeGroupsInOrder([[parent, nodes]]);
+}
+
+/**
+ * Put nodes into several groups at once, moving each node at most once.
+ *
+ * groups is a list of [parent, nodes] pairs: nodes are the wanted children
+ * of parent, first to last; a node may come from another of the groups (a
+ * champion that falls moves from the living group to the dead group). First
+ * every group is walked in its wanted order: a child that no group of this
+ * parent wants is stepped over, a wanted node already at its place stays,
+ * and only a node out of place is moved (insertBefore), straight from where
+ * it is to its place. Then, in each parent, the children that are not in its
+ * nodes and still sit before a placed node go right after the last placed
+ * node, keeping their relative order. So one fall moves one body, not every
+ * body after it, and a smooth glide keeps all other nodes (an observer sees
+ * one removal for the one move). Return undefined. DOM change only; no game
+ * value is read.
+ *
+ * @param {ReadonlyArray<readonly [Element, ReadonlyArray<Element>]>} groups
+ *   The [parent, wanted children] pairs, in any order.
+ */
+function placeGroupsInOrder(groups) {
+  for (const [parent, nodes] of groups) {
+    const wanted = new Set(nodes);
+    let cursor = parent.firstElementChild;
+    for (const node of nodes) {
+      while (cursor !== null && cursor !== node && !wanted.has(cursor)) {
+        cursor = cursor.nextElementSibling;
+      }
+      if (cursor === node) {
+        cursor = node.nextElementSibling;
+      } else {
+        parent.insertBefore(node, cursor);
+      }
+    }
+  }
+  for (const [parent, nodes] of groups) {
+    const last = nodes.at(-1);
+    if (last === undefined || last.parentNode !== parent) continue;
+    const wanted = new Set(nodes);
+    /** @type {Element[]} */
+    const before = [];
+    for (let child = parent.firstElementChild; child !== null && child !== last; ) {
+      const next = child.nextElementSibling;
+      if (!wanted.has(child)) before.push(child);
+      child = next;
+    }
+    if (before.length > 0) last.after(...before);
+  }
+}
+
+/**
+ * Return the arena padding, in CSS pixels, for one render.
+ *
+ * The BattleClient and the DevClient combat screen (`product_kind`
+ * "combat_debugger") draw the field as the approved vision page does: its
+ * field drawing is 1032 px wide with a 16 px pad (50 px per world unit on a
+ * 20 by 10 map), so the pad is 16/1032 of the arena width and every body,
+ * mark and stone lands at the vision's place at any window size. The Replay
+ * Viewer keeps its fixed 24 px pad.
+ *
+ * @param {unknown} frame The installed presentation (its product_kind is read).
+ * @param {number} viewportWidth The arena width in CSS pixels.
+ * @returns {number} The pad on every side, in CSS pixels.
+ */
+function arenaPadding(frame, viewportWidth) {
+  return isRecord(frame) && frame.product_kind === "combat_debugger"
+    ? (viewportWidth * 16) / 1032
+    : 24;
+}
+
+/**
+ * Return the raw event rows inside one audience's incoming summary record.
+ *
+ * Rune Zones (looks/statuses.js) reads these rows to learn what happened to
+ * each body this tick: a status applied, refreshed, aged out or broken by
+ * damage (the Freezing Trap's Shatter), and an Ultimate made ready or spent.
+ * It needs the rows, not the summary record around them.
+ *
+ * @param {unknown} summary This audience's own incoming summary, as
+ *   audienceSources gives it: Oracle View `latest_events` or Agent POV
+ *   `visual_events` (a record whose `events` array holds the rows), or null on
+ *   a frame with no transition into it.
+ * @returns {ReadonlyArray<unknown>} The summary's `events` array itself (not a
+ *   copy), or an empty array when the summary is missing or has no array. Agent
+ *   POV: the rows are the POV team's own authorized rows; nothing is added.
+ *   Pure: reads the record, writes nothing.
+ */
+export function incomingEventRows(summary) {
+  return isRecord(summary) && Array.isArray(summary.events) ? summary.events : [];
+}
+
+/**
+ * Gather the audience-scoped inputs the durable looks share for one render.
+ *
+ * frame is the normalized presentation; scene is its authorized arena scene for
+ * the same audience; visualFilters is the page's switch state. Return a frozen
+ * record:
+ * - events: this audience's own incoming summary record (Oracle View
+ *   latest_events, Agent POV visual_events), or null. Its raw event rows sit
+ *   in its `events` array; a look that reads rows (Rune Zones) gets that array.
+ * - trajectories: Agent POV only, the visual_events agent_phase_trajectories
+ *   array (null in Oracle View or when missing); the sight veil reads them.
+ * - startSeen(presentationKey): whether a body was seen at the start of the tick
+ *   (Oracle View: always true; Agent POV: its POV trajectory has a start spot).
+ * - sensorSources: Agent POV only, current_endpoint.parts.authorized_sensor_sources
+ *   (null: the recipient alone, as for NoSharedObs).
+ * - schedule: the tick's beat schedule from beatView (null when unavailable).
+ * - homeFallIds: public IDs of this tick's double-scoring falls this audience saw
+ *   (the adapter scopes them; Agent POV: seen falls only).
+ * - povTeamId: Agent POV only, the team (1 or 2) of the POV recipient, read from
+ *   the POV scene (the recipient always sees itself); otherwise null.
+ * - tick: the public tick after this transition; on a frame with no transition
+ *   into it, the presentation's own public tick (authorizedPresentationCurrentTick);
+ *   null when neither is known.
+ * Agent POV boundary: nothing here reads researcher_space or the match summary's
+ * hidden rows. Pure: reads the frame, writes nothing.
+ *
+ * @param {unknown} frame
+ * @param {JsonRecord} scene
+ * @param {Readonly<Record<string, boolean>>} visualFilters
+ */
+function audienceSources(frame, scene, visualFilters) {
+  const agentPov = scene.audience === "agent_pov";
+  const presentation = isRecord(frame) ? frame : {};
+  const events = agentPov
+    ? isRecord(presentation.visual_events)
+      ? presentation.visual_events
+      : null
+    : isRecord(presentation.latest_events)
+      ? presentation.latest_events
+      : null;
+  const trajectories =
+    agentPov && Array.isArray(events?.agent_phase_trajectories)
+      ? /** @type {JsonRecord[]} */ (events.agent_phase_trajectories)
+      : null;
+  const seenAtStart = new Set(
+    (trajectories ?? [])
+      .filter(
+        (trajectory) => isRecord(trajectory) && trajectory.transition_start != null,
+      )
+      .map((trajectory) => String(trajectory.agent_presentation_key)),
+  );
+  const parts = isRecord(presentation.current_endpoint)
+    ? presentation.current_endpoint.parts
+    : null;
+  const sensorSources =
+    agentPov && isRecord(parts) && Array.isArray(parts.authorized_sensor_sources)
+      ? parts.authorized_sensor_sources
+      : null;
+  const view = beatView(frame, "end", { visualFilters });
+  const facts = authorizedPresentationMatchBeatFacts(frame);
+  const recipientId = isRecord(presentation.authority)
+    ? presentation.authority.recipient_public_agent_id
+    : null;
+  const recipient = agentPov
+    ? asArray(scene.agents).find(
+        (agent) => isRecord(agent) && agent.public_agent_id === recipientId,
+      )
+    : undefined;
+  const povTeamId =
+    isRecord(recipient) && (recipient.team_id === 1 || recipient.team_id === 2)
+      ? recipient.team_id
+      : null;
+  // The tick after this transition; on a frame with no transition into it (a
+  // fresh start or an installed start such as tick 299) the presentation's own
+  // public tick, so a still shows the Time Of Night step for its tick.
+  const tick = Number.isInteger(events?.incoming_successor_simulator_step_count)
+    ? Number(events?.incoming_successor_simulator_step_count)
+    : authorizedPresentationCurrentTick(frame);
+  return Object.freeze({
+    events,
+    trajectories,
+    /**
+     * Say whether the body with presentationKey was seen at the start of the tick.
+     *
+     * @param {string} presentationKey
+     */
+    startSeen: (presentationKey) => !agentPov || seenAtStart.has(presentationKey),
+    sensorSources,
+    schedule: view?.schedule ?? null,
+    homeFallIds: facts?.home_fall_public_agent_ids ?? [],
+    povTeamId,
+    tick,
+  });
+}
+
+/**
+ * Own the durable SVG layers for an authoritative debugger or replay frame.
+ *
+ * The constructor replaces the supplied SVG's children with one camera wrapper
+ * group holding the fixed layer stack (BATTLEFIELD_LAYER_ORDER). Later render
+ * calls update durable layers while keeping the SVG root, the camera wrapper
+ * and both transient layers for CombatChoreographer. Bodies keep stable node
+ * identities where possible, each inside its glide wrapper. The class owns
+ * projection, layer placement and dock layout, not simulator rules or fetching;
+ * the look modules own how each part is drawn.
  */
 export class BattlefieldRenderer {
   /**
    * Install the battlefield layers into caller-supplied browser elements.
    *
-   * The elements object requires battlefield (SVGSVGElement) and empty (HTMLElement).
-   * Replace battlefield children, initialize retained-node/authority maps and schedule
-   * numeric dock measurement after battlefield.ownerDocument.fonts.ready. The caller
-   * owns the elements and coordinates transient cleanup. A browser DOM/font API is
-   * required; unsupported element operations propagate their errors.
+   * The elements object requires battlefield (SVGSVGElement) and empty
+   * (HTMLElement). Replace battlefield's children with the camera wrapper and
+   * its layers, start the retained-node and lookup maps and schedule dock number
+   * fitting after battlefield.ownerDocument.fonts.ready. The caller owns the
+   * elements and coordinates transient cleanup. A browser DOM and font API are
+   * required; unsupported element operations throw.
    *
    * @param {{
    *   battlefield: SVGSVGElement,
@@ -774,6 +772,14 @@ export class BattlefieldRenderer {
     this.empty = empty;
     /** @type {ViewportTransform | null} */
     this.transform = null;
+    /**
+     * The switch state and arena scene of the last successful render, which the
+     * choreography surface hands to the event looks (same audience as the scene).
+     * @type {Readonly<Record<string, boolean>>}
+     */
+    this.lastVisualFilterState = DEFAULT_VISUAL_FILTER_STATE;
+    /** @type {JsonRecord | null} */
+    this.lastScene = null;
     /** @type {ReadonlyArray<ProtectedRegion>} */
     this.choreographyProtectedRects = Object.freeze([]);
     /** @type {Readonly<{
@@ -791,95 +797,183 @@ export class BattlefieldRenderer {
     /** @type {ReadonlyMap<number, JsonRecord>} */
     this.agentByLayoutSlot = new Map();
     /** @type {ReadonlyMap<string, JsonRecord>} */
-    this.researcherAgentByPublicId = new Map();
+    this.sceneAgentByPublicId = new Map();
 
-    const map = createLayer("map", { "aria-hidden": "true" });
-    const aura = createLayer("aura", { "aria-hidden": "true" });
-    const debugRange = createLayer("debug-range", {
-      "aria-label": "Authorized ability and effect ranges",
-    });
-    this.rangeCues = createLayer("range-cues", { "aria-hidden": "true" });
-    debugRange.append(this.rangeCues);
-    const pendingRoute = createLayer("pending-route", { "aria-hidden": "true" });
-    const transientRoute = createLayer("transient-route", {
-      "aria-label": "Authorized combat event routes",
-    });
-    const obstacle = createLayer("obstacle", { "aria-label": "Map obstacles" });
-    const body = createLayer("body", { "aria-label": "Authorized agents" });
-    this.bodyLayers = {
-      dead: svgElement("g", { "data-body-state": "dead" }),
-      living: svgElement("g", { "data-body-state": "living" }),
-    };
-    body.append(this.bodyLayers.dead, this.bodyLayers.living);
-    const selectionLegality = createLayer("selection-legality", {
-      "aria-label": "Selection and exact actor-owned legality",
-    });
-    this.selectionCues = createLayer("selection-cues", {
+    const doc = battlefield.ownerDocument;
+    const map = createLayer(doc, "map", { "aria-hidden": "true" });
+    const atmosphereLayer = createLayer(doc, "atmosphere", { "aria-hidden": "true" });
+    const redZoneLayer = createLayer(doc, "red-zone", { "aria-hidden": "true" });
+    const spawnsLayer = createLayer(doc, "spawns", { "aria-hidden": "true" });
+    const teamIdentityLayer = createLayer(doc, "team-identity", {
       "aria-hidden": "true",
     });
-    this.legalityCues = createLayer("legality-cues");
-    selectionLegality.append(this.selectionCues, this.legalityCues);
-    const durableStatusModifier = createLayer("durable-status-modifier", {
+    const aura = createLayer(doc, "aura", { "aria-hidden": "true" });
+    const imprints = createLayer(doc, "imprints", { "aria-hidden": "true" });
+    const debugRange = createLayer(doc, "debug-range", {
+      "aria-label": "Authorized ability and effect ranges",
+    });
+    // Selection moonlight sits first, under the reach rings, stones and bodies.
+    this.selectionMoonlight = createLayer(doc, "selection-moonlight", {
+      "aria-hidden": "true",
+    });
+    this.rangeCues = createLayer(doc, "range-cues", { "aria-hidden": "true" });
+    debugRange.append(this.selectionMoonlight, this.rangeCues);
+    const pendingRoute = createLayer(doc, "pending-route", { "aria-hidden": "true" });
+    const fogLayer = createLayer(doc, "fog", { "aria-hidden": "true" });
+    const obstacle = createLayer(doc, "obstacle", { "aria-label": "Map obstacles" });
+    const deathDim = createLayer(doc, "death-dim", { "aria-hidden": "true" });
+    const strikeBand = createLayer(doc, "strike-band", {
+      "aria-label": "Authorized combat event routes",
+    });
+    const body = createLayer(doc, "body", { "aria-label": "Authorized agents" });
+    this.bodyLayers = {
+      dead: svgNode(doc, "g", { "data-body-state": "dead" }),
+      corpseMarks: svgNode(doc, "g", {
+        "data-body-state": "corpse-marks",
+        "aria-hidden": "true",
+      }),
+      living: svgNode(doc, "g", { "data-body-state": "living" }),
+    };
+    // Selection brackets sit under every body, so a neighbour covers them
+    // (live play moves them over the bodies; see #arrangeLiveLayers).
+    this.selectionCues = createLayer(doc, "selection-cues", {
+      "aria-hidden": "true",
+    });
+    // The live hotbar's plan marks (Command Ring, studs, Reach Marks, Order
+    // Thread, Step Ghost) lie under every body, as the vision draws them.
+    this.planMarks = createLayer(doc, "plan-marks", { "aria-hidden": "true" });
+    body.append(
+      this.selectionCues,
+      this.planMarks,
+      this.bodyLayers.dead,
+      this.bodyLayers.corpseMarks,
+      this.bodyLayers.living,
+    );
+    const over = createLayer(doc, "over", { "aria-hidden": "true" });
+    const selectionLegality = createLayer(doc, "selection-legality", {
+      "aria-label": "Selection and exact actor-owned legality",
+    });
+    this.legalityCues = createLayer(doc, "legality-cues");
+    selectionLegality.append(this.legalityCues);
+    const durableStatusModifier = createLayer(doc, "durable-status-modifier", {
       "aria-label": "Durable status, cooldown, and modifier cues",
     });
-    const transientEvents = createLayer("transient-events", {
+    const transientEvents = createLayer(doc, "transient-events", {
       "aria-label": "Authorized combat event summaries",
     });
-    const accessibleLabels = createLayer("accessible-labels");
+    const heraldsLayer = createLayer(doc, "heralds", {
+      "aria-label": "Match moments",
+    });
+    const explain = createLayer(doc, "explain", {
+      "aria-label": "Frame Explanation marks",
+    });
+    const accessibleLabels = createLayer(doc, "accessible-labels");
 
     this.layers = {
       map,
+      atmosphere: atmosphereLayer,
+      redZone: redZoneLayer,
+      spawns: spawnsLayer,
+      teamIdentity: teamIdentityLayer,
       aura,
+      imprints,
       debugRange,
       pendingRoute,
-      transientRoute,
+      fog: fogLayer,
       obstacle,
+      deathDim,
+      strikeBand,
       body,
+      over,
       selectionLegality,
-      durableStatusModifier,
       transientEvents,
+      durableStatusModifier,
+      heralds: heraldsLayer,
+      explain,
       accessibleLabels,
     };
 
     /** @type {Map<number | string, AgentNodes>} */
     this.agentNodes = new Map();
+    /**
+     * Glide wrapper of each drawn body by presentation key, so marks that ride
+     * a body (Rune Zones, the Agent POV recipient rim) join its glide.
+     * @type {Map<string, SVGElement>}
+     */
+    this.wrapperByPresentationKey = new Map();
     /** @type {Map<string, SVGElement>} */
     this.observedBodyNodes = new Map();
 
-    battlefield.replaceChildren(
+    /**
+     * The one camera wrapper group. A camera change may ease with a temporary
+     * transform on it; its data-camera-frame names the current world frame.
+     */
+    this.cameraGroup = svgNode(doc, "g", { class: BATTLEFIELD_CAMERA_CLASS });
+    this.cameraGroup.append(
       map,
+      atmosphereLayer,
+      redZoneLayer,
+      spawnsLayer,
+      teamIdentityLayer,
       aura,
+      imprints,
       debugRange,
       pendingRoute,
-      transientRoute,
+      fogLayer,
       obstacle,
+      deathDim,
+      strikeBand,
       body,
+      over,
       selectionLegality,
       transientEvents,
       durableStatusModifier,
+      heraldsLayer,
+      explain,
       accessibleLabels,
     );
+    battlefield.replaceChildren(this.cameraGroup);
     void battlefield.ownerDocument.fonts.ready.then(() => {
-      this.#resolveNumericDockCellContent();
+      statuses.fitDockValues(this.layers.durableStatusModifier);
     });
   }
 
   /**
    * Paint the durable facts of a normalized authorized frame.
    *
-   * frame may be unknown. options.offline defaults to false and changes only empty
-   * state text; showRanges defaults to true; localInspectedPresentationKey defaults to
-   * undefined; visualFilterState defaults to DEFAULT_VISUAL_FILTER_STATE. Optional
-   * renderPolicy is copied to SVG metadata without changing game time.
+   * frame may be unknown. options.offline defaults to false and changes only the
+   * empty-state text; showRanges defaults to true; localInspectedPresentationKey
+   * defaults to undefined; visualFilterState defaults to
+   * DEFAULT_VISUAL_FILTER_STATE. Optional renderPolicy is copied to SVG metadata
+   * without changing game time. options.cameraFrame is the camera's world
+   * rectangle {minX, minY, maxX, maxY} (world units); null or absent means the
+   * Whole Map. A frame changes only where world points land on screen: every
+   * pixel size (docks, cues, strokes) stays the same.
    *
-   * Return true after rendering a recognized researcher/agent_pov scene with a positive
-   * map size. Otherwise clear durable state, show an unavailable message and return
-   * false; transient layers remain controller-owned. Use the element's measured viewport
-   * or a map-based fallback, with 24 px padding. Project disclosed rows, then allocate
-   * status/cooldown/modifier/legality docks and publish protected regions. Tooltips may
-   * use joined researcher references; bodies use only the authorized display scene.
-   * This mutates DOM and renderer caches. Layout, filter and browser errors propagate;
-   * no network request or game command is sent.
+   * Return true after rendering a recognized researcher or agent_pov scene with
+   * a positive map size. Otherwise clear durable state, show an unavailable
+   * message and return false; transient layers stay controller-owned. Use the
+   * element's measured viewport (live play: its exact box, liveFieldSize;
+   * otherwise its whole-pixel client size) or a map-based fallback, with 24 px
+   * padding (live play: the vision's 16/1032 pad). Live play also sets the
+   * battlefield's `--mark-scale` (setMarkScale); other products clear it.
+   * Ask each look module for its records and nodes (passing the switch state,
+   * the audience, this audience's own events and beat schedule from beatView;
+   * see audienceSources), keep the retained body nodes, put the Rune Zones and
+   * the recipient rim inside each body's glide wrapper, lay out the status,
+   * modifier and lane-pill docks (no Ultimate cooldown docks: the Rune Ring shows
+   * the cooldown) and publish protected regions. The `explain` layer is left to
+   * the Frame Explanation controller. Bodies, marks and tooltips use only the
+   * authorized arena scene of the frame's audience (Agent POV: the POV scene; no
+   * researcher row is read). This changes the DOM and renderer caches (the
+   * stored switch state and scene the choreography surface hands to the event
+   * looks). Layout, filter, camera-frame (TypeError or RangeError for a bad
+   * frame) and browser errors propagate; no network request or game command is
+   * sent.
+   *
+   * Agent POV: every look reads the POV arena scene and visual_events, so no
+   * unseen champion is drawn and no timing depends on one; the camera frame must
+   * come from the same audience's scene.
    *
    * @param {unknown} frame
    * @param {{
@@ -888,7 +982,19 @@ export class BattlefieldRenderer {
    *   localInspectedPresentationKey?: string | null,
    *   visualFilterState?: Readonly<Record<string, boolean>>,
    *   renderPolicy?: "live_once" | "replay_animated" | "replay_static",
-   * }} [options]
+   *   cameraFrame?: CameraFrame | null,
+   *   focusedPublicAgentId?: string | null,
+   *   manualSlots?: ReadonlyArray<number> | null,
+   * }} [options] focusedPublicAgentId (live Agent POV only, default null) is
+   *   the transport frame's focused_public_agent_id: the champion the player
+   *   looks at when it is not the one being ordered. The hotbar then draws
+   *   Watch Only's Look Ring round its body, only when this audience's scene
+   *   draws that body. manualSlots (live only, default null) is the transport
+   *   frame's `combat_configuration.manual_slots` (shown slots 0 to 9 of the
+   *   Manual champions); the hotbar dims a Command Ring round every other
+   *   Manual champion this scene draws. With null, the Manual champions are
+   *   the ones the frame's own top-level `pending_joint_action` names (Oracle
+   *   View only; Agent POV has no such rows, so no other ring shows).
    * @returns {boolean} Whether the frame contained a paintable scene.
    */
   render(frame, options = {}) {
@@ -898,9 +1004,6 @@ export class BattlefieldRenderer {
         : options.visualFilterState;
     const visualPolicy = durableVisualPolicy(visualFilterState);
     const scene = frameScene(frame, options.localInspectedPresentationKey);
-    const researcherScene = isAuthorizedPresentationFrame(frame)
-      ? authorizedPresentationResearcherSceneView(frame)
-      : scene;
     const map = isRecord(scene?.map) ? scene.map : null;
     const width = finiteNumber(map?.width);
     const height = finiteNumber(map?.height);
@@ -917,6 +1020,7 @@ export class BattlefieldRenderer {
       this.battlefield.removeAttribute("data-preset");
       this.battlefield.removeAttribute("data-audience");
       this.battlefield.removeAttribute("data-render-policy");
+      setMarkScale(this.battlefield, null);
       this.battlefield.setAttribute(
         "aria-label",
         "Battlefield unavailable; no authorized scene was returned.",
@@ -926,24 +1030,35 @@ export class BattlefieldRenderer {
         ? "The local debugger service is unavailable. Commands are not being retried."
         : "No authorized battlefield scene was returned.";
       this.transform = null;
-      this.researcherAgentByPublicId = new Map();
+      this.sceneAgentByPublicId = new Map();
       return false;
     }
 
+    // Live play sizes the drawing by the field's exact box (see liveFieldSize);
+    // the Replay Viewer keeps its whole-pixel size.
+    const exact =
+      isRecord(frame) && frame.product_kind === "combat_debugger"
+        ? liveFieldSize(this.battlefield)
+        : null;
     const viewportWidth =
-      this.battlefield.clientWidth > 0
-        ? this.battlefield.clientWidth
-        : Math.max(width * 40, 320);
+      exact !== null
+        ? exact.width
+        : this.battlefield.clientWidth > 0
+          ? this.battlefield.clientWidth
+          : Math.max(width * 40, 320);
     const viewportHeight =
-      this.battlefield.clientHeight > 0
-        ? this.battlefield.clientHeight
-        : Math.max(height * 40, 240);
+      exact !== null
+        ? exact.height
+        : this.battlefield.clientHeight > 0
+          ? this.battlefield.clientHeight
+          : Math.max(height * 40, 240);
     const transform = createViewportTransform({
       worldWidth: width,
       worldHeight: height,
       viewportWidth,
       viewportHeight,
-      padding: 24,
+      padding: arenaPadding(frame, viewportWidth),
+      cameraFrame: options.cameraFrame ?? null,
     });
     this.transform = transform;
     this.battlefield.setAttribute("viewBox", `0 0 ${viewportWidth} ${viewportHeight}`);
@@ -954,6 +1069,13 @@ export class BattlefieldRenderer {
     } else {
       this.battlefield.dataset.renderPolicy = options.renderPolicy;
     }
+    const cameraFrame = transform.cameraFrame;
+    this.cameraGroup.dataset.cameraFrame = [
+      cameraFrame.minX,
+      cameraFrame.minY,
+      cameraFrame.maxX,
+      cameraFrame.maxY,
+    ].join(" ");
     const audienceLabel = scene.audience === "researcher" ? "Oracle View" : "Agent POV";
     this.battlefield.setAttribute(
       "aria-label",
@@ -961,26 +1083,96 @@ export class BattlefieldRenderer {
     );
     this.empty.hidden = true;
 
-    this.#renderMap(
-      transform,
-      width,
-      height,
-      isRecord(frame) && frame.product_kind === "combat_debugger",
-      visualPolicy.showRedZoneFloors && isRecord(map?.red_zone)
-        ? /** @type {Readonly<{team_a_x_range: number[], team_b_x_range: number[]}>} */ (
-            map.red_zone
-          )
-        : null,
+    const doc = this.battlefield.ownerDocument;
+    const audience = /** @type {"researcher" | "agent_pov"} */ (scene.audience);
+    const sources = audienceSources(frame, scene, visualFilterState);
+    // The BattleClient and the DevClient combat screen (see the file notes).
+    const liveProduct = isRecord(frame) && frame.product_kind === "combat_debugger";
+    if (liveProduct) this.#arrangeLiveLayers();
+    setMarkScale(this.battlefield, liveProduct ? hotbar.markScale(transform) : null);
+    this.lastVisualFilterState = visualFilterState;
+    this.lastScene = scene;
+    replaceLayer(
+      this.layers.map,
+      mapSkins.build(
+        mapSkins.records({
+          transform,
+          map,
+          spawnPads: scene.spawn_pads,
+          // The technical map name lives only in match_summary, which no arena
+          // drawing reads; the skin is found by its exact layout instead.
+          mapKey: null,
+          filters: visualFilterState,
+          audience,
+          showUnitGrid: isRecord(frame) && frame.product_kind === "combat_debugger",
+        }),
+        doc,
+      ),
     );
-    const classByIdentity = new Map(
-      asArray(scene.agents)
-        .filter(
-          (agent) => isRecord(agent) && typeof agent.presentation_key === "string",
-        )
-        .map((agent) => [
-          String(agent.presentation_key),
-          classTokenFromId(agent.class_id).cssKey,
-        ]),
+    replaceLayer(
+      this.layers.atmosphere,
+      atmosphere.build(
+        atmosphere.records({
+          transform,
+          map,
+          scene,
+          filters: visualFilterState,
+          tick: sources.tick,
+          // The episode limit is a public constant fixed before the game (the
+          // same in both audiences); the adapter reads only that one field, so
+          // the Last Watch Veil works in Oracle View and Agent POV alike.
+          episodeLimit: authorizedPresentationEpisodeLimit(frame),
+        }),
+        doc,
+      ),
+    );
+    replaceLayer(
+      this.layers.redZone,
+      redZone.build(
+        redZone.records({
+          transform,
+          map,
+          redZone: isRecord(map?.red_zone)
+            ? /** @type {Readonly<{team_a_x_range: number[], team_b_x_range: number[]}>} */ (
+                map.red_zone
+              )
+            : null,
+          filters: visualFilterState,
+          scene,
+          homeFallIds: sources.homeFallIds,
+          // Live play draws the BattleClient vision's Grave Ground marks.
+          vision: liveProduct,
+        }),
+        doc,
+      ),
+    );
+    replaceLayer(
+      this.layers.spawns,
+      spawns.build(
+        spawns.records({
+          scene,
+          transform,
+          audience,
+          filters: visualFilterState,
+          falls: sources.schedule?.falls ?? [],
+          returns: sources.schedule?.returns ?? [],
+        }),
+        doc,
+      ),
+    );
+    replaceLayer(
+      this.layers.teamIdentity,
+      teamIdentity.build(
+        teamIdentity.records({
+          scene,
+          map,
+          transform,
+          audience,
+          filters: visualFilterState,
+          povTeamId: sources.povTeamId,
+        }),
+        doc,
+      ),
     );
     this.agentByPresentationKey = new Map(
       asArray(scene.agents)
@@ -989,74 +1181,340 @@ export class BattlefieldRenderer {
         )
         .map((agent) => [String(agent.presentation_key), agent]),
     );
-    this.researcherAgentByPublicId = new Map(
-      asArray(researcherScene?.agents)
+    this.sceneAgentByPublicId = new Map(
+      asArray(scene.agents)
         .filter((agent) => isRecord(agent) && typeof agent.public_agent_id === "string")
         .map((agent) => [String(agent.public_agent_id), agent]),
     );
-    renderCircleLayer(
+    replaceLayer(
       this.layers.aura,
-      visualPolicy.showAuraFields
-        ? asArray(scene.aura_fields).filter(
-            (field) => isRecord(field) && field.source_alive === true,
-          )
-        : [],
-      "aura-field",
-      "token_id",
-      transform,
-      new Map(),
-      (record) => {
-        const sourcePublicAgentId = ownEnumerableDataValue(
-          record,
-          "source_public_agent_id",
-        );
-        const sourceAgent =
-          typeof sourcePublicAgentId === "string"
-            ? (this.researcherAgentByPublicId.get(sourcePublicAgentId) ?? null)
-            : null;
-        const explanationRecord =
-          sourceAgent === null
-            ? record
-            : {
-                ...record,
-                source_presentation_key: sourceAgent.presentation_key,
-                source_public_agent_id: sourceAgent.public_agent_id,
-              };
-        return explainAura(explanationRecord, sourceAgent, scene.audience);
-      },
+      statuses.build(
+        statuses.records({
+          part: "aura-fields",
+          transform,
+          agents: asArray(scene.agents),
+          fields: visualPolicy.showAuraFields
+            ? asArray(scene.aura_fields).filter(
+                (field) => isRecord(field) && field.source_alive === true,
+              )
+            : [],
+          tooltipInput: (/** @type {JsonRecord} */ record) =>
+            this.#auraTooltipInput(record, audience),
+          // The ring moments of a played tick (Aura Glints, the Barrier Held
+          // stud flash) come from this audience's own rows and, in Agent POV,
+          // its own tick-start spots only.
+          audience,
+          events: incomingEventRows(sources.events),
+          trajectories: sources.trajectories,
+          switches: {
+            auraGlints: visualFilterState.aura_glints === true,
+            barrierHeld: visualFilterState.barrier_held !== false,
+          },
+        }),
+        doc,
+      ),
     );
-    renderCircleLayer(
+    replaceLayer(
+      this.layers.imprints,
+      movement.build(
+        movement.records({
+          scene,
+          transform,
+          audience,
+          filters: visualFilterState,
+          ...movement.movementSource(sources.events, audience),
+        }),
+        doc,
+      ),
+    );
+    // Live play rings the target with corner brackets only, as the vision
+    // does: the selected body there is the draft's target, so no moonlight.
+    const selectionMoonlight =
+      !liveProduct &&
+      isVisualPaintPartEnabled(visualFilterState, {
+        surface: "durable",
+        kind: "selection_moonlight",
+      });
+    // Live play (BattleClient and DevClient) shows the vision's two reach
+    // rings, Basic and Ultimate (an Ultimate with no reach, the Mage's Burst,
+    // has none); sight is the Agent POV veil's job. The Replay Viewer keeps
+    // its three rings.
+    const reachScene = liveProduct
+      ? {
+          ...scene,
+          ranges: asArray(scene.ranges).filter(
+            (range) =>
+              isRecord(range) &&
+              (range.kind === "basic" || range.kind === "ultimate") &&
+              finiteNumber(range.radius) > 0,
+          ),
+        }
+      : scene;
+    replaceLayer(
       this.rangeCues,
-      options.showRanges === false ? [] : asArray(scene.ranges),
-      "range-ring",
-      "kind",
-      transform,
-      classByIdentity,
-      (record) => {
-        const owner =
-          (typeof record.presentation_key === "string"
-            ? this.agentByPresentationKey.get(record.presentation_key)
-            : null) ?? null;
-        return explainRange(record, owner);
-      },
-      true,
+      championFrame.build(
+        championFrame.records({
+          part: "reach-rings",
+          scene: reachScene,
+          transform,
+          // Live play: Reach Rings is the Ranges rings' own switch (G shows
+          // and hides them while it is on; off hides them whatever G says),
+          // and no ring is drawn for a selected target with Ranges off, as on
+          // the vision page. The Replay Viewer keeps the selected agent's
+          // rings with Ranges off.
+          showRanges:
+            options.showRanges !== false &&
+            (!liveProduct ||
+              isVisualPaintPartEnabled(visualFilterState, {
+                surface: "durable",
+                kind: "reach_ring",
+              })),
+          showReachRings:
+            !liveProduct &&
+            isVisualPaintPartEnabled(visualFilterState, {
+              surface: "durable",
+              kind: "reach_ring",
+            }),
+        }),
+        doc,
+      ),
     );
-    this.#renderPendingRoute(scene, transform);
-    this.#renderObstacles(map, transform);
-    const projectedAgents = this.#renderAgents(scene, transform, visualPolicy);
+    // The live Command Ring and Order Thread (hotbar) replace the controlled
+    // halo's route in live play, so the next-action thread is drawn only when
+    // the hotbar draws no command ring.
+    const focusedId =
+      typeof options.focusedPublicAgentId === "string"
+        ? options.focusedPublicAgentId
+        : null;
+    const lookedAtBody =
+      focusedId === null
+        ? null
+        : (asArray(scene.agents).find(
+            (agent) => isRecord(agent) && agent.public_agent_id === focusedId,
+          ) ?? null);
+    const hotbarRecords = hotbar.records({
+      scene,
+      transform,
+      audience,
+      filters: visualFilterState,
+      lookedAtKey:
+        typeof lookedAtBody?.presentation_key === "string"
+          ? lookedAtBody.presentation_key
+          : null,
+      inspection: isAuthorizedPresentationFrame(frame)
+        ? authorizedPresentationInspectionState(frame).inspection
+        : null,
+      manualSlots: Array.isArray(options.manualSlots) ? options.manualSlots : null,
+      // The frame's own top-level staged Manual rows; never researcher_space.
+      pendingRows:
+        isAuthorizedPresentationFrame(frame) &&
+        isRecord(frame.pending_joint_action) &&
+        Array.isArray(frame.pending_joint_action.action_rows)
+          ? frame.pending_joint_action.action_rows
+          : [],
+    });
+    const hotbarDrawsCommand = hotbarRecords.some(
+      (record) => record.kind === "command-ring" || record.kind === "order-thread",
+    );
+    const threadRecords = hotbarDrawsCommand
+      ? []
+      : championFrame.records({
+          part: "next-action-route",
+          scene,
+          transform,
+          showNextActionThread: isVisualPaintPartEnabled(visualFilterState, {
+            surface: "durable",
+            kind: "next_action_thread",
+          }),
+        });
+    // Replay Viewer only: All Staged Orders and Next Step Ghost read the
+    // frame's own top-level next-tick facts (never researcher_space). In Agent
+    // POV the upcoming rows hold only the recipient's own order and the host
+    // names a ghost only for a champion the team sees now and next tick. The
+    // selected champion's order stays the Next Action Thread's, so its line
+    // is never drawn twice.
+    const replayFrame = !liveProduct && isAuthorizedPresentationFrame(frame);
+    const stagedRecords = championFrame.records({
+      part: "staged-orders",
+      scene,
+      transform,
+      showStagedOrders:
+        replayFrame &&
+        isVisualPaintPartEnabled(visualFilterState, {
+          surface: "durable",
+          kind: "staged_order",
+        }),
+      actionRows:
+        replayFrame && isRecord(frame.upcoming_transition)
+          ? frame.upcoming_transition.action_rows
+          : [],
+      skipActorIds: threadRecords.map((record) => record.sourceAgentId),
+    });
+    const ghostRecords = championFrame.records({
+      part: "next-step-ghosts",
+      scene,
+      transform,
+      showNextStepGhost:
+        replayFrame &&
+        isVisualPaintPartEnabled(visualFilterState, {
+          surface: "durable",
+          kind: "next_step_ghost",
+        }),
+      spots: replayFrame ? frame.next_end_spots : [],
+    });
+    replaceLayer(
+      this.layers.pendingRoute,
+      championFrame.build([...ghostRecords, ...threadRecords, ...stagedRecords], doc),
+    );
+    const fogInput = {
+      scene,
+      transform,
+      audience,
+      live: liveProduct,
+      filters: visualFilterState,
+      sensorSources: sources.sensorSources,
+      trajectories: sources.trajectories,
+      schedule: sources.schedule,
+    };
+    replaceLayer(this.layers.fog, fog.build(fog.records(fogInput), doc));
+    // Standing Stones keep their hover targets and tips; on a tale-skinned map
+    // the tale's own stones are painted over them (no pointer input, no tips),
+    // on the same exact layout.
+    replaceLayer(this.layers.obstacle, [
+      ...obstacles.build(
+        obstacles.records({ map, transform, filters: visualFilterState }),
+        doc,
+      ),
+      ...mapSkins.build(
+        mapSkins.taleStoneRecords({
+          transform,
+          map,
+          mapKey: null,
+          filters: visualFilterState,
+        }),
+        doc,
+      ),
+    ]);
+    const dimRecords = atmosphere.records({
+      part: "dim",
+      transform,
+      map,
+      filters: visualFilterState,
+      fallBeat: sources.schedule?.fall ?? null,
+      motionMode: "normal",
+    });
+    const dimNodes = atmosphere.build(dimRecords, doc);
+    for (const [index, node] of dimNodes.entries()) {
+      // The choreographer reads the beat window to start the dimming on a
+      // played tick; the node itself rests at its END opacity 0.
+      const record = dimRecords[index];
+      if (node instanceof SVGElement && record !== undefined) {
+        node.dataset.dimStart = String(record.start);
+        node.dataset.dimEnd = String(record.end);
+      }
+    }
+    replaceLayer(this.layers.deathDim, dimNodes);
+    const projectedAgents = this.#renderAgents(
+      frame,
+      scene,
+      transform,
+      visualPolicy,
+      visualFilterState,
+      selectionMoonlight,
+      sources.startSeen,
+    );
     this.agentByLayoutSlot = new Map(
       projectedAgents.map((projected) => [projected.layoutSlot, projected.agent]),
     );
+    replaceLayer(
+      this.bodyLayers.corpseMarks,
+      requiems.build(
+        requiems.records({
+          part: "corpse-marks",
+          scene,
+          transform,
+          audience,
+          filters: visualFilterState,
+        }),
+        doc,
+      ),
+    );
+    replaceLayer(this.planMarks, hotbar.build(hotbarRecords, doc));
+    // Rune Zones and the Rune Ring ride each body's glide wrapper, after the token.
+    /** @type {Element[]} */
+    const overNodes = [];
+    const statusSwitches = {
+      statusMarks: visualFilterState.status_marks !== false,
+      cooldownEffects: visualFilterState.cooldown_effects !== false,
+      statusApplication: visualFilterState.status_application !== false,
+      naturalStatusExpiry: visualFilterState.natural_status_expiry !== false,
+      freezingTrapBreak: visualFilterState.freezing_trap_break !== false,
+      statusClearOnDeath: visualFilterState.status_clear_on_death === true,
+      barrierHeld: visualFilterState.barrier_held !== false,
+    };
+    const statusRecords = statuses.records({
+      part: "status-marks",
+      scene,
+      transform,
+      audience,
+      events: incomingEventRows(sources.events),
+      trajectories: sources.trajectories,
+      startSeen: sources.startSeen,
+      switches: statusSwitches,
+    });
+    const statusNodes = statuses.build(statusRecords, doc);
+    // Marks that ride a body's glide wrapper (Rune Zones, the recipient rim),
+    // gathered per wrapper and then reconciled after the token and shield.
+    /** @type {Map<Element, Element[]>} */
+    const riders = new Map();
+    const ride = (/** @type {Element} */ wrapper, /** @type {Element} */ node) => {
+      const list = riders.get(wrapper);
+      if (list) list.push(node);
+      else riders.set(wrapper, [node]);
+    };
+    for (const [index, node] of statusNodes.entries()) {
+      const key = statusRecords[index]?.presentationKey;
+      const wrapper = typeof key === "string" ? this.#glideWrapperByKey(key) : null;
+      if (wrapper) {
+        ride(wrapper, node);
+      } else {
+        overNodes.push(node);
+      }
+    }
+    for (const node of fog.build(fog.records({ ...fogInput, part: "over" }), doc)) {
+      const key = node instanceof SVGElement ? node.dataset.presentationKey : undefined;
+      const wrapper =
+        node.classList.contains("fog-rim") && typeof key === "string"
+          ? this.#glideWrapperByKey(key)
+          : null;
+      if (wrapper) {
+        ride(wrapper, node);
+      } else {
+        overNodes.push(node);
+      }
+    }
+    for (const nodes of this.agentNodes.values()) {
+      reconcileNodes(
+        nodes.wrapper,
+        [
+          ...nodes.wrapper.querySelectorAll(
+            ":scope > .status-marks, :scope > .fog-rim",
+          ),
+        ],
+        riders.get(nodes.wrapper) ?? [],
+      );
+    }
+    replaceLayer(this.layers.over, overNodes);
     this.#renderObservedBodies(
       scene,
       transform,
       visualPolicy.showPovDurationStatusBadges,
     );
-    this.#renderStatusDocks(scene, projectedAgents, transform, {
-      showLegality: visualPolicy.showSelectedPairLegality,
+    this.#renderStatusDocks(projectedAgents, transform, {
       showModifiers: visualPolicy.showAuraModifierBadges,
       showStatuses: visualPolicy.showDurationStatusBadges,
-      showCooldowns: visualPolicy.showCooldownBadges,
+      // The Rune Ring on each body replaces the old Ultimate cooldown docks.
+      showCooldowns: false,
       audience: scene.audience,
     });
     this.#refreshChoreographyProtectedRects();
@@ -1066,10 +1524,10 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Refresh protected regions for legacy callers and return false.
+   * Refresh protected regions for older callers and return false.
    *
-   * _active is retained for compatibility and is ignored. Durable facts are not
-   * suppressed by transient activity; the shared allocator reserves their regions.
+   * _active is kept for compatibility and ignored. Durable facts are not hidden
+   * by transient activity; the shared allocator reserves their regions.
    *
    * @param {boolean} _active
    * @returns {boolean} Whether the effective compact-active state changed.
@@ -1082,9 +1540,11 @@ export class BattlefieldRenderer {
   /**
    * Convert an SVG-local pointer point into debugger world_x/world_y.
    *
-   * point must have finite x/y and a current transform must exist; otherwise return
-   * null. Return a new coordinate record without clamping it to the map. This does
-   * not issue a command or validate whether that position is actionable.
+   * point must have finite x/y and a current transform must exist; otherwise
+   * return null. The current camera frame is included, so a click lands on the
+   * world point under the pointer. Return a new coordinate record without
+   * clamping it to the map. This sends no command and does not check whether
+   * the position is actionable.
    *
    * @param {{x: number, y: number}} point
    * @returns {{world_x: number, world_y: number} | null}
@@ -1101,14 +1561,40 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Return the narrow layer/projection contract for transient choreography.
+   * Return the glide wrapper of one drawn body, or null.
    *
-   * Return null before a valid durable scene exists. Otherwise return a frozen surface
-   * with foreground/route layers, ownerDocument, map bounds, immutable protected-region
-   * snapshot and a viewportKey that includes those regions. Projection functions close
-   * over this render's transform. Callers may append only their owned children to
-   * layer/routeLayer and must project authorized event anchors instead of borrowing
-   * current body positions. Other layers remain owned by this renderer.
+   * identityKey is the body's retained-node key (its display_key, or its integer
+   * global slot when it has none); the same value is written as the wrapper's
+   * data-glide-key. Return the `g.agent-glide` group holding the body token and
+   * its spawn-shield chip, or null when that body is not drawn (in Agent POV an
+   * unseen champion is never drawn). The choreographer may set a temporary
+   * transform on it for a glide; the DOM keeps the END position.
+   *
+   * @param {number | string} identityKey
+   * @returns {SVGElement | null}
+   */
+  bodyGlideWrapper(identityKey) {
+    return this.agentNodes.get(identityKey)?.wrapper ?? null;
+  }
+
+  /**
+   * Return the narrow layer and projection contract for transient choreography.
+   *
+   * Return null before a valid durable scene exists. Otherwise return a frozen
+   * surface with the foreground layer (`transient-events`), the route layer
+   * (`strike-band`), the herald layer (`heralds`, above every body), this
+   * render's viewport transform (lookTransform), switch state (visualFilters) and
+   * arena scene (scene; Agent POV: the POV scene) for the event looks, the
+   * battlefield SVG root (where the choreographer looks for
+   * the `g.agent-glide` body wrappers; only drawn bodies are there, so in Agent
+   * POV an unseen champion is never found), ownerDocument, the visible map bounds, an immutable
+   * protected-region snapshot, the page chrome over the arena (chromeRects, see
+   * #arenaChromeRects; read from layout once per call) and a viewportKey that includes those regions and
+   * the map bounds (which change with the camera frame). Projection functions
+   * close over this render's transform. Callers may append only their own
+   * children to layer and routeLayer and must project authorized event anchors
+   * instead of borrowing current body positions. Other layers stay owned by
+   * this renderer.
    *
    * @returns {Readonly<ChoreographySurface> | null}
    */
@@ -1133,7 +1619,9 @@ export class BattlefieldRenderer {
     /** @type {ChoreographySurface} */
     const surface = {
       layer: this.layers.transientEvents,
-      routeLayer: this.layers.transientRoute,
+      routeLayer: this.layers.strikeBand,
+      heraldLayer: this.layers.heralds,
+      battlefield: this.battlefield,
       ownerDocument: this.battlefield.ownerDocument,
       viewportKey: [
         transform.worldWidth,
@@ -1146,8 +1634,9 @@ export class BattlefieldRenderer {
         transform.mapBounds.bottom,
         protectedLayoutKey,
       ].join(":"),
-      viewportBounds: Object.freeze({ ...transform.mapBounds }),
+      viewportBounds: Object.freeze({ ...transform.visibleMapBounds }),
       protectedRects: this.choreographyProtectedRects,
+      chromeRects: this.#arenaChromeRects(),
       /**
        * Project a supplied authorized world point with this surface's captured transform.
        *
@@ -1162,25 +1651,89 @@ export class BattlefieldRenderer {
        * changing renderer state.
        */
       worldLengthToScreen: (length) => transform.worldLengthToScreen(length),
+      lookTransform: transform,
+      visualFilters: this.lastVisualFilterState,
+      scene: this.lastScene,
     };
     return Object.freeze(surface);
   }
 
   /**
-   * Remove durable drawing children and reset retained scene/projection caches.
+   * Read the page chrome over the arena, for moment cards to keep clear of.
    *
-   * Clear body/selection/status/range/map/obstacle/pending-route metadata and owned
-   * node maps. Keep the SVG root, fixed layers and transient route/event children;
-   * the animation controller must clear its own authority. Return undefined.
+   * Every shown element of the battlefield's document marked
+   * `data-arena-chrome` (the arena key stack, index.html) gives one rectangle
+   * {left, top, right, bottom} in this SVG's user units (CSS px from its
+   * top-left corner, the units of viewportBounds), mapped through the SVG's
+   * screen matrix. A hidden element or one with no size gives none. Page
+   * chrome is the same in every view, so this reads nothing about champions.
+   * Reads layout (getBoundingClientRect); writes nothing.
+   *
+   * @returns {ReadonlyArray<Readonly<{left: number, top: number, right: number, bottom: number}>>}
+   *   A frozen list, empty when there is no such element or the SVG has no
+   *   screen matrix (a document without layout, such as a test DOM).
+   */
+  #arenaChromeRects() {
+    const doc = this.battlefield.ownerDocument;
+    const matrix = this.battlefield.getScreenCTM?.()?.inverse?.() ?? null;
+    if (matrix === null || typeof doc?.querySelectorAll !== "function") {
+      return Object.freeze([]);
+    }
+    /** @param {number} x @param {number} y */
+    const toUser = (x, y) => ({
+      x: matrix.a * x + matrix.c * y + matrix.e,
+      y: matrix.b * x + matrix.d * y + matrix.f,
+    });
+    const rects = [];
+    for (const element of doc.querySelectorAll("[data-arena-chrome]")) {
+      if (/** @type {HTMLElement} */ (element).hidden) continue;
+      const box = element.getBoundingClientRect();
+      if (!(box.width > 0 && box.height > 0)) continue;
+      const a = toUser(box.left, box.top);
+      const b = toUser(box.right, box.bottom);
+      rects.push(
+        Object.freeze({
+          left: Math.min(a.x, b.x),
+          top: Math.min(a.y, b.y),
+          right: Math.max(a.x, b.x),
+          bottom: Math.max(a.y, b.y),
+        }),
+      );
+    }
+    return Object.freeze(rects);
+  }
+
+  /**
+   * Remove durable drawing children and reset retained scene and projection caches.
+   *
+   * Clear every durable layer (map, atmosphere, Red Zone, spawns, brackets,
+   * aura, imprints, selection moonlight, ranges, route, fog, obstacles, Death
+   * Dimming, bodies, corpse marks, plan marks, over, selection, legality,
+   * docks, heralds,
+   * Frame Explanation and labels), dock metadata and the retained node maps, and
+   * drop the camera frame mark. Keep the SVG root, the camera wrapper, the fixed
+   * layers and the transient route and event children; the animation controller
+   * clears its own. Return undefined.
    */
   #clearDurableScene() {
     this.layers.map.replaceChildren();
+    this.layers.atmosphere.replaceChildren();
+    this.layers.redZone.replaceChildren();
+    this.layers.spawns.replaceChildren();
+    this.layers.teamIdentity.replaceChildren();
     this.layers.aura.replaceChildren();
+    this.layers.imprints.replaceChildren();
+    this.selectionMoonlight.replaceChildren();
     this.rangeCues.replaceChildren();
     this.layers.pendingRoute.replaceChildren();
+    this.layers.fog.replaceChildren();
     this.layers.obstacle.replaceChildren();
+    this.layers.deathDim.replaceChildren();
     this.bodyLayers.dead.replaceChildren();
+    this.bodyLayers.corpseMarks.replaceChildren();
     this.bodyLayers.living.replaceChildren();
+    this.layers.over.replaceChildren();
+    this.planMarks.replaceChildren();
     this.selectionCues.replaceChildren();
     this.legalityCues.replaceChildren();
     this.layers.durableStatusModifier.replaceChildren();
@@ -1200,12 +1753,16 @@ export class BattlefieldRenderer {
     this.layers.durableStatusModifier.removeAttribute(
       "data-compacted-required-presentations",
     );
+    this.layers.heralds.replaceChildren();
+    this.layers.explain.replaceChildren();
     this.layers.accessibleLabels.replaceChildren();
+    this.cameraGroup.removeAttribute("data-camera-frame");
     this.agentNodes.clear();
+    this.wrapperByPresentationKey.clear();
     this.observedBodyNodes.clear();
     this.agentByPresentationKey = new Map();
     this.agentByLayoutSlot = new Map();
-    this.researcherAgentByPublicId = new Map();
+    this.sceneAgentByPublicId = new Map();
     this.choreographyProtectedRects = Object.freeze([]);
     this.choreographyProtectedRectGroups = Object.freeze({
       base: Object.freeze([]),
@@ -1213,6 +1770,7 @@ export class BattlefieldRenderer {
       status: Object.freeze([]),
     });
     this.transform = null;
+    this.lastScene = null;
   }
 
   /**
@@ -1234,334 +1792,212 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Replace the map boundary, the optional Red Zone floor tint and the optional grid.
+   * Return the tooltip input for one aura field, with its joined source row.
    *
-   * transform supplies screen bounds; width/height are world dimensions. showUnitGrid
-   * adds internal lines only when both dimensions are integers. redZone is the
-   * recorded, already-validated `map.red_zone` record when the Red Zone Floors
-   * filter is on, otherwise null (filter off, depth 0, or a map recorded before the
-   * rule). Each strip from redZoneFloorIntervals becomes a nested `<svg
-   * class="red-zone-floor-clip">` window holding one floor-sized `<rect
-   * class="red-zone-floor">` with the floor's corner radius, so the tint follows the
-   * rounded floor corners without `<clipPath>` ids (PNG export strips ids). Paint
-   * order is boundary, tint, grid; the whole map layer stays below obstacles, bodies
-   * and effects. Return undefined; this draws a display aid and does not generate
-   * map geometry, obstacles, scores or Red Zone facts.
+   * record is an authorized aura field; audience is the scene audience. When the
+   * field names a source public ID that an agent of the current arena scene
+   * carries, the explanation record carries that source's presentation key and
+   * public ID and the source row. In Agent POV the scene is the POV scene, so an
+   * unseen source gives sourceAgent null and the card names no source. Return {field, sourceAgent, audience} for the Statuses look.
+   * Reads the field without calling getters. No body or position is added.
    *
-   * @param {ViewportTransform} transform
-   * @param {number} width
-   * @param {number} height
-   * @param {boolean} showUnitGrid
-   * @param {Readonly<{team_a_x_range: readonly number[], team_b_x_range: readonly number[]}> | null} redZone
+   * @param {JsonRecord} record
+   * @param {"researcher" | "agent_pov"} audience
+   * @returns {{field: JsonRecord, sourceAgent: JsonRecord | null, audience: string}}
    */
-  #renderMap(transform, width, height, showUnitGrid, redZone) {
-    const bounds = transform.mapBounds;
-    const redZoneFloors = redZoneFloorIntervals(width, redZone).map((interval) => {
-      const left = screenPoint([interval.start, 0], transform).x;
-      const right = screenPoint([interval.end, 0], transform).x;
-      const clipLeft = Math.min(left, right);
-      const clip = svgElement("svg", {
-        class: "red-zone-floor-clip",
-        x: clipLeft,
-        y: bounds.top,
-        width: Math.abs(right - left),
-        height: bounds.height,
-      });
-      clip.append(
-        svgElement("rect", {
-          class: "red-zone-floor",
-          x: bounds.left - clipLeft,
-          y: 0,
-          width: bounds.width,
-          height: bounds.height,
-          rx: MAP_FLOOR_CORNER_RADIUS,
-        }),
-      );
-      return clip;
-    });
-    const gridLines = [];
-    if (showUnitGrid && Number.isInteger(width) && Number.isInteger(height)) {
-      for (let x = 1; x < width; x += 1) {
-        const start = screenPoint([x, 0], transform);
-        const end = screenPoint([x, height], transform);
-        gridLines.push(
-          svgElement("line", {
-            class: "map-grid-line map-grid-line--vertical",
-            x1: start.x,
-            y1: start.y,
-            x2: end.x,
-            y2: end.y,
-          }),
-        );
-      }
-      for (let y = 1; y < height; y += 1) {
-        const start = screenPoint([0, y], transform);
-        const end = screenPoint([width, y], transform);
-        gridLines.push(
-          svgElement("line", {
-            class: "map-grid-line map-grid-line--horizontal",
-            x1: start.x,
-            y1: start.y,
-            x2: end.x,
-            y2: end.y,
-          }),
-        );
-      }
-    }
-    this.layers.map.replaceChildren(
-      svgElement("rect", {
-        class: "map-boundary",
-        x: bounds.left,
-        y: bounds.top,
-        width: bounds.width,
-        height: bounds.height,
-        rx: MAP_FLOOR_CORNER_RADIUS,
-      }),
-      ...redZoneFloors,
-      ...gridLines,
+  #auraTooltipInput(record, audience) {
+    const sourcePublicAgentId = ownEnumerableDataValue(
+      record,
+      "source_public_agent_id",
     );
+    const sourceAgent =
+      typeof sourcePublicAgentId === "string"
+        ? (this.sceneAgentByPublicId.get(sourcePublicAgentId) ?? null)
+        : null;
+    const explanationRecord =
+      sourceAgent === null
+        ? record
+        : {
+            ...record,
+            source_presentation_key: sourceAgent.presentation_key,
+            source_public_agent_id: sourceAgent.public_agent_id,
+          };
+    return { field: explanationRecord, sourceAgent, audience };
   }
 
   /**
-   * Draw the supplied inspected/draft route without treating it as an event.
+   * Stack the arena layers as the vision page does, for live play.
    *
-   * scene.pending_route owns disclosed source/target anchors, lane and legality.
-   * transform converts them to screen space; absent route clears the layer. Create a
-   * presentation curve with a directional marker and tooltip joined to matching scene
-   * identities. Return undefined. No target position, legality or accepted transition
-   * is inferred from drawing geometry.
-   *
-   * @param {JsonRecord} scene
-   * @param {ViewportTransform} transform
+   * The BattleClient and the DevClient combat screen call this on each render
+   * (it moves nothing once in place): the reach rings and the look ring
+   * (`debug-range`) go over the sight veil and the stones, the plan marks lie
+   * under every body, and the target's corner brackets (`selection-cues`) go
+   * over the bodies. The Replay Viewer never calls it and keeps the
+   * constructor's order (BATTLEFIELD_LAYER_ORDER). Moving a layer keeps its
+   * nodes, attributes and running animations. Return undefined. DOM order only.
    */
-  #renderPendingRoute(scene, transform) {
-    const route = isRecord(scene.pending_route) ? scene.pending_route : null;
-    if (!route) {
-      this.layers.pendingRoute.replaceChildren();
-      return;
-    }
-    const source = screenPoint(route.source_anchor, transform);
-    const target = screenPoint(route.target_anchor, transform);
-    const routeIdentity = `${route.source_public_agent_id ?? "unknown"}:${route.target_public_agent_id ?? "unknown"}`;
-    const geometry = createRouteGeometry(
-      {
-        eventId: `pending:${routeIdentity}:${route.lane ?? "unknown"}`,
-        source,
-        target,
-        sourceRadius: transform.worldLengthToScreen(finiteNumber(route.source_radius)),
-        targetRadius: transform.worldLengthToScreen(finiteNumber(route.target_radius)),
-        offset: route.lane === 1 ? 12 : -12,
-      },
-      { viewportBounds: transform.mapBounds },
-    );
-    const path = svgElement("path", {
-      class: "pending-route",
-      d: geometry.path,
-    });
-    const hitPath = svgElement("path", {
-      class: "pending-route-hit",
-      d: geometry.path,
-      role: "img",
-      tabindex: "0",
-    });
-    const marker = routeMarkerPose(geometry, 1);
-    const arrow = svgElement("path", {
-      class: "pending-route-arrow",
-      d: "M -13 -6 L 0 0 L -13 6 L -9 0 Z",
-      transform: `translate(${marker.x} ${marker.y}) rotate(${marker.degrees})`,
-      "aria-hidden": "true",
-    });
-    path.dataset.lane = String(route.lane ?? 0);
-    path.dataset.legal = String(Boolean(route.legal));
-    path.dataset.sourceAgentId = String(route.source_public_agent_id ?? "");
-    path.dataset.targetAgentId = String(route.target_public_agent_id ?? "");
-    if (Number.isInteger(route.source_global_slot)) {
-      path.dataset.sourceSlot = String(route.source_global_slot);
-    }
-    if (Number.isInteger(route.target_global_slot)) {
-      path.dataset.targetSlot = String(route.target_global_slot);
-    }
-    if (typeof route.source_presentation_key === "string") {
-      path.dataset.sourcePresentationKey = route.source_presentation_key;
-    }
-    if (typeof route.target_presentation_key === "string") {
-      path.dataset.targetPresentationKey = route.target_presentation_key;
-    }
-    path.dataset.routeKind = geometry.kind;
-    arrow.dataset.lane = String(route.lane ?? 0);
-    arrow.dataset.legal = String(Boolean(route.legal));
-    arrow.dataset.sourceAgentId = String(route.source_public_agent_id ?? "");
-    arrow.dataset.targetAgentId = String(route.target_public_agent_id ?? "");
-    const sourceAgent = asArray(scene.agents).find(
-      (agent) =>
-        isRecord(agent) &&
-        agent.presentation_key === route.source_presentation_key &&
-        agent.public_agent_id === route.source_public_agent_id,
-    );
-    const recipientAgent = asArray(scene.agents).find(
-      (agent) =>
-        isRecord(agent) &&
-        agent.presentation_key === route.target_presentation_key &&
-        agent.public_agent_id === route.target_public_agent_id,
-    );
-    const routeDescriptor = explainPendingRoute(route, {
-      sourceAgent,
-      recipientAgent,
-    });
-    hitPath.setAttribute("aria-label", routeDescriptor.title);
-    registerTooltipOwner(hitPath, routeDescriptor);
-    this.layers.pendingRoute.replaceChildren(path, arrow, hitPath);
+  #arrangeLiveLayers() {
+    const { debugRange, obstacle, body } = this.layers;
+    if (obstacle.nextElementSibling !== debugRange) obstacle.after(debugRange);
+    placeInOrder(body, [
+      this.planMarks,
+      this.bodyLayers.dead,
+      this.bodyLayers.corpseMarks,
+      this.bodyLayers.living,
+      this.selectionCues,
+    ]);
   }
 
   /**
-   * Replace the obstacle layer using disclosed map geometry.
+   * Return the glide wrapper of a drawn body by its presentation key, or null.
    *
-   * map.obstacles supplies pillar circles or oriented wall rectangles; transform
-   * projects coordinates/lengths and flips wall angle for screen y. Ignore other roots
-   * or kinds. Register obstacle tooltips and return undefined; no collision is solved.
+   * presentationKey is the body's audience-scoped presentation key. Return the
+   * `g.agent-glide` group of that body from this render, or null when the body
+   * is not drawn (in Agent POV an unseen champion is never drawn). Read only.
    *
-   * @param {JsonRecord} map
-   * @param {ViewportTransform} transform
+   * @param {string} presentationKey
+   * @returns {SVGElement | null}
    */
-  #renderObstacles(map, transform) {
-    const obstacles = [];
-    for (const obstacle of asArray(map.obstacles)) {
-      if (!isRecord(obstacle)) {
-        continue;
-      }
-      const center = screenPoint(obstacle.center, transform);
-      if (obstacle.kind === "pillar") {
-        const node = svgElement("circle", {
-          class: "obstacle",
-          cx: center.x,
-          cy: center.y,
-          r: transform.worldLengthToScreen(finiteNumber(obstacle.radius)),
-          role: "img",
-          tabindex: "0",
-          "aria-label": `Pillar ${obstacle.obstacle_id ?? ""}`,
-        });
-        registerTooltipOwner(node, explainObstacle(obstacle));
-        obstacles.push(node);
-      } else if (obstacle.kind === "wall") {
-        const wallWidth = transform.worldLengthToScreen(finiteNumber(obstacle.width));
-        const wallHeight = transform.worldLengthToScreen(finiteNumber(obstacle.height));
-        const thetaDegrees = (-finiteNumber(obstacle.theta) * 180) / Math.PI;
-        const node = svgElement("rect", {
-          class: "obstacle",
-          x: center.x - wallWidth / 2,
-          y: center.y - wallHeight / 2,
-          width: wallWidth,
-          height: wallHeight,
-          transform: `rotate(${thetaDegrees} ${center.x} ${center.y})`,
-          role: "img",
-          tabindex: "0",
-          "aria-label": `Wall ${obstacle.obstacle_id ?? ""}`,
-        });
-        registerTooltipOwner(node, explainObstacle(obstacle));
-        obstacles.push(node);
-      }
-    }
-    this.layers.obstacle.replaceChildren(...obstacles);
+  #glideWrapperByKey(presentationKey) {
+    return this.wrapperByPresentationKey.get(presentationKey) ?? null;
   }
 
   /**
-   * Update retained body nodes and return their projected layout records.
+   * Keep each drawn body's retained nodes and return their projected records.
    *
-   * scene supplies accepted agents/selection; transform projects positions/radii;
-   * visualPolicy controls durable pieces. Remove missing identities, reuse/create
-   * remaining nodes and register audience-appropriate tooltips. Shared body groups
-   * keep every corpse below every living body, retaining scene order within each. Return ProjectedAgent rows with screen center/radius and separate global,
-   * presentation and layout identities. Layout fallback indices never become public
-   * slot facts. Source records remain unchanged.
+   * frame is the normalized presentation (its audience's incoming rows give the
+   * beat cues); scene supplies accepted agents and selection; transform projects
+   * positions and radii; visualPolicy controls the spawn shield and corner
+   * marks; visualFilterState is the page's switch state (the champion look and
+   * the beat clock read it); showMoonlight says whether Selection Moonlight is
+   * on; startSeen is the audience's seen-at-tick-start test from
+   * audienceSources (Oracle View: always true; Agent POV: the body has a
+   * tick-start spot in the team's own trajectories), so a Class Seal or a
+   * Spawn Ward's lift shows its earlier look only on a body the audience saw
+   * at the start of the tick. Ask the Champions look for one record per
+   * drawable body, with its beat cues from this audience's rows and beatView
+   * (Agent POV: visual_events only), remove bodies that are gone, build nodes for new ones (body token in its
+   * glide wrapper and the selection marks), update every bundle, register the
+   * token tooltip and put each wrapper in the dead or living group (every
+   * corpse under every living body, scene order inside each), with its shield
+   * after the token. A wrapper, token, shield or selection node already in its
+   * place is not moved, and a body that changes group moves once
+   * (placeGroupsInOrder), so a repaint tears nothing down. Marks
+   * that ride a wrapper (Rune Zones, the recipient rim) are left for render,
+   * which reconciles them after the token and shield. The selection
+   * brackets go in the body layer's first group (under every body) and the
+   * moonlight in the debug-range layer's first group. Return the champion
+   * records as ProjectedAgent rows (screen center and radius, with separate
+   * global, presentation and layout identities). Layout fallback indices never
+   * become public slot facts. Source records stay unchanged.
    *
+   * @param {unknown} frame
    * @param {JsonRecord} scene
    * @param {ViewportTransform} transform
    * @param {Readonly<DurableVisualPolicy>} visualPolicy
+   * @param {Readonly<Record<string, boolean>>} visualFilterState
+   * @param {boolean} showMoonlight
+   * @param {(presentationKey: string) => boolean} startSeen
    * @returns {ProjectedAgent[]}
    */
-  #renderAgents(scene, transform, visualPolicy) {
-    const agents = asArray(scene.agents).filter(
-      (agent) => isRecord(agent) && agentDisplayIdentity(agent) !== null,
-    );
-    const nextIdentities = new Set(agents.map(agentDisplayIdentity));
+  #renderAgents(
+    frame,
+    scene,
+    transform,
+    visualPolicy,
+    visualFilterState,
+    showMoonlight,
+    startSeen,
+  ) {
+    const doc = this.battlefield.ownerDocument;
+    const championRecords = champions.records({
+      scene,
+      transform,
+      showSpawnShield: visualPolicy.showSpawnShield,
+      visualFilters: visualFilterState,
+      startSeen,
+      beats: isAuthorizedPresentationFrame(frame)
+        ? {
+            rows: authorizedPresentationIncomingRows(frame),
+            view: beatView(frame, "end", { visualFilters: visualFilterState }),
+          }
+        : undefined,
+    });
+    const nextIdentities = new Set(championRecords.map((record) => record.identityKey));
     for (const [identityKey, nodes] of this.agentNodes) {
       if (!nextIdentities.has(identityKey)) {
-        nodes.root.remove();
-        nodes.shieldRoot?.remove();
+        nodes.wrapper.remove();
         nodes.selectionRoot.remove();
+        nodes.moonlight?.remove();
         this.agentNodes.delete(identityKey);
       }
     }
+    this.wrapperByPresentationKey.clear();
+    const selectionRecords = championFrame.records({
+      part: "selection-marks",
+      champions: championRecords,
+      showSelectionReticle: visualPolicy.showSelectionReticle,
+      showSelectionMoonlight: showMoonlight,
+      // Live play draws the BattleClient vision's corner brackets.
+      bracketShape:
+        isRecord(frame) && frame.product_kind === "combat_debugger"
+          ? "vision"
+          : "ladder",
+    });
 
-    const selection = isRecord(scene.selection) ? scene.selection : {};
-    /** @type {ProjectedAgent[]} */
-    const projectedAgents = [];
-    for (const [index, agent] of agents.entries()) {
-      const identityKey = agentDisplayIdentity(agent);
-      if (identityKey === null) {
-        continue;
-      }
-      const globalSlot = Number.isInteger(agent.global_slot)
-        ? Number(agent.global_slot)
-        : null;
-      const presentationKey =
-        typeof agent.presentation_key === "string" ? agent.presentation_key : null;
-      const layoutSlot = agentLayoutSlot(agent, index);
-      const controlled =
-        globalSlot !== null
-          ? globalSlot === selection.controlled_global_slot
-          : presentationKey === selection.controlled_presentation_key;
-      const selected =
-        globalSlot !== null
-          ? globalSlot === selection.selected_global_slot
-          : presentationKey === selection.selected_presentation_key;
-      const center = screenPoint(agent.position, transform);
-      const radius = transform.worldLengthToScreen(finiteNumber(agent.radius, 0.5));
-      let nodes = this.agentNodes.get(identityKey);
+    // Wanted children of each group, in paint order. A body that is already in
+    // place is never removed and re-inserted, and a body that falls or returns
+    // moves once between the two groups (placeGroupsInOrder), so a repaint
+    // keeps every other body node and its running glide (smooth play).
+    /** @type {Element[]} */
+    const living = [];
+    /** @type {Element[]} */
+    const dead = [];
+    /** @type {Element[]} */
+    const selectionRoots = [];
+    /** @type {Element[]} */
+    const moonlights = [];
+    for (const [index, record] of championRecords.entries()) {
+      const selectionRecord = selectionRecords[index];
+      let nodes = this.agentNodes.get(record.identityKey);
       if (!nodes) {
-        nodes = this.#createAgentNodes(agent, visualPolicy);
-        this.agentNodes.set(identityKey, nodes);
+        nodes = {
+          ...champions.build([record], doc)[0],
+          ...championFrame.buildSelectionMarks([selectionRecord], doc)[0],
+        };
+        this.agentNodes.set(record.identityKey, nodes);
       }
-      this.#updateAgentNodes(
-        nodes,
-        agent,
-        scene.spawn_shield_mechanics,
-        center,
-        radius,
-        controlled,
-        selected,
-        visualPolicy,
-      );
-      registerTooltipOwner(
-        nodes.root,
-        scene.audience === "agent_pov"
-          ? explainPovAgent(agent, { controlled, selected })
-          : explainAgent(agent),
-      );
+      champions.update([nodes], [record]);
+      championFrame.updateSelectionMarks([nodes], [selectionRecord]);
+      registerTooltipOwner(nodes.root, champions.tooltip(record));
 
-      // Appending an existing child reorders it without replacing its identity.
-      const bodyLayer = agent.alive ? this.bodyLayers.living : this.bodyLayers.dead;
-      bodyLayer.append(nodes.root);
-      if (visualPolicy.showSpawnShield && nodes.shieldRoot !== null) {
-        bodyLayer.append(nodes.shieldRoot);
-      } else {
-        nodes.shieldRoot?.remove();
+      (record.agent.alive ? living : dead).push(nodes.wrapper);
+      // Inside the wrapper: the token first, then its shield.
+      if (nodes.wrapper.firstElementChild !== nodes.root) {
+        nodes.wrapper.insertBefore(nodes.root, nodes.wrapper.firstChild);
       }
-      this.selectionCues.append(nodes.selectionRoot);
-      projectedAgents.push({
-        agent,
-        identityKey,
-        layoutSlot,
-        globalSlot,
-        presentationKey,
-        center,
-        radius,
-        controlled,
-        selected,
-        statuses: asArray(agent.statuses),
-      });
+      if (visualPolicy.showSpawnShield && nodes.shieldRoot !== null) {
+        if (nodes.root.nextElementSibling !== nodes.shieldRoot) {
+          nodes.root.after(nodes.shieldRoot);
+        }
+      } else if (nodes.shieldRoot?.parentNode) {
+        nodes.shieldRoot.remove();
+      }
+      if (typeof record.presentationKey === "string") {
+        this.wrapperByPresentationKey.set(record.presentationKey, nodes.wrapper);
+      }
+      selectionRoots.push(nodes.selectionRoot);
+      if (nodes.moonlight) moonlights.push(nodes.moonlight);
     }
-    return projectedAgents;
+    placeGroupsInOrder([
+      [this.bodyLayers.living, living],
+      [this.bodyLayers.dead, dead],
+    ]);
+    placeInOrder(this.selectionCues, selectionRoots);
+    placeInOrder(this.selectionMoonlight, moonlights);
+    return /** @type {ProjectedAgent[]} */ (
+      /** @type {unknown} */ ([...championRecords])
+    );
   }
 
   /**
@@ -1573,14 +2009,16 @@ export class BattlefieldRenderer {
    * Retain nodes by relation-row key, remove absent bodies and update hover/keyboard
    * inspection. Use the same corpse/living paint groups as ordinary agents so later
    * observed corpses cannot hide living actors. These hit regions do not become
-   * target/control regions. Return
-   * undefined; no hidden body identity or position is invented.
+   * target/control regions. Return undefined; no hidden body identity or position
+   * is invented. The authorized adapter never sets `scene.observed_bodies` today,
+   * so this older path draws nothing; it stays until its last browser check moves.
    *
    * @param {JsonRecord} scene
    * @param {ViewportTransform} transform
    * @param {boolean} showDurationStatusBadges
    */
   #renderObservedBodies(scene, transform, showDurationStatusBadges) {
+    const doc = this.battlefield.ownerDocument;
     const bodies = asArray(scene.observed_bodies).filter(
       (body) =>
         isRecord(body) &&
@@ -1604,26 +2042,26 @@ export class BattlefieldRenderer {
       const teamToken = teamTokenFromId(body.team_id);
       let root = this.observedBodyNodes.get(key);
       if (!root) {
-        root = svgElement("g", {
+        root = svgNode(doc, "g", {
           class: "agent pov-observed-body",
           tabindex: "0",
           role: "img",
           "data-observation-key": key,
         });
         root.append(
-          svgElement("circle", {
+          svgNode(doc, "circle", {
             class: "agent-body",
             "data-zone": "observed-body",
           }),
-          svgElement("circle", {
+          svgNode(doc, "circle", {
             class: "agent-team-ring",
             "data-zone": "observed-team",
           }),
-          svgElement("circle", {
+          svgNode(doc, "circle", {
             class: "agent-health-track",
             "data-zone": "observed-health",
           }),
-          svgElement("circle", {
+          svgNode(doc, "circle", {
             class: "agent-health",
             "data-zone": "observed-health",
             pathLength: 100,
@@ -1631,8 +2069,8 @@ export class BattlefieldRenderer {
           createSvgIcon(this.battlefield.ownerDocument, classToken.glyphKey, {
             className: "agent-class-icon",
           }),
-          svgElement("text", { class: "pov-observed-body__label" }),
-          svgElement("g", {
+          svgNode(doc, "text", { class: "pov-observed-body__label" }),
+          svgNode(doc, "g", {
             class: "pov-observed-body__statuses",
             "data-zone": "observed-statuses",
           }),
@@ -1646,13 +2084,13 @@ export class BattlefieldRenderer {
       root.dataset.team = teamToken.cssKey;
       root.dataset.class = classToken.cssKey;
       root.dataset.alive = String(Boolean(body.alive));
-      const statuses = asArray(body.statuses);
-      const paintedStatuses = showDurationStatusBadges ? statuses : [];
+      const observedStatuses = asArray(body.statuses);
+      const paintedStatuses = showDurationStatusBadges ? observedStatuses : [];
       const statusDescriptions = paintedStatuses.map((status) => {
         const token = resolveVisualToken("status", status.token_id);
         return `${token.accessibleName}, ${formatDisplayNumber(status.duration)} ticks`;
       });
-      root.dataset.statusCount = String(statuses.length);
+      root.dataset.statusCount = String(observedStatuses.length);
       root.setAttribute(
         "aria-label",
         [
@@ -1683,22 +2121,22 @@ export class BattlefieldRenderer {
       );
       const [bodyCircle, teamRing, healthTrack, health, icon, label, statusGroup] =
         root.children;
-      setAttributes(/** @type {SVGElement} */ (bodyCircle), {
+      setNodeAttributes(/** @type {SVGElement} */ (bodyCircle), {
         cx: center.x,
         cy: center.y,
         r: radius,
       });
-      setAttributes(/** @type {SVGElement} */ (teamRing), {
+      setNodeAttributes(/** @type {SVGElement} */ (teamRing), {
         cx: center.x,
         cy: center.y,
         r: radius,
       });
-      setAttributes(/** @type {SVGElement} */ (healthTrack), {
+      setNodeAttributes(/** @type {SVGElement} */ (healthTrack), {
         cx: center.x,
         cy: center.y,
         r: healthRadius,
       });
-      setAttributes(/** @type {SVGElement} */ (health), {
+      setNodeAttributes(/** @type {SVGElement} */ (health), {
         cx: center.x,
         cy: center.y,
         r: healthRadius,
@@ -1706,13 +2144,13 @@ export class BattlefieldRenderer {
         transform: `rotate(-90 ${center.x} ${center.y})`,
       });
       const iconSize = Math.max(14, Math.min(radius * 0.95, 28));
-      setAttributes(/** @type {SVGElement} */ (icon), {
+      setNodeAttributes(/** @type {SVGElement} */ (icon), {
         x: center.x - iconSize / 2,
         y: center.y - iconSize * 0.62,
         width: iconSize,
         height: iconSize,
       });
-      setAttributes(/** @type {SVGElement} */ (label), {
+      setNodeAttributes(/** @type {SVGElement} */ (label), {
         x: center.x,
         y: center.y + radius + 15,
       });
@@ -1729,7 +2167,7 @@ export class BattlefieldRenderer {
           center.x - (rowCount * statusCellWidth) / 2 + columnIndex * statusCellWidth;
         const y = center.y - radius - 19 - rowIndex * statusCellHeight;
         const effectClass = classTokenFromId(status.source_class_id);
-        const cell = svgElement("g", {
+        const cell = svgNode(doc, "g", {
           class: "pov-observed-status",
           transform: `translate(${x} ${y})`,
           role: "img",
@@ -1745,14 +2183,14 @@ export class BattlefieldRenderer {
           token.glyphKey,
           { className: "pov-observed-status__icon" },
         );
-        setAttributes(statusIcon, {
+        setNodeAttributes(statusIcon, {
           x: 2,
           y: 2,
           width: 8,
           height: 8,
         });
         cell.append(
-          svgElement("rect", {
+          svgNode(doc, "rect", {
             class: "pov-observed-status__box",
             x: 0,
             y: 0,
@@ -1761,7 +2199,7 @@ export class BattlefieldRenderer {
             rx: 3,
           }),
           statusIcon,
-          svgElement("text", {
+          svgNode(doc, "text", {
             class: "pov-observed-status__duration",
             x: 12,
             y: 11,
@@ -1773,15 +2211,20 @@ export class BattlefieldRenderer {
         }
         registerTooltipOwner(
           cell,
-          this.#explainStatus(
-            status,
-            {
-              presentation_key: body.presentation_key,
-              public_agent_id: body.public_agent_id,
-              class_id: body.class_id,
-              team_id: body.team_id,
-            },
-            "agent_pov",
+          statuses.tooltip(
+            Object.freeze({
+              kind: "dock-cell",
+              tooltipInput: this.#statusTooltipInput(
+                status,
+                {
+                  presentation_key: body.presentation_key,
+                  public_agent_id: body.public_agent_id,
+                  class_id: body.class_id,
+                  team_id: body.team_id,
+                },
+                "agent_pov",
+              ),
+            }),
           ),
         );
         return cell;
@@ -1801,199 +2244,46 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Draw the selected pair's supplied Basic/Ultimate legality at its exact owner.
+   * Clear the selected pair's legality layer.
    *
-   * scene.selected_legality must join one projectedAgents row by presentation key and
-   * public ID. transform supplies viewport; reservedRects protects already placed
-   * cues. Allocate two lane pills, register mask-based explanations and return their
-   * ProtectedRegion array. Missing owner/legality, suppressed placement or unavailable
-   * explanation gives an empty array. Geometry/cooldown/class facts never determine
-   * legality. The legality layer is replaced; inputs stay unchanged.
+   * The arena no longer draws Basic/Ultimate lane pills (the Champion Frame and
+   * the Tactics Turn deck show what is allowed), so this only empties the
+   * legality layer and drops its old suppression marks. It reserves no arena
+   * space. Returns an empty ProtectedRegion array, so callers keep their shape.
    *
-   * @param {JsonRecord} scene
-   * @param {ProjectedAgent[]} projectedAgents
-   * @param {ViewportTransform} transform
-   * @param {Rectangle[]} reservedRects
    * @returns {ProtectedRegion[]}
    */
-  #renderSelectedLegality(scene, projectedAgents, transform, reservedRects) {
+  #renderSelectedLegality() {
     this.legalityCues.replaceChildren();
-    const legality = isRecord(scene.selected_legality) ? scene.selected_legality : null;
-    if (!legality) {
-      return [];
-    }
-    const owner = projectedAgents.find(
-      ({ presentationKey, agent }) =>
-        typeof legality.owner_presentation_key === "string" &&
-        typeof legality.owner_public_agent_id === "string" &&
-        presentationKey === legality.owner_presentation_key &&
-        agent.public_agent_id === legality.owner_public_agent_id,
-    );
-    if (!owner) {
-      return [];
-    }
-
-    const layout = layoutStatusDocks(
-      {
-        agents: projectedAgents.map((agent) => ({
-          globalSlot: agent.layoutSlot,
-          center: agent.center,
-          radius: agent.radius,
-          statuses:
-            agent.layoutSlot === owner.layoutSlot
-              ? Object.freeze(["basic", "ultimate"])
-              : Object.freeze([]),
-          controlled: agent.controlled,
-          selected: agent.selected || agent.layoutSlot === owner.layoutSlot,
-        })),
-        viewport: transform.viewportBounds,
-        reservedRects,
-      },
-      {
-        bodyPadding: 4,
-        selectionAllowance: 12,
-        ...LEGALITY_DOCK_DIMENSIONS,
-        dockGap: 5,
-      },
-    );
-    const placement = layout.docks.find(
-      ({ globalSlot }) => globalSlot === owner.layoutSlot,
-    );
-    if (!placement) {
-      if (owner.globalSlot !== null) {
-        this.legalityCues.removeAttribute("data-suppressed-presentation-key");
-        this.legalityCues.dataset.suppressedSlot = String(owner.globalSlot);
-      } else {
-        this.legalityCues.removeAttribute("data-suppressed-slot");
-        this.legalityCues.dataset.suppressedPresentationKey = String(
-          owner.presentationKey,
-        );
-      }
-      return [];
-    }
     this.legalityCues.removeAttribute("data-suppressed-slot");
     this.legalityCues.removeAttribute("data-suppressed-presentation-key");
-
-    const group = svgElement("g", {
-      class: "legality-dock",
-      role: "group",
-      "aria-label": `Exact actor-owned legality for ${agentIdentity(owner.agent)}`,
-      "data-zone": "legality",
-      "data-presentation-key": owner.presentationKey,
-      "data-anchor": placement.anchor,
-      "data-collision-free": placement.collisionFree,
-    });
-    if (placement.anchor !== "north" || placement.tangentShift !== 0) {
-      group.append(
-        svgElement("line", {
-          class: "dock-leader legality-dock__leader",
-          x1: placement.leader.start.x,
-          y1: placement.leader.start.y,
-          x2: placement.leader.end.x,
-          y2: placement.leader.end.y,
-          "aria-hidden": "true",
-        }),
-      );
-    }
-    const lanes = [
-      {
-        lane: 0,
-        label: "0/B",
-        name: "Basic",
-        available: Boolean(legality.basic_available),
-      },
-      {
-        lane: 1,
-        label: "1/U",
-        name: "Ultimate",
-        available: Boolean(legality.ultimate_available),
-      },
-    ];
-    for (const [index, lane] of lanes.entries()) {
-      const x =
-        placement.bounds.left +
-        index * (LEGALITY_DOCK_DIMENSIONS.cellWidth + LEGALITY_DOCK_DIMENSIONS.cellGap);
-      const y = placement.bounds.top;
-      const armed = legality.armed_lane === lane.lane;
-      const pill = svgElement("g", {
-        class: "legality-pill",
-        role: "img",
-        "aria-label": `${lane.name} lane ${lane.available ? "available" : "unavailable"}${armed ? `, armed and ${legality.armed_pair_legal ? "legal" : "illegal"}` : ""} for ${agentIdentity(owner.agent)}`,
-        "data-zone": "legality-pill",
-        "data-lane": lane.lane,
-        "data-available": lane.available,
-        "data-armed": armed,
-        "data-pair-legal": armed ? Boolean(legality.armed_pair_legal) : null,
-      });
-      const explanation = explainLegality(
-        legality,
-        lane.lane === 0 ? 0 : 1,
-        owner.agent,
-      );
-      if (explanation === null) {
-        this.legalityCues.replaceChildren();
-        return [];
-      }
-      registerTooltipOwner(pill, explanation);
-      pill.append(
-        svgElement("rect", {
-          class: "legality-pill__box",
-          x,
-          y,
-          width: LEGALITY_DOCK_DIMENSIONS.cellWidth,
-          height: LEGALITY_DOCK_DIMENSIONS.cellHeight,
-          rx: 6,
-        }),
-        svgElement("text", {
-          class: "legality-pill__label",
-          x: x + LEGALITY_DOCK_DIMENSIONS.cellWidth / 2,
-          y: y + LEGALITY_DOCK_DIMENSIONS.cellHeight / 2,
-        }),
-      );
-      const label = pill.lastElementChild;
-      if (label) {
-        label.textContent = lane.label;
-      }
-      group.append(pill);
-    }
-    this.legalityCues.replaceChildren(group);
-    const ownerPresentationKey =
-      typeof owner.presentationKey === "string" ? owner.presentationKey : null;
-    const ownerIdentity = ownerPresentationKey ?? `slot:${owner.layoutSlot}`;
-    return [
-      choreographyProtectedRegion(
-        "legality",
-        ownerIdentity,
-        placement.bounds,
-        ownerPresentationKey,
-      ),
-    ];
+    return [];
   }
 
   /**
-   * Place separate current status, cooldown, modifier and legality docks.
+   * Place separate current status, cooldown and modifier docks.
    *
-   * scene supplies exact legality; projectedAgents contains disclosed current bodies;
-   * transform supplies pixel bounds. policy supplies four show switches and audience.
-   * Required selected/controlled statuses and positive cooldowns are placed first,
-   * then optional statuses, exact pair legality and nonneutral modifiers. Small
+   * projectedAgents contains disclosed current bodies; transform supplies pixel
+   * bounds. policy supplies three show switches and audience. Required
+   * selected/controlled statuses and positive cooldowns are placed first, then
+   * optional statuses and nonneutral modifiers. The legality layer is only
+   * cleared (no lane pills are drawn and no legality dock is reserved). Small
    * viewports use compact/overflow representations; the shared allocators own collision
-   * choices. Replace durable dock DOM, publish suppression/compaction metadata and
-   * protected regions, then measure numeric cells. Return undefined. Python-provided
-   * status order, values and actor identity remain the semantic authority.
+   * choices. The Statuses look draws each dock from its placement. Replace durable dock
+   * DOM, publish suppression/compaction metadata and protected regions, then fit numeric
+   * cells. Return undefined. Python-provided status order, values and actor identity
+   * remain the semantic authority.
    *
-   * @param {JsonRecord} scene
    * @param {ProjectedAgent[]} projectedAgents
    * @param {ViewportTransform} transform
    * @param {{
-   *   showLegality: boolean,
    *   showModifiers: boolean,
    *   showStatuses: boolean,
    *   showCooldowns: boolean,
    *   audience: "researcher" | "agent_pov",
    * }} policy
    */
-  #renderStatusDocks(scene, projectedAgents, transform, policy) {
+  #renderStatusDocks(projectedAgents, transform, policy) {
     const compactMinimumViewport =
       transform.viewportBounds.width <= 600 && transform.viewportBounds.height <= 420;
     const requiredStatusSlots = new Set(
@@ -2140,18 +2430,7 @@ export class BattlefieldRenderer {
     const statusRects = statusLayout.docks.map(({ bounds }) => bounds);
     const cooldownRects = cooldownDocks.map(({ bounds }) => bounds);
     const compactRequiredRects = compactRequiredDocks.map(({ bounds }) => bounds);
-    const legalityRects = policy.showLegality
-      ? this.#renderSelectedLegality(scene, projectedAgents, transform, [
-          ...statusRects,
-          ...cooldownRects,
-          ...compactRequiredRects,
-        ])
-      : [];
-    if (!policy.showLegality) {
-      this.legalityCues.replaceChildren();
-      this.legalityCues.removeAttribute("data-suppressed-slot");
-      this.legalityCues.removeAttribute("data-suppressed-presentation-key");
-    }
+    const legalityRects = this.#renderSelectedLegality();
     const modifierLayout = policy.showModifiers
       ? layoutStatusDocks(
           {
@@ -2187,37 +2466,81 @@ export class BattlefieldRenderer {
         )
       : { docks: [], suppressedGlobalSlots: [] };
 
-    const modifierNodes = modifierLayout.docks.map((placement) =>
-      this.#renderFactDock(
-        placement,
-        "modifier",
-        MODIFIER_DOCK_DIMENSIONS,
-        policy.audience,
-      ),
+    const doc = this.battlefield.ownerDocument;
+    /** @type {{
+     *   cell: (item: JsonRecord, owner: JsonRecord, dockKind: "status" | "modifier") => DockTooltipInput,
+     *   overflow: (items: ReadonlyArray<unknown>, owner: JsonRecord, dockKind: "status" | "modifier") => DockTooltipInput,
+     * }} */
+    const tooltipInputs = {
+      cell: (item, owner, dockKind) =>
+        dockKind === "status"
+          ? this.#statusTooltipInput(item, owner, policy.audience)
+          : { kind: "modifier", modifier: item, recipient: owner },
+      overflow: (items, owner, dockKind) =>
+        policy.audience === "agent_pov" && dockKind === "status"
+          ? this.#statusOverflowTooltipInput(items, owner)
+          : {
+              kind: "overflow",
+              items,
+              dockKind,
+              recipient: owner,
+              sourceAgents: [...this.agentByLayoutSlot.values()],
+            },
+    };
+    /**
+     * Ask the Statuses look to draw fact docks of one kind at their placements.
+     *
+     * placements are allocator docks; dockKind is status or modifier; dimensions
+     * gives each placement's cell size in pixels. Return the dock groups in order.
+     *
+     * @param {ReadonlyArray<any>} placements
+     * @param {"status" | "modifier"} dockKind
+     * @param {(placement: any) => {cellWidth: number, cellHeight: number, cellGap: number}} dimensions
+     */
+    const factDockNodes = (placements, dockKind, dimensions) =>
+      statuses.build(
+        statuses.records({
+          part: "fact-docks",
+          docks: placements.map((placement) => ({
+            placement,
+            dockKind,
+            dimensions: dimensions(placement),
+          })),
+          ownerByLayoutSlot: this.agentByLayoutSlot,
+          audience: policy.audience,
+          tooltipInputs,
+        }),
+        doc,
+      );
+    const modifierNodes = factDockNodes(
+      modifierLayout.docks,
+      "modifier",
+      () => MODIFIER_DOCK_DIMENSIONS,
     );
-    const statusNodes = statusLayout.docks.map((placement) =>
-      this.#renderFactDock(
-        placement,
-        "status",
-        STATUS_DOCK_DIMENSIONS,
-        policy.audience,
-      ),
+    const statusNodes = factDockNodes(
+      statusLayout.docks,
+      "status",
+      () => STATUS_DOCK_DIMENSIONS,
     );
-    const cooldownNodes = [
-      ...cooldownLayout.docks.filter(({ compactFallback }) => compactFallback),
-      ...cooldownLayout.docks.filter(({ compactFallback }) => !compactFallback),
-    ].map((placement) => this.#renderCooldownDock(placement));
-    const compactRequiredNodes = compactRequiredDocks.map((placement) =>
-      this.#renderFactDock(
-        placement,
-        "status",
-        {
-          cellWidth: placement.bounds.width,
-          cellHeight: placement.bounds.height,
-          cellGap: 0,
-        },
-        policy.audience,
-      ),
+    const cooldownNodes = statuses.build(
+      statuses.records({
+        part: "cooldown-docks",
+        docks: [
+          ...cooldownLayout.docks.filter(({ compactFallback }) => compactFallback),
+          ...cooldownLayout.docks.filter(({ compactFallback }) => !compactFallback),
+        ],
+        ownerByLayoutSlot: this.agentByLayoutSlot,
+      }),
+      doc,
+    );
+    const compactRequiredNodes = factDockNodes(
+      compactRequiredDocks,
+      "status",
+      (placement) => ({
+        cellWidth: placement.bounds.width,
+        cellHeight: placement.bounds.height,
+        cellGap: 0,
+      }),
     );
     const usesPresentationKeys = projectedAgents.some(
       ({ presentationKey }) => presentationKey !== null,
@@ -2330,7 +2653,7 @@ export class BattlefieldRenderer {
       ...cooldownNodes,
       ...statusNodes,
     );
-    this.#resolveNumericDockCellContent();
+    statuses.fitDockValues(this.layers.durableStatusModifier);
     /**
      * Resolve an internal layout slot to its protected-region identity.
      *
@@ -2417,866 +2740,47 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Keep dock values readable using measured browser text/glyph bounds.
+   * Choose the tooltip input of one drawn status.
    *
-   * Inspect current status/cooldown/modifier cells. Ordinary supported status durations
-   * 1..5 keep fixed compartments. Otherwise hide a colliding decorative icon and, if
-   * needed, abbreviate the visible number. Exact values remain in data attributes and
-   * semantic labels/tooltips. This reads browser layout and mutates current cells;
-   * return undefined. Missing graphics nodes are skipped; DOM measurement errors
-   * propagate. It also runs after fonts become ready.
+   * rawStatus is the status as the current arena scene carries it;
+   * localRecipient carries its public ID and local presentation key; audience
+   * is "researcher" (Oracle View) or "agent_pov". Oracle View explains the
+   * status with the scene agents as possible sources. Agent POV always uses the
+   * limited POV status card built from the POV scene alone: it never joins a
+   * researcher row, so it cannot name a source the team did not see. Return the
+   * DockTooltipInput for the Statuses look. This admits no status, reads no
+   * researcher data and adds no geometry.
+   *
+   * @param {unknown} rawStatus The drawn status record.
+   * @param {JsonRecord} localRecipient The champion that carries it.
+   * @param {"researcher" | "agent_pov"} audience The scene audience.
+   * @returns {DockTooltipInput}
    */
-  #resolveNumericDockCellContent() {
-    for (const cell of this.layers.durableStatusModifier.querySelectorAll(
-      ".status-cell, .cooldown-cell, .modifier-cell",
-    )) {
-      const kind = cell.classList.contains("status-cell")
-        ? "status"
-        : cell.classList.contains("cooldown-cell")
-          ? "cooldown"
-          : "modifier";
-      const box = cell.querySelector(`.${kind}-cell__box`);
-      const icon = cell.querySelector(`.${kind}-cell__icon`);
-      const value = cell.querySelector(`.${kind}-cell__value`);
-      if (
-        !(box instanceof SVGGraphicsElement) ||
-        !(icon instanceof SVGGraphicsElement) ||
-        !(value instanceof SVGGraphicsElement)
-      ) {
-        continue;
-      }
-      const supportedStatusDuration =
-        kind === "status" && /^[1-5]$/u.test(value.textContent ?? "");
-      if (supportedStatusDuration) {
-        cell.setAttribute("data-numeric-layout", "compartments");
-        cell.removeAttribute("data-icon-suppressed");
-        cell.removeAttribute("data-numeric-fallback");
-        icon.removeAttribute("hidden");
-        continue;
-      }
-      const boxBounds = box.getBBox();
-      const iconScreenBounds = icon.getBoundingClientRect();
-      const valueScreenBounds = value.getBoundingClientRect();
-      let valueBounds = value.getBBox();
-      if (iconScreenBounds.right + 2 > valueScreenBounds.left) {
-        cell.setAttribute("data-icon-suppressed", "true");
-        cell.setAttribute("data-numeric-fallback", "true");
-        cell.setAttribute("data-numeric-layout", "measured-fallback");
-        icon.setAttribute("hidden", "");
-        value.setAttribute("x", String(boxBounds.x + boxBounds.width / 2));
-        valueBounds = value.getBBox();
-      }
-      const availableWidth = Math.max(boxBounds.width - 6, 1);
-      if (valueBounds.width > availableWidth) {
-        const exactValue =
-          kind === "status"
-            ? Number(cell.getAttribute("data-duration"))
-            : kind === "cooldown"
-              ? Number(cell.getAttribute("data-ticks"))
-              : Number(cell.getAttribute("data-multiplier"));
-        const prefix = kind === "modifier" ? "×" : "";
-        value.textContent = `${prefix}${formatCompactDisplayNumber(exactValue)}`;
-        value.removeAttribute("textLength");
-        value.removeAttribute("lengthAdjust");
-        cell.setAttribute("data-numeric-layout", "compact-measured-fallback");
-        cell.setAttribute("data-visible-value-abbreviated", "true");
-      }
-    }
+  #statusTooltipInput(rawStatus, localRecipient, audience) {
+    return audience === "agent_pov"
+      ? { kind: "pov-status", status: rawStatus, recipient: localRecipient }
+      : {
+          kind: "status",
+          status: rawStatus,
+          recipient: localRecipient,
+          sourceAgents: [...this.agentByLayoutSlot.values()],
+        };
   }
 
   /**
-   * Create one class-specific Ultimate cooldown dock from an allocated placement.
+   * Choose the tooltip input for all hidden statuses of one Agent POV dock.
    *
-   * placement supplies a required-dock result and its one visible class/tick record.
-   * Use the owner from the renderer's layout map. Positive integer ticks are shown
-   * exactly before later measurement; invalid ticks display ?. A missing explanation
-   * returns an aria-hidden empty group. Otherwise return detached SVG with separate
-   * icon/value compartments and tooltip, including compact fallback metadata.
+   * rawStatuses is the ordered hidden list as the POV scene carries it and
+   * localRecipient supplies identity. The whole list uses the POV overflow
+   * card; no researcher row is joined, so no unseen source can be named.
+   * Return the DockTooltipInput without changing statuses or admitting new
+   * visible facts.
    *
-   * @param {ReturnType<typeof layoutRequiredDocks>["docks"][number]} placement
-   * @returns {SVGElement}
+   * @param {ReadonlyArray<unknown>} rawStatuses The statuses hidden behind "+N".
+   * @param {JsonRecord} localRecipient The champion that carries them.
+   * @returns {DockTooltipInput}
    */
-  #renderCooldownDock(placement) {
-    const fallbackPlacement = placement.compactFallback === true;
-    const rawItem = placement.visibleStatuses[0];
-    const item = isRecord(rawItem) ? rawItem : {};
-    const ticks =
-      Number.isInteger(item.ticks) && item.ticks > 0 ? Number(item.ticks) : "?";
-    const classToken = classTokenFromId(item.classId);
-    const token = ultimateTokenFromClassId(item.classId);
-    const ownerAgent = this.agentByLayoutSlot.get(placement.globalSlot) ?? {};
-    const group = svgElement("g", {
-      class: "cooldown-dock",
-      "data-zone": "cooldown-dock",
-      ...displayIdentityAttributes(ownerAgent),
-      "data-class": classToken.cssKey,
-      "data-anchor": placement.anchor,
-      "data-expanded": fallbackPlacement ? true : placement.expanded,
-      "data-collision-free": placement.collisionFree,
-      "data-visible-count": 1,
-      "data-hidden-count": 0,
-    });
-    const explanation = explainCooldown(
-      {
-        ...displayIdentityRecord(ownerAgent),
-        ultimate_cooldown: ticks,
-      },
-      ownerAgent,
-    );
-    if (explanation === null) {
-      group.setAttribute("aria-hidden", "true");
-      return group;
-    }
-    if (
-      fallbackPlacement ||
-      placement.anchor !== "north" ||
-      placement.tangentShift !== 0
-    ) {
-      group.append(
-        svgElement("line", {
-          class: "dock-leader cooldown-dock__leader",
-          x1: placement.leader.start.x,
-          y1: placement.leader.start.y,
-          x2: placement.leader.end.x,
-          y2: placement.leader.end.y,
-          "aria-hidden": "true",
-        }),
-      );
-    }
-
-    const x = placement.bounds.left;
-    const y = placement.bounds.top;
-    const accessibleTicks =
-      typeof ticks === "number"
-        ? `${ticks} ${ticks === 1 ? "tick" : "ticks"} remaining`
-        : "remaining ticks unknown";
-    const cell = svgElement("g", {
-      class: "cooldown-cell",
-      role: "img",
-      tabindex: fallbackPlacement ? "0" : null,
-      "aria-label": `${token.accessibleName} cooldown, ${accessibleTicks}, ${agentIdentity(ownerAgent)}`,
-      "data-zone": "ultimate-cooldown",
-      ...displayIdentityAttributes(ownerAgent),
-      "data-layout-key": fallbackPlacement ? placement.layoutKey : null,
-      "data-kind": fallbackPlacement ? "cooldown" : null,
-      "data-compact-fallback": fallbackPlacement ? "true" : null,
-      "data-owner-label": fallbackPlacement ? agentIdentity(ownerAgent) : null,
-      "data-class": classToken.cssKey,
-      "data-token": token.cssKey,
-      "data-token-id": token.tokenId,
-      "data-ticks": ticks,
-      "data-numeric-layout": "compartments",
-    });
-    const box = svgElement("rect", {
-      class: "cooldown-cell__box",
-      x,
-      y,
-      width: COOLDOWN_DOCK_DIMENSIONS.cellWidth,
-      height: COOLDOWN_DOCK_DIMENSIONS.cellHeight,
-      rx: 5,
-    });
-    const iconCompartment = svgElement("rect", {
-      class: "cooldown-cell__icon-compartment",
-      x: x + 2,
-      y: y + 2,
-      width: 14,
-      height: COOLDOWN_DOCK_DIMENSIONS.cellHeight - 4,
-      "aria-hidden": "true",
-    });
-    const valueCompartment = svgElement("rect", {
-      class: "cooldown-cell__value-compartment",
-      x: x + 19,
-      y: y + 2,
-      width: 16,
-      height: COOLDOWN_DOCK_DIMENSIONS.cellHeight - 4,
-      "aria-hidden": "true",
-    });
-    const icon = createSvgIcon(this.battlefield.ownerDocument, token.glyphKey, {
-      className: "cooldown-cell__icon",
-    });
-    setAttributes(icon, {
-      x: x + 3,
-      y: y + 3,
-      width: 12,
-      height: 12,
-    });
-    const value = svgElement("text", {
-      class: "cooldown-cell__value",
-      x: x + COOLDOWN_DOCK_DIMENSIONS.cellWidth - 3,
-      y: y + COOLDOWN_DOCK_DIMENSIONS.cellHeight / 2,
-    });
-    value.textContent = String(ticks);
-    registerTooltipOwner(cell, explanation);
-    cell.append(box, iconCompartment, valueCompartment, icon, value);
-    group.append(cell);
-    return group;
-  }
-
-  /**
-   * Create one status/modifier dock and its inspectable overflow cue.
-   *
-   * placement supplies ordered visible/hidden items and pixel geometry; kind is status
-   * or modifier; dimensions gives pixel cell width/height/gap; audience selects the
-   * researcher or Agent POV explanation path. Return a detached SVG group with exact
-   * value metadata, icons and accessible labels. Unknown values show ? rather than
-   * becoming measurements. Hidden items remain available through overflow tooltips;
-   * local layout slots never become undisclosed public identities.
-   *
-   * @param {ReturnType<typeof layoutStatusDocks>["docks"][number]} placement
-   * @param {"status" | "modifier"} kind
-   * @param {{cellWidth: number, cellHeight: number, cellGap: number}} dimensions
-   * @param {"researcher" | "agent_pov"} audience
-   * @returns {SVGElement}
-   */
-  #renderFactDock(placement, kind, dimensions, audience) {
-    const compact =
-      "compactFallback" in placement && placement.compactFallback === true;
-    const compactAttributes = compact
-      ? { "data-compact-fallback": true, "data-kind": kind, tabindex: "0" }
-      : {};
-    const ownerAgent = this.agentByLayoutSlot.get(placement.globalSlot) ?? {};
-    const group = svgElement("g", {
-      class: `${kind}-dock`,
-      "data-zone": `${kind}-dock`,
-      ...displayIdentityAttributes(ownerAgent),
-      "data-anchor": placement.anchor,
-      "data-expanded": placement.expanded,
-      "data-collision-free": placement.collisionFree,
-      "data-visible-count": placement.visibleCount,
-      "data-hidden-count": placement.hiddenCount,
-    });
-    if (
-      placement.hiddenCount > 0 ||
-      placement.anchor !== "north" ||
-      placement.tangentShift !== 0
-    ) {
-      group.append(
-        svgElement("line", {
-          class: `dock-leader ${kind}-dock__leader`,
-          x1: placement.leader.start.x,
-          y1: placement.leader.start.y,
-          x2: placement.leader.end.x,
-          y2: placement.leader.end.y,
-          "aria-hidden": "true",
-        }),
-      );
-    }
-
-    for (const [index, rawItem] of placement.visibleStatuses.entries()) {
-      const item = isRecord(rawItem) ? rawItem : {};
-      const token = resolveVisualToken(
-        kind,
-        item.token_id,
-        audience === "agent_pov" && kind === "status" ? undefined : item,
-      );
-      const column = index % placement.columns;
-      const row = Math.floor(index / placement.columns);
-      const x =
-        placement.bounds.left + column * (dimensions.cellWidth + dimensions.cellGap);
-      const y =
-        placement.bounds.top + row * (dimensions.cellHeight + dimensions.cellGap);
-      const value =
-        kind === "status"
-          ? String(
-              Number.isInteger(item.duration) && item.duration > 0
-                ? item.duration
-                : "?",
-            )
-          : Number.isFinite(item.multiplier)
-            ? `×${formatDisplayNumber(item.multiplier)}`
-            : "×?";
-      const accessibleValue =
-        kind === "status"
-          ? `duration ${value}`
-          : Number.isFinite(item.multiplier)
-            ? `multiplier ${formatDisplayNumber(item.multiplier)}`
-            : "multiplier unknown";
-      const supportedStatusDuration =
-        kind === "status" &&
-        Number.isInteger(item.duration) &&
-        item.duration >= 1 &&
-        item.duration <= 5;
-      const cell = svgElement("g", {
-        class: `${kind}-cell${compact ? " required-dock-fallback" : ""}`,
-        ...compactAttributes,
-        role: "img",
-        "aria-label": `${token.accessibleName}, ${accessibleValue}, ${agentIdentity(ownerAgent)}`,
-        "data-zone": `${kind}-cell`,
-        ...displayIdentityAttributes(ownerAgent),
-        "data-token": token.cssKey,
-        "data-token-id": token.tokenId,
-        "data-index": index,
-        "data-numeric-layout": supportedStatusDuration ? "compartments" : "measured",
-        "data-supported-duration": kind === "status" ? supportedStatusDuration : null,
-        "data-duration":
-          kind === "status" && Number.isInteger(item.duration) ? item.duration : null,
-        "data-multiplier":
-          kind === "modifier" && Number.isFinite(item.multiplier)
-            ? item.multiplier
-            : null,
-      });
-      if (kind === "status") {
-        cell.dataset.sourceClass = classTokenFromId(item.source_class_id).cssKey;
-      }
-      const box = svgElement("rect", {
-        class: `${kind}-cell__box`,
-        x,
-        y,
-        width: dimensions.cellWidth,
-        height: dimensions.cellHeight,
-        rx: 5,
-      });
-      const icon = createSvgIcon(this.battlefield.ownerDocument, token.glyphKey, {
-        className: `${kind}-cell__icon`,
-      });
-      const iconSize = kind === "modifier" ? 9 : kind === "status" ? 12 : 10;
-      setAttributes(icon, {
-        x: x + (kind === "modifier" ? 3 : 2),
-        y: y + (dimensions.cellHeight - iconSize) / 2,
-        width: iconSize,
-        height: iconSize,
-      });
-      const text = svgElement("text", {
-        class: `${kind}-cell__value`,
-        x: x + dimensions.cellWidth - 3,
-        y: y + dimensions.cellHeight / 2,
-      });
-      text.textContent = value;
-      const compartments =
-        kind === "status"
-          ? [
-              svgElement("rect", {
-                class: "status-cell__icon-compartment",
-                x: x + 2,
-                y: y + 2,
-                width: 12,
-                height: dimensions.cellHeight - 4,
-                "aria-hidden": "true",
-              }),
-              svgElement("rect", {
-                class: "status-cell__value-compartment",
-                x: x + 16,
-                y: y + 2,
-                width: 9,
-                height: dimensions.cellHeight - 4,
-                "aria-hidden": "true",
-              }),
-            ]
-          : [];
-      registerTooltipOwner(
-        cell,
-        kind === "status"
-          ? audience === "agent_pov"
-            ? this.#explainStatus(item, ownerAgent, audience)
-            : explainStatus(item, ownerAgent, [...this.agentByLayoutSlot.values()])
-          : explainModifier(item, ownerAgent),
-      );
-      cell.append(box, ...compartments, icon, text);
-      group.append(cell);
-    }
-
-    if (placement.hiddenCount > 0) {
-      const index = placement.visibleCount;
-      const column = index % placement.columns;
-      const row = Math.floor(index / placement.columns);
-      const x =
-        placement.bounds.left + column * (dimensions.cellWidth + dimensions.cellGap);
-      const y =
-        placement.bounds.top + row * (dimensions.cellHeight + dimensions.cellGap);
-      const hiddenLabels = placement.hiddenStatuses.map((rawItem) => {
-        const item = isRecord(rawItem) ? rawItem : {};
-        const token = resolveVisualToken(
-          kind,
-          item.token_id,
-          audience === "agent_pov" && kind === "status" ? undefined : item,
-        );
-        return kind === "status"
-          ? `${token.accessibleName}, duration ${item.duration ?? "unknown"}`
-          : `${token.accessibleName}, multiplier ${formatDisplayNumber(item.multiplier)}`;
-      });
-      const overflow = svgElement("g", {
-        class: `${kind}-overflow${compact ? " required-dock-fallback" : ""}`,
-        ...compactAttributes,
-        role: "img",
-        "aria-label": `${placement.overflowLabel} hidden ${kind} cues for ${agentIdentity(ownerAgent)}: ${hiddenLabels.join("; ")}`,
-        "data-zone": `${kind}-overflow`,
-        ...displayIdentityAttributes(ownerAgent),
-        "data-hidden-count": placement.hiddenCount,
-        "data-owner-label": agentIdentity(ownerAgent),
-      });
-      registerTooltipOwner(
-        overflow,
-        audience === "agent_pov" && kind === "status"
-          ? this.#explainStatusOverflow(placement.hiddenStatuses, ownerAgent, audience)
-          : explainOverflow(placement.hiddenStatuses, kind, ownerAgent, [
-              ...this.agentByLayoutSlot.values(),
-            ]),
-      );
-      const overflowLabel = svgElement("text", {
-        class: `${kind}-overflow__label`,
-        x: x + dimensions.cellWidth / 2,
-        y: y + dimensions.cellHeight / 2,
-      });
-      overflowLabel.textContent = placement.overflowLabel;
-      overflow.append(
-        svgElement("rect", {
-          class: `${kind}-cell__box`,
-          x,
-          y,
-          width: dimensions.cellWidth,
-          height: dimensions.cellHeight,
-          rx: 5,
-        }),
-        overflowLabel,
-      );
-      group.append(overflow);
-    }
-    return group;
-  }
-
-  /**
-   * Explain an already displayed status with optional joined source attribution.
-   *
-   * rawStatus is the local status, localRecipient carries public ID/local presentation
-   * key, and audience selects researcher or agent_pov. Researcher views use their
-   * scene list directly. Agent views look up the same public recipient and require
-   * exactly one matching public-status row before using researcher provenance, while
-   * retaining the local key; otherwise use the limited POV explanation. Return the
-   * semantic descriptor. This does not admit a status or add spatial geometry.
-   *
-   * @param {unknown} rawStatus
-   * @param {JsonRecord} localRecipient
-   * @param {"researcher" | "agent_pov"} audience
-   */
-  #explainStatus(rawStatus, localRecipient, audience) {
-    if (audience !== "agent_pov") {
-      return explainStatus(rawStatus, localRecipient, [
-        ...this.agentByLayoutSlot.values(),
-      ]);
-    }
-    const publicAgentId =
-      typeof localRecipient.public_agent_id === "string"
-        ? localRecipient.public_agent_id
-        : null;
-    const researcherRecipient =
-      publicAgentId === null
-        ? null
-        : (this.researcherAgentByPublicId.get(publicAgentId) ?? null);
-    const matches = asArray(researcherRecipient?.statuses).filter((candidate) =>
-      samePublicStatusFacts(rawStatus, candidate),
-    );
-    const tooltipRecipient =
-      researcherRecipient !== null &&
-      typeof localRecipient.presentation_key === "string"
-        ? {
-            ...researcherRecipient,
-            presentation_key: localRecipient.presentation_key,
-          }
-        : null;
-    return tooltipRecipient !== null && matches.length === 1
-      ? explainStatus(matches[0], tooltipRecipient, [
-          ...this.researcherAgentByPublicId.values(),
-        ])
-      : explainPovStatus(rawStatus, localRecipient);
-  }
-
-  /**
-   * Explain all hidden local statuses using one consistent disclosure path.
-   *
-   * rawStatuses is the ordered hidden list, localRecipient supplies identity, and
-   * audience selects researcher/agent_pov. Agent views use researcher provenance only
-   * when every status has exactly one public-fact match and the local key exists;
-   * otherwise the whole list uses POV explanations. Return the descriptor without
-   * changing statuses or admitting new visible facts.
-   *
-   * @param {ReadonlyArray<unknown>} rawStatuses
-   * @param {JsonRecord} localRecipient
-   * @param {"researcher" | "agent_pov"} audience
-   */
-  #explainStatusOverflow(rawStatuses, localRecipient, audience) {
-    if (audience !== "agent_pov") {
-      return explainOverflow(rawStatuses, "status", localRecipient, [
-        ...this.agentByLayoutSlot.values(),
-      ]);
-    }
-    const publicAgentId =
-      typeof localRecipient.public_agent_id === "string"
-        ? localRecipient.public_agent_id
-        : null;
-    const researcherRecipient =
-      publicAgentId === null
-        ? null
-        : (this.researcherAgentByPublicId.get(publicAgentId) ?? null);
-    const researcherStatuses = asArray(researcherRecipient?.statuses);
-    const joined = rawStatuses.map((status) => {
-      const matches = researcherStatuses.filter((candidate) =>
-        samePublicStatusFacts(status, candidate),
-      );
-      return matches.length === 1 ? matches[0] : null;
-    });
-    const tooltipRecipient =
-      researcherRecipient !== null &&
-      typeof localRecipient.presentation_key === "string"
-        ? {
-            ...researcherRecipient,
-            presentation_key: localRecipient.presentation_key,
-          }
-        : null;
-    return tooltipRecipient !== null && joined.every((status) => status !== null)
-      ? explainOverflow(joined, "status", tooltipRecipient, [
-          ...this.researcherAgentByPublicId.values(),
-        ])
-      : explainPovOverflow(rawStatuses, localRecipient);
-  }
-
-  /**
-   * Create detached shield-chip, icon and text nodes for an accepted agent.
-   *
-   * agent supplies only display identity at this stage. Return {root, chip, icon, text};
-   * active state, position, counter and tooltip are set later by updateAgentNodes.
-   *
-   * @param {JsonRecord} agent
-   * @returns {{
-   *   root: SVGElement,
-   *   chip: SVGElement,
-   *   icon: SVGSVGElement,
-   *   text: SVGElement,
-   * }}
-   */
-  #createSpawnShieldNodes(agent) {
-    const root = svgElement("g", {
-      class: "agent-spawn-shield",
-      role: "img",
-      "data-zone": "spawn-shield",
-      ...displayIdentityAttributes(agent),
-    });
-    const chip = svgElement("rect", {
-      class: "agent-spawn-shield__chip",
-      width: 27,
-      height: 16,
-      rx: 6,
-      fill: "#000",
-      stroke: "#fff",
-      "stroke-width": "1.5",
-      "vector-effect": "non-scaling-stroke",
-    });
-    const icon = createSvgIcon(this.battlefield.ownerDocument, "status-spawn-shield", {
-      className: "agent-spawn-shield__icon",
-    });
-    const text = svgElement("text", {
-      class: "agent-spawn-shield__ticks",
-      fill: "#fff",
-      "font-size": "9",
-      "font-weight": "800",
-      "text-anchor": "middle",
-      "dominant-baseline": "central",
-      "pointer-events": "none",
-    });
-    root.append(chip, icon, text);
-    return { root, chip, icon, text };
-  }
-
-  /**
-   * Create a retained body/selection node bundle for an accepted display agent.
-   *
-   * agent supplies display identity; visualPolicy.showSpawnShield decides whether to
-   * allocate shield nodes immediately. Return AgentNodes with nullable shield members.
-   * Nodes are detached and have no current geometry until updateAgentNodes runs.
-   *
-   * @param {JsonRecord} agent
-   * @param {Readonly<DurableVisualPolicy>} visualPolicy
-   * @returns {AgentNodes}
-   */
-  #createAgentNodes(agent, visualPolicy) {
-    const root = svgElement("g", {
-      class: "agent",
-      tabindex: "-1",
-      role: "img",
-      ...displayIdentityAttributes(agent),
-    });
-    const body = svgElement("circle", {
-      class: "agent-body",
-      "data-zone": "body",
-    });
-    const teamRing = svgElement("circle", {
-      class: "agent-team-ring",
-      "data-zone": "team",
-    });
-    const teamMarker = svgElement("path", {
-      class: "agent-team-marker",
-      "data-zone": "team",
-      "aria-hidden": "true",
-    });
-    const healthTrack = svgElement("circle", {
-      class: "agent-health-track",
-      "data-zone": "health",
-    });
-    const health = svgElement("circle", {
-      class: "agent-health",
-      "data-zone": "health",
-      pathLength: 100,
-    });
-    const classIcon = createSvgIcon(this.battlefield.ownerDocument, "unknown", {
-      className: "agent-class-icon",
-    });
-    const classLetter = svgElement("text", { class: "agent-class-letter" });
-    const deadMark = svgElement("path", {
-      class: "agent-dead-mark",
-      "aria-hidden": "true",
-    });
-    const shieldNodes = visualPolicy.showSpawnShield
-      ? this.#createSpawnShieldNodes(agent)
-      : null;
-    root.append(
-      body,
-      teamRing,
-      teamMarker,
-      healthTrack,
-      health,
-      classIcon,
-      classLetter,
-      deadMark,
-    );
-
-    const selectionRoot = svgElement("g", {
-      class: "agent-selection",
-      ...displayIdentityAttributes(agent),
-      "data-zone": "selection",
-      "aria-hidden": "true",
-    });
-    const controlledHalo = svgElement("circle", {
-      class: "controlled-halo",
-    });
-    const selectedReticle = svgElement("path", {
-      class: "selected-reticle",
-    });
-    selectionRoot.append(controlledHalo, selectedReticle);
-    return {
-      root,
-      body,
-      teamRing,
-      teamMarker,
-      healthTrack,
-      health,
-      classIcon,
-      classLetter,
-      deadMark,
-      shieldRoot: shieldNodes?.root ?? null,
-      shieldChip: shieldNodes?.chip ?? null,
-      shieldIcon: shieldNodes?.icon ?? null,
-      shieldText: shieldNodes?.text ?? null,
-      selectionRoot,
-      controlledHalo,
-      selectedReticle,
-    };
-  }
-
-  /**
-   * Refresh current body, health, shield and selection paint on retained nodes.
-   *
-   * nodes is the mutable AgentNodes bundle; agent supplies accepted current facts;
-   * spawnShieldMechanics supplies the public shield profile; center/radius are screen
-   * geometry. controlled/selected are exact current selection flags and visualPolicy
-   * controls shield/reticle paint. Update accessible labels, health arc, life marks,
-   * class icon, shield counter/tooltip and selection outlines. Lazily allocate shield
-   * nodes and blur a hidden focused shield. Return undefined. Health ratio is clipped
-   * only for drawing; this neither changes game health nor derives simulator legality.
-   *
-   * @param {AgentNodes} nodes
-   * @param {JsonRecord} agent
-   * @param {unknown} spawnShieldMechanics
-   * @param {{x: number, y: number}} center
-   * @param {number} radius
-   * @param {boolean} controlled
-   * @param {boolean} selected
-   * @param {Readonly<DurableVisualPolicy>} visualPolicy
-   */
-  #updateAgentNodes(
-    nodes,
-    agent,
-    spawnShieldMechanics,
-    center,
-    radius,
-    controlled,
-    selected,
-    visualPolicy,
-  ) {
-    const classToken = classTokenFromId(agent.class_id);
-    const teamToken = teamTokenFromId(agent.team_id);
-    if (visualPolicy.showSpawnShield && nodes.shieldRoot === null) {
-      const shieldNodes = this.#createSpawnShieldNodes(agent);
-      nodes.shieldRoot = shieldNodes.root;
-      nodes.shieldChip = shieldNodes.chip;
-      nodes.shieldIcon = shieldNodes.icon;
-      nodes.shieldText = shieldNodes.text;
-    }
-    const healthRadius = Math.max(radius - 4, radius * 0.7);
-    const healthRatio = Math.max(
-      0,
-      Math.min(
-        1,
-        finiteNumber(agent.current_health) /
-          Math.max(finiteNumber(agent.max_health, 1), Number.EPSILON),
-      ),
-    );
-    const stepsUntilOutOfCombat =
-      Number.isInteger(agent.steps_until_out_of_combat) &&
-      agent.steps_until_out_of_combat >= 0
-        ? Number(agent.steps_until_out_of_combat)
-        : 0;
-    const inCombat = stepsUntilOutOfCombat > 0;
-
-    nodes.root.dataset.team = teamToken.cssKey;
-    nodes.root.dataset.class = classToken.cssKey;
-    nodes.root.dataset.alive = String(Boolean(agent.alive));
-    nodes.root.dataset.controlled = String(controlled);
-    nodes.root.dataset.selected = String(selected);
-    nodes.root.dataset.combatStatus = inCombat ? "IC" : "OOC";
-    nodes.root.dataset.stepsUntilOutOfCombat = String(stepsUntilOutOfCombat);
-    const spawnShieldView = visualPolicy.showSpawnShield
-      ? createSpawnShieldView(agent, spawnShieldMechanics)
-      : null;
-    const spawnShieldRemaining = Number.isInteger(agent.spawn_shield_remaining)
-      ? Math.max(0, Number(agent.spawn_shield_remaining))
-      : 0;
-    if (
-      (!visualPolicy.showSpawnShield || spawnShieldView?.active !== true) &&
-      nodes.shieldRoot !== null &&
-      nodes.shieldRoot.ownerDocument.activeElement === nodes.shieldRoot
-    ) {
-      nodes.shieldRoot.blur();
-    }
-    nodes.root.dataset.spawnShieldRemaining = String(spawnShieldRemaining);
-    nodes.root.dataset.respawnedOnIncomingTransition = String(
-      agent.respawned_on_incoming_transition === true,
-    );
-    nodes.root.setAttribute(
-      "aria-label",
-      [
-        agentIdentity(agent),
-        classToken.label,
-        teamToken.label,
-        `health ${formatDisplayNumber(agent.current_health)} of ${formatDisplayNumber(agent.max_health)}`,
-        agent.alive ? "alive" : "dead",
-        spawnShieldView?.rootAriaLabel ?? null,
-        controlled ? "controlled actor" : null,
-        selected ? "selected target" : null,
-      ]
-        .filter((part) => part !== null)
-        .join(", "),
-    );
-    setAttributes(nodes.body, {
-      cx: center.x,
-      cy: center.y,
-      r: radius,
-    });
-    setAttributes(nodes.teamRing, {
-      cx: center.x,
-      cy: center.y,
-      r: radius,
-    });
-    setAttributes(nodes.teamMarker, {
-      d: [
-        `M ${center.x + radius - 7} ${center.y - 4}`,
-        `L ${center.x + radius - 3} ${center.y}`,
-        `L ${center.x + radius - 7} ${center.y + 4}`,
-      ].join(" "),
-    });
-    if (
-      spawnShieldView !== null &&
-      nodes.shieldRoot !== null &&
-      nodes.shieldChip !== null &&
-      nodes.shieldIcon !== null &&
-      nodes.shieldText !== null
-    ) {
-      setAttributes(nodes.shieldRoot, {
-        hidden: spawnShieldView.active ? null : "",
-        tabindex: spawnShieldView.active ? "0" : "-1",
-        "aria-label": spawnShieldView.shieldAriaLabel,
-      });
-      const shieldChipX = center.x + radius * 0.6;
-      const shieldChipY = center.y - radius - 13;
-      setAttributes(nodes.shieldChip, {
-        x: shieldChipX,
-        y: shieldChipY,
-      });
-      setAttributes(nodes.shieldIcon, {
-        x: shieldChipX + 2.5,
-        y: shieldChipY + 2.5,
-        width: 11,
-        height: 11,
-      });
-      setAttributes(nodes.shieldText, {
-        x: shieldChipX + 20,
-        y: shieldChipY + 8,
-      });
-      nodes.shieldText.textContent = spawnShieldView.badgeText;
-      if (spawnShieldView.active) {
-        nodes.shieldRoot.removeAttribute("aria-description");
-        registerTooltipOwner(nodes.shieldRoot, spawnShieldView.descriptor);
-      } else {
-        nodes.shieldRoot.removeAttribute("data-tooltip-owner");
-        nodes.shieldRoot.removeAttribute("aria-describedby");
-        nodes.shieldRoot.removeAttribute("aria-description");
-      }
-    }
-    setAttributes(nodes.healthTrack, {
-      cx: center.x,
-      cy: center.y,
-      r: healthRadius,
-    });
-    setAttributes(nodes.health, {
-      cx: center.x,
-      cy: center.y,
-      r: healthRadius,
-      "stroke-dasharray": `${healthRatio * 100} ${100 - healthRatio * 100}`,
-      transform: `rotate(-90 ${center.x} ${center.y})`,
-    });
-
-    if (nodes.classIcon.dataset.icon !== classToken.glyphKey) {
-      const replacement = createSvgIcon(
-        this.battlefield.ownerDocument,
-        classToken.glyphKey,
-        {
-          className: "agent-class-icon",
-        },
-      );
-      nodes.classIcon.replaceWith(replacement);
-      nodes.classIcon = replacement;
-    }
-    const iconSize = Math.max(14, Math.min(radius * 0.95, 28));
-    setAttributes(nodes.classIcon, {
-      x: center.x - iconSize / 2,
-      y: center.y - iconSize * 0.62,
-      width: iconSize,
-      height: iconSize,
-    });
-    setAttributes(nodes.classLetter, {
-      x: center.x,
-      y: center.y + Math.min(radius * 0.5, 11) + 2,
-    });
-    nodes.classLetter.textContent = classToken.fallback;
-
-    const deadOffset = radius * 0.45;
-    setAttributes(nodes.deadMark, {
-      d: [
-        `M ${center.x - deadOffset} ${center.y - deadOffset}`,
-        `L ${center.x + deadOffset} ${center.y + deadOffset}`,
-        `M ${center.x + deadOffset} ${center.y - deadOffset}`,
-        `L ${center.x - deadOffset} ${center.y + deadOffset}`,
-      ].join(" "),
-      hidden: agent.alive ? "" : null,
-    });
-
-    setAttributes(nodes.controlledHalo, {
-      cx: center.x,
-      cy: center.y,
-      r: radius + 8,
-      hidden: controlled ? null : "",
-    });
-    setAttributes(nodes.selectedReticle, {
-      d: targetReticlePath(center.x, center.y, radius + 12),
-      hidden: selected && visualPolicy.showSelectionReticle ? null : "",
-    });
+  #statusOverflowTooltipInput(rawStatuses, localRecipient) {
+    return { kind: "pov-overflow", items: rawStatuses, recipient: localRecipient };
   }
 }

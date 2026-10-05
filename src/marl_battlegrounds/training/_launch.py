@@ -18,6 +18,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -36,6 +37,7 @@ from marl_battlegrounds.training._run_io import (
     atomic_json,
     process_identity,
     progress_text,
+    unused_run_folder,
     utc_now,
 )
 
@@ -75,6 +77,39 @@ def _read(path: Path) -> Record:
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object in {path}")
     return cast(Record, value)
+
+
+def read_declaration(path: Path) -> Record:
+    """Read an authored JSON or optional YAML declaration without numerical setup.
+
+    path must name a regular file. YAML requires the hydra extra and resolves
+    interpolations once; missing values fail here. Return a finite JSON mapping.
+    This only decodes authored settings. The calling owner validates fields and
+    resolves its own path fields beside this file. Recovery records still use
+    the strict JSON reader. No output is written and no factory is called.
+    """
+    if path.suffix.lower() not in (".yaml", ".yml"):
+        value = _read(path)
+    else:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Required declaration file is missing: {path}")
+        try:
+            from omegaconf import OmegaConf
+            from omegaconf.errors import OmegaConfBaseException
+        except ImportError as error:
+            raise ImportError(
+                "YAML declarations need pip install 'marl-battlegrounds[hydra]'"
+            ) from error
+        try:
+            loaded = OmegaConf.to_container(
+                OmegaConf.load(path), resolve=True, throw_on_missing=True
+            )
+        except OmegaConfBaseException as error:
+            raise ValueError(f"Invalid declaration {path}: {error}") from error
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Expected a mapping in {path}")
+        value = cast(Record, loaded)
+    return cast(Record, json.loads(json.dumps(value, allow_nan=False)))
 
 
 def write_once(path: Path, value: Mapping[str, Any]) -> None:
@@ -283,6 +318,215 @@ def _files(root: Path) -> dict[str, str]:
     return values
 
 
+def resource_settings(value: object, *, base_dir: Path) -> Record | None:
+    """Validate optional study hardware settings without opening a backend.
+
+    value is None (inherit one worker), or a JSON object with devices and optional
+    compilation_cache. Each device entry names cpu or a full GPU UUID, defaults
+    max_workers to one, and may set memory_fraction in (0, 1]. Multiple workers
+    on a GPU require fractions whose total is at most one. Fractions control the
+    JAX allocator, not total process VRAM. CPU entries reject GPU fractions.
+    Return a copied, normalized declaration; relative cache paths use base_dir.
+    Reject unknown fields, duplicate devices and invalid values with ValueError.
+    No directory, process or numerical backend is created.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("resources must be an object or null")
+    value = cast(Record, value)
+    if set(value) - {"devices", "compilation_cache"}:
+        raise ValueError("Unknown resources fields")
+    devices = value.get("devices")
+    if not isinstance(devices, list) or not devices:
+        raise ValueError("resources.devices must be a nonempty list")
+    rows: list[Record] = []
+    seen: set[str] = set()
+    for raw in cast(list[object], devices):
+        if not isinstance(raw, dict):
+            raise ValueError("Each resource device must be an object")
+        entry = cast(Record, raw)
+        if set(entry) - {"device", "max_workers", "memory_fraction"}:
+            raise ValueError("Unknown resource device fields")
+        device = entry.get("device")
+        if not isinstance(device, str) or (
+            device != "cpu"
+            and re.fullmatch(
+                r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", device
+            )
+            is None
+        ):
+            raise ValueError("device must be cpu or a full GPU UUID")
+        if device in seen:
+            raise ValueError(f"Resource device is repeated: {device}")
+        seen.add(device)
+        workers = entry.get("max_workers", 1)
+        if type(workers) is not int or workers <= 0:
+            raise ValueError("max_workers must be a positive integer")
+        row: Record = {"device": device, "max_workers": workers}
+        if "memory_fraction" in entry:
+            fraction = entry["memory_fraction"]
+            if (
+                device == "cpu"
+                or isinstance(fraction, bool)
+                or not isinstance(fraction, (int, float))
+                or not math.isfinite(fraction)
+                or not 0 < fraction <= 1
+                or fraction * workers > 1
+            ):
+                raise ValueError(
+                    "GPU memory_fraction must be finite in (0, 1] "
+                    "with worker total <= 1"
+                )
+            row["memory_fraction"] = float(fraction)
+        elif device != "cpu" and workers > 1:
+            raise ValueError("Multiple workers per GPU require memory_fraction")
+        rows.append(row)
+    result: Record = {"devices": rows}
+    if "compilation_cache" in value:
+        cache = value["compilation_cache"]
+        if not isinstance(cache, str) or not cache.strip():
+            raise ValueError("compilation_cache must be a nonempty directory path")
+        path = Path(cache).expanduser()
+        result["compilation_cache"] = str((base_dir / path).resolve())
+    return result
+
+
+def resource_environment(
+    device: Mapping[str, Any] | None, *, compilation_cache: str | None = None
+) -> dict[str, str]:
+    """Copy the caller's environment and apply only declared resource overrides.
+
+    device is one checked resource entry, or None to inherit device and allocator
+    settings. A CPU entry sets JAX_PLATFORMS=cpu and hides CUDA devices. A GPU
+    entry selects its UUID and sets JAX_PLATFORMS=cuda,cpu: CUDA stays required
+    and is the default, while CPU is available for checkpoint checks. A GPU
+    entry also sets XLA_PYTHON_CLIENT_PREALLOCATE=false unless the caller set
+    that flag, so a worker takes GPU memory as it needs it instead of JAX's
+    default 75% up front, and its recorded memory is real use. Optional
+    memory_fraction replaces JAX's allocator fraction, which still caps the
+    allocator without preallocation; other inherited flags,
+    Python paths and provider settings stay unchanged. compilation_cache, when
+    set, selects an enabled persistent JAX cache that also keeps programs that
+    compile in under a second (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0).
+    No directory or backend opens.
+    Call before importing numerical modules. Return a new complete environment.
+    """
+    environment = dict(os.environ)
+    if device is not None:
+        cpu = device["device"] == "cpu"
+        environment["CUDA_VISIBLE_DEVICES"] = "" if cpu else device["device"]
+        environment["JAX_PLATFORMS"] = "cpu" if cpu else "cuda,cpu"
+        if not cpu:
+            environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+        if "memory_fraction" in device:
+            if environment.get("XLA_PYTHON_CLIENT_ALLOCATOR") == "platform":
+                raise ValueError(
+                    "The platform allocator ignores memory_fraction; "
+                    "use JAX's default allocator"
+                )
+            environment["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(
+                device["memory_fraction"]
+            )
+    if compilation_cache is not None:
+        environment["JAX_COMPILATION_CACHE_DIR"] = compilation_cache
+        environment["JAX_ENABLE_COMPILATION_CACHE"] = "true"
+        # Keep the hundreds of small setup programs too; each is under the
+        # default 1 s threshold, and together they cost 10-12 s per start.
+        environment["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] = "0"
+    return environment
+
+
+def missing_resource_devices(resources: Record | None) -> list[str]:
+    """Check cache outputs and return the declared GPU UUIDs that are not present.
+
+    Parameters
+    ----------
+    resources : dict or None
+        A declaration already checked by resource_settings, or None. None and
+        CPU-only declarations run no device query and give an empty list.
+
+    Returns
+    -------
+    list of str
+        Declared GPU UUIDs that ``nvidia-smi --query-gpu=uuid`` does not list,
+        in declared order. An empty list means every declared GPU is present.
+
+    Raises
+    ------
+    ValueError
+        The declared compilation cache sits in a forbidden output location
+        (the shared source-preservation rule).
+    OSError, subprocess.SubprocessError
+        nvidia-smi is missing, fails or takes longer than 10 seconds.
+
+    Notes
+    -----
+    nvidia-smi only lists UUIDs; it allocates no device memory. No file is
+    created. Actual JAX backend start remains the worker's responsibility.
+    The study owner pauses missing GPUs; check_resource_devices refuses them.
+    """
+    if resources is None:
+        return []
+    if cache := resources.get("compilation_cache"):
+        from marl_battlegrounds.evaluation.revision import (
+            _check_output_path,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        _check_output_path(Path(cache))
+    requested = [
+        row["device"] for row in resources["devices"] if row["device"] != "cpu"
+    ]
+    if not requested:
+        return []
+    completed = subprocess.run(
+        ["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader,nounits"],
+        timeout=10,
+        capture_output=True,
+        text=True,
+        check=True,
+        stdin=subprocess.DEVNULL,
+    )
+    present = {line.strip() for line in completed.stdout.splitlines()}
+    return [device for device in requested if device not in present]
+
+
+def check_resource_devices(resources: Record | None) -> None:
+    """Refuse unavailable declared GPU UUIDs and unsafe cache outputs before work.
+
+    resources is a checked declaration or None. missing_resource_devices does
+    the cache check and the nvidia-smi query; CPU-only work runs no query. Any
+    missing GPU, command failure or forbidden cache destination raises
+    ValueError/OSError. Single Hydra runs use this strict check; declared
+    studies instead pause missing GPUs and continue on the others.
+    """
+    missing = missing_resource_devices(resources)
+    if missing:
+        raise ValueError(f"Declared GPU devices are unavailable: {sorted(missing)}")
+
+
+def resource_facts(environment: Mapping[str, str]) -> Record:
+    """Record actual startup overrides without recording secrets or unrelated env.
+
+    Read only CUDA device visibility, JAX platforms, allocator and cache controls
+    from a complete environment. Missing values stay None and retain their native
+    library defaults. This records applied settings, not measured memory usage.
+    """
+    return {
+        key: environment.get(key)
+        for key in (
+            "CUDA_VISIBLE_DEVICES",
+            "JAX_PLATFORMS",
+            "XLA_PYTHON_CLIENT_MEM_FRACTION",
+            "XLA_PYTHON_CLIENT_PREALLOCATE",
+            "XLA_PYTHON_CLIENT_ALLOCATOR",
+            "JAX_COMPILATION_CACHE_DIR",
+            "JAX_ENABLE_COMPILATION_CACHE",
+            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
+        )
+    }
+
+
 def _environment(
     gpu_uuid: str | None,
     *,
@@ -303,8 +547,10 @@ def _environment(
         Optional JAX allocator fraction in (0, 1]. None leaves JAX's default.
         Preallocation remains off. This is a pool limit, not a memory forecast.
     compilation_cache : Path or None, optional
-        Absolute directory for JAX's persistent compilation cache. None drops
-        inherited cache settings. This helper does not create the directory.
+        Absolute directory for JAX's persistent compilation cache. The cache
+        also keeps programs that compile in under a second
+        (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0). None drops inherited
+        cache settings. This helper does not create the directory.
 
     Returns
     -------
@@ -347,6 +593,7 @@ def _environment(
     if compilation_cache is not None:
         env["JAX_COMPILATION_CACHE_DIR"] = str(compilation_cache)
         env["JAX_ENABLE_COMPILATION_CACHE"] = "true"
+        env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] = "0"
     return env
 
 
@@ -643,7 +890,7 @@ def prepare_run(
     if target.exists():
         raise ValueError("The launch package destination must be new")
     hardware = _gpu(gpu_uuid)
-    from marl_battlegrounds.training.runner import config_from_dict, config_to_dict
+    from marl_battlegrounds.training.config import config_from_dict, config_to_dict
     from marl_battlegrounds.training.validation import load_panel
 
     config = config_from_dict(_read(Path(config_path)))
@@ -1038,7 +1285,9 @@ def start(
 
     Validates the package first, then serializes starts using a local file lock.
     A live matching supervisor, trainer or leftover worker blocks either start.
-    An existing run requires resume. stdin is closed; stdout/stderr append to
+    An existing run requires resume; a run folder holding only the trainer's
+    ``.training.lock`` is not a run yet, so a fresh start may use it.
+    stdin is closed; stdout/stderr append to
     logs/process.log. Returns
     exact process identity, command and mode after recording them durably.
     This function is only called by the user's launch/resume command.
@@ -1052,7 +1301,7 @@ def start(
         status_path = root / "process.json"
         if status_path.exists() and _alive(_read(status_path)):
             raise RuntimeError("This package already has an active training process")
-        if not resume and (root / "run").exists() and any((root / "run").iterdir()):
+        if not resume and not unused_run_folder(root / "run"):
             raise ValueError("This package has a run already; use its resume command")
         selected = _checkpoint(root, checkpoint) if resume else None
         python = root / ".venv" / "bin" / "python"

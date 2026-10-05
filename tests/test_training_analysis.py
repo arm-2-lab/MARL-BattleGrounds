@@ -752,10 +752,10 @@ def test_selection_refuses_changed_validation_maps_and_rosters(
     first = _result("first", 4, 0.5, maps=[42])
     second = _result("second", 8, 0.5, maps=[42])
     second.update(changed)
-    with pytest.raises(ValueError, match="maps or team rosters"):
+    with pytest.raises(ValueError, match="maps, team rosters"):
         confirmation_candidates([first, second], final_checkpoint_id="second")
     first["purpose"] = second["purpose"] = "confirmation"
-    with pytest.raises(ValueError, match="maps or team rosters"):
+    with pytest.raises(ValueError, match="maps, team rosters"):
         select_checkpoint([first, second])
 
 
@@ -770,3 +770,24 @@ def test_selection_accepts_explicit_canonical_rosters_with_historical_defaults()
     second.update(system_roster=list(a), opponent_roster=list(b))
     first["purpose"] = second["purpose"] = "confirmation"
     assert select_checkpoint([first, second])["checkpoint_id"] == "first"
+
+
+def test_refresh_summary_expands_home_in_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import marl_battlegrounds.training.analysis as analysis
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    def summary(value: Path) -> dict[str, Path]:
+        return {"path": value}
+
+    def write(rows: object, output: Path) -> Path:
+        return output
+
+    monkeypatch.setattr(analysis, "_summary", summary)
+    monkeypatch.setattr(analysis, "_write_summary", write)
+    assert (
+        analysis.refresh_summary(["~/run"], output_dir="~/report")
+        == tmp_path / "report"
+    )

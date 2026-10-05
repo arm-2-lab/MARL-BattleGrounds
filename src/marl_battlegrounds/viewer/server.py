@@ -1,11 +1,19 @@
-"""Serve the local DevClient and Replay Viewer through checked HTTP routes.
+"""Serve the local BattleClient and Replay Viewer through checked HTTP routes.
 
 ``create_server`` binds to 127.0.0.1 after loading an explicit browser asset
-list. ``serve_browser_debugger`` also prints the launch URL, optionally opens
-a browser, and handles shutdown. API calls require the launch token and the
-expected local origin. The coordinator owns service calls; this module does
-not import or advance the simulator. Responses disable caching, request logs
-are suppressed, and command bodies are limited to 64 KiB.
+list: a fixed set of required files, the look stylesheets that styles.css
+imports, and every script, stylesheet, font and image of a served type under
+src/ and assets/. ``serve_browser_debugger`` also prints the launch URL,
+optionally opens a browser, and handles shutdown. API calls require the launch
+token and the expected local origin. The coordinator owns service calls; this
+module does not import or advance the simulator. Responses disable caching,
+request logs are suppressed, and command bodies are limited to 64 KiB. A server
+made with ``page_ready`` holds only its page (``/`` and ``/index.html``) until
+that event is set; the BattleClient's Open Replay child uses it so its tab opens
+once the Replay Viewer is ready, while the page's API answers at once. Every GET
+and POST that any server in the process answers is counted, and
+``wait_for_quiet_requests`` waits until none runs, so background work (the Open
+Replay prepare) gives way to the game.
 """
 
 from __future__ import annotations
@@ -17,26 +25,34 @@ import sys
 import webbrowser
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import Parameter, Signature, signature
 from pathlib import Path
 from socket import socket
-from threading import Event, Lock, RLock, Thread
+from threading import Condition, Event, Lock, RLock, Thread
+from time import monotonic
 from typing import Any, Literal, Protocol, cast, get_args
 
 from pydantic import BaseModel, ValidationError
 
+_LIVE_SNAPSHOT_ROUTE = "/api/live/snapshot"
 _TOKEN_HEADER = "X-MARL-Debugger-Token"
 _MAX_COMMAND_BODY_BYTES = 64 * 1024
 _CLIENT_SOCKET_TIMEOUT_SECONDS = 2.0
 _METRIC_REPORT_ROUTE = "/api/replay/metric-report"
 _METRIC_CATALOG_ROUTE = "/api/replay/metrics/catalog.json"
+_TIMELINE_MARKS_ROUTE = "/api/replay/timeline-marks"
+"""GET route for the Rune Scrubber marks of the current replay audience.
+
+Answers 200 with the JSON bytes from HttpCoordinatorBinding.timeline_marks
+(one ReplayTimelineMarksV1: Oracle View marks, or the current Agent POV
+recipient's marks). Needs the launch token like every API route; replay mode
+only."""
 _METRIC_ANALYSIS_ROUTE = re.compile(
     r"/api/replay/metrics/([0-9]{1,9})/(cursor|final)\.(json|csv)"
 )
-_AUTHORING_COMMAND_ROUTE = "/api/dev/authoring/command"
 _METRIC_REPORT_SUFFIX = ".marlbg-metrics.json"
 _METRIC_REPORT_CONTENT_TYPE = "application/json; charset=utf-8"
 _SAFE_METRIC_REPORT_STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
@@ -57,17 +73,30 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
+# File suffix to the exact Content-Type sent for it. Only these types are
+# served; with "nosniff" the browser trusts this type and never guesses.
 _CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
+    ".png": "image/png",
     ".svg": "image/svg+xml",
     ".txt": "text/plain; charset=utf-8",
+    ".webp": "image/webp",
     ".woff2": "font/woff2",
 }
+# The main stylesheet; its @import lines are the one list of look stylesheets.
+_MAIN_STYLESHEET_PATH = "styles.css"
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_CSS_IMPORT_KEYWORD = re.compile(r"@import\b", re.IGNORECASE)
+# The one accepted import form: @import url("/src/<folders>/<name>.css"); with
+# lowercase letters, digits and hyphens only. Group 1 is the root-relative path.
+_CSS_LOOK_STYLESHEET_IMPORT = re.compile(
+    r'@import\s+url\("/(src/(?:[a-z0-9-]+/)*[a-z0-9-]+\.css)"\)\s*;'
+)
 _REQUIRED_RUNTIME_ASSET_PATHS = (
     "index.html",
-    "styles.css",
+    _MAIN_STYLESHEET_PATH,
     "src/api.js",
     "src/authorized-presentation-adapter.js",
     "src/authorized-presentation-normalizer.js",
@@ -75,27 +104,43 @@ _REQUIRED_RUNTIME_ASSET_PATHS = (
     "src/choreography-painter.js",
     "src/choreography-plan.js",
     "src/choreography.js",
+    "src/command-set.js",
     "src/controls.js",
     "src/system-controls.js",
     "src/display.js",
     "src/explanations.js",
+    "src/filter-controls.js",
     "src/frame-normalizer.js",
     "src/icons.js",
     "src/layout.js",
+    "src/ledger.js",
+    "src/looks/camera.js",
+    "src/looks/champion-frame.js",
+    "src/looks/frame-explanation.js",
+    "src/looks/hud.js",
     "src/main.js",
     "src/match-summary.js",
     "src/metrics-panel.js",
+    "src/palette.js",
     "src/panels.js",
     "src/presentation-install.js",
     "src/replay-controls.js",
     "src/replay-export.js",
     "src/replay-frame-normalizer.js",
+    "src/replay-recipient-rotation.js",
     "src/routes.js",
+    "src/rune-scrubber.js",
     "src/scene.js",
+    "src/shell.js",
+    "src/tactics-turn.js",
     "src/tooltip.js",
     "src/vocabulary.js",
     "assets/fonts/AtkinsonHyperlegible-Regular.woff2",
     "assets/fonts/AtkinsonHyperlegible-Bold.woff2",
+    "assets/brand/marl-bgs-emblem-32.webp",
+    "assets/brand/marl-bgs-emblem-64.png",
+    "assets/brand/marl-bgs-emblem-64.webp",
+    "assets/brand/marl-bgs-emblem-128.webp",
 )
 
 type DebuggerServerMode = Literal["live", "replay"]
@@ -107,7 +152,7 @@ _PRODUCT_KIND_BY_MODE: dict[DebuggerServerMode, DebuggerProductKind] = {
     "replay": "replay_viewer",
 }
 _PRODUCT_TITLE_BY_KIND: dict[DebuggerProductKind, str] = {
-    "combat_debugger": "MARL-BattleGrounds DevClient",
+    "combat_debugger": "MARL-BattleGrounds BattleClient",
     "replay_viewer": "MARL-BattleGrounds Replay Viewer",
 }
 
@@ -241,26 +286,6 @@ def _require_http_status(value: object) -> HTTPStatus:
     return value
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class HttpAuthoringBinding:
-    """Strict live-only command boundary for DevClient authoring operations."""
-
-    request_model: type[BaseModel]
-    apply_command: Callable[[BaseModel], BaseModel]
-
-    def __post_init__(self) -> None:
-        """Require a Pydantic request class and a callable authoring command handler."""
-        request_model = cast(object, self.request_model)
-        if not isinstance(request_model, type) or not issubclass(
-            request_model, BaseModel
-        ):
-            raise TypeError(
-                "authoring request_model must be an exact Pydantic model class."
-            )
-        if not callable(self.apply_command):
-            raise TypeError("authoring apply_command must be callable.")
-
-
 def _validate_metric_report_filename(filename: object) -> str:
     """Validate the complete ASCII attachment basename at the HTTP boundary."""
     if type(filename) is not str or not filename.isascii():
@@ -317,10 +342,12 @@ def _validate_response_headers(
             raise TypeError(
                 "Optional response header names and values must be strings."
             )
-        if name != "Content-Disposition" or name in seen:
+        if name not in ("Content-Disposition", "ETag") or name in seen:
             raise ValueError("Optional response header is not allowlisted.")
         if not value.isascii() or "\r" in value or "\n" in value:
             raise ValueError("Optional response header value is unsafe.")
+        if name == "ETag" and re.fullmatch(r'"[A-Za-z0-9_-]+:[0-9]+"', value) is None:
+            raise ValueError("Snapshot ETag must contain a session and revision.")
         seen.add(name)
     return headers
 
@@ -336,13 +363,17 @@ class HttpCoordinatorBinding:
     current_frame: Callable[[], object]
     apply_command: Callable[..., HttpCommandResult]
     current_presentation: Callable[[], HttpPayloadResult]
+    current_snapshot: Callable[[], object] | None = None
     current_timeline: Callable[[], object] | None = None
     current_metric_report: Callable[[], HttpMetricReportResult] | None = None
     metric_analysis: Callable[[int, str, str], tuple[bytes, str | None]] | None = None
     metric_catalog: Callable[[], bytes] | None = None
     episode_details: Callable[[], tuple[bytes, str]] | None = None
+    timeline_marks: Callable[[], bytes] | None = None
+    """Replay only: return the current audience's timeline-marks JSON bytes for
+    /api/replay/timeline-marks. None (the default) leaves that route answering
+    404 Not Found, as before the route existed."""
     result_status: Callable[[HttpCommandResult], HTTPStatus] = _default_result_status
-    authoring: HttpAuthoringBinding | None = None
     initial_show_ranges: bool | None = None
 
     @property
@@ -383,6 +414,10 @@ class HttpCoordinatorBinding:
         for name, operation in operations.items():
             if not callable(operation):
                 raise TypeError(f"{name} must be callable.")
+        if self.current_snapshot is not None and (
+            self.mode != "live" or not callable(self.current_snapshot)
+        ):
+            raise ValueError("Live snapshots require a callable live operation.")
         if self.mode == "live" and self.current_timeline is not None:
             raise ValueError("live debugger mode cannot expose a replay timeline.")
         if self.mode == "replay" and not callable(self.current_timeline):
@@ -401,13 +436,12 @@ class HttpCoordinatorBinding:
             self.mode != "replay" or not callable(self.episode_details)
         ):
             raise ValueError("episode details require a callable replay operation")
+        if self.timeline_marks is not None and (
+            self.mode != "replay" or not callable(self.timeline_marks)
+        ):
+            raise ValueError("timeline marks require a callable replay operation")
         if self.mode == "replay" and not callable(self.current_metric_report):
             raise ValueError("replay debugger mode requires a metric-report operation.")
-        if self.mode == "replay" and self.authoring is not None:
-            raise ValueError("replay debugger mode cannot expose DevClient authoring.")
-        authoring = cast(object, self.authoring)
-        if authoring is not None and not isinstance(authoring, HttpAuthoringBinding):
-            raise TypeError("authoring must be an exact HttpAuthoringBinding.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -591,6 +625,7 @@ def _legacy_live_binding(service: object) -> HttpCoordinatorBinding:
     current_frame = getattr(service, "current_frame", None)
     current_presentation = getattr(service, "current_presentation", None)
     apply_command = getattr(service, "apply_command", None)
+    current_snapshot = getattr(service, "current_snapshot", None)
     if (
         not callable(current_frame)
         or not callable(current_presentation)
@@ -639,6 +674,9 @@ def _legacy_live_binding(service: object) -> HttpCoordinatorBinding:
         current_frame=call_current_frame,
         apply_command=call_apply_command,
         current_presentation=call_current_presentation,
+        current_snapshot=cast(Callable[[], object], current_snapshot)
+        if callable(current_snapshot)
+        else None,
         current_metric_report=None,
         initial_show_ranges=getattr(
             getattr(service, "session", None), "show_ranges", None
@@ -685,14 +723,71 @@ class StaticAsset:
     content_type: str
 
 
+def _imported_stylesheet_paths(stylesheet: bytes) -> tuple[str, ...]:
+    """List the look stylesheets that the main stylesheet imports.
+
+    The main stylesheet (``styles.css``) is the one list of look stylesheets.
+    Each must be imported in exactly this form::
+
+        @import url("/src/styles/hud.css");
+
+    Parameters
+    ----------
+    stylesheet : bytes
+        The UTF-8 text of ``styles.css``, already loaded by the caller.
+        Comments are ignored, so an ``@import`` written inside a comment is
+        not an import.
+
+    Returns
+    -------
+    tuple of str
+        Paths relative to the browser root, such as ``"src/styles/hud.css"``,
+        in import order with repeats removed. An empty tuple means the
+        stylesheet imports nothing.
+
+    Raises
+    ------
+    ValueError
+        The bytes are not UTF-8, or an ``@import`` rule uses any other form:
+        a relative or outside address, single quotes, a media list, a layer,
+        a path with characters other than lowercase letters, digits, hyphens
+        and slashes, or a file outside ``src/``.
+
+    Notes
+    -----
+    This reads text only. It does not touch the file system or check that the
+    imported files exist; ``build_static_manifest`` does that. It also does
+    not check placement: browsers ignore an ``@import`` written after other
+    rules, so keep the imports at the top of ``styles.css``.
+    """
+    try:
+        text = _CSS_COMMENT.sub("", stylesheet.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{_MAIN_STYLESHEET_PATH} is not UTF-8 text.") from exc
+    paths: list[str] = []
+    for keyword in _CSS_IMPORT_KEYWORD.finditer(text):
+        match = _CSS_LOOK_STYLESHEET_IMPORT.match(text, keyword.start())
+        if match is None:
+            rule = text[keyword.start() : keyword.start() + 80].split(";", 1)[0]
+            raise ValueError(
+                f"unsupported stylesheet import in {_MAIN_STYLESHEET_PATH}: "
+                f'{rule.strip()!r}; write @import url("/src/<folder>/<name>.css");'
+            )
+        paths.append(match.group(1))
+    return tuple(dict.fromkeys(paths))
+
+
 def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     """Read the allowed browser files before starting the server.
 
     Parameters
     ----------
     asset_root : pathlib.Path
-        Existing browser root containing required runtime files. JavaScript in
-        src and supported assets beneath assets are also included.
+        Existing browser root containing the required runtime files. Every
+        JavaScript and CSS file under ``src/`` and every file of a served type
+        under ``assets/`` (fonts, licence text, PNG and WebP images) is also
+        included. Files of other types under ``assets/``, such as Markdown
+        notes, are left out without an error.
 
     Returns
     -------
@@ -705,12 +800,23 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     OSError
         The root cannot be resolved.
     ValueError
-        An asset is missing, unreadable, unsupported, a symlink, or outside the root.
+        A required asset is missing, unreadable, of an unsupported type, a
+        symlink or outside the root. Required assets are the fixed runtime
+        list (core modules, fonts, brand emblem images) plus every look
+        stylesheet that ``styles.css`` imports. Also raised when
+        ``styles.css`` is not UTF-8 or writes an ``@import`` in any form
+        other than ``@import url("/src/<folder>/<name>.css");``.
 
     Notes
     -----
     All selected files are read into host memory once. Asset contents are not
     executed by this function.
+
+    Imported look stylesheets are required on purpose. A browser silently
+    skips a stylesheet it cannot load, so a missing one would quietly drop part
+    of the look; refusing to start makes the fault visible at launch instead.
+    The list lives only in ``styles.css``: adding an import there makes the
+    new file required here with no change to this module.
     """
     root = asset_root.resolve(strict=True)
     required = tuple(root / relative for relative in _REQUIRED_RUNTIME_ASSET_PATHS)
@@ -718,6 +824,7 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
     source_root = root / "src"
     if source_root.is_dir():
         candidates.extend(sorted(source_root.rglob("*.js")))
+        candidates.extend(sorted(source_root.rglob("*.css")))
     bundled_root = root / "assets"
     if bundled_root.is_dir():
         candidates.extend(
@@ -750,8 +857,95 @@ def build_static_manifest(asset_root: Path) -> dict[str, StaticAsset]:
         route = f"/{relative.as_posix()}"
         manifest[route] = StaticAsset(body, content_type)
 
+    for imported in _imported_stylesheet_paths(
+        manifest[f"/{_MAIN_STYLESHEET_PATH}"].body
+    ):
+        if f"/{imported}" not in manifest:
+            raise ValueError(f"required browser asset is missing: {root / imported}")
     manifest["/"] = manifest["/index.html"]
     return manifest
+
+
+# Every GET and POST that any DebuggerHTTPServer in this process is answering,
+# counted under this condition, and when the last one ended (time.monotonic
+# seconds); see wait_for_quiet_requests.
+_REQUEST_ACTIVITY = Condition()
+_requests_in_flight = 0
+_last_request_end = 0.0
+
+
+@contextmanager
+def _counted_request() -> Generator[None]:
+    """Count one request as running, for wait_for_quiet_requests, while it runs.
+
+    On exit, also after an error, it uncounts the request, records the end
+    time and wakes every waiter. Takes only the activity condition, briefly.
+    """
+    global _requests_in_flight, _last_request_end
+    with _REQUEST_ACTIVITY:
+        _requests_in_flight += 1
+    try:
+        yield
+    finally:
+        with _REQUEST_ACTIVITY:
+            _requests_in_flight -= 1
+            _last_request_end = monotonic()
+            _REQUEST_ACTIVITY.notify_all()
+
+
+def wait_for_quiet_requests(
+    quiet_seconds: float = 0.15, *, longest_wait_seconds: float | None = None
+) -> bool:
+    """Wait until no server in this process is answering a request.
+
+    Parameters
+    ----------
+    quiet_seconds : float, optional
+        How long, in seconds, no request may have run before this returns.
+        Default 0.15, so the few requests of one click (a command, then its
+        presentation and timeline reads) all finish first.
+    longest_wait_seconds : float or None, optional, keyword-only
+        The longest this call waits, in seconds; then it returns False even
+        though requests still come. None (the default) waits as long as
+        requests keep coming.
+
+    Returns
+    -------
+    bool
+        True when it became quiet; False when longest_wait_seconds ran out
+        first.
+
+    Notes
+    -----
+    Returns True once no GET or POST of any DebuggerHTTPServer in this
+    process is running and quiet_seconds have passed since the last one
+    ended; at once when no request has run for that long. A page GET held by
+    its server's page_ready event does not count. Background work calls it
+    between small pieces so it rarely shares the CPU (the Python GIL) with a
+    request: the BattleClient's Open Replay prepare does, with a bound
+    (_battle_client.recording_coordinator._GiveWayToRequests). The longest
+    single request is one that waits for a background save (about 13 s after
+    a 300-tick game). Waits on one condition and holds no other lock.
+    """
+    deadline = (
+        None if longest_wait_seconds is None else monotonic() + longest_wait_seconds
+    )
+    with _REQUEST_ACTIVITY:
+        while True:
+            now = monotonic()
+            remaining = (
+                None
+                if _requests_in_flight > 0
+                else _last_request_end + quiet_seconds - now
+            )
+            if remaining is not None and remaining <= 0:
+                return True
+            if deadline is not None:
+                if now >= deadline:
+                    return False
+                left = deadline - now
+                remaining = left if remaining is None else min(remaining, left)
+            _REQUEST_ACTIVITY.wait(remaining)
 
 
 class DebuggerHTTPServer(ThreadingHTTPServer):
@@ -769,6 +963,7 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
         capability_token: str,
         static_manifest: dict[str, StaticAsset],
         port: int,
+        page_ready: Event | None = None,
     ) -> None:
         """Bind a threaded server to the local loopback interface.
 
@@ -786,6 +981,10 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
             Preloaded exact routes and response bytes.
         port : int
             Local TCP port; zero asks the operating system to select one.
+        page_ready : threading.Event or None, optional
+            When given, a GET of the page (``/`` or ``/index.html``) waits
+            until this event is set, then answers as usual; every other route
+            answers at once. None (the default) never waits.
 
         Raises
         ------
@@ -820,6 +1019,7 @@ class DebuggerHTTPServer(ThreadingHTTPServer):
             self._coordinator_router = coordinator_router
         self.capability_token = capability_token
         self.static_manifest = static_manifest
+        self.page_ready = page_ready
         self.shutdown_started = Event()
         self._shutdown_lock = Lock()
         super().__init__(("127.0.0.1", port), DebuggerRequestHandler)
@@ -973,16 +1173,24 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         # read releases the router lock so cursor and POV commands stay usable.
         """Handle one GET while holding the coordinator generation through the
         response.
+
+        A page GET (``/`` or ``/index.html``) first waits for the server's
+        page_ready event, when it has one, holding no lock while it waits.
+        The GET then counts as running for wait_for_quiet_requests.
         """
-        snapshot = self.debugger_server.coordinator_router.snapshot()
-        if snapshot.binding.mode == "replay" and (
-            _METRIC_ANALYSIS_ROUTE.fullmatch(self.path) is not None
-            or self.path == _METRIC_CATALOG_ROUTE
-        ):
-            self._handle_get(snapshot.binding)
-            return
-        with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
-            self._handle_get(snapshot.binding)
+        page_ready = self.debugger_server.page_ready
+        if page_ready is not None and self.path in ("/", "/index.html"):
+            page_ready.wait()
+        with _counted_request():
+            snapshot = self.debugger_server.coordinator_router.snapshot()
+            if snapshot.binding.mode == "replay" and (
+                _METRIC_ANALYSIS_ROUTE.fullmatch(self.path) is not None
+                or self.path == _METRIC_CATALOG_ROUTE
+            ):
+                self._handle_get(snapshot.binding)
+                return
+            with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
+                self._handle_get(snapshot.binding)
 
     def _handle_get(self, coordinator: HttpCoordinatorBinding) -> None:
         """Route a checked GET to bootstrap, static bytes, or authenticated service
@@ -996,7 +1204,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 "globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
                 + json.dumps(
                     {
-                        "authoring_available": coordinator.authoring is not None,
                         "schema_version": 1,
                         "product_kind": coordinator.product_kind,
                         **(
@@ -1016,6 +1223,48 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 body,
                 content_type="text/javascript; charset=utf-8",
             )
+            return
+        if route == _LIVE_SNAPSHOT_ROUTE and coordinator.current_snapshot is not None:
+            if not self._authenticated(coordinator):
+                return
+            if (
+                self.headers.get("Content-Length", "0") != "0"
+                or self.headers.get("Transfer-Encoding") is not None
+            ):
+                self._send_api_error(
+                    coordinator,
+                    HTTPStatus.BAD_REQUEST,
+                    error_code="invalid_request",
+                    message="Live snapshot reads do not accept a body.",
+                )
+                return
+            try:
+                frame = coordinator.current_frame()
+                etag = (
+                    f'"{getattr(frame, "session_id", None)}:'
+                    f'{getattr(frame, "revision", None)}"'
+                )
+                if self.headers.get("If-None-Match") == etag:
+                    self._send_bytes(
+                        HTTPStatus.NOT_MODIFIED,
+                        b"",
+                        content_type="application/json; charset=utf-8",
+                        response_headers=(("ETag", etag),),
+                    )
+                    return
+                snapshot = coordinator.current_snapshot()
+                frame = getattr(snapshot, "frame", None)
+                etag = (
+                    f'"{getattr(frame, "session_id", None)}:'
+                    f'{getattr(frame, "revision", None)}"'
+                )
+                self._send_model(
+                    HTTPStatus.OK, snapshot, response_headers=(("ETag", etag),)
+                )
+            except BrokenPipeError, ConnectionError, TimeoutError:
+                self.close_connection = True
+            except Exception:
+                self._send_internal_error(coordinator)
             return
         if route == coordinator.routes.frame:
             if not self._authenticated(coordinator):
@@ -1064,6 +1313,23 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     response_headers=(
                         ("Content-Disposition", f'attachment; filename="{filename}"'),
                     ),
+                )
+            except BrokenPipeError, ConnectionError, TimeoutError:
+                self.close_connection = True
+            except Exception:
+                self._send_internal_error(coordinator)
+            return
+        if route == _TIMELINE_MARKS_ROUTE and coordinator.timeline_marks is not None:
+            if not self._authenticated(coordinator):
+                return
+            try:
+                payload = coordinator.timeline_marks()
+                if type(payload) is not bytes:
+                    raise TypeError("timeline marks must return bytes")
+                self._send_bytes(
+                    HTTPStatus.OK,
+                    payload,
+                    content_type=_METRIC_REPORT_CONTENT_TYPE,
                 )
             except BrokenPipeError, ConnectionError, TimeoutError:
                 self.close_connection = True
@@ -1220,9 +1486,12 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Handle one POST while holding the coordinator generation through the
-        response.
+        response; it counts as running for wait_for_quiet_requests.
         """
-        with self.debugger_server.coordinator_router.pinned_snapshot() as snapshot:
+        with (
+            _counted_request(),
+            self.debugger_server.coordinator_router.pinned_snapshot() as snapshot,
+        ):
             self._handle_post(snapshot.binding)
 
     def _handle_post(self, coordinator: HttpCoordinatorBinding) -> None:
@@ -1233,7 +1502,9 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         if route is None or not self._valid_request_origin(coordinator):
             return
         metric_report_route = coordinator.routes.metric_report
-        if metric_report_route is not None and route == metric_report_route:
+        if (metric_report_route is not None and route == metric_report_route) or (
+            route == _LIVE_SNAPSHOT_ROUTE and coordinator.current_snapshot is not None
+        ):
             if not self._authenticated(coordinator):
                 return
             self._send_api_error(
@@ -1242,9 +1513,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 error_code="method_not_allowed",
                 message="Method is not supported by this debugger.",
             )
-            return
-        if route == _AUTHORING_COMMAND_ROUTE:
-            self._handle_authoring_post(coordinator)
             return
         if route != coordinator.routes.command:
             self._send_api_error(
@@ -1306,52 +1574,6 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         finally:
             if shutdown_requested:
                 self.debugger_server.request_shutdown()
-
-    def _handle_authoring_post(self, coordinator: HttpCoordinatorBinding) -> None:
-        """Apply one whole-draft command only for an installed live binding."""
-        authoring = coordinator.authoring
-        if coordinator.mode != "live" or authoring is None:
-            self._send_api_error(
-                coordinator,
-                HTTPStatus.NOT_FOUND,
-                error_code="not_found",
-                message="No such debugger route.",
-            )
-            return
-        if not self._authenticated(coordinator):
-            return
-        body = self._read_command_body(coordinator)
-        if body is None:
-            return
-        try:
-            request = authoring.request_model.model_validate_json(body)
-        except ValidationError as error:
-            malformed_json = any(
-                detail.get("type") == "json_invalid" for detail in error.errors()
-            )
-            self._send_api_error(
-                coordinator,
-                HTTPStatus.BAD_REQUEST
-                if malformed_json
-                else HTTPStatus.UNPROCESSABLE_ENTITY,
-                error_code="invalid_request",
-                message=(
-                    "Request body is not valid JSON."
-                    if malformed_json
-                    else (
-                        "Request body does not match "
-                        f"{authoring.request_model.__name__}."
-                    )
-                ),
-            )
-            return
-        try:
-            response = authoring.apply_command(request)
-            self._send_model(HTTPStatus.OK, response)
-        except BrokenPipeError, ConnectionError, TimeoutError:
-            self.close_connection = True
-        except Exception:
-            self._send_internal_error(coordinator)
 
     def do_OPTIONS(self) -> None:
         """Reject OPTIONS with a typed 405 response; dispatch no service operation."""
@@ -1555,7 +1777,13 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         )
         self._send_model(status, error)
 
-    def _send_model(self, status: HTTPStatus, model: object) -> None:
+    def _send_model(
+        self,
+        status: HTTPStatus,
+        model: object,
+        *,
+        response_headers: tuple[tuple[str, str], ...] = (),
+    ) -> None:
         """Serialize a model to UTF-8 JSON; reject objects without model_dump_json."""
         model_dump_json = getattr(model, "model_dump_json", None)
         if not callable(model_dump_json):
@@ -1565,6 +1793,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
             status,
             body,
             content_type="application/json; charset=utf-8",
+            response_headers=response_headers,
         )
 
     def _send_bytes(
@@ -1578,14 +1807,16 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         """Write one response with checked optional headers and fixed security headers.
 
         ``body`` is already encoded; Content-Length counts its bytes. Only a safe
-        Content-Disposition extra header is accepted. The connection closes after
-        the response. Header validation happens before any status bytes are sent.
+        Content-Disposition or live snapshot ETag extra header is accepted. The
+        connection closes after the response. Header validation happens before
+        any status bytes are sent.
         """
         validated_headers = _validate_response_headers(response_headers)
         self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        if status != HTTPStatus.NOT_MODIFIED:
+            self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         for name, value in validated_headers:
             self.send_header(name, value)
@@ -1603,6 +1834,7 @@ def create_server(
     capability_token: str | None = None,
     coordinator: HttpCoordinatorBinding | None = None,
     coordinator_router: HttpCoordinatorRouter | None = None,
+    page_ready: Event | None = None,
 ) -> DebuggerHTTPServer:
     """Validate browser assets and bind a local debugger server.
 
@@ -1621,6 +1853,10 @@ def create_server(
     coordinator_router : HttpCoordinatorRouter or None, optional
         Existing exact router. Any supplied service or binding must be its current
         objects. Defaults to None.
+    page_ready : threading.Event or None, optional
+        When given, the server holds every GET of its page (``/`` or
+        ``/index.html``) until the event is set; API, bootstrap and file
+        routes answer at once. Defaults to None (never holds).
 
     Returns
     -------
@@ -1675,6 +1911,7 @@ def create_server(
         capability_token=capability_token or secrets.token_urlsafe(32),
         static_manifest=manifest,
         port=port,
+        page_ready=page_ready,
     )
 
 
@@ -1686,8 +1923,8 @@ def serve_browser_debugger(
     open_browser: bool,
     coordinator: HttpCoordinatorBinding | None = None,
     coordinator_router: HttpCoordinatorRouter | None = None,
-    authoring: HttpAuthoringBinding | None = None,
     graceful_close: GracefulCloseCallback | None = None,
+    caller_drain: Callable[[], bool] | None = None,
 ) -> int:
     """Launch the local browser service and close its socket on exit.
 
@@ -1705,11 +1942,14 @@ def serve_browser_debugger(
         Explicit operations; None uses the router or adapts a live service.
     coordinator_router : HttpCoordinatorRouter or None, optional
         Existing router for live-to-replay replacement. Defaults to None.
-    authoring : HttpAuthoringBinding or None, optional
-        Extra live authoring operations. Router-backed callers install these on
-        the binding beforehand. Defaults to None.
     graceful_close : callable or None, optional
         No-argument callback used on KeyboardInterrupt. Defaults to None.
+
+    caller_drain : callable or None, optional
+        Pump live work or drain one callback in the original caller context.
+        When set, HTTP runs on an owned thread; the caller runs outside locks.
+        Return True after doing work, or False when idle. None uses the live
+        service pump when present; other services keep the request-loop lifetime.
 
     Returns
     -------
@@ -1722,7 +1962,7 @@ def serve_browser_debugger(
     TypeError
         Service, callback setup, or router contracts are invalid.
     ValueError
-        Authoring setup, port, identities, or assets are inconsistent.
+        Port, identities, or assets are inconsistent.
     OSError
         Assets cannot be read or the local socket cannot be bound.
 
@@ -1732,18 +1972,6 @@ def serve_browser_debugger(
     may open a browser, and invokes the optional close callback under the router
     lock. Browser-open failure only prints a warning.
     """
-    if authoring is not None:
-        if coordinator_router is not None:
-            raise ValueError(
-                "router-backed servers must install authoring on their live binding."
-            )
-        if coordinator is None:
-            if service is None:
-                raise TypeError("authoring requires a live debugger service.")
-            coordinator = _legacy_live_binding(service)
-        if coordinator.mode != "live" or coordinator.authoring is not None:
-            raise ValueError("authoring can be installed once on a live binding.")
-        coordinator = replace(coordinator, authoring=authoring)
     server = create_server(
         service,
         asset_root=asset_root,
@@ -1751,11 +1979,68 @@ def serve_browser_debugger(
         coordinator=coordinator,
         coordinator_router=coordinator_router,
     )
+    return serve_debugger_server(
+        server,
+        open_browser=open_browser,
+        graceful_close=graceful_close,
+        caller_drain=caller_drain,
+    )
+
+
+def serve_debugger_server(
+    server: DebuggerHTTPServer,
+    *,
+    open_browser: bool,
+    graceful_close: GracefulCloseCallback | None = None,
+    caller_drain: Callable[[], bool] | None = None,
+    product_title: str | None = None,
+) -> int:
+    """Serve an already prepared loopback server and close it on exit.
+
+    Parameters
+    ----------
+    server : DebuggerHTTPServer
+        Bound server whose assets and request handler are already installed.
+    open_browser : bool
+        Open the printed token URL in the default browser when True.
+    graceful_close : callable or None, optional
+        No-argument closeout callback for Ctrl-C; None stops without closeout.
+    product_title : str or None, optional
+        Local launch title. None uses the server's current live/replay title.
+
+    caller_drain : callable or None, optional
+        Pump live work or drain one callback in the original caller context.
+        When set, HTTP runs on an owned thread; the caller runs outside locks.
+        Return True after doing work, or False when idle. None uses the live
+        service pump when present; other services keep the request-loop lifetime.
+
+    Returns
+    -------
+    int
+        Zero for ordinary shutdown, or the graceful-close result on Ctrl-C.
+        A closeout failure returns one and prints an error.
+
+    Notes
+    -----
+    Blocks until Exit or Ctrl-C. Browser-open failures print the usable URL.
+    Every line printed to standard output is flushed at once, so a launcher
+    reading through a pipe sees the URL line immediately. The shared server
+    owns the socket and request loop; callers may supply a prepared handler
+    without copying this lifetime code.
+    """
+    if caller_drain is None:
+        pump = getattr(server.coordinator_snapshot().service, "pump", None)
+        if callable(pump):
+            caller_drain = cast(Callable[[], bool], pump)
     exit_code = 0
     with server:
         url = f"{server.expected_origin}/#token={server.capability_token}"
-        startup_title = _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
-        print(f"{startup_title}: {url}")
+        startup_title = (
+            product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+        )
+        # Flush at once: a launcher that reads this through a pipe (output not
+        # a terminal) must see the URL now, not when the buffer fills.
+        print(f"{startup_title}: {url}", flush=True)
         if open_browser:
             try:
                 opened = webbrowser.open(url)
@@ -1770,12 +2055,36 @@ def serve_browser_debugger(
                         "warning: browser could not be opened; use the URL above.",
                         file=sys.stderr,
                     )
+        server_thread: Thread | None = None
+        serving_done = Event()
+        serving_errors: list[BaseException] = []
+
+        def serve_http() -> None:
+            """Keep request transport separate from caller-owned method execution."""
+            try:
+                server.serve_forever(poll_interval=0.1)
+            except BaseException as error:
+                serving_errors.append(error)
+            finally:
+                serving_done.set()
+
         try:
-            server.serve_forever(poll_interval=0.1)
+            if caller_drain is None:
+                server.serve_forever(poll_interval=0.1)
+            else:
+                server_thread = Thread(target=serve_http, name="marl-battle-http")
+                server_thread.start()
+                while not serving_done.is_set():
+                    if not caller_drain():
+                        serving_done.wait(0.01)
+                if serving_errors:
+                    raise serving_errors[0]
         except KeyboardInterrupt:
-            active_title = _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+            active_title = (
+                product_title or _PRODUCT_TITLE_BY_KIND[server.coordinator.product_kind]
+            )
             if graceful_close is None:
-                print(f"{active_title} stopped.")
+                print(f"{active_title} stopped.", flush=True)
             else:
                 try:
                     close_result = server.run_graceful_close(graceful_close)
@@ -1794,6 +2103,12 @@ def serve_browser_debugger(
                                 if close_result.exit_code == 0
                                 else sys.stderr
                             ),
+                            flush=True,
                         )
                     exit_code = close_result.exit_code
+        finally:
+            if server_thread is not None and server_thread.ident is not None:
+                if server_thread.is_alive():
+                    server.shutdown()
+                server_thread.join()
     return exit_code

@@ -1,5 +1,9 @@
 # Use Your Own LLM Format
 
+Public experiment scripts use [Hydra settings and overrides](../training/hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 Supply ordinary Python functions to `llm.make_system`. You can change the prompt,
 the reply syntax, or both. The System still owns actor routing, optional history,
 request limits, frame conversion and native action checks.
@@ -62,14 +66,20 @@ them to native categories. It does not copy Core's action-name table. The System
 checks the returned action again, converts movement back to the world frame once,
 and checks the original world masks. Target IDs never change with the frame.
 
+The reply must contain the plain names, separated by one space. Labels such as
+`move=north combat=no_combat` are invalid. Earlier actions may use labels in the
+prompt; the final instruction says which format the new reply must use. An
+unrestricted model can still return bad text. The default stops and records the
+failure; it does not silently fix the reply or try again.
+
 `format_actor_view(..., reply_instruction="...")` changes the final instruction
 without changing the facts. `reply_instruction=None` omits it in an earlier
 history view. This prevents old JSON instructions from fighting a custom parser.
 You can also write the whole prompt yourself.
 
 ```bash
-JAX_PLATFORMS=cpu python examples/llm.py --model my-served-model \
-  --format words --history-turns 2 --output-dir runs/llm-words
+JAX_PLATFORMS=cpu python examples/llm.py model=my-served-model format=words \
+  history_turns=2 output_dir=runs/llm-words
 ```
 
 A custom parser turns off the default provider JSON restriction. You may supply

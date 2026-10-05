@@ -1,0 +1,51 @@
+{
+  "bootstrap_draws": 100,
+  "bootstrap_seed": 19044003,
+  "maps": [
+    42,
+    43
+  ],
+  "measure": "point_margin",
+  "opponents": [
+    "Synthetic opponent"
+  ],
+  "panel_digest": "synthetic-software-panel",
+  "recipe_selection": [
+    {
+      "direction": "maximize",
+      "groups": [
+        "lucky",
+        "steady"
+      ],
+      "name": "Software mean comparison",
+      "tie_order": [
+        "lucky",
+        "steady"
+      ]
+    }
+  ],
+  "red_zone_depth": 5.0,
+  "runs": [
+    {
+      "group": "lucky",
+      "run_dir": "../calibration/study/cases/lucky--seed-101/run",
+      "unit": "seed-101"
+    },
+    {
+      "group": "lucky",
+      "run_dir": "../calibration/study/cases/lucky--seed-102/run",
+      "unit": "seed-102"
+    },
+    {
+      "group": "steady",
+      "run_dir": "../calibration/study/cases/steady--seed-201/run",
+      "unit": "seed-201"
+    },
+    {
+      "group": "steady",
+      "run_dir": "../calibration/study/cases/steady--seed-202/run",
+      "unit": "seed-202"
+    }
+  ],
+  "schema_version": 2
+}

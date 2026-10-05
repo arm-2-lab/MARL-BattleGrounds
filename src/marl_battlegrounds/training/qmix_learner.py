@@ -49,19 +49,24 @@ from marl_battlegrounds.baselines.actions import (
     encode_actions,
     mirror_action_indices,
 )
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_QMIX_CONFIG,
+    QMIXConfig,
+    validate_qmix_batch_size,
+)
 from marl_battlegrounds.baselines.inputs import (
     encode_actor_inputs,
     spawn_frame_flag,
     team_obstacle_partners,
 )
-from marl_battlegrounds.baselines.ppo import _actor_groups
+from marl_battlegrounds.baselines.ppo import (
+    _actor_groups,  # pyright: ignore[reportPrivateUsage]
+)
 from marl_battlegrounds.baselines.qmix import (
-    DEFAULT_QMIX_CONFIG,
     QMIX_HIDDEN_SIZE,
     TEAM_SLOTS,
     QMIXActorVariables,
     QMIXBatch,
-    QMIXConfig,
     QMIXExploration,
     QMIXMetrics,
     QMIXTrainState,
@@ -71,7 +76,6 @@ from marl_battlegrounds.baselines.qmix import (
     make_qmix_system,
     team_task_reward,
     update_qmix,
-    validate_qmix_batch_size,
 )
 from marl_battlegrounds.core.types import ActionMask, Observation
 from marl_battlegrounds.evaluation.policy_execution import Policy, System
@@ -80,6 +84,9 @@ from marl_battlegrounds.policies.input import (
     Observations,
     build_team_actor_input,
     mirror_team_view,
+)
+from marl_battlegrounds.training._compilation import (
+    _place_training_state,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.training._content import PreparedTrainingContent
 from marl_battlegrounds.training._continuation_schedules import (
@@ -97,9 +104,9 @@ from marl_battlegrounds.training.collection import (
     TrainingCollection,
     TrainingRollout,
     TrainingTransition,
-    _failed,
-    _padding,
-    _validate_training_continuation,
+    _failed,  # pyright: ignore[reportPrivateUsage]
+    _padding,  # pyright: ignore[reportPrivateUsage]
+    _validate_training_continuation,  # pyright: ignore[reportPrivateUsage]
     init_training_collection,
     learner_memory,
 )
@@ -113,10 +120,10 @@ from marl_battlegrounds.training.learner import (
     LEARNER_ERROR_NONFINITE_BATCH,
     LEARNER_ERROR_NONFINITE_UPDATE,
     UpdateSummary,
-    _array,
-    _cond,
-    _finite,
-    _summary,
+    _array,  # pyright: ignore[reportPrivateUsage]
+    _cond,  # pyright: ignore[reportPrivateUsage]
+    _finite,  # pyright: ignore[reportPrivateUsage]
+    _summary,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.training.opponents import (
     SnapshotEvent,
@@ -722,7 +729,9 @@ def init_qmix_learner(
         initialized. PPO takes actor parameters; QMIX takes online Q parameters
         (also used for its targets); PQN takes parameters and running statistics.
         Critic, mixer, optimizer, memory and counters start fresh. Initial
-        exploration and collection keep this method's normal rules.
+        exploration and collection keep this method's normal rules. Loaded arrays
+        and fresh learner arrays receive one device placement before return;
+        already resident buffers are reused.
     prepared : PreparedTrainingContent or None, default=None
         Existing verified content, or None to verify installed content now.
     shaping : bool, default=False
@@ -853,6 +862,7 @@ def init_qmix_learner(
         jnp.int32(LEARNER_ERROR_NONE),
     )
     _state_shapes(state, qmix)
+    state = _place_training_state(state, sharding=state.carry.root_key.sharding)
     return collection, state
 
 
@@ -1055,11 +1065,23 @@ def _absent_counts(bank: int, opponent_rows: int) -> QMIXSampledCounts:
 
 
 def _absent_metrics(epochs: int) -> QMIXMetrics:
-    """Return zero (epochs,) metrics for blocks without optimizer steps."""
+    """Return zero (epochs,) metrics for blocks without optimizer steps.
+
+    Losses, means and grad_norm are float32 zeros; counts are int32 zeros and
+    finite is False. The host log ignores these values because the block's
+    performed flag is False.
+    """
     floats = jnp.zeros(epochs, jnp.float32)
     counts = jnp.zeros(epochs, jnp.int32)
     return QMIXMetrics(
-        floats, floats, floats, counts, counts, counts, jnp.zeros(epochs, jnp.bool_)
+        floats,
+        floats,
+        floats,
+        counts,
+        counts,
+        counts,
+        jnp.zeros(epochs, jnp.bool_),
+        floats,
     )
 
 
@@ -1092,6 +1114,7 @@ def _absent_summary(
         jnp.zeros((opponent_rows, 3), jnp.int32),
         jnp.zeros((opponent_rows, 2), jnp.int32),
         jnp.float32(0) if custom_reward else None,
+        jnp.zeros(opponent_rows, jnp.int32),
     )
 
 

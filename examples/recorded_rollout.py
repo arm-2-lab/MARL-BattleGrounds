@@ -15,7 +15,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -23,6 +23,7 @@ import numpy as np
 from jax import Array
 
 import marl_battlegrounds as marl_bgs
+from marl_battlegrounds.environment import MetricMode
 from marl_battlegrounds.policies.random_valid import random_policy
 from marl_battlegrounds.tasks import make_standard_team_deathmatch_config
 from marl_battlegrounds.types import SystemInput, SystemOutput
@@ -71,7 +72,12 @@ def act(
     Return actions, incremented valid-lane memory and weighted old memory. These
     learning values stay outside the recording path.
     """
-    actor_keys = jax.vmap(lambda key: jax.random.split(key, 5))(keys)
+
+    def split_actors(key: Array) -> Array:
+        """Split one lane key into five actor keys without sharing randomness."""
+        return jax.random.split(key, 5)
+
+    actor_keys = jax.vmap(split_actors)(keys)
     actions = jax.vmap(jax.vmap(random_policy))(
         inputs.actors.observation, inputs.action_mask, actor_keys
     )
@@ -110,9 +116,12 @@ def step(current: Carry, unused: None) -> tuple[Carry, tuple[Tree, Tree, Tree]]:
     rng, action_key, step_key, reset_key = jax.random.split(rng, 4)
     automatic = isinstance(env, marl_bgs.AutoReset)
     if not automatic:
-        source = jax.tree.map(
-            lambda values: values[source_index], tracking.source_configs
-        )
+
+        def take_source(values: Array) -> Array:
+            """Select the current curriculum row from one batched config leaf."""
+            return values[source_index]
+
+        source = jax.tree.map(take_source, tracking.source_configs)
         prepared = marl_bgs.balanced_spawn_configs(source, num_envs=env.num_envs)
         observations, before = env.reset_done(reset_key, before, prepared)
     actions, memory, learning = marl_bgs.apply_systems(
@@ -162,7 +171,12 @@ def direct_scan(carry: Carry) -> tuple[Carry, Tree]:
 
 
 def context(
-    seed: int, *, automatic: bool, recording: bool, metrics: str, num_envs: int = 32
+    seed: int,
+    *,
+    automatic: bool,
+    recording: bool,
+    metrics: MetricMode,
+    num_envs: int = 32,
 ) -> Carry:
     """Prepare one independent batched experiment and its initial complete carry.
 
@@ -186,7 +200,12 @@ def context(
     ]
     bank = jax.tree.map(lambda *values: jnp.stack(values), *sources)
     indices = jnp.arange(num_envs, dtype=jnp.int32) % 2
-    selected = jax.tree.map(lambda values: values[indices], bank)
+
+    def take_rows(values: Array) -> Array:
+        """Select each lane's declared source from one batched config leaf."""
+        return values[indices]
+
+    selected = jax.tree.map(take_rows, bank)
     base = marl_bgs.make(
         "tdm",
         num_envs=num_envs,
@@ -287,8 +306,9 @@ def load_numerical_checkpoint(
     its recording token. This is not a general checkpoint framework or a loader
     for arbitrary Python objects. Missing or incompatible files raise errors.
     """
-    leaves, structure = jax.tree.flatten(template)
-    restored = []
+    # JAX exposes an opaque tree descriptor here; array leaves keep exact types.
+    leaves, structure = cast(tuple[list[Array], Any], jax.tree.flatten(template))
+    restored: list[Array] = []
     with np.load(path, allow_pickle=False) as archive:
         metadata = json.loads(archive["metadata"].tobytes())
         if metadata["version"] != 1 or len(metadata["leaves"]) != len(leaves):
@@ -310,13 +330,15 @@ def load_numerical_checkpoint(
                 )
             data = jnp.asarray(value)
             restored.append(
-                jax.random.wrap_key_data(data, impl=impl) if is_key else data
+                cast(Array, jax.random.wrap_key_data(data, impl=impl))
+                if is_key
+                else data
             )
-    return jax.tree.unflatten(structure, restored), metadata["token"]
+    return cast(Carry, jax.tree.unflatten(structure, restored)), metadata["token"]
 
 
 def run(
-    seed: int, *, automatic: bool, metrics: str, output_dir: Path | None
+    seed: int, *, automatic: bool, metrics: MetricMode, output_dir: Path | None
 ) -> dict[str, object]:
     """Run one balanced stage, optionally demonstrating recorded rewind.
 
@@ -331,7 +353,7 @@ def run(
         seed, automatic=automatic, recording=output_dir is not None, metrics=metrics
     )
     if output_dir is None:
-        carry, transitions = direct_scan(carry)
+        carry, transitions = cast(tuple[Carry, Tree], direct_scan(carry))
         carry = illustrative_update(carry, transitions)
     else:
         destination = output_dir / f"seed-{seed}"

@@ -47,6 +47,7 @@ keeps its existing MAPPO interface. IPPO critics use each actor's permitted
 view. MAPPO critics use separate physical training data. Learners retain the
 compact rollout and construct only the selected minibatch's expanded features.
 
+PPOConfig and host setting checks are re-exported from baselines.config.
 Requires the optional training extra. Inputs stay on device inside jit/scan.
 Reference settings are starting values, not qualified learning settings for BG.
 PPOConfig.spawn_frame is a BG adaptation: "left", the default, reflects the
@@ -59,15 +60,46 @@ formula; learners always train on the current schema 2.
 """
 
 import functools
-import math
 from collections.abc import Callable
-from dataclasses import dataclass
-from numbers import Real
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
 from jax import Array
+
+from marl_battlegrounds.baselines.config import (
+    _METHODS as _METHODS,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _PARAMETER_SHARING as _PARAMETER_SHARING,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_PPO_CONFIG as DEFAULT_PPO_CONFIG,
+)
+from marl_battlegrounds.baselines.config import (
+    PPOConfig as PPOConfig,
+)
+from marl_battlegrounds.baselines.config import (
+    PPOMethod as PPOMethod,
+)
+from marl_battlegrounds.baselines.config import (
+    _input_scale as _input_scale,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _parameter_sharing as _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    _spawn_frame as _spawn_frame,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.baselines.config import (
+    is_recurrent_method as is_recurrent_method,
+)
+from marl_battlegrounds.baselines.config import (
+    validate_ppo_batch_size as validate_ppo_batch_size,
+)
+from marl_battlegrounds.baselines.config import (
+    validate_ppo_method as validate_ppo_method,
+)
 
 try:
     import optax  # pyright: ignore[reportMissingTypeStubs]
@@ -102,6 +134,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
+    _declare_lane_independent,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.policies.input import (
     ActorInput,
@@ -111,37 +144,10 @@ from marl_battlegrounds.policies.input import (
 )
 
 type Tree = Any
-type PPOMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo"]
 HIDDEN_SIZE = 128
-_METHODS = {
-    "mappo": (True, False, "Recurrent MAPPO"),
-    "ippo": (True, True, "Recurrent IPPO"),
-    "ff_mappo": (False, False, "Feedforward MAPPO"),
-    "ff_ippo": (False, True, "Feedforward IPPO"),
-}
 _VALUE_NORM_DECAY = 0.99999
 _VALUE_NORM_EPSILON = 1e-5
 _VALUE_NORM_VARIANCE_FLOOR = 1e-2
-
-
-def validate_ppo_method(method: str) -> PPOMethod:
-    """Return a supported static PPO method name or raise ValueError.
-
-    Accept mappo, ippo, ff_mappo and ff_ippo. This host-only check allocates no
-    arrays and owns the method choices shared by models, training and storage.
-    """
-    if not isinstance(cast(object, method), str) or method not in _METHODS:
-        raise ValueError("PPO method must be mappo, ippo, ff_mappo or ff_ippo")
-    return cast(PPOMethod, method)
-
-
-def is_recurrent_method(method: str) -> bool:
-    """Return whether a checked PPO method uses recurrent actor/critic memory.
-
-    method is a static name accepted by validate_ppo_method. Invalid names raise
-    ValueError. No network, arrays or mutable state are created.
-    """
-    return _METHODS[validate_ppo_method(method)][0]
 
 
 def uses_local_critic(method: str) -> bool:
@@ -256,35 +262,6 @@ def _update_value_norm(
     return cast(ValueNormState, jax.lax.cond(count > 0, update, keep, None))
 
 
-def _input_scale(value: float) -> float:
-    """Check a fixed positive finite real input scale and return a Python float.
-
-    This host check accepts real scalar numbers, excluding Booleans. Arrays,
-    traced values, strings and nonpositive/nonfinite values raise ValueError.
-    It performs no device work and stores no normalization statistics.
-    """
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, Real)
-        or not math.isfinite(value)
-        or value <= 0
-    ):
-        raise ValueError("input_scale must be a finite positive real number.")
-    return float(value)
-
-
-def _spawn_frame(value: object) -> str:
-    """Check a static spawn frame name and return it as a Python string.
-
-    This host check accepts exactly the strings "world" and "left". Any other
-    value, including the removed "right", Booleans, None and traced arrays,
-    raises ValueError. It performs no device work.
-    """
-    if not isinstance(value, str) or value not in SPAWN_FRAMES:
-        raise ValueError('spawn_frame must be "world" or "left".')
-    return value
-
-
 def _actor_input_schema(value: object) -> int:
     """Check an actor input schema version and return it as a Python int.
 
@@ -296,16 +273,6 @@ def _actor_input_schema(value: object) -> int:
     """
     if type(value) is not int or value not in ACTOR_FEATURE_SIZES:
         raise ValueError("actor_input_schema must be 1 or 2.")
-    return value
-
-
-_PARAMETER_SHARING = ("all", "class", "none")
-
-
-def _parameter_sharing(value: str) -> str:
-    """Check the fixed actor weight rule: all actors, own class or physical slot."""
-    if value not in _PARAMETER_SHARING:
-        raise ValueError("parameter_sharing must be all, class or none")
     return value
 
 
@@ -439,140 +406,6 @@ def _grouped_actor_inputs(
         groups,
         flag,
     )
-
-
-@dataclass(frozen=True)
-class PPOConfig:
-    """Hold static donor update settings, with separate actor/critic optimizers.
-
-    Parameters
-    ----------
-    actor_lr, critic_lr : float, default=0.00025
-        Positive constant learning rates for the separate Adam optimizers.
-    rollout_length : int, default=128
-        Decisions collected per game before an update. Recurrent methods keep
-        this complete sequence; shorter recurrent chunks are unsupported.
-    epochs : int, default=4
-        How many times each update uses the supplied rollout.
-    minibatches : int, default=2
-        Number of subsets in each group and epoch: whole game sequences for
-        recurrent methods, or time/game rows for feedforward methods.
-    groups : int, default=2
-        Number of groups whose gradients are averaged for one learner. These
-        are not independent runs. Game count must be divisible by groups.
-        Recurrent game count, or feedforward rollout_length times game count,
-        must also be divisible by groups*minibatches.
-    gamma : float, default=0.99
-        Reward discount per transition, from zero through one.
-    gae_lambda : float, default=0.95
-        Advantage mixing weight, from zero through one.
-    clip_epsilon : float, default=0.2
-        Positive limit for policy-ratio changes and changes in predicted value.
-    entropy_coefficient : float, default=0.01
-        Nonnegative weight of policy entropy in the actor loss.
-    value_coefficient : float, default=0.5
-        Nonnegative weight of the donor value loss. That loss already includes
-        its separate factor of 0.5 for squared errors.
-    max_grad_norm : float, default=0.5
-        Positive gradient-length limit, applied after group averaging and before
-        each network's Adam update.
-    adam_epsilon : float, default=0.00001
-        Positive offset in Adam's denominator.
-    input_scale : float, default=1.0
-        Positive finite multiplier applied to every actor and critic feature
-        before the first Dense layer. One preserves the donor's raw inputs.
-        Use the same setting for collection, learning and loaded inference.
-        No feature is removed and no running statistics are collected.
-    parameter_sharing : {"all", "class", "none"}, default="all"
-        Share actor weights across everyone, within each class, or not between
-        physical slots. Grouped modes have five parameter groups. Actor memory
-        remains separate per physical slot; the critic keeps its existing rule.
-    value_normalization : bool, default=True
-        Train the critic on normalized reward targets using one learner-owned
-        moving average. GAE still uses reward units; actor inputs and exports
-        do not use these statistics. False preserves the historical raw loss.
-        Saved configurations from before this field existed mean False.
-    spawn_frame : str, default="left"
-        Which spawn bank the actor always seems to start from. "left", the
-        default, reflects the permitted view of any actor whose own team
-        starts on the right bank about the map's vertical centerline, so every
-        game looks like a left start, and maps the chosen move back before the
-        game receives it. "world" keeps raw coordinates; use it for runs made
-        before the default
-        changed on 22 September 2026, and in old config files, which name no
-        frame and would otherwise train in "left". Saved checkpoints, exports
-        and run records without a frame still mean "world". On
-        the built-in Team Deathmatch maps, which are their own mirror images,
-        a reflected right start shows the own pads near x = 0.5; a custom
-        layout is reflected the same way with no such guarantee, and
-        coordinates keep float32 rounding. Use the same setting for
-        collection, learning and loaded inference; it is saved with exported
-        actors and is part of their inference identity.
-
-    Raises
-    ------
-    ValueError
-        A count is not a positive Python int, or a numerical setting is nonfinite
-        or outside its stated range. Boolean counts and non-real/Boolean input
-        scales are rejected, as is a spawn frame other than "world" or "left".
-
-    Notes
-    -----
-    Values are immutable host setup settings. Capture one fixed instance or mark
-    it static in jit. New settings may require a new compiled program. This
-    record changes neither network width nor the environment's rules.
-    """
-
-    actor_lr: float = 0.00025
-    critic_lr: float = 0.00025
-    rollout_length: int = 128
-    epochs: int = 4
-    minibatches: int = 2
-    groups: int = 2
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    clip_epsilon: float = 0.2
-    entropy_coefficient: float = 0.01
-    value_coefficient: float = 0.5
-    max_grad_norm: float = 0.5
-    adam_epsilon: float = 0.00001
-    input_scale: float = 1.0
-    spawn_frame: str = "left"
-    value_normalization: bool = True
-    parameter_sharing: str = "all"
-
-    def __post_init__(self) -> None:
-        """Reject invalid static update counts and numerical settings on the host."""
-        _input_scale(self.input_scale)
-        _spawn_frame(self.spawn_frame)
-        _parameter_sharing(self.parameter_sharing)
-        if type(self.value_normalization) is not bool:
-            raise ValueError("value_normalization must be a Python bool")
-        for name in ("rollout_length", "epochs", "minibatches", "groups"):
-            value = getattr(self, name)
-            if type(value) is not int or value < 1:
-                raise ValueError(f"{name} must be a positive integer.")
-        for name in (
-            "actor_lr",
-            "critic_lr",
-            "clip_epsilon",
-            "max_grad_norm",
-            "adam_epsilon",
-        ):
-            value = getattr(self, name)
-            if not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be finite and positive.")
-        for name in ("gamma", "gae_lambda"):
-            value = getattr(self, name)
-            if not math.isfinite(value) or not 0 <= value <= 1:
-                raise ValueError(f"{name} must be in [0, 1].")
-        for name in ("entropy_coefficient", "value_coefficient"):
-            value = getattr(self, name)
-            if not math.isfinite(value) or value < 0:
-                raise ValueError(f"{name} must be finite and nonnegative.")
-
-
-DEFAULT_PPO_CONFIG = PPOConfig()
 
 
 class PPOTrainState(NamedTuple):
@@ -1674,6 +1507,8 @@ def make_recurrent_mappo_system(
     System
         Existing M8 JAX System with stable actor/init callables and the supplied
         weights. Arrays are retained by reference. No action is chosen here.
+        The apply hook is declared lane-independent, so a pool runs this actor
+        only on the games assigned to it.
 
     Raises
     ------
@@ -1710,7 +1545,7 @@ def make_recurrent_mappo_system(
         apply = _scaled_actor_apply(scale, frame)
     return System(
         name,
-        apply,
+        _declare_lane_independent(apply),
         variables=actor_params,
         init=_initial_actor_memory,
         checkpoint=checkpoint,
@@ -1905,6 +1740,8 @@ def make_ppo_system(
     -------
     System
         Actor-only descriptor retaining the supplied variables and stable hooks.
+        The apply hook is declared lane-independent, so a pool runs this actor
+        only on the games assigned to it.
 
     Raises
     ------
@@ -1939,7 +1776,7 @@ def make_ppo_system(
     )
     if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
         raise ValueError("Grouped actors require the current actor input schema")
-    apply = (
+    apply = _declare_lane_independent(
         hook(scale, frame)
         if sharing == "all"
         else _grouped_ppo_actor_apply(scale, frame, sharing, False)
@@ -2597,27 +2434,6 @@ def update_recurrent_ppo(
     environment advances, checkpoint saves, file writes or new experience occur.
     """
     return update_ppo(state, batch, key, config)
-
-
-def validate_ppo_batch_size(
-    games: int, config: PPOConfig, *, method: str = "mappo"
-) -> None:
-    """Check one static PPO game's batch against its grouping and minibatches.
-
-    games is a positive Python count; config supplies positive rollout length,
-    groups and minibatches. Recurrent game count must be divisible by
-    groups*minibatches. Feedforward game count must be divisible by groups,
-    and rollout_length*games must be divisible by groups*minibatches.
-    Invalid method or divisibility raises ValueError. This host/static helper
-    performs no device work; training separately requires an even game count.
-    """
-    recurrent = is_recurrent_method(method)
-    if type(games) is not int or games < 1 or games % config.groups:
-        raise ValueError("PPO needs positive B divisible by groups")
-    rows = games if recurrent else config.rollout_length * games
-    if rows % (config.groups * config.minibatches):
-        kind = "B" if recurrent else "T*B"
-        raise ValueError(f"PPO needs {kind} divisible by groups*minibatches")
 
 
 def update_ppo(

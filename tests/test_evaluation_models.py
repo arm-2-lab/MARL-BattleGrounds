@@ -594,6 +594,7 @@ def test_package_exports_legacy_and_current_replay_public_functions() -> None:
     }
     assert exported_functions == {
         "evaluate_episodes",
+        "evaluate_scenarios",
         "load_results",
         "build_evaluation_episode_context_v2",
         "build_evaluation_episode_context_v3",

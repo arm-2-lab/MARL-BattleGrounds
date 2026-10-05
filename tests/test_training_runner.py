@@ -52,6 +52,9 @@ Live callbacks receive saved finite rows once per block and isolate mutation.
 Children forward them; failed callbacks keep the row and allow normal recovery.
 Partner-only matchmaking leaves legacy opponents alone. Matchmaking receives
 copies of member records, so editing callback input cannot change saved identity.
+An eleven-member software pool covers eight distinct actors and all three bots,
+path relocation, recovery, continued training and wrong-input rejection before
+any run file changes. It is not the scientific pool or a learning experiment.
 """
 
 # Failure injection inspects the private host coordinator, not a public API.
@@ -59,6 +62,7 @@ copies of member records, so editing callback input cannot change saved identity
 
 import json
 import shutil
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -145,6 +149,22 @@ def test_public_run_resume_and_final_pending_work(
     assert details["config"]["method"] == method
     assert baseline.completed_env_steps == 12
     assert baseline.completed_updates == 2
+    saved_boundary = checkpoints.read_checkpoint_description(baseline.final_checkpoint)
+    saved_host = saved_boundary["metadata"]["host_state"]
+    assert len(saved_host["exposure_snapshots"]) == 2
+    for kind in ("policy", "value"):
+        assert (
+            sum(saved_host["ppo_exposure"][f"{kind}_source"])
+            == saved_host[f"used_{kind}_samples"]
+        )
+    from marl_battlegrounds.training.analysis import _exposure_history
+
+    exposure_rows = _exposure_history(baseline.run_dir)
+    assert {row["actual_env_steps"] for row in exposure_rows if row["accepted"]} == {
+        0,
+        12,
+    }
+    assert (baseline.run_dir / "exposure_history.csv").is_file()
     assert baseline.selected_actor is None
     assert all(path.is_file() for path in baseline.evidence_paths)
     original_report = runner._Run.report
@@ -343,6 +363,9 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
         return provenance
 
     monkeypatch.setattr(evaluator, "capture_recording_provenance", fixed_provenance)
+    # One declared development map keeps this software journey bounded. The
+    # shared validation owner still builds and plays both mirrored spawns.
+    monkeypatch.setattr(validation, "VALIDATION_MAPS", (42,))
     original_evaluate = evaluator.evaluate
     original_verify = evaluator._verify_evaluation
 
@@ -391,7 +414,7 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
         # World frame: the selected export's identity is then its raw weight digest.
         ppo=PPOConfig(rollout_length=2, epochs=1, spawn_frame="world"),
         checkpoint_interval_updates=1,
-        validation_fractions=(1.0,),
+        validation_fractions=(0.5, 1.0),
         routine_seed_pairs=1,
         confirmation_seed_pairs=1,
         metrics="none",
@@ -416,7 +439,11 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
 
     def interrupt_after_final_routine(self: runner._Run) -> tuple[Path, ...]:
         if self.host["env_steps"] == 12:
-            assert [row["env_steps"] for row in self.host["routine_results"]] == [0, 12]
+            assert [row["env_steps"] for row in self.host["routine_results"]] == [
+                0,
+                8,
+                12,
+            ]
             assert not self.host["confirmation_results"]
             raise KeyboardInterrupt("Declared report failure after final routine")
         return original_report(self)
@@ -430,8 +457,8 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     interrupted_results = json.loads(
         (destination / "validation_results.json").read_text()
     )
-    assert len(interrupted_results) == 2
-    assert all(row["complete"] and row["games"] == 20 for row in interrupted_results)
+    assert len(interrupted_results) == 3
+    assert all(row["complete"] and row["games"] == 4 for row in interrupted_results)
     previous_games = {
         path: path.read_bytes() for path in (destination / "validation").rglob("*.csv")
     }
@@ -475,11 +502,13 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     results = json.loads((destination / "validation_results.json").read_text())
     assert [(row["purpose"], row["env_steps"]) for row in results] == [
         ("routine", 0),
+        ("routine", 8),
         ("routine", 12),
+        ("confirmation", 8),
         ("confirmation", 12),
     ]
-    assert len({row["task_id"] for row in results}) == 3
-    assert all(row["complete"] and row["games"] == 20 for row in results)
+    assert len({row["task_id"] for row in results}) == 5
+    assert all(row["complete"] and row["games"] == 4 for row in results)
     played_games = 0
     pass_paths: set[str] = set()
     for result in results:
@@ -502,9 +531,9 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
                 for batch in saved.iter_table("episodes")
                 for value in batch["episode_id"]
             ]
-            assert len(episode_ids) == len(set(episode_ids)) == 10
+            assert len(episode_ids) == len(set(episode_ids)) == 2
             played_games += len(episode_ids)
-    assert len(pass_paths) == 6 and played_games == 60
+    assert len(pass_paths) == 10 and played_games == 20
     status = json.loads((destination / "status.json").read_text())
     assert set(status["memory"]) == {
         "process_peak_ram_bytes",
@@ -516,6 +545,16 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
         json.loads(line)
         for line in (destination / "run_events.jsonl").read_text().splitlines()
     ]
+    snapshots = [row for row in events if row["event"] == "exposure_snapshot"]
+    assert [row["actual_env_steps"] for row in snapshots] == [0, 8, 12]
+    assert snapshots[-1]["purposes"] == ["routine_validation", "final"]
+    from marl_battlegrounds.training.analysis import _exposure_history
+
+    accepted = _exposure_history(destination)
+    assert accepted and all(row["accepted"] for row in accepted)
+    assert {row["event_id"] for row in accepted} == {
+        row["event_id"] for row in snapshots
+    }
     attempts = [row for row in events if row["event"] == "attempt_started"]
     assert len(attempts) == 2
     assert all(row["runtime"]["provenance"]["backend"] == "cpu" for row in attempts)
@@ -526,24 +565,19 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     assert all(set(row["memory"]) == set(status["memory"]) for row in terminal)
     assert terminal[-1]["memory"] == status["memory"]
     assert restored.selected_actor is not None
-    assert restored.selected_actor == restored.final_actor
+    selected_identity = checkpoints.artifact_identity(restored.selected_actor)
     selection = json.loads((destination / "selection.json").read_text())
     assert selection["purpose"] == "confirmation"
-    assert (
-        selection["checkpoint_id"]
-        == checkpoints.artifact_identity(restored.final_actor)["metadata"][
-            "checkpoint_id"
-        ]
-    )
-    assert selection["actor_digest"] == restored_identity["actor_digest"]
+    assert selection["checkpoint_id"] == selected_identity["metadata"]["checkpoint_id"]
+    assert selection["actor_digest"] == selected_identity["actor_digest"]
     loaded = training.load_system(restored.selected_actor)
-    assert tree_digest(loaded.variables) == restored_identity["actor_digest"]
+    assert tree_digest(loaded.variables) == selected_identity["weight_digest"]
     assert all(
         path.is_file() and path.stat().st_size for path in restored.evidence_paths
     )
     report = training.analyze([destination], output_dir=tmp_path / "review")
     assert report["complete"]
-    assert report["runs"][0]["validation_checkpoints"] == 3
+    assert report["runs"][0]["validation_checkpoints"] == 5
     assert "Status: complete" in Path(report["artifacts"]["summary"]).read_text()
     assert (
         "not held-out test results" in Path(report["artifacts"]["summary"]).read_text()
@@ -904,40 +938,74 @@ def test_ppo_method_config_roundtrip_and_method_specific_batch_rules(
             replace(config, num_envs=6, total_env_steps=24)
 
 
+@pytest.mark.parametrize("retain", (False, True))
 def test_retention_preserves_candidates_and_small_ancestry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, retain: bool
 ) -> None:
-    from marl_battlegrounds.training import checkpoints, runner
+    from tests.test_training_progress import _description, _exposure_event, _saved_host
 
-    # Isolate retention; checkpoint tests resolve real saved payloads.
-    def saved_directory(root: Path, kind: str, identifier: str) -> Path:
-        return root / kind / identifier
+    from marl_battlegrounds.training import runner
+    from marl_battlegrounds.training._run_io import append_jsonl, exposure_event_digest
+    from marl_battlegrounds.training.analysis import _exposure_history
 
-    monkeypatch.setattr(checkpoints, "artifact_directory", saved_directory)
-
-    records = {letter: tmp_path / "checkpoints" / (letter * 64) for letter in "abcd"}
-    for directory in records.values():
-        (directory / "state").mkdir(parents=True)
-        (directory / "actor").mkdir()
-        (directory / "checkpoint_details.json").write_text("{}")
+    records: dict[str, Path] = {}
+    mapping: dict[str, Any] = {}
+    for letter, steps in zip("abcd", (0, 16, 32, 48), strict=True):
+        event = _exposure_event(steps, letter)
+        event.update(run_id="one-run", boundary_id=f"one-run:{steps}")
+        append_jsonl(tmp_path / "run_events.jsonl", event, durable=True)
+        mapping[event["boundary_id"]] = {
+            "event_id": letter,
+            "digest": exposure_event_digest(event),
+        }
+        host = _saved_host(steps=steps, pending=None)
+        host["exposure_snapshots"] = dict(mapping)
+        description = _description(tmp_path, host)
+        directory = tmp_path / "checkpoints" / description["checkpoint_id"]
+        # Retention touches payload directories; these are deliberately tiny
+        # placeholders, not a claim of a loadable learner in this host proof.
+        for name in ("actor", "state"):
+            (directory / name).mkdir()
+            (directory / name / "payload").write_bytes(b"saved payload")
+        records[letter] = directory
+    (tmp_path / "run_details.json").write_text(json.dumps({"run_id": "one-run"}))
+    (tmp_path / "status.json").write_text(
+        json.dumps(
+            {
+                "run_id": "one-run",
+                "latest_checkpoint": str(records["d"]),
+            }
+        )
+    )
+    before = _exposure_history(tmp_path)
+    assert len(before) == 4 and all(row["accepted"] for row in before)
+    raw = (tmp_path / "run_events.jsonl").read_bytes()
     execution = object.__new__(runner._Run)
+    execution.config = TrainConfig(retain_all_actors=retain)
     execution.root = tmp_path
-    execution.metadata = {"attempt_id": "test"}
+    execution.start = time.monotonic()
+    execution.prior_elapsed = 0.0
+    execution.created_at = time.time()
+    execution.metadata = {"run_id": "one-run", "attempt_id": "test"}
     execution.host = {
-        "actors": {"a" * 64: "actor-a"},
-        "recovery_checkpoints": ["a" * 64, "b" * 64],
-        "env_steps": 0,
+        "actors": {record.name: f"actor-{letter}" for letter, record in records.items()}
+        if retain
+        else {records["a"].name: "actor-a"},
+        "routine_results": [{"checkpoint_id": records["a"].name}],
+        "recovery_checkpoints": [records["a"].name, records["b"].name],
+        "env_steps": 48,
+        "training_seconds": 0.0,
     }
-    execution.checkpoint = records["c"]
-    execution.checkpoint_id = "c" * 64
-    execution.prune_recovery()
-    execution.checkpoint = records["d"]
-    execution.checkpoint_id = "d" * 64
-    execution.prune_recovery()
+    for letter in "cd":
+        execution.checkpoint = records[letter]
+        execution.checkpoint_id = records[letter].name
+        execution.prune_recovery()
     assert (records["a"] / "state").is_dir()
     assert not (records["b"] / "state").exists()
     assert (records["b"] / "checkpoint_details.json").is_file()
     assert all((records[name] / "state").is_dir() for name in "cd")
+    assert _exposure_history(tmp_path) == before
+    assert (tmp_path / "run_events.jsonl").read_bytes().startswith(raw)
 
 
 def test_slot_task_keeps_separate_continuation_evidence(
@@ -951,11 +1019,14 @@ def test_slot_task_keeps_separate_continuation_evidence(
     execution = object.__new__(runner._Run)
     execution.config = TrainConfig()
     execution.root = tmp_path
+    execution.start = time.monotonic()
+    execution.prior_elapsed = 0.0
+    execution.created_at = time.time()
     execution.panel = validation.FrozenPanel(
         tmp_path / "panel.json", "panel", (member,), True
     )
-    execution.host = {"env_steps": 8, "final_actor": ""}
-    execution.metadata = {"attempt_id": "test"}
+    execution.host = {"env_steps": 8, "final_actor": "", "training_seconds": 0.0}
+    execution.metadata = {"run_id": "run", "attempt_id": "test"}
     destinations: list[Path] = []
 
     def diagnostic(actor: Path, opponent: Path, **kwargs: object) -> dict[str, Any]:
@@ -1217,7 +1288,13 @@ def test_callback_failure_keeps_saved_row_and_resumes_from_normal_checkpoint(
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.training import checkpoints, runner
+    from marl_battlegrounds.training.study import _bound_callback
 
+    receipt = {
+        "kind": "factory",
+        "reference": "example:logger",
+        "kwargs": {"mode": "test"},
+    }
     fixed_source(monkeypatch, "ff_ippo")
     config = TrainConfig(
         keep_past=0,
@@ -1239,7 +1316,9 @@ def test_callback_failure_keeps_saved_row_and_resumes_from_normal_checkpoint(
             raise failure
 
     with pytest.raises(RuntimeError, match="on_update failed after saving") as caught:
-        runner.train(config, output_dir=root, on_update=fail_second)
+        runner.train(
+            config, output_dir=root, on_update=_bound_callback(fail_second, receipt)
+        )
     assert caught.value.__cause__ is failure and calls == [8, 16]
     log = root / "training_updates.jsonl"
     saved = [json.loads(line) for line in log.open()]
@@ -1249,7 +1328,27 @@ def test_callback_failure_keeps_saved_row_and_resumes_from_normal_checkpoint(
     assert checkpoints.read_checkpoint_details(checkpoint)["counters"]["env_steps"] == 8
     assert json.loads((root / "status.json").read_text())["status"] == "failed"
     resumed_rows: list[dict[str, Any]] = []
-    resumed = runner.train(resume_from=checkpoint, on_update=resumed_rows.append)
+    before_files = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    for wrong in (
+        None,
+        _bound_callback(
+            resumed_rows.append, {**receipt, "kwargs": {"mode": "changed"}}
+        ),
+    ):
+        with pytest.raises(ValueError, match="callback factories or kwargs differ"):
+            runner.train(resume_from=checkpoint, on_update=wrong)
+        assert {
+            path.relative_to(root): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        } == before_files
+    resumed = runner.train(
+        resume_from=checkpoint, on_update=_bound_callback(resumed_rows.append, receipt)
+    )
     after = [json.loads(line) for line in log.open()]
     assert resumed.completed_env_steps == 16
     assert [row["env_steps"] for row in after] == [8, 16]
@@ -1331,6 +1430,12 @@ def test_child_history_growth_preserves_named_member_statistics() -> None:
         "last_member_completed": [[0, 0, 0], [0, 0, 0], [0, 0, 1], [1, 1, 1]],
         "last_member_score_sums": [[0, 0], [0, 0], [2, 6], [3, 2]],
         "sampled_exposure": {"by_opponent": [10, 20, 30, 40]},
+        "member_length_sum": [1, 2, 3, 4],
+        "last_member_length_sum": [0, 0, 1, 2],
+        "ppo_exposure": {
+            "policy_opponent": [10, 20, 30, 40],
+            "value_opponent": [20, 30, 40, 50],
+        },
     }
     _resize_member_statistics(host, old_capacity=1, new_capacity=3, new_rows=7)
     assert host["member_completed"] == [
@@ -1346,6 +1451,10 @@ def test_child_history_growth_preserves_named_member_statistics() -> None:
     assert host["last_member_completed"][5:] == [[1, 1, 1], [0, 0, 0]]
     assert host["last_member_score_sums"][5:] == [[3, 2], [0, 0]]
     assert host["sampled_exposure"]["by_opponent"] == [10, 20, 30, 0, 0, 40, 0]
+    assert host["member_length_sum"] == [1, 2, 3, 0, 0, 4, 0]
+    assert host["last_member_length_sum"] == [0, 0, 1, 0, 0, 2, 0]
+    assert host["ppo_exposure"]["policy_opponent"] == [10, 20, 30, 0, 0, 40, 0]
+    assert host["ppo_exposure"]["value_opponent"] == [20, 30, 40, 0, 0, 50, 0]
 
 
 @pytest.mark.parametrize("recording", [False, True])
@@ -1600,3 +1709,320 @@ def test_matchmaking_cannot_mutate_frozen_member_records(
     execution._choose_next_games()
     assert partner == {"name": "friend", "evidence": {"actor_id": "frozen_partner"}}
     assert opponent == {"name": "rival", "evidence": {"actor_id": "frozen_opponent"}}
+
+
+def test_eleven_member_pool_relocates_resumes_and_rejects_changed_actor_before_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+    from collections import Counter
+
+    import jax
+    from tests.training_continuation_helpers import fixed_source
+
+    from marl_battlegrounds.baselines.ppo import PPOConfig, initialize_ppo
+    from marl_battlegrounds.training import checkpoints, runner
+
+    fixed_source(monkeypatch, "ff_ippo")
+    actors = tmp_path / "actors"
+    actors.mkdir()
+    bindings: dict[str, str] = {}
+    inference_ids: set[str] = set()
+    for seed in range(8):
+        path = checkpoints.export_system(
+            initialize_ppo(jax.random.key(seed), method="ff_ippo").actor_params,
+            actors / f"actor-{seed}",
+            metadata={
+                "run_id": f"software-actor-{seed}",
+                "seed": seed,
+                "env_steps": 0,
+                "checkpoint_id": f"{seed:064x}",
+            },
+            spawn_frame="left",
+            method="ff_ippo",
+        )
+        bindings[f"model_{seed}"] = str(path)
+        inference_ids.add(checkpoints.artifact_identity(path)["actor_digest"])
+    assert len(inference_ids) == 8
+    bindings.update({name: name for name in ("tdm-alpha", "tdm-beta", "tdm-gamma")})
+    weights = {"self": 0.6, "past": 0.2, **{name: 0.2 / 11 for name in bindings}}
+    config = TrainConfig(
+        method="ff_ippo",
+        num_envs=4,
+        total_env_steps=8,
+        keep_past=0,
+        opponents=weights,
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        checkpoint_interval_updates=1,
+        metrics="none",
+        verbose=False,
+    )
+    loads: list[str] = []
+    load = checkpoints.load_system
+
+    def load_once(path: str | Path) -> object:
+        loads.append(str(path))
+        return load(path)
+
+    monkeypatch.setattr(checkpoints, "load_system", load_once)
+    parent = runner.train(config, output_dir=tmp_path / "parent", opponents=bindings)
+    rows = checkpoints.read_checkpoint_details(parent.final_checkpoint)["collection"][
+        "opponent_members"
+    ]
+    assert [row["name"] for row in rows] == list(bindings)
+    assert len(rows) == 11
+    assert Counter(loads) == {str(actors / f"actor-{seed}"): 1 for seed in range(8)}
+    moved = tmp_path / "relocated actors"
+    actors.rename(moved)
+    replacements = {
+        name: str(moved / Path(ref).name) if name.startswith("model_") else ref
+        for name, ref in bindings.items()
+    }
+    loads.clear()
+    resumed = runner.train(resume_from=parent.final_checkpoint, opponents=replacements)
+    assert resumed.completed_env_steps == 8
+    assert Counter(loads) == {str(moved / f"actor-{seed}"): 1 for seed in range(8)}
+    before = {
+        str(path.relative_to(parent.run_dir)): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in parent.run_dir.rglob("*")
+        if path.is_file()
+    }
+    wrong = {**replacements, "model_0": replacements["model_1"]}
+    with pytest.raises(ValueError, match=r"Checkpoint .* differs"):
+        runner.train(resume_from=parent.final_checkpoint, opponents=wrong)
+    after = {
+        str(path.relative_to(parent.run_dir)): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in parent.run_dir.rglob("*")
+        if path.is_file()
+    }
+    assert before == after
+    child = runner.extend_training(
+        parent.final_checkpoint,
+        additional_env_steps=8,
+        output_dir=tmp_path / "child",
+        opponents=replacements,
+    )
+    saved = checkpoints.read_checkpoint_details(child.final_checkpoint)["collection"][
+        "opponent_members"
+    ]
+    assert [row["reference"] for row in saved] == list(replacements.values())
+    assert [row["input_identity"] for row in saved] == [
+        row["input_identity"] for row in rows
+    ]
+    assert [row["evidence"] for row in saved] == [row["evidence"] for row in rows]
+
+
+@pytest.mark.parametrize("failure", ["none", "append", "callback"])
+def test_component_window_commits_only_after_saved_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from types import SimpleNamespace
+    from typing import NamedTuple, cast
+
+    import jax.numpy as jnp
+
+    from marl_battlegrounds.training import runner
+    from marl_battlegrounds.training.shaping import _RewardTotals
+
+    class Carry(NamedTuple):
+        reward_totals: _RewardTotals
+
+    class State(NamedTuple):
+        carry: Carry
+
+    totals = _RewardTotals(
+        jnp.asarray([[0.4]], jnp.float32),
+        jnp.asarray([[0.2]], jnp.float32),
+        jnp.asarray([2], jnp.int32),
+        jnp.asarray([2], jnp.int32),
+        jnp.asarray([[2, 0, 0, 0, 0]], jnp.int32),
+    )
+    execution = object.__new__(runner._Run)
+    execution.root = tmp_path
+    execution.state = State(Carry(totals))
+    execution.collection = cast(Any, SimpleNamespace(reward_component_keys=("part",)))
+    execution.metadata = {"run_id": "fixed"}
+    execution.host = {}
+    observed: list[dict[str, Any]] = []
+
+    def statistics(self: runner._Run, **kwargs: object) -> list[object]:
+        return []
+
+    def logger(row: dict[str, Any]) -> None:
+        observed.append(row)
+        assert execution.host["collected_reward_components"]["real_transitions"] == 2
+        assert (
+            int(cast(_RewardTotals, execution.state.carry.reward_totals).transitions[0])
+            == 0
+        )
+        if failure == "callback":
+            raise LookupError("Logger failed")
+
+    def fail_append(*args: object, **kwargs: object) -> None:
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(runner._Run, "_member_statistics", statistics)
+    execution.on_update = logger
+    if failure == "append":
+        monkeypatch.setattr(runner, "append_jsonl", fail_append)
+    summary = SimpleNamespace(custom_reward_sum=None)
+    if failure == "none":
+        execution._write_update({"env_steps": 2}, summary)
+    else:
+        with pytest.raises(OSError if failure == "append" else RuntimeError):
+            execution._write_update({"env_steps": 2}, summary)
+    if failure == "append":
+        assert execution.state.carry.reward_totals is totals
+        assert execution.host == {} and observed == []
+        assert not (tmp_path / "training_updates.jsonl").exists()
+    else:
+        saved = json.loads((tmp_path / "training_updates.jsonl").read_text())
+        assert saved["collected_reward_components"]["real_transitions"] == 2
+        assert (
+            execution.host["collected_reward_components"]
+            == saved["collected_reward_components"]
+        )
+        assert int(execution.state.carry.reward_totals.transitions[0]) == 0
+        assert len(observed) == 1
+
+
+def test_exposure_snapshot_save_failure_recovery_keeps_failed_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marl_battlegrounds.baselines.ppo import PPOConfig
+    from marl_battlegrounds.training import checkpoints, runner
+    from marl_battlegrounds.training._run_io import read_run_events, run_lock
+    from marl_battlegrounds.training.analysis import _exposure_history
+
+    identity = checkpoints.runtime_identity()
+    monkeypatch.setattr(checkpoints, "runtime_identity", lambda: identity)
+    save = checkpoints.save_checkpoint
+    owners: list[runner._Run] = []
+    initialize = runner._Run.__init__
+
+    def remember(owner: runner._Run, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        initialize(owner, *args, **kwargs)
+        owners.append(owner)
+
+    monkeypatch.setattr(runner._Run, "__init__", remember)
+
+    def fail_final(*args: Any, **kwargs: Any) -> Path:  # noqa: ANN401
+        if kwargs["metadata"]["host_state"]["env_steps"] == 8:
+            raise OSError("Injected failure after exposure append, before publication")
+        return save(*args, **kwargs)
+
+    monkeypatch.setattr(checkpoints, "save_checkpoint", fail_final)
+    config = TrainConfig(
+        method="ff_ippo",
+        keep_past=1,
+        history_capture_env_steps=(8,),
+        num_envs=4,
+        total_env_steps=8,
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        metrics="none",
+        verbose=False,
+    )
+    with pytest.raises(OSError, match="after exposure append"):
+        runner.train(config, output_dir=tmp_path)
+    before = read_run_events(tmp_path / "run_events.jsonl")
+    raw = (tmp_path / "run_events.jsonl").read_bytes()
+    assert [
+        event["actual_env_steps"]
+        for event in before
+        if event["event"] == "exposure_snapshot"
+    ] == [0, 8]
+    rows = _exposure_history(tmp_path)
+    assert {row["actual_env_steps"] for row in rows if row["accepted"]} == {0}
+    assert {row["actual_env_steps"] for row in rows if not row["accepted"]} == {8}
+    pointer = json.loads((tmp_path / "latest_checkpoint.json").read_text())
+    checkpoint = tmp_path / pointer["relative_path"]
+    assert (
+        checkpoints.read_checkpoint_description(checkpoint)["counters"]["env_steps"]
+        == 0
+    )
+    from uuid import uuid4
+
+    from tests.test_training_checkpoint_writes import _abandoned
+
+    pending, receipt, record = _abandoned(tmp_path / "checkpoints")
+    record["writer"]["boot_id"] = str(uuid4())
+    checkpoints._atomic_json(receipt, record)
+    unknown = tmp_path / "checkpoints" / ".pending-unknown"
+    unknown.mkdir()
+    (unknown / "keep").write_bytes(b"Unowned data")
+    # A damaged input must fail before recovery removes even a dead write.
+    details = checkpoints.read_checkpoint_description(checkpoint)
+    payload = checkpoint / next(iter(details["files"]))
+    contents = payload.read_bytes()
+    payload.write_bytes(contents + b"corrupt")
+    with pytest.raises(ValueError):
+        runner.train(resume_from=checkpoint)
+    assert pending.exists() and receipt.exists()
+    assert (tmp_path / "run_events.jsonl").read_bytes() == raw
+    payload.write_bytes(contents)
+    monkeypatch.setattr(checkpoints, "save_checkpoint", save)
+    restored = runner.train(resume_from=checkpoint)
+    assert not pending.exists() and not receipt.exists()
+    assert (unknown / "keep").read_bytes() == b"Unowned data"
+    cleanup = [
+        event
+        for event in read_run_events(tmp_path / "run_events.jsonl")
+        if event["event"] == "pending_write_cleanup"
+    ]
+    assert {event["status"] for event in cleanup} == {"removed", "preserved"}
+    assert restored.completed_env_steps == 8
+    assert (tmp_path / "run_events.jsonl").read_bytes().startswith(raw)
+    after = read_run_events(tmp_path / "run_events.jsonl")
+    snapshots = [event for event in after if event["event"] == "exposure_snapshot"]
+    assert [event["actual_env_steps"] for event in snapshots] == [0, 8, 8]
+    rows = _exposure_history(tmp_path)
+    accepted = {row["event_id"] for row in rows if row["accepted"]}
+    assert accepted == {snapshots[0]["event_id"], snapshots[2]["event_id"]}
+    failed = [row for row in rows if not row["accepted"]]
+    assert {row["event_id"] for row in failed} == {snapshots[1]["event_id"]}
+    assert all(row["elapsed_seconds"] > 0 for row in failed)
+    assert [
+        event["event"]
+        for event in after
+        if event["event"] in ("attempt_failed", "attempt_complete")
+    ] == [
+        "attempt_failed",
+        "attempt_complete",
+    ]
+    assert (tmp_path / "exposure_history.csv").is_file()
+
+    saved = checkpoints.read_checkpoint_description(restored.final_checkpoint)
+    capture = saved["metadata"]["host_state"]["past_copies"]["0"]
+    actor_path = Path(capture["path"])
+    actor = checkpoints.read_checkpoint_description(actor_path)
+    assert capture["artifact_id"] == actor["checkpoint_id"]
+    assert len(list((tmp_path / "past_copies").iterdir())) == 1
+    # The replayed capture after rollback reused its original immutable export.
+    payload = actor_path / next(iter(actor["files"]))
+    previous = payload.read_bytes()
+    payload.write_bytes(previous + b"damage")
+    events_before = (tmp_path / "run_events.jsonl").read_bytes()
+    updates_before = (tmp_path / "training_updates.jsonl").read_bytes()
+    with pytest.raises(ValueError, match="Cannot verify saved history actor"):
+        runner.train(resume_from=restored.final_checkpoint)
+    assert (tmp_path / "run_events.jsonl").read_bytes() == events_before
+    assert (tmp_path / "training_updates.jsonl").read_bytes() == updates_before
+    payload.write_bytes(previous)
+
+    legacy_owner = owners[-1]
+    legacy_owner.host.pop("past_copies")
+    legacy_owner.host.pop("past_copies_start_capture_id")
+    with run_lock(tmp_path):
+        legacy_checkpoint = legacy_owner.save()
+    runner.train(resume_from=legacy_checkpoint)
+    assert owners[-1].host["past_copies_start_capture_id"] == 1
+    assert owners[-1].host["past_copies"] == {}
+    with run_lock(tmp_path):
+        saved_again = owners[-1].save()
+    runner.train(resume_from=saved_again)
+    assert owners[-1].host["past_copies_start_capture_id"] == 1
+    assert owners[-1].host["past_copies"] == {}

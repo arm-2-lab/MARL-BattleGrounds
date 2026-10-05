@@ -2,15 +2,13 @@
 
 # Run the repository's Python correctness and static checks on the CPU.
 # Usage: scripts/dev/check.sh --help. With no options, run all nineteen Python
-# shards, Ruff format/lint and Pyright with at most nineteen workers. --tests-only
+# shards, Ruff format/lint and Pyright together without a worker cap. --tests-only
 # and --static-only select those groups; --shard N/19 accepts extra pytest args.
 # --timings DIR runs the same full gate and also saves each shard's per-test
 # times as DIR/python-shard-N.xml (JUnit) for scripts/dev/shard_costs.py.
 # Run after preparing the locked uv environment; this command never syncs it.
 # The shard plugin owns test assignment. Output includes each task's exit code and
 # elapsed seconds. Failures return nonzero. No commit or GPU speed claim is made.
-# MARL_PYTHON_GATE_JOBS may limit concurrent workers to 1-19 (default 19).
-# This changes resource use only; every shard and static check still runs.
 set -euo pipefail
 
 CALLER_DIR="${PWD}"
@@ -27,10 +25,6 @@ export UV_NO_SYNC=1
 # Reject environment variables that could disable JIT, alter collection or
 # select a deprecated JAX backend. No arguments; print the first error and return 2.
 require_canonical_python_environment() {
-  if [[ ! "${MARL_PYTHON_GATE_JOBS-19}" =~ ^([1-9]|1[0-9])$ ]]; then
-    echo "error: MARL_PYTHON_GATE_JOBS must be an integer from 1 to 19." >&2
-    return 2
-  fi
   if [[ -n "${JAX_PLATFORM_NAME+x}" ]]; then
     echo "error: unset deprecated JAX_PLATFORM_NAME before the canonical Python gate." >&2
     return 2
@@ -69,7 +63,7 @@ run_all_python_tests() {
   local shard_number=""
   local status=0
 
-  marl_validation_init "${MARL_PYTHON_GATE_JOBS:-19}" python-validation
+  marl_validation_init python-validation
   for shard_number in {1..19}; do
     marl_validation_start \
       "Python tests ${shard_number}/19" \
@@ -87,7 +81,7 @@ run_all_python_tests() {
 run_python_static() {
   local status=0
 
-  marl_validation_init 3 python-static
+  marl_validation_init python-static
   marl_validation_start "Ruff format" uv run --no-sync ruff format --check .
   marl_validation_start "Ruff lint" uv run --no-sync ruff check .
   marl_validation_start "Pyright" uv run --no-sync pyright
@@ -98,8 +92,8 @@ run_python_static() {
   return "${status}"
 }
 
-# Run all nineteen shards and three static checks through the shared configured worker
-# pool. Optional $1 is an existing directory; when given, each shard also writes
+# Start all nineteen shards and three static checks together without a worker cap.
+# Optional $1 is an existing directory; when given, each shard also writes
 # its per-test times to $1/python-shard-N.xml. Print every result, clean logs and
 # return 1 on any failure.
 run_complete_python_gate() {
@@ -108,7 +102,7 @@ run_complete_python_gate() {
   local status=0
   local -a timing_args=()
 
-  marl_validation_init "${MARL_PYTHON_GATE_JOBS:-19}" python-validation
+  marl_validation_init python-validation
   for shard_number in {1..19}; do
     timing_args=()
     if [[ -n "${timings_dir}" ]]; then
@@ -132,7 +126,7 @@ run_complete_python_gate() {
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/dev/check.sh [--tests-only | --static-only | --timings DIR | --shard N/19 [pytest arguments...] | --help]
-MARL_PYTHON_GATE_JOBS=1..19 limits concurrent full-gate workers; default 19.
+All selected checks start together without a worker cap.
 EOF
 }
 

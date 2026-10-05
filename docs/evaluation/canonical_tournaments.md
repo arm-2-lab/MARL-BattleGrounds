@@ -1,5 +1,9 @@
 # Canonical Tournaments
 
+Public experiment scripts use [Hydra settings and overrides](../training/hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 `run_canonical_tournament` compares the controller versions in one released
 snapshot. Supply one System, Policy or built-in name to add one challenger.
 For a field of N entrants, the field has N*(N-1)/2 unordered matchups; a challenger
@@ -97,15 +101,16 @@ After installing MARL-BGs, run the complete
 [researcher example](../../examples/canonical_tournament.py):
 
 ```bash
-python examples/canonical_tournament.py fixture --directory runs/fixture --save
-python examples/canonical_tournament.py fixture --entrants 13 --metrics none
+python examples/canonical_tournament.py command=fixture directory=runs/fixture \
+  save=true
+python examples/canonical_tournament.py command=fixture entrants=13 metrics=none
 ```
 
 The example creates its own fixture paths using
 [one shared fixture builder](../../examples/canonical_fixture.py). It invents
 outcomes and measurements and labels them as artificial. It uses the custom
 configuration route. It does not install those versions as official controllers.
-Without `--save`, it creates no result directory. The explicit fixture command
+Without `save`, it creates no result directory. The explicit fixture command
 still writes its source fixture files; ordinary calls on existing prepared assets
 create no files unless an output directory is supplied.
 
@@ -113,7 +118,7 @@ The example checks saved-first resume and prints the actual saved directory.
 Read that exact directory later:
 
 ```bash
-python examples/canonical_tournament.py read YOUR_SAVED_RUN --table matches
+python examples/canonical_tournament.py command=read run_dir=YOUR_SAVED_RUN table=matches
 ```
 
 Reading uses bounded table batches. It starts no simulation runtime, downloads
@@ -152,6 +157,14 @@ released fields can be larger than twelve.
 Supply one population source, not both. Add one local challenger with
 `run_tournament(config="field.json", challenger=my_system)`; the canonical
 shortcut retains `system=my_system`. Both keep the challenger as Team A.
+
+Current version-2 fields keep a challenger supplied as an actor path, built-in
+name or factory reference. You can omit it when resuming the returned folder.
+Completed resume reads saved results without loading the model. Unfinished
+challenger games reload the reference and check its saved identity before
+changing results. Live Python objects must be supplied again. Older saved runs
+that describe the challenger as an opaque live object also need the matching
+`challenger=` argument; their records are not rewritten.
 
 A complete descriptor owns its scientific settings. Do not separately supply
 maps, seeds, rosters, weights or stopping rules on that route. A short config
@@ -305,7 +318,10 @@ optional measurement parsing. Selected full reports and replays remain separate
 requests; their presence does not upgrade the whole run. Select them with logical
 `full_metrics_episodes` and `replay_episodes`, or use `save_replays=N` for the first
 N scheduled games. Conflicting selections fail. Missing reused replay/full
-coverage requires preparation or an explicit fresh run.
+coverage requires preparation or an explicit fresh run. A fresh run on a GPU may
+play a few games differently from earlier records of the same games. That is
+ordinary floating-point noise, not a simulator defect; see
+[Same Seed, Same Game](repeatability.md).
 
 Ratings are fitted jointly from all qualifying game records. Old Elo supplies
 no prior credit. The existing estimator, weighting and bootstrap rules remain
@@ -487,3 +503,10 @@ qualification or a manuscript measurement. The script, raw rows and source
 record are kept in `artifacts/m11/llm-speed-sandbox-20260924/`
 (`policy_only_speed.py`, `results/policy_only_speed_v2.jsonl`, and
 `results/policy_only_speed_v2.source.txt`, which names the three checkpoints).
+
+
+For a fixed execution batch, pass `keep_batch_size=True` to `run_tournament`.
+For example, `num_envs=32, keep_batch_size=True` uses 32 lanes even when a pair
+has only two games. The other lanes are padding; the game budget and saved
+results stay the same. The default shrinks the batch to the games still needed.
+This execution setting may change when resuming a saved tournament.

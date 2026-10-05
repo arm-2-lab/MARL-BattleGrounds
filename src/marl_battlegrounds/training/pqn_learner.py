@@ -39,29 +39,33 @@ from marl_battlegrounds.baselines.actions import (
     encode_actions,
     mirror_action_indices,
 )
+from marl_battlegrounds.baselines.config import (
+    DEFAULT_PQN_CONFIG,
+    PQNConfig,
+    pqn_planned_learning_blocks,
+    validate_pqn_batch_size,
+)
 from marl_battlegrounds.baselines.inputs import (
     encode_actor_inputs,
     spawn_frame_flag,
     team_obstacle_partners,
 )
-from marl_battlegrounds.baselines.ppo import _actor_groups
+from marl_battlegrounds.baselines.ppo import (
+    _actor_groups,  # pyright: ignore[reportPrivateUsage]
+)
 from marl_battlegrounds.baselines.pqn import (
-    DEFAULT_PQN_CONFIG,
     PQN_HIDDEN_SIZE,
     PQNActorVariables,
     PQNBatch,
-    PQNConfig,
     PQNLearningOutputs,
     PQNMetrics,
     PQNTrainState,
-    _nonnegative_variances,
+    _nonnegative_variances,  # pyright: ignore[reportPrivateUsage]
     epsilon_at,
     initialize_pqn,
     make_pqn_system,
     pqn_epsilon_reference,
-    pqn_planned_learning_blocks,
     update_pqn,
-    validate_pqn_batch_size,
 )
 from marl_battlegrounds.baselines.qmix import TEAM_SLOTS, team_task_reward
 from marl_battlegrounds.core.types import ActionMask, Observation
@@ -71,6 +75,9 @@ from marl_battlegrounds.policies.input import (
     Observations,
     build_team_actor_input,
     mirror_team_view,
+)
+from marl_battlegrounds.training._compilation import (
+    _place_training_state,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.training._content import PreparedTrainingContent
 from marl_battlegrounds.training._continuation_schedules import (
@@ -89,9 +96,9 @@ from marl_battlegrounds.training.collection import (
     TrainingCollection,
     TrainingRollout,
     TrainingTransition,
-    _failed,
-    _padding,
-    _validate_training_continuation,
+    _failed,  # pyright: ignore[reportPrivateUsage]
+    _padding,  # pyright: ignore[reportPrivateUsage]
+    _validate_training_continuation,  # pyright: ignore[reportPrivateUsage]
     init_training_collection,
     learner_memory,
 )
@@ -105,10 +112,10 @@ from marl_battlegrounds.training.learner import (
     LEARNER_ERROR_NONFINITE_BATCH,
     LEARNER_ERROR_NONFINITE_UPDATE,
     UpdateSummary,
-    _array,
-    _cond,
-    _finite,
-    _summary,
+    _array,  # pyright: ignore[reportPrivateUsage]
+    _cond,  # pyright: ignore[reportPrivateUsage]
+    _finite,  # pyright: ignore[reportPrivateUsage]
+    _summary,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.training.opponents import (
     OpponentHistory,
@@ -678,7 +685,9 @@ def init_pqn_learner(
         initialized. PPO takes actor parameters; QMIX takes online Q parameters
         (also used for its targets); PQN takes parameters and running statistics.
         Critic, mixer, optimizer, memory and counters start fresh. Initial
-        exploration and collection keep this method's normal rules.
+        exploration and collection keep this method's normal rules. Loaded arrays
+        and fresh learner arrays receive one device placement before return;
+        already resident buffers are reused.
     prepared : PreparedTrainingContent or None, default=None
         Existing verified content, or None to verify installed content now.
     shaping : bool, default=False
@@ -770,6 +779,7 @@ def init_pqn_learner(
         input_scale=pqn.input_scale,
         spawn_frame=pqn.spawn_frame,
         parameter_sharing=pqn.parameter_sharing,
+        normalization=pqn.normalization,
     )
     collection, carry = init_training_collection(
         actor,
@@ -812,6 +822,7 @@ def init_pqn_learner(
         jnp.int32(LEARNER_ERROR_NONE),
     )
     _state_shapes(state, pqn)
+    state = _place_training_state(state, sharding=state.carry.root_key.sharding)
     return collection, state
 
 
@@ -1755,7 +1766,9 @@ def validate_pqn_learner(
     _validate_training_continuation(
         collection, state.carry, recheck_installed_content=recheck_installed_content
     )
-    from marl_battlegrounds.training.validation import _collection_boundary
+    from marl_battlegrounds.training.validation import (
+        _collection_boundary,  # pyright: ignore[reportPrivateUsage]
+    )
 
     total = int(state.carry.schedule.total_rounds)
     planned = (

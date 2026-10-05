@@ -14,43 +14,36 @@ is an HTTP 200 ``no_op`` with the old frame, and later commands still work.
 import json
 import socket
 from collections.abc import Iterator
-from dataclasses import replace
 from http import HTTPStatus
 from http.client import HTTPConnection, HTTPResponse
 from pathlib import Path
 from threading import Thread
 
 import pytest
-import scripts.dev.visual_debugger.control as control_module
-import scripts.dev.visual_debugger.input as input_module
 import scripts.dev.visual_debugger.server as server_module
-from scripts.dev.visual_debugger.authoring_service import (
-    DevAuthoringCommandRequestV1,
-    DevAuthoringCommandResponseV1,
-    DevClientAuthoringBinding,
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from scripts.dev.visual_debugger.server import (
+    DebuggerHTTPServer,
+    DebuggerRequestHandler,
+    GracefulCloseResult,
+    build_static_manifest,
+    create_server,
+    serve_browser_debugger,
 )
-from scripts.dev.visual_debugger.authoring_store import DevAssetStore
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.model import TeamBController
-from scripts.dev.visual_debugger.protocol import (
+from tests.visual_debugger_fixtures import debugger_test_launch_specification
+
+import marl_battlegrounds._battle_client.control as control_module
+import marl_battlegrounds._battle_client.input as input_module
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.model import TeamBController
+from marl_battlegrounds._battle_client.protocol import (
     CommandRequestV1,
     ExitCommandV1,
     KeyboardCommandV1,
     ResetCommandV1,
     SetCombatConfigurationCommandV1,
 )
-from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.server import (
-    DebuggerHTTPServer,
-    DebuggerRequestHandler,
-    GracefulCloseResult,
-    HttpAuthoringBinding,
-    build_static_manifest,
-    create_server,
-    serve_browser_debugger,
-)
-from scripts.dev.visual_debugger.service import DebuggerService
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from marl_battlegrounds._battle_client.service import DebuggerService
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _ASSET_ROOT = _REPOSITORY_ROOT / "web" / "visual_debugger"
@@ -239,7 +232,7 @@ def test_bootstrap_exposes_only_the_live_product_identity(
     assert response.getheader("Cache-Control") == "no-store"
     assert body == (
         b"globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
-        b'{"authoring_available":false,"initial_show_ranges":true,'
+        b'{"initial_show_ranges":true,'
         b'"product_kind":"combat_debugger",'
         b'"schema_version":1});\n'
     )
@@ -301,85 +294,6 @@ def test_live_authoring_route_exists_only_when_explicitly_installed(
     )
 
     assert response.status == HTTPStatus.NOT_FOUND
-
-
-def test_live_authoring_route_strictly_parses_and_applies_one_command(
-    tmp_path: Path,
-) -> None:
-    service = _service()
-    authoring_service = DevClientAuthoringBinding(
-        DevAssetStore(_REPOSITORY_ROOT, artifact_root=tmp_path / "artifacts"),
-    )
-
-    def apply_authoring(request: object) -> DevAuthoringCommandResponseV1:
-        if type(request) is not DevAuthoringCommandRequestV1:
-            raise TypeError("unexpected authoring request type")
-        return authoring_service.apply_command(request)
-
-    coordinator = replace(
-        server_module._legacy_live_binding(  # pyright: ignore[reportPrivateUsage]
-            service
-        ),
-        authoring=HttpAuthoringBinding(
-            request_model=DevAuthoringCommandRequestV1,
-            apply_command=apply_authoring,
-        ),
-    )
-    server = create_server(
-        service,
-        coordinator=coordinator,
-        asset_root=_ASSET_ROOT,
-        port=0,
-        capability_token=_TOKEN,
-    )
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        accepted, accepted_body = _exchange(
-            server,
-            "POST",
-            "/api/dev/authoring/command",
-            body=b'{"command_type":"list"}',
-            headers=_authorized_headers(**{"Content-Type": "application/json"}),
-        )
-        rejected, rejected_body = _exchange(
-            server,
-            "POST",
-            "/api/dev/authoring/command",
-            body=b'{"command_type":"list","unexpected":true}',
-            headers=_authorized_headers(**{"Content-Type": "application/json"}),
-        )
-        bootstrap, bootstrap_body = _exchange(server, "GET", "/bootstrap.js")
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
-
-    assert accepted.status == HTTPStatus.OK
-    assert bootstrap.status == HTTPStatus.OK
-    assert bootstrap_body == (
-        b"globalThis.__MARL_DEBUGGER_BOOTSTRAP__ = Object.freeze("
-        b'{"authoring_available":true,"initial_show_ranges":true,'
-        b'"product_kind":"combat_debugger",'
-        b'"schema_version":1});\n'
-    )
-    accepted_payload = json.loads(accepted_body)
-    catalog = accepted_payload.pop("catalog")
-    assert accepted_payload == {
-        "ok": True,
-        "command_type": "list",
-        "draft": None,
-        "deleted": None,
-        "assets": [],
-        "validation": None,
-        "debug_load": None,
-        "problems": [],
-    }
-    assert catalog["schema_id"] == "dev-authoring-catalog@1"
-    assert catalog["maximum_obstacle_slots"] == 32
-    assert rejected.status == HTTPStatus.UNPROCESSABLE_ENTITY
-    assert json.loads(rejected_body)["error_code"] == "invalid_request"
-    assert server.coordinator.current_metric_report is None
 
 
 def test_host_origin_and_cross_site_requests_are_rejected(
@@ -1061,7 +975,7 @@ def test_keyboard_interrupt_without_close_hook_preserves_legacy_success(
 
     captured = capsys.readouterr()
     assert result == 0
-    assert "MARL-BattleGrounds DevClient stopped." in captured.out
+    assert "MARL-BattleGrounds BattleClient stopped." in captured.out
 
 
 def test_keyboard_interrupt_invokes_graceful_close_once_under_router_lock(
@@ -1118,3 +1032,22 @@ def test_keyboard_interrupt_invokes_graceful_close_once_under_router_lock(
     assert calls == [1]
     assert len(observed_servers) == 1
     assert "synthetic recovery publication failed" in captured.err
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/src/authoring-model.js",
+        "/src/authoring-renderer.js",
+        "/src/authoring-inspector.js",
+        "/src/dev-client.js",
+        "/src/authoring-api.js",
+        "/src/entry.js",
+        "/dev-client.css",
+    ),
+)
+def test_public_live_client_does_not_serve_private_assets(
+    running_server: tuple[DebuggerHTTPServer, Thread], path: str
+) -> None:
+    response, _body = _exchange(running_server[0], "GET", path)
+    assert response.status == HTTPStatus.NOT_FOUND

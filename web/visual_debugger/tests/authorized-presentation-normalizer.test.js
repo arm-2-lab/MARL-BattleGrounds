@@ -1816,9 +1816,12 @@ test("Pending Joint Action rejects epoch and roster drift and canonicalizes ever
 
   const missingActor = clone(liveAgent);
   missingActor.researcher_space.pending_joint_action.action_rows.pop();
-  await assert.rejects(
-    normalizeAuthorizedPresentationFrameV1(missingActor),
-    /Pending Joint Action misses its active roster or decision epoch\./u,
+  // A mixed match may have a strict Manual subset. The raw/presentation pair
+  // joins this subset to the configured ownership before installing controls.
+  const subset = await normalizeAuthorizedPresentationFrameV1(missingActor);
+  assert.equal(
+    subset.researcher_space.pending_joint_action.action_rows.length,
+    liveAgent.researcher_space.pending_joint_action.action_rows.length - 1,
   );
 
   const selectedDivergence = clone(liveAgent);

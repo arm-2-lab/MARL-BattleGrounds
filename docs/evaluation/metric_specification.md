@@ -596,6 +596,10 @@ Agent 8 give `0.5`, or `50%`. The help names Team A or Team B explicitly.
 **Blank When** explains when no number
 can be given. **CSV Column** gives the exact column to use in pandas. Fractions
 remain decimals in the viewer and CSV: `0.4` means `40%`.
+In the Replay Viewer these rows live in the **Metrics** tab. Their help is
+always available; the **Symbol Explanations** switch only turns off the tips
+on arena and panel symbols, never the measurement help. In Agent POV the
+Metrics tab still shows the full recorded game, under a **Full Record** chip.
 
 Every tooltip starts with a short definition for that row. For example:
 "How many times this agent used its Basic ability." Counting rules and brief
@@ -695,6 +699,12 @@ planned episode IDs. `replay_episodes` independently requests capture; neither
 selection implies the other. Finite integer iterables include `range(...)` and
 lists. Resolve selections before compiled transitions. Metric computation needs
 authoritative transition facts, not replay files.
+
+The metric mode does not change which games are played: in a game-by-game check
+of a 7,200-game tournament with the GPU's run-to-run noise switched off, metrics
+off, priority and full gave the same games and ratings. Two separate GPU runs can still differ in a few games because of
+floating-point rounding; [Same Seed, Same Game](repeatability.md) explains this
+noise and how to remove it.
 
 Priority records episode length; both teams' win/draw/loss indicators; canonical
 agent/team returns; Team A/B scores and A-minus-B difference; team kills/deaths.

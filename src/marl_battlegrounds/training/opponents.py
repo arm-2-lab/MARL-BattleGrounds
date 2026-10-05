@@ -28,18 +28,26 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
     SystemOutput,
-    _CompositionVariables,
-    _default_reset,
-    _execution,
-    _host_apply,
-    _initial_memory,
-    _jax_apply,
-    _normal_output,
-    _SystemExecution,
+    _CompositionVariables,  # pyright: ignore[reportPrivateUsage]
+    _default_reset,  # pyright: ignore[reportPrivateUsage]
+    _execution,  # pyright: ignore[reportPrivateUsage]
+    _gather_rows,  # pyright: ignore[reportPrivateUsage]
+    _host_apply,  # pyright: ignore[reportPrivateUsage]
+    _initial_memory,  # pyright: ignore[reportPrivateUsage]
+    _jax_apply,  # pyright: ignore[reportPrivateUsage]
+    _normal_output,  # pyright: ignore[reportPrivateUsage]
+    _scatter_rows,  # pyright: ignore[reportPrivateUsage]
+    _SystemExecution,  # pyright: ignore[reportPrivateUsage]
     select_policy_carry,
 )
 from marl_battlegrounds.evaluation.system_evaluation import prepare_evaluation_system
 from marl_battlegrounds.policies.actor import ActorAction
+from marl_battlegrounds.training.config import (
+    _pinned_share as _pinned_share,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
+    opponent_selection_names as opponent_selection_names,
+)
 from marl_battlegrounds.training.curriculum import ScheduleArrays
 
 type Tree = Any
@@ -137,41 +145,6 @@ class SnapshotEvent(NamedTuple):
     update_index: Array
     threshold_mask: Array
     capture_id: Array
-
-
-def opponent_selection_names(selection: object) -> tuple[str, ...]:
-    """Validate training shares or a repeating order and return distinct names.
-
-    None keeps the existing self/history recipe. A mapping gives finite,
-    nonnegative relative shares with a positive total. A nonempty sequence
-    gives an exact repeating game-start order; repeated names are allowed.
-    Names must be nonempty strings. This does not load or resolve any member.
-    """
-    if selection is None:
-        return ()
-    if isinstance(selection, Mapping):
-        if not selection:
-            raise ValueError("Opponent shares must not be empty")
-        values = list(cast(Mapping[Any, Any], selection).values())
-        if any(
-            isinstance(v, bool) or not isinstance(cast(object, v), (int, float))
-            for v in values
-        ):
-            raise TypeError("Opponent shares must be real numbers")
-        if any(not math.isfinite(v) or v < 0 for v in values):
-            raise ValueError("Opponent shares must be finite and nonnegative")
-        if not math.isfinite(sum(values)) or sum(values) <= 0:
-            raise ValueError("Opponent shares must have a finite positive total")
-        names = tuple(cast(Mapping[Any, Any], selection))
-    elif isinstance(selection, Sequence) and not isinstance(selection, (str, bytes)):
-        names = tuple(cast(Sequence[Any], selection))
-        if not names:
-            raise ValueError("Opponent order must not be empty")
-    else:
-        raise TypeError("Opponent selection must be a share mapping or a name sequence")
-    if any(not isinstance(name, str) or not name.strip() for name in names):
-        raise ValueError("Opponent names must be nonempty strings")
-    return tuple(dict.fromkeys(names))
 
 
 class OpponentSelection(NamedTuple):
@@ -359,30 +332,6 @@ def _matching_variables(variables: Tree, expected: Tree) -> None:
     _array_tree(variables, name="Actor variables")
     if _schema(variables) != expected:
         raise ValueError("Actor variables must keep the same tree, shapes and dtypes")
-
-
-def _pinned_share(value: object) -> None:
-    """Require a static Python pinned-opponent share within [0, 0.8].
-
-    Parameters
-    ----------
-    value : object
-        The share to check. Zero reserves no probability for a permanent pin.
-
-    Raises
-    ------
-    TypeError
-        value is bool, a traced array or another non-number.
-    ValueError
-        value is not finite or lies outside [0, 0.8].
-    """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TypeError(
-            "The pinned opponent share must be a Python number, not bool, string or "
-            "traced"
-        )
-    if not math.isfinite(value) or not 0 <= value <= 0.8:
-        raise ValueError("The pinned opponent share must be finite within [0, 0.8]")
 
 
 def _field(value: Array, shape: tuple[int, ...], dtype: DTypeLike, name: str) -> None:
@@ -1060,57 +1009,23 @@ def _compact_capacity(size: int) -> int:
     return max(1, -(-size // 4))
 
 
-def _gather_rows(tree: Tree, index: Array, size: int) -> Tree:
-    """Take the rows named by index from every leading-B leaf of a tree.
+def _frozen_lane_capacity(size: int) -> int:
+    """Return how many frozen-copy lanes one per-lane opponent group holds.
 
     Parameters
     ----------
-    tree : Any
-        Pytree whose leaves all have leading axis B; typed key arrays work too.
-    index : Array
-        Int32 (C,) row numbers. Entries equal to size mark unused slots.
     size : int
-        Static B.
+        Static number of games B, positive.
 
     Returns
     -------
-    Any
-        The same tree with leading axis C. Unused slots read row B - 1; the
-        caller marks them invalid. Pure; no host transfer.
+    int
+        ceil(size / 4), at least 1: 192 lanes at B=768. The usual 20 percent
+        share of past copies fits one group; larger shares run a few groups
+        in one compiled loop. Each lane in a group reads its own weight copy,
+        so the group size, not B, sets that memory traffic.
     """
-    safe = jnp.minimum(index, size - 1)
-
-    def take(leaf: Array) -> Array:
-        """Read the selected rows of one leaf."""
-        return leaf[safe]
-
-    return jax.tree.map(take, tree)
-
-
-def _scatter_rows(full: Tree, part: Tree, index: Array) -> Tree:
-    """Write rows of part back into full at index; unused slots are dropped.
-
-    Parameters
-    ----------
-    full : Any
-        Pytree with leading-B leaves.
-    part : Any
-        The same tree structure with leading-C leaves of matching dtypes.
-    index : Array
-        Int32 (C,) target rows; entries equal to B are out of range.
-
-    Returns
-    -------
-    Any
-        full with the indexed rows replaced. Out-of-range entries are dropped,
-        so padding never overwrites a real game. Pure.
-    """
-
-    def put(whole: Array, rows: Array) -> Array:
-        """Place one leaf's rows."""
-        return whole.at[index].set(rows, mode="drop")
-
-    return jax.tree.map(put, full, part)
+    return max(1, -(-size // 4))
 
 
 def make_opponent_system(
@@ -1135,10 +1050,10 @@ def make_opponent_system(
         and runs the host method through HostOpponent.
 
     vectorize_lanes : bool, default=True
-        Map mixed history lanes with vmap. Built-in grouped models use False
+        Map frozen-copy lanes with vmap. Built-in grouped models use False
         because their grouped dot primitive lacks this extra batching rule;
-        lax.map then preserves their results. All-current batches still call the
-        actor once. The shared-model path keeps its original compiled program.
+        lax.map then preserves their results. Current-weight lanes always share
+        one full-batch actor call.
 
     Returns
     -------
@@ -1148,9 +1063,14 @@ def make_opponent_system(
         apply_systems; with one, supply (history, pinned variables, pinned memory
         template), and the memory is (network memory, pinned memory).
         All-current batches call the base actor once on the full batch. Mixed
-        batches map independent length-one calls in lane order; with a pinned
-        System, permanent-pin lanes count as current for the network, whose output
-        there is discarded. Initialization selects each lane's assigned
+        batches also call it once on the full batch with current weights, with
+        frozen-copy lanes (past copies and the permanent pin) marked invalid,
+        unless no valid lane uses current weights;
+        then only those lanes are gathered, in groups of ceil(B / 4), mapped as
+        independent length-one calls with their own weights and written back.
+        So per-lane weight copies cover only frozen-copy lanes, not all B.
+        With a pinned System, its lanes count as current for the network, whose
+        output there is discarded. Initialization selects each lane's assigned
         variables too. Learning outputs are empty and policy IDs are unreported
         (-1); training records own exact version identities.
 
@@ -1282,7 +1202,39 @@ def make_opponent_system(
             return normalized(history.current_variables, memory, inputs, keys)
 
         def mixed(_: None) -> SystemOutput:
-            """Map only the assigned actor for each lane."""
+            """Apply current weights once, then each frozen copy on its own lanes."""
+            frozen = history.lane_snapshot != -1
+            live = inputs.valid & ~frozen
+
+            def shared_call(_: None) -> SystemOutput:
+                """Run current weights once; frozen lanes are invalid here."""
+                output = normalized(
+                    history.current_variables,
+                    memory,
+                    inputs._replace(valid=live),
+                    keys,
+                )
+                return SystemOutput(
+                    ActorAction(
+                        *(jnp.asarray(head, jnp.int32) for head in output.actions)
+                    ),
+                    output.next_memory,
+                )
+
+            def no_shared_call(_: None) -> SystemOutput:
+                """Skip the call when no live lane uses current weights."""
+                zero = jnp.zeros((size, 5), jnp.int32)
+                return SystemOutput(ActorAction(zero, zero, zero), memory)
+
+            # Frozen lanes are replaced below; other lanes outside live are
+            # invalid, so M8 keeps their memory either way.
+            shared = cast(
+                SystemOutput,
+                jax.lax.cond(jnp.any(live), shared_call, no_shared_call, None),
+            )
+            capacity = _frozen_lane_capacity(size)
+            groups = -(-size // capacity)
+            order = jnp.nonzero(frozen, size=groups * capacity, fill_value=size)[0]
 
             def one(
                 slot: Array, prior: Tree, row: SystemInput, key: Array
@@ -1296,16 +1248,45 @@ def make_opponent_system(
                 )
                 return jax.tree.map(_remove_batch, result)
 
-            if vectorize_lanes:
-                return jax.vmap(one)(history.lane_snapshot, memory, inputs, keys)
-
             def row(values: tuple[Array, Tree, SystemInput, Array]) -> SystemOutput:
                 """Keep grouped primitives outside an extra vmap axis."""
                 return one(*values)
 
+            def group(number: Array, done: SystemOutput) -> SystemOutput:
+                """Apply one group of frozen lanes and write their rows back."""
+                index = jax.lax.dynamic_slice_in_dim(order, number * capacity, capacity)
+                slots = _gather_rows(history.lane_snapshot, index, size)
+                # Padding reads a real lane's snapshot; it is dropped on write.
+                slots = jnp.where(index < size, slots, -1)
+                rows = cast(SystemInput, _gather_rows(inputs, index, size))
+                values = (
+                    slots,
+                    _gather_rows(memory, index, size),
+                    rows._replace(valid=rows.valid & (index < size)),
+                    _gather_rows(keys, index, size),
+                )
+                result = cast(
+                    SystemOutput,
+                    jax.vmap(one)(*values)
+                    if vectorize_lanes
+                    else jax.lax.map(row, values),
+                )
+                return SystemOutput(
+                    ActorAction(
+                        *(
+                            _scatter_rows(old, new, index)
+                            for old, new in zip(
+                                done.actions, result.actions, strict=True
+                            )
+                        )
+                    ),
+                    _scatter_rows(done.next_memory, result.next_memory, index),
+                )
+
+            count = jnp.sum(frozen, dtype=jnp.int32)
             return cast(
                 SystemOutput,
-                jax.lax.map(row, (history.lane_snapshot, memory, inputs, keys)),
+                jax.lax.fori_loop(0, -(-count // capacity), group, shared),
             )
 
         return cast(

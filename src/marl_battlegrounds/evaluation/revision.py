@@ -15,7 +15,6 @@ import subprocess
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from marl_battlegrounds.evaluation.catalog import build_code_revision_v1
 from marl_battlegrounds.evaluation.models import CodeRevisionV1, CodeRevisionV2
 
 _PACKAGE_DISTRIBUTION = "marl-battlegrounds"
@@ -170,6 +169,8 @@ def discover_code_revision_v1(
             raise ValueError(
                 "the installed marl-battlegrounds package version is unavailable"
             ) from error
+    from marl_battlegrounds.evaluation.catalog import build_code_revision_v1
+
     return build_code_revision_v1(
         package_version=resolved_package_version,
         commit_sha=commit_sha,
@@ -222,3 +223,41 @@ def discover_code_revision_v2() -> CodeRevisionV1 | CodeRevisionV2:
 
 
 __all__ = ["discover_code_revision_v1", "discover_code_revision_v2"]
+
+
+def _check_output_path(path: Path) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Reject output folders that would change this package's source identity.
+
+    path may not exist. Normalize it without writing. Inside a source checkout,
+    it must be ignored by Git and contain no tracked files. Installed package
+    folders are always refused. External destinations are allowed. This host-only
+    preflight reads Git ignore/index rules, not model data or source payloads.
+    The caller must check every actual destination before creating output files.
+    """
+    destination = path.expanduser().resolve()
+    package = Path(__file__).resolve().parents[1]
+    if destination == package or package in destination.parents:
+        raise ValueError("Keep experiment outputs outside the installed source package")
+    for root in package.parents:
+        if (
+            root / "src" / "marl_battlegrounds" != package
+            or not (root / ".git").exists()
+        ):
+            continue
+        if destination != root and root not in destination.parents:
+            return
+        relative = destination.relative_to(root).as_posix()
+        ignored = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-q", "--", relative + "/"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+        )
+        tracked = _git(root, "ls-files", "-z", "--", relative)
+        if ignored.returncode != 0 or tracked:
+            raise ValueError(
+                f"Output would change saved source identity: {destination}. "
+                "Choose an ignored folder such as artifacts/ "
+                "or a path outside the checkout."
+            )
+        return

@@ -331,6 +331,14 @@ def test_collected_values_behavior_and_update_match_direct_composition(
     assert int(result.summary.real_transitions) == 16
     assert int(result.summary.active_samples) == 80
     assert int(result.metrics.critic_samples.sum()) == 80
+    for kind, measured in (
+        ("policy", result.metrics.actor_samples),
+        ("value", result.metrics.critic_samples),
+    ):
+        for dimension in ("source", "opponent"):
+            assert int(
+                getattr(result.summary, f"used_{kind}_by_{dimension}").sum()
+            ) == int(measured.sum())
     assert any(
         not np.array_equal(a, b)
         for a, b in zip(
@@ -854,6 +862,10 @@ def test_death_and_respawn_keep_critic_memory_and_only_remove_policy_samples(
     assert int(result.metrics.critic_samples.sum()) == 12
     assert int(result.summary.live_actor_decisions) == 8
     assert int(result.summary.active_samples) == 12
+    assert result.summary.used_policy_by_source is not None
+    assert int(result.summary.used_policy_by_source.sum()) == 8
+    assert result.summary.used_value_by_opponent is not None
+    assert int(result.summary.used_value_by_opponent.sum()) == 12
     np.testing.assert_array_equal(updated.carry.state.reset_generation, 0)
     finite((updated, result))
 
@@ -886,6 +898,10 @@ def test_wholly_dead_real_block_advances_critic_history_but_not_actor_optimizer(
     assert int(updated.carry.history.current_update) == 1
     assert int(updated.carry.history.last_refresh_rounds) == 1
     assert int(result.summary.live_actor_decisions) == 0
+    assert result.summary.used_policy_by_opponent is not None
+    assert int(result.summary.used_policy_by_opponent.sum()) == 0
+    assert result.summary.used_value_by_source is not None
+    assert int(result.summary.used_value_by_source.sum()) == 4
     finite((updated, result))
 
 
@@ -1000,6 +1016,9 @@ def test_completion_summary_keeps_outcomes_scores_and_valid_stage_ownership(
     np.testing.assert_array_equal(result.stage_score_sums[2], (30, 28))
     assert int(result.stage_length_sum[2]) == 33
     assert int(result.stage_k20_count[2]) == 2
+    assert result.per_member_length_sum is not None
+    assert int(result.per_member_length_sum.sum()) == 33
+    assert result.used_policy_by_source is None
     np.testing.assert_array_equal(result.stage_completed[16], 0)
     np.testing.assert_array_equal(result.stage_score_sums[16], 0)
     assert int(result.stage_length_sum[16]) == int(result.stage_k20_count[16]) == 0
@@ -1080,3 +1099,45 @@ def test_warm_start_copies_actor_before_history_with_fresh_learner(
         variables_a=variables,
     )
     equal(actual, expected)
+
+
+def test_grouped_ppo_exposure_counts_masks_and_epochs_without_joint_cells(
+    collected: tuple[TrainingCarry, TrainingRollout],
+) -> None:
+    _, rollout = collected
+    rows = rollout.transitions
+    valid = jnp.zeros_like(rows.valid).at[0, :3].set(True)
+    owned = (
+        jnp.zeros_like(rows.active)
+        .at[0, 0, :2]
+        .set(True)
+        .at[0, 1, :3]
+        .set(True)
+        .at[0, 2, 0]
+        .set(True)
+    )
+    alive = jnp.ones_like(rows.alive).at[0, 1, 0].set(False)
+    rows = rows._replace(
+        valid=valid,
+        active=jnp.ones_like(rows.active),
+        learner_active=owned,
+        alive=alive,
+        source_index=jnp.full_like(rows.source_index, -1)
+        .at[0, :3]
+        .set(jnp.asarray([0, 1, 1], jnp.int32)),
+        opponent_snapshot=jnp.full_like(rows.opponent_snapshot, -1).at[0, 1:3].set(-2),
+    )
+    result = _summary(
+        rollout._replace(transitions=rows),
+        opponent_rows=2,
+        capture_capacity=0,
+        ppo_epochs=3,
+        source_rows=2,
+    )
+    np.testing.assert_array_equal(result.used_policy_by_source, [6, 9])
+    np.testing.assert_array_equal(result.used_value_by_source, [6, 12])
+    np.testing.assert_array_equal(result.used_policy_by_opponent, [6, 9])
+    np.testing.assert_array_equal(result.used_value_by_opponent, [6, 12])
+    assert int(result.real_transitions) == 3
+    assert int(result.active_samples) == 6
+    assert int(result.live_actor_decisions) == 5

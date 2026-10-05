@@ -104,7 +104,7 @@ run_e2e_shard_timed() {
     --reporter=line,json "$@"
 }
 
-# Run one browser profile alongside static/unit checks in a two-worker pool.
+# Run one browser profile alongside static/unit checks without a worker cap.
 # Optional $1 is an existing directory; when given, each profile also writes its
 # per-test times to $1/browser-profile-N.json. Set CI=1, reject noncanonical
 # overrides and isolate browser output directories. Remove outputs on success;
@@ -118,7 +118,7 @@ run_complete_frontend_gate() {
   require_canonical_frontend_environment
   export CI=1
   output_root="$(mktemp -d "${TMPDIR:-/tmp}/marl-browser-validation.XXXXXX")"
-  marl_validation_init 2 frontend-validation
+  marl_validation_init frontend-validation
   if [[ -n "${timings_dir}" ]]; then
     marl_validation_start \
       "Browser profile 1/1" \

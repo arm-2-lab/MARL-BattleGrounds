@@ -32,8 +32,6 @@ from typing import Protocol, cast
 
 import jax
 import jax.numpy as jnp
-from scripts.dev.visual_debugger.control import create_session
-from scripts.dev.visual_debugger.model import DebuggerScenario
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
     LiveOracleAuthorizedPresentationFrameV1,
@@ -41,10 +39,8 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
     _seal_oracle_authorized_current_endpoint_v1,
 )
-from scripts.dev.visual_debugger.protocol import CommandRequestV1, KeyboardCommandV1
 from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from scripts.dev.visual_debugger.service import DebuggerService
 from tests.evaluation_fixtures import current_captured_evaluation_trajectory
 from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
 from tests.red_zone_scene_cases import (
@@ -75,6 +71,13 @@ from tests.test_visual_debugger_replay_service import (
 from tests.test_visual_debugger_service import _service
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.model import DebuggerScenario
+from marl_battlegrounds._battle_client.protocol import (
+    CommandRequestV1,
+    KeyboardCommandV1,
+)
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.env import initialize_scenario_state, reset
 from marl_battlegrounds.core.types import (
     MAX_OBSTACLE_SLOTS,

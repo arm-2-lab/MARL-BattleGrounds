@@ -38,10 +38,20 @@ from marl_battlegrounds.tasks import (
     AgentClassName,
     _roster_ids,  # pyright: ignore[reportPrivateUsage]
 )
+from marl_battlegrounds.training.config import (
+    _MAPS as _MAPS,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
+    _STAGES as _STAGES,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
+    _custom_stages as _custom_stages,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
+    _freeze_continuation as _freeze_continuation,  # pyright: ignore[reportPrivateUsage]
+)
 from marl_battlegrounds.training.distributions import validate_training_distribution
 
-_STAGES = 17
-_MAPS = 42
 _MAX_COUNT = int(np.iinfo(np.int32).max)
 _SCORE_THRESHOLDS = (*range(1, 11), 12, 15, 20)
 type Curriculum = bool | Sequence[Mapping[str, object]]
@@ -441,104 +451,6 @@ def make_training_schedule(
         score_threshold_curriculum,
         early_history_capture,
     )
-
-
-def _custom_stages(value: object) -> tuple[Mapping[str, object], ...]:
-    """Validate a stage list and copy its JSON values into immutable mappings.
-
-    Stages use positive finite shares summing exactly to one as decimal
-    fractions. Maps are training IDs 0..41. Roster names use the task owner's
-    validator; thresholds receive their depth-specific upper check when the
-    source bank is prepared. This helper reads no assets and changes no inputs.
-    """
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise TypeError("curriculum must be bool or a sequence of stage mappings")
-    stages = cast(Sequence[object], value)
-    if not 1 <= len(stages) <= _STAGES:
-        raise ValueError("A custom curriculum needs 1..17 stages")
-    total = Fraction(0)
-    for index, raw in enumerate(stages):
-        if not isinstance(raw, Mapping):
-            raise TypeError(f"Curriculum stage {index} must be a mapping")
-        stage = cast(Mapping[str, Any], raw)
-        keys = set(stage)
-        if (
-            not {"share", "maps"} <= keys
-            or keys - {"share", "maps", "team_size", "rosters", "score_threshold"}
-            or ("team_size" in keys) == ("rosters" in keys)
-        ):
-            raise ValueError(
-                f"Curriculum stage {index} needs share, maps and exactly one of "
-                "team_size or rosters"
-            )
-        share = stage["share"]
-        if type(share) not in (int, float) or not 0 < share <= 1:
-            raise ValueError("Stage shares must be positive finite numbers")
-        total += Fraction(str(share))
-        raw_maps = stage["maps"]
-        if not isinstance(raw_maps, (list, tuple)):
-            raise ValueError("Stage maps must be a list of training IDs from 0..41")
-        maps = cast(Sequence[object], raw_maps)
-        if (
-            not maps
-            or any(type(item) is not int or not 0 <= item < _MAPS for item in maps)
-            or len(set(maps)) != len(maps)
-        ):
-            raise ValueError("Stage maps must be distinct training IDs from 0..41")
-        if "team_size" in stage:
-            size = stage["team_size"]
-            if type(size) is not int or not 1 <= size <= 5:
-                raise ValueError("Stage team_size must be a Python integer in 1..5")
-        else:
-            rosters = cast(Mapping[str, object], stage["rosters"])
-            if not isinstance(cast(object, rosters), Mapping) or set(rosters) != {
-                "system",
-                "opponent",
-            }:
-                raise ValueError("Stage rosters must name system and opponent")
-            for team in ("system", "opponent"):
-                _roster_ids(cast(Sequence[AgentClassName], rosters[team]), name=team)
-        threshold = stage.get("score_threshold", 20)
-        if type(threshold) is not int or not 1 <= threshold <= 2**24 - 4:
-            raise ValueError(
-                "Stage score_threshold is outside the supported score range"
-            )
-    if total != 1:
-        raise ValueError("Curriculum stage shares must sum to one")
-    frozen = _freeze_continuation({"stages": stages})
-    return cast(tuple[Mapping[str, object], ...], frozen["stages"])
-
-
-def _freeze_continuation(value: Mapping[str, object]) -> Mapping[str, object]:
-    """Copy a finite JSON-like declaration into read-only nested records.
-
-    Mapping keys must be strings; leaves must be None, strings, booleans, finite
-    numbers or sequences of these. Raises ValueError for other values. No input
-    is retained as mutable storage. Use _continuation_details to encode a schedule.
-    """
-
-    def freeze(item: object) -> object:
-        """Freeze one mapping or sequence, checking its scalar leaves."""
-        if isinstance(item, Mapping):
-            mapping = cast(Mapping[object, object], item)
-            if any(type(key) is not str for key in mapping):
-                raise ValueError("Continuation keys must be strings")
-            return MappingProxyType(
-                {cast(str, key): freeze(val) for key, val in mapping.items()}
-            )
-        if isinstance(item, (tuple, list)):
-            return tuple(
-                freeze(val) for val in cast(tuple[object, ...] | list[object], item)
-            )
-        if item is None or type(item) in (str, bool, int):
-            return item
-        if type(item) is float and np.isfinite(item):
-            return item
-        raise ValueError("Continuation must contain finite JSON values")
-
-    if not isinstance(cast(object, value), Mapping):
-        raise ValueError("Continuation declaration must be a mapping")
-    return cast(Mapping[str, object], freeze(value))
 
 
 def _continuation_details(schedule: TrainingSchedule) -> dict[str, Any] | None:

@@ -1,0 +1,20 @@
+{
+  "entrants": [
+    "../250m/study/cases/pqn_vdn-b768-t128-reward-x10--seed-12259871/run/actors/pqn_vdn_actor_step_000240156672_8c1e52fbccfb238801b31041eb4df87cf6df38c62cc458e379c00d6224036f30",
+    "../250m/study/cases/ippo-reference--seed-20261001/run/actors/ippo_actor_step_000250675200_76b55aa1d72003c22020d13872730d9cf6d96b50a6a936026287b7a35f0f3328",
+    "../250m/study/cases/ff_ippo-reference--seed-20261001/run/actors/ff_ippo_actor_step_000219103232_83cc8f75bd015ea02ec977a4e446afbe3a4f247fddb604c42b60f8edcebc1952",
+    "../250m/study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-12259871/run/actors/qmix_actor_step_000219095040_c9a2ada94944055f57ebfafdc87245954bd270c603a48bbe1a634bf2761cf499",
+    "../250m/study/cases/mappo-reference--seed-20261002/run/actors/mappo_actor_step_000219103232_01f7e47402a9ba3e6a17a302ad9f21e680647cbb75e0186c7f1ef12f67303174",
+    "../ff-mappo-250m/study/cases/ff_mappo-team-reward--seed-12259871/run/actors/ff_mappo_actor_step_000208568320_f2b2650e9f35e96296d8b70bb28043dd551cc11abd382c75b366e9e24528a6f4",
+    "tdm-alpha",
+    "tdm-beta",
+    "tdm-gamma"
+  ],
+  "maps": [47, 48, 49, 50, 51],
+  "games_per_opponent": 200,
+  "seed": 20261004,
+  "score_threshold": 20,
+  "max_steps": 300,
+  "red_zone_depth": 5.0,
+  "metrics": "priority"
+}

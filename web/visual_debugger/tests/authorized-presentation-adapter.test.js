@@ -3,6 +3,12 @@
  * identity/preferences keep their exact scope. The scene view passes a recorded
  * version 2 map's Red Zone strips through exactly and frozen, keeps `null` when
  * the rule is off (depth 0), and adds no Red Zone to a legacy version 1 map.
+ * Plan timing checked here: life numbers (health and rest heals) pop at Impact
+ * (blow 260 ms) while status outcomes share Settle, and a tick with a herald card
+ * keeps the herald's persistent nodes in its bound. Status changes and team
+ * respawn waves reserve no arena box (no cue fields), status changes add no
+ * nodes to the plan's node bound (no look draws them), and team waves have no
+ * arena anchor.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -35,7 +41,12 @@ import {
 } from "../src/authorized-presentation-adapter.js";
 import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
 import { explainChoreographyEvent } from "../src/choreography-painter.js";
-import { buildChoreographyPlan as buildPlan } from "../src/choreography-plan.js";
+import {
+  beatRealTime,
+  buildChoreographyPlan as buildPlan,
+  planEventBudget,
+} from "../src/choreography-plan.js";
+import { BUDGET as HERALD_BUDGET } from "../src/looks/heralds.js";
 import {
   explainActivation,
   explainLegality,
@@ -92,7 +103,7 @@ const EXPECTED_CLASS_LABELS = new Map([
 
 /** @param {Record<string, any>} identity */
 function expectedAuthorizedIdentityTitle(identity) {
-  return `Agent ID ${identity.display_agent_id ?? String(identity.public_agent_id).replace(/^agent-slot-(\d)$/u, "$1")} · ${EXPECTED_CLASS_LABELS.get(Number(identity.class_id))} · Team ${identity.team_id === 1 ? "A" : "B"}`;
+  return `${EXPECTED_CLASS_LABELS.get(Number(identity.class_id))} · ID ${identity.display_agent_id ?? String(identity.public_agent_id).replace(/^agent-slot-(\d)$/u, "$1")}`;
 }
 
 /** @param {keyof typeof fixture.presentations} kind */
@@ -1330,7 +1341,7 @@ test("Agent visual events, local evidence, Submitted/Accepted, Technical Frame, 
   ]);
   assert.match(
     transition[0].actor_title,
-    /^Agent ID .+ · (?:Mage|Warrior|Hunter|Rogue|Priest) · Team [AB]$/u,
+    /^(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+$/u,
   );
   assert.notEqual(
     transition[0].submitted_action,
@@ -1382,10 +1393,7 @@ test("Latest Transition is exact for recorded later frames and empty at frame ze
     assert.equal(rows.length, expectedCount, String(kind));
     for (const row of rows) {
       assert.deepEqual(Object.keys(row), exactKeys, String(kind));
-      assert.match(
-        row.actor_title,
-        /^Agent ID .+ · (?:Mage|Warrior|Hunter|Rogue|Priest) · Team [AB]$/u,
-      );
+      assert.match(row.actor_title, /^(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+$/u);
       assert.match(row.actor_accent, /^(?:mage|warrior|hunter|rogue|priest)$/u);
       assert.match(row.actor_team, /^team-[ab]$/u);
       assert.equal(Object.isFrozen(row.submitted_action), true);
@@ -1465,10 +1473,7 @@ test("Upcoming Transition is the exact authority-scoped transition out of the cu
       assert.deepEqual(row.accepted_action, source.accepted_action);
       assert.notEqual(row.submitted_action, source.submitted_action);
       assert.notEqual(row.accepted_action, source.accepted_action);
-      assert.match(
-        row.actor_title,
-        /^Agent ID .+ · (?:Mage|Warrior|Hunter|Rogue|Priest) · Team [AB]$/u,
-      );
+      assert.match(row.actor_title, /^(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+$/u);
       assert.match(row.actor_team, /^team-[ab]$/u);
       assert.equal(Object.isFrozen(row), true);
     }
@@ -1522,10 +1527,7 @@ test("Pending Joint Action is one exact researcher-space row per live actor", as
       "actor_team",
       "pending_action",
     ]);
-    assert.match(
-      row.actor_title,
-      /^Agent ID .+ · (?:Mage|Warrior|Hunter|Rogue|Priest) · Team [AB]$/u,
-    );
+    assert.match(row.actor_title, /^(?:Mage|Warrior|Hunter|Rogue|Priest) · ID .+$/u);
     assert.match(row.actor_accent, /^(?:mage|warrior|hunter|rogue|priest)$/u);
     assert.match(row.actor_team, /^team-[ab]$/u);
     assert.deepEqual(Object.keys(row.pending_action), [
@@ -2689,16 +2691,18 @@ test("combat reset stays feed-only while successor regeneration cues pack determ
   const status = plan.events.find((event) => event.kind === "status_lifecycle");
   assert.ok(health);
   assert.ok(status);
-  assert.ok(health.phaseEnd <= regenerations[0].phaseStart);
-  assert.equal(
-    regenerations.every(
-      (event) =>
-        event.phaseStart === regenerations[0].phaseStart &&
-        event.phaseEnd === regenerations[0].phaseEnd,
-    ),
-    true,
-  );
-  assert.ok(regenerations[0].phaseEnd <= status.phaseStart);
+  // Life numbers (health and rest heals) pop at Impact, blow 260 ms, and stay
+  // to the end of Settle; status outcomes share the Settle window. No family
+  // queues behind another.
+  assert.ok(plan.beats);
+  const [settleStart, settleEnd] = plan.beats.windows.settle;
+  assert.deepEqual([settleStart, settleEnd], [620, 1100]);
+  const impact = beatRealTime(260, plan.beats.glide, plan.beats.lead);
+  assert.equal(impact, 460);
+  for (const event of [health, ...regenerations]) {
+    assert.deepEqual([event.phaseStart, event.phaseEnd], [impact, settleEnd]);
+  }
+  assert.deepEqual([status.phaseStart, status.phaseEnd], [settleStart, settleEnd]);
 });
 
 test("regeneration cue leaders allow only their exact protected agent body", async () => {
@@ -2821,7 +2825,7 @@ test("Oracle lifecycle cues retain successor and strict team-anchor authority", 
         teamId: 1,
         teamSide: "left",
         label: "EVENT: Team A Respawn",
-        anchor: { x: 112, y: 24 },
+        anchor: null,
         persistent: true,
       },
       {
@@ -2830,7 +2834,7 @@ test("Oracle lifecycle cues retain successor and strict team-anchor authority", 
         teamId: 2,
         teamSide: "right",
         label: "EVENT: Team B Respawn",
-        anchor: { x: 528, y: 24 },
+        anchor: null,
         persistent: true,
       },
     ],
@@ -2847,7 +2851,9 @@ test("Oracle lifecycle cues retain successor and strict team-anchor authority", 
   assert.equal(respawn.agentPresentationKey, respawnAnchor.presentation_key);
   assert.equal(respawn.agentPublicAgentId, respawnAnchor.public_agent_id);
   assert.equal(respawn.phaseEnd, plan.phases.total);
-  for (const lifecycleEvent of [death, respawn]) {
+  // Status changes show on the body and team waves are page chrome, so they
+  // reserve no arena box, like the death and return rings.
+  for (const lifecycleEvent of [death, respawn, shield, ...waves]) {
     for (const allocationField of [
       "cue",
       "cueLayoutKey",
@@ -2859,15 +2865,15 @@ test("Oracle lifecycle cues retain successor and strict team-anchor authority", 
       assert.equal(Object.hasOwn(lifecycleEvent, allocationField), false);
     }
   }
-  assert.ok(shield.cue);
-  assert.ok(waves.every((wave) => wave.cue));
+  assert.equal(shield.spatial, true);
+  assert.ok(waves.every((wave) => wave.spatial === false));
 
   const lifecycleCopy = [death, ...waves, respawn].map((event) =>
     explainChoreographyEvent(event),
   );
   assert.deepEqual(
     lifecycleCopy.map(({ title }) => title),
-    ["Agent Died", "EVENT: Team A Respawn", "EVENT: Team B Respawn", "Agent Respawned"],
+    ["Fallen", "EVENT: Team A Respawn", "EVENT: Team B Respawn", "Returned"],
   );
   assert.doesNotMatch(
     JSON.stringify(
@@ -2875,7 +2881,17 @@ test("Oracle lifecycle cues retain successor and strict team-anchor authority", 
     ),
     /agent_died|agent_respawned|respawn_wave_occurred|semantic pulse|authoritative semantic/iu,
   );
-  assert.equal(plan.bounds.persistentNodes, 28);
+  // Kept rows: the fall, the return (with its waystone Call) and the
+  // persistent herald_card row, each at its look's kept allowance. The two
+  // team waves are page chrome (not spatial), so they keep no arena nodes.
+  const kept = (/** @type {string} */ cueSemantic) =>
+    planEventBudget({ kind: "semantic_pulse", cueSemantic }).persistentNodesPerRecord;
+  assert.equal(
+    plan.bounds.persistentNodes,
+    kept("agent_died") +
+      kept("agent_respawned") +
+      HERALD_BUDGET.persistentNodesPerRecord,
+  );
 });
 
 test("NoShared and Shared authorized clocks never synthesize a respawn wave", async () => {
@@ -3072,7 +3088,9 @@ test("Oracle status compositor applies exact precedence and preserves every atom
       };
     });
     assert.equal(plan.events.length, 1, expected.label);
-    assert.equal(plan.bounds.nodes, 33, expected.label);
+    // Only the 3 plan roots: no look draws a status change (Rune Zones shows it
+    // on the body), so the row reserves no nodes.
+    assert.equal(plan.bounds.nodes, 3, expected.label);
     const [lifecycle] = plan.events;
     assert.deepEqual(
       [lifecycle.eventId, lifecycle.eventType],
@@ -3143,7 +3161,7 @@ test("Oracle status compositor applies exact precedence and preserves every atom
   }
 });
 
-test("status groups keep first-atomic plan order and use the nearest collision-safe layout when precedence favors a later group", async () => {
+test("status groups keep first-atomic plan order and reserve no arena box when precedence favors a later group", async () => {
   const raw = structuredClone(fixture.presentations.replay_oracle);
   const events = [
     oracleStatusEvent(raw, "status_applied", { channel: 8, sourceClass: 5 }),
@@ -3173,7 +3191,8 @@ test("status groups keep first-atomic plan order and use the nearest collision-s
     incomingRowsBefore,
   );
   assert.equal(plan.events.length, 4);
-  assert.equal(plan.bounds.nodes, 123);
+  // Only the 3 plan roots: the four status-change rows are drawn by no look.
+  assert.equal(plan.bounds.nodes, 3);
   assert.deepEqual(
     plan.events.map(({ eventId }) => eventId),
     [incomingRows[0].id, incomingRows[2].id, incomingRows[3].id, incomingRows[4].id],
@@ -3198,38 +3217,21 @@ test("status groups keep first-atomic plan order and use the nearest collision-s
   ]);
   assert.equal(plan.events[0].lifecycle, "applied");
   assert.equal(plan.events[1].lifecycle, "applied");
-  const earlierApply = plan.events[0];
-  const laterApplication = plan.events[1];
-  assert.ok(earlierApply.cue);
-  assert.ok(laterApplication.cue);
-  assert.ok(earlierApply.cueBounds);
-  assert.ok(laterApplication.cueBounds);
-  assert.equal(earlierApply.cueCollisionFree, true);
-  assert.equal(laterApplication.cueCollisionFree, true);
-  assert.equal(
-    earlierApply.cueLayoutKey,
-    JSON.stringify(["event", incomingRows[0].id, "cue"]),
-  );
-  assert.equal(
-    laterApplication.cueLayoutKey,
-    JSON.stringify(["event", incomingRows[2].id, "cue"]),
-  );
-  const cueDistance = (/** @type {Record<string, any>} */ event) =>
-    Math.hypot(event.cue.x - event.recipient.x, event.cue.y - event.recipient.y);
-  assert.ok(Math.abs(cueDistance(earlierApply) - cueDistance(laterApplication)) < 1e-9);
-  assert.equal(earlierApply.cueDisposition, "recipient_stack");
-  assert.equal(laterApplication.cueDisposition, "recipient_stack");
-  const overlapWidth = Math.max(
-    0,
-    Math.min(earlierApply.cueBounds.right, laterApplication.cueBounds.right) -
-      Math.max(earlierApply.cueBounds.left, laterApplication.cueBounds.left),
-  );
-  const overlapHeight = Math.max(
-    0,
-    Math.min(earlierApply.cueBounds.bottom, laterApplication.cueBounds.bottom) -
-      Math.max(earlierApply.cueBounds.top, laterApplication.cueBounds.top),
-  );
-  assert.equal(overlapWidth * overlapHeight, 0);
+  // Status changes show on the body (V5 Rune Zones): neither group reserves an
+  // arena box, so neither can push life numbers or other cues away.
+  for (const group of [plan.events[0], plan.events[1]]) {
+    assert.equal(group.spatial, true);
+    for (const allocationField of [
+      "cue",
+      "cueLayoutKey",
+      "cueBounds",
+      "cueDisposition",
+      "cueCollisionFree",
+      "cueLeader",
+    ]) {
+      assert.equal(Object.hasOwn(group, allocationField), false, allocationField);
+    }
+  }
 });
 
 test("durable current status without an atomic status event creates no lifecycle cue", async () => {
@@ -3295,7 +3297,7 @@ test("canonical in-combat expiry paints one self-contained duration expiration",
   assert.equal(explanation.title, "Out of Combat");
   assert.equal(
     explanation.summary,
-    "This agent can regenerate up to 8 health per tick while it remains out of combat.",
+    "It can regain up to 8 life per tick while it stays out of combat.",
   );
   assert.deepEqual(
     explanation.rows.map(({ label, value }) => [label, value]),

@@ -519,7 +519,7 @@ warm development environment.
 Prepare the locked dependencies separately, then run the complete inventories:
 
 ```bash
-uv sync --locked --extra dev --extra viz --extra training
+uv sync --locked --extra dev --extra viz --extra training --extra notebook
 scripts/dev/check.sh
 npm ci --prefix web/visual_debugger
 npm run install:browser --prefix web/visual_debugger
@@ -532,12 +532,10 @@ Frontend forces its CI inventory and rejects conflicting selectors/capture
 settings. Both retain per-task status and elapsed time. A missing prerequisite
 or failed shard blocks qualification.
 
-On a machine with limited RAM, set `MARL_PYTHON_GATE_JOBS=6` when running
-`check.sh` or `check_before_commit.sh`. The supported range is 1–19, with 19
-as the default. This limits concurrent Python workers, not test membership:
-all nineteen shards and all static checks still run. Use the same worker count
-when comparing shard timings. Heavy swap use is a reason to lower concurrency,
-not to omit tests or call an unfinished gate a pass.
+All nineteen Python shards and the three Python static checks start together.
+The commit gate also starts the full frontend gate alongside Python. There is
+no local gate worker cap or worker-limit setting. Compare shard timings under
+the same machine load, and never call an unfinished gate a pass.
 
 The Python plugin collects ordinary pytest nodes and groups parameter families
 by path, parent collector and original function name. Files normally remain
@@ -562,28 +560,19 @@ invalidates the separate frozen pre-commit qualification.
 
 ## Visual baselines
 
-Compare first:
-
-```bash
-npm run test:visual --prefix web/visual_debugger
-```
-
-Only after approving an intentional visual change, update:
-
-```bash
-npm run test:visual:update --prefix web/visual_debugger
-```
-
-Review each image at its original resolution and retain its semantic assertions.
-Updating snapshots is not an automatic test repair. Keep failure artifacts in
-ignored outputs and tracked baselines within the repository file-size limit.
+The browser tests keep no screenshot baselines: they check layout with
+measured assertions instead (`e2e/support/visual-regression.js`), at the
+smallest supported window (1366 x 768) and the desktop window (1440 x 900).
+There is no screenshot comparison command. Keep failure artifacts in ignored
+outputs.
 
 ## Automation
 
 [CI](../../.github/workflows/ci.yml) runs nineteen Python shards with the static
 checks distributed across the matrix, plus one browser profile containing
 the frontend unit/static inventory and real Chromium tests. It uses locked
-Python `dev`/`viz` and frontend dependencies. Hosted jobs do not qualify CUDA;
+Python `dev`, `viz`, `training` and `notebook` extras and frontend dependencies.
+Hosted jobs do not qualify CUDA;
 that is the separate [local GPU gate](gpu_sanity.md).
 
 Pre-commit hooks provide fast hygiene and may mutate files. Run them before

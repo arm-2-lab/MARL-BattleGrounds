@@ -13,10 +13,12 @@ checks its scalar output before collection; learners own runtime finite checks.
 resolve_reward loads a declared callback once and records available code evidence.
 """
 
-from collections.abc import Callable
-from functools import partial
+# The collection and runner share these private reward owners.
+# pyright: reportUnusedFunction=false
+from collections.abc import Callable, Mapping
+from functools import partial, wraps
 from numbers import Real
-from typing import cast
+from typing import NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -24,10 +26,82 @@ import numpy as np
 from jax import Array
 from jax.core import Tracer
 
-from marl_battlegrounds.core.types import EnvState
+from marl_battlegrounds.core.types import EnvConfig, EnvState
 from marl_battlegrounds.environment import EpisodeInfo, TrainingFacts, episode_advanced
+from marl_battlegrounds.training.config import (
+    _validate_shaping_mode,  # pyright: ignore[reportPrivateUsage]
+    _validate_shaping_number,  # pyright: ignore[reportPrivateUsage]
+)
 
-type RewardFunction = Callable[[EnvState, TrainingFacts, EnvState, Array], Array]
+
+class RewardOutput(NamedTuple):
+    """Return custom learner adjustments and their named parts for one step.
+
+    adjustments is float32 (10,) in global slot order. components maps fixed,
+    nonempty string names to float32 (10,) arrays whose sum is adjustments.
+    The mapping itself must also be nonempty.
+    These arrays describe custom feedback only; native task rewards stay
+    separate. Names and shapes must stay fixed throughout a run. Collection
+    keeps small totals, not these arrays in replay or full metric tables.
+    Array-only callbacks remain supported without component accounting.
+    """
+
+    adjustments: Array
+    components: Mapping[str, Array]
+
+
+type RewardFunction = Callable[..., Array | RewardOutput]
+
+
+def _reward_config_parameter(reward: RewardFunction) -> tuple[bool, bool]:
+    """Inspect the optional keyword-only config contract during host setup.
+
+    Return whether config is accepted and whether it is required. A named
+    config argument must be keyword-only; **kwargs alone does not opt in.
+    Signature errors propagate before training. No callback is executed.
+    """
+    import inspect
+
+    parameter = inspect.signature(reward).parameters.get("config")
+    if parameter is None:
+        return False, False
+    if parameter.kind is not inspect.Parameter.KEYWORD_ONLY:
+        raise TypeError("A reward's config argument must be keyword-only")
+    return True, parameter.default is inspect.Parameter.empty
+
+
+def _prepare_reward(reward: RewardFunction) -> RewardFunction:
+    """Bind argument routing once for collection, without calling the reward.
+
+    Prepared callbacks accept optional config. Old callbacks receive exactly
+    their four positional arguments. Declared config users receive the supplied
+    producing configuration; a missing required config raises ValueError.
+    A private marker avoids repeated inspection during numerical tracing.
+    """
+    if not callable(reward):
+        raise TypeError("reward must be a pure JAX callable")
+    if getattr(reward, "_marl_prepared_reward", False):
+        return reward
+    accepts_config, requires_config = _reward_config_parameter(reward)
+
+    @wraps(reward)
+    def prepared(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        config: EnvConfig | None = None,
+    ) -> Array | RewardOutput:
+        """Call the original reward once with its declared argument contract."""
+        if accepts_config and config is not None:
+            return reward(before, facts, after, progress, config=config)
+        if requires_config:
+            raise ValueError("This reward requires the producing config")
+        return reward(before, facts, after, progress)
+
+    setattr(prepared, "_marl_prepared_reward", True)  # noqa: B010
+    return prepared
 
 
 def resolve_reward(
@@ -60,7 +134,9 @@ def resolve_reward(
 
     Notes
     -----
-    Host setup only. Source hashing reads one file; no callback, numerical
+    Host setup only. Source hashing binds declared wrapped callable files and
+    the built-in recipes' shared combat helper. Other imported or hidden state
+    remains unknown unless separately declared. No callback, numerical
     transition or output write occurs. Reuse the returned callable during the
     run. A source hash covers constants written in that module, but does not
     prove imported configuration, mutable globals, closures or external state.
@@ -87,7 +163,8 @@ def resolve_reward(
         )
     except OSError, TypeError:
         source_digest = None
-    return reward, {
+    accepts_config, _ = _reward_config_parameter(reward)
+    identity: dict[str, object] = {
         "reference": reference,
         "callable": _callable_evidence(reward),
         "source_digest": source_digest,
@@ -96,6 +173,27 @@ def resolve_reward(
         "external_state": "unknown",
         "progress_clock": "completed_training_rounds_before_step",
     }
+    if accepts_config:
+        identity["call_contract"] = "producing_config_keyword_v1"
+    if hasattr(reward, "__wrapped__"):
+        from marl_battlegrounds._method_loading import (
+            _reference_identity,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        identity["wrapped_callables"] = _reference_identity(reference).get(
+            "wrapped_callables", []
+        )
+    if getattr(
+        reward, "__module__", None
+    ) == "marl_battlegrounds.training.reward_recipes" and getattr(
+        reward, "__name__", None
+    ) in ("combat_support_reward", "combat_support_team_reward"):
+        from marl_battlegrounds.evaluation import combat_metrics
+
+        identity["combat_source_digest"] = sha256(
+            Path(cast(str, inspect.getsourcefile(combat_metrics))).read_bytes()
+        ).hexdigest()
+    return reward, identity
 
 
 def reward_adjustments(
@@ -104,6 +202,8 @@ def reward_adjustments(
     facts: TrainingFacts,
     after: EnvState,
     progress: Array,
+    *,
+    config: EnvConfig | None = None,
 ) -> Array:
     """Apply one custom training reward to one producing transition.
 
@@ -111,8 +211,10 @@ def reward_adjustments(
     ----------
     reward : callable
         Pure JAX function reward(before, facts, after, progress). Return one
-        float32 (10,) adjustment in global slot order. The function owns its
-        feedback rule, including how dead or inactive agents are treated.
+        float32 (10,) adjustment in global slot order, or RewardOutput with
+        fixed named parts. The function owns how dead/inactive agents are
+        treated. It may explicitly accept keyword-only config. Old callbacks
+        receive only the original four arguments.
     before, after : EnvState
         Exact public Environment.training_state views before and after the same
         action. Pass the producing successor, never an AutoReset replacement.
@@ -126,6 +228,11 @@ def reward_adjustments(
         including parent lineage. One round advances each environment once.
         Multiplying by the fixed saved batch size gives real transitions.
         Resets, padding and optimizer updates do not advance this clock.
+
+    config : EnvConfig or None, default=None
+        Producing scalar configuration, from before.config. Required only by
+        callbacks that declare a required keyword-only config argument. Keep
+        it as a dynamic JAX value when batching or changing ordinary settings.
 
     Returns
     -------
@@ -151,6 +258,26 @@ def reward_adjustments(
     function inside vmap. Disabled collectors must skip this helper entirely.
     Arbitrary custom feedback need not preserve the native training objective.
     """
+    return _reward_output(reward, before, facts, after, progress, config).adjustments
+
+
+def _reward_output(
+    reward: RewardFunction,
+    before: EnvState,
+    facts: TrainingFacts,
+    after: EnvState,
+    progress: Array,
+    config: EnvConfig | None = None,
+) -> RewardOutput:
+    """Call and normalize one reward, sharing validation with public helpers.
+
+    Scalar inputs follow reward_adjustments. Arrays keep empty components.
+    Named parts must sum to the adjustment within rtol=1e-5, atol=1e-6.
+    A nonfinite or inconsistent real-step component makes the adjustment NaN,
+    so the existing learner failure path cannot accept misleading diagnostics.
+    Padding zeros both outputs. Prepared collection callbacks skip signature
+    inspection; all validation here uses static shapes and pure JAX operations.
+    """
     if not callable(reward):
         raise TypeError("reward must be a pure JAX callable")
     if not isinstance(cast(object, facts), TrainingFacts):
@@ -163,12 +290,43 @@ def reward_adjustments(
             raise ValueError(f"{name} must be a scalar")
         if getattr(value, "dtype", None) != dtype:
             raise TypeError(f"{name} must have {jnp.dtype(dtype)} dtype")
-    adjustment = reward(before, facts, after, progress)
+    result = _prepare_reward(reward)(before, facts, after, progress, config=config)
+    adjustment = result.adjustments if isinstance(result, RewardOutput) else result
+    components: Mapping[str, Array] = (
+        result.components if isinstance(result, RewardOutput) else {}
+    )
     if np.shape(adjustment) != (10,):
         raise ValueError("reward must return shape (10,)")
     if getattr(adjustment, "dtype", None) != jnp.float32:
         raise TypeError("reward must return float32 dtype")
-    return jnp.where(facts.has_transition, adjustment, jnp.float32(0))
+    if not isinstance(cast(object, components), Mapping):
+        raise TypeError("RewardOutput.components must be a mapping")
+    if isinstance(result, RewardOutput) and not components:
+        raise ValueError(
+            "Reward components must be nonempty; return an array to omit them"
+        )
+    if any(
+        not isinstance(key, str) or not key.strip()
+        for key in cast(Mapping[object, Array], components)
+    ):
+        raise ValueError("Reward component names must be nonempty strings")
+    checked: dict[str, Array] = {}
+    for key in sorted(components):
+        value = components[key]
+        if np.shape(value) != (10,):
+            raise ValueError(f"Reward component {key!r} must have shape (10,)")
+        if getattr(value, "dtype", None) != jnp.float32:
+            raise TypeError(f"Reward component {key!r} must have float32 dtype")
+        checked[key] = jnp.where(facts.has_transition, value, jnp.float32(0))
+    if checked:
+        values = jnp.stack(tuple(checked.values()))
+        consistent = jnp.all(jnp.isfinite(values)) & jnp.all(
+            jnp.isclose(values.sum(0), adjustment, rtol=1e-5, atol=1e-6)
+        )
+        adjustment = jnp.where(consistent, adjustment, jnp.float32(jnp.nan))
+    return RewardOutput(
+        jnp.where(facts.has_transition, adjustment, jnp.float32(0)), checked
+    )
 
 
 def validate_reward(
@@ -177,6 +335,8 @@ def validate_reward(
     facts: TrainingFacts,
     after: EnvState,
     progress: Array,
+    *,
+    config: EnvConfig | None = None,
 ) -> None:
     """Trace a custom reward's scalar contract before collection starts.
 
@@ -186,6 +346,8 @@ def validate_reward(
         The callback and scalar inputs documented by reward_adjustments. Use
         one prepared game, its producing facts and an int32 round counter.
         Actual input values are not inspected; tracing checks shapes and dtypes.
+    config : EnvConfig or None, default=None
+        Producing scalar configuration for callbacks that explicitly accept it.
 
     Returns
     -------
@@ -205,7 +367,172 @@ def validate_reward(
     transition. The callback must have no I/O or side effects. No callable is
     saved, no clock is allocated and no file or device result is written.
     """
-    jax.eval_shape(partial(reward_adjustments, reward), before, facts, after, progress)
+    jax.eval_shape(
+        partial(_reward_output, _prepare_reward(reward)),
+        before,
+        facts,
+        after,
+        progress,
+        config,
+    )
+
+
+class _RewardTotals(NamedTuple):
+    """Keep one undrained collection window, independent of learner sample reuse.
+
+    Sums are float32 (B,K), with K fixed named components. Counts stay per lane:
+    transitions/team_transitions are int32 (B,), recipients is int32 (B,5).
+    Every count is bounded by the existing int32 round budget, even when the
+    batch-wide or five-slot total is larger. Host reporting adds Python numbers.
+    Configured dead learners count; partners, Team B and padding do not.
+    """
+
+    recipient_sums: Array
+    team_mean_sums: Array
+    transitions: Array
+    team_transitions: Array
+    recipients: Array
+
+
+def _empty_reward_totals(num_envs: int, components: int) -> _RewardTotals | tuple[()]:
+    """Allocate a small zero window only when named components are enabled."""
+    if not components:
+        return ()
+    return _RewardTotals(
+        jnp.zeros((num_envs, components), jnp.float32),
+        jnp.zeros((num_envs, components), jnp.float32),
+        jnp.zeros(num_envs, jnp.int32),
+        jnp.zeros(num_envs, jnp.int32),
+        jnp.zeros((num_envs, 5), jnp.int32),
+    )
+
+
+def _add_reward_totals(
+    totals: _RewardTotals,
+    output: RewardOutput,
+    owned: Array,
+    valid: Array,
+) -> _RewardTotals:
+    """Count a collected batch once, using configured learner-slot ownership.
+
+    output contains batched (B,10) adjustments/parts; owned is bool (B,5),
+    independent of alive status; valid is bool (B,) real transitions. Sum each
+    part over recipients and separately sum its per-game owned-slot mean, which
+    matches the Q learners' existing reduction. No per-step host transfer occurs.
+    """
+    selected = owned & valid[:, None]
+    parts = jnp.stack(tuple(output.components.values()), axis=1)[:, :, :5]
+    recipient_sums = jnp.where(selected[:, None, :], parts, 0).sum(-1)
+    count = selected.sum(-1)
+    team_means = recipient_sums / jnp.maximum(count[:, None], 1)
+    return _RewardTotals(
+        totals.recipient_sums + recipient_sums,
+        totals.team_mean_sums + team_means,
+        totals.transitions + valid.astype(jnp.int32),
+        totals.team_transitions + (count > 0).astype(jnp.int32),
+        totals.recipients + selected.astype(jnp.int32),
+    )
+
+
+def _validate_reward_totals(
+    totals: _RewardTotals, keys: tuple[str, ...], *, rounds: int
+) -> None:
+    """Check a host window before saving, restoring or reporting its totals.
+
+    totals has float32 (B,K) sums and int32 per-lane counts. keys fixes K;
+    rounds bounds every lane's real count. Every recipient count is bounded by
+    eligible-team transitions; their sum covers those transitions. Lanes with
+    no owned recipients must have zero sums. Nonfinite or inconsistent values
+    raise ValueError. The caller transfers the small tree once; this check adds
+    no device work, writes or full-payload reads.
+    """
+    transitions = np.asarray(totals.transitions)
+    teams = np.asarray(totals.team_transitions)
+    recipients = np.asarray(totals.recipients)
+    batch = transitions.size
+    sums = (np.asarray(totals.recipient_sums), np.asarray(totals.team_mean_sums))
+    if (
+        transitions.shape != (batch,)
+        or teams.shape != (batch,)
+        or recipients.shape != (batch, 5)
+        or any(value.dtype != np.int32 for value in (transitions, teams, recipients))
+        or any(
+            value.shape != (batch, len(keys)) or value.dtype != np.float32
+            for value in sums
+        )
+        or np.any(transitions < 0)
+        or np.any(transitions > rounds)
+        or np.any(teams < 0)
+        or np.any(teams > transitions)
+        or np.any(recipients < 0)
+        or np.any(recipients > teams[:, None])
+        or np.any(recipients.sum(axis=1, dtype=np.int64) < teams)
+        or any(not np.all(np.isfinite(value)) for value in sums)
+        or any(np.any(value[teams == 0] != 0) for value in sums)
+    ):
+        raise ValueError("Collected reward component window has invalid counts or sums")
+
+
+def _reward_totals_record(
+    totals: _RewardTotals, keys: tuple[str, ...]
+) -> dict[str, object]:
+    """Read one compact window to finite JSON-ready Python sums and counts.
+
+    Called only at a saved-row or continuation boundary. The single device_get
+    transfers these small totals, not transitions or replay. Host Python sums
+    avoid batch-wide int32 overflow and long-run float32 cumulative rounding.
+    Nonfinite totals raise ValueError before a row or checkpoint write.
+    """
+    host = jax.device_get(totals)
+    _validate_reward_totals(host, keys, rounds=int(np.iinfo(np.int32).max))
+    return {
+        "real_transitions": sum(map(int, np.asarray(host.transitions).flat)),
+        "learner_team_transitions": sum(
+            map(int, np.asarray(host.team_transitions).flat)
+        ),
+        "learner_agent_transitions": sum(map(int, np.asarray(host.recipients).flat)),
+        "components": {
+            key: {
+                "recipient_sum": sum(
+                    map(float, np.asarray(host.recipient_sums)[:, index])
+                ),
+                "team_mean_sum": sum(
+                    map(float, np.asarray(host.team_mean_sums)[:, index])
+                ),
+            }
+            for index, key in enumerate(keys)
+        },
+    }
+
+
+def _merge_reward_records(
+    previous: dict[str, object] | None, current: dict[str, object]
+) -> dict[str, object]:
+    """Return cumulative host totals without mutating either input record.
+
+    Both records must describe the same fixed component keys. Missing previous
+    totals mean the start of a reward segment. This shared owner is used by the
+    saved-row writer and continuation archival; callers own write ordering.
+    """
+    import copy
+
+    result = copy.deepcopy(current)
+    if previous is None:
+        return result
+    for name in (
+        "real_transitions",
+        "learner_team_transitions",
+        "learner_agent_transitions",
+    ):
+        result[name] = cast(int, previous[name]) + cast(int, current[name])
+    old = cast(dict[str, dict[str, float]], previous["components"])
+    new = cast(dict[str, dict[str, float]], result["components"])
+    if old.keys() != new.keys():
+        raise ValueError("Cannot combine different reward component keys")
+    for name, amounts in new.items():
+        for quantity in amounts:
+            amounts[quantity] += old[name][quantity]
+    return result
 
 
 def validate_shaping(
@@ -250,11 +577,7 @@ def validate_shaping(
     before execution, then pass them as dynamic scalar float32 arrays. This
     function reads no files and creates no reward configuration or history.
     """
-    if not isinstance(cast(object, mode), str) or mode not in (
-        "potential",
-        "score_delta",
-    ):
-        raise ValueError("shaping mode must be potential or score_delta")
+    _validate_shaping_mode(mode)
     for name, value in (("discount", discount), ("coefficient", coefficient)):
         if isinstance(value, Tracer):
             raise TypeError("Validate shaping on the host before compiled use")
@@ -263,9 +586,7 @@ def validate_shaping(
             raise ValueError(f"{name} must be a scalar")
         if scalar.dtype.kind not in "iuf":
             raise TypeError(f"{name} must be a real scalar, excluding Boolean values")
-        if not np.isfinite(scalar) or scalar < 0 or (name == "discount" and scalar > 1):
-            limit = "in [0, 1]" if name == "discount" else "nonnegative"
-            raise ValueError(f"{name} must be finite and {limit}")
+        _validate_shaping_number(scalar.item(), name=name)
 
 
 def _scalar_float32(value: float | Array, *, name: str) -> Array:

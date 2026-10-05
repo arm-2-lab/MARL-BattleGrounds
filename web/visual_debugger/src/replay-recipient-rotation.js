@@ -1,10 +1,32 @@
 /**
- * @file Recognize a replay view that changes only its authorized agent recipient.
- * The helpers compare already joined transport/presentation identities. Both
- * recipient identifiers must change while artifact, cursor and display
- * conditions remain equal. They do not load a replay or grant access to one.
+ * @file Recognize and drive a Replay Viewer change of agent: the recipient
+ * rotation checks and the Tab / Shift+Tab agent stepping.
+ *
+ * Rotation checks (isReplayAgentRecipientRotation and helpers) compare already
+ * joined transport/presentation identities: both recipient identifiers must
+ * change while artifact, cursor and display conditions remain equal. main.js
+ * uses them to keep panel preferences when only the Agent POV agent changes.
+ *
+ * Agent stepping (replayAgentStepCommand, bindReplayAgentStepping): in the
+ * Replay Viewer, Tab and Shift+Tab step through the agents while the
+ * battlefield field has focus (the one command set, row "next_champion",
+ * handler "replay_next_agent"). In Oracle View they move the selection; in
+ * Agent POV they move the POV agent, through every agent in the recorded
+ * roster, because the docked Replay Viewer may watch any agent's view. The
+ * command is the same one the roster row sends, so the host still checks it.
+ *
+ * Boundary: nothing here loads a replay, grants access, or reads facts beyond
+ * identity (public ID, presentation key, command slot). No DOM is touched
+ * except by the key handler, which only reads the event target.
  */
+import {
+  authorizedPresentationAudience,
+  authorizedPresentationIdentityRows,
+  authorizedPresentationSceneView,
+  isAuthorizedPresentationFrame,
+} from "./authorized-presentation-adapter.js";
 import { isJoinedTransportAndAuthorizedPresentationV1 } from "./authorized-presentation-normalizer.js";
+import { registerLocalCommandHandler } from "./command-set.js";
 
 /**
  * @typedef {Readonly<{
@@ -166,5 +188,128 @@ export function isReplayAgentRecipientRotation(previous, next) {
   return isReplayAgentRecipientIdentityRotation(
     replayAgentRecipientRotationIdentity(previous),
     replayAgentRecipientRotationIdentity(next),
+  );
+}
+
+/**
+ * Work out the command that Tab (direction 1) or Shift+Tab (direction -1)
+ * sends in the Replay Viewer. Pure.
+ *
+ * Oracle View: the agents are the recorded roster in its own order; the
+ * current agent is currentPublicAgentId, else the scene's inspected agent;
+ * the result selects the next one with {command_type:
+ * "activate_authorized_agent", presentation_key}. Agent POV: the agents are the
+ * whole recorded roster; the current agent is the POV agent
+ * (authority.recipient_public_agent_id); the result moves the POV agent with
+ * {command_type: "activate_replay_pov_agent", global_slot, public_agent_id}.
+ * With no current agent, Tab picks the first agent and Shift+Tab the last.
+ * Steps wrap around the ends.
+ *
+ * @param {unknown} presentation The installed presentation.
+ * @param {1 | -1} direction 1 for Tab (next), -1 for Shift+Tab (previous).
+ * @param {string | null} [currentPublicAgentId] Oracle View only: the agent
+ *   selected on the page (default null: use the scene's inspected agent).
+ * @returns {Readonly<Record<string, unknown>> | null} A frozen command, or null
+ *   for a live frame, an unknown audience, a roster with no usable agent or a
+ *   roster of one agent that is already current.
+ */
+export function replayAgentStepCommand(
+  presentation,
+  direction,
+  currentPublicAgentId = null,
+) {
+  if (
+    !isAuthorizedPresentationFrame(presentation) ||
+    presentation.viewer_mode !== "replay"
+  ) {
+    return null;
+  }
+  const audience = authorizedPresentationAudience(presentation);
+  const pov = audience === "agent_pov";
+  if (!pov && audience !== "researcher") return null;
+  const rows = authorizedPresentationIdentityRows(presentation).filter((row) =>
+    pov
+      ? row.activation_kind === "replay_pov_global" &&
+        Number.isInteger(row.command_global_slot)
+      : row.activation_kind === "scene_agent",
+  );
+  if (rows.length === 0) return null;
+  let current = pov ? presentation.authority?.recipient_public_agent_id : null;
+  if (!pov) {
+    const ownerKey =
+      authorizedPresentationSceneView(presentation)?.selection
+        ?.inspection_owner_presentation_key ?? null;
+    current =
+      typeof currentPublicAgentId === "string"
+        ? currentPublicAgentId
+        : (rows.find((row) => row.presentation_key === ownerKey)?.public_agent_id ??
+          null);
+  }
+  const index = rows.findIndex((row) => row.public_agent_id === current);
+  const step = direction === -1 ? -1 : 1;
+  const nextIndex =
+    index < 0
+      ? step === 1
+        ? 0
+        : rows.length - 1
+      : (index + step + rows.length) % rows.length;
+  if (index >= 0 && nextIndex === index) return null;
+  const next = rows[nextIndex];
+  return pov
+    ? Object.freeze({
+        command_type: "activate_replay_pov_agent",
+        global_slot: next.command_global_slot,
+        public_agent_id: next.public_agent_id,
+      })
+    : Object.freeze({
+        command_type: "activate_authorized_agent",
+        presentation_key: next.presentation_key,
+      });
+}
+
+/**
+ * Register the Replay Viewer's Tab / Shift+Tab handler ("replay_next_agent"
+ * in command-set.js). Call once at page start in the Replay Viewer only.
+ *
+ * The handler acts only when isFieldTarget(event.target) is true (the
+ * battlefield field has focus); otherwise it returns false so Tab moves focus
+ * as usual. It then builds replayAgentStepCommand(getPresentation(), Shift
+ * ? -1 : 1, getCurrentPublicAgentId()) and, when there is one, calls
+ * onCommand(command, {pointerOriginated: false}) and returns true (the
+ * replay key dispatcher then stops the key's default focus move).
+ *
+ * Side effects: one registration in the command set until the returned
+ * function runs. Sends nothing itself; onCommand owns the request.
+ *
+ * @param {{
+ *   getPresentation: () => unknown,
+ *   getCurrentPublicAgentId?: () => string | null,
+ *   isFieldTarget: (target: EventTarget | null) => boolean,
+ *   onCommand: (
+ *     command: Readonly<Record<string, unknown>>,
+ *     context: Readonly<{pointerOriginated: boolean}>,
+ *   ) => unknown,
+ * }} options getPresentation returns the installed presentation;
+ *   getCurrentPublicAgentId (default: always null) returns the page's selected
+ *   agent in Oracle View; isFieldTarget says whether a key event came from the
+ *   battlefield field; onCommand sends the activation command.
+ * @returns {() => void} Removes the registration.
+ * @throws {TypeError} When the handler name already has a handler.
+ */
+export function bindReplayAgentStepping(options) {
+  return registerLocalCommandHandler(
+    "replay_next_agent",
+    /** @param {import("./command-set.js").LocalCommandCall} call */ (call) => {
+      const event = /** @type {KeyboardEvent} */ (call.event);
+      if (!options.isFieldTarget(event?.target ?? null)) return false;
+      const command = replayAgentStepCommand(
+        options.getPresentation(),
+        call.shiftKey ? -1 : 1,
+        options.getCurrentPublicAgentId?.() ?? null,
+      );
+      if (command === null) return false;
+      void options.onCommand(command, Object.freeze({ pointerOriginated: false }));
+      return true;
+    },
   );
 }

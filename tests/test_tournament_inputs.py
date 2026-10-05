@@ -72,7 +72,7 @@ def test_short_declaration_resolves_paths_and_keeps_factories_unopened(
     actors.mkdir()
     (tmp_path / "random").mkdir()
     source = {
-        "entrants": ["actor:folder", "random", "not_imported:make"],
+        "entrants": ["./actor:folder", "actor:folder", "random", "not_imported:make"],
         "output_dir": "results",
         "maps": [47],
         "games_per_opponent": 2,
@@ -83,7 +83,12 @@ def test_short_declaration_resolves_paths_and_keeps_factories_unopened(
     result = inputs.read_short_tournament_config(path)
     assert result is not None
     raw, base = result
-    assert raw["entrants"] == [str(actors), "random", "not_imported:make"]
+    assert raw["entrants"] == [
+        str(actors),
+        "actor:folder",
+        "random",
+        "not_imported:make",
+    ]
     assert raw["output_dir"] == str(tmp_path / "results")
     assert base == tmp_path
     assert json.loads(path.read_text()) == source

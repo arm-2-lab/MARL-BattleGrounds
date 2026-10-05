@@ -1,0 +1,170 @@
+/*
+ * BattleClient layout: the #bc grid of the live combat screen (the
+ * BattleClient and the DevClient combat screen), ported from the approved
+ * vision page. Four areas: the top bar across the top, the scorebug under
+ * it, then the stage (arena and deck) beside a 340 px rail that scrolls on
+ * its own. Owner, 4 Oct 2026: no status line under the deck; its message is
+ * the deck's header line and its buttons are in the top bar.
+ *
+ * Height: as in the vision, #bc is as tall as its content, but never
+ * taller than the window. When the content would be taller, the stage row
+ * takes what the top bar and the scorebug leave, the deck keeps its size,
+ * and only the arena gets shorter (arena.css). So the arena, the deck and
+ * Lock In are always on one screen (owner, 2 Oct: at 1280 x 720,
+ * 1280 x 800, 1366 x 768, 1440 x 900, 1536 x 864 and 1920 x 1080, in every
+ * "Who Plays" mode and in the DevClient below its setup line). The deck's
+ * header line must stay on screen because refusals and host messages appear
+ * only there: a refusal below the window's edge would look like a dead
+ * button. In a tall enough window nothing shrinks; in shorter windows the
+ * smaller arena is the one difference. The deck's height depends only on
+ * the window's width (deck.css), never on the turn. The top bar and the
+ * scorebug rows are max-content, so they always keep their full height (48
+ * px and about 84 px; the DevClient's top bar is about 113 px with its
+ * setup line). The stage row never gets less than 420 px (a 120 px arena
+ * and the deck). So in a very short window the page scrolls; it never
+ * squeezes the arena to nothing, which the renderer cannot draw, and the
+ * top bar never runs over the scorebug. (With auto rows the grid shrank the
+ * top bar to its 48 px min-height there, and the DevClient's setup line
+ * covered the scorebug.)
+ *
+ * Laptops (planner default, desktop and laptop widths only): below 1380 px
+ * the two columns stay side by side with a narrower rail (300 px, then
+ * 290 px below 1300 px), so the arena, the deck and Lock In fit one screen
+ * down to 1280 x 720. The vision's one-column stack and phone rules are not
+ * ported.
+ *
+ * --rail-w: the rail column's width (340, 300 or 290 px), set on #bc and
+ * owned here. Other parts that must line up with the rail read it, for
+ * example the Visual Filters drawer in overlays.css, which sits over the
+ * rail's cards (below the scorebug) and never covers the scorebug or the
+ * deck.
+ *
+ * Old live regions the vision does not have stay in the page only because
+ * src/main.js still finds them by ID; they are never shown in live play:
+ * the old match strip and party frames, the Arena Frames (shown only in the
+ * Replay Viewer), the
+ * Battlefield instructions row, the corner camera switch and the old Your
+ * Turn and How To Play slots.
+ *
+ * Scope: live play and the Replay Viewer, which takes the BattleClient's look
+ * (owner, 3 Oct 2026). Shared rules start with
+ * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
+ * a rule for only one client names its product kind alone.
+ */
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+.bc {
+  --rail-w: 340px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  grid-template-rows: max-content max-content minmax(420px, 1fr);
+  grid-template-areas:
+    "top top"
+    "score score"
+    "stage rail";
+  max-height: 100dvh;
+}
+
+/* The arena column and the rail are grid items of #bc. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  #workspace {
+  display: contents;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-stage {
+  grid-area: stage;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  container: stage / inline-size;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-stage
+  > #command-deck {
+  flex: none;
+}
+
+/* The rail is as tall as the stage row and adds nothing to its height
+   (height 0, min-height 100%, the vision's own rule), so a long rail scrolls
+   on its own instead of making the page taller. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  align-content: normal;
+  gap: 10px;
+  min-width: 0;
+  height: 0;
+  min-height: 100%;
+  padding: 12px 12px 12px 10px;
+  overflow-y: auto;
+  scrollbar-color: #34425f transparent;
+  scrollbar-width: thin;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .bc-rail
+  > * {
+  flex: none;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  :is(
+    #match-scoreboard,
+    #party-frames,
+    .battlefield-support,
+    #live-camera-switch,
+    #this-turn,
+    #how-to-play
+  ) {
+  display: none;
+}
+
+html[data-product-kind="combat_debugger"] .bc #team-rosters {
+  display: none;
+}
+
+/* Replay Viewer (owner, 3 Oct 2026): the same grid, top bar, scorebug and
+   rail as live play. The stage holds, top to bottom, the arena, the Arena
+   Frames (#team-rosters, both teams' party frames, League of Legends
+   style) and the Rune Scrubber dock (#replay-timeline); the Arena Frames
+   and the dock keep their height and only the arena gets shorter. */
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #arena {
+  order: 1;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #team-rosters {
+  order: 2;
+  flex: none;
+}
+
+html[data-product-kind="replay_viewer"] .bc .bc-stage > #replay-timeline {
+  order: 3;
+  flex: none;
+}
+
+@media (max-width: 1379px) {
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+    .bc {
+    --rail-w: 300px;
+  }
+}
+
+@media (max-width: 1299px) {
+  html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+    .bc {
+    --rail-w: 290px;
+  }
+}

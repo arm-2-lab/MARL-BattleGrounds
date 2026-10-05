@@ -1,7 +1,9 @@
 """Read and verify recorded map names without changing simulator conditions.
 
 Host-only helpers match explicit asset identity or registered metadata against
-the current catalog, retained map history and approved aliases. Geometry alone
+the current catalog, retained map history and approved aliases. They also own
+each map's readable name, which the clients show; the technical name stays the
+stored identity. Geometry alone
 never grants an old recording a map ID or split. Custom layouts remain unnamed
 unless the record provides truthful descriptive text. No JAX runtime is imported here.
 """
@@ -43,7 +45,10 @@ class RecordedMap(EvaluationModel):
     technical_name : Annotated[str, Field(min_length=1)]
         Nonempty stable source name or recorded layout identifier.
     display_name : Annotated[str, Field(min_length=1)]
-        Nonempty readable label; custom maps use "Custom Map".
+        Nonempty readable label. A registered map shows its technical name's
+        words in title case ("Teutoburg Forest") unless it has its own
+        readable name ("Whispers of Nzoth" for map 19). Custom maps use
+        "Custom Map". The label is built when the record is read, never stored.
     split : Literal['training', 'validation', 'test'] | None
         "training", "validation", "test", or None when not established.
 
@@ -92,14 +97,29 @@ def approved_map_id(asset_id: str | None, semantic_digest: str) -> int | None:
     )
 
 
+# Readable names that differ from the words of a map's technical name, keyed by
+# those words joined with hyphens. Only the label people see changes: the
+# technical name stays the map's stored identity in results, replays, file names
+# and training records. The key also matches older names of the same map under
+# its historical IDs (for example "tdm-map-id-7-nzoth-the-corruptor-training").
+_DISPLAY_NAMES: dict[str, str] = {"nzoth-the-corruptor": "Whispers of Nzoth"}
+
+
 def _map_identity(
     map_id: int, technical_name: str, split: Literal["training", "validation", "test"]
 ) -> RecordedMap:
-    """Build a readable label from a verified ID, technical name and split."""
+    """Build a readable label from a verified ID, technical name and split.
+
+    The label is the technical name without its "tdm-map-id-N-" prefix and
+    split suffix, in title case ("Teutoburg Forest"), unless _DISPLAY_NAMES
+    gives that map another name ("Whispers of Nzoth"). The technical name is
+    returned unchanged.
+    """
     prefix = r"^tdm[-_]map[-_]id[-_]\d+[-_]"
     name = re.sub(prefix, "", technical_name)
     name = re.sub(rf"[-_]{split}$", "", name)
-    display = re.sub(r"[-_]+", " ", name).title()
+    words = re.sub(r"[-_]+", "-", name)
+    display = _DISPLAY_NAMES.get(words) or words.replace("-", " ").title()
     return RecordedMap(
         map_id=map_id,
         technical_name=technical_name,

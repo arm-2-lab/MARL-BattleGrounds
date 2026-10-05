@@ -1,7 +1,12 @@
 /**
- * @file Check map-to-viewport coordinates, bounded status/route layouts, readable
- * dense displays and the Red Zone floor strips (clipped to the floor, collapsed
- * ranges dropped, overlaps merged so no floor is tinted twice).
+ * @file Check map-to-viewport coordinates (with no camera frame the transform
+ * shows the Whole Map and reports it as its camera frame, with the whole map
+ * visible; camera-frame.test.js checks zoomed frames), bounded status/route
+ * layouts (a cue with no free spot falls back to its anchor, kept inside the
+ * viewport and marked not collision-free, instead of failing the layout),
+ * readable dense displays and the Red Zone floor strips (clipped to
+ * the floor, collapsed ranges dropped, overlaps merged so no floor is tinted
+ * twice).
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -110,6 +115,8 @@ test("viewport transform fits the map, inverts Y, and round-trips finite points"
     y: transform.mapBounds.bottom,
   });
   assert.equal(transform.worldLengthToScreen(0.5), 70 / 3);
+  assert.deepEqual(transform.cameraFrame, { minX: 0, minY: 0, maxX: 16, maxY: 12 });
+  assert.equal(transform.visibleMapBounds, transform.mapBounds);
 
   for (const world of [
     { x: 0, y: 0 },
@@ -1528,7 +1535,7 @@ test("cross-phase routes persist the first collision-free marker progress", () =
   });
 });
 
-test("cross-phase occupancy routes around protected regions and fails loudly when full", () => {
+test("cross-phase occupancy routes around protected regions and puts a cue with no free spot on its anchor", () => {
   const obstacle = {
     layoutKey: "obstacle:center",
     bounds: testRectangle(270, 165, 330, 235),
@@ -1562,29 +1569,81 @@ test("cross-phase occupancy routes around protected regions and fails loudly whe
       }),
     /layoutKey must be a non-empty string/,
   );
-  assert.throws(
-    () =>
-      layoutCrossPhaseOccupancy({
-        viewport: testRectangle(0, 0, 40, 30),
-        protectedRects: [
-          {
-            layoutKey: "protected:all",
-            bounds: testRectangle(0, 0, 40, 30),
-          },
-        ],
-        requests: [
-          {
-            layoutKey: "cue:no-space",
-            kind: "recipient_cue",
-            stableOrder: 0,
-            anchor: { x: 20, y: 15 },
-            width: 10,
-            height: 10,
-          },
-        ],
-      }),
-    /no bounded collision-free placement/,
+  const full = layoutCrossPhaseOccupancy({
+    viewport: testRectangle(0, 0, 40, 30),
+    protectedRects: [
+      {
+        layoutKey: "protected:all",
+        bounds: testRectangle(0, 0, 40, 30),
+      },
+    ],
+    requests: [
+      {
+        layoutKey: "cue:no-space",
+        kind: "recipient_cue",
+        stableOrder: 0,
+        anchor: { x: 20, y: 15 },
+        width: 10,
+        height: 10,
+      },
+      {
+        layoutKey: "cue:no-space-edge",
+        kind: "recipient_cue",
+        stableOrder: 1,
+        anchor: { x: 1, y: 29 },
+        width: 10,
+        height: 10,
+      },
+      {
+        layoutKey: "cue:no-space-wide",
+        kind: "recipient_cue",
+        stableOrder: 2,
+        anchor: { x: 5, y: 5 },
+        width: 60,
+        height: 10,
+      },
+    ],
+  });
+  assert.deepEqual(full.anchorFallbackLayoutKeys, [
+    "cue:no-space",
+    "cue:no-space-edge",
+    "cue:no-space-wide",
+  ]);
+  const [center, edge, wide] = full.cuePlacements;
+  assert.equal(center.disposition, "anchor_fallback");
+  assert.equal(center.collisionFree, false);
+  assert.deepEqual(center.center, { x: 20, y: 15 });
+  assert.deepEqual(center.bounds, testRectangle(15, 10, 25, 20));
+  assert.deepEqual(center.leader.points, [
+    { x: 20, y: 15 },
+    { x: 20, y: 15 },
+  ]);
+  assert.deepEqual(edge.center, { x: 5, y: 25 });
+  assert.deepEqual(edge.bounds, testRectangle(0, 20, 10, 30));
+  assert.deepEqual(edge.leader.points, [
+    { x: 1, y: 29 },
+    { x: 5, y: 25 },
+  ]);
+  assert.deepEqual(wide.center, { x: 20, y: 5 });
+  assert.equal(
+    full.cuePlacements.map(({ layoutKey }) => layoutKey).join(),
+    "cue:no-space,cue:no-space-edge,cue:no-space-wide",
   );
+  const roomy = layoutCrossPhaseOccupancy({
+    viewport: VIEWPORT,
+    requests: [
+      {
+        layoutKey: "cue:roomy",
+        kind: "recipient_cue",
+        stableOrder: 0,
+        anchor: { x: 300, y: 200 },
+        width: 10,
+        height: 10,
+      },
+    ],
+  });
+  assert.deepEqual(roomy.anchorFallbackLayoutKeys, []);
+  assert.equal(roomy.cuePlacements[0].collisionFree, true);
 });
 
 test("cross-phase recovery route uses an exact-owner polyline through the full durable ledger", () => {

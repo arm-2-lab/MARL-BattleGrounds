@@ -1,6 +1,7 @@
 /**
  * @file Check that standalone launchers install the intended live/replay product and
- * follow server lifecycle rules.
+ * follow server lifecycle rules. The tab title keeps the full "MARL-BattleGrounds
+ * <Product>" name; the page heading (#app-title) shows the product name only.
  */
 import { expect, test } from "@playwright/test";
 
@@ -11,8 +12,8 @@ test("standalone launchers install their exact product identity", async ({ page 
   const live = await startDebugger();
   try {
     await page.goto(live.url);
-    await expect(page).toHaveTitle("MARL-BattleGrounds DevClient");
-    await expect(page.locator("#app-title")).toHaveText("MARL-BattleGrounds DevClient");
+    await expect(page).toHaveTitle("MARL-BattleGrounds BattleClient");
+    await expect(page.locator("#app-title")).toHaveText("BattleClient");
     await expect(page.locator("html")).toHaveAttribute(
       "data-product-kind",
       "combat_debugger",
@@ -80,9 +81,7 @@ test("standalone launchers install their exact product identity", async ({ page 
     releaseMain();
     await page.waitForLoadState("load");
     await expect(page).toHaveTitle("MARL-BattleGrounds Replay Viewer");
-    await expect(page.locator("#app-title")).toHaveText(
-      "MARL-BattleGrounds Replay Viewer",
-    );
+    await expect(page.locator("#app-title")).toHaveText("Replay Viewer");
     await expect(page.locator("html")).toHaveAttribute(
       "data-product-kind",
       "replay_viewer",

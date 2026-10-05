@@ -1,50 +1,45 @@
-"""Train a small researcher-owned CTDE actor, then validate and evaluate it.
+"""Train a researcher-owned CTDE actor, then validate and evaluate its snapshots.
 
-Run ``python examples/own_learner.py --output-dir artifacts/own_learner`` from
-an installed checkout. The destination must be new. Defaults are a small wiring
-example, not a trained baseline. For a larger declared budget, change --updates,
---rollout-length and --num-envs; their product counts environment transitions.
-Use JAX_PLATFORMS=cpu for small CPU checks. GPU batches must follow the project's
-allowed sizes; the default is 32. Add --custom-reward for a fading death signal.
+Install training and hydra, then run with JAX_PLATFORMS=cpu::
 
-CTDE means centralized training and decentralized execution. Only the critic
-reads privileged physical state. The shared feed-forward actor processes each
-permitted actor row separately. This file owns its network, Adam updates and
-numerical actor snapshots; it does not call a built-in trainer. Snapshots are
-immutable actor exports for this example, not resumable learner checkpoints.
+    python examples/own_learner.py output_dir=artifacts/own-learner
+
+The destination must be new. updates * rollout_length * num_envs counts real
+training transitions. Defaults check wiring, not trained skill. Validation uses
+a separate batch capped at 32. custom_reward=true adds the fading reward lesson.
+CTDE means centralized training and decentralized execution: only the critic
+reads privileged state. The actor processes each permitted row separately.
+This file owns its networks and updates rather than calling a built-in trainer.
+Saved snapshots are immutable actor exports, not resumable learner checkpoints.
+Use --help or --cfg job for YAML; import run or train for plain Python.
 """
 
-import argparse
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 from functools import partial
 from pathlib import Path
-from typing import Any, NamedTuple, cast
-
-import jax
-import jax.numpy as jnp
-import numpy as np
-import optax  # pyright: ignore[reportMissingTypeStubs]
-from jax import Array
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import marl_battlegrounds as marl_bgs
-from marl_battlegrounds.baselines.inputs import (
-    ACTOR_FEATURE_SIZE,
-    TRAINING_STATE_FEATURE_SIZE,
-    encode_actor_inputs,
-    encode_training_state,
-)
-from marl_battlegrounds.core.types import EnvState
-from marl_battlegrounds.policies.input import (
-    ActorInput,
-    Observations,
-    build_team_actor_input,
-)
-from marl_battlegrounds.training.analysis import select_checkpoint
-from marl_battlegrounds.training.shaping import reward_adjustments
-from marl_battlegrounds.training.validation import create_panel, validate_checkpoint
-from marl_battlegrounds.types import ActionMask, ActorAction, SystemInput, SystemOutput
+
+if TYPE_CHECKING:
+    from jax import Array
+
+    from marl_battlegrounds.core.types import EnvState
+    from marl_battlegrounds.policies.input import (
+        ActorInput,
+        Observations,
+    )
+    from marl_battlegrounds.types import (
+        ActionMask,
+        ActorAction,
+        SystemInput,
+        SystemOutput,
+    )
+
 
 type Parameters = dict[str, Array]
 type Tree = Any
@@ -86,6 +81,10 @@ def initialize(key: Array, inputs: int, outputs: int) -> Parameters:
     inputs/outputs are positive feature widths. Return float32 weights/biases;
     all applications preserve leading batch/actor axes without mixing rows.
     """
+
+    import jax
+    import jax.numpy as jnp
+
     hidden, head = jax.random.split(key)
     return {
         "hidden": jax.random.normal(hidden, (inputs, 32)) / jnp.sqrt(inputs),
@@ -97,6 +96,9 @@ def initialize(key: Array, inputs: int, outputs: int) -> Parameters:
 
 def network(parameters: Parameters, features: Array) -> Array:
     """Apply independent rows after a fixed 0.01 input scale; preserve all axes."""
+
+    import jax.numpy as jnp
+
     hidden = jnp.tanh(
         features * 0.01 @ parameters["hidden"] + parameters["hidden_bias"]
     )
@@ -111,6 +113,12 @@ def distributions(
     actors contains permitted rows only. Coupled target/Ultimate legality comes
     from the supplied same-decision joint mask. No private rows are combined.
     """
+
+    import jax
+    import jax.numpy as jnp
+
+    from marl_battlegrounds.baselines.inputs import encode_actor_inputs
+
     logits = network(parameters, encode_actor_inputs(actors))
     combat = masks.select_target_use_ultimate_joint_mask.reshape(
         (*logits.shape[:-1], 22)
@@ -125,6 +133,9 @@ def selected_log_probability(
     probabilities: tuple[Array, Array], actions: ActorAction
 ) -> Array:
     """Read each submitted move and combat pair's joint log probability."""
+
+    import jax.numpy as jnp
+
     moves, combat = probabilities
     return (
         jnp.take_along_axis(moves, actions.move[..., None], -1)[..., 0]
@@ -143,6 +154,12 @@ def act(
     permitted System view. keys has one key per game; split it by actor and head.
     The critic, raw state, rewards and other actors' private rows are absent.
     """
+
+    import jax
+    import jax.numpy as jnp
+
+    from marl_battlegrounds.types import ActorAction, SystemOutput
+
     probabilities = distributions(variables, inputs.actors, inputs.action_mask)
 
     def actor_keys(key: Array) -> Array:
@@ -180,6 +197,9 @@ def fading_reward(
     counts completed rounds; a fade budget of E transitions uses E/num_envs
     rounds. This changes the training objective while active, never task scores.
     """
+
+    import jax.numpy as jnp
+
     del before, after
     fade = jnp.maximum(0.0, 1.0 - progress.astype(jnp.float32) / fade_rounds)
     return (
@@ -199,6 +219,9 @@ def td_targets(rewards: Array, next_values: Array, completed: Array) -> Array:
     is the native Boolean done flag, including horizon draws. A computational
     rollout cutoff leaves that flag false and keeps its producing successor.
     """
+
+    import jax.numpy as jnp
+
     return rewards + 0.99 * jnp.where(completed, 0, next_values)
 
 
@@ -211,6 +234,12 @@ def objective(
     The critic alone uses physical-state features. TD targets and advantages
     are constants for this update; dead/inactive actors contribute no actor loss.
     """
+
+    import jax
+    import jax.numpy as jnp
+
+    from marl_battlegrounds.policies.input import build_team_actor_input
+
     actor_weights, critic_weights = parameters
     actors = jax.vmap(jax.vmap(partial(build_team_actor_input, team=0)))(
         rows.observations
@@ -246,6 +275,9 @@ def save_actor(directory: Path, parameters: Parameters, *, env_steps: int) -> Pa
     checkpoint ID hashes the exact saved bytes; env_steps is measured collection
     work. This actor-only snapshot cannot resume its optimizer or games.
     """
+
+    import numpy as np
+
     directory.mkdir(parents=True, exist_ok=False)
     path = directory / "actor_weights.npz"
     np.savez(
@@ -264,6 +296,10 @@ def save_actor(directory: Path, parameters: Parameters, *, env_steps: int) -> Pa
 
 def load_actor(directory: Path) -> marl_bgs.System:
     """Load this example's numerical actor and verify its saved-byte identity."""
+
+    import jax.numpy as jnp
+    import numpy as np
+
     details = json.loads((directory / "actor.json").read_text())
     path = directory / "actor_weights.npz"
     if hashlib.sha256(path.read_bytes()).hexdigest() != details["checkpoint_id"]:
@@ -301,6 +337,18 @@ def train(
     and a declared fade_rounds horizon. Return snapshots, finite update metrics
     and initial/final parameters for the example's correctness checks.
     """
+
+    import jax
+    import jax.numpy as jnp
+    import optax  # pyright: ignore[reportMissingTypeStubs]
+
+    from marl_battlegrounds.baselines.inputs import (
+        ACTOR_FEATURE_SIZE,
+        TRAINING_STATE_FEATURE_SIZE,
+        encode_training_state,
+    )
+    from marl_battlegrounds.training.shaping import reward_adjustments
+
     if (
         updates < 2
         or rollout_length < 1
@@ -443,7 +491,7 @@ def train(
     env_steps = 0
     for index in range(updates):
         parameters, optimizer_state, carry, measured = cast(
-            tuple[tuple[Parameters, Parameters], Tree, Carry, dict[str, Array]],
+            "tuple[tuple[Parameters, Parameters], Tree, Carry, dict[str, Array]]",
             update(parameters, optimizer_state, carry),
         )
         measured = jax.device_get(measured)
@@ -483,6 +531,10 @@ def validate_and_evaluate(
     num_envs controls validation only; use 32 on GPU. The CLI caps this separate
     evaluation batch at 32 without changing the training experience budget.
     """
+
+    from marl_battlegrounds.training.analysis import select_checkpoint
+    from marl_battlegrounds.training.validation import create_panel, validate_checkpoint
+
     output_dir.mkdir(parents=True, exist_ok=False)
     panel = create_panel(opponents=["random"], output_dir=output_dir / "panel")
     confirmations: list[dict[str, Any]] = []
@@ -524,35 +576,80 @@ def validate_and_evaluate(
     return summary
 
 
-def main() -> None:
-    """Parse a declared budget and run training, saved selection and evaluation."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--updates", type=int, default=4)
-    parser.add_argument("--rollout-length", type=int, default=16)
-    parser.add_argument("--num-envs", type=int, default=32)
-    parser.add_argument("--max-steps", type=int, default=300)
-    parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--custom-reward", action="store_true")
-    parser.add_argument("--fade-rounds", type=int, default=1024)
-    args = parser.parse_args()
+def run(
+    *,
+    output_dir: str | Path,
+    updates: int = 4,
+    rollout_length: int = 16,
+    num_envs: int = 32,
+    max_steps: int = 300,
+    seed: int = 7,
+    custom_reward: bool = False,
+    fade_rounds: int = 1024,
+) -> None:
+    """Train the researcher-owned CTDE lesson and evaluate its actor snapshots.
+
+    Parameters
+    ----------
+    output_dir : str | Path
+        Exact new training output folder. Two frozen actors and a validation
+        subfolder are written here.
+    updates : int, default=4
+        Number of learner updates. Each collects rollout_length rounds from every
+        parallel game.
+    rollout_length : int, default=16
+        Number of game transitions per lane collected for each learner update.
+    num_envs : int, default=32
+        Parallel training games. Validation uses min(num_envs, 32) separately.
+    max_steps : int, default=300
+        Game horizon in transitions. A short horizon is a software check, not
+        evidence of learned skill.
+    seed : int, default=7
+        Root random seed. The lesson separates training and evaluation keys.
+    custom_reward : bool, default=False
+        Use the example's optional transition-reward callback. False keeps its base
+        reward.
+    fade_rounds : int, default=1024
+        Number of training rounds over which the optional reward coefficient fades;
+        used only with custom_reward=True.
+
+    Returns
+    -------
+    None
+        Print results and saved locations. No scientific learning claim is made.
+
+    Notes
+    -----
+    API errors propagate without an automatic retry. Python callers use current
+    working-directory paths; Hydra preserves its original launch directory.
+    """
+    if type(custom_reward) is not bool:
+        raise TypeError("custom_reward must be true or false")
+    output_dir = Path(output_dir)
     result = train(
-        args.output_dir,
-        updates=args.updates,
-        rollout_length=args.rollout_length,
-        num_envs=args.num_envs,
-        max_steps=args.max_steps,
-        seed=args.seed,
-        custom_reward=args.custom_reward,
-        fade_rounds=args.fade_rounds,
+        output_dir,
+        updates=updates,
+        rollout_length=rollout_length,
+        num_envs=num_envs,
+        max_steps=max_steps,
+        seed=seed,
+        custom_reward=custom_reward,
+        fade_rounds=fade_rounds,
     )
     selected = validate_and_evaluate(
         result["snapshots"],
-        args.output_dir / "validation",
-        num_envs=min(args.num_envs, 32),
+        output_dir / "validation",
+        num_envs=min(num_envs, 32),
     )
     print(json.dumps({"env_steps": result["env_steps"], **selected}, indent=2))
 
 
+def main() -> int:
+    """Compose packaged YAML and call run; use --help or --cfg job to inspect."""
+    from marl_battlegrounds.experiments.hydra import example_main
+
+    return example_main("own_learner", run)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

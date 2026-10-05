@@ -1,5 +1,6 @@
 /**
- * @file Check direct and multiple-source labels, stable duplicate removal and
+ * @file Check direct and multiple-source labels (champion labels such as
+ * "Mage · ID alpha/9001", from agent-identity.js), stable duplicate removal and
  * rejection of unauthorized or conflicting joins.
  */
 import assert from "node:assert/strict";
@@ -61,8 +62,8 @@ test("one direct source uses the exact canonical public identity and no raw fiel
   assert.deepEqual(result, {
     state: "single",
     label: "Source",
-    value: "Agent ID alpha/9001 · Mage · Team A",
-    text: "Source: Agent ID alpha/9001 · Mage · Team A",
+    value: "Mage · ID alpha/9001",
+    text: "Source: Mage · ID alpha/9001",
   });
   assert.equal(Object.isFrozen(result), true);
   assert.doesNotMatch(JSON.stringify(result), /source:m1|999|must-not-be-read/u);
@@ -83,8 +84,8 @@ test("multiple sources preserve serialized first occurrence and dedupe exact rep
   assert.deepEqual(result, {
     state: "multiple",
     label: "Sources",
-    value: "Agent ID beta.17 · Rogue · Team B; Agent ID alpha/9001 · Hunter · Team A",
-    text: "Sources: Agent ID beta.17 · Rogue · Team B; Agent ID alpha/9001 · Hunter · Team A",
+    value: "Rogue · ID beta.17; Hunter · ID alpha/9001",
+    text: "Sources: Rogue · ID beta.17; Hunter · ID alpha/9001",
   });
 });
 
@@ -328,10 +329,7 @@ test("malformed public identities never receive a partial canonical title", () =
       team_id: 1,
     }),
   ];
-  assert.equal(
-    exactAuthorizedAgentIdentityV1(valid)?.title,
-    "Agent ID alpha/9001 · Mage · Team A",
-  );
+  assert.equal(exactAuthorizedAgentIdentityV1(valid)?.title, "Mage · ID alpha/9001");
   for (const identity of malformed) {
     assert.equal(exactAuthorizedAgentIdentityV1(identity), null);
     assert.equal(
@@ -351,7 +349,7 @@ test("malformed public identities never receive a partial canonical title", () =
   });
   assert.equal(
     exactAuthorizedAgentIdentityV1(ignoredAccessor)?.title,
-    "Agent ID alpha/9001 · Mage · Team A",
+    "Mage · ID alpha/9001",
   );
   assert.equal(ignoredAccessorReads, 0);
 

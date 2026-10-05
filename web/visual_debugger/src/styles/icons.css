@@ -1,0 +1,212 @@
+/*
+ * Paints of the Heraldic Sigils made by src/icons.js (createSvgIcon with the
+ * default "sigil" style). Each sigil part carries `sigil-paint` plus one
+ * `sigil-paint--<paint>` class; the paint class names one colour token from
+ * styles.css, so PNG export resolves it like any other style. "current" uses
+ * the caller's text colour (generic icons such as status-stun). Keylines are
+ * Ink and keep a fixed pixel width (non-scaling strokes set in icons.js).
+ * styles.css imports this file first, so its later rules win on a clash.
+ * The last rule styles the "outline" switch-off look (`.sigil-outline`).
+ */
+.sigil-paint {
+  fill: var(--sigil-paint, currentColor);
+  stroke: none;
+}
+
+.sigil-keyline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linejoin: round;
+}
+
+.sigil-keyline--filled {
+  fill: var(--ink);
+}
+
+.sigil-keyline--ready {
+  fill: none;
+  stroke: var(--sigil-paint, currentColor);
+}
+
+.sigil-jewel--ringed {
+  stroke: var(--ink);
+}
+
+.sigil-filigree {
+  fill: none;
+  stroke: var(--sigil-paint, currentColor);
+  stroke-linecap: round;
+}
+
+.sigil-paint--current {
+  --sigil-paint: currentColor;
+}
+
+.sigil-paint--mage {
+  --sigil-paint: var(--class-mage);
+}
+
+.sigil-paint--warrior {
+  --sigil-paint: var(--class-warrior);
+}
+
+.sigil-paint--hunter {
+  --sigil-paint: var(--class-hunter);
+}
+
+.sigil-paint--rogue {
+  --sigil-paint: var(--class-rogue);
+}
+
+.sigil-paint--priest {
+  --sigil-paint: var(--class-priest);
+}
+
+.sigil-paint--class-mage {
+  --sigil-paint: var(--class-mage);
+}
+
+.sigil-paint--class-warrior {
+  --sigil-paint: var(--class-warrior);
+}
+
+.sigil-paint--class-hunter {
+  --sigil-paint: var(--class-hunter);
+}
+
+.sigil-paint--class-rogue {
+  --sigil-paint: var(--class-rogue);
+}
+
+.sigil-paint--class-priest {
+  --sigil-paint: var(--class-priest);
+}
+
+.sigil-paint--team-a {
+  --sigil-paint: var(--team-a);
+}
+
+.sigil-paint--team-a-light {
+  --sigil-paint: var(--team-a-light);
+}
+
+.sigil-paint--team-b {
+  --sigil-paint: var(--team-b);
+}
+
+.sigil-paint--team-b-light {
+  --sigil-paint: var(--team-b-light);
+}
+
+.sigil-paint--azure {
+  --sigil-paint: var(--team-a);
+}
+
+.sigil-paint--azure-field {
+  --sigil-paint: var(--team-a-field);
+}
+
+.sigil-paint--crimson {
+  --sigil-paint: var(--team-b);
+}
+
+.sigil-paint--crimson-field {
+  --sigil-paint: var(--team-b-field);
+}
+
+.sigil-paint--starcore {
+  --sigil-paint: var(--starcore);
+}
+
+.sigil-paint--forge-white {
+  --sigil-paint: var(--forge-white);
+}
+
+.sigil-paint--rime {
+  --sigil-paint: var(--rime);
+}
+
+.sigil-paint--frostglass {
+  --sigil-paint: var(--frostglass);
+}
+
+.sigil-paint--ice-crack {
+  --sigil-paint: var(--ice-crack);
+}
+
+.sigil-paint--venom-deep {
+  --sigil-paint: var(--venom-deep);
+}
+
+.sigil-paint--blade {
+  --sigil-paint: var(--blade-silver);
+}
+
+.sigil-paint--dawnlight {
+  --sigil-paint: var(--dawnlight);
+}
+
+.sigil-paint--amber {
+  --sigil-paint: var(--amber-deep);
+}
+
+.sigil-paint--ash {
+  --sigil-paint: var(--ash);
+}
+
+.sigil-paint--grave {
+  --sigil-paint: var(--grave-stone);
+}
+
+.sigil-paint--veil {
+  --sigil-paint: var(--moonward-veil);
+}
+
+.sigil-paint--ink {
+  --sigil-paint: var(--ink);
+}
+
+.sigil-paint--ward {
+  --sigil-paint: var(--ward-silver);
+}
+
+.sigil-paint--ivory {
+  --sigil-paint: var(--life-ivory);
+}
+
+.sigil-paint--dew {
+  --sigil-paint: var(--moon-dew);
+}
+
+.sigil-paint--moon {
+  --sigil-paint: var(--moon-silver);
+}
+
+.sigil-paint--text {
+  --sigil-paint: var(--ui-text);
+}
+
+.sigil-paint--muted {
+  --sigil-paint: var(--ui-muted);
+}
+
+.sigil-paint--panel {
+  --sigil-paint: var(--panel);
+}
+
+.sigil-paint--edge {
+  --sigil-paint: var(--panel-edge);
+}
+
+.sigil-paint--withered {
+  --sigil-paint: var(--withered-gold);
+}
+
+/*
+ * The "outline" style (Lore Emblems or Status Icons From Marks off): the
+ * sigil's shapes as thin lines in the caller's text colour, never filled.
+ */
+.sigil-outline {
+  fill: none;
+  stroke: currentColor;
+}

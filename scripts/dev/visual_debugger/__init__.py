@@ -2,8 +2,9 @@
 
 ``iter_scenario_summaries`` uses metadata only. ``get_scenario`` and
 ``list_scenarios`` load live scenario definitions when requested. Importing this
-package alone does not initialize the simulator or an array backend. Launch the
-product through its development shell scripts.
+package alone does not initialize the simulator or an array backend. Launch live
+play with ``marl_bgs.battle_client(...)``. Open saved replays with
+``python -m marl_battlegrounds replay PATH``.
 """
 
 from importlib import import_module

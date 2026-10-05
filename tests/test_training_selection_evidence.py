@@ -485,6 +485,31 @@ def test_failed_run_and_missing_work_remain_visible(package: dict[str, Any]) -> 
     assert evidence.read_run_evidence(root / "missing")["status"] == "missing"
 
 
+@pytest.mark.parametrize("original", [None, [], "unfinished"])
+def test_unfinished_original_selection_accepts_only_null_or_an_object(
+    package: dict[str, Any], original: object
+) -> None:
+    data = _make_run(package)
+    root = data["root"]
+    _write(root / "status.json", {"status": "running"})
+    _write(root / "selection.json", original)
+    if original is None:
+        result = evidence.read_run_evidence(root)
+        assert result["original_selection"] is None
+        assert result["final_checkpoint_id"] is None
+        assert result["status"] == "running"
+        decision = selection.reselect_checkpoint(
+            [root],
+            declaration={"name": "Inspect Unfinished Run"},
+            output_dir=root.parent / "selection",
+        )
+        assert decision["status"] == "incomplete"
+        assert decision["runs"][0]["winner"] is None
+    else:
+        with pytest.raises(ValueError, match="Original selection must be an object"):
+            evidence.read_run_evidence(root)
+
+
 def test_snapshot_refuses_a_file_changed_during_read(
     package: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -898,6 +923,8 @@ def test_repeated_lineage_reuses_only_completed_call_local_verification(
         root: Path,
         snapshot: evidence._Snapshot,
         confirmation_root: object,
+        *,
+        point_cells: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         value = dict(snapshot.read(path))
         actors[value["checkpoint_id"]] = {
@@ -915,6 +942,7 @@ def test_repeated_lineage_reuses_only_completed_call_local_verification(
         declaration: Mapping[str, Any],
         _active: frozenset[str] = frozenset(),
         _verified: dict[str, tuple[dict[str, Any], frozenset[str]]] | None = None,
+        point_cells: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         fresh: dict[str, tuple[dict[str, Any], frozenset[str]]] = {}
         result = implementation(
@@ -957,3 +985,65 @@ def test_inherited_reference_rejects_boolean_schema(package: dict[str, Any]) -> 
     references[0]["schema_version"] = True
     with pytest.raises(ValueError, match="Invalid inherited candidate reference"):
         evidence.read_inherited_candidates(references, declaration=declaration)
+
+
+@pytest.mark.parametrize("changed_present", [False, True])
+def test_old_native_points_are_recovered_without_rewriting_history(
+    package: dict[str, Any], changed_present: bool
+) -> None:
+    data = _make_run(package)
+    root = data["root"]
+    confirmed = _make_task(data, purpose="confirmation")
+    for cell in confirmed["cells"]:
+        cell.pop("mean_team_a_score")
+        cell.pop("mean_team_b_score")
+    if changed_present:
+        confirmed["cells"][0]["mean_team_a_score"] = 99
+    summary = (
+        root
+        / "validation"
+        / f"confirmation-{data['identifier']}"
+        / "validation_summary.json"
+    )
+    _write(summary, confirmed)
+    _write(root / "validation_results.json", [confirmed])
+    _write(root / "selection.json", confirmed)
+    before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    collected: dict[str, dict[str, Any]] = {}
+    if changed_present:
+        with pytest.raises(ValueError, match="differs from its saved games"):
+            evidence.read_run_evidence(root, point_cells=collected)
+    else:
+        checked = evidence.read_run_evidence(root, point_cells=collected)
+        assert "mean_team_a_score" not in checked["records"][0]["cells"][0]
+        cell = collected[confirmed["task_id"]]["cells"][0]
+        assert (cell["mean_team_a_score"], cell["mean_team_b_score"]) == (3, 1)
+        from marl_battlegrounds.training import analysis
+
+        grouping = {
+            "schema_version": 2,
+            "measure": "point_margin",
+            "maps": confirmed["maps"],
+            "opponents": [member.name for member in data["panel"].members],
+            "panel_digest": data["panel"].digest,
+            "red_zone_depth": 5.0,
+            "runs": [{"run_dir": str(root), "group": "Software", "unit": "Seed7"}],
+            "recipe_selection": [
+                {
+                    "name": "Mean",
+                    "groups": ["Software"],
+                    "direction": "maximize",
+                    "tie_order": ["Software"],
+                }
+            ],
+        }
+        report = analysis.analyze(
+            [root], output_dir=root.parent / "report", grouping=grouping
+        )
+        decision = report["training_variation"]["recipe_selection"]["decisions"][0]
+        assert decision["candidates"][0]["mean"] == 2
+        assert (
+            analysis._checked_recipe_report(report, {str(root)})
+            == report["training_variation"]["recipe_selection"]
+        )
+    assert all(path.read_bytes() == value for path, value in before.items())

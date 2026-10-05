@@ -397,6 +397,7 @@ def test_warmup_child_run_setup_uses_saved_points_and_planned_learning_count(
         random_diagnostic_seed_pairs=None,
         checkpoint_env_steps=(),
         validation_fractions=(1.0,),
+        retain_all_actors=False,
     )
     (tmp_path / "run_details.json").write_text(
         '{"created_at":"2026-09-25T00:00:00+00:00"}'
@@ -404,10 +405,11 @@ def test_warmup_child_run_setup_uses_saved_points_and_planned_learning_count(
     run = runner._Run(
         tmp_path,
         cast(Any, config),
-        cast(Any, SimpleNamespace(schedule=None)),
+        cast(Any, SimpleNamespace(schedule=None, reward_component_keys=())),
         SimpleNamespace(
             carry=SimpleNamespace(
-                progress=SimpleNamespace(opponent_steps=SimpleNamespace(shape=(2,)))
+                history=SimpleNamespace(next_capture_id=0),
+                progress=SimpleNamespace(opponent_steps=SimpleNamespace(shape=(2,))),
             )
         ),
         {

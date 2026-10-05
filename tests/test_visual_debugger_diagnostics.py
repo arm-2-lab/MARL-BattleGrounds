@@ -1,15 +1,6 @@
 """Check live debugger diagnostics built from evaluation records."""
 
 import pytest
-from scripts.dev.visual_debugger.control import (
-    arm_ultimate,
-    create_session,
-    make_neutral_joint_action,
-    reset_session,
-    submit_joint_action,
-    submit_next_script_frame,
-)
-from scripts.dev.visual_debugger.model import DebuggerSession
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.visual_debugger_fixtures import (
     debugger_test_launch_specification,
@@ -17,6 +8,15 @@ from tests.visual_debugger_fixtures import (
     submit_fixture_frame,
 )
 
+from marl_battlegrounds._battle_client.control import (
+    arm_ultimate,
+    create_session,
+    make_neutral_joint_action,
+    reset_session,
+    submit_joint_action,
+    submit_next_script_frame,
+)
+from marl_battlegrounds._battle_client.model import DebuggerSession
 from marl_battlegrounds.core.types import MOVE_EAST, MOVE_STAY, NUM_TARGET_ACTIONS
 from marl_battlegrounds.evaluation.models import ActionRejectedEventV1
 from marl_battlegrounds.rendering.evaluation_adapter import (

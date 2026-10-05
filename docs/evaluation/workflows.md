@@ -1,5 +1,9 @@
 # Research Workflows
 
+Public experiment scripts use [Hydra settings and overrides](../training/hydra.md#run-the-public-tutorials).
+Install the optional `hydra` extra to run those commands. Plain Python APIs and
+the package CLI remain available.
+
 Start with ordinary environment calls. Add the evaluator, recorder or tournament
 helper when that saves work. You own the method that chooses actions and learns;
 MARL-BGs owns environment behavior and the shared measurement/recording rules.
@@ -14,10 +18,14 @@ and verify reusable games. A qualified official bundle is a separate release,
 not a set of built-ins invented by the library. The runnable
 [evaluation/results example](../../examples/evaluation_results.py) covers the
 implemented evaluation and analysis paths without requiring a learner.
-Run `python examples/evaluation_results.py validation --output-dir runs/checkpoints`
+Run `python examples/evaluation_results.py workflow=validation \
+  output_dir=runs/checkpoints`
 to save small illustrative numerical checkpoints, select one on validation maps,
 load that file and evaluate it on test maps. The values demonstrate the workflow;
 they are not trained models. Omit the output option to keep validation in memory.
+
+For exact authored starts, follow [Evaluate Exact Scenarios](scenarios.md). It
+covers saved actors, arbitrary Systems, dead slots, full outputs and recovery.
 
 ## Use Package Commands
 
@@ -97,6 +105,10 @@ handled method, file or API failures; and 130 for interruption. Errors do not
 retry a method or replace its actions. Unexpected programming faults retain their
 traceback. Existing repository launchers keep their own compatibility behavior.
 
+For saved built-in actors, use the [six checkpoint evaluation launchers](checkpoints.md)
+for method checks, rich offline metrics and exact recovery. The
+[saved-results notebook](analysis.md) explains metrics and reads those outputs.
+
 ## Follow A Complete Experiment
 
 The examples expose the editable pieces of an experiment without a Trainer:
@@ -105,7 +117,7 @@ The examples expose the editable pieces of an experiment without a Trainer:
 | --- | --- |
 | Model and action sampling | [Systems](../../examples/systems.py) and [research factories](../../examples/research_methods.py) |
 | Compiled rollout and curriculum | [Episode tracking](../../examples/episode_tracking.py) |
-| Verified maps, sampled rosters and recorded restart | [Training distributions](../../examples/training_distributions.py) |
+| Verified maps, sampled rosters and bounded collection | [Training distributions](../../examples/training_distributions.py) |
 | Exact budgets, optional shaping and self-play collection | [Training collection](../../examples/training_collection.py) |
 | Illustrative update and complete numerical save/load | [Recorded rollout](../../examples/recorded_rollout.py) |
 | Validation and checkpoint selection | [Evaluation results](../../examples/evaluation_results.py) |
@@ -358,14 +370,13 @@ input contract. This change makes no new learning or slot-fairness claim.
 Run 32 complete ALPHA/BETA episodes and save full measurements plus two replays:
 
 ```bash
-JAX_PLATFORMS=cuda .venv/bin/python examples/evaluation.py evaluate \
-  --episodes 32 --num-envs 32 --metrics full --save-replays 2 \
-  --output-dir runs/evaluation
+JAX_PLATFORMS=cuda .venv/bin/python examples/evaluation.py workflow=evaluate \
+  episodes=32 num_envs=32 metrics=full save_replays=2 output_dir=runs/evaluation
 ```
 
-`--episodes` is the total evaluation budget, cycled across the chosen maps in
-order. Four episodes cover four of five maps; use a multiple of five for equal
-coverage of that split. The executor batch changes concurrency, not schedule
+`episodes` is the total evaluation budget. Paired games cycle maps once per
+spawn pair. Four games cover two map choices; use a multiple of ten for equal
+coverage of five maps. The executor batch changes concurrency, not schedule
 identities. Compilation affects the first call. The command prints the unique
 run directory and saved paths. CPU execution remains available for correctness
 checks; GPU JAX is the performance target.
@@ -376,9 +387,11 @@ Open a selected replay with its printed path:
 .venv/bin/python scripts/dev/replay_viewer.py --replay PATH_TO_REPLAY
 ```
 
-The Viewer reads saved evidence; it does not run the policy again. **Up to Current
-Tick** analyzes the selected prefix and **Entire Episode** analyzes the recorded
-endpoint, which may itself be incomplete. CSV exports are numeric measurements.
+The Viewer reads saved evidence; it does not run the policy again. Its metrics
+live in the **Metrics** tab of the right-hand rail. The Scope switch reads **Up
+To Tick N** (Up to Current Tick), which analyzes the selected prefix, or **Whole
+Game** (Entire Episode), which analyzes the recorded endpoint, which may itself
+be incomplete. CSV exports are numeric measurements.
 **Episode Details** exports context/configuration/completion/runtime metadata,
 without trajectory arrays. Replay export and full metric collection are separate.
 
@@ -408,10 +421,13 @@ Replay format versions and analysis schema versions are separate.
 
 The [metric specification](metric_specification.md) owns formulas, applicability,
 zero/blank rules and display mappings. The [column dictionary](metric_columns.csv)
-provides exact CSV names and positions. In the Viewer, choose a topic and its
-**Totals** or **By Recipient** view. **Find a Measurement** accepts plain words,
-partial words, agent labels and exact CSV names. Arrow keys select a result,
-Enter opens it and Escape closes the list. Hover/focus help names its CSV column,
+provides exact CSV names and positions. In the Viewer's **Metrics** tab, choose
+a topic and its **Totals** or **By Recipient** view. **Find A Measurement**
+accepts plain words, partial words, agent labels and exact CSV names. Arrow keys
+select a result, Enter opens it and Escape closes the list. While the search box
+has focus these keys belong to it; elsewhere the Viewer's keys follow its one
+command table (press **?** for the list). In Agent POV the Metrics tab still
+shows the full recorded game, under a **Full Record** chip. Hover/focus help names its CSV column,
 who acted, who was affected, numerator, denominator and blank-value rule.
 
 Tables hide structurally impossible rows using the recorded active roster;
@@ -444,6 +460,21 @@ there is no per-transition Python lookup or file write. IDs not reached by a
 run produce no capture. Automatic reset allocation may leave unused IDs, so a
 numeric range does not promise a particular number of completed games. Metrics
 consume authoritative transition facts without needing a replay or second game.
+
+### Recording, Metrics And Exact Repeats
+
+Choosing `metrics="none"`, `"priority"` or `"full"`, and recording replays or
+not, does not change which games are played. We checked this game by game on a
+7,200-game tournament with the GPU's run-to-run noise switched off. On a GPU, two separate runs can still disagree on a few
+percent of games that involve neural networks, because the GPU may round
+floating-point math slightly differently from run to run (XLA's
+[GPU determinism documentation](https://openxla.org/xla/determinism) describes
+why). This is ordinary noise, not a simulator defect: in that test it moved the median Elo by about 2
+points, several times less than choosing another seed. To watch the exact games
+of a run, record them in that run. For game-for-game repeats between runs, set
+`XLA_FLAGS=--xla_gpu_deterministic_ops=true`. See
+[Same Seed, Same Game](repeatability.md) for the measurements, the cause and
+the setting.
 
 ## Train and record
 
@@ -518,9 +549,9 @@ reuse their descriptor and carry with `collect_training_rollout`. The default
 uses priority metrics and writes no files. Its pure `scan_training_rollout`
 route can be part of your larger compiled loop.
 
-Run `python examples/training_collection.py --mode Plain` after installing the
-training extra. Choose `C`, `RS` or `C-RS` for curriculum, shaping or both.
-`--output-dir PATH` attaches the existing writer with `phase="training"`.
+Run `python examples/training_collection.py mode=Plain` after installing the
+training and hydra extras. Choose `C`, `RS` or `C-RS` for curriculum, shaping or both.
+`output_dir=PATH` attaches the existing writer with `phase="training"`.
 The example uses untrained MAPPO weights without optimizer updates. It prints
 requested stages beside actual played exposure; a short completed budget is
 not proof that the requested distributions received useful practice.
@@ -704,8 +735,8 @@ to continue its unrecorded execution; that alone does not coordinate recovery
 with recorded output.
 
 The separate [training-distribution example](../../examples/training_distributions.py)
-combines verified content, sampled rosters, bounded collection and an in-memory
-recorded restart. Random is the default; its optional MAPPO actor is untrained.
+combines verified content, sampled rosters and bounded collection. Use the
+recorded rollout example below for coordinated restart. Random is the default; its optional MAPPO actor is untrained.
 Each independent seed needs its own environment, memory, RNG, tracker, budget and
 recording pass. Validation uses a separate context and leaves training untouched.
 
@@ -931,7 +962,7 @@ random methods. Games ended after four or seven transitions, so the workload
 included frequent partial resets. Five synchronized warm samples followed separate
 compilation. All common actions, rewards, observations, masks, metrics, counters
 and final states matched the manual reference, including committed `f051ded`.
-The [comparison record](../../artifacts/m8-api-tracking/20260916T215430Z/final_gpu_comparison.json)
+The comparison record (historical local evidence: `artifacts/m8-api-tracking/20260916T215430Z/final_gpu_comparison.json`)
 links exact source, frozen assets, workload identities and all raw samples.
 
 | Route | GPU Time for 512 Transitions | Real Transitions per Second | Compile Time |
@@ -963,14 +994,14 @@ previous cases, so they cannot isolate each helper's memory cost. Setup, validat
 and initial resets took 2.13–3.64 seconds; these include cached work from earlier
 cases and are not independent startup comparisons.
 
-The [source-cache probe](../../artifacts/m8-api-tracking/20260916T215430Z/source_cache_gpu.json)
+The source-cache probe (historical local evidence: `artifacts/m8-api-tracking/20260916T215430Z/source_cache_gpu.json`)
 measured fresh unchanged bank verification at 0.104–0.121 ms for one to three
 sources, versus 0.411–0.598 ms to hash fresh banks. Only one comparison Boolean
 returns to the host. Empty registration took 0.153–0.199 ms and performs no disk
 write or unrelated flush. This avoids repeated hashing after a compiled rollout
 returns new array objects. Changed or mutable banks still receive content checks.
 
-A separate [rebinding probe](../../artifacts/m8-api-tracking/20260916T215430Z/tracker_rebind_gpu.json)
+A separate rebinding probe (historical local evidence: `artifacts/m8-api-tracking/20260916T215430Z/tracker_rebind_gpu.json`)
 returned identical tracker results for an already checked binding and a pending
 reset binding. Both used one compiled function with no warm transfers. Median
 standalone call times were 0.557/0.549 ms; dispatch noise is larger than that
@@ -994,9 +1025,9 @@ They say nothing current about either controller.
 A matched RTX 5090 check used 32 games, 16 decisions, ALPHA/BETA controllers,
 the same map and keys, and five synchronized warm samples per mode. Every retained
 metric and final trajectory matched the committed `f43c2cb` reference by value.
-The [comparison record](../../artifacts/m8-api-recording/20260916T194952Z/final_gpu_comparison.json)
+The comparison record (historical local evidence: `artifacts/m8-api-recording/20260916T194952Z/final_gpu_comparison.json`)
 records exact package, asset and workload identities. Later changes affected only
-host recording; [final host costs](../../artifacts/m8-api-recording/20260916T194952Z/final_host_costs_final.json)
+host recording; final host costs (historical local evidence: `artifacts/m8-api-recording/20260916T194952Z/final_host_costs_final.json`)
 measure that final writer separately.
 
 | Mode | GPU Time for 512 Transitions | Real Transitions per Second | Save 32 Completed Games |
@@ -1032,8 +1063,8 @@ follows from this check.
 ## Repeat validation in one run
 
 ```bash
-JAX_PLATFORMS=cuda .venv/bin/python examples/evaluation.py validation \
-  --episodes 32 --num-envs 32 --metrics full --output-dir runs/validation
+JAX_PLATFORMS=cuda .venv/bin/python examples/evaluation.py workflow=validation \
+  episodes=32 num_envs=32 metrics=full output_dir=runs/validation
 ```
 
 This example shares one writer across two named validation passes. Omitted maps
@@ -1311,6 +1342,12 @@ identities. Opaque providers remain unknown. Resume and game reuse read verified
 facts belonging to the original games; missing or conflicting facts stay unknown.
 Facts are never guessed from a method name. Already completed historical summaries
 are returned with their original meaning and are not rewritten.
+
+A tournament run again on a GPU in normal mode may play a few games differently
+and move ratings by a few points. That run-to-run noise comes from GPU
+floating-point rounding, not from the simulator, and it is several times smaller
+than the effect of choosing another seed. [Same Seed, Same Game](repeatability.md)
+has the measurements and the setting for exact game-for-game repeats.
 
 These intervals describe repeated evaluation of fixed Systems. Variation between
 separately trained Systems uses whole training-run vectors, with shared seeds
@@ -2231,9 +2268,9 @@ Recording and host synchronization still cost real time. The checks establish no
 learning advantage, geometry result, official tournament qualification or maximum
 possible speed. CPU simulation speed is not an acceptance target.
 
-Evidence: [matched GPU results](../../artifacts/m8-api-evaluation/20260917T105827Z/final_gpu_comparison.json),
-[host fixture costs](../../artifacts/m8-api-evaluation/20260917T105827Z/host-costs.json)
-and [installed workflows](../../artifacts/m8-api-evaluation/20260917T105827Z/installed-examples.json).
+Evidence: matched GPU results (historical local evidence: `artifacts/m8-api-evaluation/20260917T105827Z/final_gpu_comparison.json`),
+host fixture costs (historical local evidence: `artifacts/m8-api-evaluation/20260917T105827Z/host-costs.json`)
+and installed workflows (historical local evidence: `artifacts/m8-api-evaluation/20260917T105827Z/installed-examples.json`).
 
 ### Package Command Costs
 

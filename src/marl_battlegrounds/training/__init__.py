@@ -22,8 +22,22 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training._content import (
         prepare_training_content as prepare_training_content,
     )
+    from marl_battlegrounds.training.actor_library import (
+        collect_actors as collect_actors,
+    )
     from marl_battlegrounds.training.analysis import analyze as analyze
     from marl_battlegrounds.training.analysis import analyze_screen as analyze_screen
+    from marl_battlegrounds.training.analysis import (
+        export_study_data as export_study_data,
+    )
+    from marl_battlegrounds.training.analysis import list_runs as list_runs
+    from marl_battlegrounds.training.analysis import (
+        load_study_data as load_study_data,
+    )
+    from marl_battlegrounds.training.callbacks import (
+        make_wandb_callback as make_wandb_callback,
+    )
+    from marl_battlegrounds.training.checkpoints import export_actor as export_actor
     from marl_battlegrounds.training.checkpoints import load_system as load_system
     from marl_battlegrounds.training.collection import TrainingCarry as TrainingCarry
     from marl_battlegrounds.training.collection import (
@@ -50,6 +64,7 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.collection import (
         training_summary as training_summary,
     )
+    from marl_battlegrounds.training.config import TrainConfig as TrainConfig
     from marl_battlegrounds.training.curriculum import ScheduleArrays as ScheduleArrays
     from marl_battlegrounds.training.curriculum import (
         TrainingProgress as TrainingProgress,
@@ -87,14 +102,21 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.opponents import (
         refresh_opponents as refresh_opponents,
     )
-    from marl_battlegrounds.training.runner import TrainConfig as TrainConfig
+    from marl_battlegrounds.training.reward_recipes import (
+        combat_support_reward as combat_support_reward,
+    )
+    from marl_battlegrounds.training.reward_recipes import (
+        combat_support_team_reward as combat_support_team_reward,
+    )
     from marl_battlegrounds.training.runner import TrainResult as TrainResult
     from marl_battlegrounds.training.runner import extend_training as extend_training
+    from marl_battlegrounds.training.runner import load_run as load_run
     from marl_battlegrounds.training.runner import train as train
     from marl_battlegrounds.training.screen import prepare_screen as prepare_screen
     from marl_battlegrounds.training.selection import (
         reselect_checkpoint as reselect_checkpoint,
     )
+    from marl_battlegrounds.training.shaping import RewardOutput as RewardOutput
     from marl_battlegrounds.training.shaping import (
         team_potential_shaping as team_potential_shaping,
     )
@@ -102,13 +124,32 @@ if TYPE_CHECKING:
         team_score_delta_shaping as team_score_delta_shaping,
     )
     from marl_battlegrounds.training.shaping import validate_shaping as validate_shaping
+    from marl_battlegrounds.training.study import preview_study as preview_study
     from marl_battlegrounds.training.study import run_study as run_study
     from marl_battlegrounds.training.study import start_study as start_study
     from marl_battlegrounds.training.study import stop_study as stop_study
     from marl_battlegrounds.training.study import study_status as study_status
+    from marl_battlegrounds.training.validation import create_panel as create_panel
+    from marl_battlegrounds.training.validation import load_panel as load_panel
+    from marl_battlegrounds.training.validation import (
+        validate_checkpoint as validate_checkpoint,
+    )
 
 _OWNERS = {
-    "TrainConfig": "runner",
+    "create_panel": "validation",
+    "load_panel": "validation",
+    "validate_checkpoint": "validation",
+    "collect_actors": "actor_library",
+    "export_actor": "checkpoints",
+    "list_runs": "analysis",
+    "export_study_data": "analysis",
+    "load_study_data": "analysis",
+    "load_run": "runner",
+    "RewardOutput": "shaping",
+    "combat_support_reward": "reward_recipes",
+    "combat_support_team_reward": "reward_recipes",
+    "TrainConfig": "config",
+    "make_wandb_callback": "callbacks",
     "TrainResult": "runner",
     "train": "runner",
     "extend_training": "runner",
@@ -117,6 +158,7 @@ _OWNERS = {
     "analyze_screen": "analysis",
     "reselect_checkpoint": "selection",
     "prepare_screen": "screen",
+    "preview_study": "study",
     "run_study": "study",
     "start_study": "study",
     "stop_study": "study",
@@ -157,6 +199,7 @@ __all__ = [
     "TRAINING_KEY_SCHEMA_VERSION",
     "OpponentHistory",
     "PreparedTrainingContent",
+    "RewardOutput",
     "SampledTrainingConfigs",
     "ScheduleArrays",
     "SnapshotEvent",
@@ -173,15 +216,27 @@ __all__ = [
     "analyze",
     "analyze_screen",
     "assign_opponents",
+    "collect_actors",
     "collect_training_rollout",
+    "combat_support_reward",
+    "combat_support_team_reward",
+    "create_panel",
+    "export_actor",
+    "export_study_data",
     "extend_training",
     "init_opponent_history",
     "init_training_collection",
+    "list_runs",
+    "load_panel",
+    "load_run",
+    "load_study_data",
     "load_system",
     "make_opponent_system",
     "make_training_schedule",
+    "make_wandb_callback",
     "prepare_screen",
     "prepare_training_content",
+    "preview_study",
     "refresh_opponents",
     "reselect_checkpoint",
     "run_study",
@@ -191,9 +246,11 @@ __all__ = [
     "stop_study",
     "study_status",
     "team_potential_shaping",
+    "team_score_delta_shaping",
     "train",
     "training_keys",
     "training_summary",
+    "validate_checkpoint",
     "validate_shaping",
     "validate_training_distribution",
 ]
@@ -202,8 +259,8 @@ __all__ = [
 def __getattr__(name: str) -> object:
     """Load and cache one public helper, record or schema constant.
 
-    name must be in __all__; otherwise raise AttributeError. Import only the
-    owning module on first access. Importing this package by itself starts no
+    name must have a registered owner; otherwise raise AttributeError. Import
+    only that module on first access. Importing this package by itself starts no
     numerical backend, collection, file read or optional baseline dependency.
     """
     if name not in _OWNERS:

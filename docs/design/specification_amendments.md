@@ -2740,6 +2740,11 @@ by total tournament deaths, with no-death results displayed as unavailable.
 Retain raw totals internally; do not average per-match ratios or use K/D as an
 additional rating input. This narrow team-level display supersedes earlier
 broad K/D rejection; individual killer attribution and agent K/D remain rejected.
+Each row also shows a named tier and division (Iron to Grandmaster) taken from
+its Elo. The tier is display only and never changes rank or rating. The tier
+table and its rules live in
+[Leaderboard tiers](../evaluation/protocol.md#leaderboard-tiers); it is
+accepted design, not yet built.
 TDM team totals use authoritative score increments
 or recorded death counts, respecting any nonzero initial score. Selected
 manuscript analyses remain a separate reporting surface.
@@ -3487,3 +3492,146 @@ that run (A26).
 correctly. It does not show that turtling stops: teams could wait just outside
 the strip, spawn camping could pay more, and horizon draws remain possible.
 Those need learning evidence.
+
+## A45. Runefield Client Presentation
+
+**Classification:** approved presentation change (owner, 30 September and
+1 October 2026). No Core change.
+**Revises:** the BattleClient's starting view, the Replay Viewer's starting
+speed and keyboard, A17's drawing of the SharedObs view (it adds a sight
+veil; the union itself is unchanged) and A44's Viewer paragraph (visual
+switches and PNG provenance). Simulator rules, observations, action masks,
+policy inputs, metrics, scores and replay files keep their meaning.
+
+**Scope.** The Runefield look is the new drawing of the three clients: the
+BattleClient, the private DevClient combat screen and the Replay Viewer. It
+changes how recorded and live facts are drawn and when they appear during a
+tick. It never changes a fact. Every look switch only changes drawing: it
+never shows a fact the current view may not see, and a switch turned off
+falls back to a plain, truthful drawing (for example a flat stone with its
+true footprint, or a plain token with its team ring and life). Presets set
+switches only; they never change the view, Ranges, layout or motion.
+
+**Starting views.**
+
+| Client | Starts In |
+| --- | --- |
+| BattleClient (`battle_client()`) | Agent POV |
+| DevClient combat screen | Oracle View |
+| Replay Viewer | Oracle View (`--view pov` opts in) |
+| Replay Viewer opened by **Open Replay** | Oracle View |
+
+Oracle View shows everything. Agent POV shows only what the viewing team
+sees. In the BattleClient and DevClient, play in Oracle View is marked with
+an amber "Oracle View · You See Everything" tag.
+
+**Viewing team.** In the BattleClient and DevClient, Agent POV shows the
+view of the Manual champion you focused last. Looking at a policy champion
+or an enemy, with Tab, a click or a roster pick, never changes the viewing
+team. In a game with no Manual champion (Policies Only), the view follows
+the champion you look at. In Agent POV, Tab and Shift+Tab skip champions the
+viewing team cannot see. In the Replay Viewer, the Agent POV recipient is the
+agent chosen in the POV picker.
+
+**Agent POV rules.** In Agent POV nothing on or over the arena shows a
+champion the viewing team cannot see, or anything tied to it: position,
+life, statuses, the class of an unseen attacker, or the timing of its
+events. This covers the arena, overlays, hover tips, Frame Explanation, the
+camera and the beat timing. These parts read only the audience's own scene
+and visual events; they never read the global researcher panels or the
+match summary. An unseen enemy reads "Unseen" with no life in the
+BattleClient and DevClient panels, and a teammate's next action reads "Not
+Observed". A status names its source only on the tick its application was
+seen; otherwise it reads "from a hidden source". One exception: under
+NoSharedObs, a killing blow on the recipient stays drawn, starting from a
+faint Last Seen ring where the attacker was last seen. The Replay Viewer's
+docked researcher tabs (Agent, Metrics, Actions and Frame) still show the
+full recorded game in Agent POV, under a "Full Record" chip. Switching
+Oracle View to Agent POV and back gives exactly a fresh render.
+
+Agent POV is a fairness aid for play, not a security boundary. The browser
+still receives the global researcher panels for the Replay Viewer's docked
+tabs, and a person with browser developer tools can read them.
+
+**One command set.** One table in the browser (`command-set.js`) owns every
+key of the three clients. A key does the same job in every client, or
+nothing. V is Everyone In View in all three clients. B is Battle Cam in the
+Replay Viewer only. F is Frame Explanation. Space and N keep their jobs. The
+in-app Help (press ?) and How To Play lists are written from that table, so
+they always match what the keys do. Guides link to them instead of copying
+key lists.
+
+**Beat timing.** A tick plays as a sequence of beats. Bodies glide to the
+spots where they ended the tick (0-260 ms), blows start at 280 ms, then come
+one Fall beat for the deaths, one Return beat for respawns, and a 600 ms end
+hold. With Longer Tick on (the default), an ordinary tick lasts 1.7 seconds
+at 1x and a tick with a death 3.2 seconds. Life reaches 0, the score
+changes and the fall notices appear at the Fall beat; respawns appear at
+the Return beat, in the panels too. The field holds still through the death
+and respawn beats. Paused frames always show the settled end of the tick.
+The Replay Viewer now starts at 1x speed (it was 0.5x): at 1x a quiet tick
+lasts about as long as one did before at 0.5x.
+
+**Movement truth trade-off.** Positions are drawn where the agent ended the
+tick. A blow is drawn between those end spots, so a stroke drawn end to end
+can look longer than the ability's real reach. A faint imprint ring and
+hairline keep the true spot where the blow was decided. A Warrior's Charge
+is the one exception: its path runs from its start to its landing. Agent POV
+is told only where champions stood at the start and the end of a tick, never
+where a rush stopped, so there the landing is drawn where the Warrior's body
+would touch its target's start spot, and the Warrior's body glides along that
+same drawn path without dimming. Nothing new is shown.
+
+**Sight veil (Stone Shadows).** In Agent POV every blind spot of the
+viewing team is darkened: the floor beyond the observation reach of the
+frame's authorized living sensors and the shadow behind every stone. Under
+NoSharedObs only the recipient counts; under SharedObs its team's sensors
+count. A trusted host producer, `rendering.team_sight`, builds the shape for
+the BattleClient, DevClient and Replay Viewer alike, from the authorized POV
+scene only (the sensors' own places and reaches and the public map), with
+Core's line-of-sight rule: stones block sight, champions do not. It names no
+enemy. The browser only paints it and never works out line of sight, as A17
+requires. While a tick plays, the veil keeps the start-of-tick shape until the
+glide, then changes at each Fall and Return beat; a paused frame shows the
+true shape at the end of the tick. Enemies under a Spawn Shield stay hidden
+even in the light. Saved replays need no change: the server builds the shape
+from recorded positions.
+
+**Host additions (no Core change).** Each recorded death row carries
+`home_fall`, true when the death scored double in its own Red Zone. The rule
+has one owner, `evaluation.events.team_deathmatch_home_fall_slots_v1`.
+Agent POV receives the flag only for falls that audience saw. The Replay
+Viewer serves per-audience timeline marks (falls, Ultimates and returns) at
+`/api/replay/timeline-marks` for its Rune Scrubber transport; Agent POV marks
+come only from what that audience saw. Nothing groups ticks into fights.
+Every Replay Viewer presentation frame also carries two facts the server
+works out from the recorded frames; neither is a replay-file field:
+
+- `next_end_spots`, for the Next Step Ghost switch: where each champion
+  stands at the end of the recorded next tick. Oracle View lists every living
+  champion. Agent POV lists only champions the viewing team sees alive now
+  and still sees in its next authorized scene, so it never tells where an
+  unseen champion went. The final frame lists none.
+- `recent_falls`, for the Fallen panel: the falls of the 7 ticks before the
+  shown one (the panel's 8-tick window; the shown tick's own falls come from
+  the browser's beat plan), each with its killers, points and any damaging
+  Ultimate. The server owns this history, so a seek, a reload or a view
+  switch shows the same rows as playing up to the tick. Kill credit has one
+  owner, `viewer.champion_streaks`: Oracle View names the lethal damage
+  contributors; Agent POV names only falls the team saw and only killers
+  whose blow it saw land. Limit: an old recording without lethal damage
+  contribution events names no killers on these earlier rows.
+
+All Staged Orders needs no new fact: it draws the frame's own recorded next
+actions, which in Agent POV hold only the recipient's own order.
+
+**Export.** Export PNG captures what is on screen, including the current
+camera. New PNGs write provenance version 4, which records the battlefield
+switches (version 3's list plus Next Step Ghost and All Staged Orders) and
+the camera frame as a world rectangle. Versions 1, 2 and 3 still read.
+Exported PNGs carry no brand mark.
+
+**Limits.** This amendment records the presentation contract and the checks
+that guard it (Agent POV leak and boundary tests, beat-clock and movement
+tests, and the command-set test). It makes no claim about learning, and a
+better-looking replay does not show learned skill.

@@ -1,5 +1,7 @@
 /**
- * @file Check the small, optional declared-System menu and pending-work envelope.
+ * @file Check the small, optional declared-System menu and pending-work envelope,
+ * and the other optional live transport facts (run state, fresh launch, and in
+ * Agent POV the focused champion's public ID when it is not the recipient).
  * Names come from the launcher. This module never loads code or accepts URLs.
  * The service owns declaration membership, execution, cancellation and adoption.
  */
@@ -35,21 +37,42 @@ export function systemTransportKeys(keys, frame) {
   normalizeSystemControls(frame);
   return [
     ...keys,
-    ...["system_choices", "system_operation"].filter((key) =>
-      Object.hasOwn(frame, key),
-    ),
+    ...[
+      "system_choices",
+      "system_operation",
+      "run_state",
+      "fresh_launch_required",
+      "focused_public_agent_id",
+    ].filter((key) => Object.hasOwn(frame, key)),
   ].sort();
 }
 
 /**
  * Validate optional menu/status fields and return frozen copies, or no extra keys.
  * Unknown entry fields, duplicate names and malformed operation IDs are rejected.
+ * run_state (default "paused") and fresh_launch_required (default false) are
+ * always returned; system_choices, system_operation and
+ * focused_public_agent_id (a public ID such as "agent_2", sent only in Agent
+ * POV while the player looks at a champion other than the recipient) only
+ * when present. Throws TypeError on any malformed field. Pure.
  * @param {Record<string, any>} frame
  * @returns {Readonly<Record<string, any>>}
  */
 export function normalizeSystemControls(frame) {
   /** @type {Record<string, any>} */
   const result = {};
+  if (Object.hasOwn(frame, "run_state")) {
+    if (!["paused", "running"].includes(frame.run_state)) {
+      throw new TypeError("Run state must be paused or running.");
+    }
+  }
+  result.run_state = frame.run_state ?? "paused";
+  if (
+    Object.hasOwn(frame, "fresh_launch_required") &&
+    typeof frame.fresh_launch_required !== "boolean"
+  )
+    throw new TypeError("Fresh launch state must be a boolean.");
+  result.fresh_launch_required = frame.fresh_launch_required ?? false;
   if (Object.hasOwn(frame, "system_choices")) {
     if (!Array.isArray(frame.system_choices))
       throw new TypeError("System choices must be a list.");
@@ -73,6 +96,20 @@ export function normalizeSystemControls(frame) {
         return Object.freeze({ id: choice.id, label: choice.label });
       }),
     );
+  }
+  // Agent POV only: the champion the player looks at when it is not the POV
+  // recipient (Watch Only). Display plumbing; never a policy input.
+  if (Object.hasOwn(frame, "focused_public_agent_id")) {
+    const focused = frame.focused_public_agent_id;
+    if (
+      typeof focused !== "string" ||
+      focused.length < 1 ||
+      focused.length > 256 ||
+      !/^[A-Za-z0-9_.:-]+$/u.test(focused)
+    ) {
+      throw new TypeError("Focused public agent ID is invalid.");
+    }
+    result.focused_public_agent_id = focused;
   }
   if (Object.hasOwn(frame, "system_operation")) {
     const operation = frame.system_operation;
