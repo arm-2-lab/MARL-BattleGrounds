@@ -2,10 +2,13 @@
 # The Python shard plugin and browser profile manifest own test membership.
 # Keep nineteen Python shards, one browser profile and stable aggregate names.
 # Local GPU qualification is separate; see docs/dev/quality_gates.md.
+# Runs on pull requests and on pushes to main. A feature branch is tested only
+# through its pull request, so one push starts one run, not two.
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
