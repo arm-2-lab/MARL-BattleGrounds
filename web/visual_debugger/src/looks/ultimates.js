@@ -64,6 +64,7 @@ import {
   semanticImpactGlyph,
   setEffectAttributes,
 } from "./look-support.js";
+import { chargeLandingGuess } from "./movement.js";
 import { ACTIVATION_FOOTPRINTS } from "./strike-routes.js";
 
 /**
@@ -513,7 +514,9 @@ function radiusOf(value, fallback) {
  * - sourceRadius, targetRadius: body radii in px (DEFAULT_BODY_RADIUS_PX).
  * - unitPx: px per world unit (2 x the Warrior's radius, a 0.5-unit body).
  * - chargeLanding: where the Charge rush stopped (Oracle only). Without it the
- *   war-path ends at the target's near rim, the recorded relation.
+ *   war-path ends at the target's near rim, the recorded relation
+ *   (movement.js chargeLandingGuess; in Agent POV the Warrior's body glide and
+ *   Start Spot follow the same guess, so they share this route).
  * - chargeTravel: rush length in world units (the drawn length / unitPx).
  * - sourceEnd, targetEnd: END spots for the Charge clasp; null means "not seen
  *   at END" (no clasp on an unseen target), undefined means "use START".
@@ -679,7 +682,8 @@ function chargeDrawing(event) {
     };
   }
   const u = norm(sub(targetStart, start));
-  const landing = vec(event.chargeLanding) ?? sub(targetStart, mul(u, R + rS));
+  const landing =
+    vec(event.chargeLanding) ?? chargeLandingGuess(start, targetStart, rS, R);
   const unitPx = radiusOf(event.unitPx, rS / 0.5);
   const travel = Number.isFinite(event.chargeTravel)
     ? Number(event.chargeTravel)

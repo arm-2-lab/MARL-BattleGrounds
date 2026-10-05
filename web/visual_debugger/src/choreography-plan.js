@@ -20,7 +20,9 @@
  *   audience's Ultimate combos and wiped teams); looks/heralds.js names the
  *   moments.
  * - plan.bodies (glide records for the choreographer, with dimShift for a path
- *   that cuts a stone) and plan.camera (the camera's input: body spots and fights).
+ *   that cuts a stone; in Agent POV a Charge glides through the same guessed
+ *   stop spot the war-path is drawn to) and plan.camera (the camera's input:
+ *   body spots and fights).
  * - The look inputs on each row, all in CSS px and all from this audience's own
  *   anchors: an activation carries sourceRadius, targetRadius, unitPx (also
  *   pixelsPerUnit), sourceEnd and targetEnd (null when its body was not seen at
@@ -84,7 +86,7 @@ import {
   momentEntersAtSettle,
   rowBudget,
 } from "./looks/heralds.js";
-import { cutsStone } from "./looks/movement.js";
+import { agentPovChargeLandings, cutsStone, movementSource } from "./looks/movement.js";
 import { BUDGET as RED_ZONE_BUDGET } from "./looks/red-zone.js";
 import {
   BUDGET as REQUIEM_BUDGET,
@@ -3675,22 +3677,38 @@ function derivedFamilyEvents(input) {
  * trajectories the joined phase anchors, or null. falls and returns are the
  * audience's own seen deaths and returns (beat schedule entries). Return one frozen
  * record per scene body in scene order with world positions: start (transition
- * start, or null when not disclosed), postCharge (Oracle only, where a Charge rush
- * stopped, or null), end (the body's END spot), and whether it glides in play:
- * glide is true only when start is known, the body did not return to a pad this
- * tick (returns never travel) and it moved. dimShift is true for a gliding body
- * whose last leg (from the post-Charge spot or start to END) cuts into a stone of
- * obstacles (the public map stones, default none): the choreographer then dims it
- * out and back in rather than sliding it over the stone. In Agent POV a body that
- * came into sight this tick has no start, so it never glides out of the dark. Pure.
+ * start, or null when not disclosed), postCharge (where a Charge rush stopped, or
+ * null: Oracle View's recorded spot; in Agent POV, which never learns it, the
+ * guess from guessedPosts, the same spot the Charge war-path is drawn to), end
+ * (the body's END spot), and whether it glides in play: glide is true only when
+ * start is known, the body did not return to a pad this tick (returns never
+ * travel) and it moved. dimShift is true for a gliding body whose last leg (from
+ * the post-Charge spot or start to END) cuts into a stone of obstacles (the
+ * public map stones, default none): the choreographer then dims it out and back
+ * in rather than sliding it over the stone. A Charge on a guessed route never
+ * dims: its rush line has clear sight (Core's target rule), so the body only
+ * grazes stone edges as real rushes do, and checked against Oracle View on real
+ * games, the guessed route's stride would dim Charges Oracle glides. guessedPosts
+ * maps a Warrior's presentation key to its guessed post-Charge spot in world units
+ * (movement.js agentPovChargeLandings; default empty, and always empty in Oracle
+ * View); it is used only when the trajectory has no recorded post_charge. In Agent
+ * POV a body that came into sight this tick has no start, so it never glides out
+ * of the dark. Pure.
  *
  * @param {Map<string, Record<string, any>>} sceneByKey
  * @param {Map<string, Record<string, any>> | null} trajectories
  * @param {BeatSchedule} schedule
  * @param {ReadonlyArray<unknown>} [obstacles]
+ * @param {ReadonlyMap<string, readonly [number, number]>} [guessedPosts]
  * @returns {ReadonlyArray<PlanBody>}
  */
-function planBodies(sceneByKey, trajectories, schedule, obstacles = []) {
+function planBodies(
+  sceneByKey,
+  trajectories,
+  schedule,
+  obstacles = [],
+  guessedPosts = new Map(),
+) {
   const fallen = new Set(schedule.falls.map((entry) => entry.presentationKey));
   const returned = new Set(schedule.returns.map((entry) => entry.presentationKey));
   /** @type {PlanBody[]} */
@@ -3701,7 +3719,9 @@ function planBodies(sceneByKey, trajectories, schedule, obstacles = []) {
     if (end === null || publicId === null) continue;
     const trajectory = trajectories?.get(key) ?? null;
     const start = authorizedWorldPoint(trajectory?.transition_start);
-    const post = authorizedWorldPoint(trajectory?.post_charge);
+    const recordedPost = authorizedWorldPoint(trajectory?.post_charge);
+    const guessedPost = recordedPost === null ? (guessedPosts.get(key) ?? null) : null;
+    const post = recordedPost ?? guessedPost;
     const charged =
       start !== null &&
       post !== null &&
@@ -3725,6 +3745,8 @@ function planBodies(sceneByKey, trajectories, schedule, obstacles = []) {
           start !== null &&
           !returned.has(key) &&
           (moved || charged) &&
+          // A guessed Agent POV Charge route never dims (see the doc above).
+          !(charged && guessedPost !== null) &&
           cutsStone(
             charged ? post : start,
             end,
@@ -5074,11 +5096,18 @@ function buildAuthorizedPresentationChoreographyPlan(
     return null;
   }
   const scheduled = scheduleChoreography(laidOut, schedule);
+  // Agent POV never learns where a Charge rush stopped; its bodies follow the
+  // same guessed route the Charge war-path draws (empty in Oracle View).
+  const guessedPosts = agentPovChargeLandings(
+    movementSource(latest, audience).charges,
+    (key) => finiteNumber(sceneByKey.get(key)?.radius),
+  );
   const bodies = planBodies(
     sceneByKey,
     trajectories,
     schedule,
     array(record(presentation.scene)?.map?.obstacles),
+    guessedPosts,
   );
   const budgeted = applyPlanBudget(scheduled.events, familyRows, bodies, schedule);
   const events = budgeted.events;

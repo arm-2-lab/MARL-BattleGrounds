@@ -494,7 +494,10 @@ Arena Frames row shows the bar with its number (for example 114 / 200).
 Blows are drawn between the end spots of their source and target, so a stroke
 can look longer than the ability's real reach; a faint imprint ring and
 hairline keep the true spot. A Warrior's Charge is drawn from its start to its
-landing. See
+landing. In Agent POV, which never learns where the rush stopped, the landing
+is where the Warrior's body would touch its target's start spot, and the body,
+its Start Spot and its Focus Trail follow that same path (a Charge never dims
+there). See
 [A45](../design/specification_amendments.md#a45-runefield-client-presentation).
 
 Under [amendment

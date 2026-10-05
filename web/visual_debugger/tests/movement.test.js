@@ -17,6 +17,14 @@
  *   refuses a non-fog-filtered inventory in Agent POV, and lists returns only
  *   from agent_respawned events. On real fixture frames every Agent POV record
  *   belongs to a body in the POV scene.
+ * - Agent POV Charge (a fixture frame given a Warrior Ultimate): movementSource
+ *   lists it (never in Oracle View, never for a Basic); agentPovChargeLandings
+ *   gives chargeLandingGuess with its radius fallbacks; the plan's body glides
+ *   start -> guessed spot -> END with no Dim Shift when only the straight line
+ *   cuts a stone, through the very spot the war-path is drawn to; the Start Spot
+ *   bends through a pin there. A guessed route is never a Dim Shift, even past
+ *   stone; a Warrior's Basic keeps its straight dotted Dim Shift.
+ * - chargeLandingGuess(): where the two bodies touch, in any one unit.
  * - cutsStone(): the display-only swept-circle stone test.
  * - build()/update(): export-safe SVG (no url(), gradients, masks, filters,
  *   images or id attributes), END opacities in attributes, the afterimage at
@@ -38,11 +46,14 @@ import test from "node:test";
 
 import { authorizedPresentationSceneView } from "../src/authorized-presentation-adapter.js";
 import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
+import { buildChoreographyPlan } from "../src/choreography-plan.js";
 import { createViewportTransform } from "../src/layout.js";
 import {
+  agentPovChargeLandings,
   animationSpecs,
   BUDGET,
   build,
+  chargeLandingGuess,
   cutsStone,
   dimShiftSpecs,
   MOVEMENT,
@@ -525,7 +536,7 @@ test("movementSource reads only the audience's own events", async () => {
       assert.ok(sceneKeys.has(record.presentationKey), name);
     }
   }
-  const empty = { trajectories: [], returned: [] };
+  const empty = { trajectories: [], returned: [], charges: [] };
   assert.deepEqual(movementSource(null, "researcher"), empty);
   // Agent POV refuses any inventory that is not the fog-filtered one.
   assert.deepEqual(
@@ -546,6 +557,211 @@ test("movementSource reads only the audience's own events", async () => {
     "agent_pov",
   );
   assert.deepEqual(returns.returned, ["pov_a"]);
+});
+
+test("chargeLandingGuess stops the rush where the two bodies touch", () => {
+  assert.deepEqual(chargeLandingGuess([0, 0], [4, 0], 0.5, 0.5), [3, 0]);
+  assert.deepEqual(chargeLandingGuess([2, 2], [2, 6], 0.5, 0.75), [2, 4.75]);
+  // Any one unit works: CSS pixels give the same spot, scaled.
+  assert.deepEqual(chargeLandingGuess([0, 0], [160, 0], 20, 20), [120, 0]);
+  // Coinciding spots step back along +x.
+  assert.deepEqual(chargeLandingGuess([1, 1], [1, 1], 0.5, 0.5), [0, 1]);
+});
+
+/**
+ * @param {readonly [number, number]} targetStart
+ * @param {"ultimate" | "basic"} [component]
+ */
+async function agentPovChargeFrame(targetStart, component = "ultimate") {
+  const raw = await fixturePresentation("live_shared_obs_agent_pov");
+  const inventory = raw.visual_events;
+  const row = (/** @type {string} */ id) =>
+    inventory.agent_phase_trajectories.find(
+      (/** @type {Record<string, any>} */ entry) => entry.agent_public_agent_id === id,
+    );
+  // The Warrior (public ID 1) ends at (3, 3); from (13, 3) its straight line runs
+  // through the pillar at (10, 3). Its target is the Priest (public ID 4).
+  const warrior = row("1");
+  const target = row("4");
+  warrior.transition_start.position = [13, 3];
+  target.transition_start.position = [...targetStart];
+  const id = `${inventory.incoming_recipient_transition_id}:visual-event:0000`;
+  inventory.events = [
+    {
+      ability_component: component,
+      event_id: id,
+      event_kind: "ability_activated",
+      ordinal: 0,
+      phase_rank: 20,
+      source_anchor: structuredClone(warrior.transition_start),
+      recipient_anchor: structuredClone(target.transition_start),
+    },
+  ];
+  inventory.event_count = 1;
+  inventory.ordered_event_ids = [id];
+  inventory.ordered_event_kinds = ["ability_activated"];
+  return {
+    frame: /** @type {Record<string, any>} */ (
+      await normalizeAuthorizedPresentationFrameV1(raw)
+    ),
+    warriorKey: warrior.agent_presentation_key,
+    targetKey: target.agent_presentation_key,
+  };
+}
+
+const planSurface = Object.freeze({
+  worldToScreen: (/** @type {any} */ point) => ({
+    x: 24 + Number(point.x ?? point[0]) * 40,
+    y: 664 - Number(point.y ?? point[1]) * 40,
+  }),
+  worldLengthToScreen: (/** @type {number} */ length) => length * 40,
+  viewportBounds: Object.freeze({
+    left: 24,
+    top: 24,
+    right: 1064,
+    bottom: 664,
+    width: 1040,
+    height: 640,
+  }),
+});
+
+test("Agent POV Charge: the body, Start Spot and war-path share one guessed route", async () => {
+  const { frame, warriorKey, targetKey } = await agentPovChargeFrame([13, 6.5]);
+  const source = movementSource(frame.visual_events, "agent_pov");
+  assert.deepEqual(source.charges, [
+    { sourceKey: warriorKey, targetKey, start: [13, 3], targetStart: [13, 6.5] },
+  ]);
+  const guessed = agentPovChargeLandings(source.charges, () => 0.5);
+  assert.deepEqual([...guessed], [[warriorKey, [13, 5.5]]]);
+  // Fallbacks: no Warrior radius uses 0.5; no target radius uses the Warrior's.
+  assert.deepEqual(
+    agentPovChargeLandings(source.charges, (key) =>
+      key === warriorKey ? 1 : null,
+    ).get(warriorKey),
+    [13, 4.5],
+  );
+  // Oracle View has the recorded spot and never guesses.
+  const oracle = await normalizeAuthorizedPresentationFrameV1(
+    await fixturePresentation("replay_oracle"),
+  );
+  assert.deepEqual(
+    movementSource(
+      /** @type {Record<string, any>} */ (oracle).latest_events,
+      "researcher",
+    ).charges,
+    [],
+  );
+
+  const plan = /** @type {Record<string, any>} */ (
+    buildChoreographyPlan(frame, planSurface, undefined)
+  );
+  const body = plan.bodies.find(
+    (/** @type {Record<string, any>} */ entry) => entry.presentationKey === warriorKey,
+  );
+  assert.deepEqual(
+    [body.start, body.postCharge, body.end, body.charged, body.glide, body.dimShift],
+    [[13, 3], [13, 5.5], [3, 3], true, true, false],
+  );
+  // The war-path's own landing (looks/ultimates.js, CSS px) is the same spot.
+  const charge = plan.events.find(
+    (/** @type {Record<string, any>} */ event) => event.tokenId === "warrior_charge",
+  );
+  assert.deepEqual(
+    chargeLandingGuess(
+      [charge.source.x, charge.source.y],
+      [charge.target.x, charge.target.y],
+      charge.sourceRadius,
+      charge.targetRadius,
+    ),
+    [
+      planSurface.worldToScreen(body.postCharge).x,
+      planSurface.worldToScreen(body.postCharge).y,
+    ],
+  );
+
+  const scene = authorizedPresentationSceneView(frame);
+  const [spot] = ofKind(
+    records({ scene, transform, audience: "agent_pov", ...source }),
+    "start_spot",
+  ).filter((record) => record.presentationKey === warriorKey);
+  assert.deepEqual(
+    spot.legs.map((/** @type {Record<string, any>} */ leg) => [leg.leg, leg.cut]),
+    [
+      ["rush", false],
+      ["stride", false],
+    ],
+  );
+  assert.equal(spot.charged, true);
+  assert.equal(spot.cut, false);
+  assert.deepEqual(spot.pin, transform.worldToScreen([13, 5.5]));
+
+  // A Warrior's Basic is no Charge: the straight move through the pillar keeps
+  // its Dim Shift and dotted leg, exactly as before.
+  const basic = await agentPovChargeFrame([13, 6.5], "basic");
+  const basicSource = movementSource(basic.frame.visual_events, "agent_pov");
+  assert.deepEqual(basicSource.charges, []);
+  const basicPlan = /** @type {Record<string, any>} */ (
+    buildChoreographyPlan(basic.frame, planSurface, undefined)
+  );
+  const straight = basicPlan.bodies.find(
+    (/** @type {Record<string, any>} */ entry) => entry.presentationKey === warriorKey,
+  );
+  assert.deepEqual(
+    [straight.postCharge, straight.charged, straight.dimShift],
+    [null, false, true],
+  );
+  const [straightSpot] = ofKind(
+    records({
+      scene: authorizedPresentationSceneView(basic.frame),
+      transform,
+      audience: "agent_pov",
+      ...basicSource,
+    }),
+    "start_spot",
+  ).filter((record) => record.presentationKey === warriorKey);
+  assert.deepEqual(
+    straightSpot.legs.map((/** @type {Record<string, any>} */ leg) => [
+      leg.leg,
+      leg.cut,
+    ]),
+    [["stride", true]],
+  );
+  assert.equal(straightSpot.pin, null);
+});
+
+test("Agent POV Charge: a guessed route never dims, even past stone", async () => {
+  // Target at (6, 3): the guessed rush (13, 3) -> (7, 3) passes the pillar at
+  // (10, 3). Core only allows a Charge with clear sight, and Oracle View never
+  // checks the rush, so the guessed route glides like a recorded one.
+  const { frame, warriorKey } = await agentPovChargeFrame([6, 3]);
+  const plan = /** @type {Record<string, any>} */ (
+    buildChoreographyPlan(frame, planSurface, undefined)
+  );
+  const body = plan.bodies.find(
+    (/** @type {Record<string, any>} */ entry) => entry.presentationKey === warriorKey,
+  );
+  assert.deepEqual(
+    [body.postCharge, body.charged, body.glide, body.dimShift],
+    [[7, 3], true, true, false],
+  );
+  const source = movementSource(frame.visual_events, "agent_pov");
+  const [spot] = ofKind(
+    records({
+      scene: authorizedPresentationSceneView(frame),
+      transform,
+      audience: "agent_pov",
+      ...source,
+    }),
+    "start_spot",
+  ).filter((record) => record.presentationKey === warriorKey);
+  assert.deepEqual(
+    spot.legs.map((/** @type {Record<string, any>} */ leg) => [leg.leg, leg.cut]),
+    [
+      ["rush", false],
+      ["stride", false],
+    ],
+  );
+  assert.equal(spot.cut, false);
 });
 
 test("build draws export-safe SVG with END opacities and update reprojects in place", () => {

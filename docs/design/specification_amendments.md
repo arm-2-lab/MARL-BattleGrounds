@@ -3576,7 +3576,11 @@ lasts about as long as one did before at 0.5x.
 tick. A blow is drawn between those end spots, so a stroke drawn end to end
 can look longer than the ability's real reach. A faint imprint ring and
 hairline keep the true spot where the blow was decided. A Warrior's Charge
-is the one exception: its path runs from its start to its landing.
+is the one exception: its path runs from its start to its landing. Agent POV
+is told only where champions stood at the start and the end of a tick, never
+where a rush stopped, so there the landing is drawn where the Warrior's body
+would touch its target's start spot, and the Warrior's body glides along that
+same drawn path without dimming. Nothing new is shown.
 
 **Sight veil (Stone Shadows).** In Agent POV every blind spot of the
 viewing team is darkened: the floor beyond the observation reach of the

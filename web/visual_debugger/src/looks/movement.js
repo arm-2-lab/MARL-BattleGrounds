@@ -26,16 +26,24 @@
  *
  * Callers: `scene.js` calls `records`, `build` and `update` for the `imprints`
  * layer, with `movementSource(events, audience)` (the audience's own event
- * inventory) for the trajectories and returns;
- * `choreography.js` calls `animationSpecs`, `cutsStone` and `dimShiftSpecs`.
- * `visual-filters.js` reads `PAINT_PARTS`.
+ * inventory) for the trajectories, returns and Agent POV Charges;
+ * `choreography.js` calls `animationSpecs`, `cutsStone` and `dimShiftSpecs`;
+ * `choreography-plan.js` calls `cutsStone`, `movementSource` and
+ * `agentPovChargeLandings` for the bodies' glide routes; `looks/ultimates.js`
+ * calls `chargeLandingGuess` for the Charge war-path. `visual-filters.js` reads
+ * `PAINT_PARTS`.
  *
  * Agent POV boundary: records read only the audience's own arena scene and the
  * audience's own events (Oracle View: latest_events; Agent POV: visual_events).
  * A champion the team cannot see at the end of the tick, or whose start spot
  * was not disclosed, gets no Start Spot, no afterimage and no trail. Agent POV
- * trajectories never carry a post-Charge spot, so no Charge pin is drawn there.
- * Nothing here reads the researcher view or the match summary.
+ * trajectories never carry a post-Charge spot (the team only sees the start and
+ * the end of a tick). For a Charge the team saw, Agent POV uses the same guess
+ * the Charge war-path already draws: the target's start spot, moved back by the
+ * two body radii (`chargeLandingGuess`). So the pin, the hairlines and the trail
+ * follow the drawn war-path, and nothing new is shown. Such a guessed Charge is
+ * never a Dim Shift, like its body. Nothing here reads the researcher view or
+ * the match summary.
  */
 import { canonicalAgentIdentity } from "../agent-identity.js";
 import { formatDisplayNumber } from "../display.js";
@@ -116,6 +124,9 @@ export const MOVEMENT = Object.freeze({
 
 /** The Rogue's class ID: only a Rogue leaves a Phantom Afterimage. */
 const ROGUE_CLASS_ID = 4;
+
+/** The Warrior's class ID: a Warrior's Ultimate is the Charge. */
+const WARRIOR_CLASS_ID = 2;
 
 /** Marks sit under the bodies and never enter the collision allocator. */
 export const FOOTPRINT = Object.freeze({});
@@ -255,6 +266,37 @@ export function cutsStone(from, to, obstacles, bodyRadius = MOVEMENT.bodyRadius)
 }
 
 /**
+ * Guess where a Charge rush stopped, from the two start spots alone.
+ *
+ * start is the Warrior's start spot and targetStart its target's start spot;
+ * sourceRadius and targetRadius are the two body radii. All four share one
+ * unit (world units or CSS pixels; the result is in the same unit). Return the
+ * spot on the line from start to targetStart where the Warrior's body just
+ * touches the target's: targetStart moved back toward start by sourceRadius +
+ * targetRadius. When the two spots coincide (closer than 1e-9) the line points
+ * along +x. This is a display guess, not the game's rule: a stone or another
+ * body may have stopped the real rush sooner. Oracle View uses the recorded
+ * post-Charge spot instead. Used by the Charge war-path (looks/ultimates.js)
+ * and, in Agent POV, by the body glide and this look (agentPovChargeLandings),
+ * so all three draw one route. Pure; returns a new array.
+ *
+ * @param {readonly [number, number]} start
+ * @param {readonly [number, number]} targetStart
+ * @param {number} sourceRadius
+ * @param {number} targetRadius
+ * @returns {[number, number]}
+ */
+export function chargeLandingGuess(start, targetStart, sourceRadius, targetRadius) {
+  const dx = targetStart[0] - start[0];
+  const dy = targetStart[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  const ux = length > 1e-9 ? dx / length : 1;
+  const uy = length > 1e-9 ? dy / length : 0;
+  const reach = targetRadius + sourceRadius;
+  return [targetStart[0] - ux * reach, targetStart[1] - uy * reach];
+}
+
+/**
  * Collect this look's frame inputs from the audience's own event inventory.
  *
  * events is that inventory, chosen by the caller from the normalized frame:
@@ -262,21 +304,28 @@ export function cutsStone(from, to, obstacles, bodyRadius = MOVEMENT.bodyRadius)
  * (never the other one). audience is "researcher" or "agent_pov"; in Agent POV
  * the inventory must be the fog-filtered one (summary_kind
  * "agent_pov_fog_filtered_visual_events"), otherwise nothing is returned.
- * Return a frozen {trajectories, returned}: trajectories is the inventory's
- * agent_phase_trajectories list (empty when missing), and returned lists the
- * presentation keys from the agent_anchor of each event whose event_kind is
- * "agent_respawned" (a return to a pad is not a move). A non-object gives empty
- * lists. Pure: no DOM; it reads only what it is given, so in Agent POV an unseen
- * return is simply not listed.
+ * Return a frozen {trajectories, returned, charges}: trajectories is the
+ * inventory's agent_phase_trajectories list (empty when missing), and returned
+ * lists the presentation keys from the agent_anchor of each event whose
+ * event_kind is "agent_respawned" (a return to a pad is not a move). charges
+ * is filled in Agent POV only (empty in Oracle View, which has the recorded
+ * post-Charge spot): one frozen {sourceKey, targetKey, start, targetStart} per
+ * "ability_activated" event with ability_component "ultimate" whose source
+ * trajectory is a Warrior's (agent_class_id 2) and whose source and target
+ * trajectories both have a transition_start position; start and targetStart
+ * are those two world points. A non-object gives empty lists. Pure: no DOM; it
+ * reads only what it is given, so in Agent POV an unseen return or Charge is
+ * simply not listed.
  *
  * @param {unknown} events
  * @param {"researcher" | "agent_pov" | null | undefined} audience
- * @returns {Readonly<{trajectories: ReadonlyArray<unknown>, returned: ReadonlyArray<string>}>}
+ * @returns {Readonly<{trajectories: ReadonlyArray<unknown>, returned: ReadonlyArray<string>, charges: ReadonlyArray<Readonly<{sourceKey: string, targetKey: string, start: WorldPoint, targetStart: WorldPoint}>>}>}
  */
 export function movementSource(events, audience) {
   const empty = Object.freeze({
     trajectories: Object.freeze([]),
     returned: Object.freeze([]),
+    charges: Object.freeze([]),
   });
   if (!isRecord(events)) return empty;
   if (
@@ -293,10 +342,90 @@ export function movementSource(events, audience) {
       : null;
     if (typeof key === "string" && key.length > 0) returned.add(key);
   }
+  /** @type {Array<Readonly<{sourceKey: string, targetKey: string, start: WorldPoint, targetStart: WorldPoint}>>} */
+  const charges = [];
+  if (audience === "agent_pov") {
+    /** @type {Map<string, {classId: unknown, start: WorldPoint | null}>} */
+    const rows = new Map();
+    for (const row of asArray(events.agent_phase_trajectories)) {
+      if (!isRecord(row) || typeof row.agent_presentation_key !== "string") continue;
+      rows.set(row.agent_presentation_key, {
+        classId: row.agent_class_id,
+        start: isRecord(row.transition_start)
+          ? worldPoint(row.transition_start.position)
+          : null,
+      });
+    }
+    for (const event of asArray(events.events)) {
+      if (
+        !isRecord(event) ||
+        event.event_kind !== "ability_activated" ||
+        event.ability_component !== "ultimate"
+      ) {
+        continue;
+      }
+      const sourceKey = isRecord(event.source_anchor)
+        ? event.source_anchor.presentation_key
+        : null;
+      const targetKey = isRecord(event.recipient_anchor)
+        ? event.recipient_anchor.presentation_key
+        : null;
+      if (typeof sourceKey !== "string" || typeof targetKey !== "string") continue;
+      const source = rows.get(sourceKey);
+      const start = source?.start ?? null;
+      const targetStart = rows.get(targetKey)?.start ?? null;
+      if (
+        source?.classId !== WARRIOR_CLASS_ID ||
+        start === null ||
+        targetStart === null
+      ) {
+        continue;
+      }
+      charges.push(Object.freeze({ sourceKey, targetKey, start, targetStart }));
+    }
+  }
   return Object.freeze({
     trajectories: Object.freeze([...asArray(events.agent_phase_trajectories)]),
     returned: Object.freeze([...returned]),
+    charges: Object.freeze(charges),
   });
+}
+
+/**
+ * Turn Agent POV Charges into each Warrior's guessed post-Charge spot.
+ *
+ * charges is movementSource(...).charges (Agent POV only; empty otherwise).
+ * radiusOf(key) gives a champion's body radius in world units, or null when
+ * the audience's scene has no radius for it. A Warrior with no radius uses
+ * MOVEMENT.bodyRadius (0.5); a target with none uses the Warrior's, the same
+ * fallbacks as the Charge war-path. Return a new Map from the Warrior's
+ * presentation key to chargeLandingGuess(start, targetStart, Warrior radius,
+ * target radius), first Charge per Warrior. Pure; reads only its arguments.
+ *
+ * @param {unknown} charges
+ * @param {(key: string) => number | null | undefined} radiusOf
+ * @returns {Map<string, WorldPoint>}
+ */
+export function agentPovChargeLandings(charges, radiusOf) {
+  /** @type {Map<string, WorldPoint>} */
+  const landings = new Map();
+  const positive = (/** @type {unknown} */ value) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+  for (const charge of asArray(charges)) {
+    if (!isRecord(charge) || typeof charge.sourceKey !== "string") continue;
+    if (landings.has(charge.sourceKey)) continue;
+    const start = worldPoint(charge.start);
+    const targetStart = worldPoint(charge.targetStart);
+    if (start === null || targetStart === null) continue;
+    const sourceRadius = positive(radiusOf(charge.sourceKey)) ?? MOVEMENT.bodyRadius;
+    const targetRadius =
+      positive(radiusOf(String(charge.targetKey ?? ""))) ?? sourceRadius;
+    landings.set(
+      charge.sourceKey,
+      Object.freeze(chargeLandingGuess(start, targetStart, sourceRadius, targetRadius)),
+    );
+  }
+  return landings;
 }
 
 /**
@@ -323,7 +452,8 @@ function teamLetter(teamId) {
  * - transform: this render's projection (camera included). Without a scene or
  *   transform the result is empty.
  * - audience: "researcher" (Oracle View) or "agent_pov"; defaults to
- *   scene.audience. In Agent POV a trajectory's post_charge is ignored.
+ *   scene.audience. In Agent POV a trajectory's post_charge is ignored and a
+ *   Warrior's post-Charge spot is the guess from charges instead.
  * - filters: the visual filter state (default: every switch on).
  *   last_move_ghosts, phantom_afterimage, focus_trail and stride_glide are
  *   read; an Afterimage also needs stride_glide (Body Glide).
@@ -334,14 +464,20 @@ function teamLetter(teamId) {
  *   is missing draws nothing.
  * - returned: presentation keys of champions that returned to a pad this tick
  *   (from movementSource); they draw nothing.
+ * - charges: Agent POV Charges (from movementSource; empty or absent in Oracle
+ *   View). Each Warrior's guessed post-Charge spot is
+ *   agentPovChargeLandings(charges, the scene bodies' radii).
  *
  * Records, all positions and radii in CSS pixels, frozen, in scene order:
  * - {kind: "start_spot", presentationKey, publicAgentId, label, team, center,
  *   radius, legs: [{from, to, cut, leg: "rush" | "stride"}], pin, charged, cut,
  *   path, startWorld, endWorld, opacity: {ring, hairline, pin}}: only with
  *   last_move_ghosts on and a move of at least 0.25 world units. pin is the
- *   post-Charge spot or null; cut says the last leg passes through stone (a
- *   Dim Shift; its leg is dotted). path is the world length of the move.
+ *   post-Charge spot (Oracle View: recorded; Agent POV: guessed) or null; cut
+ *   says the last leg passes through stone (a Dim Shift; its leg is dotted).
+ *   A Charge on an Agent POV guessed route never cuts, matching its body,
+ *   which never dims (choreography-plan.js planBodies). path is the world
+ *   length of the move, rush plus stride.
  * - {kind: "phantom_afterimage", presentationKey, center, radius}: a Rogue
  *   that moved at least 0.95 world units, with phantom_afterimage and
  *   stride_glide on.
@@ -379,6 +515,20 @@ export function records(input) {
   const selectedKey = isRecord(scene.selection)
     ? scene.selection.selected_presentation_key
     : null;
+  /** @type {Map<string, unknown>} */
+  const radiusByKey = new Map();
+  for (const agent of asArray(scene.agents)) {
+    if (isRecord(agent) && typeof agent.presentation_key === "string") {
+      radiusByKey.set(agent.presentation_key, agent.radius);
+    }
+  }
+  const guessedPosts =
+    audience === "agent_pov"
+      ? agentPovChargeLandings(input.charges, (key) => {
+          const radius = radiusByKey.get(key);
+          return typeof radius === "number" ? radius : null;
+        })
+      : new Map();
   /** @type {LookRecord[]} */
   const result = [];
   for (const agent of asArray(scene.agents)) {
@@ -392,7 +542,9 @@ export function records(input) {
     if (end === null || successor === null || start === null) continue;
     if (distance(end, successor) > 1e-6) continue;
     const rawPost =
-      audience === "agent_pov" ? null : worldPoint(trajectory.post_charge?.position);
+      audience === "agent_pov"
+        ? (guessedPosts.get(key) ?? null)
+        : worldPoint(trajectory.post_charge?.position);
     const post = rawPost !== null && distance(start, rawPost) > 1e-4 ? rawPost : null;
     const legStart = post ?? start;
     const path = (post === null ? 0 : distance(start, post)) + distance(legStart, end);
@@ -403,7 +555,10 @@ export function records(input) {
     );
     const team = teamLetter(agent.team_id);
     const center = screenPoint(start, transform);
-    const cut = cutsStone(legStart, end, obstacles, MOVEMENT.bodyRadius);
+    // A Charge on an Agent POV guessed route never dims, as in the plan's bodies.
+    const cut =
+      !(audience === "agent_pov" && post !== null) &&
+      cutsStone(legStart, end, obstacles, MOVEMENT.bodyRadius);
     if (ghosts && path >= MOVEMENT.ghostMin) {
       /** @type {Array<Readonly<{from: ScreenPoint, to: ScreenPoint, cut: boolean, leg: string}>>} */
       const legs = [];
