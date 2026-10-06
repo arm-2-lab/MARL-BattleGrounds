@@ -426,10 +426,10 @@ deterministic controller through `pressure_protocol`, identically for the full
 method and matched ablation. Merely selecting a controller in the DevClient or
 passing its physical regression does not qualify official scenario evidence.
 [Amendment A27](../design/specification_amendments.md#a27-rolling-big-12-and-baseline-library-governance)
-records the current Big N and cumulative Baseline Library contract, while
+records the current Big Nine and cumulative Baseline Library contract, while
 preserving the historical version-1 field.
 The accepted monthly snapshot, optional challenger, and admission rules in
-[Big N Tournament And Baseline Library](#big-n-tournament-and-baseline-library)
+[Big Nine Tournament And Baseline Library](#big-nine-tournament-and-baseline-library)
 supersede its earlier weekly/fixed-budget details. These governance changes do
 not alter the simulator, generic cross-play rules, or the slot-based focal,
 partner, and opponent roles.
@@ -955,12 +955,16 @@ Matched-partner metrics are `structurally_inapplicable` for a monolithic
 full-team policy without separable partner assignments.
 
 <a id="big-12-tournament-and-baseline-library"></a>
+<a id="big-n-tournament-and-baseline-library"></a>
 
-## Big N Tournament And Baseline Library
+## Big Nine Tournament And Baseline Library
 
 **Canonical execution, reuse and separate maintainer admission machinery are
-implemented. Official rules, trained controllers and a qualified released bundle
-are still required.** A version-1 released Big 12 snapshot retains exactly
+implemented. The official rules are the [Tournament Rulebook](tournament_rules.md),
+Version 1, from Season 1. The portable file, the play-limit check, the sealed
+training run and a qualified released bundle are still required.** The official
+field is the Big Nine: nine Systems. Season 0 is our six baselines and three
+scripted reference opponents. A version-1 released Big 12 snapshot retains exactly
 twelve method-level entrants. Version 2 takes N from its frozen participant list,
 with at least two entrants and no separate size setting. Each entrant has one
 fixed executable System and one Elo value. An ordinary canonical call evaluates
@@ -985,9 +989,11 @@ separately declared rule compares run finalists and chooses one fixed System
 per setting. Keep all run, checkpoint, selection and failure records. Protected
 scenario and test results cannot make those choices.
 
-Scripted controllers and LLMs, including the former Qwen-Five proposal, are
-excluded from the official candidate field and ladder. Valid scripted and host
-Systems remain supported for custom research and local comparisons against the
+From Season 1, any JAX System may enter the official ladder: learned,
+scripted, search-based, hybrid or built on a language model, within the
+rulebook's training budget and play limits. Each entry is labeled by type. Host
+Systems and Systems that read hidden game data never enter. Valid host Systems
+remain supported for custom research and local comparisons against the
 released field. This eligibility rule does not block inference loading based
 on training history or add an admission side effect to a local run. Diagnostic,
 scenario and declared one-day competence comparisons retain their own roles.
@@ -1238,13 +1244,13 @@ for every retained game; selected replays remain separate. A prior priority-only
 run cannot manufacture missing full data. Resource or write failures cannot
 become invented wins, losses, or draws to meet a release date.
 
-**Remaining gates:** approve and qualify the official numerical game and
-resource limits, timing definitions, the eviction rule when several incumbents
-tie for last, revised-method admission/replacement, episode-local adaptation,
-and remaining eligibility, reproduction, and public-test-feedback rules. The
-monthly cadence and use of a frozen N-System field are settled design choices;
-these open gates still block official launch. This closeout chooses neither a
-new official N nor a numerical game or resource limit. Ratings from different snapshot populations
+**Settled gates:** the [Tournament Rulebook](tournament_rules.md) sets the
+numerical game and resource limits and how they are measured (Rules 2, 4 and
+8), the eviction rule when several members tie for last (Rule 9.3), resubmission
+and replacement (Rules 6.1 and 6.2), adaptation inside a game only (Rule 5.2),
+and eligibility, retraining and test-map rules (Rules 1, 3 and 7). The official
+N is nine. The tools named at the top of this section must exist before the
+first admission. Ratings from different snapshot populations
 are not directly comparable without a separate model for changes over time.
 Paper 1's frozen snapshot and results remain permanent.
 
@@ -1256,13 +1262,13 @@ legitimate training workflow may consume compatible library material only
 through an immutable manifest declaring exact identities and weights. It must
 never resolve a mutable `latest_big_12` population.
 
-Scripted controllers, LLMs, Random, scenario pressure controllers, privileged
-policies, intermediate unqualified checkpoints and internal training-population
-members are not official entrants. Scenario controllers remain outside the
-Baseline Library. Other research artifacts, including Qwen experiments, may be
-retained without being labelled admitted members. Maintainers must reproduce
-every admitted fixed System under its frozen protocol. An unreproducible claim
-is ineligible; that failure alone is not a finding of fraud.
+Privileged policies never enter. Intermediate checkpoints, internal
+training-population members and the scenario pressure controllers do not
+become entrants unless someone submits them under the rulebook. Scenario
+controllers remain outside the Baseline Library. Other research artifacts,
+including Qwen experiments, may be retained without being labelled admitted
+members. The maintainers train each submission once under the rulebook's
+budget, and that run is the entry (Rule 7).
 
 ## Learning and sample efficiency
 

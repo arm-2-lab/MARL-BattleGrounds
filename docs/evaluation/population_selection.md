@@ -9,10 +9,10 @@ The tool then selects the requested number of entrants from that complete field.
 It writes the chosen members before refitting their ratings or running test games.
 It does not admit an official release, train a model or replace failed games.
 
-The initial official field excludes scripted controllers and LLMs. Those methods
-remain supported in local experiments. The tiny example below uses built-ins to
-check the software; it does not choose the official field or prove strong play.
-See [the tournament protocol](protocol.md#big-12-tournament-and-baseline-library)
+The official field is the Big Nine; who may enter it is set by the
+[Tournament Rulebook](tournament_rules.md). The tiny example below uses
+built-ins to check the software; it does not choose the official field or prove
+strong play. See [the tournament protocol](protocol.md#big-nine-tournament-and-baseline-library)
 for the scientific requirements and historical version-1 rules.
 
 ## Declare And Run The Field

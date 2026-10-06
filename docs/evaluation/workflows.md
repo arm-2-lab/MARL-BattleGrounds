@@ -1371,14 +1371,15 @@ playing them again. Once summaries are finalized, result access does not refit
 statistics. Whole-population summaries require whole-population scope; a filtered
 matchup cannot appear to be a completed tournament.
 
-The official design uses a monthly frozen Big N snapshot, with N taken from its
-pinned participant list. The canonical call compares an optional challenger
+The official design uses a monthly frozen Big Nine snapshot, with N taken from
+its pinned participant list. The canonical call compares an optional challenger
 against that released field and can reuse verified compatible games. Historical
 version-1 twelve-entry snapshots keep their original rules and meaning. The wider
 baseline library can grow independently. Priority/full tournaments produce the
 automatic headline report. Running a local tournament does not admit or publish
 an entrant; maintainer admission is separate. See the
-[protocol](protocol.md#big-n-tournament-and-baseline-library) for scientific rules.
+[protocol](protocol.md#big-nine-tournament-and-baseline-library) for scientific
+rules and the [Tournament Rulebook](tournament_rules.md) for who may enter.
 
 ## Resume and combine results
 

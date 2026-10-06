@@ -726,8 +726,10 @@ class Environment:
         Works in jit and vmap with a static team. The supplied snapshot must be
         coherent; this helper does not compare epochs. It builds only this
         team's transient source banks and does not transfer data to the host.
-        Each recipient's private rows remain separate information rights. A
-        method must not use another actor's private input to choose its action.
+        Each recipient's private rows remain separate information rights.
+        Within one decision, a method must not use another actor's private
+        input to choose its action. Teammates may pass information only across
+        decisions, so a message sent on one tick arrives on the next.
         """
         from marl_battlegrounds.evaluation.policy_execution import system_inputs
 

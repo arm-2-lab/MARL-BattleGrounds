@@ -1989,6 +1989,14 @@ active membership. Maintainers must be able to reproduce official claims from
 the saved information; these controls do not claim to prevent all scientific
 misconduct.
 
+**Update, 6 October 2026.** The [Tournament Rulebook](../evaluation/tournament_rules.md),
+Version 1, settles the decisions left open above for Season 1 onward. The
+official field is the Big Nine. Any JAX System may enter, including scripted
+and language-model Systems, within the rulebook's training budget and play
+limits; this supersedes the earlier exclusion of scripted controllers and LLMs.
+The maintainers train each submission once, and that run is the entry. The
+text above stays as the record of the earlier decisions.
+
 ## A28. Scenario pressure controllers in the DevClient
 
 **Classification:** narrow developer-tool integration of A26's reactive

@@ -567,7 +567,10 @@ class SystemInput(NamedTuple):
     ----------
     actors : ActorInput
         Permitted inputs with leading axes (B, 5). Each recipient retains its
-        own information rights; the team method must not pool private rows.
+        own information rights: within one decision, the team method must not
+        use one actor's private rows to choose another actor's action.
+        Teammates may pass information only across decisions, so a message
+        sent on one tick arrives on the next.
     action_mask : ActionMask
         Boolean move, target, Ultimate and joint masks shaped (B,5,9),
         (B,5,11), (B,5,2) and (B,5,11,2).

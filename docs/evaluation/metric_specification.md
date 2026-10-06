@@ -1575,7 +1575,7 @@ games and refits the complete population. Both descriptor versions keep the
 existing 5,000 bootstrap resamples; the reported count is the executed count.
 A local call does not promote or publish. Monthly admission, provisional
 replacement/refit, full-report coverage and the remaining release gates are in the
-[tournament protocol](protocol.md#big-n-tournament-and-baseline-library).
+[tournament protocol](protocol.md#big-nine-tournament-and-baseline-library).
 New tournaments keep fixed Team A/B ownership and exchange spawn ends. Historical
 team-swapped records keep their original conditions and are never relabelled.
 

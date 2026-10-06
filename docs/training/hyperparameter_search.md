@@ -365,7 +365,7 @@ represented by that earlier checkpoint, and the report says so.
 
 **Tournament on the test maps** (after study 3). The six study 3 policies and
 the three scripted bots play one round robin on the held-out test maps, which
-no training, tuning or checkpoint choice ever used. The field is declared in
+no baseline's training, tuning or checkpoint choice ever used. The field is declared in
 [`tournament_250m.json`](../../scripts/paper_experiments/hyperparameter_search/tournament_250m.json)
 and runs through the public `run_tournament` API.
 

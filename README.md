@@ -360,10 +360,10 @@ reproduction. This is a reproducibility and eligibility boundary,
 not a claim that open-source software can make deliberate misconduct
 impossible.
 
-The official ladder uses a frozen population, called **Big N**. Each entrant
-is one fixed, validation-selected System with one Elo value. Version-2 releases
-take N from their participant list, with at least two entrants; no separate size
-setting can disagree with that list. Historical version-1 official snapshots
+The official ladder uses a frozen population, the **Big Nine**. Each entrant
+is one fixed System with one Elo value. The software takes N from a release's
+participant list, with at least two entrants, so custom tournaments may use any
+size; the official field holds nine. Historical version-1 official snapshots
 keep exactly twelve entrants and their original rules and hashes.
 
 The initial scientific plan covers eighteen settings from six learners:
@@ -388,17 +388,19 @@ refit may change ratings and order, but cannot choose different members. Weak
 valid candidates stay eligible; failed work stays visible and missing evidence
 must not turn into invented results or replacement seeds.
 
-Scripted controllers and LLMs, including the former Qwen-Five proposal, are
-excluded from the official candidate field and ladder. Valid scripted and host
-Systems remain usable in custom tournaments and local comparisons against the
-released field. Their diagnostic, scenario and declared competence-evaluation
-roles remain separate. Loading a valid actor does not require official training
-provenance; loading it does not grant official eligibility.
+From Season 1, any JAX System may enter the official ladder, within the
+[Tournament Rulebook](docs/evaluation/tournament_rules.md)'s training budget and
+play limits; each entry is labeled by type. Valid host Systems remain usable in
+custom tournaments and local comparisons against the released field. Their
+diagnostic, scenario and declared competence-evaluation roles remain separate.
+Loading a valid actor does not require official training provenance; loading it
+does not grant official eligibility.
 
 A field has N*(N-1)/2 unordered matchups; one challenger adds N. Twelve entrants
 at 100 games per pairing give 6,600 games. That is a historical workload example,
-not a selected official N or budget. The final official field, game budget and
-resource rules still need a scientific declaration and qualification.
+not the official budget. The official field holds nine, with 200 games per
+pairing; the budget and resource rules are in the
+[Tournament Rulebook](docs/evaluation/tournament_rules.md).
 
 The raw win/draw/loss matrix remains authoritative. The compact report is Policy,
 Elo with uncertainty, Expected Score with uncertainty, Win %, Draw % and Loss %,
@@ -417,8 +419,9 @@ process; a promotion replaces one incumbent and keeps that release's N. Ratings
 from different populations are not directly comparable over time. The Baseline
 Library retains current and former entrants with their identities and evidence;
 its growth does not enlarge the active field. See
-[amendment A27](docs/design/specification_amendments.md#a27-rolling-big-n-and-baseline-library-governance)
-and the [tournament protocol](docs/evaluation/protocol.md#big-n-tournament-and-baseline-library).
+[amendment A27](docs/design/specification_amendments.md#a27-rolling-big-n-and-baseline-library-governance),
+the [tournament protocol](docs/evaluation/protocol.md#big-nine-tournament-and-baseline-library)
+and the [Tournament Rulebook](docs/evaluation/tournament_rules.md).
 
 ## Static Snapshots
 
@@ -449,6 +452,9 @@ require Matplotlib.
 - [Evaluation protocol](docs/evaluation/protocol.md) defines evaluation cells,
   aggregation, inference, cross-play, scenarios, failure handling, and
   canonical actor-information provenance.
+- [Tournament Rulebook](docs/evaluation/tournament_rules.md) sets who may enter
+  the official tournament, the training budget, the play limits and how
+  challengers are admitted.
 - [Standard replay format](docs/evaluation/replay_format.md) defines the
   versioned semantic replay normal form, whole-artifact validation boundary,
   companion artifacts, and canonical bounded local persistence.
