@@ -154,6 +154,35 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
 }
 
 
+# The training history of each Season 0 baseline in rank order: its 40M run,
+# then the run that continued it to 250M, relative to runs_dir, the
+# hyperparameter-search root (docs/training/hyperparameter_search.md, "The six
+# tournament policies").
+SEASON_0_LINEAGES = (
+    ("Recurrent IPPO", "shapes-and-ppo", "250m", "ippo-reference--seed-20261001"),
+    (
+        "PQN-VDN",
+        "q-settings",
+        "250m",
+        "pqn_vdn-b768-t128-reward-x10--seed-12259871",
+    ),
+    ("Recurrent MAPPO", "shapes-and-ppo", "250m", "mappo-reference--seed-20261002"),
+    (
+        "QMIX",
+        "q-settings",
+        "250m",
+        "qmix-b768-t32-lr-1e-4-target-faster--seed-12259871",
+    ),
+    ("Feedforward IPPO", "shapes-and-ppo", "250m", "ff_ippo-reference--seed-20261001"),
+    (
+        "Feedforward MAPPO",
+        "ff-mappo-levers",
+        "ff-mappo-250m",
+        "ff_mappo-team-reward--seed-12259871",
+    ),
+)
+
+
 def _defaults(record: type[Any]) -> dict[str, Any]:
     """Copy declared dataclass defaults into JSON values, retaining sentinels.
 
@@ -476,6 +505,24 @@ def presets() -> dict[str, dict[str, Any]]:
         "analysis_data_dir": None,
         "protocol": None,
         "hydra": deepcopy(stage_hydra),
+    }
+    result["training_curves.yaml"] = {
+        "lineages": "???",
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    result["training_runs/season_0.yaml"] = {
+        "runs_dir": "???",
+        "lineages": [
+            {
+                "name": name,
+                "runs": [
+                    f"${{runs_dir}}/{study}/study/cases/{case}/run"
+                    for study in (first, continued)
+                ],
+            }
+            for name, first, continued, case in SEASON_0_LINEAGES
+        ],
     }
     result["resume.yaml"] = {
         "output_dir": None,

@@ -604,6 +604,22 @@ For each of the six tournament policies, these measures can be plotted at
 every point from step 0 to 250,675,200 transitions. All are in
 `results/250m/`; filter one lineage with `case_id` and order by `env_steps`.
 
+**Plot them with the public stage.** One command reads every routine check of
+the six lineages, each 40M run followed by its continuation, through
+`training.list_runs(progress=True)`, and draws point margin and kills per game
+against transitions:
+
+```bash
+python -m marl_battlegrounds.experiments.training_curves +training_runs=season_0 \
+  runs_dir=artifacts/paper-experiments/hyperparameter-search output_dir=artifacts/paper-experiments/training-curves-season-0
+```
+
+It writes `curves.csv` (margin, kills and deaths per game at all 186 checks),
+`curves.png` and `summary.md` in 19 seconds on the CPU (2.0 GB peak RAM), and
+plays no games. Its curves match `lineage_curves.csv` at every check. The 186
+rows are in
+[`season_0_training_curves.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves.csv).
+
 **At every validation check** (31 per lineage: step 0, 10 checks to 40M about
 every 4M, then 20 checks about every 10.5M; 128 games each, 8 per map and
 opponent). Use the rows of `routine_checks.csv` whose `purpose` is
