@@ -1,0 +1,6 @@
+num_envs,map_id,steps,first_call_seconds,warm_median_seconds,warm_spread_percent,game_steps_per_second,agent_steps_per_second
+32,47,500,10.61,3.2524,8.39,4919,49194
+64,47,500,10.31,3.1614,5.49,10122,101221
+128,47,500,11.2,3.6035,0.56,17760,177605
+512,47,500,14.86,6.4127,3.3,39921,399205
+1024,47,500,17.65,10.1554,4.3,50416,504165

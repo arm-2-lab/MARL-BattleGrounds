@@ -289,6 +289,23 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false .venv/bin/python -m marl_battlegrounds \
 Resume and status commands run from the same worktree. Remove the worktree only
 after the study and its analysis are finished.
 
+## Measure Speed On Your Machine
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.speed output_dir=/runs/speed
+```
+
+The stage first times the simulator alone, as JaxMARL times its environments:
+canonical 5v5 games on test map 47 play 500-tick calls of random legal actions
+inside one `jax.jit` and `lax.scan`, at 32, 64, 128, 512 and 1024 parallel
+games, with compilation timed separately. It then trains recurrent MAPPO in pure
+self-play with `train` for 40 updates of 1024 games by 32 ticks and takes the
+median of the warm updates from the run's `training_updates.jsonl`. It writes
+`simulator.csv`, `training.json`, `speed.md` and the run folder `training/`.
+Override `batch_sizes=`, `map_id=`, `train_method=` (any PPO baseline) or
+`train_blocks=0` to skip training. Keep `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+so memory readings show real use; pin a card with `CUDA_VISIBLE_DEVICES`.
+
 ## Choose Devices And Worker Limits
 
 Leave `resources=inherit` to keep the calling process's device and allocator
