@@ -1,0 +1,154 @@
+system,scenario,outcome,ticks,games
+Recurrent IPPO,1,win,5,7
+Recurrent IPPO,1,draw,5,160
+Recurrent IPPO,1,loss,3,1
+Recurrent IPPO,1,loss,4,24
+Recurrent IPPO,1,loss,5,64
+Recurrent IPPO,2,loss,2,256
+Recurrent IPPO,3,loss,3,168
+Recurrent IPPO,3,loss,4,72
+Recurrent IPPO,3,loss,5,7
+Recurrent IPPO,3,loss,6,6
+Recurrent IPPO,3,loss,7,3
+Recurrent IPPO,4,draw,4,1
+Recurrent IPPO,4,draw,5,2
+Recurrent IPPO,4,loss,3,46
+Recurrent IPPO,4,loss,4,206
+Recurrent IPPO,4,loss,5,1
+Recurrent IPPO,5,loss,2,256
+Recurrent IPPO,6,loss,1,223
+Recurrent IPPO,6,loss,2,33
+Recurrent IPPO,7,loss,1,256
+Recurrent IPPO,8,loss,2,256
+PQN-VDN,1,draw,5,256
+PQN-VDN,2,loss,2,256
+PQN-VDN,3,loss,4,256
+PQN-VDN,4,loss,4,256
+PQN-VDN,5,loss,2,256
+PQN-VDN,6,loss,1,256
+PQN-VDN,7,loss,2,256
+PQN-VDN,8,loss,2,256
+Recurrent MAPPO,1,win,5,3
+Recurrent MAPPO,1,draw,5,200
+Recurrent MAPPO,1,loss,4,19
+Recurrent MAPPO,1,loss,5,34
+Recurrent MAPPO,2,loss,2,256
+Recurrent MAPPO,3,loss,3,185
+Recurrent MAPPO,3,loss,4,48
+Recurrent MAPPO,3,loss,5,2
+Recurrent MAPPO,3,loss,6,19
+Recurrent MAPPO,3,loss,7,2
+Recurrent MAPPO,4,draw,5,2
+Recurrent MAPPO,4,loss,4,249
+Recurrent MAPPO,4,loss,5,5
+Recurrent MAPPO,5,loss,2,256
+Recurrent MAPPO,6,loss,1,189
+Recurrent MAPPO,6,loss,2,67
+Recurrent MAPPO,7,loss,1,256
+Recurrent MAPPO,8,loss,2,256
+QMIX,1,loss,5,256
+QMIX,2,loss,2,256
+QMIX,3,loss,3,256
+QMIX,4,loss,3,256
+QMIX,5,loss,2,256
+QMIX,6,loss,1,256
+QMIX,7,loss,1,256
+QMIX,8,loss,2,256
+Feedforward IPPO,1,win,5,8
+Feedforward IPPO,1,draw,5,148
+Feedforward IPPO,1,loss,4,11
+Feedforward IPPO,1,loss,5,89
+Feedforward IPPO,2,win,3,1
+Feedforward IPPO,2,draw,3,2
+Feedforward IPPO,2,draw,5,1
+Feedforward IPPO,2,loss,2,249
+Feedforward IPPO,2,loss,3,3
+Feedforward IPPO,3,win,8,2
+Feedforward IPPO,3,draw,9,1
+Feedforward IPPO,3,loss,3,115
+Feedforward IPPO,3,loss,4,111
+Feedforward IPPO,3,loss,5,12
+Feedforward IPPO,3,loss,6,12
+Feedforward IPPO,3,loss,7,2
+Feedforward IPPO,3,loss,8,1
+Feedforward IPPO,4,draw,5,21
+Feedforward IPPO,4,loss,3,28
+Feedforward IPPO,4,loss,4,207
+Feedforward IPPO,5,loss,2,256
+Feedforward IPPO,6,loss,1,241
+Feedforward IPPO,6,loss,2,15
+Feedforward IPPO,7,loss,1,255
+Feedforward IPPO,7,loss,2,1
+Feedforward IPPO,8,loss,2,256
+Feedforward MAPPO,1,win,5,1
+Feedforward MAPPO,1,draw,5,208
+Feedforward MAPPO,1,loss,4,13
+Feedforward MAPPO,1,loss,5,34
+Feedforward MAPPO,2,loss,2,256
+Feedforward MAPPO,3,win,8,1
+Feedforward MAPPO,3,draw,8,3
+Feedforward MAPPO,3,loss,3,170
+Feedforward MAPPO,3,loss,4,58
+Feedforward MAPPO,3,loss,5,7
+Feedforward MAPPO,3,loss,6,13
+Feedforward MAPPO,3,loss,7,4
+Feedforward MAPPO,4,draw,5,1
+Feedforward MAPPO,4,loss,4,255
+Feedforward MAPPO,5,loss,2,256
+Feedforward MAPPO,6,loss,1,237
+Feedforward MAPPO,6,loss,2,19
+Feedforward MAPPO,7,loss,1,256
+Feedforward MAPPO,8,loss,2,256
+TDM-Beta,1,draw,5,256
+TDM-Beta,2,loss,2,256
+TDM-Beta,3,loss,3,256
+TDM-Beta,4,loss,4,256
+TDM-Beta,5,loss,2,256
+TDM-Beta,6,loss,1,256
+TDM-Beta,7,loss,2,256
+TDM-Beta,8,loss,2,256
+TDM-Gamma,1,draw,5,256
+TDM-Gamma,2,loss,2,256
+TDM-Gamma,3,loss,3,256
+TDM-Gamma,4,loss,4,256
+TDM-Gamma,5,loss,2,256
+TDM-Gamma,6,loss,1,256
+TDM-Gamma,7,loss,2,256
+TDM-Gamma,8,loss,2,256
+TDM-Alpha,1,draw,5,256
+TDM-Alpha,2,loss,2,256
+TDM-Alpha,3,loss,3,256
+TDM-Alpha,4,loss,4,256
+TDM-Alpha,5,loss,2,256
+TDM-Alpha,6,loss,1,256
+TDM-Alpha,7,loss,2,256
+TDM-Alpha,8,loss,2,256
+Random,1,win,5,2
+Random,1,draw,5,92
+Random,1,loss,3,19
+Random,1,loss,4,63
+Random,1,loss,5,80
+Random,2,draw,5,3
+Random,2,loss,1,138
+Random,2,loss,2,103
+Random,2,loss,3,12
+Random,3,loss,2,25
+Random,3,loss,3,144
+Random,3,loss,4,64
+Random,3,loss,5,17
+Random,3,loss,6,3
+Random,3,loss,7,3
+Random,4,draw,5,17
+Random,4,loss,3,59
+Random,4,loss,4,160
+Random,4,loss,5,20
+Random,5,loss,2,256
+Random,6,loss,1,151
+Random,6,loss,2,97
+Random,6,loss,3,6
+Random,6,loss,4,2
+Random,7,loss,1,187
+Random,7,loss,2,67
+Random,7,loss,3,2
+Random,8,loss,2,255
+Random,8,loss,3,1

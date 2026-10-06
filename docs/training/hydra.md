@@ -539,6 +539,22 @@ python -m marl_battlegrounds.experiments.train recipe=software_check preview=tru
 ```
 
 
+## Score A Field On The Endgame Scenarios
+
+`python -m marl_battlegrounds.experiments.scenarios output_dir=PATH` plays every
+listed system as Team A in all eight endgame scenarios, against each scenario's
+own opponent, and writes `results.csv` and `results.md` (wins, draws and losses
+per system and scenario). It calls `marl_bgs.evaluate_scenarios` and reads the
+games back with `marl_bgs.load_results`. Override `systems=` to play your own
+methods, or add `+field=season_0 models_dir=PATH` for the Season 0 field and
+Random.
+Play with `metrics=full`, then run
+`python -m marl_battlegrounds.experiments.scenario_analysis scenarios_dir=PATH output_dir=PATH`
+to count, from the saved files, which agents died, which used their Ultimate,
+how long games lasted and how each system's wins compare with Random's.
+[The experiments README](../../src/marl_battlegrounds/experiments/README.md)
+has the Season 0 results, the exact commands and their measured cost.
+
 ## Run The Public Tutorials
 
 The experiment tutorials use the same optional Hydra adapter. Each script keeps

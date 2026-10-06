@@ -352,17 +352,28 @@ def _initial_snapshots(
     Build matching Core state/observation/masks for every lane, using ordinary
     reset for the remaining lanes. Inputs have already passed host validation.
     Return None for an entirely ordinary batch; do not retain extra start history.
+
+    An authored start takes no random key, so lanes that share the same authored
+    state and configuration objects share one prepared start. Building it once
+    per batch, not once per lane, removes the repeated host-side validation and
+    observation work that otherwise dominates short scenario games.
     """
     if all(spec.initial_state is None for spec in specs):
         return None
+    authored: dict[tuple[int, int], InitialSnapshot] = {}
     rows: list[InitialSnapshot] = []
     for index, spec in enumerate(specs):
-        state, observation, mask, _ = (
-            core.reset(spec.env_config, keys[index])
-            if spec.initial_state is None
-            else core.initialize_scenario_state(spec.initial_state, spec.env_config)
-        )
-        rows.append((state, observation, mask))
+        if spec.initial_state is None:
+            state, observation, mask, _ = core.reset(spec.env_config, keys[index])
+            rows.append((state, observation, mask))
+            continue
+        shared = (id(spec.initial_state), id(spec.env_config))
+        if shared not in authored:
+            state, observation, mask, _ = core.initialize_scenario_state(
+                spec.initial_state, spec.env_config
+            )
+            authored[shared] = (state, observation, mask)
+        rows.append(authored[shared])
 
     def stack(*values: Array) -> Array:
         """Stack scalar authored/ordinary starts into the active native batch."""

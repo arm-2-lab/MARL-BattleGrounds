@@ -154,6 +154,48 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
 }
 
 
+# The Season 0 field in rank order: the six tournament actors (relative to
+# models_dir, the hyperparameter-search root; docs/training/hyperparameter_search.md,
+# "The six tournament policies") and the three scripted systems, then Random as
+# a reference floor that is not a member of the field.
+SEASON_0_FIELD = (
+    (
+        "Recurrent IPPO",
+        "${models_dir}/250m/study/cases/ippo-reference--seed-20261001/run/actors/"
+        "ippo_actor_step_000250675200_76b55aa1d72003c22020d13872730d9cf6d96b50a6a936026287b7a35f0f3328",
+    ),
+    (
+        "PQN-VDN",
+        "${models_dir}/250m/study/cases/pqn_vdn-b768-t128-reward-x10--seed-12259871/run/actors/"
+        "pqn_vdn_actor_step_000240156672_8c1e52fbccfb238801b31041eb4df87cf6df38c62cc458e379c00d6224036f30",
+    ),
+    (
+        "Recurrent MAPPO",
+        "${models_dir}/250m/study/cases/mappo-reference--seed-20261002/run/actors/"
+        "mappo_actor_step_000219103232_01f7e47402a9ba3e6a17a302ad9f21e680647cbb75e0186c7f1ef12f67303174",
+    ),
+    (
+        "QMIX",
+        "${models_dir}/250m/study/cases/qmix-b768-t32-lr-1e-4-target-faster--seed-12259871/run/actors/"
+        "qmix_actor_step_000219095040_c9a2ada94944055f57ebfafdc87245954bd270c603a48bbe1a634bf2761cf499",
+    ),
+    (
+        "Feedforward IPPO",
+        "${models_dir}/250m/study/cases/ff_ippo-reference--seed-20261001/run/actors/"
+        "ff_ippo_actor_step_000219103232_83cc8f75bd015ea02ec977a4e446afbe3a4f247fddb604c42b60f8edcebc1952",
+    ),
+    (
+        "Feedforward MAPPO",
+        "${models_dir}/ff-mappo-250m/study/cases/ff_mappo-team-reward--seed-12259871/run/actors/"
+        "ff_mappo_actor_step_000208568320_f2b2650e9f35e96296d8b70bb28043dd551cc11abd382c75b366e9e24528a6f4",
+    ),
+    ("TDM-Beta", "tdm-beta"),
+    ("TDM-Gamma", "tdm-gamma"),
+    ("TDM-Alpha", "tdm-alpha"),
+    ("Random", "random"),
+)
+
+
 def _defaults(record: type[Any]) -> dict[str, Any]:
     """Copy declared dataclass defaults into JSON values, retaining sentinels.
 
@@ -476,6 +518,35 @@ def presets() -> dict[str, dict[str, Any]]:
         "analysis_data_dir": None,
         "protocol": None,
         "hydra": deepcopy(stage_hydra),
+    }
+    result["scenarios.yaml"] = {
+        "defaults": ["_self_"],
+        "systems": [
+            {"name": "TDM-Beta", "method": "tdm-beta"},
+            {"name": "TDM-Gamma", "method": "tdm-gamma"},
+            {"name": "TDM-Alpha", "method": "tdm-alpha"},
+            {"name": "Random", "method": "random"},
+        ],
+        "models_dir": None,
+        "scenario_ids": [1, 2, 3, 4, 5, 6, 7, 8],
+        "num_episodes": 256,
+        "num_envs": 128,
+        "seed": 20261006,
+        "metrics": "priority",
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    result["scenario_analysis.yaml"] = {
+        "scenarios_dir": "???",
+        "output_dir": "???",
+        "reference": "Random",
+        "hydra": deepcopy(stage_hydra),
+    }
+    result["field/season_0.yaml"] = {
+        "models_dir": "???",
+        "systems": [
+            {"name": name, "method": method} for name, method in SEASON_0_FIELD
+        ],
     }
     result["resume.yaml"] = {
         "output_dir": None,

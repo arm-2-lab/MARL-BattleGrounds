@@ -1,0 +1,73 @@
+system,scenario,games,wins,reference_wins,p_value
+Recurrent IPPO,1,256,7,2,0.1758
+Recurrent IPPO,2,256,0,0,1.0
+Recurrent IPPO,3,256,0,0,1.0
+Recurrent IPPO,4,256,0,0,1.0
+Recurrent IPPO,5,256,0,0,1.0
+Recurrent IPPO,6,256,0,0,1.0
+Recurrent IPPO,7,256,0,0,1.0
+Recurrent IPPO,8,256,0,0,1.0
+PQN-VDN,1,256,0,2,0.499
+PQN-VDN,2,256,0,0,1.0
+PQN-VDN,3,256,0,0,1.0
+PQN-VDN,4,256,0,0,1.0
+PQN-VDN,5,256,0,0,1.0
+PQN-VDN,6,256,0,0,1.0
+PQN-VDN,7,256,0,0,1.0
+PQN-VDN,8,256,0,0,1.0
+Recurrent MAPPO,1,256,3,2,1.0
+Recurrent MAPPO,2,256,0,0,1.0
+Recurrent MAPPO,3,256,0,0,1.0
+Recurrent MAPPO,4,256,0,0,1.0
+Recurrent MAPPO,5,256,0,0,1.0
+Recurrent MAPPO,6,256,0,0,1.0
+Recurrent MAPPO,7,256,0,0,1.0
+Recurrent MAPPO,8,256,0,0,1.0
+QMIX,1,256,0,2,0.499
+QMIX,2,256,0,0,1.0
+QMIX,3,256,0,0,1.0
+QMIX,4,256,0,0,1.0
+QMIX,5,256,0,0,1.0
+QMIX,6,256,0,0,1.0
+QMIX,7,256,0,0,1.0
+QMIX,8,256,0,0,1.0
+Feedforward IPPO,1,256,8,2,0.1059
+Feedforward IPPO,2,256,1,0,1.0
+Feedforward IPPO,3,256,2,0,0.499
+Feedforward IPPO,4,256,0,0,1.0
+Feedforward IPPO,5,256,0,0,1.0
+Feedforward IPPO,6,256,0,0,1.0
+Feedforward IPPO,7,256,0,0,1.0
+Feedforward IPPO,8,256,0,0,1.0
+Feedforward MAPPO,1,256,1,2,1.0
+Feedforward MAPPO,2,256,0,0,1.0
+Feedforward MAPPO,3,256,1,0,1.0
+Feedforward MAPPO,4,256,0,0,1.0
+Feedforward MAPPO,5,256,0,0,1.0
+Feedforward MAPPO,6,256,0,0,1.0
+Feedforward MAPPO,7,256,0,0,1.0
+Feedforward MAPPO,8,256,0,0,1.0
+TDM-Beta,1,256,0,2,0.499
+TDM-Beta,2,256,0,0,1.0
+TDM-Beta,3,256,0,0,1.0
+TDM-Beta,4,256,0,0,1.0
+TDM-Beta,5,256,0,0,1.0
+TDM-Beta,6,256,0,0,1.0
+TDM-Beta,7,256,0,0,1.0
+TDM-Beta,8,256,0,0,1.0
+TDM-Gamma,1,256,0,2,0.499
+TDM-Gamma,2,256,0,0,1.0
+TDM-Gamma,3,256,0,0,1.0
+TDM-Gamma,4,256,0,0,1.0
+TDM-Gamma,5,256,0,0,1.0
+TDM-Gamma,6,256,0,0,1.0
+TDM-Gamma,7,256,0,0,1.0
+TDM-Gamma,8,256,0,0,1.0
+TDM-Alpha,1,256,0,2,0.499
+TDM-Alpha,2,256,0,0,1.0
+TDM-Alpha,3,256,0,0,1.0
+TDM-Alpha,4,256,0,0,1.0
+TDM-Alpha,5,256,0,0,1.0
+TDM-Alpha,6,256,0,0,1.0
+TDM-Alpha,7,256,0,0,1.0
+TDM-Alpha,8,256,0,0,1.0

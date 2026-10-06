@@ -1,0 +1,520 @@
+system,scenario,outcome,team,agent_class,start_health,start_ultimate_cooldown,games,died,used_ultimate
+Recurrent IPPO,1,win,A,Hunter,41.0,0,7,0,7
+Recurrent IPPO,1,win,A,Rogue,12.0,0,7,7,7
+Recurrent IPPO,1,win,A,Priest,1.0,1,7,7,0
+Recurrent IPPO,1,win,B,Mage,4.0,30,7,7,0
+Recurrent IPPO,1,win,B,Rogue,36.0,10,7,7,0
+Recurrent IPPO,1,win,B,Priest,94.0,1,7,0,0
+Recurrent IPPO,1,draw,A,Hunter,41.0,0,160,2,31
+Recurrent IPPO,1,draw,A,Rogue,12.0,0,160,157,141
+Recurrent IPPO,1,draw,A,Priest,1.0,1,160,160,0
+Recurrent IPPO,1,draw,B,Mage,4.0,30,160,2,0
+Recurrent IPPO,1,draw,B,Rogue,36.0,10,160,150,0
+Recurrent IPPO,1,draw,B,Priest,94.0,1,160,0,152
+Recurrent IPPO,1,loss,A,Hunter,41.0,0,89,89,22
+Recurrent IPPO,1,loss,A,Rogue,12.0,0,89,89,20
+Recurrent IPPO,1,loss,A,Priest,1.0,1,89,89,0
+Recurrent IPPO,1,loss,B,Mage,4.0,30,89,0,0
+Recurrent IPPO,1,loss,B,Rogue,36.0,10,89,44,0
+Recurrent IPPO,1,loss,B,Priest,94.0,1,89,0,77
+Recurrent IPPO,2,loss,A,Warrior,35.0,0,256,182,256
+Recurrent IPPO,2,loss,A,Priest,8.0,2,256,75,0
+Recurrent IPPO,2,loss,B,Mage,8.0,30,256,74,0
+Recurrent IPPO,2,loss,B,Rogue,28.0,1,256,177,75
+Recurrent IPPO,3,loss,A,Warrior,81.0,11,256,0,0
+Recurrent IPPO,3,loss,A,Hunter,1.0,11,256,256,0
+Recurrent IPPO,3,loss,B,Rogue,100.0,11,256,0,0
+Recurrent IPPO,4,draw,A,Warrior,47.0,0,3,1,3
+Recurrent IPPO,4,draw,A,Rogue,36.0,0,3,0,3
+Recurrent IPPO,4,draw,B,Mage,19.0,0,3,3,3
+Recurrent IPPO,4,draw,B,Warrior,200.0,0,3,0,3
+Recurrent IPPO,4,draw,B,Priest,40.0,4,3,1,0
+Recurrent IPPO,4,loss,A,Warrior,47.0,0,253,252,243
+Recurrent IPPO,4,loss,A,Rogue,36.0,0,253,1,46
+Recurrent IPPO,4,loss,B,Mage,19.0,0,253,6,253
+Recurrent IPPO,4,loss,B,Warrior,200.0,0,253,0,253
+Recurrent IPPO,4,loss,B,Priest,40.0,4,253,10,1
+Recurrent IPPO,5,loss,A,Mage,15.0,0,256,2,51
+Recurrent IPPO,5,loss,A,Warrior,36.0,0,256,0,256
+Recurrent IPPO,5,loss,A,Priest,1.0,2,256,255,0
+Recurrent IPPO,5,loss,B,Mage,13.0,0,256,256,256
+Recurrent IPPO,5,loss,B,Rogue,44.0,0,256,0,255
+Recurrent IPPO,5,loss,B,Priest,15.0,3,256,197,0
+Recurrent IPPO,6,loss,A,Mage,23.0,0,256,0,223
+Recurrent IPPO,6,loss,A,Hunter,7.0,0,256,247,45
+Recurrent IPPO,6,loss,A,Priest,1.0,10,256,21,0
+Recurrent IPPO,6,loss,B,Mage,20.0,25,256,4,0
+Recurrent IPPO,6,loss,B,Warrior,19.0,1,256,0,10
+Recurrent IPPO,6,loss,B,Rogue,20.0,1,256,16,29
+Recurrent IPPO,7,loss,A,Mage,21.0,0,256,0,0
+Recurrent IPPO,7,loss,A,Warrior,1.0,0,256,256,256
+Recurrent IPPO,7,loss,A,Priest,5.0,15,256,0,0
+Recurrent IPPO,7,loss,B,Mage,14.0,30,256,248,0
+Recurrent IPPO,7,loss,B,Hunter,20.0,15,256,6,0
+Recurrent IPPO,7,loss,B,Rogue,54.0,1,256,0,0
+Recurrent IPPO,8,loss,A,Warrior,1.0,3,256,0,0
+Recurrent IPPO,8,loss,A,Rogue,21.0,1,256,0,147
+Recurrent IPPO,8,loss,A,Priest,1.0,3,256,256,0
+Recurrent IPPO,8,loss,B,Rogue,56.0,0,256,0,256
+Recurrent IPPO,8,loss,B,Priest,9.0,1,256,0,242
+PQN-VDN,1,draw,A,Hunter,41.0,0,256,0,0
+PQN-VDN,1,draw,A,Rogue,12.0,0,256,256,0
+PQN-VDN,1,draw,A,Priest,1.0,1,256,256,0
+PQN-VDN,1,draw,B,Mage,4.0,30,256,0,0
+PQN-VDN,1,draw,B,Rogue,36.0,10,256,256,0
+PQN-VDN,1,draw,B,Priest,94.0,1,256,0,256
+PQN-VDN,2,loss,A,Warrior,35.0,0,256,0,256
+PQN-VDN,2,loss,A,Priest,8.0,2,256,256,0
+PQN-VDN,2,loss,B,Mage,8.0,30,256,256,0
+PQN-VDN,2,loss,B,Rogue,28.0,1,256,0,256
+PQN-VDN,3,loss,A,Warrior,81.0,11,256,0,0
+PQN-VDN,3,loss,A,Hunter,1.0,11,256,256,0
+PQN-VDN,3,loss,B,Rogue,100.0,11,256,0,0
+PQN-VDN,4,loss,A,Warrior,47.0,0,256,256,256
+PQN-VDN,4,loss,A,Rogue,36.0,0,256,0,0
+PQN-VDN,4,loss,B,Mage,19.0,0,256,0,256
+PQN-VDN,4,loss,B,Warrior,200.0,0,256,0,256
+PQN-VDN,4,loss,B,Priest,40.0,4,256,0,0
+PQN-VDN,5,loss,A,Mage,15.0,0,256,0,0
+PQN-VDN,5,loss,A,Warrior,36.0,0,256,0,256
+PQN-VDN,5,loss,A,Priest,1.0,2,256,256,0
+PQN-VDN,5,loss,B,Mage,13.0,0,256,256,256
+PQN-VDN,5,loss,B,Rogue,44.0,0,256,0,256
+PQN-VDN,5,loss,B,Priest,15.0,3,256,256,0
+PQN-VDN,6,loss,A,Mage,23.0,0,256,0,0
+PQN-VDN,6,loss,A,Hunter,7.0,0,256,256,0
+PQN-VDN,6,loss,A,Priest,1.0,10,256,0,0
+PQN-VDN,6,loss,B,Mage,20.0,25,256,0,0
+PQN-VDN,6,loss,B,Warrior,19.0,1,256,0,0
+PQN-VDN,6,loss,B,Rogue,20.0,1,256,0,0
+PQN-VDN,7,loss,A,Mage,21.0,0,256,256,0
+PQN-VDN,7,loss,A,Warrior,1.0,0,256,0,256
+PQN-VDN,7,loss,A,Priest,5.0,15,256,256,0
+PQN-VDN,7,loss,B,Mage,14.0,30,256,256,0
+PQN-VDN,7,loss,B,Hunter,20.0,15,256,0,0
+PQN-VDN,7,loss,B,Rogue,54.0,1,256,0,256
+PQN-VDN,8,loss,A,Warrior,1.0,3,256,0,0
+PQN-VDN,8,loss,A,Rogue,21.0,1,256,0,0
+PQN-VDN,8,loss,A,Priest,1.0,3,256,256,0
+PQN-VDN,8,loss,B,Rogue,56.0,0,256,0,256
+PQN-VDN,8,loss,B,Priest,9.0,1,256,0,256
+Recurrent MAPPO,1,win,A,Hunter,41.0,0,3,0,3
+Recurrent MAPPO,1,win,A,Rogue,12.0,0,3,3,3
+Recurrent MAPPO,1,win,A,Priest,1.0,1,3,3,0
+Recurrent MAPPO,1,win,B,Mage,4.0,30,3,3,0
+Recurrent MAPPO,1,win,B,Rogue,36.0,10,3,3,0
+Recurrent MAPPO,1,win,B,Priest,94.0,1,3,0,0
+Recurrent MAPPO,1,draw,A,Hunter,41.0,0,200,1,145
+Recurrent MAPPO,1,draw,A,Rogue,12.0,0,200,199,190
+Recurrent MAPPO,1,draw,A,Priest,1.0,1,200,200,0
+Recurrent MAPPO,1,draw,B,Mage,4.0,30,200,0,0
+Recurrent MAPPO,1,draw,B,Rogue,36.0,10,200,198,0
+Recurrent MAPPO,1,draw,B,Priest,94.0,1,200,0,200
+Recurrent MAPPO,1,loss,A,Hunter,41.0,0,53,53,30
+Recurrent MAPPO,1,loss,A,Rogue,12.0,0,53,53,2
+Recurrent MAPPO,1,loss,A,Priest,1.0,1,53,53,0
+Recurrent MAPPO,1,loss,B,Mage,4.0,30,53,0,0
+Recurrent MAPPO,1,loss,B,Rogue,36.0,10,53,15,0
+Recurrent MAPPO,1,loss,B,Priest,94.0,1,53,0,51
+Recurrent MAPPO,2,loss,A,Warrior,35.0,0,256,1,256
+Recurrent MAPPO,2,loss,A,Priest,8.0,2,256,255,0
+Recurrent MAPPO,2,loss,B,Mage,8.0,30,256,255,0
+Recurrent MAPPO,2,loss,B,Rogue,28.0,1,256,1,255
+Recurrent MAPPO,3,loss,A,Warrior,81.0,11,256,0,0
+Recurrent MAPPO,3,loss,A,Hunter,1.0,11,256,256,0
+Recurrent MAPPO,3,loss,B,Rogue,100.0,11,256,0,0
+Recurrent MAPPO,4,draw,A,Warrior,47.0,0,2,0,2
+Recurrent MAPPO,4,draw,A,Rogue,36.0,0,2,0,1
+Recurrent MAPPO,4,draw,B,Mage,19.0,0,2,1,2
+Recurrent MAPPO,4,draw,B,Warrior,200.0,0,2,0,2
+Recurrent MAPPO,4,draw,B,Priest,40.0,4,2,0,1
+Recurrent MAPPO,4,loss,A,Warrior,47.0,0,254,254,254
+Recurrent MAPPO,4,loss,A,Rogue,36.0,0,254,0,29
+Recurrent MAPPO,4,loss,B,Mage,19.0,0,254,1,254
+Recurrent MAPPO,4,loss,B,Warrior,200.0,0,254,0,254
+Recurrent MAPPO,4,loss,B,Priest,40.0,4,254,0,5
+Recurrent MAPPO,5,loss,A,Mage,15.0,0,256,0,9
+Recurrent MAPPO,5,loss,A,Warrior,36.0,0,256,0,256
+Recurrent MAPPO,5,loss,A,Priest,1.0,2,256,256,0
+Recurrent MAPPO,5,loss,B,Mage,13.0,0,256,256,256
+Recurrent MAPPO,5,loss,B,Rogue,44.0,0,256,0,256
+Recurrent MAPPO,5,loss,B,Priest,15.0,3,256,246,0
+Recurrent MAPPO,6,loss,A,Mage,23.0,0,256,0,223
+Recurrent MAPPO,6,loss,A,Hunter,7.0,0,256,255,75
+Recurrent MAPPO,6,loss,A,Priest,1.0,10,256,4,0
+Recurrent MAPPO,6,loss,B,Mage,20.0,25,256,32,0
+Recurrent MAPPO,6,loss,B,Warrior,19.0,1,256,0,0
+Recurrent MAPPO,6,loss,B,Rogue,20.0,1,256,29,63
+Recurrent MAPPO,7,loss,A,Mage,21.0,0,256,0,0
+Recurrent MAPPO,7,loss,A,Warrior,1.0,0,256,256,256
+Recurrent MAPPO,7,loss,A,Priest,5.0,15,256,0,0
+Recurrent MAPPO,7,loss,B,Mage,14.0,30,256,256,0
+Recurrent MAPPO,7,loss,B,Hunter,20.0,15,256,0,0
+Recurrent MAPPO,7,loss,B,Rogue,54.0,1,256,0,0
+Recurrent MAPPO,8,loss,A,Warrior,1.0,3,256,0,0
+Recurrent MAPPO,8,loss,A,Rogue,21.0,1,256,0,141
+Recurrent MAPPO,8,loss,A,Priest,1.0,3,256,256,0
+Recurrent MAPPO,8,loss,B,Rogue,56.0,0,256,0,256
+Recurrent MAPPO,8,loss,B,Priest,9.0,1,256,0,256
+QMIX,1,loss,A,Hunter,41.0,0,256,256,0
+QMIX,1,loss,A,Rogue,12.0,0,256,256,0
+QMIX,1,loss,A,Priest,1.0,1,256,256,0
+QMIX,1,loss,B,Mage,4.0,30,256,0,0
+QMIX,1,loss,B,Rogue,36.0,10,256,0,0
+QMIX,1,loss,B,Priest,94.0,1,256,0,256
+QMIX,2,loss,A,Warrior,35.0,0,256,256,0
+QMIX,2,loss,A,Priest,8.0,2,256,256,0
+QMIX,2,loss,B,Mage,8.0,30,256,0,0
+QMIX,2,loss,B,Rogue,28.0,1,256,0,256
+QMIX,3,loss,A,Warrior,81.0,11,256,0,0
+QMIX,3,loss,A,Hunter,1.0,11,256,256,0
+QMIX,3,loss,B,Rogue,100.0,11,256,0,0
+QMIX,4,loss,A,Warrior,47.0,0,256,256,0
+QMIX,4,loss,A,Rogue,36.0,0,256,0,0
+QMIX,4,loss,B,Mage,19.0,0,256,0,256
+QMIX,4,loss,B,Warrior,200.0,0,256,0,256
+QMIX,4,loss,B,Priest,40.0,4,256,0,0
+QMIX,5,loss,A,Mage,15.0,0,256,0,256
+QMIX,5,loss,A,Warrior,36.0,0,256,0,256
+QMIX,5,loss,A,Priest,1.0,2,256,256,0
+QMIX,5,loss,B,Mage,13.0,0,256,256,256
+QMIX,5,loss,B,Rogue,44.0,0,256,0,256
+QMIX,5,loss,B,Priest,15.0,3,256,0,0
+QMIX,6,loss,A,Mage,23.0,0,256,0,0
+QMIX,6,loss,A,Hunter,7.0,0,256,256,0
+QMIX,6,loss,A,Priest,1.0,10,256,0,0
+QMIX,6,loss,B,Mage,20.0,25,256,0,0
+QMIX,6,loss,B,Warrior,19.0,1,256,0,0
+QMIX,6,loss,B,Rogue,20.0,1,256,0,0
+QMIX,7,loss,A,Mage,21.0,0,256,0,256
+QMIX,7,loss,A,Warrior,1.0,0,256,256,256
+QMIX,7,loss,A,Priest,5.0,15,256,0,0
+QMIX,7,loss,B,Mage,14.0,30,256,256,0
+QMIX,7,loss,B,Hunter,20.0,15,256,0,0
+QMIX,7,loss,B,Rogue,54.0,1,256,0,0
+QMIX,8,loss,A,Warrior,1.0,3,256,0,0
+QMIX,8,loss,A,Rogue,21.0,1,256,0,0
+QMIX,8,loss,A,Priest,1.0,3,256,256,0
+QMIX,8,loss,B,Rogue,56.0,0,256,0,256
+QMIX,8,loss,B,Priest,9.0,1,256,0,0
+Feedforward IPPO,1,win,A,Hunter,41.0,0,8,0,8
+Feedforward IPPO,1,win,A,Rogue,12.0,0,8,8,8
+Feedforward IPPO,1,win,A,Priest,1.0,1,8,8,0
+Feedforward IPPO,1,win,B,Mage,4.0,30,8,8,0
+Feedforward IPPO,1,win,B,Rogue,36.0,10,8,8,0
+Feedforward IPPO,1,win,B,Priest,94.0,1,8,0,0
+Feedforward IPPO,1,draw,A,Hunter,41.0,0,148,6,22
+Feedforward IPPO,1,draw,A,Rogue,12.0,0,148,142,114
+Feedforward IPPO,1,draw,A,Priest,1.0,1,148,148,0
+Feedforward IPPO,1,draw,B,Mage,4.0,30,148,3,0
+Feedforward IPPO,1,draw,B,Rogue,36.0,10,148,137,0
+Feedforward IPPO,1,draw,B,Priest,94.0,1,148,0,144
+Feedforward IPPO,1,loss,A,Hunter,41.0,0,100,100,19
+Feedforward IPPO,1,loss,A,Rogue,12.0,0,100,100,6
+Feedforward IPPO,1,loss,A,Priest,1.0,1,100,100,0
+Feedforward IPPO,1,loss,B,Mage,4.0,30,100,3,0
+Feedforward IPPO,1,loss,B,Rogue,36.0,10,100,37,0
+Feedforward IPPO,1,loss,B,Priest,94.0,1,100,0,91
+Feedforward IPPO,2,win,A,Warrior,35.0,0,1,0,1
+Feedforward IPPO,2,win,A,Priest,8.0,2,1,0,1
+Feedforward IPPO,2,win,B,Mage,8.0,30,1,1,0
+Feedforward IPPO,2,win,B,Rogue,28.0,1,1,1,0
+Feedforward IPPO,2,draw,A,Warrior,35.0,0,3,2,3
+Feedforward IPPO,2,draw,A,Priest,8.0,2,3,0,1
+Feedforward IPPO,2,draw,B,Mage,8.0,30,3,2,0
+Feedforward IPPO,2,draw,B,Rogue,28.0,1,3,3,0
+Feedforward IPPO,2,loss,A,Warrior,35.0,0,252,52,252
+Feedforward IPPO,2,loss,A,Priest,8.0,2,252,200,1
+Feedforward IPPO,2,loss,B,Mage,8.0,30,252,200,0
+Feedforward IPPO,2,loss,B,Rogue,28.0,1,252,51,200
+Feedforward IPPO,3,win,A,Warrior,81.0,11,2,0,0
+Feedforward IPPO,3,win,A,Hunter,1.0,11,2,0,0
+Feedforward IPPO,3,win,B,Rogue,100.0,11,2,2,0
+Feedforward IPPO,3,draw,A,Warrior,81.0,11,1,0,0
+Feedforward IPPO,3,draw,A,Hunter,1.0,11,1,1,0
+Feedforward IPPO,3,draw,B,Rogue,100.0,11,1,1,0
+Feedforward IPPO,3,loss,A,Warrior,81.0,11,253,0,0
+Feedforward IPPO,3,loss,A,Hunter,1.0,11,253,253,0
+Feedforward IPPO,3,loss,B,Rogue,100.0,11,253,0,0
+Feedforward IPPO,4,draw,A,Warrior,47.0,0,21,0,21
+Feedforward IPPO,4,draw,A,Rogue,36.0,0,21,0,21
+Feedforward IPPO,4,draw,B,Mage,19.0,0,21,21,21
+Feedforward IPPO,4,draw,B,Warrior,200.0,0,21,0,21
+Feedforward IPPO,4,draw,B,Priest,40.0,4,21,0,0
+Feedforward IPPO,4,loss,A,Warrior,47.0,0,235,235,234
+Feedforward IPPO,4,loss,A,Rogue,36.0,0,235,0,80
+Feedforward IPPO,4,loss,B,Mage,19.0,0,235,51,235
+Feedforward IPPO,4,loss,B,Warrior,200.0,0,235,0,235
+Feedforward IPPO,4,loss,B,Priest,40.0,4,235,10,0
+Feedforward IPPO,5,loss,A,Mage,15.0,0,256,6,120
+Feedforward IPPO,5,loss,A,Warrior,36.0,0,256,0,256
+Feedforward IPPO,5,loss,A,Priest,1.0,2,256,250,0
+Feedforward IPPO,5,loss,B,Mage,13.0,0,256,256,256
+Feedforward IPPO,5,loss,B,Rogue,44.0,0,256,0,250
+Feedforward IPPO,5,loss,B,Priest,15.0,3,256,125,0
+Feedforward IPPO,6,loss,A,Mage,23.0,0,256,0,242
+Feedforward IPPO,6,loss,A,Hunter,7.0,0,256,256,72
+Feedforward IPPO,6,loss,A,Priest,1.0,10,256,1,0
+Feedforward IPPO,6,loss,B,Mage,20.0,25,256,6,0
+Feedforward IPPO,6,loss,B,Warrior,19.0,1,256,0,1
+Feedforward IPPO,6,loss,B,Rogue,20.0,1,256,7,14
+Feedforward IPPO,7,loss,A,Mage,21.0,0,256,0,0
+Feedforward IPPO,7,loss,A,Warrior,1.0,0,256,255,256
+Feedforward IPPO,7,loss,A,Priest,5.0,15,256,1,0
+Feedforward IPPO,7,loss,B,Mage,14.0,30,256,256,0
+Feedforward IPPO,7,loss,B,Hunter,20.0,15,256,1,0
+Feedforward IPPO,7,loss,B,Rogue,54.0,1,256,0,1
+Feedforward IPPO,8,loss,A,Warrior,1.0,3,256,0,0
+Feedforward IPPO,8,loss,A,Rogue,21.0,1,256,0,170
+Feedforward IPPO,8,loss,A,Priest,1.0,3,256,256,0
+Feedforward IPPO,8,loss,B,Rogue,56.0,0,256,0,256
+Feedforward IPPO,8,loss,B,Priest,9.0,1,256,0,253
+Feedforward MAPPO,1,win,A,Hunter,41.0,0,1,0,1
+Feedforward MAPPO,1,win,A,Rogue,12.0,0,1,1,1
+Feedforward MAPPO,1,win,A,Priest,1.0,1,1,1,0
+Feedforward MAPPO,1,win,B,Mage,4.0,30,1,1,0
+Feedforward MAPPO,1,win,B,Rogue,36.0,10,1,1,0
+Feedforward MAPPO,1,win,B,Priest,94.0,1,1,0,0
+Feedforward MAPPO,1,draw,A,Hunter,41.0,0,208,0,142
+Feedforward MAPPO,1,draw,A,Rogue,12.0,0,208,208,201
+Feedforward MAPPO,1,draw,A,Priest,1.0,1,208,208,0
+Feedforward MAPPO,1,draw,B,Mage,4.0,30,208,0,0
+Feedforward MAPPO,1,draw,B,Rogue,36.0,10,208,203,0
+Feedforward MAPPO,1,draw,B,Priest,94.0,1,208,0,208
+Feedforward MAPPO,1,loss,A,Hunter,41.0,0,47,47,31
+Feedforward MAPPO,1,loss,A,Rogue,12.0,0,47,47,11
+Feedforward MAPPO,1,loss,A,Priest,1.0,1,47,47,0
+Feedforward MAPPO,1,loss,B,Mage,4.0,30,47,0,0
+Feedforward MAPPO,1,loss,B,Rogue,36.0,10,47,22,0
+Feedforward MAPPO,1,loss,B,Priest,94.0,1,47,0,46
+Feedforward MAPPO,2,loss,A,Warrior,35.0,0,256,7,256
+Feedforward MAPPO,2,loss,A,Priest,8.0,2,256,249,0
+Feedforward MAPPO,2,loss,B,Mage,8.0,30,256,249,0
+Feedforward MAPPO,2,loss,B,Rogue,28.0,1,256,7,249
+Feedforward MAPPO,3,win,A,Warrior,81.0,11,1,0,0
+Feedforward MAPPO,3,win,A,Hunter,1.0,11,1,0,0
+Feedforward MAPPO,3,win,B,Rogue,100.0,11,1,1,0
+Feedforward MAPPO,3,draw,A,Warrior,81.0,11,3,0,0
+Feedforward MAPPO,3,draw,A,Hunter,1.0,11,3,3,0
+Feedforward MAPPO,3,draw,B,Rogue,100.0,11,3,3,0
+Feedforward MAPPO,3,loss,A,Warrior,81.0,11,252,0,0
+Feedforward MAPPO,3,loss,A,Hunter,1.0,11,252,252,0
+Feedforward MAPPO,3,loss,B,Rogue,100.0,11,252,0,0
+Feedforward MAPPO,4,draw,A,Warrior,47.0,0,1,0,1
+Feedforward MAPPO,4,draw,A,Rogue,36.0,0,1,0,1
+Feedforward MAPPO,4,draw,B,Mage,19.0,0,1,1,1
+Feedforward MAPPO,4,draw,B,Warrior,200.0,0,1,0,1
+Feedforward MAPPO,4,draw,B,Priest,40.0,4,1,0,0
+Feedforward MAPPO,4,loss,A,Warrior,47.0,0,255,255,255
+Feedforward MAPPO,4,loss,A,Rogue,36.0,0,255,0,58
+Feedforward MAPPO,4,loss,B,Mage,19.0,0,255,2,255
+Feedforward MAPPO,4,loss,B,Warrior,200.0,0,255,0,255
+Feedforward MAPPO,4,loss,B,Priest,40.0,4,255,29,0
+Feedforward MAPPO,5,loss,A,Mage,15.0,0,256,0,232
+Feedforward MAPPO,5,loss,A,Warrior,36.0,0,256,0,256
+Feedforward MAPPO,5,loss,A,Priest,1.0,2,256,256,0
+Feedforward MAPPO,5,loss,B,Mage,13.0,0,256,256,256
+Feedforward MAPPO,5,loss,B,Rogue,44.0,0,256,0,256
+Feedforward MAPPO,5,loss,B,Priest,15.0,3,256,0,0
+Feedforward MAPPO,6,loss,A,Mage,23.0,0,256,0,254
+Feedforward MAPPO,6,loss,A,Hunter,7.0,0,256,250,99
+Feedforward MAPPO,6,loss,A,Priest,1.0,10,256,15,0
+Feedforward MAPPO,6,loss,B,Mage,20.0,25,256,0,0
+Feedforward MAPPO,6,loss,B,Warrior,19.0,1,256,0,4
+Feedforward MAPPO,6,loss,B,Rogue,20.0,1,256,4,14
+Feedforward MAPPO,7,loss,A,Mage,21.0,0,256,0,0
+Feedforward MAPPO,7,loss,A,Warrior,1.0,0,256,256,256
+Feedforward MAPPO,7,loss,A,Priest,5.0,15,256,0,0
+Feedforward MAPPO,7,loss,B,Mage,14.0,30,256,256,0
+Feedforward MAPPO,7,loss,B,Hunter,20.0,15,256,0,0
+Feedforward MAPPO,7,loss,B,Rogue,54.0,1,256,0,0
+Feedforward MAPPO,8,loss,A,Warrior,1.0,3,256,0,0
+Feedforward MAPPO,8,loss,A,Rogue,21.0,1,256,0,226
+Feedforward MAPPO,8,loss,A,Priest,1.0,3,256,256,0
+Feedforward MAPPO,8,loss,B,Rogue,56.0,0,256,0,256
+Feedforward MAPPO,8,loss,B,Priest,9.0,1,256,0,255
+TDM-Beta,1,draw,A,Hunter,41.0,0,256,0,256
+TDM-Beta,1,draw,A,Rogue,12.0,0,256,256,256
+TDM-Beta,1,draw,A,Priest,1.0,1,256,256,0
+TDM-Beta,1,draw,B,Mage,4.0,30,256,0,0
+TDM-Beta,1,draw,B,Rogue,36.0,10,256,256,0
+TDM-Beta,1,draw,B,Priest,94.0,1,256,0,256
+TDM-Beta,2,loss,A,Warrior,35.0,0,256,0,256
+TDM-Beta,2,loss,A,Priest,8.0,2,256,256,0
+TDM-Beta,2,loss,B,Mage,8.0,30,256,256,0
+TDM-Beta,2,loss,B,Rogue,28.0,1,256,0,256
+TDM-Beta,3,loss,A,Warrior,81.0,11,256,0,0
+TDM-Beta,3,loss,A,Hunter,1.0,11,256,256,0
+TDM-Beta,3,loss,B,Rogue,100.0,11,256,0,0
+TDM-Beta,4,loss,A,Warrior,47.0,0,256,256,256
+TDM-Beta,4,loss,A,Rogue,36.0,0,256,0,256
+TDM-Beta,4,loss,B,Mage,19.0,0,256,0,256
+TDM-Beta,4,loss,B,Warrior,200.0,0,256,0,256
+TDM-Beta,4,loss,B,Priest,40.0,4,256,256,0
+TDM-Beta,5,loss,A,Mage,15.0,0,256,0,256
+TDM-Beta,5,loss,A,Warrior,36.0,0,256,0,256
+TDM-Beta,5,loss,A,Priest,1.0,2,256,256,0
+TDM-Beta,5,loss,B,Mage,13.0,0,256,256,256
+TDM-Beta,5,loss,B,Rogue,44.0,0,256,0,256
+TDM-Beta,5,loss,B,Priest,15.0,3,256,0,0
+TDM-Beta,6,loss,A,Mage,23.0,0,256,0,0
+TDM-Beta,6,loss,A,Hunter,7.0,0,256,256,256
+TDM-Beta,6,loss,A,Priest,1.0,10,256,0,0
+TDM-Beta,6,loss,B,Mage,20.0,25,256,0,0
+TDM-Beta,6,loss,B,Warrior,19.0,1,256,0,0
+TDM-Beta,6,loss,B,Rogue,20.0,1,256,0,0
+TDM-Beta,7,loss,A,Mage,21.0,0,256,256,256
+TDM-Beta,7,loss,A,Warrior,1.0,0,256,0,256
+TDM-Beta,7,loss,A,Priest,5.0,15,256,256,0
+TDM-Beta,7,loss,B,Mage,14.0,30,256,256,0
+TDM-Beta,7,loss,B,Hunter,20.0,15,256,0,0
+TDM-Beta,7,loss,B,Rogue,54.0,1,256,0,256
+TDM-Beta,8,loss,A,Warrior,1.0,3,256,0,0
+TDM-Beta,8,loss,A,Rogue,21.0,1,256,0,0
+TDM-Beta,8,loss,A,Priest,1.0,3,256,256,0
+TDM-Beta,8,loss,B,Rogue,56.0,0,256,0,256
+TDM-Beta,8,loss,B,Priest,9.0,1,256,0,256
+TDM-Gamma,1,draw,A,Hunter,41.0,0,256,0,256
+TDM-Gamma,1,draw,A,Rogue,12.0,0,256,256,256
+TDM-Gamma,1,draw,A,Priest,1.0,1,256,256,0
+TDM-Gamma,1,draw,B,Mage,4.0,30,256,0,0
+TDM-Gamma,1,draw,B,Rogue,36.0,10,256,256,0
+TDM-Gamma,1,draw,B,Priest,94.0,1,256,0,0
+TDM-Gamma,2,loss,A,Warrior,35.0,0,256,0,256
+TDM-Gamma,2,loss,A,Priest,8.0,2,256,256,0
+TDM-Gamma,2,loss,B,Mage,8.0,30,256,256,0
+TDM-Gamma,2,loss,B,Rogue,28.0,1,256,0,256
+TDM-Gamma,3,loss,A,Warrior,81.0,11,256,0,0
+TDM-Gamma,3,loss,A,Hunter,1.0,11,256,256,0
+TDM-Gamma,3,loss,B,Rogue,100.0,11,256,0,0
+TDM-Gamma,4,loss,A,Warrior,47.0,0,256,256,256
+TDM-Gamma,4,loss,A,Rogue,36.0,0,256,0,256
+TDM-Gamma,4,loss,B,Mage,19.0,0,256,0,256
+TDM-Gamma,4,loss,B,Warrior,200.0,0,256,0,256
+TDM-Gamma,4,loss,B,Priest,40.0,4,256,256,0
+TDM-Gamma,5,loss,A,Mage,15.0,0,256,0,256
+TDM-Gamma,5,loss,A,Warrior,36.0,0,256,0,256
+TDM-Gamma,5,loss,A,Priest,1.0,2,256,256,0
+TDM-Gamma,5,loss,B,Mage,13.0,0,256,256,256
+TDM-Gamma,5,loss,B,Rogue,44.0,0,256,0,256
+TDM-Gamma,5,loss,B,Priest,15.0,3,256,0,0
+TDM-Gamma,6,loss,A,Mage,23.0,0,256,0,0
+TDM-Gamma,6,loss,A,Hunter,7.0,0,256,256,256
+TDM-Gamma,6,loss,A,Priest,1.0,10,256,0,0
+TDM-Gamma,6,loss,B,Mage,20.0,25,256,0,0
+TDM-Gamma,6,loss,B,Warrior,19.0,1,256,0,0
+TDM-Gamma,6,loss,B,Rogue,20.0,1,256,0,0
+TDM-Gamma,7,loss,A,Mage,21.0,0,256,256,256
+TDM-Gamma,7,loss,A,Warrior,1.0,0,256,0,256
+TDM-Gamma,7,loss,A,Priest,5.0,15,256,256,0
+TDM-Gamma,7,loss,B,Mage,14.0,30,256,256,0
+TDM-Gamma,7,loss,B,Hunter,20.0,15,256,0,0
+TDM-Gamma,7,loss,B,Rogue,54.0,1,256,0,256
+TDM-Gamma,8,loss,A,Warrior,1.0,3,256,0,0
+TDM-Gamma,8,loss,A,Rogue,21.0,1,256,0,0
+TDM-Gamma,8,loss,A,Priest,1.0,3,256,256,0
+TDM-Gamma,8,loss,B,Rogue,56.0,0,256,0,256
+TDM-Gamma,8,loss,B,Priest,9.0,1,256,0,0
+TDM-Alpha,1,draw,A,Hunter,41.0,0,256,0,256
+TDM-Alpha,1,draw,A,Rogue,12.0,0,256,256,0
+TDM-Alpha,1,draw,A,Priest,1.0,1,256,256,0
+TDM-Alpha,1,draw,B,Mage,4.0,30,256,0,0
+TDM-Alpha,1,draw,B,Rogue,36.0,10,256,0,0
+TDM-Alpha,1,draw,B,Priest,94.0,1,256,0,256
+TDM-Alpha,2,loss,A,Warrior,35.0,0,256,0,256
+TDM-Alpha,2,loss,A,Priest,8.0,2,256,256,0
+TDM-Alpha,2,loss,B,Mage,8.0,30,256,256,0
+TDM-Alpha,2,loss,B,Rogue,28.0,1,256,0,256
+TDM-Alpha,3,loss,A,Warrior,81.0,11,256,0,0
+TDM-Alpha,3,loss,A,Hunter,1.0,11,256,256,0
+TDM-Alpha,3,loss,B,Rogue,100.0,11,256,0,0
+TDM-Alpha,4,loss,A,Warrior,47.0,0,256,256,256
+TDM-Alpha,4,loss,A,Rogue,36.0,0,256,0,256
+TDM-Alpha,4,loss,B,Mage,19.0,0,256,0,256
+TDM-Alpha,4,loss,B,Warrior,200.0,0,256,0,256
+TDM-Alpha,4,loss,B,Priest,40.0,4,256,256,0
+TDM-Alpha,5,loss,A,Mage,15.0,0,256,0,256
+TDM-Alpha,5,loss,A,Warrior,36.0,0,256,0,256
+TDM-Alpha,5,loss,A,Priest,1.0,2,256,256,0
+TDM-Alpha,5,loss,B,Mage,13.0,0,256,256,256
+TDM-Alpha,5,loss,B,Rogue,44.0,0,256,0,256
+TDM-Alpha,5,loss,B,Priest,15.0,3,256,0,0
+TDM-Alpha,6,loss,A,Mage,23.0,0,256,0,0
+TDM-Alpha,6,loss,A,Hunter,7.0,0,256,256,256
+TDM-Alpha,6,loss,A,Priest,1.0,10,256,0,0
+TDM-Alpha,6,loss,B,Mage,20.0,25,256,0,0
+TDM-Alpha,6,loss,B,Warrior,19.0,1,256,0,0
+TDM-Alpha,6,loss,B,Rogue,20.0,1,256,0,0
+TDM-Alpha,7,loss,A,Mage,21.0,0,256,256,256
+TDM-Alpha,7,loss,A,Warrior,1.0,0,256,0,256
+TDM-Alpha,7,loss,A,Priest,5.0,15,256,256,0
+TDM-Alpha,7,loss,B,Mage,14.0,30,256,256,0
+TDM-Alpha,7,loss,B,Hunter,20.0,15,256,0,0
+TDM-Alpha,7,loss,B,Rogue,54.0,1,256,0,256
+TDM-Alpha,8,loss,A,Warrior,1.0,3,256,0,0
+TDM-Alpha,8,loss,A,Rogue,21.0,1,256,0,256
+TDM-Alpha,8,loss,A,Priest,1.0,3,256,256,0
+TDM-Alpha,8,loss,B,Rogue,56.0,0,256,0,256
+TDM-Alpha,8,loss,B,Priest,9.0,1,256,0,256
+Random,1,win,A,Hunter,41.0,0,2,0,2
+Random,1,win,A,Rogue,12.0,0,2,2,2
+Random,1,win,A,Priest,1.0,1,2,2,0
+Random,1,win,B,Mage,4.0,30,2,2,0
+Random,1,win,B,Rogue,36.0,10,2,2,0
+Random,1,win,B,Priest,94.0,1,2,0,0
+Random,1,draw,A,Hunter,41.0,0,92,17,79
+Random,1,draw,A,Rogue,12.0,0,92,72,33
+Random,1,draw,A,Priest,1.0,1,92,92,0
+Random,1,draw,B,Mage,4.0,30,92,1,0
+Random,1,draw,B,Rogue,36.0,10,92,23,0
+Random,1,draw,B,Priest,94.0,1,92,0,84
+Random,1,loss,A,Hunter,41.0,0,162,162,124
+Random,1,loss,A,Rogue,12.0,0,162,162,30
+Random,1,loss,A,Priest,1.0,1,162,162,0
+Random,1,loss,B,Mage,4.0,30,162,5,0
+Random,1,loss,B,Rogue,36.0,10,162,15,0
+Random,1,loss,B,Priest,94.0,1,162,0,132
+Random,2,draw,A,Warrior,35.0,0,3,0,3
+Random,2,draw,A,Priest,8.0,2,3,0,3
+Random,2,draw,B,Mage,8.0,30,3,0,0
+Random,2,draw,B,Rogue,28.0,1,3,2,3
+Random,2,loss,A,Warrior,35.0,0,253,58,194
+Random,2,loss,A,Priest,8.0,2,253,230,4
+Random,2,loss,B,Mage,8.0,30,253,109,0
+Random,2,loss,B,Rogue,28.0,1,253,12,87
+Random,3,loss,A,Warrior,81.0,11,256,0,0
+Random,3,loss,A,Hunter,1.0,11,256,256,0
+Random,3,loss,B,Rogue,100.0,11,256,0,0
+Random,4,draw,A,Warrior,47.0,0,17,0,17
+Random,4,draw,A,Rogue,36.0,0,17,0,6
+Random,4,draw,B,Mage,19.0,0,17,1,17
+Random,4,draw,B,Warrior,200.0,0,17,0,17
+Random,4,draw,B,Priest,40.0,4,17,1,5
+Random,4,loss,A,Warrior,47.0,0,239,232,215
+Random,4,loss,A,Rogue,36.0,0,239,7,55
+Random,4,loss,B,Mage,19.0,0,239,1,239
+Random,4,loss,B,Warrior,200.0,0,239,0,239
+Random,4,loss,B,Priest,40.0,4,239,29,6
+Random,5,loss,A,Mage,15.0,0,256,188,126
+Random,5,loss,A,Warrior,36.0,0,256,0,241
+Random,5,loss,A,Priest,1.0,2,256,187,0
+Random,5,loss,B,Mage,13.0,0,256,65,256
+Random,5,loss,B,Rogue,44.0,0,256,0,187
+Random,5,loss,B,Priest,15.0,3,256,78,0
+Random,6,loss,A,Mage,23.0,0,256,0,151
+Random,6,loss,A,Hunter,7.0,0,256,228,113
+Random,6,loss,A,Priest,1.0,10,256,74,0
+Random,6,loss,B,Mage,20.0,25,256,8,0
+Random,6,loss,B,Warrior,19.0,1,256,0,31
+Random,6,loss,B,Rogue,20.0,1,256,6,67
+Random,7,loss,A,Mage,21.0,0,256,45,80
+Random,7,loss,A,Warrior,1.0,0,256,200,210
+Random,7,loss,A,Priest,5.0,15,256,49,0
+Random,7,loss,B,Mage,14.0,30,256,119,0
+Random,7,loss,B,Hunter,20.0,15,256,79,0
+Random,7,loss,B,Rogue,54.0,1,256,0,53
+Random,8,loss,A,Warrior,1.0,3,256,0,0
+Random,8,loss,A,Rogue,21.0,1,256,2,34
+Random,8,loss,A,Priest,1.0,3,256,254,0
+Random,8,loss,B,Rogue,56.0,0,256,0,256
+Random,8,loss,B,Priest,9.0,1,256,0,129

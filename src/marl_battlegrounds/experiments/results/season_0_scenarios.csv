@@ -1,0 +1,81 @@
+system,scenario,games,wins,draws,losses
+Recurrent IPPO,1,256,7,160,89
+Recurrent IPPO,2,256,0,0,256
+Recurrent IPPO,3,256,0,0,256
+Recurrent IPPO,4,256,0,3,253
+Recurrent IPPO,5,256,0,0,256
+Recurrent IPPO,6,256,0,0,256
+Recurrent IPPO,7,256,0,0,256
+Recurrent IPPO,8,256,0,0,256
+PQN-VDN,1,256,0,256,0
+PQN-VDN,2,256,0,0,256
+PQN-VDN,3,256,0,0,256
+PQN-VDN,4,256,0,0,256
+PQN-VDN,5,256,0,0,256
+PQN-VDN,6,256,0,0,256
+PQN-VDN,7,256,0,0,256
+PQN-VDN,8,256,0,0,256
+Recurrent MAPPO,1,256,3,200,53
+Recurrent MAPPO,2,256,0,0,256
+Recurrent MAPPO,3,256,0,0,256
+Recurrent MAPPO,4,256,0,2,254
+Recurrent MAPPO,5,256,0,0,256
+Recurrent MAPPO,6,256,0,0,256
+Recurrent MAPPO,7,256,0,0,256
+Recurrent MAPPO,8,256,0,0,256
+QMIX,1,256,0,0,256
+QMIX,2,256,0,0,256
+QMIX,3,256,0,0,256
+QMIX,4,256,0,0,256
+QMIX,5,256,0,0,256
+QMIX,6,256,0,0,256
+QMIX,7,256,0,0,256
+QMIX,8,256,0,0,256
+Feedforward IPPO,1,256,8,148,100
+Feedforward IPPO,2,256,1,3,252
+Feedforward IPPO,3,256,2,1,253
+Feedforward IPPO,4,256,0,21,235
+Feedforward IPPO,5,256,0,0,256
+Feedforward IPPO,6,256,0,0,256
+Feedforward IPPO,7,256,0,0,256
+Feedforward IPPO,8,256,0,0,256
+Feedforward MAPPO,1,256,1,208,47
+Feedforward MAPPO,2,256,0,0,256
+Feedforward MAPPO,3,256,1,3,252
+Feedforward MAPPO,4,256,0,1,255
+Feedforward MAPPO,5,256,0,0,256
+Feedforward MAPPO,6,256,0,0,256
+Feedforward MAPPO,7,256,0,0,256
+Feedforward MAPPO,8,256,0,0,256
+TDM-Beta,1,256,0,256,0
+TDM-Beta,2,256,0,0,256
+TDM-Beta,3,256,0,0,256
+TDM-Beta,4,256,0,0,256
+TDM-Beta,5,256,0,0,256
+TDM-Beta,6,256,0,0,256
+TDM-Beta,7,256,0,0,256
+TDM-Beta,8,256,0,0,256
+TDM-Gamma,1,256,0,256,0
+TDM-Gamma,2,256,0,0,256
+TDM-Gamma,3,256,0,0,256
+TDM-Gamma,4,256,0,0,256
+TDM-Gamma,5,256,0,0,256
+TDM-Gamma,6,256,0,0,256
+TDM-Gamma,7,256,0,0,256
+TDM-Gamma,8,256,0,0,256
+TDM-Alpha,1,256,0,256,0
+TDM-Alpha,2,256,0,0,256
+TDM-Alpha,3,256,0,0,256
+TDM-Alpha,4,256,0,0,256
+TDM-Alpha,5,256,0,0,256
+TDM-Alpha,6,256,0,0,256
+TDM-Alpha,7,256,0,0,256
+TDM-Alpha,8,256,0,0,256
+Random,1,256,2,92,162
+Random,2,256,0,3,253
+Random,3,256,0,0,256
+Random,4,256,0,17,239
+Random,5,256,0,0,256
+Random,6,256,0,0,256
+Random,7,256,0,0,256
+Random,8,256,0,0,256
