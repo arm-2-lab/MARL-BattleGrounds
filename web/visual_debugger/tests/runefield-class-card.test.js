@@ -53,7 +53,7 @@ test("each class card names its Basic with host numbers", () => {
     [
       [
         "Arcane Blast",
-        "Arcane Blast hits one enemy in reach with a bolt of starlight. It is the strongest Basic in the game. Damage bonuses and reductions affect the damage dealt.",
+        "Arcane Blast hits one enemy in reach with a bolt of arcane energy. It is the strongest Basic in the game. Damage bonuses and reductions affect the damage dealt.",
       ],
       [
         "Shield Bash",

@@ -98,7 +98,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     order: "The Council of Caelmont",
     home: "Caelmont, a violet city of scholars that floats above the clouds",
     fantasyLine:
-      "An archmage of Caelmont, the violet city that floats above the clouds, who speaks one word of star-lore and a star answers.",
+      "An archmage of Caelmont, the floating city of scholars: frail up close, devastating at range.",
     description:
       "The Mage is an archmage of the Council of Caelmont, the violet city that floats above the clouds. It has the strongest Basic in the game but the lowest health, so its team must keep it safe. The Mage and allies close to it deal more damage. Its Ultimate, Burst, lights a star inside the Mage, and its own blows hit harder for the next few ticks.",
     guideRole: "Artillery / Glass Cannon",
@@ -113,7 +113,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     basicName: "Arcane Blast",
     basicShortName: "Blast",
     basicTemplate:
-      "Arcane Blast hits one enemy in reach with a bolt of starlight. It is the strongest Basic in the game. Damage bonuses and reductions affect the damage dealt.",
+      "Arcane Blast hits one enemy in reach with a bolt of arcane energy. It is the strongest Basic in the game. Damage bonuses and reductions affect the damage dealt.",
     ultimateName: "Burst",
     ultimateTemplate:
       "For {{burstDuration}}, Burst applies {{burstDamageEffect}} to this Mage's damage, starting on the next tick.",
@@ -127,7 +127,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     order: "The Knights of Lornhold",
     home: "Lornhold, a human kingdom that fell long ago; its knights remain",
     fantasyLine:
-      "A knight of fallen Lornhold whose kingdom died but whose oath did not: it plants the line and holds it.",
+      "A knight of fallen Lornhold who still holds the front line for a kingdom that no longer exists.",
     description:
       "The Warrior is a knight of Lornhold, a fallen kingdom whose knights still keep their oath to hold the line. It has the most health in the game, and allies close to it take less damage. Its Basic is weak, so it needs allies to finish fights. Its Ultimate, Charge, rushes it in one straight line up to a visible enemy, then hurts, stuns and slows that enemy without pushing it back.",
     guideRole: "Tank / Guardian",
@@ -156,7 +156,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     order: "The Sentinels of the Lunewood",
     home: "The Lunewood, an ancient moonlit forest of a tall, long-lived night folk",
     fantasyLine:
-      "A Sentinel of the moonlit Lunewood who sees first, strikes from farthest and seals an enemy in frost.",
+      "A Sentinel of the moonlit Lunewood who sees the enemy first, shoots from farthest, and decides when the fight begins.",
     description:
       "The Hunter is a Sentinel of the Lunewood, an ancient moonlit forest whose night folk serve the Moon. It sees the farthest and its Basic reaches the farthest, but its arrows do the least damage and only slow their target a little. Its Ultimate, Freezing Trap, is thrown at one enemy and freezes it in place for the longest stun in the game. Any damage on a later tick breaks the ice early, so allies must choose: wait, or strike.",
     guideRole: "Crowd Control / Scout",
@@ -187,7 +187,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     order: "The Nightshade Office",
     home: "Galehaven, a living human kingdom; the Office serves its crown in secret",
     fantasyLine:
-      "An agent of the Nightshade Office, the crown's secret service of spies: a whisper, a cut, and a wound that will not heal.",
+      "An agent of Galehaven's Nightshade Office who picks its fights, strikes first, and leaves poison in the wound.",
     description:
       "The Rogue is an agent of the Nightshade Office, the secret service of spies and assassins who work for the crown of Galehaven. It moves faster than any other class, but it cannot turn invisible, blink or teleport: it wins with speed, stone cover and good timing. Its Ultimate, Crippling Poison, is the biggest single hit in the game; it also stuns, slows, and cuts the healing its target gets for a few ticks. The poison does no damage over time.",
     guideRole: "Assassin / Flanker",
@@ -213,7 +213,7 @@ const CLASS_DOCUMENTATION = Object.freeze({
     order: "The Church of the Morning Light",
     home: "Galehaven, where the Archbishop keeps the church's great cathedral",
     fantasyLine:
-      "A priest of the Church of the Morning Light, sent to keep one candle lit through the night battle.",
+      "A priest of the Church of the Morning Light who carries no weapon and keeps everyone else standing.",
     description:
       "The Priest is a Lightbringer of the Church of the Morning Light, sent by the Archbishop of Galehaven to keep a candle lit through the night battle. It is the only class that can heal, and it cannot deal damage at all, so its team must protect it. Its Basic, Lesser Heal, mends one ally or itself and briefly lets that ally shake off most of a strong slow (stuns still hold). Its Ultimate, Holy Word: Salvation, is a huge heal that can save an ally from a killing blow in the same tick, but it never brings back the fallen.",
     guideRole: "Healer / Medic",
