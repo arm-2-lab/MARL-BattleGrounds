@@ -4,7 +4,7 @@ The control layer creates ``DebuggerSession`` endpoints and replaces them after
 validated actions. These models keep one coherent simulator state, observation,
 mask, random key, and evaluation record, plus a short tail of public team
 scores for the scorebug's Momentum switch (``DebuggerSession.recent_scores``)
-, every view's Champion Streaks counts
+, every view's Champion Streaks counts and Fallen panel history
 (``DebuggerSession.champion_takedowns``) and every view's Herald Cards
 history (``DebuggerSession.match_moments``).
 Pending actions remain separate from
@@ -739,8 +739,10 @@ class DebuggerSession:
     Scores are public match facts; they never enter actor inputs.
     champion_takedowns holds every view's counts of takedowns without falling
     after the current frame, for the Champion Streaks switch
-    (viewer.champion_streaks.ChampionTakedownsV1): Oracle View and the Agent
-    POV of every possible recipient, so a view switch is exact at once. It is
+    (viewer.champion_streaks.ChampionTakedownsV1), and each view's recent
+    ticks with a fall, for the Fallen panel's earlier rows (recent_falls):
+    Oracle View and the Agent POV of every possible recipient, so a view
+    switch is exact at once. It is
     the zero record on frame zero (a new game, Reset or restart); each
     transition advances it (live_presentation.
     advance_live_champion_takedowns_v1). These are display facts only; they

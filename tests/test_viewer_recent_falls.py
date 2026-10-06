@@ -1,8 +1,8 @@
-"""Check two Replay Viewer host facts: recent_falls and next_end_spots.
+"""Check two host facts: recent_falls (both servers) and next_end_spots.
 
 The game: the Vision Moment "fall" start under NoSharedObs, where the Team A
 Warrior Charges the Team B Mage, who falls on the first tick; then nine quiet
-ticks. Contracts checked:
+ticks, played live and saved as a replay. Contracts checked:
 
 - ``recent_falls`` (the Fallen panel's earlier rows; viewer.champion_streaks
   is the one owner of kill credit):
@@ -14,6 +14,17 @@ ticks. Contracts checked:
   - The window: the fall's own frame and frame zero list nothing (the plan
     draws the shown tick), the row stays for the 7 ticks after it and is
     gone on the 8th; a seek straight to a frame equals counting up to it.
+  - Live play: the BattleClient and DevClient service sends each view's own
+    rows from its session (ChampionTakedownsV1.recent_falls), equal to the
+    Replay Viewer's on every checked frame for Oracle View, the Warrior's
+    victim's view, a recipient that saw only the fall and one that saw
+    nothing, so a view switch or a reload no longer empties the panel.
+  - The session record keeps each view's ticks with a fall: a tick lists the
+    7 ticks before it and never itself, a quiet tick keeps the rows, a later
+    advance drops rows outside the window, and rows out of order or without
+    a fall are refused.
+  - A live frame refuses a recent_falls row on its own tick and a victim
+    listed twice (the same check as replay frames).
 - ``next_end_spots`` (Next Step Ghost):
   - Oracle View lists every champion alive now at its recorded position in
     the next frame.
@@ -35,17 +46,20 @@ ticks. Contracts checked:
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import jax.numpy as jnp
 import pytest
+from pydantic import ValidationError
 from tests.test_viewer_champion_streaks import _replay_of, _session
 
 from marl_battlegrounds._battle_client.control import (
     make_neutral_joint_action,
     submit_joint_action,
 )
+from marl_battlegrounds._battle_client.model import DebuggerSession
+from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.types import Action
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay
 from marl_battlegrounds.rendering.authorized_presentation import (
@@ -60,10 +74,13 @@ from marl_battlegrounds.rendering.vocabulary import (
 )
 from marl_battlegrounds.viewer.champion_streaks import (
     DAMAGING_ULTIMATE_CLASS_IDS,
+    NO_TAKEDOWNS,
+    ChampionTakedownsV1,
     TickTakedownsV1,
 )
 from marl_battlegrounds.viewer.presentation import _scene_next_end_spots_v1
 from marl_battlegrounds.viewer.presentation_protocol import (
+    LiveOracleAuthorizedPresentationFrameV1,
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
     ReplayOracleAuthorizedPresentationFrameV1,
     ReplaySharedObsAuthorizedPresentationFrameV1,
@@ -86,7 +103,7 @@ DAMAGING_BY_CLASS = {
 
 
 @pytest.fixture(scope="module")
-def loaded() -> LoadedReplay:
+def sessions() -> tuple[DebuggerSession, ...]:
     zeros = jnp.zeros((10,), dtype=jnp.int32)
     charge = Action(
         move=zeros,
@@ -103,7 +120,12 @@ def loaded() -> LoadedReplay:
                 report_actor_slots=(),
             )
         )
-    return _replay_of(tuple(sessions))
+    return tuple(sessions)
+
+
+@pytest.fixture(scope="module")
+def loaded(sessions: tuple[DebuggerSession, ...]) -> LoadedReplay:
+    return _replay_of(sessions)
 
 
 type _ReplayFrame = (
@@ -182,6 +204,106 @@ def test_recent_falls_follow_each_views_rules_and_the_window(
         assert sequential._recent_falls(frame, recipient_global_slot=None) == (
             ReplayViewerService(loaded)._recent_falls(frame, recipient_global_slot=None)
         )
+
+
+def test_live_recent_falls_equal_the_replay_viewers_in_every_view(
+    sessions: tuple[DebuggerSession, ...], loaded: LoadedReplay
+) -> None:
+    for recipient in (None, 5, 0, 6):
+        at = _viewer(loaded, recipient)
+        for frame in (0, 1, 2, 8, 9, 10):
+            service = DebuggerService(
+                replace(
+                    sessions[frame],
+                    controlled_global_slot=1 if recipient is None else recipient,
+                ),
+                view_mode="researcher" if recipient is None else "pov",
+                preset="analysis",
+                include_stress=False,
+            )
+            try:
+                live = service.current_presentation().payload
+            finally:
+                service.close()
+            replayed = at(frame)
+            assert getattr(live, "recent_falls", None) == replayed.recent_falls, (
+                recipient,
+                frame,
+            )
+    # Not empty-equals-empty: Oracle View lists the fall on the frame after it.
+    assert len(_falls(_viewer(loaded, None)(2))) == 1
+
+
+def test_live_frames_refuse_falls_on_their_own_tick_or_listed_twice(
+    sessions: tuple[DebuggerSession, ...],
+) -> None:
+    service = DebuggerService(
+        replace(sessions[2], controlled_global_slot=1),
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+    )
+    try:
+        live = service.current_presentation().payload
+    finally:
+        service.close()
+    assert isinstance(live, LiveOracleAuthorizedPresentationFrameV1)
+    rows = live.recent_falls
+    assert rows is not None and len(rows) == 1
+
+    def rebuilt(recent: object) -> None:
+        LiveOracleAuthorizedPresentationFrameV1.model_validate(
+            {
+                **{
+                    name: getattr(live, name)
+                    for name in LiveOracleAuthorizedPresentationFrameV1.model_fields
+                },
+                "recent_falls": recent,
+            }
+        )
+
+    rebuilt(rows)
+    shown_tick = live.source.source_simulator_step_count
+    with pytest.raises(ValidationError, match="recent falls must lie"):
+        rebuilt((rows[0].model_copy(update={"tick": shown_tick}),))
+    with pytest.raises(ValidationError, match="recent falls must lie"):
+        rebuilt((rows[0], rows[0]))
+
+
+def test_session_record_keeps_each_views_window_of_falls(
+    sessions: tuple[DebuggerSession, ...],
+) -> None:
+    context = sessions[0].evaluation_context
+    fall = TickTakedownsV1(falls=frozenset({5}), takedowns=frozenset({(1, 5)}))
+    seen_by_warrior = tuple(fall if slot == 1 else NO_TAKEDOWNS for slot in range(10))
+    record = ChampionTakedownsV1().advance(fall, seen_by_warrior, tick=4)
+    assert record.oracle_recent == ((4, fall),)
+    assert record.agent_pov_recent[1] == ((4, fall),)
+    assert record.agent_pov_recent[0] == ()
+    assert record.quiet().oracle_recent == record.oracle_recent
+
+    def listed(view: int | None, tick: int) -> list[int]:
+        return [row.tick for row in record.recent_falls(context, view, tick)]
+
+    # A tick lists the 7 ticks before it, never itself; a view lists only its own.
+    assert listed(None, 4) == []
+    assert listed(None, 5) == [4]
+    assert listed(None, 11) == [4]
+    assert listed(None, 12) == []
+    assert listed(1, 5) == [4]
+    assert listed(0, 5) == []
+    # A later advance drops the rows no later frame can list.
+    later = record.advance(NO_TAKEDOWNS, (NO_TAKEDOWNS,) * 10, tick=12)
+    assert later.oracle_recent == ()
+    assert record.advance(
+        NO_TAKEDOWNS, (NO_TAKEDOWNS,) * 10, tick=11
+    ).oracle_recent == ((4, fall),)
+    with pytest.raises(ValueError, match="rising"):
+        ChampionTakedownsV1(oracle_recent=((5, fall), (4, fall)))
+    with pytest.raises(ValueError, match="rising"):
+        ChampionTakedownsV1(oracle_recent=((4, NO_TAKEDOWNS),))
+    with pytest.raises(ValueError, match="rising"):
+        record.advance(fall, seen_by_warrior, tick=4)
 
 
 def test_next_end_spots_name_next_positions_of_champions_seen_at_both_ends(

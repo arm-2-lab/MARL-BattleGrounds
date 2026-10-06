@@ -1466,6 +1466,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": null,
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -10088,6 +10089,7 @@
         },
         "presentation_kind": "live_no_shared_obs_agent_pov",
         "product_kind": "combat_debugger",
+        "recent_falls": [],
         "researcher_space": {
           "class_mechanics": [
             {
@@ -13173,6 +13175,7 @@
         },
         "presentation_kind": "live_oracle",
         "product_kind": "combat_debugger",
+        "recent_falls": [],
         "run_state": "paused",
         "schema_version": 1,
         "source": {
@@ -17651,6 +17654,7 @@
         },
         "presentation_kind": "live_shared_obs_agent_pov",
         "product_kind": "combat_debugger",
+        "recent_falls": [],
         "researcher_space": {
           "class_mechanics": [
             {
@@ -30217,6 +30221,7 @@
       "match_summary": null,
       "presentation_kind": "live_no_shared_obs_agent_pov",
       "product_kind": "combat_debugger",
+      "recent_falls": null,
       "researcher_space": {
         "class_mechanics": [
           {
@@ -32760,6 +32765,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": null,
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -35900,6 +35906,7 @@
       },
       "presentation_kind": "live_shared_obs_agent_pov",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "researcher_space": {
         "class_mechanics": [
           {
@@ -44212,6 +44219,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -45373,6 +45381,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -46524,6 +46533,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -47685,6 +47695,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -48846,6 +48857,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -50007,6 +50019,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -51168,6 +51181,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -52329,6 +52343,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -53490,6 +53505,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -54676,6 +54692,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -55837,6 +55854,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -56998,6 +57016,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "run_state": "paused",
       "schema_version": 1,
       "source": {
@@ -67920,6 +67939,7 @@
       },
       "presentation_kind": "live_no_shared_obs_agent_pov",
       "product_kind": "combat_debugger",
+      "recent_falls": [],
       "researcher_space": {
         "class_mechanics": [
           {
@@ -69709,6 +69729,7 @@
       "match_summary": null,
       "presentation_kind": "live_no_shared_obs_agent_pov",
       "product_kind": "combat_debugger",
+      "recent_falls": null,
       "researcher_space": {
         "class_mechanics": [
           {
@@ -71477,6 +71498,7 @@
       },
       "presentation_kind": "live_oracle",
       "product_kind": "combat_debugger",
+      "recent_falls": null,
       "run_state": "paused",
       "schema_version": 1,
       "source": {

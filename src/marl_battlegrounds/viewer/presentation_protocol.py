@@ -28,11 +28,13 @@ of the tick. Every replay frame may carry ``next_end_spots``, the Next Step
 Ghost host fact: where each champion of the view stands at the end of the
 recorded next tick (see NextEndSpotV1); its check requires each named
 champion to be alive in the frame's own current scene, and the final frame to
-name nobody. Every replay frame may also carry ``recent_falls``, the Fallen
-panel's earlier rows for that frame's own view (see
-viewer.champion_streaks.RecentFallV1); its check requires every row to fall
-on one of the 7 ticks before the shown one, each victim once per tick. An old
-recording without lethal damage contribution events names no killers there.
+name nobody. Every replay and live frame may also carry ``recent_falls``, the
+Fallen panel's earlier rows for that frame's own view (see
+viewer.champion_streaks.RecentFallV1; the Replay Viewer service counts them
+from the recording, the live service keeps them on its session); its check
+requires every row to fall on one of the 7 ticks before the shown one, each
+victim once per tick. An old recording without lethal damage contribution
+events names no killers there.
 """
 
 from __future__ import annotations
@@ -4454,7 +4456,7 @@ def _validate_recent_falls(
     *,
     tick: int,
 ) -> None:
-    """Check a replay frame's Fallen panel history against its own tick.
+    """Check a replay or live frame's Fallen panel history against its own tick.
 
     Parameters
     ----------
@@ -4675,6 +4677,10 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
     pending_joint_action: LivePendingJointActionV1 | None
     technical_frame: LiveOracleTechnicalFrameV1
     live_inspection: LiveOracleInspectionEnvelopeV1
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: every fall this view saw on the 7 ticks before
+    this one, with the killers it credits (the live session keeps it,
+    viewer.champion_streaks); None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4786,6 +4792,9 @@ class LiveOracleAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel):
             audience="oracle",
             recipient_public_agent_id=None,
         )
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -4814,6 +4823,10 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
     technical_frame: LiveNoSharedObsTechnicalFrameV1
     live_inspection: LiveNoSharedObsInspectionEnvelopeV1
     researcher_space: LiveResearcherSpaceV1
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: every fall this view saw on the 7 ticks before
+    this one, with the killers it credits (the live session keeps it,
+    viewer.champion_streaks); None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4845,6 +4858,9 @@ class LiveNoSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolMod
                 replay=False,
             )
         _validate_live_researcher_space(self)
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 
@@ -4872,6 +4888,10 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
     technical_frame: LiveSharedObsTechnicalFrameV1
     live_inspection: LiveSharedObsInspectionEnvelopeV1
     researcher_space: LiveResearcherSpaceV1
+    recent_falls: tuple[RecentFallV1, ...] | None = None
+    """Fallen panel history: every fall this view saw on the 7 ticks before
+    this one, with the killers it credits (the live session keeps it,
+    viewer.champion_streaks); None when the producer sends none."""
 
     @model_validator(mode="after")
     def _validate_frame(self) -> Self:
@@ -4922,6 +4942,9 @@ class LiveSharedObsAuthorizedPresentationFrameV1(_MatchPresentationProtocolModel
                 replay=False,
             )
         _validate_live_researcher_space(self)
+        _validate_recent_falls(
+            self.recent_falls, tick=self.source.source_simulator_step_count
+        )
         return self
 
 

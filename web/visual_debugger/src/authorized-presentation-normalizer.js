@@ -5569,9 +5569,9 @@ function validateNextEndSpots(frame) {
 }
 
 /**
- * Check the Fallen panel history host fact (recent_falls) of a replay frame, as
- * the Python protocol does. The schema has already checked each record's types;
- * an absent or null field (live frames, older producers) passes. Every row must
+ * Check the Fallen panel history host fact (recent_falls) of a replay or live
+ * frame, as the Python protocol does. The schema has already checked each
+ * record's types; an absent or null field (older producers) passes. Every row must
  * fall on one of the 7 ticks before the shown one (source_simulator_step_count
  * minus 7 to minus 1; FEED_WINDOW_TICKS is 8), and a victim may fall only once
  * per tick. Who may be named in Agent POV is the host's rule

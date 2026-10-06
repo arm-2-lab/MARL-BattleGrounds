@@ -12,7 +12,7 @@
  *   a row for the shown tick or later is ignored (the plan draws the shown
  *   tick); an unknown victim is left out and an unknown killer is dropped.
  * - With recent_falls, a view change or a skip keeps the server's rows (no
- *   memory needed); without it (live play) the carry still works.
+ *   memory needed); without it (an older producer) the carry still works.
  * - The damaging-blow table (a Basic deals damage unless it is the Priest's;
  *   an Ultimate for the Warrior, Hunter and Rogue) equals the browser's
  *   activation tokens (vocabulary.js activationImpactSemantic) for all five
@@ -185,7 +185,7 @@ test("recent_falls ignores the shown tick, unknown names and needs no memory", (
     identityOf,
   });
   assert.equal(other.rows.length, 2);
-  // Live play (no recent_falls) still carries rows tick by tick.
+  // An older producer (no recent_falls) still carries rows tick by tick.
   let live = fallenFeedHistory(null, plan(117));
   live = fallenFeedHistory(live.memory, plan(118));
   assert.equal(live.rows.length, 2);

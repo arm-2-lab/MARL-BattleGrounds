@@ -18,9 +18,12 @@ counts (every view's takedowns without falling) and its Herald Cards history
 (every view's unanswered runs and rescues, the earlier lead and the fresh
 start; viewer.match_moments) by one transition, building each recipient's
 Agent POV visual events at most once; control.submit_joint_action calls it.
-``advance_live_champion_takedowns_v1`` advances the streak counts alone. Each
-builder's ``champion_streaks`` and ``match_moments`` arguments carry the shown
-view's own rows into its frame. Each builder's
+``advance_live_champion_takedowns_v1`` advances the streak counts alone. Both
+also keep each view's recent ticks with a fall (the Fallen panel's window).
+Each builder's ``champion_streaks``, ``match_moments`` and ``recent_falls``
+arguments carry the shown view's own rows into its frame, so a view switch or
+a reload shows the same Fallen panel as watching that view all along. Each
+builder's
 ``match_honors`` argument carries the shown view's game-over Honors and Match
 Summary rows (viewer.match_summary.match_honors_v1, totalled by the live
 service) into the completion frame.
@@ -110,6 +113,7 @@ from marl_battlegrounds.viewer.champion_streaks import (
     NO_TAKEDOWNS,
     ChampionStreakV1,
     ChampionTakedownsV1,
+    RecentFallV1,
     agent_pov_tick_takedowns_v1,
     oracle_tick_takedowns_v1,
 )
@@ -367,7 +371,10 @@ def advance_live_champion_takedowns_v1(
     ChampionTakedownsV1
         The counts after the successor frame, for Oracle View and for the
         Agent POV of every configured-active recipient (see
-        viewer.champion_streaks for the rule). ``previous`` is unchanged.
+        viewer.champion_streaks for the rule), and each view's recent ticks
+        with a fall, at the successor frame's simulator tick (Oracle View's
+        with home falls from the start frame's positions, as the Replay
+        Viewer service counts them). ``previous`` is unchanged.
 
     Raises
     ------
@@ -397,7 +404,15 @@ def advance_live_champion_takedowns_v1(
         else agent_pov_tick_takedowns_v1(context, summary)
         for summary in _live_agent_pov_visual_events_by_recipient(view)
     )
-    return previous.advance(oracle_tick_takedowns_v1(context, events), agent_pov)
+    return previous.advance(
+        oracle_tick_takedowns_v1(
+            context,
+            events,
+            start_positions=view.start_frame.snapshot.agent_positions,
+        ),
+        agent_pov,
+        tick=view.successor_frame.simulator_step_count,
+    )
 
 
 def advance_live_match_history_v1(
@@ -423,8 +438,8 @@ def advance_live_match_history_v1(
     Returns
     -------
     takedowns : ChampionTakedownsV1
-        The streak counts after the successor frame; equal to
-        ``advance_live_champion_takedowns_v1(takedowns, view)``.
+        The streak counts and recent falls after the successor frame; equal
+        to ``advance_live_champion_takedowns_v1(takedowns, view)``.
     moments : MatchMomentHistoryV1
         The history after the successor frame, for Oracle View and the Agent
         POV of every configured-active recipient (see viewer.match_moments
@@ -460,14 +475,18 @@ def advance_live_match_history_v1(
         else (None,) * len(context.roster)
     )
     if fell:
-        oracle_tick = oracle_tick_takedowns_v1(context, events)
+        oracle_tick = oracle_tick_takedowns_v1(
+            context, events, start_positions=start.snapshot.agent_positions
+        )
         pov_ticks = tuple(
             NO_TAKEDOWNS
             if summary is None
             else agent_pov_tick_takedowns_v1(context, summary)
             for summary in visual
         )
-        takedowns = takedowns.advance(oracle_tick, pov_ticks)
+        takedowns = takedowns.advance(
+            oracle_tick, pov_ticks, tick=view.successor_frame.simulator_step_count
+        )
     else:
         oracle_tick = NO_TAKEDOWNS
         pov_ticks = (NO_TAKEDOWNS,) * len(visual)
@@ -883,6 +902,7 @@ def build_live_oracle_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
 ) -> LiveOracleAuthorizedPresentationFrameV1:
     """Build a global live display with incoming history and the current action
     draft.
@@ -928,6 +948,14 @@ def build_live_oracle_authorized_presentation_v1(
         the frame's ``match_moments`` field. None (the default) means not
         counted; browsers then show no First Blood, Comeback, run or
         Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history: the falls it saw on the 7 ticks
+        before the source frame (DebuggerSession.champion_takedowns
+        .recent_falls; viewer.champion_streaks). An Agent POV view names only
+        falls and killers its recipient's team saw. Copied into the frame's
+        ``recent_falls`` field. None (the default) means not sent; the
+        browser then keeps the history itself, which a view switch or a
+        reload clears.
 
     Returns
     -------
@@ -1072,6 +1100,7 @@ def build_live_oracle_authorized_presentation_v1(
         champion_streaks=champion_streaks,
         match_honors=match_honors,
         match_moments=match_moments,
+        recent_falls=recent_falls,
         schema_version=1,
         presentation_kind="live_oracle",
         product_kind="combat_debugger",
@@ -1274,6 +1303,7 @@ def build_live_no_shared_obs_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
 ) -> LiveNoSharedObsAuthorizedPresentationFrameV1:
     """Build a live own-observation display and separately scoped researcher panels.
 
@@ -1332,6 +1362,14 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         the frame's ``match_moments`` field. None (the default) means not
         counted; browsers then show no First Blood, Comeback, run or
         Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history: the falls it saw on the 7 ticks
+        before the source frame (DebuggerSession.champion_takedowns
+        .recent_falls; viewer.champion_streaks). An Agent POV view names only
+        falls and killers its recipient's team saw. Copied into the frame's
+        ``recent_falls`` field. None (the default) means not sent; the
+        browser then keeps the history itself, which a view switch or a
+        reload clears.
 
     Returns
     -------
@@ -1618,6 +1656,7 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         champion_streaks=champion_streaks,
         match_honors=match_honors,
         match_moments=match_moments,
+        recent_falls=recent_falls,
         schema_version=1,
         presentation_kind="live_no_shared_obs_agent_pov",
         product_kind="combat_debugger",
@@ -1677,6 +1716,7 @@ def build_live_shared_obs_authorized_presentation_v1(
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
     match_honors: MatchHonorsV1 | None = None,
     match_moments: MatchMomentFactsV1 | None = None,
+    recent_falls: tuple[RecentFallV1, ...] | None = None,
 ) -> LiveSharedObsAuthorizedPresentationFrameV1:
     """Build a live SharedObs scene and the recipient's current action inspection.
 
@@ -1731,6 +1771,14 @@ def build_live_shared_obs_authorized_presentation_v1(
         the frame's ``match_moments`` field. None (the default) means not
         counted; browsers then show no First Blood, Comeback, run or
         Rescue card.
+    recent_falls : tuple of RecentFallV1 or None, optional, keyword-only
+        This view's Fallen panel history: the falls it saw on the 7 ticks
+        before the source frame (DebuggerSession.champion_takedowns
+        .recent_falls; viewer.champion_streaks). An Agent POV view names only
+        falls and killers its recipient's team saw. Copied into the frame's
+        ``recent_falls`` field. None (the default) means not sent; the
+        browser then keeps the history itself, which a view switch or a
+        reload clears.
 
     Returns
     -------
@@ -2020,6 +2068,7 @@ def build_live_shared_obs_authorized_presentation_v1(
         champion_streaks=champion_streaks,
         match_honors=match_honors,
         match_moments=match_moments,
+        recent_falls=recent_falls,
         schema_version=1,
         presentation_kind="live_shared_obs_agent_pov",
         product_kind="combat_debugger",

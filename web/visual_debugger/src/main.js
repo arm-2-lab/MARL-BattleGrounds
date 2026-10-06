@@ -525,7 +525,9 @@ let matchSummarySheet = null;
 
 /**
  * What the Fallen panel remembers between paints (requiems.fallenFeedHistory):
- * the falls of the last 8 ticks of the audience shown last, or null.
+ * the falls of the last 8 ticks of the audience shown last, or null. Used
+ * only when a frame carries no recent_falls (an older producer): both
+ * clients' servers now send that history with every frame.
  * installJoinedAuthority sets it to null whenever the installed view kind or
  * Agent POV recipient changes, even if no plan of the other view was painted
  * in between, so a quick Oracle -> POV -> Oracle round trip equals a fresh
@@ -3342,13 +3344,14 @@ function pageChoreographySurface() {
  *
  * plan is the plan about to be shown (the choreographer passes it through the
  * surface's beforeBeatHolds hook), or null to clear the panel. This tick's
- * falls come from the plan. The earlier ticks' falls (the last 8 ticks) come,
- * in the Replay Viewer, from the installed frame's recent_falls host fact
- * when that frame is the plan's tick (the server owns the history, so a seek
- * shows the same rows as playing there), with identities from the frame's
- * identity rows; otherwise (live play, older producers) requiems.
- * fallenFeedHistory carries them from tick to tick (the same audience; a
- * seek, view or recipient change starts again). The panel shows only while
+ * falls come from the plan. The earlier ticks' falls (the last 8 ticks) come
+ * from the installed frame's recent_falls host fact when that frame is the
+ * plan's tick (the server owns the history: the Replay Viewer service counts
+ * it from the recording, the live service keeps it on its session; so a seek,
+ * a view switch or a reload shows the same rows as playing there), with
+ * identities from the frame's identity rows; otherwise (older producers)
+ * requiems.fallenFeedHistory carries them from tick to tick (the same
+ * audience; a seek, view or recipient change starts again). The panel shows only while
  * the Fallen Feed switch (death_announcer) is on and the plan has a tick.
  * Shown IDs come from authorizedPresentationAgentDisplayId on the installed
  * presentation.

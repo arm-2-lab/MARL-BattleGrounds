@@ -901,7 +901,11 @@ class DebuggerService:
         is this audience's own row of session.champion_takedowns, and its
         match_moments is the same audience's row of session.match_moments
         (the Herald Cards history): Oracle View's, or the recipient's Agent
-        POV row (never another view's). On the
+        POV row (never another view's). Its recent_falls (the Fallen panel's
+        earlier rows) is that same audience's
+        session.champion_takedowns.recent_falls at the current frame's tick,
+        so switching views or reloading the page shows the same rows as
+        watching that view all along. On the
         completion frame its match_honors is the game's Honors (_match_honors:
         every champion, in both views, because the game is over); the Oracle
         frame is then built a second time with them, once per game. Raises
@@ -938,6 +942,9 @@ class DebuggerService:
                 scores_ten_ticks_ago=session.scores_ten_ticks_ago,
                 champion_streaks=session.champion_takedowns.streaks(context, None),
                 match_moments=session.match_moments.facts(context, None),
+                recent_falls=session.champion_takedowns.recent_falls(
+                    context, None, current.simulator_step_count
+                ),
             )
             honors = self._match_honors(session, presentation.match_summary, None)
             if honors is not None:
@@ -950,6 +957,9 @@ class DebuggerService:
                     champion_streaks=session.champion_takedowns.streaks(context, None),
                     match_honors=honors,
                     match_moments=session.match_moments.facts(context, None),
+                    recent_falls=session.champion_takedowns.recent_falls(
+                        context, None, current.simulator_step_count
+                    ),
                 )
         else:
             if type(raw_frame) not in (
@@ -1012,6 +1022,9 @@ class DebuggerService:
                     ),
                     match_honors=honors,
                     match_moments=session.match_moments.facts(context, recipient),
+                    recent_falls=session.champion_takedowns.recent_falls(
+                        context, recipient, current.simulator_step_count
+                    ),
                 )
             else:
                 if type(raw_frame) is not ActorPovLiveDebuggerFrameV2:
@@ -1052,6 +1065,9 @@ class DebuggerService:
                     ),
                     match_honors=honors,
                     match_moments=session.match_moments.facts(context, recipient),
+                    recent_falls=session.champion_takedowns.recent_falls(
+                        context, recipient, current.simulator_step_count
+                    ),
                 )
         result = PresentationResourceResultV1(
             outcome="response",

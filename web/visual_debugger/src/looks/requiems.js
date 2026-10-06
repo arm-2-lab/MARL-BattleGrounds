@@ -2106,7 +2106,7 @@ export function fallenFeedRecords(input) {
  * fallen_feed_row derivedEvents are read. Rows are kept even when the Fallen
  * Feed switch is off, so turning it on shows the recent falls.
  *
- * Rules without recent (live play; the same as the herald carry in
+ * Rules without recent (an older producer; the same as the herald carry in
  * choreography-painter.js): the same
  * audienceKey one tick later keeps the remembered falls of the last
  * FEED_WINDOW_TICKS ticks and adds this tick's; the same audienceKey and the
@@ -2115,9 +2115,10 @@ export function fallenFeedRecords(input) {
  * change, or no plan) starts again from this tick's falls only, so the panel
  * equals a fresh render.
  *
- * The Replay Viewer passes recent instead: recent.rows is the frame's
- * `recent_falls` host fact (the server owns the history, so a seek, a reload
- * or a view switch gives the same rows as playing up to the tick): records
+ * Both clients pass recent instead (the memory remains for older producers):
+ * recent.rows is the frame's `recent_falls` host fact (the server owns the
+ * history, so a seek, a reload or a view switch gives the same rows as playing
+ * up to the tick): records
  * {tick, victim_public_agent_id, killer_public_agent_ids, points,
  * ultimate_public_agent_id} for the ticks before this one. recent.identityOf
  * maps a public ID to that champion's identity directory row (public_agent_id,
@@ -2147,8 +2148,9 @@ export function fallenFeedRecords(input) {
  * @param {{
  *   rows: ReadonlyArray<JsonRecord>,
  *   identityOf: (publicAgentId: string) => Readonly<Record<string, any>> | null,
- * } | null} [recent] The server's earlier rows (Replay Viewer), or null
- *   (default) to carry them in memory (live play).
+ * } | null} [recent] The server's earlier rows (both clients), or null
+ *   (default) to carry them in memory (an older producer that sends no
+ *   recent_falls).
  * @returns {{memory: FallenFeedMemory | null, tick: number | null, rows: ReadonlyArray<FallenFeedSource>}}
  */
 export function fallenFeedHistory(memory, plan, recent = null) {

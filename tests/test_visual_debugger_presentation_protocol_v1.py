@@ -1709,6 +1709,7 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "recent_falls",
         },
         "root.$defs.LiveNoSharedObsAuthorizedPresentationFrameV1": {
             "run_state",
@@ -1716,6 +1717,7 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "recent_falls",
         },
         "root.$defs.LiveSharedObsAuthorizedPresentationFrameV1": {
             "run_state",
@@ -1723,11 +1725,13 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
             "champion_streaks",
             "match_honors",
             "match_moments",
+            "recent_falls",
         },
         # The Champion Streaks host fact and the game-over Honors host fact;
         # None from producers that do not count them and before game over.
-        # Replay frames add the Next Step Ghost spots and the Fallen panel
-        # history; None from producers that do not send them.
+        # Live and replay frames carry the Fallen panel history; replay frames
+        # also add the Next Step Ghost spots; None from producers that do not
+        # send them.
         "root.$defs.ReplayOracleAuthorizedPresentationFrameV1": {
             "champion_streaks",
             "match_honors",

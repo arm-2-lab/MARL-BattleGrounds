@@ -60,7 +60,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import build_visual_event_batch_v2
-from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1
+from marl_battlegrounds.viewer.champion_streaks import ChampionStreakV1, RecentFallV1
 from marl_battlegrounds.viewer.match_moments import MatchMomentFactsV1
 
 
@@ -813,6 +813,7 @@ def test_recording_lifecycle_presentation_preflight_precedes_recorder_mutation(
         scores_ten_ticks_ago: tuple[int, int] | None = None,
         champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
         match_moments: MatchMomentFactsV1 | None = None,
+        recent_falls: tuple[RecentFallV1, ...] | None = None,
     ) -> LiveOracleAuthorizedPresentationFrameV1:
         nonlocal builder_calls
         builder_calls += 1
@@ -826,6 +827,7 @@ def test_recording_lifecycle_presentation_preflight_precedes_recorder_mutation(
             scores_ten_ticks_ago=scores_ten_ticks_ago,
             champion_streaks=champion_streaks,
             match_moments=match_moments,
+            recent_falls=recent_falls,
         )
 
     monkeypatch.setattr(
@@ -1069,6 +1071,7 @@ def test_live_presentation_getter_holds_lock_against_submit(
         scores_ten_ticks_ago: tuple[int, int] | None = None,
         champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
         match_moments: MatchMomentFactsV1 | None = None,
+        recent_falls: tuple[RecentFallV1, ...] | None = None,
     ) -> LiveOracleAuthorizedPresentationFrameV1:
         entered.set()
         assert release.wait()
@@ -1080,6 +1083,7 @@ def test_live_presentation_getter_holds_lock_against_submit(
             scores_ten_ticks_ago=scores_ten_ticks_ago,
             champion_streaks=champion_streaks,
             match_moments=match_moments,
+            recent_falls=recent_falls,
         )
 
     monkeypatch.setattr(

@@ -16,6 +16,8 @@ Who calls it:
   its session (``_battle_client.model.DebuggerSession.champion_takedowns``),
   advanced once per transition by
   ``_battle_client.live_presentation.advance_live_champion_takedowns_v1``.
+  The same record keeps each view's ticks with a fall from the Fallen panel's
+  window, so live frames carry ``recent_falls`` exactly like replay frames.
 
 The rule, per view (one "audience"):
 
@@ -53,6 +55,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -469,6 +472,10 @@ class ChampionTakedownsV1:
     row of counts; Agent POV has one per possible recipient (global slots
     0-9; an inactive slot keeps zeros), because the viewing champion can
     change at any time and each view must be exact the moment it is shown.
+    The record also keeps each view's recent ticks with a fall, the Fallen
+    panel's earlier rows (``recent_falls``), for the same reason: a view
+    switch or a reload of the page shows the same rows as watching that view
+    all along.
 
     Attributes
     ----------
@@ -484,28 +491,62 @@ class ChampionTakedownsV1:
     agent_pov_reached : tuple of tuple of (int, int)
         Ten rows, one per recipient: the streaks reached on this frame in
         that recipient's Agent POV. Default all empty.
+    oracle_recent : tuple of (int, TickTakedownsV1)
+        Oracle View's ticks with a fall that a later frame's Fallen panel may
+        still list: (simulator tick of the frame the fall reached, what the
+        view saw on it), oldest first, only ticks with at least one fall,
+        none older than ``FEED_WINDOW_TICKS - 1`` ticks before the newest
+        advance. Default empty. Read it through ``recent_falls``.
+    agent_pov_recent : tuple of tuple of (int, TickTakedownsV1)
+        Ten rows, one per recipient global slot, each that recipient's Agent
+        POV ticks with a fall, kept like ``oracle_recent``. Default all empty.
 
     Raises
     ------
     ValueError
         A row does not have ten whole counts 0 or more, there are not ten
-        recipient rows, or a reached streak is not a count's passed value.
+        recipient rows, a reached streak is not a count's passed value, or a
+        recent row is not (tick 0 or more, TickTakedownsV1 with a fall) in
+        rising tick order.
     """
 
     oracle_counts: tuple[int, ...] = ZERO_COUNTS
     oracle_reached: tuple[tuple[int, int], ...] = ()
     agent_pov_counts: tuple[tuple[int, ...], ...] = (ZERO_COUNTS,) * SLOT_COUNT
     agent_pov_reached: tuple[tuple[tuple[int, int], ...], ...] = ((),) * SLOT_COUNT
+    oracle_recent: tuple[tuple[int, TickTakedownsV1], ...] = ()
+    agent_pov_recent: tuple[tuple[tuple[int, TickTakedownsV1], ...], ...] = (
+        (),
+    ) * SLOT_COUNT
 
     def __post_init__(self) -> None:
-        """Check every row's shape and that each reached streak joins its count."""
+        """Check every row's shape, each reached streak and each recent row."""
         if (
             type(self.agent_pov_counts) is not tuple
             or type(self.agent_pov_reached) is not tuple
+            or type(self.agent_pov_recent) is not tuple
             or len(self.agent_pov_counts) != SLOT_COUNT
             or len(self.agent_pov_reached) != SLOT_COUNT
+            or len(self.agent_pov_recent) != SLOT_COUNT
         ):
             raise ValueError("Agent POV takedown rows need one row per global slot")
+        for recent in (self.oracle_recent, *self.agent_pov_recent):
+            if (
+                type(recent) is not tuple
+                or any(
+                    type(row) is not tuple
+                    or len(row) != 2
+                    or type(row[0]) is not int
+                    or row[0] < 0
+                    or type(row[1]) is not TickTakedownsV1
+                    or not row[1].falls
+                    for row in recent
+                )
+                or any(a[0] >= b[0] for a, b in pairwise(recent))
+            ):
+                raise ValueError(
+                    "recent takedown rows must be rising (tick, fall) pairs"
+                )
         for counts, reached in (
             (self.oracle_counts, self.oracle_reached),
             *zip(self.agent_pov_counts, self.agent_pov_reached, strict=True),
@@ -528,8 +569,10 @@ class ChampionTakedownsV1:
         self,
         oracle: TickTakedownsV1,
         agent_pov: tuple[TickTakedownsV1, ...],
+        *,
+        tick: int,
     ) -> ChampionTakedownsV1:
-        """Return every view's counts one tick later.
+        """Return every view's counts and recent falls one tick later.
 
         Parameters
         ----------
@@ -539,16 +582,26 @@ class ChampionTakedownsV1:
             Ten entries, one per recipient global slot, each what that
             recipient's Agent POV saw (``agent_pov_tick_takedowns_v1``);
             ``NO_TAKEDOWNS`` for an inactive slot or a tick without a fall.
+        tick : int, keyword-only
+            The simulator tick of the frame the transition reached (the
+            successor frame's ``simulator_step_count``), 0 or more and later
+            than every tick already kept.
 
         Returns
         -------
         ChampionTakedownsV1
-            A new record; this one is unchanged.
+            A new record; this one is unchanged. Each view that saw a fall
+            adds ``(tick, its TickTakedownsV1)`` to its recent rows, and every
+            view drops rows older than ``tick - FEED_WINDOW_TICKS + 1`` (no
+            later frame's Fallen panel can list them).
 
         Raises
         ------
         ValueError
-            ``agent_pov`` does not have ten entries.
+            ``agent_pov`` does not have ten entries, or a view that saw a fall
+            at ``tick`` already keeps a row at ``tick`` or later (each view's
+            kept rows must rise). A tick without a fall adds no row, so it is
+            not checked.
         """
         if len(agent_pov) != SLOT_COUNT:
             raise ValueError("Agent POV ticks need one entry per global slot")
@@ -556,28 +609,90 @@ class ChampionTakedownsV1:
             self.oracle_counts, oracle
         )
         rows = tuple(
-            advance_takedown_counts_v1(counts, tick)
-            for counts, tick in zip(self.agent_pov_counts, agent_pov, strict=True)
+            advance_takedown_counts_v1(counts, seen)
+            for counts, seen in zip(self.agent_pov_counts, agent_pov, strict=True)
         )
+        oldest = tick - FEED_WINDOW_TICKS + 1
+
+        def kept(
+            recent: tuple[tuple[int, TickTakedownsV1], ...], seen: TickTakedownsV1
+        ) -> tuple[tuple[int, TickTakedownsV1], ...]:
+            # Keep the rows a later frame may still list, then add this tick's.
+            return tuple(row for row in recent if row[0] >= oldest) + (
+                ((tick, seen),) if seen.falls else ()
+            )
+
         return ChampionTakedownsV1(
             oracle_counts=oracle_counts,
             oracle_reached=oracle_reached,
             agent_pov_counts=tuple(row[0] for row in rows),
             agent_pov_reached=tuple(row[1] for row in rows),
+            oracle_recent=kept(self.oracle_recent, oracle),
+            agent_pov_recent=tuple(
+                kept(recent, seen)
+                for recent, seen in zip(self.agent_pov_recent, agent_pov, strict=True)
+            ),
         )
 
     def quiet(self) -> ChampionTakedownsV1:
         """Return the record for a tick on which nobody fell.
 
-        Counts stay the same and nothing is reached; this skips all Agent
-        POV work on the common tick without a fall. Returns ``self`` when
-        nothing was reached on this frame.
+        Counts and recent rows stay the same and nothing is reached; this
+        skips all Agent POV work on the common tick without a fall (a recent
+        row outside the window is never listed, see ``recent_falls``, and is
+        dropped by the next ``advance``).
+
+        Returns
+        -------
+        ChampionTakedownsV1
+            ``self`` when nothing was reached on this frame; otherwise a new
+            record with the same counts and recent rows and no reached
+            streaks.
         """
         if not self.oracle_reached and not any(self.agent_pov_reached):
             return self
         return ChampionTakedownsV1(
             oracle_counts=self.oracle_counts,
             agent_pov_counts=self.agent_pov_counts,
+            oracle_recent=self.oracle_recent,
+            agent_pov_recent=self.agent_pov_recent,
+        )
+
+    def recent_falls(
+        self,
+        context: EvaluationEpisodeContext,
+        recipient_global_slot: int | None,
+        tick: int,
+    ) -> tuple[RecentFallV1, ...]:
+        """Return one view's ``recent_falls`` field for the frame at ``tick``.
+
+        Parameters
+        ----------
+        context : EvaluationEpisodeContext
+            The session's episode context (roster public IDs).
+        recipient_global_slot : int or None
+            None for Oracle View; otherwise the Agent POV recipient's global
+            slot 0-9. Agent POV reads only its own recipient's rows.
+        tick : int
+            The shown frame's simulator tick (its ``simulator_step_count``).
+
+        Returns
+        -------
+        tuple of RecentFallV1
+            The falls this view saw on the 7 ticks before ``tick`` (``tick -
+            FEED_WINDOW_TICKS < row tick < tick``), oldest first, as
+            ``recent_falls_v1`` builds them; the shown tick's own falls are
+            left out (the browser's plan draws them at the Fall beat), the
+            same window the Replay Viewer service uses. Empty when none.
+        """
+        recent = (
+            self.oracle_recent
+            if recipient_global_slot is None
+            else self.agent_pov_recent[recipient_global_slot]
+        )
+        return recent_falls_v1(
+            context,
+            [row for row in recent if tick - FEED_WINDOW_TICKS < row[0] < tick],
         )
 
     def streaks(
