@@ -154,8 +154,9 @@ with an RTX 5090 and our software lock can replay them exactly.
 the standard five-class 5v5 of Mage, Warrior, Hunter, Rogue and Priest.
 
 8.4 **Full records, no invented results.** Full metrics are recorded from the
-first tick of every challenger game. A resource or write failure never
-becomes a made-up win, draw or loss.
+first tick of every challenger game. The field's own games carry full metrics
+too; Season 0's come from a replay that matched all 7,200 of its games. A
+resource or write failure never becomes a made-up win, draw or loss.
 
 8.5 **Scenarios do not count.** Scenario results never feed Elo.
 
