@@ -8,10 +8,14 @@ Head-to-head views count saved outcomes and points; their matrix is a plain pivo
 System as Team A, through ``metric_catalog.mirror_metric``), combines games by
 each column's ``summary_weight`` and resamples whole spawn pairs for intervals.
 ``execution_settings`` reports whether deterministic GPU mode was declared.
+``table("policy_assignments")`` and the member columns of
+``system_metrics(by="game")`` say which member of a pool or team played each
+slot of each saved game (``_member_labels``, ``_game_members``).
 Shared private helpers own the side of each game (``_directions``), each
-scheduled game's sampling facts (``_game_plan``, ``_plan_record``) and the draw
-order that ``point_margin_summary`` and ``system_metrics`` share
-(``_bootstrap_indices``).
+scheduled game's sampling facts (``_game_plan``, ``_plan_record``), and the draw
+order and interval rule that ``point_margin_summary`` and ``system_metrics``
+share (``_bootstrap_indices``, ``_interval_rule``: unknown sampling alone keeps
+the range, labeled "Conditional: Sampling not verified", as Elo does).
 Whole-table allocation is explicit through ``table``; ``iter_table`` bounds raw
 row batches.
 Each saved run reads with the full-report header of its own recorded scalar
@@ -43,11 +47,18 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     mirror_metric,
 )
 from marl_battlegrounds.evaluation.run_writer import (
+    ASSIGNMENT_COLUMNS,
     EPISODE_COLUMNS,
     IDENTITY_COLUMNS,
     MATCH_COLUMNS,
 )
+from marl_battlegrounds.evaluation.sampling_evidence import (
+    CONDITIONAL_INTERVAL_ASSUMPTION,
+    CONDITIONAL_INTERVAL_STATUS,
+)
 from marl_battlegrounds.evaluation.scalar_reports import (
+    has_members,
+    iter_policy_assignments,
     iter_scalar_rows,
     iter_summary_rows,
 )
@@ -68,8 +79,25 @@ _TABLES = (
     "matchup_results",
     "map_results",
     "tournament_headline_metrics",
+    "policy_assignments",
 )
-_SUMMARIES = frozenset(_TABLES[4:])
+_SUMMARIES = frozenset(
+    {
+        "tournament_results",
+        "tournament_rankings",
+        "matchup_results",
+        "map_results",
+        "tournament_headline_metrics",
+    }
+)
+# Member columns that system_metrics(by="game") adds, from the System's side.
+_MEMBER_COLUMNS = (
+    *(f"agent_{slot}_member" for slot in range(10)),
+    "member",
+    "opponent_member",
+)
+_IN_MEMORY_MEMBERS = "Members are recorded in saved runs; pass output_dir"
+_NO_MEMBERS = "No System in this scope has members"
 _FILES = {name: f"{name}.csv" for name in _TABLES if name != "tournament_rankings"}
 _FILES["matches"] = "match_results.csv"
 _TEXT = frozenset(
@@ -94,10 +122,16 @@ _TEXT = frozenset(
         "conditional_interval_assumption",
         "sampling_unit",
         "unavailable_reason",
+        "team",
+        *_MEMBER_COLUMNS,
     }
 )
 _INTS = frozenset(
     {
+        "global_slot",
+        "policy_id",
+        "decision_start",
+        "decision_stop",
         "episode_id",
         "seed_id",
         "map_id",
@@ -134,11 +168,12 @@ _INTS = frozenset(
 )
 _EXACT = frozenset({"episode_length", "team_a_score", "team_b_score"})
 _NULLABLE = frozenset({"seed_id", "map_id", "pass_id", "block_id", "rank"})
-_HEADERS = {
+_HEADERS: dict[str, tuple[str, ...]] = {
     "episodes.csv": EPISODE_COLUMNS,
     "priority_metrics.csv": (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES),
     "full_metrics.csv": (*IDENTITY_COLUMNS, *FULL_METRIC_NAMES),
     "match_results.csv": MATCH_COLUMNS,
+    "policy_assignments.csv": ASSIGNMENT_COLUMNS,
 }
 _CELL_TYPES = {
     "text": ("text", "None when absent"),
@@ -473,6 +508,46 @@ def _pass_facts(entry: Row, pass_complete: bool) -> Row:
     }
 
 
+def _interval_rule(reasons: Sequence[str]) -> tuple[bool, str, str | None, str | None]:
+    """Decide whether a summary row shows its ranges, and how it labels them.
+
+    One rule for ``point_margin_summary`` and ``system_metrics``, the rule Elo
+    rankings use too. reasons are the row's de-duplicated problems, in order.
+
+    Parameters
+    ----------
+    reasons : sequence of str
+        Every reason the row's ranges could be wrong, such as "Sampling
+        mechanism unknown" or "Requested games are incomplete". Empty means
+        nothing is wrong.
+
+    Returns
+    -------
+    tuple of (bool, str, str or None, str or None)
+        (compute, interval_status, unavailable_reason, assumption):
+
+        - No reasons: (True, "Available", None, None).
+        - Only "Sampling mechanism unknown" (for example, a researcher's own
+          System): the ranges are still calculated and shown, labeled
+          "Conditional: Sampling not verified", with the assumption "Assumes
+          declared game groups are independent; sampling is not verified".
+          The reason is None, because nothing is withheld.
+        - Anything else, alone or beside unknown sampling: (False,
+          "Unavailable", every reason joined with "; ", None). The ranges are
+          withheld; a conditional label never makes them valid.
+    """
+    if not reasons:
+        return True, "Available", None, None
+    if list(reasons) == ["Sampling mechanism unknown"]:
+        return (
+            True,
+            CONDITIONAL_INTERVAL_STATUS,
+            None,
+            CONDITIONAL_INTERVAL_ASSUMPTION,
+        )
+    return False, "Unavailable", "; ".join(reasons), None
+
+
 def _plan_record(
     origin: tuple[str, str, str, str],
     facts: Row,
@@ -573,6 +648,43 @@ def _directions(
     return tuple(views)
 
 
+def _member_labels(registration: Mapping[str, Any]) -> list[str] | None:
+    """Give each policy ID of a System with members a readable member label.
+
+    registration is the System's saved record, with its ``components`` list.
+    A component's label is its name when no other component of the System
+    shares it, else "name #<policy_id>" (two checkpoints of one run share a
+    name). Returns None when the System has fewer than two components
+    (``scalar_reports.has_members``).
+    """
+    components = registration.get("components")
+    if not isinstance(components, list):
+        return None
+    items = cast(list[object], components)
+    if not has_members(len(items)):
+        return None
+    names = [str(_mapping(item).get("name", "")) for item in items]
+    counts = Counter(names)
+    return [
+        name if counts[name] == 1 else f"{name} #{index}"
+        for index, name in enumerate(names)
+    ]
+
+
+def _side_member(labels: Sequence[str | None], active: Sequence[object]) -> str | None:
+    """Join one team's distinct member labels in slot order, or give None.
+
+    labels and active hold the team's five slots from its own side. None when a
+    slot is active without a label (its member was not recorded for the whole
+    game, or its System has no members; ``_game_members`` labels only Systems
+    with members) or no slot is active.
+    """
+    present = [label for label, alive in zip(labels, active, strict=True) if alive]
+    if not present or any(label is None for label in present):
+        return None
+    return " / ".join(dict.fromkeys(cast(list[str], present)))
+
+
 # Fact columns of a system_metrics summary row; ratios= names may not reuse them.
 _SYSTEM_FACT_COLUMNS = frozenset(
     {
@@ -595,10 +707,12 @@ _SYSTEM_FACT_COLUMNS = frozenset(
         "independent_units",
         "interval_status",
         "unavailable_reason",
+        "conditional_interval_assumption",
         "sampling_unit",
         "bootstrap_draws",
         "bootstrap_seed",
         *(f"agent_{slot}_class_id" for slot in range(10)),
+        *_MEMBER_COLUMNS,
     }
 )
 # Identity columns that exchange their team when a game is read from Team B.
@@ -841,7 +955,17 @@ class _View:
             present |= self._present("match_results.csv") and any(
                 entry["phase"] == "tournament" for entry in self.selected.values()
             )
-        if summary and not self.whole_tournament:
+        members = self._member_systems() if name == "policy_assignments" else {}
+        if name == "policy_assignments":
+            if self.run_dir is None:
+                availability, reason = (
+                    ("unavailable", _IN_MEMORY_MEMBERS)
+                    if members
+                    else ("disabled", _NO_MEMBERS)
+                )
+            elif not present and not members:
+                availability, reason = "disabled", _NO_MEMBERS
+        elif summary and not self.whole_tournament:
             availability, reason = (
                 "unavailable",
                 "This scope does not contain the complete tournament population",
@@ -901,6 +1025,8 @@ class _View:
                 "This scope does not contain tournament games",
             )
         columns = self._header(filename)
+        if name == "policy_assignments":
+            columns = (*columns, "system_name", "member")
         if name == "episodes":
             columns = (*EPISODE_COLUMNS, "system_game_score")
         elif (
@@ -955,7 +1081,11 @@ class _View:
             missing_fields.append("system_game_score")
         if name == "tournament_rankings" and not self.manifest.get("systems"):
             missing_fields.append("system_id")
+        extra: Row = (
+            {"member_coverage": self._member_coverage(members)} if members else {}
+        )
         return {
+            **extra,
             "availability": availability,
             "reason": reason,
             "columns": columns,
@@ -976,6 +1106,106 @@ class _View:
                 and not entry.get("recorded_metrics_by_episode")
                 and _mapping(entry.get("details")).get("metrics") is None
             ),
+        }
+
+    def _registration(self, row: Mapping[str, Any]) -> Row:
+        """Return the saved System record that owns one assignment row."""
+        systems = _mapping(self.manifest.get("systems"))
+        return _mapping(systems.get(str(row["system_id"])))
+
+    def _member_systems(self) -> dict[str, Row]:
+        """Map each System with members in this scope to its saved record.
+
+        Reads only the manifest. Returns {} at once, without visiting games,
+        when no registered System has members.
+        """
+        systems = _mapping(self.manifest.get("systems"))
+        labels = {
+            str(system): _mapping(registration)
+            for system, registration in systems.items()
+            if _member_labels(_mapping(registration)) is not None
+        }
+        if not labels:
+            return {}
+        used: set[str] = set()
+        for entry in self.selected.values():
+            used.update(map(str, _mapping(entry.get("system_ids")).values()))
+            for declaration in _mapping(entry.get("episodes")).values():
+                owners = _mapping(_mapping(declaration).get("system_ids"))
+                used.update(map(str, owners.values()))
+        return {system: value for system, value in labels.items() if system in used}
+
+    def _member_coverage(self, members: Mapping[str, Row]) -> Row:
+        """Count each member System's completed games with and without members.
+
+        A completed game is recorded when its pass lists it in
+        ``trace_epochs``, as summary and per-decision rows both do. Returns
+        {System ID: {"system_name": name, "recorded": n, "not_recorded": m}}
+        from the manifest only.
+        """
+        counts: dict[str, dict[str, Any]] = {
+            system: {
+                "system_name": registration.get("name"),
+                "recorded": 0,
+                "not_recorded": 0,
+            }
+            for system, registration in members.items()
+        }
+        for entry in self.selected.values():
+            epochs = _mapping(entry.get("trace_epochs"))
+            default = _mapping(entry.get("system_ids"))
+            declarations = _mapping(entry.get("episodes"))
+            for episode in entry.get("completed_episode_ids", ()):
+                owners = (
+                    _mapping(_mapping(declarations.get(str(episode))).get("system_ids"))
+                    or default
+                )
+                recorded = "recorded" if str(episode) in epochs else "not_recorded"
+                for system in set(map(str, owners.values())) & counts.keys():
+                    counts[system][recorded] += 1
+        return counts
+
+    def _game_members(self) -> dict[tuple[str, str, str, str], tuple[str | None, ...]]:
+        """Label each recorded game's ten slots with the member that played it.
+
+        Keys are (run ID, phase, pass ID, episode ID) as text. A slot has a label
+        only when its System has members and one row with a policy ID of 0 or
+        more covers the whole game, decisions 0 to its trace epoch; otherwise
+        None. Reads the assignment table once; {} when nothing applies.
+        """
+        members = self._member_systems()
+        description = self.metadata["tables"]["policy_assignments"]
+        if not members or description["availability"] != "available":
+            return {}
+        rows: dict[tuple[str, str, str, str], list[Row | None]] = {}
+        seen: set[tuple[tuple[str, str, str, str], int]] = set()
+        for row in self.iter_rows("policy_assignments", 1024):
+            system = str(row["system_id"])
+            key = (
+                str(row["run_id"]),
+                str(row["phase"]),
+                str(row["pass_id"]),
+                str(row["episode_id"]),
+            )
+            slot = int(row["global_slot"])
+            slots = rows.setdefault(key, [None] * 10)
+            if (key, slot) in seen:
+                # A second interval: the member did not cover the whole game.
+                slots[slot] = None
+                continue
+            seen.add((key, slot))
+            epoch = _mapping(self._entry(row).get("trace_epochs")).get(key[3])
+            if (
+                system in members
+                and int(row["policy_id"]) >= 0
+                and int(row["decision_start"]) == 0
+                and isinstance(epoch, int)
+                and int(row["decision_stop"]) == epoch + 1
+            ):
+                slots[slot] = row
+        return {
+            key: tuple(None if row is None else row["member"] for row in slots)
+            for key, slots in rows.items()
         }
 
     def _check_snapshot(self, filename: str) -> None:
@@ -1078,6 +1308,18 @@ class _View:
                     )
             return
         summary = filename not in self._headers
+        if filename == "policy_assignments.csv":
+            for batch in iter_policy_assignments(
+                self.run_dir / filename,
+                manifest=self.manifest,
+                expected_header=ASSIGNMENT_COLUMNS,
+                batch_size=rows,
+            ):
+                self._check_snapshot(filename)
+                for row in batch:
+                    if (row.get("phase"), row.get("pass_id")) in self.identities:
+                        yield dict(row)
+            return
         batches = (
             iter_summary_rows(
                 self.run_dir / filename,
@@ -1216,9 +1458,10 @@ class _View:
         Exact identities group rows; the declared schedule keeps missing games
         visible. Pair keys carry each game's full origin (run, phase, pass and
         pair), so reused canonical games never merge with local ones; explicit
-        larger block keys keep their declared scope. Unknown sampling or
-        incomplete evidence keeps descriptive means but withholds intervals. No
-        model or file is changed.
+        larger block keys keep their declared scope. Incomplete evidence keeps
+        descriptive means but withholds intervals; unknown sampling alone keeps
+        them, labeled conditional (``_interval_rule``). No model or file is
+        changed.
         """
         groups: dict[tuple[str, str, str | None], Row] = {}
         for game in self._game_plan():
@@ -1341,8 +1584,9 @@ class _View:
             if complete_pairs * 2 != group["scheduled_games"]:
                 group["reasons"].append("Requested pair evidence is incomplete")
             reasons = list(dict.fromkeys(group["reasons"]))
+            compute, status, reason, assumption = _interval_rule(reasons)
             low, high = None, None
-            if not reasons:
+            if compute:
                 ordered = sorted(strata.items())
                 indices = _bootstrap_indices(
                     [len(blocks) for _, blocks in ordered], draws, seed
@@ -1400,8 +1644,9 @@ class _View:
                     "ci_low": low,
                     "ci_high": high,
                     "confidence": 0.95,
-                    "interval_status": "Available" if not reasons else "Unavailable",
-                    "unavailable_reason": "; ".join(reasons) or None,
+                    "interval_status": status,
+                    "unavailable_reason": reason,
+                    "conditional_interval_assumption": assumption,
                     "sampling_unit": "Whole declared blocks of exchanged-spawn pairs",
                     "bootstrap_draws": draws,
                     "bootstrap_seed": seed,
@@ -1728,6 +1973,8 @@ class _View:
             fact_rows: list[Row] = []
             positions_list: list[int] = []
             mirrored_list: list[bool] = []
+            game_members = self._game_members()
+            unlabeled: tuple[str | None, ...] = (None,) * 10
             for position, (record, identity) in enumerate(games):
                 for view in _directions(
                     record["a"],
@@ -1740,22 +1987,34 @@ class _View:
                     if wanted is not None and system not in wanted:
                         continue
                     flipped = played_as == "team_b"
-                    fact_rows.append(
-                        {
-                            "system_id": system,
-                            "system_name": system_name,
-                            "opponent_id": opponent,
-                            "opponent_name": opponent_name,
-                            "played_as": played_as,
-                            "spawn_end": end,
-                            **{
-                                name: identity[
-                                    _IDENTITY_TWINS.get(name, name) if flipped else name
-                                ]
-                                for name in IDENTITY_COLUMNS
-                            },
-                        }
-                    )
+                    fact: Row = {
+                        "system_id": system,
+                        "system_name": system_name,
+                        "opponent_id": opponent,
+                        "opponent_name": opponent_name,
+                        "played_as": played_as,
+                        "spawn_end": end,
+                        **{
+                            name: identity[
+                                _IDENTITY_TWINS.get(name, name) if flipped else name
+                            ]
+                            for name in IDENTITY_COLUMNS
+                        },
+                    }
+                    labels = game_members.get(record["origin"], unlabeled)
+                    for slot in range(10):
+                        fact[f"agent_{slot}_member"] = labels[
+                            (slot + 5) % 10 if flipped else slot
+                        ]
+                    for column, slots in (
+                        ("member", range(5)),
+                        ("opponent_member", range(5, 10)),
+                    ):
+                        fact[column] = _side_member(
+                            [fact[f"agent_{slot}_member"] for slot in slots],
+                            [fact[f"agent_{slot}_active"] for slot in slots],
+                        )
+                    fact_rows.append(fact)
                     positions_list.append(position)
                     mirrored_list.append(flipped)
             if not fact_rows:
@@ -1955,6 +2214,7 @@ class _View:
             if complete_pairs * 2 != scheduled:
                 reasons.append("Requested pair evidence is incomplete")
             reasons = list(dict.fromkeys(reasons))
+            compute, status, reason, assumption = _interval_rule(reasons)
             stochastic_units = sum(
                 any(record["sampling"] == "stochastic" for record, _ in members)
                 for members in units.values()
@@ -1979,7 +2239,7 @@ class _View:
             counts: NDArray[np.float64] | None = None
             by_unit = np.zeros(0, np.int64)
             unit_starts = np.zeros(0, np.int64)
-            if rows and not partial and not reasons:
+            if rows and not partial and compute:
                 ordered = sorted(strata.items())
                 unit_position = {
                     unit: place
@@ -2078,8 +2338,9 @@ class _View:
                         )
                     )
                     else stochastic_units,
-                    "interval_status": "Available" if not reasons else "Unavailable",
-                    "unavailable_reason": "; ".join(reasons) or None,
+                    "interval_status": status,
+                    "unavailable_reason": reason,
+                    "conditional_interval_assumption": assumption,
                     "sampling_unit": "Whole declared blocks of exchanged-spawn pairs",
                     "bootstrap_draws": draws,
                     "bootstrap_seed": seed,
@@ -2192,6 +2453,23 @@ class _View:
             raise ValueError(description["reason"])
         if name == "episodes":
             yield from self._episodes(rows)
+            return
+        if name == "policy_assignments":
+            labels: dict[str, list[str]] = {}
+            for row in self._raw("policy_assignments.csv", rows):
+                system = str(row["system_id"])
+                registration = self._registration(row)
+                if system not in labels:
+                    labels[system] = _member_labels(registration) or [
+                        str(_mapping(item).get("name", ""))
+                        for item in cast(
+                            list[object], registration.get("components", [])
+                        )
+                    ]
+                choice = int(row["policy_id"])
+                row["system_name"] = registration.get("name")
+                row["member"] = None if choice < 0 else labels[system][choice]
+                yield row
             return
         if name == "priority_metrics":
             yield from self._raw("priority_metrics.csv", rows, columns)
@@ -2595,10 +2873,15 @@ class _ResultAccess:
             Bounds use linear 2.5/97.5 percentiles. Whole verified spawn pairs
             stay together; declared larger blocks use one draw across linked
             maps. Each condition stratum needs two independent complete units.
-            Incomplete games/pairs, unknown sampling, deterministic repetition
-            or missing points keep descriptive rows but yield NaN bounds and an
-            unavailable_reason. Empty declared scope returns {}. These intervals
-            describe fixed methods, not uncertainty across training seeds.
+            Incomplete games/pairs, deterministic repetition or missing points
+            keep descriptive rows but yield NaN bounds, ``interval_status``
+            "Unavailable" and an ``unavailable_reason``. When the only problem
+            is a method whose sampling is unknown (such as your own System),
+            the bounds are kept, ``interval_status`` is "Conditional: Sampling
+            not verified" and ``conditional_interval_assumption`` states what
+            they assume, as Elo rankings do; otherwise that column is None.
+            Empty declared scope returns {}. These intervals describe fixed
+            methods, not uncertainty across training seeds.
 
         Raises
         ------
@@ -2699,8 +2982,13 @@ class _ResultAccess:
             ``opponent_name``, ``played_as`` ("team_a" or "team_b", the side the
             System really played), ``spawn_end`` (the map's original spawn bank
             it started from, as in ``head_to_head(by="spawn")``, or None when
-            not saved), the identity columns from the System's side, each
-            metric column (float32, NaN when unavailable) and each ratio
+            not saved), the identity columns from the System's side,
+            ``agent_<slot>_member`` for slots 0-9 from the System's side (the
+            member that controlled the slot for the whole game, None otherwise),
+            ``member`` and ``opponent_member`` (each side's distinct member
+            labels joined with " / " in slot order, None when a member was not
+            recorded or that System has none; see ``table("policy_assignments")``),
+            each metric column (float32, NaN when unavailable) and each ratio
             (float64). Rows follow the table's order, Team A's view first.
 
             Summaries: ``system_id`` and ``system_name`` (plus ``opponent_id``
@@ -2712,7 +3000,9 @@ class _ResultAccess:
             slot's class when it never changed, else None), then each metric
             and ratio under its own name with ``<name>_ci_low`` and
             ``<name>_ci_high``, then ``confidence``, ``independent_units``,
-            ``interval_status``, ``unavailable_reason``, ``sampling_unit``,
+            ``interval_status`` ("Available", "Conditional: Sampling not
+            verified" or "Unavailable"), ``unavailable_reason``,
+            ``conditional_interval_assumption``, ``sampling_unit``,
             ``bootstrap_draws`` and ``bootstrap_seed`` as in
             ``point_margin_summary``, except that ``independent_units``
             counts only resampled units from matchups with random sampling.
@@ -2743,16 +3033,17 @@ class _ResultAccess:
 
         **Sampling facts.** Intervals need to know how each method chooses its
         actions. Built-in methods and saved actors from the built-in learners
-        declare it; other Systems are "unknown", and every summary row with one
-        of their games withholds its interval. In a canonical run with your own
-        challenger, that includes each member's overall row; member-against-
-        member ``by="opponent"`` rows keep theirs.
+        declare it; other Systems are "unknown". Every summary row with one of
+        their games keeps its interval but labels it "Conditional: Sampling not
+        verified", as Elo rankings do: the interval assumes the game pairs are
+        independent repeats, which the records cannot prove (a System that
+        carries memory from one game to the next breaks that). In a canonical
+        run with your own challenger, that includes each member's overall row;
+        member-against-member ``by="opponent"`` rows stay "Available".
 
         **In-memory evaluations.** An ``evaluate`` call without ``output_dir``
-        does not inspect how its methods sample, to keep unsaved evaluations
-        free of that work, so its summary intervals are withheld with
-        "Sampling mechanism unknown". Save the run to get intervals.
-        In-memory tournaments always record these facts.
+        inspects how its methods sample, as saved runs do, so its summaries
+        carry the same interval labels. In-memory tournaments do too.
 
         **Missing data.** If games were played but some have no row in this
         table (full metrics recorded for only some games), a summary row's
@@ -2772,11 +3063,12 @@ class _ResultAccess:
         drawn unit can vary ("No random sampling variation"). Matchups where
         both sides choose without randomness add no width to a mixed row. A
         column's bounds are NaN when some draw has no usable game for it, even
-        under a row status of "Available". These intervals describe repeated
-        games of fixed methods, not training seeds. With thousands of columns,
-        many intervals exclude a difference by chance, and overlapping
-        intervals between two Systems are not a test. Separate ``evaluate``
-        calls combined into one result need different seeds.
+        when the row's status is "Available" or conditional. These intervals
+        describe repeated games of fixed methods, not training seeds. With
+        thousands of columns, many intervals exclude a difference by chance,
+        and overlapping intervals between two Systems are not a test.
+        Separate ``evaluate`` calls combined into one result need different
+        seeds.
 
         **Cost.** Host-only NumPy: no JAX, no file writes. One pass over the
         table converts only the needed columns (requested, ratio inputs, their

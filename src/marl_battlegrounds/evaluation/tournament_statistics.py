@@ -20,6 +20,8 @@ from numpy.typing import NDArray
 from scipy import linalg, optimize, special  # pyright: ignore[reportMissingTypeStubs]
 
 from marl_battlegrounds.evaluation.sampling_evidence import (
+    CONDITIONAL_INTERVAL_ASSUMPTION,
+    CONDITIONAL_INTERVAL_STATUS,
     combine_sampling_facts,
     summarize_sampling_evidence,
 )
@@ -560,15 +562,11 @@ def _qualify_intervals(
         if not supported:
             if metric_report["determinism"] == "Determinism Unknown":
                 if row[f"{metric}_interval_status"] == "Available":
-                    row[f"{metric}_interval_status"] = (
-                        "Conditional: Sampling not verified"
-                    )
+                    row[f"{metric}_interval_status"] = CONDITIONAL_INTERVAL_STATUS
             else:
                 row[f"{metric}_interval_status"] = metric_report["interval_status"]
     row["conditional_interval_assumption"] = (
-        None
-        if not any_unsupported
-        else "Assumes declared game groups are independent; sampling is not verified"
+        None if not any_unsupported else CONDITIONAL_INTERVAL_ASSUMPTION
     )
 
 

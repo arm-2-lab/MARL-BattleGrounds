@@ -12,7 +12,10 @@ combine as total over total, and ratios= does the same for researcher-chosen
 columns; intervals resample verified pairs (available with finite bounds, at
 least one checked), a row whose matchups are all deterministic is withheld
 with "No random sampling variation" while a mixed row counts only its
-stochastic units, and a rare column gets NaN bounds under an available row;
+stochastic units, a row with a game of unknown sampling keeps its interval
+labeled "Conditional: Sampling not verified" with its stated assumption (and
+point_margin_summary gives the same label and bounds), and a rare column gets
+NaN bounds under an available row;
 games played without rows in the table make summary values NaN with a reason
 while complete by="opponent" rows stay valid; unplayed games keep descriptive
 values but no interval; a slot whose class changes gives NaN slot columns; a
@@ -430,6 +433,55 @@ def test_intervals_follow_sampling_facts(tmp_path: Path) -> None:
     assert (
         opponents[("s1", "s2")]["unavailable_reason"] == "No random sampling variation"
     )
+
+
+def test_unknown_sampling_keeps_intervals_labeled_conditional(tmp_path: Path) -> None:
+    mixed = [("s1", "s2", "unknown"), ("s1", "s3", "stochastic")]
+    results = load_results(_run(tmp_path, mixed))
+    systems = _rows(
+        results.system_metrics("full_metrics", columns=["score_difference"]),
+        "system_id",
+    )
+    for name in ("s1", "s2"):
+        row = systems[(name,)]
+        assert row["interval_status"] == "Conditional: Sampling not verified"
+        assert row["unavailable_reason"] is None
+        assert row["conditional_interval_assumption"] == (
+            "Assumes declared game groups are independent; sampling is not verified"
+        )
+        assert row["independent_units"] is None
+        low, high = row["score_difference_ci_low"], row["score_difference_ci_high"]
+        assert np.isfinite(low) and low <= row["score_difference"] <= high
+    # s2's fixture games repeat exactly; s1 also has random games against s3.
+    assert (
+        systems[("s1",)]["score_difference_ci_low"]
+        < (systems[("s1",)]["score_difference_ci_high"])
+    )
+    three = systems[("s3",)]
+    assert three["interval_status"] == "Available"
+    assert three["conditional_interval_assumption"] is None
+    opponents = _rows(
+        results.system_metrics(
+            "full_metrics", by="opponent", columns=["score_difference"]
+        ),
+        "system_id",
+        "opponent_id",
+    )
+    margins = _rows(results.point_margin_summary(), "system_id", "opponent_id")
+    for key, status in ((("s1", "s2"), "Conditional"), (("s1", "s3"), "Available")):
+        forward, margin = opponents[key], margins[key]
+        assert forward["interval_status"].startswith(status)
+        assert margin["interval_status"] == forward["interval_status"]
+        assert (
+            margin["conditional_interval_assumption"]
+            == (forward["conditional_interval_assumption"])
+        )
+        assert forward["score_difference_ci_low"] == pytest.approx(
+            margin["ci_low"], abs=1e-9
+        )
+        assert forward["score_difference_ci_high"] == pytest.approx(
+            margin["ci_high"], abs=1e-9
+        )
 
 
 def test_rare_column_has_nan_bounds_under_an_available_row(tmp_path: Path) -> None:

@@ -8,9 +8,10 @@ exact sources at depth 0.0 records 5.0, the depth for map-built games, so it
 resumes only with the depth omitted (0.0 "differs", 5.0 "conflicts"). An actor
 trained before Red Zone (actor input schema 1) and a current actor play one
 evaluate call at recorded depths 0.0 and 5.0, and the second depth reuses the
-compiled System chunk. An in-memory evaluation creates no files and inspects no
-sampling, so its system_metrics intervals say "Sampling mechanism unknown", yet
-it still records its declared XLA flags in execution_settings.
+compiled System chunk. An in-memory evaluation creates no files, yet it still
+records its declared XLA flags in execution_settings and both methods' sampling
+facts, so its system_metrics rows never say "Sampling mechanism unknown" for
+built-in methods.
 """
 
 import csv
@@ -81,15 +82,6 @@ def test_public_evaluate_cycles_one_total_budget_and_creates_no_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-
-    def unexpected_sampling(*args: object) -> None:
-        raise AssertionError("Recording-disabled evaluation inspected sampling")
-
-    monkeypatch.setattr(
-        import_module("marl_battlegrounds.evaluation.sampling_evidence"),
-        "method_sampling_fact",
-        unexpected_sampling,
-    )
     result = evaluate(
         "random",
         "random",
@@ -132,15 +124,21 @@ def test_public_evaluate_cycles_one_total_budget_and_creates_no_files(
     )
     np.testing.assert_array_equal(result.priority_metrics["team_a_return"], [0, 0, 0])
     assert result.full_metrics == {}
-    # The free XLA-flag record is kept; sampling stays uninspected in memory.
+    # In memory, the XLA flags and both methods' sampling are still recorded.
     settings = result.execution_settings
     flags = os.environ.get("XLA_FLAGS", "")
     assert settings["declared_xla_flags_by_attempt"] == [flags]
     assert settings["declared_gpu_deterministic_ops"] is (
         declared_gpu_deterministic_ops(flags)
     )
+    sampling = cast(dict[str, dict[str, str]], result.metadata["method_sampling"])
+    assert {team: fact["determinism"] for team, fact in sampling.items()} == {
+        "team_a": "stochastic",
+        "team_b": "stochastic",
+    }
     summary = result.system_metrics("priority_metrics", columns=["team_a_kills"])
-    assert "Sampling mechanism unknown" in summary["unavailable_reason"][0]
+    assert summary["interval_status"].tolist() == ["Unavailable"]
+    assert "Sampling mechanism unknown" not in summary["unavailable_reason"][0]
     assert list(tmp_path.iterdir()) == []
 
 

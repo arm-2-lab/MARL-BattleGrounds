@@ -6,7 +6,8 @@ must match the caller's shared schema. Host schema 2 accepts each scalar schema
 listed by metric_catalog.FULL_METRIC_NAMES_BY_SCHEMA_VERSION (14 and 15); the
 catalog is standard-library only, so this reader still loads no JAX. This is a
 low-level host reader; it does not resume a writer, recompute metrics or
-qualify a tournament population.
+qualify a tournament population. ``iter_policy_assignments`` reads the member
+record, and ``has_members`` is the one rule for which Systems have members.
 """
 
 from __future__ import annotations
@@ -749,12 +750,43 @@ def iter_summary_rows(
     )
 
 
+def has_members(component_count: int) -> bool:
+    """Say whether a System's component table names members to record per game.
+
+    Parameters
+    ----------
+    component_count : int
+        Number of entries in the System's component table: ``System.components``,
+        or ``_SystemExecution.component_count`` inside compiled evaluation.
+
+    Returns
+    -------
+    bool
+        True for two or more components, as in ``pool``, ``team`` and
+        ``independent_policies`` of two or more members. A built-in Policy and a
+        language-model System declare one component and a learned System none,
+        so they have no members to record.
+
+    Notes
+    -----
+    The one rule for member records: evaluation captures each game's members,
+    the writer saves their rows and saved results read them only for Systems
+    that pass it. It lives here, beside the member table's reader, so readers
+    of saved results need no JAX import.
+    """
+    return component_count >= 2
+
+
 def _assignment_values(
     row: Mapping[str, ScalarCell],
     manifest: Mapping[str, object],
     passes: _Passes,
-) -> tuple[tuple[str, str, int, int], int, int]:
-    """Validate one assignment's slot, interval, saved epoch and registered owner."""
+) -> tuple[tuple[str, str, int, int], int, int, int]:
+    """Validate one assignment's slot, interval, saved epoch and registered owner.
+
+    Return the (phase, pass ID, episode ID, slot) key, the interval's start and
+    stop, and the game's durable trace epoch (its last recorded decision).
+    """
     phase, pass_id = str(row["phase"]), str(row["pass_id"])
     episode_id = row["episode_id"]
     slot, choice = row.get("global_slot"), row.get("policy_id")
@@ -806,7 +838,12 @@ def _assignment_values(
     config_ids = entry.get("trace_config_ids", {})
     if not isinstance(config_ids, Mapping):
         raise ValueError("policy assignment has an invalid configuration binding")
+    # Whole-game member rows rely on the completion's binding instead.
     config_id = cast(Mapping[str, object], config_ids).get(str(episode_id))
+    if config_id is None:
+        completed = entry.get("completed_config_ids", {})
+        if isinstance(completed, Mapping):
+            config_id = cast(Mapping[str, object], completed).get(str(episode_id))
     configurations = manifest.get("configurations", {})
     if not isinstance(configurations, Mapping) or config_id not in configurations:
         raise ValueError("policy assignment has no recorded episode configuration")
@@ -829,7 +866,7 @@ def _assignment_values(
         or not active[slot]
     ):
         raise ValueError("policy assignment slot is not active in the recorded roster")
-    return (phase, pass_id, episode_id, slot), start, stop
+    return (phase, pass_id, episode_id, slot), start, stop, epoch
 
 
 def iter_policy_assignments(
@@ -838,6 +875,7 @@ def iter_policy_assignments(
     manifest: Mapping[str, object],
     expected_header: Sequence[str],
     batch_size: int = 256,
+    table_name: str | None = None,
 ) -> Iterator[tuple[dict[str, ScalarCell], ...]]:
     """Read verified assignment intervals and join equal adjacent flush segments.
 
@@ -847,11 +885,17 @@ def iter_policy_assignments(
         policy_assignments.csv path. Only its saved durable prefix is read.
     manifest : Mapping[str, object]
         Host schema 2/scalar 14 or 15 run metadata, including Systems, per-pass trace
-        epochs and trace_config_ids. Incomplete games are valid trace owners.
+        epochs and trace_config_ids (or, for whole-game member rows of a
+        completed game, completed_config_ids). Incomplete games are valid trace
+        owners.
     expected_header : sequence of str
         Exact shared assignment header supplied by the writer/table authority.
     batch_size : int, optional
         Positive maximum output rows per tuple, default 256; booleans fail.
+    table_name : str or None, optional
+        Name whose saved boundary the manifest records, default None for the
+        file's own name. A copied record-source asset stored under another
+        name passes ``"policy_assignments.csv"``.
 
     Yields
     ------
@@ -873,12 +917,17 @@ def iter_policy_assignments(
     -----
     Host-only and read-only. Holds at most one pending segment per recorded
     pass/episode/slot, plus bounded input/output batches; it does not retain the
-    whole decision history. Consume fully to validate all rows. No interval is
-    invented for a missing decision, absent trace or inactive actor. This reader
-    does not prove that a declared component actually produced an action.
+    whole decision history. A slot's last segment, the one reaching its game's
+    durable trace epoch, is released at once and only its key is kept, so a
+    game summarized in one row per slot is never held to the end of the file.
+    Consume fully to validate all rows. No interval is invented for a missing
+    decision, absent trace or inactive actor. This reader does not prove that a
+    declared component actually produced an action.
     """
     passes = _pass_lookup(manifest)
     pending: dict[tuple[str, str, int, int], dict[str, ScalarCell]] = {}
+    # Slots whose last segment was released; any later row would overlap it.
+    closed: set[tuple[str, str, int, int]] = set()
     output: list[dict[str, ScalarCell]] = []
     for batch in _iter_rows(
         path,
@@ -887,9 +936,12 @@ def iter_policy_assignments(
         batch_size=batch_size,
         assignments=True,
         passes=passes,
+        table_name=table_name,
     ):
         for row in batch:
-            key, start, stop = _assignment_values(row, manifest, passes)
+            key, start, stop, epoch = _assignment_values(row, manifest, passes)
+            if key in closed:
+                raise ValueError("policy assignment intervals overlap or move backward")
             previous = pending.get(key)
             if previous is not None:
                 previous_stop = cast(int, previous["decision_stop"])
@@ -903,12 +955,18 @@ def iter_policy_assignments(
                     and previous["policy_id"] == row["policy_id"]
                 ):
                     previous["decision_stop"] = stop
-                    continue
-                output.append(previous)
-            pending[key] = row
-            if len(output) == batch_size:
-                yield tuple(output)
-                output.clear()
+                    row = previous
+                else:
+                    output.append(previous)
+                    pending[key] = row
+            else:
+                pending[key] = row
+            if stop == epoch + 1:
+                output.append(pending.pop(key))
+                closed.add(key)
+            if len(output) >= batch_size:
+                yield tuple(output[:batch_size])
+                del output[:batch_size]
     for row in pending.values():
         output.append(row)
         if len(output) == batch_size:
