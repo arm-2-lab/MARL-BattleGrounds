@@ -515,7 +515,8 @@ class DebuggerScenario:
     against the catalog with the banks put back, names it as that map and
     records the exchange (``marl_bgs.spawn_locations`` "1"); if that check
     fails, the bridge records a custom map instead. False keeps the exact
-    bank-order check every packaged map uses.
+    bank-order check every packaged map uses and records
+    ``marl_bgs.spawn_locations`` "0".
     """
 
     name: str

@@ -256,15 +256,19 @@ def _packaged_map_keys(
     Returns
     -------
     tuple of AggregationKeyV1 or None
-        Without exchanged banks: the four registered map keys (map_id,
-        map_name, map_origin "registered", map_split). With
-        ``scenario.spawn_banks_exchanged``: the same four keys, checked against
-        the config with its spawn banks put back in catalog order, then
-        ``marl_bgs.source_config_id`` (the content ID of that put-back config)
-        and ``marl_bgs.spawn_locations`` "1", the keys evaluate records for
-        exchanged spawns (``recording_context._map_recording_keys``). None when
-        the exchanged map fails that check; the caller then records a custom
-        map and never claims the packaged map.
+        The four registered map keys (map_id, map_name, map_origin
+        "registered", map_split), then ``marl_bgs.source_config_id`` and
+        ``marl_bgs.spawn_locations``, the keys evaluate records for every
+        packaged-map game (``recording_context._map_recording_keys``). Without
+        exchanged banks the map keys are checked against the config itself,
+        the source ID is that config's content ID and spawn_locations is "0".
+        With ``scenario.spawn_banks_exchanged`` they are checked against the
+        config with its spawn banks put back in catalog order, the source ID
+        is that put-back config's content ID, and spawn_locations is "1". So
+        a game and its swapped twin with the same rules share one source ID,
+        as evaluate's paired games do. None when the exchanged map fails that
+        check; the caller then records a custom map and never claims the
+        packaged map.
 
     Raises
     ------
@@ -278,6 +282,7 @@ def _packaged_map_keys(
     Host-only. It reads the packaged catalog and hashes the config; it starts
     no episode and writes no file.
     """
+    from marl_battlegrounds.evaluation.evaluation_conditions import config_record
     from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
 
     packaged_map = scenario.packaged_map
@@ -285,8 +290,15 @@ def _packaged_map_keys(
         raise ValueError("a packaged map is required")
     if not scenario.spawn_banks_exchanged:
         # Frozen Pydantic models provide their runtime hash for this host cache.
-        return registered_map_metadata(packaged_map.map_id, resolved_config)  # pyright: ignore[reportArgumentType]
-    from marl_battlegrounds.evaluation.evaluation_conditions import config_record
+        keys = registered_map_metadata(packaged_map.map_id, resolved_config)  # pyright: ignore[reportArgumentType]
+        # The check above passed, so the banks are in catalog order: choice 0.
+        return (
+            *keys,
+            AggregationKeyV1(
+                name="marl_bgs.source_config_id", value=config_record(config)[0]
+            ),
+            AggregationKeyV1(name="marl_bgs.spawn_locations", value="0"),
+        )
     from marl_battlegrounds.tasks import (
         _swap_spawn_banks,  # pyright: ignore[reportPrivateUsage]
     )
@@ -685,11 +697,11 @@ def build_debugger_evaluation_context_v1(
         When the scenario provenance names an approved map ID, the layout
         identity is that map's approved source: its catalog asset ID, catalog
         revision and semantic digest, and the aggregation keys record the map as
-        registered. A packaged map gets the same layout identity and keys. If
-        the scenario declares the packaged map's spawn banks exchanged, the
-        map is checked with the banks put back and the keys also record the
-        exchange (``marl_bgs.source_config_id`` and
-        ``marl_bgs.spawn_locations`` "1"); a failed check records a custom map
+        registered. A packaged map gets the same layout identity and keys, plus
+        ``marl_bgs.source_config_id`` and ``marl_bgs.spawn_locations``, as
+        evaluate records them: "0" for the catalog bank order, or "1" when the
+        scenario declares its spawn banks exchanged. An exchanged map is
+        checked with the banks put back; a failed check records a custom map
         with the resolved-debugger-environment layout instead. Other
         authored provenance gives the layout identity
         ``authored-map`` version 1 with the map's semantic digest, recorded as a

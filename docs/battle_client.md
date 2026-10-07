@@ -66,7 +66,8 @@ desktop and laptop screens, not phones or tablets.
 Choose exactly one `map_id` or `scenario_id`. `list_tdm_maps()` and
 `list_tdm_scenarios()` list the packaged choices. Ordinary maps default to the
 canonical five classes per team, both teams Manual, seed 0, 300 steps, score
-threshold 20 and Red Zone depth 5.0. Policy execution uses SharedObs.
+threshold 20, Red Zone depth 5.0 and Team A starting on the left (see
+[Play From Either End](#play-from-either-end)). Policy execution uses SharedObs.
 
 For complete saved-policy matchups, follow [Play Your Saved Methods](battle_client_tutorial.md).
 It includes a downloadable script, optional untrained actors, six native families,
@@ -118,6 +119,34 @@ Ordinary teams independently support one to five roster members, including
 repeated classes. `team_a_roster` and `team_b_roster` set their ordered classes.
 Controller lists follow that order. Loading weights never silently changes a
 roster or makes a slot-specific model compatible with a different roster.
+
+## Play From Either End
+
+On every packaged map Team A starts on the left and Team B on the right.
+`spawn_mode="swapped"` exchanges the two ends, as `evaluate(spawn_mode="swapped")`
+does: Team A starts, respawns and has its Red Zone on the right, and Team B on
+the left. Teams, slots, rosters and controls stay the same, so you can stay
+Team A and play a map from both ends. Each call blocks until you press Exit (and,
+if you opened the saved replay, until you close that Replay Viewer too; see
+[Save And Continue](#save-and-continue)), so these two lines play one game after
+the other:
+
+```python
+import marl_battlegrounds as marl_bgs
+
+marl_bgs.battle_client(map_id=47, team_b="tdm-alpha")  # Team A on the left
+marl_bgs.battle_client(map_id=47, team_b="tdm-alpha", spawn_mode="swapped")  # right
+```
+
+`spawn_mode` takes `"default"` (the same as leaving it out) or `"swapped"`.
+Restart keeps the chosen ends. To compare the two ends fairly, keep the map,
+rosters, seed and rules the same in both games, as `evaluate`'s paired games
+do. The saved replay names the map and records the ends the same way `evaluate`
+does: `marl_bgs.spawn_locations` is "0" for the default ends and "1" for
+swapped ones, and both games of a pair share one `marl_bgs.source_config_id`.
+`evaluate`'s third choice, `"paired"`, alternates the ends across many games,
+so a live game rejects it: start one game for each end. Fixed scenarios have
+fixed positions and reject `spawn_mode`.
 
 ## Play And Watch
 
@@ -748,8 +777,9 @@ marl_bgs.battle_client(scenario_id=1, team_a="tdm-alpha")
 
 Only Team A controllers can change. The scenario fixes its opponent, all agent
 slots, living/dead state, positions, rules, effects, timers, scores and horizon.
-Do not supply `team_b`, map, roster, seed or rule overrides, even if the value
-matches the fixed setting. Invalid setup is rejected before loading policies.
+Do not supply `team_b`, map, roster, seed, rule or `spawn_mode` overrides, even
+if the value matches the fixed setting. Invalid setup is rejected before loading
+policies.
 
 A dead agent still occupies its original slot. Do not shorten a controller list
 to the number of living agents. Methods receive the configured layout and its

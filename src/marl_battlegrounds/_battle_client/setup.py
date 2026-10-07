@@ -2,7 +2,10 @@
 
 Setup validates explicit fixed-scenario overrides before reading content or
 loading a method. It keeps all ten physical slots and the exact packaged start.
-Nothing here starts a server, runs a controller or writes a recording.
+An ordinary map can start with the two teams' spawn ends swapped; the swap
+reuses ``tasks._swap_spawn_banks``, the owner that ``evaluate`` and the
+canonical tournament call. Nothing here starts a server, runs a controller or
+writes a recording.
 """
 
 from __future__ import annotations
@@ -20,7 +23,9 @@ from marl_battlegrounds._battle_client.model import (
     SCENARIO_OPPONENT_ERROR,
     DebuggerScenario,
 )
+from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._tdm_assets import scenario_content
+from marl_battlegrounds.core.config import validate_env_config
 from marl_battlegrounds.core.env import reset
 from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
 from marl_battlegrounds.evaluation.policy_execution import Policy, System
@@ -33,6 +38,7 @@ from marl_battlegrounds.tasks import (
     DEFAULT_TDM_RED_ZONE_DEPTH,
     AgentClassName,
     _load_tdm_scenario,
+    _swap_spawn_banks,
     canonical_tournament_rosters,
     list_tdm_maps,
     list_tdm_scenarios,
@@ -96,6 +102,7 @@ def prepare_battle_setup(
     max_steps: int | Omitted = OMITTED,
     score_threshold: int | Omitted = OMITTED,
     red_zone_depth: float | Omitted = OMITTED,
+    spawn_mode: str | Omitted = OMITTED,
 ) -> BattleSetup:
     """Prepare one ordinary map or exact fixed scenario without loading methods.
 
@@ -115,18 +122,31 @@ def prepare_battle_setup(
         Ordinary defaults are 300 and 20, checked by the existing task builder.
     red_zone_depth : float or Omitted
         Ordinary default 5.0 map units, checked by the existing task builder.
+    spawn_mode : {'default', 'swapped'} or Omitted
+        Where each team starts on an ordinary map; omitted means 'default'.
+        'default' keeps the map's spawn banks: on every packaged map Team A
+        starts on the left and Team B on the right. 'swapped' exchanges the two
+        teams' complete spawn banks, as ``evaluate(spawn_mode='swapped')`` does:
+        Team A starts, respawns and has its Red Zone on the right. Teams,
+        slots, rosters and action meanings never swap. evaluate's 'paired'
+        alternates ends across many games, so one live game rejects it.
 
     Returns
     -------
     BattleSetup
-        Prepared content and unloaded sources. Restart reuses this exact content.
+        Prepared content and unloaded sources. Restart reuses this exact content,
+        spawn ends included. A swapped map sets the scenario's
+        ``spawn_banks_exchanged``. Either way the recording names the packaged
+        map and records the ends as evaluate does: ``marl_bgs.spawn_locations``
+        "0" or "1" and the shared ``marl_bgs.source_config_id``.
 
     Raises
     ------
     TypeError, ValueError
-        Source selection, controller shape or a task rule is invalid. Any explicit
-        scenario opponent, map, roster, seed or rule override is rejected, even
-        when its value equals the fixed setting. Content validation errors propagate.
+        Source selection, controller shape, spawn_mode or a task rule is invalid.
+        Any explicit scenario opponent, map, roster, seed, rule or spawn_mode
+        override is rejected, even when its value equals the fixed setting.
+        Content validation errors propagate.
 
     Notes
     -----
@@ -145,6 +165,7 @@ def prepare_battle_setup(
             ("max_steps", max_steps),
             ("score_threshold", score_threshold),
             ("red_zone_depth", red_zone_depth),
+            ("spawn_mode", spawn_mode),
         ):
             if not isinstance(value, Omitted):
                 raise ValueError(
@@ -180,6 +201,24 @@ def prepare_battle_setup(
     actual_seed = 0 if isinstance(seed, Omitted) else seed
     if type(actual_seed) is not int or not 0 <= actual_seed < 2**32:
         raise ValueError("seed must be an integer from 0 through 2**32 - 1.")
+    # Callers can pass any object at run time; check it before comparing.
+    actual_spawn_mode = cast(
+        object, "default" if isinstance(spawn_mode, Omitted) else spawn_mode
+    )
+    if isinstance(actual_spawn_mode, str) and actual_spawn_mode == "paired":
+        raise ValueError(
+            "spawn_mode='paired' alternates spawn ends across many games, and a "
+            "live game is one game. Use 'default' or 'swapped', one game for "
+            "each end."
+        )
+    if not isinstance(actual_spawn_mode, str) or actual_spawn_mode not in (
+        "default",
+        "swapped",
+    ):
+        raise ValueError(
+            f"spawn_mode must be 'default' or 'swapped', not {actual_spawn_mode!r}."
+        )
+    swapped = actual_spawn_mode == "swapped"
     defaults = canonical_tournament_rosters()
     roster_a = defaults[0] if isinstance(team_a_roster, Omitted) else team_a_roster
     roster_b = defaults[1] if isinstance(team_b_roster, Omitted) else team_b_roster
@@ -193,6 +232,10 @@ def prepare_battle_setup(
         if isinstance(red_zone_depth, Omitted)
         else red_zone_depth,
     )
+    if swapped:
+        # evaluate validates a requested swapped choice the same way.
+        config = _swap_spawn_banks(config)
+        run_config_check(validate_env_config, config)
     first = _controllers(team_a, size=len(roster_a), name="team_a")
     second = _controllers(
         "manual" if isinstance(team_b, Omitted) else team_b,
@@ -210,5 +253,6 @@ def prepare_battle_setup(
         frames=(),
         default_controlled_slot=0,
         packaged_map=map_info,
+        spawn_banks_exchanged=swapped,
     )
     return BattleSetup(scenario, actual_seed, first, second)

@@ -12,7 +12,8 @@
  * them, and never over the page chrome it is told about (the arena key stack)
  * while a clear spot exists; it shrinks only when it must and never below its
  * smallest readable size, and it is always the plate (no one-line form). The lineup draws medallions only from the given
- * authorized scene; the verdict shows in the Replay Viewer and at live game
+ * authorized scene and puts the team named by leftTeamId (Team B when the
+ * spawn ends are swapped) in its left column and first band crest; the verdict shows in the Replay Viewer and at live game
  * over (BattleClient and DevClient), never for another product, and draws
  * exactly the Honours its caller passes (every champion in both views, since
  * they come only at game over); with Full Lineup And Verdict off the lineup turns into a
@@ -318,6 +319,29 @@ test("the lineup shows only the champions in the given scene, as a card or a ban
   });
   assert.equal(band.kind, "herald-band");
   assert.deepEqual(band.crests, ["a", "b"]);
+  // Swapped spawn ends: Team B stands on the left, so its column comes first.
+  const [swapped] = heralds.records({
+    part: "lineup",
+    scene,
+    bounds,
+    mapTitle: "Teutoburg Forest",
+    leftTeamId: 2,
+  });
+  assert.deepEqual(
+    swapped.columns.map((/** @type {any} */ column) => column.teamId),
+    [2, 1],
+  );
+  assert.equal(swapped.columns[0].medallions.length, 0);
+  assert.equal(swapped.columns[1].medallions.length, 2);
+  const [swappedBand] = heralds.records({
+    part: "lineup",
+    scene,
+    bounds,
+    mapTitle: "Teutoburg Forest",
+    filters: { moment_full_cards: false },
+    leftTeamId: 2,
+  });
+  assert.deepEqual(swappedBand.crests, ["b", "a"]);
   assert.deepEqual(
     heralds.records({ part: "lineup", scene, bounds, mapTitle: "" }),
     [],

@@ -5916,12 +5916,17 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
   const tick = summary.tick?.current ?? null;
   const pointsToWin = Number.isInteger(summary.threshold) ? summary.threshold : null;
   const tickLimit = summary.tick?.limit ?? null;
+  const teams = /** @type {ReadonlyArray<Record<string, any>>} */ (summary.teams);
+  // Both cards draw the team on the field's left on the left: Team B when
+  // the spawn ends are swapped.
+  const leftTeamId = teams.find((team) => team.side === "left")?.teamId === 2 ? 2 : 1;
   if (tick === 0) {
     return heralds.records({
       part: "lineup",
       scene,
       bounds,
       filters,
+      leftTeamId,
       mapTitle: summary.map ?? "",
       mapLabel: summary.taskMode === 1 ? "Team Deathmatch" : "Combat Diagnostic",
       pointsToWin,
@@ -5933,7 +5938,6 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
         scene.map.red_zone !== undefined,
     });
   }
-  const teams = /** @type {ReadonlyArray<Record<string, any>>} */ (summary.teams);
   const scoreA = teams[0]?.scoreValue;
   const scoreB = teams[1]?.scoreValue;
   if (pointsToWin === null || !Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
@@ -5963,14 +5967,13 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
       const name = controllerLineParts(team).join(" + ");
       return policies >= 2 ? { name, short: collapsedControllerLine(team) } : { name };
     };
-    const left = teams.find((team) => team.side === "left");
     return heralds.records({
       part: "verdict",
       product: installedProductKind(),
       audience,
       bounds,
       filters,
-      leftTeamId: left?.teamId === 2 ? 2 : 1,
+      leftTeamId,
       tucked: options.tucked === true,
       chrome: options.chrome ?? [],
       verdict: {
