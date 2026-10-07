@@ -363,7 +363,11 @@ Two things to know when you read these rows:
   keep their intervals labeled "Conditional: Sampling not verified", the label
   your Elo interval carries too. They assume your games are independent
   repeats; a System that keeps memory between games breaks that assumption.
-  Member-against-member rows from `by="opponent"` stay "Available".
+  Member-against-member rows from `by="opponent"` keep their own label:
+  "Available" when either member samples at random, "Unavailable" with "No
+  random sampling variation" when neither does (scripted bots, greedy QMIX or
+  PQN-VDN). A row's `interval_status` covers its metric columns only; its
+  copied `elo_ci_*` bounds keep the rankings' own labels.
 - **Members' overall rows include your games.** A member's `by="system"` row in
   this run covers all its games here, its games against your challenger
   included, so it differs a little from the field's own published numbers. For

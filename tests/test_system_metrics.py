@@ -14,8 +14,10 @@ least one checked), a row whose matchups are all deterministic is withheld
 with "No random sampling variation" while a mixed row counts only its
 stochastic units, a row with a game of unknown sampling keeps its interval
 labeled "Conditional: Sampling not verified" with its stated assumption (and
-point_margin_summary gives the same label and bounds), and a rare column gets
-NaN bounds under an available row;
+point_margin_summary gives the same label and bounds), one pair whose passes
+have different sampling facts gets one verdict in both summaries (unknown
+wins; "No random sampling variation" only when no game is stochastic), and a
+rare column gets NaN bounds under an available row;
 games played without rows in the table make summary values NaN with a reason
 while complete by="opponent" rows stay valid; unplayed games keep descriptive
 values but no interval; a slot whose class changes gives NaN slot columns; a
@@ -433,6 +435,47 @@ def test_intervals_follow_sampling_facts(tmp_path: Path) -> None:
     assert (
         opponents[("s1", "s2")]["unavailable_reason"] == "No random sampling variation"
     )
+
+
+@pytest.mark.parametrize(
+    ("samplings", "status", "reason"),
+    [
+        (("unknown", "deterministic"), "Conditional: Sampling not verified", None),
+        (("stochastic", "deterministic"), "Available", None),
+        (
+            ("deterministic", "deterministic"),
+            "Unavailable",
+            "No random sampling variation",
+        ),
+    ],
+)
+def test_mixed_passes_give_both_summaries_one_sampling_verdict(
+    tmp_path: Path, samplings: tuple[str, str], status: str, reason: str | None
+) -> None:
+    results = load_results(_run(tmp_path, [("s1", "s2", kind) for kind in samplings]))
+    margin = _rows(results.point_margin_summary(), "system_id", "opponent_id")[
+        ("s1", "s2")
+    ]
+    metric = _rows(
+        results.system_metrics(
+            "full_metrics", by="opponent", columns=["score_difference"]
+        ),
+        "system_id",
+        "opponent_id",
+    )[("s1", "s2")]
+    assert margin["interval_status"] == metric["interval_status"] == status
+    assert margin["unavailable_reason"] == metric["unavailable_reason"] == reason
+    if reason is None:
+        assert margin["ci_low"] == pytest.approx(
+            metric["score_difference_ci_low"], abs=1e-9
+        )
+        assert margin["ci_high"] == pytest.approx(
+            metric["score_difference_ci_high"], abs=1e-9
+        )
+    else:
+        assert np.isnan(margin["ci_low"]) and np.isnan(
+            metric["score_difference_ci_low"]
+        )
 
 
 def test_unknown_sampling_keeps_intervals_labeled_conditional(tmp_path: Path) -> None:

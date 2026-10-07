@@ -3,7 +3,8 @@
 Game weights, Team A ownership, larger linked blocks and incomplete evidence
 remain visible. Unknown sampling keeps the interval, labeled "Conditional:
 Sampling not verified" with its stated assumption; deterministic games withhold
-it. Only the requested accessor resamples; cheap descriptions do not. These
+it, and so does unknown sampling beside another problem (every reason joined,
+no assumption). Only the requested accessor resamples; cheap descriptions do not. These
 synthetic fixtures test software, not learned behavior.
 """
 
@@ -123,6 +124,22 @@ def test_sampling_facts_label_or_withhold_intervals_not_observed_means(
         assert summary["conditional_interval_assumption"][0].startswith(
             "Assumes declared game groups are independent"
         )
+
+
+def test_unknown_sampling_beside_another_problem_withholds_interval(
+    tmp_path: Path,
+) -> None:
+    result = load_results(
+        _saved(tmp_path, [(0, 1, None), (0, 5, None)], omit=1, sampling="unknown")
+    )
+    summary = result.point_margin_summary()
+    assert summary["interval_status"].tolist() == ["Unavailable"]
+    assert np.isnan(summary["ci_low"]).all() and np.isnan(summary["ci_high"]).all()
+    reasons = summary["unavailable_reason"][0].split("; ")
+    assert reasons[0] == "Requested pass is incomplete or failed"
+    assert reasons[1] == "Sampling mechanism unknown"
+    assert "Requested games are incomplete" in reasons
+    assert summary["conditional_interval_assumption"][0] is None
 
 
 def test_missing_pair_stays_visible_and_resume_can_complete_it(tmp_path: Path) -> None:

@@ -11,7 +11,9 @@ evaluate call at recorded depths 0.0 and 5.0, and the second depth reuses the
 compiled System chunk. An in-memory evaluation creates no files, yet it still
 records its declared XLA flags in execution_settings and both methods' sampling
 facts, so its system_metrics rows never say "Sampling mechanism unknown" for
-built-in methods.
+built-in methods; with verified pairs, built-in methods give "Available"
+intervals and a custom Policy gives "Conditional: Sampling not verified" in
+both point_margin_summary and system_metrics.
 """
 
 import csv
@@ -139,6 +141,46 @@ def test_public_evaluate_cycles_one_total_budget_and_creates_no_files(
     summary = result.system_metrics("priority_metrics", columns=["team_a_kills"])
     assert summary["interval_status"].tolist() == ["Unavailable"]
     assert "Sampling mechanism unknown" not in summary["unavailable_reason"][0]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_in_memory_pairs_label_built_in_available_and_custom_conditional(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    base = policy("random")
+
+    def wrapped(
+        variables: PolicyTree,
+        memory: PolicyTree,
+        actor: ActorInput,
+        mask: ActionMask,
+        key: Array,
+    ) -> tuple[ActorAction, PolicyTree]:
+        return base.apply(variables, memory, actor, mask, key)
+
+    custom = Policy(
+        name="mine",
+        apply=wrapped,
+        variables=base.variables,
+        initial_carry=base.initial_carry,
+    )
+    expected = {"random": "Available", "custom": "Conditional: Sampling not verified"}
+    for label, method in (("random", "random"), ("custom", custom)):
+        result = evaluate(
+            method,
+            "random",
+            num_episodes=8,
+            maps=[12],
+            num_envs=2,
+            max_steps=2,
+            spawn_mode="paired",
+        )
+        margin = result.point_margin_summary()
+        assert margin["interval_status"].tolist() == [expected[label]]
+        assert np.isfinite(margin["ci_low"]).all()
+        summary = result.system_metrics("priority_metrics", columns=["team_a_kills"])
+        assert set(summary["interval_status"].tolist()) == {expected[label]}
     assert list(tmp_path.iterdir()) == []
 
 

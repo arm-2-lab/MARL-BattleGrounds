@@ -15,7 +15,8 @@ Shared private helpers own the side of each game (``_directions``), each
 scheduled game's sampling facts (``_game_plan``, ``_plan_record``), and the draw
 order and interval rule that ``point_margin_summary`` and ``system_metrics``
 share (``_bootstrap_indices``, ``_interval_rule``: unknown sampling alone keeps
-the range, labeled "Conditional: Sampling not verified", as Elo does).
+the range, labeled "Conditional: Sampling not verified", the label Elo rankings
+give unknown sampling).
 Whole-table allocation is explicit through ``table``; ``iter_table`` bounds raw
 row batches.
 Each saved run reads with the full-report header of its own recorded scalar
@@ -511,8 +512,11 @@ def _pass_facts(entry: Row, pass_complete: bool) -> Row:
 def _interval_rule(reasons: Sequence[str]) -> tuple[bool, str, str | None, str | None]:
     """Decide whether a summary row shows its ranges, and how it labels them.
 
-    One rule for ``point_margin_summary`` and ``system_metrics``, the rule Elo
-    rankings use too. reasons are the row's de-duplicated problems, in order.
+    One rule for ``point_margin_summary`` and ``system_metrics``. Elo rankings
+    give unknown sampling the same label, but their
+    ``conditional_interval_assumption`` describes their separate
+    ``conditional_*`` columns; here it describes the row's own bounds. reasons
+    are the row's de-duplicated problems, in order.
 
     Parameters
     ----------
@@ -1460,8 +1464,10 @@ class _View:
         pair), so reused canonical games never merge with local ones; explicit
         larger block keys keep their declared scope. Incomplete evidence keeps
         descriptive means but withholds intervals; unknown sampling alone keeps
-        them, labeled conditional (``_interval_rule``). No model or file is
-        changed.
+        them, labeled conditional (``_interval_rule``). Sampling is judged once
+        per row, as in ``system_metrics``: unknown wins, and "No random
+        sampling variation" applies only when no game is stochastic. No model
+        or file is changed.
         """
         groups: dict[tuple[str, str, str | None], Row] = {}
         for game in self._game_plan():
@@ -1482,6 +1488,7 @@ class _View:
                     "values": [],
                     "pairs": {},
                     "reasons": [],
+                    "samplings": set(),
                 },
             )
             group["scheduled_games"] += 1
@@ -1489,12 +1496,7 @@ class _View:
                 group["reasons"].append("Requested pass is incomplete or failed")
             if not game["root_known"]:
                 group["reasons"].append("Random root coordinates are unavailable")
-            if game["sampling"] != "stochastic":
-                group["reasons"].append(
-                    "Sampling mechanism unknown"
-                    if game["sampling"] == "unknown"
-                    else "No random sampling variation"
-                )
+            group["samplings"].add(game["sampling"])
             margin = None
             if row is None:
                 group["reasons"].append("Requested games are incomplete")
@@ -1583,7 +1585,20 @@ class _View:
                 )
             if complete_pairs * 2 != group["scheduled_games"]:
                 group["reasons"].append("Requested pair evidence is incomplete")
-            reasons = list(dict.fromkeys(group["reasons"]))
+            # One sampling verdict per row, as in system_metrics: unknown
+            # wins, and a row without any stochastic game cannot vary.
+            samplings = group.pop("samplings")
+            first = (
+                "Requested pass is incomplete or failed",
+                "Random root coordinates are unavailable",
+            )
+            seen = list(dict.fromkeys(group["reasons"]))
+            reasons = [reason for reason in seen if reason in first]
+            if "unknown" in samplings:
+                reasons.append("Sampling mechanism unknown")
+            elif "stochastic" not in samplings:
+                reasons.append("No random sampling variation")
+            reasons += [reason for reason in seen if reason not in first]
             compute, status, reason, assumption = _interval_rule(reasons)
             low, high = None, None
             if compute:
@@ -2873,13 +2888,18 @@ class _ResultAccess:
             Bounds use linear 2.5/97.5 percentiles. Whole verified spawn pairs
             stay together; declared larger blocks use one draw across linked
             maps. Each condition stratum needs two independent complete units.
-            Incomplete games/pairs, deterministic repetition or missing points
-            keep descriptive rows but yield NaN bounds, ``interval_status``
+            Incomplete games/pairs, deterministic repetition (no stochastic
+            game in the row) or missing points keep descriptive rows but yield
+            NaN bounds, ``interval_status``
             "Unavailable" and an ``unavailable_reason``. When the only problem
             is a method whose sampling is unknown (such as your own System),
             the bounds are kept, ``interval_status`` is "Conditional: Sampling
-            not verified" and ``conditional_interval_assumption`` states what
-            they assume, as Elo rankings do; otherwise that column is None.
+            not verified" (also when that row mixes unknown and deterministic
+            passes, as ``system_metrics`` decides) and
+            ``conditional_interval_assumption`` states what these bounds
+            assume. Elo rankings use the same label, but their assumption
+            column describes separate ``conditional_*`` columns. Otherwise
+            that column is None.
             Empty declared scope returns {}. These intervals describe fixed
             methods, not uncertainty across training seeds.
 
@@ -3035,11 +3055,16 @@ class _ResultAccess:
         actions. Built-in methods and saved actors from the built-in learners
         declare it; other Systems are "unknown". Every summary row with one of
         their games keeps its interval but labels it "Conditional: Sampling not
-        verified", as Elo rankings do: the interval assumes the game pairs are
-        independent repeats, which the records cannot prove (a System that
-        carries memory from one game to the next breaks that). In a canonical
-        run with your own challenger, that includes each member's overall row;
-        member-against-member ``by="opponent"`` rows stay "Available".
+        verified", the label Elo rankings give unknown sampling: the interval
+        assumes the game pairs are independent repeats, which the records
+        cannot prove (a System that carries memory from one game to the next
+        breaks that). In a canonical run with your own challenger, that
+        includes each member's overall row. Member-against-member
+        ``by="opponent"`` rows keep their own label: "Available" when either
+        member samples at random, "Unavailable" with "No random sampling
+        variation" when neither does (scripted bots, greedy QMIX or PQN-VDN).
+        ``interval_status`` covers a row's metric columns only; the copied
+        ``elo_ci_*`` bounds keep the rankings' own labels.
 
         **In-memory evaluations.** An ``evaluate`` call without ``output_dir``
         inspects how its methods sample, as saved runs do, so its summaries

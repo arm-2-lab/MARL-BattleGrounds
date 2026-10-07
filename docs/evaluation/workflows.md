@@ -371,10 +371,13 @@ column, with intervals.
 - Intervals need to know how each method chooses its actions. Built-in
   methods and saved actors from our learners declare it, in saved and
   in-memory runs alike; a System of your own is "unknown". Rows with its games
-  keep their intervals but say "Conditional: Sampling not verified", as Elo
-  does, and `conditional_interval_assumption` states the assumption: the game
-  pairs are independent repeats, which the records cannot prove (a System that
-  carries memory from one game to the next breaks it). See
+  keep their intervals but say "Conditional: Sampling not verified", the
+  label Elo gives unknown sampling, and `conditional_interval_assumption`
+  states what these bounds assume: the game pairs are independent repeats,
+  which the records cannot prove (a System that carries memory from one game
+  to the next breaks it). In Elo rankings that column describes their separate
+  `conditional_*` columns instead. A row's `interval_status` covers its metric
+  columns only; its copied `elo_ci_*` bounds keep the rankings' own labels. See
   [Compare Your Challenger With Every Member](canonical_tournaments.md#compare-your-challenger-with-every-member).
 - A trend across one field of Systems may not hold for stronger ones, so treat
   these numbers as diagnostics, not reward recipes.
