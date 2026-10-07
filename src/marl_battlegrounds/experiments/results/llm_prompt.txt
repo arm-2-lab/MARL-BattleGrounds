@@ -1,0 +1,101 @@
+MARL-BGs actor-text-v1; Frame: left
+Rules: Choose one move and one complete combat pair from the legal lists. All actors commit both choices from the same decision. Damage and healing are summed before health clipping and death. Combat reads starting positions and statuses; Charge relocation precedes the chosen ordinary movement. New statuses first control the next decision. Legal choices can have no effect because of game physics. Previous actions describe accepted choices, not hits.
+Abilities: Basic and Ultimate are alternatives. Priest Basic heals an ally, including self, and grants a temporary speed floor. Other Basics damage an enemy; Hunter Basic also slows it. Mage Ultimate gives self Burst damage amplification without a target. Warrior Ultimate damages, slows and stuns an enemy and moves the Warrior toward it. Hunter Ultimate damages and traps an enemy. Rogue Ultimate damages and applies slow, stun and reduced healing. Priest Ultimate heals an ally. capability_* fields describe what a unit can apply; other status fields describe effects currently on it. Use the displayed amounts, ranges and durations. Ultimate starts its full cooldown.
+Sight and control: Direct sight needs a living observer and target, range and a clear line through static obstacles; units do not block sight. Shared sight does not expand your legal combat choices. Shielded enemies are hidden; shielded units cannot use or receive targeted combat. Stun prevents movement and combat. Different slows multiply with minimum speed fraction 0.2; Priest's speed floor can raise this. Existing effects age once per tick; reapplication refreshes durations. Positive damage breaks an existing Hunter Trap in the next state, but does not remove a Trap first applied that tick. Poison reduces healing and recovery; it does not damage each tick.
+Team effects: Mage auras increase outgoing damage; Warrior auras reduce incoming damage. Living unshielded allies, including the emitter, benefit within aura range without a sight requirement. Matching auras multiply up to two emitters' strength. Recovery needs a countdown already at zero and no combat participation that tick; healing a unit already in combat counts as participation.
+Units: Positions, radii, widths and heights are map units; movement speeds are map units per tick; angles are radians; health, damage and healing use health units. Durations, cooldowns and clocks count ticks. Multipliers and fractions are dimensionless. North increases y; east increases x. Diagonal directions have unit length too. Sight and interaction radii use center-to-center distance, including their boundary.
+Geometry: Obstacle type 1 is a circular pillar and 2 is a rectangular wall. x/y give the center; radius describes a pillar, and width/height are full wall lengths. theta rotates a wall counterclockwise from the x axis. Only active obstacles participate. Bodies have their displayed radius; collisions and map boundaries can shorten or redirect movement.
+Roster: Ally/enemy numbers are stable rows 0..4. Class IDs are 1=Mage, 2=Warrior, 3=Hunter, 4=Rogue, 5=Priest; 0 means unused. Public alive flags reveal no hidden position. Source permission does not mean the source currently sees a unit. Respawn clock zero means a wave is due at transition end; a dead actor cannot act before it respawns.
+Scoring: In Team Deathmatch a death gives the opponent 1 point, or 2 in the victim's own Red Zone, using its starting position. The zone is the full-height strip beside that team's spawn edge, including its boundary. Depth is in context; zero disables it. A team wins only when it reaches the threshold with more points than the opponent. A simultaneous threshold tie, or the horizon without a threshold winner, is a draw.
+Encoding: Unlisted numeric fields and padded rows are positive zero. Zero means a whole positive-zero row. Equal unit definitions share an ID; visibility and source assignments remain separate. Current objectives have 8 rows of 12 columns; unexpected nonzero reserved values are printed. Hidden means no direct visible unit row; Not seen means no previous accepted action was supplied. All numbers preserve their original values.
+Map:
+Obstacle 0: type=1 x=4 y=7.5 radius=0.5 active=1
+Obstacle 1: type=1 x=10 y=9.5 radius=0.5 active=1
+Obstacle 2: type=1 x=6 y=0.5 radius=0.5 active=1
+Obstacle 3: type=1 x=10 y=0.5 radius=0.5 active=1
+Obstacle 4: type=1 x=14 y=0.5 radius=0.5 active=1
+Obstacle 5: type=1 x=16 y=2.5 radius=0.5 active=1
+Obstacle 6: type=1 x=16 y=7.5 radius=0.5 active=1
+Obstacle 7: type=1 x=7.8 y=2 radius=0.5 active=1
+Obstacle 8: type=1 x=12.2 y=8 radius=0.5 active=1
+Obstacle 9: type=1 x=6 y=9.5 radius=0.5 active=1
+Obstacle 10: type=1 x=12.2 y=2 radius=0.5 active=1
+Obstacle 11: type=1 x=7.8 y=8 radius=0.5 active=1
+Obstacle 12: type=1 x=14 y=9.5 radius=0.5 active=1
+Obstacle 13: type=1 x=4 y=2.5 radius=0.5 active=1
+Obstacle 14: type=2 x=8 y=5 width=0.5 height=1.5 active=1
+Obstacle 15: type=2 x=12 y=5 width=0.5 height=1.5 active=1
+Obstacle 16: type=2 x=6 y=6.5 width=1 height=0.5 active=1
+Obstacle 17: type=2 x=14 y=6.5 width=1 height=0.5 active=1
+Obstacle 18: type=2 x=6 y=3.5 width=1 height=0.5 active=1
+Obstacle 19: type=2 x=14 y=3.5 width=1 height=0.5 active=1
+Obstacle 20: type=2 x=2 y=7.9 width=0.01 height=2 active=1
+Obstacle 21: type=2 x=3 y=5 width=0.01 height=2 active=1
+Obstacle 22: type=2 x=2 y=2.1 width=0.01 height=2 active=1
+Obstacle 23: type=2 x=18 y=7.9 width=0.01 height=2 active=1
+Obstacle 24: type=2 x=17 y=5 width=0.01 height=2 active=1
+Obstacle 25: type=2 x=18 y=2.1 width=0.01 height=2 active=1
+Obstacle 26: type=2 x=10 y=1.5 width=0.01 height=1 active=1
+Obstacle 27: type=2 x=10 y=8.5 width=0.01 height=1 active=1
+Obstacle 28: type=2 x=3 y=5 width=1 height=1 theta=0.7853982 active=1
+Obstacle 29: type=2 x=17 y=5 width=1 height=1 theta=0.7853982 active=1
+Obstacle 30: type=1 x=10 y=2.5 radius=0.5 active=1
+Obstacle 31: type=1 x=10 y=7.5 radius=0.5 active=1
+Context: current_timestep=12 episode_horizon=300 map_width=20 map_height=10 ally_team_size=5 enemy_team_size=5 is_tdm=1 tdm_score_threshold=20 tdm_red_zone_depth=5
+Self row: ally_0
+Objectives: Zero
+Units (unlisted fields are zero):
+unit_0: x=8.31376 y=3.0042355 radius=0.5 active=1 alive=1 class_id=1 base_movement_speed=1 effective_movement_speed=1 observation_radius=6 basic_interaction_radius=3 current_health=80 max_health=80 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1.15 damage_mitigation_warrior_aura_multiplier=1 capability_basic_damage=13 capability_ultimate_cooldown_duration=30 capability_damage_amplification_mage_burst_duration=5 capability_damage_amplification_mage_burst_multiplier=1.5 capability_damage_amplification_mage_aura_radius=2 capability_damage_amplification_mage_aura_multiplier=1.15 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_1: x=5.88503 y=1.4976574 radius=0.5 active=1 alive=1 class_id=2 base_movement_speed=1 effective_movement_speed=1 observation_radius=6 basic_interaction_radius=1.5 ultimate_interaction_radius=5.75 current_health=200 max_health=200 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1 damage_mitigation_warrior_aura_multiplier=0.85 capability_basic_damage=8 capability_ultimate_cooldown_duration=30 capability_slow_warrior_charge_duration=5 capability_slow_warrior_charge_multiplier=0.5 capability_stun_warrior_charge_duration=1 capability_damage_mitigation_warrior_aura_radius=2 capability_damage_mitigation_warrior_aura_multiplier=0.85 capability_ultimate_damage=20 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_2: x=9.04857 y=3.718026 radius=0.5 active=1 alive=1 class_id=3 base_movement_speed=1 effective_movement_speed=1 observation_radius=6.5 basic_interaction_radius=3.5 ultimate_interaction_radius=3 current_health=100 max_health=100 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1.15 damage_mitigation_warrior_aura_multiplier=1 capability_basic_damage=6 capability_ultimate_cooldown_duration=30 capability_slow_hunter_basic_duration=1 capability_slow_hunter_basic_multiplier=0.85 capability_stun_hunter_trap_duration=4 capability_ultimate_damage=10 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_3: x=7.5343695 y=3.6408072 radius=0.5 active=1 alive=1 class_id=4 base_movement_speed=1.3 effective_movement_speed=1.3 observation_radius=6 basic_interaction_radius=1.5 ultimate_interaction_radius=1.5 current_health=100 max_health=100 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1.15 damage_mitigation_warrior_aura_multiplier=1 capability_basic_damage=12 capability_ultimate_cooldown_duration=30 capability_slow_rogue_poison_duration=5 capability_slow_rogue_poison_multiplier=0.5 capability_stun_rogue_poison_duration=1 capability_anti_heal_rogue_poison_duration=4 capability_anti_heal_rogue_poison_multiplier=0.5 capability_ultimate_damage=36 capability_out_of_combat_delay_steps=3 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_4: x=11.712795 y=3.02687 radius=0.5 is_enemy=1 active=1 alive=1 class_id=1 base_movement_speed=1 effective_movement_speed=1 observation_radius=6 basic_interaction_radius=3 current_health=80 max_health=80 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1.15 damage_mitigation_warrior_aura_multiplier=1 capability_basic_damage=13 capability_ultimate_cooldown_duration=30 capability_damage_amplification_mage_burst_duration=5 capability_damage_amplification_mage_burst_multiplier=1.5 capability_damage_amplification_mage_aura_radius=2 capability_damage_amplification_mage_aura_multiplier=1.15 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_5: x=11.010998 y=3.7395778 radius=0.5 is_enemy=1 active=1 alive=1 class_id=3 base_movement_speed=1 effective_movement_speed=1 observation_radius=6.5 basic_interaction_radius=3.5 ultimate_interaction_radius=3 current_health=100 max_health=100 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 damage_amplification_mage_aura_multiplier=1.15 damage_mitigation_warrior_aura_multiplier=1 capability_basic_damage=6 capability_ultimate_cooldown_duration=30 capability_slow_hunter_basic_duration=1 capability_slow_hunter_basic_multiplier=0.85 capability_stun_hunter_trap_duration=4 capability_ultimate_damage=10 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+unit_6: x=4.826409 y=3.5277374 radius=0.5 active=1 alive=1 class_id=5 base_movement_speed=1 effective_movement_speed=1 observation_radius=6 basic_interaction_radius=3 ultimate_interaction_radius=5.75 current_health=100 max_health=100 slow_warrior_charge_multiplier=1 slow_hunter_basic_multiplier=1 slow_rogue_poison_multiplier=1 anti_heal_rogue_poison_multiplier=1 slow_floor_priest_blessing_of_freedom_duration=1 slow_floor_priest_blessing_of_freedom_fraction=0.85 damage_amplification_mage_aura_multiplier=1 damage_mitigation_warrior_aura_multiplier=1 capability_basic_healing=8 capability_ultimate_cooldown_duration=30 capability_slow_floor_priest_blessing_of_freedom_duration=1 capability_slow_floor_priest_blessing_of_freedom_fraction=0.85 capability_ultimate_healing=200 capability_out_of_combat_delay_steps=5 capability_out_of_combat_health_regen_fraction_per_step=0.04
+Self: unit_0
+ally_0: Visible unit_0
+ally_1: Visible unit_1
+ally_2: Visible unit_2
+ally_3: Visible unit_3
+ally_4: Hidden Zero
+enemy_0: Visible unit_4
+enemy_1: Hidden Zero
+enemy_2: Visible unit_5
+enemy_3: Hidden Zero
+enemy_4: Hidden Zero
+Source ally_0: Unavailable; No visible rows
+Source ally_0 objectives: Zero
+Source ally_1: Allowed; ally_0=Visible unit_0; ally_1=Visible unit_1; ally_2=Visible unit_2; ally_3=Visible unit_3; ally_4=Visible unit_6
+Source ally_1 objectives: Zero
+Source ally_2: Allowed; ally_0=Visible unit_0; ally_1=Visible unit_1; ally_2=Visible unit_2; ally_3=Visible unit_3; enemy_0=Visible unit_4; enemy_2=Visible unit_5
+Source ally_2 objectives: Zero
+Source ally_3: Allowed; ally_0=Visible unit_0; ally_1=Visible unit_1; ally_2=Visible unit_2; ally_3=Visible unit_3; enemy_0=Visible unit_4; enemy_2=Visible unit_5
+Source ally_3 objectives: Zero
+Source ally_4: Allowed; ally_1=Visible unit_1; ally_4=Visible unit_6
+Source ally_4 objectives: Zero
+Unlisted source candidates: Hidden Zero
+Spawn lifecycle (team axes: own team, opponent):
+Spawn pads: [[[0.5,1],[0.5,3],[0.5,5],[0.5,7],[0.5,9]],[[19.5,1],[19.5,3],[19.5,5],[19.5,7],[19.5,9]]]
+Shield ticks: [[0,0,0,0,0],[0,0,0,0,0]]
+Configured shield ticks: 3
+Shield speed: 2
+Wave periods: [5,5]
+Wave countdowns: [2,2]
+Active roster: [[1,1,1,1,1],[1,1,1,1,1]]
+Alive roster: [[1,1,1,1,1],[1,1,1,1,1]]
+Class IDs: [[1,2,3,4,5],[1,2,3,4,5]]
+Previous accepted actions (targets already use your roster names):
+ally_0: move=east target=target_none ultimate=No
+ally_1: move=east target=target_none ultimate=No
+ally_2: move=east target=target_none ultimate=No
+ally_3: move=southeast target=target_none ultimate=No
+ally_4: Not seen
+enemy_0: move=west target=target_none ultimate=No
+enemy_1: Not seen
+enemy_2: move=west target=target_none ultimate=No
+enemy_3: Not seen
+enemy_4: Not seen
+Legal moves: stay, north, south, east, west, northeast, northwest, southeast, southwest
+Legal combat pairs: no_combat, ultimate, enemy_2_basic
+Combat: no_combat means no target and no Ultimate; ultimate means an untargeted Ultimate. Target names keep their roster meaning. The target and Ultimate marginal masks are the unions of the listed complete pairs.
+Reply with exactly {"move":"<legal move>","combat":"<legal combat>"}.

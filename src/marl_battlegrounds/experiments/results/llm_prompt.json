@@ -1,0 +1,26 @@
+{
+ "tick": 12,
+ "slot": 0,
+ "reflected": false,
+ "text_version": "actor-text-v1",
+ "chars": 14297,
+ "lines": 101,
+ "menu": {
+  "move": [
+   "stay",
+   "north",
+   "south",
+   "east",
+   "west",
+   "northeast",
+   "northwest",
+   "southeast",
+   "southwest"
+  ],
+  "combat": [
+   "no_combat",
+   "ultimate",
+   "enemy_2_basic"
+  ]
+ }
+}
