@@ -10,6 +10,12 @@ unrelated training. All speed figures below include that contention. The
 simulator used CPU for the development and validation games, and the same GPU
 as the model for the separate 32-environment check.
 
+Every game, panel, cost and token figure on this page was measured with prompt
+version 1 (`actor-text-v1`). The default prompt is now version 2, which names
+each unit by its roster slot (see
+[What The Text Contains](README.md#what-the-text-contains)); the measurements
+have not been repeated with it.
+
 ## Start The Model Server
 
 Use a separate model-serving environment. The tested installation used Python
@@ -267,6 +273,11 @@ RSS can count shared pages more than once. These are contended measurements,
 not isolated hardware limits.
 
 ## Prompt And Storage Cost
+
+These figures were measured with prompt version 1. Over 1,290 real views,
+version 2 is a median of 60 tokens longer (1.28%), from 17 tokens shorter to
+160 longer. The fixed rules at the top add 47 tokens, which a server's prefix
+cache can reuse; the rest of the prompt grows by a median of 13 tokens.
 
 The real compact formatter's ten development views used 2,733–4,060 text tokens,
 or 2,745–4,072 with the pinned Qwen chat wrapper. Per-view median formatting time

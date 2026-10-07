@@ -272,15 +272,18 @@ and `mirror_team_view`, as `llm.make_system` does. Then it renders the view with
 `llm.format_actor_view`. No model is called:
 
 ```bash
-XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.llm_prompt \
+JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_prompt \
     output_dir=artifacts/paper-experiments/llm-challenge-season-0/prompt
 ```
 
-It took 110 seconds on one NVIDIA RTX 5090, mostly compiling the two scripted
-Systems, with a peak of 3.5 GiB of RAM. The text
-([llm_prompt.txt](results/llm_prompt.txt)) has 101 lines and 14,297
-characters. It covers the rules, the map's obstacles, every visible unit and
-the legal menu ([llm_prompt.json](results/llm_prompt.json)): Team A's Mage may
-stay or move in eight directions, and may skip combat, use its Ultimate or hit
-enemy 2 with its Basic ability. On the CPU the unit positions differ in their
-last digits, because floating-point arithmetic rounds differently there.
+On the CPU it took 74 seconds while other work shared the machine (about 60
+seconds when idle), mostly compiling the two scripted Systems, with a peak of
+3.0 GB of RAM. The text ([llm_prompt.txt](results/llm_prompt.txt))
+uses text version `actor-text-v2` and has 92 lines and 14,611 characters. It
+covers the rules, the map's obstacles, who the agent is ("You are ally_0, the
+Mage."), every visible unit under its roster name and the legal menu
+([llm_prompt.json](results/llm_prompt.json)): Team A's Mage may stay or move in
+eight directions, and may skip combat, use its Ultimate or hit enemy 2 with its
+Basic ability. On a GPU the unit positions can differ in their last digits,
+because floating-point arithmetic rounds differently there; the committed
+example is the CPU's output.

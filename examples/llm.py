@@ -45,7 +45,7 @@ def _view_and_history(
     from marl_battlegrounds import llm
     from marl_battlegrounds.llm.actions import COMBAT_NAMES, MOVE_NAMES
 
-    parts = ["You control the actor described by Self."]
+    parts = ["You control the actor named on the 'You are' line."]
     for entry in history:
         parts.extend(
             [

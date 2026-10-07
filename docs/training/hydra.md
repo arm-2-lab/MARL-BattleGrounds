@@ -346,7 +346,9 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.llm
 ```
 
 It writes `prompt.txt`, rendered by `llm.format_actor_view` in the model's own
-frame, and `menu.json`, the tick, agent and legal choices.
+frame, and `menu.json`, the tick, agent and legal choices. Run it with
+`JAX_PLATFORMS=cpu` to reproduce the committed example's exact bytes; on a GPU
+unit positions can differ in their last digits.
 
 ## Choose Devices And Worker Limits
 

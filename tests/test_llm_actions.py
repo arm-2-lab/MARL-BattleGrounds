@@ -219,7 +219,7 @@ def test_named_charge_and_precommitted_move_match_native_public_trajectory(
         flag,
     )
     next_text = format_actor_view(next_actor, next_mask)
-    assert "ally_0: move=east target=enemy_0 ultimate=Yes" in next_text
+    assert "ally_0 (you): move=east target=enemy_0 ultimate=Yes" in next_text
     assert "ultimate_cooldown_remaining=" in next_text
     opponent = env.policy_inputs(next_observations, next_state, team=1)
     target = _row(_row(opponent.actors, 0), 0)
@@ -239,7 +239,7 @@ def test_named_charge_and_precommitted_move_match_native_public_trajectory(
             }
         else:
             self_line = next(
-                line for line in text.splitlines() if line.startswith("unit_0:")
+                line for line in text.splitlines() if line.startswith("ally_0 (you):")
             )
             assert "stun_warrior_charge_duration=" not in self_line
             assert len(legal_action_names(target_masks)["move"]) > 1

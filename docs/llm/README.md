@@ -301,21 +301,21 @@ with llm.Client("http://127.0.0.1:8000/v1", timeout=600) as client:
 print(llm.call_summary(result)["completed_games"]["team_a"])
 ```
 
-`max_tokens` covers the thinking and the answer together. A reply cut off by
-the limit is a reply failure. Under the default `failure_policy="stop"`, one
-such reply stops the run, so the example uses `"fallback"`: a cut-off reply
-becomes standing still with no attack, and `llm.call_summary` counts it. In one
-check with Qwen3.5-4B on one RTX 5090, the first tick's replies thought for
-about 2,000 to 6,000 tokens, one used all 8,192 without answering, and the
-slowest took about 50 seconds, so two full games take hours. Qwen's model card
-recommends "an output length of 32,768 tokens for most queries". The server's
-`--max-model-len` must hold the prompt plus `max_tokens`, so raise it from the
-recipe's 16,384 when you raise `max_tokens`. Set the reply limit with
-`max_tokens`, not in the editor; if an editor sets a larger one, history fitting
-reserves the larger value. The token counter reserves that many tokens of the
-model's context for the reply, which leaves less room for earlier turns. vLLM
-0.30 also accepts a `thinking_token_budget` request field that limits the
-thinking; add it in the same editor if you need it.
+`max_tokens` covers the thinking and the answer together. A reply cut off by the
+limit is a reply failure. Under the default `failure_policy="stop"`, one such
+reply stops the run, so the example uses `"fallback"`: a cut-off reply becomes
+standing still with no attack, and `llm.call_summary` counts it. In one check
+with Qwen3.5-4B on one RTX 5090, using prompt version 1, the first tick's
+replies thought for about 2,000 to 6,000 tokens, one used all 8,192 without
+answering, and the slowest took about 50 seconds, so two full games take hours.
+Qwen's model card recommends "an output length of 32,768 tokens for most
+queries". The server's `--max-model-len` must hold the prompt plus `max_tokens`,
+so raise it from the recipe's 16,384 when you raise `max_tokens`. Set the reply
+limit with `max_tokens`, not in the editor; if an editor sets a larger one,
+history fitting reserves the larger value. The token counter reserves that many
+tokens of the model's context for the reply, which leaves less room for earlier
+turns. vLLM 0.30 also accepts a `thinking_token_budget` request field that
+limits the thinking; add it in the same editor if you need it.
 
 Thinking replies take longer. A managed client gives each HTTP request 60
 seconds, so supply your own client with a longer `timeout`, as above. Runners
@@ -542,12 +542,13 @@ The default includes every supplied field family:
 | --- | --- |
 | Public rules and obstacles | Rules first, then obstacle rows in their original order |
 | Context | Current tick, horizon, dimensions, task flags, scores, thresholds and Red Zone depth |
-| Self, allies and enemies | Exact unit facts, stable roster assignments and separate visibility |
+| Who you are | `You are ally_k, the <class>.` and a Teams line naming every slot's class, with `(you)`, `dead` and `unused` marks from the public roster arrays |
+| Self, allies and enemies | Exact unit facts, one line per unit under its roster name (`ally_0` ... `enemy_4`), the actor marked `(you)`, and the actor's own sight for all ten slots |
 | Public spawn lifecycle | Pads, shields, wave rules/clocks, membership, alive flags and classes |
 | Previous accepted actions | Movement, target and Ultimate in the observer's roster names |
-| Shared sensor sources | Separate source permission, visible candidates, unit facts and objectives |
+| Shared sensor sources | Each teammate source's permission, the units it sees and its objectives; the actor's own source line says its own sight is listed above |
 | Reserved objectives | Positive-zero default; any nonzero supplied value remains explicit |
-| Masks | Legal moves and complete combat pairs; marginal combat masks are their unions |
+| Masks | Legal moves and complete combat pairs; marginal combat masks are their unions; a note that the `ally_k`/`enemy_k` part of a combat name is the target, with a fixed pattern example (`enemy_k_basic`) that names no real choice |
 
 Core's feature constants own the field names. Unit features include current
 position, health, speed and status, plus the amounts, ranges and durations the
@@ -556,15 +557,30 @@ describe effects currently on the unit. See the [Core input contract](../../src/
 for the simulator interface.
 
 The text omits positive-zero fields and padding under an explicit zero rule.
-Identical unit rows share one definition, but each observer/source assignment
-and visibility flag remains. Different facts never share a definition. There is
-no shared mutable prompt cache.
+Each unit's facts appear once, under its roster name, and the names are the same
+in every view and every earlier turn. Rows of different units are never merged,
+even when equal. If a teammate reports a unit differently from that unit's line
+(possible only with synthetic input: real games build every view from one
+table), that view gets its own line named like `enemy_2_via_ally_3`. Every row,
+visibility flag, permission and previous action can be read back exactly from
+the text. There is no shared mutable prompt cache.
 
-“Hidden” differs from a visible zero row. “Unavailable” differs from an allowed
-source that sees nothing. An all-zero previous-action row means “Not seen.”
-An accepted Stay/no-combat action is a real one-hot history entry. Previous enemy
-targets already use the observing actor's ally/enemy names; they are not swapped
-again, and a previously selected target may now be hidden.
+**Changed in `actor-text-v2` (October 2026).** Version 1 gave unit rows per-view
+IDs (`unit_0`, `unit_1`, ...). The actor was always `unit_0` while its slot was,
+for example, `ally_4`. In a thinking test with Qwen3.5-4B, replies read `unit_k`
+as slot `k`, and the Priest argued with itself about which unit it was until it
+ran out of tokens. Version 2 uses roster names and adds the `You are` line, the
+Teams line, the `(you)` marks, the own-sight line and the combat note.
+`llm.TEXT_VERSION` is part of a System's saved identity, so a run saved with
+version 1 is not resumed with version 2. Code that parses the default text must
+read roster names, not `unit_N` IDs.
+
+“Hidden” differs from a visible zero row (`Visible (Zero)`). “Unavailable”
+differs from an allowed source that sees nothing. An all-zero previous-action
+row means “Not seen.” An accepted Stay/no-combat action is a real one-hot
+history entry. Previous enemy targets already use the observing actor's
+ally/enemy names; they are not swapped again, and a previously selected target
+may now be hidden.
 
 Decimal text recovers the original float32 value, including signed zero. Integer
 lifecycle values retain their full int32 value. This exactness applies to the
@@ -597,13 +613,13 @@ to private simulator state or another actor's private input.
 
 ## Measured Development Check
 
-On 25 September 2026, Qwen3.5-4B at revision
-`851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a` completed two development games on
-map 0 against Random. Each game used seed 19671501 and a 300-tick horizon.
-The first used the default spawn end and no history; the second used the other
-end and two history turns. Both were draws with zero kills and deaths for both
-teams. These check the software routes; they do not compare history quality or
-establish playing strength.
+On 25 September 2026, with prompt version 1 (`actor-text-v1`), Qwen3.5-4B at
+revision `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a` completed two development
+games on map 0 against Random. Each game used seed 19671501 and a 300-tick
+horizon. The first used the default spawn end and no history; the second used
+the other end and two history turns. Both were draws with zero kills and deaths
+for both teams. These check the software routes; they do not compare history
+quality or establish playing strength.
 
 | Measurement | No History | Two Earlier Turns |
 | --- | ---: | ---: |
