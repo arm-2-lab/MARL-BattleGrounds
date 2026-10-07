@@ -18,7 +18,8 @@ whether the view was reflected, the text format version, the text's size and
 the legal move and combat names from llm.legal_action_names). No model is
 called and no file outside output_dir changes. results/llm_prompt.txt and
 results/llm_prompt.json are this stage's output with the default settings on
-one RTX 5090; they are the example printed in the paper's supplement.
+the CPU (JAX_PLATFORMS=cpu), so anyone can reproduce their exact bytes; they are
+the example printed in the paper's supplement.
 """
 
 from __future__ import annotations

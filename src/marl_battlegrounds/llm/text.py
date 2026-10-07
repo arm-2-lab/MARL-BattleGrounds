@@ -2,8 +2,11 @@
 
 format_actor_view is a host-only presentation helper. It never reads Core state,
 configuration, another actor's private input or a provider. Its caller chooses
-and transforms the coordinate frame before calling it. Equal float32 rows share
-one named definition; their distinct visibility and source identities remain.
+and transforms the coordinate frame before calling it. Every unit is named by
+its roster slot (ally_0 ... ally_4, enemy_0 ... enemy_4), the same names the
+combat choices use, and the actor is marked "(you)". Each unit's facts appear
+once; its own sight and each teammate source keep separate visibility and
+permission.
 """
 
 from typing import Literal, cast
@@ -18,7 +21,9 @@ from marl_battlegrounds.core.types import ActionMask
 from marl_battlegrounds.llm.actions import MOVE_NAMES, TARGET_NAMES, legal_action_names
 from marl_battlegrounds.policies.input import ActorInput
 
-TEXT_VERSION = "actor-text-v1"
+# actor-text-v2 (Oct 2026) names units by roster slot instead of v1's per-view
+# unit_N IDs, which models misread as slot numbers. Saved runs record it.
+TEXT_VERSION = "actor-text-v2"
 _DEFAULT_REPLY_INSTRUCTION = (
     'Reply with exactly {"move":"<legal move>","combat":"<legal combat>"}.'
 )
@@ -85,7 +90,9 @@ _RULES = (
     "rotates a wall counterclockwise from the x axis. Only active obstacles "
     "participate. Bodies have their displayed radius; collisions and map "
     "boundaries can shorten or redirect movement.\n"
-    "Roster: Ally/enemy numbers are stable rows 0..4. Class IDs are "
+    "Roster: ally_0 to ally_4 are your team's five slots, including you; enemy_0 "
+    "to enemy_4 are the opponent's. Names never change during a game. A unit you "
+    "do not see yourself can still have a line when a teammate sees it. Class IDs are "
     f"{core_types.MAGE_CLASS_ID}=Mage, {core_types.WARRIOR_CLASS_ID}=Warrior, "
     f"{core_types.HUNTER_CLASS_ID}=Hunter, {core_types.ROGUE_CLASS_ID}=Rogue, "
     f"{core_types.PRIEST_CLASS_ID}=Priest; 0 means unused. "
@@ -102,8 +109,9 @@ _RULES = (
     "opponent. A simultaneous threshold tie, or the horizon without a threshold "
     "winner, is a draw.\n"
     "Encoding: Unlisted numeric fields and padded rows are positive zero. "
-    "Zero means a whole positive-zero row. Equal unit definitions share an ID; "
-    "visibility and source assignments remain separate. Current objectives have "
+    "Zero means a whole positive-zero row. Each unit's facts appear once, under "
+    "its roster name; visibility and source assignments remain separate. Current "
+    "objectives have "
     "8 rows of 12 columns; unexpected nonzero reserved values are printed. "
     "Hidden means no direct visible unit row; Not seen means no previous "
     "accepted action was supplied. All numbers preserve their original values."
@@ -154,8 +162,9 @@ def _host_actor(actor: ActorInput) -> ActorInput:
     """Transfer and validate one actor's complete shapes, dtypes and finite facts.
 
     The caller must supply an already permitted ActorInput. This checks the data
-    layout, not information rights, actor identity or decision freshness. Batched
-    inputs fail instead of accidentally exposing another actor's private row.
+    layout and that self_ally_index names one of the five own-team slots (0-4),
+    not information rights, actor identity or decision freshness. Batched inputs
+    fail instead of accidentally exposing another actor's private row.
     """
     if not isinstance(actor, ActorInput):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError("Input must be one permitted ActorInput")
@@ -213,6 +222,8 @@ def _host_actor(actor: ActorInput) -> ActorInput:
             )
         if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
             raise ValueError("Actor features must be finite")
+    if not 0 <= int(np.asarray(observation.self_ally_index)) < 5:
+        raise ValueError("self_ally_index must be 0 to 4")
     return host
 
 
@@ -238,6 +249,211 @@ def _objectives(value: _HostArray) -> str:
     )
 
 
+_UNIT_NAMES = TARGET_NAMES[1:]
+"""Roster names of the ten unit slots: ally_0 ... ally_4, then enemy_0 ... enemy_4."""
+
+_CLASS_NAMES = {
+    core_types.MAGE_CLASS_ID: "Mage",
+    core_types.WARRIOR_CLASS_ID: "Warrior",
+    core_types.HUNTER_CLASS_ID: "Hunter",
+    core_types.ROGUE_CLASS_ID: "Rogue",
+    core_types.PRIEST_CLASS_ID: "Priest",
+}
+"""Class names by Core class ID, for the You are and Teams lines; 0 is unused."""
+
+
+def _teams_line(lifecycle: core_types.SpawnLifecycleObservation, you: int) -> str:
+    """Name every slot's class from the public roster arrays, marking self and state.
+
+    Parameters
+    ----------
+    lifecycle : SpawnLifecycleObservation
+        One actor's public lifecycle facts. Its active, alive and class-ID arrays
+        have shape (2, 5): own team, then opponent, in roster slot order.
+    you : int
+        The actor's own slot, 0-4, already checked by ``_host_actor``.
+
+    Returns
+    -------
+    str
+        ``"Teams: ally_0 Mage, ..., ally_4 Priest (you); enemy_0 Mage, ..."``.
+        An inactive slot reads ``unused``; an active slot that is not alive
+        gains ``dead`` in its parentheses; an unknown class ID reads
+        ``class_id N``. The raw arrays still print in the lifecycle block.
+    """
+    active = np.asarray(lifecycle.active_mask_by_agent_by_team)
+    alive = np.asarray(lifecycle.alive_mask_by_agent_by_team)
+    classes = np.asarray(lifecycle.class_ids_by_agent_by_team)
+    teams: list[str] = []
+    for team, relation in enumerate(("ally", "enemy")):
+        entries: list[str] = []
+        for slot in range(5):
+            flags = ["you"] if team == 0 and slot == you else []
+            if active[team, slot]:
+                class_id = int(classes[team, slot])
+                label = _CLASS_NAMES.get(class_id, f"class_id {class_id}")
+                if not alive[team, slot]:
+                    flags.append("dead")
+            else:
+                label = "unused"
+            marks = f" ({', '.join(flags)})" if flags else ""
+            entries.append(f"{relation}_{slot} {label}{marks}")
+        teams.append(", ".join(entries))
+    return "Teams: " + "; ".join(teams)
+
+
+def _unit_lines(host: ActorInput) -> list[str]:
+    """Print each unit's facts once under its roster name, then who sees what.
+
+    Parameters
+    ----------
+    host : ActorInput
+        One host actor input already checked by ``_host_actor``.
+
+    Returns
+    -------
+    list of str
+        The units header and one line per distinct (unit, row) pair in roster
+        order; the sentence explaining "_via_" lines when one exists; "Your own
+        row is all zero." when the self row is all zero; the actor's own sight
+        (all ten slots); one line for each of the five own-team sources, the
+        actor's own included, and its objectives; and the unlisted-candidates
+        line.
+
+    Notes
+    -----
+    A unit's main line, named by its roster name, comes from its first visible
+    nonzero row in the order: the actor's self row (self only; it counts as
+    visible), the actor's own sight tables, then sources 0-4; with no visible
+    nonzero row, from its first nonzero row. Any other distinct nonzero row of
+    the same unit gets ``<unit>_via_your_sight`` or ``<unit>_via_ally_<s>``.
+    In real games every view of one unit is the same row, so these extra lines
+    appear only for synthetic input. Rows of different units are never merged.
+    Every input row, visibility flag and permission can be read back exactly.
+    """
+    obs = host.observation
+    you = int(obs.self_ally_index)
+    bank = host.source_bank
+    self_row = np.asarray(obs.self_features)
+    own_rows = np.concatenate(
+        (np.asarray(obs.ally_unit_features), np.asarray(obs.enemy_unit_features))
+    )
+    own_seen = np.concatenate(
+        (np.asarray(obs.ally_visibility_mask), np.asarray(obs.enemy_visibility_mask))
+    )
+    source_rows = np.asarray(bank.unit_features_by_source_and_candidate)
+    source_seen = np.asarray(bank.unit_visibility_by_source_and_candidate)
+
+    def shown(unit: int) -> str:
+        """Return a unit's roster name, with ``(you)`` for the actor itself."""
+        return _UNIT_NAMES[unit] + (" (you)" if unit == you else "")
+
+    names: list[dict[bytes, str]] = []
+    definitions: list[str] = []
+    for unit in range(10):
+        views: list[tuple[str, _HostArray, bool]] = [
+            ("your_sight", own_rows[unit], bool(own_seen[unit]))
+        ]
+        views.extend(
+            (
+                f"ally_{source}",
+                source_rows[source, unit],
+                bool(source_seen[source, unit]),
+            )
+            for source in range(5)
+        )
+        if unit == you:
+            views.insert(0, ("self_row", self_row, True))
+        nonzero = [view for view in views if np.any(_nonzero(view[1]))]
+        ordered = [view for view in nonzero if view[2]] + nonzero
+        unit_names: dict[bytes, str] = {}
+        for index, (view, row, _) in enumerate(ordered):
+            key = row.tobytes()
+            if key not in unit_names:
+                name = shown(unit) if index == 0 else f"{_UNIT_NAMES[unit]}_via_{view}"
+                unit_names[key] = name.removesuffix(" (you)")
+                definitions.append(f"{name}: {_fields(row, _UNIT_FIELDS)}")
+        names.append(unit_names)
+
+    def entry(unit: int, row: _HostArray, visible: bool) -> str:
+        """Describe one view of one unit for the actor's own sight list."""
+        if not np.any(_nonzero(row)):
+            return f"{shown(unit)} {'Visible (Zero)' if visible else 'Hidden'}"
+        line = names[unit][row.tobytes()]
+        if not visible:
+            return f"{shown(unit)} Hidden, has data {line}"
+        return f"{shown(unit)} Visible" + (
+            "" if line == _UNIT_NAMES[unit] else f" ({line})"
+        )
+
+    def seen_by_source(unit: int, row: _HostArray) -> str:
+        """Describe one unit a teammate source sees, naming any differing line."""
+        if not np.any(_nonzero(row)):
+            return f"{shown(unit)} (Zero)"
+        line = names[unit][row.tobytes()]
+        return shown(unit) + ("" if line == _UNIT_NAMES[unit] else f" ({line})")
+
+    lines = [
+        "Units (each unit's facts once, under its roster name; "
+        "unlisted fields are zero):",
+        *definitions,
+    ]
+    if any(len(unit_names) > 1 for unit_names in names):
+        lines.append(
+            "A line named like enemy_2_via_ally_3 shows how that view reports "
+            "enemy_2 when it differs from enemy_2's line."
+        )
+    if not np.any(_nonzero(self_row)):
+        lines.append("Your own row is all zero.")
+    lines.append(
+        "Your own sight: "
+        + "; ".join(
+            entry(unit, own_rows[unit], bool(own_seen[unit])) for unit in range(10)
+        )
+    )
+    for source in range(5):
+        label = f"Source ally_{source}" + (" (you)" if source == you else "")
+        allowed = bool(host.source_availability[source])
+        sees = [
+            seen_by_source(unit, source_rows[source, unit])
+            for unit in range(10)
+            if source_seen[source, unit]
+        ]
+        hidden = [
+            names[unit][source_rows[source, unit].tobytes()]
+            for unit in range(10)
+            if not source_seen[source, unit]
+            and np.any(_nonzero(source_rows[source, unit]))
+        ]
+        if source == you and not allowed and not sees and not hidden:
+            text = "Unavailable; your own sight is listed above"
+        else:
+            parts = ["Allowed" if allowed else "Unavailable"]
+            if sees:
+                parts.append("sees " + ", ".join(sees))
+            if hidden:
+                parts.append("Hidden, has data " + ", ".join(hidden))
+            if len(parts) == 1:
+                parts.append("No visible rows")
+            text = "; ".join(parts)
+        objectives = _objectives(np.asarray(bank.objective_features_by_source[source]))
+        lines.extend([f"{label}: {text}", f"{label} objectives: {objectives}"])
+    lines.append("Unlisted source candidates: Hidden, no data")
+    return lines
+
+
+_COMBAT_NOTE = (
+    "Combat: In a combat name, the ally_k or enemy_k part is the target; the "
+    "ability is always your own. For example, enemy_k_basic would use your Basic "
+    "on enemy_k, and ally_k_ultimate your Ultimate on ally_k. no_combat means no "
+    "target and no Ultimate; ultimate means an "
+    "untargeted Ultimate. The target and Ultimate marginal masks are the unions "
+    "of the listed complete pairs."
+)
+"""The note under the legal menu. Its example is a pattern (k), never a real
+choice, so it cannot point the model at one target or at a masked pair."""
+
+
 def format_actor_view(
     actor: ActorInput,
     masks: ActionMask,
@@ -255,8 +471,9 @@ def format_actor_view(
         One already-filtered actor: self (58,), unit tables (5, 58), obstacles
         (32, 8), context (20,), objectives (8, 12), previous-action tables,
         public spawn lifecycle, source rows (5, 10, 58) and permissions (5,).
-        Features are finite float32; masks are Boolean; lifecycle counters and
-        self row are int32. No leading batch or actor axis is accepted.
+        Features are finite float32; masks are Boolean; lifecycle counters are
+        int32; self_ally_index is an int32 scalar from 0 to 4. No leading batch
+        or actor axis is accepted.
     masks : ActionMask
         Matching actor masks in the same decision epoch and coordinate frame.
     frame : {"left", "world"}, default="left"
@@ -276,15 +493,28 @@ def format_actor_view(
     Returns
     -------
     str
-        Deterministic plain text: public rules/map first, then current permitted
-        facts, source provenance, previous actions and legal named choices.
-        Short decimals round-trip to the original float32 including signed zero.
-        Source permission and visibility are never combined. Inputs are unchanged.
+        Deterministic plain text in this order: the version and frame line; the
+        public rules and map (only with include_static); the context; "You are
+        ally_k, the <class>." (the class is left out when that slot is inactive
+        or its class ID unknown); a Teams line naming every slot's class, with
+        "(you)", "dead" and "unused" marks from the public roster arrays; own
+        objectives; one line per unit under its roster name (ally_0 ...
+        ally_4, enemy_0 ... enemy_4, the actor marked "(you)"), followed, only
+        when they apply, by a sentence explaining "_via_" lines and "Your own
+        row is all zero."; the actor's own sight for all ten slots; one line
+        for each of the five own-team sources, the actor's own included, with
+        its permission, the units it sees and its objectives; "Unlisted source
+        candidates: Hidden, no data"; the public spawn lifecycle; previous
+        actions; legal moves and combat pairs; a fixed note on combat names;
+        and the reply instruction. Short decimals round-trip to the original
+        float32 including signed zero. Source permission and visibility are
+        never combined. Inputs are unchanged.
 
     Raises
     ------
     ValueError
-        Frame, scalar actor shapes, dtypes, finite values or masks are invalid.
+        Frame, scalar actor shapes, dtypes, finite values or masks are invalid,
+        or self_ally_index is outside 0-4.
 
     Notes
     -----
@@ -294,6 +524,17 @@ def format_actor_view(
     Information filtering and matching actor/epoch/frame are caller obligations.
     Default full-field text is optional; custom methods may format allowed data
     differently while keeping the same action checks.
+
+    The text version is TEXT_VERSION ("actor-text-v2"). Names are roster slots,
+    so they are the same in every view and every earlier turn. Each distinct
+    row of a unit is printed once. A unit's main line comes from its first
+    visible nonzero row (the self row first, then the actor's own sight, then
+    sources 0-4); a different row of the same unit, which only synthetic input
+    can produce, gets its own line named like enemy_2_via_ally_3 or
+    ally_1_via_your_sight. Every input row, visibility flag, permission and
+    previous action can be read back exactly from the text. make_system records
+    the text version in the System's identity, so a saved run cannot be resumed
+    with a different version.
     """
     if frame not in ("left", "world"):
         raise ValueError("Frame must be left or world")
@@ -309,56 +550,19 @@ def format_actor_view(
             for index, row in enumerate(obstacles)
             if np.any(_nonzero(row))
         )
+    you = int(obs.self_ally_index)
+    class_id = int(np.asarray(obs.spawn_lifecycle.class_ids_by_agent_by_team)[0, you])
+    active = bool(np.asarray(obs.spawn_lifecycle.active_mask_by_agent_by_team)[0, you])
+    role = _CLASS_NAMES.get(class_id) if active else None
     lines.extend(
         [
             f"Context: {_fields(np.asarray(obs.context_features), _CONTEXT_FIELDS)}",
-            f"Self row: ally_{int(obs.self_ally_index)}",
+            f"You are ally_{you}" + (f", the {role}." if role else "."),
+            _teams_line(obs.spawn_lifecycle, you),
             f"Objectives: {_objectives(np.asarray(obs.objective_features))}",
+            *_unit_lines(host),
         ]
     )
-    definitions: list[str] = []
-    ids: dict[bytes, str] = {}
-
-    def unit(row: _HostArray) -> str:
-        """Assign an exact-row ID within this one prompt, without a shared cache."""
-        if not np.any(_nonzero(row)):
-            return "Zero"
-        key = row.tobytes()
-        if key not in ids:
-            name = f"unit_{len(ids)}"
-            ids[key] = name
-            definitions.append(f"{name}: {_fields(row, _UNIT_FIELDS)}")
-        return ids[key]
-
-    assignments = [f"Self: {unit(np.asarray(obs.self_features))}"]
-    for relation, rows, visibility in (
-        ("ally", obs.ally_unit_features, obs.ally_visibility_mask),
-        ("enemy", obs.enemy_unit_features, obs.enemy_visibility_mask),
-    ):
-        for index, row in enumerate(np.asarray(rows)):
-            visible = "Visible" if visibility[index] else "Hidden"
-            assignments.append(f"{relation}_{index}: {visible} {unit(row)}")
-    bank = host.source_bank
-    for source in range(5):
-        permission = "Allowed" if host.source_availability[source] else "Unavailable"
-        visible = np.asarray(bank.unit_visibility_by_source_and_candidate[source])
-        rows = np.asarray(bank.unit_features_by_source_and_candidate[source])
-        entries = [
-            f"{TARGET_NAMES[candidate + 1]}="
-            f"{'Visible' if visible[candidate] else 'Hidden'} {unit(row)}"
-            for candidate, row in enumerate(rows)
-            if visible[candidate] or np.any(_nonzero(row))
-        ]
-        assignments.append(
-            f"Source ally_{source}: {permission}; "
-            + ("; ".join(entries) or "No visible rows")
-        )
-        source_objectives = _objectives(
-            np.asarray(bank.objective_features_by_source[source])
-        )
-        assignments.append(f"Source ally_{source} objectives: {source_objectives}")
-    lines.extend(["Units (unlisted fields are zero):", *definitions, *assignments])
-    lines.append("Unlisted source candidates: Hidden Zero")
     lifecycle_names = (
         "Spawn pads",
         "Shield ticks",
@@ -387,8 +591,9 @@ def format_actor_view(
                 _previous(np.asarray(targets[index]), TARGET_NAMES),
                 _previous(np.asarray(ultimates[index]), ("No", "Yes")),
             )
+            mark = " (you)" if relation == "ally" and index == you else ""
             lines.append(
-                f"{relation}_{index}: "
+                f"{relation}_{index}{mark}: "
                 + (
                     "Not seen"
                     if values == ("Not seen",) * 3
@@ -399,9 +604,7 @@ def format_actor_view(
         [
             "Legal moves: " + ", ".join(menu["move"]),
             "Legal combat pairs: " + ", ".join(menu["combat"]),
-            "Combat: no_combat means no target and no Ultimate; ultimate means an "
-            "untargeted Ultimate. Target names keep their roster meaning. The target "
-            "and Ultimate marginal masks are the unions of the listed complete pairs.",
+            _COMBAT_NOTE,
         ]
     )
     if reply_instruction is not None:

@@ -23,9 +23,13 @@ view is supplied.
 
 The example's `prompt_with_note` adds a short introduction and clearly labels
 earlier turns. It reuses `format_actor_view`, so it does not copy field names or
-formatting rules. These tutorial functions use the default left frame. If you
-choose `frame="world"`, pass that same frame to their formatter calls. The
-example keeps the default JSON parser:
+formatting rules. A prompt function that calls `format_actor_view` gets the
+current text version, `llm.TEXT_VERSION`. Every `make_system` System, with or
+without a custom prompt, records that version in its identity, so a run saved
+with one version is not resumed with another, even when your own prompt
+function does not use the default text. These tutorial functions use the
+default left frame. If you choose `frame="world"`, pass that same frame to
+their formatter calls. The example keeps the default JSON parser:
 
 ```python
 import marl_battlegrounds as marl_bgs
