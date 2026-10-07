@@ -22,7 +22,9 @@ scenario at a time, against each scenario's own scripted opponent, and give a
 results table in the same format as the scenarios stage.
 
 Results are saved after every pair of games and every scenario; running the
-same command again skips what is already saved. The stage trains nothing. Run
+same command again skips what is already saved, and refuses to continue if a
+different System (another prompt version, model or setting) made those saved
+games. The stage trains nothing. Run
 it with JAX_PLATFORMS=cpu so the games use the CPU and the model server keeps
 the GPU.
 """
@@ -185,6 +187,107 @@ def write_tables(
     return rows
 
 
+def check_saved_system(system: System, run_dir: str) -> None:
+    """Refuse to reuse saved games that a different System played as Team A.
+
+    Parameters
+    ----------
+    system : System
+        The language-model System this run plays as Team A, from
+        ``llm.make_system``.
+    run_dir : str
+        A saved pair's or scenario's run folder, as listed in ``runs.json`` or
+        ``scenario_runs.json``.
+
+    Raises
+    ------
+    ValueError
+        The folder's ``run_details.json`` is missing, unreadable or records no
+        Team A System (for example after the output folder was moved, since the
+        listed paths are absolute); or any recorded pass's Team A
+        ``parameters_digest`` differs from this System's. The digest covers the
+        System's whole declared identity, including ``llm.TEXT_VERSION``, the
+        model, its revision and the generation settings, so games made with
+        another prompt version or setting are never mixed into one table. The
+        message names the folder and, for a difference, both digests. Use a
+        fresh ``output_dir``.
+
+    Notes
+    -----
+    Reads only that file. The evaluator writes Team A's System under
+    ``passes[*]["system_ids"]["team_a"]`` and its description under
+    ``systems``; every recorded pass must match.
+    """
+    path = Path(run_dir) / "run_details.json"
+    current: object = (system.components or ({},))[0].get("parameters_digest")
+    try:
+        details = json.loads(path.read_text(encoding="utf-8"))
+        saved: set[object] = {
+            details["systems"][entry["system_ids"]["team_a"]]["components"][0][
+                "parameters_digest"
+            ]
+            for entry in details["passes"].values()
+        }
+    except OSError, ValueError, KeyError, IndexError, TypeError, AttributeError:
+        saved = set[object]()
+    if not saved:
+        raise ValueError(
+            f"No readable record of the saved games' System in {run_dir}; "
+            "use a fresh output_dir"
+        )
+    if saved != {current}:
+        raise ValueError(
+            f"The saved games in {run_dir} were made by a different System "
+            f"(saved {sorted(map(str, saved))}, this one {current}): another "
+            "prompt version, model or setting; use a fresh output_dir"
+        )
+
+
+def check_saved_runs(
+    system: System, settings: Mapping[str, Any], output_dir: Path
+) -> None:
+    """Check every saved field pair and scenario before any opponent loads or game runs.
+
+    Parameters
+    ----------
+    system : System
+        The language-model System this run plays as Team A.
+    settings : mapping
+        The stage settings; only ``maps`` and ``scenario_ids`` are read, to
+        check just the modes this run plays.
+    output_dir : pathlib.Path
+        The stage's output folder, holding ``runs.json`` and
+        ``scenarios/scenario_runs.json`` from earlier runs, if any.
+
+    Raises
+    ------
+    ValueError
+        A saved list (``runs.json`` or ``scenario_runs.json``) cannot be read,
+        or ``check_saved_system`` refuses a saved entry. Nothing is loaded or
+        played first, so a wrong folder fails at once instead of after hours
+        of field games.
+    """
+    lists: list[tuple[Path, str]] = []
+    if settings["maps"]:
+        lists.append((output_dir / "runs.json", "pairs"))
+    if settings["scenario_ids"]:
+        lists.append((output_dir / "scenarios" / "scenario_runs.json", "scenarios"))
+    for path, key in lists:
+        if not path.exists():
+            continue
+        try:
+            run_dirs = [
+                str(entry["run_dir"])
+                for entry in json.loads(path.read_text(encoding="utf-8"))[key]
+            ]
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError(
+                f"Cannot read the list of saved games in {path}; use a fresh output_dir"
+            ) from error
+        for run_dir in run_dirs:
+            check_saved_system(system, run_dir)
+
+
 def play_field(
     system: System,
     opponents: Sequence[tuple[str, str]],
@@ -215,25 +318,35 @@ def play_field(
         Every saved pair, earlier runs' first: ``map``, ``opponent``,
         ``run_dir``, the ``summarize_pair`` totals and ``seconds``.
 
+    Raises
+    ------
+    ValueError
+        A pair in ``runs.json`` was not made by this System
+        (``check_saved_system``).
+
     Notes
     -----
     Every opponent is loaded once, before the first game, so its compiled
     program is reused on every map. Pairs already in ``runs.json`` are
-    skipped. No new pair starts once the elapsed time plus the longest pair so
-    far would pass ``time_limit_hours``; a pair already playing finishes. The
+    skipped, after ``check_saved_system`` confirms, before any opponent loads,
+    that this System made every one of them. No new pair starts once the
+    elapsed time plus the longest pair so far would pass ``time_limit_hours``;
+    a pair already playing finishes. The
     evaluator opens and closes the System's model client; the model server
     keeps running.
     """
     import marl_battlegrounds as marl_bgs
 
     games = int(settings["games_per_map"])
-    loaded = {name: marl_bgs.load_method(method) for name, method in opponents}
     runs_path = output_dir / "runs.json"
     pairs: list[dict[str, Any]] = (
         json.loads(runs_path.read_text(encoding="utf-8"))["pairs"]
         if runs_path.exists()
         else []
     )
+    for pair in pairs:
+        check_saved_system(system, pair["run_dir"])
+    loaded = {name: marl_bgs.load_method(method) for name, method in opponents}
     done = {(pair["map"], pair["opponent"]) for pair in pairs}
     limit = 3600 * float(settings["time_limit_hours"])
     started = time.perf_counter()
@@ -308,11 +421,18 @@ def play_scenarios(
         ``run_dir``, ``games``, ``wins``, ``draws``, ``losses``, the model
         costs of the completed games and ``seconds``.
 
+    Raises
+    ------
+    ValueError
+        A scenario in ``scenario_runs.json`` was not made by this System
+        (``check_saved_system``), or ``evaluate_scenarios`` saved no folder.
+
     Notes
     -----
     Each scenario starts from its authored position and meets its own
     scripted opponent, TDM-Alpha or TDM-Beta. Scenarios already in
-    ``scenario_runs.json`` are skipped.
+    ``scenario_runs.json`` are skipped, after ``check_saved_system`` confirms,
+    before any game starts, that this System made every one of them.
     """
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds import llm
@@ -323,6 +443,8 @@ def play_scenarios(
         if runs_path.exists()
         else []
     )
+    for record in records:
+        check_saved_system(system, record["run_dir"])
     done = {record["scenario"] for record in records}
     for scenario in settings["scenario_ids"]:
         if scenario in done:
@@ -402,7 +524,8 @@ def main(config: DictConfig) -> dict[str, list[dict[str, Any]]]:
     ValueError
         Both modes are empty; or maps are given and no opponent is left after
         ``skip``, two opponents share a folder name, or ``games_per_map`` is
-        not a positive even number.
+        not a positive even number; or games already saved in ``output_dir``
+        were made by a different System (``check_saved_system``).
 
     Notes
     -----
@@ -438,6 +561,7 @@ def main(config: DictConfig) -> dict[str, list[dict[str, Any]]]:
         failure_policy=settings["failure_policy"],
         records=settings["records"],
     )
+    check_saved_runs(system, settings, output_dir)
     rows: list[dict[str, Any]] = []
     if settings["maps"]:
         rows = write_tables(

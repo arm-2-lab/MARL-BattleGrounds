@@ -318,7 +318,9 @@ it as Team A.
   scenario.
 
 Results are saved after every pair of games and every scenario. Running the
-same command again skips what is already saved.
+same command again skips what is already saved. If a different System (another
+prompt version, model or setting) made the saved games, the stage stops with an
+error naming the folder before it loads anything; use a fresh `output_dir`.
 
 Then explain how the model played, from the saved games and calls alone:
 

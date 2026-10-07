@@ -12,9 +12,15 @@ opponent; with no maps it plays each listed scenario once through
 evaluate_scenarios, saves it in scenarios/scenario_runs.json, skips saved
 scenarios when run again, and writes the scenarios stage's results table and
 costs.csv; it refuses an odd games_per_map and settings with neither maps nor
-scenarios. Fakes replace evaluate, evaluate_scenarios, load_method,
-make_system, call_summary and the saved-outcome reader, so no model server,
-saved opponent or game is needed.
+scenarios. Before loading any opponent or playing any game, it refuses to
+continue when a saved folder's run_details.json is missing, unreadable or
+records, in any pass, a Team A System whose parameters_digest differs from the
+current System's, or when a saved list itself cannot be read, for field pairs
+and scenarios alike, including a stale scenario folder in a command that also
+plays the field; and the real llm.make_system digest changes when
+llm.TEXT_VERSION changes. Fakes replace evaluate, evaluate_scenarios,
+load_method, make_system, call_summary and the saved-outcome reader, so no
+model server, saved opponent or game is needed.
 """
 
 import json
@@ -29,6 +35,29 @@ from omegaconf import DictConfig, OmegaConf
 import marl_battlegrounds
 from marl_battlegrounds import llm
 from marl_battlegrounds.experiments import llm_challenge, scenarios
+from marl_battlegrounds.llm import system as llm_system
+
+DIGEST = ["digest-a"]
+
+
+class FakeSystem:
+    def __init__(self, digest: str) -> None:
+        self.components: tuple[dict[str, str], ...] = ({"parameters_digest": digest},)
+
+
+def record(run_dir: Path, system: FakeSystem) -> FakeResult:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    details: dict[str, Any] = {
+        "passes": {
+            '["evaluation","1"]': {"system_ids": {"team_a": "a", "team_b": "b"}}
+        },
+        "systems": {
+            "a": {"components": list(system.components)},
+            "b": {"components": []},
+        },
+    }
+    (run_dir / "run_details.json").write_text(json.dumps(details), encoding="utf-8")
+    return FakeResult(run_dir)
 
 
 class FakeResult:
@@ -54,29 +83,27 @@ class FakeResult:
 def played(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, str]]:
     calls: list[tuple[int, str]] = []
 
-    def evaluate(system: object, opponent: str, **options: object) -> FakeResult:
-        assert system == "llm-system"
+    def evaluate(system: FakeSystem, opponent: str, **options: object) -> FakeResult:
         assert (options["num_episodes"], options["spawn_mode"]) == (2, "paired")
         calls.append((cast(list[int], options["maps"])[0], opponent))
-        return FakeResult(Path(cast(str, options["output_dir"])) / "run")
+        return record(Path(cast(str, options["output_dir"])) / "run", system)
 
     costs = {"model_calls": 800, "input_tokens": 9, "output_tokens": 3}
     costs |= {"fallback_actions": 2, "reply_failures": 2}
 
-    def make_system(*args: object, **kwargs: object) -> str:
-        return "llm-system"
+    def make_system(*args: object, **kwargs: object) -> FakeSystem:
+        return FakeSystem(DIGEST[0])
 
     def call_summary(result: FakeResult) -> dict[str, dict[str, dict[str, int]]]:
         return {"completed_games": {"team_a": costs}}
 
     def evaluate_scenarios(
-        system: object, *, scenario_ids: list[int], **options: object
+        system: FakeSystem, *, scenario_ids: list[int], **options: object
     ) -> tuple[FakeResult]:
-        assert system == "llm-system"
         assert (options["num_episodes"], options["seed"]) == (256, 20261006)
         calls.append((scenario_ids[0], "scenario"))
         folder = Path(cast(str, options["output_dir"])) / f"scenario-{scenario_ids[0]}"
-        return (FakeResult(folder),)
+        return (record(folder, system),)
 
     def count_outcomes(run_dir: object) -> dict[str, int]:
         return {"games": 256, "wins": 1, "draws": 0, "losses": 255}
@@ -87,6 +114,7 @@ def played(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, str]]:
     monkeypatch.setattr(marl_battlegrounds, "load_method", str)
     monkeypatch.setattr(llm, "make_system", make_system)
     monkeypatch.setattr(llm, "call_summary", call_summary)
+    DIGEST[0] = "digest-a"
     return calls
 
 
@@ -208,3 +236,54 @@ def test_stage_plays_scenarios_and_resumes(
 
     llm_challenge.main(config)  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
     assert len(played) == 2
+
+
+def test_stage_refuses_games_made_by_a_different_system(
+    played: list[tuple[int, str]], tmp_path: Path
+) -> None:
+    field, scenario = tmp_path / "field", tmp_path / "scenarios"
+    llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    llm_challenge.main(settings(scenario, maps=[], scenario_ids=[1]))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    assert len(played) == 5
+    DIGEST[0] = "digest-b"
+    with pytest.raises(ValueError, match="made by a different System"):
+        llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    with pytest.raises(ValueError, match="made by a different System"):
+        llm_challenge.main(settings(scenario, maps=[], scenario_ids=[1, 3]))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    # One command with a field to play and a stale scenario folder fails first.
+    with pytest.raises(ValueError, match="made by a different System"):
+        llm_challenge.main(settings(scenario, scenario_ids=[1, 3]))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    assert len(played) == 5
+    DIGEST[0] = "digest-a"
+    record = field / "map-47" / "tdm-alpha" / "run" / "run_details.json"
+    details = json.loads(record.read_text(encoding="utf-8"))
+    second = dict(details["passes"]['["evaluation","1"]'])
+    second["system_ids"] = {"team_a": "c", "team_b": "b"}
+    details["passes"]['["evaluation","2"]'] = second
+    details["systems"]["c"] = {"components": [{"parameters_digest": "digest-b"}]}
+    record.write_text(json.dumps(details), encoding="utf-8")
+    with pytest.raises(ValueError, match="made by a different System"):
+        llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    record.write_text(json.dumps({"passes": [], "systems": {}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="No readable record"):
+        llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    record.unlink()
+    with pytest.raises(ValueError, match="No readable record"):
+        llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    (field / "runs.json").write_text("not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="Cannot read the list"):
+        llm_challenge.main(settings(field))  # pyright: ignore[reportCallIssue] - Hydra passes a given config straight through.
+    assert len(played) == 5
+
+
+def test_prompt_version_changes_the_digest_the_guard_compares(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first: object = (llm_system.make_system("model").components or ({},))[0].get(
+        "parameters_digest"
+    )
+    monkeypatch.setattr(llm_system, "TEXT_VERSION", "actor-text-v1")
+    second: object = (llm_system.make_system("model").components or ({},))[0].get(
+        "parameters_digest"
+    )
+    assert isinstance(first, str) and first != second

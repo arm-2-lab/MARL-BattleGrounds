@@ -183,6 +183,11 @@ comparisons; correcting would only raise the p-values.
 **Question.** Can a language-model team be evaluated for team coordination
 with the same tools as any other System, and how does a small one do?
 
+**Prompt version.** The results below were made with prompt version 1
+(`actor-text-v1`). The stage now sends version 2 (see What The Model Reads),
+so the commands below play version 2 games, and the stage refuses to add them
+to a folder of version 1 games.
+
 **Method.** Serve Qwen3.5-9B with [the Qwen recipe](../../../docs/llm/qwen_recipe.md)'s
 vLLM settings (dynamic FP8 weights, thinking off), on one GPU. The
 `llm_challenge` stage turns it into a System with `llm.make_system`
