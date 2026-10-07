@@ -1260,7 +1260,25 @@ intervals resample whole spawn-swapped game pairs within each opponent and
 map, as Elo does; matchups that repeat exactly (see Repeated games above) add
 no width. A rank correlation of +1 means the measure rises with every step up
 in Elo and −1 that it falls; the stage also ranks all 145 team-level metrics
-in the catalog this way (`season_0_teamwork_screen.csv`).
+in the catalog this way (`season_0_teamwork_screen.csv`) and tests each one:
+
+- **Exact p-value.** The share of all 362,880 orderings of the nine ratings
+  whose rank correlation is at least as far from zero (`p_value_all`; the
+  smallest possible is 2 / 9!, about 0.0000055), the same over the six learned
+  entrants (`p_value_learned`; 720 orderings, smallest 0.0028), and
+  `p_value_all` after Holm's correction for testing all 141 metrics with a
+  value (`holm_p_value_all`).
+- **Winner check.** Over the 5,933 decided games, the share in which the
+  winner had more of the metric than the loser (`winner_higher_share`).
+- **Wins over losses.** For each entrant, the chance that one of its wins
+  shows more of the metric than one of its losses, averaged over the nine
+  (`wins_over_losses`). Near 0.5 means the metric does not change with the
+  result inside a team: it describes how the team plays, not how a game went.
+
+The class tables (`season_0_teamwork_by_class.csv`) also give the share of
+each ally class's ticks inside a Mage or Warrior aura, the share of the
+Priest's Freedom uses each class received, and the distance between each pair
+of classes.
 
 ```bash
 XLA_FLAGS=--xla_gpu_deterministic_ops=true XLA_PYTHON_CLIENT_PREALLOCATE=false \
@@ -1362,12 +1380,30 @@ useful Priest healing and of the damage it received).
 8. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
    with two or more Trap ticks left. Its Hunters trapped enemies 10,355 times
    in its 1,600 games, and its team broke none of those Traps with damage.
-9. **Limits.** These are correlations across one field of nine at Season 0's
-   level of play. A trend may weaken or reverse among stronger teams, and
-   with 145 metrics screened some strong correlations arise by chance. A
-   measure that follows strength is a diagnostic, not a recipe: rewarding it
-   directly, for example through reward shaping, may teach the measure
-   without the skill, such as a team that stays close but stops fighting.
+9. **Four trends survive the whole screen.** With Holm's correction over
+   141 metrics, four remain below 0.05: damage Warrior auras prevented,
+   damage Mage auras added and kills a Hunter's Basic helped (each +0.97,
+   p = 0.00017, Holm 0.023), and the share of kills a Warrior's Ultimate
+   helped (−0.95, Holm 0.049: 13.9-14.4% for the bots, 3.1-3.7% for the
+   learned teams). Ultimate uses stay a null (+0.45, p = 0.23).
+10. **Some trends describe the team, not the score.** Teammate distance
+    (0.49), Freedom protection (0.52, +0.93 with Elo) and time inside a
+    Warrior aura (0.52) barely change between a team's wins and its losses,
+    while kills (0.92) and deaths (0.09) follow the result. Warrior aura
+    protection is higher in a team's losses (0.38) yet rises with Elo:
+    stronger teams protect more in every kind of game.
+11. **Learned teams bring the back line into the auras.** The bots keep their
+    Priest inside the Mage's aura 23-24% of its ticks and their Hunter inside
+    the Warrior's aura 16-18%; the learned teams 46-59% and 34-61%. The bots'
+    Priests keep 34-36% of their Freedom uses for themselves and give the
+    Warrior 2-3%; learned Priests give it 8.5-13.5%.
+12. **Limits.** These are correlations across one field of nine at Season 0's
+    level of play. A trend may weaken or reverse among stronger teams, and
+    with 145 metrics screened some strong correlations arise by chance; the
+    metrics overlap, so Holm's correction is conservative. A measure that
+    follows strength is a diagnostic, not a recipe: rewarding it directly,
+    for example through reward shaping, may teach the measure without the
+    skill, such as a team that stays close but stops fighting.
 
 ### Final Policies
 

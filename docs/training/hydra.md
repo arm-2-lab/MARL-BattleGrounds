@@ -313,12 +313,16 @@ point margin, kills, deaths and teamwork measures such as focus fire, shared
 kills, spacing between allies, aura coverage and the damage auras add or
 prevent, useful healing, rescues, own-Red-Zone deaths and ability use, each
 with a 95% interval from resampling whole game pairs within each opponent and
-map. `by_class.csv` holds who damaged, helped kill and healed whom, class by
-class, from each game's agent columns read from the entrant's side.
-`elo_screen.csv` ranks every team-level metric in the catalog by its rank
-correlation with Elo, over all entrants and over the learned ones only (set
-`scripted` to name the scripted entrants), to find the measures that follow
-strength most closely. `summary.md` shows the tables from the highest Elo
+map. `by_class.csv` holds who damaged, helped kill and healed whom, whose
+aura reached which ally, who got the Priest's Freedom and how far apart each
+pair of classes stood, class by class, from each game's agent columns read
+from the entrant's side. `elo_screen.csv` ranks every team-level metric in the
+catalog by its rank correlation with Elo, over all entrants and over the
+learned ones only (set `scripted` to name the scripted entrants), to find the
+measures that follow strength most closely. It tests each one too: an exact
+permutation p-value with Holm's correction over the screen, the share of
+decided games the winner had more of it, and whether each entrant had more of
+it in its wins than in its losses. `summary.md` shows the tables from the highest Elo
 down, and `teamwork.png` plots each teamwork measure against Elo. A
 correlation across one field describes that field; it does not show that a
 measure causes strength. Set `names` to give entrants readable names (the Season 0 names are
