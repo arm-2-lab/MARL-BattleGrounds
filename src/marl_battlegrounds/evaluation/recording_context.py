@@ -52,7 +52,10 @@ from marl_battlegrounds.evaluation.models import (
 )
 from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.revision import discover_code_revision_v2
-from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
+from marl_battlegrounds.evaluation.runtime_provenance import (
+    capture_execution_settings,
+    capture_runtime_provenance,
+)
 
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.policy_execution import Policy, System
@@ -182,7 +185,9 @@ def capture_recording_provenance(
     Returns
     -------
     dict[str, object]
-        Dict containing JSON-ready code_revision and runtime_provenance models.
+        Dict containing JSON-ready code_revision and runtime_provenance models,
+        and execution_settings: this attempt's declared XLA_FLAGS and whether
+        they declare deterministic GPU ops (see capture_execution_settings).
 
     Raises
     ------
@@ -208,6 +213,7 @@ def capture_recording_provenance(
     return {
         "code_revision": code.model_dump(mode="json"),
         "runtime_provenance": runtime.model_dump(mode="json"),
+        "execution_settings": capture_execution_settings(),
     }
 
 

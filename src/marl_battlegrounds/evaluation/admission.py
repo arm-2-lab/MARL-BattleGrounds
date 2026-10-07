@@ -1498,6 +1498,9 @@ def _source_from_run(
     referenced in their original run, so those selected files must remain
     available. Their checked size/hash never grants availability to an unrecorded
     replay. This helper creates no replay and changes no original run bytes.
+    ``policy_assignments.csv``, the record of which member played each slot, is
+    copied too when the run has it, under the same ``outcomes_priority`` role as
+    the other non-full tables, so reused games keep their members.
     """
     from marl_battlegrounds.evaluation.tournament_assets import _hash_file
     from marl_battlegrounds.evaluation.tournament_reuse import record_source_identity
@@ -1517,6 +1520,7 @@ def _source_from_run(
         "tournament_results.csv",
         "matchup_results.csv",
         "map_results.csv",
+        "policy_assignments.csv",
     ):
         boundary = manifest.get("tables", {}).get(filename)
         if boundary is None or not boundary.get("durable_bytes"):

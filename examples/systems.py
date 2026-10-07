@@ -141,10 +141,12 @@ def record_examples(output_dir: Path) -> None:
 def composition_examples(output_dir: Path | None = None) -> None:
     """Use ordinary team/pool Systems in a raw game, evaluation and tournament.
 
-    output_dir optionally saves three separate result folders. Two fixed-member
-    evaluations show how to obtain paired per-member results; the mixture itself
-    makes independent per-game choices. This short CPU example checks integration,
-    not learned behavior or performance. A host member needs no new runner.
+    output_dir optionally saves three separate result folders; a saved mixture
+    also prints which member played each game, since members are recorded in
+    saved runs only. Two fixed-member evaluations show how to obtain paired
+    per-member results; the mixture itself makes independent per-game choices.
+    This short CPU example checks integration, not learned behavior or
+    performance. A host member needs no new runner.
     """
     host = marl_bgs.System("Local Host", host_act, execution="host")
     deployed = marl_bgs.team(host, "random", slots=[[4], [0, 1, 2, 3]])
@@ -168,6 +170,17 @@ def composition_examples(output_dir: Path | None = None) -> None:
         output_dir=output_dir / "mixture" if output_dir else None,
     )
     print("Mixture games:", mixture.table("episodes")["episode_id"])
+    if output_dir:
+        # Members are recorded in saved runs: the pool's draw for each game.
+        rows = mixture.table("policy_assignments")
+        drawn = {
+            int(episode): member
+            for episode, slot, member in zip(
+                rows["episode_id"], rows["global_slot"], rows["member"], strict=True
+            )
+            if slot == 5
+        }
+        print("Mixture members:", drawn)
     for name in ("random", "tdm-alpha"):
         folder = "fixed_" + name.replace("-", "_")
         paired = marl_bgs.evaluate(

@@ -235,6 +235,33 @@ If you already pass other XLA flags, add this one to the same space-separated
 and software match. It does not promise the same results on a different GPU
 model or a different JAX or CUDA version.
 
+### Check Whether Saved Games Can Repeat Exactly
+
+Every evaluation and tournament pass records what was declared, attempt by
+attempt, so you can tell before replaying whether an exact repeat is expected:
+
+```python
+results = marl_bgs.load_results("runs/my_tournament")
+print(results.execution_settings)
+# {'declared_xla_flags_by_attempt': ['--xla_gpu_deterministic_ops=true'],
+#  'declared_gpu_deterministic_ops': True}
+for entry in results.metadata["passes"].values():
+    provenance = entry["details"].get("runtime_provenance")
+    if provenance is not None:  # a tournament's schedule pass plays no games
+        print(provenance["device"])  # each playing pass's GPU
+```
+
+`declared_gpu_deterministic_ops` is True only when every attempt of every pass
+with games declared the flag. It is False when any attempt left it out or
+turned it off, and None when an attempt saved no record (runs made before this
+record existed) or spelled the setting another way, such as `=1`. A resumed run
+adds each attempt that saved games, so a run finished without the flag cannot
+claim it; a resume that saves no game changes nothing.
+Canonical results include the passes of the reused field games. The record is
+what was declared, not proof of what XLA parsed: changing `XLA_FLAGS` after JAX
+has started proves nothing. An exact repeat also needs the same GPU model and
+the same JAX and CUDA versions, which `runtime_provenance` records.
+
 ## Limits Of These Tests
 
 - One GPU model (RTX 5090), one software stack (JAX 0.10.1, CUDA 13) and one

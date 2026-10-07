@@ -220,7 +220,8 @@ def run(
     ----------
     workflow : str, default='paired'
         paired, fixed, validation, authored, save, tournament or read. Each uses the
-        existing result and evaluation APIs.
+        existing result and evaluation APIs. tournament and read also print
+        system_metrics: each System's metrics seen from its own side.
     num_envs : int, default=32
         Number of parallel games. This changes batching, not the declared game or
         transition budget.
@@ -264,6 +265,13 @@ def run(
         print("Status:", result.status)
         for rows in result.iter_table("episodes", rows=128):
             print(rows)
+        # Every System's margin and kills from its own side; {} when disabled.
+        print(
+            "Each System As Team A:",
+            result.system_metrics(
+                "priority_metrics", columns=["score_difference", "team_a_kills"]
+            ),
+        )
         return
     if workflow == "validation":
         validate(num_envs, max_steps, output_dir)
@@ -279,16 +287,23 @@ def run(
     import marl_battlegrounds as marl_bgs
 
     if workflow == "tournament":
+        # Four games per pair of Systems: two spawn pairs, enough for intervals.
         result = marl_bgs.run_tournament(
             ["random", "tdm-alpha"],
             maps=[12],
-            episodes_per_pair=2,
+            episodes_per_pair=4,
             num_envs=num_envs,
             max_steps=max_steps,
             output_dir=output_dir,
         )
         print("Rankings:", result.table("tournament_rankings"))
         print("Headlines:", result.table("tournament_headline_metrics"))
+        # Each System seen as Team A, whichever side it played. These 2-tick
+        # games are a software check: most values and interval widths are zero.
+        field = result.system_metrics(
+            "priority_metrics", columns=["score_difference", "team_a_kills"]
+        )
+        print("Each System As Team A:", field)
         return
     fixed = workflow == "fixed"
     result = marl_bgs.evaluate(

@@ -945,7 +945,7 @@ def test_historical_head_to_head_never_guesses_identity_spawn_or_points(
         result.opponent_matrix("kills")
     manifest["passes"]["0"].pop("system_ids")
     _save(directory, manifest)
-    with pytest.raises(ValueError, match="System IDs were not saved"):
+    with pytest.raises(ValueError, match="lack their original System IDs"):
         load_results(directory).head_to_head()
 
 

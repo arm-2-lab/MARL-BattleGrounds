@@ -329,6 +329,47 @@ unchanged. The shared ranking view uses unrounded stored Elo; no duplicate ranki
 CSV is written. Headlines use the same verified participant ownership and exact
 measurement rules as ordinary tournaments.
 
+### Compare Your Challenger With Every Member
+
+One call shows your challenger and every member side by side, each from its own
+side, with its Elo:
+
+```python
+field = result.system_metrics("full_metrics")
+mine = result.system_metrics("full_metrics", systems=[result.challenger_id])
+against = result.system_metrics("full_metrics", by="opponent", systems=[result.challenger_id])
+```
+
+Each row shows its System as Team A, so `team_a_kills` is always that System's
+own kills, even for a member that played Team B against you. The
+[workflows guide](workflows.md#compare-every-systems-metrics) explains the
+columns, intervals and limits.
+
+For this to compare full metrics, the field's own games need full metrics too.
+Ask for `metrics="full"` when the snapshot you compare against carries them.
+When only some games have full metrics, a summary row whose games are not all
+covered is NaN with the reason "Full metrics cover only N of M played games of
+this row", because Systems measured on different games are not comparable;
+`by="opponent"` rows with every game covered stay valid. `priority_metrics`
+always covers every game. `point_margin_summary` and `system_metrics` both keep
+reused field games in their resampled pairs.
+
+Two things to know when you read these rows:
+
+- **Your challenger's intervals.** Intervals need to know how each method
+  chooses its actions. Built-in methods and saved actors from our learners
+  declare it; a System of your own is "unknown". So rows that include your
+  challenger's games, its own row and each member's overall `by="system"` row,
+  keep their intervals labeled "Conditional: Sampling not verified", the label
+  your Elo interval carries too. They assume your games are independent
+  repeats; a System that keeps memory between games breaks that assumption.
+  Member-against-member rows from `by="opponent"` stay "Available".
+- **Members' overall rows include your games.** A member's `by="system"` row in
+  this run covers all its games here, its games against your challenger
+  included, so it differs a little from the field's own published numbers. For
+  the field alone, run the snapshot with `system=None` (it reuses the recorded
+  games and plays none) and call `system_metrics` on that result.
+
 ## Maintainer Admission Is Separate
 
 The private maintainer helpers live in `evaluation.admission`. They manage an
