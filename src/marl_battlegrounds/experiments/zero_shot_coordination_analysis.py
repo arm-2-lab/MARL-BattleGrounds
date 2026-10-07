@@ -628,7 +628,9 @@ def map_end_rows(
         One row per (opponent, map, spawn end) in first-seen order: the three
         names, ``opponent``, ``map_id``, ``side`` ("left" for spawn end
         "team_a", "right" for "team_b", "unknown" when not saved), ``games``,
-        the mean ``margin`` and ``wins``, ``draws`` and ``losses``.
+        the mean ``margin``, ``wins``, ``draws`` and ``losses``, and
+        ``<class>_distance`` for each class: the mean over games of that slot's
+        tick-weighted distance to its four teammates (as ``game_measures``).
     """
     groups: dict[tuple[str, int, str], list[int]] = {}
     for index, key in enumerate(
@@ -637,6 +639,10 @@ def map_end_rows(
         opponent, map_id, end = key
         groups.setdefault((str(opponent), int(map_id), str(end)), []).append(index)
     margin = np.asarray(team["score_difference"], np.float64)
+    distances = {
+        kind: game_measures(team, slot)["newcomer_distance"]
+        for slot, kind in enumerate(CLASSES)
+    }
     flags = (("wins", "win"), ("draws", "draw"), ("losses", "loss"))
     sides = {"team_a": "left", "team_b": "right"}
     rows: list[dict[str, Any]] = []
@@ -659,6 +665,10 @@ def map_end_rows(
                 "margin": float(np.mean(margin[indices])),
             }
             | counts
+            | {
+                f"{kind.lower()}_distance": float(np.nanmean(values[indices]))
+                for kind, values in distances.items()
+            }
         )
     return rows
 

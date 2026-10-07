@@ -273,7 +273,8 @@ The full results are in `results/zero_shot_coordination_teams.csv` (every
 team and class, with each measure, its change and intervals, and the slot
 value kept with its interval), `results/zero_shot_coordination_fit_drivers.csv`
 (finding 3) and `results/zero_shot_coordination_map_ends.csv` (every team's
-margin and results against each opponent on each map and spawn end).
+margin, results and each class's distance to its teammates against each
+opponent on each map and spawn end).
 
 **Limits.** One host, one checkpoint per method, maps 47 to 51 and one seed per
 team: the intervals describe repeated games of these fixed teams, not other

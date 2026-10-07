@@ -1,19 +1,18 @@
 """Check the zero_shot_coordination stage and its analysis on small stand-ins.
 
 Contracts: the packaged settings compose to recurrent IPPO hosting the other
-five learned Season 0 methods and Random, in all five classes, against the
-nine members on maps 47 to 51 with 200 full-metric games from seed 20261007,
-and the analysis to 2,000 draws from seed 20261007; folder_name keeps
-lowercase letters, digits and single hyphens; team_plan lists the host alone,
-then every newcomer in every class, and refuses no newcomer, repeats, the
-host as a newcomer and an unknown class; play_team plays each opponent once,
-records its run and time in runs.json after each one and skips opponents
-already recorded. The analysis: game_measures reads margin, the newcomer's
-kill help, deaths and damage and its tick-weighted distance to teammates
-(NaN with no shared ticks); game_measures also gives the newcomer's aura
-coverage of its teammates (NaN without an aura or ticks), the Priest's useful
-healing to it (NaN for the Priest) and the four kept agents' tick-weighted
-distance; paired_interval
+five learned Season 0 methods and Random, in all five classes, against the nine
+members on maps 47 to 51 with 200 full-metric games from seed 20261007, and the
+analysis to 2,000 draws from seed 20261007; folder_name keeps lowercase
+letters, digits and single hyphens; team_plan lists the host alone, then every
+newcomer in every class, and refuses no newcomer, repeats, the host as a
+newcomer and an unknown class; play_team plays each opponent once, records its
+run and time in runs.json after each one and skips opponents already recorded.
+The analysis: game_measures reads margin, the newcomer's kill help, deaths and
+damage and its tick-weighted distance to teammates (NaN with no shared ticks);
+game_measures also gives the newcomer's aura coverage of its teammates (NaN
+without an aura or ticks), the Priest's useful healing to it (NaN for the
+Priest) and the four kept agents' tick-weighted distance; paired_interval
 resamples whole units with a fixed seed, within strata when given, and gives
 zero width when every unit (or stratum) has the same mean; compare matches
 games by opponent and episode ID, refuses a missing game, a matched game on
@@ -24,8 +23,9 @@ interval from shared draws (0 for the floor itself); fit_drivers gives each
 measure's rank correlation with the margin change within each class and an
 exact two-sided permutation p-value of the mean, NaN for a constant measure;
 map_end_rows groups games by opponent, map and spawn end, an unsaved end
-labeled "unknown"; play_team also records each opponent's seconds.
-Stand-ins replace the evaluator and saved runs, so no game is played.
+labeled "unknown", with each class's mean distance to its teammates; play_team
+also records each opponent's seconds. Stand-ins replace the evaluator and saved
+runs, so no game is played.
 """
 
 import json
@@ -265,3 +265,4 @@ def test_map_end_rows_group_by_opponent_map_and_spawn_end() -> None:
     assert left["margin"] == 5.0 and right["margin"] == 2.0
     assert (right["wins"], right["losses"], right["side"]) == (1, 0, "right")
     assert left["team"] == "Team" and left["newcomer_class"] == "Mage"
+    assert left["mage_distance"] == left["warrior_distance"] == 2.0
