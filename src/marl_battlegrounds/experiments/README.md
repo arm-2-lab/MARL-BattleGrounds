@@ -289,8 +289,10 @@ python -m marl_battlegrounds.experiments.human_games_analysis \
 
 It runs on the CPU in about 30 seconds, most of it loading the six replays.
 
-**Findings against recurrent IPPO** (per 100 ticks unless stated). Each
-holds against recurrent IPPO's lopsided wins too, except where said.
+**Findings against recurrent IPPO** (per 100 ticks unless stated). Findings
+2 and 3 and the Burst damage in finding 1 hold against recurrent IPPO's
+lopsided wins too; the Ultimate timing in finding 1 comes from the replays of
+these three games.
 
 1. **The expert opens with Burst at contact and fires it with the Warrior's
    Charge.** Both Mages use Burst soon after it is ready, but recurrent
@@ -298,15 +300,16 @@ holds against recurrent IPPO's lopsided wins too, except where said.
    game and the expert's 4 to 7. The expert's Burst came within 4 ticks of
    the Warrior's Ultimate (Charge) 15 of 15 times; recurrent IPPO's, 3 of 16.
    29-45% of the expert's Mage damage came during Burst, against 16-18%
-   in recurrent IPPO's wins, and each Burst brought 70-86 damage, against
-   45-59 in its lopsided wins.
+   in recurrent IPPO's wins, and the expert's Bursts averaged 70-86 damage,
+   against 45-59 in its lopsided wins.
 2. **The expert's Priest heals slowed teammates.** Every Priest heal gives
    its target Freedom, a short floor on its speed. Freedom held up a slowed
    teammate's speed on 10-15% of the ticks it was active for the expert,
    against 5-6% for recurrent IPPO.
 3. **The expert's Rogue takes the enemy's fire.** It took 456 damage per 100
    ticks, against 272 for recurrent IPPO's Rogue in its lopsided wins, and 9
-   of the team's 13 deaths; the expert's Warrior took 248, against 477.
+   of the team's 13 deaths; the expert's Warrior took less in every game (323,
+   249 and 134, against 367, 589 and 520 on the same maps).
 4. **Differences that are mostly the size of the lead.** The expert's Priest
    took 42 damage per 100 ticks, against 141 in all of recurrent IPPO's wins
    but 88 in its lopsided ones. 15 of the expert's kills, worth 30 of its 62
@@ -329,22 +332,26 @@ holds against recurrent IPPO's lopsided wins too, except where said.
 1. **No detectable difference from recurrent IPPO alone.** Margins were +17,
    −5 and +7 (mean +6.3); recurrent IPPO alone averaged +19.4, −2.5 and +3.9
    (mean +6.9) on the same maps and spawn ends in Season 0, a difference of
-   −0.6 points per game (95% interval −6.3 to +5.1).
+   −0.6 points per game (95% interval −6.4 to +5.2, counting the spread of
+   both the three games and the Season 0 means).
 2. **The expert's Mage was at least as productive, in a different style.**
    Per 100 ticks over the three games, it helped make 4.86 kills against 4.62
    for recurrent IPPO's own Mage, dealt 718 damage against 683, and made 1.03
    kills alone against 0.47. It also died more (1.33 against 1.03), and its
    aura covered teammates less in all three games (39% against 52% of their
    ticks).
-3. **The team held level by out-killing, not by dying less.** It made 6.63
-   kills per 100 ticks against 6.40 and died 5.30 times against 4.75.
-4. **Recurrent IPPO's Priest supported the stranger less.** It gave the
-   expert's Mage 0.56 points of useful healing per point of damage taken,
-   against 0.69 for its own Mage; the zero-shot coordination run shows the
-   same cut for every learned stranger Mage (0.55 to 0.63, against 0.71).
-5. **Formation.** The expert's Mage stood 0.34 map units farther from its
-   teammates on average than recurrent IPPO's own Mage; its distance to the
-   Warrior did not change (2.98).
+3. **The team died more often and killed about as often.** It died 5.30
+   times per 100 ticks against 4.75 (more in games 4 and 5, the same in
+   game 6) and made 6.63 kills against 6.40 (more only in game 6).
+4. **Recurrent IPPO's Priest supported the stranger less.** Against PQN-VDN
+   on these maps, it gave the expert's Mage 0.56 points of useful healing per
+   point of damage taken, against 0.69 for its own Mage. Across all nine
+   opponents in the zero-shot coordination run, every learned stranger Mage
+   gets a similar cut (0.55 to 0.63, against 0.71).
+5. **Formation.** Over the three games, the expert's Mage stood farther from
+   the Hunter, Rogue and Priest (2.8, 3.6 and 2.8 map units, against 2.5, 3.0
+   and 2.4 for recurrent IPPO's own Mage in Season 0) and as far from the
+   Warrior (2.98 for both).
 
 The full tables are in `results/human_games_against_screen.csv`,
 `human_games_against_screen_lead.csv`, `human_games_classes.csv`,
