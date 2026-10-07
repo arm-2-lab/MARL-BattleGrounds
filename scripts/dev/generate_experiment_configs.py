@@ -548,6 +548,20 @@ def presets() -> dict[str, dict[str, Any]]:
             {"name": name, "method": method} for name, method in SEASON_0_FIELD
         ],
     }
+    result["speed.yaml"] = {
+        "map_id": 47,
+        "batch_sizes": [32, 64, 128, 512, 1024],
+        "steps": 500,
+        "repeats": 5,
+        "seed": 0,
+        "train_method": "mappo",
+        "train_num_envs": 1024,
+        "train_rollout_length": 32,
+        "train_blocks": 40,
+        "warmup_blocks": 3,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["resume.yaml"] = {
         "output_dir": None,
         "resume_from": "???",

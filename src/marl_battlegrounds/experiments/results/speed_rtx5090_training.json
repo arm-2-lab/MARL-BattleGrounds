@@ -1,0 +1,17 @@
+{
+ "method": "mappo",
+ "num_envs": 1024,
+ "rollout_length": 32,
+ "blocks": 40,
+ "first_block_seconds": 33.46,
+ "warm_median_seconds": 1.0967,
+ "warm_min_max_seconds": [
+  1.0893,
+  1.1347
+ ],
+ "game_steps_per_second": 29878,
+ "agent_steps_per_second": 298779,
+ "peak_jax_bytes": 4976051456,
+ "jax_pool_bytes": 8592031744,
+ "peak_ram_bytes": 4813447168
+}
