@@ -17,6 +17,10 @@ Recurrent IPPO,1441.3,1600,800,Available,warrior_ultimate_kill_fraction,0.0323,0
 Recurrent IPPO,1441.3,1600,800,Available,rescue_rate,0.661,0.6514,0.6698
 Recurrent IPPO,1441.3,1600,800,Available,own_red_zone_deaths,0.5919,0.5394,0.6456
 Recurrent IPPO,1441.3,1600,800,Available,basic_uses,651.5344,648.0904,654.9345
+Recurrent IPPO,1441.3,1600,800,Available,mage_aura_damage_share,0.0977,0.0974,0.098
+Recurrent IPPO,1441.3,1600,800,Available,warrior_aura_protection_share,0.1163,0.1157,0.1169
+Recurrent IPPO,1441.3,1600,800,Available,kills_per_tick,0.075,0.0745,0.0756
+Recurrent IPPO,1441.3,1600,800,Available,ultimates_per_tick,0.1293,0.129,0.1296
 Recurrent IPPO,1441.3,1600,800,Available,ultimate_uses,30.9925,30.8025,31.1725
 PQN-VDN,1358.4,1600,400,Available,margin,1.2988,1.1375,1.4606
 PQN-VDN,1358.4,1600,400,Available,kills,14.7338,14.6538,14.8131
@@ -36,6 +40,10 @@ PQN-VDN,1358.4,1600,400,Available,warrior_ultimate_kill_fraction,0.0309,0.0294,0
 PQN-VDN,1358.4,1600,400,Available,rescue_rate,0.7729,0.7676,0.7783
 PQN-VDN,1358.4,1600,400,Available,own_red_zone_deaths,1.3513,1.3037,1.3938
 PQN-VDN,1358.4,1600,400,Available,basic_uses,570.2894,567.7273,572.8282
+PQN-VDN,1358.4,1600,400,Available,mage_aura_damage_share,0.097,0.0967,0.0973
+PQN-VDN,1358.4,1600,400,Available,warrior_aura_protection_share,0.1179,0.1175,0.1184
+PQN-VDN,1358.4,1600,400,Available,kills_per_tick,0.0602,0.0597,0.0606
+PQN-VDN,1358.4,1600,400,Available,ultimates_per_tick,0.11,0.1096,0.1104
 PQN-VDN,1358.4,1600,400,Available,ultimate_uses,26.9469,26.7987,27.0875
 Recurrent MAPPO,1304.3,1600,800,Available,margin,2.29,2.0437,2.5319
 Recurrent MAPPO,1304.3,1600,800,Available,kills,16.9138,16.76,17.06
@@ -55,6 +63,10 @@ Recurrent MAPPO,1304.3,1600,800,Available,warrior_ultimate_kill_fraction,0.0334,
 Recurrent MAPPO,1304.3,1600,800,Available,rescue_rate,0.6087,0.5976,0.6189
 Recurrent MAPPO,1304.3,1600,800,Available,own_red_zone_deaths,0.5756,0.5319,0.6219
 Recurrent MAPPO,1304.3,1600,800,Available,basic_uses,614.2731,610.284,618.2908
+Recurrent MAPPO,1304.3,1600,800,Available,mage_aura_damage_share,0.0921,0.0917,0.0926
+Recurrent MAPPO,1304.3,1600,800,Available,warrior_aura_protection_share,0.1023,0.1017,0.1028
+Recurrent MAPPO,1304.3,1600,800,Available,kills_per_tick,0.071,0.0702,0.0717
+Recurrent MAPPO,1304.3,1600,800,Available,ultimates_per_tick,0.1242,0.1235,0.1248
 Recurrent MAPPO,1304.3,1600,800,Available,ultimate_uses,29.5975,29.4156,29.7937
 QMIX,1300.2,1600,400,Available,margin,0.6412,0.4444,0.8332
 QMIX,1300.2,1600,400,Available,kills,15.7925,15.6775,15.8994
@@ -74,6 +86,10 @@ QMIX,1300.2,1600,400,Available,warrior_ultimate_kill_fraction,0.0353,0.0337,0.03
 QMIX,1300.2,1600,400,Available,rescue_rate,0.8133,0.8078,0.8182
 QMIX,1300.2,1600,400,Available,own_red_zone_deaths,0.36,0.3369,0.3844
 QMIX,1300.2,1600,400,Available,basic_uses,606.6738,603.3424,610.0336
+QMIX,1300.2,1600,400,Available,mage_aura_damage_share,0.0874,0.0871,0.0877
+QMIX,1300.2,1600,400,Available,warrior_aura_protection_share,0.1025,0.102,0.103
+QMIX,1300.2,1600,400,Available,kills_per_tick,0.0652,0.0647,0.0657
+QMIX,1300.2,1600,400,Available,ultimates_per_tick,0.1166,0.1161,0.1171
 QMIX,1300.2,1600,400,Available,ultimate_uses,28.2556,28.0881,28.425
 Feedforward IPPO,1239.9,1600,800,Available,margin,1.7537,1.4737,2.0307
 Feedforward IPPO,1239.9,1600,800,Available,kills,15.9269,15.7837,16.0688
@@ -93,6 +109,10 @@ Feedforward IPPO,1239.9,1600,800,Available,warrior_ultimate_kill_fraction,0.0368
 Feedforward IPPO,1239.9,1600,800,Available,rescue_rate,0.7824,0.7733,0.7907
 Feedforward IPPO,1239.9,1600,800,Available,own_red_zone_deaths,0.705,0.6556,0.7556
 Feedforward IPPO,1239.9,1600,800,Available,basic_uses,612.6769,608.7422,616.4983
+Feedforward IPPO,1239.9,1600,800,Available,mage_aura_damage_share,0.0864,0.086,0.0868
+Feedforward IPPO,1239.9,1600,800,Available,warrior_aura_protection_share,0.1007,0.1,0.1013
+Feedforward IPPO,1239.9,1600,800,Available,kills_per_tick,0.0639,0.0633,0.0644
+Feedforward IPPO,1239.9,1600,800,Available,ultimates_per_tick,0.1269,0.1263,0.1274
 Feedforward IPPO,1239.9,1600,800,Available,ultimate_uses,31.64,31.4369,31.8263
 Feedforward MAPPO,1140.1,1600,800,Available,margin,-2.6931,-2.9444,-2.4418
 Feedforward MAPPO,1140.1,1600,800,Available,kills,13.1163,12.9412,13.2932
@@ -112,6 +132,10 @@ Feedforward MAPPO,1140.1,1600,800,Available,warrior_ultimate_kill_fraction,0.036
 Feedforward MAPPO,1140.1,1600,800,Available,rescue_rate,0.7577,0.7487,0.7663
 Feedforward MAPPO,1140.1,1600,800,Available,own_red_zone_deaths,1.9363,1.8456,2.0281
 Feedforward MAPPO,1140.1,1600,800,Available,basic_uses,575.0881,569.9454,580.3251
+Feedforward MAPPO,1140.1,1600,800,Available,mage_aura_damage_share,0.092,0.0915,0.0925
+Feedforward MAPPO,1140.1,1600,800,Available,warrior_aura_protection_share,0.1003,0.0995,0.1011
+Feedforward MAPPO,1140.1,1600,800,Available,kills_per_tick,0.0521,0.0514,0.0527
+Feedforward MAPPO,1140.1,1600,800,Available,ultimates_per_tick,0.121,0.1202,0.1218
 Feedforward MAPPO,1140.1,1600,800,Available,ultimate_uses,30.4775,30.1962,30.7501
 TDM-Beta,1042.5,1600,400,Available,margin,-2.9919,-3.1482,-2.8269
 TDM-Beta,1042.5,1600,400,Available,kills,14.6719,14.5781,14.77
@@ -131,6 +155,10 @@ TDM-Beta,1042.5,1600,400,Available,warrior_ultimate_kill_fraction,0.1408,0.1377,
 TDM-Beta,1042.5,1600,400,Available,rescue_rate,0.9438,0.9397,0.9477
 TDM-Beta,1042.5,1600,400,Available,own_red_zone_deaths,0.2975,0.29,0.3063
 TDM-Beta,1042.5,1600,400,Available,basic_uses,547.6725,545.576,549.8465
+TDM-Beta,1042.5,1600,400,Available,mage_aura_damage_share,0.0715,0.0712,0.0718
+TDM-Beta,1042.5,1600,400,Available,warrior_aura_protection_share,0.0894,0.089,0.0897
+TDM-Beta,1042.5,1600,400,Available,kills_per_tick,0.0691,0.0687,0.0695
+TDM-Beta,1042.5,1600,400,Available,ultimates_per_tick,0.1184,0.1181,0.1186
 TDM-Beta,1042.5,1600,400,Available,ultimate_uses,25.1494,25.045,25.2506
 TDM-Gamma,999.6,1600,400,Available,margin,-2.3931,-2.5544,-2.24
 TDM-Gamma,999.6,1600,400,Available,kills,15.05,14.9487,15.1444
@@ -150,6 +178,10 @@ TDM-Gamma,999.6,1600,400,Available,warrior_ultimate_kill_fraction,0.1389,0.1362,
 TDM-Gamma,999.6,1600,400,Available,rescue_rate,0.9334,0.9295,0.9373
 TDM-Gamma,999.6,1600,400,Available,own_red_zone_deaths,0.22,0.2131,0.2275
 TDM-Gamma,999.6,1600,400,Available,basic_uses,551.6031,549.1029,553.9432
+TDM-Gamma,999.6,1600,400,Available,mage_aura_damage_share,0.0708,0.0705,0.0711
+TDM-Gamma,999.6,1600,400,Available,warrior_aura_protection_share,0.0871,0.0867,0.0874
+TDM-Gamma,999.6,1600,400,Available,kills_per_tick,0.0711,0.0706,0.0715
+TDM-Gamma,999.6,1600,400,Available,ultimates_per_tick,0.1381,0.1379,0.1383
 TDM-Gamma,999.6,1600,400,Available,ultimate_uses,29.2394,29.1112,29.365
 TDM-Alpha,973.6,1600,400,Available,margin,-3.1113,-3.2719,-2.9487
 TDM-Alpha,973.6,1600,400,Available,kills,14.5106,14.415,14.6081
@@ -169,4 +201,8 @@ TDM-Alpha,973.6,1600,400,Available,warrior_ultimate_kill_fraction,0.1441,0.1413,
 TDM-Alpha,973.6,1600,400,Available,rescue_rate,0.9461,0.9421,0.9501
 TDM-Alpha,973.6,1600,400,Available,own_red_zone_deaths,0.1713,0.1663,0.1775
 TDM-Alpha,973.6,1600,400,Available,basic_uses,537.665,535.4921,539.7527
+TDM-Alpha,973.6,1600,400,Available,mage_aura_damage_share,0.0721,0.0718,0.0724
+TDM-Alpha,973.6,1600,400,Available,warrior_aura_protection_share,0.0901,0.0897,0.0905
+TDM-Alpha,973.6,1600,400,Available,kills_per_tick,0.0706,0.0702,0.0711
+TDM-Alpha,973.6,1600,400,Available,ultimates_per_tick,0.1211,0.1208,0.1214
 TDM-Alpha,973.6,1600,400,Available,ultimate_uses,24.8794,24.7706,24.9838

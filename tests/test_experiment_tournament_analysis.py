@@ -5,39 +5,43 @@ entrants as the saved tournament records them and mark the three scripted bots,
 with 128 parallel games and no earlier replay; compare_matches counts games
 equal in every column but run_id, with missing values equal to missing values;
 summary_columns lists every MEASURES catalog column and the 145 screened team
-metrics once each, leaving the ratio measure to ratios= and the class-table
+metrics once each, leaving the ratio measures to ratios= and the class-table
 agent columns to the per-game call; team_profiles turns a system_metrics
 summary into profiles under display names, with each measure's value and
 interval, NaN kept, and keeps an entrant whose sampling is unknown with its
-values and intervals, no resampled units, the status "Conditional: Sampling
-not verified" and no reason; class_tables
-builds the damage, kill-help, healing and damage-taken tables, the share of
-each ally class's ticks inside a Mage or Warrior aura (covered over eligible,
-NaN with nothing to count), the Priest's Freedom share by ally class and the
-class-pair distance weighted by observed ticks from per-game rows, agents 0-4
-as the entrant's team, each game's own classes, skipping inactive agents and
-missing values; screen_tests adds each screened metric's exact two-sided
-permutation p-value over all and over learned entrants, Holm's correction
-over the screen, the share of decided games the winner had more of it (ties
-and missing left out) and the chance an entrant's win shows more than its
-loss, NaN or 0.5 where nothing separates; _permutation_p counts every
-ordering up to nine entrants and draws seeded random orderings above that;
-_holm adjusts finite p-values and keeps NaN; check_sides passes when every matchup's
-mean score_difference over its per-game rows equals its saved head-to-head
-margin and refuses a mismatch or a different set of matchups; elo_correlations
-gives each measure's rank correlation with Elo, with tied values sharing their
-average rank, and NaN when every value is equal or fewer than three rated
-entrants have one; screen_measures takes each team metric's summary value per
-entrant and ranks the metrics by their correlation with the given Elo, over all
-entrants and without the scripted ones; write_outputs lists entrants from the
-highest Elo down and writes teamwork.csv (with each entrant's interval status),
-by_class.csv, elo_screen.csv, summary.md (with the correlations) and
-teamwork.png; main reads the saved Elo, joins profiles and class tables,
-records the replay's execution settings in analysis.json and refuses an entrant
-without a saved rating. Small hand-made tables and stand-in results replace
-saved runs; one small saved tournament runs the stage's own system_metrics
-calls end to end, and one saved run with an unknown-sampling entrant runs
-team_profiles.
+values and intervals, no resampled units, the status "Conditional: Sampling not
+verified" and no reason; class_tables builds the damage, kill-help, healing and
+damage-taken tables, the share of each ally class's ticks inside a Mage or
+Warrior aura (covered over eligible, NaN with nothing to count), the Priest's
+Freedom share by ally class and the class-pair distance weighted by observed
+ticks from per-game rows, agents 0-4 as the entrant's team, each game's own
+classes, skipping inactive agents and missing values; per_tick marks per-game
+totals (not fractions, distances or averages) and summary_columns asks for
+episode_length; screen_measures puts per-game totals per 100 ticks and treats a
+rate constant up to float noise as having no trend; screen_tests adds each
+screened metric's exact two-sided permutation p-value over all and over learned
+entrants, Holm's correction and the Westfall-Young max-statistic correction
+over the screen, the share of decided games the winner had more of it (ties and
+missing left out) and, inside each matchup cell of one opponent, map and spawn
+end, the chance a win shows more than a loss, NaN or 0.5 where nothing
+separates; _permutation_p counts every ordering up to nine entrants and draws
+seeded random orderings above that, counted with one added hit; _max_t gives
+the max-statistic p-values; _holm adjusts finite p-values and keeps NaN;
+check_sides passes when every matchup's mean score_difference over its per-game
+rows equals its saved head-to-head margin and refuses a mismatch or a different
+set of matchups; elo_correlations gives each measure's rank correlation with
+Elo, with tied values sharing their average rank, and NaN when every value is
+equal or fewer than three rated entrants have one; screen_measures takes each
+team metric's summary value per entrant and ranks the metrics by their
+correlation with the given Elo, over all entrants and without the scripted
+ones; write_outputs lists entrants from the highest Elo down and writes
+teamwork.csv (with each entrant's interval status), by_class.csv,
+elo_screen.csv, summary.md (with the correlations) and teamwork.png; main reads
+the saved Elo, joins profiles and class tables, records the replay's execution
+settings in analysis.json and refuses an entrant without a saved rating. Small
+hand-made tables and stand-in results replace saved runs; one small saved
+tournament runs the stage's own system_metrics calls end to end, and one saved
+run with an unknown-sampling entrant runs team_profiles.
 """
 
 # pyright: reportPrivateUsage=false
@@ -103,6 +107,15 @@ def test_summary_columns_cover_every_measure_once() -> None:
     assert "team_a_win" not in columns and "team_a_score" not in columns
 
 
+def test_per_tick_covers_per_game_totals_only() -> None:
+    assert stage.per_tick("team_a_kills")
+    assert stage.per_tick("team_a_damage_from_mage_aura")
+    assert not stage.per_tick("team_a_multi_contributor_kill_fraction")
+    assert not stage.per_tick("team_a_ally_distance_mean")
+    assert not stage.per_tick("team_a_mean_observed_respawn_wait_steps")
+    assert "episode_length" in stage.summary_columns()
+
+
 def summary(rows: int = 2) -> defaultdict[str, Any]:
     # Entrant "x-run" and entrant "y"; every column not set here is zero.
     table: defaultdict[str, Any] = defaultdict(lambda: np.zeros(rows))
@@ -117,6 +130,7 @@ def summary(rows: int = 2) -> defaultdict[str, Any]:
     table["team_a_kills_ci_low"] = np.array([6.5, np.nan])
     table["team_a_kills_ci_high"] = np.array([7.5, np.nan])
     table["team_a_rescue_rate"] = np.array([np.nan, 0.5])
+    table["episode_length"] = np.full(rows, 200.0)
     return table
 
 
@@ -185,6 +199,7 @@ def games(rows: int = 3) -> defaultdict[str, Any]:
     table["agent_4_to_agent_0_effective_healing_done"] = np.array([25.0, 0.0, 0.0])
     table["agent_1_damage_received"] = np.array([30.0, 0.0, 0.0])
     table["agent_3_damage_received"] = np.array([10.0, 99.0, 0.0])
+    table["episode_length"] = np.full(rows, 200.0)
     return table
 
 
@@ -243,6 +258,10 @@ def test_screen_tests_give_exact_p_values_and_game_checks() -> None:
     count = 50
     table: dict[str, Any] = {
         "system_name": np.array(["a-run", "B"] * count, dtype=object),
+        "opponent_name": np.array(["B", "a-run"] * count, dtype=object),
+        "map_id": np.full(2 * count, 47),
+        "spawn_end": np.array(["team_a", "team_b"] * count, dtype=object),
+        "episode_length": np.full(2 * count, 100.0),
         "run_id": np.array(["r"] * 2 * count),
         "phase": np.array(["p"] * 2 * count),
         "pass_id": np.array(["0"] * 2 * count),
@@ -259,14 +278,23 @@ def test_screen_tests_give_exact_p_values_and_game_checks() -> None:
     assert kills["p_value_all"] == pytest.approx(2 / 24)
     assert kills["p_value_learned"] == pytest.approx(2 / 6)
     assert kills["holm_p_value_all"] == pytest.approx(2 / 24)
+    # The only metric with a value sets the maximum itself.
+    assert kills["max_t_p_value_all"] == pytest.approx(2 / 24)
     assert kills["winner_higher_share"] == 1.0
     assert kills["decided_games_compared"] == count
     assert kills["wins_over_losses"] == 1.0
     assert math.isnan(shared["p_value_all"]) and math.isnan(shared["holm_p_value_all"])
+    assert math.isnan(shared["max_t_p_value_all"])
     assert math.isnan(shared["winner_higher_share"])
     assert shared["decided_games_compared"] == 0
     assert shared["wins_over_losses"] == 0.5
     assert screen[0].keys() < kills.keys()
+    # Inside one matchup cell, a's wins come only against B: holding the
+    # opponent fixed, a measure higher in every loss gives 0.
+    flipped = dict(table)
+    flipped["team_a_kills"] = np.where(table["team_a_win"] == 1, 1.0, 5.0)
+    (reversed_kills, _) = stage.screen_tests(screen, flipped, elo, {"a-run": "A"})
+    assert reversed_kills["wins_over_losses"] == 0.0
 
 
 def test_permutation_p_values_and_holm() -> None:
@@ -276,9 +304,14 @@ def test_permutation_p_values_and_holm() -> None:
     assert math.isnan(stage._permutation_p([1.0, 1.0, 1.0], [1.0, 2.0, 3.0]))
     assert math.isnan(stage._permutation_p([1.0, math.nan, 2.0], [1.0, 2.0, 3.0]))
     ten = [float(value) for value in range(stage.EXACT_ENTRANTS + 1)]
-    # Ten entrants use random orderings: a perfect order is almost never matched.
+    # Ten entrants use random orderings, counted with one added hit and draw.
     assert stage._orderings(len(ten)).shape == (stage.PERMUTATION_DRAWS, len(ten))
-    assert stage._permutation_p(ten, ten) < 1e-3
+    assert 0 < stage._permutation_p(ten, ten) < 1e-3
+    # The maximum over two metrics reaches 1 when either one is in perfect
+    # order: 2 orderings each, 4 of the 24.
+    pair = [[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 4.0, 3.0]]
+    adjusted = stage._max_t(pair, [1, 2, 3, 4])
+    assert adjusted[0] == pytest.approx(4 / 24) and adjusted[0] <= adjusted[1]
     adjusted = stage._holm([0.01, 0.04, 0.03, math.nan])
     assert adjusted[:3] == pytest.approx([0.03, 0.06, 0.06])
     assert math.isnan(adjusted[3])
@@ -325,13 +358,19 @@ def test_screen_measures_ranks_team_metrics_by_elo() -> None:
     table["system_name"] = np.array(["x", "y", "z"], dtype=object)
     table["team_a_kills"] = np.array([6.0, 4.0, 2.0])
     table["team_a_multi_contributor_kill_fraction"] = np.array([0.7, np.nan, 0.5])
+    # Float noise on a truly constant rate must not become a trend.
+    table["team_a_action_acceptance_rate"] = 1.0 - np.array([1e-9, 3e-9, 2e-9])
+    table["episode_length"] = np.array([200.0, 100.0, 400.0])
     elo = {"X": 1300.0, "y": 1200.0, "z": 1100.0}
     rows = stage.screen_measures(table, elo, {"x": "X"}, scripted=["z"])
     by_name = {row["measure"]: row for row in rows}
     assert len(rows) == len(stage.SCREEN_COLUMNS)
-    assert rows[0]["measure"] == "kills"
-    assert (rows[0]["X"], rows[0]["y"], rows[0]["z"]) == (6.0, 4.0, 2.0)
-    assert rows[0]["correlation_all"] == pytest.approx(1.0)
+    assert rows[0]["measure"] == "kills" and rows[0]["scale"] == "per 100 ticks"
+    # Kills are per-game totals: 6 in 200 ticks is 3 per 100 ticks.
+    assert (rows[0]["X"], rows[0]["y"], rows[0]["z"]) == (3.0, 4.0, 0.5)
+    assert math.isnan(by_name["action_acceptance_rate"]["correlation_all"])
+    assert by_name["multi_contributor_kill_fraction"]["scale"] == "as summarized"
+    assert rows[0]["correlation_all"] == pytest.approx(0.5)
     # Two learned entrants are too few for a correlation.
     assert math.isnan(rows[0]["correlation_learned"])
     shared = by_name["multi_contributor_kill_fraction"]
@@ -387,7 +426,7 @@ def test_stage_calls_work_on_a_saved_tournament(tmp_path: Path) -> None:
     profiles = stage.team_profiles(table)
     assert len(profiles) == 3
     assert all(profile["games"] == 8 for profile in profiles.values())
-    columns = ["score_difference", "team_a_win", "team_a_loss"]
+    columns = ["score_difference", "team_a_win", "team_a_loss", "episode_length"]
     per_game = results.system_metrics(
         "full_metrics",
         by="game",
@@ -399,6 +438,7 @@ def test_stage_calls_work_on_a_saved_tournament(tmp_path: Path) -> None:
     screen = stage.screen_measures(table, elo)
     assert len(screen) == len(stage.SCREEN_COLUMNS)
     tested = stage.screen_tests(screen, per_game, elo)
+    assert all("max_t_p_value_all" in row for row in tested)
     assert all(0 <= row["decided_games_compared"] <= 12 for row in tested)
 
 

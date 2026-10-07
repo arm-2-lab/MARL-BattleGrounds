@@ -138,7 +138,7 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
     (
         "freedom_protection",
         "team_a_freedom_protection_fraction",
-        "Share of living ticks on which the Priest's Freedom weakened a slow",
+        "Share of ticks with Freedom on which it held up a slowed ally's speed",
     ),
     (
         "warrior_ultimate_kill_fraction",
@@ -157,19 +157,40 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
     ),
     ("basic_uses", "team_a_basic_activations", "Basic abilities used per game"),
     (
+        "mage_aura_damage_share",
+        "mage_aura_damage_share",
+        "Share of the team's damage that Mage auras added",
+    ),
+    (
+        "warrior_aura_protection_share",
+        "warrior_aura_protection_share",
+        "Damage Warrior auras prevented per point of damage the team took",
+    ),
+    ("kills_per_tick", "kills_per_tick", "Kills per tick"),
+    ("ultimates_per_tick", "ultimates_per_tick", "Ultimate abilities used per tick"),
+    (
         "ultimate_uses",
         "team_a_ultimate_activations",
         "Ultimate abilities used per game",
     ),
 )
 
-# The one measure without its own catalog column: kills on slowed enemies
-# divided by all kills, each total combined separately.
+# Measures without their own catalog column, each a total divided by a total
+# over all of an entrant's games: kills on slowed enemies over all kills, the
+# auras' payoff over the damage it belongs to (so longer games do not count
+# more), and kills and Ultimates per tick.
 RATIOS = {
     "slowed_kill_fraction": (
         "team_a_kills_of_hunter_basic_slow_recipient",
         "team_a_kills",
-    )
+    ),
+    "mage_aura_damage_share": ("team_a_damage_from_mage_aura", "team_a_damage_done"),
+    "warrior_aura_protection_share": (
+        "team_a_damage_prevented_by_warrior_aura",
+        "team_a_damage_received",
+    ),
+    "kills_per_tick": ("team_a_kills", "episode_length"),
+    "ultimates_per_tick": ("team_a_ultimate_activations", "episode_length"),
 }
 
 # Measures that are game results; the figure shows only the teamwork after them.
@@ -249,11 +270,12 @@ CLASS_COLUMNS = tuple(
     ]
 )
 
-# Step 5's tests: an entrant needs this many wins and as many losses before
-# its wins and losses are compared; exact p-values enumerate every ordering of
-# up to EXACT_ENTRANTS ratings, and larger fields draw PERMUTATION_DRAWS random
-# orderings from PERMUTATION_SEED.
-MIN_GAMES = 20
+# Step 5's tests: a matchup cell (one entrant, opponent, map and spawn end)
+# needs this many wins and as many losses before its wins and losses are
+# compared; exact p-values enumerate every ordering of up to EXACT_ENTRANTS
+# ratings, and larger fields draw PERMUTATION_DRAWS random orderings from
+# PERMUTATION_SEED.
+MIN_CELL_RESULTS = 2
 EXACT_ENTRANTS = 9
 PERMUTATION_DRAWS = 100_000
 PERMUTATION_SEED = 20261007
@@ -269,6 +291,41 @@ SCREEN_COLUMNS = tuple(
 )
 
 
+# Units the screen compares per 100 ticks when the catalog sums them per game
+# (counts, health and ticks), because games last different times.
+PER_TICK_UNITS = frozenset({"count", "health", "agent_steps", "steps", "pair_steps"})
+
+
+def per_tick(column: str) -> bool:
+    """Tell whether the screen compares a column per 100 ticks.
+
+    Parameters
+    ----------
+    column : str
+        A catalog column, such as ``team_a_kills``.
+
+    Returns
+    -------
+    bool
+        True for per-game totals: a unit in ``PER_TICK_UNITS``, no summary
+        weight in the catalog (the summary is a mean per game) and no "mean"
+        in the name (so averages such as a mean respawn wait keep their
+        scale). False for fractions, distances and averages.
+
+    Notes
+    -----
+    Learned Season 0 teams draw far more often than the scripted bots (20-29%
+    of games against 2.5-4.8%), and draws run the full 300 ticks, so a per-game
+    total partly measures game length.
+    """
+    info = METRIC_COLUMNS_BY_NAME[column]
+    return (
+        info.unit in PER_TICK_UNITS
+        and info.summary_weight is None
+        and "mean" not in column.removeprefix("team_a_")
+    )
+
+
 def summary_columns() -> list[str]:
     """List the full-metric columns one system_metrics call needs, once each.
 
@@ -276,12 +333,13 @@ def summary_columns() -> list[str]:
     -------
     list of str
         The ``MEASURES`` columns that are catalog columns, then
-        ``SCREEN_COLUMNS``, in that order without repeats. The ``RATIOS``
-        measure is not listed: ``ratios=`` reads its two input columns itself.
+        ``SCREEN_COLUMNS`` and ``episode_length`` (for the screen's per-tick
+        values), in that order without repeats. The ``RATIOS``
+        measures are not listed: ``ratios=`` reads their input columns itself.
         The class tables read ``CLASS_COLUMNS`` per game instead.
     """
     names = [column for _, column, _ in MEASURES if column not in RATIOS]
-    return list(dict.fromkeys([*names, *SCREEN_COLUMNS]))
+    return list(dict.fromkeys([*names, *SCREEN_COLUMNS, "episode_length"]))
 
 
 def compare_matches(
@@ -618,7 +676,7 @@ def screen_measures(
     ----------
     summary : mapping of str to numpy.ndarray
         The ``system_metrics`` summary that ``team_profiles`` also reads; it
-        must hold ``SCREEN_COLUMNS``.
+        must hold ``SCREEN_COLUMNS`` and ``episode_length``.
     elo : mapping of str to float
         Display name to the saved tournament's Elo rating, for every entrant.
     names : mapping of str to str or None, default=None
@@ -632,11 +690,13 @@ def screen_measures(
     -------
     list of dict
         One row per ``SCREEN_COLUMNS`` metric: ``measure`` (the name after
-        ``team_a_``), ``unit``, ``description`` (the catalog's description for
-        one team), ``correlation_all`` and ``correlation_learned`` (rank
-        correlations with Elo, as in ``elo_correlations``, over all entrants
-        and over those not in ``scripted``) and each entrant's value under its
-        display name. Rows are sorted from the strongest correlation over all
+        ``team_a_``), ``unit``, ``scale`` ("per 100 ticks" for ``per_tick``
+        columns, else "as summarized"), ``description`` (the catalog's
+        description for one team), ``correlation_all`` and
+        ``correlation_learned`` (rank correlations with Elo, as in
+        ``elo_correlations``, over all entrants and over those not in
+        ``scripted``) and each entrant's value on that scale under its display
+        name. Rows are sorted from the strongest correlation over all
         entrants, rising or falling, down.
 
     Notes
@@ -644,24 +704,30 @@ def screen_measures(
     Values are the summary's own, combined by each column's catalog rule:
     counts are means per game, fractions with a saved denominator are total
     numerator over total denominator, and the few without one are means per
-    game (``metric_catalog.SUMMARY_WEIGHT_MISSING``). With about 145 metrics and a
-    field of nine, some strong correlations appear by chance; read a trend
-    together with its learned correlation and meaning.
+    game (``metric_catalog.SUMMARY_WEIGHT_MISSING``). Per-game totals are then
+    divided by the entrant's mean game length and multiplied by 100. With about
+    145 metrics and a field of nine, some strong correlations appear by chance;
+    read a trend together with its learned correlation and meaning.
     """
     names = names or {}
     entrants = [names.get(str(name), str(name)) for name in summary["system_name"]]
     learned = [name for name in entrants if name not in scripted]
+    length = np.asarray(summary["episode_length"], np.float64)
     rows: list[dict[str, Any]] = []
     for name in SCREEN_COLUMNS:
         column = METRIC_COLUMNS_BY_NAME[name]
+        scale = 100.0 / length if per_tick(name) else np.ones_like(length)
         values = {
             entrant: float(value)
-            for entrant, value in zip(entrants, summary[name], strict=True)
+            for entrant, value in zip(
+                entrants, np.asarray(summary[name], np.float64) * scale, strict=True
+            )
         }
         description = column.description.replace("Team A's", "the team's")
         row: dict[str, Any] = {
             "measure": name.removeprefix("team_a_"),
             "unit": column.unit,
+            "scale": "per 100 ticks" if per_tick(name) else "as summarized",
             "description": description.replace("Team A", "the team"),
             "correlation_all": _rank_correlation(values, elo, entrants),
             "correlation_learned": _rank_correlation(values, elo, learned),
@@ -679,7 +745,7 @@ def screen_tests(
     names: Mapping[str, str] | None = None,
     scripted: Collection[str] = (),
 ) -> list[dict[str, Any]]:
-    """Test each screened metric's trend with Elo three ways.
+    """Test each screened metric's trend with Elo, across teams and inside matchups.
 
     Parameters
     ----------
@@ -688,9 +754,10 @@ def screen_tests(
         display name.
     games : mapping of str to numpy.ndarray
         ``results.system_metrics("full_metrics", by="game", ...)`` with
-        ``team_a_win``, ``team_a_loss`` and every screened ``team_a_<measure>``
-        among its columns: one row per entrant per game, from the entrant's
-        side, with ``system_name`` and the game's ``run_id``, ``phase``,
+        ``team_a_win``, ``team_a_loss``, ``episode_length`` and every screened
+        ``team_a_<measure>`` among its columns: one row per entrant per game,
+        from the entrant's side, with ``system_name``, ``opponent_name``,
+        ``map_id``, ``spawn_end`` and the game's ``run_id``, ``phase``,
         ``pass_id`` and ``episode_id``.
     elo : mapping of str to float
         Display name to the saved tournament's Elo rating.
@@ -702,40 +769,51 @@ def screen_tests(
     Returns
     -------
     list of dict
-        Copies of the screen rows, in the same order, each with six more
-        values:
+        Copies of the screen rows, in the same order, each with these values:
 
         - ``p_value_all`` and ``p_value_learned``: the two-sided permutation
           p-value of ``correlation_all`` and ``correlation_learned``, the share
-          of orderings of the ratings whose rank correlation with the values
-          is at least as far from zero. With nine entrants the smallest
-          possible value is 2 / 9! (about 0.0000055); with six it is
-          2 / 720 (about 0.0028).
-        - ``holm_p_value_all``: ``p_value_all`` after Holm's correction for
-          testing every screened metric with a value; below 0.05 means the
-          trend survives the whole screen at the 5% level.
+          of orderings of the ratings whose rank correlation with the values is
+          at least as far from zero. With nine entrants the smallest possible
+          value is 2 / 9! (about 0.0000055); with six, 2 / 720 (about 0.0028).
+        - ``holm_p_value_all``: ``p_value_all`` after Holm's correction over
+          every screened metric with a value.
+        - ``max_t_p_value_all``: the Westfall-Young max-statistic correction
+          over the same metrics: the share of orderings of the ratings in which
+          the largest rank correlation of any metric is at least as far from
+          zero as this one's. It allows for metrics that move together, so it
+          is less strict than Holm when they overlap, and still controls the
+          chance of any false trend.
         - ``winner_higher_share``: over decided games between two different
-          entrants, the share in which the winner had more of the measure
-          than the loser. Games where the two are equal or either is missing
-          are left out; ``decided_games_compared`` counts the rest. 0.5 means
-          the measure does not separate winners from losers.
-        - ``wins_over_losses``: for each entrant with at least ``MIN_GAMES``
-          wins and as many losses, the chance that one of its wins, picked at
-          random, shows more of the measure than one of its losses (ties count
-          half); the mean over those entrants, or NaN if none qualifies.
-          Near 0.5 means the measure does not change with the result inside a
-          team: it describes how the team plays, not how a game went.
+          entrants, the share in which the winner had more of the measure than
+          the loser. Ties and missing values are left out;
+          ``decided_games_compared`` counts the rest.
+        - ``wins_over_losses``: inside each matchup cell (one entrant against
+          one opponent on one map from one spawn end) with at least
+          ``MIN_CELL_RESULTS`` wins and as many losses, the chance that one of
+          its wins, picked at random, shows more of the measure than one of its
+          losses (ties count half); the average over cells, weighted by wins
+          times losses. Holding the opponent fixed matters: a team's wins come
+          mostly against weak opponents, so a pooled comparison would compare
+          opponents, not results. 0.5 means the measure does not change with
+          the result inside a matchup; NaN if no cell qualifies.
 
     Notes
     -----
-    Exact p-values count every ordering of up to ``EXACT_ENTRANTS`` ratings;
-    larger fields use ``PERMUTATION_DRAWS`` random orderings drawn from
-    ``PERMUTATION_SEED``, so their p-values are estimates. Ties share their
-    average rank. The permutation test treats each entrant as one
-    observation, so a field of nine supports only strong trends. The two game
-    checks reuse every game but not its pairing with the swapped-spawn game,
-    and a measure that is itself part of winning (kills, deaths) passes them
-    trivially; read them as a description, not a test. Host-only NumPy.
+    Values follow ``screen_measures``: per-game totals are taken per 100 ticks
+    (``per_tick``), here game by game. Exact p-values count every ordering of
+    up to ``EXACT_ENTRANTS`` ratings; larger fields use ``PERMUTATION_DRAWS``
+    random orderings from ``PERMUTATION_SEED``, counted as (hits + 1) / (draws
+    + 1), so their p-values are estimates. Ties share their average rank, values
+    are compared to 7 significant digits, and a metric whose values agree to
+    within one part in a million counts as constant (no correlation). The
+    permutation test treats each entrant as one observation, so a field of
+    nine supports only strong trends, and near-copies (Season 0's three
+    scripted bots) make the field effectively smaller. Matchups between
+    methods that never sample (scripted bots, greedy QMIX or PQN-VDN) repeat
+    the same few games, which count once per copy in both game checks. A
+    measure that is itself part of winning (kills, deaths) passes the game
+    checks trivially. Host-only NumPy.
     """
     names = names or {}
     systems = np.asarray(
@@ -743,6 +821,7 @@ def screen_tests(
     )
     win = np.asarray(games["team_a_win"], np.float64)
     loss = np.asarray(games["team_a_loss"], np.float64)
+    length = np.asarray(games["episode_length"], np.float64)
     sides: defaultdict[tuple[str, ...], list[int]] = defaultdict(list)
     for row, key in enumerate(
         zip(
@@ -762,6 +841,17 @@ def screen_tests(
         ],
         np.int64,
     ).reshape(-1, 2)
+    cells: defaultdict[tuple[str, ...], list[int]] = defaultdict(list)
+    for row, key in enumerate(
+        zip(
+            systems,
+            games["opponent_name"],
+            games["map_id"],
+            games["spawn_end"],
+            strict=True,
+        )
+    ):
+        cells[tuple(str(part) for part in key)].append(row)
     entrants = [name for name in screen[0] if name in elo] if screen else []
     learned = [name for name in entrants if name not in scripted]
     rows: list[dict[str, Any]] = []
@@ -771,7 +861,10 @@ def screen_tests(
             row[f"p_value_{label}"] = _permutation_p(
                 [float(row[name]) for name in group], [elo[name] for name in group]
             )
-        value = np.asarray(games[f"team_a_{row['measure']}"], np.float64)
+        column = f"team_a_{row['measure']}"
+        value = np.asarray(games[column], np.float64)
+        if per_tick(column):
+            value = value / length * 100.0
         winner, loser = value[decided[:, 0]], value[decided[:, 1]]
         compared = np.isfinite(winner) & np.isfinite(loser) & (winner != loser)
         row["winner_higher_share"] = (
@@ -780,21 +873,28 @@ def screen_tests(
             else math.nan
         )
         row["decided_games_compared"] = int(compared.sum())
-        chances: list[float] = []
-        for entrant in dict.fromkeys(str(name) for name in systems):
-            mine = systems == entrant
-            won, lost = value[mine & (win == 1)], value[mine & (loss == 1)]
+        weighted, weights = 0.0, 0.0
+        for members in cells.values():
+            indices = np.asarray(members)
+            won = value[indices[win[indices] == 1]]
+            lost = value[indices[loss[indices] == 1]]
             won, lost = won[np.isfinite(won)], lost[np.isfinite(lost)]
-            if len(won) >= MIN_GAMES and len(lost) >= MIN_GAMES:
+            if len(won) >= MIN_CELL_RESULTS and len(lost) >= MIN_CELL_RESULTS:
                 ranks = _ranks(np.concatenate([won, lost]))
-                above = ranks[: len(won)].sum() - len(won) * (len(won) + 1) / 2
-                chances.append(float(above) / (len(won) * len(lost)))
-        row["wins_over_losses"] = float(np.mean(chances)) if chances else math.nan
+                above = float(ranks[: len(won)].sum()) - len(won) * (len(won) + 1) / 2
+                weighted += above
+                weights += len(won) * len(lost)
+        row["wins_over_losses"] = weighted / weights if weights else math.nan
         rows.append(row)
     for row, adjusted in zip(
         rows, _holm([row["p_value_all"] for row in rows]), strict=True
     ):
         row["holm_p_value_all"] = adjusted
+    adjusted = _max_t([[float(row[name]) for name in entrants] for row in rows], [
+        elo[name] for name in entrants
+    ])  # fmt: skip
+    for row, value in zip(rows, adjusted, strict=True):
+        row["max_t_p_value_all"] = value
     return rows
 
 
@@ -1022,16 +1122,27 @@ def _rank_correlation(
 
     Entrants whose value or rating is NaN are left out, such as every entrant
     outside a complete tournament. NaN when fewer than three remain or the
-    values or ratings are all equal. Tied values share their average rank.
+    values or ratings are all equal (``_constant``). Tied values share their
+    average rank.
     """
     kept = [
         name for name in names if not np.isnan(values[name]) and not np.isnan(elo[name])
     ]
     measure = np.array([values[name] for name in kept])
     ratings = np.array([elo[name] for name in kept])
-    if len(kept) < 3 or np.ptp(measure) == 0 or np.ptp(ratings) == 0:
+    if len(kept) < 3 or _constant(measure) or _constant(ratings):
         return float("nan")
-    return float(np.corrcoef(_ranks(measure), _ranks(ratings))[0, 1])
+    return float(np.corrcoef(_ranks(_rounded(measure)), _ranks(ratings))[0, 1])
+
+
+def _constant(values: Floats) -> bool:
+    """True when the values are equal to within one part in a million."""
+    return bool(np.ptp(values) <= 1e-6 * max(1.0, float(np.max(np.abs(values)))))
+
+
+def _rounded(values: Floats) -> Floats:
+    """Round to 7 significant digits, so float noise does not break ties."""
+    return np.asarray([float(f"{value:.7g}") for value in values], np.float64)
 
 
 def _ranks(values: Floats) -> Floats:
@@ -1054,9 +1165,10 @@ def _permutation_p(values: Sequence[float], ratings: Sequence[float]) -> float:
     """Two-sided permutation p-value of the rank correlation of values with ratings.
 
     The share of orderings of the ratings (all of them up to EXACT_ENTRANTS
-    entrants) whose correlation is at least as far from zero as the observed
-    one. Pairs with a NaN are left out; NaN when fewer than three remain or
-    either side is constant, as for _rank_correlation.
+    entrants; above that, PERMUTATION_DRAWS random ones counted as (hits + 1)
+    / (draws + 1)) whose correlation is at least as far from zero as the
+    observed one. Pairs with a NaN are left out; NaN when fewer than three
+    remain or either side is constant, as for _rank_correlation.
     """
     kept = [
         (value, rating)
@@ -1065,15 +1177,61 @@ def _permutation_p(values: Sequence[float], ratings: Sequence[float]) -> float:
     ]
     if len(kept) < 3:
         return math.nan
-    x = _ranks(np.asarray([value for value, _ in kept]))
+    raw = np.asarray([value for value, _ in kept])
+    if _constant(raw):
+        return math.nan
+    x = _ranks(_rounded(raw))
     y = _ranks(np.asarray([rating for _, rating in kept]))
     x, y = x - x.mean(), y - y.mean()
     scale = math.sqrt(float((x**2).sum() * (y**2).sum()))
     if scale == 0:
         return math.nan
     observed = abs(float(np.dot(x, y))) / scale
-    shuffled: Floats = np.abs(y[_orderings(len(kept))] @ x) / scale
-    return float(np.mean(shuffled >= observed - 1e-12))
+    orderings = _orderings(len(kept))
+    shuffled: Floats = np.abs(y[orderings] @ x) / scale
+    hits = int(np.count_nonzero(shuffled >= observed - 1e-12))
+    if len(kept) <= EXACT_ENTRANTS:
+        return hits / len(orderings)
+    return (hits + 1) / (len(orderings) + 1)
+
+
+def _max_t(values: Sequence[Sequence[float]], ratings: Sequence[float]) -> list[float]:
+    """Westfall-Young max-statistic adjusted p-values for rank correlations.
+
+    values holds one list per metric, each with a value per entrant in the
+    order of ratings. Metrics with a NaN or constant values get NaN and do not
+    enter the maximum. Each kept metric's adjusted p-value is the share of
+    orderings of the ratings (as _permutation_p) in which the largest absolute
+    rank correlation over all kept metrics reaches its own.
+    """
+    keep = [
+        index
+        for index, row in enumerate(values)
+        if not np.isnan(row).any() and not _constant(np.asarray(row, np.float64))
+    ]
+    adjusted = [math.nan] * len(values)
+    if not keep or len(ratings) < 3:
+        return adjusted
+    x = np.stack([_ranks(_rounded(np.asarray(values[i], np.float64))) for i in keep])
+    x = x - x.mean(axis=1, keepdims=True)
+    x = x / np.sqrt((x**2).sum(axis=1, keepdims=True))
+    y = _ranks(np.asarray(ratings, np.float64))
+    y = (y - y.mean()) / math.sqrt(float(((y - y.mean()) ** 2).sum()))
+    observed = np.abs(x @ y)
+    orderings = _orderings(len(ratings))
+    largest = np.concatenate(
+        [
+            np.abs(y[orderings[start : start + 20_000]] @ x.T).max(axis=1)
+            for start in range(0, len(orderings), 20_000)
+        ]
+    )
+    exact = len(ratings) <= EXACT_ENTRANTS
+    for index, value in zip(keep, observed, strict=True):
+        hits = int(np.count_nonzero(largest >= value - 1e-12))
+        adjusted[index] = (
+            hits / len(largest) if exact else (hits + 1) / (len(largest) + 1)
+        )
+    return adjusted
 
 
 def _holm(p_values: Sequence[float]) -> list[float]:
@@ -1205,6 +1363,7 @@ def main(config: DictConfig) -> dict[str, Any]:
                     "score_difference",
                     "team_a_win",
                     "team_a_loss",
+                    "episode_length",
                     *SCREEN_COLUMNS,
                     *CLASS_COLUMNS,
                 ]
