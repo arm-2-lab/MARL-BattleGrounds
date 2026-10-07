@@ -262,17 +262,20 @@ def team_profiles(
     dict of str to dict
         Display name to a profile: ``games`` (games with full metrics),
         ``independent_units`` (resampled pairs from matchups with random
-        sampling, or None when the interval is withheld), ``interval_status``
-        and ``unavailable_reason`` (why an interval is withheld, or None), and
-        for each ``MEASURES`` name a dict with ``value`` and its 95% interval
-        ``low`` and ``high`` (fractions as 0-1, distances in map units, health
-        and counts per game; NaN where nothing counts or the interval is
-        withheld).
+        sampling; 0 when no matchup samples, None when sampling is unknown or
+        cannot be checked), ``interval_status`` and ``unavailable_reason``
+        (why an interval is withheld, or None), and for each ``MEASURES`` name
+        a dict with ``value`` and its 95% interval ``low`` and ``high``
+        (fractions as 0-1, distances in map units, health and counts per game;
+        NaN where nothing counts or the interval is withheld).
 
     Notes
     -----
+    Each profile copies the interval status ``system_metrics`` gives its row.
     A System of the researcher's own has unknown sampling, so its rows keep
-    their values and withhold their intervals.
+    their intervals with the status "Conditional: Sampling not verified".
+    Intervals are withheld only for the other reasons ``system_metrics``
+    names, such as partial results.
     """
     names = names or {}
     profiles: dict[str, dict[str, Any]] = {}

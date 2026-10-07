@@ -9,7 +9,8 @@ metrics once each, leaving the ratio measure to ratios= and the class-table
 agent columns to the per-game call; team_profiles turns a system_metrics
 summary into profiles under display names, with each measure's value and
 interval, NaN kept, and keeps an entrant whose sampling is unknown with its
-values, no resampled units and its interval status and reason; class_tables
+values and intervals, no resampled units, the status "Conditional: Sampling
+not verified" and no reason; class_tables
 builds the damage, kill-help, healing and damage-taken tables from per-game
 rows, agents 0-4 as the entrant's team, each game's own classes, skipping
 inactive agents and missing values; check_sides passes when every matchup's
@@ -143,8 +144,11 @@ def test_team_profiles_keep_an_entrant_with_unknown_sampling(
     )
     profiles = stage.team_profiles(table)
     assert profiles["One"]["independent_units"] is None
-    assert "unknown" in str(profiles["One"]["unavailable_reason"])
+    assert profiles["One"]["interval_status"] == "Conditional: Sampling not verified"
+    assert profiles["One"]["unavailable_reason"] is None
     assert math.isfinite(profiles["One"]["kills"]["value"])
+    assert math.isfinite(profiles["One"]["kills"]["low"])
+    assert math.isfinite(profiles["One"]["kills"]["high"])
     assert profiles["Two"]["independent_units"] is not None
 
 
