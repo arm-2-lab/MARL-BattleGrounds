@@ -1,8 +1,10 @@
 """Check ordinary team/pool composition without changing actor or memory identity.
 
 CPU tests follow public reset/apply/step paths, fixed Policy slot streams, nested
-ownership, per-game pool choice, custom memory and resource cleanup. Compilation
-counts cover same-shaped value changes; these are not GPU speed measurements.
+ownership, per-game pool choice, custom memory and resource cleanup. A saved
+evaluation records each slot's member for a team and a pool in every game.
+Compilation counts cover same-shaped value changes; these are not GPU speed
+measurements.
 """
 
 # Private executor calls here verify evaluator-owned physical-slot keys.
@@ -489,7 +491,7 @@ def test_compositions_use_ordinary_saved_evaluation(tmp_path: Path) -> None:
         num_episodes=2,
         num_envs=2,
         max_steps=1,
-        metrics="none",
+        metrics="priority",
         output_dir=tmp_path,
     )
     assert len(result.completed_episode_ids) == 2
@@ -498,16 +500,49 @@ def test_compositions_use_ordinary_saved_evaluation(tmp_path: Path) -> None:
     assert len(result.table("episodes")["episode_id"]) == 2
     assert method.components is not None
     assert method.components[0]["name"] == "random"
+    # Every saved game records each slot's member, team and pool alike.
+    members = result.table("policy_assignments")
+    owner = dict(
+        zip(
+            zip(
+                members["episode_id"].tolist(),
+                members["global_slot"].tolist(),
+                strict=True,
+            ),
+            members["member"].tolist(),
+            strict=True,
+        )
+    )
+    for episode in (1, 2):
+        assert [owner[episode, slot] for slot in range(10)] == [
+            "random",
+            "random",
+            "tdm-alpha",
+            "tdm-alpha",
+            "tdm-alpha",
+            *["random"] * 5,
+        ]
+    # The pool played Team B: its row reads its own slots as 0-4.
+    games = result.system_metrics(
+        "priority_metrics", by="game", systems=[opponent.name], columns=["team_a_kills"]
+    )
+    assert games["played_as"].tolist() == ["team_b", "team_b"]
+    assert games["agent_0_member"].tolist() == ["random", "random"]
+    assert games["agent_5_member"].tolist() == ["random", "random"]
+    assert games["agent_7_member"].tolist() == ["tdm-alpha", "tdm-alpha"]
+    assert games["member"].tolist() == ["random", "random"]
+    assert games["opponent_member"].tolist() == ["random / tdm-alpha"] * 2
 
 
 def test_composition_example_runs_all_public_workflows(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     from examples.systems import composition_examples
 
-    composition_examples()
+    composition_examples(tmp_path)
     output = capsys.readouterr().out
     assert "Mixture games:" in output
+    assert "Mixture members: {1: '" in output
     assert "Fixed opponent:" in output
     assert "Tournament completed:" in output
 

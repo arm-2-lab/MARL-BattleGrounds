@@ -3,7 +3,9 @@
 TournamentRecords joins full original run/pass/episode keys to a selected logical
 schedule. The runner, physical checks, writer and result views share this host
 accessor. Reused wide reports stay in their original files and use the shared
-indexed scalar reader. The snapshot's pinned scalar schema picks the full-report
+indexed scalar reader; member rows (``policy_assignments.csv``), several per
+game, stream once per source through ``iter_assignments``. The snapshot's pinned
+scalar schema picks the full-report
 header and the scalar version every record source must have. This module
 imports no simulator, policy or JAX runtime.
 """
@@ -25,12 +27,17 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
 )
-from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS, MATCH_COLUMNS
+from marl_battlegrounds.evaluation.run_writer import (
+    ASSIGNMENT_COLUMNS,
+    IDENTITY_COLUMNS,
+    MATCH_COLUMNS,
+)
 from marl_battlegrounds.evaluation.scalar_reports import (
     IndexedScalarTable,
     OriginKey,
     _iter_rows,
     _pass_lookup,
+    iter_policy_assignments,
 )
 
 if TYPE_CHECKING:
@@ -451,6 +458,65 @@ class TournamentRecords:
                 yield tuple(
                     selected_rows[origin_key(self.origin(game))] for game in games
                 )
+
+    def sources_with(self, table: str) -> frozenset[str]:
+        """Return the record sources that declare one copied table.
+
+        table is a role name without ".csv", such as "policy_assignments".
+        Reads the snapshot's source declarations only; no file is opened.
+        """
+        return frozenset(
+            str(source_id)
+            for source_id, source in self._sources.items()
+            if table in source["tables"]
+        )
+
+    def iter_assignments(self, game_ids: Sequence[int]) -> Iterator[Row]:
+        """Read reused games' member rows from their record sources.
+
+        Parameters
+        ----------
+        game_ids : sequence of int
+            Logical game IDs; local games and games not yet complete are skipped.
+
+        Yields
+        ------
+        dict
+            Validated ``policy_assignments.csv`` rows (merged intervals) of the
+            selected reused games, with their original run, phase, pass and
+            episode IDs, source by source.
+
+        Notes
+        -----
+        Each source's verified copied table is streamed once through
+        ``iter_policy_assignments`` against that source's own manifest and
+        filtered to the selected origins. A source without the table yields
+        nothing: its games' members read as not recorded.
+        """
+        selected: dict[str, tuple[Mapping[str, Any], set[OriginKey]]] = {}
+        for identifier in game_ids:
+            game = self._games[identifier]
+            origin = self.origin(game)
+            source_id = origin.get("source_id")
+            if source_id is None or not self.completed(game):
+                continue
+            first, keys = selected.setdefault(str(source_id), (game, set()))
+            del first
+            keys.add(origin_key(origin))
+        for source_id, (game, keys) in selected.items():
+            if self._sources[source_id]["tables"].get("policy_assignments") is None:
+                continue
+            with self.verifier.verification_scope():
+                path = self._table_path(game, "policy_assignments.csv")
+                for batch in iter_policy_assignments(
+                    path,
+                    manifest=self.source_manifest(game),
+                    expected_header=ASSIGNMENT_COLUMNS,
+                    table_name="policy_assignments.csv",
+                ):
+                    for row in batch:
+                        if origin_key(row) in keys:
+                            yield dict(row)
 
     def require_coverage(
         self,

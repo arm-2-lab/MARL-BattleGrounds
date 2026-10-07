@@ -187,8 +187,9 @@ For fixed actors, `results.point_margin_summary()` reads native game points.
 spawn pairs or declared larger blocks, preserving linked cells and original
 game-count proportions. It requires at least two independent complete units
 per condition stratum. Repeated random coordinates do not become independent
-just because a pass name or supported RNG protocol label changes. Unknown
-sampling, missing games or unsupported independence withholds an interval.
+just because a pass name or supported RNG protocol label changes. Missing
+games or unsupported independence withholds an interval; unknown sampling
+alone keeps it, labeled "Conditional: Sampling not verified".
 `bootstrap_draws=2000` and `bootstrap_seed=19044001` are API defaults, not paper
 choices. Means remain descriptive when uncertainty is unavailable.
 

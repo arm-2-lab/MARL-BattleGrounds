@@ -3,6 +3,8 @@
 The schedule owns exact configs, episode IDs and random-stream identities.
 JAX policies run in batches; host methods use synchronous Python calls with
 the same decision inputs. Optional metrics/replays go to memory or RunWriter.
+A saved run of a System with members (``scalar_reports.has_members``) also
+records which member played each slot of each game.
 Map defaults and saved-first conditions resolve before execution. This module
 does not train methods or use training trackers, automatic resets or collectors.
 """
@@ -108,6 +110,7 @@ from marl_battlegrounds.evaluation.run_writer import (
     _prepare_pass_identity,
     configuration_identity,
 )
+from marl_battlegrounds.evaluation.scalar_reports import has_members
 from marl_battlegrounds.evaluation.system_evaluation import (
     freeze_evaluation_method,
     prepare_evaluation_system,
@@ -186,8 +189,26 @@ class EpisodeSpec:
         return self.episode_id if self.seed_id is None else self.seed_id
 
 
+class _Members(NamedTuple):
+    """Track which member controlled each slot during a lane's current game.
+
+    first is int32 (B, 10): each global slot's policy ID at the game's first
+    decision, Team A slots 0-4 then Team B 5-9, -1 for unreported or inactive.
+    changed is int32 (B, 10): the first decision at which a slot's ID differed
+    from first, or -1 when it never did. Present only when a saved evaluation
+    has a System with members (``has_members``).
+    """
+
+    first: Array
+    changed: Array
+
+
 class _Completed(NamedTuple):
-    """Keep each lane's first terminal payload until the host handles this chunk."""
+    """Keep each lane's first terminal payload until the host handles this chunk.
+
+    members holds the finished game's ``_Members`` rows, or None when no member
+    record is kept.
+    """
 
     completed: Array
     episode_id: Array
@@ -199,6 +220,7 @@ class _Completed(NamedTuple):
     full: MetricValues | None
     decision_step: Array
     lifecycle_error: Array
+    members: _Members | None = None
 
     @property
     def info(self) -> EpisodeInfo:
@@ -270,8 +292,14 @@ def _actor_keys(root: Array, seed_ids: Array, local_steps: Array) -> Array:
     )
 
 
-def _empty_completed(state: EnvironmentState) -> _Completed:
-    """Allocate empty per-lane completion buffers matching enabled metric structures."""
+def _empty_completed(
+    state: EnvironmentState, members: _Members | None = None
+) -> _Completed:
+    """Allocate empty per-lane completion buffers matching enabled metric structures.
+
+    members, when given, is the carry's member record; the buffer copies its
+    shape so retained completions keep one tree structure. None keeps none.
+    """
     count = state.episode_id.shape[0]
 
     def empty(size: int) -> MetricValues:
@@ -293,17 +321,23 @@ def _empty_completed(state: EnvironmentState) -> _Completed:
         empty(len(FULL_METRIC_NAMES)) if state.full is not None else None,
         jnp.full(count, -1, jnp.int32),
         state.lifecycle_error,
+        None if members is None else _Members(*(jnp.full_like(v, -1) for v in members)),
     )
 
 
 def _retain_completion(
-    old: _Completed, state: EnvironmentState, info: EpisodeInfo
+    old: _Completed,
+    state: EnvironmentState,
+    info: EpisodeInfo,
+    members: _Members | None = None,
 ) -> _Completed:
     """Retain terminal info and every lane's sticky failure across chunk rounds.
 
     state is retained for the existing chunk-call contract. Episode summaries
     come only from info; unfinished or padded rounds cannot replace them.
     Lifecycle failures are combined on every round, including unfinished games.
+    members is the carry's member record after this decision, retained with the
+    game that finished; None when no member record is kept.
     """
     del state
     current = _Completed(
@@ -317,6 +351,7 @@ def _retain_completion(
         info.full,
         info.decision_step,
         info.lifecycle_error,
+        members,
     )
     retained = cast(_Completed, select_policy_carry(info.completed, current, old))
     return retained._replace(lifecycle_error=old.lifecycle_error | info.lifecycle_error)
@@ -512,12 +547,86 @@ def _host_chunk(
 
 
 class _SystemCarry(NamedTuple):
-    """Keep numerical or opaque System memory beside the existing game carry."""
+    """Keep numerical or opaque System memory beside the existing game carry.
+
+    members is the running ``_Members`` record of each lane's current game, or
+    None when no member record is kept; None adds no array to the program.
+    """
 
     observations: Observations
     state: EnvironmentState
     memory: SystemState
     completed: _Completed
+    members: _Members | None
+
+
+def _finished_members(
+    completed: _Completed,
+) -> dict[int, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]]:
+    """Return each game finished in this chunk with its member record on the host.
+
+    Parameters
+    ----------
+    completed : _Completed
+        The chunk's retained completions, with a ``_Members`` record; host or
+        device arrays.
+
+    Returns
+    -------
+    dict of int to (numpy.ndarray, numpy.ndarray)
+        Episode ID to its int32 (10,) first policy IDs and first change
+        decisions, for the lanes whose game finished in this chunk.
+
+    Notes
+    -----
+    One transfer of the flags, IDs and the two (B, 10) arrays when given device
+    arrays; no transfer for host arrays.
+    """
+    done, ids, members = cast(
+        tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], _Members],
+        jax.device_get((completed.completed, completed.episode_id, completed.members)),
+    )
+    return {
+        int(ids[lane]): (
+            np.asarray(members.first[lane]),
+            np.asarray(members.changed[lane]),
+        )
+        for lane in np.flatnonzero(done)
+    }
+
+
+@jax.jit
+def _update_members(members: _Members, trace: PolicyTrace) -> _Members:
+    """Fold one decision's reported policy IDs into each lane's member record.
+
+    Parameters
+    ----------
+    members : _Members
+        Running record before this decision.
+    trace : PolicyTrace
+        The decision just applied. Only valid rows change the record; a valid
+        row with decision_step 0 starts a new game for its lane.
+
+    Returns
+    -------
+    _Members
+        first is reset to this decision's IDs at a game's first decision.
+        changed records the first later decision whose ID differs from first.
+
+    Notes
+    -----
+    Jitted so a host System's loop pays one device call per decision.
+    """
+    valid = trace.valid[:, None]
+    start = valid & (trace.decision_step == 0)[:, None]
+    first = jnp.where(start, trace.policy_ids, members.first)
+    differs = valid & ~start & (members.changed < 0) & (trace.policy_ids != first)
+    changed = jnp.where(
+        start,
+        -1,
+        jnp.where(differs, trace.decision_step[:, None], members.changed),
+    )
+    return _Members(first, changed.astype(jnp.int32))
 
 
 def _selected_assignments(
@@ -568,8 +677,10 @@ def _system_advance(
     """Apply both methods once, then advance the same pre-step environment.
 
     Stable descriptors supply callables. Parameters, memories and scheduled roots
-    remain dynamic. Learner outputs are discarded inside application, before any
-    host transfer. Refilling is the host scheduler's separate responsibility.
+    remain dynamic. A carried member record folds in this decision's reported
+    policy IDs before the finished game's fields are retained. Learner outputs
+    are discarded inside application, before any host transfer. Refilling is the
+    host scheduler's separate responsibility.
     """
     local = current.state.core_state.step_count - current.state.initial_step_count
     actions, memory, _ = _apply_system_pair(
@@ -590,11 +701,17 @@ def _system_advance(
             env, episode_keys(root_key, seed_ids, local, 1), current.state, actions
         ),
     )
+    members = (
+        None
+        if current.members is None
+        else cast(_Members, _update_members(current.members, memory.policy_trace))
+    )
     return _SystemCarry(
         observations,
         state,
         memory,
-        _retain_completion(current.completed, state, info),
+        _retain_completion(current.completed, state, info, members),
+        members,
     ), (
         info.replay,
         _selected_assignments(env, info, memory.policy_trace)
@@ -1198,9 +1315,10 @@ def _run_evaluation(
     }
     if not legacy:
         metadata["rng_protocol"] = "evaluation-systems-v1"
+    from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
+
     if recording:
         from marl_battlegrounds.evaluation.evaluation_conditions import read_saved_pass
-        from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
 
         saved_sampling_pass = (
             saved
@@ -1240,6 +1358,20 @@ def _run_evaluation(
                 "runtime_version": " ".join(device.client.platform_version.split())
                 or None,
             }
+    else:
+        from marl_battlegrounds.evaluation.runtime_provenance import (
+            capture_execution_settings,
+        )
+
+        # Reading the declared XLA flags is free, so in-memory results report
+        # them too. Sampling inspection is setup-only (at most one scalar read
+        # from the device), so in-memory summaries label intervals as saved
+        # runs do.
+        metadata["execution_settings"] = capture_execution_settings()
+        metadata["method_sampling"] = {
+            "team_a": method_sampling_fact(team_a),
+            "team_b": method_sampling_fact(team_b),
+        }
     schedule: dict[int, dict[str, object]] = {}
     if contract is None:
         configs = {id(spec.env_config): spec.env_config for spec in specs}
@@ -1592,7 +1724,26 @@ def _run_evaluation(
                 state,
                 episode_keys(root, lane_seeds, jnp.zeros(batch_size, jnp.int32), 3),
             )
-            carry = _SystemCarry(observations, state, memory, _empty_completed(state))
+            # Members are recorded only in saved runs, for Systems that have them.
+            members = (
+                _Members(
+                    jnp.full((batch_size, 10), -1, jnp.int32),
+                    jnp.full((batch_size, 10), -1, jnp.int32),
+                )
+                if writer is not None
+                and (
+                    has_members(execution_a.component_count)
+                    or has_members(execution_b.component_count)
+                )
+                else None
+            )
+            carry = _SystemCarry(
+                observations,
+                state,
+                memory,
+                _empty_completed(state, members),
+                members,
+            )
         carry = place(carry)
         observed_devices = sorted(
             {
@@ -1668,6 +1819,8 @@ def _run_evaluation(
                 if evidence is not None:
                     evidence.flush()
                 if writer is not None and assignments is not None:
+                    if isinstance(carry, _SystemCarry) and carry.members is not None:
+                        writer._stage_members(_finished_members(carry.completed))
                     writer._write_collected(
                         evaluation_record_batch(
                             before_chunk,
@@ -1699,6 +1852,8 @@ def _run_evaluation(
                 publication = completed.info._replace(replay=packets)
                 if writer is not None:
                     if assignments is None:
+                        if completed.members is not None:
+                            writer._stage_members(_finished_members(completed))
                         writer.write(publication)
                 else:
                     validate_recording_errors(publication)
@@ -1760,7 +1915,10 @@ def _run_evaluation(
                         ),
                         mask,
                     )
-                    carry = _SystemCarry(observations, state, memory, carry.completed)
+                    # A new game's first decision resets its lane's member record.
+                    carry = carry._replace(
+                        observations=observations, state=state, memory=memory
+                    )
                 else:
                     carry = _Carry(
                         observations,

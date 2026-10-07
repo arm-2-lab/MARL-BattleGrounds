@@ -6,7 +6,8 @@ must match the caller's shared schema. Host schema 2 accepts each scalar schema
 listed by metric_catalog.FULL_METRIC_NAMES_BY_SCHEMA_VERSION (14 and 15); the
 catalog is standard-library only, so this reader still loads no JAX. This is a
 low-level host reader; it does not resume a writer, recompute metrics or
-qualify a tournament population.
+qualify a tournament population. ``iter_policy_assignments`` reads the member
+record, and ``has_members`` is the one rule for which Systems have members.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import csv
 import io
 import math
-from collections.abc import Buffer, Callable, Iterator, Mapping, Sequence
+from collections.abc import Buffer, Callable, Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO, cast
 
@@ -272,15 +273,23 @@ def _parse_report_row(
     current: bool,
     summary: bool = False,
     columns: frozenset[str] | None = None,
+    positions: Sequence[tuple[int, str]] | None = None,
 ) -> dict[str, ScalarCell]:
     """Check width and parse requested cells with the shared historical rules.
 
     ``columns=None`` parses every cell. A narrow internal request avoids turning
     unused full-report values into Python floats. The CSV record is still parsed
     correctly, including quoting. Unknown requested columns are not invented.
+    ``positions``, the (index, name) pairs of the requested cells found once per
+    header, skips checking every name of every row; it overrides ``columns``.
     """
     if len(cells) != len(header):
         raise ValueError("scalar row width differs from its header")
+    if positions is not None:
+        return {
+            name: _parse_cell(name, cells[index], current=current, summary=summary)
+            for index, name in positions
+        }
     return {
         name: _parse_cell(name, value, current=current, summary=summary)
         for name, value in zip(header, cells, strict=True)
@@ -428,6 +437,16 @@ class IndexedScalarTable:
         if selected is not None and not selected.issubset(self.header):
             raise ValueError("requested scalar columns are not stored in this table")
         parsed = None if selected is None else selected | _OWNERSHIP_COLUMNS
+        # Find the requested cells once, not on every row.
+        positions = (
+            None
+            if parsed is None
+            else [
+                (index, name)
+                for index, name in enumerate(self.header)
+                if name in parsed
+            ]
+        )
         self._check_unchanged()
         batch: list[dict[str, ScalarCell]] = []
         with self.path.open("rb") as stream:
@@ -439,7 +458,7 @@ class IndexedScalarTable:
                     self.header,
                     next(reader),
                     current=self._exact,
-                    columns=parsed,
+                    positions=positions,
                 )
                 _check_ownership(row, self.manifest, self._passes)
                 if _origin_key(row) != key or next(reader, None) is not None:
@@ -572,6 +591,16 @@ def _iter_rows(
                 and tuple(header) != tuple(expected_header)
             ):
                 raise ValueError("scalar table has an incompatible current header")
+            # Find the requested cells once, not on every row.
+            positions = (
+                None
+                if columns is None
+                else [
+                    (index, name)
+                    for index, name in enumerate(header)
+                    if name in columns
+                ]
+            )
             batch: list[dict[str, ScalarCell]] = []
             count = 0
             while True:
@@ -585,7 +614,7 @@ def _iter_rows(
                     cells,
                     current=exact_summaries,
                     summary=summary,
-                    columns=columns,
+                    positions=positions,
                 )
                 if not summary:
                     assert passes is not None
@@ -613,6 +642,7 @@ def iter_scalar_rows(
     manifest: Mapping[str, object],
     expected_header: Sequence[str] | None = None,
     batch_size: int = 256,
+    columns: Collection[str] | None = None,
 ) -> Iterator[tuple[dict[str, ScalarCell], ...]]:
     """Read committed scalar CSV rows with their original names and availability.
 
@@ -629,6 +659,14 @@ def iter_scalar_rows(
     batch_size : int, optional
         Maximum rows per returned tuple. Defaults to 256; must be positive and
         cannot be a boolean.
+    columns : collection of str or None, optional
+        Names of the cells to return; None, the default, returns every cell.
+        The ownership cells (run_id, phase, pass_id, episode_id, seed_id,
+        map_id and config_id) are always added, because each row's ownership
+        is checked. Each row is still split and its width and row count are
+        checked, but cells left out are neither converted nor value-checked,
+        which saves most of the time for a few columns of a wide report. Names
+        the table lacks are not invented.
 
     Yields
     ------
@@ -655,7 +693,11 @@ def iter_scalar_rows(
     manifest freshness. Completion lookup memory scales with recorded episodes.
     """
     yield from _iter_rows(
-        path, manifest=manifest, expected_header=expected_header, batch_size=batch_size
+        path,
+        manifest=manifest,
+        expected_header=expected_header,
+        batch_size=batch_size,
+        columns=None if columns is None else frozenset(columns) | _OWNERSHIP_COLUMNS,
     )
 
 
@@ -708,12 +750,43 @@ def iter_summary_rows(
     )
 
 
+def has_members(component_count: int) -> bool:
+    """Say whether a System's component table names members to record per game.
+
+    Parameters
+    ----------
+    component_count : int
+        Number of entries in the System's component table: ``System.components``,
+        or ``_SystemExecution.component_count`` inside compiled evaluation.
+
+    Returns
+    -------
+    bool
+        True for two or more components, as in ``pool``, ``team`` and
+        ``independent_policies`` of two or more members. A built-in Policy and a
+        language-model System declare one component and a learned System none,
+        so they have no members to record.
+
+    Notes
+    -----
+    The one rule for member records: evaluation captures each game's members,
+    the writer saves their rows and saved results read them only for Systems
+    that pass it. It lives here, beside the member table's reader, so readers
+    of saved results need no JAX import.
+    """
+    return component_count >= 2
+
+
 def _assignment_values(
     row: Mapping[str, ScalarCell],
     manifest: Mapping[str, object],
     passes: _Passes,
-) -> tuple[tuple[str, str, int, int], int, int]:
-    """Validate one assignment's slot, interval, saved epoch and registered owner."""
+) -> tuple[tuple[str, str, int, int], int, int, int]:
+    """Validate one assignment's slot, interval, saved epoch and registered owner.
+
+    Return the (phase, pass ID, episode ID, slot) key, the interval's start and
+    stop, and the game's durable trace epoch (its last recorded decision).
+    """
     phase, pass_id = str(row["phase"]), str(row["pass_id"])
     episode_id = row["episode_id"]
     slot, choice = row.get("global_slot"), row.get("policy_id")
@@ -765,7 +838,12 @@ def _assignment_values(
     config_ids = entry.get("trace_config_ids", {})
     if not isinstance(config_ids, Mapping):
         raise ValueError("policy assignment has an invalid configuration binding")
+    # Whole-game member rows rely on the completion's binding instead.
     config_id = cast(Mapping[str, object], config_ids).get(str(episode_id))
+    if config_id is None:
+        completed = entry.get("completed_config_ids", {})
+        if isinstance(completed, Mapping):
+            config_id = cast(Mapping[str, object], completed).get(str(episode_id))
     configurations = manifest.get("configurations", {})
     if not isinstance(configurations, Mapping) or config_id not in configurations:
         raise ValueError("policy assignment has no recorded episode configuration")
@@ -788,7 +866,7 @@ def _assignment_values(
         or not active[slot]
     ):
         raise ValueError("policy assignment slot is not active in the recorded roster")
-    return (phase, pass_id, episode_id, slot), start, stop
+    return (phase, pass_id, episode_id, slot), start, stop, epoch
 
 
 def iter_policy_assignments(
@@ -797,6 +875,7 @@ def iter_policy_assignments(
     manifest: Mapping[str, object],
     expected_header: Sequence[str],
     batch_size: int = 256,
+    table_name: str | None = None,
 ) -> Iterator[tuple[dict[str, ScalarCell], ...]]:
     """Read verified assignment intervals and join equal adjacent flush segments.
 
@@ -806,11 +885,17 @@ def iter_policy_assignments(
         policy_assignments.csv path. Only its saved durable prefix is read.
     manifest : Mapping[str, object]
         Host schema 2/scalar 14 or 15 run metadata, including Systems, per-pass trace
-        epochs and trace_config_ids. Incomplete games are valid trace owners.
+        epochs and trace_config_ids (or, for whole-game member rows of a
+        completed game, completed_config_ids). Incomplete games are valid trace
+        owners.
     expected_header : sequence of str
         Exact shared assignment header supplied by the writer/table authority.
     batch_size : int, optional
         Positive maximum output rows per tuple, default 256; booleans fail.
+    table_name : str or None, optional
+        Name whose saved boundary the manifest records, default None for the
+        file's own name. A copied record-source asset stored under another
+        name passes ``"policy_assignments.csv"``.
 
     Yields
     ------
@@ -832,12 +917,17 @@ def iter_policy_assignments(
     -----
     Host-only and read-only. Holds at most one pending segment per recorded
     pass/episode/slot, plus bounded input/output batches; it does not retain the
-    whole decision history. Consume fully to validate all rows. No interval is
-    invented for a missing decision, absent trace or inactive actor. This reader
-    does not prove that a declared component actually produced an action.
+    whole decision history. A slot's last segment, the one reaching its game's
+    durable trace epoch, is released at once and only its key is kept, so a
+    game summarized in one row per slot is never held to the end of the file.
+    Consume fully to validate all rows. No interval is invented for a missing
+    decision, absent trace or inactive actor. This reader does not prove that a
+    declared component actually produced an action.
     """
     passes = _pass_lookup(manifest)
     pending: dict[tuple[str, str, int, int], dict[str, ScalarCell]] = {}
+    # Slots whose last segment was released; any later row would overlap it.
+    closed: set[tuple[str, str, int, int]] = set()
     output: list[dict[str, ScalarCell]] = []
     for batch in _iter_rows(
         path,
@@ -846,9 +936,12 @@ def iter_policy_assignments(
         batch_size=batch_size,
         assignments=True,
         passes=passes,
+        table_name=table_name,
     ):
         for row in batch:
-            key, start, stop = _assignment_values(row, manifest, passes)
+            key, start, stop, epoch = _assignment_values(row, manifest, passes)
+            if key in closed:
+                raise ValueError("policy assignment intervals overlap or move backward")
             previous = pending.get(key)
             if previous is not None:
                 previous_stop = cast(int, previous["decision_stop"])
@@ -862,12 +955,18 @@ def iter_policy_assignments(
                     and previous["policy_id"] == row["policy_id"]
                 ):
                     previous["decision_stop"] = stop
-                    continue
-                output.append(previous)
-            pending[key] = row
-            if len(output) == batch_size:
-                yield tuple(output)
-                output.clear()
+                    row = previous
+                else:
+                    output.append(previous)
+                    pending[key] = row
+            else:
+                pending[key] = row
+            if stop == epoch + 1:
+                output.append(pending.pop(key))
+                closed.add(key)
+            if len(output) >= batch_size:
+                yield tuple(output[:batch_size])
+                del output[:batch_size]
     for row in pending.values():
         output.append(row)
         if len(output) == batch_size:

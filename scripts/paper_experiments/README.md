@@ -4,8 +4,10 @@ These scripts use Hydra/OmegaConf to read settings and the public MARL-BGs API
 to do the work. They prepare, train, select, evaluate and analyze. The shared
 study runner owns workers and recovery. There is no second scheduler here.
 
-**The paper's search settings and released downloads are not available yet.**
-The `software_check` settings exercise the tools. They are not recommended
+The paper's search settings are in `hyperparameter_search/`, and
+[Run The Six-Method Hyperparameter Search](#run-the-six-method-hyperparameter-search)
+says how to run them. The trained models are released with the paper. The
+`software_check` settings only exercise the tools. They are not recommended
 hyperparameters and do not reproduce scientific results.
 
 [Workflow checks and measured costs](../../docs/training/workflow_qualification.md)

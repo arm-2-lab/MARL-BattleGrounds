@@ -10,7 +10,10 @@ uses the host-only reader and performs no game, fitting or file repair.
 import argparse
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from marl_battlegrounds.evaluation.results import TournamentResult
 
 
 def fixture(
@@ -39,8 +42,12 @@ def fixture(
         prepare_tournament_assets,
     )
 
+    # Two spawn pairs per map give each matchup enough units for intervals.
     bundle = build_record_bundle(
-        directory / "source", entrants=entrants, full=metrics == "full"
+        directory / "source",
+        entrants=entrants,
+        full=metrics == "full",
+        pairs_per_map=2,
     )
     prepared = prepare_tournament_assets(
         bundle["config"],
@@ -61,6 +68,7 @@ def fixture(
     print("Rankings:", result.table("tournament_rankings"))
     if metrics != "none":
         print("Headlines:", result.table("tournament_headline_metrics"))
+        show_entrants(result, f"{metrics}_metrics")
     for batch in result.iter_table("matches", rows=32):
         print("Original Games In This Batch:", len(batch["episode_id"]))
     if not save:
@@ -72,6 +80,33 @@ def fixture(
     resumed = marl_bgs.run_tournament(resume_from=result.run_dir)
     assert loaded.status == resumed.status == "complete"
     print("Resumed Status:", resumed.status)
+
+
+def show_entrants(result: TournamentResult, table: str) -> None:
+    """Print every entrant's own-side margin and kills, with Elo, one per line.
+
+    result is any tournament result; table is "priority_metrics" or
+    "full_metrics", whichever the run recorded, or "" to print nothing.
+    system_metrics shows each entrant as Team A, so team_a_kills is always the
+    entrant's own kills, whichever side it played. A challenger appears beside
+    every member. The fixture's numbers are made up; this shows the call.
+    """
+    if not table:
+        return
+    field = result.system_metrics(
+        table, columns=["score_difference", "team_a_kills", "team_a_deaths"]
+    )
+    print("Each Entrant As Team A:")
+    for row in range(len(field["system_id"])):
+        print(
+            f"  {field['system_name'][row]}: Elo {field['elo'][row]:.0f}, "
+            f"margin {field['score_difference'][row]:+.2f} per game "
+            f"(95% {field['score_difference_ci_low'][row]:+.2f} to "
+            f"{field['score_difference_ci_high'][row]:+.2f}), "
+            f"kills {field['team_a_kills'][row]:.2f}, "
+            f"deaths {field['team_a_deaths'][row]:.2f}; "
+            f"Interval: {field['interval_status'][row]}"
+        )
 
 
 def compare(args: argparse.Namespace) -> None:
@@ -161,6 +196,8 @@ def compare(args: argparse.Namespace) -> None:
         "Reused Games:", result.reused_games, "Executed Games:", result.executed_games
     )
     print("Rankings:", result.table("tournament_rankings"))
+    recorded = result.metadata.get("metrics", "priority")
+    show_entrants(result, f"{recorded}_metrics" if recorded != "none" else "")
     print("Replay Files:", result.replay_paths)
     if result.run_dir is not None:
         print("Saved Run:", result.run_dir)

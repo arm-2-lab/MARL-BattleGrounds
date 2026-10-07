@@ -13,6 +13,9 @@ original IDs: it loads and reuses every game while running none, and any request
 that needs a new game fails with the reuse-only message before writing anything.
 Default and custom LLM formats also run through local canonical snapshots with
 matching identity, call records, saved-action playback and completed resume.
+A challenger that plays games beside reused field games keeps complete spawn
+pairs in point_margin_summary and system_metrics, with its own rows, also when
+the reused source is itself a canonical run whose pass IDs repeat the new run's.
 """
 
 import copy
@@ -24,6 +27,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from tests.canonical_fixtures import config_descriptor
 
@@ -184,6 +188,28 @@ def test_bare_policy_challenger_uses_shared_authority_and_fixed_team_a(
         result.metadata["participant_registrations"][result.challenger_id]["kind"]
         == "policy"
     )
+    # Played challenger games and reused field games keep complete pairs in
+    # both summaries, and the challenger has its own rows.
+    head = result.head_to_head()
+    assert result.challenger_id in head["system_id"].tolist()
+    tables = (
+        result.point_margin_summary(),
+        result.system_metrics("priority_metrics", columns=["score_difference"]),
+        result.system_metrics(
+            "priority_metrics", by="opponent", columns=["score_difference"]
+        ),
+    )
+    for table in tables:
+        np.testing.assert_array_equal(
+            np.asarray(table["completed_pairs"], dtype=np.int64) * 2,
+            table["scheduled_games"],
+        )
+        assert not any(
+            "incomplete or inconsistent" in str(reason)
+            for reason in table["unavailable_reason"]
+        )
+        assert result.challenger_id in table["system_id"].tolist()
+    assert sorted(tables[1]["scheduled_games"].tolist()) == [4, 4, 4]
 
 
 def test_reused_physical_failure_prevents_models_and_output(
@@ -324,9 +350,11 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
     )
     config["snapshot_id"] = configs.snapshot_identity(config)
     config = configs.load_tournament_config(config, official=False)
+    # A pool challenger has members, recorded in each of its own games.
+    challenger = marl_bgs.pool({fixture_policy(7): 1, fixture_policy(8): 1})
     result = canonical._run_resolved_tournament(
         config,
-        system=fixture_policy(7),
+        system=challenger,
         metrics="none",
         full_metrics_episodes=(1, 3),
         replay_episodes=(1, 3),
@@ -338,6 +366,34 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
     assert len(result.replay_paths) == 2
     assert len(result.table("full_metrics")["episode_id"]) == 2
     assert result.headline_metrics == ()
+    # The reused replay game's slot rows come from the source's copied table,
+    # named from the source run's own System records.
+    assignments = result.table("policy_assignments")
+    reused = assignments["run_id"] == original.metadata["run_id"]
+    assert set(assignments["episode_id"][reused].tolist()) == {
+        games[0]["origin"]["episode_id"]
+    }
+    assert all(name for name in assignments["system_name"][reused])
+    assert "policy_assignments" in source["tables"]
+    coverage = result.metadata["tables"]["policy_assignments"]["member_coverage"]
+    assert [value["recorded"] for value in coverage.values()] == [4]
+    assert [value["not_recorded"] for value in coverage.values()] == [0]
+    own = assignments["system_name"] == challenger.name
+    assert set(assignments["member"][own].tolist()) <= {"fixture-07", "fixture-08"}
+    games = result.system_metrics(
+        "full_metrics", by="game", systems=[challenger.name], columns=["team_a_kills"]
+    )
+    assert len(games["member"]) == 1 and games["member"][0] is not None
+    # The source's canonical-job pass IDs repeat the challenger run's own.
+    margins = result.point_margin_summary()
+    np.testing.assert_array_equal(
+        np.asarray(margins["completed_pairs"], dtype=np.int64) * 2,
+        margins["scheduled_games"],
+    )
+    assert not any(
+        "incomplete or inconsistent" in str(reason)
+        for reason in margins["unavailable_reason"]
+    )
     assert result.replay_paths[0] == original.replay_paths[0]
     assert result.replay_paths[1].parent != original.replay_paths[0].parent
     assert result.run_dir is not None
@@ -353,7 +409,7 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
             with pytest.raises((ValueError, OSError)):
                 canonical._run_resolved_tournament(
                     config,
-                    system=fixture_policy(7),
+                    system=challenger,
                     metrics="none",
                     full_metrics_episodes=(1, 3),
                     replay_episodes=(1, 3),
@@ -676,6 +732,11 @@ def test_reuse_reads_sampling_only_from_verified_original_method_identities(
     config, manifest = bundle["config"], bundle["manifest"]
     names = {value["name"]: key for key, value in manifest["systems"].items()}
     fact = {"determinism": "deterministic", "basis": "Recorded fixture declaration"}
+    if location not in {"pass", "conflict", "invalid"}:
+        # The fixture records each pass's own sampling facts; remove them so
+        # the other recorded locations are the only source here.
+        for entry in manifest["passes"].values():
+            entry["details"].pop("method_sampling", None)
     if location in {"pass", "conflict", "invalid"}:
         for entry in manifest["passes"].values():
             entry["details"]["method_sampling"] = {
