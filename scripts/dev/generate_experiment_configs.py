@@ -557,6 +557,13 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    result["zero_shot_coordination_analysis.yaml"] = {
+        "zsc_dir": "???",
+        "bootstrap_draws": 2000,
+        "bootstrap_seed": 20261007,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [
