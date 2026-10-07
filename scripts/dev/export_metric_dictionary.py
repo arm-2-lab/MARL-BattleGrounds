@@ -280,7 +280,9 @@ def dictionary_csv() -> str:
     -------
     str
         CSV text with identity-field meanings, metric guidance, locations and indexes.
-        Values are formatted from the shared catalog; no numerical metrics are run.
+        summary_weight names the column that weights each game when games are
+        combined, or is blank when each game counts equally. Values are
+        formatted from the shared catalog; no numerical metrics are run.
     """
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\n")
@@ -302,6 +304,7 @@ def dictionary_csv() -> str:
             "recipient_role",
             "numerator",
             "denominator",
+            "summary_weight",
             "gui_groups",
             "primary_topic",
             "primary_view",
@@ -361,6 +364,7 @@ def dictionary_csv() -> str:
                 "",
                 "",
                 "",
+                "",
                 "Episode Details",
                 "Episode Details",
                 "",
@@ -404,6 +408,7 @@ def dictionary_csv() -> str:
                 column.recipient_role or "",
                 column.numerator or "",
                 column.denominator or "",
+                column.summary_weight or "",
                 "; ".join(
                     topic.label
                     + (f": {METRIC_VIEW_LABELS[view]}" if topic.paired else "")

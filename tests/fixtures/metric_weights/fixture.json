@@ -1,0 +1,21 @@
+{
+ "metric_schema_version": 15,
+ "games": [
+  {
+   "how": "evaluate tdm-alpha vs tdm-beta, map 47, seed 20261007",
+   "team_a_roster": "hunter hunter priest warrior mage",
+   "team_b_roster": "mage warrior rogue priest"
+  },
+  {
+   "how": "evaluate tdm-alpha vs tdm-beta, map 47, seed 20261007",
+   "team_a_roster": "hunter hunter priest warrior mage",
+   "team_b_roster": "mage warrior rogue priest"
+  },
+  {
+   "how": "evaluate_scenarios tdm-alpha, scenario 1"
+  },
+  {
+   "how": "evaluate_scenarios tdm-alpha, scenario 8"
+  }
+ ]
+}

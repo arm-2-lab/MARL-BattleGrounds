@@ -2,8 +2,9 @@
 
 Use [evaluation_analysis.ipynb](../../examples/evaluation_analysis.ipynb) for a
 worked investigation with pandas, Matplotlib and the public results API. It
-covers outcomes, uncertainty, healing, rescues, coordination, control, agents
-and recipients, then gives a complete gallery of the 28 catalog topics. Each
+covers outcomes, uncertainty, each System's metrics seen from its own side
+(`system_metrics`), healing, rescues, coordination, control, agents and
+recipients, then gives a complete gallery of the 28 catalog topics. Each
 section explains what the numbers mean and what they cannot establish.
 
 Opening it starts no experiment. Running its cells reads saved data and writes

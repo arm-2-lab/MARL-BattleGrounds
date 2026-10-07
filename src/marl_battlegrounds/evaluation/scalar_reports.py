@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import io
 import math
-from collections.abc import Buffer, Callable, Iterator, Mapping, Sequence
+from collections.abc import Buffer, Callable, Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO, cast
 
@@ -272,15 +272,23 @@ def _parse_report_row(
     current: bool,
     summary: bool = False,
     columns: frozenset[str] | None = None,
+    positions: Sequence[tuple[int, str]] | None = None,
 ) -> dict[str, ScalarCell]:
     """Check width and parse requested cells with the shared historical rules.
 
     ``columns=None`` parses every cell. A narrow internal request avoids turning
     unused full-report values into Python floats. The CSV record is still parsed
     correctly, including quoting. Unknown requested columns are not invented.
+    ``positions``, the (index, name) pairs of the requested cells found once per
+    header, skips checking every name of every row; it overrides ``columns``.
     """
     if len(cells) != len(header):
         raise ValueError("scalar row width differs from its header")
+    if positions is not None:
+        return {
+            name: _parse_cell(name, cells[index], current=current, summary=summary)
+            for index, name in positions
+        }
     return {
         name: _parse_cell(name, value, current=current, summary=summary)
         for name, value in zip(header, cells, strict=True)
@@ -428,6 +436,16 @@ class IndexedScalarTable:
         if selected is not None and not selected.issubset(self.header):
             raise ValueError("requested scalar columns are not stored in this table")
         parsed = None if selected is None else selected | _OWNERSHIP_COLUMNS
+        # Find the requested cells once, not on every row.
+        positions = (
+            None
+            if parsed is None
+            else [
+                (index, name)
+                for index, name in enumerate(self.header)
+                if name in parsed
+            ]
+        )
         self._check_unchanged()
         batch: list[dict[str, ScalarCell]] = []
         with self.path.open("rb") as stream:
@@ -439,7 +457,7 @@ class IndexedScalarTable:
                     self.header,
                     next(reader),
                     current=self._exact,
-                    columns=parsed,
+                    positions=positions,
                 )
                 _check_ownership(row, self.manifest, self._passes)
                 if _origin_key(row) != key or next(reader, None) is not None:
@@ -572,6 +590,16 @@ def _iter_rows(
                 and tuple(header) != tuple(expected_header)
             ):
                 raise ValueError("scalar table has an incompatible current header")
+            # Find the requested cells once, not on every row.
+            positions = (
+                None
+                if columns is None
+                else [
+                    (index, name)
+                    for index, name in enumerate(header)
+                    if name in columns
+                ]
+            )
             batch: list[dict[str, ScalarCell]] = []
             count = 0
             while True:
@@ -585,7 +613,7 @@ def _iter_rows(
                     cells,
                     current=exact_summaries,
                     summary=summary,
-                    columns=columns,
+                    positions=positions,
                 )
                 if not summary:
                     assert passes is not None
@@ -613,6 +641,7 @@ def iter_scalar_rows(
     manifest: Mapping[str, object],
     expected_header: Sequence[str] | None = None,
     batch_size: int = 256,
+    columns: Collection[str] | None = None,
 ) -> Iterator[tuple[dict[str, ScalarCell], ...]]:
     """Read committed scalar CSV rows with their original names and availability.
 
@@ -629,6 +658,14 @@ def iter_scalar_rows(
     batch_size : int, optional
         Maximum rows per returned tuple. Defaults to 256; must be positive and
         cannot be a boolean.
+    columns : collection of str or None, optional
+        Names of the cells to return; None, the default, returns every cell.
+        The ownership cells (run_id, phase, pass_id, episode_id, seed_id,
+        map_id and config_id) are always added, because each row's ownership
+        is checked. Each row is still split and its width and row count are
+        checked, but cells left out are neither converted nor value-checked,
+        which saves most of the time for a few columns of a wide report. Names
+        the table lacks are not invented.
 
     Yields
     ------
@@ -655,7 +692,11 @@ def iter_scalar_rows(
     manifest freshness. Completion lookup memory scales with recorded episodes.
     """
     yield from _iter_rows(
-        path, manifest=manifest, expected_header=expected_header, batch_size=batch_size
+        path,
+        manifest=manifest,
+        expected_header=expected_header,
+        batch_size=batch_size,
+        columns=None if columns is None else frozenset(columns) | _OWNERSHIP_COLUMNS,
     )
 
 

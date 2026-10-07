@@ -4,12 +4,17 @@ Runtime capture is host-only and may initialize JAX's default backend. JAX is
 imported inside the capture call so ordinary metadata readers do not initialize
 numerical devices just by importing this module. Records contain versions and
 device descriptions, not machine paths, measured speed or guessed driver data.
+This module also owns the one reader of the declared XLA_FLAGS string and the
+execution_settings record that says whether XLA's deterministic GPU mode was
+declared for each attempt of a pass.
 """
 
 from __future__ import annotations
 
+import os
 import platform as host_platform
 import sys
+from collections.abc import Mapping, Sequence
 from importlib.metadata import version
 from typing import Protocol, cast
 
@@ -150,4 +155,129 @@ def capture_runtime_provenance(
     )
 
 
-__all__ = ["capture_debugger_runtime_provenance_v1", "capture_runtime_provenance"]
+_DETERMINISTIC_FLAG = "--xla_gpu_deterministic_ops"
+
+
+def read_declared_xla_flags() -> str:
+    """Return the XLA_FLAGS string this process declared, or "" when unset.
+
+    Returns
+    -------
+    str
+        The environment variable exactly as set, spaces included.
+
+    Notes
+    -----
+    Host-only; reads the environment, nothing else. This is what was declared,
+    not proof of what XLA parsed: changing the string after the backend starts
+    proves nothing. Training's execution identity and evaluation's
+    execution_settings both read it here.
+    """
+    return os.environ.get("XLA_FLAGS", "")
+
+
+def declared_gpu_deterministic_ops(flags: str) -> bool | None:
+    """Say whether a declared XLA_FLAGS string turns deterministic GPU ops on.
+
+    Parameters
+    ----------
+    flags : str
+        An XLA_FLAGS string, split on spaces.
+
+    Returns
+    -------
+    bool or None
+        The last ``--xla_gpu_deterministic_ops`` setting wins: the bare flag
+        or ``=true`` gives True, ``=false`` gives False, and any other value
+        (``=1``, ``=True``) gives None, meaning unknown. No such flag gives
+        False.
+    """
+    state: bool | None = False
+    for token in flags.split():
+        if token == _DETERMINISTIC_FLAG:
+            state = True
+        elif token.startswith(_DETERMINISTIC_FLAG + "="):
+            setting = token.split("=", 1)[1]
+            state = True if setting == "true" else False if setting == "false" else None
+    return state
+
+
+def capture_execution_settings() -> dict[str, object]:
+    """Record the declared XLA settings of this attempt of a run.
+
+    Returns
+    -------
+    dict
+        ``declared_xla_flags_by_attempt``: a one-item list holding this
+        attempt's whole XLA_FLAGS string; ``declared_gpu_deterministic_ops``:
+        declared_gpu_deterministic_ops of that string.
+
+    Notes
+    -----
+    Host-only. Evaluation and tournament passes save it beside
+    runtime_provenance; a resumed pass merges attempts with
+    merge_execution_settings. It records what was declared, not what XLA
+    parsed: changing XLA_FLAGS after the backend starts proves nothing.
+    """
+    flags = read_declared_xla_flags()
+    return {
+        "declared_xla_flags_by_attempt": [flags],
+        "declared_gpu_deterministic_ops": declared_gpu_deterministic_ops(flags),
+    }
+
+
+def merge_execution_settings(
+    records: Sequence[Mapping[str, object] | None],
+) -> dict[str, object]:
+    """Combine execution_settings records, oldest first, into one record.
+
+    Parameters
+    ----------
+    records : sequence of mapping or None
+        One record per attempt or per pass. None stands for an attempt or
+        pass that saved no record but has games.
+
+    Returns
+    -------
+    dict
+        ``declared_xla_flags_by_attempt``: every attempt's string in order,
+        with None for an unrecorded one; ``declared_gpu_deterministic_ops``:
+        False if any record says False, otherwise None if any is None or
+        unrecorded, otherwise True. An empty sequence gives an empty list and
+        None.
+    """
+    flags: list[object] = []
+    states: list[object] = []
+    for record in records:
+        if record is None:
+            flags.append(None)
+            states.append(None)
+            continue
+        attempts = record.get("declared_xla_flags_by_attempt")
+        flags.extend(
+            list(cast(Sequence[object], attempts))
+            if isinstance(attempts, list)
+            else [None]
+        )
+        states.append(record.get("declared_gpu_deterministic_ops"))
+    merged = (
+        False
+        if any(state is False for state in states)
+        else None
+        if not states or any(state is not True for state in states)
+        else True
+    )
+    return {
+        "declared_xla_flags_by_attempt": flags,
+        "declared_gpu_deterministic_ops": merged,
+    }
+
+
+__all__ = [
+    "capture_debugger_runtime_provenance_v1",
+    "capture_execution_settings",
+    "capture_runtime_provenance",
+    "declared_gpu_deterministic_ops",
+    "merge_execution_settings",
+    "read_declared_xla_flags",
+]

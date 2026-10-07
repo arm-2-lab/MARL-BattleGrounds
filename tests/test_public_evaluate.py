@@ -8,12 +8,15 @@ exact sources at depth 0.0 records 5.0, the depth for map-built games, so it
 resumes only with the depth omitted (0.0 "differs", 5.0 "conflicts"). An actor
 trained before Red Zone (actor input schema 1) and a current actor play one
 evaluate call at recorded depths 0.0 and 5.0, and the second depth reuses the
-compiled System chunk.
+compiled System chunk. An in-memory evaluation creates no files and inspects no
+sampling, so its system_metrics intervals say "Sampling mechanism unknown", yet
+it still records its declared XLA flags in execution_settings.
 """
 
 import csv
 import io
 import json
+import os
 from collections.abc import Callable
 from contextlib import ExitStack
 from importlib import import_module
@@ -49,6 +52,9 @@ from marl_battlegrounds.evaluation.policy_execution import (
 from marl_battlegrounds.evaluation.recording_context import capture_recording_provenance
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay
 from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS, RunWriter
+from marl_battlegrounds.evaluation.runtime_provenance import (
+    declared_gpu_deterministic_ops,
+)
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.input import ActorInput
 from marl_battlegrounds.policies.random_valid import random_policy
@@ -126,6 +132,15 @@ def test_public_evaluate_cycles_one_total_budget_and_creates_no_files(
     )
     np.testing.assert_array_equal(result.priority_metrics["team_a_return"], [0, 0, 0])
     assert result.full_metrics == {}
+    # The free XLA-flag record is kept; sampling stays uninspected in memory.
+    settings = result.execution_settings
+    flags = os.environ.get("XLA_FLAGS", "")
+    assert settings["declared_xla_flags_by_attempt"] == [flags]
+    assert settings["declared_gpu_deterministic_ops"] is (
+        declared_gpu_deterministic_ops(flags)
+    )
+    summary = result.system_metrics("priority_metrics", columns=["team_a_kills"])
+    assert "Sampling mechanism unknown" in summary["unavailable_reason"][0]
     assert list(tmp_path.iterdir()) == []
 
 

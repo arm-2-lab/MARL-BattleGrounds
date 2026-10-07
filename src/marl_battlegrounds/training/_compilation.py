@@ -8,7 +8,6 @@ Importing this module changes no JAX setting and initializes no device.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, cast
@@ -61,11 +60,12 @@ def execution_identity(
     """
     import jax
 
-    if runtime is None:
-        from marl_battlegrounds.evaluation.runtime_provenance import (
-            capture_runtime_provenance,
-        )
+    from marl_battlegrounds.evaluation.runtime_provenance import (
+        capture_runtime_provenance,
+        read_declared_xla_flags,
+    )
 
+    if runtime is None:
         runtime = capture_runtime_provenance(version("marl-battlegrounds")).model_dump(
             mode="json"
         )
@@ -86,7 +86,7 @@ def execution_identity(
             "threefry_gpu_kernel_lowering": settings.jax_threefry_gpu_kernel_lowering,
             "enable_pgle": settings.jax_enable_pgle,
         },
-        "declared_xla_flags": os.environ.get("XLA_FLAGS", ""),
+        "declared_xla_flags": read_declared_xla_flags(),
     }
 
 

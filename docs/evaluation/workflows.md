@@ -198,6 +198,199 @@ Point-margin intervals are not estimated.
 Existing tournament rankings and joint Elo stay unchanged. The package CLI
 prints the same head-to-head games, W/D/L and point values.
 
+### Compare Every System's Metrics
+
+`system_metrics` answers "how does my method play compared with every other
+System here?" for any saved or in-memory result: an evaluation, a tournament,
+a canonical tournament with your challenger, or `load_results(...)`.
+
+```python
+import marl_battlegrounds as marl_bgs
+
+results = marl_bgs.load_results("artifacts/my_tournament_run")
+field = results.system_metrics("full_metrics")        # one row per System
+print(field["system_name"], field["elo"], field["team_a_ally_distance_mean"])
+mine = results.system_metrics("full_metrics", by="opponent", systems=["My Method"])
+games = results.system_metrics("full_metrics", by="game", columns=["team_a_kills"])
+```
+
+**Every System is shown as Team A.** Whichever side a System really played,
+its own numbers are in the Team A columns and its opponent's in the Team B
+columns. Column names do not change: `team_a_kills` is always that System's
+kills, `agent_0` to `agent_4` are its agents, and `score_difference` is its
+points minus its opponent's. Games it played as Team B are read from each
+column's mirrored twin: `team_b_kills` becomes `team_a_kills`, and
+`agent_7_to_agent_2_damage_done` becomes `agent_2_to_agent_7_damage_done`.
+The [metric catalog](metric_specification.md) owns this rule
+(`mirror_metric`), so it holds for every column and roster.
+
+`by` sets one row per:
+
+| `by` | One Row Per | Notes |
+| --- | --- | --- |
+| `"system"` (default) | System | All its games against every opponent. |
+| `"opponent"` | System and opponent | The same rows as `head_to_head()`: both directions, self-play once. |
+| `"map"` | System and map | All its opponents on that map. |
+| `"game"` | System and game | Each game seen from each System's side. |
+
+In `head_to_head` and `point_margin_summary`, `by` adds a split on top of
+System and opponent; here it names the row itself.
+
+**One `by="game"` row, read slowly.** Suppose a System played recorded Team B
+and started from the map's original Team A spawn bank. Its row says
+`played_as="team_b"` (the side it really played), `spawn_end="team_a"` (the
+bank it started from) and `team_a_kills=12` (its own kills, read from the
+saved `team_b_kills`). `team_a` means three different things in that row. The
+metric and identity columns are read from the System's side, so its
+`team_a_policy` is its own name and `agent_0_class_id` its own first slot;
+only `played_as` and `spawn_end` keep their recorded meaning.
+
+**How games combine.** Summaries use each column's `summary_weight` from the
+catalog ([column dictionary](metric_columns.csv)):
+
+- Counts, health and ticks: the mean per game.
+- Fractions and rates: total numerator divided by total denominator. For
+  `team_a_multi_contributor_kill_fraction` that is all shared kills divided by
+  all kills, so a 30-kill game counts more than a 2-kill game.
+- Averages such as `team_a_ally_distance_mean`: weighted by their count of
+  observations.
+- A few averages use the mean per game instead; `SUMMARY_WEIGHT_MISSING` in
+  the catalog lists them with the reason. Four have no saved denominator.
+  The fifth is each agent's kills per death: deaths are saved, but the value
+  is blank in games without a death, so weighting by deaths would drop those
+  games' kills. For an exact total-over-total value, ask for it with `ratios=`:
+
+```python
+kd = results.system_metrics(
+    "full_metrics",
+    columns=["team_a_kills"],
+    ratios={"team_kills_per_death": ("team_a_kills", "team_a_deaths")},
+)
+```
+
+`ratios=` works for any pair of columns, such as the share of kills on enemies
+a Hunter had slowed: `{"slowed_kill_fraction":
+("team_a_kills_of_hunter_basic_slow_recipient", "team_a_kills")}`.
+
+**Intervals.** Each value has `<name>_ci_low` and `<name>_ci_high`, a 95%
+interval from resampling whole exchanged-spawn pairs inside each opponent and
+map, the rule Elo uses. With `by="opponent"`, `score_difference` gives the same
+interval as `point_margin_summary` for recorded Team A rows. Each row also
+carries the System's own `elo`, `elo_ci_low`, `elo_ci_high` and `rank` from the
+saved rankings, so plotting a metric against strength takes one call.
+
+Here is part of the Season 0 tournament's answer, from its full-metrics replay
+(7,200 games; names shortened), made with this call:
+
+```python
+field = results.system_metrics(
+    "full_metrics",
+    columns=[
+        "score_difference",                         # Margin Per Game
+        "team_a_ally_distance_mean",                # Teammate Distance
+        "team_a_multi_contributor_kill_fraction",   # Shared Kill Share
+        "team_a_ultimate_activations",              # Ultimate Uses
+    ],
+)
+```
+
+| System | Elo | Margin Per Game | Teammate Distance | Shared Kill Share | Ultimate Uses |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Recurrent IPPO | 1,441 | 5.21 (4.99 to 5.42) | 2.66 (2.65 to 2.67) | 0.84 (0.83 to 0.84) | 31.0 (30.8 to 31.2) |
+| PQN-VDN | 1,358 | 1.30 (1.14 to 1.46) | 2.44 (2.44 to 2.45) | 0.89 (0.89 to 0.89) | 26.9 (26.8 to 27.1) |
+| Recurrent MAPPO | 1,304 | 2.29 (2.04 to 2.53) | 3.16 (3.15 to 3.18) | 0.80 (0.80 to 0.81) | 29.6 (29.4 to 29.8) |
+| QMIX | 1,300 | 0.64 (0.44 to 0.83) | 3.15 (3.14 to 3.16) | 0.86 (0.85 to 0.86) | 28.3 (28.1 to 28.4) |
+| Feedforward IPPO | 1,240 | 1.75 (1.47 to 2.03) | 2.96 (2.95 to 2.98) | 0.77 (0.77 to 0.78) | 31.6 (31.4 to 31.8) |
+| Feedforward MAPPO | 1,140 | -2.69 (-2.94 to -2.44) | 3.45 (3.40 to 3.49) | 0.79 (0.78 to 0.79) | 30.5 (30.2 to 30.8) |
+| TDM-Beta | 1,043 | -2.99 (-3.15 to -2.83) | 3.90 (3.89 to 3.92) | 0.70 (0.70 to 0.71) | 25.1 (25.0 to 25.3) |
+| TDM-Gamma | 1,000 | -2.39 (-2.55 to -2.24) | 4.11 (4.09 to 4.12) | 0.69 (0.69 to 0.69) | 29.2 (29.1 to 29.4) |
+| TDM-Alpha | 974 | -3.11 (-3.27 to -2.95) | 3.96 (3.95 to 3.97) | 0.71 (0.71 to 0.72) | 24.9 (24.8 to 25.0) |
+
+Stronger teams tend to stay closer together and share more kills; Ultimate uses
+show no clear order.
+
+To see it as a chart, plot any column against Elo:
+
+```python
+import matplotlib.pyplot as plt
+
+name = "team_a_ally_distance_mean"
+fig, ax = plt.subplots()
+ax.errorbar(
+    field["elo"],
+    field[name],
+    yerr=[field[name] - field[f"{name}_ci_low"], field[f"{name}_ci_high"] - field[name]],
+    fmt="o",
+)
+for x, y, label in zip(field["elo"], field[name], field["system_name"]):
+    ax.annotate(label, (x, y), fontsize=8)
+ax.set_xlabel("Elo")
+ax.set_ylabel("Mean Distance Between Teammates (Map Units)")
+fig.savefig("ally_distance_vs_elo.png")
+```
+
+The result is a plain dictionary of NumPy columns, so `pandas.DataFrame(field)`
+turns it into a table, and `.to_csv(...)` saves it.
+
+**How it relates to the other views.** `head_to_head` stays the place for
+wins, draws and losses; `point_margin_summary` stays the standard for point
+margins. With `by="opponent"`, `system_metrics` gives the same rows and
+margins as `head_to_head`, and the same `score_difference` interval as
+`point_margin_summary` for each recorded Team A row (a Team B row's interval is
+the same one, negated, with its ends swapped). The saved `tournament_headline_metrics` table
+summarizes five measures per System (kills, deaths, margin, return and game
+length) from each System's side; `system_metrics` gives the same means for any
+column, with intervals.
+
+**Missing data.**
+
+- Games played but without rows in the table you asked for, such as full
+  metrics recorded for only some games, make a summary row's values NaN.
+  `unavailable_reason` says "Full metrics cover only N of M played games of
+  this row". `by="opponent"` rows whose games are all covered stay valid, and
+  `by="game"` shows every recorded game.
+- Games not played yet keep descriptive values but get no interval. An
+  unfinished round robin plays matchups one at a time, so its `by="system"`
+  rows can compare different sets of opponents; read `by="opponent"` until it
+  finishes.
+- When a slot's class changes between a System's games, that slot's agent,
+  pair and recipient columns are NaN in summaries (`agent_<slot>_class_id` is
+  None), because averaging them would mix classes.
+
+**Reading it honestly.**
+
+- With thousands of columns, many 95% intervals will exclude a difference by
+  chance.
+- Overlapping intervals between two Systems are not a test of a difference.
+- These intervals describe repeat games of the same fixed methods, not
+  different training seeds.
+- Matchups where both sides choose without randomness add no width; a row
+  made only of them says "No random sampling variation".
+- If you combine several `evaluate` calls into one comparison, give each call
+  a different seed, or the repeated seed coordinates withhold the intervals.
+- An `evaluate` call without `output_dir` does not inspect how its methods
+  sample, so its intervals are withheld ("Sampling mechanism unknown"); save
+  the run to get them. Tournaments always record these facts, but a System of
+  your own is "unknown", so rows with its games keep their values and withhold
+  their intervals (see
+  [Compare Your Challenger With Every Member](canonical_tournaments.md#compare-your-challenger-with-every-member)).
+- A trend across one field of Systems may not hold for stronger ones, so treat
+  these numbers as diagnostics, not reward recipes.
+
+**Cost.** Host-only NumPy, no JAX and no file writes. One pass over a saved
+table converts only the cells it needs; in-memory results convert every cell
+of their rows. On the Season 0 full-metrics replay (7,200
+games, 370 MB), on one workstation:
+
+| Call | Time | Peak RAM |
+| --- | ---: | ---: |
+| `by="system"`, 17 columns | 5 s | 0.3 GB |
+| `by="system"`, all 11,192 columns with intervals | 36 s | 1.0 GB |
+| `by="opponent"`, all columns with intervals | 60 to 67 s | 0.9 GB |
+| `by="game"`, all columns (returns about 645 MB) | 27 s | 1.5 GB |
+
+Pass `columns=` or `systems=` when you only need some.
+
 ## Use Your Own Method
 
 The [Systems example](../../examples/systems.py) runs a complete compiled

@@ -511,7 +511,10 @@ class RunWriter:
         token and absent when unknown.
     details : dict, optional
         JSON-compatible pass metadata. Source discovery is added only when capture
-        needs it. Resume allows runtime_provenance, num_envs and chunk_size to vary.
+        needs it. Resume allows runtime_provenance, num_envs, chunk_size and
+        execution_settings to vary. execution_settings keeps one record per
+        attempt that saved games of the pass; a resume that saves none leaves
+        it unchanged.
     buffer_size : int, default 128
         Positive completed-row limit; bool is invalid. Optional assignment
         intervals share a capacity of 10 * buffer_size open and closed segments.
@@ -602,6 +605,10 @@ class RunWriter:
         # Live Team A/B methods that name replay controllers; in memory only.
         self._replay_methods: tuple[Policy | System, Policy | System] | None = None
         self._assignment_open: dict[tuple[int, int], list[object]] = {}
+        # This attempt's execution_settings, waiting for its first saved game
+        # of each resumed pass, and the passes whose record already has them.
+        self._attempt_settings: dict[str, Mapping[str, object]] = {}
+        self._settings_done: set[str] = set()
         self._source_cache: list[tuple[object, tuple[object, ...], str]] = []
         self._pending_numerical_starts: set[int] = set()
         self._collection_active = False
@@ -1042,8 +1049,38 @@ class RunWriter:
         self._details["systems"].update(systems)
         previous = self._details["passes"].get(key)
         if previous is not None:
-            previous["details"] = identity["details"]
+            details = cast(dict[str, Any], identity["details"])
+            current = details.get("execution_settings")
+            saved = previous["details"].get("execution_settings")
+            # Keep the saved record unchanged here, so a resume that plays no
+            # game rewrites nothing; this attempt's settings join it when the
+            # attempt first saves a game of this pass (see _flush).
+            if saved is not None:
+                details = {**details, "execution_settings": saved}
+            else:
+                details = {
+                    name: value
+                    for name, value in details.items()
+                    if name != "execution_settings"
+                }
+            if isinstance(current, dict) and key not in self._settings_done:
+                self._attempt_settings[key] = cast(Mapping[str, object], current)
+            previous["details"] = details
         else:
+            details = cast(dict[str, Any], identity["details"])
+            current = details.get("execution_settings")
+            if isinstance(current, dict):
+                # Like a resumed pass, a new pass records this attempt's
+                # settings only once the attempt saves one of its games.
+                self._attempt_settings[key] = cast(Mapping[str, object], current)
+                identity = {
+                    **identity,
+                    "details": {
+                        name: value
+                        for name, value in details.items()
+                        if name != "execution_settings"
+                    },
+                }
             self._details["passes"][key] = {
                 **identity,
                 "completed_episode_ids": [],
@@ -3653,6 +3690,29 @@ class RunWriter:
                         "durable_bytes": stream.tell(),
                         "rows": previous["rows"] + len(rows),
                     }
+            for key in dict.fromkeys(key for key, _ in self._pending):
+                current = self._attempt_settings.pop(key, None)
+                if current is None:
+                    continue
+                from marl_battlegrounds.evaluation.runtime_provenance import (
+                    merge_execution_settings,
+                )
+
+                entry = candidate["passes"][key]
+                saved = entry["details"].get("execution_settings")
+                # An earlier attempt that saved games but no record is unknown.
+                earlier: list[Mapping[str, object] | None] = (
+                    [cast(Mapping[str, object], saved)]
+                    if isinstance(saved, dict)
+                    else [None]
+                    if entry["completed_episode_ids"]
+                    else []
+                )
+                entry["details"] = {
+                    **entry["details"],
+                    "execution_settings": merge_execution_settings([*earlier, current]),
+                }
+                self._settings_done.add(key)
             for key, episode_id in self._pending:
                 candidate["passes"][key]["completed_episode_ids"].append(episode_id)
                 for evidence in (
@@ -3886,7 +3946,12 @@ def _prepare_pass_identity(
     }
     key = json.dumps((phase, pass_id), separators=(",", ":"))
     previous = manifest["passes"].get(key)
-    execution_fields = {"runtime_provenance", "num_envs", "chunk_size"}
+    execution_fields = {
+        "runtime_provenance",
+        "num_envs",
+        "chunk_size",
+        "execution_settings",
+    }
     if previous is not None:
         for name, value in identity.items():
             old = previous.get(name)

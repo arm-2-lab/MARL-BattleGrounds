@@ -26,8 +26,11 @@ from marl_battlegrounds.evaluation.results import (
     Row,
     _cell_type,
     _mapping,
+    _pass_facts,
+    _plan_record,
     _schema,
     _stamp,
+    _state,
     _View,
 )
 from marl_battlegrounds.evaluation.run_writer import (
@@ -341,6 +344,18 @@ class CanonicalView(_View):
             row["entrant_id"]: row["name"]
             for row in self.records.config["participants"]
         }
+        # A challenger is not a config participant; its saved registration
+        # names it, so every view can name its games.
+        challenger = reuse.get("challenger_id")
+        if isinstance(challenger, str) and challenger not in self._entrant_names:
+            registration = _mapping(
+                _mapping(
+                    _mapping(manifest.get("details")).get("participant_registrations")
+                ).get(challenger)
+            )
+            self._entrant_names[challenger] = str(
+                registration.get("name") or challenger
+            )
         super().__init__(
             manifest, run_dir=run_dir, phase=phase, pass_id=pass_id, memory=memory
         )
@@ -449,12 +464,17 @@ class CanonicalView(_View):
             "missing_passes": (),
         }
 
-    def _raw(self, filename: str, rows: int) -> Iterator[Row]:
-        """Stream original selected rows while leaving summary reading unchanged."""
+    def _raw(
+        self, filename: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Stream original selected rows while leaving summary reading unchanged.
+
+        columns keeps only those cells of a raw game table; None keeps all.
+        """
         if filename in {"episodes.csv", "priority_metrics.csv"}:
             return
         if filename not in {"match_results.csv", "full_metrics.csv"}:
-            yield from super()._raw(filename, rows)
+            yield from super()._raw(filename, rows, columns)
             return
         ids = self._selected_game_ids()
         if filename == "full_metrics.csv" and self._settings["metrics"] != "full":
@@ -471,9 +491,9 @@ class CanonicalView(_View):
                     raise ValueError(
                         "selected completed game lacks its required full report"
                     )
-        columns = None
+        narrow: tuple[str, ...] | None = None
         if filename == "match_results.csv" and self._settings["metrics"] == "none":
-            columns = (
+            narrow = (
                 *IDENTITY_COLUMNS,
                 "block_id",
                 "bootstrap_group",
@@ -482,13 +502,21 @@ class CanonicalView(_View):
                 "team_a_score",
                 "team_b_score",
             )
+        if columns is not None:
+            narrow = tuple(
+                name for name in narrow or self._header(filename) if name in columns
+            )
         for batch in self.records.iter_rows(
-            filename, game_ids=ids, rows=rows, columns=columns
+            filename, game_ids=ids, rows=rows, columns=narrow
         ):
             self._check_snapshot(filename)
             for row in batch:
-                if filename == "match_results.csv" and columns is not None:
-                    row = {name: row.get(name) for name in MATCH_COLUMNS}
+                if filename == "match_results.csv" and narrow is not None:
+                    row = {
+                        name: row.get(name)
+                        for name in MATCH_COLUMNS
+                        if columns is None or name in columns
+                    }
                 yield row
 
     def _check_snapshot(self, filename: str) -> None:
@@ -560,6 +588,114 @@ class CanonicalView(_View):
             game.get("spawn_locations"),
         )
 
+    def _game_plan(self) -> list[Row]:
+        """List the logical schedule in scope with each game's original declaration.
+
+        Local games come first, in pass and schedule order as the shared view
+        lists them, so a run without reused games keeps its earlier summaries.
+        Reused games follow in logical order. They keep the declaration, random
+        root and sampling facts of the pass that played them, and their pair
+        keys start with that run's ID, so they never merge with local games
+        that reuse the same labels.
+        """
+        completed = {origin_key(row): row for row in self.iter_rows("episodes", 128)}
+        selected = set(self._selected_game_ids())
+        run_id = str(self.manifest.get("run_id"))
+        plan: list[Row] = []
+        for entry in self.selected.values():
+            schedule = _mapping(entry.get("episodes"))
+            if not schedule:
+                continue
+            facts = _pass_facts(entry, _state(entry, self.manifest)[0] == "complete")
+            for identifier, raw in schedule.items():
+                key = (run_id, entry["phase"], entry["pass_id"], int(identifier))
+                game = self._game_by_origin.get(key)
+                if game is None or game["logical_game_id"] not in selected:
+                    continue
+                plan.append(
+                    _plan_record(
+                        (run_id, entry["phase"], entry["pass_id"], str(identifier)),
+                        facts,
+                        _mapping(raw),
+                        completed.get(key),
+                        self._game_context(game),
+                    )
+                )
+        facts_by_pass: dict[tuple[object, str, str], Row] = {}
+        for game in self.records.games:
+            if game.get("origin") is None or game["logical_game_id"] not in selected:
+                continue
+            origin = self.records.origin(game)
+            entry = self.records.entry(game)
+            if entry is None:
+                raise ValueError("reused tournament game has no original pass")
+            pass_key = (origin.get("source_id"), origin["phase"], origin["pass_id"])
+            if pass_key not in facts_by_pass:
+                facts_by_pass[pass_key] = _pass_facts(entry, True)
+            plan.append(
+                _plan_record(
+                    (
+                        str(origin["run_id"]),
+                        str(origin["phase"]),
+                        str(origin["pass_id"]),
+                        str(origin["episode_id"]),
+                    ),
+                    facts_by_pass[pass_key],
+                    _mapping(
+                        _mapping(entry.get("episodes")).get(str(origin["episode_id"]))
+                    ),
+                    completed.get(origin_key(origin)),
+                    self._game_context(game),
+                )
+            )
+        return plan
+
+    def _settings_entries(self) -> list[Row]:
+        """Return local passes with games and the source passes of reused games."""
+        entries = super()._settings_entries()
+        selected = set(self._selected_game_ids())
+        seen: set[tuple[object, str, str]] = set()
+        for game in self.records.games:
+            if game.get("origin") is None or game["logical_game_id"] not in selected:
+                continue
+            origin = self.records.origin(game)
+            key = (origin.get("source_id"), origin["phase"], origin["pass_id"])
+            entry = self.records.entry(game)
+            if key not in seen and entry is not None:
+                seen.add(key)
+                entries.append(entry)
+        return entries
+
+    def _rankings(self, rows: int) -> Iterator[Row]:
+        """Give saved rankings the declared entrant IDs the other views use.
+
+        The saved table names entrants; the shared reader turns names into
+        recorded registration IDs. Canonical results identify entrants by their
+        declared IDs everywhere else, so a name that belongs to exactly one
+        entrant gets that ID. Other rows keep the shared reader's ID.
+        """
+        by_name: dict[str, list[str]] = {}
+        for identifier, name in self._entrant_names.items():
+            by_name.setdefault(name, []).append(identifier)
+        for row in super()._rankings(rows):
+            matches = by_name.get(str(row.get("system_name")), [])
+            if len(matches) == 1:
+                row["system_id"] = matches[0]
+            yield row
+
+    def _game_context(
+        self, game: Mapping[str, Any]
+    ) -> tuple[str, str, str, str, object]:
+        """Return a logical game's entrant IDs, names and spawn choice."""
+        a, b = game["team_a"], game["team_b"]
+        return (
+            a,
+            b,
+            self._entrant_names[a],
+            self._entrant_names[b],
+            game.get("spawn_locations"),
+        )
+
     def _episodes(self, rows: int) -> Iterator[Row]:
         """Project exact outcomes with focal score only for challenger-owned games."""
         challenger = self._reuse["challenger_id"]
@@ -582,10 +718,16 @@ class CanonicalView(_View):
             )
             yield result
 
-    def iter_rows(self, name: str, rows: int) -> Iterator[Row]:
-        """Use shared projections, selecting priority from actual requested games."""
+    def iter_rows(
+        self, name: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Use shared projections, selecting priority from actual requested games.
+
+        columns keeps only those cells of a metric table (identity included);
+        None keeps every cell.
+        """
         if name != "priority_metrics":
-            yield from super().iter_rows(name, rows)
+            yield from super().iter_rows(name, rows, columns)
             return
         if self.metadata["tables"][name]["availability"] == "disabled":
             return
@@ -593,9 +735,13 @@ class CanonicalView(_View):
         if self._settings["metrics"] == "none":
             wanted = set(self._settings["full_metrics_episodes"])
             ids = tuple(identifier for identifier in ids if identifier in wanted)
-        columns = (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES)
+        names = tuple(
+            name
+            for name in (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES)
+            if columns is None or name in columns
+        )
         for batch in self.records.iter_rows(
-            "match_results.csv", game_ids=ids, rows=rows, columns=columns
+            "match_results.csv", game_ids=ids, rows=rows, columns=names
         ):
             self._check_snapshot("match_results.csv")
             yield from batch

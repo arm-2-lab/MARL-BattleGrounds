@@ -1229,6 +1229,15 @@ def _run_evaluation(
                 "runtime_version": " ".join(device.client.platform_version.split())
                 or None,
             }
+    else:
+        from marl_battlegrounds.evaluation.runtime_provenance import (
+            capture_execution_settings,
+        )
+
+        # Reading the declared XLA flags is free, so in-memory results report
+        # them too. Sampling inspection stays recording-only (it can read from
+        # the device); in-memory intervals are therefore withheld.
+        metadata["execution_settings"] = capture_execution_settings()
     schedule: dict[int, dict[str, object]] = {}
     if contract is None:
         configs = {id(spec.env_config): spec.env_config for spec in specs}
