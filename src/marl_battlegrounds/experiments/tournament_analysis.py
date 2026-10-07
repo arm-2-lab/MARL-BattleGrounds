@@ -24,12 +24,13 @@ This stage shows how to get the rest from the public API:
    full metrics against the points the original run saved (head_to_head), a
    check across two tables.
 5. Rank every team-level metric in the catalog by its rank correlation with
-   the saved Elo, to find the measures that follow strength most closely, and
-   test each one three ways: an exact permutation p-value (with Holm's
-   correction for testing every metric), whether the winner of a decided game
-   had more of it than the loser, and whether each entrant had more of it in
-   its wins than in its losses (a sign that the measure follows the score of
-   a game rather than the team that plays it).
+   the saved Elo, with per-game totals taken per 100 ticks because games last
+   different times, to find the measures that follow strength most closely,
+   and test each one: an exact permutation p-value with Holm's and the
+   Westfall-Young max-statistic corrections for testing every metric, whether
+   the winner of a decided game had more of it than the loser, and, inside
+   each matchup (one opponent, map and spawn end), whether an entrant had
+   more of it in its wins than in its losses.
 
 Outputs in output_dir: teamwork.csv (each MEASURES value with its interval),
 by_class.csv (the class tables), elo_screen.csv (step 5, with its tests), summary.md
@@ -783,7 +784,8 @@ def screen_tests(
           the largest rank correlation of any metric is at least as far from
           zero as this one's. It allows for metrics that move together, so it
           is less strict than Holm when they overlap, and still controls the
-          chance of any false trend.
+          chance of any false trend. Only metrics with a value for every
+          entrant enter it; the others get NaN.
         - ``winner_higher_share``: over decided games between two different
           entrants, the share in which the winner had more of the measure than
           the loser. Ties and missing values are left out;
@@ -1032,30 +1034,33 @@ def write_outputs(
         lines += ["", "**Strongest trends with Elo among all team metrics**", ""]
         if tested:
             lines.append(
-                "p: exact permutation p-value over all entrants; Holm: after "
-                "correcting for every screened metric; Winner higher: share of "
-                "decided games the winner had more; Wins over losses: chance a "
-                "team's win shows more than its loss (0.5: no change)."
+                "Per-game totals are per 100 ticks (Scale). p: exact permutation "
+                "p-value over all entrants; Holm and Max-t: after Holm's and the "
+                "Westfall-Young max-statistic corrections over the screen; Winner "
+                "higher: share of decided games the winner had more; In matchup: "
+                "chance a win shows more than a loss against the same opponent, "
+                "map and spawn end (0.5: no change)."
             )
             lines.append("")
             lines.append(
-                "| Measure | Unit | All | p | Holm | Learned | p | Winner higher "
-                "| Wins over losses | Meaning |"
+                "| Measure | Scale | All | p | Holm | Max-t | Learned | p "
+                "| Winner higher | In matchup | Meaning |"
             )
-            lines.append("| --- | --- |" + " ---: |" * 7 + " --- |")
+            lines.append("| --- | --- |" + " ---: |" * 8 + " --- |")
         else:
             lines.append("| Measure | Unit | All | Learned | Meaning |")
             lines.append("| --- | --- | ---: | ---: | --- |")
         for row in screen[:20]:
             cells = [
                 row["measure"],
-                row["unit"],
+                row.get("scale", row["unit"]),
                 f"{row['correlation_all']:+.2f}",
             ]
             if tested:
                 cells += [
                     f"{row['p_value_all']:.2g}",
                     f"{row['holm_p_value_all']:.2g}",
+                    f"{row['max_t_p_value_all']:.2g}",
                     f"{row['correlation_learned']:+.2f}",
                     f"{row['p_value_learned']:.2g}",
                     f"{row['winner_higher_share']:.2f}",

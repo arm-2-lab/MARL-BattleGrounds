@@ -1272,9 +1272,10 @@ fractions, distances and averages keep their scale (`scale`). The tests:
   smallest possible is 2 / 9!, about 0.0000055), and the same over the six
   learned entrants (`p_value_learned`; 720 orderings, smallest 0.0028).
 - **Corrections for the whole screen.** `p_value_all` after Holm's correction
-  (`holm_p_value_all`) and after the Westfall-Young max-statistic correction
-  (`max_t_p_value_all`), over the 138 metrics whose values differ between
-  entrants. The second allows for metrics that move together.
+  over the 138 metrics whose values differ between entrants
+  (`holm_p_value_all`), and after the Westfall-Young max-statistic
+  correction over the 137 of them with a value for every entrant
+  (`max_t_p_value_all`). The second allows for metrics that move together.
 - **Winner check.** Over the 5,933 decided games, the share in which the
   winner had more of the metric than the loser (`winner_higher_share`).
 - **Inside a matchup.** Within each cell of one entrant, opponent, map and
@@ -1363,17 +1364,20 @@ useful Priest healing and of the damage it received).
 **Findings.** Per-game values are in the table above; the screen's per-tick
 values and tests are in `season_0_teamwork_screen.csv`.
 
-1. **Activity does not separate strong teams from weak ones.** Per tick,
-   kills (+0.02), Basic uses (−0.17), Ultimate uses (−0.13) and ticks with
-   two or more attackers (−0.02) show no trend across the nine. Every
-   Ultimate has a 30-tick cooldown, so a team can use at most about 0.17 per
-   tick; the nine use 0.11 to 0.14.
+1. **Activity shows no trend across the nine.** Per tick, kills (+0.02),
+   Basic uses (−0.17) and ticks with two or more attackers (−0.02) show no
+   trend, because the scripted bots are as active as the best learned teams;
+   among the learned six, each leans with Elo (+0.66, not significant).
+   Ultimate use shows no trend in either (−0.13; +0.14 among the learned
+   six): every Ultimate has a 30-tick cooldown, so a team can use at most
+   about 0.17 per tick, and the nine use 0.11 to 0.14.
 2. **One trend survives the whole screen, narrowly.** The share of kills a
    Warrior's Ultimate helped with falls from 13.9-14.4% for the bots to
    3.1-3.7% for the learned teams (−0.95; Holm p = 0.049, max-statistic p =
-   0.029; −0.89 among the learned six). Recurrent MAPPO and QMIX are 4 Elo
-   apart; if they swapped places, this metric would fall below Holm's line
-   and the useful share of Basic healing would rise above it.
+   0.029; −0.89 among the learned six): the bots lean on the Warrior's
+   Ultimate to finish kills, learned teams rarely do. Recurrent MAPPO and QMIX
+   are 4 Elo apart; if they swapped places, this metric would no longer pass
+   Holm's correction and the useful share of Basic healing would.
 3. **Strong teams hold together.** Teammates stand 3.90-4.11 map units apart
    in the bots and 2.45-3.45 in the learned teams (−0.90). The auras pay off
    accordingly: Warrior auras prevent 10.0-11.8 points per 100 points of
@@ -1382,14 +1386,15 @@ values and tests are in `season_0_teamwork_screen.csv`.
    learned teams' damage, against 7.1-7.2% (`mage_aura_damage_share`,
    +0.90). Per game, both payoffs reach +0.97, partly because learned teams'
    games last longer.
-4. **Freedom reaches slowed allies.** Every Priest heal gives its target
+4. **Freedom reaches slowed allies.** Every Priest Basic heal gives its target
    Freedom, a short floor on its speed. In learned teams Freedom held up a
    slowed ally's speed on 4.9-6.3% of the ticks it was active, against
    3.5-3.8% for the bots (+0.93, max-statistic p = 0.055), and this orders
    the six learned teams almost perfectly (+0.94).
-5. **A few measures order the six learned teams.** Damage to enemies a Hunter
-   had slowed and kills a Warrior's Basic helped, both per tick, order them
-   perfectly (+1.00, p = 0.0028); Freedom protection, Mage aura damage and
+5. **A few measures order the six learned teams.** Picked from the screen of
+   138, where chance alone gives about 0.4 perfect orders: damage to enemies
+   a Hunter had slowed and kills a Warrior's Basic helped, both per tick,
+   order them perfectly (+1.00, p = 0.0028); Freedom protection, Mage aura damage and
    Warrior aura protection per tick reach +0.94. Warrior aura protection per
    tick is only +0.68 over all nine: the bots, hit more often, prevent as
    much per tick (160-165 per 100 ticks) as feedforward IPPO and MAPPO
@@ -1399,13 +1404,13 @@ values and tests are in `season_0_teamwork_screen.csv`.
    49 of the 54 with p < 0.05 over the nine are of this kind. The three bots
    are near copies, so the field acts smaller than nine. Among the learned
    six, 9 metrics reach p < 0.05, where chance alone gives about 5.
-7. **Inside a matchup, teamwork also follows the result.** With the opponent,
-   map and spawn end fixed, kills (0.94) and deaths (0.06) move with the
-   result; a team also stands closer (0.43), gains more Mage aura damage per
-   tick (0.77) and more from Freedom (0.58) in the games it wins, and
-   prevents less per tick with Warrior auras (0.41), because a winning team
-   is hit less. These measures are partly the state of a game, not only a
-   fixed style.
+7. **Inside a matchup, formation and support also follow the result.** With
+   the opponent, map and spawn end fixed, kills (0.94) and deaths (0.06) move
+   with the result; a team also stands closer (0.43) and gets more from
+   Freedom (0.58) in the games it wins. These measures are partly the state of
+   a game, not only a fixed style. Aura payoff per tick mostly follows the
+   amount of fighting at this level (Mage 0.77, Warrior 0.41), so it is not
+   read here.
 8. **Learned teams bring the back line into the auras** (class tables, not
    tested). The bots keep their Priest inside the Mage's aura 23-24% of its
    ticks and their Hunter inside the Warrior's 16-18%; learned teams 46-59%
