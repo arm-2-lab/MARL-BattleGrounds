@@ -250,6 +250,7 @@ def battle_client(
     max_steps: int | Omitted = OMITTED,
     score_threshold: int | Omitted = OMITTED,
     red_zone_depth: float | Omitted = OMITTED,
+    spawn_mode: str | Omitted = OMITTED,
     port: int = 0,
     open_browser: bool = True,
     output_dir: str | Path = "./recordings",
@@ -275,6 +276,16 @@ def battle_client(
         Ordinary step limit and winning score, default 300 and 20.
     red_zone_depth : float or Omitted
         Ordinary Red Zone depth in map units, default 5.0. SharedObs is used.
+    spawn_mode : {'default', 'swapped'} or Omitted
+        Where each team starts on an ordinary map; default 'default': on every
+        packaged map Team A starts on the left and Team B on the right.
+        'swapped' exchanges the two teams' spawn ends, as
+        ``evaluate(spawn_mode='swapped')`` does: Team A starts, respawns and
+        has its Red Zone on the right. Teams, slots, rosters and controls stay
+        the same, so you can stay Team A and play from either end. Restart
+        keeps the ends. The saved replay records them as evaluate does
+        (``marl_bgs.spawn_locations`` "0" or "1"). 'paired' alternates ends
+        across many games, so one live game rejects it.
     port : int, default=0
         Loopback port. Zero asks the operating system for an available port.
     open_browser : bool, default=True
@@ -302,7 +313,8 @@ def battle_client(
     ------
     TypeError, ValueError
         Invalid setup or controller input. Fixed scenarios reject explicit Team B,
-        map, roster, seed or rule overrides even when equal to the fixed value.
+        map, roster, seed, rule or spawn_mode overrides even when equal to the
+        fixed value.
     OSError
         A required asset/output path cannot be used or the server cannot bind.
     ImportError
@@ -369,6 +381,7 @@ def battle_client(
         max_steps=max_steps,
         score_threshold=score_threshold,
         red_zone_depth=red_zone_depth,
+        spawn_mode=spawn_mode,
     )
     return _launch_setup(
         setup,

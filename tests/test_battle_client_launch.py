@@ -1,8 +1,9 @@
 """Check the public BattleClient launch boundary and packaged resource lifetime.
 
 Root imports stay lazy and expose a callable in either import order. Invalid
-launch options fail before setup or serving. Browser assets remain alive for the
-server lifetime, cleanup runs on errors, and recordings keep installed identity.
+launch options fail before setup or serving; valid ones, spawn_mode included,
+reach setup unchanged. Browser assets remain alive for the server lifetime,
+cleanup runs on errors, and recordings keep installed identity.
 The public call opens in Agent POV and has no view argument; the private
 _launch_setup takes view_mode (default Agent POV) so the browser test harness
 and the DevClient can keep Oracle View. Every launch compiles the first turn on
@@ -141,6 +142,7 @@ def test_public_signature_has_only_approved_keyword_options() -> None:
         "max_steps",
         "score_threshold",
         "red_zone_depth",
+        "spawn_mode",
     }
     defaults = {
         "team_a": "manual",
@@ -182,6 +184,7 @@ def test_valid_launch_options_reach_one_prepared_launch(
     monkeypatch.setattr(launch, "_launch_setup", serve)
     result = launch.battle_client(
         map_id=0,
+        spawn_mode="swapped",
         port=port,
         open_browser=False,
         output_dir=tmp_path / "records",
@@ -191,6 +194,7 @@ def test_valid_launch_options_reach_one_prepared_launch(
     assert len(setup_calls) == len(serve_calls) == 1
     assert setup_calls[0]["map_id"] == 0
     assert setup_calls[0]["team_a"] == "manual"
+    assert setup_calls[0]["spawn_mode"] == "swapped"
     assert serve_calls[0]["port"] == port
     assert serve_calls[0]["open_browser"] is False
     assert serve_calls[0]["capture_replay"] is False

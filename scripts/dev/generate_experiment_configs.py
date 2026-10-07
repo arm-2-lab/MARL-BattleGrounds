@@ -196,6 +196,21 @@ SEASON_0_FIELD = (
 )
 
 
+# Season 0 display names for the nine entrants, keyed as the saved tournament
+# records them. The teamwork and human-games analyses both read them.
+SEASON_0_RECORDED_NAMES = {
+    "IPPO at step 250,675,200 (run)": "Recurrent IPPO",
+    "PQN-VDN at step 240,156,672 (run)": "PQN-VDN",
+    "MAPPO at step 219,103,232 (run)": "Recurrent MAPPO",
+    "QMIX at step 219,095,040 (run)": "QMIX",
+    "FF-IPPO at step 219,103,232 (run)": "Feedforward IPPO",
+    "FF-MAPPO at step 208,568,320 (run)": "Feedforward MAPPO",
+    "tdm-beta": "TDM-Beta",
+    "tdm-gamma": "TDM-Gamma",
+    "tdm-alpha": "TDM-Alpha",
+}
+
+
 # The training history of each Season 0 baseline in rank order: its 40M run,
 # then the run that continued it to 250M, relative to runs_dir, the
 # hyperparameter-search root (docs/training/hyperparameter_search.md, "The six
@@ -642,6 +657,39 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    tournament_winner, runner_up = SEASON_0_FIELD[0][0], SEASON_0_FIELD[1][0]
+    result["human_games.yaml"] = {
+        "defaults": [{"field": "season_0"}, "_self_"],
+        "parts": [
+            {
+                "kind": "against",
+                "opponent": tournament_winner,
+                "maps": [47, 48, 49],
+                "seed": 20261007,
+            },
+            {
+                "kind": "alongside",
+                "opponent": runner_up,
+                "partner": tournament_winner,
+                "player_class": "mage",
+                "maps": [47, 48, 49],
+                "seed": 20261013,
+            },
+        ],
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    # The series names Systems by display name, so the analysis maps the
+    # field's recorded names to them.
+    result["human_games_analysis.yaml"] = {
+        "series_dir": "???",
+        "field_dir": "???",
+        "names": dict(SEASON_0_RECORDED_NAMES),
+        "window_ticks": 10,
+        "lead_margin": 12,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [
@@ -680,23 +728,13 @@ def presets() -> dict[str, dict[str, Any]]:
             for name, first, continued, case in SEASON_0_LINEAGES
         ],
     }
-    # Season 0: display names for the nine entrants, keyed as the saved
-    # tournament records them, and the scripted bots, which the figure draws
-    # as open points and the screen's learned correlation leaves out.
+    # Season 0: the nine entrants' display names and the scripted bots, which
+    # the figure draws as open points and the screen's learned correlation
+    # leaves out.
     result["tournament_analysis.yaml"] = {
         "tournament_dir": "???",
         "field": "???",
-        "names": {
-            "IPPO at step 250,675,200 (run)": "Recurrent IPPO",
-            "PQN-VDN at step 240,156,672 (run)": "PQN-VDN",
-            "MAPPO at step 219,103,232 (run)": "Recurrent MAPPO",
-            "QMIX at step 219,095,040 (run)": "QMIX",
-            "FF-IPPO at step 219,103,232 (run)": "Feedforward IPPO",
-            "FF-MAPPO at step 208,568,320 (run)": "Feedforward MAPPO",
-            "tdm-beta": "TDM-Beta",
-            "tdm-gamma": "TDM-Gamma",
-            "tdm-alpha": "TDM-Alpha",
-        },
+        "names": dict(SEASON_0_RECORDED_NAMES),
         "scripted": ["TDM-Beta", "TDM-Gamma", "TDM-Alpha"],
         "num_envs": 128,
         "replay_dir": None,

@@ -5,8 +5,10 @@ metric functions as live evaluation. Fixed-size JAX blocks limit temporary
 decoding; ReplayAnalysis keeps only scalar values for each captured frame.
 Seeking and exporting then select stored values without replaying game physics.
 Full metrics require a matching recorded mechanics catalog. This computes the
-current scalar schema from captured facts. Historical stored metric reports
-keep their own recorded schemas and are not overwritten or relabelled. A
+current scalar schema from captured facts. replay_metrics is the public route:
+one saved game's final values by column name, for any replay, including games
+played by people in the BattleClient. Historical stored metric reports
+keep their own recorded schemas and are not overwritten or relabeled. A
 recording saved before the Red Zone rule (its context does not hold
 ResolvedEnvConfigV2) shows all 44 Red Zone columns as unavailable, never as
 invented zeros.
@@ -17,6 +19,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import math
+import os
 from dataclasses import dataclass, field
 from functools import partial
 from importlib.resources import files
@@ -81,7 +85,12 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
     ResolvedEnvConfigV2,
 )
-from marl_battlegrounds.evaluation.replay_io import LoadedReplayBundle
+from marl_battlegrounds.evaluation.replay_io import (
+    LoadedReplay,
+    LoadedReplayBundle,
+    LoadedReplayBundleV1,
+    load_replay,
+)
 
 type MetricScope = Literal["cursor", "final"]
 # A common shape reuses one compiled scan across replay lengths. Host decoding is
@@ -1083,3 +1092,96 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
         _values=scalars,
         _valid=valid,
     )
+
+
+def replay_metrics(
+    replay: str | os.PathLike[str] | LoadedReplayBundle,
+    *,
+    metrics: Literal["priority", "full"] = "priority",
+) -> dict[str, float]:
+    """Measure one saved game: every metric's value at its last recorded tick.
+
+    Use it for games that ``evaluate`` did not measure, for example a game a
+    person played in the BattleClient, or an older replay saved without full
+    metrics. It is the same calculation as the Replay Viewer's Metrics tab and
+    CSV export, and it uses the same metric functions as live evaluation.
+
+    Parameters
+    ----------
+    replay : str, os.PathLike or LoadedReplayBundle
+        A saved ``.marlbg-replay.json`` file, from ``evaluate``, a tournament,
+        the BattleClient or the DevClient, or the result of ``load_replay``
+        for that file. Pass the loaded replay when you also read its header
+        or completion, so the file is read only once; reading a 20 MB replay
+        takes a few seconds and is most of this call's time.
+    metrics : {'priority', 'full'}, default='priority'
+        ``'priority'`` gives the priority columns, the default everywhere in
+        MARL-BGs; ``'full'`` gives every column of the full metric catalog.
+
+    Returns
+    -------
+    dict of str to float
+        Column name to value, in the catalog order of
+        ``docs/evaluation/metric_columns.csv``, with the same names as the
+        ``priority_metrics`` and ``full_metrics`` tables of ``load_results``.
+        A measurement that does not apply to this game, or that the replay
+        cannot provide, is NaN, as in those tables; a real zero stays 0.0. For
+        example ``team_a_win`` is 1.0 or 0.0 once the game has ended, and the
+        44 Red Zone columns are NaN for a replay recorded before the Red Zone
+        rule. Values are computed in float32 and returned as Python floats.
+
+    Raises
+    ------
+    TypeError
+        ``replay`` is neither a path nor a loaded replay, or the replay's
+        captured data cannot be rebuilt with its declared types.
+    ValueError
+        ``metrics`` is not ``'priority'`` or ``'full'``, the replay is not a
+        Team Deathmatch or neutral game, or a full measurement meets a replay
+        whose recorded game mechanics differ from this version's.
+    RuntimeError
+        The installed evaluation or Core source files change during the call.
+    marl_battlegrounds.evaluation.replay_io.ReplayLoadError
+        A path is missing, unsafe or not a valid replay.
+
+    Notes
+    -----
+    Reads the file at most once and computes on the default JAX device; it
+    never replays game physics and writes no file. The first call compiles a
+    short program, which later calls of the same kind reuse. A replay of an
+    unfinished game is measured up to its last recorded tick, so columns the
+    catalog shows only after the game ends, such as ``team_a_win``, stay NaN.
+    When only finished games count, load the file with ``load_replay``, check
+    its ``.replay.completion.completion_state`` and pass the loaded replay.
+
+    In our checks every value equaled the one ``evaluate`` saves for the same
+    game: on a CPU, and on a GPU in XLA's deterministic mode. In the GPU's
+    normal mode a few sums of fractional amounts, such as damage, differed in
+    the last digits, because the GPU may add numbers in another order
+    (``docs/evaluation/repeatability.md``); counts, kills, scores and outcomes
+    matched. ``docs/evaluation/workflows.md``, "Measure A Saved Game", lists
+    the checks.
+
+    Examples
+    --------
+    >>> import marl_battlegrounds as marl_bgs
+    >>> values = marl_bgs.replay_metrics("recordings/game.marlbg-replay.json")
+    >>> values["team_a_kills"], values["team_a_deaths"]  # doctest: +SKIP
+    (17.0, 9.0)
+    """
+    if metrics not in ("priority", "full"):
+        raise ValueError("metrics must be 'priority' or 'full'")
+    if isinstance(replay, (str, os.PathLike)):
+        loaded: LoadedReplayBundle = load_replay(replay)
+    elif isinstance(cast(object, replay), (LoadedReplay, LoadedReplayBundleV1)):
+        loaded = replay
+    else:
+        raise TypeError("replay must be a path or a replay from load_replay")
+    analysis = analyze_replay(loaded, full=metrics == "full")
+    rows = cast(
+        list[dict[str, object]], analysis.summary(0, scope="final")["statistics"]
+    )
+    return {
+        str(row["name"]): math.nan if row["value"] is None else float(row["value"])  # pyright: ignore[reportArgumentType] - a valid value is a float.
+        for row in rows
+    }

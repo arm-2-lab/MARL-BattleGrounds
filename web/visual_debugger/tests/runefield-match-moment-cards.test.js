@@ -5,7 +5,8 @@
  * Viewer and live game over), in its own group in the renderer's herald
  * layer, after the choreographer presents each tick and after a resize; it
  * asks for no state chip (owner, 4 Oct 2026: no countdown and no "Match Point
- * · Needs 1").
+ * · Needs 1"). Both cards put the team on the field's left on the left (Team B
+ * when the spawn ends are swapped), from the scoreboard's team sides.
  * Champions on the cards come only from the audience's authorized scene; the
  * match facts come from the public scoreboard reader (matchSummaryView), never
  * from researcher_space. (2) No load moves keyboard focus to the replay
@@ -41,6 +42,11 @@ test("main draws the lineup and verdict cards from heralds, and no state chip", 
   assert.match(records, /matchSummaryView\(presentation\)/u);
   assert.match(records, /product: installedProductKind\(\)/u);
   assert.doesNotMatch(records, /researcher_space|match_summary/u);
+  assert.match(records, /team\.side === "left"\)\?\.teamId === 2 \? 2 : 1/u);
+  for (const part of ["lineup", "verdict"]) {
+    const call = records.slice(records.indexOf(`part: "${part}"`));
+    assert.match(call.slice(0, call.indexOf("});")), /\bleftTeamId,/u);
+  }
   const draw = functionBody(source, "renderMatchMomentCards");
   assert.match(draw, /matchMomentCardsGroup\?\.remove\(\)/u);
   assert.match(draw, /surface\.heraldLayer\.append\(group\)/u);

@@ -1,0 +1,4 @@
+number,map_id,side,partner,opponent,games,margin,margin_mean,margin_low,margin_high,kills,kills_mean,kills_low,kills_high,deaths,deaths_mean,deaths_low,deaths_high,margin_rank,wins,draws,losses
+4,47,left,Recurrent IPPO,PQN-VDN,20,17.0,19.45,17.0,20.0,10.0,10.1,10.0,11.0,3.0,0.7,0.0,3.0,0.025,20,0,0
+5,48,right,Recurrent IPPO,PQN-VDN,20,-5.0,-2.55,-13.0,6.0,15.0,15.65,7.0,20.0,20.0,17.75,12.0,20.0,0.375,3,7,10
+6,49,left,Recurrent IPPO,PQN-VDN,20,7.0,3.85,-10.0,18.0,20.0,16.3,10.0,19.0,13.0,12.75,3.0,19.0,0.675,3,14,3
