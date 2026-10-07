@@ -1608,7 +1608,9 @@ New tournament summaries record sampling facts separately from the raw game
 count. `independent_blocks` keeps its original declared paired-group count;
 `declared_blocks` reports the same count. `supported_independent_sampling_units`
 is separate and may be zero or unknown. Unknown sampling keeps calculated ranges
-in the ordinary confidence columns, labelled **Conditional: Sampling not verified**.
+in the ordinary confidence columns, labeled **Conditional: Sampling not verified**;
+`point_margin_summary` and `system_metrics` follow the same rule and state the
+assumption in `conditional_interval_assumption`.
 These ranges assume independent groups; they do not prove independence. Known
 determinism, too few groups, lack of variation and failed fits keep their existing
 safeguards. Saved historical summaries keep their original meaning. The

@@ -1304,9 +1304,10 @@ def _run_evaluation(
     }
     if not legacy:
         metadata["rng_protocol"] = "evaluation-systems-v1"
+    from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
+
     if recording:
         from marl_battlegrounds.evaluation.evaluation_conditions import read_saved_pass
-        from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
 
         saved_sampling_pass = (
             saved
@@ -1352,9 +1353,14 @@ def _run_evaluation(
         )
 
         # Reading the declared XLA flags is free, so in-memory results report
-        # them too. Sampling inspection stays recording-only (it can read from
-        # the device); in-memory intervals are therefore withheld.
+        # them too. Sampling inspection is setup-only (at most one scalar read
+        # from the device), so in-memory summaries label intervals as saved
+        # runs do.
         metadata["execution_settings"] = capture_execution_settings()
+        metadata["method_sampling"] = {
+            "team_a": method_sampling_fact(team_a),
+            "team_b": method_sampling_fact(team_b),
+        }
     schedule: dict[int, dict[str, object]] = {}
     if contract is None:
         configs = {id(spec.env_config): spec.env_config for spec in specs}

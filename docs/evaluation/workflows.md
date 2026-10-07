@@ -368,12 +368,14 @@ column, with intervals.
   made only of them says "No random sampling variation".
 - If you combine several `evaluate` calls into one comparison, give each call
   a different seed, or the repeated seed coordinates withhold the intervals.
-- An `evaluate` call without `output_dir` does not inspect how its methods
-  sample, so its intervals are withheld ("Sampling mechanism unknown"); save
-  the run to get them. Tournaments always record these facts, but a System of
-  your own is "unknown", so rows with its games keep their values and withhold
-  their intervals (see
-  [Compare Your Challenger With Every Member](canonical_tournaments.md#compare-your-challenger-with-every-member)).
+- Intervals need to know how each method chooses its actions. Built-in
+  methods and saved actors from our learners declare it, in saved and
+  in-memory runs alike; a System of your own is "unknown". Rows with its games
+  keep their intervals but say "Conditional: Sampling not verified", as Elo
+  does, and `conditional_interval_assumption` states the assumption: the game
+  pairs are independent repeats, which the records cannot prove (a System that
+  carries memory from one game to the next breaks it). See
+  [Compare Your Challenger With Every Member](canonical_tournaments.md#compare-your-challenger-with-every-member).
 - A trend across one field of Systems may not hold for stronger ones, so treat
   these numbers as diagnostics, not reward recipes.
 

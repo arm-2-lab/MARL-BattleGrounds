@@ -5,6 +5,8 @@ or trajectory digests. Equal records never establish a sampling mechanism.
 Callers own the evidence that methods and game conditions are fixed; unknown
 providers remain unknown. No numerical backend, actor or learner is imported
 until ``method_sampling_fact`` inspects an already constructed method.
+``CONDITIONAL_INTERVAL_STATUS`` and ``CONDITIONAL_INTERVAL_ASSUMPTION`` are the
+shared label and assumption for ranges shown although sampling is unknown.
 """
 
 from collections.abc import Hashable, Mapping, Sequence
@@ -22,6 +24,12 @@ _LABELS = {
 _NO_VARIATION = "Unavailable: No random sampling variation"
 _UNKNOWN = "Unavailable: Sampling mechanism unknown"
 _TOO_FEW = "Unavailable: Too few independent sampling units"
+# The one label and stated assumption for ranges that are shown although a
+# method's sampling is unknown (Elo rankings, point margins, system_metrics).
+CONDITIONAL_INTERVAL_STATUS = "Conditional: Sampling not verified"
+CONDITIONAL_INTERVAL_ASSUMPTION = (
+    "Assumes declared game groups are independent; sampling is not verified"
+)
 
 
 def _count(value: object, name: str) -> int:

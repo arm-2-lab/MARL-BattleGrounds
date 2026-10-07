@@ -360,8 +360,10 @@ Two things to know when you read these rows:
   chooses its actions. Built-in methods and saved actors from our learners
   declare it; a System of your own is "unknown". So rows that include your
   challenger's games, its own row and each member's overall `by="system"` row,
-  give values with intervals withheld ("Sampling mechanism unknown").
-  Member-against-member rows from `by="opponent"` keep theirs.
+  keep their intervals labeled "Conditional: Sampling not verified", the label
+  your Elo interval carries too. They assume your games are independent
+  repeats; a System that keeps memory between games breaks that assumption.
+  Member-against-member rows from `by="opponent"` stay "Available".
 - **Members' overall rows include your games.** A member's `by="system"` row in
   this run covers all its games here, its games against your challenger
   included, so it differs a little from the field's own published numbers. For
