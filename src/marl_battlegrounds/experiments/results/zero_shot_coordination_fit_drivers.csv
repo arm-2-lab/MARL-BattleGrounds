@@ -1,0 +1,10 @@
+measure,rho_Mage,rho_Warrior,rho_Hunter,rho_Rogue,rho_Priest,mean_rho,p_value
+newcomer_kill_contributions,0.9,0.7,0.5,0.7,1.0,0.76,0.0002187
+newcomer_deaths,0.9,0.9,0.5,0.3,0.9,0.7,0.0009248
+newcomer_damage,1.0,0.9,0.8,0.6,nan,0.825,0.0002238
+newcomer_healing,nan,nan,nan,nan,0.9,0.9,0.08333
+newcomer_damage_received,0.9,0.8,0.6,0.6,0.9,0.76,0.0002187
+newcomer_healing_received,1.0,0.6,0.8,0.7,nan,0.775,0.0007827
+newcomer_aura_coverage,1.0,0.4,nan,nan,nan,0.7,0.05222
+newcomer_distance,-1.0,-0.9,-0.8,-0.5,-1.0,-0.84,1.729e-05
+kept_distance,-0.1,0.4,0.1,-0.3,-0.1,0.0,1.0

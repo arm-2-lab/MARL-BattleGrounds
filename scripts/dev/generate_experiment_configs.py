@@ -620,6 +620,28 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    learned = [name for name, _ in SEASON_0_FIELD[:6]]
+    result["zero_shot_coordination.yaml"] = {
+        "defaults": [{"field": "season_0"}, "_self_"],
+        "host": learned[0],
+        "newcomers": [*learned[1:], "Random"],
+        "classes": ["Mage", "Warrior", "Hunter", "Rogue", "Priest"],
+        "opponents": [name for name, _ in SEASON_0_FIELD[:9]],
+        "maps": [47, 48, 49, 50, 51],
+        "num_episodes": 200,
+        "seed": 20261007,
+        "num_envs": 128,
+        "metrics": "full",
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    result["zero_shot_coordination_analysis.yaml"] = {
+        "zsc_dir": "???",
+        "bootstrap_draws": 2000,
+        "bootstrap_seed": 20261007,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [
