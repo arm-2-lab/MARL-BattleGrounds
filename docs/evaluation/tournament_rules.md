@@ -147,8 +147,9 @@ repeats training exactly but trains much slower.
 each member, 40 on each test map 47-51, mirrored 5v5. First to 20 points
 wins; at tick 300 it is a draw. Red Zone depth 5.0; 128 games at once.
 
-8.2 Games run in XLA's deterministic mode with a seed we publish, so anyone
-with an RTX 5090 and our software lock can replay them exactly.
+8.2 Games run in XLA's deterministic mode. We draw the seed at random when your
+games are played, after your training run, and publish it with your results,
+so anyone with an RTX 5090 and our software lock can replay them exactly.
 
 8.3 **Mirrored rosters.** Both teams use the same roster in the same order:
 the standard five-class 5v5 of Mage, Warrior, Hunter, Rogue and Priest.
