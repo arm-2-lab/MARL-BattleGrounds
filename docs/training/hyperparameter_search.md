@@ -520,6 +520,7 @@ A run folder is `<study folder>/study/cases/<case>/run/`, where `<case>` is
 | Feedforward MAPPO's 40M run | `ff_mappo_team_reward.yaml` | `ff-mappo-levers/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` (its parent segment) |
 | Study 3 | `continue_to_250m.yaml` | `250m/study/cases/` (five methods); feedforward MAPPO's continuation ran in its own folder, `ff-mappo-250m/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` |
 | Tournament | `tournament_250m.json` | `tournament-250m/runs/tournament_20261005_082220_ae54a3f293be/` (field `tournament-250m/field.json`, log `tournament-250m/tournament.log`) | `results/tournament-250m/` |
+| Teamwork in the tournament | the `tournament_analysis` stage's packaged settings | `../tournament-analysis-season-0/full-metrics-timed/` (replay and analysis) and `../tournament-analysis-season-0/priority-only-timed/` (the timing reference) | [`season_0_teamwork.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork.csv), [`season_0_teamwork_by_class.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_by_class.csv), [`season_0_teamwork_screen.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_screen.csv) |
 | Fixed opponents | `opponents.yaml` | `opponents/models/` (the six training models and the pooled 250M model) | – |
 
 **The six tournament policies.** Each lineage is its 40M run followed by its
@@ -1254,6 +1255,193 @@ at most 10 distinct games per pair.
    entrant (−3.6 to −8.4). 466 of its 1,600 games are draws, 436 of them
    against the five learned entrants, most against feedforward IPPO (130 of
    200).
+
+### Teamwork In The Tournament
+
+**Question.** Which teamwork separates the strongest Season 0 entrants from
+the weakest?
+
+**Method.** The tournament saved priority metrics for every game. The public
+`tournament_analysis` stage played its schedule again on the same RTX 5090 in
+XLA's deterministic mode, recording all full metrics for every game. All
+7,200 games repeated exactly. One call to
+[`system_metrics`](../evaluation/workflows.md#compare-every-systems-metrics)
+then reads every entrant's games from the side it played, as Team A or Team B,
+over all 1,600 of its games, and its point margin against each opponent equals
+the saved head-to-head result. Games combine by each column's catalog rule:
+counts per game, fractions with a saved denominator as total numerator over
+total denominator, averages such as teammate distance weighted by their
+observations. 95%
+intervals resample whole spawn-swapped game pairs within each opponent and
+map, as Elo does; matchups that repeat exactly (see Repeated games above) add
+no width. A rank correlation of +1 means the measure rises with every step up
+in Elo and −1 that it falls; the stage also ranks all 145 team-level metrics
+in the catalog this way (`season_0_teamwork_screen.csv`), an exploratory
+screen, and tests each one. Learned teams draw 20-29% of their games and the
+scripted bots 2.5-4.8%, and a draw runs the full 300 ticks, so learned teams'
+games last longer (238-252 ticks on average, against 205-212). The screen
+therefore compares per-game totals (counts, health, ticks) per 100 ticks;
+fractions, distances and averages keep their scale (`scale`). The tests:
+
+- **Exact p-value.** The share of all 362,880 orderings of the nine ratings
+  whose rank correlation is at least as far from zero (`p_value_all`; the
+  smallest possible is 2 / 9!, about 0.0000055), and the same over the six
+  learned entrants (`p_value_learned`; 720 orderings, smallest 0.0028).
+- **Corrections for the whole screen.** `p_value_all` after Holm's correction
+  over the 138 metrics whose values differ between entrants
+  (`holm_p_value_all`), and after the Westfall-Young max-statistic
+  correction over the 137 of them with a value for every entrant
+  (`max_t_p_value_all`). The second allows for metrics that move together.
+- **Winner check.** Over the 5,933 decided games, the share in which the
+  winner had more of the metric than the loser (`winner_higher_share`).
+- **Inside a matchup.** Within each cell of one entrant, opponent, map and
+  spawn end with at least two wins and two losses, the chance that one of
+  its wins shows more of the metric than one of its losses, averaged over
+  cells and weighted by wins times losses (`wins_over_losses`). Holding the
+  opponent fixed matters: a team's wins come mostly against weak opponents.
+  0.5 means the metric does not change with the result inside a matchup.
+
+Matchups between methods that never sample (the bots, greedy QMIX and
+PQN-VDN) repeat the same 10 games 20 times, and the two game checks count
+each copy.
+
+The class tables (`season_0_teamwork_by_class.csv`) also give the share of
+each ally class's ticks inside a Mage or Warrior aura, the share of the
+Priest's Freedom uses each class received, and the distance between each pair
+of classes.
+
+```bash
+XLA_FLAGS=--xla_gpu_deterministic_ops=true XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python -m marl_battlegrounds.experiments.tournament_analysis \
+  tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
+  field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
+  output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out
+```
+
+To redo only the analysis from that saved replay, as for the results below
+(`field` is required but unused when `replay_dir` is given):
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python -m marl_battlegrounds.experiments.tournament_analysis \
+  tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
+  field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
+  replay_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out/replay/tournament_20261007_095226_96f9aa8c5e85 \
+  output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/analysis-system-metrics
+```
+
+**Cost.** Both runs used the same RTX 5090, 128 parallel games, deterministic
+mode and the same code, on the same day. Time runs from the creation of the
+run folder to the saved results; peak GPU memory was sampled every 0.5 s with
+preallocation off.
+
+| Metrics recorded | Time | Peak RAM | Peak GPU memory | Disk |
+| --- | ---: | ---: | ---: | ---: |
+| Priority, as in the tournament | 488 s (8.1 minutes) | 6.5 GB | 924 MiB | 40 MB |
+| Full, for every game | 834 s (13.9 minutes) | 9.5 GB, with an earlier analysis | 980 MiB | 392 MB |
+
+The analysis alone, from the saved replay, took 15.6 seconds on the CPU and
+0.61 GB of peak RAM for the whole command, screen tests included; the two
+`system_metrics` calls took 8.6 seconds.
+
+**Results.** Entrants from the highest Elo down; percentages are shares.
+Values and rank correlations in this table are per game; the findings below
+use the screen's per-tick values and length-free shares where game length
+matters.
+
+| Measure | Rank correlation with Elo | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Elo | | 1,441 | 1,358 | 1,304 | 1,300 | 1,240 | 1,140 | 1,043 | 1,000 | 974 |
+| Margin per game | | +5.2 | +1.3 | +2.3 | +0.6 | +1.8 | −2.7 | −3.0 | −2.4 | −3.1 |
+| Kills / deaths per game | | 18.0 / 12.7 | 14.7 / 12.5 | 16.9 / 14.8 | 15.8 / 15.5 | 15.9 / 14.1 | 13.1 / 14.2 | 14.7 / 18.1 | 15.1 / 18.4 | 14.5 / 18.3 |
+| Ticks with two or more attackers, per game | +0.42 | 151 | 121 | 142 | 139 | 134 | 121 | 123 | 126 | 123 |
+| Kills with two or more helpers | +0.85 | 83.8% | 89.1% | 80.3% | 85.7% | 77.3% | 78.7% | 70.5% | 69.0% | 71.3% |
+| Kills on enemies a Hunter had slowed | +0.85 | 52.1% | 57.3% | 47.6% | 53.1% | 42.2% | 45.6% | 31.8% | 35.3% | 32.6% |
+| Kills helped by an Ultimate | −0.82 | 11.3% | 10.3% | 10.8% | 9.5% | 13.0% | 12.3% | 20.1% | 21.0% | 20.9% |
+| Distance between teammates (map units) | −0.90 | 2.66 | 2.44 | 3.16 | 3.15 | 2.96 | 3.45 | 3.90 | 4.11 | 3.96 |
+| Teammate time inside a Mage aura | +0.88 | 64.9% | 65.4% | 55.9% | 58.1% | 55.9% | 54.2% | 46.1% | 44.0% | 46.3% |
+| Teammate time inside a Warrior aura | +0.87 | 53.6% | 63.0% | 49.0% | 49.6% | 50.7% | 46.5% | 40.2% | 37.8% | 40.5% |
+| Damage Mage auras added, per game | +0.97 | 434 | 356 | 384 | 350 | 350 | 339 | 261 | 265 | 261 |
+| Damage Warrior auras prevented, per game | +0.97 | 470 | 433 | 405 | 427 | 397 | 380 | 341 | 339 | 340 |
+| Useful share of Priest healing | +0.83 | 76.8% | 62.1% | 65.0% | 70.4% | 68.2% | 60.2% | 50.7% | 51.3% | 49.7% |
+| Chances to save a dying ally that were taken | −0.80 | 66.1% | 77.3% | 60.9% | 81.3% | 78.2% | 75.8% | 94.4% | 93.3% | 94.6% |
+| Deaths in the team's own Red Zone, per game | +0.62 | 0.59 | 1.35 | 0.58 | 0.36 | 0.70 | 1.94 | 0.30 | 0.22 | 0.17 |
+| Basic abilities used, per game | +0.80 | 652 | 570 | 614 | 607 | 613 | 575 | 548 | 552 | 538 |
+| Ultimate abilities used, per game | +0.45 | 31.0 | 26.9 | 29.6 | 28.3 | 31.6 | 30.5 | 25.1 | 29.2 | 24.9 |
+
+**Who the Priest healed, and who took the damage** (shares of the team's
+useful Priest healing and of the damage it received).
+
+| Entrant | Healing: Mage | Warrior | Hunter | Rogue | Priest | Damage taken: Mage | Warrior | Hunter | Rogue | Priest |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Recurrent IPPO | 34.6% | 32.6% | 13.8% | 8.5% | 10.5% | 25.9% | 34.2% | 13.2% | 19.1% | 7.6% |
+| Feedforward IPPO | 25.3% | 26.3% | 12.4% | 20.2% | 15.9% | 19.9% | 29.0% | 15.0% | 25.8% | 10.4% |
+
+**Findings.** Per-game values are in the table above; the screen's per-tick
+values and tests are in `season_0_teamwork_screen.csv`.
+
+1. **Activity shows no trend across the nine.** Per tick, kills (+0.02),
+   Basic uses (−0.17) and ticks with two or more attackers (−0.02) show no
+   trend, because the scripted bots are as active as the best learned teams;
+   among the learned six, each leans with Elo (+0.66, not significant).
+   Ultimate use shows no trend in either (−0.13; +0.14 among the learned
+   six): every Ultimate has a 30-tick cooldown, so a team can use at most
+   about 0.17 per tick, and the nine use 0.11 to 0.14.
+2. **One trend survives the whole screen, narrowly.** The share of kills a
+   Warrior's Ultimate helped with falls from 13.9-14.4% for the bots to
+   3.1-3.7% for the learned teams (−0.95; Holm p = 0.049, max-statistic p =
+   0.029; −0.89 among the learned six): the bots lean on the Warrior's
+   Ultimate to finish kills, learned teams rarely do. Recurrent MAPPO and QMIX
+   are 4 Elo apart; if they swapped places, this metric would no longer pass
+   Holm's correction and the useful share of Basic healing would.
+3. **Strong teams hold together.** Teammates stand 3.90-4.11 map units apart
+   in the bots and 2.45-3.45 in the learned teams (−0.90). The auras pay off
+   accordingly: Warrior auras prevent 10.0-11.8 points per 100 points of
+   damage learned teams take, against 8.7-9.0 for the bots
+   (`warrior_aura_protection_share`, +0.92), and Mage auras add 8.6-9.8% of
+   learned teams' damage, against 7.1-7.2% (`mage_aura_damage_share`,
+   +0.90). Per game, both payoffs reach +0.97, partly because learned teams'
+   games last longer.
+4. **Freedom reaches slowed allies.** Every Priest Basic heal gives its target
+   Freedom, a short floor on its speed. In learned teams Freedom held up a
+   slowed ally's speed on 4.9-6.3% of the ticks it was active, against
+   3.5-3.8% for the bots (+0.93, max-statistic p = 0.055), and this orders
+   the six learned teams almost perfectly (+0.94).
+5. **A few measures order the six learned teams.** Picked from the screen of
+   138, where chance alone gives about 0.4 perfect orders: damage to enemies
+   a Hunter had slowed and kills a Warrior's Basic helped, both per tick,
+   order them perfectly (+1.00, p = 0.0028); Freedom protection, Mage aura damage and
+   Warrior aura protection per tick reach +0.94. Warrior aura protection per
+   tick is only +0.68 over all nine: the bots, hit more often, prevent as
+   much per tick (160-165 per 100 ticks) as feedforward IPPO and MAPPO
+   (159 and 151).
+6. **Most strong trends separate the bots from the learned teams.** 70 of the
+   138 metrics put all three bots on one side of all six learned teams, and
+   49 of the 54 with p < 0.05 over the nine are of this kind. The three bots
+   are near copies, so the field acts smaller than nine. Among the learned
+   six, 9 metrics reach p < 0.05, where chance alone gives about 5.
+7. **Inside a matchup, formation and support also follow the result.** With
+   the opponent, map and spawn end fixed, kills (0.94) and deaths (0.06) move
+   with the result; a team also stands closer (0.43) and gets more from
+   Freedom (0.58) in the games it wins. These measures are partly the state of
+   a game, not only a fixed style. Aura payoff per tick mostly follows the
+   amount of fighting at this level (Mage 0.77, Warrior 0.41), so it is not
+   read here.
+8. **Learned teams bring the back line into the auras** (class tables, not
+   tested). The bots keep their Priest inside the Mage's aura 23-24% of its
+   ticks and their Hunter inside the Warrior's 16-18%; learned teams 46-59%
+   and 34-61%. The bots' Priests give the Warrior 2-3% of their Freedom uses
+   and learned Priests 8.5-13.5%, which separates the bots from learned teams
+   but does not order the learned ones.
+9. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
+   with two or more Trap ticks left. Its Hunters trapped enemies 10,355 times
+   in its 1,600 games, and its team broke none of those Traps with damage.
+10. **Limits.** These are correlations across one field of nine at Season
+    0's level of play, an exploratory screen of 145 metrics. A trend may
+    weaken or reverse among stronger teams. A measure that follows strength is
+    a diagnostic, not a recipe: rewarding it directly, for example through
+    reward shaping, may teach the measure without the skill, such as a team
+    that stays close but stops fighting.
 
 ### Final Policies
 

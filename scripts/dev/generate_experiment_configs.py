@@ -658,6 +658,29 @@ def presets() -> dict[str, dict[str, Any]]:
             for name, first, continued, case in SEASON_0_LINEAGES
         ],
     }
+    # Season 0: display names for the nine entrants, keyed as the saved
+    # tournament records them, and the scripted bots, which the figure draws
+    # as open points and the screen's learned correlation leaves out.
+    result["tournament_analysis.yaml"] = {
+        "tournament_dir": "???",
+        "field": "???",
+        "names": {
+            "IPPO at step 250,675,200 (run)": "Recurrent IPPO",
+            "PQN-VDN at step 240,156,672 (run)": "PQN-VDN",
+            "MAPPO at step 219,103,232 (run)": "Recurrent MAPPO",
+            "QMIX at step 219,095,040 (run)": "QMIX",
+            "FF-IPPO at step 219,103,232 (run)": "Feedforward IPPO",
+            "FF-MAPPO at step 208,568,320 (run)": "Feedforward MAPPO",
+            "tdm-beta": "TDM-Beta",
+            "tdm-gamma": "TDM-Gamma",
+            "tdm-alpha": "TDM-Alpha",
+        },
+        "scripted": ["TDM-Beta", "TDM-Gamma", "TDM-Alpha"],
+        "num_envs": 128,
+        "replay_dir": None,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["resume.yaml"] = {
         "output_dir": None,
         "resume_from": "???",

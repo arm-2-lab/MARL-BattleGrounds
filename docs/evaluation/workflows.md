@@ -307,7 +307,11 @@ field = results.system_metrics(
 | TDM-Alpha | 974 | -3.11 (-3.27 to -2.95) | 3.96 (3.95 to 3.97) | 0.71 (0.71 to 0.72) | 24.9 (24.8 to 25.0) |
 
 Stronger teams tend to stay closer together and share more kills; Ultimate uses
-show no clear order.
+show no clear order. The
+[Season 0 teamwork study](../training/hyperparameter_search.md#teamwork-in-the-tournament)
+takes this further with the `tournament_analysis` stage: margin, kills,
+deaths and 14 teamwork measures, class-by-class tables and a ranking of all 145
+team-level metrics by how closely they follow Elo, all from `system_metrics`.
 
 To see it as a chart, plot any column against Elo:
 
