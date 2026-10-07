@@ -39,6 +39,7 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     PRIORITY_METRIC_NAMES,
     PRIORITY_OUTCOME_CODES,
 )
+from marl_battlegrounds.evaluation.scalar_reports import has_members
 
 if TYPE_CHECKING:
     from jax import Array
@@ -147,6 +148,35 @@ class _RecordingRows(NamedTuple):
     priority: Any = None
     full: Any = None
     episode_start_records: Any = None
+
+
+class _MemberRecord(NamedTuple):
+    """One finished game's checked member summary, ready to become table rows.
+
+    length is the game's number of decisions. first and changed are int32 (10,)
+    global-slot arrays from evaluation's ``_Members`` record: each slot's policy
+    ID at the first decision, and the first decision with a different ID (-1 for
+    never). slots lists the active slots whose team's System has members, in
+    order; system_ids maps "team_a"/"team_b" to the game's recorded Systems.
+    """
+
+    length: int
+    first: np.ndarray[Any, Any]
+    changed: np.ndarray[Any, Any]
+    slots: tuple[int, ...]
+    system_ids: dict[str, str]
+
+
+# One checked completion: ID, config identity and content, table rows, metric
+# coverage, and its member summary (None when no member rows are due).
+type _PreparedCompletion = tuple[
+    int,
+    str,
+    dict[str, object],
+    list[tuple[str, list[object]]],
+    str,
+    _MemberRecord | None,
+]
 
 
 def _host_row(value: object, *, index: int) -> np.ndarray[Any, Any]:
@@ -519,6 +549,8 @@ class RunWriter:
         Positive completed-row limit; bool is invalid. Optional assignment
         intervals share a capacity of 10 * buffer_size open and closed segments.
         They also flush without a completed game, preserving whole decisions.
+        Whole-game member rows that evaluation adds for Systems with members
+        flush with their games and do not count toward that capacity.
 
     Attributes
     ----------
@@ -605,6 +637,13 @@ class RunWriter:
         # Live Team A/B methods that name replay controllers; in memory only.
         self._replay_methods: tuple[Policy | System, Policy | System] | None = None
         self._assignment_open: dict[tuple[int, int], list[object]] = {}
+        # Finished games' member summaries from evaluation, consumed by the same
+        # write call, and the buffered member rows that do not count toward the
+        # open-interval flush limit.
+        self._staged_members: dict[
+            int, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]
+        ] = {}
+        self._member_rows = 0
         # This attempt's execution_settings, waiting for its first saved game
         # of each resumed pass, and the passes whose record already has them.
         self._attempt_settings: dict[str, Mapping[str, object]] = {}
@@ -2180,9 +2219,7 @@ class RunWriter:
             starts = self._verify_starts(records, config_cache)
             self._check_evidence_ownership(records, config_cache)
             traces = self._prepare_traces(records, policy_trace, leading, config_cache)
-            prepared: list[
-                tuple[int, str, dict[str, object], list[tuple[str, list[object]]], str]
-            ] = []
+            prepared: list[_PreparedCompletion] = []
             seen: set[int] = set()
             for index in np.flatnonzero(completion):
                 record = self._prepare_record(records, int(index), config_cache)
@@ -2211,7 +2248,7 @@ class RunWriter:
                 if bindings.get(trace[0], trace[5]) != trace[5]:
                     raise ValueError("trace configuration differs from its start")
                 bindings[trace[0]] = trace[5]
-            for episode_id, config_id, _, _, _ in prepared:
+            for episode_id, config_id, *_ in prepared:
                 if bindings.get(episode_id, config_id) != config_id:
                     raise ValueError(
                         "completion configuration differs from its trace/start"
@@ -2564,7 +2601,7 @@ class RunWriter:
                 if bindings.get(trace[0], trace[5]) != trace[5]:
                     raise ValueError("trace configuration differs from its start")
                 bindings[trace[0]] = trace[5]
-            for identifier, config_id, _, _, _ in prepared:
+            for identifier, config_id, *_ in prepared:
                 if bindings.get(identifier, config_id) != config_id:
                     raise ValueError(
                         "completion configuration differs from its trace/start"
@@ -2606,16 +2643,17 @@ class RunWriter:
                 dict[str, object],
             ]
         ],
-        completions: list[
-            tuple[int, str, dict[str, object], list[tuple[str, list[object]]], str]
-        ],
+        completions: list[_PreparedCompletion],
         replay: _PreparedReplay | None,
     ) -> None:
         """Publish a fully checked call in start, replay, trace and completion order.
 
         Both direct and compact writes use this boundary. Recording joins have
-        passed preflight. Replay artifact construction finishes for the entire
-        incoming family before final files or table rows are published. File
+        passed preflight. A completion's checked member summary becomes its
+        member rows just before the game joins the pending flush, unless the
+        game already has per-decision rows. Replay artifact construction
+        finishes for the entire incoming family before final files or table rows
+        are published. File
         failures retain normal recovery rules. Capacity flushes cannot precede
         the complete incoming replay family's validation.
         """
@@ -2628,7 +2666,7 @@ class RunWriter:
             self._consume_replay(replay)
         for trace in traces:
             self._append_trace(*trace)
-        for episode_id, config_id, config, rows, coverage in completions:
+        for episode_id, config_id, config, rows, coverage, members in completions:
             if (
                 self._collector is not None
                 and episode_id in self._collector.pending_episode_ids
@@ -2642,6 +2680,11 @@ class RunWriter:
             entry = self._details["passes"][self._pass_key]
             entry["recorded_metrics_by_episode"][str(episode_id)] = coverage
             entry["completed_config_ids"][str(episode_id)] = config_id
+            self._staged_members.pop(episode_id, None)
+            # Games with per-decision rows keep them; the others get one row per
+            # member slot, durable with this outcome.
+            if members is not None and str(episode_id) not in entry["trace_epochs"]:
+                self._append_member_rows(entry, episode_id, members)
             key = (self._pass_key, episode_id)
             self._completed.add(key)
             self._pending.append(key)
@@ -2790,11 +2833,13 @@ class RunWriter:
         *,
         entry: dict[str, Any] | None = None,
         metric_indices: tuple[int, int] | None = None,
-    ) -> tuple[int, str, dict[str, object], list[tuple[str, list[object]]], str]:
+    ) -> _PreparedCompletion:
         """Validate one completion without mutating buffers or metadata.
 
         Keep exact integer outcomes separate from float32 optional measurements.
-        Return its ID, config identity/content, table rows and actual metric mode.
+        Return its ID, config identity/content, table rows, actual metric mode and
+        its checked member summary from ``_stage_members`` (None when none is
+        staged or no team's System has members).
         """
         episode_id = self._integer(
             records.episode_id[index], "completed episode ID", minimum=1
@@ -2979,7 +3024,8 @@ class RunWriter:
             if "priority" in cells_by_mode
             else "none"
         )
-        return episode_id, config_id, config, rows, coverage
+        members = self._prepare_members(episode_id, length, active, entry, episode)
+        return episode_id, config_id, config, rows, coverage, members
 
     @staticmethod
     def _integer(value: object, name: str, *, minimum: int) -> int:
@@ -3128,6 +3174,151 @@ class RunWriter:
             )
         return result
 
+    def _stage_members(
+        self,
+        members: Mapping[int, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]],
+    ) -> None:
+        """Hold finished games' member summaries for the next write call.
+
+        Parameters
+        ----------
+        members : mapping of int to (numpy.ndarray, numpy.ndarray)
+            Episode ID to that game's int32 (10,) first policy IDs and first
+            change decisions (-1 for never), from evaluation's ``_Members``
+            record. Only games completing in the next ``write`` or
+            ``_write_collected`` call may appear.
+
+        Raises
+        ------
+        RuntimeError
+            The writer is closed or failed, or an earlier staged summary was
+            never consumed by its game's completion.
+
+        Notes
+        -----
+        Private evaluation route; public ``write`` is unchanged. The summaries
+        are checked when their games' completions are prepared and become rows
+        in the same flush as those outcomes.
+        """
+        self._check_open()
+        if self._staged_members:
+            raise RuntimeError("staged member summaries lost their games")
+        self._staged_members = {
+            int(episode_id): (np.array(first), np.array(changed))
+            for episode_id, (first, changed) in members.items()
+        }
+
+    def _prepare_members(
+        self,
+        episode_id: int,
+        length: int,
+        active: np.ndarray[Any, Any],
+        entry: Mapping[str, Any],
+        episode: Mapping[str, Any],
+    ) -> _MemberRecord | None:
+        """Check one finished game's staged member summary without mutating state.
+
+        Parameters
+        ----------
+        episode_id, length : int
+            The completed game and its number of decisions.
+        active : numpy.ndarray
+            Its bool (10,) roster, already checked against the configuration.
+        entry, episode : mapping
+            The pass record and the game's declaration, which name its Systems.
+
+        Returns
+        -------
+        _MemberRecord or None
+            None when nothing is staged for the game or neither team's System has
+            members (``scalar_reports.has_members`` on its registered component
+            table).
+
+        Raises
+        ------
+        ValueError
+            The arrays are not int32 (10,); an inactive slot has an ID other than
+            -1; a member slot's ID is outside its component table; or a change
+            decision is not -1 or between 1 and length - 1.
+        """
+        staged = self._staged_members.get(episode_id)
+        if staged is None:
+            return None
+        first, changed = staged
+        for name, value in (("first", first), ("changed", changed)):
+            if value.shape != (10,) or value.dtype != np.int32:
+                raise ValueError(f"member {name} record must be int32 with ten slots")
+        if np.any(first[~active] != -1):
+            raise ValueError("inactive slots must have policy ID -1")
+        system_ids = cast(
+            dict[str, str], dict(episode.get("system_ids", entry["system_ids"]))
+        )
+        slots: list[int] = []
+        for slot in np.flatnonzero(active):
+            team = "team_a" if slot < 5 else "team_b"
+            components = self._details["systems"][system_ids[team]]["components"]
+            if not has_members(len(components)):
+                continue
+            if not -1 <= first[slot] < len(components):
+                raise ValueError(
+                    f"policy ID for slot {slot} is outside its component table"
+                )
+            if changed[slot] != -1 and not 1 <= changed[slot] < length:
+                raise ValueError(f"member change for slot {slot} is outside its game")
+            slots.append(int(slot))
+        if not slots:
+            return None
+        return _MemberRecord(length, first, changed, tuple(slots), system_ids)
+
+    def _append_member_rows(
+        self,
+        entry: dict[str, Any],
+        episode_id: int,
+        members: _MemberRecord,
+    ) -> None:
+        """Buffer one finished game's member rows and their trace bindings.
+
+        Parameters
+        ----------
+        entry : dict
+            The current pass record; its ``trace_epochs`` gains this game, as
+            for traced games. Its configuration stays only in
+            ``completed_config_ids``, which readers use when
+            ``trace_config_ids`` has no entry, so run_details.json does not
+            repeat a 64-character ID per game.
+        episode_id : int
+            The completed game.
+        members : _MemberRecord
+            Its checked summary from ``_prepare_members``.
+
+        Notes
+        -----
+        One row per member slot covers decisions [0, length) with the first
+        member; a slot whose member changed gets [0, change) with the first
+        member, then [change, length) with -1 (only the first member is kept).
+        Rows stay in this call's buffer and flush with the game's outcome.
+        """
+        table = self._rows["policy_assignments.csv"]
+        before = len(table)
+        for slot in members.slots:
+            team = "team_a" if slot < 5 else "team_b"
+            change = int(members.changed[slot])
+            stop = members.length if change < 0 else change
+            prefix = [
+                self.run_id,
+                entry["phase"],
+                entry["pass_id"],
+                episode_id,
+                team,
+                slot,
+                members.system_ids[team],
+            ]
+            table.append([*prefix, int(members.first[slot]), 0, stop])
+            if change >= 0:
+                table.append([*prefix, -1, change, members.length])
+        self._member_rows += len(table) - before
+        entry["trace_epochs"][str(episode_id)] = members.length - 1
+
     def _append_trace(
         self,
         episode_id: int,
@@ -3156,6 +3347,7 @@ class RunWriter:
         if (
             len(self._assignment_open)
             + len(self._rows["policy_assignments.csv"])
+            - self._member_rows
             + additions
             > capacity
         ):
@@ -3733,6 +3925,7 @@ class RunWriter:
         self._pending_replays.clear()
         for rows in self._rows.values():
             rows.clear()
+        self._member_rows = 0
 
     def record_failure(self, error: BaseException) -> None:
         """Try to preserve completed rows and record an escaping execution failure.

@@ -26,6 +26,7 @@ from marl_battlegrounds.evaluation.results import (
     Row,
     _cell_type,
     _mapping,
+    _member_labels,
     _pass_facts,
     _plan_record,
     _schema,
@@ -412,10 +413,6 @@ class CanonicalView(_View):
             else super()._header(filename)
         )
 
-    def _present(self, filename: str) -> bool:
-        """Describe logical raw table roles without claiming optional capture."""
-        return filename in _RAW_ROLES or super()._present(filename)
-
     def _describe(self, name: str) -> Row:
         """Keep table availability separate from borrowed files and required scores.
 
@@ -472,6 +469,11 @@ class CanonicalView(_View):
         columns keeps only those cells of a raw game table; None keeps all.
         """
         if filename in {"episodes.csv", "priority_metrics.csv"}:
+            return
+        if filename == "policy_assignments.csv":
+            # The challenger's own games, then reused games from their sources.
+            yield from super()._raw(filename, rows)
+            yield from self.records.iter_assignments(self._selected_game_ids())
             return
         if filename not in {"match_results.csv", "full_metrics.csv"}:
             yield from super()._raw(filename, rows, columns)
@@ -554,6 +556,92 @@ class CanonicalView(_View):
             self._plan_stamps = {
                 name: _stamp(self.run_dir / name) for name in self._plan_stamps
             }
+
+    def _registration(self, row: Mapping[str, Any]) -> Row:
+        """Return the System record that owns a row, from its own source run."""
+        game = self._game_by_origin.get(origin_key(row))
+        manifest = self.manifest if game is None else self.records.source_manifest(game)
+        return _mapping(_mapping(manifest.get("systems")).get(str(row["system_id"])))
+
+    def _present(self, filename: str) -> bool:
+        """Count a member table present locally or in any record source."""
+        if filename == "policy_assignments.csv":
+            return super()._present(filename) or bool(
+                self.records.sources_with("policy_assignments")
+            )
+        return filename in _RAW_ROLES or super()._present(filename)
+
+    def _owners(self, game: Mapping[str, Any]) -> set[str]:
+        """Return the System IDs that played one logical game, from its own pass."""
+        entry = self.records.entry(game) or {}
+        episode = str(self.records.origin(game)["episode_id"])
+        declaration = _mapping(_mapping(entry.get("episodes")).get(episode))
+        owners = _mapping(declaration.get("system_ids")) or _mapping(
+            entry.get("system_ids")
+        )
+        return set(map(str, owners.values()))
+
+    def _member_games(self) -> Iterator[Mapping[str, Any]]:
+        """Yield selected completed games, local or from a source with the table.
+
+        Reused games from sources saved without ``policy_assignments`` are
+        skipped, so their manifests are never opened for member records.
+        """
+        carrying = self.records.sources_with("policy_assignments")
+        selected = set(self._selected_game_ids())
+        for game in self.records.games:
+            source_id = self.records.origin(game).get("source_id")
+            if (
+                game["logical_game_id"] in selected
+                and (source_id is None or source_id in carrying)
+                and self.records.completed(game)
+            ):
+                yield game
+
+    def _member_systems(self) -> dict[str, Row]:
+        """Add member Systems of selected reused games whose sources carry rows.
+
+        Only record sources that declare ``policy_assignments`` are opened, and
+        only the Systems that played the selected games count.
+        """
+        result = super()._member_systems()
+        if not self.records.sources_with("policy_assignments"):
+            return result
+        for game in self._member_games():
+            if self.records.origin(game).get("source_id") is None:
+                continue
+            systems = _mapping(self.records.source_manifest(game).get("systems"))
+            for system in self._owners(game):
+                registration = _mapping(systems.get(system))
+                if _member_labels(registration) is not None:
+                    result[system] = registration
+        return result
+
+    def _member_coverage(self, members: Mapping[str, Row]) -> Row:
+        """Count member Systems' completed logical games, local and reused.
+
+        Reused games from record sources saved without ``policy_assignments``
+        are not counted: those sources predate the member record.
+        """
+        counts: dict[str, dict[str, Any]] = {
+            system: {
+                "system_name": registration.get("name"),
+                "recorded": 0,
+                "not_recorded": 0,
+            }
+            for system, registration in members.items()
+        }
+        for game in self._member_games():
+            entry = self.records.entry(game) or {}
+            episode = str(self.records.origin(game)["episode_id"])
+            recorded = (
+                "recorded"
+                if episode in _mapping(entry.get("trace_epochs"))
+                else "not_recorded"
+            )
+            for system in self._owners(game) & counts.keys():
+                counts[system][recorded] += 1
+        return counts
 
     def _entry(self, row: Mapping[str, Any]) -> Row:
         """Find a row's complete foreign or local pass owner, including run ID."""

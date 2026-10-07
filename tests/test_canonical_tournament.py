@@ -350,9 +350,11 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
     )
     config["snapshot_id"] = configs.snapshot_identity(config)
     config = configs.load_tournament_config(config, official=False)
+    # A pool challenger has members, recorded in each of its own games.
+    challenger = marl_bgs.pool({fixture_policy(7): 1, fixture_policy(8): 1})
     result = canonical._run_resolved_tournament(
         config,
-        system=fixture_policy(7),
+        system=challenger,
         metrics="none",
         full_metrics_episodes=(1, 3),
         replay_episodes=(1, 3),
@@ -364,6 +366,24 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
     assert len(result.replay_paths) == 2
     assert len(result.table("full_metrics")["episode_id"]) == 2
     assert result.headline_metrics == ()
+    # The reused replay game's slot rows come from the source's copied table,
+    # named from the source run's own System records.
+    assignments = result.table("policy_assignments")
+    reused = assignments["run_id"] == original.metadata["run_id"]
+    assert set(assignments["episode_id"][reused].tolist()) == {
+        games[0]["origin"]["episode_id"]
+    }
+    assert all(name for name in assignments["system_name"][reused])
+    assert "policy_assignments" in source["tables"]
+    coverage = result.metadata["tables"]["policy_assignments"]["member_coverage"]
+    assert [value["recorded"] for value in coverage.values()] == [4]
+    assert [value["not_recorded"] for value in coverage.values()] == [0]
+    own = assignments["system_name"] == challenger.name
+    assert set(assignments["member"][own].tolist()) <= {"fixture-07", "fixture-08"}
+    games = result.system_metrics(
+        "full_metrics", by="game", systems=[challenger.name], columns=["team_a_kills"]
+    )
+    assert len(games["member"]) == 1 and games["member"][0] is not None
     # The source's canonical-job pass IDs repeat the challenger run's own.
     margins = result.point_margin_summary()
     np.testing.assert_array_equal(
@@ -389,7 +409,7 @@ def test_reused_and_new_replays_keep_original_capture_ids_under_none(
             with pytest.raises((ValueError, OSError)):
                 canonical._run_resolved_tournament(
                     config,
-                    system=fixture_policy(7),
+                    system=challenger,
                     metrics="none",
                     full_metrics_episodes=(1, 3),
                     replay_episodes=(1, 3),

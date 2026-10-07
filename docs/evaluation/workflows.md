@@ -231,7 +231,7 @@ The [metric catalog](metric_specification.md) owns this rule
 | `"system"` (default) | System | All its games against every opponent. |
 | `"opponent"` | System and opponent | The same rows as `head_to_head()`: both directions, self-play once. |
 | `"map"` | System and map | All its opponents on that map. |
-| `"game"` | System and game | Each game seen from each System's side. |
+| `"game"` | System and game | Each game seen from each System's side, with the [members](#see-which-member-played-each-game) of a pool or team. |
 
 In `head_to_head` and `point_margin_summary`, `by` adds a split on top of
 System and opponent; here it names the row itself.
@@ -785,7 +785,10 @@ writer.write(info, policy_trace=memory.policy_trace)
 
 Register the two systems with `RunWriter(..., policies={"team_a": a, "team_b": b})`.
 The trace is optional. Known component choices go to `policy_assignments.csv`;
-unknown choices remain unknown. Learning outputs and recurrent/provider memory
+unknown choices remain unknown. Saved `evaluate`, tournament and canonical runs
+record every game's members for Systems with two or more components without a
+trace; see
+[See Which Member Played Each Game](#see-which-member-played-each-game). Learning outputs and recurrent/provider memory
 are never serialized automatically. This is a host recording call. The bounded
 collector below is optional for compiled training. Run `python examples/systems.py --output-dir artifacts/system-example`
 for a complete raw System recording and saved none-mode evaluation example.
@@ -1358,8 +1361,11 @@ for rows in resumed.iter_table("episodes", rows=128):
 `table(name)` explicitly allocates a whole table. `iter_table(name, rows=128)`
 reads bounded chunks from committed rows. The common table names are `episodes`,
 `priority_metrics`, `full_metrics`, `matches`, `tournament_results`,
-`tournament_rankings`, `matchup_results`, `map_results` and
-`tournament_headline_metrics`. Applicable disabled tables are empty. Missing
+`tournament_rankings`, `matchup_results`, `map_results`,
+`tournament_headline_metrics` and `policy_assignments` (which member played
+each slot; see
+[See Which Member Played Each Game](#see-which-member-played-each-game)).
+Applicable disabled tables are empty. Missing
 historical evidence is unavailable with an explanation in `metadata["tables"]`;
 it is never filled with invented zeros. A none-mode outcome's length and score
 are required facts, not evidence that priority metrics were collected.
@@ -2547,8 +2553,12 @@ import marl_battlegrounds as marl_bgs
 
 researcher = marl_bgs.team("random", "tdm-alpha", slots=[[0, 1], [2, 3, 4]])
 opponents = marl_bgs.pool({"random": 0.25, "tdm-beta": 0.75})
-result = marl_bgs.evaluate(researcher, opponents, maps=[0], num_episodes=2)
+result = marl_bgs.evaluate(
+    researcher, opponents, maps=[0], num_episodes=2, output_dir="runs/mixtures"
+)
 print(result.table("episodes"))
+games = result.system_metrics("priority_metrics", by="game", systems=[opponents.name])
+print(games["episode_id"], games["member"])  # the pool's draw in each game
 ```
 
 One team member defaults to all slots; five members default to slots 0 through
@@ -2602,8 +2612,80 @@ for opponent in ("random", "tdm-beta"):
 
 Run `JAX_PLATFORMS=cpu python examples/systems.py --composition` for the raw
 loop, evaluation, fixed-member comparisons and a custom tournament. Add
-`--output-dir PATH` to save the examples. These short checks demonstrate wiring;
+`--output-dir PATH` to save the examples; a saved run also prints the pool's
+member in each game. These short checks demonstrate wiring;
 they do not establish learning quality or GPU speed.
+
+### See Which Member Played Each Game
+
+A System with two or more components has members: `pool`, `team` and
+`independent_policies` of two or more. A built-in name, a language-model System
+and a learned actor have one component or none, so they have no members to
+record. Every saved game of a System with members records which member
+controlled each of its slots, in `policy_assignments`. With the saved `result`
+from the example above (or `marl_bgs.load_results(folder)` later):
+
+```python
+members = result.table("policy_assignments")
+for column in ("episode_id", "global_slot", "system_name", "member"):
+    print(column, members[column])
+print(result.metadata["tables"]["policy_assignments"]["member_coverage"])
+```
+
+Each row says that one member (`policy_id`, its index in the System's component
+table, with a readable `member` label) controlled one slot from decision
+`decision_start` up to, not including, `decision_stop`. A label is the
+component's name; when two components share a name, such as two checkpoints of
+one run, it becomes `"name #<policy_id>"`. Games saved with a replay keep one
+row per change of member, decision by decision. Other games get one row per
+slot for the whole game. Pools and teams never change members inside a game;
+if a custom System reports a change, its row stops there and a row with
+`policy_id` -1 ("changed; only the first member kept") covers the rest.
+`member_coverage` names each System with members (`system_name`) and counts its
+games recorded and not recorded; runs saved before this record existed have
+members only for their replayed games.
+
+`system_metrics(by="game")` puts the members beside the metrics, from each
+System's own side: `agent_0_member` to `agent_4_member` are its slots and
+`agent_5_member` to `agent_9_member` its opponent's. `member` joins the System's
+distinct labels in slot order, such as `"random"` for one pool draw or
+`"random / tdm-alpha"` for a team or a drawn team, and `opponent_member` does
+the same for the other side. Both are None when a member was not recorded for
+the whole game or the System has no members. Members are recorded in saved runs
+only: in memory, `table("policy_assignments")` raises "Members are recorded in
+saved runs; pass output_dir", and the member columns are present but empty.
+
+A pool draws its member at random for each game, so the two games of a spawn
+pair can have different members, and per-member summaries have no paired
+interval. For a quick look, average each member's games with equal weight on
+each spawn end, and read kills and deaths beside the margin. This optional
+pandas analysis needs the `notebook` extra:
+
+```python
+import pandas as pd
+
+games = pd.DataFrame(
+    result.system_metrics(
+        "priority_metrics",
+        by="game",
+        systems=[opponents.name],  # the pool, seen from its own side
+        columns=["score_difference", "team_a_kills", "team_a_deaths"],
+    )
+)
+# Games whose member was not recorded (member None) drop out of the groups.
+print(games.groupby(["member", "spawn_end"]).size())  # games per member and end
+by_end = games.groupby(["member", "spawn_end"])[
+    ["score_difference", "team_a_kills", "team_a_deaths"]
+].mean()
+print(by_end.groupby("member").mean())  # equal weight per spawn end
+```
+
+A member seen at only one spawn end gets a one-sided mean; the counts above
+show it.
+
+For claims about a member, evaluate it on its own, as above. Training
+collection with opponent pools does not record members; training validation
+saves its runs, so it does.
 
 
 ## Read Saved File Names
