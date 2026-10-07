@@ -139,8 +139,7 @@ in the queue.
 
 7.5 On a GPU, our run does not repeat your home run exactly, so a lucky seed
 may not carry over. Your script may turn on XLA's deterministic mode, which
-repeats training exactly; in a short recurrent IPPO test on one RTX 5090 with
-512 games, it trained about 3.6 times slower.
+repeats training exactly but trains much slower.
 
 ## Rule 8. The Evaluation
 
@@ -214,10 +213,8 @@ the cutoff. Each table names its rulebook version.
   every Season 0 learned entrant meets the limits a challenger faces.
 - **The play limits** exist because every entrant becomes a downloadable
   training opponent for later challengers, so a slow or memory-hungry entrant
-  would slow down everyone who trains against it. Playing itself with 512
-  games at once on one RTX 5090, our slowest Season 0 entrant runs at about
-  16,800 game steps per second, more than three times the floor, and every
-  Season 0 entrant uses under 0.5 GB of GPU memory.
+  would slow down everyone who trains against it. Every Season 0 entrant
+  plays well above the speed floor and well under the memory limit.
 - **One official run by us, on one fixed and published machine,** follows the
   MineRL 2020 and Procgen 2020 competitions, which also retrained every
   submission themselves under fixed limits on experience, time and hardware.
