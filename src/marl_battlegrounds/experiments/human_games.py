@@ -1,18 +1,30 @@
-"""Play recorded games against, and alongside, a trained System in the BattleClient.
+"""Play recorded games against, and alongside, trained Systems in the BattleClient.
 
-Use python -m marl_battlegrounds.experiments.human_games
-models_dir=/path/models output_dir=/path/run. A person plays Team A in the
-BattleClient (marl_bgs.battle_client); the opponent System, by default the
-Season 0 winner, recurrent IPPO, plays Team B. In "against" games the person
-controls all five Team A agents. In "alongside" games the person controls one
-class, the Priest by default, and the partner System, by default the opponent
-itself, controls the other four. The games visit the test maps 47 to 51, once
-from each spawn end (spawn_mode). Each game has its own seed (game_seed). After
-each finished game the stage checks its replay against the schedule, measures
-it with marl_bgs.replay_metrics, saves the full metrics and a record beside it,
-and rewrites results.csv and results.md. Run the same command again to continue
-where you stopped; a different series needs its own output_dir. A person's
-moves cannot be repeated, so the saved replays are the record of the games.
+Use python -m marl_battlegrounds.experiments.human_games models_dir=/path/models
+output_dir=/path/series. A person plays Team A in the BattleClient
+(marl_bgs.battle_client), in Agent POV; the opponent System plays Team B. The
+series is a list of parts, played in order, each with its own settings:
+
+- ``kind='against'``: the person controls all five Team A agents.
+- ``kind='alongside'``: the person controls one class (``player_class``) and the
+  partner System controls the other four Team A agents.
+
+A part plays one game per entry in its ``maps``. Team A starts on the left in
+the part's odd-numbered games and on the right in its even-numbered games
+(``spawn_mode``), and the part's game N uses the seed ``seed + N - 1``. Games
+are numbered through the whole series. Before each game the stage waits for
+Enter and then opens the BattleClient; play the game to its end and press Exit.
+The stage checks the saved replay against the schedule (check_replay), measures
+it with marl_bgs.replay_metrics, which gives the same full metrics evaluate
+saves, and writes game.json and full_metrics.csv beside the replay, then
+results.csv and results.md for the series.
+
+Every game counts: the first replay in a game's folder that was played to its
+end is the game, and a later replay never replaces it. Run the same command
+again to continue a series: recorded games are skipped. settings.json keeps the
+first launch's settings, and a launch with other settings is refused. The
+settings come from configs/human_games.yaml, which names Systems from
+configs/field/season_0.yaml.
 """
 
 from __future__ import annotations
@@ -21,10 +33,9 @@ import csv
 import io
 import json
 import math
-import os
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,15 +53,7 @@ if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.replay_io import LoadedReplay
 
 KINDS = ("against", "alongside")
-# Bumped when game.json gains fields; older records are measured again.
-RECORD_VERSION = 2
-# Settings a series keeps. games_per_kind may also change, but only between
-# whole rounds (multiples of the number of maps), so earlier games keep their
-# numbers.
-SERIES_SETTINGS = ("opponent", "partner", "kinds", "maps", "player_class", "seed")
-# Subfolder for a redone game's earlier files: still listed, never counted.
-REDONE = "redone"
-# Catalog columns summarized for every game, from Team A's side.
+# Catalog columns copied into each game's record, from Team A's side.
 SUMMARY_COLUMNS = (
     "team_a_score",
     "team_b_score",
@@ -63,7 +66,7 @@ SUMMARY_COLUMNS = (
 
 @dataclass(frozen=True, slots=True)
 class Game:
-    """One scheduled game of the series.
+    """One scheduled game of a series.
 
     Attributes
     ----------
@@ -71,22 +74,33 @@ class Game:
         Position in the whole series, from 1.
     kind : {'against', 'alongside'}
         ``'against'``: the person controls all five Team A agents.
-        ``'alongside'``: the person controls one class and the partner System
+        ``'alongside'``: the person controls ``player_class`` and the partner
         the other four Team A agents.
-    index : int
-        Position among the games of its kind, from 1.
     map_id : int
         Packaged map.
     swapped : bool
         False: Team A starts on the left (``spawn_mode='default'``). True:
         Team A starts on the right (``spawn_mode='swapped'``).
+    seed : int
+        The game's own seed, from 0 through 2**32 - 1.
+    opponent : str
+        Name of the System that plays Team B.
+    partner : str or None
+        Name of the System beside the person in alongside games; None in
+        against games.
+    player_class : str or None
+        The class the person plays in alongside games, for example
+        ``'mage'``; None in against games.
     """
 
     number: int
     kind: str
-    index: int
     map_id: int
     swapped: bool
+    seed: int
+    opponent: str
+    partner: str | None = None
+    player_class: str | None = None
 
     @property
     def side(self) -> str:
@@ -95,173 +109,138 @@ class Game:
 
     @property
     def folder(self) -> str:
-        """Return the game's folder, relative to the output folder.
+        """Return the game's folder name.
 
-        For example ``'alongside/game-03-map-49-left'``.
+        For example ``'game-04-alongside-map-47-left'``.
         """
-        return f"{self.kind}/game-{self.index:02d}-map-{self.map_id}-{self.side}"
+        return f"game-{self.number:02d}-{self.kind}-map-{self.map_id}-{self.side}"
 
 
-def schedule(
-    kinds: Sequence[str], maps: Sequence[int], games_per_kind: int
-) -> list[Game]:
-    """Put the games of every kind in playing order.
-
-    Each kind plays its games in rounds of one game per map. In the first round
-    the ends alternate map by map, starting with Team A on the left; each later
-    round swaps every map's end. With five maps and ten games per kind, games 1
-    to 5 visit every map once and games 6 to 10 visit them again from the
-    other end. Each round plays every kind in turn, so stopping when a round
-    of the last kind ends leaves the same number of games of each kind. When
-    both counts are whole rounds (multiples of the number of maps), the
-    schedule for fewer games per kind is the start of the schedule for more.
+def schedule(parts: Sequence[Mapping[str, Any]]) -> list[Game]:
+    """Put every part's games in playing order.
 
     Parameters
     ----------
-    kinds : sequence of {'against', 'alongside'}
-        Distinct kinds, in the order each round plays them.
-    maps : sequence of int
-        Distinct packaged map IDs, in the order each round plays them.
-    games_per_kind : int
-        Games of each kind, at least 1. When games_per_kind is not a multiple
-        of the number of maps, the last round is cut short.
+    parts : sequence of mapping
+        The parts in playing order. Each has ``kind`` (``'against'`` or
+        ``'alongside'``), ``opponent`` (a System name), ``maps`` (one map ID
+        per game, repeats allowed) and ``seed`` (the part's first seed);
+        alongside parts also have ``partner`` and ``player_class``.
 
     Returns
     -------
     list of Game
-        The series in playing order, numbered from 1.
+        Numbered from 1 through the whole series. Within a part, game N plays
+        ``maps[N - 1]`` with seed ``seed + N - 1``, Team A on the left when N
+        is odd.
 
     Raises
     ------
     ValueError
-        A kind is unknown or repeated, no kind or map is given, a map repeats,
-        or games_per_kind is below 1.
+        No part or no map is given, a kind is unknown, an alongside part lacks
+        its partner or class, or a seed falls outside 0 through 2**32 - 1.
 
     Examples
     --------
-    >>> [(g.index, g.map_id, g.side) for g in schedule(["against"], [47, 48], 4)]
-    [(1, 47, 'left'), (2, 48, 'right'), (3, 47, 'right'), (4, 48, 'left')]
+    >>> games = schedule([{"kind": "against", "opponent": "A", "maps": [47, 48],
+    ...                    "seed": 7}])
+    >>> [(g.number, g.map_id, g.side, g.seed) for g in games]
+    [(1, 47, 'left', 7), (2, 48, 'right', 8)]
     """
-    if not kinds or len(set(kinds)) != len(kinds) or not set(kinds) <= set(KINDS):
-        raise ValueError(f"kinds must be distinct values from {list(KINDS)}")
-    if not maps or len(set(maps)) != len(maps):
-        raise ValueError("maps must list at least one map, without repeats")
-    if type(games_per_kind) is not int or games_per_kind < 1:
-        raise ValueError("games_per_kind must be an integer of at least 1")
+    if not parts:
+        raise ValueError("parts must list at least one part")
     games: list[Game] = []
-    for round_index in range(math.ceil(games_per_kind / len(maps))):
-        for kind in kinds:
-            for position, map_id in enumerate(maps):
-                index = round_index * len(maps) + position + 1
-                if index > games_per_kind:
-                    break
-                swapped = (position + round_index) % 2 == 1
-                games.append(Game(len(games) + 1, kind, index, map_id, swapped))
+    for part in parts:
+        kind = str(part["kind"])
+        if kind not in KINDS:
+            raise ValueError(f"kind must be one of {list(KINDS)}")
+        if not part["maps"]:
+            raise ValueError("every part must list at least one map")
+        alongside = kind == "alongside"
+        if alongside and not (part.get("partner") and part.get("player_class")):
+            raise ValueError("an alongside part needs a partner and a player_class")
+        for index, map_id in enumerate(part["maps"], start=1):
+            seed = int(part["seed"]) + index - 1
+            if not 0 <= seed < 2**32:
+                raise ValueError(
+                    f"Seed {seed} is outside 0 through 2**32 - 1; choose another seed."
+                )
+            games.append(
+                Game(
+                    number=len(games) + 1,
+                    kind=kind,
+                    map_id=int(map_id),
+                    swapped=index % 2 == 0,
+                    seed=seed,
+                    opponent=str(part["opponent"]),
+                    partner=str(part["partner"]) if alongside else None,
+                    player_class=str(part["player_class"]) if alongside else None,
+                )
+            )
     return games
 
 
-def person_slots(game: Game, player_class: str) -> tuple[int, ...]:
-    """Return the global slots the person controls in a game.
-
-    Parameters
-    ----------
-    game : Game
-        The game to play.
-    player_class : str
-        The class the person plays in alongside games, one of the canonical
-        roster's classes: ``'mage'``, ``'warrior'``, ``'hunter'``, ``'rogue'``
-        or ``'priest'``.
-
-    Returns
-    -------
-    tuple of int
-        ``(0, 1, 2, 3, 4)`` (all of Team A) for an against game, or the one
-        Team A slot of player_class for an alongside game, for example ``(4,)``
-        for the Priest.
-
-    Raises
-    ------
-    ValueError
-        player_class is not in the canonical roster.
-    """
-    import marl_battlegrounds as marl_bgs
-
-    roster = marl_bgs.canonical_tournament_rosters()[0]
-    if player_class not in roster:
-        raise ValueError(f"player_class must be one of {list(roster)}")
-    return tuple(range(5)) if game.kind == "against" else (roster.index(player_class),)
-
-
-def game_seed(game: Game, seed: int) -> int:
-    """Return one game's seed: the series seed plus the game's number minus 1.
-
-    The seed fixes the random numbers the Systems draw to choose their actions.
-    An alongside game is played on the same map and from the same end as the
-    against game with the same index. With one shared seed the opponent would
-    repeat that game's opening move for move until it first saw a difference,
-    and the person would already know it. So every game gets its own seed.
+def person_slots(game: Game) -> tuple[int, ...]:
+    """Return the Team A slots the person controls in a game.
 
     Parameters
     ----------
     game : Game
         The scheduled game.
-    seed : int
-        The series seed, which is game 1's seed.
 
     Returns
     -------
-    int
-        ``seed + game.number - 1``, the seed the game's BattleClient uses.
+    tuple of int
+        ``(0, 1, 2, 3, 4)`` in against games, or the canonical roster slot of
+        the game's ``player_class`` in alongside games, for example ``(0,)``
+        for the Mage.
 
     Raises
     ------
     ValueError
-        The game's seed is outside 0 through 2**32 - 1, the seeds
-        ``marl_bgs.battle_client`` accepts.
-
-    Examples
-    --------
-    >>> game_seed(Game(3, "against", 3, 49, False), 20261007)
-    20261009
+        The class is not in the canonical roster: ``'mage'``, ``'warrior'``,
+        ``'hunter'``, ``'rogue'`` or ``'priest'``.
     """
-    value = seed + game.number - 1
-    if not 0 <= value < 2**32:
-        raise ValueError(
-            f"Game {game.number}'s seed, {value}, is outside 0 through 2**32 - 1; "
-            "choose another seed."
-        )
-    return value
+    import marl_battlegrounds as marl_bgs
+
+    if game.kind == "against":
+        return tuple(range(5))
+    roster = marl_bgs.canonical_tournament_rosters()[0]
+    if game.player_class not in roster:
+        raise ValueError(f"player_class must be one of {list(roster)}")
+    return (roster.index(game.player_class),)
 
 
 def team_a_controllers(
-    game: Game, partner: Policy | System, player_class: str
+    game: Game, partner: Policy | System | None
 ) -> str | list[str | Policy | System]:
     """Return Team A's controllers for ``marl_bgs.battle_client``.
 
     Parameters
     ----------
     game : Game
-        The game to play.
-    partner : Policy or System
-        The loaded System that fills Team A's other slots in alongside games.
-    player_class : str
-        The class the person plays in alongside games (see ``person_slots``).
+        The scheduled game.
+    partner : Policy, System or None
+        The loaded partner System for alongside games; None for against games.
 
     Returns
     -------
     str or list
-        ``'manual'`` (all five slots) for an against game, or one controller per
-        canonical roster slot for an alongside game: ``'manual'`` at the
-        player's class and ``partner`` elsewhere.
+        ``'manual'`` (all five slots) in against games, or one controller per
+        roster slot in alongside games: ``'manual'`` at the person's slot and
+        ``partner`` elsewhere.
 
     Raises
     ------
     ValueError
-        player_class is not in the canonical roster.
+        The class is unknown (``person_slots``), or an alongside game has no
+        partner.
     """
-    slots = person_slots(game, player_class)
+    slots = person_slots(game)
     if game.kind == "against":
         return "manual"
+    if partner is None:
+        raise ValueError(f"Game {game.number} needs a partner System")
     return ["manual" if slot in slots else partner for slot in range(5)]
 
 
@@ -269,10 +248,7 @@ def read_attempts(folder: Path) -> list[tuple[Path, LoadedReplay]]:
     """Load every replay saved in a game's folder, oldest first.
 
     The BattleClient saves a replay when a game ends, and also when a person
-    finishes, saves or exits a game early, or restarts after saving. Each
-    file is one attempt at the game. A Restart whose recording is discarded
-    leaves no file. Replays moved into the folder's ``redone`` subfolder, to
-    redo a recorded game, are attempts too, but never count.
+    saves or exits a game early. Each file is one attempt at the game.
 
     Parameters
     ----------
@@ -282,8 +258,8 @@ def read_attempts(folder: Path) -> list[tuple[Path, LoadedReplay]]:
     Returns
     -------
     list of (pathlib.Path, LoadedReplay)
-        Each replay file, in the folder or its ``redone`` subfolder, and its
-        loaded content, ordered by file time. Each file is read once.
+        Each ``*.marlbg-replay.json`` file and its loaded content, ordered by
+        file time. Each file is read once.
 
     Raises
     ------
@@ -292,15 +268,7 @@ def read_attempts(folder: Path) -> list[tuple[Path, LoadedReplay]]:
     """
     from marl_battlegrounds.evaluation import load_replay
 
-    if not folder.is_dir():
-        return []
-    paths = sorted(
-        [
-            *folder.glob(f"{REDONE}/*.marlbg-replay.json"),
-            *folder.glob("*.marlbg-replay.json"),
-        ],
-        key=lambda path: path.stat().st_mtime,
-    )
+    paths = sorted(folder.glob("*.marlbg-replay.json"), key=lambda p: p.stat().st_mtime)
     return [(path, load_replay(path)) for path in paths]
 
 
@@ -308,11 +276,6 @@ def counted_attempt(
     attempts: Sequence[tuple[Path, LoadedReplay]],
 ) -> tuple[Path, LoadedReplay] | None:
     """Return the attempt that counts: the first one played to its end.
-
-    A replayed game never replaces an earlier finished one. To redo a
-    recorded game, move its ``game.json`` and its finished replay into the
-    game folder's ``redone`` subfolder; they stay listed as attempts, and a
-    redo should be reported with the results.
 
     Parameters
     ----------
@@ -325,17 +288,12 @@ def counted_attempt(
         None when no attempt was played to its end.
     """
     for path, loaded in attempts:
-        if (
-            path.parent.name != REDONE
-            and loaded.replay.completion.completion_state == "complete"
-        ):
+        if loaded.replay.completion.completion_state == "complete":
             return path, loaded
     return None
 
 
-def check_replay(
-    game: Game, loaded: LoadedReplay, *, seed: int, player_class: str
-) -> None:
+def check_replay(game: Game, loaded: LoadedReplay) -> None:
     """Refuse a replay that is not this game, played as scheduled.
 
     Parameters
@@ -344,31 +302,25 @@ def check_replay(
         The scheduled game.
     loaded : LoadedReplay
         Its counted replay.
-    seed : int
-        The series seed. The replay must use the game's own seed,
-        ``game_seed(game, seed)``.
-    player_class : str
-        The class the person plays in alongside games.
 
     Raises
     ------
     ValueError
         The game did not end, or the replay records another map, other spawn
-        ends, another seed than the game's own, or a person ("Manual") in
-        other slots than the game gives the person; or the game's seed is
-        outside 0 through 2**32 - 1 (``game_seed``).
+        ends, another seed than ``game.seed``, or a person ("Manual") in other
+        slots than ``person_slots(game)``.
     """
     from marl_battlegrounds.evaluation.controller_names import (
         recorded_slot_controller_names,
     )
     from marl_battlegrounds.evaluation.map_identity import recorded_map
 
-    own_seed = game_seed(game, seed)
     replay = loaded.replay
     context = replay.header.context
     keys = {row.name: row.value for row in context.aggregation_keys}
     names = recorded_slot_controller_names(context) or (None,) * 10
     manual = tuple(slot for slot, name in enumerate(names) if name == "Manual")
+    slots = person_slots(game)
     problems = {
         "was not played to its end": replay.completion.completion_state != "complete",
         f"is not map {game.map_id}": recorded_map(context).map_id != game.map_id,
@@ -376,84 +328,61 @@ def check_replay(
             "marl_bgs.spawn_locations"
         )
         != str(int(game.swapped)),
-        f"did not use seed {own_seed}": context.seed_protocol.root_seed != own_seed,
-        f"does not have the person in slots {person_slots(game, player_class)}": (
-            manual != person_slots(game, player_class)
-        ),
+        f"did not use seed {game.seed}": context.seed_protocol.root_seed != game.seed,
+        f"does not have the person in slots {slots}": manual != slots,
     }
     failed = [problem for problem, found in problems.items() if found]
     if failed:
         raise ValueError(f"Game {game.number}'s replay " + "; ".join(failed) + ".")
 
 
-def _write_text(path: Path, text: str) -> None:
-    """Replace a file in one step, so a stopped run never leaves half a file."""
-    temporary = path.with_name(path.name + ".partial")
-    temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, path)
-
-
 def record_game(
     game: Game,
     attempts: Sequence[tuple[Path, LoadedReplay]],
     *,
-    settings: Mapping[str, Any],
     played: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """Measure a game's counted attempt and save its full metrics and record.
 
-    Writes ``full_metrics.csv`` (one row: the game, its replay and its digest,
-    then every full metric column; an empty cell is a metric that does not
-    apply) and ``game.json`` (the returned record) in the game's folder.
-    ``game.json`` is written last and marks the game as done.
+    Writes ``full_metrics.csv`` (one row: the game and its replay, then every
+    full metric column; an empty cell is a metric that does not apply) and
+    then ``game.json`` (the returned record) in the replay's folder.
+    ``game.json`` marks the game as done.
 
     Parameters
     ----------
     game : Game
-        The scheduled game.
+        The scheduled game. Call ``check_replay`` on its counted attempt first.
     attempts : sequence of (pathlib.Path, LoadedReplay)
         Every replay of the game, from ``read_attempts``; the first finished
-        one counts. Call ``check_replay`` on it first.
-    settings : mapping
-        The series settings: ``opponent`` and ``partner`` (``name`` and
-        ``method``), ``player_class`` and ``seed`` (the series seed).
+        one counts.
     played : (float, float) or None, default=None
         Wall-clock start and end of the BattleClient launch, in Unix seconds,
-        or None when unknown (for example a game measured on a later run).
+        or None when unknown (a game measured on a later run).
 
     Returns
     -------
     dict
-        ``record_version``; the game (``asdict(game)`` plus ``side``); the
-        settings above, except that ``seed`` is the game's own seed
-        (``game_seed``); ``replay`` (file name), ``replay_digest``,
-        ``episode_id``; ``controllers`` and ``classes`` (one entry per global
+        ``number``, ``kind``, ``map_id``, ``side``, ``replay`` (file name),
+        ``replay_digest``; the game's ``seed``, ``opponent``, ``partner`` and
+        ``player_class``; ``controllers`` and ``classes`` (one entry per global
         slot, as recorded; ``"Manual"`` marks the person); ``attempts`` (every
-        replay file of the game, relative to its folder, with its completion
-        state, oldest first); ``started_at``, ``ended_at`` and ``wall_seconds``
-        (how long the BattleClient was open for the launch that saved the
-        counted game, including about 12 s of setup and any time in an opened
-        Replay Viewer; None when unknown);
-        ``metric_schema_version``; ``measured_with`` (``XLA_FLAGS`` and the
-        JAX backend that measured it); ``outcome`` (``'win'``, ``'draw'`` or
-        ``'loss'``, from Team A's side); and the SUMMARY_COLUMNS values.
+        replay file and its completion state, oldest first); ``wall_seconds``
+        (how long the BattleClient was open, or None); ``outcome``
+        (``'win'``, ``'draw'`` or ``'loss'``, from Team A's side); and the
+        ``SUMMARY_COLUMNS`` values.
 
     Raises
     ------
     ValueError
-        No attempt was played to its end, its result is unknown, or the
-        game's seed is outside 0 through 2**32 - 1 (``game_seed``). Nothing
-        is written then.
+        No attempt was played to its end or its result is unknown. Nothing is
+        written then.
     """
-    import jax
-
     import marl_battlegrounds as marl_bgs
     from marl_battlegrounds.evaluation.controller_names import (
         recorded_slot_controller_names,
     )
-    from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 
-    own_seed = game_seed(game, int(settings["seed"]))
     counted = counted_attempt(attempts)
     if counted is None:
         raise ValueError(f"Game {game.number} has no attempt played to its end.")
@@ -464,8 +393,14 @@ def record_game(
     outcomes = [o for o in ("win", "draw", "loss") if values[f"team_a_{o}"] == 1]
     if len(outcomes) != 1:
         raise ValueError(f"Game {game.number}'s result is unknown.")
-    identity = asdict(game) | {"side": game.side, "replay": path.name}
-    identity["replay_digest"] = replay.canonical_digest_sha256
+    identity = {
+        "number": game.number,
+        "kind": game.kind,
+        "map_id": game.map_id,
+        "side": game.side,
+        "replay": path.name,
+        "replay_digest": replay.canonical_digest_sha256,
+    }
     table = io.StringIO()
     writer = csv.DictWriter(table, fieldnames=[*identity, *values], lineterminator="\n")
     writer.writeheader()
@@ -473,179 +408,27 @@ def record_game(
         identity
         | {name: "" if math.isnan(value) else value for name, value in values.items()}
     )
-    _write_text(path.parent / "full_metrics.csv", table.getvalue())
+    (path.parent / "full_metrics.csv").write_text(table.getvalue(), encoding="utf-8")
     catalog = context.static_mechanics_catalog.class_name_by_id
     record = identity | {
-        "record_version": RECORD_VERSION,
-        **{name: settings[name] for name in ("opponent", "partner", "player_class")},
-        "seed": own_seed,
-        "episode_id": context.identity.episode_id,
+        "seed": game.seed,
+        "opponent": game.opponent,
+        "partner": game.partner,
+        "player_class": game.player_class,
         "controllers": list(recorded_slot_controller_names(context) or [None] * 10),
         "classes": [catalog[row.class_id] for row in context.roster],
         "attempts": [
-            {
-                "replay": str(p.relative_to(path.parent)),
-                "completion": a.replay.completion.completion_state,
-            }
+            {"replay": p.name, "completion": a.replay.completion.completion_state}
             for p, a in attempts
         ],
-        "started_at": None if played is None else played[0],
-        "ended_at": None if played is None else played[1],
         "wall_seconds": None if played is None else round(played[1] - played[0]),
-        "metric_schema_version": METRIC_SCHEMA_VERSION,
-        "measured_with": {
-            "xla_flags": os.environ.get("XLA_FLAGS", ""),
-            "jax_backend": jax.default_backend(),
-        },
         "outcome": outcomes[0],
         **{name: int(values[name]) for name in SUMMARY_COLUMNS},
     }
-    _write_text(path.parent / "game.json", json.dumps(record, indent=2) + "\n")
-    return record
-
-
-def method_reference(reference: str) -> str:
-    """Return a method reference with a folder path made absolute.
-
-    The same actor folder then compares equal whether a run named it with a
-    relative or an absolute path. ``marl_bgs.load_method``'s own rule decides
-    what a reference is: a built-in name (for example ``'tdm-alpha'``) or a
-    ``module:function`` factory is returned unchanged, even when a folder of
-    that name exists.
-
-    Parameters
-    ----------
-    reference : str
-        Any reference ``marl_bgs.load_method`` accepts.
-
-    Returns
-    -------
-    str
-        The absolute path, relative to the folder the command was started
-        from, when ``load_method`` would read the reference as a saved folder;
-        else ``reference``.
-
-    Raises
-    ------
-    TypeError, ValueError
-        reference is not text, or is blank.
-    """
-    from marl_battlegrounds._method_loading import (
-        _reference_kind,  # pyright: ignore[reportPrivateUsage] - load_method's own rule.
+    (path.parent / "game.json").write_text(
+        json.dumps(record, indent=2) + "\n", encoding="utf-8"
     )
-
-    if _reference_kind(reference) != "artifact":
-        return reference
-    return to_absolute_path(str(Path(reference).expanduser()))
-
-
-def check_series(output_dir: Path, settings: Mapping[str, Any]) -> None:
-    """Refuse settings that differ from the series already in a folder.
-
-    Parameters
-    ----------
-    output_dir : pathlib.Path
-        The series folder. ``series.json`` there, written by ``save_series``
-        when the first game starts, holds the series settings.
-    settings : mapping
-        The current run's settings, with method references made absolute by
-        ``method_reference``.
-
-    Raises
-    ------
-    ValueError
-        A saved setting differs, or games_per_kind changes by a part of a
-        round. Use another output_dir for another series.
-    """
-    saved_path = output_dir / "series.json"
-    if not saved_path.is_file():
-        return
-    saved = json.loads(saved_path.read_text(encoding="utf-8"))
-    changed = [name for name in SERIES_SETTINGS if saved.get(name) != settings[name]]
-    rounds = len(settings["maps"])
-    if saved.get("games_per_kind") != settings["games_per_kind"] and (
-        saved.get("games_per_kind", 0) % rounds or settings["games_per_kind"] % rounds
-    ):
-        changed.append(f"games_per_kind (change it only by whole rounds of {rounds})")
-    if changed:
-        raise ValueError(
-            f"{output_dir} holds a series with other {', '.join(changed)}; "
-            "continue it with its own settings or choose another output_dir."
-        )
-
-
-def save_series(output_dir: Path, settings: Mapping[str, Any]) -> None:
-    """Save the series settings once, when the series' first game starts.
-
-    Parameters
-    ----------
-    output_dir : pathlib.Path
-        The series folder.
-    settings : mapping
-        The settings checked by ``check_series``. An existing ``series.json``
-        is kept.
-    """
-    saved_path = output_dir / "series.json"
-    if not saved_path.is_file():
-        names = (*SERIES_SETTINGS, "games_per_kind")
-        _write_text(
-            saved_path, json.dumps({n: settings[n] for n in names}, indent=2) + "\n"
-        )
-
-
-def recorded_games(
-    games: Sequence[Game], output_dir: Path, settings: Mapping[str, Any]
-) -> list[dict[str, Any]]:
-    """Read the record of every scheduled game that has one.
-
-    A record from an older version of this stage is measured again from its
-    replay, which is the record of the game.
-
-    Parameters
-    ----------
-    games : sequence of Game
-        The schedule.
-    output_dir : pathlib.Path
-        The series folder.
-    settings : mapping
-        The series settings, as for ``record_game``.
-
-    Returns
-    -------
-    list of dict
-        The records in playing order, numbered by the current schedule.
-
-    Raises
-    ------
-    ValueError
-        A record names a replay that no longer exists, or an older record's
-        replay fails ``check_replay`` or ``record_game``.
-    """
-    records: list[dict[str, Any]] = []
-    for game in games:
-        record_path = output_dir / game.folder / "game.json"
-        if not record_path.is_file():
-            continue
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-        if not (record_path.parent / record["replay"]).is_file():
-            raise ValueError(
-                f"{record_path} names a missing replay; to redo the game, move "
-                "game.json into the game folder's redone/ subfolder."
-            )
-        if record.get("record_version") != RECORD_VERSION:
-            print(f"Measuring game {game.number} again (an older record)...")
-            attempts = read_attempts(record_path.parent)
-            counted = counted_attempt(attempts)
-            if counted is not None:
-                check_replay(
-                    game,
-                    counted[1],
-                    seed=int(settings["seed"]),
-                    player_class=settings["player_class"],
-                )
-            record = record_game(game, attempts, settings=settings)
-        records.append(record | {"number": game.number})
-    return records
+    return record
 
 
 def write_tables(records: Sequence[dict[str, Any]], output_dir: Path) -> None:
@@ -666,8 +449,8 @@ def write_tables(records: Sequence[dict[str, Any]], output_dir: Path) -> None:
     per game.
     """
     fields = [
-        "number", "kind", "index", "map_id", "side", "outcome", *SUMMARY_COLUMNS,
-        "wall_seconds", "replay",
+        "number", "kind", "map_id", "side", "opponent", "player_class", "outcome",
+        *SUMMARY_COLUMNS, "wall_seconds", "replay",
     ]  # fmt: skip
     table = io.StringIO()
     writer = csv.DictWriter(
@@ -675,7 +458,7 @@ def write_tables(records: Sequence[dict[str, Any]], output_dir: Path) -> None:
     )
     writer.writeheader()
     writer.writerows(records)
-    _write_text(output_dir / "results.csv", table.getvalue())
+    (output_dir / "results.csv").write_text(table.getvalue(), encoding="utf-8")
     lines = [
         "| Kind | Games | Wins · Draws · Losses | Point Margin | Kills | Deaths |",
         "| --- | ---: | :---: | ---: | ---: | ---: |",
@@ -698,12 +481,13 @@ def write_tables(records: Sequence[dict[str, Any]], output_dir: Path) -> None:
         )
     lines += [
         "",
-        "| Game | Kind | Map | Team A Starts | Result | Points | Kills · Deaths |",
-        "| ---: | --- | ---: | --- | --- | :---: | :---: |",
+        "| Game | Kind | Opponent | Map | Team A Starts | Result | Points "
+        "| Kills · Deaths |",
+        "| ---: | --- | --- | ---: | --- | --- | :---: | :---: |",
     ]
     lines += [
-        f"| {r['number']} | {r['kind']} {r['index']} | {r['map_id']} | {r['side']} | "
-        f"{r['outcome']} | {r['team_a_score']} to {r['team_b_score']} | "
+        f"| {r['number']} | {r['kind']} | {r['opponent']} | {r['map_id']} | "
+        f"{r['side']} | {r['outcome']} | {r['team_a_score']} to {r['team_b_score']} | "
         f"{r['team_a_kills']} · {r['team_a_deaths']} |"
         for r in records
     ]
@@ -711,34 +495,29 @@ def write_tables(records: Sequence[dict[str, Any]], output_dir: Path) -> None:
         "Team A is the person's team. Point margin, kills and deaths are means "
         "per game."
     )
-    _write_text(output_dir / "results.md", note + "\n\n" + "\n".join(lines) + "\n")
+    (output_dir / "results.md").write_text(
+        note + "\n\n" + "\n".join(lines) + "\n", encoding="utf-8"
+    )
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="human_games")
 def main(config: DictConfig) -> list[dict[str, Any]]:
     """Play the scheduled games one by one, measuring each finished game.
 
-    First it loads the methods and checks every recorded game, measuring an
-    older record again. Before each game it prints which game comes next and
-    waits for Enter. It then saves ``series.json`` (once) and opens the
-    BattleClient, which returns when the person presses Exit. Recorded games
-    are skipped, and a game that was played to its end but not yet measured
-    is measured without being played again, so running the command again
-    continues the series. The stage stops, without error, when the person
-    presses Ctrl-C at the prompt or exits a game before its end. Method
-    references that name folders are made absolute (``method_reference``)
-    before they are saved or compared.
+    Recorded games are skipped, and a game played to its end but not yet
+    measured is measured without being played again, so running the command
+    again continues the series. Before each new game the stage prints the
+    game and waits for Enter; it stops without error at Ctrl-C there, or after
+    a game exited before its end.
 
     Parameters
     ----------
     config : omegaconf.DictConfig
-        ``opponent`` and ``partner`` (each a ``name`` and a ``method``, any
-        reference ``marl_bgs.load_method`` accepts; the partner defaults to
-        the opponent), ``kinds``, ``maps``, ``games_per_kind``,
-        ``player_class``, ``seed`` (game 1's seed; see ``game_seed``) and the
-        required ``output_dir``;
-        ``models_dir`` fills ``${models_dir}`` in the default paths. Relative
-        paths use the folder the command was started from.
+        ``systems`` (name and method of every System, from the field
+        settings); ``parts`` (see ``schedule``; ``opponent`` and ``partner``
+        are names from ``systems``) and the required ``output_dir``.
+        ``models_dir`` fills ``${models_dir}`` in method paths. Relative paths
+        use the folder the command was started from.
 
     Returns
     -------
@@ -748,58 +527,82 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     Raises
     ------
     ValueError
-        The schedule settings or player_class are invalid, a game's seed is
-        outside 0 through 2**32 - 1 (``game_seed``), output_dir holds a series with
-        other settings (see ``check_series``), or a replay fails
-        ``check_replay``.
+        A setting is invalid (``schedule``, ``person_slots``), a name is not in
+        ``systems``, the folder holds a series with other settings, or a
+        replay fails ``check_replay``.
+
+    Notes
+    -----
+    Each System is loaded once. The BattleClient plays the Systems on the
+    default JAX device; set ``CUDA_VISIBLE_DEVICES`` to choose a GPU. It needs
+    a browser.
     """
     import marl_battlegrounds as marl_bgs
 
     settings: dict[str, Any] = OmegaConf.to_container(config, resolve=True)  # pyright: ignore[reportAssignmentType] - the root is a mapping.
-    for role in ("opponent", "partner"):
-        settings[role]["method"] = method_reference(settings[role]["method"])
-    games = schedule(settings["kinds"], settings["maps"], settings["games_per_kind"])
-    player_class, seed = settings["player_class"], int(settings["seed"])
-    # Check the class and every game's seed before any game.
-    person_slots(games[0], player_class)
+    methods = {
+        str(entry["name"]): str(entry["method"]) for entry in settings["systems"]
+    }
+    games = schedule(settings["parts"])
+    names = {name for g in games for name in (g.opponent, g.partner) if name}
+    missing = sorted(names - set(methods))
+    if missing:
+        raise ValueError(f"not in systems: {missing}")
     for game in games:
-        game_seed(game, seed)
+        person_slots(game)
     output_dir = Path(to_absolute_path(str(Path(settings["output_dir"]).expanduser())))
     output_dir.mkdir(parents=True, exist_ok=True)
-    check_series(output_dir, settings)
-    # Load once: every game reuses the same frozen weights.
-    opponent = marl_bgs.load_method(settings["opponent"]["method"])
-    partner = (
-        opponent
-        if settings["partner"]["method"] == settings["opponent"]["method"]
-        else marl_bgs.load_method(settings["partner"]["method"])
-    )
-    # Check earlier games now, not after the next game is played.
-    if recorded_games(games, output_dir, settings):
-        save_series(output_dir, settings)
+    saved = {key: value for key, value in settings.items() if key != "output_dir"}
+    settings_path = output_dir / "settings.json"
+    if settings_path.exists():
+        if json.loads(settings_path.read_text(encoding="utf-8")) != saved:
+            raise ValueError(
+                f"{output_dir} holds a series with other settings; "
+                "continue it with its own settings or choose another output_dir"
+            )
+    else:
+        settings_path.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
+
+    loaded: dict[str, Policy | System] = {}
+
+    def system(name: str) -> Policy | System:
+        """Load a System once, on its first use."""
+        if name not in loaded:
+            loaded[name] = marl_bgs.load_method(methods[name])
+        return loaded[name]
+
+    records: list[dict[str, Any]] = []
     for game in games:
         folder = output_dir / game.folder
         if (folder / "game.json").is_file():
+            records.append(json.loads((folder / "game.json").read_text("utf-8")))
             continue
         attempts, played = read_attempts(folder), None
         if counted_attempt(attempts) is None:
+            who = (
+                "all of Team A"
+                if game.kind == "against"
+                else f"the {game.player_class}"
+            )
             print(
-                f"Game {game.number} of {len(games)}: {game.kind} {game.index}, "
-                f"map {game.map_id}, Team A starts on the {game.side}."
+                f"Game {game.number} of {len(games)} ({game.kind}): you play {who} "
+                f"against {game.opponent} on map {game.map_id}, "
+                f"Team A starts on the {game.side}."
             )
             try:
                 input("Press Enter to open it, or Ctrl-C to stop. ")
             except KeyboardInterrupt, EOFError:
                 print("\nStopped. Run the same command to continue.")
                 break
-            save_series(output_dir, settings)
             folder.mkdir(parents=True, exist_ok=True)
             started = time.time()
             marl_bgs.battle_client(
                 map_id=game.map_id,
-                team_a=team_a_controllers(game, partner, player_class),
-                team_b=opponent,
-                seed=game_seed(game, seed),
+                team_a=team_a_controllers(
+                    game, None if game.partner is None else system(game.partner)
+                ),
+                team_b=system(game.opponent),
+                seed=game.seed,
                 spawn_mode="swapped" if game.swapped else "default",
                 output_dir=folder,
             )
@@ -811,13 +614,9 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
                 f"Game {game.number} was not played to its end. Run again to replay it."
             )
             break
-        print(f"Measuring game {game.number}...")
-        check_replay(game, counted[1], seed=seed, player_class=player_class)
-        save_series(output_dir, settings)
-        record = record_game(game, attempts, settings=settings, played=played)
-        write_tables(recorded_games(games, output_dir, settings), output_dir)
-        print(f"Game {game.number}: {record['outcome']}, saved in {folder}")
-    records = recorded_games(games, output_dir, settings)
+        check_replay(game, counted[1])
+        records.append(record_game(game, attempts, played=played))
+        print(f"Game {game.number}: {records[-1]['outcome']}, saved in {folder}")
     if records:
         write_tables(records, output_dir)
         print(output_dir / "results.md")

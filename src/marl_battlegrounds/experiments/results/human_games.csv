@@ -1,0 +1,4 @@
+number,kind,map_id,side,opponent,player_class,outcome,team_a_score,team_b_score,score_difference,team_a_kills,team_a_deaths,episode_length,wall_seconds,replay
+1,against,47,left,Recurrent IPPO,,win,21,4,17,19,4,233,,battle_43accf1d7b82445c98c8b8fd5602720e.marlbg-replay.json
+2,against,48,right,Recurrent IPPO,,win,20,8,12,16,8,161,,battle_5c58941cf96f493daaf7b95f0911ae66.marlbg-replay.json
+3,against,49,left,Recurrent IPPO,,win,21,1,20,12,1,157,,battle_d995e040938146e6a5fab884ba9f1216.marlbg-replay.json

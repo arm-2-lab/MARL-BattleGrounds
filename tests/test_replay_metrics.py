@@ -114,24 +114,18 @@ def test_human_games_read_real_replays(
     loaded = load_replay(replay)
     context = loaded.replay.header.context
     keys = {row.name: row.value for row in context.aggregation_keys}
-    game = human_games.Game(
-        1, "against", 1, 47, keys["marl_bgs.spawn_locations"] == "1"
-    )
     seed = context.seed_protocol.root_seed
     assert seed is not None
+    game = human_games.Game(
+        1, "against", 47, keys["marl_bgs.spawn_locations"] == "1", seed, "TDM-Beta"
+    )
     with pytest.raises(ValueError) as caught:
-        human_games.check_replay(game, loaded, seed=seed, player_class="priest")
+        human_games.check_replay(game, loaded)
     # Only the missing person fails: map, end, seed and completion all match.
     assert str(caught.value) == (
         "Game 1's replay does not have the person in slots (0, 1, 2, 3, 4)."
     )
-    settings = {
-        "opponent": {"name": "TDM-Beta", "method": "tdm-beta"},
-        "partner": {"name": "TDM-Beta", "method": "tdm-beta"},
-        "player_class": "priest",
-        "seed": seed,
-    }
-    record = human_games.record_game(game, [(replay, loaded)], settings=settings)
+    record = human_games.record_game(game, [(replay, loaded)])
     full = marl_bgs.replay_metrics(loaded, metrics="full")
     assert record["outcome"] in ("win", "draw", "loss")
     assert record["team_a_kills"] == int(full["team_a_kills"])
