@@ -1248,14 +1248,19 @@ the weakest?
 **Method.** The tournament saved priority metrics for every game. The public
 `tournament_analysis` stage played its schedule again on the same RTX 5090 in
 XLA's deterministic mode, recording all full metrics for every game. All
-7,200 games repeated exactly, and every entrant's point margin, read from the
-side it played in each game, equals the saved head-to-head result. Each
-entrant is measured over all 1,600 of its games, as Team A or Team B. 95%
-intervals resample its spawn-swapped game pairs; games that repeat exactly
-(see Repeated games above) are held fixed. A rank correlation of +1 means the
-measure rises with every step up in Elo and −1 that it falls; the stage also
-ranks all 145 team-level metrics in the catalog this way
-(`season_0_teamwork_screen.csv`).
+7,200 games repeated exactly. One call to
+[`system_metrics`](../evaluation/workflows.md#compare-every-systems-metrics)
+then reads every entrant's games from the side it played, as Team A or Team B,
+over all 1,600 of its games, and its point margin against each opponent equals
+the saved head-to-head result. Games combine by each column's catalog rule:
+counts per game, fractions with a saved denominator as total numerator over
+total denominator, averages such as teammate distance weighted by their
+observations. 95%
+intervals resample whole spawn-swapped game pairs within each opponent and
+map, as Elo does; matchups that repeat exactly (see Repeated games above) add
+no width. A rank correlation of +1 means the measure rises with every step up
+in Elo and −1 that it falls; the stage also ranks all 145 team-level metrics
+in the catalog this way (`season_0_teamwork_screen.csv`).
 
 ```bash
 XLA_FLAGS=--xla_gpu_deterministic_ops=true XLA_PYTHON_CLIENT_PREALLOCATE=false \
@@ -1263,6 +1268,18 @@ XLA_FLAGS=--xla_gpu_deterministic_ops=true XLA_PYTHON_CLIENT_PREALLOCATE=false \
   tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
   field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
   output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out
+```
+
+To redo only the analysis from that saved replay, as for the results below
+(`field` is required but unused when `replay_dir` is given):
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python -m marl_battlegrounds.experiments.tournament_analysis \
+  tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
+  field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
+  replay_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out/replay/tournament_20261007_095226_96f9aa8c5e85 \
+  output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/analysis-system-metrics
 ```
 
 **Cost.** Both runs used the same RTX 5090, 128 parallel games, deterministic
@@ -1273,9 +1290,11 @@ preallocation off.
 | Metrics recorded | Time | Peak RAM | Peak GPU memory | Disk |
 | --- | ---: | ---: | ---: | ---: |
 | Priority, as in the tournament | 488 s (8.1 minutes) | 6.5 GB | 924 MiB | 40 MB |
-| Full, for every game | 834 s (13.9 minutes) | 9.5 GB, analysis included | 980 MiB | 392 MB |
+| Full, for every game | 834 s (13.9 minutes) | 9.5 GB, with an earlier analysis | 980 MiB | 392 MB |
 
-The analysis alone, from the saved replay, took 28 seconds and 1.2 GB of RAM.
+The analysis alone, from the saved replay on the same card, took 13.4 seconds
+and 0.50 GB of peak RAM for the whole command, of which the two
+`system_metrics` calls took 8.2 seconds.
 
 **Results.** Entrants from the highest Elo down; percentages are shares.
 
