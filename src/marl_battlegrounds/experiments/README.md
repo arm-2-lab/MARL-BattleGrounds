@@ -111,15 +111,14 @@ every system, scenario and outcome, it counts how often each starting agent
 died and used its Ultimate, and how many ticks the games lasted. It compares
 each system's wins with Random's using Fisher's exact test.
 
-**Command.** The first command plays; the second only reads saved files and
-runs on the CPU:
+**Command.** The first command plays; the second only reads saved files:
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
 python -m marl_battlegrounds.experiments.scenarios +field=season_0 metrics=full \
     models_dir=artifacts/paper-experiments/hyperparameter-search \
     output_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics
-JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.scenario_analysis \
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.scenario_analysis \
     scenarios_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics \
     output_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics/analysis
 ```
@@ -127,7 +126,7 @@ JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.scenario_analysis \
 **Hardware and cost.** Playing all 20,480 games with full metrics took 367
 seconds on one NVIDIA RTX 5090, with a peak of 6.9 GiB of RAM, and saved 524 MB
 of results. Every win, draw and loss matched the run above. The analysis took
-42 seconds on the CPU, with a peak of 0.8 GiB of RAM.
+45 seconds, with a peak of 1.2 GiB of RAM.
 
 **Results.** Counts pool all ten systems, 2,560 games per scenario. HP is the
 agent's health at the start.
