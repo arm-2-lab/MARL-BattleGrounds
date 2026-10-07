@@ -564,6 +564,26 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    # Season 0: display names for the field, keyed as the saved tournament
+    # records them; the series names Systems by display name.
+    result["human_games_analysis.yaml"] = {
+        "series_dir": "???",
+        "field_dir": "???",
+        "names": {
+            "IPPO at step 250,675,200 (run)": "Recurrent IPPO",
+            "PQN-VDN at step 240,156,672 (run)": "PQN-VDN",
+            "MAPPO at step 219,103,232 (run)": "Recurrent MAPPO",
+            "QMIX at step 219,095,040 (run)": "QMIX",
+            "FF-IPPO at step 219,103,232 (run)": "Feedforward IPPO",
+            "FF-MAPPO at step 208,568,320 (run)": "Feedforward MAPPO",
+            "tdm-beta": "TDM-Beta",
+            "tdm-gamma": "TDM-Gamma",
+            "tdm-alpha": "TDM-Alpha",
+        },
+        "window_ticks": 10,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [

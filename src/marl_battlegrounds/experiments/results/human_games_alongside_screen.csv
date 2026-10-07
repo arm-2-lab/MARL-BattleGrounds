@@ -1,0 +1,314 @@
+measure,unit,scale,person_1,other_side_1,reference_1,z_1,person_2,other_side_2,reference_2,z_2,person_3,other_side_3,reference_3,z_3,same_direction,smallest_z
+mage_aura_covered_steps,agent_steps,per 100 ticks,265.9574,285.1064,329.2602,-1.3902,226.6892,320.6081,268.2088,-1.4901,226.6436,275.7785,277.6504,-3.0019,True,-1.3902
+agent_0_mage_aura_covered_steps,agent_steps,per 100 ticks,265.9574,nan,329.2602,-1.3902,226.6892,nan,268.2088,-1.4901,226.6436,nan,277.6504,-3.0019,True,-1.3902
+mage_aura_coverage,fraction,as is,0.547,0.6442,0.6636,-1.3381,0.513,0.7195,0.6207,-2.001,0.5153,0.6381,0.6123,-2.819,True,-1.3381
+agent_0_mage_aura_coverage,fraction,as is,0.547,nan,0.6636,-1.3381,0.513,nan,0.6207,-2.001,0.5153,nan,0.6123,-2.819,True,-1.3381
+damage_received,health,per 100 ticks,883.7367,1675.2088,618.2726,2.4988,1950.9324,1813.2933,1784.0328,1.5358,1605.4938,1717.6716,1444.884,0.8027,True,0.8027
+agent_0_healing_received_while_hunter_trap,health,per 100 ticks,0.0,nan,3.2331,-0.7296,5.4054,nan,22.0527,-1.0357,0.0,nan,19.9133,-1.012,True,-0.7296
+agent_0_trap_intervals,count,per 100 ticks,0.0,nan,0.4041,-0.7296,1.6892,nan,1.9476,-0.7429,1.0381,nan,1.4461,-0.8162,True,-0.7296
+damage_prevented_by_warrior_aura,health,per 100 ticks,93.391,163.8071,82.8124,0.7276,220.0476,254.0549,203.6039,0.9006,192.0324,189.5515,163.279,1.4723,True,0.7276
+burst_damage_fraction,fraction,as is,0.2294,0.0,0.1549,0.6637,0.3209,0.1798,0.1492,6.0649,0.266,0.2264,0.1676,2.0071,True,0.6637
+agent_0_burst_damage_fraction,fraction,as is,0.2294,nan,0.1549,0.6637,0.3209,nan,0.1492,6.0649,0.266,nan,0.1676,2.0071,True,0.6637
+damage_from_mage_aura,health,per 100 ticks,151.1928,83.258,182.4044,-1.0961,144.7627,189.1329,157.5929,-0.635,146.8845,152.8377,161.0778,-0.7225,True,-0.635
+kills_of_rogue_poison_anti_heal_recipient,count,per 100 ticks,0.0,1.0638,0.373,-0.7234,0.3378,0.6757,0.6229,-0.6303,0.346,0.692,0.6046,-0.7974,True,-0.6303
+excess_healing,health,per 100 ticks,367.367,1008.617,431.3208,-0.5954,245.4324,218.5802,316.4391,-1.6079,321.1358,234.487,362.5331,-0.6465,True,-0.5954
+freedom_eligible_steps,agent_steps,per 100 ticks,97.8723,70.2128,94.2128,0.9203,90.8784,83.1081,89.6678,0.5598,93.4256,84.7751,91.4749,0.9249,True,0.5598
+kills_of_hunter_trap_recipient,count,per 100 ticks,0.0,0.0,0.289,-0.5679,0.0,0.0,0.1787,-0.7545,0.0,0.0,0.1151,-0.5515,True,-0.5515
+effective_healing_fraction,fraction,as is,0.5359,0.1883,0.4798,0.5429,0.7888,0.8255,0.7283,1.64,0.7336,0.7906,0.6702,1.1165,True,0.5429
+effective_priest_healing_received_fraction,fraction,as is,0.5359,0.1883,0.4798,0.5429,0.7888,0.8255,0.7283,1.64,0.7336,0.7906,0.6702,1.1165,True,0.5429
+excess_priest_healing_received_fraction,fraction,as is,0.4641,0.8117,0.5202,-0.5429,0.2112,0.1745,0.2717,-1.64,0.2664,0.2094,0.3298,-1.1165,True,-0.5429
+excess_healing_fraction,fraction,as is,0.4641,0.8117,0.5202,-0.5429,0.2112,0.1745,0.2717,-1.64,0.2664,0.2094,0.3298,-1.1165,True,-0.5429
+burst_damage,health,per 100 ticks,149.1024,0.0,108.8856,0.5097,238.6444,126.1406,100.9683,5.2033,189.7202,153.2504,114.471,2.3516,True,0.5097
+agent_0_burst_damage,health,per 100 ticks,149.1024,nan,108.8856,0.5097,238.6444,nan,100.9683,5.2033,189.7202,nan,114.471,2.3516,True,0.5097
+rescues,count,per 100 ticks,0.0,0.0,0.3527,-0.5049,1.6892,5.7432,2.1691,-0.5538,0.346,3.4602,1.3949,-0.7769,True,-0.5049
+agent_0_kill_contributions_to_hunter_trap_recipient,count,per 100 ticks,0.0,nan,0.2232,-0.4916,0.0,nan,0.0735,-0.4966,0.0,nan,0.0818,-0.4895,True,-0.4895
+hunter_basic_slow_applications,count,per 100 ticks,52.1277,15.9574,45.1587,0.4867,69.9324,70.9459,65.6585,0.7876,69.2042,56.7474,59.1033,2.2739,True,0.4867
+basic_effective_healing_done,health,per 100 ticks,424.1223,217.9787,382.2827,0.4821,626.8822,656.5017,551.3083,1.7157,556.4853,620.4338,503.4719,1.0806,True,0.4821
+basic_effective_healing_fraction,fraction,as is,0.5359,0.3607,0.4882,0.4699,0.8284,0.9218,0.7244,1.9919,0.7364,0.8807,0.6611,1.1506,True,0.4699
+basic_excess_healing_fraction,fraction,as is,0.4641,0.6393,0.5118,-0.4699,0.1716,0.0782,0.2756,-1.9919,0.2636,0.1193,0.3389,-1.1506,True,-0.4699
+agent_0_healing_received_while_hunter_basic_slow,health,per 100 ticks,17.0213,nan,40.5181,-0.5426,21.6216,nan,93.727,-1.4352,51.2111,nan,77.0316,-0.461,True,-0.461
+basic_excess_healing,health,per 100 ticks,367.367,386.2766,395.9621,-0.4432,129.8746,55.6605,209.3652,-2.0945,199.2241,84.0644,258.4581,-1.1344,True,-0.4432
+burst_kill_contributions,count,per 100 ticks,1.0638,0.0,0.7777,0.4441,0.6757,0.0,0.526,0.4412,1.0381,1.0381,0.6317,0.9672,True,0.4412
+burst_kills,count,per 100 ticks,1.0638,0.0,0.7777,0.4441,0.6757,0.0,0.526,0.4412,1.0381,1.0381,0.6317,0.9672,True,0.4412
+agent_0_burst_kill_contributions,count,per 100 ticks,1.0638,nan,0.7777,0.4441,0.6757,nan,0.526,0.4412,1.0381,nan,0.6317,0.9672,True,0.4412
+kills_of_rogue_poison_stun_recipient,count,per 100 ticks,0.0,0.0,0.167,-0.4137,0.0,0.0,0.2015,-0.6372,0.0,0.0,0.1793,-0.8415,True,-0.4137
+agent_0_kill_contributions_to_rogue_poison_stun_recipient,count,per 100 ticks,0.0,nan,0.167,-0.4137,0.0,nan,0.1301,-0.4503,0.0,nan,0.0959,-0.5592,True,-0.4137
+mean_observed_respawn_wait_steps,steps,per 100 ticks,1.4184,3.1915,3.4515,-1.8955,0.9966,1.0586,1.069,-0.7319,0.9582,0.9516,1.0731,-0.4117,True,-0.4117
+warrior_charge_slow_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
+warrior_charge_stun_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
+warrior_charge_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
+agent_0_healing_received,health,per 100 ticks,170.2128,nan,200.3427,-0.3638,289.1892,nan,336.3319,-0.5227,263.8062,nan,341.2946,-0.8532,True,-0.3638
+agent_0_priest_healing_received,health,per 100 ticks,170.2128,nan,199.5645,-0.3537,289.1892,nan,335.9729,-0.519,261.5917,nan,339.5497,-0.8576,True,-0.3537
+agent_0_basic_priest_healing_received,health,per 100 ticks,170.2128,nan,199.5645,-0.3537,221.6216,nan,254.4881,-0.5302,157.7855,nan,261.2551,-2.3539,True,-0.3537
+agent_0_hunter_trap_active_steps,agent_steps,per 100 ticks,0.0,nan,0.6059,-0.6062,4.0541,nan,4.5689,-0.3389,1.0381,nan,3.6324,-1.6269,True,-0.3389
+hunter_ultimate_kill_fraction,fraction,as is,0.0,0.0,0.01,-0.3333,0.0,0.0,0.0245,-0.5802,0.0,0.0,0.0262,-0.611,True,-0.3333
+hunter_ultimate_kills,count,per 100 ticks,0.0,0.0,0.1117,-0.3313,0.0,0.0,0.1379,-0.5954,0.0,0.0,0.146,-0.6209,True,-0.3313
+effective_healing_done,health,per 100 ticks,424.1223,233.9362,394.8191,0.3282,916.7297,1034.1225,849.5356,1.0135,884.4005,885.2361,737.3255,1.7902,True,0.3282
+effective_priest_healing_received,health,per 100 ticks,424.1223,233.9362,394.8191,0.3282,916.7297,1034.1225,849.5356,1.0135,884.4005,885.2361,737.3255,1.7902,True,0.3282
+agent_0_effective_healing_received,health,per 100 ticks,79.7979,nan,103.3119,-0.3149,189.1381,nan,238.9297,-0.71,184.6064,nan,225.2528,-0.7745,True,-0.3149
+agent_0_priest_freedom_active_steps,agent_steps,per 100 ticks,21.2766,nan,24.4484,-0.3088,27.7027,nan,31.4428,-0.4778,19.7232,nan,32.4216,-2.2326,True,-0.3088
+agent_0_basic_effective_priest_healing_received,health,per 100 ticks,79.7979,nan,102.5337,-0.3033,167.8712,nan,199.3248,-0.5147,126.5545,nan,188.1197,-1.4202,True,-0.3033
+agent_0_effective_priest_healing_received,health,per 100 ticks,79.7979,nan,102.5337,-0.3033,189.1381,nan,238.5708,-0.7058,182.3919,nan,223.5078,-0.7864,True,-0.3033
+damage_to_hunter_basic_slow_recipient,health,per 100 ticks,644.1063,143.6835,531.2652,0.56,667.3168,829.087,640.8354,0.2873,641.1536,584.4792,599.6836,0.4283,True,0.2873
+healing_to_hunter_trap_recipient,health,per 100 ticks,8.5106,8.5106,11.2327,-0.2847,5.4054,21.6216,22.1931,-1.0515,0.0,5.5363,21.5343,-1.0509,True,-0.2847
+focus_fire_steps,steps,per 100 ticks,55.3191,22.3404,53.8944,0.2743,66.5541,67.9054,64.482,0.4321,59.1696,55.7093,56.2864,0.699,True,0.2743
+basic_activations,count,per 100 ticks,261.7021,151.0638,250.5828,0.5187,277.7027,282.7703,273.6222,0.3417,262.9758,244.9827,259.5319,0.2663,True,0.2663
+agent_0_kill_contributions_to_warrior_charge_slow_recipient,count,per 100 ticks,0.0,nan,0.5179,-0.7112,0.3378,nan,0.423,-0.2643,0.0,nan,0.1736,-0.846,True,-0.2643
+red_zone_kills,count,per 100 ticks,10.6383,0.0,11.0196,-0.2419,0.0,0.0,0.0348,-0.333,0.0,0.0,0.4557,-0.5176,True,-0.2419
+burst_damage_contributing_to_kill,health,per 100 ticks,20.2779,0.0,16.9392,0.2329,12.8792,0.0,10.5753,0.334,20.9507,20.9507,12.9145,0.9586,True,0.2329
+agent_0_burst_damage_contributing_to_kill,health,per 100 ticks,20.2779,nan,16.9392,0.2329,12.8792,nan,10.5753,0.334,20.9507,nan,12.9145,0.9586,True,0.2329
+agent_0_kill_contributions_to_warrior_charge_stun_recipient,count,per 100 ticks,0.0,nan,0.0424,-0.2294,0.0,nan,0.1099,-0.6507,0.0,nan,0.05,-0.3145,True,-0.2294
+agent_0_healing_received_while_warrior_charge_slow,health,per 100 ticks,42.5532,nan,2.1055,7.8984,100.0,nan,72.5039,0.5588,74.7405,nan,63.0648,0.2249,True,0.2249
+agent_0_freedom_eligible_steps,agent_steps,per 100 ticks,21.2766,nan,24.0016,-0.2691,26.6892,nan,28.1204,-0.197,19.0311,nan,29.8926,-1.9749,True,-0.197
+agent_0_solo_kills,count,per 100 ticks,1.0638,nan,0.925,0.1878,1.0135,nan,0.4274,2.4683,1.0381,nan,0.3636,2.0049,True,0.1878
+agent_0_healing_received_fraction,fraction,as is,0.2151,nan,0.2317,-0.187,0.2349,nan,0.2796,-0.58,0.2032,nan,0.2914,-1.2459,True,-0.187
+damage_done,health,per 100 ticks,1675.2087,883.7367,1621.8014,0.2847,1813.2933,1950.9324,1757.9557,0.4162,1717.6717,1605.4936,1691.4143,0.1815,True,0.1815
+basic_damage_done,health,per 100 ticks,1514.9428,722.8803,1490.9255,0.1432,1647.3963,1776.3139,1591.2621,0.4315,1548.9156,1468.3881,1523.5193,0.1829,True,0.1432
+ultimate_activations,count,per 100 ticks,9.5745,10.6383,9.3733,0.1339,13.1757,13.1757,13.0758,0.1982,13.1488,10.7266,12.6791,0.809,True,0.1339
+agent_0_kill_contributions_to_rogue_poison_anti_heal_recipient,count,per 100 ticks,0.0,nan,0.328,-0.6471,0.3378,nan,0.3993,-0.1315,0.0,nan,0.3168,-0.9079,True,-0.1315
+agent_0_damage_to_hunter_basic_slow_recipient,health,per 100 ticks,252.8776,nan,218.7402,0.2826,225.5127,nan,206.9982,0.3848,233.9494,nan,228.6678,0.1147,True,0.1147
+mean_agents_per_respawn_wave,agents,as is,0.1667,0.4444,0.0369,2.8076,0.322,0.2542,0.3079,0.3134,0.2281,0.3333,0.2212,0.1113,True,0.1113
+agent_0_basic_excess_healing_received,health,per 100 ticks,90.4149,nan,97.0308,-0.1626,53.7504,nan,55.1633,-0.073,31.231,nan,73.1354,-1.8966,True,-0.073
+warrior_aura_eligible_steps,agent_steps,per 100 ticks,486.1702,386.1702,495.6775,-1.6616,420.2703,455.7432,421.1092,-0.066,437.0242,445.6747,443.5769,-0.3846,True,-0.066
+hunter_trap_applications,count,per 100 ticks,2.1277,2.1277,2.3032,-0.2827,2.3649,2.027,2.4767,-0.6007,2.4221,1.7301,2.4333,-0.0447,True,-0.0447
+trap_intervals,count,per 100 ticks,2.1277,2.1277,2.3032,-0.2827,2.3649,2.027,2.4767,-0.6007,2.4221,1.7301,2.4333,-0.0447,True,-0.0447
+priest_basic_kills,count,per 100 ticks,3.1915,1.0638,4.9539,-0.8024,2.7027,4.7297,2.9573,-0.2811,2.7682,2.4221,2.8021,-0.0425,True,-0.0425
+deaths,count,per 100 ticks,3.1915,10.6383,0.7265,2.7143,6.7568,5.0676,6.3295,0.4241,4.4983,6.9204,4.4832,0.0117,True,0.0117
+kills,count,per 100 ticks,10.6383,3.1915,11.0686,-0.2771,5.0676,6.7568,5.5107,-0.4376,6.9204,4.4983,5.9197,0.8208,False,0.0
+actions_submitted,count,per 100 ticks,500.0,500.0,500.0,nan,500.0,500.0,500.0,nan,500.0,500.0,500.0,nan,False,0.0
+actions_accepted,count,per 100 ticks,500.0,500.0,500.0,nan,500.0,500.0,500.0,nan,500.0,500.0,500.0,nan,False,0.0
+action_acceptance_rate,fraction,as is,1.0,1.0,1.0,-1.3628,1.0,1.0,1.0,0.2294,1.0,1.0,1.0,-0.2294,False,0.0
+actions_rejected,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,False,0.0
+action_domain_rejections,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,False,0.0
+action_movement_rejections,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,False,0.0
+action_combat_rejections,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,0.0,0.0,0.0,nan,False,0.0
+ultimate_damage_done,health,per 100 ticks,160.266,160.8564,130.8759,0.9381,165.897,174.6182,166.6936,-0.0828,168.7561,137.1055,167.895,0.0639,False,0.0
+damage_to_warrior_charge_slow_recipient,health,per 100 ticks,109.5,29.5,119.502,-0.1592,184.7061,62.0684,102.9115,3.1094,32.301,34.814,91.1411,-2.5649,False,0.0
+damage_to_warrior_charge_stun_recipient,health,per 100 ticks,25.5319,14.75,25.8049,-0.0209,31.2035,26.9464,25.51,0.7135,9.9654,19.4265,22.6445,-1.6924,False,0.0
+damage_to_hunter_trap_recipient,health,per 100 ticks,12.6223,19.758,34.7929,-1.2085,24.5667,12.2466,23.8593,0.1126,32.3849,49.0329,28.6812,0.2778,False,0.0
+damage_to_rogue_poison_slow_recipient,health,per 100 ticks,99.7128,60.9149,82.2022,0.2548,115.6727,117.0114,87.7402,1.0529,69.4498,107.9403,97.9389,-0.741,False,0.0
+damage_to_rogue_poison_stun_recipient,health,per 100 ticks,26.383,12.4787,23.7192,0.1575,34.6584,22.0253,27.9092,0.583,15.2941,35.5104,27.7358,-1.0703,False,0.0
+damage_to_rogue_poison_anti_heal_recipient,health,per 100 ticks,92.4787,60.9149,71.3721,0.358,101.3433,100.7796,77.6047,1.0503,56.2734,103.8227,85.0638,-0.8512,False,0.0
+healing_done,health,per 100 ticks,791.4894,1242.5532,826.14,-0.4302,1162.1622,1252.7027,1165.9748,-0.0607,1205.5363,1119.7232,1099.8586,1.4023,False,0.0
+basic_healing_done,health,per 100 ticks,791.4894,604.2553,778.2448,0.437,756.7568,712.1622,760.6735,-0.2843,755.7093,704.4983,761.9301,-0.4743,False,0.0
+ultimate_healing_done,health,per 100 ticks,0.0,638.2979,47.8952,-0.57,405.4054,540.5405,405.3013,0.0017,449.827,415.2249,337.9285,1.3932,False,0.0
+ultimate_effective_healing_done,health,per 100 ticks,0.0,15.9574,12.5364,-0.4191,289.8476,377.6208,298.2274,-0.1544,327.9152,264.8024,233.8536,1.4025,False,0.0
+ultimate_effective_healing_fraction,fraction,as is,nan,0.025,0.2422,nan,0.715,0.6986,0.7364,-0.2827,0.729,0.6377,0.6926,0.3456,False,0.0
+priest_healing_received,health,per 100 ticks,791.4894,1242.5532,826.14,-0.4302,1162.1622,1252.7027,1165.9748,-0.0607,1205.5363,1119.7232,1099.8586,1.4023,False,0.0
+priest_healing_received_fraction,fraction,as is,1.0,0.9602,0.9648,1.3461,0.944,0.9475,0.9663,-1.2686,0.9287,0.9632,0.9407,-0.5766,False,0.0
+healing_received,health,per 100 ticks,791.4894,1294.0426,856.8184,-0.7724,1231.0811,1322.1021,1206.9255,0.3624,1298.1488,1162.5312,1169.5218,1.5977,False,0.0
+regenerated_healing,health,per 100 ticks,0.0,51.4894,30.6785,-1.3306,68.9189,69.3995,40.9507,1.2904,92.6125,42.808,69.6633,0.9098,False,0.0
+regeneration_healing_received_fraction,fraction,as is,0.0,0.0398,0.0352,-1.3461,0.056,0.0525,0.0337,1.2686,0.0713,0.0368,0.0593,0.5766,False,0.0
+effective_healing_received,health,per 100 ticks,424.1223,285.4256,425.4976,-0.0142,985.6487,1103.5221,890.4863,1.3515,977.013,928.0441,806.9888,1.9801,False,0.0
+ultimate_excess_healing,health,per 100 ticks,0.0,622.3404,35.3587,-0.5654,115.5578,162.9197,107.074,0.2297,121.9117,150.4226,104.0749,0.4008,False,0.0
+ultimate_excess_healing_fraction,fraction,as is,nan,0.975,0.7578,nan,0.285,0.3014,0.2636,0.2827,0.271,0.3623,0.3074,-0.3456,False,0.0
+healing_to_hunter_basic_slow_recipient,health,per 100 ticks,42.5532,76.5957,126.0538,-0.9071,379.7297,464.8649,389.4738,-0.1081,351.5571,323.8754,250.7273,1.295,False,0.0
+healing_to_warrior_charge_slow_recipient,health,per 100 ticks,59.5745,51.0638,21.6392,2.0867,100.0,267.5676,97.6344,0.0437,80.2768,13.8408,87.0849,-0.1396,False,0.0
+healing_to_warrior_charge_stun_recipient,health,per 100 ticks,8.5106,17.0213,5.1865,0.4924,72.973,10.8108,21.0634,2.0289,2.7682,5.5363,26.0919,-0.7435,False,0.0
+healing_to_rogue_poison_slow_recipient,health,per 100 ticks,8.5106,25.5319,3.1197,1.0051,8.1081,20.2703,40.5796,-1.0314,51.2111,9.6886,38.9577,0.3639,False,0.0
+healing_to_rogue_poison_stun_recipient,health,per 100 ticks,0.0,4.2553,0.6183,-0.4193,1.3514,4.0541,7.9815,-0.5066,37.3702,4.1522,5.3014,3.3103,False,0.0
+healing_to_rogue_poison_anti_heal_recipient,health,per 100 ticks,8.5106,17.0213,2.2397,1.3337,8.1081,14.8649,33.0597,-0.8456,45.6747,6.9204,28.6459,0.7675,False,0.0
+rescue_opportunities,count,per 100 ticks,3.1915,1.0638,0.9265,1.8154,2.3649,6.4189,3.2887,-0.9041,0.692,4.1522,1.9512,-0.915,False,0.0
+rescue_rate,fraction,as is,0.0,0.0,0.2933,-0.8802,0.7143,0.8947,0.6551,0.3802,0.5,0.8333,0.6791,-0.8413,False,0.0
+basic_rescues,count,per 100 ticks,0.0,0.0,0.3527,-0.5049,1.6892,5.0676,1.5467,0.2354,0.0,3.1142,1.1156,-0.9105,False,0.0
+basic_rescue_fraction,fraction,as is,nan,nan,1.0,nan,1.0,0.8824,0.7492,1.4412,0.0,0.9,0.8,-3.6108,False,0.0
+ultimate_rescues,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.6757,0.6225,-1.2782,0.346,0.346,0.2794,0.2187,False,0.0
+ultimate_rescue_fraction,fraction,as is,nan,nan,0.0,nan,0.0,0.1176,0.2508,-1.4412,1.0,0.1,0.2,3.6108,False,0.0
+single_contributor_kills,count,per 100 ticks,1.0638,1.0638,2.1843,-1.006,1.3514,0.3378,0.9421,0.7194,2.7682,1.0381,1.1399,2.6508,False,0.0
+single_contributor_kill_fraction,fraction,as is,0.1,0.3333,0.2023,-0.9741,0.2667,0.05,0.1696,0.9927,0.4,0.2308,0.1969,1.8405,False,0.0
+multi_contributor_kills,count,per 100 ticks,9.5745,2.1277,8.8842,0.3508,3.7162,6.4189,4.5686,-0.903,4.1522,3.4602,4.7798,-0.47,False,0.0
+multi_contributor_kill_fraction,fraction,as is,0.9,0.6667,0.7977,0.9741,0.7333,0.95,0.8304,-0.9927,0.6,0.7692,0.8031,-1.8405,False,0.0
+basic_kills,count,per 100 ticks,10.6383,3.1915,11.0283,-0.238,5.0676,6.4189,5.4245,-0.3556,6.2284,4.1522,5.7847,0.3436,False,0.0
+basic_kill_fraction,fraction,as is,1.0,1.0,0.995,0.2294,1.0,0.95,0.9847,0.5704,0.9,0.9231,0.9744,-2.0068,False,0.0
+mage_basic_kills,count,per 100 ticks,10.6383,2.1277,8.5965,1.4213,3.3784,5.0676,4.0503,-0.6108,4.4983,3.1142,4.0398,0.3734,False,0.0
+mage_basic_kill_fraction,fraction,as is,1.0,0.6667,0.7823,1.95,0.6667,0.75,0.7355,-0.4887,0.65,0.6923,0.6802,-0.2273,False,0.0
+warrior_basic_kills,count,per 100 ticks,3.1915,0.0,6.2477,-1.6644,2.7027,4.3919,2.2763,0.786,2.4221,1.7301,2.3743,0.0671,False,0.0
+warrior_basic_kill_fraction,fraction,as is,0.3,0.0,0.56,-1.9061,0.5333,0.65,0.4189,1.255,0.35,0.3846,0.4033,-0.5361,False,0.0
+hunter_basic_kills,count,per 100 ticks,6.383,0.0,5.9904,0.1417,3.0405,5.0676,3.136,-0.0961,3.4602,2.7682,3.5177,-0.0538,False,0.0
+hunter_basic_kill_fraction,fraction,as is,0.6,0.0,0.53,0.3121,0.6,0.75,0.563,0.2877,0.5,0.6154,0.5909,-0.9222,False,0.0
+rogue_basic_kills,count,per 100 ticks,2.1277,1.0638,2.3547,-0.1117,2.027,1.3514,1.5074,0.9314,1.3841,1.0381,1.7104,-0.3835,False,0.0
+rogue_basic_kill_fraction,fraction,as is,0.2,0.3333,0.2077,-0.0443,0.4,0.2,0.2749,1.371,0.2,0.2308,0.2856,-0.7345,False,0.0
+priest_basic_kill_fraction,fraction,as is,0.3,0.3333,0.4473,-0.7829,0.5333,0.7,0.5307,0.0225,0.4,0.5385,0.4812,-0.6374,False,0.0
+ultimate_kills,count,per 100 ticks,0.0,1.0638,0.6371,-1.072,0.0,0.6757,0.6835,-1.8176,1.3841,0.692,0.7176,1.3805,False,0.0
+ultimate_kill_fraction,fraction,as is,0.0,0.3333,0.0595,-1.0261,0.0,0.1,0.1214,-1.7502,0.2,0.1538,0.12,1.0225,False,0.0
+warrior_ultimate_kills,count,per 100 ticks,0.0,1.0638,0.1444,-0.416,0.0,0.0,0.1782,-0.8361,0.692,0.346,0.2722,1.8756,False,0.0
+warrior_ultimate_kill_fraction,fraction,as is,0.0,0.3333,0.015,-0.4201,0.0,0.0,0.032,-0.853,0.1,0.0769,0.048,1.2813,False,0.0
+rogue_ultimate_kills,count,per 100 ticks,0.0,0.0,0.3809,-0.7182,0.0,0.6757,0.3661,-1.4312,0.692,0.346,0.3023,1.0813,False,0.0
+rogue_ultimate_kill_fraction,fraction,as is,0.0,0.0,0.0345,-0.7332,0.0,0.1,0.0639,-1.3644,0.1,0.0769,0.0475,0.9124,False,0.0
+priest_ultimate_kills,count,per 100 ticks,0.0,0.0,0.0,nan,0.0,0.0,0.0353,-0.3333,0.0,0.0,0.0403,-0.328,False,0.0
+priest_ultimate_kill_fraction,fraction,as is,0.0,0.0,0.0,nan,0.0,0.0,0.0067,-0.3325,0.0,0.0,0.0059,-0.3333,False,0.0
+kills_of_hunter_basic_slow_recipient,count,per 100 ticks,5.3191,1.0638,5.1273,0.0731,2.7027,3.7162,2.9147,-0.2421,3.8062,2.7682,3.1411,0.5417,False,0.0
+kills_of_warrior_charge_slow_recipient,count,per 100 ticks,0.0,0.0,0.6344,-0.8643,0.6757,1.0135,0.5773,0.3146,0.346,0.692,0.3541,-0.0228,False,0.0
+kills_of_warrior_charge_stun_recipient,count,per 100 ticks,0.0,0.0,0.0424,-0.2294,0.0,0.3378,0.162,-0.7625,0.346,0.692,0.1236,1.1081,False,0.0
+kills_of_rogue_poison_slow_recipient,count,per 100 ticks,0.0,1.0638,0.4712,-0.7841,0.3378,0.6757,0.692,-0.7746,0.692,0.692,0.6046,0.2697,False,0.0
+dead_steps,agent_steps,per 100 ticks,4.2553,31.9149,2.3574,0.6134,19.9324,15.8784,18.8655,0.4494,12.4567,19.0311,13.1796,-0.1691,False,0.0
+respawn_waves,count,per 100 ticks,19.1489,19.1489,19.5405,-1.2704,19.9324,19.9324,19.8996,0.2903,19.7232,19.7232,19.9546,-3.1709,False,0.0
+red_zone_deaths,count,per 100 ticks,0.0,10.6383,0.0,nan,0.0,0.0,0.2143,-0.6407,0.0,0.0,0.2923,-0.5156,False,0.0
+focus_fire_concentration,fraction,as is,0.7308,0.6746,0.71,0.3892,0.7187,0.7811,0.7239,-0.1967,0.7066,0.809,0.72,-0.4485,False,0.0
+ally_distance_observations,pair_steps,per 100 ticks,984.0426,872.3404,990.6674,-0.5452,922.973,938.5135,925.4564,-0.2684,950.173,924.5675,947.8819,0.1387,False,0.0
+ally_distance_mean,distance,as is,3.3972,2.2726,2.6354,0.9439,2.7059,2.3078,2.7099,-0.024,2.9014,2.8247,2.8293,0.3301,False,0.0
+mage_aura_eligible_steps,agent_steps,per 100 ticks,486.1702,442.5532,495.6775,-1.6616,441.8919,445.6081,431.564,0.763,439.7924,432.1799,453.5173,-1.0832,False,0.0
+warrior_aura_covered_steps,agent_steps,per 100 ticks,253.1915,202.1277,316.478,-1.5983,234.4595,297.973,219.3998,0.9366,207.6125,252.2491,221.7573,-0.5513,False,0.0
+warrior_aura_coverage,fraction,as is,0.5208,0.5234,0.6381,-1.5289,0.5579,0.6538,0.5213,0.9451,0.4751,0.566,0.4994,-0.5091,False,0.0
+priest_freedom_applications,count,per 100 ticks,100.0,77.6596,97.5606,0.6526,95.6081,90.8784,96.2468,-0.3663,95.8478,88.9273,96.2182,-0.257,False,0.0
+mage_burst_applications,count,per 100 ticks,2.1277,0.0,2.5821,-0.5636,3.0405,2.7027,2.8574,0.8575,2.7682,2.4221,2.9197,-0.6968,False,0.0
+rogue_poison_slow_applications,count,per 100 ticks,2.1277,2.1277,1.6604,0.6049,2.3649,2.7027,2.4947,-0.5074,2.4221,2.0761,2.4891,-0.2103,False,0.0
+rogue_poison_stun_applications,count,per 100 ticks,2.1277,2.1277,1.6604,0.6049,2.3649,2.7027,2.4947,-0.5074,2.4221,2.0761,2.4891,-0.2103,False,0.0
+rogue_poison_anti_heal_applications,count,per 100 ticks,2.1277,2.1277,1.6604,0.6049,2.3649,2.7027,2.4947,-0.5074,2.4221,2.0761,2.4891,-0.2103,False,0.0
+hunter_basic_slow_active_steps,agent_steps,per 100 ticks,15.9574,45.7447,27.747,-1.5746,65.8784,66.8919,58.109,1.3019,53.9792,65.7439,45.4488,1.39,False,0.0
+priest_freedom_active_steps,agent_steps,per 100 ticks,97.8723,75.5319,96.0773,0.4693,92.9054,88.5135,93.4793,-0.2931,94.8097,85.8131,94.6522,0.0966,False,0.0
+mage_burst_active_steps,agent_steps,per 100 ticks,10.6383,0.0,12.9107,-0.5636,15.2027,13.5135,13.9439,1.2453,13.8408,12.1107,14.2323,-0.3549,False,0.0
+warrior_charge_slow_active_steps,agent_steps,per 100 ticks,10.6383,15.9574,12.0006,-0.6141,12.5,14.8649,10.7079,0.9234,7.6125,10.7266,11.5757,-2.8839,False,0.0
+warrior_charge_stun_active_steps,agent_steps,per 100 ticks,2.1277,3.1915,2.4641,-0.7351,3.0405,3.0405,2.4563,1.659,2.0761,2.4221,2.4783,-1.4685,False,0.0
+hunter_trap_active_steps,agent_steps,per 100 ticks,5.3191,2.1277,5.6452,-0.1279,4.7297,5.0676,4.6423,0.0565,1.7301,3.4602,4.4515,-2.0183,False,0.0
+rogue_poison_slow_active_steps,agent_steps,per 100 ticks,8.5106,10.6383,6.2138,0.6785,9.1216,10.8108,8.6598,0.3631,7.6125,7.9585,7.9521,-0.2238,False,0.0
+rogue_poison_stun_active_steps,agent_steps,per 100 ticks,2.1277,2.1277,1.3214,1.1533,2.027,2.3649,2.0099,0.0494,1.7301,1.7301,1.8742,-0.4083,False,0.0
+rogue_poison_anti_heal_active_steps,agent_steps,per 100 ticks,7.4468,8.5106,5.0885,0.8342,7.7703,8.7838,7.1551,0.6027,6.5744,6.5744,6.6057,-0.0259,False,0.0
+freedom_protected_steps,agent_steps,per 100 ticks,6.383,10.6383,2.6582,1.6997,5.0676,11.1486,6.0443,-0.5695,3.8062,3.1142,5.6841,-1.1438,False,0.0
+freedom_protection_fraction,fraction,as is,0.0652,0.1515,0.0281,1.617,0.0558,0.1341,0.0674,-0.6042,0.0407,0.0367,0.0622,-1.1862,False,0.0
+trap_breaks,count,per 100 ticks,2.1277,1.0638,2.0715,0.0816,1.6892,1.3514,1.9124,-0.5585,2.0761,1.7301,1.6945,0.8405,False,0.0
+trap_break_rate,fraction,as is,1.0,0.5,0.9035,0.5085,0.7143,0.6667,0.7756,-0.378,0.8571,1.0,0.6981,0.882,False,0.0
+trap_mean_remaining_steps_at_break,steps,per 100 ticks,3.1915,3.1915,3.1178,0.1175,0.8784,0.8446,0.9907,-1.0383,1.0381,1.0381,1.0505,-0.0579,False,0.0
+rogue_poison_applications,count,per 100 ticks,2.1277,2.1277,1.6604,0.6049,2.3649,2.7027,2.4947,-0.5074,2.4221,2.0761,2.4891,-0.2103,False,0.0
+healing_prevented_by_poison,health,per 100 ticks,8.5106,17.0213,2.2397,1.3337,8.1081,14.8649,33.0597,-0.8456,45.6747,6.9204,28.6459,0.7675,False,0.0
+priest_holy_word_salvation_applications,count,per 100 ticks,0.0,3.1915,0.2395,-0.57,2.027,2.7027,2.1453,-0.3932,2.4221,2.0761,1.7938,1.589,False,0.0
+agent_0_basic_activations,count,per 100 ticks,45.7447,nan,50.3972,-0.621,51.0135,nan,48.4361,0.4165,48.0969,nan,48.8212,-0.1323,False,0.0
+agent_0_ultimate_activations,count,per 100 ticks,2.1277,nan,2.5821,-0.5636,3.0405,nan,2.8574,0.8575,2.7682,nan,2.9197,-0.6968,False,0.0
+agent_0_actions_submitted,count,per 100 ticks,100.0,nan,100.0,nan,100.0,nan,100.0,nan,100.0,nan,100.0,nan,False,0.0
+agent_0_actions_accepted,count,per 100 ticks,100.0,nan,100.0,nan,100.0,nan,100.0,nan,100.0,nan,100.0,nan,False,0.0
+agent_0_action_acceptance_rate,fraction,as is,1.0,nan,1.0,-3.0,1.0,nan,1.0,-1.1055,1.0,nan,1.0,1.5275,False,0.0
+agent_0_actions_rejected,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_action_domain_rejections,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_action_movement_rejections,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_action_combat_rejections,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_damage_done,health,per 100 ticks,650.0865,nan,717.7396,-0.6683,743.7121,nan,671.5728,0.8226,713.2289,nan,689.1916,0.3164,False,0.0
+agent_0_damage_done_fraction,fraction,as is,0.3881,nan,0.4432,-1.2635,0.4101,nan,0.381,1.0091,0.4152,nan,0.4069,0.4625,False,0.0
+agent_0_basic_damage_done,health,per 100 ticks,650.0865,nan,717.7396,-0.6683,743.7121,nan,671.5728,0.8226,713.2289,nan,689.1916,0.3164,False,0.0
+agent_0_ultimate_damage_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_damage_received,health,per 100 ticks,112.9362,nan,120.4003,-0.0874,314.2965,nan,372.6474,-0.8917,353.7176,nan,312.1414,0.6497,False,0.0
+agent_0_damage_received_fraction,fraction,as is,0.1278,nan,0.2006,-0.5144,0.1611,nan,0.2098,-1.2426,0.2203,nan,0.2159,0.1379,False,0.0
+agent_0_basic_damage_received,health,per 100 ticks,92.1383,nan,111.8456,-0.2287,250.9181,nan,299.2123,-0.7681,304.7504,nan,255.5753,0.8523,False,0.0
+agent_0_ultimate_damage_received,health,per 100 ticks,20.7979,nan,8.5547,1.0776,63.3784,nan,73.4351,-0.836,48.9671,nan,56.5661,-0.4997,False,0.0
+agent_0_damage_to_warrior_charge_slow_recipient,health,per 100 ticks,0.0,nan,43.4779,-1.3218,61.6182,nan,32.1608,1.9555,15.519,nan,24.5,-0.6733,False,0.0
+agent_0_damage_to_warrior_charge_stun_recipient,health,per 100 ticks,0.0,nan,7.8687,-0.8461,12.8792,nan,6.2284,2.1367,0.0,nan,5.1482,-1.1725,False,0.0
+agent_0_damage_to_hunter_trap_recipient,health,per 100 ticks,0.0,nan,13.2645,-0.9372,12.8792,nan,7.4244,1.0523,4.3971,nan,12.157,-1.1071,False,0.0
+agent_0_damage_to_rogue_poison_slow_recipient,health,per 100 ticks,0.0,nan,25.5474,-1.0114,40.7842,nan,26.6502,0.8702,8.7941,nan,26.9968,-1.047,False,0.0
+agent_0_damage_to_rogue_poison_stun_recipient,health,per 100 ticks,0.0,nan,10.0621,-0.9563,10.7327,nan,8.0525,0.4275,0.0,nan,7.0625,-1.2194,False,0.0
+agent_0_damage_to_rogue_poison_anti_heal_recipient,health,per 100 ticks,0.0,nan,23.5462,-0.9587,32.1981,nan,22.9515,0.6588,0.0,nan,23.0355,-1.4741,False,0.0
+agent_0_damage_received_while_hunter_basic_slow,health,per 100 ticks,51.133,nan,40.1821,0.2381,70.8716,nan,125.72,-1.4385,103.8542,nan,86.1368,0.5502,False,0.0
+agent_0_damage_received_while_warrior_charge_slow,health,per 100 ticks,12.4787,nan,0.2782,10.0601,49.9738,nan,63.5202,-0.5327,22.9135,nan,47.3392,-0.7074,False,0.0
+agent_0_damage_received_while_warrior_charge_stun,health,per 100 ticks,6.2394,nan,0.0,nan,24.2437,nan,16.7968,1.1607,10.2941,nan,14.4288,-0.4415,False,0.0
+agent_0_damage_received_while_hunter_trap,health,per 100 ticks,0.0,nan,3.5451,-0.5323,7.1959,nan,19.4633,-1.5805,23.5329,nan,12.8357,1.2068,False,0.0
+agent_0_damage_received_while_rogue_poison_slow,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,21.5437,-0.7798,39.4299,nan,14.4052,1.6704,False,0.0
+agent_0_damage_received_while_rogue_poison_stun,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,8.0943,-1.2447,10.4853,nan,5.7666,0.6909,False,0.0
+agent_0_damage_received_while_rogue_poison_anti_heal,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,19.9204,-0.917,39.4299,nan,12.5402,2.0172,False,0.0
+agent_0_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_healing_done_fraction,fraction,as is,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_effective_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_effective_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_basic_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_basic_effective_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_basic_effective_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_ultimate_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_ultimate_effective_healing_done,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_ultimate_effective_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_priest_healing_received_fraction,fraction,as is,1.0,nan,0.9951,0.3596,1.0,nan,0.999,0.323,0.9916,nan,0.9947,-0.3928,False,0.0
+agent_0_effective_priest_healing_received_fraction,fraction,as is,0.4688,nan,0.4539,0.0633,0.654,nan,0.7096,-0.7575,0.6972,nan,0.6672,0.3469,False,0.0
+agent_0_regenerated_healing,health,per 100 ticks,0.0,nan,0.7782,-0.402,0.0,nan,0.359,-0.3233,2.2145,nan,1.745,0.1779,False,0.0
+agent_0_regeneration_healing_received_fraction,fraction,as is,0.0,nan,0.0049,-0.3596,0.0,nan,0.001,-0.323,0.0084,nan,0.0053,0.3927,False,0.0
+agent_0_ultimate_priest_healing_received,health,per 100 ticks,0.0,nan,0.0,nan,67.5676,nan,81.4848,-0.235,103.8062,nan,78.2946,0.3283,False,0.0
+agent_0_ultimate_effective_priest_healing_received,health,per 100 ticks,0.0,nan,0.0,nan,21.2669,nan,39.246,-0.5669,55.8374,nan,35.3881,0.6144,False,0.0
+agent_0_excess_healing,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_excess_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_basic_excess_healing,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_basic_excess_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_ultimate_excess_healing,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_ultimate_excess_healing_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_excess_healing_received,health,per 100 ticks,90.4149,nan,97.0308,-0.1626,100.0511,nan,97.4021,0.0779,79.1998,nan,116.0419,-0.694,False,0.0
+agent_0_excess_priest_healing_received_fraction,fraction,as is,0.5312,nan,0.5461,-0.0633,0.346,nan,0.2904,0.7575,0.3028,nan,0.3328,-0.3469,False,0.0
+agent_0_ultimate_excess_healing_received,health,per 100 ticks,0.0,nan,0.0,nan,46.3007,nan,42.2388,0.1346,47.9689,nan,42.9065,0.1077,False,0.0
+agent_0_healing_to_hunter_basic_slow_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_warrior_charge_slow_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_warrior_charge_stun_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_hunter_trap_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_rogue_poison_slow_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_rogue_poison_stun_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_to_rogue_poison_anti_heal_recipient,health,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_healing_received_while_warrior_charge_stun,health,per 100 ticks,8.5106,nan,1.3385,2.1854,72.973,nan,15.7249,2.6994,2.7682,nan,19.2848,-0.6722,False,0.0
+agent_0_healing_received_while_rogue_poison_slow,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,10.8732,-0.5013,34.6021,nan,15.7111,1.0028,False,0.0
+agent_0_healing_received_while_rogue_poison_stun,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,1.5156,-1.0399,34.6021,nan,2.6353,4.2942,False,0.0
+agent_0_healing_received_while_rogue_poison_anti_heal,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,9.2632,-0.459,34.6021,nan,14.0668,1.1647,False,0.0
+agent_0_rescue_contributions,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_rescue_participation,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_basic_rescue_contributions,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_basic_rescue_participation,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_ultimate_rescue_contributions,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_ultimate_rescue_participation,fraction,as is,nan,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_rescue_opportunities,count,per 100 ticks,0.0,nan,0.0,nan,0.3378,nan,1.0897,-1.1041,0.346,nan,0.839,-0.7094,False,0.0
+agent_0_rescues,count,per 100 ticks,0.0,nan,0.0,nan,0.3378,nan,0.9373,-0.938,0.346,nan,0.7141,-0.5014,False,0.0
+agent_0_kill_contributions,count,per 100 ticks,10.6383,nan,8.5965,1.4213,3.3784,nan,4.0503,-0.6108,4.4983,nan,4.0398,0.3734,False,0.0
+agent_0_kill_participation,fraction,as is,1.0,nan,0.7823,1.95,0.6667,nan,0.7355,-0.4887,0.65,nan,0.6802,-0.2273,False,0.0
+agent_0_kill_contributions_per_death,ratio,as is,nan,nan,nan,nan,2.5,nan,3.7404,-0.3393,2.6,nan,5.1867,-0.8507,False,0.0
+agent_0_solo_kill_fraction,fraction,as is,0.1,nan,0.1082,-0.0925,0.3,nan,0.1096,3.1835,0.2308,nan,0.0903,1.7018,False,0.0
+agent_0_basic_kill_contributions,count,per 100 ticks,10.6383,nan,8.5965,1.4213,3.3784,nan,4.0503,-0.6108,4.4983,nan,4.0398,0.3734,False,0.0
+agent_0_basic_kill_participation,fraction,as is,1.0,nan,0.7823,1.95,0.6667,nan,0.7355,-0.4887,0.65,nan,0.6802,-0.2273,False,0.0
+agent_0_ultimate_kill_contributions,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_ultimate_kill_participation,fraction,as is,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,0.0,nan,False,0.0
+agent_0_kill_contributions_to_hunter_basic_slow_recipient,count,per 100 ticks,5.3191,nan,4.0915,0.4956,1.3514,nan,2.0815,-0.9428,2.4221,nan,2.3363,0.069,False,0.0
+agent_0_kill_participation_in_hunter_basic_slow_recipient,fraction,as is,1.0,nan,0.7592,0.9697,0.5,nan,0.7161,-1.2675,0.6364,nan,0.72,-0.3957,False,0.0
+agent_0_kill_participation_in_warrior_charge_slow_recipient,fraction,as is,nan,nan,0.8,nan,0.5,nan,0.7407,-0.6833,0.0,nan,0.5641,-1.293,False,0.0
+agent_0_kill_participation_in_warrior_charge_stun_recipient,fraction,as is,nan,nan,1.0,nan,nan,nan,0.6875,nan,0.0,nan,0.3333,-0.7071,False,0.0
+agent_0_kill_participation_in_hunter_trap_recipient,fraction,as is,nan,nan,0.8,nan,nan,nan,0.375,nan,nan,nan,0.7,nan,False,0.0
+agent_0_kill_contributions_to_rogue_poison_slow_recipient,count,per 100 ticks,0.0,nan,0.328,-0.6471,0.3378,nan,0.4511,-0.2307,0.346,nan,0.3168,0.0836,False,0.0
+agent_0_kill_participation_in_rogue_poison_slow_recipient,fraction,as is,nan,nan,0.75,nan,1.0,nan,0.5784,1.0024,0.5,nan,0.463,0.0864,False,0.0
+agent_0_kill_participation_in_rogue_poison_stun_recipient,fraction,as is,nan,nan,1.0,nan,nan,nan,0.5,nan,nan,nan,0.5,nan,False,0.0
+agent_0_kill_participation_in_rogue_poison_anti_heal_recipient,fraction,as is,nan,nan,0.8571,nan,1.0,nan,0.5938,0.9473,0.0,nan,0.463,-1.0798,False,0.0
+agent_0_deaths_while_hunter_basic_slow,count,per 100 ticks,0.0,nan,0.0,nan,0.3378,nan,0.8921,-1.5338,0.692,nan,0.339,1.7158,False,0.0
+agent_0_deaths_while_warrior_charge_slow,count,per 100 ticks,0.0,nan,0.0,nan,0.6757,nan,0.3819,0.9242,0.346,nan,0.2711,0.3292,False,0.0
+agent_0_deaths_while_warrior_charge_stun,count,per 100 ticks,0.0,nan,0.0,nan,0.3378,nan,0.1088,1.3684,0.346,nan,0.0667,2.0952,False,0.0
+agent_0_deaths_while_hunter_trap,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0341,-0.3332,0.0,nan,0.05,-0.4201,False,0.0
+agent_0_deaths_while_rogue_poison_slow,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.2439,-0.8376,0.346,nan,0.0866,1.3672,False,0.0
+agent_0_deaths_while_rogue_poison_stun,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.054,-0.3179,0.0,nan,0.035,-0.3329,False,0.0
+agent_0_deaths_while_rogue_poison_anti_heal,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.2439,-0.8376,0.346,nan,0.07,1.5185,False,0.0
+agent_0_deaths,count,per 100 ticks,0.0,nan,0.0,nan,1.3514,nan,1.4569,-0.2078,1.7301,nan,0.9375,2.2029,False,0.0
+agent_0_death_fraction,fraction,as is,0.0,nan,0.0,nan,0.2,nan,0.2298,-0.4062,0.3846,nan,0.219,2.1372,False,0.0
+agent_0_dead_steps,agent_steps,per 100 ticks,0.0,nan,0.0,nan,3.0405,nan,4.1052,-0.6067,3.4602,nan,2.6194,0.7506,False,0.0
+agent_0_dead_step_fraction,fraction,as is,0.0,nan,0.0,nan,0.1525,nan,0.2211,-0.6419,0.2778,nan,0.2086,0.7966,False,0.0
+agent_0_red_zone_kill_contributions,count,per 100 ticks,10.6383,nan,8.5475,1.4472,0.0,nan,0.0348,-0.333,0.0,nan,0.3239,-0.38,False,0.0
+agent_0_red_zone_kill_participation,fraction,as is,1.0,nan,0.7814,1.9621,nan,nan,1.0,nan,nan,nan,0.5185,nan,False,0.0
+agent_0_red_zone_deaths,count,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.0427,-0.2294,0.0,nan,0.0236,-0.2294,False,0.0
+agent_0_red_zone_death_fraction,fraction,as is,nan,nan,nan,nan,nan,nan,0.0833,nan,nan,nan,0.05,nan,False,0.0
+agent_0_mage_aura_eligible_steps,agent_steps,per 100 ticks,486.1702,nan,495.6775,-1.6616,441.8919,nan,431.564,0.763,439.7924,nan,453.5173,-1.0832,False,0.0
+agent_0_warrior_aura_covered_steps,agent_steps,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_warrior_aura_eligible_steps,agent_steps,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_warrior_aura_coverage,fraction,as is,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_mage_aura_covered_recipient_steps,agent_steps,per 100 ticks,100.0,nan,100.0,nan,93.9189,nan,91.6472,0.7593,91.3495,nan,94.568,-1.6035,False,0.0
+agent_0_mage_aura_eligible_recipient_steps,agent_steps,per 100 ticks,100.0,nan,100.0,nan,93.9189,nan,91.6472,0.7593,91.3495,nan,94.568,-1.6035,False,0.0
+agent_0_warrior_aura_covered_recipient_steps,agent_steps,per 100 ticks,31.9149,nan,63.5251,-3.4358,39.8649,nan,34.6886,0.6597,29.4118,nan,38.3286,-1.0203,False,0.0
+agent_0_warrior_aura_eligible_recipient_steps,agent_steps,per 100 ticks,100.0,nan,100.0,nan,84.1216,nan,81.3085,0.6809,82.3529,nan,87.0519,-1.3593,False,0.0
+agent_0_hunter_basic_slow_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_priest_freedom_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_mage_burst_applications,count,per 100 ticks,2.1277,nan,2.5821,-0.5636,3.0405,nan,2.8574,0.8575,2.7682,nan,2.9197,-0.6968,False,0.0
+agent_0_warrior_charge_slow_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_warrior_charge_stun_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_hunter_trap_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_rogue_poison_slow_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_rogue_poison_stun_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_rogue_poison_anti_heal_applications,count,per 100 ticks,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,False,0.0
+agent_0_hunter_basic_slow_active_steps,agent_steps,per 100 ticks,9.5745,nan,8.5269,0.1331,8.4459,nan,10.718,-0.6375,9.3426,nan,9.3299,0.0041,False,0.0
+agent_0_mage_burst_active_steps,agent_steps,per 100 ticks,10.6383,nan,12.9107,-0.5636,15.2027,nan,13.9439,1.2453,13.8408,nan,14.2323,-0.3549,False,0.0
+agent_0_warrior_charge_slow_active_steps,agent_steps,per 100 ticks,5.3191,nan,0.8127,2.3264,9.7973,nan,7.1466,1.161,3.8062,nan,6.405,-1.1848,False,0.0
+agent_0_warrior_charge_stun_active_steps,agent_steps,per 100 ticks,1.0638,nan,0.2159,1.9114,2.3649,nan,1.632,1.5671,1.0381,nan,1.4061,-0.7425,False,0.0
+agent_0_rogue_poison_slow_active_steps,agent_steps,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,1.8126,-1.3655,1.3841,nan,1.3339,0.0348,False,0.0
+agent_0_rogue_poison_stun_active_steps,agent_steps,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,0.5024,-1.4062,0.346,nan,0.3158,0.0968,False,0.0
+agent_0_rogue_poison_anti_heal_active_steps,agent_steps,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,1.5541,-1.4244,1.3841,nan,1.0881,0.2572,False,0.0
+agent_0_freedom_protected_steps,agent_steps,per 100 ticks,4.2553,nan,0.2229,7.0005,3.3784,nan,4.2838,-0.6643,0.692,nan,3.6409,-1.8442,False,0.0
+agent_0_freedom_protection_fraction,fraction,as is,0.2,nan,0.0129,5.2911,0.1266,nan,0.1576,-0.6288,0.0364,nan,0.1188,-1.8885,False,0.0
+agent_0_burst_damage_received,health,per 100 ticks,0.0,nan,0.0,nan,33.3345,nan,30.471,0.1189,43.0653,nan,32.3784,0.4514,False,0.0
+agent_0_burst_damage_contributing_to_kill_received,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,4.3508,-0.7683,14.3551,nan,4.3008,1.8493,False,0.0
+agent_0_trap_break_contributions,count,per 100 ticks,0.0,nan,0.9287,-0.9882,0.6757,nan,0.5222,0.4451,0.346,nan,0.7702,-1.0661,False,0.0
+agent_0_trap_break_participation,fraction,as is,0.0,nan,0.4298,-1.0409,0.4,nan,0.2745,0.6939,0.1667,nan,0.4642,-1.2993,False,0.0
+agent_0_trap_breaks,count,per 100 ticks,0.0,nan,0.3556,-0.6529,1.0135,nan,1.2431,-0.4306,1.0381,nan,0.7507,0.5705,False,0.0
+agent_0_trap_break_rate,fraction,as is,nan,nan,0.8571,nan,0.6,nan,0.6387,-0.1511,1.0,nan,0.4936,1.7228,False,0.0
+agent_0_trap_mean_remaining_steps_at_break,steps,per 100 ticks,nan,nan,3.3687,nan,0.9009,nan,0.8472,0.2887,1.0381,nan,0.8447,0.8805,False,0.0
+agent_0_healing_prevented_by_poison,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,9.2632,-0.459,34.6021,nan,14.0668,1.1647,False,0.0
