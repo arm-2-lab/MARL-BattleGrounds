@@ -1,7 +1,8 @@
 """Provide local HTTP servers for LLM transport and System contract tests.
 
-These helpers run only loopback HTTP. They preserve request bodies and let each
-case control timing, HTTP framing and model replies without weights or a GPU.
+These helpers run only loopback HTTP. They preserve request bodies, including
+each request's raw bytes as handler.raw_body, and let each case control timing,
+HTTP framing and model replies without weights or a GPU.
 """
 
 import json
@@ -32,9 +33,10 @@ def server(
             pass
 
         def do_POST(self) -> None:
-            payload = json.loads(
-                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.raw_body = self.rfile.read(
+                int(self.headers.get("Content-Length", "0"))
             )
+            payload = json.loads(self.raw_body)
             with suppress(BrokenPipeError, ConnectionResetError):
                 reply(self, payload)
 

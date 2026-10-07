@@ -3,9 +3,13 @@
 Local fake servers control replies and stalls. No model, external network or GPU
 is needed. Tests cover shared capacity, keep-alive, byte limits, failed framing,
 DNS and TLS stalls, cancellation and the absence of automatic request retries.
+An idle connection the server already closed is replaced before sending, while a
+sent request is never repeated, and HTTP errors carry the server's error text as
+one bounded line with the API key removed.
 """
 
 import io
+import select
 import shutil
 import socket
 import ssl
@@ -202,7 +206,7 @@ def test_declared_server_error_categories(
     with (
         server(lambda h, _: send(h, {"error": {"code": code}}, status=status)) as url,
         Client(url) as client,
-        pytest.raises(error),
+        pytest.raises(error, match=code),
     ):
         client.request("chat/completions", {})
 
@@ -404,23 +408,58 @@ def test_cancelled_batch_does_not_cancel_another_borrower(ordered: bool) -> None
         assert client.request("chat/completions", {"id": 3}) == {"id": 3}
 
 
-def test_stale_keep_alive_is_not_retried() -> None:
+def test_closed_idle_connection_is_replaced_but_sent_request_is_not_retried() -> None:
     observed: list[int] = []
     dropped = threading.Event()
 
     def reply(handler: BaseHTTPRequestHandler, payload: dict[str, Any]) -> None:
         observed.append(payload["id"])
-        send(handler, payload)
-        handler.connection.shutdown(socket.SHUT_RDWR)
-        handler.close_connection = True
-        dropped.set()
+        if payload["id"] != 3:
+            send(handler, payload)
+        if payload["id"] != 2:
+            handler.connection.shutdown(socket.SHUT_RDWR)
+            handler.close_connection = True
+            dropped.set()
 
     with server(reply) as url, Client(url) as client:
         assert client.request("chat/completions", {"id": 1}) == {"id": 1}
-        assert dropped.wait(1)
+        assert dropped.wait()
+        idle = client._idle[0].sock
+        assert idle is not None
+        # Wait, without a limit, until the client's idle socket sees the close.
+        poller = select.poll()
+        poller.register(idle, select.POLLIN)
+        poller.poll()
+        assert client.request("chat/completions", {"id": 2}) == {"id": 2}
+        # Request 3 reaches the server, which closes without answering.
         with pytest.raises(TransportError):
-            client.request("chat/completions", {"id": 2})
-    assert observed == [1]
+            client.request("chat/completions", {"id": 3})
+    assert observed == [1, 2, 3]
+
+
+def test_provider_error_text_is_one_bounded_line() -> None:
+    text = "Unsupported parameter: 'max_tokens'.\n\x1bUse max_completion_tokens."
+
+    def reply(handler: BaseHTTPRequestHandler, payload: dict[str, Any]) -> None:
+        # The server echoes the Authorization header, key included.
+        echoed = f"{text} {handler.headers['Authorization']} "
+        data = (echoed + "x" * 900).encode()
+        handler.send_response(400)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        handler.wfile.write(data)
+
+    with (
+        server(reply) as url,
+        Client(url, api_key="secret-key-123") as client,
+        pytest.raises(ProviderConfigurationError) as caught,
+    ):
+        client.request("chat/completions", {})
+    text = str(caught.value)
+    assert "(HTTP 400): " in text and "'max_tokens'. Use max_completion_tokens." in text
+    assert "Bearer [api key]" in text and "secret-key-123" not in text
+    assert "\n" not in text and text.endswith("...")
+    assert len(text.split("(HTTP 400): ", 1)[1]) == 500
 
 
 def test_connect_cancellation_closes_unpublished_socket(

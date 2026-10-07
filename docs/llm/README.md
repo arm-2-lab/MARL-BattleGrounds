@@ -29,11 +29,18 @@ the independent server. Construction does not download weights, make a model
 request or start a server. The simulator needs no new transport dependency.
 
 The default request uses vLLM's Chat Completions and `/tokenize` routes, with
-thinking off, temperature 0 and a 64-token reply allowance. Use
-`server_type="chat"` for standard Chat Completions fields. That mode needs a
+thinking off, temperature 0 and a 64-token reply allowance. A `request_editor`
+can change any request field, for example to turn thinking on; see
+[Reasoning Models And Provider Settings](#reasoning-models-and-provider-settings).
+Use `server_type="chat"` for standard Chat Completions fields. That mode needs a
 trusted `token_counter` for history; without one it requires `history_turns=0`
 and leaves context rejection to the server. A Chat Completions-compatible
 endpoint is required; this is not a client for every provider's native API.
+The endpoint must return the reply as plain text in `choices[0].message.content`
+with `finish_reason` `"stop"`, accept an optional key as a Bearer token in the
+`Authorization` header and need no query string in its URL. For any other
+service, [call your model your own way](#call-a-model-any-other-way) and still
+reuse the text view and action checks.
 
 Try the complete script:
 
@@ -167,8 +174,11 @@ are excluded here. Include that source evidence before reporting costs or
 fallback counts for the whole tournament population.
 
 Token totals cover measured usage only. `missing_usage_replies` marks replies
-with incomplete usage. Abrupt interruption can lose unflushed costs; these
-summaries are not a spending guard.
+with incomplete usage. `reasoning_replies` counts replies that carried visible
+reasoning text; see
+[Reasoning Models And Provider Settings](#reasoning-models-and-provider-settings).
+Abrupt interruption can lose unflushed costs; these summaries are not a
+spending guard.
 
 `records="light"` is the default. Rows name the actor, team, game,
 turn and execution attempt. They keep the request hash, reply and checked actions
@@ -227,6 +237,207 @@ response reading and decoding. It cannot forcibly stop arbitrary Python custom
 functions or prove that the remote server stopped generating. Close interrupts
 owned HTTP work and waits up to its cleanup grace, default 2 seconds. It raises
 if user work survives, retaining that work in the closed client.
+
+## Reasoning Models And Provider Settings
+
+Providers name their reasoning settings differently, and some reject fields that
+`make_system` sends by default. A `request_editor` handles both. It is a plain
+Python function. It receives the complete request the System would send and
+returns the request to send. The System counts tokens on that request, saves it
+in the call records and sends exactly those bytes. With `records="full"`, the
+saved `request_json` is the body the server received. The editor sees only the
+finished request, whose prompt already holds just this actor's permitted view,
+so it gains no extra information. The editor must keep the model name, one
+choice and no streaming; the System refuses other changes to those fields.
+
+Keep the editor pure. History fitting may call it more than once for one
+decision, and several actors' requests can run it at the same time. A request
+editor is part of your method, like a custom prompt or parser. Saved runs need a
+`custom_version`. The editor's code fingerprint enters the saved method
+identity, so a resume with a changed editor is rejected. Declare any outside
+value the editor reads in `custom_settings`. Change requests with an editor, not
+by wrapping `llm.Client`: a wrapped client changes bodies after the System saves
+them, so the call records would no longer match what was sent.
+
+### Turn On Qwen3.5 Thinking
+
+Start vLLM with the [recipe](qwen_recipe.md) command plus
+`--reasoning-parser qwen3`. This changes the measured recipe, so measure the new
+setup before you report results. The parser moves the model's thinking into the
+reply's `reasoning` field, and vLLM 0.30 then applies the JSON reply format
+only after the thinking ends. Without the parser, the format starts at the
+first token and the model cannot think.
+
+The default request turns thinking off with
+`chat_template_kwargs={"enable_thinking": False}`, so the editor sets that
+switch to `True`. Adding only `reasoning_effort` does not turn thinking on,
+because vLLM keeps an explicit switch. The sampling values below are the ones
+Qwen's model card suggests for thinking on general tasks:
+
+```python
+import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import llm
+
+
+def qwen_thinking(request):
+    return request | {"chat_template_kwargs": {"enable_thinking": True}}
+
+
+with llm.Client("http://127.0.0.1:8000/v1", timeout=600) as client:
+    system = llm.make_system(
+        "qwen3.5-4b-fp8", client=client, max_tokens=8192,
+        sampling={
+            "temperature": 1.0, "top_p": 0.95, "top_k": 20,
+            "min_p": 0.0, "presence_penalty": 1.5, "repetition_penalty": 1.0,
+        },
+        request_editor=qwen_thinking, custom_version="qwen-thinking-v1",
+        failure_policy="fallback",
+    )
+    result = marl_bgs.evaluate(
+        system, "tdm-alpha", num_episodes=2, maps=[47], num_envs=2,
+        output_dir="runs/llm-thinking",
+    )
+
+print(llm.call_summary(result)["completed_games"]["team_a"])
+```
+
+`max_tokens` covers the thinking and the answer together. A reply cut off by
+the limit is a reply failure. Under the default `failure_policy="stop"`, one
+such reply stops the run, so the example uses `"fallback"`: a cut-off reply
+becomes standing still with no attack, and `llm.call_summary` counts it. In one
+check with Qwen3.5-4B on one RTX 5090, the first tick's replies thought for
+about 2,000 to 6,000 tokens, one used all 8,192 without answering, and the
+slowest took about 50 seconds, so two full games take hours. Qwen's model card
+recommends "an output length of 32,768 tokens for most queries". The server's
+`--max-model-len` must hold the prompt plus `max_tokens`, so raise it from the
+recipe's 16,384 when you raise `max_tokens`. Set the reply limit with
+`max_tokens`, not in the editor; if an editor sets a larger one, history fitting
+reserves the larger value. The token counter reserves that many tokens of the
+model's context for the reply, which leaves less room for earlier turns. vLLM
+0.30 also accepts a `thinking_token_budget` request field that limits the
+thinking; add it in the same editor if you need it.
+
+Thinking replies take longer. A managed client gives each HTTP request 60
+seconds, so supply your own client with a longer `timeout`, as above. Runners
+leave a supplied client open; the `with` block closes it. A factory for the
+package command can create such a client the same way and leave it open for the
+life of the process.
+
+`llm.call_summary(result)` counts `reasoning_replies`: replies that carried
+visible reasoning text. If thinking is on and this stays 0, the server most
+likely has no reasoning parser. Thinking tokens count in `output_tokens`. Light
+and full call records keep each reply, thinking included, so files grow with
+every thought; use `records="none"` when you need only the totals.
+
+### Use A Provider's Reasoning Model
+
+Some hosted reasoning models refuse fields from the default request. For
+example, OpenAI documents that `max_tokens` "is not compatible with o-series
+models", and that when reasoning effort is not `none`, requests must "remove
+`temperature`, `top_p`, and `top_logprobs`"
+([parameter notes in OpenAI's Python library](https://github.com/openai/openai-python/blob/main/src/openai/types/chat/completion_create_params.py),
+[reasoning guide](https://developers.openai.com/api/docs/guides/latest-model)).
+Azure also lists `presence_penalty` and `frequency_penalty` among the fields
+that its reasoning models, other than GPT-6 Astra, do not support
+([Azure reasoning models](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning)).
+An editor can rename and remove fields as well as add them:
+
+```python
+import os
+
+from marl_battlegrounds import llm
+
+SAMPLING = ("temperature", "top_p", "presence_penalty", "frequency_penalty")
+
+
+def provider_reasoning(request):
+    request = {k: v for k, v in request.items() if k not in SAMPLING}
+    request["max_completion_tokens"] = request.pop("max_tokens")
+    return request | {"reasoning_effort": "high"}
+
+
+with llm.Client(
+    "https://api.example.com/v1", api_key=os.environ["PROVIDER_API_KEY"], timeout=600
+) as client:
+    system = llm.make_system(
+        "provider-reasoning-model", client=client, server_type="chat",
+        max_tokens=8192, request_editor=provider_reasoning,
+        custom_version="provider-reasoning-v1",
+    )
+    # Evaluate inside this block, as in the Qwen example.
+```
+
+Check your provider's documentation for the fields it accepts; the names above
+are examples. If your provider does not enforce `response_format`, the model may
+wrap its JSON in prose, which the default parser rejects; use a
+[custom parser](custom_formats.md) that accepts your provider's replies.
+
+When a server rejects a request, the raised error includes a one-line copy of
+its error text, at most 500 characters, with any copy of the client's API key
+replaced. Call records keep only the error's class name, but a run that stops
+saves the error message in `run_details.json` and `failures.jsonl`, so that
+text can reach those files.
+
+### Call A Model Any Other Way
+
+`make_system` is optional. A host System built from your own function can call
+any model through any route, such as a provider's own library, and still use the
+same text view and action checks. Each actor gets only its own permitted view:
+
+```python
+import json
+
+import jax
+import numpy as np
+
+import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import llm
+from marl_battlegrounds.policies.actor import ActorAction
+
+
+def ask_my_model(prompt):
+    # Replace this with any call that returns the model's reply text.
+    return '{"move":"north","combat":"no_combat"}'
+
+
+def take(tree, lane, slot):
+    return jax.tree.map(lambda value: np.asarray(value)[lane, slot], tree)
+
+
+def apply(variables, memory, inputs, keys):
+    actions = [np.zeros(inputs.active_mask.shape, np.int32) for _ in range(3)]
+    live = np.asarray(inputs.valid)[:, None] & np.asarray(inputs.active_mask)
+    if inputs.controlled_mask is not None:  # other slots belong to someone else
+        live &= np.asarray(inputs.controlled_mask)
+    for lane, slot in np.argwhere(live):
+        actor = take(inputs.actors, lane, slot)
+        masks = take(inputs.action_mask, lane, slot)
+        menu = llm.legal_action_names(masks)
+        if len(menu["move"]) == len(menu["combat"]) == 1:
+            reply = json.dumps({"move": menu["move"][0], "combat": menu["combat"][0]})
+        else:
+            reply = ask_my_model(llm.format_actor_view(actor, masks, frame="world"))
+        action = llm.parse_action_reply(reply, masks)
+        for target, value in zip(actions, action):
+            target[lane, slot] = int(value)
+    return ActorAction(*actions), memory
+
+
+system = marl_bgs.System("my-model", apply, execution="host")
+result = marl_bgs.evaluate(
+    system, "random", num_episodes=2, maps=[0], num_envs=2,
+    output_dir="runs/my-model",
+)
+```
+
+This example shows the world frame, asks about one actor at a time and keeps no
+memory. A turn with exactly one legal move and one legal combat choice needs no
+model call. `parse_action_reply` raises `llm.ReplyFormatError` or
+`llm.IllegalActionError` for a bad reply; catch them if you want a fallback
+choice. The [Systems guide](../evaluation/workflows.md#use-your-own-method)
+explains memory, batching and the other System options; the
+[standalone helpers](#standalone-view-and-action-helpers) show the left frame.
+Your own route also owns its connections, retries and records.
 
 ## Standalone View And Action Helpers
 

@@ -5,8 +5,9 @@ Install the optional `hydra` extra to run those commands. Plain Python APIs and
 the package CLI remain available.
 
 Supply ordinary Python functions to `llm.make_system`. You can change the prompt,
-the reply syntax, or both. The System still owns actor routing, optional history,
-request limits, frame conversion and native action checks.
+the reply syntax, the request itself, or any mix. The System still owns actor
+routing, optional history, request limits, frame conversion and native action
+checks.
 
 The runnable source is [examples/llm.py](../../examples/llm.py). Its three modes
 use the same evaluator and output files. Start a compatible vLLM server first;
@@ -86,6 +87,14 @@ A custom parser turns off the default provider JSON restriction. You may supply
 an explicit compatible `response_format`; it must match what your parser accepts.
 The shared action checker applies either way. It checks the full target/Ultimate
 pair, not just each separate category.
+
+## Change The Request
+
+A `request_editor` receives the complete Chat Completions request and returns
+the request to send, for example to turn on a model's thinking or to rename a
+field that a provider refuses. The System counts, saves and sends exactly what it
+returns. See [Reasoning Models And Provider Settings](README.md#reasoning-models-and-provider-settings)
+for examples and limits.
 
 ## Inspect The Same Game Records
 

@@ -44,6 +44,7 @@ _COUNTERS = (
     "input_tokens",
     "output_tokens",
     "missing_usage_replies",
+    "reasoning_replies",
     "reply_failures",
     "transport_failures",
     "fallback_actions",
@@ -98,7 +99,13 @@ class CallEvidence:
         self.update(**values)
 
     def response(self, response: Mapping[str, Any]) -> None:
-        """Keep measured usage and the provider reply; never invent missing usage."""
+        """Keep measured usage and the provider reply; never invent missing usage.
+
+        A reply whose first message carries nonempty reasoning text, in vLLM's
+        reasoning field or the older reasoning_content field, adds one to
+        reasoning_replies in every recording mode. Providers that hide their
+        reasoning add nothing there; their thinking still counts in output tokens.
+        """
         usage = response.get("usage")
         complete = True
         for source, target in (
@@ -116,6 +123,25 @@ class CallEvidence:
                 complete = False
         if not complete:
             self.count("missing_usage_replies")
+        choices: object = response.get("choices")
+        first = (
+            cast(list[object], choices)[0]
+            if isinstance(choices, list) and choices
+            else None
+        )
+        message = (
+            cast(dict[str, object], first).get("message")
+            if isinstance(first, dict)
+            else None
+        )
+        if isinstance(message, dict) and any(
+            isinstance(text, str) and text.strip()
+            for text in (
+                cast(dict[str, object], message).get(name)
+                for name in ("reasoning", "reasoning_content")
+            )
+        ):
+            self.count("reasoning_replies")
         if self.mode != "none":
             self.update(reply=response.get("choices"))
 
@@ -404,6 +430,11 @@ def call_summary(
     fallback counts or costs.
 
     Token totals count only reported usage; missing_usage_replies marks gaps.
+    reasoning_replies counts replies that carried visible reasoning text. With
+    thinking requested, 0 usually means the server separates no reasoning, for
+    example a vLLM server started without --reasoning-parser. Providers that
+    hide reasoning also report 0. Records written before this counter existed
+    contribute 0.
     An abrupt interruption can lose unflushed costs, especially with records=none.
     by_system groups the same counts by the saved System registration ID,
     with its recorded name. This keeps ownership clear when tournament entrants

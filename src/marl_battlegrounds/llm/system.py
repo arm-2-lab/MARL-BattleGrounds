@@ -1,6 +1,7 @@
 """Build an ordinary host System from bounded model calls and actor-local history.
 
-Only permitted actor inputs reach prompts, parsers and token counters. History
+Only permitted actor inputs reach prompts, parsers and token counters; an
+optional request editor sees only the finished request built from them. History
 is immutable prospective memory: callers adopt it only with a successful game
 step. Shared runners own game identifiers, durable records and managed lifetime.
 """
@@ -82,6 +83,7 @@ class HistoryEntry:
 type History = tuple[HistoryEntry, ...]
 type PromptBuilder = Callable[[ActorInput, ActionMask, History], str]
 type ReplyParser = Callable[[str, ActorInput, ActionMask, History], ActorAction]
+type RequestEditor = Callable[[dict[str, Any]], Mapping[str, object]]
 type TokenCounter = Callable[[Mapping[str, object]], tuple[int, int]]
 type _Memory = list[tuple[History, ...]]
 
@@ -267,6 +269,7 @@ class _Settings:
     failure_policy: Literal["stop", "fallback"]
     prompt_builder: PromptBuilder | None
     reply_parser: ReplyParser | None
+    request_editor: RequestEditor | None
     token_counter: TokenCounter | Literal["vllm"] | None
     context_limit: int | None
     generation_json: str
@@ -301,17 +304,39 @@ def _count(
     if counter == "vllm":
         if evidence is not None:
             evidence.count("tokenizer_calls")
-        result = settings.client.request(
-            "/tokenize",
-            {
-                "model": settings.model,
-                "messages": request["messages"],
-                "add_generation_prompt": True,
-                "continue_final_message": False,
-                "add_special_tokens": False,
-                "chat_template_kwargs": request.get("chat_template_kwargs", {}),
-            },
-        )
+        template = dict(request.get("chat_template_kwargs") or {})
+        # vLLM's chat route passes reasoning_effort to the chat template and,
+        # unless the request sets enable_thinking, derives that switch from it.
+        # /tokenize has no reasoning_effort field, so pass both the same way.
+        effort = request.get("reasoning_effort")
+        if effort is not None:
+            if "enable_thinking" not in template:
+                template["enable_thinking"] = effort != "none"
+            template["reasoning_effort"] = effort
+        # The chat route also hands documents to the template; like its other
+        # inputs, a None value is dropped there, so it is skipped here too.
+        if request.get("documents") is not None:
+            template["documents"] = request["documents"]
+        payload: dict[str, object] = {
+            "model": settings.model,
+            "messages": request["messages"],
+            "add_generation_prompt": True,
+            "continue_final_message": False,
+            "add_special_tokens": False,
+            "chat_template_kwargs": template,
+        }
+        # Count the same template inputs that generation renders, when an
+        # edited request sets them; the default request sets none of them.
+        for name in (
+            "add_generation_prompt",
+            "continue_final_message",
+            "add_special_tokens",
+            "chat_template",
+            "tools",
+        ):
+            if name in request:
+                payload[name] = request[name]
+        result = settings.client.request("/tokenize", payload)
         count, limit = result.get("count"), result.get("max_model_len")
     else:
         try:
@@ -327,6 +352,51 @@ def _count(
     return count, limit
 
 
+def _edit(editor: RequestEditor, request: dict[str, Any], model: str) -> dict[str, Any]:
+    """Return a custom editor's request as a detached JSON object.
+
+    editor receives the System's complete request, which it may change in place,
+    and may return any mapping. The result goes through one JSON round trip, so
+    later counting, recording and sending all use the same independent finite
+    values. A transport, reply or mask error raised inside the editor becomes
+    RuntimeError, so it stops execution instead of turning into a fallback
+    action; other exceptions propagate unchanged and also stop.
+
+    Raises
+    ------
+    TypeError
+        The editor returned no mapping, or values JSON cannot hold exactly.
+    ValueError
+        The edited request changes the model name, asks for streaming or asks
+        for more than one choice. The System owns those settings.
+    """
+    try:
+        edited = cast(object, editor(request))
+    except (TransportError, ReplyFormatError, MaskedActionError) as exc:
+        raise RuntimeError("Custom request editor failed") from exc
+    if not isinstance(edited, Mapping):
+        raise TypeError("Request editor must return a JSON object")
+    try:
+        value = json.loads(
+            json.dumps(dict(cast(Mapping[str, object], edited)), allow_nan=False)
+        )
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "Request editor must return a JSON object of finite values"
+        ) from exc
+    choices = value.get("n", 1)
+    if (
+        value.get("model") != model
+        or value.get("stream", False) is not False
+        or type(choices) is not int
+        or choices != 1
+    ):
+        raise ValueError(
+            "Request editor must keep the model name, one choice and no streaming"
+        )
+    return cast(dict[str, Any], value)
+
+
 def _request(
     settings: _Settings,
     actor: ActorInput,
@@ -334,7 +404,13 @@ def _request(
     history: History,
     evidence: CallEvidence | None = None,
 ) -> ActorAction:
-    """Fit whole history entries, generate once and validate the exact reply."""
+    """Fit whole history entries, generate once and validate the exact reply.
+
+    The optional request editor runs before counting, so the counter, the saved
+    record and the server all see the same final request. Fitting reserves the
+    declared max_tokens, or a larger reply limit that the editor set in
+    max_completion_tokens or max_tokens, as vLLM does.
+    """
     included = history
     current = ""
     earlier: tuple[str, ...] = ()
@@ -352,11 +428,17 @@ def _request(
         if not isinstance(cast(object, prompt), str):
             raise TypeError("Prompt builder must return text")
         request = settings.generation()
+        reserved = cast(int, request["max_tokens"])
         request.update(
             model=settings.model, messages=[{"role": "user", "content": prompt}]
         )
+        if settings.request_editor is not None:
+            request = _edit(settings.request_editor, request, settings.model)
+            edited = request.get("max_completion_tokens", request.get("max_tokens"))
+            if type(edited) is int:
+                reserved = max(reserved, edited)
         counted = _count(settings, request, evidence)
-        if counted is None or counted[0] + request["max_tokens"] <= counted[1]:
+        if counted is None or counted[0] + reserved <= counted[1]:
             break
         if not included:
             raise ContextLimitError(
@@ -577,6 +659,7 @@ def make_system(
     records: RecordingMode = "light",
     prompt_builder: PromptBuilder | None = None,
     reply_parser: ReplyParser | None = None,
+    request_editor: RequestEditor | None = None,
     token_counter: TokenCounter | Literal["vllm", "auto"] | None = "auto",
     context_limit: int | None = None,
     max_tokens: int = 64,
@@ -602,9 +685,10 @@ def make_system(
         resource_scope(False) or supply a context-managed Client. Later runs
         reopen owned clients; supplied clients are never closed by the runner.
     server_type : {"vllm", "chat"}
-        Default vLLM sends its explicit sampling and thinking controls. Chat
-        sends standard Chat Completions fields. Changing the token counter does
-        not change these generation settings.
+        Default vLLM sends its explicit sampling and thinking controls, with
+        thinking off. Chat sends standard Chat Completions fields. Changing the
+        token counter does not change these generation settings; a
+        request_editor can change any of them.
     name : str | None
         Optional display label, default the model name. It participates in saved
         System identity, but the label alone does not prove which method ran.
@@ -629,16 +713,39 @@ def make_system(
         Optional (reply, actor, masks, history) -> ActorAction. History is exactly
         what the fitted request used. Raise ReplyFormatError for expected invalid
         replies. Native shapes, categories and original masks are always checked.
+    request_editor : callable | None
+        Optional pure function (request) -> mapping, default None. It receives
+        the complete Chat Completions request as a new dictionary that it may
+        change, and returns the request to send. Use it for provider-specific
+        fields, for example to turn on a model's thinking, rename max_tokens or
+        drop sampling fields a provider rejects. The System counts tokens on the
+        returned request, saves it in the call records and sends exactly it.
+        The result must be a JSON object of finite values that keeps the model
+        name, asks for one choice and does not stream. The request holds only
+        this actor's prompt, so the editor gains no extra information. It may
+        be called repeatedly while history is fitted, and at the same time on
+        several Client worker threads, so it must not change shared state.
+        Saved runs need custom_version, as for the other custom functions.
+        Set the reply limit with max_tokens; if the editor sets a larger one,
+        fitting reserves the larger value. Under the default vLLM server type
+        the request already turns thinking off, so set the template's own
+        switch to turn it on; reasoning_effort alone does not override it.
     token_counter : {"auto", "vllm", None} or callable
         Default auto selects vLLM /tokenize for a vLLM server and None for chat.
-        The vLLM route counts the wrapped chat with thinking disabled.
+        The vLLM route counts the wrapped chat with the request's own template
+        inputs, as vLLM's chat route renders them: its chat_template_kwargs;
+        reasoning_effort and documents when present, plus a thinking switch
+        derived from reasoning_effort unless the request sets one; and any
+        add_generation_prompt, continue_final_message, add_special_tokens,
+        chat_template and tools fields an edited request carries.
         A custom pure counter receives the complete request and returns
         (input_tokens, context_limit). None requires history 0 and relies on the
         server's context check. Counted requests must agree with generation usage.
     context_limit : int | None
         Optional positive stricter context limit; requires a token counter.
     max_tokens : int
-        Positive reserved reply allowance, default 64, also sent to generation.
+        Positive reserved reply allowance, default 64. It is sent to generation
+        as max_tokens unless a request_editor renames or removes that field.
     sampling : mapping | None
         Explicit overrides of temperature, top_p, seed, presence_penalty and
         frequency_penalty. Local vLLM also supports top_k, min_p,
@@ -674,6 +781,13 @@ def make_system(
     ValueError, TypeError
         Settings are invalid or history fitting lacks a trustworthy counter.
         Runtime custom-code errors propagate; failed joint calls keep old memory.
+        An exception raised inside a request_editor always stops execution:
+        transport, reply and mask errors become RuntimeError. An edited request
+        that is no JSON object of finite values stops with TypeError, and one
+        that changes the model, streams or asks for several choices stops with
+        ValueError. None of these becomes a fallback action. The editor's
+        ordinary choices still shape replies: for example, a tiny reply limit
+        causes reply failures, which failure_policy handles as usual.
     """
     if not isinstance(cast(object, model), str) or not model.strip():
         raise ValueError("model must be a nonempty name")
@@ -701,9 +815,11 @@ def make_system(
             not isinstance(cast(object, value), str) or not value.strip()
         ):
             raise ValueError(f"{label} must be nonempty text when supplied")
-    for hook in (prompt_builder, reply_parser):
+    for hook in (prompt_builder, reply_parser, request_editor):
         if hook is not None and not callable(hook):
-            raise TypeError("Custom prompt and reply functions must be callable")
+            raise TypeError(
+                "Custom prompt, reply and request functions must be callable"
+            )
     if (
         token_counter != "vllm"
         and token_counter is not None
@@ -768,6 +884,7 @@ def make_system(
     custom = (
         prompt_builder is not None
         or reply_parser is not None
+        or request_editor is not None
         or callable(token_counter)
     )
     selected_client = client or Client(server_url)
@@ -778,6 +895,10 @@ def make_system(
         if callable(token_counter)
         else None,
     }
+    if request_editor is not None:
+        # Added only when used, so Systems without an editor keep the identity
+        # that their earlier saved runs recorded.
+        hooks["request_editor"] = _callable_evidence(request_editor)
     identity = {
         "model": model,
         "server_type": server_type,
@@ -825,6 +946,7 @@ def make_system(
         failure_policy,
         prompt_builder,
         reply_parser,
+        request_editor,
         token_counter,
         context_limit,
         generation_json,

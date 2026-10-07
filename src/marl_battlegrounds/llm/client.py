@@ -13,6 +13,7 @@ import http.client
 import ipaddress
 import json
 import math
+import select
 import socket
 import ssl
 import subprocess
@@ -40,6 +41,22 @@ def _finite_json_number(token: str) -> float:
     if not math.isfinite(number):
         raise ValueError("Server JSON numbers must be finite")
     return number
+
+
+def _error_text(data: bytes, secret: str | None) -> str:
+    """Return a server's error body as one printable line of at most 500 characters.
+
+    Raised errors carry this copy so a researcher can see which field or setting
+    the provider refused. Any copy of secret, the client's API key, is replaced
+    first. Call records keep only the error class, but the run writer saves a
+    stopped run's error message, so this text can reach its failure records.
+    """
+    text = data.decode("utf-8", "replace")
+    if secret:
+        text = text.replace(secret, "[api key]")
+    text = "".join(char if char.isprintable() else " " for char in text[:2000])
+    text = " ".join(text.split())
+    return text if len(text) <= 500 else text[:497] + "..."
 
 
 class TransportError(RuntimeError):
@@ -116,7 +133,11 @@ class Client:
     to map must cooperate: a thread cannot forcibly stop arbitrary user code.
     Redirects and failed keep-alive connections are errors, never hidden retries.
     Socket and child-process cleanup is bounded; surviving user work stays fenced
-    in the closed client and raises an explicit cleanup error.
+    in the closed client and raises an explicit cleanup error. Before an idle
+    pooled connection is reused, a connection the server already closed, for
+    example after vLLM's 5-second idle limit, is replaced with a new one. A
+    request that was already sent is never sent again, even if its connection
+    then fails.
     """
 
     def __init__(
@@ -213,6 +234,29 @@ class Client:
         if call.expired or remaining <= 0:
             raise TransportError("LLM request exceeded its deadline")
         return remaining
+
+    @staticmethod
+    def _dropped(sock: socket.socket) -> bool:
+        """Say whether an idle pooled socket is closed or holds unexpected bytes.
+
+        An idle HTTP/1.1 connection has nothing to read. Readable means the server
+        closed it or sent stray data, so the caller replaces it before sending.
+        A failed check also counts as closed; replacing an unsent connection is
+        always safe. The server can still close it just after this check; that
+        request then fails without a retry.
+        """
+        if isinstance(sock, ssl.SSLSocket) and sock.pending():
+            return True
+        try:
+            if hasattr(select, "poll"):
+                # poll has no file-number limit; select fails at 1024 and above.
+                poller = select.poll()
+                poller.register(sock, select.POLLIN)
+                return bool(poller.poll(0))
+            readable, _, _ = select.select([sock], [], [], 0)
+        except OSError, ValueError:
+            return True
+        return bool(readable)
 
     @staticmethod
     def _shutdown(sock: socket.socket | None) -> None:
@@ -372,7 +416,10 @@ class Client:
         payload must contain finite JSON values. Calls share the client limit.
         HTTP context errors stop with ContextLimitError; other 4xx errors use
         ProviderConfigurationError. Network, 5xx and malformed bodies raise
-        TransportError. No request is retried. Authentication is never returned.
+        TransportError. Errors for an HTTP error status include a one-line copy
+        of the server's error text, at most 500 characters, with any copy of the
+        API key replaced. No request is retried. Authentication is never
+        returned.
         """
         if (
             not isinstance(cast(object, path), str)
@@ -408,6 +455,9 @@ class Client:
                 else:
                     connection = _Connection(self)
                     self._connections.add(connection)
+            if connection.sock is not None and self._dropped(connection.sock):
+                # Nothing was sent on it yet, so a fresh connection is no retry.
+                connection.close()
             connection.call = call
             with self._condition:
                 self._remaining(call)
@@ -429,6 +479,8 @@ class Client:
                 raise TransportError("LLM response ended before its declared length")
             self._remaining(call)
             if response.status >= 300:
+                detail = _error_text(data, self._api_key)
+                detail = f": {detail}" if detail else ""
                 if response.status in (400, 413, 422):
                     try:
                         error = json.loads(data).get("error", {})
@@ -445,13 +497,16 @@ class Client:
                         or response.status == 413
                     ):
                         raise ContextLimitError(
-                            "LLM server rejected the request context length"
+                            f"LLM server rejected the request context length{detail}"
                         )
                 if 400 <= response.status < 500:
                     raise ProviderConfigurationError(
                         f"LLM server rejected the request (HTTP {response.status})"
+                        f"{detail}"
                     )
-                raise TransportError(f"LLM server returned HTTP {response.status}")
+                raise TransportError(
+                    f"LLM server returned HTTP {response.status}{detail}"
+                )
             decoded = json.loads(
                 data,
                 parse_float=_finite_json_number,
