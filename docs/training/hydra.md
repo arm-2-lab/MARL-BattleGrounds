@@ -306,6 +306,22 @@ Override `batch_sizes=`, `map_id=`, `train_method=` (any PPO baseline) or
 `train_blocks=0` to skip training. Keep `XLA_PYTHON_CLIENT_PREALLOCATE=false`
 so memory readings show real use; pin a card with `CUDA_VISIBLE_DEVICES`.
 
+## Plot Training Curves From Saved Runs
+
+```bash
+python -m marl_battlegrounds.experiments.training_curves \
+  'lineages=[{name:Mine,runs:[/runs/first/run,/runs/more/run]}]' output_dir=/runs/curves
+```
+
+The stage reads every routine validation check of the listed runs with
+`training.list_runs(progress=True)` and writes `curves.csv` (point margin,
+kills and deaths per game at each check), `curves.png` and `summary.md`. List a
+run, then the runs that continued it, in training order, to draw one curve from
+step 0. Add `+training_runs=season_0 runs_dir=PATH` instead for the six Season 0
+baselines from step 0 to 250M; [the search record](hyperparameter_search.md#curves-from-0-to-250m)
+shows their curves. The stage plays no games and needs no GPU; the plot needs
+the viz extra.
+
 ## Choose Devices And Worker Limits
 
 Leave `resources=inherit` to keep the calling process's device and allocator
