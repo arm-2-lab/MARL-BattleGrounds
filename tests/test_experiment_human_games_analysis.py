@@ -4,8 +4,9 @@ Contracts: the packaged settings compose with the nine Season 0 display names
 keyed as the saved tournament records them and a 10-tick window;
 agent_columns lists an agent's own columns and no pair columns; mirrored reads
 a game from Team B's side by exchanging team_a and team_b and moving each
-agent index by five; per_tick_value puts counts, health and ticks per 100
-ticks and keeps fractions as they are; screen_games compares each game with
+agent index by five; per_tick_value puts per-game totals (counts, health,
+ticks) per 100 ticks and keeps fractions, averages and derived ratios as they
+are (per_game_total); screen_games compares each game with
 its own references (mean, z in their standard deviations), marks a metric
 whose z has one sign in every game and sorts by the z nearest zero, giving
 the other team's value for team columns and NaN for agent columns;
@@ -14,10 +15,13 @@ the Priest's Freedom and useful healing, aura coverage per ally class (NaN
 for the giver and with nothing to count), the share of kills by enemy class
 and, with a focus slot, the tick-weighted distance to it; ultimate_timing
 waits from tick 0 or the last cooldown_ready, counts the user's team's kills
-in the window after each use and gives the team's kills in an average
-window; ultimate_summary pools uses by kind, controller and class;
+in the window after each use, gives the team's kills in an average window and
+the ticks to the nearest teammate's and Warrior's Ultimate; ultimate_summary
+pools uses by kind, controller and class, with the shares used together;
+screen_games also screens the derived Burst damage per use;
 compare_alongside places a game among the partner's own games; main reads a
-series and a field run through the public loaders, refuses an empty series
+series and a field run through the public loaders, screens against all of
+the opponent's wins and its wins by lead_margin or more, refuses an empty series
 and a System without a recorded name, and writes its files. Stand-ins replace
 saved runs and replays, so no game is played.
 """
@@ -49,7 +53,7 @@ def test_settings_compose() -> None:
         )
     assert len(config.names) == 9
     assert config.names["IPPO at step 250,675,200 (run)"] == "Recurrent IPPO"
-    assert config.window_ticks == 10
+    assert (config.window_ticks, config.lead_margin) == (10, 12)
 
 
 def test_agent_columns_and_mirrored_rows() -> None:
@@ -76,6 +80,11 @@ def test_per_tick_values() -> None:
     assert stage.per_tick_value("team_a_kills", 5.0, 200.0) == 2.5
     fraction = "team_a_multi_contributor_kill_fraction"
     assert stage.per_tick_value(fraction, 0.4, 200.0) == 0.4
+    # An average stays an average, and a derived ratio keeps its scale.
+    wait = "team_a_mean_observed_respawn_wait_steps"
+    assert stage.per_tick_value(wait, 6.0, 200.0) == 6.0
+    assert not stage.per_game_total("team_a_burst_damage_per_use")
+    assert stage.per_tick_value("team_a_burst_damage_per_use", 80.0, 200.0) == 80.0
 
 
 def test_screen_games_compares_each_game_with_its_own_references() -> None:
@@ -101,6 +110,19 @@ def test_screen_games_compares_each_game_with_its_own_references() -> None:
     assert math.isnan(agent["other_side_1"]) and math.isnan(agent["z_1"])
     same = stage.screen_games(games[:1], references[:1], ["team_a_kills"])
     assert same[0]["same_direction"] and same[0]["smallest_z"] == 4.0
+    burst = [
+        {"episode_length": 100.0, "team_a_burst_damage": 90.0}
+        | {"team_a_mage_burst_applications": 3.0, "team_b_burst_damage": 20.0}
+        | {"team_b_mage_burst_applications": 0.0}
+    ]
+    past = [
+        {"episode_length": 100.0, "team_a_burst_damage": damage}
+        | {"team_a_mage_burst_applications": 2.0}
+        for damage in (40.0, 60.0)
+    ]
+    (per_use,) = stage.screen_games(burst, [past], ["team_a_burst_damage_per_use"])
+    assert (per_use["person_1"], per_use["reference_1"]) == (30.0, 25.0)
+    assert math.isnan(per_use["other_side_1"]) and per_use["scale"] == "as is"
 
 
 def test_class_profile_reads_classes_shares_and_focus_distance() -> None:
@@ -147,6 +169,9 @@ def test_ultimate_timing_and_summary() -> None:
         _event("ability_activated", ability_component="ultimate", source_global_slot=0)
     )
     events[4].append(_event("agent_died", recipient_global_slot=7))
+    events[4].append(
+        _event("ability_activated", ability_component="ultimate", source_global_slot=1)
+    )
     events[6].append(_event("agent_died", recipient_global_slot=8))
     events[20].append(_event("cooldown_ready", agent_global_slot=0))
     events[25].append(
@@ -159,16 +184,22 @@ def test_ultimate_timing_and_summary() -> None:
         _event("ability_activated", ability_component="ultimate", source_global_slot=5)
     )
     rows = stage.ultimate_timing(events, (0,), 10)
-    first, second, enemy = rows
+    first, warrior, second, enemy = rows
+    # The Mage's first Ultimate came 2 ticks before the Warrior's.
+    assert (first["teammate_gap"], first["warrior_gap"]) == (2.0, 2.0)
+    assert math.isnan(warrior["warrior_gap"]) and warrior["teammate_gap"] == 2.0
+    assert math.isnan(enemy["teammate_gap"])
     assert (first["wait"], first["kills_after"], first["person"]) == (2, 2, True)
     assert (second["wait"], second["kills_after"]) == (5, 0)
     assert first["kills_per_window"] == pytest.approx(2 / 30 * 10)
     assert (enemy["team"], enemy["class"], enemy["person"]) == ("B", "Mage", False)
     assert enemy["kills_per_window"] == 0.0
-    labeled = [row | {"kind": "against", "who": "Person"} for row in rows[:2]]
+    labeled = [row | {"kind": "against", "who": "Person"} for row in (first, second)]
     (pooled,) = stage.ultimate_summary(labeled)
     assert (pooled["uses"], pooled["median_wait"]) == (2, 3.5)
     assert pooled["kills_after_per_use"] == 1.0
+    # Only the first Mage use was within SYNC_TICKS of the Warrior's.
+    assert pooled["with_warrior_share"] == pooled["with_teammate_share"] == 0.5
 
 
 def test_compare_alongside_places_a_game_among_the_partners_games() -> None:
@@ -263,6 +294,7 @@ def test_main_reads_the_series_and_the_field(
             "field_dir": str(tmp_path / "field"),
             "names": {"ippo-run": "Rec", "pqn-run": "PQN"},
             "window_ticks": 10,
+            "lead_margin": 6,
             "output_dir": str(tmp_path / "out"),
         }
     )
@@ -271,9 +303,18 @@ def test_main_reads_the_series_and_the_field(
     kills = next(row for row in record["against_screen"] if row["measure"] == "kills")
     # 6 kills in 50 ticks against the opponent's two wins on map 47 (8, 9).
     assert kills["person_1"] == 12.0 and kills["reference_1"] == 8.5
+    # Lead-matched: only the opponent's win by 7 on map 47 is at least 6.
+    lead = next(row for row in record["lead_screen"] if row["measure"] == "kills")
+    assert lead["reference_1"] == 9.0
     (alongside,) = record["alongside"]
     assert alongside["games"] == 1 and alongside["margin_mean"] == 5.0
-    for name in ("against_screen.csv", "alongside.csv", "summary.md", "analysis.json"):
+    for name in (
+        "against_screen.csv",
+        "against_screen_lead.csv",
+        "alongside.csv",
+        "summary.md",
+        "analysis.json",
+    ):
         assert (tmp_path / "out" / name).exists()
     config.names = {"ippo-run": "Rec"}
     with pytest.raises(ValueError, match="no recorded name for"):

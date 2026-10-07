@@ -15,7 +15,9 @@ shows how to read both with the public API and put them side by side:
    results.system_metrics(by="game") call, each row from the System's side.
 3. Against games (the person controls all of Team A): screen every team-level
    metric of the person's team against the opponent's own wins on the same map,
-   and keep the differences that point the same way in every game. Counts,
+   and again against only its wins by lead_margin points or more (a team as
+   far ahead as the person was), and keep the differences that point the same
+   way in every game. Counts,
    health and ticks are compared per 100 ticks, because games end at different
    times; fractions and distances are compared as they are.
 4. Class tables for the person's team, the opponent in the same games and the
@@ -23,15 +25,18 @@ shows how to read both with the public API and put them side by side:
    Freedom, how much of each ally class's time was inside the Mage's and the
    Warrior's auras, and which enemy classes each side killed.
 5. Ultimate timing from the replays: for each class and side, how long after
-   its Ultimate was ready the agent used it, and how many enemies its team
-   killed in the next window_ticks ticks, beside the team's kills in an
-   average window of that length.
+   its Ultimate was ready the agent used it, how many enemies its team killed
+   in the next window_ticks ticks, beside the team's kills in an average
+   window of that length, and how often it came within SYNC_TICKS ticks of a
+   teammate's Ultimate (for example, the Mage's Burst with the Warrior's
+   Charge).
 6. Alongside games (the person controls one class beside a partner System):
    compare each game with the partner's own games against the same opponent on
    the same map and spawn end, as a result (point margin, kills, deaths) and
    as a screen of every team-level metric and of the person's own agent.
 
-Outputs in output_dir: against_screen.csv (step 3), classes.csv (step 4),
+Outputs in output_dir: against_screen.csv and against_screen_lead.csv (step 3),
+classes.csv (step 4),
 ultimates.csv (step 5), alongside.csv and alongside_screen.csv (step 6),
 summary.md (readable tables) and analysis.json (settings and inputs). With
 three games per kind, every result is a description of these games, found by
@@ -65,6 +70,19 @@ from marl_battlegrounds.evaluation.metric_catalog import METRIC_COLUMNS_BY_NAME
 # One game: metric values as floats; names (System, spawn end) as text.
 type Row = dict[str, Any]
 
+# Two Ultimates count as used together when they are this many ticks apart or
+# fewer.
+SYNC_TICKS = 4
+
+# Ratios screened beside the team columns, per game: name to (numerator,
+# denominator), NaN when the denominator is zero.
+DERIVED = {
+    "team_a_burst_damage_per_use": (
+        "team_a_burst_damage",
+        "team_a_mage_burst_applications",
+    ),
+}
+
 # Canonical roster order: slot k plays CLASSES[k] on each team.
 CLASSES = ("Mage", "Warrior", "Hunter", "Rogue", "Priest")
 
@@ -81,7 +99,8 @@ TEAM_COLUMNS = tuple(
     and name.removeprefix("team_a_") not in ("win", "draw", "loss", "return", "score")
 )
 
-# Agent columns behind the class tables, for agents 0-4 (one team).
+# Agent columns behind the class tables: each agent's own columns for both
+# teams (0-9), and the Priest's and the aura givers' columns toward teammates.
 CLASS_COLUMNS = tuple(
     [
         f"agent_{agent}_{stem}"
@@ -170,7 +189,8 @@ def per_tick_value(column: str, value: float, ticks: float) -> float:
     Parameters
     ----------
     column : str
-        A full-metric column of the catalog, such as ``team_a_kills``.
+        A full-metric column of the catalog, such as ``team_a_kills``, or a
+        ``DERIVED`` ratio (kept as it is).
     value : float
         Its value in one game; NaN stays NaN.
     ticks : float
@@ -179,12 +199,36 @@ def per_tick_value(column: str, value: float, ticks: float) -> float:
     Returns
     -------
     float
-        value per 100 ticks for counts, health and ticks (``RATE_UNITS``);
-        value itself for fractions, distances and other units.
+        value per 100 ticks for per-game totals: a unit in ``RATE_UNITS``,
+        no summary weight in the catalog and no "mean" in the name; value
+        itself for fractions, distances and averages (such as a mean respawn
+        wait).
     """
-    if METRIC_COLUMNS_BY_NAME[column].unit in RATE_UNITS:
-        return value / ticks * 100.0
-    return value
+    return value / ticks * 100.0 if per_game_total(column) else value
+
+
+def per_game_total(column: str) -> bool:
+    """Tell whether a column is a per-game total, compared per 100 ticks.
+
+    Parameters
+    ----------
+    column : str
+        A catalog column or a ``DERIVED`` ratio.
+
+    Returns
+    -------
+    bool
+        True for a catalog column with a unit in ``RATE_UNITS``, no summary
+        weight and no "mean" in its name; False for fractions, distances,
+        averages and every ``DERIVED`` ratio.
+    """
+    info = METRIC_COLUMNS_BY_NAME.get(column)
+    return (
+        info is not None
+        and info.unit in RATE_UNITS
+        and info.summary_weight is None
+        and "mean" not in column.removeprefix("team_a_")
+    )
 
 
 def screen_games(
@@ -207,7 +251,8 @@ def screen_games(
         spawn end for an alongside game.
     columns : sequence of str, default=TEAM_COLUMNS
         Full-metric columns of Team A (``team_a_*`` or an agent's own
-        ``agent_<k>_*`` column) to screen.
+        ``agent_<k>_*`` column), or a ``DERIVED`` ratio, to screen. A derived
+        ratio is computed per game and stored in each game's dict.
 
     Returns
     -------
@@ -233,11 +278,23 @@ def screen_games(
     """
     rows: list[dict[str, Any]] = []
     for column in columns:
-        unit = METRIC_COLUMNS_BY_NAME[column].unit
+        if column in DERIVED:
+            top, bottom = DERIVED[column]
+            for game in [*games, *(past for group in references for past in group)]:
+                below = game.get(bottom, math.nan)
+                game[column] = game.get(top, math.nan) / below if below else math.nan
+            other = column.replace("team_a_", "team_b_", 1)
+            top_b, bottom_b = (
+                name.replace("team_a_", "team_b_", 1) for name in DERIVED[column]
+            )
+            for game in games:
+                below = game.get(bottom_b, math.nan)
+                game[other] = game.get(top_b, math.nan) / below if below else math.nan
+        unit = METRIC_COLUMNS_BY_NAME[column].unit if column not in DERIVED else "ratio"
         row: dict[str, Any] = {
             "measure": column.removeprefix("team_a_"),
             "unit": unit,
-            "scale": "per 100 ticks" if unit in RATE_UNITS else "as is",
+            "scale": "per 100 ticks" if per_game_total(column) else "as is",
         }
         scores: list[float] = []
         for number, (game, reference) in enumerate(
@@ -400,10 +457,15 @@ def ultimate_timing(
         One row per Ultimate use: ``slot``, ``class``, ``team`` ("A" or "B"),
         ``person`` (True for the person's slots), ``tick``, ``wait`` (ticks
         since the Ultimate was last ready; the first use of a game waits from
-        tick 0, when every Ultimate starts ready), ``kills_after`` (enemies
-        the user's team killed in the next window_ticks ticks) and
+        tick 0, when every Ultimate starts ready; time dead counts),
+        ``kills_after`` (enemies the user's team killed in the next
+        window_ticks ticks, not counting the use's own tick),
         ``kills_per_window`` (the team's kills in the whole game per
-        window_ticks ticks: what an average window holds).
+        window_ticks ticks: what an average window holds) and
+        ``teammate_gap`` (ticks to the nearest Ultimate by another agent of
+        the same team, before or after; NaN if none) with ``warrior_gap``
+        (the same, to the team's Warrior's Ultimate, Charge; NaN for the
+        Warrior itself or with none).
     """
     deaths = [
         (tick, event.recipient_global_slot)
@@ -445,6 +507,29 @@ def ultimate_timing(
                         "kills_per_window": kills[team] / length * window_ticks,
                     }
                 )
+    for row in rows:
+        others = [
+            other["tick"]
+            for other in rows
+            if other["team"] == row["team"] and other["slot"] != row["slot"]
+        ]
+        warrior = [
+            other["tick"]
+            for other in rows
+            if other["team"] == row["team"]
+            and other["class"] == "Warrior"
+            and other["slot"] != row["slot"]
+        ]
+        row["teammate_gap"] = (
+            float(min(abs(tick - row["tick"]) for tick in others))
+            if others
+            else math.nan
+        )
+        row["warrior_gap"] = (
+            float(min(abs(tick - row["tick"]) for tick in warrior))
+            if warrior
+            else math.nan
+        )
     return rows
 
 
@@ -496,7 +581,25 @@ def compare_alongside(game: Row, reference: Sequence[Row]) -> dict[str, Any]:
 
 
 def _read_game(folder: Path) -> tuple[dict[str, Any], Row, Path]:
-    """Read one recorded game: game.json, its full metrics row and its replay."""
+    """Read one recorded game: game.json, its full metrics row and its replay.
+
+    Parameters
+    ----------
+    folder : pathlib.Path
+        A game folder written by the human_games stage.
+
+    Returns
+    -------
+    (dict, dict, pathlib.Path)
+        game.json as a dict; the one full_metrics.csv row with every number
+        as float (text cells such as the replay name are left out); and the
+        path of the counted replay named in game.json.
+
+    Raises
+    ------
+    OSError, json.JSONDecodeError, StopIteration
+        A file is missing, unreadable or empty.
+    """
     details = json.loads((folder / "game.json").read_text(encoding="utf-8"))
     with (folder / "full_metrics.csv").open(newline="", encoding="utf-8") as file:
         raw = next(csv.DictReader(file))
@@ -512,8 +615,18 @@ def _read_game(folder: Path) -> tuple[dict[str, Any], Row, Path]:
 def _rows(table: Mapping[str, Any]) -> list[Row]:
     """Turn a column table into one dict per row: numbers as float, else text.
 
-    Cells are converted one by one, because a column of mixed values comes
-    back as an object array; None becomes NaN only in number columns' cells.
+    Parameters
+    ----------
+    table : mapping of str to numpy.ndarray
+        Columns of equal length, such as a ``system_metrics(by="game")``
+        result.
+
+    Returns
+    -------
+    list of dict
+        One dict per row. Cells are converted one by one, because a column of
+        mixed values comes back as an object array: numbers become float;
+        booleans, text and None stay as they are. Empty for an empty table.
     """
     count = len(next(iter(table.values()))) if table else 0
 
@@ -537,7 +650,8 @@ def write_outputs(record: Mapping[str, Any], output_dir: Path) -> None:
     Parameters
     ----------
     record : mapping
-        ``main``'s record: ``against_screen``, ``alongside_screen``,
+        ``main``'s record: ``against_screen``, ``lead_screen``,
+        ``alongside_screen``,
         ``classes``, ``ultimates`` and ``alongside`` rows, ``games`` and
         ``settings``.
     output_dir : pathlib.Path
@@ -560,6 +674,7 @@ def write_outputs(record: Mapping[str, Any], output_dir: Path) -> None:
                 )
 
     table("against_screen.csv", record["against_screen"])
+    table("against_screen_lead.csv", record["lead_screen"])
     table("alongside_screen.csv", record["alongside_screen"])
     table("classes.csv", record["classes"])
     table("ultimates.csv", record["ultimates"])
@@ -571,6 +686,11 @@ def write_outputs(record: Mapping[str, Any], output_dir: Path) -> None:
     )
     for key, title, reference in (
         ("against_screen", "Against games", "the opponent's wins on that map"),
+        (
+            "lead_screen",
+            "Against games, lead-matched",
+            "the opponent's wins by lead_margin or more on that map",
+        ),
         (
             "alongside_screen",
             "Alongside games",
@@ -615,14 +735,17 @@ def write_outputs(record: Mapping[str, Any], output_dir: Path) -> None:
             "average window)",
             "",
             "| Games | Who | Class | Uses | Median wait after ready "
-            "| Kills after, per use | Kills in an average window |",
-            "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+            "| Kills after, per use | Kills in an average window "
+            f"| With a teammate's Ultimate (within {SYNC_TICKS} ticks) "
+            "| With the Warrior's Ultimate |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
         for row in ultimate_summary(record["ultimates"]):
             lines.append(
                 f"| {row['kind']} | {row['who']} | {row['class']} | {row['uses']} | "
                 f"{row['median_wait']:.1f} | {row['kills_after_per_use']:.2f} | "
-                f"{row['kills_per_window']:.2f} |"
+                f"{row['kills_per_window']:.2f} | {row['with_teammate_share']:.2f} | "
+                f"{row['with_warrior_share']:.2f} |"
             )
     if record["alongside"]:
         lines += [
@@ -664,9 +787,12 @@ def ultimate_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     -------
     list of dict
         One row per (kind, who, class) in first-seen order: ``uses``,
-        ``median_wait`` (ticks), ``kills_after_per_use`` and
+        ``median_wait`` (ticks), ``kills_after_per_use``,
         ``kills_per_window`` (the mean of the games' average windows over the
-        uses, so each use is compared with its own game).
+        uses, so each use is compared with its own game),
+        ``with_teammate_share`` (the share of uses within ``SYNC_TICKS`` ticks
+        of a teammate's Ultimate) and ``with_warrior_share`` (the same for the
+        team's Warrior's Ultimate; NaN for the Warrior).
     """
     groups: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
     for row in rows:
@@ -683,6 +809,14 @@ def ultimate_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             ),
             "kills_per_window": float(
                 np.mean([row["kills_per_window"] for row in group])
+            ),
+            "with_teammate_share": float(
+                np.mean([row["teammate_gap"] <= SYNC_TICKS for row in group])
+            ),
+            "with_warrior_share": (
+                math.nan
+                if kind == "Warrior"
+                else float(np.mean([row["warrior_gap"] <= SYNC_TICKS for row in group]))
             ),
         }
         for (game_kind, who, kind), group in groups.items()
@@ -702,14 +836,18 @@ def main(config: DictConfig) -> dict[str, Any]:
         run with full metrics for every game of the Systems' field), ``names``
         (display name for each System as the field run records it; the series
         uses display names), ``window_ticks`` (ticks after an Ultimate in which
-        kills count) and the required ``output_dir``. Relative paths use the
-        folder the command was started from.
+        kills count), ``lead_margin`` (the smallest point margin of the
+        opponent's wins in the lead-matched reference, so the reference is as
+        far ahead as the person was) and the required ``output_dir``.
+        Relative paths use the folder the command was started from.
 
     Returns
     -------
     dict
-        ``against_screen``, ``alongside_screen``, ``classes``, ``ultimates``
-        and ``alongside`` rows (see ``screen_games``, ``class_profile``,
+        ``against_screen`` and ``lead_screen`` (against all of the opponent's
+        wins and against its wins by ``lead_margin`` or more),
+        ``alongside_screen``, ``classes``, ``ultimates`` and ``alongside`` rows
+        (see ``screen_games``, ``class_profile``,
         ``ultimate_timing`` and
         ``compare_alongside``), ``games`` (each recorded game's number, kind,
         map, side, opponent, partner and result) and ``settings``.
@@ -801,6 +939,7 @@ def main(config: DictConfig) -> dict[str, Any]:
     # 3-5. Against games.
     against = [game for game in series if game[0]["kind"] == "against"]
     against_screen: list[dict[str, Any]] = []
+    lead_screen: list[dict[str, Any]] = []
     classes: list[dict[str, Any]] = []
     ultimates: list[dict[str, Any]] = []
     if against:
@@ -811,15 +950,27 @@ def main(config: DictConfig) -> dict[str, Any]:
             if row["system"] == opponent and row["team_a_win"] == 1
         ]
         maps = [int(details["map_id"]) for details, _, _ in against]
+        lead = int(settings["lead_margin"])
+        lopsided = [row for row in wins if row["score_difference"] >= lead]
+        columns = [*TEAM_COLUMNS, *DERIVED]
         against_screen = screen_games(
             [row for _, row, _ in against],
             [[row for row in wins if row["map_id"] == map_id] for map_id in maps],
+            columns,
+        )
+        lead_screen = screen_games(
+            [row for _, row, _ in against],
+            [[row for row in lopsided if row["map_id"] == map_id] for map_id in maps],
+            columns,
         )
         teams = {
             "Person": [row for _, row, _ in against],
             f"{opponent} in the same games": [mirrored(row) for _, row, _ in against],
             f"{opponent}, its wins on the same maps": [
                 row for row in wins if row["map_id"] in maps
+            ],
+            f"{opponent}, its wins by {lead} or more on the same maps": [
+                row for row in lopsided if row["map_id"] in maps
             ],
         }
         for team, games in teams.items():
@@ -901,6 +1052,7 @@ def main(config: DictConfig) -> dict[str, Any]:
 
     record: dict[str, Any] = {
         "against_screen": against_screen,
+        "lead_screen": lead_screen,
         "alongside_screen": alongside_screen,
         "classes": classes,
         "ultimates": ultimates,

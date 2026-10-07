@@ -581,6 +581,7 @@ def presets() -> dict[str, dict[str, Any]]:
             "tdm-alpha": "TDM-Alpha",
         },
         "window_ticks": 10,
+        "lead_margin": 12,
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }

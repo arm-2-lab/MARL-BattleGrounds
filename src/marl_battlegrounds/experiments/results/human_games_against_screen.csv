@@ -4,6 +4,7 @@ warrior_aura_eligible_steps,agent_steps,per 100 ticks,491.8455,427.4678,455.607,
 freedom_protected_steps,agent_steps,per 100 ticks,9.0129,7.2961,4.8145,1.6344,10.559,4.9689,5.5261,2.1279,8.9172,1.2739,4.79,1.9183,True,1.6344
 freedom_protection_fraction,fraction,as is,0.0995,0.0899,0.0532,1.6298,0.1545,0.0672,0.0606,3.6291,0.1129,0.0148,0.0534,2.466,True,1.6298
 warrior_charge_slow_active_steps,agent_steps,per 100 ticks,15.0215,10.7296,9.2386,1.4785,15.528,9.3168,8.9237,1.3992,12.7389,9.5541,7.3011,1.2794,True,1.2794
+burst_damage_per_use,ratio,as is,85.5354,31.8755,48.9153,2.1049,70.0781,23.8266,52.997,1.2563,86.0559,15.249,47.316,2.9332,True,1.2563
 ultimate_excess_healing_fraction,fraction,as is,0.5355,0.2874,0.3486,1.3281,0.43,0.4352,0.3029,1.247,0.5459,0.487,0.3246,2.0584,True,1.247
 ultimate_effective_healing_fraction,fraction,as is,0.4645,0.7126,0.6514,-1.3281,0.57,0.5648,0.6971,-1.247,0.4541,0.513,0.6754,-2.0584,True,-1.247
 basic_activations,count,per 100 ticks,247.2103,213.7339,267.3579,-1.2083,254.6584,225.4658,286.7151,-2.4838,191.7197,178.3439,261.0073,-5.3934,True,-1.2083
@@ -120,7 +121,7 @@ kills_of_rogue_poison_slow_recipient,count,per 100 ticks,0.4292,0.0,0.7363,-0.59
 kills_of_rogue_poison_stun_recipient,count,per 100 ticks,0.0,0.0,0.2045,-0.6308,0.6211,0.6211,0.2249,1.1596,0.0,0.0,0.168,-0.5831,False,0.0
 kills_of_rogue_poison_anti_heal_recipient,count,per 100 ticks,0.4292,0.0,0.6275,-0.4003,0.6211,0.6211,0.7314,-0.2184,1.2739,0.0,0.7179,1.0502,False,0.0
 respawn_waves,count,per 100 ticks,19.7425,19.7425,19.7681,-0.1206,19.8758,19.8758,19.8299,0.3258,19.7452,19.7452,19.8212,-0.5944,False,0.0
-mean_observed_respawn_wait_steps,steps,per 100 ticks,1.073,1.0843,1.4728,-0.5025,1.5528,1.7857,1.3795,0.595,3.1847,1.6985,1.3067,6.3966,False,0.0
+mean_observed_respawn_wait_steps,steps,as is,2.5,2.5263,2.9783,-0.8628,2.5,2.875,2.8862,-0.8545,5.0,2.6667,2.9726,4.2153,False,0.0
 red_zone_kills,count,per 100 ticks,0.8584,0.0,2.0001,-0.278,2.4845,0.0,0.3053,3.5814,5.7325,0.0,0.2237,8.2577,False,0.0
 focus_fire_concentration,fraction,as is,0.802,0.665,0.7539,1.0289,0.7524,0.7528,0.7616,-0.2271,0.8102,0.6647,0.7738,0.7287,False,0.0
 ally_distance_mean,distance,as is,2.2702,3.1643,2.8083,-1.4739,3.5211,2.8474,2.6153,5.2237,3.5075,2.8879,2.6937,2.9858,False,0.0
@@ -141,6 +142,6 @@ burst_damage_contributing_to_kill,health,per 100 ticks,35.6105,0.0,18.2326,1.294
 burst_kill_contributions,count,per 100 ticks,1.7167,0.0,0.8678,1.3356,1.2422,0.0,0.9987,0.3788,0.6369,0.0,0.8679,-0.4018,False,0.0
 burst_kills,count,per 100 ticks,1.7167,0.0,0.8678,1.3356,1.2422,0.0,0.9987,0.3788,0.6369,0.0,0.8679,-0.4018,False,0.0
 trap_intervals,count,per 100 ticks,2.5751,2.1459,2.4621,0.2912,2.4845,2.4845,2.4794,0.0174,0.6369,1.9108,2.3289,-4.9185,False,0.0
-trap_mean_remaining_steps_at_break,steps,per 100 ticks,1.2876,1.2876,1.5026,-0.2764,1.2422,1.8634,1.3163,-0.2877,nan,1.9108,1.2388,nan,False,0.0
+trap_mean_remaining_steps_at_break,steps,as is,3.0,3.0,2.763,0.8206,2.0,3.0,2.7463,-2.4101,nan,3.0,2.8184,nan,False,0.0
 healing_prevented_by_poison,health,per 100 ticks,8.5837,54.9356,25.4478,-0.522,79.5031,7.4534,21.1493,2.1781,10.1911,63.6943,23.9297,-0.5506,False,0.0
 priest_holy_word_salvation_applications,count,per 100 ticks,1.7167,1.7167,1.7742,-0.0729,2.4845,1.8634,2.1693,0.9485,1.2739,1.9108,1.9093,-1.625,False,0.0

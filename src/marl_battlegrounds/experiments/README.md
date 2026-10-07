@@ -267,14 +267,18 @@ does a team of recurrent IPPO and the expert compare with recurrent IPPO alone?
 tournament's full-metrics replay (see `tournament_analysis`) with the public
 API. For the games against recurrent IPPO, it compares every team-level metric
 of the person's team with recurrent IPPO's own wins on the same map (240, 214
-and 152 games on maps 47, 48 and 49), from recurrent IPPO's side. Counts,
-health and ticks are compared per 100 ticks, because these games ended early;
-fractions and distances as they are. A difference is kept when it points the
-same way in all three games. For the games beside recurrent IPPO, it compares
-each game with recurrent IPPO's own 20 games against PQN-VDN on the same map
-and spawn end. From the replays it times every Ultimate: the ticks since it
-was ready, and the kills by its user's team in the next 10 ticks, beside the
-team's kills in an average 10 ticks.
+and 152 games on maps 47, 48 and 49), read from recurrent IPPO's side, and
+again with only its wins by 12 points or more (`lead_margin`), a team as far
+ahead as the person was (the person won by 17, 12 and 20). Per-game totals
+are compared per 100 ticks, because these games ended early; fractions,
+averages and distances as they are. A difference is kept when it points the
+same way in all three games; with three games, about one in four metrics
+that differ only by chance also pass this filter, so it is a screen, not a
+test. For the games beside recurrent IPPO, it compares each game with
+recurrent IPPO's own 20 games against PQN-VDN on the same map and spawn end.
+From the replays it times every Ultimate: the ticks since it was ready, the
+kills by its user's team in the next 10 ticks beside an average 10 ticks, and
+the ticks to the nearest teammate's Ultimate.
 
 ```bash
 python -m marl_battlegrounds.experiments.human_games_analysis \
@@ -285,54 +289,67 @@ python -m marl_battlegrounds.experiments.human_games_analysis \
 
 It runs on the CPU in about 30 seconds, most of it loading the six replays.
 
-**Findings against recurrent IPPO** (per 100 ticks unless stated).
+**Findings against recurrent IPPO** (per 100 ticks unless stated). Each
+holds against recurrent IPPO's lopsided wins too, except where said.
 
-1. **The expert times Ultimates to fights.** Each of the person's 63
-   Ultimates was followed by 1.57 kills in the next 10 ticks, against 0.86 in
-   an average 10 ticks of the same games. Recurrent IPPO's 67 were followed by
-   0.36, against 0.24. Its Mage used Burst 16 times with 1 kill after it; the
-   person's Mage used it 15 times with 25. Recurrent IPPO's first Burst came
-   13 to 24 ticks before the first death of each game, the person's 4 to 7.
-   So 29-45% of the person's Mage damage came during Burst, against 17% in
-   recurrent IPPO's wins.
-2. **The expert spends Freedom where it counts.** Per tick a teammate was
-   slowed, the person's Freedom cancelled the slow 0.14-0.15 of the time,
-   against 0.08 in recurrent IPPO's wins, in every game.
-3. **The expert protects the healer and uses the Rogue as bait.** The
-   person's Warrior and Priest never died; the Rogue took 9 of the team's 13
-   deaths and 31% of its Freedom uses (recurrent IPPO's Rogue: 13%). The
-   person's Priest took 42 damage per 100 ticks (recurrent IPPO's: 141) and
-   stood inside the Warrior's aura 43% of the time (31%).
-4. **The expert kills the back line.** Recurrent IPPO's Priest and Hunter
-   were 40% of the person's kills; enemy Priests and Hunters are 14% of
-   recurrent IPPO's kills in its wins.
-5. **The expert pushes into the Red Zone.** 15 of the person's 47 kills, 30
-   of 62 points, came inside recurrent IPPO's Red Zone; recurrent IPPO makes
-   0.5 to 2 such kills per game in its own wins on these maps.
-6. **Similar, or better for the policy.** Kills per 100 ticks were close to
-   recurrent IPPO's wins (8.2, 9.9, 7.6 against 8.9, 9.3, 8.6), as were
-   Ultimate and Warrior Charge uses. The person dealt less damage per tick
-   (1,282-1,796 against 1,800-2,017), used fewer Basics, and wasted more
-   Ultimate healing (useful share 45-57%, against 65-70%).
+1. **The expert opens with Burst at contact and fires it with the Warrior's
+   Charge.** Both Mages use Burst soon after it is ready, but recurrent
+   IPPO's first Burst came 13 to 24 ticks before the first death of each
+   game and the expert's 4 to 7. The expert's Burst came within 4 ticks of
+   the Warrior's Ultimate (Charge) 15 of 15 times; recurrent IPPO's, 3 of 16.
+   29-45% of the expert's Mage damage came during Burst, against 16-18%
+   in recurrent IPPO's wins, and each Burst brought 70-86 damage, against
+   45-59 in its lopsided wins.
+2. **The expert's Priest heals slowed teammates.** Every Priest heal gives
+   its target Freedom, a short floor on its speed. Freedom held up a slowed
+   teammate's speed on 10-15% of the ticks it was active for the expert,
+   against 5-6% for recurrent IPPO.
+3. **The expert's Rogue takes the enemy's fire.** It took 456 damage per 100
+   ticks, against 272 for recurrent IPPO's Rogue in its lopsided wins, and 9
+   of the team's 13 deaths; the expert's Warrior took 248, against 477.
+4. **Differences that are mostly the size of the lead.** The expert's Priest
+   took 42 damage per 100 ticks, against 141 in all of recurrent IPPO's wins
+   but 88 in its lopsided ones. 15 of the expert's kills, worth 30 of its 62
+   points, came inside recurrent IPPO's Red Zone; recurrent IPPO's own
+   lopsided wins put more kills there on map 47 (6.4 per 100 ticks, against
+   the expert's 0.9) and fewer on maps 48 and 49 (0.6 and 1.0, against 2.5
+   and 5.7). Recurrent IPPO's Priest and Hunter were 40% of
+   the expert's kills, against 14% of recurrent IPPO's kills in its wins and
+   21% in its lopsided wins; which classes a team kills also depends on the
+   opponent, so this is not clear.
+5. **Similar, or better for the policy.** Kills per 100 ticks (7.6-9.9) were
+   close to recurrent IPPO's wins (8.6-9.3) and below its lopsided wins
+   (9.1-10.5). The expert dealt less damage per tick (1,282-1,796 against
+   1,774-2,124 in lopsided wins), used fewer Basic abilities, had fewer
+   ticks with two or more attackers, and wasted more Ultimate healing
+   (useful share 45-57%, against 60-71%).
 
 **Findings beside recurrent IPPO.**
 
-1. **The team played at recurrent IPPO's own level.** Margins were +17, −5
-   and +7 (mean +6.3); recurrent IPPO alone averaged +19.4, −2.5 and +3.9
-   (mean +6.9) on the same maps and spawn ends, and each game sat inside its
-   range.
-2. **The expert kept their Burst habit, but it stopped paying.** 23-32% of
-   the person's Mage damage came during Burst, against 15-17% for recurrent
-   IPPO's Mage, yet 0.68 kills followed each Burst, against 0.64 in an
-   average window: the four policy agents did not fight in step with it.
-3. **The policy did not adapt its support.** Recurrent IPPO's Priest gave the
-   person's Mage 21% of its useful healing and 24% of its Freedom uses,
-   against 29% and 33% for its own Mage, and the person's Mage stood farther
-   from the Hunter, Rogue and Priest (2.8-3.6 map units, against 2.4-3.0).
+1. **No detectable difference from recurrent IPPO alone.** Margins were +17,
+   −5 and +7 (mean +6.3); recurrent IPPO alone averaged +19.4, −2.5 and +3.9
+   (mean +6.9) on the same maps and spawn ends in Season 0, a difference of
+   −0.6 points per game (95% interval −6.3 to +5.1).
+2. **The expert's Mage was at least as productive, in a different style.**
+   Per 100 ticks over the three games, it helped make 4.86 kills against 4.62
+   for recurrent IPPO's own Mage, dealt 718 damage against 683, and made 1.03
+   kills alone against 0.47. It also died more (1.33 against 1.03), and its
+   aura covered teammates less in all three games (39% against 52% of their
+   ticks).
+3. **The team held level by out-killing, not by dying less.** It made 6.63
+   kills per 100 ticks against 6.40 and died 5.30 times against 4.75.
+4. **Recurrent IPPO's Priest supported the stranger less.** It gave the
+   expert's Mage 0.56 points of useful healing per point of damage taken,
+   against 0.69 for its own Mage; the zero-shot coordination run shows the
+   same cut for every learned stranger Mage (0.55 to 0.63, against 0.71).
+5. **Formation.** The expert's Mage stood 0.34 map units farther from its
+   teammates on average than recurrent IPPO's own Mage; its distance to the
+   Warrior did not change (2.98).
 
 The full tables are in `results/human_games_against_screen.csv`,
-`human_games_classes.csv`, `human_games_ultimates.csv`,
-`human_games_alongside.csv` and `human_games_alongside_screen.csv`.
+`human_games_against_screen_lead.csv`, `human_games_classes.csv`,
+`human_games_ultimates.csv`, `human_games_alongside.csv` and
+`human_games_alongside_screen.csv`.
 
 **Limits.** The games are played by one expert, who designed the game, so they
 show what the policy does against and beside that player, not how people in
@@ -344,5 +361,8 @@ its own. A person's moves cannot be repeated, so the saved replays are the
 record of the games. The analysis screens about 145 metrics in three games
 per kind: it describes these games and suggests where the policy falls short,
 but a single game can move a ratio a long way, and patterns need more games
-and more people before they are claims. The person reported adapting to the
-policy's teammates; the metrics show what changed, not why.
+and more people before they are claims. The person is the developer, had
+played several games with and against this policy before the alongside games,
+and played them in a fixed order; they reported adapting to the policy's
+teammates, which the metrics cannot show. The policy is frozen, so it can
+adapt only through its memory within a game.

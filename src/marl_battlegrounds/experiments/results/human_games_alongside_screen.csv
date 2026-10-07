@@ -33,7 +33,6 @@ burst_kills,count,per 100 ticks,1.0638,0.0,0.7777,0.4441,0.6757,0.0,0.526,0.4412
 agent_0_burst_kill_contributions,count,per 100 ticks,1.0638,nan,0.7777,0.4441,0.6757,nan,0.526,0.4412,1.0381,nan,0.6317,0.9672,True,0.4412
 kills_of_rogue_poison_stun_recipient,count,per 100 ticks,0.0,0.0,0.167,-0.4137,0.0,0.0,0.2015,-0.6372,0.0,0.0,0.1793,-0.8415,True,-0.4137
 agent_0_kill_contributions_to_rogue_poison_stun_recipient,count,per 100 ticks,0.0,nan,0.167,-0.4137,0.0,nan,0.1301,-0.4503,0.0,nan,0.0959,-0.5592,True,-0.4137
-mean_observed_respawn_wait_steps,steps,per 100 ticks,1.4184,3.1915,3.4515,-1.8955,0.9966,1.0586,1.069,-0.7319,0.9582,0.9516,1.0731,-0.4117,True,-0.4117
 warrior_charge_slow_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
 warrior_charge_stun_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
 warrior_charge_applications,count,per 100 ticks,3.1915,3.1915,2.5881,1.4514,3.3784,3.0405,3.1018,2.1522,3.1142,2.4221,3.0432,0.4048,True,0.4048
@@ -59,6 +58,7 @@ burst_damage_contributing_to_kill,health,per 100 ticks,20.2779,0.0,16.9392,0.232
 agent_0_burst_damage_contributing_to_kill,health,per 100 ticks,20.2779,nan,16.9392,0.2329,12.8792,nan,10.5753,0.334,20.9507,nan,12.9145,0.9586,True,0.2329
 agent_0_kill_contributions_to_warrior_charge_stun_recipient,count,per 100 ticks,0.0,nan,0.0424,-0.2294,0.0,nan,0.1099,-0.6507,0.0,nan,0.05,-0.3145,True,-0.2294
 agent_0_healing_received_while_warrior_charge_slow,health,per 100 ticks,42.5532,nan,2.1055,7.8984,100.0,nan,72.5039,0.5588,74.7405,nan,63.0648,0.2249,True,0.2249
+mean_observed_respawn_wait_steps,steps,as is,1.3333,3.0,3.3148,-1.7553,2.95,3.1333,3.0098,-0.2155,2.7692,2.75,2.9413,-0.3956,True,-0.2155
 agent_0_freedom_eligible_steps,agent_steps,per 100 ticks,21.2766,nan,24.0016,-0.2691,26.6892,nan,28.1204,-0.197,19.0311,nan,29.8926,-1.9749,True,-0.197
 agent_0_solo_kills,count,per 100 ticks,1.0638,nan,0.925,0.1878,1.0135,nan,0.4274,2.4683,1.0381,nan,0.3636,2.0049,True,0.1878
 agent_0_healing_received_fraction,fraction,as is,0.2151,nan,0.2317,-0.187,0.2349,nan,0.2796,-0.58,0.2032,nan,0.2914,-1.2459,True,-0.187
@@ -168,7 +168,7 @@ freedom_protected_steps,agent_steps,per 100 ticks,6.383,10.6383,2.6582,1.6997,5.
 freedom_protection_fraction,fraction,as is,0.0652,0.1515,0.0281,1.617,0.0558,0.1341,0.0674,-0.6042,0.0407,0.0367,0.0622,-1.1862,False,0.0
 trap_breaks,count,per 100 ticks,2.1277,1.0638,2.0715,0.0816,1.6892,1.3514,1.9124,-0.5585,2.0761,1.7301,1.6945,0.8405,False,0.0
 trap_break_rate,fraction,as is,1.0,0.5,0.9035,0.5085,0.7143,0.6667,0.7756,-0.378,0.8571,1.0,0.6981,0.882,False,0.0
-trap_mean_remaining_steps_at_break,steps,per 100 ticks,3.1915,3.1915,3.1178,0.1175,0.8784,0.8446,0.9907,-1.0383,1.0381,1.0381,1.0505,-0.0579,False,0.0
+trap_mean_remaining_steps_at_break,steps,as is,3.0,3.0,2.7895,0.6247,2.6,2.5,2.7809,-0.8732,3.0,3.0,2.8777,0.6299,False,0.0
 rogue_poison_applications,count,per 100 ticks,2.1277,2.1277,1.6604,0.6049,2.3649,2.7027,2.4947,-0.5074,2.4221,2.0761,2.4891,-0.2103,False,0.0
 healing_prevented_by_poison,health,per 100 ticks,8.5106,17.0213,2.2397,1.3337,8.1081,14.8649,33.0597,-0.8456,45.6747,6.9204,28.6459,0.7675,False,0.0
 priest_holy_word_salvation_applications,count,per 100 ticks,0.0,3.1915,0.2395,-0.57,2.027,2.7027,2.1453,-0.3932,2.4221,2.0761,1.7938,1.589,False,0.0
@@ -310,5 +310,5 @@ agent_0_trap_break_contributions,count,per 100 ticks,0.0,nan,0.9287,-0.9882,0.67
 agent_0_trap_break_participation,fraction,as is,0.0,nan,0.4298,-1.0409,0.4,nan,0.2745,0.6939,0.1667,nan,0.4642,-1.2993,False,0.0
 agent_0_trap_breaks,count,per 100 ticks,0.0,nan,0.3556,-0.6529,1.0135,nan,1.2431,-0.4306,1.0381,nan,0.7507,0.5705,False,0.0
 agent_0_trap_break_rate,fraction,as is,nan,nan,0.8571,nan,0.6,nan,0.6387,-0.1511,1.0,nan,0.4936,1.7228,False,0.0
-agent_0_trap_mean_remaining_steps_at_break,steps,per 100 ticks,nan,nan,3.3687,nan,0.9009,nan,0.8472,0.2887,1.0381,nan,0.8447,0.8805,False,0.0
+agent_0_trap_mean_remaining_steps_at_break,steps,as is,nan,nan,2.8333,nan,2.6667,nan,2.4,0.5659,3.0,nan,2.3676,1.1791,False,0.0
 agent_0_healing_prevented_by_poison,health,per 100 ticks,0.0,nan,0.0,nan,0.0,nan,9.2632,-0.459,34.6021,nan,14.0668,1.1647,False,0.0

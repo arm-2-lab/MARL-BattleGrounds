@@ -20,6 +20,13 @@ Recurrent IPPO in the same games,warrior_aura_coverage,0.4165,nan,0.3603,0.3763,
 "Recurrent IPPO, its wins on the same maps",healing_share,0.3473,0.3189,0.1359,0.0811,0.1169
 "Recurrent IPPO, its wins on the same maps",mage_aura_coverage,nan,0.5164,0.6382,0.4534,0.5862
 "Recurrent IPPO, its wins on the same maps",warrior_aura_coverage,0.5164,nan,0.4506,0.352,0.3062
+"Recurrent IPPO, its wins by 12 or more on the same maps",deaths,0.5802,0.7765,0.4437,1.2073,0.0896
+"Recurrent IPPO, its wins by 12 or more on the same maps",damage_received,369.3405,476.9922,180.6768,271.6997,87.7045
+"Recurrent IPPO, its wins by 12 or more on the same maps",freedom_share,0.4007,0.1234,0.2164,0.143,0.1165
+"Recurrent IPPO, its wins by 12 or more on the same maps",kills_by_victim,0.2309,0.2318,0.1224,0.3268,0.0881
+"Recurrent IPPO, its wins by 12 or more on the same maps",healing_share,0.3656,0.3208,0.1368,0.0963,0.0805
+"Recurrent IPPO, its wins by 12 or more on the same maps",mage_aura_coverage,nan,0.5502,0.6633,0.4672,0.6029
+"Recurrent IPPO, its wins by 12 or more on the same maps",warrior_aura_coverage,0.5502,nan,0.4771,0.3821,0.3137
 Person beside Recurrent IPPO,deaths,1.3255,1.4728,0.5891,1.7673,0.1473
 Person beside Recurrent IPPO,damage_received,303.199,649.0452,210.6644,395.2732,97.9814
 Person beside Recurrent IPPO,freedom_share,0.2431,0.1498,0.2752,0.2003,0.1315
