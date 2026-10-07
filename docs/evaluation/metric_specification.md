@@ -674,7 +674,8 @@ can limit positioning, and more casts can give only excess healing.
 [The column data dictionary](metric_columns.csv) lists all **11,222 full-table
 columns**: 30 identity columns followed by 11,192 numerical measurements. Priority
 tables have **46 columns**. The dictionary includes meaning, units, scope,
-subjects, subject/recipient roles, numerators, denominators, missingness, priority/full
+subjects, subject/recipient roles, numerators, denominators, summary weights,
+missingness, priority/full
 membership, GUI labels, relevant views, family and defensible direction.
 `gui_text_by_topic` contains the row and tooltip wording used in named Ultimate
 tables. Only those five topics may replace a label or the words explaining a
@@ -690,6 +691,30 @@ team-to-recipient scope uses a Core team ID followed by the recipient's global
 slot, source/recipient scope orders source before recipient, and ally pairs are
 unordered pairs written with the lower slot first. Class IDs remain recorded row
 metadata. The same exporter generates and checks the manuscript family counts.
+
+**Comparing Systems from their own side.** `mirror_metric(name)` names the
+column that holds the same measurement for the other team: teams 1 and 2
+exchange, agent slot `i` becomes `(i + 5) % 10` in every role, and
+`score_difference` keeps its name but changes sign. Every one of the 11,192
+columns has such a twin. `system_metrics` uses it to show every System as
+Team A ([workflows guide](workflows.md#compare-every-systems-metrics)).
+
+**Combining games.** Each column's `summary_weight` (a column of the
+dictionary) names the column whose per-game value says how much a game counts
+when games are combined: a fraction's denominator (`team_a_kills` for
+`team_a_multi_contributor_kill_fraction`) or an average's count of
+observations (`team_a_ally_distance_observations` for
+`team_a_ally_distance_mean`). Combined values are then total numerator divided
+by total denominator. Blank means each game counts equally. Five averages keep
+the plain mean per game. Four have a denominator that is not saved as its own
+column: team-level Burst damage share (all damage by a team's Mages),
+team-level observed respawn wait (the number of waits, including unfinished
+ones), and pairwise Mage and Warrior aura coverage (ticks when both agents
+were alive without spawn shields). The fifth, each agent's kills per death,
+has its deaths saved, but it is blank in games without a death, so weighting
+by deaths would drop those games' kills; use `ratios=` with
+`kill_contributions` and `deaths`. `SUMMARY_WEIGHT_MISSING` in the catalog
+keeps these reasons.
 
 ### Selection and cost boundary
 
@@ -1583,7 +1608,9 @@ New tournament summaries record sampling facts separately from the raw game
 count. `independent_blocks` keeps its original declared paired-group count;
 `declared_blocks` reports the same count. `supported_independent_sampling_units`
 is separate and may be zero or unknown. Unknown sampling keeps calculated ranges
-in the ordinary confidence columns, labelled **Conditional: Sampling not verified**.
+in the ordinary confidence columns, labeled **Conditional: Sampling not verified**;
+`point_margin_summary` and `system_metrics` follow the same rule and state the
+assumption in `conditional_interval_assumption`.
 These ranges assume independent groups; they do not prove independence. Known
 determinism, too few groups, lack of variation and failed fits keep their existing
 safeguards. Saved historical summaries keep their original meaning. The

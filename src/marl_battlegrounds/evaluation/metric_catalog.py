@@ -9,12 +9,16 @@ Schema versions protect names/order; presentation reuses existing values.
 FULL_METRIC_NAMES_BY_SCHEMA_VERSION owns the saved full-column order of every
 readable current-format scalar schema (14 before the Red Zone columns, 15
 now), so readers never apply new offsets to old files.
+The catalog also owns two comparison rules: ``mirror_metric`` names each
+column's twin for the other team, and ``MetricColumn.summary_weight`` names the
+column that weights each game when games are combined (filled once at import;
+``SUMMARY_WEIGHT_MISSING`` lists averages whose denominator is not saved).
 """
 
 import re
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from types import MappingProxyType
 from typing import Literal, cast
@@ -436,6 +440,14 @@ class MetricColumn:
         Meaning of its counted amount, default None.
     requires_basic_target : bool
         Require the Basic target relationship, default False.
+    summary_weight : str | None
+        Exact name of the column whose per-game value says how much each game
+        counts when games are combined, or None, the default, when each game
+        counts equally. Fractions and rates name their denominator column
+        (``team_a_kills`` for ``team_a_multi_contributor_kill_fraction``) and
+        averages name their count of observations, so a combined value is
+        total numerator divided by total denominator. The catalog builder
+        fills it in; an average whose denominator is not saved keeps None.
 
     Notes
     -----
@@ -462,6 +474,7 @@ class MetricColumn:
     denominator: str | None = None
     numerator: str | None = None
     requires_basic_target: bool = False
+    summary_weight: str | None = None
 
 
 def metric_guidance(
@@ -5130,7 +5143,178 @@ def _build_columns() -> tuple[MetricColumn, ...]:
     return tuple(columns)
 
 
-_columns = _build_columns()
+# How games combine for averages that the directed table does not describe:
+# (scope, stem) -> (where, weight stem). "same" names the weight with the
+# column's own subjects; "team" uses the team of an agent column's agent, as in
+# agent_7_death_fraction -> team_b_deaths.
+_TEAM_KILL_FRACTIONS = (
+    "single_contributor_kill_fraction",
+    "multi_contributor_kill_fraction",
+    "basic_kill_fraction",
+    "ultimate_kill_fraction",
+    *(f"{name}_basic_kill_fraction" for name in ULTIMATE_CLASS_NAMES),
+    *(f"{name}_ultimate_kill_fraction" for name in ULTIMATE_CLASS_NAMES[1:]),
+)
+_HEALING_GIVEN_FRACTIONS = {
+    f"{kind}{prefix}_healing_fraction": f"{kind}healing_done"
+    for kind in ("", "basic_", "ultimate_")
+    for prefix in ("effective", "excess")
+}
+_SUMMARY_WEIGHT_RULES: Mapping[tuple[MetricScope, str], tuple[str, str]] = (
+    MappingProxyType(
+        {
+            **{
+                (scope, stem): ("same", weight)
+                for scope in ("team", "agent", "source_recipient")
+                for stem, weight in _HEALING_GIVEN_FRACTIONS.items()
+            },
+            **{
+                (scope, stem): ("same", weight)
+                for scope in ("team", "agent")
+                for stem, weight in (
+                    ("action_acceptance_rate", "actions_submitted"),
+                    ("priest_healing_received_fraction", "healing_received"),
+                    ("regeneration_healing_received_fraction", "healing_received"),
+                    (
+                        "effective_priest_healing_received_fraction",
+                        "priest_healing_received",
+                    ),
+                    (
+                        "excess_priest_healing_received_fraction",
+                        "priest_healing_received",
+                    ),
+                    ("mage_aura_coverage", "mage_aura_eligible_steps"),
+                    ("warrior_aura_coverage", "warrior_aura_eligible_steps"),
+                    ("freedom_protection_fraction", "freedom_eligible_steps"),
+                    ("trap_break_rate", "trap_intervals"),
+                    ("trap_mean_remaining_steps_at_break", "trap_breaks"),
+                )
+            },
+            **{("team", stem): ("same", "kills") for stem in _TEAM_KILL_FRACTIONS},
+            ("team", "rescue_rate"): ("same", "rescue_opportunities"),
+            ("team", "basic_rescue_fraction"): ("same", "rescues"),
+            ("team", "ultimate_rescue_fraction"): ("same", "rescues"),
+            ("team", "mean_agents_per_respawn_wave"): ("same", "respawn_waves"),
+            ("team", "focus_fire_concentration"): ("same", "focus_fire_steps"),
+            ("team", "ally_distance_mean"): ("same", "ally_distance_observations"),
+            ("ally_pair", "ally_distance_mean"): (
+                "same",
+                "ally_distance_observations",
+            ),
+            ("agent", "solo_kill_fraction"): ("same", "kill_contributions"),
+            # These shares divide by all of the team's kills or rescues, not
+            # the Basic-only or Ultimate-only total the directed table names.
+            ("agent", "basic_kill_participation"): ("team", "kills"),
+            ("agent", "ultimate_kill_participation"): ("team", "kills"),
+            ("agent", "basic_rescue_participation"): ("team", "rescues"),
+            ("agent", "ultimate_rescue_participation"): ("team", "rescues"),
+            ("agent", "burst_damage_fraction"): ("same", "damage_done"),
+            ("agent", "damage_received_fraction"): ("team", "damage_received"),
+            ("agent", "healing_received_fraction"): ("team", "healing_received"),
+            ("agent", "death_fraction"): ("team", "deaths"),
+            ("agent", "dead_step_fraction"): ("team", "dead_steps"),
+            ("agent", "red_zone_kill_participation"): ("team", "red_zone_kills"),
+            ("agent", "red_zone_death_fraction"): ("team", "red_zone_deaths"),
+        }
+    )
+)
+
+# Averages whose denominator is not saved as its own column. Summaries take
+# their plain mean per game, and the reason says why.
+SUMMARY_WEIGHT_MISSING: Mapping[tuple[MetricScope, str], str] = MappingProxyType(
+    {
+        ("team", "burst_damage_fraction"): (
+            "All damage dealt by a team's Mages is not saved as its own column"
+        ),
+        ("team", "mean_observed_respawn_wait_steps"): (
+            "The number of observed waits, which includes unfinished waits and "
+            "agents already dead at the start, is not saved"
+        ),
+        ("agent", "kill_contributions_per_death"): (
+            "It is blank in games without a death, so weighting by deaths would "
+            "drop those games' kills; combine kill_contributions and deaths with "
+            "ratios= instead"
+        ),
+        ("source_recipient", "mage_aura_coverage"): (
+            "Ticks when both agents were alive without spawn shields are not saved"
+        ),
+        ("source_recipient", "warrior_aura_coverage"): (
+            "Ticks when both agents were alive without spawn shields are not saved"
+        ),
+    }
+)
+
+
+def _team_letter(slot: int) -> str:
+    """Return the team prefix letter of a global agent slot: a for 0-4, b for 5-9."""
+    return "a" if slot < 5 else "b"
+
+
+def _with_summary_weights(
+    columns: tuple[MetricColumn, ...],
+) -> tuple[MetricColumn, ...]:
+    """Fill every column's summary_weight from the directed table and the rules.
+
+    Directed fractions take their weight from the measurement's own totals: an
+    allocation from the source's total, a contribution from the recipient's
+    total (or, for an agent's share of its team, the team's total). Other
+    averages use _SUMMARY_WEIGHT_RULES. Raises ValueError when a column with
+    denominator text has no rule and is not in SUMMARY_WEIGHT_MISSING, when a
+    stem belongs to two directed measurements, or when a weight column does
+    not exist. Host-only, once at import.
+    """
+    names = {column.name for column in columns}
+    directed: dict[str, list[tuple[str, DirectedMetric]]] = {}
+    for metric in DIRECTED_METRICS:
+        for kind, stem in (
+            ("allocation", metric.allocation),
+            ("contribution", metric.contribution),
+        ):
+            if stem is not None:
+                directed.setdefault(stem, []).append((kind, metric))
+    result: list[MetricColumn] = []
+    for column in columns:
+        key = (column.scope, column.stem)
+        weight: str | None = None
+        if key in SUMMARY_WEIGHT_MISSING:
+            pass
+        elif key in _SUMMARY_WEIGHT_RULES:
+            where, stem = _SUMMARY_WEIGHT_RULES[key]
+            weight = (
+                f"team_{_team_letter(column.subjects[0])}_{stem}"
+                if where == "team"
+                else _prefix(column.scope, column.subjects) + stem
+            )
+        elif column.stem in directed and column.scope in ("agent", "source_recipient"):
+            links = directed[column.stem]
+            if len(links) != 1:
+                raise ValueError(f"Two directed measurements share {column.stem}")
+            kind, metric = links[0]
+            source = column.subjects[0]
+            if column.scope == "agent":
+                weight = f"team_{_team_letter(source)}_{metric.team_total}"
+            elif kind == "allocation":
+                weight = f"agent_{source}_{metric.source_total}"
+            elif metric.recipient_scope == "agent":
+                weight = f"agent_{column.subjects[1]}_{metric.recipient_total}"
+            else:
+                weight = (
+                    f"team_{_team_letter(source)}_to_agent_{column.subjects[1]}_"
+                    f"{metric.recipient_total}"
+                )
+        elif column.denominator is not None:
+            raise ValueError(f"No summary weight rule for {column.name}")
+        if weight is not None and weight not in names:
+            raise ValueError(
+                f"Summary weight {weight} of {column.name} is not a column"
+            )
+        result.append(
+            column if weight is None else replace(column, summary_weight=weight)
+        )
+    return tuple(result)
+
+
+_columns = _with_summary_weights(_build_columns())
 _MEASURE_ORDER = _measure_order(list(_columns))
 PRIORITY_METRIC_COLUMNS = tuple(column for column in _columns if column.priority)
 METRIC_COLUMNS = PRIORITY_METRIC_COLUMNS + tuple(
@@ -5157,6 +5341,68 @@ METRIC_COLUMNS_BY_NAME = MappingProxyType(
 FAMILY_COLUMN_COUNTS = MappingProxyType(
     Counter(column.family for column in METRIC_COLUMNS)
 )
+
+# Columns whose value changes sign, not name, when Team A and Team B exchange.
+_SIGN_CHANGING_METRICS = frozenset({"score_difference"})
+
+
+@cache
+def _mirror_table() -> Mapping[str, tuple[str, int]]:
+    """Build every column's mirrored twin once, from its scope and subjects."""
+    table: dict[str, tuple[str, int]] = {}
+    for column in METRIC_COLUMNS:
+        if column.scope == "team":
+            subjects: tuple[int, ...] = (3 - column.subjects[0],)
+        elif column.scope == "team_recipient":
+            team, recipient = column.subjects
+            subjects = (3 - team, (recipient + 5) % 10)
+        else:
+            subjects = tuple((slot + 5) % 10 for slot in column.subjects)
+        twin = _prefix(column.scope, subjects) + column.stem
+        if twin not in METRIC_COLUMNS_BY_NAME:
+            raise ValueError(f"{column.name} has no mirrored column {twin}")
+        sign = -1 if column.name in _SIGN_CHANGING_METRICS else 1
+        table[column.name] = (twin, sign)
+    return MappingProxyType(table)
+
+
+def mirror_metric(name: str) -> tuple[str, int]:
+    """Name the column that holds the same measurement for the other team.
+
+    Exchanging Team A and Team B maps team 1 to team 2 and agent slot ``i`` to
+    ``(i + 5) % 10`` in every role: source, recipient and ally pair. For
+    example, ``team_b_kills`` is the twin of ``team_a_kills``, and
+    ``agent_7_to_agent_2_damage_done`` is the twin of
+    ``agent_2_to_agent_7_damage_done``. ``episode_length`` is its own twin, and
+    ``score_difference`` is its own twin with its sign changed.
+
+    Parameters
+    ----------
+    name : str
+        Exact metric column name from ``METRIC_COLUMNS``. Identity columns such
+        as ``team_a_policy`` are not metrics.
+
+    Returns
+    -------
+    tuple[str, int]
+        The twin's exact name, and 1, or -1 when the value must change sign.
+        Mirroring the twin returns the original name.
+
+    Raises
+    ------
+    ValueError
+        name is not a metric column.
+
+    Notes
+    -----
+    Host-only lookup in a table built once on first use. The rule follows the
+    recorded scope and subjects, so it holds for every roster.
+    ``system_metrics`` uses it to show each System as Team A.
+    """
+    try:
+        return _mirror_table()[name]
+    except KeyError:
+        raise ValueError(f"Unknown metric column: {name!r}") from None
 
 
 # Search phrases name the measurements below; they do not change their meaning.

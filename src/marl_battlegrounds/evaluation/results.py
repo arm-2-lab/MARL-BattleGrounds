@@ -4,6 +4,19 @@ Results keep the older convenience fields and add bounded NumPy table access.
 Saved views use one committed manifest snapshot. They never recover a writer,
 load JAX, reconstruct optional measurements or fit tournament ratings.
 Head-to-head views count saved outcomes and points; their matrix is a plain pivot.
+``system_metrics`` shows every System's metric columns from its own side (each
+System as Team A, through ``metric_catalog.mirror_metric``), combines games by
+each column's ``summary_weight`` and resamples whole spawn pairs for intervals.
+``execution_settings`` reports whether deterministic GPU mode was declared.
+``table("policy_assignments")`` and the member columns of
+``system_metrics(by="game")`` say which member of a pool or team played each
+slot of each saved game (``_member_labels``, ``_game_members``).
+Shared private helpers own the side of each game (``_directions``), each
+scheduled game's sampling facts (``_game_plan``, ``_plan_record``), and the draw
+order and interval rule that ``point_margin_summary`` and ``system_metrics``
+share (``_bootstrap_indices``, ``_interval_rule``: unknown sampling alone keeps
+the range, labeled "Conditional: Sampling not verified", the label Elo rankings
+give unknown sampling).
 Whole-table allocation is explicit through ``table``; ``iter_table`` bounds raw
 row batches.
 Each saved run reads with the full-report header of its own recorded scalar
@@ -15,9 +28,10 @@ from __future__ import annotations
 import csv
 import json
 import math
-from collections import defaultdict
-from collections.abc import Iterator, Mapping, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from operator import itemgetter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -27,16 +41,25 @@ from numpy.typing import NDArray
 from marl_battlegrounds.evaluation.metric_catalog import (
     FULL_METRIC_NAMES,
     FULL_METRIC_NAMES_BY_SCHEMA_VERSION,
+    METRIC_COLUMNS_BY_NAME,
     METRIC_SCHEMA_ID,
     METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
+    mirror_metric,
 )
 from marl_battlegrounds.evaluation.run_writer import (
+    ASSIGNMENT_COLUMNS,
     EPISODE_COLUMNS,
     IDENTITY_COLUMNS,
     MATCH_COLUMNS,
 )
+from marl_battlegrounds.evaluation.sampling_evidence import (
+    CONDITIONAL_INTERVAL_ASSUMPTION,
+    CONDITIONAL_INTERVAL_STATUS,
+)
 from marl_battlegrounds.evaluation.scalar_reports import (
+    has_members,
+    iter_policy_assignments,
     iter_scalar_rows,
     iter_summary_rows,
 )
@@ -57,8 +80,25 @@ _TABLES = (
     "matchup_results",
     "map_results",
     "tournament_headline_metrics",
+    "policy_assignments",
 )
-_SUMMARIES = frozenset(_TABLES[4:])
+_SUMMARIES = frozenset(
+    {
+        "tournament_results",
+        "tournament_rankings",
+        "matchup_results",
+        "map_results",
+        "tournament_headline_metrics",
+    }
+)
+# Member columns that system_metrics(by="game") adds, from the System's side.
+_MEMBER_COLUMNS = (
+    *(f"agent_{slot}_member" for slot in range(10)),
+    "member",
+    "opponent_member",
+)
+_IN_MEMORY_MEMBERS = "Members are recorded in saved runs; pass output_dir"
+_NO_MEMBERS = "No System in this scope has members"
 _FILES = {name: f"{name}.csv" for name in _TABLES if name != "tournament_rankings"}
 _FILES["matches"] = "match_results.csv"
 _TEXT = frozenset(
@@ -76,16 +116,23 @@ _TEXT = frozenset(
         "opponent_id",
         "opponent_name",
         "spawn_end",
+        "played_as",
         "policy",
         "opponent",
         "determinism",
         "conditional_interval_assumption",
         "sampling_unit",
         "unavailable_reason",
+        "team",
+        *_MEMBER_COLUMNS,
     }
 )
 _INTS = frozenset(
     {
+        "global_slot",
+        "policy_id",
+        "decision_start",
+        "decision_stop",
         "episode_id",
         "seed_id",
         "map_id",
@@ -122,11 +169,12 @@ _INTS = frozenset(
 )
 _EXACT = frozenset({"episode_length", "team_a_score", "team_b_score"})
 _NULLABLE = frozenset({"seed_id", "map_id", "pass_id", "block_id", "rank"})
-_HEADERS = {
+_HEADERS: dict[str, tuple[str, ...]] = {
     "episodes.csv": EPISODE_COLUMNS,
     "priority_metrics.csv": (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES),
     "full_metrics.csv": (*IDENTITY_COLUMNS, *FULL_METRIC_NAMES),
     "match_results.csv": MATCH_COLUMNS,
+    "policy_assignments.csv": ASSIGNMENT_COLUMNS,
 }
 _CELL_TYPES = {
     "text": ("text", "None when absent"),
@@ -431,6 +479,299 @@ def _row_arrays(columns: Columns, order: Sequence[int] | None = None) -> Iterato
         }
 
 
+def _pass_facts(entry: Row, pass_complete: bool) -> Row:
+    """Read one pass's random root and sampling facts for its scheduled games.
+
+    Returns pass_complete (as given), root_seed, root_known (a uint32 root with
+    a supported protocol) and sampling: stochastic, deterministic or unknown,
+    combined from both teams' recorded method facts.
+    """
+    from marl_battlegrounds.evaluation.sampling_evidence import (
+        combine_sampling_facts,
+    )
+
+    details = _mapping(entry.get("details"))
+    root_seed = details.get("seed")
+    facts = _mapping(details.get("method_sampling"))
+    sampling = combine_sampling_facts(
+        [facts[team] for team in ("team_a", "team_b")]
+        if all(isinstance(facts.get(team), Mapping) for team in ("team_a", "team_b"))
+        else []
+    )
+    return {
+        "pass_complete": pass_complete,
+        "root_seed": root_seed,
+        "root_known": type(root_seed) is int
+        and 0 <= root_seed < 2**32
+        and details.get("rng_protocol")
+        in ("episode-fold-in-v1", "evaluation-systems-v1"),
+        "sampling": sampling["determinism"],
+    }
+
+
+def _interval_rule(reasons: Sequence[str]) -> tuple[bool, str, str | None, str | None]:
+    """Decide whether a summary row shows its ranges, and how it labels them.
+
+    One rule for ``point_margin_summary`` and ``system_metrics``. Elo rankings
+    give unknown sampling the same label, but their
+    ``conditional_interval_assumption`` describes their separate
+    ``conditional_*`` columns; here it describes the row's own bounds. reasons
+    are the row's de-duplicated problems, in order.
+
+    Parameters
+    ----------
+    reasons : sequence of str
+        Every reason the row's ranges could be wrong, such as "Sampling
+        mechanism unknown" or "Requested games are incomplete". Empty means
+        nothing is wrong.
+
+    Returns
+    -------
+    tuple of (bool, str, str or None, str or None)
+        (compute, interval_status, unavailable_reason, assumption):
+
+        - No reasons: (True, "Available", None, None).
+        - Only "Sampling mechanism unknown" (for example, a researcher's own
+          System): the ranges are still calculated and shown, labeled
+          "Conditional: Sampling not verified", with the assumption "Assumes
+          declared game groups are independent; sampling is not verified".
+          The reason is None, because nothing is withheld.
+        - Anything else, alone or beside unknown sampling: (False,
+          "Unavailable", every reason joined with "; ", None). The ranges are
+          withheld; a conditional label never makes them valid.
+    """
+    if not reasons:
+        return True, "Available", None, None
+    if list(reasons) == ["Sampling mechanism unknown"]:
+        return (
+            True,
+            CONDITIONAL_INTERVAL_STATUS,
+            None,
+            CONDITIONAL_INTERVAL_ASSUMPTION,
+        )
+    return False, "Unavailable", "; ".join(reasons), None
+
+
+def _plan_record(
+    origin: tuple[str, str, str, str],
+    facts: Row,
+    declared: Mapping[str, Any],
+    row: Row | None,
+    context: tuple[str, str, str, str, object],
+) -> Row:
+    """Describe one scheduled game for summaries that resample its pair.
+
+    origin is the game's full ownership (run ID, phase, pass ID, episode ID as
+    text); facts come from _pass_facts; declared is its schedule declaration;
+    row is its completed outcome row or None; context is (Team A ID, Team B ID,
+    their names, spawn choice). The record keeps those values plus map_id,
+    config_id, cell (map and configuration as one key), map_key, pair (the
+    full-origin verified spawn-pair key, or None), unit (that pair, or its
+    declared bootstrap block) and seed (root seed and seed ID).
+    """
+    a, b, name_a, name_b, spawn = context
+    map_id = declared.get("map_id")
+    config_id = (
+        declared.get("source_config_id")
+        or declared.get("configuration_digest")
+        or declared.get("config_id")
+    )
+    pair = declared.get("paired_comparison_key", declared.get("comparison_key"))
+    pair_key = (
+        (*origin[:3], str(pair))
+        if declared.get("comparison_kind") == "verified_spawn_pair" and pair is not None
+        else None
+    )
+    block = declared.get("bootstrap_group")
+    return {
+        "origin": origin,
+        "row": row,
+        "a": a,
+        "b": b,
+        "name_a": name_a,
+        "name_b": name_b,
+        "spawn": spawn,
+        "map_id": map_id,
+        "config_id": config_id,
+        "cell": json.dumps([map_id, config_id], separators=(",", ":")),
+        "map_key": f"map:{map_id}" if map_id is not None else f"config:{config_id}",
+        "pass_complete": facts["pass_complete"],
+        "root_known": facts["root_known"],
+        "sampling": facts["sampling"],
+        "pair": pair_key,
+        "unit": None
+        if pair_key is None
+        else ("pair", *pair_key)
+        if block is None
+        else ("block", str(block)),
+        "seed": (facts["root_seed"], declared.get("seed_id")),
+    }
+
+
+def _bootstrap_indices(
+    sizes: Sequence[int], draws: int, seed: int
+) -> list[list[NDArray[np.int64]]]:
+    """Draw resampled unit positions for each stratum, in chunks of 64 draws.
+
+    sizes gives each stratum's unit count, in the caller's sorted stratum order.
+    One private NumPy generator seeded with seed draws, stratum by stratum and
+    chunk by chunk, an int64 (chunk, units) array of positions with
+    replacement. point_margin_summary and system_metrics share this order, so
+    the same seed gives them the same draws.
+    """
+    random = np.random.default_rng(seed)
+    return [
+        [
+            random.integers(size, size=(min(64, draws - start), size))
+            for start in range(0, draws, 64)
+        ]
+        for size in sizes
+    ]
+
+
+def _directions(
+    a: str, b: str, name_a: str, name_b: str, spawn: object
+) -> tuple[tuple[str, str, str, str, str, str | None], ...]:
+    """Give each recorded System's own view of one game.
+
+    Returns (System ID, opponent ID, System name, opponent name, played_as,
+    spawn_end) for recorded Team A first, then Team B; a System that played
+    itself appears once, as Team A. played_as is "team_a" or "team_b".
+    spawn_end names the map's original spawn bank the System started from
+    ("team_a" or "team_b"), or None when the game's spawn choice was not saved.
+    """
+    known = type(spawn) is int and spawn in (0, 1)
+    views: list[tuple[str, str, str, str, str, str | None]] = []
+    for reverse in (False, True) if a != b else (False,):
+        end = ("team_b" if bool(spawn) != reverse else "team_a") if known else None
+        views.append(
+            (b, a, name_b, name_a, "team_b", end)
+            if reverse
+            else (a, b, name_a, name_b, "team_a", end)
+        )
+    return tuple(views)
+
+
+def _member_labels(registration: Mapping[str, Any]) -> list[str] | None:
+    """Give each policy ID of a System with members a readable member label.
+
+    registration is the System's saved record, with its ``components`` list.
+    A component's label is its name when no other component of the System
+    shares it, else "name #<policy_id>" (two checkpoints of one run share a
+    name). Returns None when the System has fewer than two components
+    (``scalar_reports.has_members``).
+    """
+    components = registration.get("components")
+    if not isinstance(components, list):
+        return None
+    items = cast(list[object], components)
+    if not has_members(len(items)):
+        return None
+    names = [str(_mapping(item).get("name", "")) for item in items]
+    counts = Counter(names)
+    return [
+        name if counts[name] == 1 else f"{name} #{index}"
+        for index, name in enumerate(names)
+    ]
+
+
+def _side_member(labels: Sequence[str | None], active: Sequence[object]) -> str | None:
+    """Join one team's distinct member labels in slot order, or give None.
+
+    labels and active hold the team's five slots from its own side. None when a
+    slot is active without a label (its member was not recorded for the whole
+    game, or its System has no members; ``_game_members`` labels only Systems
+    with members) or no slot is active.
+    """
+    present = [label for label, alive in zip(labels, active, strict=True) if alive]
+    if not present or any(label is None for label in present):
+        return None
+    return " / ".join(dict.fromkeys(cast(list[str], present)))
+
+
+# Fact columns of a system_metrics summary row; ratios= names may not reuse them.
+_SYSTEM_FACT_COLUMNS = frozenset(
+    {
+        "system_id",
+        "system_name",
+        "opponent_id",
+        "opponent_name",
+        "map_id",
+        "config_id",
+        "played_as",
+        "spawn_end",
+        "games",
+        "scheduled_games",
+        "completed_pairs",
+        "elo",
+        "elo_ci_low",
+        "elo_ci_high",
+        "rank",
+        "confidence",
+        "independent_units",
+        "interval_status",
+        "unavailable_reason",
+        "conditional_interval_assumption",
+        "sampling_unit",
+        "bootstrap_draws",
+        "bootstrap_seed",
+        *(f"agent_{slot}_class_id" for slot in range(10)),
+        *_MEMBER_COLUMNS,
+    }
+)
+# Identity columns that exchange their team when a game is read from Team B.
+_IDENTITY_TWINS = {
+    "team_a_policy": "team_b_policy",
+    "team_b_policy": "team_a_policy",
+    **{
+        f"agent_{slot}_{suffix}": f"agent_{(slot + 5) % 10}_{suffix}"
+        for slot in range(10)
+        for suffix in ("class_id", "active")
+    },
+}
+# Columns per batch when combining games; bounds the float64 working arrays.
+_COLUMN_BATCH = 1024
+
+
+def _metric_slots(name: str) -> tuple[int, ...]:
+    """Return the global agent slots a metric column describes, if any.
+
+    name must be a catalog column. Agent, source-to-recipient and ally-pair
+    columns give their subject slots (0-9); a team-to-recipient column gives its
+    recipient slots; team-level and game-level columns give (). Callers use the
+    slots to blank a column when a slot's class differs between games.
+    """
+    column = METRIC_COLUMNS_BY_NAME[name]
+    if column.scope in ("agent", "source_recipient", "ally_pair"):
+        return column.subjects
+    if column.scope == "team_recipient":
+        return column.subjects[1:]
+    return ()
+
+
+def _unit_counts(
+    chunks: Sequence[NDArray[np.int64]], units: int
+) -> NDArray[np.float64]:
+    """Turn one stratum's drawn positions into (draws, units) draw counts.
+
+    chunks are _bootstrap_indices' int64 (chunk, units) position arrays for
+    this stratum, in draw order; units is the stratum's unit count. Returns a
+    float64 (total draws, units) array whose cell says how often that draw
+    picked that unit, so a matrix product with per-unit sums gives every draw's
+    totals at once.
+    """
+    rows: list[NDArray[np.float64]] = []
+    for chosen in chunks:
+        size = len(chosen)
+        flat = np.arange(size)[:, None] * units + chosen
+        rows.append(
+            np.bincount(flat.ravel(), minlength=size * units)
+            .reshape(size, units)
+            .astype(np.float64)
+        )
+    return np.concatenate(rows)
+
+
 class _View:
     """Keep one manifest scope and bounded row sources for a result object.
 
@@ -618,7 +959,17 @@ class _View:
             present |= self._present("match_results.csv") and any(
                 entry["phase"] == "tournament" for entry in self.selected.values()
             )
-        if summary and not self.whole_tournament:
+        members = self._member_systems() if name == "policy_assignments" else {}
+        if name == "policy_assignments":
+            if self.run_dir is None:
+                availability, reason = (
+                    ("unavailable", _IN_MEMORY_MEMBERS)
+                    if members
+                    else ("disabled", _NO_MEMBERS)
+                )
+            elif not present and not members:
+                availability, reason = "disabled", _NO_MEMBERS
+        elif summary and not self.whole_tournament:
             availability, reason = (
                 "unavailable",
                 "This scope does not contain the complete tournament population",
@@ -678,6 +1029,8 @@ class _View:
                 "This scope does not contain tournament games",
             )
         columns = self._header(filename)
+        if name == "policy_assignments":
+            columns = (*columns, "system_name", "member")
         if name == "episodes":
             columns = (*EPISODE_COLUMNS, "system_game_score")
         elif (
@@ -732,7 +1085,11 @@ class _View:
             missing_fields.append("system_game_score")
         if name == "tournament_rankings" and not self.manifest.get("systems"):
             missing_fields.append("system_id")
+        extra: Row = (
+            {"member_coverage": self._member_coverage(members)} if members else {}
+        )
         return {
+            **extra,
             "availability": availability,
             "reason": reason,
             "columns": columns,
@@ -753,6 +1110,106 @@ class _View:
                 and not entry.get("recorded_metrics_by_episode")
                 and _mapping(entry.get("details")).get("metrics") is None
             ),
+        }
+
+    def _registration(self, row: Mapping[str, Any]) -> Row:
+        """Return the saved System record that owns one assignment row."""
+        systems = _mapping(self.manifest.get("systems"))
+        return _mapping(systems.get(str(row["system_id"])))
+
+    def _member_systems(self) -> dict[str, Row]:
+        """Map each System with members in this scope to its saved record.
+
+        Reads only the manifest. Returns {} at once, without visiting games,
+        when no registered System has members.
+        """
+        systems = _mapping(self.manifest.get("systems"))
+        labels = {
+            str(system): _mapping(registration)
+            for system, registration in systems.items()
+            if _member_labels(_mapping(registration)) is not None
+        }
+        if not labels:
+            return {}
+        used: set[str] = set()
+        for entry in self.selected.values():
+            used.update(map(str, _mapping(entry.get("system_ids")).values()))
+            for declaration in _mapping(entry.get("episodes")).values():
+                owners = _mapping(_mapping(declaration).get("system_ids"))
+                used.update(map(str, owners.values()))
+        return {system: value for system, value in labels.items() if system in used}
+
+    def _member_coverage(self, members: Mapping[str, Row]) -> Row:
+        """Count each member System's completed games with and without members.
+
+        A completed game is recorded when its pass lists it in
+        ``trace_epochs``, as summary and per-decision rows both do. Returns
+        {System ID: {"system_name": name, "recorded": n, "not_recorded": m}}
+        from the manifest only.
+        """
+        counts: dict[str, dict[str, Any]] = {
+            system: {
+                "system_name": registration.get("name"),
+                "recorded": 0,
+                "not_recorded": 0,
+            }
+            for system, registration in members.items()
+        }
+        for entry in self.selected.values():
+            epochs = _mapping(entry.get("trace_epochs"))
+            default = _mapping(entry.get("system_ids"))
+            declarations = _mapping(entry.get("episodes"))
+            for episode in entry.get("completed_episode_ids", ()):
+                owners = (
+                    _mapping(_mapping(declarations.get(str(episode))).get("system_ids"))
+                    or default
+                )
+                recorded = "recorded" if str(episode) in epochs else "not_recorded"
+                for system in set(map(str, owners.values())) & counts.keys():
+                    counts[system][recorded] += 1
+        return counts
+
+    def _game_members(self) -> dict[tuple[str, str, str, str], tuple[str | None, ...]]:
+        """Label each recorded game's ten slots with the member that played it.
+
+        Keys are (run ID, phase, pass ID, episode ID) as text. A slot has a label
+        only when its System has members and one row with a policy ID of 0 or
+        more covers the whole game, decisions 0 to its trace epoch; otherwise
+        None. Reads the assignment table once; {} when nothing applies.
+        """
+        members = self._member_systems()
+        description = self.metadata["tables"]["policy_assignments"]
+        if not members or description["availability"] != "available":
+            return {}
+        rows: dict[tuple[str, str, str, str], list[Row | None]] = {}
+        seen: set[tuple[tuple[str, str, str, str], int]] = set()
+        for row in self.iter_rows("policy_assignments", 1024):
+            system = str(row["system_id"])
+            key = (
+                str(row["run_id"]),
+                str(row["phase"]),
+                str(row["pass_id"]),
+                str(row["episode_id"]),
+            )
+            slot = int(row["global_slot"])
+            slots = rows.setdefault(key, [None] * 10)
+            if (key, slot) in seen:
+                # A second interval: the member did not cover the whole game.
+                slots[slot] = None
+                continue
+            seen.add((key, slot))
+            epoch = _mapping(self._entry(row).get("trace_epochs")).get(key[3])
+            if (
+                system in members
+                and int(row["policy_id"]) >= 0
+                and int(row["decision_start"]) == 0
+                and isinstance(epoch, int)
+                and int(row["decision_stop"]) == epoch + 1
+            ):
+                slots[slot] = row
+        return {
+            key: tuple(None if row is None else row["member"] for row in slots)
+            for key, slots in rows.items()
         }
 
     def _check_snapshot(self, filename: str) -> None:
@@ -802,19 +1259,25 @@ class _View:
             raise ValueError("selected tournament summary changed while reading")
         self._manifest_stamp = stamp
 
-    def _raw(self, filename: str, rows: int) -> Iterator[Row]:
-        """Stream scoped rows from an existing memory table or durable CSV prefix."""
+    def _raw(
+        self, filename: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Stream scoped rows from an existing memory table or durable CSV prefix.
+
+        columns keeps only those cells of a raw game table and skips converting
+        the rest; None keeps every cell. Summary tables ignore it.
+        """
         if not self._present(filename):
             return
         if self.run_dir is None:
             data = self.memory[filename.removesuffix(".csv")]
             if isinstance(data, dict):
                 order = None
-                columns = cast(Columns, data)
-                if "episode_id" in columns and "completion_order" in self.memory:
+                arrays = cast(Columns, data)
+                if "episode_id" in arrays and "completion_order" in self.memory:
                     indexes = {
                         int(value): index
-                        for index, value in enumerate(columns["episode_id"])
+                        for index, value in enumerate(arrays["episode_id"])
                     }
                     order = tuple(
                         indexes[value]
@@ -823,7 +1286,7 @@ class _View:
                         )
                         if value in indexes
                     )
-                iterator = _row_arrays(cast(Columns, data), order)
+                iterator = _row_arrays(arrays, order)
             else:
                 sequence = cast(Sequence[Row], data)
                 if filename in self._headers and "completion_order" in self.memory:
@@ -842,16 +1305,42 @@ class _View:
                     filename not in self._headers
                     or (row.get("phase"), row.get("pass_id")) in self.identities
                 ):
-                    yield dict(row)
+                    yield (
+                        dict(row)
+                        if columns is None or filename not in self._headers
+                        else {key: row[key] for key in row if key in columns}
+                    )
             return
         summary = filename not in self._headers
-        reader = iter_summary_rows if summary else iter_scalar_rows
-        for batch in reader(
-            self.run_dir / filename,
-            manifest=self.manifest,
-            expected_header=self._headers.get(filename),
-            batch_size=rows,
-        ):
+        if filename == "policy_assignments.csv":
+            for batch in iter_policy_assignments(
+                self.run_dir / filename,
+                manifest=self.manifest,
+                expected_header=ASSIGNMENT_COLUMNS,
+                batch_size=rows,
+            ):
+                self._check_snapshot(filename)
+                for row in batch:
+                    if (row.get("phase"), row.get("pass_id")) in self.identities:
+                        yield dict(row)
+            return
+        batches = (
+            iter_summary_rows(
+                self.run_dir / filename,
+                manifest=self.manifest,
+                expected_header=self._headers.get(filename),
+                batch_size=rows,
+            )
+            if summary
+            else iter_scalar_rows(
+                self.run_dir / filename,
+                manifest=self.manifest,
+                expected_header=self._headers.get(filename),
+                batch_size=rows,
+                columns=columns,
+            )
+        )
+        for batch in batches:
             self._check_snapshot(filename)
             for row in batch:
                 if summary or (row.get("phase"), row.get("pass_id")) in self.identities:
@@ -902,7 +1391,7 @@ class _View:
         a, b = ids.get("team_a"), ids.get("team_b")
         if not isinstance(a, str) or not a or not isinstance(b, str) or not b:
             raise ValueError(
-                "Head-to-head unavailable: original System IDs were not saved"
+                "Unavailable: these saved games lack their original System IDs"
             )
         declaration = _mapping(
             _mapping(entry.get("episodes")).get(str(row["episode_id"]))
@@ -928,145 +1417,125 @@ class _View:
                     )
         return names
 
+    def _game_plan(self) -> list[Row]:
+        """List every scheduled game in scope with its sides and sampling facts.
+
+        One dict per declared game, in schedule order (see _plan_record for the
+        fields). Completed outcomes come from one narrow read of the episodes
+        table. The canonical view overrides this with its logical schedule, so
+        reused games keep their original pass declarations.
+        """
+        completed = {
+            (row["phase"], row["pass_id"], str(row["episode_id"])): row
+            for row in self.iter_rows("episodes", 128)
+        }
+        run_id = str(self.manifest.get("run_id"))
+        plan: list[Row] = []
+        for entry in self.selected.values():
+            schedule = _mapping(entry.get("episodes"))
+            if not schedule:
+                continue
+            facts = _pass_facts(entry, _state(entry, self.manifest)[0] == "complete")
+            for identifier, raw in schedule.items():
+                row = completed.get((entry["phase"], entry["pass_id"], str(identifier)))
+                probe = row or {
+                    "phase": entry["phase"],
+                    "pass_id": entry["pass_id"],
+                    "episode_id": identifier,
+                }
+                plan.append(
+                    _plan_record(
+                        (run_id, entry["phase"], entry["pass_id"], str(identifier)),
+                        facts,
+                        _mapping(raw),
+                        row,
+                        self._match_context(probe),
+                    )
+                )
+        return plan
+
     def point_margin_summary(self, by: str, draws: int, seed: int) -> list[Row]:
         """Summarize Team A points using complete declared spawn-pair evidence.
 
         by, draws and seed are checked by the public accessor. Read narrow saved
         outcomes once and retain their narrow rows and per-game declarations.
         Exact identities group rows; the declared schedule keeps missing games
-        visible. Pair keys are pass-local; explicit larger block keys span passes
-        within this saved run. Unknown sampling or incomplete evidence keeps
-        descriptive means but withholds intervals. No model or file is changed.
+        visible. Pair keys carry each game's full origin (run, phase, pass and
+        pair), so reused canonical games never merge with local ones; explicit
+        larger block keys keep their declared scope. Incomplete evidence keeps
+        descriptive means but withholds intervals; unknown sampling alone keeps
+        them, labeled conditional (``_interval_rule``). Sampling is judged once
+        per row, as in ``system_metrics``: unknown wins, and "No random
+        sampling variation" applies only when no game is stochastic. No model
+        or file is changed.
         """
-        from marl_battlegrounds.evaluation.sampling_evidence import (
-            combine_sampling_facts,
-        )
-
-        completed = {
-            (row["phase"], row["pass_id"], str(row["episode_id"])): row
-            for row in self.iter_rows("episodes", 128)
-        }
         groups: dict[tuple[str, str, str | None], Row] = {}
-        for entry in self.selected.values():
-            schedule = _mapping(entry.get("episodes"))
-            if not schedule:
-                continue
-            details = _mapping(entry.get("details"))
-            pass_complete = _state(entry, self.manifest)[0] == "complete"
-            root_seed = details.get("seed")
-            root_known = (
-                type(root_seed) is int
-                and 0 <= root_seed < 2**32
-                and details.get("rng_protocol")
-                in ("episode-fold-in-v1", "evaluation-systems-v1")
+        for game in self._game_plan():
+            row = game["row"]
+            map_id, config_id = game["map_id"], game["config_id"]
+            key = (game["a"], game["b"], game["map_key"] if by == "map" else None)
+            group = groups.setdefault(
+                key,
+                {
+                    "system_id": game["a"],
+                    "opponent_id": game["b"],
+                    "system_name": game["name_a"],
+                    "opponent_name": game["name_b"],
+                    "map_id": map_id if by == "map" else None,
+                    "config_id": config_id if by == "map" and map_id is None else None,
+                    "scheduled_games": 0,
+                    "games": 0,
+                    "values": [],
+                    "pairs": {},
+                    "reasons": [],
+                    "samplings": set(),
+                },
             )
-            facts = _mapping(details.get("method_sampling"))
-            sampling = combine_sampling_facts(
-                [facts[team] for team in ("team_a", "team_b")]
+            group["scheduled_games"] += 1
+            if not game["pass_complete"]:
+                group["reasons"].append("Requested pass is incomplete or failed")
+            if not game["root_known"]:
+                group["reasons"].append("Random root coordinates are unavailable")
+            group["samplings"].add(game["sampling"])
+            margin = None
+            if row is None:
+                group["reasons"].append("Requested games are incomplete")
+            else:
+                group["games"] += 1
+                points = (row.get("team_a_score"), row.get("team_b_score"))
                 if all(
-                    isinstance(facts.get(team), Mapping)
-                    for team in ("team_a", "team_b")
-                )
-                else []
-            )
-            for identifier, raw in schedule.items():
-                declared = _mapping(raw)
-                identity = (entry["phase"], entry["pass_id"], str(identifier))
-                row = completed.get(identity)
-                probe = row or {
-                    "phase": entry["phase"],
-                    "pass_id": entry["pass_id"],
-                    "episode_id": identifier,
-                }
-                a, b, name_a, name_b, spawn = self._match_context(probe)
-                map_id = declared.get("map_id")
-                config_id = (
-                    declared.get("source_config_id")
-                    or declared.get("configuration_digest")
-                    or declared.get("config_id")
-                )
-                cell = json.dumps([map_id, config_id], separators=(",", ":"))
-                map_key = (
-                    f"map:{map_id}" if map_id is not None else f"config:{config_id}"
-                )
-                key = (a, b, map_key if by == "map" else None)
-                group = groups.setdefault(
-                    key,
-                    {
-                        "system_id": a,
-                        "opponent_id": b,
-                        "system_name": name_a,
-                        "opponent_name": name_b,
-                        "map_id": map_id if by == "map" else None,
-                        "config_id": config_id
-                        if by == "map" and map_id is None
-                        else None,
-                        "scheduled_games": 0,
-                        "games": 0,
-                        "values": [],
-                        "pairs": {},
-                        "reasons": [],
-                    },
-                )
-                group["scheduled_games"] += 1
-                if not pass_complete:
-                    group["reasons"].append("Requested pass is incomplete or failed")
-                if not root_known:
-                    group["reasons"].append("Random root coordinates are unavailable")
-                if sampling["determinism"] != "stochastic":
-                    group["reasons"].append(
-                        "Sampling mechanism unknown"
-                        if sampling["determinism"] == "unknown"
-                        else "No random sampling variation"
-                    )
-                margin = None
-                if row is None:
-                    group["reasons"].append("Requested games are incomplete")
-                else:
-                    group["games"] += 1
-                    points = (row.get("team_a_score"), row.get("team_b_score"))
-                    if all(
-                        isinstance(value, (int, float))
-                        and not isinstance(value, bool)
-                        and math.isfinite(value)
-                        for value in points
-                    ):
-                        margin = float(cast(float, points[0])) - float(
-                            cast(float, points[1])
-                        )
-                        if not math.isfinite(margin):
-                            margin = None
-                    else:
-                        margin = None
-                    if margin is None:
-                        group["reasons"].append("Native points are missing")
-                    else:
-                        group["values"].append(margin)
-                pair = declared.get(
-                    "paired_comparison_key", declared.get("comparison_key")
-                )
-                if (
-                    declared.get("comparison_kind") != "verified_spawn_pair"
-                    or pair is None
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    for value in points
                 ):
-                    group["reasons"].append(
-                        "Verified exchanged-spawn pairs are unavailable"
+                    margin = float(cast(float, points[0])) - float(
+                        cast(float, points[1])
                     )
-                    continue
-                pair_key = (entry["phase"], entry["pass_id"], str(pair))
-                block = declared.get("bootstrap_group")
-                unit = ("pair", *pair_key) if block is None else ("block", str(block))
-                group["pairs"].setdefault(pair_key, []).append(
-                    {
-                        "cell": cell,
-                        "spawn": spawn,
-                        "unit": unit,
-                        # Both supported protocols use the same actor-key
-                        # coordinates; their labels do not create independence.
-                        "seed": (root_seed, declared.get("seed_id")),
-                        "margin": margin if row is not None else None,
-                    }
+                    if not math.isfinite(margin):
+                        margin = None
+                else:
+                    margin = None
+                if margin is None:
+                    group["reasons"].append("Native points are missing")
+                else:
+                    group["values"].append(margin)
+            if game["pair"] is None:
+                group["reasons"].append(
+                    "Verified exchanged-spawn pairs are unavailable"
                 )
+                continue
+            group["pairs"].setdefault(game["pair"], []).append(
+                {
+                    "cell": game["cell"],
+                    "spawn": game["spawn"],
+                    "unit": game["unit"],
+                    # Both supported protocols use the same actor-key
+                    # coordinates; their labels do not create independence.
+                    "seed": game["seed"],
+                    "margin": margin if row is not None else None,
+                }
+            )
         result: list[Row] = []
         for group in groups.values():
             units: dict[tuple[str, ...], list[Row]] = defaultdict(list)
@@ -1116,12 +1585,29 @@ class _View:
                 )
             if complete_pairs * 2 != group["scheduled_games"]:
                 group["reasons"].append("Requested pair evidence is incomplete")
-            reasons = list(dict.fromkeys(group["reasons"]))
+            # One sampling verdict per row, as in system_metrics: unknown
+            # wins, and a row without any stochastic game cannot vary.
+            samplings = group.pop("samplings")
+            first = (
+                "Requested pass is incomplete or failed",
+                "Random root coordinates are unavailable",
+            )
+            seen = list(dict.fromkeys(group["reasons"]))
+            reasons = [reason for reason in seen if reason in first]
+            if "unknown" in samplings:
+                reasons.append("Sampling mechanism unknown")
+            elif "stochastic" not in samplings:
+                reasons.append("No random sampling variation")
+            reasons += [reason for reason in seen if reason not in first]
+            compute, status, reason, assumption = _interval_rule(reasons)
             low, high = None, None
-            if not reasons:
-                random = np.random.default_rng(seed)
+            if compute:
+                ordered = sorted(strata.items())
+                indices = _bootstrap_indices(
+                    [len(blocks) for _, blocks in ordered], draws, seed
+                )
                 sampled = np.zeros(draws, np.float64)
-                for cells, blocks in sorted(strata.items()):
+                for (cells, blocks), chunks in zip(ordered, indices, strict=True):
                     columns = [
                         (
                             np.asarray(
@@ -1133,12 +1619,11 @@ class _View:
                         )
                         for cell in cells
                     ]
-                    for start in range(0, draws, 64):
-                        size = min(64, draws - start)
-                        indices = random.integers(len(blocks), size=(size, len(blocks)))
+                    for start, chosen in zip(range(0, draws, 64), chunks, strict=True):
+                        size = len(chosen)
                         for sums, counts in columns:
                             weight = counts.sum() / group["games"]
-                            means = sums[indices].sum(axis=1) / counts[indices].sum(
+                            means = sums[chosen].sum(axis=1) / counts[chosen].sum(
                                 axis=1
                             )
                             sampled[start : start + size] += means * weight
@@ -1174,8 +1659,9 @@ class _View:
                     "ci_low": low,
                     "ci_high": high,
                     "confidence": 0.95,
-                    "interval_status": "Available" if not reasons else "Unavailable",
-                    "unavailable_reason": "; ".join(reasons) or None,
+                    "interval_status": status,
+                    "unavailable_reason": reason,
+                    "conditional_interval_assumption": assumption,
                     "sampling_unit": "Whole declared blocks of exchanged-spawn pairs",
                     "bootstrap_draws": draws,
                     "bootstrap_seed": seed,
@@ -1201,14 +1687,11 @@ class _View:
                 )
             map_id = row.get("map_id")
             condition = (map_id, row.get("config_id") if map_id is None else None)
-            for reverse in (False, True) if a != b else (False,):
-                system, opponent = (b, a) if reverse else (a, b)
-                names = (name_b, name_a) if reverse else (name_a, name_b)
-                end = (
-                    ("team_b" if bool(spawn) != reverse else "team_a")
-                    if by == "spawn"
-                    else None
-                )
+            for view in _directions(a, b, name_a, name_b, spawn):
+                system, opponent, system_name, opponent_name, played_as, side = view
+                reverse = played_as == "team_b"
+                names = (system_name, opponent_name)
+                end = side if by == "spawn" else None
                 key = (system, opponent, condition if by == "map" else end)
                 if key not in groups:
                     groups[key] = {
@@ -1318,6 +1801,620 @@ class _View:
                         matches[0][name] = saved.get(name)
         return result
 
+    def system_metrics(
+        self,
+        table: str,
+        by: str,
+        systems: Iterable[str] | None,
+        columns: Iterable[str] | None,
+        ratios: Mapping[str, tuple[str, str]],
+        draws: int,
+        seed: int,
+    ) -> Columns:
+        """Read a metric table once and show every System as Team A.
+
+        The public accessor checks argument types and owns the contract. This
+        method checks names against the table, reads only the needed columns,
+        reads Team B games through mirror_metric, and either returns one row per
+        System per game or combines games with each column's summary weight and
+        resamples whole verified pairs for intervals. Host-only NumPy.
+        """
+        description = self.metadata["tables"][table]
+        if description["availability"] == "disabled":
+            return {}
+        if description["availability"] != "available":
+            raise ValueError(description["reason"])
+        present = [
+            name for name in description["columns"] if name in METRIC_COLUMNS_BY_NAME
+        ]
+        known = set(present)
+        requested = list(present if columns is None else columns)
+        absent = [name for name in requested if name not in known]
+        if absent:
+            raise ValueError(
+                f"These are not metric columns of the {table} table: "
+                + ", ".join(absent[:5])
+            )
+        for name, parts in ratios.items():
+            if (
+                name in METRIC_COLUMNS_BY_NAME
+                or name in IDENTITY_COLUMNS
+                or name in _SYSTEM_FACT_COLUMNS
+                or name.endswith(("_ci_low", "_ci_high"))
+            ):
+                raise ValueError(f"The ratio name {name!r} is already a column name")
+            missing = [part for part in parts if part not in known]
+            if missing:
+                raise ValueError(
+                    f"Ratio {name!r} uses columns not in the {table} table: "
+                    + ", ".join(missing)
+                )
+        weight_of = {
+            name: weight
+            if (weight := METRIC_COLUMNS_BY_NAME[name].summary_weight) in known
+            else None
+            for name in requested
+        }
+        sources = [
+            *requested,
+            *(part for parts in ratios.values() for part in parts),
+            *(weight for weight in weight_of.values() if weight is not None),
+        ]
+        twin = {
+            name: mirror_metric(name)
+            for source in sources
+            for name in (source, mirror_metric(source)[0])
+        }
+        order = sorted(twin)
+        index = {name: position for position, name in enumerate(order)}
+
+        names = self.participant_names()
+        wanted: set[str] | None = None
+        if systems is not None:
+            wanted = set()
+            for item in systems:
+                if item in names:
+                    wanted.add(item)
+                    continue
+                matches = sorted(key for key, value in names.items() if value == item)
+                if not matches:
+                    raise ValueError(f"No System here has the ID or name {item!r}")
+                if len(matches) > 1:
+                    raise ValueError(
+                        f"{item!r} names several Systems; use one of their IDs: "
+                        + ", ".join(matches)
+                    )
+                wanted.add(matches[0])
+
+        # Older runs without an episodes table still read, without pairs.
+        plan = (
+            self._game_plan()
+            if self.metadata["tables"]["episodes"]["availability"] == "available"
+            else []
+        )
+        by_origin = {record["origin"]: record for record in plan}
+        values = np.full((max(len(plan), 1), len(order)), np.nan, np.float32)
+        games: list[tuple[Row, Row]] = []
+        unknown_facts: Row = {
+            "pass_complete": True,
+            "root_seed": None,
+            "root_known": False,
+            "sampling": "unknown",
+        }
+        projection = frozenset((*IDENTITY_COLUMNS, *order))
+        cells = itemgetter(*order) if len(order) > 1 else None
+        pending: list[tuple[object, ...]] = []
+
+        def store() -> None:
+            """Convert the waiting rows to float32 in one step; blank means NaN."""
+            nonlocal values
+            if not pending:
+                return
+            block = np.array(pending, dtype=object).reshape(len(pending), len(order))
+            block[np.equal(block, cast(Any, None))] = np.nan
+            first = len(games) - len(pending)
+            while len(values) < len(games):
+                values = np.concatenate([values, np.full_like(values, np.nan)])
+            values[first : len(games)] = block.astype(np.float32)
+            pending.clear()
+
+        for row in self.iter_rows(table, 256, projection):
+            origin = tuple(
+                str(row.get(name))
+                for name in ("run_id", "phase", "pass_id", "episode_id")
+            )
+            record = by_origin.get(origin)
+            if record is None:
+                # A game the schedule does not declare (older runs): its sides
+                # still come from the run, but no pair or sampling is known.
+                record = _plan_record(
+                    cast(tuple[str, str, str, str], origin),
+                    unknown_facts,
+                    {"map_id": row.get("map_id"), "config_id": row.get("config_id")},
+                    row,
+                    self._match_context(row),
+                )
+                plan.append(record)
+                by_origin[record["origin"]] = record
+            pending.append(
+                cast(tuple[object, ...], cells(row))
+                if cells is not None
+                else (row.get(order[0]),)
+            )
+            games.append((record, {name: row.get(name) for name in IDENTITY_COLUMNS}))
+            if len(pending) == 256:
+                store()
+        store()
+        values = values[: len(games)]
+
+        def oriented(
+            sources: Sequence[str | None],
+            positions: NDArray[np.int64],
+            mirrored: NDArray[np.bool_],
+            dtype: type[np.floating[Any]] = np.float64,
+        ) -> NDArray[np.floating[Any]]:
+            """Read sources for these games from each game's System side.
+
+            A None source reads as 1. Team B games read each source's twin,
+            with its sign. Rows and columns are taken in one step, so only the
+            requested cells are copied.
+            """
+            result = np.ones((len(positions), len(sources)), dtype)
+            real = np.asarray(
+                [place for place, name in enumerate(sources) if name is not None],
+                np.int64,
+            )
+            if not len(real) or not len(positions):
+                return result
+            own = np.asarray(
+                [index[cast(str, sources[place])] for place in real], np.int64
+            )
+            other = np.asarray(
+                [index[twin[cast(str, sources[place])][0]] for place in real], np.int64
+            )
+            signs = np.asarray(
+                [twin[cast(str, sources[place])][1] for place in real], dtype
+            )
+            straight = np.flatnonzero(~mirrored)
+            flipped = np.flatnonzero(mirrored)
+            result[np.ix_(straight, real)] = values[np.ix_(positions[straight], own)]
+            # Adding zero turns a mirrored -0.0 into 0.0.
+            result[np.ix_(flipped, real)] = (
+                values[np.ix_(positions[flipped], other)] * signs + 0.0
+            )
+            return result
+
+        if by == "game":
+            fact_rows: list[Row] = []
+            positions_list: list[int] = []
+            mirrored_list: list[bool] = []
+            game_members = self._game_members()
+            unlabeled: tuple[str | None, ...] = (None,) * 10
+            for position, (record, identity) in enumerate(games):
+                for view in _directions(
+                    record["a"],
+                    record["b"],
+                    record["name_a"],
+                    record["name_b"],
+                    record["spawn"],
+                ):
+                    system, opponent, system_name, opponent_name, played_as, end = view
+                    if wanted is not None and system not in wanted:
+                        continue
+                    flipped = played_as == "team_b"
+                    fact: Row = {
+                        "system_id": system,
+                        "system_name": system_name,
+                        "opponent_id": opponent,
+                        "opponent_name": opponent_name,
+                        "played_as": played_as,
+                        "spawn_end": end,
+                        **{
+                            name: identity[
+                                _IDENTITY_TWINS.get(name, name) if flipped else name
+                            ]
+                            for name in IDENTITY_COLUMNS
+                        },
+                    }
+                    labels = game_members.get(record["origin"], unlabeled)
+                    for slot in range(10):
+                        fact[f"agent_{slot}_member"] = labels[
+                            (slot + 5) % 10 if flipped else slot
+                        ]
+                    for column, slots in (
+                        ("member", range(5)),
+                        ("opponent_member", range(5, 10)),
+                    ):
+                        fact[column] = _side_member(
+                            [fact[f"agent_{slot}_member"] for slot in slots],
+                            [fact[f"agent_{slot}_active"] for slot in slots],
+                        )
+                    fact_rows.append(fact)
+                    positions_list.append(position)
+                    mirrored_list.append(flipped)
+            if not fact_rows:
+                return {}
+            result = _columns(
+                fact_rows, table=table, current=self.manifest["schema_version"] == 2
+            )
+            positions = np.asarray(positions_list, np.int64)
+            mirrored = np.asarray(mirrored_list, np.bool_)
+            # Fill in column batches so temporary copies stay small.
+            block = np.empty((len(positions), len(requested)), np.float32)
+            for start in range(0, len(requested), _COLUMN_BATCH):
+                stop = min(start + _COLUMN_BATCH, len(requested))
+                block[:, start:stop] = oriented(
+                    requested[start:stop], positions, mirrored, np.float32
+                )
+            for place, name in enumerate(requested):
+                result[name] = block[:, place]
+            for name, (top, bottom) in ratios.items():
+                parts = oriented([top, bottom], positions, mirrored)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    result[name] = np.where(
+                        parts[:, 1] > 0, parts[:, 0] / parts[:, 1], np.nan
+                    )
+            return result
+
+        rankings: dict[str, Row] = (
+            {
+                str(row.get("system_id")): row
+                for row in self.iter_rows("tournament_rankings", 256)
+            }
+            if self.metadata["tables"]["tournament_rankings"]["availability"]
+            == "available"
+            else {}
+        )
+        groups: dict[tuple[object, ...], Row] = {}
+
+        def group_of(
+            record: Row, system: str, opponent: str, names: tuple[str, str]
+        ) -> Row:
+            """Return the summary group of one System's view of one game."""
+            key: tuple[object, ...] = (
+                (system,)
+                if by == "system"
+                else (system, opponent)
+                if by == "opponent"
+                else (system, record["map_key"])
+            )
+            if key not in groups:
+                facts: Row = {"system_id": system, "system_name": names[0]}
+                if by == "opponent":
+                    facts.update(opponent_id=opponent, opponent_name=names[1])
+                elif by == "map":
+                    facts.update(
+                        map_id=record["map_id"],
+                        config_id=record["config_id"]
+                        if record["map_id"] is None
+                        else None,
+                    )
+                groups[key] = {"facts": facts, "records": [], "rows": []}
+            return groups[key]
+
+        for record in plan:
+            for view in _directions(
+                record["a"],
+                record["b"],
+                record["name_a"],
+                record["name_b"],
+                record["spawn"],
+            ):
+                system, opponent, system_name, opponent_name, played_as, _ = view
+                if wanted is None or system in wanted:
+                    group_of(record, system, opponent, (system_name, opponent_name))[
+                        "records"
+                    ].append((record, opponent))
+        for position, (record, identity) in enumerate(games):
+            for view in _directions(
+                record["a"],
+                record["b"],
+                record["name_a"],
+                record["name_b"],
+                record["spawn"],
+            ):
+                system, opponent, system_name, opponent_name, played_as, _ = view
+                if wanted is None or system in wanted:
+                    group_of(record, system, opponent, (system_name, opponent_name))[
+                        "rows"
+                    ].append((position, played_as == "team_b", record, identity))
+
+        outputs = [*requested, *ratios]
+        value_sources: list[str | None] = [
+            *requested,
+            *(parts[0] for parts in ratios.values()),
+        ]
+        weight_sources: list[str | None] = [
+            *(weight_of[name] for name in requested),
+            *(parts[1] for parts in ratios.values()),
+        ]
+        is_ratio = np.asarray([False] * len(requested) + [True] * len(ratios))
+        slots = [
+            {slot for part in ratios.get(name, (name,)) for slot in _metric_slots(part)}
+            for name in outputs
+        ]
+        label = "Full metrics" if table == "full_metrics" else "Priority metrics"
+        fact_rows = []
+        metric_values: list[NDArray[np.float64]] = []
+        metric_lows: list[NDArray[np.float64]] = []
+        metric_highs: list[NDArray[np.float64]] = []
+
+        def row_order(key: tuple[object, ...]) -> tuple[object, ...]:
+            """Sort rows as head_to_head does: System, then opponent or map."""
+            if by != "map":
+                return tuple(str(part) for part in key)
+            facts = groups[key]["facts"]
+            map_id = facts["map_id"]
+            return (
+                str(key[0]),
+                (0, map_id, "")
+                if map_id is not None
+                else (1, 0, str(facts["config_id"])),
+            )
+
+        for key in sorted(groups, key=row_order):
+            group = groups[key]
+            records = group["records"]
+            rows = group["rows"]
+            scheduled = len(records)
+            played = sum(record["row"] is not None for record, _ in records)
+            reasons: list[str] = []
+            if any(not record["pass_complete"] for record, _ in records):
+                reasons.append("Requested pass is incomplete or failed")
+            if any(not record["root_known"] for record, _ in records):
+                reasons.append("Random root coordinates are unavailable")
+            samplings = {record["sampling"] for record, _ in records}
+            if "unknown" in samplings:
+                reasons.append("Sampling mechanism unknown")
+            elif "stochastic" not in samplings:
+                reasons.append("No random sampling variation")
+            if played < scheduled:
+                reasons.append("Requested games are incomplete")
+            partial = len(rows) < played
+            if partial:
+                reasons.append(
+                    f"{label} cover only {len(rows)} of {played} played games "
+                    "of this row"
+                )
+            recorded = {record["origin"] for _, _, record, _ in rows}
+            pairs: dict[tuple[str, ...], list[tuple[Row, str]]] = {}
+            for record, opponent in records:
+                if record["pair"] is None:
+                    reasons.append("Verified exchanged-spawn pairs are unavailable")
+                    continue
+                pairs.setdefault(record["pair"], []).append((record, opponent))
+            units: dict[tuple[str, ...], list[tuple[Row, str]]] = {}
+            seed_units: dict[tuple[object, ...], set[tuple[str, ...]]] = defaultdict(
+                set
+            )
+            complete_pairs = 0
+            for pair in pairs.values():
+                first = pair[0][0]
+                if (
+                    len(pair) != 2
+                    or {record["spawn"] for record, _ in pair} != {0, 1}
+                    or len({record["cell"] for record, _ in pair}) != 1
+                    or len({record["unit"] for record, _ in pair}) != 1
+                    or len({record["seed"] for record, _ in pair}) != 1
+                    or first["seed"][-1] is None
+                    or any(record["origin"] not in recorded for record, _ in pair)
+                ):
+                    reasons.append(
+                        "An exchanged-spawn pair is incomplete or inconsistent"
+                    )
+                    continue
+                complete_pairs += 1
+                units.setdefault(first["unit"], []).extend(pair)
+                seed_units[first["seed"]].add(first["unit"])
+            if any(len(value) > 1 for value in seed_units.values()):
+                reasons.append(
+                    "Repeated seed coordinates need one declared sampling block"
+                )
+            # Equal-coverage strata, as Elo uses: units covering the same
+            # opponents and map cells, game for game, are drawn together.
+            strata: dict[tuple[object, ...], list[tuple[str, ...]]] = defaultdict(list)
+            for unit, members in units.items():
+                signature = tuple(
+                    sorted(
+                        Counter(
+                            (opponent, record["cell"]) for record, opponent in members
+                        ).items()
+                    )
+                )
+                strata[signature].append(unit)
+            if not strata or any(len(value) < 2 for value in strata.values()):
+                reasons.append(
+                    "Fewer than two independent complete units in a condition stratum"
+                )
+            if complete_pairs * 2 != scheduled:
+                reasons.append("Requested pair evidence is incomplete")
+            reasons = list(dict.fromkeys(reasons))
+            compute, status, reason, assumption = _interval_rule(reasons)
+            stochastic_units = sum(
+                any(record["sampling"] == "stochastic" for record, _ in members)
+                for members in units.values()
+            )
+
+            positions = np.asarray([row[0] for row in rows], np.int64)
+            mirrored = np.asarray([row[1] for row in rows], np.bool_)
+            classes: list[object] = []
+            unsettled: set[int] = set()
+            for slot in range(10):
+                seen = {
+                    identity[f"agent_{(slot + 5) % 10 if flipped else slot}_class_id"]
+                    for _, flipped, _, identity in rows
+                }
+                classes.append(next(iter(seen)) if len(seen) == 1 else None)
+                if len(seen) > 1:
+                    unsettled.add(slot)
+            usable = np.asarray([not (slot_set & unsettled) for slot_set in slots])
+            value = np.full(len(outputs), np.nan, np.float64)
+            low = np.full(len(outputs), np.nan, np.float64)
+            high = np.full(len(outputs), np.nan, np.float64)
+            counts: NDArray[np.float64] | None = None
+            by_unit = np.zeros(0, np.int64)
+            unit_starts = np.zeros(0, np.int64)
+            if rows and not partial and compute:
+                ordered = sorted(strata.items())
+                unit_position = {
+                    unit: place
+                    for place, unit in enumerate(
+                        unit for _, members in ordered for unit in members
+                    )
+                }
+                origin_unit = {
+                    record["origin"]: unit_position[unit]
+                    for unit, members in units.items()
+                    for record, _ in members
+                }
+                unit_of = np.asarray(
+                    [origin_unit[record["origin"]] for _, _, record, _ in rows],
+                    np.int64,
+                )
+                by_unit = np.argsort(unit_of, kind="stable")
+                unit_starts = np.flatnonzero(
+                    np.r_[True, np.diff(unit_of[by_unit]) != 0]
+                )
+                chunks = _bootstrap_indices(
+                    [len(members) for _, members in ordered], draws, seed
+                )
+                # Units are numbered stratum by stratum, so the strata's draw
+                # counts sit side by side as one (draws, units) matrix.
+                counts = np.concatenate(
+                    [
+                        _unit_counts(drawn, len(members))
+                        for (_, members), drawn in zip(ordered, chunks, strict=True)
+                    ],
+                    axis=1,
+                )
+            if rows and not partial:
+                for start in range(0, len(outputs), _COLUMN_BATCH):
+                    stop = min(start + _COLUMN_BATCH, len(outputs))
+                    top = oriented(value_sources[start:stop], positions, mirrored)
+                    bottom = oriented(weight_sources[start:stop], positions, mirrored)
+                    ratio = is_ratio[start:stop]
+                    valid = (
+                        np.isfinite(top) & np.isfinite(bottom) & (ratio | (bottom > 0))
+                    )
+                    numerator = np.where(valid, np.where(ratio, top, top * bottom), 0.0)
+                    denominator = np.where(valid, bottom, 0.0)
+                    total = denominator.sum(axis=0)
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        value[start:stop] = np.where(
+                            total > 0, numerator.sum(axis=0) / total, np.nan
+                        )
+                    if counts is None:
+                        continue
+                    # Rows sorted by unit: each unit's games sum in one pass.
+                    top_units = np.add.reduceat(numerator[by_unit], unit_starts, axis=0)
+                    bottom_units = np.add.reduceat(
+                        denominator[by_unit], unit_starts, axis=0
+                    )
+                    sampled_top = counts @ top_units
+                    sampled_bottom = counts @ bottom_units
+                    empty = np.any(sampled_bottom <= 0, axis=0)
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        sampled = sampled_top / sampled_bottom
+                    sampled[:, empty] = 0.0
+                    bounds = np.percentile(
+                        sampled, (2.5, 97.5), axis=0, method="linear"
+                    )
+                    bounds[:, empty] = np.nan
+                    low[start:stop], high[start:stop] = bounds[0], bounds[1]
+            value[~usable] = np.nan
+            low[~usable | ~np.isfinite(value)] = np.nan
+            high[~usable | ~np.isfinite(value)] = np.nan
+            metric_values.append(value)
+            metric_lows.append(low)
+            metric_highs.append(high)
+            ranking = rankings.get(str(group["facts"]["system_id"]), {})
+            fact_rows.append(
+                {
+                    **group["facts"],
+                    "games": len(rows),
+                    "scheduled_games": scheduled,
+                    "completed_pairs": complete_pairs,
+                    "elo": ranking.get("elo", np.nan),
+                    "elo_ci_low": ranking.get("elo_ci_low", np.nan),
+                    "elo_ci_high": ranking.get("elo_ci_high", np.nan),
+                    "rank": ranking.get("rank"),
+                    **{f"agent_{slot}_class_id": classes[slot] for slot in range(10)},
+                    "confidence": 0.95,
+                    "independent_units": 0
+                    if "No random sampling variation" in reasons
+                    else None
+                    if any(
+                        reason in reasons
+                        for reason in (
+                            "Sampling mechanism unknown",
+                            "Random root coordinates are unavailable",
+                            "Repeated seed coordinates need "
+                            "one declared sampling block",
+                        )
+                    )
+                    else stochastic_units,
+                    "interval_status": status,
+                    "unavailable_reason": reason,
+                    "conditional_interval_assumption": assumption,
+                    "sampling_unit": "Whole declared blocks of exchanged-spawn pairs",
+                    "bootstrap_draws": draws,
+                    "bootstrap_seed": seed,
+                }
+            )
+        if not fact_rows:
+            return {}
+        facts = _columns(fact_rows, table="system_metrics", current=False)
+        split = list(facts).index("confidence")
+        result = {name: facts[name] for name in list(facts)[:split]}
+        stacked = (
+            np.stack(metric_values),
+            np.stack(metric_lows),
+            np.stack(metric_highs),
+        )
+        for place, name in enumerate(outputs):
+            result[name] = stacked[0][:, place]
+            result[f"{name}_ci_low"] = stacked[1][:, place]
+            result[f"{name}_ci_high"] = stacked[2][:, place]
+        result.update({name: facts[name] for name in list(facts)[split:]})
+        return result
+
+    def _settings_entries(self) -> list[Row]:
+        """Return the pass entries whose games this scope reports."""
+        return [
+            entry
+            for entry in self.selected.values()
+            if entry.get("completed_episode_ids")
+        ]
+
+    def execution_settings(self) -> dict[str, object]:
+        """Merge the execution_settings of every pass with games, once.
+
+        A pass that played games without a record counts as unknown. The
+        merged record is cached on the view; callers receive a copy.
+        """
+        cached = cast(dict[str, object] | None, getattr(self, "_settings_cache", None))
+        if cached is None:
+            from marl_battlegrounds.evaluation.runtime_provenance import (
+                merge_execution_settings,
+            )
+
+            records: list[Mapping[str, object] | None] = []
+            for entry in self._settings_entries():
+                saved = _mapping(entry.get("details")).get("execution_settings")
+                records.append(
+                    cast(Mapping[str, object], saved)
+                    if isinstance(saved, Mapping)
+                    else None
+                )
+            cached = merge_execution_settings(records)
+            self._settings_cache = cached
+        return {
+            "declared_xla_flags_by_attempt": list(
+                cast(list[object], cached["declared_xla_flags_by_attempt"])
+            ),
+            "declared_gpu_deterministic_ops": cached["declared_gpu_deterministic_ops"],
+        }
+
     def _rankings(self, rows: int) -> Iterator[Row]:
         """Add exact competition ranks from saved unrounded Elo, without fitting."""
         values = list(self._raw("tournament_results.csv", rows))
@@ -1355,8 +2452,14 @@ class _View:
             previous = rating
             yield row
 
-    def iter_rows(self, name: str, rows: int) -> Iterator[Row]:
-        """Apply one small projection over raw rows; never refit or reduce metrics."""
+    def iter_rows(
+        self, name: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Apply one small projection over raw rows; never refit or reduce metrics.
+
+        columns, used only for the two metric tables, keeps just those cells;
+        it must include the identity columns. None keeps every cell.
+        """
         description = self.metadata["tables"][name]
         availability = description["availability"]
         if availability == "disabled":
@@ -1366,9 +2469,26 @@ class _View:
         if name == "episodes":
             yield from self._episodes(rows)
             return
+        if name == "policy_assignments":
+            labels: dict[str, list[str]] = {}
+            for row in self._raw("policy_assignments.csv", rows):
+                system = str(row["system_id"])
+                registration = self._registration(row)
+                if system not in labels:
+                    labels[system] = _member_labels(registration) or [
+                        str(_mapping(item).get("name", ""))
+                        for item in cast(
+                            list[object], registration.get("components", [])
+                        )
+                    ]
+                choice = int(row["policy_id"])
+                row["system_name"] = registration.get("name")
+                row["member"] = None if choice < 0 else labels[system][choice]
+                yield row
+            return
         if name == "priority_metrics":
-            yield from self._raw("priority_metrics.csv", rows)
-            for row in self._raw("match_results.csv", rows):
+            yield from self._raw("priority_metrics.csv", rows, columns)
+            for row in self._raw("match_results.csv", rows, columns):
                 entry = self._entry(row)
                 coverage = _mapping(entry.get("recorded_metrics_by_episode"))
                 measured = coverage.get(str(row["episode_id"])) in {"priority", "full"}
@@ -1379,12 +2499,18 @@ class _View:
                         "full",
                     } or row["episode_id"] in details.get("full_metrics_episodes", ())
                 if measured:
-                    yield {name: row.get(name) for name in description["columns"]}
+                    yield {
+                        name: row.get(name)
+                        for name in description["columns"]
+                        if columns is None or name in columns
+                    }
             return
         iterator = (
             self._rankings(rows)
             if name == "tournament_rankings"
-            else self._raw(_FILES[name], rows)
+            else self._raw(
+                _FILES[name], rows, columns if name == "full_metrics" else None
+            )
         )
         for row in iterator:
             if name in _SUMMARIES:
@@ -1596,6 +2722,31 @@ class _ResultAccess:
         """
         return self._view.replay_paths
 
+    @property
+    def execution_settings(self) -> dict[str, object]:
+        """Say whether XLA's deterministic GPU mode was declared for these games.
+
+        Returns
+        -------
+        dict
+            ``declared_gpu_deterministic_ops``: True when every attempt of
+            every pass with games declared ``--xla_gpu_deterministic_ops``,
+            False when any declared it off or left it out, and None when any
+            attempt saved no record (runs made before this record existed) or
+            used an unknown spelling. ``declared_xla_flags_by_attempt``: each
+            attempt's whole XLA_FLAGS string in pass order, with None for an
+            attempt without a record. Canonical results include the source
+            passes of reused games.
+
+        Notes
+        -----
+        Exact repeats of saved games on a GPU need deterministic mode, the same
+        GPU model and the same software (``metadata["runtime_provenance"]``).
+        This reports what was declared, not what XLA parsed. Computed on first
+        access and cached; canonical sources load only then.
+        """
+        return self._view.execution_settings()
+
     def iter_table(self, name: str, rows: int = 128) -> Iterator[Columns]:
         """Yield at most ``rows`` recorded rows as NumPy columns per batch.
 
@@ -1737,10 +2888,20 @@ class _ResultAccess:
             Bounds use linear 2.5/97.5 percentiles. Whole verified spawn pairs
             stay together; declared larger blocks use one draw across linked
             maps. Each condition stratum needs two independent complete units.
-            Incomplete games/pairs, unknown sampling, deterministic repetition
-            or missing points keep descriptive rows but yield NaN bounds and an
-            unavailable_reason. Empty declared scope returns {}. These intervals
-            describe fixed methods, not uncertainty across training seeds.
+            Incomplete games/pairs, deterministic repetition (no stochastic
+            game in the row) or missing points keep descriptive rows but yield
+            NaN bounds, ``interval_status``
+            "Unavailable" and an ``unavailable_reason``. When the only problem
+            is a method whose sampling is unknown (such as your own System),
+            the bounds are kept, ``interval_status`` is "Conditional: Sampling
+            not verified" (also when that row mixes unknown and deterministic
+            passes, as ``system_metrics`` decides) and
+            ``conditional_interval_assumption`` states what these bounds
+            assume. Elo rankings use the same label, but their assumption
+            column describes separate ``conditional_*`` columns. Otherwise
+            that column is None.
+            Empty declared scope returns {}. These intervals describe fixed
+            methods, not uncertainty across training seeds.
 
         Raises
         ------
@@ -1754,7 +2915,12 @@ class _ResultAccess:
         Works with metrics="none". Reads narrow outcomes only, on the host,
         without JAX, policy calls or file writes. Memory holds narrow game rows
         and the saved schedule; bootstrap draw batches are bounded. Calling
-        head_to_head does not perform this resampling work.
+        head_to_head does not perform this resampling work. A canonical result
+        that reuses another run's games includes those games, with their
+        original declarations; pair keys carry each game's full origin (run,
+        phase, pass and pair), so a reused pair never merges with a local pair
+        that has the same labels. ``system_metrics(by="opponent")`` gives the
+        same ``score_difference`` interval for recorded Team A rows.
         """
         if by not in ("overall", "map"):
             raise ValueError("by must be overall or map")
@@ -1768,6 +2934,243 @@ class _ResultAccess:
             self._view.point_margin_summary(by, bootstrap_draws, bootstrap_seed),
             table="point_margin_summary",
             current=False,
+        )
+
+    def system_metrics(
+        self,
+        table: str,
+        *,
+        by: str = "system",
+        systems: Iterable[str] | None = None,
+        columns: Iterable[str] | None = None,
+        ratios: Mapping[str, tuple[str, str]] | None = None,
+        bootstrap_draws: int = 2000,
+        bootstrap_seed: int = 19044001,
+    ) -> Columns:
+        """Show every System's metrics from its own side, ready to compare.
+
+        Each System is shown as Team A and its opponent as Team B, whichever
+        side it really played, so ``team_a_kills`` is always that System's
+        kills, ``agent_0`` to ``agent_4`` are its agents, and
+        ``score_difference`` is its points minus its opponent's. Column names
+        do not change. A game a System played as Team B is read from each
+        column's mirrored twin (``metric_catalog.mirror_metric``).
+
+        Parameters
+        ----------
+        table : {"priority_metrics", "full_metrics"}
+            Metric table to read, by the names ``table()`` uses.
+        by : {"system", "opponent", "map", "game"}, default="system"
+            Row grain: one row per System; per System and opponent (the same
+            rows as ``head_to_head()``, both directions, self-play once); per
+            System and map (all its opponents on that map); or per System per
+            game. Unlike head_to_head, ``by`` names the grain, not an extra
+            split on top of System and opponent.
+        systems : iterable of str or None, default=None
+            System IDs or display names to keep; None keeps every System. Any
+            non-empty, non-string iterable works, such as ``field["system_id"]``
+            from an earlier call. A display name that two IDs share raises an
+            error naming both. A single string is not accepted; use a one-item
+            list.
+        columns : iterable of str or None, default=None
+            Metric column names to report, as the table names them; None reports
+            every metric column in the table. An empty list is an error. Fewer
+            columns use less memory and summary time; reading still splits
+            each saved row once.
+        ratios : mapping of str to (str, str) or None, default=None
+            Extra combined fractions: new name -> (numerator column, denominator
+            column), both read from the System's side. A summary gives total
+            numerator / total denominator over games where both are recorded,
+            with intervals, and NaN when that total denominator is not
+            positive; ``by="game"`` gives each game's ratio (NaN when the
+            denominator is not positive). Use a denominator that cannot be
+            negative. Their input columns are read even when
+            ``columns`` leaves them out. Example: ``{"slowed_kill_fraction":
+            ("team_a_kills_of_hunter_basic_slow_recipient", "team_a_kills")}``.
+        bootstrap_draws : int, default=2000
+            At least two whole-unit resampling draws; booleans are rejected.
+            Not used with ``by="game"``.
+        bootstrap_seed : int, default=19044001
+            Seed from 0 through 2**63 - 1 for a private NumPy generator, the
+            same rule and draws as ``point_margin_summary``. Not used with
+            ``by="game"``.
+
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            ``by="game"``: ``system_id``, ``system_name``, ``opponent_id``,
+            ``opponent_name``, ``played_as`` ("team_a" or "team_b", the side the
+            System really played), ``spawn_end`` (the map's original spawn bank
+            it started from, as in ``head_to_head(by="spawn")``, or None when
+            not saved), the identity columns from the System's side,
+            ``agent_<slot>_member`` for slots 0-9 from the System's side (the
+            member that controlled the slot for the whole game, None otherwise),
+            ``member`` and ``opponent_member`` (each side's distinct member
+            labels joined with " / " in slot order, None when a member was not
+            recorded or that System has none; see ``table("policy_assignments")``),
+            each metric column (float32, NaN when unavailable) and each ratio
+            (float64). Rows follow the table's order, Team A's view first.
+
+            Summaries: ``system_id`` and ``system_name`` (plus ``opponent_id``
+            and ``opponent_name``, or ``map_id`` and ``config_id``), ``games``
+            (games with rows in the table), ``scheduled_games``,
+            ``completed_pairs``, the System's own ``elo``, ``elo_ci_low``,
+            ``elo_ci_high`` and ``rank`` copied from the saved rankings (NaN or
+            None outside a complete tournament), ``agent_<slot>_class_id`` (the
+            slot's class when it never changed, else None), then each metric
+            and ratio under its own name with ``<name>_ci_low`` and
+            ``<name>_ci_high``, then ``confidence``, ``independent_units``,
+            ``interval_status`` ("Available", "Conditional: Sampling not
+            verified" or "Unavailable"), ``unavailable_reason``,
+            ``conditional_interval_assumption``, ``sampling_unit``,
+            ``bootstrap_draws`` and ``bootstrap_seed`` as in
+            ``point_margin_summary``, except that ``independent_units``
+            counts only resampled units from matchups with random sampling.
+            Values are float64. Rows are sorted by System ID, then by opponent
+            ID or by map ID (configurations without a map ID last), as in
+            ``head_to_head``.
+
+            A disabled table, or no System to show, returns {}.
+
+        Raises
+        ------
+        ValueError
+            An argument is invalid, a column or System is unknown, a name is
+            ambiguous, a ratio name is already a column name, or the table is
+            unavailable in this scope.
+        OSError
+            A saved file cannot be read.
+
+        Notes
+        -----
+        **How games combine.** Each column's ``summary_weight`` in the catalog
+        decides: a fraction or rate is total numerator / total denominator, an
+        average is weighted by its count of observations, and counts, health
+        and ticks are means per game. Listed fractions without a saved
+        denominator (``metric_catalog.SUMMARY_WEIGHT_MISSING``) are means per
+        game. A game whose value is missing, or whose weight is zero, adds
+        nothing to that column; a column with no usable game is NaN.
+
+        **Sampling facts.** Intervals need to know how each method chooses its
+        actions. Built-in methods and saved actors from the built-in learners
+        declare it; other Systems are "unknown". Every summary row with one of
+        their games keeps its interval but labels it "Conditional: Sampling not
+        verified", the label Elo rankings give unknown sampling: the interval
+        assumes the game pairs are independent repeats, which the records
+        cannot prove (a System that carries memory from one game to the next
+        breaks that). In a canonical run with your own challenger, that
+        includes each member's overall row. Member-against-member
+        ``by="opponent"`` rows keep their own label: "Available" when either
+        member samples at random, "Unavailable" with "No random sampling
+        variation" when neither does (scripted bots, greedy QMIX or PQN-VDN).
+        ``interval_status`` covers a row's metric columns only; the copied
+        ``elo_ci_*`` bounds keep the rankings' own labels.
+
+        **In-memory evaluations.** An ``evaluate`` call without ``output_dir``
+        inspects how its methods sample, as saved runs do, so its summaries
+        carry the same interval labels. In-memory tournaments do too.
+
+        **Missing data.** If games were played but some have no row in this
+        table (full metrics recorded for only some games), a summary row's
+        values are NaN and ``unavailable_reason`` says how many are covered;
+        ``by="opponent"`` rows with every game covered stay valid, and
+        ``by="game"`` still shows the recorded games. Games not played yet
+        keep descriptive values but no interval. When a slot's class changes
+        between a System's games, that slot's agent, pair and recipient
+        columns are NaN in summaries.
+
+        **Intervals.** Whole verified exchanged-spawn pairs, or declared
+        blocks, are drawn with replacement inside equal-coverage groups of
+        opponent and map, as for Elo; each column is recomputed from the drawn
+        totals and the 2.5th and 97.5th percentiles (linear) are reported. A
+        row withholds its interval with a reason in the cases
+        ``point_margin_summary`` does, and also when coverage is partial or no
+        drawn unit can vary ("No random sampling variation"). Matchups where
+        both sides choose without randomness add no width to a mixed row. A
+        column's bounds are NaN when some draw has no usable game for it, even
+        when the row's status is "Available" or conditional. These intervals
+        describe repeated games of fixed methods, not training seeds. With
+        thousands of columns, many intervals exclude a difference by chance,
+        and overlapping intervals between two Systems are not a test.
+        Separate ``evaluate`` calls combined into one result need different
+        seeds.
+
+        **Cost.** Host-only NumPy: no JAX, no file writes. One pass over the
+        table converts only the needed columns (requested, ratio inputs, their
+        mirrored twins and weights) into float32 rows; summaries then work one
+        group at a time in batches of columns. In-memory results convert every
+        cell of their borrowed rows, so the projection saves time only for saved
+        runs. ``by="game"`` on every full metric of a 7,200-game tournament
+        returns about 645 MB; use ``columns`` and ``systems`` to keep it small.
+
+        Examples
+        --------
+        >>> import marl_battlegrounds as marl_bgs
+        >>> results = marl_bgs.load_results("runs/my_tournament")  # doctest: +SKIP
+        >>> field = results.system_metrics("full_metrics")  # doctest: +SKIP
+        >>> field["team_a_ally_distance_mean"], field["elo"]  # doctest: +SKIP
+        """
+        if table not in ("priority_metrics", "full_metrics"):
+            raise ValueError("table must be priority_metrics or full_metrics")
+        if by not in ("system", "opponent", "map", "game"):
+            raise ValueError("by must be system, opponent, map or game")
+        picked: dict[str, list[str] | None] = {}
+        for name, value in (("systems", systems), ("columns", columns)):
+            # Any non-string iterable works, such as a column of an earlier result.
+            items = (
+                None
+                if value is None
+                else list(cast(Iterable[object], value))
+                if not isinstance(value, str)
+                and isinstance(cast(object, value), Iterable)
+                else [cast(object, value)]
+            )
+            if items is not None and (
+                isinstance(value, str)
+                or not items
+                or not all(isinstance(item, str) and item for item in items)
+            ):
+                raise ValueError(
+                    f"{name} must be a nonempty list of nonempty strings, or None"
+                )
+            picked[name] = None if items is None else [str(item) for item in items]
+        if picked["columns"] is not None and len(set(picked["columns"])) != len(
+            picked["columns"]
+        ):
+            raise ValueError("columns must not repeat a name")
+        checked: dict[str, tuple[str, str]] = {}
+        if ratios is not None:
+            if not isinstance(cast(object, ratios), Mapping):
+                raise ValueError("ratios must map names to (numerator, denominator)")
+            for name, parts in ratios.items():
+                if (
+                    not isinstance(cast(object, name), str)
+                    or not name
+                    or isinstance(parts, str)
+                    or not isinstance(cast(object, parts), Sequence)
+                    or len(parts) != 2
+                    or not all(
+                        isinstance(cast(object, part), str) and part for part in parts
+                    )
+                ):
+                    raise ValueError(
+                        "ratios must map names to (numerator, denominator) column names"
+                    )
+                checked[name] = (parts[0], parts[1])
+        if type(bootstrap_draws) is not int or bootstrap_draws < 2:
+            raise ValueError("bootstrap_draws must be an integer of at least two")
+        if type(bootstrap_seed) is not int or not 0 <= bootstrap_seed <= 2**63 - 1:
+            raise ValueError(
+                "bootstrap_seed must be an integer from 0 through 2**63 - 1"
+            )
+        return self._view.system_metrics(
+            table,
+            by,
+            picked["systems"],
+            picked["columns"],
+            checked,
+            bootstrap_draws,
+            bootstrap_seed,
         )
 
     def opponent_matrix(self, metric: str = "mean_point_margin") -> dict[str, Any]:

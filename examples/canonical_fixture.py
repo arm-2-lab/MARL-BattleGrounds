@@ -553,7 +553,19 @@ def build_record_bundle(
                 "team_a": registration_ids[team_a],
                 "team_b": registration_ids[team_b],
             },
-            "details": {"seed": root_seed, "rng_protocol": stream_version},
+            # Every fixture entrant is the built-in random Policy, so both
+            # teams sample their actions; summaries can report intervals.
+            "details": {
+                "seed": root_seed,
+                "rng_protocol": stream_version,
+                "method_sampling": {
+                    team: {
+                        "determinism": "stochastic",
+                        "basis": "Built-in random Policy samples legal actions",
+                    }
+                    for team in ("team_a", "team_b")
+                },
+            },
             "episodes": {},
             "completed_episode_ids": [],
             "recorded_metrics_by_episode": {},
@@ -642,6 +654,7 @@ def build_record_bundle(
                             "source_config_id": source_id,
                             "spawn_locations": spawn,
                             "comparison_kind": "verified_spawn_pair",
+                            "paired_comparison_key": f"pair-{pair_id}",
                             "block_id": pair_id,
                             "seed_id": pair_id,
                             "map_id": map_id,

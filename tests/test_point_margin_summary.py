@@ -1,8 +1,11 @@
 """Check native-point intervals from saved pairs without running policies.
 
 Game weights, Team A ownership, larger linked blocks and incomplete evidence
-remain visible. Only the requested accessor resamples; cheap descriptions do
-not. These synthetic fixtures test software, not learned behavior.
+remain visible. Unknown sampling keeps the interval, labeled "Conditional:
+Sampling not verified" with its stated assumption; deterministic games withhold
+it, and so does unknown sampling beside another problem (every reason joined,
+no assumption). Only the requested accessor resamples; cheap descriptions do not. These
+synthetic fixtures test software, not learned behavior.
 """
 
 from __future__ import annotations
@@ -99,7 +102,7 @@ def test_linked_blocks_move_together_across_maps(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("sampling", ["unknown", "deterministic"])
-def test_sampling_facts_withhold_intervals_not_observed_means(
+def test_sampling_facts_label_or_withhold_intervals_not_observed_means(
     tmp_path: Path, sampling: str
 ) -> None:
     result = load_results(
@@ -107,8 +110,36 @@ def test_sampling_facts_withhold_intervals_not_observed_means(
     )
     summary = result.point_margin_summary()
     assert summary["mean_point_margin"].tolist() == [3]
-    assert np.isnan(summary["ci_low"]).all()
-    assert summary["unavailable_reason"][0]
+    if sampling == "deterministic":
+        assert np.isnan(summary["ci_low"]).all()
+        assert summary["interval_status"].tolist() == ["Unavailable"]
+        assert summary["unavailable_reason"][0] == "No random sampling variation"
+        assert summary["conditional_interval_assumption"][0] is None
+    else:
+        assert summary["ci_low"].tolist() == [1] and summary["ci_high"].tolist() == [5]
+        assert summary["interval_status"].tolist() == [
+            "Conditional: Sampling not verified"
+        ]
+        assert summary["unavailable_reason"][0] is None
+        assert summary["conditional_interval_assumption"][0].startswith(
+            "Assumes declared game groups are independent"
+        )
+
+
+def test_unknown_sampling_beside_another_problem_withholds_interval(
+    tmp_path: Path,
+) -> None:
+    result = load_results(
+        _saved(tmp_path, [(0, 1, None), (0, 5, None)], omit=1, sampling="unknown")
+    )
+    summary = result.point_margin_summary()
+    assert summary["interval_status"].tolist() == ["Unavailable"]
+    assert np.isnan(summary["ci_low"]).all() and np.isnan(summary["ci_high"]).all()
+    reasons = summary["unavailable_reason"][0].split("; ")
+    assert reasons[0] == "Requested pass is incomplete or failed"
+    assert reasons[1] == "Sampling mechanism unknown"
+    assert "Requested games are incomplete" in reasons
+    assert summary["conditional_interval_assumption"][0] is None
 
 
 def test_missing_pair_stays_visible_and_resume_can_complete_it(tmp_path: Path) -> None:

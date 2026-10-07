@@ -26,8 +26,12 @@ from marl_battlegrounds.evaluation.results import (
     Row,
     _cell_type,
     _mapping,
+    _member_labels,
+    _pass_facts,
+    _plan_record,
     _schema,
     _stamp,
+    _state,
     _View,
 )
 from marl_battlegrounds.evaluation.run_writer import (
@@ -341,6 +345,18 @@ class CanonicalView(_View):
             row["entrant_id"]: row["name"]
             for row in self.records.config["participants"]
         }
+        # A challenger is not a config participant; its saved registration
+        # names it, so every view can name its games.
+        challenger = reuse.get("challenger_id")
+        if isinstance(challenger, str) and challenger not in self._entrant_names:
+            registration = _mapping(
+                _mapping(
+                    _mapping(manifest.get("details")).get("participant_registrations")
+                ).get(challenger)
+            )
+            self._entrant_names[challenger] = str(
+                registration.get("name") or challenger
+            )
         super().__init__(
             manifest, run_dir=run_dir, phase=phase, pass_id=pass_id, memory=memory
         )
@@ -397,10 +413,6 @@ class CanonicalView(_View):
             else super()._header(filename)
         )
 
-    def _present(self, filename: str) -> bool:
-        """Describe logical raw table roles without claiming optional capture."""
-        return filename in _RAW_ROLES or super()._present(filename)
-
     def _describe(self, name: str) -> Row:
         """Keep table availability separate from borrowed files and required scores.
 
@@ -449,12 +461,22 @@ class CanonicalView(_View):
             "missing_passes": (),
         }
 
-    def _raw(self, filename: str, rows: int) -> Iterator[Row]:
-        """Stream original selected rows while leaving summary reading unchanged."""
+    def _raw(
+        self, filename: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Stream original selected rows while leaving summary reading unchanged.
+
+        columns keeps only those cells of a raw game table; None keeps all.
+        """
         if filename in {"episodes.csv", "priority_metrics.csv"}:
             return
-        if filename not in {"match_results.csv", "full_metrics.csv"}:
+        if filename == "policy_assignments.csv":
+            # The challenger's own games, then reused games from their sources.
             yield from super()._raw(filename, rows)
+            yield from self.records.iter_assignments(self._selected_game_ids())
+            return
+        if filename not in {"match_results.csv", "full_metrics.csv"}:
+            yield from super()._raw(filename, rows, columns)
             return
         ids = self._selected_game_ids()
         if filename == "full_metrics.csv" and self._settings["metrics"] != "full":
@@ -471,9 +493,9 @@ class CanonicalView(_View):
                     raise ValueError(
                         "selected completed game lacks its required full report"
                     )
-        columns = None
+        narrow: tuple[str, ...] | None = None
         if filename == "match_results.csv" and self._settings["metrics"] == "none":
-            columns = (
+            narrow = (
                 *IDENTITY_COLUMNS,
                 "block_id",
                 "bootstrap_group",
@@ -482,13 +504,21 @@ class CanonicalView(_View):
                 "team_a_score",
                 "team_b_score",
             )
+        if columns is not None:
+            narrow = tuple(
+                name for name in narrow or self._header(filename) if name in columns
+            )
         for batch in self.records.iter_rows(
-            filename, game_ids=ids, rows=rows, columns=columns
+            filename, game_ids=ids, rows=rows, columns=narrow
         ):
             self._check_snapshot(filename)
             for row in batch:
-                if filename == "match_results.csv" and columns is not None:
-                    row = {name: row.get(name) for name in MATCH_COLUMNS}
+                if filename == "match_results.csv" and narrow is not None:
+                    row = {
+                        name: row.get(name)
+                        for name in MATCH_COLUMNS
+                        if columns is None or name in columns
+                    }
                 yield row
 
     def _check_snapshot(self, filename: str) -> None:
@@ -527,6 +557,92 @@ class CanonicalView(_View):
                 name: _stamp(self.run_dir / name) for name in self._plan_stamps
             }
 
+    def _registration(self, row: Mapping[str, Any]) -> Row:
+        """Return the System record that owns a row, from its own source run."""
+        game = self._game_by_origin.get(origin_key(row))
+        manifest = self.manifest if game is None else self.records.source_manifest(game)
+        return _mapping(_mapping(manifest.get("systems")).get(str(row["system_id"])))
+
+    def _present(self, filename: str) -> bool:
+        """Count a member table present locally or in any record source."""
+        if filename == "policy_assignments.csv":
+            return super()._present(filename) or bool(
+                self.records.sources_with("policy_assignments")
+            )
+        return filename in _RAW_ROLES or super()._present(filename)
+
+    def _owners(self, game: Mapping[str, Any]) -> set[str]:
+        """Return the System IDs that played one logical game, from its own pass."""
+        entry = self.records.entry(game) or {}
+        episode = str(self.records.origin(game)["episode_id"])
+        declaration = _mapping(_mapping(entry.get("episodes")).get(episode))
+        owners = _mapping(declaration.get("system_ids")) or _mapping(
+            entry.get("system_ids")
+        )
+        return set(map(str, owners.values()))
+
+    def _member_games(self) -> Iterator[Mapping[str, Any]]:
+        """Yield selected completed games, local or from a source with the table.
+
+        Reused games from sources saved without ``policy_assignments`` are
+        skipped, so their manifests are never opened for member records.
+        """
+        carrying = self.records.sources_with("policy_assignments")
+        selected = set(self._selected_game_ids())
+        for game in self.records.games:
+            source_id = self.records.origin(game).get("source_id")
+            if (
+                game["logical_game_id"] in selected
+                and (source_id is None or source_id in carrying)
+                and self.records.completed(game)
+            ):
+                yield game
+
+    def _member_systems(self) -> dict[str, Row]:
+        """Add member Systems of selected reused games whose sources carry rows.
+
+        Only record sources that declare ``policy_assignments`` are opened, and
+        only the Systems that played the selected games count.
+        """
+        result = super()._member_systems()
+        if not self.records.sources_with("policy_assignments"):
+            return result
+        for game in self._member_games():
+            if self.records.origin(game).get("source_id") is None:
+                continue
+            systems = _mapping(self.records.source_manifest(game).get("systems"))
+            for system in self._owners(game):
+                registration = _mapping(systems.get(system))
+                if _member_labels(registration) is not None:
+                    result[system] = registration
+        return result
+
+    def _member_coverage(self, members: Mapping[str, Row]) -> Row:
+        """Count member Systems' completed logical games, local and reused.
+
+        Reused games from record sources saved without ``policy_assignments``
+        are not counted: those sources predate the member record.
+        """
+        counts: dict[str, dict[str, Any]] = {
+            system: {
+                "system_name": registration.get("name"),
+                "recorded": 0,
+                "not_recorded": 0,
+            }
+            for system, registration in members.items()
+        }
+        for game in self._member_games():
+            entry = self.records.entry(game) or {}
+            episode = str(self.records.origin(game)["episode_id"])
+            recorded = (
+                "recorded"
+                if episode in _mapping(entry.get("trace_epochs"))
+                else "not_recorded"
+            )
+            for system in self._owners(game) & counts.keys():
+                counts[system][recorded] += 1
+        return counts
+
     def _entry(self, row: Mapping[str, Any]) -> Row:
         """Find a row's complete foreign or local pass owner, including run ID."""
         game = self._game_by_origin.get(origin_key(row))
@@ -560,6 +676,114 @@ class CanonicalView(_View):
             game.get("spawn_locations"),
         )
 
+    def _game_plan(self) -> list[Row]:
+        """List the logical schedule in scope with each game's original declaration.
+
+        Local games come first, in pass and schedule order as the shared view
+        lists them, so a run without reused games keeps its earlier summaries.
+        Reused games follow in logical order. They keep the declaration, random
+        root and sampling facts of the pass that played them, and their pair
+        keys start with that run's ID, so they never merge with local games
+        that reuse the same labels.
+        """
+        completed = {origin_key(row): row for row in self.iter_rows("episodes", 128)}
+        selected = set(self._selected_game_ids())
+        run_id = str(self.manifest.get("run_id"))
+        plan: list[Row] = []
+        for entry in self.selected.values():
+            schedule = _mapping(entry.get("episodes"))
+            if not schedule:
+                continue
+            facts = _pass_facts(entry, _state(entry, self.manifest)[0] == "complete")
+            for identifier, raw in schedule.items():
+                key = (run_id, entry["phase"], entry["pass_id"], int(identifier))
+                game = self._game_by_origin.get(key)
+                if game is None or game["logical_game_id"] not in selected:
+                    continue
+                plan.append(
+                    _plan_record(
+                        (run_id, entry["phase"], entry["pass_id"], str(identifier)),
+                        facts,
+                        _mapping(raw),
+                        completed.get(key),
+                        self._game_context(game),
+                    )
+                )
+        facts_by_pass: dict[tuple[object, str, str], Row] = {}
+        for game in self.records.games:
+            if game.get("origin") is None or game["logical_game_id"] not in selected:
+                continue
+            origin = self.records.origin(game)
+            entry = self.records.entry(game)
+            if entry is None:
+                raise ValueError("reused tournament game has no original pass")
+            pass_key = (origin.get("source_id"), origin["phase"], origin["pass_id"])
+            if pass_key not in facts_by_pass:
+                facts_by_pass[pass_key] = _pass_facts(entry, True)
+            plan.append(
+                _plan_record(
+                    (
+                        str(origin["run_id"]),
+                        str(origin["phase"]),
+                        str(origin["pass_id"]),
+                        str(origin["episode_id"]),
+                    ),
+                    facts_by_pass[pass_key],
+                    _mapping(
+                        _mapping(entry.get("episodes")).get(str(origin["episode_id"]))
+                    ),
+                    completed.get(origin_key(origin)),
+                    self._game_context(game),
+                )
+            )
+        return plan
+
+    def _settings_entries(self) -> list[Row]:
+        """Return local passes with games and the source passes of reused games."""
+        entries = super()._settings_entries()
+        selected = set(self._selected_game_ids())
+        seen: set[tuple[object, str, str]] = set()
+        for game in self.records.games:
+            if game.get("origin") is None or game["logical_game_id"] not in selected:
+                continue
+            origin = self.records.origin(game)
+            key = (origin.get("source_id"), origin["phase"], origin["pass_id"])
+            entry = self.records.entry(game)
+            if key not in seen and entry is not None:
+                seen.add(key)
+                entries.append(entry)
+        return entries
+
+    def _rankings(self, rows: int) -> Iterator[Row]:
+        """Give saved rankings the declared entrant IDs the other views use.
+
+        The saved table names entrants; the shared reader turns names into
+        recorded registration IDs. Canonical results identify entrants by their
+        declared IDs everywhere else, so a name that belongs to exactly one
+        entrant gets that ID. Other rows keep the shared reader's ID.
+        """
+        by_name: dict[str, list[str]] = {}
+        for identifier, name in self._entrant_names.items():
+            by_name.setdefault(name, []).append(identifier)
+        for row in super()._rankings(rows):
+            matches = by_name.get(str(row.get("system_name")), [])
+            if len(matches) == 1:
+                row["system_id"] = matches[0]
+            yield row
+
+    def _game_context(
+        self, game: Mapping[str, Any]
+    ) -> tuple[str, str, str, str, object]:
+        """Return a logical game's entrant IDs, names and spawn choice."""
+        a, b = game["team_a"], game["team_b"]
+        return (
+            a,
+            b,
+            self._entrant_names[a],
+            self._entrant_names[b],
+            game.get("spawn_locations"),
+        )
+
     def _episodes(self, rows: int) -> Iterator[Row]:
         """Project exact outcomes with focal score only for challenger-owned games."""
         challenger = self._reuse["challenger_id"]
@@ -582,10 +806,16 @@ class CanonicalView(_View):
             )
             yield result
 
-    def iter_rows(self, name: str, rows: int) -> Iterator[Row]:
-        """Use shared projections, selecting priority from actual requested games."""
+    def iter_rows(
+        self, name: str, rows: int, columns: frozenset[str] | None = None
+    ) -> Iterator[Row]:
+        """Use shared projections, selecting priority from actual requested games.
+
+        columns keeps only those cells of a metric table (identity included);
+        None keeps every cell.
+        """
         if name != "priority_metrics":
-            yield from super().iter_rows(name, rows)
+            yield from super().iter_rows(name, rows, columns)
             return
         if self.metadata["tables"][name]["availability"] == "disabled":
             return
@@ -593,9 +823,13 @@ class CanonicalView(_View):
         if self._settings["metrics"] == "none":
             wanted = set(self._settings["full_metrics_episodes"])
             ids = tuple(identifier for identifier in ids if identifier in wanted)
-        columns = (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES)
+        names = tuple(
+            name
+            for name in (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES)
+            if columns is None or name in columns
+        )
         for batch in self.records.iter_rows(
-            "match_results.csv", game_ids=ids, rows=rows, columns=columns
+            "match_results.csv", game_ids=ids, rows=rows, columns=names
         ):
             self._check_snapshot("match_results.csv")
             yield from batch

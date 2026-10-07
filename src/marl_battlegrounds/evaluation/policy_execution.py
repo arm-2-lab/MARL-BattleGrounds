@@ -780,7 +780,9 @@ class System:
     components : tuple[dict, ...] | None
         Optional ordered JSON-compatible identities with nonempty name and
         optional version, code_digest, checkpoint and parameters_digest.
-        IDs returned by apply index this table; None permits only -1 IDs.
+        IDs returned by apply index this table; None permits only -1 IDs. With
+        two or more entries the System has members: saved evaluations record
+        which member controlled each slot of every game (``policy_assignments``).
     checkpoint : str | None
         Optional caller-supplied checkpoint identity; default None.
     resource_scope : callable | None
@@ -1778,7 +1780,9 @@ def team(
     members fold the fixed MEMB domain and index. Scalar Policy adapters always
     retain physical-slot keys, including evaluator-supplied keys.
     Concrete coverage is checked at initialization/application; compiled callers
-    must preserve coverage when changing roster or selector values.
+    must preserve coverage when changing roster or selector values. Saved
+    evaluations record each slot's member in every game
+    (``load_results(...).table("policy_assignments")``).
 
     Raises
     ------
@@ -1862,6 +1866,9 @@ def pool[Member: System | Policy | str](
     keep the full-batch route, which skips unowned Policy slots. A mixture
     evaluation does not promise paired member draws across spawn ends: evaluate
     each fixed member separately when paired per-member results are needed.
+    Saved evaluations record the member drawn for every game
+    (``load_results(...).table("policy_assignments")`` and the ``member``
+    column of ``system_metrics(by="game")``).
 
     Raises
     ------
