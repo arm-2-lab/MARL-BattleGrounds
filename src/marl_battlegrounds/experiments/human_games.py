@@ -1,18 +1,18 @@
 """Play recorded games against, and alongside, a trained System in the BattleClient.
 
-Use python -m marl_battlegrounds.experiments.human_games models_dir=/path/models
-output_dir=/path/run. A person plays Team A in the BattleClient
-(marl_bgs.battle_client); the opponent System, by default the Season 0 winner,
-recurrent IPPO, plays Team B. In "against" games the person controls all five
-Team A agents. In "alongside" games the person controls one class, the Priest
-by default, and the partner System, by default the opponent itself, controls
-the other four. The games visit the test maps 47 to 51, once from each spawn
-end (spawn_mode). After each finished game the stage checks its replay against
-the schedule, measures it with marl_bgs.replay_metrics, saves the full metrics
-and a record beside it, and rewrites results.csv and results.md. Run the same
-command again to continue where you stopped; a different series needs its own
-output_dir. A person's moves cannot be repeated, so the saved replays are the
-record of the games.
+Use python -m marl_battlegrounds.experiments.human_games
+models_dir=/path/models output_dir=/path/run. A person plays Team A in the
+BattleClient (marl_bgs.battle_client); the opponent System, by default the
+Season 0 winner, recurrent IPPO, plays Team B. In "against" games the person
+controls all five Team A agents. In "alongside" games the person controls one
+class, the Priest by default, and the partner System, by default the opponent
+itself, controls the other four. The games visit the test maps 47 to 51, once
+from each spawn end (spawn_mode). Each game has its own seed (game_seed). After
+each finished game the stage checks its replay against the schedule, measures
+it with marl_bgs.replay_metrics, saves the full metrics and a record beside it,
+and rewrites results.csv and results.md. Run the same command again to continue
+where you stopped; a different series needs its own output_dir. A person's
+moves cannot be repeated, so the saved replays are the record of the games.
 """
 
 from __future__ import annotations
@@ -192,6 +192,47 @@ def person_slots(game: Game, player_class: str) -> tuple[int, ...]:
     return tuple(range(5)) if game.kind == "against" else (roster.index(player_class),)
 
 
+def game_seed(game: Game, seed: int) -> int:
+    """Return one game's seed: the series seed plus the game's number minus 1.
+
+    The seed fixes the random numbers the Systems draw to choose their actions.
+    An alongside game is played on the same map and from the same end as the
+    against game with the same index. With one shared seed the opponent would
+    repeat that game's opening move for move until it first saw a difference,
+    and the person would already know it. So every game gets its own seed.
+
+    Parameters
+    ----------
+    game : Game
+        The scheduled game.
+    seed : int
+        The series seed, which is game 1's seed.
+
+    Returns
+    -------
+    int
+        ``seed + game.number - 1``, the seed the game's BattleClient uses.
+
+    Raises
+    ------
+    ValueError
+        The game's seed is outside 0 through 2**32 - 1, the seeds
+        ``marl_bgs.battle_client`` accepts.
+
+    Examples
+    --------
+    >>> game_seed(Game(3, "against", 3, 49, False), 20261007)
+    20261009
+    """
+    value = seed + game.number - 1
+    if not 0 <= value < 2**32:
+        raise ValueError(
+            f"Game {game.number}'s seed, {value}, is outside 0 through 2**32 - 1; "
+            "choose another seed."
+        )
+    return value
+
+
 def team_a_controllers(
     game: Game, partner: Policy | System, player_class: str
 ) -> str | list[str | Policy | System]:
@@ -304,7 +345,8 @@ def check_replay(
     loaded : LoadedReplay
         Its counted replay.
     seed : int
-        The seed every game of the series uses.
+        The series seed. The replay must use the game's own seed,
+        ``game_seed(game, seed)``.
     player_class : str
         The class the person plays in alongside games.
 
@@ -312,14 +354,16 @@ def check_replay(
     ------
     ValueError
         The game did not end, or the replay records another map, other spawn
-        ends, another seed, or a person ("Manual") in other slots than the
-        game gives the person.
+        ends, another seed than the game's own, or a person ("Manual") in
+        other slots than the game gives the person; or the game's seed is
+        outside 0 through 2**32 - 1 (``game_seed``).
     """
     from marl_battlegrounds.evaluation.controller_names import (
         recorded_slot_controller_names,
     )
     from marl_battlegrounds.evaluation.map_identity import recorded_map
 
+    own_seed = game_seed(game, seed)
     replay = loaded.replay
     context = replay.header.context
     keys = {row.name: row.value for row in context.aggregation_keys}
@@ -332,7 +376,7 @@ def check_replay(
             "marl_bgs.spawn_locations"
         )
         != str(int(game.swapped)),
-        f"did not use seed {seed}": context.seed_protocol.root_seed != seed,
+        f"did not use seed {own_seed}": context.seed_protocol.root_seed != own_seed,
         f"does not have the person in slots {person_slots(game, player_class)}": (
             manual != person_slots(game, player_class)
         ),
@@ -372,7 +416,7 @@ def record_game(
         one counts. Call ``check_replay`` on it first.
     settings : mapping
         The series settings: ``opponent`` and ``partner`` (``name`` and
-        ``method``), ``player_class`` and ``seed``.
+        ``method``), ``player_class`` and ``seed`` (the series seed).
     played : (float, float) or None, default=None
         Wall-clock start and end of the BattleClient launch, in Unix seconds,
         or None when unknown (for example a game measured on a later run).
@@ -381,7 +425,8 @@ def record_game(
     -------
     dict
         ``record_version``; the game (``asdict(game)`` plus ``side``); the
-        settings above; ``replay`` (file name), ``replay_digest``,
+        settings above, except that ``seed`` is the game's own seed
+        (``game_seed``); ``replay`` (file name), ``replay_digest``,
         ``episode_id``; ``controllers`` and ``classes`` (one entry per global
         slot, as recorded; ``"Manual"`` marks the person); ``attempts`` (every
         replay file of the game, relative to its folder, with its completion
@@ -396,7 +441,9 @@ def record_game(
     Raises
     ------
     ValueError
-        No attempt was played to its end, or its result is unknown.
+        No attempt was played to its end, its result is unknown, or the
+        game's seed is outside 0 through 2**32 - 1 (``game_seed``). Nothing
+        is written then.
     """
     import jax
 
@@ -406,6 +453,7 @@ def record_game(
     )
     from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 
+    own_seed = game_seed(game, int(settings["seed"]))
     counted = counted_attempt(attempts)
     if counted is None:
         raise ValueError(f"Game {game.number} has no attempt played to its end.")
@@ -430,7 +478,7 @@ def record_game(
     record = identity | {
         "record_version": RECORD_VERSION,
         **{name: settings[name] for name in ("opponent", "partner", "player_class")},
-        "seed": int(settings["seed"]),
+        "seed": own_seed,
         "episode_id": context.identity.episode_id,
         "controllers": list(recorded_slot_controller_names(context) or [None] * 10),
         "classes": [catalog[row.class_id] for row in context.roster],
@@ -571,7 +619,7 @@ def recorded_games(
     ------
     ValueError
         A record names a replay that no longer exists, or an older record's
-        replay fails ``check_replay``.
+        replay fails ``check_replay`` or ``record_game``.
     """
     records: list[dict[str, Any]] = []
     for game in games:
@@ -687,7 +735,8 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
         ``opponent`` and ``partner`` (each a ``name`` and a ``method``, any
         reference ``marl_bgs.load_method`` accepts; the partner defaults to
         the opponent), ``kinds``, ``maps``, ``games_per_kind``,
-        ``player_class``, ``seed`` and the required ``output_dir``;
+        ``player_class``, ``seed`` (game 1's seed; see ``game_seed``) and the
+        required ``output_dir``;
         ``models_dir`` fills ``${models_dir}`` in the default paths. Relative
         paths use the folder the command was started from.
 
@@ -699,8 +748,9 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     Raises
     ------
     ValueError
-        The schedule settings or player_class are invalid, output_dir holds a
-        series with other settings (see ``check_series``), or a replay fails
+        The schedule settings or player_class are invalid, a game's seed is
+        outside 0 through 2**32 - 1 (``game_seed``), output_dir holds a series with
+        other settings (see ``check_series``), or a replay fails
         ``check_replay``.
     """
     import marl_battlegrounds as marl_bgs
@@ -710,7 +760,10 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
         settings[role]["method"] = method_reference(settings[role]["method"])
     games = schedule(settings["kinds"], settings["maps"], settings["games_per_kind"])
     player_class, seed = settings["player_class"], int(settings["seed"])
-    person_slots(games[0], player_class)  # Check the class before any game.
+    # Check the class and every game's seed before any game.
+    person_slots(games[0], player_class)
+    for game in games:
+        game_seed(game, seed)
     output_dir = Path(to_absolute_path(str(Path(settings["output_dir"]).expanduser())))
     output_dir.mkdir(parents=True, exist_ok=True)
     check_series(output_dir, settings)
@@ -746,7 +799,7 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
                 map_id=game.map_id,
                 team_a=team_a_controllers(game, partner, player_class),
                 team_b=opponent,
-                seed=seed,
+                seed=game_seed(game, seed),
                 spawn_mode="swapped" if game.swapped else "default",
                 output_dir=folder,
             )

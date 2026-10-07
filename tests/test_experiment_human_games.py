@@ -10,20 +10,26 @@ against games give the person all of Team A and alongside games only the
 player's class, with the partner elsewhere; method_reference() makes a folder
 path absolute and keeps a built-in name or factory even beside a same-named
 folder; check_replay() names every way a replay differs from its scheduled
-game; record_game() counts the first finished attempt outside the redone
+game, including a seed other than the game's own; game_seed() gives game N the
+series seed plus N - 1, so an alongside game never shares its seed with the
+against game on the same map and end, and refuses a seed outside 0 through
+2**32 - 1; record_game() counts the first finished attempt outside the redone
 subfolder, refuses a game with no finished attempt or an unknown result, and
-writes full_metrics.csv and game.json with every attempt, Team A's result and
-summary columns; check_series() refuses a folder holding a series with other
-settings or a games_per_kind change by part of a round, and save_series()
-writes series.json only once; main() checks player_class before any game, saves
-series.json only when a game starts, checks recorded games before any prompt,
-measures a finished but unmeasured game without playing it again, opens the
-BattleClient with each game's map, seed and spawn_mode, stops cleanly at Ctrl-C
-or after an unfinished game, and writes results.csv and results.md from every
-recorded game; recorded_games() measures records of an older version again and
-refuses a record whose replay is gone. Fakes replace the BattleClient, replays
-and metrics, so no JAX program is compiled; tests/test_replay_metrics.py runs
-check_replay and record_game on real replays.
+writes full_metrics.csv and game.json with the game's own seed, every attempt,
+Team A's result and summary columns; check_series() refuses a folder holding a
+series with other settings or a games_per_kind change by part of a round, and
+save_series() writes series.json only once; main() checks player_class before
+any game, saves series.json only when a game starts, checks recorded games
+before any prompt, measures a finished but unmeasured game without playing it
+again, checks and records each game against its own seed, refuses a seed that
+would put a game outside 0 through 2**32 - 1 before any prompt, opens the
+BattleClient with each game's map, own seed and spawn_mode, stops cleanly at
+Ctrl-C or after an unfinished game, and writes results.csv and results.md from
+every recorded game; recorded_games() measures records of an older version
+again, passing the series seed, and refuses a record whose replay is gone.
+Fakes replace the BattleClient, replays and metrics, so no JAX program is
+compiled; tests/test_replay_metrics.py runs check_replay and record_game on
+real replays.
 """
 
 import json
@@ -184,14 +190,27 @@ def test_check_replay_names_every_difference(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         "marl_battlegrounds.evaluation.map_identity.recorded_map", _recorded_map
     )
-    game = Game(2, "against", 2, 48, True)
-    human_games.check_replay(game, _replay(), seed=7, player_class="priest")
-    wrong = _replay("partial", map_id="47", spawn="0", seed=8, manual=(4,))
+    game = Game(2, "against", 2, 48, True)  # Series seed 7, so its own seed is 8.
+    human_games.check_replay(game, _replay(seed=8), seed=7, player_class="priest")
+    wrong = _replay("partial", map_id="47", spawn="0", seed=7, manual=(4,))
     with pytest.raises(ValueError) as caught:
         human_games.check_replay(game, wrong, seed=7, player_class="priest")
     for part in ("not played to its end", "is not map 48", "on the right",
-                 "did not use seed 7", "person in slots (0, 1, 2, 3, 4)"):  # fmt: skip
+                 "did not use seed 8", "person in slots (0, 1, 2, 3, 4)"):  # fmt: skip
         assert part in str(caught.value)
+
+
+def test_every_game_gets_its_own_seed() -> None:
+    games = schedule(["against", "alongside"], [47, 48, 49], 3)
+    seeds = [human_games.game_seed(game, 20261007) for game in games]
+    assert seeds == list(range(20261007, 20261013))
+    # Against 1 and alongside 1 share map 47 and the left end, not the seed.
+    assert (games[0].map_id, games[0].side) == (games[3].map_id, games[3].side)
+    assert seeds[0] != seeds[3]
+    assert human_games.game_seed(games[0], 2**32 - 1) == 2**32 - 1
+    for seed, game in ((2**32 - 1, games[1]), (-1, games[0])):
+        with pytest.raises(ValueError, match="outside 0 through 2\\*\\*32 - 1"):
+            human_games.game_seed(game, seed)
 
 
 def _metrics(**values: float) -> dict[str, float]:
@@ -232,7 +251,7 @@ def test_record_game_saves_every_attempt_and_the_result(
     ]  # fmt: skip
     assert record["controllers"] == ["Manual"] * 5 + ["IPPO"] * 5
     assert record["classes"][4] == "Priest" and record["wall_seconds"] is None
-    assert (record["seed"], record["player_class"]) == (7, "priest")
+    assert (record["seed"], record["player_class"]) == (8, "priest")  # 7 + 2 - 1
     assert json.loads((tmp_path / "game.json").read_text("utf-8")) == record
     header, row = (tmp_path / "full_metrics.csv").read_text("utf-8").splitlines()
     assert header.startswith("number,kind,index,map_id,swapped,side,replay,")
@@ -330,7 +349,7 @@ def test_main_plays_measures_resumes_and_stops_cleanly(
     assert [r["number"] for r in first] == [1, 2]
     assert first[0]["played"] is None and first[1]["played"] is not None
     assert [(k["map_id"], k["spawn_mode"], k["seed"]) for k in launches] == [
-        (48, "swapped", 11), (47, "swapped", 11),
+        (48, "swapped", 12), (47, "swapped", 13),
     ]  # fmt: skip
     assert launches[0]["team_b"] is opponent and launches[0]["team_a"][4] == "manual"
     assert launches[0]["output_dir"] == tmp_path / "alongside/game-02-map-48-right"
@@ -354,6 +373,8 @@ def test_main_plays_measures_resumes_and_stops_cleanly(
         human_games.main.__wrapped__(series(tmp_path, "seed=12"))
     with pytest.raises(ValueError, match="player_class must be"):
         human_games.main.__wrapped__(series(tmp_path, "player_class=paladin"))
+    with pytest.raises(ValueError, match="Game 3's seed"):
+        human_games.main.__wrapped__(series(tmp_path, f"seed={2**32 - 2}"))
 
 
 def _loaded(reference: str) -> object:
@@ -409,15 +430,17 @@ def test_main_checks_recorded_games_before_any_prompt(
 def test_older_records_are_measured_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    game = Game(1, "against", 1, 47, False)
+    game = Game(2, "against", 2, 48, True)
     _save(tmp_path / game.folder, {"replay": "r.marlbg-replay.json", "outcome": "win"})
     calls: list[Game] = []
+    seeds: list[int] = []
 
     def read_attempts(folder: Path) -> list[Any]:
         return [(folder / "r.marlbg-replay.json", _replay())]
 
     def check_replay(game: Game, loaded: object, **options: Any) -> None:  # noqa: ANN401
         calls.append(game)
+        seeds.append(options["seed"])
 
     def record_game(game: Game, attempts: object, **options: Any) -> dict[str, Any]:  # noqa: ANN401
         calls.append(game)
@@ -428,6 +451,7 @@ def test_older_records_are_measured_again(
     monkeypatch.setattr(human_games, "record_game", record_game)
     records = human_games.recorded_games([game], tmp_path, SETTINGS)
     assert calls == [game, game] and records[0]["score_difference"] == 15
+    assert seeds == [7]  # The series seed; check_replay works out game 2's own.
     (tmp_path / game.folder / "r.marlbg-replay.json").unlink()
     with pytest.raises(ValueError, match="names a missing replay"):
         human_games.recorded_games([game], tmp_path, SETTINGS)

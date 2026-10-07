@@ -218,46 +218,55 @@ python -m marl_battlegrounds.experiments.human_games \
 ```
 
 Run the same command again to continue where you stopped: recorded games are
-checked first, recorded games are skipped, and a finished game that was not
-yet measured is measured without being played again. When the first game
-starts, the settings are saved in `series.json`, and a later run with
-different settings is refused. `games_per_kind` may change only by whole
-rounds of five games, for example `games_per_kind=5` to end the series after
-the first round, so every game keeps its number. For another series, choose
-another `output_dir` and override, for example, `player_class=mage` to play
+checked first, recorded games are skipped, and a finished game that was not yet
+measured is measured without being played again. When the first game starts,
+the settings are saved in `series.json`, and a later run with different
+settings is refused. `games_per_kind` may change only by whole rounds of five
+games, for example `games_per_kind=5` to end the series after the first round,
+so every game keeps its number and its seed. For another series, choose another
+`output_dir`. If the same person plays it, also choose a seed that no earlier
+game used, for example `seed=20271007`, so the opponent never repeats an
+opening the person has seen. Override, for example, `player_class=mage` to play
 another class alongside the policy, `opponent.method=PATH opponent.name=NAME`
 to play against your own method, or `partner.method=PATH partner.name=NAME` to
-put your own method beside the person against the opponent. To redo a
-recorded game, move its `game.json` and its finished replay into a `redone/`
-subfolder of the game's folder; they stay listed as attempts, and the redo
-should be reported with the results.
+put your own method beside the person against the opponent. To redo a recorded
+game, move its `game.json` and its finished replay into a `redone/` subfolder
+of the game's folder; they stay listed as attempts, and the redo should be
+reported with the results.
 
 **Settings.** Maps 47 to 51, ten games of each kind, the Priest in the games
-alongside, seed 20261007 for every game (it fixes the random numbers recurrent
-IPPO draws at each tick; the person's moves differ from game to game), first to
-20 points, 300 ticks and Red Zone depth 5.0, and XLA's deterministic GPU mode.
+alongside, first to 20 points, 300 ticks and Red Zone depth 5.0, and XLA's
+deterministic GPU mode. Every game has its own seed: the series' first game
+uses 20261007, its second 20261008, and so on (`game_seed`). A seed fixes the
+random numbers recurrent IPPO draws to choose its actions. An alongside game is
+played on the same map and from the same end as the against game with the same
+number among the games of its kind, so with one shared seed recurrent IPPO
+would repeat that game's opening move for move, and the person would already
+know it.
 
 **Saved files.** Each game has its own folder, for example
 `against/game-03-map-49-left/`, holding every replay attempt,
 `full_metrics.csv` (the game, its replay and the replay's digest, then all
 11,192 metric columns; an empty cell is a metric that does not apply) and
-`game.json`: the game and the series settings, the controller and class of
-every slot (`"Manual"` is the person), every attempt and whether it was played
-to its end, when the BattleClient opened and closed for the counted game (the
-time includes about 12 seconds of setup and any time in the Replay Viewer),
-the metric schema version,
-the XLA flags and JAX backend that measured it, and Team A's result, points,
-point margin (`score_difference`), kills, deaths and game length. In the
-series folder, `series.json` holds the settings, and `results.csv` and
-`results.md` list every recorded game, with wins, draws and losses and the
-mean point margin, kills and deaths of each kind.
+`game.json`: the game, its own seed and the other series settings, the
+controller and class of every slot (`"Manual"` is the person), every attempt
+and whether it was played to its end, when the BattleClient opened and closed
+for the counted game (the time includes about 12 seconds of setup and any time
+in the Replay Viewer), the metric schema version, the XLA flags and JAX backend
+that measured it, and Team A's result, points, point margin
+(`score_difference`), kills, deaths and game length. In the series folder,
+`series.json` holds the settings (its `seed` is the first game's seed), and
+`results.csv` and `results.md` list every recorded game, with wins, draws and
+losses and the mean point margin, kills and deaths of each kind.
 
 **Limits.** The games are played by one expert, so they show what the policy
 does against and beside that player, not how people in general would do. The
 game is turn-based with no time limit, so the person can think as long as they
 like before each move; `game.json` records how long the BattleClient was open
-for each game. In the
-games against the policy, one person plans all five agents, while the policy's
-five agents share one team view but each decides on its own. The games are
-numbered in the order they were played. A person's moves cannot be repeated,
-so the saved replays are the record of the games.
+for each game. In the games against the policy, one person plans all five
+agents, while the policy's five agents share one team view but each decides on
+its own. The games are numbered in the order they were played. A game played
+again (an attempt exited before its end, or a redo) uses the same seed, so the
+policy repeats the opening the person saw in the earlier attempt; `game.json`
+lists every attempt, so such games can be reported. A person's moves cannot be
+repeated, so the saved replays are the record of the games.

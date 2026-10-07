@@ -568,7 +568,9 @@ saves `full_metrics.csv` and `game.json` beside it, and rewrites `results.csv`
 and `results.md`. Run the same command again to continue where you stopped.
 Override `opponent.method=` and `opponent.name=`, `partner.method=` and
 `partner.name=`, `kinds=`, `maps=`, `games_per_kind=` or `player_class=` to
-change the series, with a new `output_dir` for each series.
+change the series, with a new `output_dir` for each series and, when the same
+person plays again, a new `seed`, so the opponent never repeats an opening
+they have seen.
 [The experiments README](../../src/marl_battlegrounds/experiments/README.md#human-games-against-and-alongside-recurrent-ippo)
 has the protocol, the exact command and what each saved file holds.
 
