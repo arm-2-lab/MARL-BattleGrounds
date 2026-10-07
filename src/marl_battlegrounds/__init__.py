@@ -3,6 +3,7 @@
 Use import marl_battlegrounds as marl_bgs, then call make for the environment,
 evaluate for frozen-System games, or run_tournament for cross-play. System,
 init_systems and apply_systems support researcher-owned methods in raw loops.
+replay_metrics measures any saved game, including one played in battle_client.
 Setup helpers and the existing Policy adapter use the same package entry point.
 run_canonical_tournament uses a released tournament snapshot and verified records.
 It requires a separately installed, qualified bundle; none is fabricated here.
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
         init_episode_tracking,
         track_episode_step,
     )
+    from marl_battlegrounds.evaluation.analysis import replay_metrics
     from marl_battlegrounds.evaluation.canonical import run_canonical_tournament
     from marl_battlegrounds.evaluation.evaluate import (
         EpisodeSpec,
@@ -115,6 +117,7 @@ __all__ = [
     "policy",
     "pool",
     "prepare_bundle",
+    "replay_metrics",
     "run_canonical_tournament",
     "run_tournament",
     "select_initial_population",
@@ -144,6 +147,7 @@ _MODULES = {
     "evaluate_episodes": "evaluation.evaluate",
     "evaluate_scenarios": "evaluation.evaluate",
     "load_results": "evaluation.results",
+    "replay_metrics": "evaluation.analysis",
     "evaluate": "evaluation.evaluate",
     "Policy": "evaluation.policy_execution",
     "policy": "evaluation.policy_execution",

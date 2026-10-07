@@ -461,6 +461,45 @@ run produce no capture. Automatic reset allocation may leave unused IDs, so a
 numeric range does not promise a particular number of completed games. Metrics
 consume authoritative transition facts without needing a replay or second game.
 
+### Measure A Saved Game
+
+`marl_bgs.replay_metrics` measures any saved replay after the game: one from
+`evaluate` or a tournament, or one a person played in the BattleClient. It
+returns each metric's value at the game's last tick, by column name, with the
+same names as the `priority_metrics` and `full_metrics` tables. A metric that
+does not apply to the game is NaN, as in those tables:
+
+```python
+import marl_battlegrounds as marl_bgs
+
+values = marl_bgs.replay_metrics(
+    "recordings/battle_1f0c.marlbg-replay.json", metrics="full"
+)
+print(values["team_a_kills"], values["team_a_deaths"])
+```
+
+Like every other `metrics` setting, it gives the priority columns by default;
+`metrics="full"` gives all 11,192. It is the calculation the Replay Viewer's
+Metrics tab and CSV export use, with the same metric functions as live
+evaluation. It also accepts a replay already read with `load_replay`, so a
+script that checks a replay's header or completion reads the file only once.
+
+In our checks it matched `evaluate(..., metrics="full")` for the same games:
+
+| Check | Games | Columns That Differed |
+| --- | --- | --- |
+| CPU | Two 40-tick games of TDM-Alpha against TDM-Beta on map 47 | None of 11,192 |
+| RTX 5090, XLA's deterministic mode | Four 188- to 213-tick games of recurrent IPPO against TDM-Alpha on maps 47 and 48 | None of 11,192 |
+| RTX 5090, normal mode | The same four games | 0 to 24 per game, in the last digits only |
+
+The differences in the GPU's normal mode were damage totals and their
+fractions, at most 0.00003 on totals near 450, because the GPU may add the
+same numbers in another order ([Same Seed, Same Game](repeatability.md)).
+Every count, kill, score and outcome matched. Each of those full measurements
+took 4.5 to 6.3 seconds on an RTX 5090, most of it reading the 18 to 20 MB
+replay file on the host; the first call took 11 to 13 seconds because it also
+compiles.
+
 ### Recording, Metrics And Exact Repeats
 
 Choosing `metrics="none"`, `"priority"` or `"full"`, and recording replays or

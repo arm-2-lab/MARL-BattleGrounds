@@ -542,6 +542,20 @@ def presets() -> dict[str, dict[str, Any]]:
         "reference": "Random",
         "hydra": deepcopy(stage_hydra),
     }
+    tournament_winner, winner_method = SEASON_0_FIELD[0]
+    result["human_games.yaml"] = {
+        "defaults": ["_self_"],
+        "models_dir": "???",
+        "opponent": {"name": tournament_winner, "method": winner_method},
+        "partner": {"name": "${opponent.name}", "method": "${opponent.method}"},
+        "kinds": ["against", "alongside"],
+        "maps": [47, 48, 49, 50, 51],
+        "games_per_kind": 10,
+        "player_class": "priest",
+        "seed": 20261007,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [

@@ -555,6 +555,23 @@ how long games lasted and how each system's wins compare with Random's.
 [The experiments README](../../src/marl_battlegrounds/experiments/README.md)
 has the Season 0 results, the exact commands and their measured cost.
 
+## Play Recorded Games Against And Alongside A System
+
+`python -m marl_battlegrounds.experiments.human_games models_dir=PATH output_dir=PATH`
+walks a person through a series of BattleClient games as Team A against a
+trained System, by default recurrent IPPO: in "against" games the person
+controls all five agents, and in "alongside" games one class (the Priest by
+default) beside four agents of a partner System, by default the opponent
+itself. The games visit maps 47 to 51 from both spawn ends (`spawn_mode`).
+After each finished game it measures the replay with `marl_bgs.replay_metrics`,
+saves `full_metrics.csv` and `game.json` beside it, and rewrites `results.csv`
+and `results.md`. Run the same command again to continue where you stopped.
+Override `opponent.method=` and `opponent.name=`, `partner.method=` and
+`partner.name=`, `kinds=`, `maps=`, `games_per_kind=` or `player_class=` to
+change the series, with a new `output_dir` for each series.
+[The experiments README](../../src/marl_battlegrounds/experiments/README.md#human-games-against-and-alongside-recurrent-ippo)
+has the protocol, the exact command and what each saved file holds.
+
 ## Run The Public Tutorials
 
 The experiment tutorials use the same optional Hydra adapter. Each script keeps

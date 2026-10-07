@@ -796,6 +796,10 @@ comparisons; do not train or adapt on the evaluation scenarios.
 Capture starts at frame zero by default. `output_dir="./recordings"` resolves
 against the directory where you launched Python. It never writes into the
 installed package. Use `capture_replay=False` to skip recording and its cost.
+A saved replay holds everything needed to measure the game:
+`marl_bgs.replay_metrics(path, metrics="full")` gives the same full metrics
+`evaluate` collects
+([Measure A Saved Game](evaluation/workflows.md#measure-a-saved-game)).
 
 Completed games save automatically, in the background. At game over the arena
 shows the Verdict card at once: the result, both scores and why the game ended.
