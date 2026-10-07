@@ -1,0 +1,3 @@
+experiment,games,calls,legal_percent,failures,forced_turns,input_tokens_per_call,output_tokens_per_call,median_call_seconds,wall_seconds,no_combat_percent,move_stay_percent,move_north_percent,move_south_percent,move_east_percent,move_west_percent,move_northeast_percent,move_northwest_percent,move_southeast_percent,move_southwest_percent,seconds_per_tick
+field,90,62629,99.97,MaskedActionError: 2; ReplyFormatError: 16,638,4038.1,12.1,1.67,12502.8,94.67,0.03,36.97,0.83,61.83,0.03,0.0,0.07,0.0,0.24,1.7
+scenarios,2048,9610,99.99,ReplyFormatError: 1,256,3011.0,12.2,19.9,1317.9,84.75,0.0,33.07,2.13,62.36,2.08,0.0,0.17,0.0,0.19,

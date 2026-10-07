@@ -289,6 +289,65 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false .venv/bin/python -m marl_battlegrounds \
 Resume and status commands run from the same worktree. Remove the worktree only
 after the study and its analysis are finished.
 
+## Play A Language Model Against A Field And In The Scenarios
+
+Start a model server first, as [the Qwen recipe](../llm/qwen_recipe.md) shows,
+then play the Season 0 field, the eight endgame scenarios, or both:
+
+```bash
+JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
+  +field=season_0 models_dir=/runs/hyperparameter-search output_dir=/runs/llm-field
+JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
+  'maps=[]' 'scenario_ids=[1,2,3,4,5,6,7,8]' output_dir=/runs/llm-scenarios
+```
+
+The stage builds one System with `llm.make_system` (the recipe's Qwen3.5-9B by
+default; set `model`, `model_revision` and `server_url` for another) and plays
+it as Team A.
+
+- **Field games** go through `marl_bgs.evaluate`. On each test map the System
+  plays one pair of games, one from each spawn end, against every opponent
+  before the next map starts. `time_limit_hours` (8 by default) stops new
+  pairs, so a run that is cut off still has the same maps for every opponent.
+  `results.md` and `results.csv` give one row per opponent. Without `+field`,
+  the opponents are the three scripted systems.
+- **Scenarios** go through `marl_bgs.evaluate_scenarios`, one scenario at a
+  time, with the scenarios stage's settings: 256 games per scenario, 128 side
+  by side. `scenarios/results.md` uses that stage's table format, and
+  `scenarios/costs.csv` gives the model calls, tokens and fallbacks per
+  scenario.
+
+Results are saved after every pair of games and every scenario. Running the
+same command again skips what is already saved.
+
+Then explain how the model played, from the saved games and calls alone:
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.llm_analysis \
+  field_dir=/runs/llm-field scenarios_dir=/runs/llm-scenarios/scenarios \
+  output_dir=/runs/llm-analysis
+```
+
+`behavior.csv` puts the model's team beside its opponents in the same games,
+per game: Basic uses, damage, ticks in which two or more teammates dealt damage,
+kills shared by two or more agents, distance between teammates, deaths and
+deaths inside the team's own Red Zone. `answers.csv` gives how many replies were
+legal, what failed, tokens per call, the median call time, seconds per tick and
+which moves and attacks the model chose. Either folder can be left out. The
+field games must be played with `metrics=full`, the stage's default. No model
+or GPU is needed.
+
+To see the exact text the model reads on one tick of a real game, without a
+model server:
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.llm_prompt \
+  output_dir=/runs/llm-prompt
+```
+
+It writes `prompt.txt`, rendered by `llm.format_actor_view` in the model's own
+frame, and `menu.json`, the tick, agent and legal choices.
+
 ## Choose Devices And Worker Limits
 
 Leave `resources=inherit` to keep the calling process's device and allocator

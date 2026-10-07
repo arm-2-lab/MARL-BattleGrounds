@@ -542,6 +542,55 @@ def presets() -> dict[str, dict[str, Any]]:
         "reference": "Random",
         "hydra": deepcopy(stage_hydra),
     }
+    result["llm_analysis.yaml"] = {
+        "field_dir": None,
+        "scenarios_dir": None,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    # The paper supplement's example prompt: TDM-Alpha against TDM-Beta on
+    # test map 47, from the first tick at or after 12 with a possible hit.
+    result["llm_prompt.yaml"] = {
+        "map_id": 47,
+        "team_a": "tdm-alpha",
+        "team_b": "tdm-beta",
+        "seed": 0,
+        "min_tick": 12,
+        "max_ticks": 120,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
+    # The qualified local Qwen recipe (docs/llm/qwen_recipe.md) with the 9B
+    # model; the server is started separately with the recipe's settings.
+    result["llm_challenge.yaml"] = {
+        "defaults": ["_self_"],
+        "systems": [
+            {"name": "TDM-Beta", "method": "tdm-beta"},
+            {"name": "TDM-Gamma", "method": "tdm-gamma"},
+            {"name": "TDM-Alpha", "method": "tdm-alpha"},
+        ],
+        "models_dir": None,
+        "skip": ["Random"],
+        "model": "qwen3.5-9b-fp8",
+        "server_url": "http://127.0.0.1:8000/v1",
+        "model_revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+        "history_turns": 0,
+        "failure_policy": "fallback",
+        "records": "light",
+        "maps": [47, 48, 49, 50, 51],
+        "games_per_map": 2,
+        "seed": 20261007,
+        "max_steps": 300,
+        "metrics": "full",
+        "time_limit_hours": 8.0,
+        # The scenarios stage's Season 0 settings: 256 games per scenario.
+        "scenario_ids": [],
+        "scenario_games": 256,
+        "scenario_envs": 128,
+        "scenario_seed": 20261006,
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     result["field/season_0.yaml"] = {
         "models_dir": "???",
         "systems": [
