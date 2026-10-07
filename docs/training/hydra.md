@@ -319,10 +319,12 @@ pair of classes stood, class by class, from each game's agent columns read
 from the entrant's side. `elo_screen.csv` ranks every team-level metric in the
 catalog by its rank correlation with Elo, over all entrants and over the
 learned ones only (set `scripted` to name the scripted entrants), to find the
-measures that follow strength most closely. It tests each one too: an exact
-permutation p-value with Holm's correction over the screen, the share of
-decided games the winner had more of it, and whether each entrant had more of
-it in its wins than in its losses. `summary.md` shows the tables from the highest Elo
+measures that follow strength most closely. It compares per-game totals per 100 ticks,
+because games last different times, and tests each metric: an exact
+permutation p-value with Holm's and the Westfall-Young max-statistic
+corrections over the screen, the share of decided games the winner had more
+of it, and, inside each matchup (same opponent, map and spawn end), whether a
+team had more of it in its wins than in its losses. `summary.md` shows the tables from the highest Elo
 down, and `teamwork.png` plots each teamwork measure against Elo. A
 correlation across one field describes that field; it does not show that a
 measure causes strength. Set `names` to give entrants readable names (the Season 0 names are

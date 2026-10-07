@@ -1260,20 +1260,33 @@ intervals resample whole spawn-swapped game pairs within each opponent and
 map, as Elo does; matchups that repeat exactly (see Repeated games above) add
 no width. A rank correlation of +1 means the measure rises with every step up
 in Elo and −1 that it falls; the stage also ranks all 145 team-level metrics
-in the catalog this way (`season_0_teamwork_screen.csv`) and tests each one:
+in the catalog this way (`season_0_teamwork_screen.csv`), an exploratory
+screen, and tests each one. Learned teams draw 20-29% of their games and the
+scripted bots 2.5-4.8%, and a draw runs the full 300 ticks, so learned teams'
+games last longer (238-252 ticks on average, against 205-212). The screen
+therefore compares per-game totals (counts, health, ticks) per 100 ticks;
+fractions, distances and averages keep their scale (`scale`). The tests:
 
 - **Exact p-value.** The share of all 362,880 orderings of the nine ratings
   whose rank correlation is at least as far from zero (`p_value_all`; the
-  smallest possible is 2 / 9!, about 0.0000055), the same over the six learned
-  entrants (`p_value_learned`; 720 orderings, smallest 0.0028), and
-  `p_value_all` after Holm's correction for testing all 141 metrics with a
-  value (`holm_p_value_all`).
+  smallest possible is 2 / 9!, about 0.0000055), and the same over the six
+  learned entrants (`p_value_learned`; 720 orderings, smallest 0.0028).
+- **Corrections for the whole screen.** `p_value_all` after Holm's correction
+  (`holm_p_value_all`) and after the Westfall-Young max-statistic correction
+  (`max_t_p_value_all`), over the 138 metrics whose values differ between
+  entrants. The second allows for metrics that move together.
 - **Winner check.** Over the 5,933 decided games, the share in which the
   winner had more of the metric than the loser (`winner_higher_share`).
-- **Wins over losses.** For each entrant, the chance that one of its wins
-  shows more of the metric than one of its losses, averaged over the nine
-  (`wins_over_losses`). Near 0.5 means the metric does not change with the
-  result inside a team: it describes how the team plays, not how a game went.
+- **Inside a matchup.** Within each cell of one entrant, opponent, map and
+  spawn end with at least two wins and two losses, the chance that one of
+  its wins shows more of the metric than one of its losses, averaged over
+  cells and weighted by wins times losses (`wins_over_losses`). Holding the
+  opponent fixed matters: a team's wins come mostly against weak opponents.
+  0.5 means the metric does not change with the result inside a matchup.
+
+Matchups between methods that never sample (the bots, greedy QMIX and
+PQN-VDN) repeat the same 10 games 20 times, and the two game checks count
+each copy.
 
 The class tables (`season_0_teamwork_by_class.csv`) also give the share of
 each ally class's ticks inside a Mage or Warrior aura, the share of the
@@ -1310,11 +1323,14 @@ preallocation off.
 | Priority, as in the tournament | 488 s (8.1 minutes) | 6.5 GB | 924 MiB | 40 MB |
 | Full, for every game | 834 s (13.9 minutes) | 9.5 GB, with an earlier analysis | 980 MiB | 392 MB |
 
-The analysis alone, from the saved replay on the same card, took 13.4 seconds
-and 0.50 GB of peak RAM for the whole command, of which the two
-`system_metrics` calls took 8.2 seconds.
+The analysis alone, from the saved replay, took 15.6 seconds on the CPU and
+0.61 GB of peak RAM for the whole command, screen tests included; the two
+`system_metrics` calls took 8.6 seconds.
 
 **Results.** Entrants from the highest Elo down; percentages are shares.
+Values and rank correlations in this table are per game; the findings below
+use the screen's per-tick values and length-free shares where game length
+matters.
 
 | Measure | Rank correlation with Elo | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1344,66 +1360,67 @@ useful Priest healing and of the damage it received).
 | Recurrent IPPO | 34.6% | 32.6% | 13.8% | 8.5% | 10.5% | 25.9% | 34.2% | 13.2% | 19.1% | 7.6% |
 | Feedforward IPPO | 25.3% | 26.3% | 12.4% | 20.2% | 15.9% | 19.9% | 29.0% | 15.0% | 25.8% | 10.4% |
 
-**Findings.**
+**Findings.** Per-game values are in the table above; the screen's per-tick
+values and tests are in `season_0_teamwork_screen.csv`.
 
-1. **Strong teams stay together and inside each other's auras.** Teammates
-   stand 3.9-4.1 units apart in the scripted bots and 2.66 in recurrent
-   IPPO (rank correlation −0.90). Time inside a Mage aura rises from 44-46%
-   to 65% (+0.88), and inside a Warrior aura from 38-41% to 54% (+0.87).
-2. **The auras' payoff follows strength most closely of all.** Mage auras
-   add 261-265 damage per game for the bots and 434 for recurrent IPPO;
-   Warrior auras prevent 339-341 and 470. Both correlate +0.97 with Elo over
-   all nine entrants and +0.94 over the six learned ones, tied for the
-   strongest trend among all 145 team-level metrics.
-3. **Strong teams kill together, and set kills up.** Kills with two or more
-   helpers rise from 69-71% for the bots to 77-89% for the learned teams
-   (+0.85), and kills on an enemy a Hunter had already slowed from 32-35% to
-   42-57% (+0.85).
-4. **Using Ultimates more does not make a team stronger.** Ultimate uses per
-   game show no clear trend (+0.45 over all nine, −0.26 over the learned
-   six), and the share of kills helped by an Ultimate falls with Elo, from
-   20-21% for the bots to 9.5-13% for the learned teams (−0.82).
-5. **Healing that counts beats healing that saves.** The useful share of
-   Priest healing rises from 50-51% to 77% (+0.83). The bots take 93-95% of
-   their chances to save a dying ally, more than any learned team, yet rank
-   last (−0.80).
-6. **Aggression helps less than position.** Basic uses rise with Elo over
-   all nine (+0.80) but weakly among the learned six (+0.37), and focus-fire
-   ticks barely at all (+0.42). PQN-VDN, second, uses the fewest Basics of
-   any learned team (570 per game) and has the fewest focus-fire ticks (121),
-   but the tightest spacing (2.44) and the most time inside Warrior auras
-   (63%).
-7. **The winner protects its front line and its healer.** Recurrent IPPO's
-   Priest gives 67% of its useful healing to the Mage and Warrior, against 52%
-   for feedforward IPPO (1,240). Its Warrior takes 34% of the team's damage
-   (29%) and its Priest 7.6% (10.4%).
-8. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
+1. **Activity does not separate strong teams from weak ones.** Per tick,
+   kills (+0.02), Basic uses (−0.17), Ultimate uses (−0.13) and ticks with
+   two or more attackers (−0.02) show no trend across the nine. Every
+   Ultimate has a 30-tick cooldown, so a team can use at most about 0.17 per
+   tick; the nine use 0.11 to 0.14.
+2. **One trend survives the whole screen, narrowly.** The share of kills a
+   Warrior's Ultimate helped with falls from 13.9-14.4% for the bots to
+   3.1-3.7% for the learned teams (−0.95; Holm p = 0.049, max-statistic p =
+   0.029; −0.89 among the learned six). Recurrent MAPPO and QMIX are 4 Elo
+   apart; if they swapped places, this metric would fall below Holm's line
+   and the useful share of Basic healing would rise above it.
+3. **Strong teams hold together.** Teammates stand 3.90-4.11 map units apart
+   in the bots and 2.45-3.45 in the learned teams (−0.90). The auras pay off
+   accordingly: Warrior auras prevent 10.0-11.8 points per 100 points of
+   damage learned teams take, against 8.7-9.0 for the bots
+   (`warrior_aura_protection_share`, +0.92), and Mage auras add 8.6-9.8% of
+   learned teams' damage, against 7.1-7.2% (`mage_aura_damage_share`,
+   +0.90). Per game, both payoffs reach +0.97, partly because learned teams'
+   games last longer.
+4. **Freedom reaches slowed allies.** Every Priest heal gives its target
+   Freedom, a short floor on its speed. In learned teams Freedom held up a
+   slowed ally's speed on 4.9-6.3% of the ticks it was active, against
+   3.5-3.8% for the bots (+0.93, max-statistic p = 0.055), and this orders
+   the six learned teams almost perfectly (+0.94).
+5. **A few measures order the six learned teams.** Damage to enemies a Hunter
+   had slowed and kills a Warrior's Basic helped, both per tick, order them
+   perfectly (+1.00, p = 0.0028); Freedom protection, Mage aura damage and
+   Warrior aura protection per tick reach +0.94. Warrior aura protection per
+   tick is only +0.68 over all nine: the bots, hit more often, prevent as
+   much per tick (160-165 per 100 ticks) as feedforward IPPO and MAPPO
+   (159 and 151).
+6. **Most strong trends separate the bots from the learned teams.** 70 of the
+   138 metrics put all three bots on one side of all six learned teams, and
+   49 of the 54 with p < 0.05 over the nine are of this kind. The three bots
+   are near copies, so the field acts smaller than nine. Among the learned
+   six, 9 metrics reach p < 0.05, where chance alone gives about 5.
+7. **Inside a matchup, teamwork also follows the result.** With the opponent,
+   map and spawn end fixed, kills (0.94) and deaths (0.06) move with the
+   result; a team also stands closer (0.43), gains more Mage aura damage per
+   tick (0.77) and more from Freedom (0.58) in the games it wins, and
+   prevents less per tick with Warrior auras (0.41), because a winning team
+   is hit less. These measures are partly the state of a game, not only a
+   fixed style.
+8. **Learned teams bring the back line into the auras** (class tables, not
+   tested). The bots keep their Priest inside the Mage's aura 23-24% of its
+   ticks and their Hunter inside the Warrior's 16-18%; learned teams 46-59%
+   and 34-61%. The bots' Priests give the Warrior 2-3% of their Freedom uses
+   and learned Priests 8.5-13.5%, which separates the bots from learned teams
+   but does not order the learned ones.
+9. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
    with two or more Trap ticks left. Its Hunters trapped enemies 10,355 times
    in its 1,600 games, and its team broke none of those Traps with damage.
-9. **Four trends survive the whole screen.** With Holm's correction over
-   141 metrics, four remain below 0.05: damage Warrior auras prevented,
-   damage Mage auras added and kills a Hunter's Basic helped (each +0.97,
-   p = 0.00017, Holm 0.023), and the share of kills a Warrior's Ultimate
-   helped (−0.95, Holm 0.049: 13.9-14.4% for the bots, 3.1-3.7% for the
-   learned teams). Ultimate uses stay a null (+0.45, p = 0.23).
-10. **Some trends describe the team, not the score.** Teammate distance
-    (0.49), Freedom protection (0.52, +0.93 with Elo) and time inside a
-    Warrior aura (0.52) barely change between a team's wins and its losses,
-    while kills (0.92) and deaths (0.09) follow the result. Warrior aura
-    protection is higher in a team's losses (0.38) yet rises with Elo:
-    stronger teams protect more in every kind of game.
-11. **Learned teams bring the back line into the auras.** The bots keep their
-    Priest inside the Mage's aura 23-24% of its ticks and their Hunter inside
-    the Warrior's aura 16-18%; the learned teams 46-59% and 34-61%. The bots'
-    Priests keep 34-36% of their Freedom uses for themselves and give the
-    Warrior 2-3%; learned Priests give it 8.5-13.5%.
-12. **Limits.** These are correlations across one field of nine at Season 0's
-    level of play. A trend may weaken or reverse among stronger teams, and
-    with 145 metrics screened some strong correlations arise by chance; the
-    metrics overlap, so Holm's correction is conservative. A measure that
-    follows strength is a diagnostic, not a recipe: rewarding it directly,
-    for example through reward shaping, may teach the measure without the
-    skill, such as a team that stays close but stops fighting.
+10. **Limits.** These are correlations across one field of nine at Season
+    0's level of play, an exploratory screen of 145 metrics. A trend may
+    weaken or reverse among stronger teams. A measure that follows strength is
+    a diagnostic, not a recipe: rewarding it directly, for example through
+    reward shaping, may teach the measure without the skill, such as a team
+    that stays close but stops fighting.
 
 ### Final Policies
 
