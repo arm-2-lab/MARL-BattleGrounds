@@ -265,8 +265,10 @@ def main(config: DictConfig) -> dict[str, Any]:
     Notes
     -----
     Each method is loaded once and reused by every team and opponent. Every
-    ``evaluate`` call compiles its own program for its pair of methods, so a
-    call takes about half a minute even before its games.
+    ``evaluate`` call compiles its own program for its pair of methods. For
+    Season 0 on one RTX 5090 (128 games side by side, full metrics), a call
+    of 200 games took 8.4 seconds on average (4.6 to 25.9), compiling
+    included; all 279 calls took 39 minutes.
     """
     import jax
 

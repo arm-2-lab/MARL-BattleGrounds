@@ -186,15 +186,20 @@ teammate it never trained with, and what makes a stranger a good fit?
 time (Mage, Warrior, Hunter, Rogue or Priest) played by the same class's agent
 from another Season 0 method (PQN-VDN, recurrent MAPPO, QMIX, feedforward IPPO
 or feedforward MAPPO) or by Random, which plays random legal actions and marks
-the floor. Each team plays every member of the Season 0 field with
-`marl_bgs.evaluate`: 200 games per opponent on maps 47 to 51, spawn ends
-exchanged within each pair, full metrics, and the same seed for every team,
-so game N is the same map, spawn end and seed for every team. The
-`zero_shot_coordination_analysis` stage then compares each team's games with
-the same games of recurrent IPPO alone (matched by opponent and game ID) and
+the floor. All six methods trained only with copies of themselves (and their
+own past and scripted opponents), so every newcomer is a true stranger. Each
+team plays every member of the Season 0 field with `marl_bgs.evaluate`: 200
+games per opponent on maps 47 to 51, spawn ends exchanged within each pair,
+full metrics, and the same seed for every team, so game N of every team starts
+from the same opponent, map, spawn end and seed. The games themselves differ,
+because a different agent plays. The `zero_shot_coordination_analysis` stage
+compares each team with recurrent IPPO alone game start by game start, and
 resamples whole seed pairs within each opponent for 95% intervals. Slot value
 kept places each stranger between recurrent IPPO's own agent (1) and Random
-(0) by point margin.
+(0) by point margin, with an interval from the same draws. Fit drivers asks
+which measure's change follows the cost within each class: the rank
+correlation over the five strangers in each class, averaged over the classes,
+with an exact permutation test.
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
@@ -207,12 +212,13 @@ python -m marl_battlegrounds.experiments.zero_shot_coordination_analysis \
 ```
 
 **Cost.** One RTX 5090, 128 games side by side, XLA's deterministic mode: 279
-runs and 55,800 games took 39 minutes of `evaluate` time (about 8 seconds per
-run of 200 games with full metrics, including loading and compiling), and 3.0
-GB on disk. The analysis takes about 30 seconds on the CPU.
+runs and 55,800 games took 39 minutes of `evaluate` time (8.4 seconds per run
+of 200 games with full metrics on average, loading and compiling included),
+and 3.0 GB on disk. The analysis takes about 35 seconds on the CPU.
 
-**Results.** Slot value kept, by the stranger's method and class (recurrent
-IPPO alone: +4.42 points per game against the nine members).
+**Results.** Slot value kept, by the stranger's method and class, with 95%
+intervals of about ±0.02 (Mage) to ±0.06 (Rogue); recurrent IPPO alone scores
++4.42 points per game against the nine members.
 
 | Stranger (Season 0 Elo) | Mage | Warrior | Hunter | Rogue | Priest | Mean |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -225,31 +231,57 @@ IPPO alone: +4.42 points per game against the nine members).
 
 **Findings.**
 
-1. **Every learned stranger costs points, but keeps most of the slot.** All
-   25 learned strangers lower the margin (−0.2 to −7.2 points per game); 24
-   of 25 intervals exclude zero. They keep 54-96% of the slot's value.
-2. **Fit is not strength.** PQN-VDN, second in Season 0, keeps the least
-   on average (0.596, just below feedforward MAPPO's 0.605); recurrent MAPPO,
-   third, keeps the most (0.90). Across the five strangers, fit and Elo have
-   a rank correlation of 0.0.
-3. **Strangers that stand apart fit worst.** In every class, the stranger
-   that stands farther from its four teammates costs the team more (rank
-   correlation between the distance change and the margin change: −1.0 for
-   the Mage and Priest, −0.9 Warrior, −0.8 Hunter, −0.5 Rogue). PQN-VDN's and
-   feedforward MAPPO's agents add 1.2 and 1.3 map units on average,
-   recurrent MAPPO's 0.4.
-4. **The Mage and Priest slots matter most.** A Random Mage or Priest costs
-   16.9 and 14.5 points per game, a Random Rogue 5.0.
+1. **Strangers cost points, and some break the team.** 24 of the 25 learned
+   strangers clearly lower the margin (−0.8 to −7.2 points per game);
+   recurrent MAPPO's Rogue is within noise of none. A Mage from PQN-VDN or
+   either feedforward method turns the Season 0 winner into a team that
+   loses more games than it wins (499-602-699, 468-518-814, 500-603-697).
+2. **The strongest stranger fits worst.** PQN-VDN, second in Season 0, ties
+   with feedforward MAPPO for the lowest slot value kept (0.60 and 0.60);
+   recurrent MAPPO, third, keeps the most (0.90). Recurrent MAPPO and QMIX
+   are only 4 Elo apart.
+3. **The worst fits drift away from the fight.** Within each class, the
+   change in the stranger's distance from its teammates follows the cost
+   most consistently (mean rank correlation −0.84, exact p = 0.00002), with
+   its damage (+0.82), kill help (+0.76) and damage taken (+0.76) close
+   behind. The worst fits stand farther away, take less damage, deal less
+   and help fewer kills: feedforward MAPPO's strangers die less than the
+   agents they replace in every class. This is not a carried habit: PQN-VDN
+   is the tightest team in Season 0 (2.45 map units, against recurrent IPPO's
+   2.66), yet its agents stand 1.1 units farther from recurrent IPPO's agents
+   than the agents they replace. Recurrent MAPPO's add 0.4.
+4. **The auras show the cost.** A stranger Mage's aura covers its teammates
+   less, in exactly the order of its cost (recurrent IPPO's own Mage 0.56,
+   recurrent MAPPO's 0.46, QMIX's 0.43, feedforward IPPO's 0.36, PQN-VDN's
+   0.34, feedforward MAPPO's 0.27). A stranger Priest's useful healing
+   follows its fit too (QMIX 2,161 per game, feedforward MAPPO 1,534).
+5. **The host does not adapt.** The four kept agents stand as far from each
+   other as they always do (changes of −0.12 to +0.11 map units; no link
+   to the cost), and recurrent IPPO's Priest gives a stranger less useful
+   healing per point of damage taken than it gave its own agent in 19 of 20
+   cases (Mage: 0.71 for its own, 0.55 to 0.63 for strangers).
+6. **The cost depends on the opponent.** Against the three scripted
+   opponents, recurrent MAPPO's, PQN-VDN's and feedforward IPPO's strangers
+   cost more (−2.4, −5.7, −4.2 points per game, against −0.6, −3.3, −2.8
+   against learned teams); QMIX's and feedforward MAPPO's cost less (−1.7
+   and −3.4, against −2.3 and −4.4).
+7. **The Mage and Priest slots matter most.** A random Mage or Priest costs
+   16.9 and 14.5 points per game, a random Rogue 5.0, and the largest learned
+   costs are in the Mage slot too.
 
 The full results are in `results/zero_shot_coordination_teams.csv` (every
-team and class, with each measure, its change and intervals) and
-`results/zero_shot_coordination_map_ends.csv` (every team's margin and
-results against each opponent on each map and spawn end).
+team and class, with each measure, its change and intervals, and the slot
+value kept with its interval), `results/zero_shot_coordination_fit_drivers.csv`
+(finding 3) and `results/zero_shot_coordination_map_ends.csv` (every team's
+margin and results against each opponent on each map and spawn end).
 
-**Limits.** One host, one checkpoint per method and one seed per team: the
-intervals describe repeated games of these fixed teams, not other training
-runs. "Fit" is measured by point margin against this field; a stranger can
-fit one opponent and not another (see the map-end table). Recurrent MAPPO
-shares recurrent IPPO's trainer, recipe and rewards, so its good fit may come
-from shared training conventions rather than any skill at fitting in.
-
+**Limits.** One host, one checkpoint per method, maps 47 to 51 and one seed per
+team: the intervals describe repeated games of these fixed teams, not other
+training runs. With five strangers, a trend across strangers rests on few
+points; the within-class test uses every class but still compares the same
+five methods. Measures that follow the cost show how strangers fail, not
+what causes the failure. Recurrent MAPPO is recurrent IPPO's closest
+relative (same trainer, per-agent reward, memory and discount), so its fit
+may come from shared training conventions. The rewards also split the
+strangers in two (per-agent for recurrent MAPPO and feedforward IPPO, team
+for PQN-VDN, QMIX and feedforward MAPPO), too few to test.
