@@ -289,6 +289,43 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false .venv/bin/python -m marl_battlegrounds \
 Resume and status commands run from the same worktree. Remove the worktree only
 after the study and its analysis are finished.
 
+## Find The Teamwork That Follows Strength
+
+```bash
+XLA_FLAGS=--xla_gpu_deterministic_ops=true \
+  python -m marl_battlegrounds.experiments.tournament_analysis \
+  tournament_dir=/runs/tournament/RUN field=/runs/field.json output_dir=/runs/teamwork
+```
+
+A tournament saves priority metrics (results, points, kills and deaths) for
+every game: enough to rate the entrants, not to see how they play. This stage
+plays the saved tournament's schedule again with `marl_bgs.run_tournament`,
+recording all full metrics for every game through `full_metrics_episodes`,
+and checks that every game repeats exactly. In XLA's deterministic mode on the
+same GPU model and software, each game does. It then checks each entrant's
+point margin against the saved `head_to_head()` results, so a measure is never
+read from the wrong team's columns.
+
+For each entrant, over all of its games, the stage writes `teamwork.csv`:
+point margin, kills, deaths and teamwork measures such as focus fire, shared
+kills, spacing between allies, aura coverage and the damage auras add or
+prevent, useful healing, rescues, own-Red-Zone deaths and ability use, each
+with a 95% interval from resampling the entrant's game pairs. `by_class.csv`
+holds who damaged, helped kill and healed whom, class by class.
+`elo_screen.csv` ranks every team-level metric in the catalog by its rank
+correlation with Elo, over all entrants and over the learned ones only (set
+`scripted` to name the scripted entrants), to find the measures that follow
+strength most closely. `summary.md` shows the tables from the highest Elo
+down, and `teamwork.png` plots each measure against Elo. A correlation across
+one field describes that field; it does not show that a measure causes
+strength. Set `names` to give entrants readable names (the Season 0 names are
+the defaults), and give `replay_dir` to redo the analysis from an earlier
+replay without playing again.
+
+For Season 0 (7,200 games, 128 in parallel, one RTX 5090), the replay with
+full metrics took 834 seconds against 488 for the same tournament with
+priority metrics only, and wrote 392 MB against 40 MB.
+
 ## Choose Devices And Worker Limits
 
 Leave `resources=inherit` to keep the calling process's device and allocator
