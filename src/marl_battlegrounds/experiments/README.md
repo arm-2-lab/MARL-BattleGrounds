@@ -186,8 +186,8 @@ teammate it never trained with, and what makes a stranger a good fit?
 time (Mage, Warrior, Hunter, Rogue or Priest) played by the same class's agent
 from another Season 0 method (PQN-VDN, recurrent MAPPO, QMIX, feedforward IPPO
 or feedforward MAPPO) or by Random, which plays random legal actions and marks
-the floor. All six methods trained only with copies of themselves (and their
-own past and scripted opponents), so every newcomer is a true stranger. Each
+the floor. Every method only ever had copies of itself as teammates in
+training, so every newcomer is a true stranger. Each
 team plays every member of the Season 0 field with `marl_bgs.evaluate`: 200
 games per opponent on maps 47 to 51, spawn ends exchanged within each pair,
 full metrics, and the same seed for every team, so game N of every team starts
@@ -232,29 +232,33 @@ intervals of about ±0.02 (Mage) to ±0.06 (Rogue); recurrent IPPO alone scores
 **Findings.**
 
 1. **Strangers cost points, and some break the team.** 24 of the 25 learned
-   strangers clearly lower the margin (−0.8 to −7.2 points per game);
-   recurrent MAPPO's Rogue is within noise of none. A Mage from PQN-VDN or
-   either feedforward method turns the Season 0 winner into a team that
-   loses more games than it wins (499-602-699, 468-518-814, 500-603-697).
-2. **The strongest stranger fits worst.** PQN-VDN, second in Season 0, ties
-   with feedforward MAPPO for the lowest slot value kept (0.60 and 0.60);
-   recurrent MAPPO, third, keeps the most (0.90). Recurrent MAPPO and QMIX
-   are only 4 Elo apart.
+   strangers clearly lower the margin (−0.8 to −7.2 points per game) and keep
+   54-91% of the slot's value; recurrent MAPPO's Rogue is within noise of no
+   cost (0.96). A Mage from PQN-VDN or either feedforward method, or
+   feedforward MAPPO's Priest, turns the Season 0 winner into a team that
+   loses more games than it wins (499-602-699, 468-518-814, 500-603-697,
+   682-342-776).
+2. **The strongest stranger ties for the worst fit.** PQN-VDN, second in
+   Season 0, ties with feedforward MAPPO for the lowest slot value kept (0.60
+   and 0.60); recurrent MAPPO, third, keeps the most (0.90). Recurrent MAPPO
+   and QMIX are only 4 Elo apart.
 3. **The worst fits drift away from the fight.** Within each class, the
    change in the stranger's distance from its teammates follows the cost
    most consistently (mean rank correlation −0.84, exact p = 0.00002), with
    its damage (+0.82), kill help (+0.76) and damage taken (+0.76) close
    behind. The worst fits stand farther away, take less damage, deal less
    and help fewer kills: feedforward MAPPO's strangers die less than the
-   agents they replace in every class. This is not a carried habit: PQN-VDN
+   agents they replace in four classes (the Priest's change is within noise)
+   and tie with PQN-VDN's for the largest cost. This is not a carried habit: PQN-VDN
    is the tightest team in Season 0 (2.45 map units, against recurrent IPPO's
    2.66), yet its agents stand 1.1 units farther from recurrent IPPO's agents
    than the agents they replace. Recurrent MAPPO's add 0.4.
-4. **The auras show the cost.** A stranger Mage's aura covers its teammates
-   less, in exactly the order of its cost (recurrent IPPO's own Mage 0.56,
+4. **The auras show the cost, for the Mage.** A stranger Mage's aura covers
+   its teammates less, in exactly the order of its cost (recurrent IPPO's own Mage 0.56,
    recurrent MAPPO's 0.46, QMIX's 0.43, feedforward IPPO's 0.36, PQN-VDN's
-   0.34, feedforward MAPPO's 0.27). A stranger Priest's useful healing
-   follows its fit too (QMIX 2,161 per game, feedforward MAPPO 1,534).
+   0.34, feedforward MAPPO's 0.27); a stranger Warrior's aura follows its
+   cost only weakly (rank correlation +0.4). A stranger Priest's useful
+   healing follows its fit (QMIX 2,161 per game, feedforward MAPPO 1,534).
 5. **The host does not adapt.** The four kept agents stand as far from each
    other as they always do (changes of −0.12 to +0.11 map units; no link
    to the cost), and recurrent IPPO's Priest gives a stranger less useful

@@ -19,13 +19,13 @@ games by opponent and episode ID, refuses a missing game, a matched game on
 another map and a slot of another class and reports each measure's change;
 slot_value_kept gives 1 to the host, 0 to the Random floor and the share in
 between, NaN without a floor, and kept_interval gives the same value with an
-interval from shared draws (0 for the floor itself); fit_drivers gives each
-measure's rank correlation with the margin change within each class and an
-exact two-sided permutation p-value of the mean, NaN for a constant measure;
-map_end_rows groups games by opponent, map and spawn end, an unsaved end
-labeled "unknown", with each class's mean distance to its teammates; play_team
-also records each opponent's seconds. Stand-ins replace the evaluator and saved
-runs, so no game is played.
+interval from shared draws (0 for the floor itself), refusing a missing game;
+fit_drivers gives each measure's rank correlation with the margin change within
+each class and an exact two-sided permutation p-value of the mean, NaN for a
+constant measure; map_end_rows groups games by opponent, map and spawn end, an
+unsaved end labeled "unknown", with each class's mean distance to its
+teammates; play_team also records each opponent's seconds. Stand-ins replace
+the evaluator and saved runs, so no game is played.
 """
 
 import json
@@ -231,6 +231,9 @@ def test_compare_and_slot_value_kept() -> None:
         0.0,
         0.0,
     )
+    missing = np.array([np.nan, -2.0, -1.0, -1.0])
+    with pytest.raises(ValueError, match="every game"):
+        analysis.kept_interval(missing, floor, units, strata, draws=5, seed=2)
 
 
 def test_fit_drivers_rank_measures_within_each_class_with_exact_p() -> None:

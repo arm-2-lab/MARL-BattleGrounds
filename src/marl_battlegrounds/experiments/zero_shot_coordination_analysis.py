@@ -469,7 +469,15 @@ def kept_interval(
         1 minus the team's mean change divided by the floor's, then the 2.5th
         and 97.5th percentiles of that ratio over the draws. All NaN when the
         floor's mean change is zero.
+
+    Raises
+    ------
+    ValueError
+        A change is missing (NaN), for example a team that did not play every
+        game the host played.
     """
+    if not (np.isfinite(change).all() and np.isfinite(floor).all()):
+        raise ValueError("kept_interval needs a change for every game")
     (labels, index), groups = _units(units, strata)
     picks = _draws(groups, draws, seed)
     counts = np.bincount(index, minlength=labels.size).astype(np.float64)
