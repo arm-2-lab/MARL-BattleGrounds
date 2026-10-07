@@ -49,6 +49,31 @@ Recurrent IPPO,kill_help,Priest,Warrior,2.308
 Recurrent IPPO,kill_help,Priest,Hunter,1.012
 Recurrent IPPO,kill_help,Priest,Rogue,4.031
 Recurrent IPPO,kill_help,Priest,Priest,0.306
+Recurrent IPPO,class_pair_distance,Mage,Mage,nan
+Recurrent IPPO,class_pair_distance,Mage,Warrior,2.674
+Recurrent IPPO,class_pair_distance,Mage,Hunter,2.249
+Recurrent IPPO,class_pair_distance,Mage,Rogue,2.935
+Recurrent IPPO,class_pair_distance,Mage,Priest,2.226
+Recurrent IPPO,class_pair_distance,Warrior,Mage,2.674
+Recurrent IPPO,class_pair_distance,Warrior,Warrior,nan
+Recurrent IPPO,class_pair_distance,Warrior,Hunter,2.702
+Recurrent IPPO,class_pair_distance,Warrior,Rogue,3.21
+Recurrent IPPO,class_pair_distance,Warrior,Priest,2.921
+Recurrent IPPO,class_pair_distance,Hunter,Mage,2.249
+Recurrent IPPO,class_pair_distance,Hunter,Warrior,2.702
+Recurrent IPPO,class_pair_distance,Hunter,Hunter,nan
+Recurrent IPPO,class_pair_distance,Hunter,Rogue,2.67
+Recurrent IPPO,class_pair_distance,Hunter,Priest,2.104
+Recurrent IPPO,class_pair_distance,Rogue,Mage,2.935
+Recurrent IPPO,class_pair_distance,Rogue,Warrior,3.21
+Recurrent IPPO,class_pair_distance,Rogue,Hunter,2.67
+Recurrent IPPO,class_pair_distance,Rogue,Rogue,nan
+Recurrent IPPO,class_pair_distance,Rogue,Priest,2.9
+Recurrent IPPO,class_pair_distance,Priest,Mage,2.226
+Recurrent IPPO,class_pair_distance,Priest,Warrior,2.921
+Recurrent IPPO,class_pair_distance,Priest,Hunter,2.104
+Recurrent IPPO,class_pair_distance,Priest,Rogue,2.9
+Recurrent IPPO,class_pair_distance,Priest,Priest,nan
 Recurrent IPPO,healing_share,Priest,Mage,0.3458
 Recurrent IPPO,healing_share,Priest,Warrior,0.3261
 Recurrent IPPO,healing_share,Priest,Hunter,0.1384
@@ -59,6 +84,21 @@ Recurrent IPPO,damage_taken_share,Enemy,Warrior,0.3423
 Recurrent IPPO,damage_taken_share,Enemy,Hunter,0.1319
 Recurrent IPPO,damage_taken_share,Enemy,Rogue,0.191
 Recurrent IPPO,damage_taken_share,Enemy,Priest,0.0758
+Recurrent IPPO,freedom_share,Priest,Mage,0.3885
+Recurrent IPPO,freedom_share,Priest,Warrior,0.1195
+Recurrent IPPO,freedom_share,Priest,Hunter,0.2172
+Recurrent IPPO,freedom_share,Priest,Rogue,0.1324
+Recurrent IPPO,freedom_share,Priest,Priest,0.1424
+Recurrent IPPO,mage_aura_coverage_by_class,Mage,Mage,nan
+Recurrent IPPO,mage_aura_coverage_by_class,Mage,Warrior,0.5202
+Recurrent IPPO,mage_aura_coverage_by_class,Mage,Hunter,0.6452
+Recurrent IPPO,mage_aura_coverage_by_class,Mage,Rogue,0.4623
+Recurrent IPPO,mage_aura_coverage_by_class,Mage,Priest,0.5892
+Recurrent IPPO,warrior_aura_coverage_by_class,Warrior,Mage,0.5202
+Recurrent IPPO,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+Recurrent IPPO,warrior_aura_coverage_by_class,Warrior,Hunter,0.4581
+Recurrent IPPO,warrior_aura_coverage_by_class,Warrior,Rogue,0.3742
+Recurrent IPPO,warrior_aura_coverage_by_class,Warrior,Priest,0.3016
 PQN-VDN,damage_share,Mage,Mage,0.0772
 PQN-VDN,damage_share,Mage,Warrior,0.1554
 PQN-VDN,damage_share,Mage,Hunter,0.0345
@@ -109,6 +149,31 @@ PQN-VDN,kill_help,Priest,Warrior,2.902
 PQN-VDN,kill_help,Priest,Hunter,0.894
 PQN-VDN,kill_help,Priest,Rogue,3.226
 PQN-VDN,kill_help,Priest,Priest,0.227
+PQN-VDN,class_pair_distance,Mage,Mage,nan
+PQN-VDN,class_pair_distance,Mage,Warrior,2.443
+PQN-VDN,class_pair_distance,Mage,Hunter,2.311
+PQN-VDN,class_pair_distance,Mage,Rogue,2.947
+PQN-VDN,class_pair_distance,Mage,Priest,2.486
+PQN-VDN,class_pair_distance,Warrior,Mage,2.443
+PQN-VDN,class_pair_distance,Warrior,Warrior,nan
+PQN-VDN,class_pair_distance,Warrior,Hunter,2.219
+PQN-VDN,class_pair_distance,Warrior,Rogue,2.751
+PQN-VDN,class_pair_distance,Warrior,Priest,2.524
+PQN-VDN,class_pair_distance,Hunter,Mage,2.311
+PQN-VDN,class_pair_distance,Hunter,Warrior,2.219
+PQN-VDN,class_pair_distance,Hunter,Hunter,nan
+PQN-VDN,class_pair_distance,Hunter,Rogue,2.416
+PQN-VDN,class_pair_distance,Hunter,Priest,1.982
+PQN-VDN,class_pair_distance,Rogue,Mage,2.947
+PQN-VDN,class_pair_distance,Rogue,Warrior,2.751
+PQN-VDN,class_pair_distance,Rogue,Hunter,2.416
+PQN-VDN,class_pair_distance,Rogue,Rogue,nan
+PQN-VDN,class_pair_distance,Rogue,Priest,2.402
+PQN-VDN,class_pair_distance,Priest,Mage,2.486
+PQN-VDN,class_pair_distance,Priest,Warrior,2.524
+PQN-VDN,class_pair_distance,Priest,Hunter,1.982
+PQN-VDN,class_pair_distance,Priest,Rogue,2.402
+PQN-VDN,class_pair_distance,Priest,Priest,nan
 PQN-VDN,healing_share,Priest,Mage,0.2689
 PQN-VDN,healing_share,Priest,Warrior,0.2312
 PQN-VDN,healing_share,Priest,Hunter,0.1573
@@ -119,6 +184,21 @@ PQN-VDN,damage_taken_share,Enemy,Warrior,0.2724
 PQN-VDN,damage_taken_share,Enemy,Hunter,0.1555
 PQN-VDN,damage_taken_share,Enemy,Rogue,0.2522
 PQN-VDN,damage_taken_share,Enemy,Priest,0.1101
+PQN-VDN,freedom_share,Priest,Mage,0.2976
+PQN-VDN,freedom_share,Priest,Warrior,0.0851
+PQN-VDN,freedom_share,Priest,Hunter,0.1484
+PQN-VDN,freedom_share,Priest,Rogue,0.1672
+PQN-VDN,freedom_share,Priest,Priest,0.3017
+PQN-VDN,mage_aura_coverage_by_class,Mage,Mage,nan
+PQN-VDN,mage_aura_coverage_by_class,Mage,Warrior,0.5951
+PQN-VDN,mage_aura_coverage_by_class,Mage,Hunter,0.6775
+PQN-VDN,mage_aura_coverage_by_class,Mage,Rogue,0.4463
+PQN-VDN,mage_aura_coverage_by_class,Mage,Priest,0.5237
+PQN-VDN,warrior_aura_coverage_by_class,Warrior,Mage,0.5951
+PQN-VDN,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+PQN-VDN,warrior_aura_coverage_by_class,Warrior,Hunter,0.6085
+PQN-VDN,warrior_aura_coverage_by_class,Warrior,Rogue,0.5579
+PQN-VDN,warrior_aura_coverage_by_class,Warrior,Priest,0.3712
 Recurrent MAPPO,damage_share,Mage,Mage,0.1104
 Recurrent MAPPO,damage_share,Mage,Warrior,0.1157
 Recurrent MAPPO,damage_share,Mage,Hunter,0.0509
@@ -169,6 +249,31 @@ Recurrent MAPPO,kill_help,Priest,Warrior,1.319
 Recurrent MAPPO,kill_help,Priest,Hunter,0.908
 Recurrent MAPPO,kill_help,Priest,Rogue,3.638
 Recurrent MAPPO,kill_help,Priest,Priest,0.268
+Recurrent MAPPO,class_pair_distance,Mage,Mage,nan
+Recurrent MAPPO,class_pair_distance,Mage,Warrior,3.063
+Recurrent MAPPO,class_pair_distance,Mage,Hunter,2.79
+Recurrent MAPPO,class_pair_distance,Mage,Rogue,3.687
+Recurrent MAPPO,class_pair_distance,Mage,Priest,2.627
+Recurrent MAPPO,class_pair_distance,Warrior,Mage,3.063
+Recurrent MAPPO,class_pair_distance,Warrior,Warrior,nan
+Recurrent MAPPO,class_pair_distance,Warrior,Hunter,3.104
+Recurrent MAPPO,class_pair_distance,Warrior,Rogue,3.838
+Recurrent MAPPO,class_pair_distance,Warrior,Priest,3.132
+Recurrent MAPPO,class_pair_distance,Hunter,Mage,2.79
+Recurrent MAPPO,class_pair_distance,Hunter,Warrior,3.104
+Recurrent MAPPO,class_pair_distance,Hunter,Hunter,nan
+Recurrent MAPPO,class_pair_distance,Hunter,Rogue,3.427
+Recurrent MAPPO,class_pair_distance,Hunter,Priest,2.553
+Recurrent MAPPO,class_pair_distance,Rogue,Mage,3.687
+Recurrent MAPPO,class_pair_distance,Rogue,Warrior,3.838
+Recurrent MAPPO,class_pair_distance,Rogue,Hunter,3.427
+Recurrent MAPPO,class_pair_distance,Rogue,Rogue,nan
+Recurrent MAPPO,class_pair_distance,Rogue,Priest,3.444
+Recurrent MAPPO,class_pair_distance,Priest,Mage,2.627
+Recurrent MAPPO,class_pair_distance,Priest,Warrior,3.132
+Recurrent MAPPO,class_pair_distance,Priest,Hunter,2.553
+Recurrent MAPPO,class_pair_distance,Priest,Rogue,3.444
+Recurrent MAPPO,class_pair_distance,Priest,Priest,nan
 Recurrent MAPPO,healing_share,Priest,Mage,0.3929
 Recurrent MAPPO,healing_share,Priest,Warrior,0.292
 Recurrent MAPPO,healing_share,Priest,Hunter,0.1348
@@ -179,6 +284,21 @@ Recurrent MAPPO,damage_taken_share,Enemy,Warrior,0.3065
 Recurrent MAPPO,damage_taken_share,Enemy,Hunter,0.1523
 Recurrent MAPPO,damage_taken_share,Enemy,Rogue,0.1669
 Recurrent MAPPO,damage_taken_share,Enemy,Priest,0.1147
+Recurrent MAPPO,freedom_share,Priest,Mage,0.4485
+Recurrent MAPPO,freedom_share,Priest,Warrior,0.1069
+Recurrent MAPPO,freedom_share,Priest,Hunter,0.2056
+Recurrent MAPPO,freedom_share,Priest,Rogue,0.081
+Recurrent MAPPO,freedom_share,Priest,Priest,0.1579
+Recurrent MAPPO,mage_aura_coverage_by_class,Mage,Mage,nan
+Recurrent MAPPO,mage_aura_coverage_by_class,Mage,Warrior,0.4324
+Recurrent MAPPO,mage_aura_coverage_by_class,Mage,Hunter,0.5148
+Recurrent MAPPO,mage_aura_coverage_by_class,Mage,Rogue,0.2988
+Recurrent MAPPO,mage_aura_coverage_by_class,Mage,Priest,0.5076
+Recurrent MAPPO,warrior_aura_coverage_by_class,Warrior,Mage,0.4324
+Recurrent MAPPO,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+Recurrent MAPPO,warrior_aura_coverage_by_class,Warrior,Hunter,0.3938
+Recurrent MAPPO,warrior_aura_coverage_by_class,Warrior,Rogue,0.2677
+Recurrent MAPPO,warrior_aura_coverage_by_class,Warrior,Priest,0.3149
 QMIX,damage_share,Mage,Mage,0.0853
 QMIX,damage_share,Mage,Warrior,0.1385
 QMIX,damage_share,Mage,Hunter,0.0393
@@ -229,6 +349,31 @@ QMIX,kill_help,Priest,Warrior,2.394
 QMIX,kill_help,Priest,Hunter,1.068
 QMIX,kill_help,Priest,Rogue,3.194
 QMIX,kill_help,Priest,Priest,0.341
+QMIX,class_pair_distance,Mage,Mage,nan
+QMIX,class_pair_distance,Mage,Warrior,3.018
+QMIX,class_pair_distance,Mage,Hunter,2.762
+QMIX,class_pair_distance,Mage,Rogue,3.68
+QMIX,class_pair_distance,Mage,Priest,2.503
+QMIX,class_pair_distance,Warrior,Mage,3.018
+QMIX,class_pair_distance,Warrior,Warrior,nan
+QMIX,class_pair_distance,Warrior,Hunter,3.143
+QMIX,class_pair_distance,Warrior,Rogue,3.834
+QMIX,class_pair_distance,Warrior,Priest,3.096
+QMIX,class_pair_distance,Hunter,Mage,2.762
+QMIX,class_pair_distance,Hunter,Warrior,3.143
+QMIX,class_pair_distance,Hunter,Hunter,nan
+QMIX,class_pair_distance,Hunter,Rogue,3.664
+QMIX,class_pair_distance,Hunter,Priest,2.509
+QMIX,class_pair_distance,Rogue,Mage,3.68
+QMIX,class_pair_distance,Rogue,Warrior,3.834
+QMIX,class_pair_distance,Rogue,Hunter,3.664
+QMIX,class_pair_distance,Rogue,Rogue,nan
+QMIX,class_pair_distance,Rogue,Priest,3.353
+QMIX,class_pair_distance,Priest,Mage,2.503
+QMIX,class_pair_distance,Priest,Warrior,3.096
+QMIX,class_pair_distance,Priest,Hunter,2.509
+QMIX,class_pair_distance,Priest,Rogue,3.353
+QMIX,class_pair_distance,Priest,Priest,nan
 QMIX,healing_share,Priest,Mage,0.2765
 QMIX,healing_share,Priest,Warrior,0.2329
 QMIX,healing_share,Priest,Hunter,0.1699
@@ -239,6 +384,21 @@ QMIX,damage_taken_share,Enemy,Warrior,0.297
 QMIX,damage_taken_share,Enemy,Hunter,0.1597
 QMIX,damage_taken_share,Enemy,Rogue,0.228
 QMIX,damage_taken_share,Enemy,Priest,0.1037
+QMIX,freedom_share,Priest,Mage,0.3257
+QMIX,freedom_share,Priest,Warrior,0.1066
+QMIX,freedom_share,Priest,Hunter,0.1921
+QMIX,freedom_share,Priest,Rogue,0.1321
+QMIX,freedom_share,Priest,Priest,0.2435
+QMIX,mage_aura_coverage_by_class,Mage,Mage,nan
+QMIX,mage_aura_coverage_by_class,Mage,Warrior,0.4315
+QMIX,mage_aura_coverage_by_class,Mage,Hunter,0.5309
+QMIX,mage_aura_coverage_by_class,Mage,Rogue,0.3459
+QMIX,mage_aura_coverage_by_class,Mage,Priest,0.5541
+QMIX,warrior_aura_coverage_by_class,Warrior,Mage,0.4315
+QMIX,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+QMIX,warrior_aura_coverage_by_class,Warrior,Hunter,0.385
+QMIX,warrior_aura_coverage_by_class,Warrior,Rogue,0.3178
+QMIX,warrior_aura_coverage_by_class,Warrior,Priest,0.3071
 Feedforward IPPO,damage_share,Mage,Mage,0.0967
 Feedforward IPPO,damage_share,Mage,Warrior,0.1244
 Feedforward IPPO,damage_share,Mage,Hunter,0.0449
@@ -289,6 +449,31 @@ Feedforward IPPO,kill_help,Priest,Warrior,1.719
 Feedforward IPPO,kill_help,Priest,Hunter,0.676
 Feedforward IPPO,kill_help,Priest,Rogue,2.841
 Feedforward IPPO,kill_help,Priest,Priest,0.204
+Feedforward IPPO,class_pair_distance,Mage,Mage,nan
+Feedforward IPPO,class_pair_distance,Mage,Warrior,3.01
+Feedforward IPPO,class_pair_distance,Mage,Hunter,2.74
+Feedforward IPPO,class_pair_distance,Mage,Rogue,3.347
+Feedforward IPPO,class_pair_distance,Mage,Priest,2.693
+Feedforward IPPO,class_pair_distance,Warrior,Mage,3.01
+Feedforward IPPO,class_pair_distance,Warrior,Warrior,nan
+Feedforward IPPO,class_pair_distance,Warrior,Hunter,2.922
+Feedforward IPPO,class_pair_distance,Warrior,Rogue,3.291
+Feedforward IPPO,class_pair_distance,Warrior,Priest,2.97
+Feedforward IPPO,class_pair_distance,Hunter,Mage,2.74
+Feedforward IPPO,class_pair_distance,Hunter,Warrior,2.922
+Feedforward IPPO,class_pair_distance,Hunter,Hunter,nan
+Feedforward IPPO,class_pair_distance,Hunter,Rogue,3.071
+Feedforward IPPO,class_pair_distance,Hunter,Priest,2.481
+Feedforward IPPO,class_pair_distance,Rogue,Mage,3.347
+Feedforward IPPO,class_pair_distance,Rogue,Warrior,3.291
+Feedforward IPPO,class_pair_distance,Rogue,Hunter,3.071
+Feedforward IPPO,class_pair_distance,Rogue,Rogue,nan
+Feedforward IPPO,class_pair_distance,Rogue,Priest,3.143
+Feedforward IPPO,class_pair_distance,Priest,Mage,2.693
+Feedforward IPPO,class_pair_distance,Priest,Warrior,2.97
+Feedforward IPPO,class_pair_distance,Priest,Hunter,2.481
+Feedforward IPPO,class_pair_distance,Priest,Rogue,3.143
+Feedforward IPPO,class_pair_distance,Priest,Priest,nan
 Feedforward IPPO,healing_share,Priest,Mage,0.2526
 Feedforward IPPO,healing_share,Priest,Warrior,0.2632
 Feedforward IPPO,healing_share,Priest,Hunter,0.1237
@@ -299,6 +484,21 @@ Feedforward IPPO,damage_taken_share,Enemy,Warrior,0.2899
 Feedforward IPPO,damage_taken_share,Enemy,Hunter,0.1498
 Feedforward IPPO,damage_taken_share,Enemy,Rogue,0.2579
 Feedforward IPPO,damage_taken_share,Enemy,Priest,0.1039
+Feedforward IPPO,freedom_share,Priest,Mage,0.2721
+Feedforward IPPO,freedom_share,Priest,Warrior,0.1351
+Feedforward IPPO,freedom_share,Priest,Hunter,0.1737
+Feedforward IPPO,freedom_share,Priest,Rogue,0.1756
+Feedforward IPPO,freedom_share,Priest,Priest,0.2435
+Feedforward IPPO,mage_aura_coverage_by_class,Mage,Mage,nan
+Feedforward IPPO,mage_aura_coverage_by_class,Mage,Warrior,0.4155
+Feedforward IPPO,mage_aura_coverage_by_class,Mage,Hunter,0.4962
+Feedforward IPPO,mage_aura_coverage_by_class,Mage,Rogue,0.3709
+Feedforward IPPO,mage_aura_coverage_by_class,Mage,Priest,0.4781
+Feedforward IPPO,warrior_aura_coverage_by_class,Warrior,Mage,0.4155
+Feedforward IPPO,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+Feedforward IPPO,warrior_aura_coverage_by_class,Warrior,Hunter,0.3923
+Feedforward IPPO,warrior_aura_coverage_by_class,Warrior,Rogue,0.3781
+Feedforward IPPO,warrior_aura_coverage_by_class,Warrior,Priest,0.3155
 Feedforward MAPPO,damage_share,Mage,Mage,0.1129
 Feedforward MAPPO,damage_share,Mage,Warrior,0.147
 Feedforward MAPPO,damage_share,Mage,Hunter,0.0496
@@ -349,6 +549,31 @@ Feedforward MAPPO,kill_help,Priest,Warrior,1.617
 Feedforward MAPPO,kill_help,Priest,Hunter,0.475
 Feedforward MAPPO,kill_help,Priest,Rogue,2.316
 Feedforward MAPPO,kill_help,Priest,Priest,0.122
+Feedforward MAPPO,class_pair_distance,Mage,Mage,nan
+Feedforward MAPPO,class_pair_distance,Mage,Warrior,3.438
+Feedforward MAPPO,class_pair_distance,Mage,Hunter,3.456
+Feedforward MAPPO,class_pair_distance,Mage,Rogue,3.734
+Feedforward MAPPO,class_pair_distance,Mage,Priest,3.207
+Feedforward MAPPO,class_pair_distance,Warrior,Mage,3.438
+Feedforward MAPPO,class_pair_distance,Warrior,Warrior,nan
+Feedforward MAPPO,class_pair_distance,Warrior,Hunter,3.541
+Feedforward MAPPO,class_pair_distance,Warrior,Rogue,3.813
+Feedforward MAPPO,class_pair_distance,Warrior,Priest,3.553
+Feedforward MAPPO,class_pair_distance,Hunter,Mage,3.456
+Feedforward MAPPO,class_pair_distance,Hunter,Warrior,3.541
+Feedforward MAPPO,class_pair_distance,Hunter,Hunter,nan
+Feedforward MAPPO,class_pair_distance,Hunter,Rogue,3.325
+Feedforward MAPPO,class_pair_distance,Hunter,Priest,2.943
+Feedforward MAPPO,class_pair_distance,Rogue,Mage,3.734
+Feedforward MAPPO,class_pair_distance,Rogue,Warrior,3.813
+Feedforward MAPPO,class_pair_distance,Rogue,Hunter,3.325
+Feedforward MAPPO,class_pair_distance,Rogue,Rogue,nan
+Feedforward MAPPO,class_pair_distance,Rogue,Priest,3.472
+Feedforward MAPPO,class_pair_distance,Priest,Mage,3.207
+Feedforward MAPPO,class_pair_distance,Priest,Warrior,3.553
+Feedforward MAPPO,class_pair_distance,Priest,Hunter,2.943
+Feedforward MAPPO,class_pair_distance,Priest,Rogue,3.472
+Feedforward MAPPO,class_pair_distance,Priest,Priest,nan
 Feedforward MAPPO,healing_share,Priest,Mage,0.3401
 Feedforward MAPPO,healing_share,Priest,Warrior,0.2584
 Feedforward MAPPO,healing_share,Priest,Hunter,0.1324
@@ -359,6 +584,21 @@ Feedforward MAPPO,damage_taken_share,Enemy,Warrior,0.3247
 Feedforward MAPPO,damage_taken_share,Enemy,Hunter,0.1426
 Feedforward MAPPO,damage_taken_share,Enemy,Rogue,0.1918
 Feedforward MAPPO,damage_taken_share,Enemy,Priest,0.098
+Feedforward MAPPO,freedom_share,Priest,Mage,0.3725
+Feedforward MAPPO,freedom_share,Priest,Warrior,0.0932
+Feedforward MAPPO,freedom_share,Priest,Hunter,0.137
+Feedforward MAPPO,freedom_share,Priest,Rogue,0.1267
+Feedforward MAPPO,freedom_share,Priest,Priest,0.2707
+Feedforward MAPPO,mage_aura_coverage_by_class,Mage,Mage,nan
+Feedforward MAPPO,mage_aura_coverage_by_class,Mage,Warrior,0.3805
+Feedforward MAPPO,mage_aura_coverage_by_class,Mage,Hunter,0.4583
+Feedforward MAPPO,mage_aura_coverage_by_class,Mage,Rogue,0.3784
+Feedforward MAPPO,mage_aura_coverage_by_class,Mage,Priest,0.4599
+Feedforward MAPPO,warrior_aura_coverage_by_class,Warrior,Mage,0.3805
+Feedforward MAPPO,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+Feedforward MAPPO,warrior_aura_coverage_by_class,Warrior,Hunter,0.3371
+Feedforward MAPPO,warrior_aura_coverage_by_class,Warrior,Rogue,0.2908
+Feedforward MAPPO,warrior_aura_coverage_by_class,Warrior,Priest,0.2841
 TDM-Beta,damage_share,Mage,Mage,0.0816
 TDM-Beta,damage_share,Mage,Warrior,0.1337
 TDM-Beta,damage_share,Mage,Hunter,0.0501
@@ -409,6 +649,31 @@ TDM-Beta,kill_help,Priest,Warrior,0.962
 TDM-Beta,kill_help,Priest,Hunter,0.609
 TDM-Beta,kill_help,Priest,Rogue,1.428
 TDM-Beta,kill_help,Priest,Priest,0.382
+TDM-Beta,class_pair_distance,Mage,Mage,nan
+TDM-Beta,class_pair_distance,Mage,Warrior,3.689
+TDM-Beta,class_pair_distance,Mage,Hunter,3.354
+TDM-Beta,class_pair_distance,Mage,Rogue,4.345
+TDM-Beta,class_pair_distance,Mage,Priest,3.423
+TDM-Beta,class_pair_distance,Warrior,Mage,3.689
+TDM-Beta,class_pair_distance,Warrior,Warrior,nan
+TDM-Beta,class_pair_distance,Warrior,Hunter,4.013
+TDM-Beta,class_pair_distance,Warrior,Rogue,4.37
+TDM-Beta,class_pair_distance,Warrior,Priest,4.265
+TDM-Beta,class_pair_distance,Hunter,Mage,3.354
+TDM-Beta,class_pair_distance,Hunter,Warrior,4.013
+TDM-Beta,class_pair_distance,Hunter,Hunter,nan
+TDM-Beta,class_pair_distance,Hunter,Rogue,4.21
+TDM-Beta,class_pair_distance,Hunter,Priest,3.147
+TDM-Beta,class_pair_distance,Rogue,Mage,4.345
+TDM-Beta,class_pair_distance,Rogue,Warrior,4.37
+TDM-Beta,class_pair_distance,Rogue,Hunter,4.21
+TDM-Beta,class_pair_distance,Rogue,Rogue,nan
+TDM-Beta,class_pair_distance,Rogue,Priest,4.375
+TDM-Beta,class_pair_distance,Priest,Mage,3.423
+TDM-Beta,class_pair_distance,Priest,Warrior,4.265
+TDM-Beta,class_pair_distance,Priest,Hunter,3.147
+TDM-Beta,class_pair_distance,Priest,Rogue,4.375
+TDM-Beta,class_pair_distance,Priest,Priest,nan
 TDM-Beta,healing_share,Priest,Mage,0.3162
 TDM-Beta,healing_share,Priest,Warrior,0.1943
 TDM-Beta,healing_share,Priest,Hunter,0.1185
@@ -419,6 +684,21 @@ TDM-Beta,damage_taken_share,Enemy,Warrior,0.3574
 TDM-Beta,damage_taken_share,Enemy,Hunter,0.0595
 TDM-Beta,damage_taken_share,Enemy,Rogue,0.2782
 TDM-Beta,damage_taken_share,Enemy,Priest,0.0884
+TDM-Beta,freedom_share,Priest,Mage,0.3234
+TDM-Beta,freedom_share,Priest,Warrior,0.0263
+TDM-Beta,freedom_share,Priest,Hunter,0.2063
+TDM-Beta,freedom_share,Priest,Rogue,0.0935
+TDM-Beta,freedom_share,Priest,Priest,0.3505
+TDM-Beta,mage_aura_coverage_by_class,Mage,Mage,nan
+TDM-Beta,mage_aura_coverage_by_class,Mage,Warrior,0.3938
+TDM-Beta,mage_aura_coverage_by_class,Mage,Hunter,0.3676
+TDM-Beta,mage_aura_coverage_by_class,Mage,Rogue,0.2553
+TDM-Beta,mage_aura_coverage_by_class,Mage,Priest,0.2302
+TDM-Beta,warrior_aura_coverage_by_class,Warrior,Mage,0.3938
+TDM-Beta,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+TDM-Beta,warrior_aura_coverage_by_class,Warrior,Hunter,0.1732
+TDM-Beta,warrior_aura_coverage_by_class,Warrior,Rogue,0.2739
+TDM-Beta,warrior_aura_coverage_by_class,Warrior,Priest,0.1329
 TDM-Gamma,damage_share,Mage,Mage,0.0826
 TDM-Gamma,damage_share,Mage,Warrior,0.1304
 TDM-Gamma,damage_share,Mage,Hunter,0.0503
@@ -469,6 +749,31 @@ TDM-Gamma,kill_help,Priest,Warrior,0.791
 TDM-Gamma,kill_help,Priest,Hunter,0.639
 TDM-Gamma,kill_help,Priest,Rogue,1.245
 TDM-Gamma,kill_help,Priest,Priest,0.366
+TDM-Gamma,class_pair_distance,Mage,Mage,nan
+TDM-Gamma,class_pair_distance,Mage,Warrior,3.941
+TDM-Gamma,class_pair_distance,Mage,Hunter,3.501
+TDM-Gamma,class_pair_distance,Mage,Rogue,4.71
+TDM-Gamma,class_pair_distance,Mage,Priest,3.532
+TDM-Gamma,class_pair_distance,Warrior,Mage,3.941
+TDM-Gamma,class_pair_distance,Warrior,Warrior,nan
+TDM-Gamma,class_pair_distance,Warrior,Hunter,4.179
+TDM-Gamma,class_pair_distance,Warrior,Rogue,4.758
+TDM-Gamma,class_pair_distance,Warrior,Priest,4.415
+TDM-Gamma,class_pair_distance,Hunter,Mage,3.501
+TDM-Gamma,class_pair_distance,Hunter,Warrior,4.179
+TDM-Gamma,class_pair_distance,Hunter,Hunter,nan
+TDM-Gamma,class_pair_distance,Hunter,Rogue,4.612
+TDM-Gamma,class_pair_distance,Hunter,Priest,3.197
+TDM-Gamma,class_pair_distance,Rogue,Mage,4.71
+TDM-Gamma,class_pair_distance,Rogue,Warrior,4.758
+TDM-Gamma,class_pair_distance,Rogue,Hunter,4.612
+TDM-Gamma,class_pair_distance,Rogue,Rogue,nan
+TDM-Gamma,class_pair_distance,Rogue,Priest,4.436
+TDM-Gamma,class_pair_distance,Priest,Mage,3.532
+TDM-Gamma,class_pair_distance,Priest,Warrior,4.415
+TDM-Gamma,class_pair_distance,Priest,Hunter,3.197
+TDM-Gamma,class_pair_distance,Priest,Rogue,4.436
+TDM-Gamma,class_pair_distance,Priest,Priest,nan
 TDM-Gamma,healing_share,Priest,Mage,0.3013
 TDM-Gamma,healing_share,Priest,Warrior,0.1722
 TDM-Gamma,healing_share,Priest,Hunter,0.1165
@@ -479,6 +784,21 @@ TDM-Gamma,damage_taken_share,Enemy,Warrior,0.3512
 TDM-Gamma,damage_taken_share,Enemy,Hunter,0.0609
 TDM-Gamma,damage_taken_share,Enemy,Rogue,0.2827
 TDM-Gamma,damage_taken_share,Enemy,Priest,0.0927
+TDM-Gamma,freedom_share,Priest,Mage,0.2948
+TDM-Gamma,freedom_share,Priest,Warrior,0.0275
+TDM-Gamma,freedom_share,Priest,Hunter,0.207
+TDM-Gamma,freedom_share,Priest,Rogue,0.1122
+TDM-Gamma,freedom_share,Priest,Priest,0.3585
+TDM-Gamma,mage_aura_coverage_by_class,Mage,Mage,nan
+TDM-Gamma,mage_aura_coverage_by_class,Mage,Warrior,0.3416
+TDM-Gamma,mage_aura_coverage_by_class,Mage,Hunter,0.3605
+TDM-Gamma,mage_aura_coverage_by_class,Mage,Rogue,0.1946
+TDM-Gamma,mage_aura_coverage_by_class,Mage,Priest,0.2356
+TDM-Gamma,warrior_aura_coverage_by_class,Warrior,Mage,0.3416
+TDM-Gamma,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+TDM-Gamma,warrior_aura_coverage_by_class,Warrior,Hunter,0.1622
+TDM-Gamma,warrior_aura_coverage_by_class,Warrior,Rogue,0.2125
+TDM-Gamma,warrior_aura_coverage_by_class,Warrior,Priest,0.1244
 TDM-Alpha,damage_share,Mage,Mage,0.0828
 TDM-Alpha,damage_share,Mage,Warrior,0.1162
 TDM-Alpha,damage_share,Mage,Hunter,0.0558
@@ -529,6 +849,31 @@ TDM-Alpha,kill_help,Priest,Warrior,1.041
 TDM-Alpha,kill_help,Priest,Hunter,0.613
 TDM-Alpha,kill_help,Priest,Rogue,1.444
 TDM-Alpha,kill_help,Priest,Priest,0.286
+TDM-Alpha,class_pair_distance,Mage,Mage,nan
+TDM-Alpha,class_pair_distance,Mage,Warrior,3.832
+TDM-Alpha,class_pair_distance,Mage,Hunter,3.424
+TDM-Alpha,class_pair_distance,Mage,Rogue,4.365
+TDM-Alpha,class_pair_distance,Mage,Priest,3.432
+TDM-Alpha,class_pair_distance,Warrior,Mage,3.832
+TDM-Alpha,class_pair_distance,Warrior,Warrior,nan
+TDM-Alpha,class_pair_distance,Warrior,Hunter,4.144
+TDM-Alpha,class_pair_distance,Warrior,Rogue,4.517
+TDM-Alpha,class_pair_distance,Warrior,Priest,4.425
+TDM-Alpha,class_pair_distance,Hunter,Mage,3.424
+TDM-Alpha,class_pair_distance,Hunter,Warrior,4.144
+TDM-Alpha,class_pair_distance,Hunter,Hunter,nan
+TDM-Alpha,class_pair_distance,Hunter,Rogue,4.224
+TDM-Alpha,class_pair_distance,Hunter,Priest,3.115
+TDM-Alpha,class_pair_distance,Rogue,Mage,4.365
+TDM-Alpha,class_pair_distance,Rogue,Warrior,4.517
+TDM-Alpha,class_pair_distance,Rogue,Hunter,4.224
+TDM-Alpha,class_pair_distance,Rogue,Rogue,nan
+TDM-Alpha,class_pair_distance,Rogue,Priest,4.323
+TDM-Alpha,class_pair_distance,Priest,Mage,3.432
+TDM-Alpha,class_pair_distance,Priest,Warrior,4.425
+TDM-Alpha,class_pair_distance,Priest,Hunter,3.115
+TDM-Alpha,class_pair_distance,Priest,Rogue,4.323
+TDM-Alpha,class_pair_distance,Priest,Priest,nan
 TDM-Alpha,healing_share,Priest,Mage,0.3255
 TDM-Alpha,healing_share,Priest,Warrior,0.1623
 TDM-Alpha,healing_share,Priest,Hunter,0.1239
@@ -539,3 +884,18 @@ TDM-Alpha,damage_taken_share,Enemy,Warrior,0.3381
 TDM-Alpha,damage_taken_share,Enemy,Hunter,0.0586
 TDM-Alpha,damage_taken_share,Enemy,Rogue,0.3094
 TDM-Alpha,damage_taken_share,Enemy,Priest,0.0796
+TDM-Alpha,freedom_share,Priest,Mage,0.3191
+TDM-Alpha,freedom_share,Priest,Warrior,0.021
+TDM-Alpha,freedom_share,Priest,Hunter,0.22
+TDM-Alpha,freedom_share,Priest,Rogue,0.0981
+TDM-Alpha,freedom_share,Priest,Priest,0.3419
+TDM-Alpha,mage_aura_coverage_by_class,Mage,Mage,nan
+TDM-Alpha,mage_aura_coverage_by_class,Mage,Warrior,0.3635
+TDM-Alpha,mage_aura_coverage_by_class,Mage,Hunter,0.3619
+TDM-Alpha,mage_aura_coverage_by_class,Mage,Rogue,0.3005
+TDM-Alpha,mage_aura_coverage_by_class,Mage,Priest,0.2342
+TDM-Alpha,warrior_aura_coverage_by_class,Warrior,Mage,0.3635
+TDM-Alpha,warrior_aura_coverage_by_class,Warrior,Warrior,nan
+TDM-Alpha,warrior_aura_coverage_by_class,Warrior,Hunter,0.1826
+TDM-Alpha,warrior_aura_coverage_by_class,Warrior,Rogue,0.3214
+TDM-Alpha,warrior_aura_coverage_by_class,Warrior,Priest,0.1238

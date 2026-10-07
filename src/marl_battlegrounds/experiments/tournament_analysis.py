@@ -16,16 +16,23 @@ This stage shows how to get the rest from the public API:
    results.system_metrics, which reads each game from the side the entrant
    played, combines games by each column's catalog rule and gives 95%
    intervals from resampling whole game pairs.
-4. Build class tables (who damaged, helped kill and healed whom) from one
-   by="game" call, where agents 0-4 are always the entrant's team and each
-   game's own classes count, so any roster works. The same rows check each
-   matchup's point margin in the replayed full metrics against the points the
-   original run saved (head_to_head), a check across two tables.
+4. Build class tables (who damaged, helped kill and healed whom, whose aura
+   reached which ally, who got the Priest's Freedom, and how far apart each
+   pair of classes stood) from one by="game" call, where agents 0-4 are
+   always the entrant's team and each game's own classes count, so any roster
+   works. The same rows check each matchup's point margin in the replayed
+   full metrics against the points the original run saved (head_to_head), a
+   check across two tables.
 5. Rank every team-level metric in the catalog by its rank correlation with
-   the saved Elo, to find the measures that follow strength most closely.
+   the saved Elo, to find the measures that follow strength most closely, and
+   test each one three ways: an exact permutation p-value (with Holm's
+   correction for testing every metric), whether the winner of a decided game
+   had more of it than the loser, and whether each entrant had more of it in
+   its wins than in its losses (a sign that the measure follows the score of
+   a game rather than the team that plays it).
 
 Outputs in output_dir: teamwork.csv (each MEASURES value with its interval),
-by_class.csv (the class tables), elo_screen.csv (step 5), summary.md
+by_class.csv (the class tables), elo_screen.csv (step 5, with its tests), summary.md
 (readable tables), teamwork.png (each teamwork measure against Elo) and
 analysis.json (everything, plus the checks, whether the replay declared XLA's
 deterministic mode, and the replay's and analysis's times). Give replay_dir to
@@ -35,9 +42,13 @@ redo steps 3-5 from an earlier replay without playing again.
 from __future__ import annotations
 
 import csv
+import itertools
 import json
+import math
 import time
+from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -125,6 +136,16 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
         "Share of Priest healing that was useful, not excess",
     ),
     (
+        "freedom_protection",
+        "team_a_freedom_protection_fraction",
+        "Share of living ticks on which the Priest's Freedom weakened a slow",
+    ),
+    (
+        "warrior_ultimate_kill_fraction",
+        "team_a_warrior_ultimate_kill_fraction",
+        "Share of kills a Warrior helped with its Ultimate on the killing tick",
+    ),
+    (
         "rescue_rate",
         "team_a_rescue_rate",
         "Share of chances to save a dying ally with Priest healing that were taken",
@@ -161,6 +182,35 @@ CLASS_TABLES = (
     ("kill_help", "Kill contributions per game, helper class to enemy class"),
     ("healing_share", "Share of the Priest's useful healing each ally class received"),
     ("damage_taken_share", "Share of the damage the team received, by class"),
+    (
+        "mage_aura_coverage_by_class",
+        "Share of each ally class's ticks inside a Mage aura",
+    ),
+    (
+        "warrior_aura_coverage_by_class",
+        "Share of each ally class's ticks inside a Warrior aura",
+    ),
+    ("freedom_share", "Share of the Priest's Freedom uses each ally class received"),
+    (
+        "class_pair_distance",
+        "Average distance between two living classes, in map units",
+    ),
+)
+
+# Tables with one value per class: (table, the class the values come from;
+# "Enemy" when they come from the opponents).
+VECTOR_TABLES = (
+    ("healing_share", "Priest"),
+    ("damage_taken_share", "Enemy"),
+    ("freedom_share", "Priest"),
+    ("mage_aura_coverage_by_class", "Mage"),
+    ("warrior_aura_coverage_by_class", "Warrior"),
+)
+
+# The aura tables: (table, class that gives the aura, catalog stem).
+AURAS = (
+    ("mage_aura_coverage_by_class", "Mage", "mage_aura"),
+    ("warrior_aura_coverage_by_class", "Warrior", "warrior_aura"),
 )
 
 # Agent columns behind the class tables: the entrant's agents are 0-4 and its
@@ -178,7 +228,35 @@ CLASS_COLUMNS = tuple(
         for ally in range(5)
     ]
     + [f"agent_{agent}_damage_received" for agent in range(5)]
+    + [
+        f"agent_{source}_to_agent_{ally}_{stem}_{part}"
+        for _, _, stem in AURAS
+        for part in ("covered_steps", "eligible_steps")
+        for source in range(5)
+        for ally in range(5)
+        if source != ally
+    ]
+    + [
+        f"agent_{source}_to_agent_{ally}_priest_freedom_applications"
+        for source in range(5)
+        for ally in range(5)
+    ]
+    + [
+        f"agent_{first}_and_agent_{second}_ally_distance_{part}"
+        for first in range(5)
+        for second in range(first + 1, 5)
+        for part in ("mean", "observations")
+    ]
 )
+
+# Step 5's tests: an entrant needs this many wins and as many losses before
+# its wins and losses are compared; exact p-values enumerate every ordering of
+# up to EXACT_ENTRANTS ratings, and larger fields draw PERMUTATION_DRAWS random
+# orderings from PERMUTATION_SEED.
+MIN_GAMES = 20
+EXACT_ENTRANTS = 9
+PERMUTATION_DRAWS = 100_000
+PERMUTATION_SEED = 20261007
 
 # Team-level metrics the Elo screen ranks: every Team A team column except the
 # game result itself.
@@ -318,9 +396,19 @@ def class_tables(
     dict of str to dict
         Display name to ``damage_share`` and ``kill_help`` as 5 x 5 lists
         (the entrant's classes as rows, enemy classes as columns, in
-        ``CLASSES`` order; kill help per game) and ``healing_share`` and
-        ``damage_taken_share`` as 5 values. Shares are rounded to 4 places and
-        kill help to 3; an empty table gives zeros.
+        ``CLASSES`` order; kill help per game); ``healing_share``,
+        ``damage_taken_share`` and ``freedom_share`` (the Priest's Freedom
+        uses by ally class, the Priest itself included) as 5 values;
+        ``mage_aura_coverage_by_class`` and ``warrior_aura_coverage_by_class`` as
+        5 values, the
+        share of each ally class's ticks inside that class's aura (covered
+        ticks over ticks the aura could cover, never the aura giver itself);
+        and ``class_pair_distance``, a symmetric 5 x 5 list of the mean distance in
+        map units between two living teammates of those classes, weighted by
+        the ticks both were alive. Shares and coverage are rounded to 4
+        places, kill help and distance to 3; an empty share gives zeros, and
+        coverage or distance with no ticks to count gives NaN (for example
+        a roster without a Warrior, or one Mage and the Mage-Mage cell).
 
     Notes
     -----
@@ -346,6 +434,9 @@ def class_tables(
         kill_help = np.zeros((5, 5))
         healing = np.zeros(5)
         taken = np.zeros(5)
+        freedom = np.zeros(5)
+        auras = {table: np.zeros((2, 5)) for table, _, _ in AURAS}
+        apart = np.zeros((2, 5, 5))
         rosters: dict[tuple[tuple[int, ...], tuple[bool, ...]], list[int]] = {}
         for row in mine:
             key = (tuple(classes[row].tolist()), tuple(active[row].tolist()))
@@ -355,6 +446,13 @@ def class_tables(
             def total(name: str, rows: list[int] = rows) -> float:
                 """Sum one column over these games; missing values add nothing."""
                 return float(np.nansum(np.asarray(games[name], np.float64)[rows]))
+
+            def weighted(stem: str, rows: list[int] = rows) -> tuple[float, float]:
+                """Sum mean times observations, and observations, over games."""
+                mean = np.asarray(games[f"{stem}_mean"], np.float64)[rows]
+                count = np.asarray(games[f"{stem}_observations"], np.float64)[rows]
+                kept = np.isfinite(mean) & np.isfinite(count)
+                return float((mean * count)[kept].sum()), float(count[kept].sum())
 
             kind = {
                 agent: kinds[agent] - 1
@@ -376,11 +474,43 @@ def class_tables(
                         healing[kind[ally]] += total(
                             f"agent_{source}_to_agent_{ally}_effective_healing_done"
                         )
+                        freedom[kind[ally]] += total(
+                            f"agent_{source}_to_agent_{ally}_priest_freedom_applications"
+                        )
+                for table, giver, stem in AURAS:
+                    if kind[source] != CLASSES.index(giver):
+                        continue
+                    for ally in own:
+                        if ally != source:
+                            pair = f"agent_{source}_to_agent_{ally}_{stem}"
+                            auras[table][0, kind[ally]] += total(
+                                f"{pair}_covered_steps"
+                            )
+                            auras[table][1, kind[ally]] += total(
+                                f"{pair}_eligible_steps"
+                            )
+                for other in own:
+                    if other > source:
+                        summed, count = weighted(
+                            f"agent_{source}_and_agent_{other}_ally_distance"
+                        )
+                        for row, column in {
+                            (kind[source], kind[other]),
+                            (kind[other], kind[source]),
+                        }:
+                            apart[0, row, column] += summed
+                            apart[1, row, column] += count
         tables[names.get(str(recorded), str(recorded))] = {
             "damage_share": _share(damage),
             "kill_help": (kill_help / max(len(mine), 1)).round(3).tolist(),
             "healing_share": _share(healing),
             "damage_taken_share": _share(taken),
+            "freedom_share": _share(freedom),
+            **{
+                table: _ratio(covered, eligible, 4)
+                for table, (covered, eligible) in auras.items()
+            },
+            "class_pair_distance": _ratio(apart[0], apart[1], 3),
         }
     return tables
 
@@ -542,6 +672,132 @@ def screen_measures(
     )
 
 
+def screen_tests(
+    screen: Sequence[Mapping[str, Any]],
+    games: Columns,
+    elo: Mapping[str, float],
+    names: Mapping[str, str] | None = None,
+    scripted: Collection[str] = (),
+) -> list[dict[str, Any]]:
+    """Test each screened metric's trend with Elo three ways.
+
+    Parameters
+    ----------
+    screen : sequence of mapping
+        ``screen_measures`` rows, each with every entrant's value under its
+        display name.
+    games : mapping of str to numpy.ndarray
+        ``results.system_metrics("full_metrics", by="game", ...)`` with
+        ``team_a_win``, ``team_a_loss`` and every screened ``team_a_<measure>``
+        among its columns: one row per entrant per game, from the entrant's
+        side, with ``system_name`` and the game's ``run_id``, ``phase``,
+        ``pass_id`` and ``episode_id``.
+    elo : mapping of str to float
+        Display name to the saved tournament's Elo rating.
+    names : mapping of str to str or None, default=None
+        Display name for each recorded ``system_name``.
+    scripted : collection of str, default=()
+        Display names left out of ``p_value_learned``.
+
+    Returns
+    -------
+    list of dict
+        Copies of the screen rows, in the same order, each with six more
+        values:
+
+        - ``p_value_all`` and ``p_value_learned``: the two-sided permutation
+          p-value of ``correlation_all`` and ``correlation_learned``, the share
+          of orderings of the ratings whose rank correlation with the values
+          is at least as far from zero. With nine entrants the smallest
+          possible value is 2 / 9! (about 0.0000055); with six it is
+          2 / 720 (about 0.0028).
+        - ``holm_p_value_all``: ``p_value_all`` after Holm's correction for
+          testing every screened metric with a value; below 0.05 means the
+          trend survives the whole screen at the 5% level.
+        - ``winner_higher_share``: over decided games between two different
+          entrants, the share in which the winner had more of the measure
+          than the loser. Games where the two are equal or either is missing
+          are left out; ``decided_games_compared`` counts the rest. 0.5 means
+          the measure does not separate winners from losers.
+        - ``wins_over_losses``: for each entrant with at least ``MIN_GAMES``
+          wins and as many losses, the chance that one of its wins, picked at
+          random, shows more of the measure than one of its losses (ties count
+          half); the mean over those entrants, or NaN if none qualifies.
+          Near 0.5 means the measure does not change with the result inside a
+          team: it describes how the team plays, not how a game went.
+
+    Notes
+    -----
+    Exact p-values count every ordering of up to ``EXACT_ENTRANTS`` ratings;
+    larger fields use ``PERMUTATION_DRAWS`` random orderings drawn from
+    ``PERMUTATION_SEED``, so their p-values are estimates. Ties share their
+    average rank. The permutation test treats each entrant as one
+    observation, so a field of nine supports only strong trends. The two game
+    checks reuse every game but not its pairing with the swapped-spawn game,
+    and a measure that is itself part of winning (kills, deaths) passes them
+    trivially; read them as a description, not a test. Host-only NumPy.
+    """
+    names = names or {}
+    systems = np.asarray(
+        [names.get(str(name), str(name)) for name in games["system_name"]], object
+    )
+    win = np.asarray(games["team_a_win"], np.float64)
+    loss = np.asarray(games["team_a_loss"], np.float64)
+    sides: defaultdict[tuple[str, ...], list[int]] = defaultdict(list)
+    for row, key in enumerate(
+        zip(
+            games["run_id"],
+            games["phase"],
+            games["pass_id"],
+            games["episode_id"],
+            strict=True,
+        )
+    ):
+        sides[tuple(str(part) for part in key)].append(row)
+    decided = np.asarray(
+        [
+            (first, second) if win[first] == 1 else (second, first)
+            for first, second in (rows for rows in sides.values() if len(rows) == 2)
+            if win[first] + win[second] == 1
+        ],
+        np.int64,
+    ).reshape(-1, 2)
+    entrants = [name for name in screen[0] if name in elo] if screen else []
+    learned = [name for name in entrants if name not in scripted]
+    rows: list[dict[str, Any]] = []
+    for source in screen:
+        row = dict(source)
+        for label, group in (("all", entrants), ("learned", learned)):
+            row[f"p_value_{label}"] = _permutation_p(
+                [float(row[name]) for name in group], [elo[name] for name in group]
+            )
+        value = np.asarray(games[f"team_a_{row['measure']}"], np.float64)
+        winner, loser = value[decided[:, 0]], value[decided[:, 1]]
+        compared = np.isfinite(winner) & np.isfinite(loser) & (winner != loser)
+        row["winner_higher_share"] = (
+            float(np.mean(winner[compared] > loser[compared]))
+            if compared.any()
+            else math.nan
+        )
+        row["decided_games_compared"] = int(compared.sum())
+        chances: list[float] = []
+        for entrant in dict.fromkeys(str(name) for name in systems):
+            mine = systems == entrant
+            won, lost = value[mine & (win == 1)], value[mine & (loss == 1)]
+            won, lost = won[np.isfinite(won)], lost[np.isfinite(lost)]
+            if len(won) >= MIN_GAMES and len(lost) >= MIN_GAMES:
+                ranks = _ranks(np.concatenate([won, lost]))
+                above = ranks[: len(won)].sum() - len(won) * (len(won) + 1) / 2
+                chances.append(float(above) / (len(won) * len(lost)))
+        row["wins_over_losses"] = float(np.mean(chances)) if chances else math.nan
+        rows.append(row)
+    for row, adjusted in zip(
+        rows, _holm([row["p_value_all"] for row in rows]), strict=True
+    ):
+        row["holm_p_value_all"] = adjusted
+    return rows
+
+
 def write_outputs(
     profiles: Mapping[str, dict[str, Any]],
     elo: Mapping[str, float],
@@ -562,8 +818,9 @@ def write_outputs(
     output_dir : pathlib.Path
         Existing folder; files there with these names are replaced.
     screen : sequence of mapping, default=()
-        ``screen_measures`` rows. When given, they are written to
-        elo_screen.csv and the 20 strongest trends are added to summary.md.
+        ``screen_measures`` rows, optionally with ``screen_tests``' columns.
+        When given, they are written to elo_screen.csv and the 20 strongest
+        trends are added to summary.md, with the tests when present.
     scripted : collection of str, default=()
         Display names drawn as open points in teamwork.png; the others are
         filled.
@@ -598,15 +855,12 @@ def write_outputs(
         writer.writerow(["system", "table", "source_class", "target_class", "value"])
         for name in order:
             profile = profiles[name]
-            for table in ("damage_share", "kill_help"):
+            for table in ("damage_share", "kill_help", "class_pair_distance"):
                 for row, source in enumerate(CLASSES):
                     for column, target in enumerate(CLASSES):
                         cell = profile[table][row][column]
                         writer.writerow([name, table, source, target, cell])
-            for table, source in (
-                ("healing_share", "Priest"),
-                ("damage_taken_share", "Enemy"),
-            ):
+            for table, source in VECTOR_TABLES:
                 for column, target in enumerate(CLASSES):
                     writer.writerow(
                         [name, table, source, target, profile[table][column]]
@@ -618,9 +872,12 @@ def write_outputs(
             writer = csv.DictWriter(file, fieldnames=list(screen[0]))
             writer.writeheader()
             for row in screen:
+                # p-values keep 4 significant digits; other values 4 places.
                 writer.writerow(
                     {
-                        k: round(v, 4) if isinstance(v, float) else v
+                        k: (float(f"{v:.4g}") if "p_value" in k else round(v, 4))
+                        if isinstance(v, float)
+                        else v
                         for k, v in row.items()
                     }
                 )
@@ -650,22 +907,63 @@ def write_outputs(
             + " | ".join(cells)
             + " |"
         )
-    for table, meaning in CLASS_TABLES[2:]:
+    meanings = dict(CLASS_TABLES)
+    for table, _ in VECTOR_TABLES:
+        meaning = meanings[table]
         lines += ["", f"**{meaning}** ({table})", ""]
         lines += ["| System | " + " | ".join(CLASSES) + " |", "| --- |" + " ---: |" * 5]
         for name in order:
             values = " | ".join(f"{value:.3f}" for value in profiles[name][table])
             lines.append(f"| {name} | {values} |")
+    pairs = [(first, second) for first in range(5) for second in range(first + 1, 5)]
+    lines += ["", f"**{meanings['class_pair_distance']}** (class_pair_distance)", ""]
+    lines.append(
+        "| System | "
+        + " | ".join(f"{CLASSES[a]}-{CLASSES[b]}" for a, b in pairs)
+        + " |"
+    )
+    lines.append("| --- |" + " ---: |" * len(pairs))
+    for name in order:
+        distance = profiles[name]["class_pair_distance"]
+        cells = " | ".join(f"{distance[a][b]:.2f}" for a, b in pairs)
+        lines.append(f"| {name} | {cells} |")
     if screen:
+        tested = "p_value_all" in screen[0]
         lines += ["", "**Strongest trends with Elo among all team metrics**", ""]
-        lines.append("| Measure | Unit | All | Learned | Meaning |")
-        lines.append("| --- | --- | ---: | ---: | --- |")
-        for row in screen[:20]:
+        if tested:
             lines.append(
-                f"| {row['measure']} | {row['unit']} | "
-                f"{row['correlation_all']:+.2f} | {row['correlation_learned']:+.2f} | "
-                f"{row['description']} |"
+                "p: exact permutation p-value over all entrants; Holm: after "
+                "correcting for every screened metric; Winner higher: share of "
+                "decided games the winner had more; Wins over losses: chance a "
+                "team's win shows more than its loss (0.5: no change)."
             )
+            lines.append("")
+            lines.append(
+                "| Measure | Unit | All | p | Holm | Learned | p | Winner higher "
+                "| Wins over losses | Meaning |"
+            )
+            lines.append("| --- | --- |" + " ---: |" * 7 + " --- |")
+        else:
+            lines.append("| Measure | Unit | All | Learned | Meaning |")
+            lines.append("| --- | --- | ---: | ---: | --- |")
+        for row in screen[:20]:
+            cells = [
+                row["measure"],
+                row["unit"],
+                f"{row['correlation_all']:+.2f}",
+            ]
+            if tested:
+                cells += [
+                    f"{row['p_value_all']:.2g}",
+                    f"{row['holm_p_value_all']:.2g}",
+                    f"{row['correlation_learned']:+.2f}",
+                    f"{row['p_value_learned']:.2g}",
+                    f"{row['winner_higher_share']:.2f}",
+                    f"{row['wins_over_losses']:.2f}",
+                ]
+            else:
+                cells.append(f"{row['correlation_learned']:+.2f}")
+            lines.append("| " + " | ".join([*cells, row["description"]]) + " |")
     (output_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     import matplotlib
@@ -710,6 +1008,13 @@ def _share(values: Floats) -> list[Any]:
     return (values / max(float(values.sum()), 1e-9)).round(4).tolist()
 
 
+def _ratio(top: Floats, bottom: Floats, places: int) -> list[Any]:
+    """Cell-by-cell top over bottom, rounded; NaN where bottom is zero."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(bottom > 0, top / np.where(bottom > 0, bottom, 1.0), np.nan)
+    return ratio.round(places).tolist()
+
+
 def _rank_correlation(
     values: Mapping[str, float], elo: Mapping[str, float], names: Sequence[str]
 ) -> float:
@@ -730,14 +1035,58 @@ def _rank_correlation(
 
 
 def _ranks(values: Floats) -> Floats:
-    """Ranks from 1 upward; tied values share their average rank."""
-    order = values.argsort(kind="stable")
-    ranks = np.empty(len(values))
-    ranks[order] = np.arange(1, len(values) + 1)
-    for value in np.unique(values):
-        tied = values == value
-        ranks[tied] = ranks[tied].mean()
-    return ranks
+    """Ranks from 1 upward; tied values share their average rank (no NaN)."""
+    _, inverse, counts = np.unique(values, return_inverse=True, return_counts=True)
+    upper = np.cumsum(counts)
+    return (upper - (counts - 1) / 2)[inverse].astype(np.float64)
+
+
+@cache
+def _orderings(count: int) -> NDArray[np.int64]:
+    """Every ordering of count items, or seeded random ones for large counts."""
+    if count <= EXACT_ENTRANTS:
+        return np.asarray(list(itertools.permutations(range(count))), np.int64)
+    generator = np.random.default_rng(PERMUTATION_SEED)
+    return generator.permuted(np.tile(np.arange(count), (PERMUTATION_DRAWS, 1)), axis=1)
+
+
+def _permutation_p(values: Sequence[float], ratings: Sequence[float]) -> float:
+    """Two-sided permutation p-value of the rank correlation of values with ratings.
+
+    The share of orderings of the ratings (all of them up to EXACT_ENTRANTS
+    entrants) whose correlation is at least as far from zero as the observed
+    one. Pairs with a NaN are left out; NaN when fewer than three remain or
+    either side is constant, as for _rank_correlation.
+    """
+    kept = [
+        (value, rating)
+        for value, rating in zip(values, ratings, strict=True)
+        if not (math.isnan(value) or math.isnan(rating))
+    ]
+    if len(kept) < 3:
+        return math.nan
+    x = _ranks(np.asarray([value for value, _ in kept]))
+    y = _ranks(np.asarray([rating for _, rating in kept]))
+    x, y = x - x.mean(), y - y.mean()
+    scale = math.sqrt(float((x**2).sum() * (y**2).sum()))
+    if scale == 0:
+        return math.nan
+    observed = abs(float(np.dot(x, y))) / scale
+    shuffled: Floats = np.abs(y[_orderings(len(kept))] @ x) / scale
+    return float(np.mean(shuffled >= observed - 1e-12))
+
+
+def _holm(p_values: Sequence[float]) -> list[float]:
+    """Holm's step-down adjustment over the finite p-values; NaN stays NaN."""
+    finite = sorted(
+        (value, index) for index, value in enumerate(p_values) if not math.isnan(value)
+    )
+    adjusted = [math.nan] * len(p_values)
+    running = 0.0
+    for position, (value, index) in enumerate(finite):
+        running = max(running, min(1.0, (len(finite) - position) * value))
+        adjusted[index] = running
+    return adjusted
 
 
 @hydra.main(
@@ -848,7 +1197,19 @@ def main(config: DictConfig) -> dict[str, Any]:
         "full_metrics", columns=summary_columns(), ratios=RATIOS
     )
     games = replayed.system_metrics(
-        "full_metrics", by="game", columns=["score_difference", *CLASS_COLUMNS]
+        "full_metrics",
+        by="game",
+        columns=list(
+            dict.fromkeys(
+                [
+                    "score_difference",
+                    "team_a_win",
+                    "team_a_loss",
+                    *SCREEN_COLUMNS,
+                    *CLASS_COLUMNS,
+                ]
+            )
+        ),
     )
     analysis_seconds = round(time.perf_counter() - started, 1)
     side_check = check_sides(games, saved.head_to_head())
@@ -861,8 +1222,11 @@ def main(config: DictConfig) -> dict[str, Any]:
     if unrated:
         raise ValueError(f"no saved rating for {unrated}")
 
-    # 5. Rank every team-level metric by its correlation with Elo, then save.
-    screen = screen_measures(summary, elo, names, scripted)
+    # 5. Rank every team-level metric by its correlation with Elo, test each
+    # trend, then save.
+    screen = screen_tests(
+        screen_measures(summary, elo, names, scripted), games, elo, names, scripted
+    )
     write_outputs(profiles, elo, output_dir, screen, scripted)
     settings_record = replayed.execution_settings
     record = {

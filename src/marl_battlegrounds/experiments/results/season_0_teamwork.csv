@@ -12,6 +12,8 @@ Recurrent IPPO,1441.3,1600,800,Available,warrior_aura_coverage,0.5358,0.5334,0.5
 Recurrent IPPO,1441.3,1600,800,Available,mage_aura_damage,434.0352,431.2198,436.7161
 Recurrent IPPO,1441.3,1600,800,Available,warrior_aura_protection,470.235,466.0051,474.3704
 Recurrent IPPO,1441.3,1600,800,Available,useful_healing_fraction,0.7683,0.7657,0.7709
+Recurrent IPPO,1441.3,1600,800,Available,freedom_protection,0.0629,0.0617,0.0641
+Recurrent IPPO,1441.3,1600,800,Available,warrior_ultimate_kill_fraction,0.0323,0.0303,0.0343
 Recurrent IPPO,1441.3,1600,800,Available,rescue_rate,0.661,0.6514,0.6698
 Recurrent IPPO,1441.3,1600,800,Available,own_red_zone_deaths,0.5919,0.5394,0.6456
 Recurrent IPPO,1441.3,1600,800,Available,basic_uses,651.5344,648.0904,654.9345
@@ -29,6 +31,8 @@ PQN-VDN,1358.4,1600,400,Available,warrior_aura_coverage,0.6299,0.6283,0.6316
 PQN-VDN,1358.4,1600,400,Available,mage_aura_damage,356.4649,354.4437,358.4515
 PQN-VDN,1358.4,1600,400,Available,warrior_aura_protection,433.0157,430.449,435.5011
 PQN-VDN,1358.4,1600,400,Available,useful_healing_fraction,0.6212,0.6176,0.6247
+PQN-VDN,1358.4,1600,400,Available,freedom_protection,0.0606,0.0598,0.0615
+PQN-VDN,1358.4,1600,400,Available,warrior_ultimate_kill_fraction,0.0309,0.0294,0.0323
 PQN-VDN,1358.4,1600,400,Available,rescue_rate,0.7729,0.7676,0.7783
 PQN-VDN,1358.4,1600,400,Available,own_red_zone_deaths,1.3513,1.3037,1.3938
 PQN-VDN,1358.4,1600,400,Available,basic_uses,570.2894,567.7273,572.8282
@@ -46,6 +50,8 @@ Recurrent MAPPO,1304.3,1600,800,Available,warrior_aura_coverage,0.4898,0.4874,0.
 Recurrent MAPPO,1304.3,1600,800,Available,mage_aura_damage,384.4812,380.9558,387.9957
 Recurrent MAPPO,1304.3,1600,800,Available,warrior_aura_protection,405.1591,401.2751,409.1485
 Recurrent MAPPO,1304.3,1600,800,Available,useful_healing_fraction,0.6505,0.6457,0.6552
+Recurrent MAPPO,1304.3,1600,800,Available,freedom_protection,0.0594,0.0581,0.0606
+Recurrent MAPPO,1304.3,1600,800,Available,warrior_ultimate_kill_fraction,0.0334,0.0313,0.0355
 Recurrent MAPPO,1304.3,1600,800,Available,rescue_rate,0.6087,0.5976,0.6189
 Recurrent MAPPO,1304.3,1600,800,Available,own_red_zone_deaths,0.5756,0.5319,0.6219
 Recurrent MAPPO,1304.3,1600,800,Available,basic_uses,614.2731,610.284,618.2908
@@ -63,6 +69,8 @@ QMIX,1300.2,1600,400,Available,warrior_aura_coverage,0.4962,0.4942,0.4984
 QMIX,1300.2,1600,400,Available,mage_aura_damage,350.3789,347.7789,353.0871
 QMIX,1300.2,1600,400,Available,warrior_aura_protection,427.39,423.9521,431.1098
 QMIX,1300.2,1600,400,Available,useful_healing_fraction,0.7042,0.7006,0.7075
+QMIX,1300.2,1600,400,Available,freedom_protection,0.0534,0.0525,0.0543
+QMIX,1300.2,1600,400,Available,warrior_ultimate_kill_fraction,0.0353,0.0337,0.0368
 QMIX,1300.2,1600,400,Available,rescue_rate,0.8133,0.8078,0.8182
 QMIX,1300.2,1600,400,Available,own_red_zone_deaths,0.36,0.3369,0.3844
 QMIX,1300.2,1600,400,Available,basic_uses,606.6738,603.3424,610.0336
@@ -80,6 +88,8 @@ Feedforward IPPO,1239.9,1600,800,Available,warrior_aura_coverage,0.5068,0.5044,0
 Feedforward IPPO,1239.9,1600,800,Available,mage_aura_damage,349.912,346.4649,353.1481
 Feedforward IPPO,1239.9,1600,800,Available,warrior_aura_protection,397.1692,393.1763,401.0755
 Feedforward IPPO,1239.9,1600,800,Available,useful_healing_fraction,0.6815,0.6775,0.6853
+Feedforward IPPO,1239.9,1600,800,Available,freedom_protection,0.0558,0.0546,0.0568
+Feedforward IPPO,1239.9,1600,800,Available,warrior_ultimate_kill_fraction,0.0368,0.0347,0.0391
 Feedforward IPPO,1239.9,1600,800,Available,rescue_rate,0.7824,0.7733,0.7907
 Feedforward IPPO,1239.9,1600,800,Available,own_red_zone_deaths,0.705,0.6556,0.7556
 Feedforward IPPO,1239.9,1600,800,Available,basic_uses,612.6769,608.7422,616.4983
@@ -97,6 +107,8 @@ Feedforward MAPPO,1140.1,1600,800,Available,warrior_aura_coverage,0.4654,0.462,0
 Feedforward MAPPO,1140.1,1600,800,Available,mage_aura_damage,339.488,335.1736,344.0875
 Feedforward MAPPO,1140.1,1600,800,Available,warrior_aura_protection,379.7219,374.3529,385.0804
 Feedforward MAPPO,1140.1,1600,800,Available,useful_healing_fraction,0.602,0.5965,0.6073
+Feedforward MAPPO,1140.1,1600,800,Available,freedom_protection,0.0486,0.0473,0.0497
+Feedforward MAPPO,1140.1,1600,800,Available,warrior_ultimate_kill_fraction,0.0362,0.0339,0.0386
 Feedforward MAPPO,1140.1,1600,800,Available,rescue_rate,0.7577,0.7487,0.7663
 Feedforward MAPPO,1140.1,1600,800,Available,own_red_zone_deaths,1.9363,1.8456,2.0281
 Feedforward MAPPO,1140.1,1600,800,Available,basic_uses,575.0881,569.9454,580.3251
@@ -114,6 +126,8 @@ TDM-Beta,1042.5,1600,400,Available,warrior_aura_coverage,0.4016,0.4003,0.4029
 TDM-Beta,1042.5,1600,400,Available,mage_aura_damage,261.3406,259.5978,263.0015
 TDM-Beta,1042.5,1600,400,Available,warrior_aura_protection,341.3791,339.45,343.2759
 TDM-Beta,1042.5,1600,400,Available,useful_healing_fraction,0.5066,0.504,0.5091
+TDM-Beta,1042.5,1600,400,Available,freedom_protection,0.0352,0.0345,0.0359
+TDM-Beta,1042.5,1600,400,Available,warrior_ultimate_kill_fraction,0.1408,0.1377,0.1437
 TDM-Beta,1042.5,1600,400,Available,rescue_rate,0.9438,0.9397,0.9477
 TDM-Beta,1042.5,1600,400,Available,own_red_zone_deaths,0.2975,0.29,0.3063
 TDM-Beta,1042.5,1600,400,Available,basic_uses,547.6725,545.576,549.8465
@@ -131,6 +145,8 @@ TDM-Gamma,999.6,1600,400,Available,warrior_aura_coverage,0.3775,0.3762,0.3788
 TDM-Gamma,999.6,1600,400,Available,mage_aura_damage,265.2572,263.357,266.9951
 TDM-Gamma,999.6,1600,400,Available,warrior_aura_protection,338.8835,336.7356,341.0543
 TDM-Gamma,999.6,1600,400,Available,useful_healing_fraction,0.5134,0.5109,0.5159
+TDM-Gamma,999.6,1600,400,Available,freedom_protection,0.0384,0.0377,0.039
+TDM-Gamma,999.6,1600,400,Available,warrior_ultimate_kill_fraction,0.1389,0.1362,0.1417
 TDM-Gamma,999.6,1600,400,Available,rescue_rate,0.9334,0.9295,0.9373
 TDM-Gamma,999.6,1600,400,Available,own_red_zone_deaths,0.22,0.2131,0.2275
 TDM-Gamma,999.6,1600,400,Available,basic_uses,551.6031,549.1029,553.9432
@@ -148,6 +164,8 @@ TDM-Alpha,973.6,1600,400,Available,warrior_aura_coverage,0.4045,0.4033,0.4058
 TDM-Alpha,973.6,1600,400,Available,mage_aura_damage,260.5587,258.8606,262.1992
 TDM-Alpha,973.6,1600,400,Available,warrior_aura_protection,339.6381,337.4233,341.6994
 TDM-Alpha,973.6,1600,400,Available,useful_healing_fraction,0.4968,0.4941,0.4994
+TDM-Alpha,973.6,1600,400,Available,freedom_protection,0.0364,0.0357,0.0371
+TDM-Alpha,973.6,1600,400,Available,warrior_ultimate_kill_fraction,0.1441,0.1413,0.147
 TDM-Alpha,973.6,1600,400,Available,rescue_rate,0.9461,0.9421,0.9501
 TDM-Alpha,973.6,1600,400,Available,own_red_zone_deaths,0.1713,0.1663,0.1775
 TDM-Alpha,973.6,1600,400,Available,basic_uses,537.665,535.4921,539.7527
