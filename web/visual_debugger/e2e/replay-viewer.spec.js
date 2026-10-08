@@ -2106,12 +2106,16 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await clickReplayCommand(page, "#replay-next-button");
   await expectReplayFrameIndex(page, 1);
 
+  // Play this step at the slowest speed, as the recipient-dwell test does: the
+  // checks between Play and Pause must finish before tick 1's beat ends, and at
+  // speed 2 a busy machine can take longer, so playback rightly sends next_frame.
+  await page.locator("#replay-playback-rate").selectOption("0.25");
   const postsBeforePausedReplay = replayPosts.length;
   await page.locator("#replay-play-pause-button").click();
   await expectReplayTransport(page, {
     position: "Tick 1 / 5",
     state: "PLAYING",
-    rate: "2",
+    rate: "0.25",
     incomingTransitionId: frameOne.incoming_transition_id,
   });
   await page.locator("#replay-play-pause-button").click();
@@ -2120,8 +2124,10 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await expectReplayTransport(page, {
     position: "Tick 1 / 5",
     state: "SETTLED",
-    rate: "2",
+    rate: "0.25",
   });
+  await page.locator("#replay-playback-rate").selectOption("2");
+  expect(replayPosts).toHaveLength(postsBeforePausedReplay);
 
   await page.route("**/api/replay/command", async (route) => {
     await delay(250);
