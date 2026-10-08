@@ -15,7 +15,8 @@ optimizer steps. A PQN-VDN run's report reads its "pqn" settings block, adds
 its summary line (optimizer steps, learning blocks, used and kept-row pairs,
 initial transitions never learned, capped by the transitions generated so far)
 and draws pqn_curves from scalar columns only, keeping the used_exposure
-dictionary out of the CSV.
+dictionary out of the CSV. Progress checks give each validation opponent its
+own points, margin and kills per game, averaging its map cells equally.
 """
 
 import json
@@ -26,6 +27,7 @@ import numpy as np
 import pytest
 
 from marl_battlegrounds.training.analysis import (
+    _progress_checks,  # pyright: ignore[reportPrivateUsage] - the progress record's per-opponent fields.
     analyze,
     confirmation_candidates,
     refresh_summary,
@@ -791,3 +793,47 @@ def test_refresh_summary_expands_home_in_output(
         analysis.refresh_summary(["~/run"], output_dir="~/report")
         == tmp_path / "report"
     )
+
+
+def test_progress_checks_give_each_opponent_its_own_points_and_kills(
+    tmp_path: Path,
+) -> None:
+    def cell(opponent: str, map_id: int, ours: float, theirs: float) -> dict[str, Any]:
+        return {
+            "opponent": opponent,
+            "map_id": map_id,
+            "games": 8,
+            "wins": 6 if ours > theirs else 0,
+            "draws": 0,
+            "losses": 0 if ours > theirs else 8,
+            "mean_team_a_score": ours,
+            "mean_team_b_score": theirs,
+            "mean_team_a_kills": ours - 1.0,
+            "mean_team_b_kills": theirs,
+        }
+
+    result = {
+        "purpose": "routine",
+        "complete": True,
+        "env_steps": 40,
+        "checkpoint_id": "c",
+        "cells": [
+            cell("tdm-alpha", 42, 20.0, 10.0),
+            cell("tdm-alpha", 43, 14.0, 12.0),
+            cell("Model", 42, 6.0, 20.0),
+            cell("Model", 43, 8.0, 20.0),
+        ],
+    }
+    path = tmp_path / "validation_results.json"
+    path.write_text(json.dumps([result]), encoding="utf-8")
+    (check,) = _progress_checks(path)
+    alpha, model = check["opponents"]
+    assert (alpha["name"], alpha["games"], alpha["wins"]) == ("tdm-alpha", 16, 12)
+    assert (alpha["points_for"], alpha["points_against"], alpha["margin"]) == (
+        17.0,
+        11.0,
+        6.0,
+    )
+    assert (alpha["kills_for"], alpha["kills_against"]) == (16.0, 11.0)
+    assert (model["margin"], model["kills_for"]) == (-13.0, 6.0)
+    assert check["margin"] == (alpha["margin"] + model["margin"]) / 2

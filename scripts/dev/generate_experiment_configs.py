@@ -197,7 +197,7 @@ SEASON_0_FIELD = (
 
 
 # Season 0 display names for the nine entrants, keyed as the saved tournament
-# records them. The teamwork and human-games analyses both read them.
+# records them. The teamwork, zero-shot and human-games analyses read them.
 SEASON_0_RECORDED_NAMES = {
     "IPPO at step 250,675,200 (run)": "Recurrent IPPO",
     "PQN-VDN at step 240,156,672 (run)": "PQN-VDN",
@@ -650,10 +650,14 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    # Home games: the Season 0 tournament replayed with full metrics by the
+    # tournament_analysis stage, read by display name like the teamwork study.
     result["zero_shot_coordination_analysis.yaml"] = {
         "zsc_dir": "???",
         "bootstrap_draws": 2000,
         "bootstrap_seed": 20261007,
+        "home_games_dir": None,
+        "home_names": dict(SEASON_0_RECORDED_NAMES),
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
@@ -687,6 +691,9 @@ def presets() -> dict[str, dict[str, Any]]:
         "names": dict(SEASON_0_RECORDED_NAMES),
         "window_ticks": 10,
         "lead_margin": 12,
+        # Luck for Ultimates used together: random slides from a declared seed.
+        "chance_shuffles": 2000,
+        "chance_seed": 20261016,
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
@@ -712,6 +719,7 @@ def presets() -> dict[str, dict[str, Any]]:
     }
     result["training_curves.yaml"] = {
         "lineages": "???",
+        "opponents": None,
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }

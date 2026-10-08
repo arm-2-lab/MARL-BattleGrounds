@@ -13,6 +13,8 @@ names:
   tdm-alpha: TDM-Alpha
 window_ticks: 10
 lead_margin: 12
+chance_shuffles: 2000
+chance_seed: 20261016
 output_dir: ???
 hydra:
   job:

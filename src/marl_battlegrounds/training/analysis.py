@@ -290,8 +290,11 @@ def _progress_checks(path: Path) -> list[Record]:
     list of dict
         One record per complete check with purpose "routine", sorted by
         env_steps: ``env_steps``, ``checkpoint_id``, ``opponents`` (one dict
-        per opponent in saved order with name, games, wins, draws, losses and
-        score, the average game score: win 1, draw 0.5, loss 0),
+        per opponent in saved order with name, games, wins, draws, losses,
+        score, the average game score: win 1, draw 0.5, loss 0, and that
+        opponent's own ``points_for``, ``points_against``, ``margin``,
+        ``kills_for`` and ``kills_against`` per game, each averaging its map
+        cells with equal weight; None when a cell lacks the value),
         ``points_for`` and ``points_against`` (our and their points per game),
         ``margin`` (points for minus points against from _mean_point_margin,
         equal weight per map and opponent), ``kills_for`` and
@@ -332,6 +335,8 @@ def _progress_checks(path: Path) -> list[Record]:
                 key: sum(int(cell.get(key) or 0) for cell in own)
                 for key in ("games", "wins", "draws", "losses")
             }
+            own_for = _mean_cell(own, "mean_team_a_score")
+            own_against = _mean_cell(own, "mean_team_b_score")
             opponents.append(
                 {
                     "name": name,
@@ -339,6 +344,13 @@ def _progress_checks(path: Path) -> list[Record]:
                     "score": (counts["wins"] + 0.5 * counts["draws"]) / counts["games"]
                     if counts["games"]
                     else None,
+                    "points_for": own_for,
+                    "points_against": own_against,
+                    "margin": None
+                    if own_for is None or own_against is None
+                    else own_for - own_against,
+                    "kills_for": _mean_cell(own, "mean_team_a_kills"),
+                    "kills_against": _mean_cell(own, "mean_team_b_kills"),
                 }
             )
         try:

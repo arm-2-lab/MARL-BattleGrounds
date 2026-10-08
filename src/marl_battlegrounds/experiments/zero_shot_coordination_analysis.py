@@ -1,8 +1,9 @@
 """Compare every zero-shot coordination team with the host team alone, game by game.
 
 Use python -m marl_battlegrounds.experiments.zero_shot_coordination_analysis
-zsc_dir=/path/run output_dir=/path/out, where zsc_dir is the output_dir of the
-zero_shot_coordination stage.
+zsc_dir=/path/run home_games_dir=/path/replay output_dir=/path/out, where
+zsc_dir is the output_dir of the zero_shot_coordination stage and the
+optional home_games_dir is described below.
 
 Every team played games with the same starts as the host team alone: game N of
 every team has the same opponent, map, spawn end and seed. Matching games by
@@ -30,12 +31,23 @@ floor: ``slot_value_kept`` places each newcomer between the host's own agent
 (1) and that floor (0), with an interval from the same draws. ``fit_drivers``
 then asks which measure follows the cost of a stranger within each class.
 
+Given home games (home_games_dir: a saved full-metric run where each
+newcomer's own System played with its own team, such as the Season 0
+tournament replayed by the tournament_analysis stage), the stage also reads
+how far each class stands from its own teammates there, through the same
+results.system_metrics call, and reports how much farther each newcomer stands
+from the host's agents than that (``distance_beyond_home``).
+
 Outputs in output_dir: teams.csv (one row per team and class: each measure,
-its change from the host alone, their intervals and the slot value kept),
-fit_drivers.csv (step above), map_ends.csv (each team's games against each
-opponent on each map and spawn end), summary.md and zero_shot_coordination.png
-(the margin change of every newcomer, one row per class). The analysis uses
-NumPy on the host and no JAX.
+its change from the host alone, their intervals, the slot value kept, the
+Priest's useful healing per point of damage taken, and the home distance),
+fit_drivers.csv (step above), classes.csv (the learned strangers' means in
+each class, and the floor's cost), newcomers.csv (each newcomer's means over
+its classes), by_opponent.csv (each newcomer's margin change against each
+opponent, averaged over its classes), map_ends.csv (each team's games against
+each opponent on each map and spawn end), summary.md and
+zero_shot_coordination.png (the margin change of every newcomer, one row per
+class). The analysis uses NumPy on the host and no JAX.
 """
 
 from __future__ import annotations
@@ -133,6 +145,110 @@ def read_columns() -> list[str]:
     return names
 
 
+def pair_distance(games: Columns, pairs: Sequence[tuple[int, int]]) -> Floats:
+    """Average the distance between teammates over several pairs, per game.
+
+    Parameters
+    ----------
+    games : mapping of str to numpy.ndarray
+        Per-game rows from one team's side, with the
+        ``agent_<a>_and_agent_<b>_ally_distance_mean`` and ``_observations``
+        columns of every pair in ``pairs`` (``a`` below ``b``); each array has
+        one entry per game.
+    pairs : sequence of (int, int)
+        Team slot pairs, 0 to 4, in either order.
+
+    Returns
+    -------
+    numpy.ndarray
+        float64, one value per game: the mean distance in map units over all
+        the pairs, each pair weighted by the ticks both agents were alive. A
+        missing value reads as zero; NaN for a game with no such tick.
+    """
+
+    def column(name: str) -> Floats:
+        """One column as float64, missing values as zero."""
+        return np.nan_to_num(np.asarray(games[name], np.float64))
+
+    names = [f"agent_{min(a, b)}_and_agent_{max(a, b)}_ally_distance" for a, b in pairs]
+    means = np.stack([column(f"{name}_mean") for name in names])
+    weights = np.stack([column(f"{name}_observations") for name in names])
+    ticks = weights.sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(ticks > 0, (means * weights).sum(axis=0) / ticks, np.nan)
+
+
+def home_distances(
+    games: Columns, names: Mapping[str, str] | None = None
+) -> dict[tuple[str, str], float]:
+    """Measure how far each class stands from its own teammates in home games.
+
+    A newcomer's "home" is its own System's team. This gives the yardstick for
+    ``distance_beyond_home``: how much farther a newcomer stands from the
+    host's agents than the same class stands from its own teammates.
+
+    Parameters
+    ----------
+    games : mapping of str to numpy.ndarray
+        ``results.system_metrics("full_metrics", by="game",
+        columns=distance_columns())`` of a saved run where the newcomers'
+        Systems played with their own teams, such as the Season 0 tournament
+        replayed with full metrics by the tournament_analysis stage: one row
+        per System per game, from that System's side, with ``system_name``
+        and ``agent_<k>_class_id``.
+    names : mapping of str to str or None, default=None
+        Display name for each recorded ``system_name``, so the keys match the
+        newcomer names; Systems left out keep their recorded name.
+
+    Returns
+    -------
+    dict of (str, str) to float
+        (display name, class) to that class's mean over games of its
+        tick-weighted distance to its four teammates, in map units, computed
+        as ``newcomer_distance`` is. NaN when the class was never alive with
+        a teammate.
+
+    Raises
+    ------
+    ValueError
+        A System's slots 0-4 are not the canonical roster (Mage, Warrior,
+        Hunter, Rogue, Priest) in every game.
+    """
+    names = names or {}
+    systems = np.asarray(games["system_name"], dtype=object)
+    result: dict[tuple[str, str], float] = {}
+    for recorded in dict.fromkeys(systems.tolist()):
+        mine = systems == recorded
+        rows = {key: np.asarray(values)[mine] for key, values in games.items()}
+        name = names.get(str(recorded), str(recorded))
+        for slot, kind in enumerate(CLASSES):
+            if np.any(np.asarray(rows[f"agent_{slot}_class_id"]) != slot + 1):
+                raise ValueError(f"{name}: slot {slot} is not the {kind} in every game")
+            others = [(slot, other) for other in range(5) if other != slot]
+            values = pair_distance(rows, others)
+            result[(name, kind)] = (
+                float(np.nanmean(values)) if np.isfinite(values).any() else math.nan
+            )
+    return result
+
+
+def distance_columns() -> list[str]:
+    """List the mean ally distance columns, and their tick counts, of every pair.
+
+    Returns
+    -------
+    list of str
+        ``agent_<a>_and_agent_<b>_ally_distance_mean`` and ``_observations``
+        for every Team A pair, ``a`` below ``b``: the columns
+        ``home_distances`` reads.
+    """
+    return [
+        f"agent_{first}_and_agent_{second}_ally_distance_{part}"
+        for first, second in itertools.combinations(range(5), 2)
+        for part in ("mean", "observations")
+    ]
+
+
 def game_measures(games: Columns, slot: int) -> dict[str, Floats]:
     """Compute every ``MEASURES`` value for each game, around one slot.
 
@@ -162,14 +278,7 @@ def game_measures(games: Columns, slot: int) -> dict[str, Floats]:
 
     def distance(pairs: Sequence[tuple[int, int]]) -> Floats:
         """Tick-weighted mean distance over agent pairs, NaN with no ticks."""
-        names = [
-            f"agent_{min(a, b)}_and_agent_{max(a, b)}_ally_distance" for a, b in pairs
-        ]
-        means = np.stack([column(f"{name}_mean") for name in names])
-        weights = np.stack([column(f"{name}_observations") for name in names])
-        ticks = weights.sum(axis=0)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            return np.where(ticks > 0, (means * weights).sum(axis=0) / ticks, np.nan)
+        return pair_distance(games, pairs)
 
     count = len(np.asarray(games["score_difference"]))
     coverage = np.full(count, np.nan)
@@ -617,6 +726,143 @@ def fit_drivers(rows: Sequence[Mapping[str, Any]], host: str) -> list[dict[str, 
     return result
 
 
+def class_means(rows: Sequence[Mapping[str, Any]], host: str) -> list[dict[str, Any]]:
+    """Average the learned strangers of each class, to show which slot matters.
+
+    Parameters
+    ----------
+    rows : sequence of mapping
+        ``teams.csv`` rows with ``margin_change``, ``newcomer_distance`` and
+        ``newcomer_distance_change``. The host's rows are left out of every
+        mean and the ``FLOOR`` rows are reported on their own.
+    host : str
+        The host's name.
+
+    Returns
+    -------
+    list of dict
+        One row per class, in first-seen order: ``newcomer_class``,
+        ``strangers`` (how many learned strangers it averages), and their
+        mean ``margin_change``, ``newcomer_distance`` and
+        ``newcomer_distance_change``; then ``floor_margin_change``, the
+        ``FLOOR`` newcomer's margin change (NaN without one).
+    """
+    classes = list(dict.fromkeys(str(row["newcomer_class"]) for row in rows))
+    result: list[dict[str, Any]] = []
+    for kind in classes:
+        mine = [r for r in rows if r["newcomer_class"] == kind]
+        learned = [r for r in mine if r["newcomer"] not in (host, FLOOR)]
+        floor = [float(r["margin_change"]) for r in mine if r["newcomer"] == FLOOR]
+        record: dict[str, Any] = {"newcomer_class": kind, "strangers": len(learned)}
+        for name in ("margin_change", "newcomer_distance", "newcomer_distance_change"):
+            values = [float(r[name]) for r in learned]
+            record[f"{name}_mean"] = float(np.mean(values)) if values else math.nan
+        record["floor_margin_change"] = floor[0] if floor else math.nan
+        result.append(record)
+    return result
+
+
+def newcomer_means(
+    rows: Sequence[Mapping[str, Any]], host: str
+) -> list[dict[str, Any]]:
+    """Average each newcomer over its classes, to compare whole methods.
+
+    Parameters
+    ----------
+    rows : sequence of mapping
+        ``teams.csv`` rows with ``margin_change``, ``slot_value_kept`` and
+        ``newcomer_distance_change``, and ``distance_beyond_home`` when home
+        games were given. The host's own rows are left out.
+    host : str
+        The host's name.
+
+    Returns
+    -------
+    list of dict
+        One row per newcomer, in first-seen order: ``newcomer``, ``classes``
+        (how many it played) and the mean over its classes of
+        ``margin_change``, ``slot_value_kept``, ``newcomer_distance_change``
+        and ``distance_beyond_home`` (NaN when absent, for example for a
+        ``FLOOR`` newcomer that has no home games).
+    """
+    newcomers = [
+        name
+        for name in dict.fromkeys(str(row["newcomer"]) for row in rows)
+        if name != host
+    ]
+    result: list[dict[str, Any]] = []
+    for name in newcomers:
+        mine = [r for r in rows if r["newcomer"] == name]
+        record: dict[str, Any] = {"newcomer": name, "classes": len(mine)}
+        for column in (
+            "margin_change",
+            "slot_value_kept",
+            "newcomer_distance_change",
+            "distance_beyond_home",
+        ):
+            values = np.array([float(r.get(column, math.nan)) for r in mine])
+            finite = np.isfinite(values)
+            record[f"{column}_mean"] = (
+                float(values[finite].mean()) if finite.all() else math.nan
+            )
+        result.append(record)
+    return result
+
+
+def opponent_rows(
+    margins: Mapping[tuple[str, str], Mapping[str, float]], host: str
+) -> list[dict[str, Any]]:
+    """Compare every newcomer with the host alone, one opponent at a time.
+
+    Parameters
+    ----------
+    margins : mapping of (str, str) to mapping of str to float
+        (newcomer, class) to the team's mean point margin per game against
+        each opponent. The host alone is keyed (host, "") and is the
+        reference; every other entry must have the same opponents.
+    host : str
+        The host's name.
+
+    Returns
+    -------
+    list of dict
+        First one row per opponent for the host alone (``newcomer`` is the
+        host, ``margin`` its mean margin, ``margin_change`` 0), then one row
+        per newcomer and opponent: ``newcomer``, ``opponent``, ``classes``
+        (how many of its teams are averaged), ``margin`` (the mean over its
+        classes of each team's mean margin against that opponent) and
+        ``margin_change`` (that minus the host's margin against it).
+    """
+    reference = margins[(host, "")]
+    result: list[dict[str, Any]] = [
+        {
+            "newcomer": host,
+            "opponent": opponent,
+            "classes": 0,
+            "margin": value,
+            "margin_change": 0.0,
+        }
+        for opponent, value in reference.items()
+    ]
+    newcomers = [
+        name for name in dict.fromkeys(name for name, _ in margins) if name != host
+    ]
+    for name in newcomers:
+        teams = [values for (who, _), values in margins.items() if who == name]
+        for opponent, base in reference.items():
+            margin = float(np.mean([values[opponent] for values in teams]))
+            result.append(
+                {
+                    "newcomer": name,
+                    "opponent": opponent,
+                    "classes": len(teams),
+                    "margin": margin,
+                    "margin_change": margin - base,
+                }
+            )
+    return result
+
+
 def map_end_rows(
     team: Columns, name: str, newcomer: str, newcomer_class: str
 ) -> list[dict[str, Any]]:
@@ -819,33 +1065,48 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     ----------
     config : omegaconf.DictConfig
         ``zsc_dir`` (the zero_shot_coordination stage's output_dir),
-        ``bootstrap_draws``, ``bootstrap_seed`` and the required
-        ``output_dir``. Relative paths use the folder the command was
-        started from.
+        ``bootstrap_draws``, ``bootstrap_seed``, ``home_games_dir`` (a saved
+        run with full metrics where the newcomers' own Systems played with
+        their own teams, such as the tournament_analysis stage's Season 0
+        replay; null leaves ``home_distance`` and ``distance_beyond_home``
+        as NaN), ``home_names`` (display name for each System name recorded
+        there, or null) and the required ``output_dir``. Relative paths use
+        the folder the command was started from.
 
     Returns
     -------
     list of dict
         The ``teams.csv`` rows: ``team``, ``newcomer`` and ``newcomer_class``,
-        then the ``compare`` values and ``slot_value_kept`` with
+        then the ``compare`` values; ``slot_value_kept`` with
         ``slot_value_kept_low`` and ``_high`` (``kept_interval``; the host's
-        rows are 1 with no width). The host alone has one row per class, each
-        comparing it with itself (changes of zero).
+        rows are 1 with no width); ``newcomer_healing_per_damage_received``
+        (mean useful healing from the Priest over mean damage taken; NaN for
+        the Priest or with no damage taken); ``home_distance`` (the
+        ``home_distances`` value of the newcomer's System and class, NaN
+        without one, for example for Random); and ``distance_beyond_home``
+        (``newcomer_distance`` minus ``home_distance``: how much farther the
+        newcomer stands from the host's agents than its class stands from its
+        own teammates). The host alone has one row per class, each comparing
+        it with itself (changes of zero).
 
     Raises
     ------
     KeyError, ValueError, OSError
-        A team or opponent run is missing or unreadable, or games do not match.
+        A team or opponent run is missing or unreadable, games do not match,
+        or a home System is not in the canonical roster.
 
     Notes
     -----
     Host-only NumPy and CSV reading, no JAX. Writes only to output_dir.
+    Reading the Season 0 replay as home games adds about 10 seconds.
     """
     settings: dict[str, Any] = OmegaConf.to_container(config, resolve=True)  # pyright: ignore[reportAssignmentType] - the root is a mapping.
 
     def path(value: str) -> Path:
         """Resolve a setting's path from the folder the command started in."""
         return Path(to_absolute_path(str(Path(value).expanduser())))
+
+    import marl_battlegrounds as marl_bgs
 
     zsc_dir, output_dir = path(settings["zsc_dir"]), path(settings["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -854,6 +1115,13 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     opponents = [str(name) for name in played["opponents"]]
     teams = team_plan(host_name, played["newcomers"], played["classes"])
     draws, seed = int(settings["bootstrap_draws"]), int(settings["bootstrap_seed"])
+    # Each class's distance to its own teammates in its own System's games.
+    home: dict[tuple[str, str], float] = {}
+    if settings.get("home_games_dir") is not None:
+        home_games = marl_bgs.load_results(
+            path(settings["home_games_dir"])
+        ).system_metrics("full_metrics", by="game", columns=distance_columns())
+        home = home_distances(home_games, settings.get("home_names"))
     host = read_team(zsc_dir / "teams" / folder_name(host_name), opponents)
     rows: list[dict[str, Any]] = []
     # Every team's margin change per game, in the host's game order, so the
@@ -862,6 +1130,7 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     host_strata = np.asarray(host["opponent"], dtype=object)
     host_margin = np.asarray(host["score_difference"], np.float64)
     changes: dict[tuple[str, str], Floats] = {}
+    by_opponent: dict[tuple[str, str], dict[str, float]] = {}
     map_ends = map_end_rows(host, host_name, host_name, "")
     for entry in teams:
         name = str(entry["name"])
@@ -871,6 +1140,18 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
             games = read_team(zsc_dir / "teams" / folder_name(name), opponents)
             classes = [str(entry["newcomer_class"])]
             map_ends += map_end_rows(games, name, str(entry["newcomer"]), classes[0])
+        # The team's mean margin against each opponent; the host alone is (host, "").
+        team_key = (
+            (str(entry["newcomer"]), classes[0])
+            if entry["newcomer"]
+            else (host_name, "")
+        )
+        against = np.asarray(games["opponent"], dtype=object)
+        margin = np.asarray(games["score_difference"], np.float64)
+        by_opponent[team_key] = {
+            opponent: float(margin[against == opponent].mean())
+            for opponent in opponents
+        }
         order, _ = matched(games, host)
         change = np.full(host_margin.size, np.nan)
         change[order] = (
@@ -892,16 +1173,29 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
             _, low, high = kept_interval(
                 changes[key], floor, host_units, host_strata, draws=draws, seed=seed
             )
+        received = float(row["newcomer_damage_received"])
+        mine = home.get(key, math.nan)
         row |= {
             "slot_value_kept": kept,
             "slot_value_kept_low": low,
             "slot_value_kept_high": high,
+            # Useful healing from the Priest per point of damage taken.
+            "newcomer_healing_per_damage_received": (
+                float(row["newcomer_healing_received"]) / received
+                if received > 0
+                else math.nan
+            ),
+            "home_distance": mine,
+            "distance_beyond_home": float(row["newcomer_distance"]) - mine,
         }
     drivers = fit_drivers(rows, host_name)
     for name, table in (
         ("teams.csv", rows),
         ("fit_drivers.csv", drivers),
         ("map_ends.csv", map_ends),
+        ("classes.csv", class_means(rows, host_name)),
+        ("newcomers.csv", newcomer_means(rows, host_name)),
+        ("by_opponent.csv", opponent_rows(by_opponent, host_name)),
     ):
         with (output_dir / name).open("w", newline="", encoding="utf-8") as file:
             writer = csv.DictWriter(file, fieldnames=list(table[0]))

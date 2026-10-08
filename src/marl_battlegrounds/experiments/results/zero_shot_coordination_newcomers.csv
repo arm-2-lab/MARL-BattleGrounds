@@ -1,0 +1,7 @@
+newcomer,classes,margin_change_mean,slot_value_kept_mean,newcomer_distance_change_mean,distance_beyond_home_mean
+PQN-VDN,5,-4.1086,0.5958,1.1484,1.3676
+Recurrent MAPPO,5,-1.1662,0.8987,0.4246,-0.0793
+QMIX,5,-2.071,0.7716,0.5001,0.0156
+Feedforward IPPO,5,-3.2343,0.6851,0.6152,0.3041
+Feedforward MAPPO,5,-4.0844,0.6047,1.3177,0.5822
+Random,5,-10.4947,0.0,2.1802,nan

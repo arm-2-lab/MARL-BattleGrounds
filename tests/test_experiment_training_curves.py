@@ -4,10 +4,14 @@ Contracts: the packaged settings with +training_runs=season_0 compose to the six
 Season 0 baselines in rank order, each with its 40M run and then its 250M
 continuation under runs_dir; the stage joins each lineage's routine validation
 checks in training order, numbers the runs, sums the check's games and copies
-margin, kills (kills_for) and deaths (kills_against); it rejects runs listed out
-of order or overlapping, and a folder that is not exactly one training run; it
-writes curves.csv, summary.md (first, best and last check) and curves.png. A
-fake training.list_runs replaces saved run folders.
+margin, kills (kills_for) and deaths (kills_against) and the share of games
+won; given opponents, every value covers only those opponents, each weighted
+equally, and a missing name is rejected; it rejects runs listed out of order or
+overlapping, and a folder that is not exactly one training run; it writes
+curves.csv, crossings.csv, summary.md (first, best and last check) and
+curves.png; first_crossings gives each system's first check with a margin above
+zero and its first that won at least half its games, None when none did. A fake
+training.list_runs replaces saved run folders.
 """
 
 import csv
@@ -25,7 +29,24 @@ from marl_battlegrounds.experiments import training_curves
 def check(steps: int, margin: float, kills: float, deaths: float) -> dict[str, Any]:
     return {
         "env_steps": steps,
-        "opponents": [{"games": 32}, {"games": 32}],
+        "opponents": [
+            {
+                "name": "bot",
+                "games": 32,
+                "wins": 8,
+                "margin": margin + 2.0,
+                "kills_for": kills + 1.0,
+                "kills_against": deaths - 1.0,
+            },
+            {
+                "name": "model",
+                "games": 32,
+                "wins": 0,
+                "margin": margin - 2.0,
+                "kills_for": kills - 1.0,
+                "kills_against": deaths + 1.0,
+            },
+        ],
         "margin": margin,
         "kills_for": kills,
         "kills_against": deaths,
@@ -100,10 +121,25 @@ def test_stage_joins_runs_and_writes_files(fake_runs: None, tmp_path: Path) -> N
         "margin": "1.0",
         "kills": "16.0",
         "deaths": "14.0",
+        "win_share": "0.125",
     }
     summary = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "| Mine | 4 | -20.0 / 0.5 / 11.0 | +3.0 / 18.0 / 13.0 (60) |" in summary
     assert (tmp_path / "curves.png").stat().st_size > 0
+    with (tmp_path / "crossings.csv").open(encoding="utf-8") as file:
+        assert next(csv.DictReader(file))["margin_above_zero_steps"] == "50"
+
+
+def test_first_crossings_find_the_first_winning_check() -> None:
+    rows = [
+        {"system": "A", "env_steps": step, "margin": margin, "win_share": share}
+        for step, margin, share in ((0, -3.0, 0.0), (10, 0.0, 0.5), (20, 2.0, 0.4))
+    ]
+    rows.append({"system": "B", "env_steps": 0, "margin": -1.0, "win_share": 0.1})
+    assert training_curves.first_crossings(rows) == [
+        {"system": "A", "margin_above_zero_steps": 20, "half_won_steps": 10},
+        {"system": "B", "margin_above_zero_steps": None, "half_won_steps": None},
+    ]
 
 
 def test_stage_rejects_bad_run_lists(fake_runs: None) -> None:
@@ -113,3 +149,21 @@ def test_stage_rejects_bad_run_lists(fake_runs: None) -> None:
         training_curves.read_lineage("Mine", ["continued", "first"])
     with pytest.raises(ValueError, match="exactly one"):
         training_curves.read_lineage("Mine", ["missing"])
+
+
+def test_stage_keeps_only_the_named_opponents(fake_runs: None) -> None:
+    rows = training_curves.read_lineage("Mine", ["first"], opponents=["bot"])
+    assert rows[1] == {
+        "system": "Mine",
+        "run": 1,
+        "env_steps": 40,
+        "games": 32,
+        "margin": -6.0,
+        "kills": 10.0,
+        "deaths": 14.0,
+        "win_share": 0.25,
+    }
+    both = training_curves.read_lineage("Mine", ["first"], opponents=["bot", "model"])
+    assert (both[1]["margin"], both[1]["games"]) == (-8.0, 64)
+    with pytest.raises(ValueError, match="no opponent 'other'"):
+        training_curves.read_lineage("Mine", ["first"], opponents=["other"])

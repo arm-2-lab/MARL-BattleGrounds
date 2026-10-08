@@ -1,0 +1,5 @@
+kind,team,who,games,ultimates,together,together_share,chance_median,chance_low,chance_high,chance_at_least
+against,B,Recurrent IPPO,3,67,38,0.5672,0.6119,0.4627,0.7612,0.773
+against,A,Person,3,63,56,0.8889,0.6032,0.4282,0.746,0.0
+alongside,B,PQN-VDN,3,80,49,0.6125,0.6125,0.475,0.7375,0.5525
+alongside,A,Recurrent IPPO and Person,3,86,56,0.6512,0.6395,0.5116,0.7674,0.488

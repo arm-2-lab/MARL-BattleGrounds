@@ -1,297 +1,297 @@
-number,kind,who,slot,class,team,person,tick,wait,kills_after,kills_per_window,teammate_gap,warrior_gap
-1,against,Recurrent IPPO,5,Mage,B,False,10,10,0,0.1717,3.0,3.0
-1,against,Recurrent IPPO,6,Warrior,B,False,13,13,1,0.1717,3.0,nan
-1,against,Person,3,Rogue,A,True,18,18,2,0.8155,1.0,1.0
-1,against,Person,0,Mage,A,True,19,19,2,0.8155,0.0,0.0
-1,against,Person,1,Warrior,A,True,19,19,2,0.8155,0.0,nan
-1,against,Recurrent IPPO,8,Rogue,B,False,23,23,0,0.1717,1.0,10.0
-1,against,Recurrent IPPO,7,Hunter,B,False,24,24,0,0.1717,1.0,11.0
-1,against,Person,2,Hunter,A,True,25,25,3,0.8155,6.0,6.0
-1,against,Recurrent IPPO,5,Mage,B,False,45,5,0,0.1717,6.0,6.0
-1,against,Recurrent IPPO,6,Warrior,B,False,51,8,0,0.1717,3.0,nan
-1,against,Person,0,Mage,A,True,52,3,2,0.8155,0.0,0.0
-1,against,Person,1,Warrior,A,True,52,3,2,0.8155,0.0,nan
-1,against,Person,3,Rogue,A,True,53,5,2,0.8155,1.0,1.0
-1,against,Recurrent IPPO,8,Rogue,B,False,54,1,1,0.1717,1.0,3.0
-1,against,Recurrent IPPO,9,Priest,B,False,55,55,1,0.1717,1.0,4.0
-1,against,Person,2,Hunter,A,True,56,1,3,0.8155,0.0,4.0
-1,against,Person,4,Priest,A,True,56,56,3,0.8155,0.0,4.0
-1,against,Recurrent IPPO,7,Hunter,B,False,57,3,1,0.1717,2.0,6.0
-1,against,Recurrent IPPO,5,Mage,B,False,78,3,0,0.1717,5.0,5.0
-1,against,Recurrent IPPO,6,Warrior,B,False,83,2,0,0.1717,5.0,nan
-1,against,Person,1,Warrior,A,True,85,3,1,0.8155,3.0,nan
-1,against,Person,0,Mage,A,True,88,6,2,0.8155,2.0,3.0
-1,against,Recurrent IPPO,9,Priest,B,False,88,3,0,0.1717,1.0,5.0
-1,against,Recurrent IPPO,7,Hunter,B,False,89,2,0,0.1717,1.0,6.0
-1,against,Person,4,Priest,A,True,90,4,2,0.8155,1.0,5.0
-1,against,Person,2,Hunter,A,True,91,5,2,0.8155,1.0,6.0
-1,against,Recurrent IPPO,8,Rogue,B,False,97,13,0,0.1717,8.0,14.0
-1,against,Recurrent IPPO,5,Mage,B,False,109,1,0,0.1717,5.0,5.0
-1,against,Person,3,Rogue,A,True,113,30,2,0.8155,3.0,3.0
-1,against,Recurrent IPPO,6,Warrior,B,False,114,1,0,0.1717,5.0,nan
-1,against,Person,1,Warrior,A,True,116,1,1,0.8155,3.0,nan
-1,against,Person,0,Mage,A,True,119,1,1,0.8155,3.0,3.0
-1,against,Recurrent IPPO,5,Mage,B,False,142,3,0,0.1717,3.0,3.0
-1,against,Person,2,Hunter,A,True,145,24,0,0.8155,5.0,5.0
-1,against,Recurrent IPPO,6,Warrior,B,False,145,1,0,0.1717,3.0,nan
-1,against,Person,0,Mage,A,True,150,1,1,0.8155,0.0,0.0
-1,against,Person,1,Warrior,A,True,150,4,1,0.8155,0.0,nan
-1,against,Person,3,Rogue,A,True,150,7,1,0.8155,0.0,0.0
-1,against,Recurrent IPPO,9,Priest,B,False,150,32,0,0.1717,2.0,5.0
-1,against,Recurrent IPPO,8,Rogue,B,False,152,25,1,0.1717,2.0,7.0
-1,against,Person,4,Priest,A,True,157,37,0,0.8155,7.0,7.0
-1,against,Recurrent IPPO,7,Hunter,B,False,166,47,0,0.1717,7.0,21.0
-1,against,Recurrent IPPO,5,Mage,B,False,173,1,0,0.1717,7.0,16.0
-1,against,Person,0,Mage,A,True,187,7,2,0.8155,0.0,0.0
-1,against,Person,1,Warrior,A,True,187,7,2,0.8155,0.0,nan
-1,against,Recurrent IPPO,6,Warrior,B,False,189,14,0,0.1717,6.0,nan
-1,against,Person,2,Hunter,A,True,191,16,1,0.8155,4.0,4.0
-1,against,Recurrent IPPO,8,Rogue,B,False,195,13,0,0.1717,6.0,6.0
-1,against,Person,3,Rogue,A,True,212,32,2,0.8155,3.0,6.0
-1,against,Person,4,Priest,A,True,215,28,1,0.8155,3.0,3.0
-1,against,Recurrent IPPO,7,Hunter,B,False,217,21,0,0.1717,1.0,3.0
-1,against,Person,1,Warrior,A,True,218,1,1,0.8155,1.0,nan
-1,against,Recurrent IPPO,9,Priest,B,False,218,38,0,0.1717,1.0,2.0
-1,against,Person,0,Mage,A,True,219,2,1,0.8155,1.0,1.0
-1,against,Recurrent IPPO,5,Mage,B,False,220,17,1,0.1717,0.0,0.0
-1,against,Recurrent IPPO,6,Warrior,B,False,220,1,1,0.1717,0.0,nan
-1,against,Person,2,Hunter,A,True,222,1,2,0.8155,3.0,4.0
-1,against,Recurrent IPPO,8,Rogue,B,False,228,3,1,0.1717,8.0,8.0
-2,against,Recurrent IPPO,5,Mage,B,False,7,7,0,0.4969,6.0,6.0
-2,against,Recurrent IPPO,6,Warrior,B,False,13,13,0,0.4969,6.0,nan
-2,against,Person,0,Mage,A,True,24,24,2,0.9938,4.0,4.0
-2,against,Recurrent IPPO,7,Hunter,B,False,24,24,0,0.4969,5.0,11.0
-2,against,Person,1,Warrior,A,True,28,28,2,0.9938,1.0,nan
-2,against,Person,4,Priest,A,True,29,29,2,0.9938,1.0,1.0
-2,against,Recurrent IPPO,8,Rogue,B,False,29,29,1,0.4969,5.0,15.0
-2,against,Person,3,Rogue,A,True,32,32,2,0.9938,3.0,4.0
-2,against,Person,2,Hunter,A,True,35,35,1,0.9938,3.0,7.0
-2,against,Recurrent IPPO,9,Priest,B,False,41,41,0,0.4969,3.0,3.0
-2,against,Recurrent IPPO,6,Warrior,B,False,44,1,0,0.4969,3.0,nan
-2,against,Recurrent IPPO,5,Mage,B,False,52,15,0,0.4969,8.0,8.0
-2,against,Recurrent IPPO,8,Rogue,B,False,60,1,2,0.4969,5.0,15.0
-2,against,Person,0,Mage,A,True,61,7,2,0.9938,0.0,2.0
-2,against,Person,4,Priest,A,True,61,2,2,0.9938,0.0,2.0
-2,against,Person,1,Warrior,A,True,63,5,1,0.9938,0.0,nan
-2,against,Person,3,Rogue,A,True,63,1,1,0.9938,0.0,0.0
-2,against,Recurrent IPPO,7,Hunter,B,False,65,11,1,0.4969,5.0,10.0
-2,against,Person,2,Hunter,A,True,68,3,1,0.9938,5.0,5.0
-2,against,Recurrent IPPO,6,Warrior,B,False,75,1,0,0.4969,10.0,nan
-2,against,Recurrent IPPO,5,Mage,B,False,90,8,0,0.4969,10.0,15.0
-2,against,Person,3,Rogue,A,True,96,3,0,0.9938,3.0,5.0
-2,against,Person,2,Hunter,A,True,99,1,1,0.9938,1.0,2.0
-2,against,Person,0,Mage,A,True,100,9,1,0.9938,1.0,1.0
-2,against,Recurrent IPPO,7,Hunter,B,False,100,5,2,0.4969,4.0,6.0
-2,against,Person,1,Warrior,A,True,101,8,1,0.9938,1.0,nan
-2,against,Recurrent IPPO,9,Priest,B,False,104,33,2,0.4969,2.0,2.0
-2,against,Recurrent IPPO,6,Warrior,B,False,106,1,1,0.4969,2.0,nan
-2,against,Person,4,Priest,A,True,107,16,1,0.9938,6.0,6.0
-2,against,Recurrent IPPO,8,Rogue,B,False,109,19,1,0.4969,3.0,3.0
-2,against,Recurrent IPPO,5,Mage,B,False,128,8,0,0.4969,10.0,10.0
-2,against,Person,0,Mage,A,True,132,2,1,0.9938,0.0,0.0
-2,against,Person,1,Warrior,A,True,132,1,1,0.9938,0.0,nan
-2,against,Person,3,Rogue,A,True,135,9,1,0.9938,1.0,3.0
-2,against,Person,2,Hunter,A,True,136,7,1,0.9938,1.0,4.0
-2,against,Recurrent IPPO,6,Warrior,B,False,138,2,1,0.4969,0.0,nan
-2,against,Recurrent IPPO,7,Hunter,B,False,138,8,1,0.4969,0.0,0.0
-2,against,Person,4,Priest,A,True,140,3,1,0.9938,4.0,8.0
-2,against,Recurrent IPPO,9,Priest,B,False,141,7,2,0.4969,3.0,3.0
-2,against,Recurrent IPPO,8,Rogue,B,False,155,16,0,0.4969,14.0,17.0
-3,against,Recurrent IPPO,5,Mage,B,False,7,7,0,0.0637,15.0,15.0
-3,against,Recurrent IPPO,6,Warrior,B,False,22,22,0,0.0637,3.0,nan
-3,against,Person,0,Mage,A,True,23,23,2,0.7643,1.0,1.0
-3,against,Person,1,Warrior,A,True,24,24,2,0.7643,1.0,nan
-3,against,Recurrent IPPO,9,Priest,B,False,25,25,0,0.0637,3.0,3.0
-3,against,Person,3,Rogue,A,True,29,29,2,0.7643,1.0,5.0
-3,against,Person,4,Priest,A,True,30,30,1,0.7643,1.0,6.0
-3,against,Recurrent IPPO,5,Mage,B,False,40,3,0,0.0637,3.0,13.0
-3,against,Recurrent IPPO,8,Rogue,B,False,43,43,0,0.0637,3.0,10.0
-3,against,Recurrent IPPO,7,Hunter,B,False,46,46,0,0.0637,3.0,7.0
-3,against,Recurrent IPPO,6,Warrior,B,False,53,1,0,0.0637,7.0,nan
-3,against,Person,2,Hunter,A,True,55,55,2,0.7643,5.0,5.0
-3,against,Person,0,Mage,A,True,60,7,3,0.7643,0.0,0.0
-3,against,Person,1,Warrior,A,True,60,6,3,0.7643,0.0,nan
-3,against,Person,3,Rogue,A,True,62,3,3,0.7643,2.0,2.0
-3,against,Recurrent IPPO,9,Priest,B,False,72,17,0,0.0637,1.0,12.0
-3,against,Recurrent IPPO,5,Mage,B,False,73,3,0,0.0637,1.0,11.0
-3,against,Recurrent IPPO,8,Rogue,B,False,74,1,1,0.0637,1.0,10.0
-3,against,Recurrent IPPO,7,Hunter,B,False,77,1,1,0.0637,3.0,7.0
-3,against,Person,4,Priest,A,True,81,21,2,0.7643,11.0,11.0
-3,against,Recurrent IPPO,6,Warrior,B,False,84,1,0,0.0637,7.0,nan
-3,against,Person,0,Mage,A,True,92,2,2,0.7643,0.0,0.0
-3,against,Person,1,Warrior,A,True,92,2,2,0.7643,0.0,nan
-3,against,Recurrent IPPO,5,Mage,B,False,108,5,0,0.0637,1.0,7.0
-3,against,Recurrent IPPO,7,Hunter,B,False,109,2,0,0.0637,1.0,6.0
-3,against,Recurrent IPPO,6,Warrior,B,False,115,1,0,0.0637,6.0,nan
-3,against,Recurrent IPPO,5,Mage,B,False,139,1,0,0.0637,8.0,8.0
-3,against,Recurrent IPPO,6,Warrior,B,False,147,2,0,0.0637,6.0,nan
-3,against,Person,1,Warrior,A,True,148,26,1,0.7643,1.0,nan
-3,against,Person,0,Mage,A,True,149,27,1,0.7643,0.0,1.0
-3,against,Person,3,Rogue,A,True,149,57,1,0.7643,0.0,1.0
-3,against,Recurrent IPPO,9,Priest,B,False,153,51,0,0.0637,6.0,6.0
-4,alongside,PQN-VDN,9,Priest,B,False,0,0,0,0.3191,21.0,21.0
-4,alongside,PQN-VDN,6,Warrior,B,False,21,21,0,0.3191,10.0,nan
-4,alongside,Recurrent IPPO,1,Warrior,A,False,23,23,0,1.0638,0.0,nan
-4,alongside,Recurrent IPPO,3,Rogue,A,False,23,23,0,1.0638,0.0,0.0
-4,alongside,Person,0,Mage,A,True,31,31,2,1.0638,1.0,8.0
-4,alongside,PQN-VDN,9,Priest,B,False,31,1,0,0.3191,10.0,10.0
-4,alongside,Recurrent IPPO,2,Hunter,A,False,32,32,2,1.0638,1.0,9.0
-4,alongside,PQN-VDN,7,Hunter,B,False,41,41,1,0.3191,8.0,11.0
-4,alongside,PQN-VDN,8,Rogue,B,False,49,49,0,0.3191,3.0,3.0
-4,alongside,PQN-VDN,6,Warrior,B,False,52,1,0,0.3191,3.0,nan
-4,alongside,Recurrent IPPO,1,Warrior,A,False,54,1,1,1.0638,19.0,nan
-4,alongside,PQN-VDN,9,Priest,B,False,63,2,0,0.3191,9.0,11.0
-4,alongside,PQN-VDN,7,Hunter,B,False,72,1,0,0.3191,8.0,11.0
-4,alongside,Person,0,Mage,A,True,73,12,1,1.0638,1.0,12.0
-4,alongside,Recurrent IPPO,2,Hunter,A,False,74,12,1,1.0638,1.0,11.0
-4,alongside,Recurrent IPPO,3,Rogue,A,False,76,23,1,1.0638,2.0,9.0
-4,alongside,PQN-VDN,8,Rogue,B,False,80,1,2,0.3191,3.0,3.0
-4,alongside,PQN-VDN,6,Warrior,B,False,83,1,0,0.3191,3.0,nan
-4,alongside,Recurrent IPPO,1,Warrior,A,False,85,1,3,1.0638,9.0,nan
-5,alongside,Recurrent IPPO,1,Warrior,A,False,9,9,0,0.5068,8.0,nan
-5,alongside,PQN-VDN,8,Rogue,B,False,12,12,0,0.6757,3.0,3.0
-5,alongside,PQN-VDN,5,Mage,B,False,15,15,0,0.6757,0.0,0.0
-5,alongside,PQN-VDN,6,Warrior,B,False,15,15,0,0.6757,0.0,nan
-5,alongside,Person,0,Mage,A,True,17,17,0,0.5068,1.0,8.0
-5,alongside,Recurrent IPPO,2,Hunter,A,False,18,18,0,0.5068,1.0,9.0
-5,alongside,PQN-VDN,9,Priest,B,False,22,22,1,0.6757,3.0,7.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,25,25,1,0.5068,0.0,15.0
-5,alongside,Recurrent IPPO,4,Priest,A,False,25,25,1,0.5068,0.0,15.0
-5,alongside,PQN-VDN,7,Hunter,B,False,25,25,1,0.6757,3.0,10.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,40,1,0,0.5068,11.0,nan
-5,alongside,PQN-VDN,5,Mage,B,False,46,1,1,0.6757,0.0,1.0
-5,alongside,PQN-VDN,8,Rogue,B,False,46,4,1,0.6757,0.0,1.0
-5,alongside,PQN-VDN,6,Warrior,B,False,47,2,1,0.6757,1.0,nan
-5,alongside,Person,0,Mage,A,True,51,4,0,0.5068,0.0,11.0
-5,alongside,Recurrent IPPO,2,Hunter,A,False,51,3,0,0.5068,0.0,11.0
-5,alongside,PQN-VDN,9,Priest,B,False,53,1,2,0.6757,6.0,6.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,57,2,0,0.5068,6.0,14.0
-5,alongside,PQN-VDN,7,Hunter,B,False,63,8,0,0.6757,10.0,16.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,71,1,3,0.5068,12.0,nan
-5,alongside,Recurrent IPPO,2,Hunter,A,False,83,2,1,0.5068,1.0,12.0
-5,alongside,Person,0,Mage,A,True,84,3,1,0.5068,1.0,13.0
-5,alongside,PQN-VDN,6,Warrior,B,False,84,7,1,0.6757,4.0,nan
-5,alongside,Recurrent IPPO,3,Rogue,A,False,88,1,1,0.5068,4.0,14.0
-5,alongside,PQN-VDN,8,Rogue,B,False,88,12,0,0.6757,4.0,4.0
-5,alongside,PQN-VDN,5,Mage,B,False,96,20,0,0.6757,0.0,12.0
-5,alongside,PQN-VDN,7,Hunter,B,False,96,3,0,0.6757,0.0,12.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,102,1,0,0.5068,4.0,nan
-5,alongside,Recurrent IPPO,4,Priest,A,False,106,51,1,0.5068,4.0,4.0
-5,alongside,PQN-VDN,9,Priest,B,False,106,23,0,0.6757,10.0,10.0
-5,alongside,PQN-VDN,6,Warrior,B,False,116,2,3,0.6757,10.0,nan
-5,alongside,Person,0,Mage,A,True,118,4,0,0.5068,6.0,15.0
-5,alongside,Recurrent IPPO,2,Hunter,A,False,124,11,0,0.5068,3.0,9.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,127,9,1,0.5068,3.0,6.0
-5,alongside,PQN-VDN,8,Rogue,B,False,130,12,0,0.6757,1.0,14.0
-5,alongside,PQN-VDN,5,Mage,B,False,131,5,0,0.6757,1.0,15.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,133,1,1,0.5068,6.0,nan
-5,alongside,PQN-VDN,9,Priest,B,False,137,1,0,0.6757,6.0,10.0
-5,alongside,Recurrent IPPO,4,Priest,A,False,140,4,0,0.5068,7.0,7.0
-5,alongside,PQN-VDN,6,Warrior,B,False,147,1,0,0.6757,10.0,nan
-5,alongside,Person,0,Mage,A,True,150,2,0,0.5068,10.0,17.0
-5,alongside,PQN-VDN,8,Rogue,B,False,161,1,0,0.6757,2.0,14.0
-5,alongside,PQN-VDN,5,Mage,B,False,163,2,0,0.6757,2.0,16.0
-5,alongside,PQN-VDN,7,Hunter,B,False,167,41,0,0.6757,4.0,20.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,170,7,0,0.5068,2.0,nan
-5,alongside,Recurrent IPPO,2,Hunter,A,False,172,18,0,0.5068,2.0,2.0
-5,alongside,PQN-VDN,9,Priest,B,False,174,7,0,0.6757,7.0,15.0
-5,alongside,Recurrent IPPO,4,Priest,A,False,180,10,1,0.5068,5.0,10.0
-5,alongside,Person,0,Mage,A,True,185,5,1,0.5068,5.0,15.0
-5,alongside,PQN-VDN,6,Warrior,B,False,189,12,2,0.6757,5.0,nan
-5,alongside,PQN-VDN,5,Mage,B,False,194,1,2,0.6757,5.0,5.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,195,38,0,0.5068,6.0,6.0
-5,alongside,Recurrent IPPO,1,Warrior,A,False,201,1,0,0.5068,6.0,nan
-5,alongside,PQN-VDN,9,Priest,B,False,205,1,1,0.6757,3.0,16.0
-5,alongside,PQN-VDN,8,Rogue,B,False,208,17,1,0.6757,3.0,19.0
-5,alongside,Recurrent IPPO,2,Hunter,A,False,214,12,2,0.5068,4.0,13.0
-5,alongside,Person,0,Mage,A,True,218,3,1,0.5068,4.0,15.0
-5,alongside,PQN-VDN,7,Hunter,B,False,229,32,0,0.6757,3.0,3.0
-5,alongside,PQN-VDN,6,Warrior,B,False,232,13,0,0.6757,3.0,nan
-5,alongside,Recurrent IPPO,1,Warrior,A,False,233,2,0,0.5068,0.0,nan
-5,alongside,Recurrent IPPO,4,Priest,A,False,233,23,0,0.5068,0.0,0.0
-5,alongside,PQN-VDN,9,Priest,B,False,238,3,0,0.6757,1.0,6.0
-5,alongside,PQN-VDN,8,Rogue,B,False,239,1,0,0.6757,1.0,7.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,242,17,1,0.5068,5.0,9.0
-5,alongside,Recurrent IPPO,2,Hunter,A,False,247,3,1,0.5068,4.0,14.0
-5,alongside,PQN-VDN,5,Mage,B,False,248,24,0,0.6757,9.0,15.0
-5,alongside,Person,0,Mage,A,True,251,3,1,0.5068,4.0,13.0
-5,alongside,PQN-VDN,6,Warrior,B,False,263,1,1,0.6757,15.0,nan
-5,alongside,Recurrent IPPO,1,Warrior,A,False,264,1,1,0.5068,0.0,nan
-5,alongside,Recurrent IPPO,4,Priest,A,False,264,1,1,0.5068,0.0,0.0
-5,alongside,Recurrent IPPO,3,Rogue,A,False,273,1,0,0.5068,9.0,9.0
-5,alongside,Person,0,Mage,A,True,282,1,0,0.5068,9.0,13.0
-5,alongside,PQN-VDN,5,Mage,B,False,283,5,1,0.6757,3.0,11.0
-5,alongside,PQN-VDN,9,Priest,B,False,286,18,2,0.6757,1.0,8.0
-5,alongside,PQN-VDN,7,Hunter,B,False,287,28,2,0.6757,0.0,7.0
-5,alongside,PQN-VDN,8,Rogue,B,False,287,18,2,0.6757,0.0,7.0
-5,alongside,PQN-VDN,6,Warrior,B,False,294,1,1,0.6757,7.0,nan
-5,alongside,Recurrent IPPO,1,Warrior,A,False,295,1,0,0.5068,13.0,nan
-6,alongside,Person,0,Mage,A,True,10,10,0,0.692,4.0,4.0
-6,alongside,PQN-VDN,6,Warrior,B,False,12,12,0,0.4498,6.0,nan
-6,alongside,Recurrent IPPO,1,Warrior,A,False,14,14,0,0.692,4.0,nan
-6,alongside,PQN-VDN,5,Mage,B,False,18,18,0,0.4498,6.0,6.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,21,21,1,0.692,1.0,7.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,22,22,1,0.692,0.0,8.0
-6,alongside,Recurrent IPPO,4,Priest,A,False,22,22,1,0.692,0.0,8.0
-6,alongside,PQN-VDN,8,Rogue,B,False,26,26,1,0.4498,7.0,14.0
-6,alongside,PQN-VDN,7,Hunter,B,False,33,33,0,0.4498,2.0,18.0
-6,alongside,PQN-VDN,9,Priest,B,False,35,35,0,0.4498,2.0,16.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,45,1,0,0.692,4.0,nan
-6,alongside,Person,0,Mage,A,True,49,9,0,0.692,4.0,4.0
-6,alongside,PQN-VDN,6,Warrior,B,False,51,9,0,0.4498,9.0,nan
-6,alongside,Recurrent IPPO,4,Priest,A,False,56,4,1,0.692,5.0,11.0
-6,alongside,PQN-VDN,8,Rogue,B,False,60,4,0,0.4498,9.0,9.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,61,10,2,0.692,5.0,15.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,67,15,3,0.692,6.0,9.0
-6,alongside,PQN-VDN,5,Mage,B,False,75,27,1,0.4498,10.0,11.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,76,1,1,0.692,9.0,nan
-6,alongside,PQN-VDN,7,Hunter,B,False,85,22,1,0.4498,1.0,1.0
-6,alongside,PQN-VDN,6,Warrior,B,False,86,5,1,0.4498,1.0,nan
-6,alongside,Recurrent IPPO,4,Priest,A,False,87,1,1,0.692,2.0,11.0
-6,alongside,Person,0,Mage,A,True,89,10,1,0.692,2.0,13.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,94,3,2,0.692,5.0,13.0
-6,alongside,PQN-VDN,9,Priest,B,False,94,29,0,0.4498,8.0,8.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,103,6,1,0.692,4.0,4.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,107,1,0,0.692,4.0,nan
-6,alongside,PQN-VDN,8,Rogue,B,False,116,26,0,0.4498,2.0,4.0
-6,alongside,Recurrent IPPO,4,Priest,A,False,118,1,1,0.692,3.0,11.0
-6,alongside,PQN-VDN,7,Hunter,B,False,118,3,1,0.4498,2.0,2.0
-6,alongside,PQN-VDN,6,Warrior,B,False,120,4,1,0.4498,2.0,nan
-6,alongside,Person,0,Mage,A,True,121,2,1,0.692,3.0,14.0
-6,alongside,PQN-VDN,5,Mage,B,False,122,17,2,0.4498,2.0,2.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,125,1,0,0.692,4.0,18.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,141,8,1,0.692,2.0,2.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,143,6,1,0.692,2.0,nan
-6,alongside,PQN-VDN,9,Priest,B,False,145,21,1,0.4498,3.0,6.0
-6,alongside,PQN-VDN,8,Rogue,B,False,148,2,1,0.4498,2.0,3.0
-6,alongside,Recurrent IPPO,4,Priest,A,False,149,1,1,0.692,6.0,6.0
-6,alongside,PQN-VDN,7,Hunter,B,False,150,2,1,0.4498,1.0,1.0
-6,alongside,PQN-VDN,6,Warrior,B,False,151,1,1,0.4498,1.0,nan
-6,alongside,PQN-VDN,5,Mage,B,False,156,4,0,0.4498,5.0,5.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,160,5,0,0.692,2.0,14.0
-6,alongside,Person,0,Mage,A,True,162,11,1,0.692,2.0,12.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,174,1,0,0.692,6.0,nan
-6,alongside,Recurrent IPPO,4,Priest,A,False,180,1,0,0.692,6.0,6.0
-6,alongside,PQN-VDN,9,Priest,B,False,180,5,1,0.4498,2.0,2.0
-6,alongside,PQN-VDN,6,Warrior,B,False,182,1,0,0.4498,2.0,nan
-6,alongside,Recurrent IPPO,3,Rogue,A,False,186,15,1,0.692,5.0,12.0
-6,alongside,Recurrent IPPO,2,Hunter,A,False,191,1,1,0.692,3.0,14.0
-6,alongside,PQN-VDN,5,Mage,B,False,191,5,1,0.4498,2.0,9.0
-6,alongside,PQN-VDN,8,Rogue,B,False,193,15,1,0.4498,2.0,11.0
-6,alongside,Person,0,Mage,A,True,194,2,1,0.692,3.0,11.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,205,1,1,0.692,6.0,nan
-6,alongside,Recurrent IPPO,4,Priest,A,False,211,1,1,0.692,6.0,6.0
-6,alongside,PQN-VDN,7,Hunter,B,False,211,31,1,0.4498,16.0,29.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,217,1,0,0.692,6.0,12.0
-6,alongside,PQN-VDN,5,Mage,B,False,227,6,0,0.4498,2.0,26.0
-6,alongside,PQN-VDN,9,Priest,B,False,229,19,0,0.4498,2.0,24.0
-6,alongside,Person,0,Mage,A,True,233,9,2,0.692,3.0,3.0
-6,alongside,PQN-VDN,8,Rogue,B,False,234,11,1,0.4498,5.0,19.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,236,1,1,0.692,3.0,nan
-6,alongside,PQN-VDN,6,Warrior,B,False,253,41,0,0.4498,8.0,nan
-6,alongside,Recurrent IPPO,2,Hunter,A,False,255,34,1,0.692,1.0,12.0
-6,alongside,Recurrent IPPO,3,Rogue,A,False,256,9,1,0.692,1.0,11.0
-6,alongside,PQN-VDN,5,Mage,B,False,261,4,0,0.4498,8.0,8.0
-6,alongside,Person,0,Mage,A,True,266,3,0,0.692,1.0,1.0
-6,alongside,Recurrent IPPO,1,Warrior,A,False,267,1,0,0.692,1.0,nan
-6,alongside,PQN-VDN,9,Priest,B,False,270,11,1,0.4498,9.0,17.0
+number,kind,who,slot,class,team,person,tick,wait,kills_after,kills_per_window,usable_wait,first_usable,mates_usable,enemy_attackable,teammate_gap,warrior_gap
+1,against,Recurrent IPPO,5,Mage,B,False,10,10,0,0.1717,10,False,1,False,3.0,3.0
+1,against,Recurrent IPPO,6,Warrior,B,False,13,13,1,0.1717,0,True,1,False,3.0,nan
+1,against,Person,3,Rogue,A,True,18,18,2,0.8155,0,True,4,True,1.0,1.0
+1,against,Person,0,Mage,A,True,19,19,2,0.8155,19,False,3,True,0.0,0.0
+1,against,Person,1,Warrior,A,True,19,19,2,0.8155,4,False,3,False,0.0,nan
+1,against,Recurrent IPPO,8,Rogue,B,False,23,23,0,0.1717,2,False,2,True,1.0,10.0
+1,against,Recurrent IPPO,7,Hunter,B,False,24,24,0,0.1717,3,False,1,True,1.0,11.0
+1,against,Person,2,Hunter,A,True,25,25,3,0.8155,9,False,1,True,6.0,6.0
+1,against,Recurrent IPPO,5,Mage,B,False,45,4,0,0.1717,4,False,1,False,6.0,6.0
+1,against,Recurrent IPPO,6,Warrior,B,False,51,7,0,0.1717,0,True,1,False,3.0,nan
+1,against,Person,0,Mage,A,True,52,2,2,0.8155,2,False,2,True,0.0,0.0
+1,against,Person,1,Warrior,A,True,52,2,2,0.8155,2,False,2,False,0.0,nan
+1,against,Person,3,Rogue,A,True,53,4,2,0.8155,0,True,1,True,1.0,1.0
+1,against,Recurrent IPPO,8,Rogue,B,False,54,0,1,0.1717,0,True,1,True,1.0,3.0
+1,against,Recurrent IPPO,9,Priest,B,False,55,55,1,0.1717,51,False,1,False,1.0,4.0
+1,against,Person,2,Hunter,A,True,56,0,3,0.8155,0,True,1,True,0.0,4.0
+1,against,Person,4,Priest,A,True,56,56,3,0.8155,55,False,1,False,0.0,4.0
+1,against,Recurrent IPPO,7,Hunter,B,False,57,2,1,0.1717,2,False,0,True,2.0,6.0
+1,against,Recurrent IPPO,5,Mage,B,False,78,2,0,0.1717,2,False,0,False,5.0,5.0
+1,against,Recurrent IPPO,6,Warrior,B,False,83,1,0,0.1717,0,True,0,False,5.0,nan
+1,against,Person,1,Warrior,A,True,85,2,1,0.8155,1,False,1,False,3.0,nan
+1,against,Person,0,Mage,A,True,88,5,2,0.8155,4,False,2,True,2.0,3.0
+1,against,Recurrent IPPO,9,Priest,B,False,88,2,0,0.1717,2,False,1,False,1.0,5.0
+1,against,Recurrent IPPO,7,Hunter,B,False,89,1,0,0.1717,1,False,0,True,1.0,6.0
+1,against,Person,4,Priest,A,True,90,3,2,0.8155,3,False,1,False,1.0,5.0
+1,against,Person,2,Hunter,A,True,91,4,2,0.8155,4,False,0,True,1.0,6.0
+1,against,Recurrent IPPO,8,Rogue,B,False,97,12,0,0.1717,0,True,0,True,8.0,14.0
+1,against,Recurrent IPPO,5,Mage,B,False,109,0,0,0.1717,0,True,0,False,5.0,5.0
+1,against,Person,3,Rogue,A,True,113,29,2,0.8155,5,False,0,True,3.0,3.0
+1,against,Recurrent IPPO,6,Warrior,B,False,114,0,0,0.1717,0,True,0,False,5.0,nan
+1,against,Person,1,Warrior,A,True,116,0,1,0.8155,0,True,0,False,3.0,nan
+1,against,Person,0,Mage,A,True,119,0,1,0.8155,0,True,0,True,3.0,3.0
+1,against,Recurrent IPPO,5,Mage,B,False,142,2,0,0.1717,2,False,1,False,3.0,3.0
+1,against,Person,2,Hunter,A,True,145,23,0,0.8155,1,False,1,True,5.0,5.0
+1,against,Recurrent IPPO,6,Warrior,B,False,145,0,0,0.1717,0,True,1,False,3.0,nan
+1,against,Person,0,Mage,A,True,150,0,1,0.8155,0,True,3,True,0.0,0.0
+1,against,Person,1,Warrior,A,True,150,3,1,0.8155,3,False,3,True,0.0,nan
+1,against,Person,3,Rogue,A,True,150,6,1,0.8155,2,False,3,True,0.0,0.0
+1,against,Recurrent IPPO,9,Priest,B,False,150,31,0,0.1717,31,False,0,False,2.0,5.0
+1,against,Recurrent IPPO,8,Rogue,B,False,152,24,1,0.1717,0,True,1,True,2.0,7.0
+1,against,Person,4,Priest,A,True,157,36,0,0.8155,36,False,0,False,7.0,7.0
+1,against,Recurrent IPPO,7,Hunter,B,False,166,46,0,0.1717,9,False,0,True,7.0,21.0
+1,against,Recurrent IPPO,5,Mage,B,False,173,0,0,0.1717,0,True,0,False,7.0,16.0
+1,against,Person,0,Mage,A,True,187,6,2,0.8155,6,False,1,True,0.0,0.0
+1,against,Person,1,Warrior,A,True,187,6,2,0.8155,3,False,1,False,0.0,nan
+1,against,Recurrent IPPO,6,Warrior,B,False,189,13,0,0.1717,0,True,1,False,6.0,nan
+1,against,Person,2,Hunter,A,True,191,15,1,0.8155,2,False,1,True,4.0,4.0
+1,against,Recurrent IPPO,8,Rogue,B,False,195,12,0,0.1717,1,False,1,True,6.0,6.0
+1,against,Person,3,Rogue,A,True,212,31,2,0.8155,7,False,1,True,3.0,6.0
+1,against,Person,4,Priest,A,True,215,27,1,0.8155,27,False,0,False,3.0,3.0
+1,against,Recurrent IPPO,7,Hunter,B,False,217,20,0,0.1717,6,False,1,True,1.0,3.0
+1,against,Person,1,Warrior,A,True,218,0,1,0.8155,0,True,0,False,1.0,nan
+1,against,Recurrent IPPO,9,Priest,B,False,218,37,0,0.1717,36,False,1,False,1.0,2.0
+1,against,Person,0,Mage,A,True,219,1,1,0.8155,0,True,0,True,1.0,1.0
+1,against,Recurrent IPPO,5,Mage,B,False,220,16,1,0.1717,12,False,1,False,0.0,0.0
+1,against,Recurrent IPPO,6,Warrior,B,False,220,0,1,0.1717,0,True,1,True,0.0,nan
+1,against,Person,2,Hunter,A,True,222,0,2,0.8155,0,True,0,True,3.0,4.0
+1,against,Recurrent IPPO,8,Rogue,B,False,228,2,1,0.1717,0,True,0,True,8.0,8.0
+2,against,Recurrent IPPO,5,Mage,B,False,7,7,0,0.4969,7,False,1,False,6.0,6.0
+2,against,Recurrent IPPO,6,Warrior,B,False,13,13,0,0.4969,0,True,1,False,6.0,nan
+2,against,Person,0,Mage,A,True,24,24,2,0.9938,24,False,2,True,4.0,4.0
+2,against,Recurrent IPPO,7,Hunter,B,False,24,24,0,0.4969,0,True,1,True,5.0,11.0
+2,against,Person,1,Warrior,A,True,28,28,2,0.9938,10,False,2,True,1.0,nan
+2,against,Person,4,Priest,A,True,29,29,2,0.9938,29,False,1,False,1.0,1.0
+2,against,Recurrent IPPO,8,Rogue,B,False,29,29,1,0.4969,0,True,1,True,5.0,15.0
+2,against,Person,3,Rogue,A,True,32,32,2,0.9938,2,False,1,True,3.0,4.0
+2,against,Person,2,Hunter,A,True,35,35,1,0.9938,18,False,0,True,3.0,7.0
+2,against,Recurrent IPPO,9,Priest,B,False,41,41,0,0.4969,37,False,1,False,3.0,3.0
+2,against,Recurrent IPPO,6,Warrior,B,False,44,0,0,0.4969,0,True,0,True,3.0,nan
+2,against,Recurrent IPPO,5,Mage,B,False,52,14,0,0.4969,8,False,0,False,8.0,8.0
+2,against,Recurrent IPPO,8,Rogue,B,False,60,0,2,0.4969,0,True,0,True,5.0,15.0
+2,against,Person,0,Mage,A,True,61,6,2,0.9938,6,False,1,True,0.0,2.0
+2,against,Person,4,Priest,A,True,61,1,2,0.9938,1,False,1,False,0.0,2.0
+2,against,Person,1,Warrior,A,True,63,4,1,0.9938,3,False,1,False,0.0,nan
+2,against,Person,3,Rogue,A,True,63,0,1,0.9938,0,True,1,True,0.0,0.0
+2,against,Recurrent IPPO,7,Hunter,B,False,65,10,1,0.4969,4,False,0,True,5.0,10.0
+2,against,Person,2,Hunter,A,True,68,2,1,0.9938,2,False,0,True,5.0,5.0
+2,against,Recurrent IPPO,6,Warrior,B,False,75,0,0,0.4969,0,True,1,True,10.0,nan
+2,against,Recurrent IPPO,5,Mage,B,False,90,7,0,0.4969,7,False,1,False,10.0,15.0
+2,against,Person,3,Rogue,A,True,96,2,0,0.9938,0,True,2,True,3.0,5.0
+2,against,Person,2,Hunter,A,True,99,0,1,0.9938,0,True,3,True,1.0,2.0
+2,against,Person,0,Mage,A,True,100,8,1,0.9938,8,False,2,True,1.0,1.0
+2,against,Recurrent IPPO,7,Hunter,B,False,100,4,2,0.4969,4,False,1,True,4.0,6.0
+2,against,Person,1,Warrior,A,True,101,7,1,0.9938,6,False,1,True,1.0,nan
+2,against,Recurrent IPPO,9,Priest,B,False,104,32,2,0.4969,31,False,0,False,2.0,2.0
+2,against,Recurrent IPPO,6,Warrior,B,False,106,0,1,0.4969,0,True,0,True,2.0,nan
+2,against,Person,4,Priest,A,True,107,15,1,0.9938,15,False,0,False,6.0,6.0
+2,against,Recurrent IPPO,8,Rogue,B,False,109,18,1,0.4969,0,True,0,True,3.0,3.0
+2,against,Recurrent IPPO,5,Mage,B,False,128,7,0,0.4969,0,True,0,False,10.0,10.0
+2,against,Person,0,Mage,A,True,132,1,1,0.9938,1,False,1,False,0.0,0.0
+2,against,Person,1,Warrior,A,True,132,0,1,0.9938,0,True,1,False,0.0,nan
+2,against,Person,3,Rogue,A,True,135,8,1,0.9938,0,True,1,True,1.0,3.0
+2,against,Person,2,Hunter,A,True,136,6,1,0.9938,3,False,0,True,1.0,4.0
+2,against,Recurrent IPPO,6,Warrior,B,False,138,1,1,0.4969,1,False,1,False,0.0,nan
+2,against,Recurrent IPPO,7,Hunter,B,False,138,7,1,0.4969,0,True,1,True,0.0,0.0
+2,against,Person,4,Priest,A,True,140,2,1,0.9938,2,False,0,False,4.0,8.0
+2,against,Recurrent IPPO,9,Priest,B,False,141,6,2,0.4969,4,False,0,False,3.0,3.0
+2,against,Recurrent IPPO,8,Rogue,B,False,155,15,0,0.4969,0,True,0,True,14.0,17.0
+3,against,Recurrent IPPO,5,Mage,B,False,7,7,0,0.0637,7,False,1,False,15.0,15.0
+3,against,Recurrent IPPO,6,Warrior,B,False,22,22,0,0.0637,0,True,1,False,3.0,nan
+3,against,Person,0,Mage,A,True,23,23,2,0.7643,23,False,2,True,1.0,1.0
+3,against,Person,1,Warrior,A,True,24,24,2,0.7643,6,False,3,True,1.0,nan
+3,against,Recurrent IPPO,9,Priest,B,False,25,25,0,0.0637,25,False,0,False,3.0,3.0
+3,against,Person,3,Rogue,A,True,29,29,2,0.7643,5,False,2,True,1.0,5.0
+3,against,Person,4,Priest,A,True,30,30,1,0.7643,30,False,1,False,1.0,6.0
+3,against,Recurrent IPPO,5,Mage,B,False,40,2,0,0.0637,2,False,0,False,3.0,13.0
+3,against,Recurrent IPPO,8,Rogue,B,False,43,43,0,0.0637,0,True,0,True,3.0,10.0
+3,against,Recurrent IPPO,7,Hunter,B,False,46,46,0,0.0637,4,False,0,True,3.0,7.0
+3,against,Recurrent IPPO,6,Warrior,B,False,53,0,0,0.0637,0,True,0,False,7.0,nan
+3,against,Person,2,Hunter,A,True,55,55,2,0.7643,20,False,1,True,5.0,5.0
+3,against,Person,0,Mage,A,True,60,6,3,0.7643,6,False,1,True,0.0,0.0
+3,against,Person,1,Warrior,A,True,60,5,3,0.7643,4,False,1,False,0.0,nan
+3,against,Person,3,Rogue,A,True,62,2,3,0.7643,0,True,1,True,2.0,2.0
+3,against,Recurrent IPPO,9,Priest,B,False,72,16,0,0.0637,16,False,0,False,1.0,12.0
+3,against,Recurrent IPPO,5,Mage,B,False,73,2,0,0.0637,0,True,0,False,1.0,11.0
+3,against,Recurrent IPPO,8,Rogue,B,False,74,0,1,0.0637,0,True,0,True,1.0,10.0
+3,against,Recurrent IPPO,7,Hunter,B,False,77,0,1,0.0637,0,True,0,True,3.0,7.0
+3,against,Person,4,Priest,A,True,81,20,2,0.7643,20,False,0,False,11.0,11.0
+3,against,Recurrent IPPO,6,Warrior,B,False,84,0,0,0.0637,0,True,0,True,7.0,nan
+3,against,Person,0,Mage,A,True,92,1,2,0.7643,1,False,1,True,0.0,0.0
+3,against,Person,1,Warrior,A,True,92,1,2,0.7643,1,False,1,False,0.0,nan
+3,against,Recurrent IPPO,5,Mage,B,False,108,4,0,0.0637,4,False,2,False,1.0,7.0
+3,against,Recurrent IPPO,7,Hunter,B,False,109,1,0,0.0637,1,False,1,True,1.0,6.0
+3,against,Recurrent IPPO,6,Warrior,B,False,115,0,0,0.0637,0,True,1,False,6.0,nan
+3,against,Recurrent IPPO,5,Mage,B,False,139,0,0,0.0637,0,True,1,False,8.0,8.0
+3,against,Recurrent IPPO,6,Warrior,B,False,147,1,0,0.0637,0,True,1,False,6.0,nan
+3,against,Person,1,Warrior,A,True,148,25,1,0.7643,0,True,2,False,1.0,nan
+3,against,Person,0,Mage,A,True,149,26,1,0.7643,26,False,2,True,0.0,1.0
+3,against,Person,3,Rogue,A,True,149,56,1,0.7643,2,False,2,True,0.0,1.0
+3,against,Recurrent IPPO,9,Priest,B,False,153,50,0,0.0637,50,False,1,False,6.0,6.0
+4,alongside,PQN-VDN,9,Priest,B,False,0,0,0,0.3191,0,True,1,False,21.0,21.0
+4,alongside,PQN-VDN,6,Warrior,B,False,21,21,0,0.3191,0,True,1,False,10.0,nan
+4,alongside,Recurrent IPPO,1,Warrior,A,False,23,23,0,1.0638,0,True,3,False,0.0,nan
+4,alongside,Recurrent IPPO,3,Rogue,A,False,23,23,0,1.0638,0,True,3,True,0.0,0.0
+4,alongside,Person,0,Mage,A,True,31,31,2,1.0638,31,False,1,False,1.0,8.0
+4,alongside,PQN-VDN,9,Priest,B,False,31,0,0,0.3191,0,True,1,False,10.0,10.0
+4,alongside,Recurrent IPPO,2,Hunter,A,False,32,32,2,1.0638,3,False,1,True,1.0,9.0
+4,alongside,PQN-VDN,7,Hunter,B,False,41,41,1,0.3191,0,True,1,True,8.0,11.0
+4,alongside,PQN-VDN,8,Rogue,B,False,49,49,0,0.3191,0,True,1,True,3.0,3.0
+4,alongside,PQN-VDN,6,Warrior,B,False,52,0,0,0.3191,0,True,1,False,3.0,nan
+4,alongside,Recurrent IPPO,1,Warrior,A,False,54,0,1,1.0638,0,True,1,True,19.0,nan
+4,alongside,PQN-VDN,9,Priest,B,False,63,1,0,0.3191,0,True,1,False,9.0,11.0
+4,alongside,PQN-VDN,7,Hunter,B,False,72,0,0,0.3191,0,True,1,True,8.0,11.0
+4,alongside,Person,0,Mage,A,True,73,11,1,1.0638,11,False,1,False,1.0,12.0
+4,alongside,Recurrent IPPO,2,Hunter,A,False,74,11,1,1.0638,6,False,1,True,1.0,11.0
+4,alongside,Recurrent IPPO,3,Rogue,A,False,76,22,1,1.0638,0,True,1,True,2.0,9.0
+4,alongside,PQN-VDN,8,Rogue,B,False,80,0,2,0.3191,0,True,1,True,3.0,3.0
+4,alongside,PQN-VDN,6,Warrior,B,False,83,0,0,0.3191,0,True,1,True,3.0,nan
+4,alongside,Recurrent IPPO,1,Warrior,A,False,85,0,3,1.0638,0,True,1,False,9.0,nan
+5,alongside,Recurrent IPPO,1,Warrior,A,False,9,9,0,0.5068,0,True,2,False,8.0,nan
+5,alongside,PQN-VDN,8,Rogue,B,False,12,12,0,0.6757,1,False,2,True,3.0,3.0
+5,alongside,PQN-VDN,5,Mage,B,False,15,15,0,0.6757,15,False,3,False,0.0,0.0
+5,alongside,PQN-VDN,6,Warrior,B,False,15,15,0,0.6757,0,True,3,False,0.0,nan
+5,alongside,Person,0,Mage,A,True,17,17,0,0.5068,17,False,2,True,1.0,8.0
+5,alongside,Recurrent IPPO,2,Hunter,A,False,18,18,0,0.5068,2,False,1,True,1.0,9.0
+5,alongside,PQN-VDN,9,Priest,B,False,22,22,1,0.6757,22,False,1,False,3.0,7.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,25,25,1,0.5068,0,True,1,True,0.0,15.0
+5,alongside,Recurrent IPPO,4,Priest,A,False,25,25,1,0.5068,25,False,1,False,0.0,15.0
+5,alongside,PQN-VDN,7,Hunter,B,False,25,25,1,0.6757,6,False,0,True,3.0,10.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,40,0,0,0.5068,0,True,0,False,11.0,nan
+5,alongside,PQN-VDN,5,Mage,B,False,46,0,1,0.6757,0,True,2,True,0.0,1.0
+5,alongside,PQN-VDN,8,Rogue,B,False,46,3,1,0.6757,0,True,2,True,0.0,1.0
+5,alongside,PQN-VDN,6,Warrior,B,False,47,1,1,0.6757,1,False,0,False,1.0,nan
+5,alongside,Person,0,Mage,A,True,51,3,0,0.5068,2,False,1,True,0.0,11.0
+5,alongside,Recurrent IPPO,2,Hunter,A,False,51,2,0,0.5068,1,False,1,True,0.0,11.0
+5,alongside,PQN-VDN,9,Priest,B,False,53,0,2,0.6757,0,True,0,False,6.0,6.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,57,1,0,0.5068,0,True,1,True,6.0,14.0
+5,alongside,PQN-VDN,7,Hunter,B,False,63,7,0,0.6757,3,False,0,True,10.0,16.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,71,0,3,0.5068,0,True,1,True,12.0,nan
+5,alongside,Recurrent IPPO,2,Hunter,A,False,83,1,1,0.5068,0,True,2,True,1.0,12.0
+5,alongside,Person,0,Mage,A,True,84,2,1,0.5068,2,False,1,True,1.0,13.0
+5,alongside,PQN-VDN,6,Warrior,B,False,84,6,1,0.6757,0,True,2,False,4.0,nan
+5,alongside,Recurrent IPPO,3,Rogue,A,False,88,0,1,0.5068,0,True,1,True,4.0,14.0
+5,alongside,PQN-VDN,8,Rogue,B,False,88,11,0,0.6757,0,True,2,True,4.0,4.0
+5,alongside,PQN-VDN,5,Mage,B,False,96,19,0,0.6757,13,False,2,False,0.0,12.0
+5,alongside,PQN-VDN,7,Hunter,B,False,96,2,0,0.6757,1,False,2,True,0.0,12.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,102,0,0,0.5068,0,True,1,True,4.0,nan
+5,alongside,Recurrent IPPO,4,Priest,A,False,106,50,1,0.5068,50,False,0,False,4.0,4.0
+5,alongside,PQN-VDN,9,Priest,B,False,106,22,0,0.6757,22,False,0,False,10.0,10.0
+5,alongside,PQN-VDN,6,Warrior,B,False,116,1,3,0.6757,1,False,0,False,10.0,nan
+5,alongside,Person,0,Mage,A,True,118,3,0,0.5068,2,False,1,True,6.0,15.0
+5,alongside,Recurrent IPPO,2,Hunter,A,False,124,10,0,0.5068,7,False,0,True,3.0,9.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,127,8,1,0.5068,0,True,0,True,3.0,6.0
+5,alongside,PQN-VDN,8,Rogue,B,False,130,11,0,0.6757,4,False,2,True,1.0,14.0
+5,alongside,PQN-VDN,5,Mage,B,False,131,4,0,0.6757,4,False,0,False,1.0,15.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,133,0,1,0.5068,0,True,0,False,6.0,nan
+5,alongside,PQN-VDN,9,Priest,B,False,137,0,0,0.6757,0,True,1,False,6.0,10.0
+5,alongside,Recurrent IPPO,4,Priest,A,False,140,3,0,0.5068,3,False,0,False,7.0,7.0
+5,alongside,PQN-VDN,6,Warrior,B,False,147,0,0,0.6757,0,True,0,False,10.0,nan
+5,alongside,Person,0,Mage,A,True,150,1,0,0.5068,1,False,0,True,10.0,17.0
+5,alongside,PQN-VDN,8,Rogue,B,False,161,0,0,0.6757,0,True,0,True,2.0,14.0
+5,alongside,PQN-VDN,5,Mage,B,False,163,1,0,0.6757,1,False,0,False,2.0,16.0
+5,alongside,PQN-VDN,7,Hunter,B,False,167,40,0,0.6757,18,False,0,True,4.0,20.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,170,6,0,0.5068,0,True,0,False,2.0,nan
+5,alongside,Recurrent IPPO,2,Hunter,A,False,172,17,0,0.5068,3,False,1,True,2.0,2.0
+5,alongside,PQN-VDN,9,Priest,B,False,174,6,0,0.6757,1,False,0,False,7.0,15.0
+5,alongside,Recurrent IPPO,4,Priest,A,False,180,9,1,0.5068,9,False,0,False,5.0,10.0
+5,alongside,Person,0,Mage,A,True,185,4,1,0.5068,4,False,0,False,5.0,15.0
+5,alongside,PQN-VDN,6,Warrior,B,False,189,11,2,0.6757,11,False,0,False,5.0,nan
+5,alongside,PQN-VDN,5,Mage,B,False,194,0,2,0.6757,0,True,0,True,5.0,5.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,195,37,0,0.5068,1,False,0,True,6.0,6.0
+5,alongside,Recurrent IPPO,1,Warrior,A,False,201,0,0,0.5068,0,True,0,False,6.0,nan
+5,alongside,PQN-VDN,9,Priest,B,False,205,0,1,0.6757,0,True,0,False,3.0,16.0
+5,alongside,PQN-VDN,8,Rogue,B,False,208,16,1,0.6757,0,True,0,True,3.0,19.0
+5,alongside,Recurrent IPPO,2,Hunter,A,False,214,11,2,0.5068,10,False,1,True,4.0,13.0
+5,alongside,Person,0,Mage,A,True,218,2,1,0.5068,2,False,1,True,4.0,15.0
+5,alongside,PQN-VDN,7,Hunter,B,False,229,31,0,0.6757,14,False,1,True,3.0,3.0
+5,alongside,PQN-VDN,6,Warrior,B,False,232,12,0,0.6757,12,False,0,False,3.0,nan
+5,alongside,Recurrent IPPO,1,Warrior,A,False,233,1,0,0.5068,0,True,1,True,0.0,nan
+5,alongside,Recurrent IPPO,4,Priest,A,False,233,22,0,0.5068,22,False,1,False,0.0,0.0
+5,alongside,PQN-VDN,9,Priest,B,False,238,2,0,0.6757,2,False,1,False,1.0,6.0
+5,alongside,PQN-VDN,8,Rogue,B,False,239,0,0,0.6757,0,True,1,True,1.0,7.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,242,16,1,0.5068,1,False,0,True,5.0,9.0
+5,alongside,Recurrent IPPO,2,Hunter,A,False,247,2,1,0.5068,2,False,0,True,4.0,14.0
+5,alongside,PQN-VDN,5,Mage,B,False,248,23,0,0.6757,15,False,0,False,9.0,15.0
+5,alongside,Person,0,Mage,A,True,251,2,1,0.5068,2,False,0,False,4.0,13.0
+5,alongside,PQN-VDN,6,Warrior,B,False,263,0,1,0.6757,0,True,0,False,15.0,nan
+5,alongside,Recurrent IPPO,1,Warrior,A,False,264,0,1,0.5068,0,True,1,True,0.0,nan
+5,alongside,Recurrent IPPO,4,Priest,A,False,264,0,1,0.5068,0,True,1,False,0.0,0.0
+5,alongside,Recurrent IPPO,3,Rogue,A,False,273,0,0,0.5068,0,True,0,True,9.0,9.0
+5,alongside,Person,0,Mage,A,True,282,0,0,0.5068,0,True,1,True,9.0,13.0
+5,alongside,PQN-VDN,5,Mage,B,False,283,4,1,0.6757,4,False,2,False,3.0,11.0
+5,alongside,PQN-VDN,9,Priest,B,False,286,17,2,0.6757,17,False,1,False,1.0,8.0
+5,alongside,PQN-VDN,7,Hunter,B,False,287,27,2,0.6757,20,False,1,True,0.0,7.0
+5,alongside,PQN-VDN,8,Rogue,B,False,287,17,2,0.6757,1,False,1,True,0.0,7.0
+5,alongside,PQN-VDN,6,Warrior,B,False,294,0,1,0.6757,0,True,0,True,7.0,nan
+5,alongside,Recurrent IPPO,1,Warrior,A,False,295,0,0,0.5068,0,True,1,True,13.0,nan
+6,alongside,Person,0,Mage,A,True,10,10,0,0.692,10,False,1,True,4.0,4.0
+6,alongside,PQN-VDN,6,Warrior,B,False,12,12,0,0.4498,0,True,2,False,6.0,nan
+6,alongside,Recurrent IPPO,1,Warrior,A,False,14,14,0,0.692,0,True,1,False,4.0,nan
+6,alongside,PQN-VDN,5,Mage,B,False,18,18,0,0.4498,18,False,1,False,6.0,6.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,21,21,1,0.692,0,True,1,True,1.0,7.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,22,22,1,0.692,0,True,1,True,0.0,8.0
+6,alongside,Recurrent IPPO,4,Priest,A,False,22,22,1,0.692,22,False,1,False,0.0,8.0
+6,alongside,PQN-VDN,8,Rogue,B,False,26,26,1,0.4498,5,False,1,True,7.0,14.0
+6,alongside,PQN-VDN,7,Hunter,B,False,33,33,0,0.4498,9,False,1,True,2.0,18.0
+6,alongside,PQN-VDN,9,Priest,B,False,35,35,0,0.4498,35,False,0,False,2.0,16.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,45,0,0,0.692,0,True,1,False,4.0,nan
+6,alongside,Person,0,Mage,A,True,49,8,0,0.692,8,False,0,False,4.0,4.0
+6,alongside,PQN-VDN,6,Warrior,B,False,51,8,0,0.4498,8,False,1,False,9.0,nan
+6,alongside,Recurrent IPPO,4,Priest,A,False,56,3,1,0.692,3,False,1,False,5.0,11.0
+6,alongside,PQN-VDN,8,Rogue,B,False,60,3,0,0.4498,0,True,1,True,9.0,9.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,61,9,2,0.692,8,False,0,True,5.0,15.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,67,14,3,0.692,0,True,0,True,6.0,9.0
+6,alongside,PQN-VDN,5,Mage,B,False,75,26,1,0.4498,21,False,1,True,10.0,11.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,76,0,1,0.692,0,True,0,False,9.0,nan
+6,alongside,PQN-VDN,7,Hunter,B,False,85,21,1,0.4498,8,False,1,True,1.0,1.0
+6,alongside,PQN-VDN,6,Warrior,B,False,86,4,1,0.4498,0,True,1,False,1.0,nan
+6,alongside,Recurrent IPPO,4,Priest,A,False,87,0,1,0.692,0,True,1,False,2.0,11.0
+6,alongside,Person,0,Mage,A,True,89,9,1,0.692,6,False,0,True,2.0,13.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,94,2,2,0.692,1,False,0,True,5.0,13.0
+6,alongside,PQN-VDN,9,Priest,B,False,94,28,0,0.4498,28,False,0,False,8.0,8.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,103,5,1,0.692,0,True,0,True,4.0,4.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,107,0,0,0.692,0,True,0,False,4.0,nan
+6,alongside,PQN-VDN,8,Rogue,B,False,116,25,0,0.4498,4,False,2,True,2.0,4.0
+6,alongside,Recurrent IPPO,4,Priest,A,False,118,0,1,0.692,0,True,0,False,3.0,11.0
+6,alongside,PQN-VDN,7,Hunter,B,False,118,2,1,0.4498,1,False,2,True,2.0,2.0
+6,alongside,PQN-VDN,6,Warrior,B,False,120,3,1,0.4498,3,False,1,False,2.0,nan
+6,alongside,Person,0,Mage,A,True,121,1,1,0.692,1,False,0,False,3.0,14.0
+6,alongside,PQN-VDN,5,Mage,B,False,122,16,2,0.4498,11,False,0,False,2.0,2.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,125,0,0,0.692,0,True,0,True,4.0,18.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,141,7,1,0.692,0,True,0,True,2.0,2.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,143,5,1,0.692,0,True,0,False,2.0,nan
+6,alongside,PQN-VDN,9,Priest,B,False,145,20,1,0.4498,20,False,0,False,3.0,6.0
+6,alongside,PQN-VDN,8,Rogue,B,False,148,1,1,0.4498,1,False,0,True,2.0,3.0
+6,alongside,Recurrent IPPO,4,Priest,A,False,149,0,1,0.692,0,True,0,False,6.0,6.0
+6,alongside,PQN-VDN,7,Hunter,B,False,150,1,1,0.4498,1,False,0,True,1.0,1.0
+6,alongside,PQN-VDN,6,Warrior,B,False,151,0,1,0.4498,0,True,0,False,1.0,nan
+6,alongside,PQN-VDN,5,Mage,B,False,156,3,0,0.4498,3,False,0,False,5.0,5.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,160,4,0,0.692,1,False,1,True,2.0,14.0
+6,alongside,Person,0,Mage,A,True,162,10,1,0.692,4,False,0,False,2.0,12.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,174,0,0,0.692,0,True,0,False,6.0,nan
+6,alongside,Recurrent IPPO,4,Priest,A,False,180,0,0,0.692,0,True,0,False,6.0,6.0
+6,alongside,PQN-VDN,9,Priest,B,False,180,4,1,0.4498,4,False,0,False,2.0,2.0
+6,alongside,PQN-VDN,6,Warrior,B,False,182,0,0,0.4498,0,True,0,False,2.0,nan
+6,alongside,Recurrent IPPO,3,Rogue,A,False,186,14,1,0.692,0,True,0,True,5.0,12.0
+6,alongside,Recurrent IPPO,2,Hunter,A,False,191,0,1,0.692,0,True,0,True,3.0,14.0
+6,alongside,PQN-VDN,5,Mage,B,False,191,4,1,0.4498,4,False,0,False,2.0,9.0
+6,alongside,PQN-VDN,8,Rogue,B,False,193,14,1,0.4498,0,True,0,True,2.0,11.0
+6,alongside,Person,0,Mage,A,True,194,1,1,0.692,1,False,0,True,3.0,11.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,205,0,1,0.692,0,True,0,False,6.0,nan
+6,alongside,Recurrent IPPO,4,Priest,A,False,211,0,1,0.692,0,True,0,False,6.0,6.0
+6,alongside,PQN-VDN,7,Hunter,B,False,211,30,1,0.4498,10,False,1,True,16.0,29.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,217,0,0,0.692,0,True,0,True,6.0,12.0
+6,alongside,PQN-VDN,5,Mage,B,False,227,5,0,0.4498,5,False,2,False,2.0,26.0
+6,alongside,PQN-VDN,9,Priest,B,False,229,18,0,0.4498,18,False,1,False,2.0,24.0
+6,alongside,Person,0,Mage,A,True,233,8,2,0.692,8,False,1,True,3.0,3.0
+6,alongside,PQN-VDN,8,Rogue,B,False,234,10,1,0.4498,0,True,1,True,5.0,19.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,236,0,1,0.692,0,True,1,False,3.0,nan
+6,alongside,PQN-VDN,6,Warrior,B,False,253,40,0,0.4498,30,False,0,False,8.0,nan
+6,alongside,Recurrent IPPO,2,Hunter,A,False,255,33,1,0.692,14,False,1,True,1.0,12.0
+6,alongside,Recurrent IPPO,3,Rogue,A,False,256,8,1,0.692,0,True,1,True,1.0,11.0
+6,alongside,PQN-VDN,5,Mage,B,False,261,3,0,0.4498,3,False,2,True,8.0,8.0
+6,alongside,Person,0,Mage,A,True,266,2,0,0.692,2,False,1,True,1.0,1.0
+6,alongside,Recurrent IPPO,1,Warrior,A,False,267,0,0,0.692,0,True,1,True,1.0,nan
+6,alongside,PQN-VDN,9,Priest,B,False,270,10,1,0.4498,10,False,1,False,9.0,17.0

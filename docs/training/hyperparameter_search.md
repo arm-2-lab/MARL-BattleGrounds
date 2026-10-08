@@ -482,8 +482,11 @@ for study 1, 32.8 for study 2, 0.6 for feedforward MAPPO's 40M team-reward run
 and 23.4 for study 3's six continuations (101.6 together), plus 8.2 minutes for
 the tournament. Training speeds on one card, in transitions per second of
 training, were 12,700-14,000 for QMIX, 10,300-10,600 for PQN-VDN and
-17,800-22,100 for the PPO methods; the continuations' wall-clock rates, which
-include validation, are in the Study 3 cost table. Measured costs and peak memory per method are reported
+17,800-21,600 for the PPO methods; the continuations' wall-clock rates, which
+include validation, are in the Study 3 cost table. From step 0 to 250,675,200
+game steps, validation included, each Season 0 lineage (its 40M run plus its
+continuation) took 3.6 to 4.3 hours for the PPO baselines, 5.5 hours for QMIX
+and 6.9 hours for PQN-VDN, on one RTX 5090. Measured costs and peak memory per method are reported
 with each study's results.
 
 ## Results
@@ -520,7 +523,7 @@ A run folder is `<study folder>/study/cases/<case>/run/`, where `<case>` is
 | Feedforward MAPPO's 40M run | `ff_mappo_team_reward.yaml` | `ff-mappo-levers/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` (its parent segment) |
 | Study 3 | `continue_to_250m.yaml` | `250m/study/cases/` (five methods); feedforward MAPPO's continuation ran in its own folder, `ff-mappo-250m/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` |
 | Tournament | `tournament_250m.json` | `tournament-250m/runs/tournament_20261005_082220_ae54a3f293be/` (field `tournament-250m/field.json`, log `tournament-250m/tournament.log`) | `results/tournament-250m/` |
-| Teamwork in the tournament | the `tournament_analysis` stage's packaged settings | `../tournament-analysis-season-0/full-metrics-timed/` (replay and analysis) and `../tournament-analysis-season-0/priority-only-timed/` (the timing reference) | [`season_0_teamwork.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork.csv), [`season_0_teamwork_by_class.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_by_class.csv), [`season_0_teamwork_screen.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_screen.csv) |
+| Teamwork in the tournament | the `tournament_analysis` stage's packaged settings | `../tournament-analysis-season-0/full-metrics-timed/` (replay and analysis) and `../tournament-analysis-season-0/priority-only-timed/` (the timing reference) | [`season_0_teamwork.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork.csv), [`season_0_teamwork_by_class.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_by_class.csv), [`season_0_teamwork_screen.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_screen.csv), [`season_0_teamwork_trends.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_trends.csv) |
 | Fixed opponents | `opponents.yaml` | `opponents/models/` (the six training models and the pooled 250M model) | – |
 
 **The six tournament policies.** Each lineage is its 40M run followed by its
@@ -620,6 +623,20 @@ It writes `curves.csv` (margin, kills and deaths per game at all 186 checks),
 plays no games. Its curves match `lineage_curves.csv` at every check. The 186
 rows are in
 [`season_0_training_curves.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves.csv).
+
+The same command with `'opponents=[tdm-alpha,tdm-beta,tdm-gamma]'` reads the
+same checks against the three scripted opponents alone (96 of each check's 128
+games) and adds the share of those games each baseline won:
+[`season_0_training_curves_scripted.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_scripted.csv).
+Each run also writes `crossings.csv`, the first check where a baseline's point
+margin was above zero and the first where it won at least half its games:
+[`season_0_training_curves_crossings.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_crossings.csv)
+against the whole panel and
+[`season_0_training_curves_scripted_crossings.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_scripted_crossings.csv)
+against the scripted opponents. Every baseline first won half its games against
+the scripted opponents between 50,651,136 (QMIX) and 166,461,440 (feedforward
+IPPO) game steps, and first crossed a margin of zero against the whole panel
+between 92,798,976 (PQN-VDN) and 166,461,440 (feedforward IPPO).
 
 **At every validation check** (31 per lineage: step 0, 10 checks to 40M about
 every 4M, then 20 checks about every 10.5M; 128 games each, 8 per map and
@@ -1301,10 +1318,6 @@ fractions, distances and averages keep their scale (`scale`). The tests:
   opponent fixed matters: a team's wins come mostly against weak opponents.
   0.5 means the metric does not change with the result inside a matchup.
 
-Matchups between methods that never sample (the bots, greedy QMIX and
-PQN-VDN) repeat the same 10 games 20 times, and the two game checks count
-each copy.
-
 The class tables (`season_0_teamwork_by_class.csv`) also give the share of
 each ally class's ticks inside a Mage or Warrior aura, the share of the
 Priest's Freedom uses each class received, and the distance between each pair
@@ -1378,30 +1391,28 @@ useful Priest healing and of the damage it received).
 | Feedforward IPPO | 25.3% | 26.3% | 12.4% | 20.2% | 15.9% | 19.9% | 29.0% | 15.0% | 25.8% | 10.4% |
 
 **Findings.** Per-game values are in the table above; the screen's per-tick
-values and tests are in `season_0_teamwork_screen.csv`.
+values and tests are in `season_0_teamwork_screen.csv`, and each teamwork
+measure's rank correlation with Elo and its exact p-value are in
+`season_0_teamwork_trends.csv`.
 
 1. **Activity shows no trend across the nine.** Per tick, kills (+0.02),
    Basic uses (−0.17) and ticks with two or more attackers (−0.02) show no
-   trend, because the scripted bots are as active as the best learned teams;
-   among the learned six, each leans with Elo (+0.66, not significant).
-   Ultimate use shows no trend in either (−0.13; +0.14 among the learned
-   six): every Ultimate has a 30-tick cooldown, so a team can use at most
-   about 0.17 per tick, and the nine use 0.11 to 0.14.
-2. **One trend survives the whole screen, narrowly.** The share of kills a
-   Warrior's Ultimate helped with falls from 13.9-14.4% for the bots to
-   3.1-3.7% for the learned teams (−0.95; Holm p = 0.049, max-statistic p =
-   0.029; −0.89 among the learned six): the bots lean on the Warrior's
-   Ultimate to finish kills, learned teams rarely do. Recurrent MAPPO and QMIX
-   are 4 Elo apart; if they swapped places, this metric would no longer pass
-   Holm's correction and the useful share of Basic healing would.
+   trend, because the scripted bots are as active as the best learned teams.
+   Ultimate use shows no trend either (−0.13): every Ultimate has a 30-tick
+   cooldown, so a team can use at most about 0.17 per tick, and the nine use
+   0.11 to 0.14.
+2. **One trend survives the whole screen.** The share of kills a Warrior's
+   Ultimate helped with falls from 13.9-14.4% for the bots to 3.1-3.7% for the
+   learned teams (−0.95; Holm p = 0.049, max-statistic p = 0.029; −0.89 among
+   the learned six): the bots lean on the Warrior's Ultimate to finish kills,
+   learned teams rarely do.
 3. **Strong teams hold together.** Teammates stand 3.90-4.11 map units apart
    in the bots and 2.45-3.45 in the learned teams (−0.90). The auras pay off
    accordingly: Warrior auras prevent 10.0-11.8 points per 100 points of
    damage learned teams take, against 8.7-9.0 for the bots
    (`warrior_aura_protection_share`, +0.92), and Mage auras add 8.6-9.8% of
    learned teams' damage, against 7.1-7.2% (`mage_aura_damage_share`,
-   +0.90). Per game, both payoffs reach +0.97, partly because learned teams'
-   games last longer.
+   +0.90).
 4. **Freedom reaches slowed allies.** Every Priest Basic heal gives its target
    Freedom, a short floor on its speed. In learned teams Freedom held up a
    slowed ally's speed on 4.9-6.3% of the ticks it was active, against
@@ -1411,37 +1422,18 @@ values and tests are in `season_0_teamwork_screen.csv`.
    138, where chance alone gives about 0.4 perfect orders: damage to enemies
    a Hunter had slowed and kills a Warrior's Basic helped, both per tick,
    order them perfectly (+1.00, p = 0.0028); Freedom protection, Mage aura damage and
-   Warrior aura protection per tick reach +0.94. Warrior aura protection per
-   tick is only +0.68 over all nine: the bots, hit more often, prevent as
-   much per tick (160-165 per 100 ticks) as feedforward IPPO and MAPPO
-   (159 and 151).
-6. **Most strong trends separate the bots from the learned teams.** 70 of the
-   138 metrics put all three bots on one side of all six learned teams, and
-   49 of the 54 with p < 0.05 over the nine are of this kind. The three bots
-   are near copies, so the field acts smaller than nine. Among the learned
-   six, 9 metrics reach p < 0.05, where chance alone gives about 5.
-7. **Inside a matchup, formation and support also follow the result.** With
-   the opponent, map and spawn end fixed, kills (0.94) and deaths (0.06) move
-   with the result; a team also stands closer (0.43) and gets more from
-   Freedom (0.58) in the games it wins. These measures are partly the state of
-   a game, not only a fixed style. Aura payoff per tick mostly follows the
-   amount of fighting at this level (Mage 0.77, Warrior 0.41), so it is not
-   read here.
-8. **Learned teams bring the back line into the auras** (class tables, not
+   Warrior aura protection per tick reach +0.94.
+6. **Learned teams bring the back line into the auras** (class tables, not
    tested). The bots keep their Priest inside the Mage's aura 23-24% of its
    ticks and their Hunter inside the Warrior's 16-18%; learned teams 46-59%
    and 34-61%. The bots' Priests give the Warrior 2-3% of their Freedom uses
    and learned Priests 8.5-13.5%, which separates the bots from learned teams
    but does not order the learned ones.
-9. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
+7. **The metrics recover a known rule.** TDM-Gamma never damages an enemy
    with two or more Trap ticks left. Its Hunters trapped enemies 10,355 times
    in its 1,600 games, and its team broke none of those Traps with damage.
-10. **Limits.** These are correlations across one field of nine at Season
-    0's level of play, an exploratory screen of 145 metrics. A trend may
-    weaken or reverse among stronger teams. A measure that follows strength is
-    a diagnostic, not a recipe: rewarding it directly, for example through
-    reward shaping, may teach the measure without the skill, such as a team
-    that stays close but stops fighting.
+8. **Scope.** These are correlations across one field of nine at Season 0's
+   level of play, from an exploratory screen of 145 metrics.
 
 ### Final Policies
 

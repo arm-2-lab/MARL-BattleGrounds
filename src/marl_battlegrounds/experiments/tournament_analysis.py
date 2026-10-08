@@ -33,7 +33,9 @@ This stage shows how to get the rest from the public API:
    more of it in its wins than in its losses.
 
 Outputs in output_dir: teamwork.csv (each MEASURES value with its interval),
-by_class.csv (the class tables), elo_screen.csv (step 5, with its tests), summary.md
+by_class.csv (the class tables), trends.csv (each MEASURES value's rank
+correlation with Elo and its exact p-value), elo_screen.csv (step 5, with its
+tests), summary.md
 (readable tables), teamwork.png (each teamwork measure against Elo) and
 analysis.json (everything, plus the checks, whether the replay declared XLA's
 deterministic mode, and the replay's and analysis's times). Give replay_dir to
@@ -170,6 +172,21 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
     ("kills_per_tick", "kills_per_tick", "Kills per tick"),
     ("ultimates_per_tick", "ultimates_per_tick", "Ultimate abilities used per tick"),
     (
+        "slowed_damage_per_tick",
+        "slowed_damage_per_tick",
+        "Damage per tick to enemies a teammate Hunter had already slowed",
+    ),
+    (
+        "focus_fire_per_tick",
+        "focus_fire_per_tick",
+        "Share of ticks when two or more teammates dealt damage",
+    ),
+    (
+        "useful_basic_healing_fraction",
+        "team_a_basic_effective_healing_fraction",
+        "Share of the Priest's Basic healing that was useful, not excess",
+    ),
+    (
         "ultimate_uses",
         "team_a_ultimate_activations",
         "Ultimate abilities used per game",
@@ -179,7 +196,8 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
 # Measures without their own catalog column, each a total divided by a total
 # over all of an entrant's games: kills on slowed enemies over all kills, the
 # auras' payoff over the damage it belongs to (so longer games do not count
-# more), and kills and Ultimates per tick.
+# more), and kills, Ultimates, damage to slowed enemies and ticks with two or
+# more attackers per tick.
 RATIOS = {
     "slowed_kill_fraction": (
         "team_a_kills_of_hunter_basic_slow_recipient",
@@ -192,6 +210,11 @@ RATIOS = {
     ),
     "kills_per_tick": ("team_a_kills", "episode_length"),
     "ultimates_per_tick": ("team_a_ultimate_activations", "episode_length"),
+    "slowed_damage_per_tick": (
+        "team_a_damage_to_hunter_basic_slow_recipient",
+        "episode_length",
+    ),
+    "focus_fire_per_tick": ("team_a_focus_fire_steps", "episode_length"),
 }
 
 # Measures that are game results; the figure shows only the teamwork after them.
@@ -907,7 +930,7 @@ def write_outputs(
     screen: Sequence[Mapping[str, Any]] = (),
     scripted: Collection[str] = (),
 ) -> None:
-    """Write teamwork.csv, by_class.csv, elo_screen.csv, summary.md and the PNG.
+    """Write teamwork.csv, by_class.csv, trends.csv, elo_screen.csv, summary.md, PNG.
 
     Parameters
     ----------
@@ -929,8 +952,12 @@ def write_outputs(
 
     Notes
     -----
-    teamwork.png plots every ``MEASURES`` value after the game results
-    against Elo, with its 95% interval, and gives each panel's rank
+    trends.csv gives, for each ``MEASURES`` name, its ``elo_correlations``
+    value (``correlation``), the exact two-sided permutation p-value of that
+    correlation over every ordering of the entrants (``p_value``, as for the
+    screen) and how many entrants have a value (``entrants``); NaN as for
+    ``elo_correlations``. teamwork.png plots every ``MEASURES`` value after
+    the game results against Elo, with its 95% interval, and gives each panel's rank
     correlation in its title. A percentile interval can lie wholly above or
     below its value; that side's bar is then drawn with zero length. It needs
     matplotlib (the viz extra).
@@ -983,6 +1010,22 @@ def write_outputs(
                         for k, v in row.items()
                     }
                 )
+
+    with (output_dir / "trends.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["measure", "correlation", "p_value", "entrants"])
+        for measure, _, _ in MEASURES:
+            values = [float(profiles[name][measure]["value"]) for name in order]
+            ratings = [elo[name] for name in order]
+            p_value = _permutation_p(values, ratings)
+            writer.writerow(
+                [
+                    measure,
+                    round(correlations[measure], 4),
+                    float(f"{p_value:.4g}"),
+                    sum(not math.isnan(value) for value in values),
+                ]
+            )
 
     lines = ["# Teamwork Of Every Entrant", ""]
     lines.append(

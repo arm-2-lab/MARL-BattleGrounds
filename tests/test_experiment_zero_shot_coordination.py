@@ -24,8 +24,14 @@ fit_drivers gives each measure's rank correlation with the margin change within
 each class and an exact two-sided permutation p-value of the mean, NaN for a
 constant measure; map_end_rows groups games by opponent, map and spawn end, an
 unsaved end labeled "unknown", with each class's mean distance to its
-teammates; play_team also records each opponent's seconds. Stand-ins replace
-the evaluator and saved runs, so no game is played.
+teammates; play_team also records each opponent's seconds. home_distances
+gives each System's class its mean tick-weighted distance to its own teammates
+(NaN with no shared ticks) and refuses a non-canonical roster; class_means
+averages the learned strangers of each class and reports the Random floor;
+newcomer_means averages each newcomer over its classes (NaN home distance for
+Random); opponent_rows gives the host's margin against each opponent and each
+newcomer's margin and change averaged over its classes. Stand-ins replace the
+evaluator and saved runs, so no game is played.
 """
 
 import json
@@ -269,3 +275,60 @@ def test_map_end_rows_group_by_opponent_map_and_spawn_end() -> None:
     assert (right["wins"], right["losses"], right["side"]) == (1, 0, "right")
     assert left["team"] == "Team" and left["newcomer_class"] == "Mage"
     assert left["mage_distance"] == left["warrior_distance"] == 2.0
+
+
+def test_home_distances_and_the_summary_tables() -> None:
+    games: dict[str, Any] = {
+        name: np.full(2, 2.0) for name in analysis.distance_columns()
+    }
+    games["system_name"] = np.asarray(["run-a", "run-a"], dtype=object)
+    for slot in range(5):
+        games[f"agent_{slot}_class_id"] = np.full(2, slot + 1)
+    games["agent_0_and_agent_1_ally_distance_mean"] = np.array([6.0, 2.0])
+    home = analysis.home_distances(games, {"run-a": "A"})
+    # The Mage's pair with the Warrior averages 4, its other three pairs 2.
+    assert home[("A", "Mage")] == 2.5 and home[("A", "Rogue")] == 2.0
+    for name in analysis.distance_columns():
+        if name.endswith("_observations"):
+            games[name] = np.zeros(2)
+    assert math.isnan(analysis.home_distances(games)[("run-a", "Priest")])
+    with pytest.raises(ValueError, match="slot 4 is not the Priest"):
+        analysis.home_distances(games | {"agent_4_class_id": np.full(2, 1)})
+    rows: list[dict[str, Any]] = [
+        {"newcomer": "Host", "newcomer_class": "Mage", "margin_change": 0.0},
+        {"newcomer": "A", "newcomer_class": "Mage", "margin_change": -2.0},
+        {"newcomer": "B", "newcomer_class": "Mage", "margin_change": -4.0},
+        {"newcomer": "Random", "newcomer_class": "Mage", "margin_change": -9.0},
+        {"newcomer": "A", "newcomer_class": "Priest", "margin_change": -1.0},
+    ]
+    for row, distance in zip(rows, [2.0, 3.0, 5.0, 6.0, 1.0], strict=True):
+        row |= {
+            "newcomer_distance": distance,
+            "newcomer_distance_change": distance - 2.0,
+            "slot_value_kept": 0.5,
+            "distance_beyond_home": math.nan if row["newcomer"] == "Random" else 0.5,
+        }
+    mage, priest = analysis.class_means(rows, "Host")
+    assert (mage["strangers"], mage["margin_change_mean"]) == (2, -3.0)
+    assert (mage["newcomer_distance_mean"], mage["floor_margin_change"]) == (4.0, -9.0)
+    assert priest["strangers"] == 1 and math.isnan(priest["floor_margin_change"])
+    a, b, floor = analysis.newcomer_means(rows, "Host")
+    assert (a["newcomer"], a["classes"], a["margin_change_mean"]) == ("A", 2, -1.5)
+    assert (
+        a["distance_beyond_home_mean"] == 0.5
+        and b["newcomer_distance_change_mean"] == 3.0
+    )
+    assert math.isnan(floor["distance_beyond_home_mean"])
+    margins = {
+        ("Host", ""): {"X": 3.0, "Y": 1.0},
+        ("A", "Mage"): {"X": 1.0, "Y": 1.0},
+        ("A", "Priest"): {"X": 2.0, "Y": -1.0},
+    }
+    host_x, host_y, a_x, a_y = analysis.opponent_rows(margins, "Host")
+    assert (host_x["margin"], host_x["margin_change"], host_y["opponent"]) == (
+        3.0,
+        0.0,
+        "Y",
+    )
+    assert (a_x["classes"], a_x["margin"], a_x["margin_change"]) == (2, 1.5, -1.5)
+    assert a_y["margin_change"] == -1.0

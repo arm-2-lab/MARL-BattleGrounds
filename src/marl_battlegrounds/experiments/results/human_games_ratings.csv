@@ -1,0 +1,21 @@
+questionnaire,item,scale,against,alongside
+NASA-TLX,Mental demand: how mentally demanding was it?,0 to 100 (higher is more demanding),50,75
+NASA-TLX,Physical demand: how physically demanding was it?,0 to 100 (higher is more demanding),0,0
+NASA-TLX,Temporal demand: how hurried or rushed was the pace?,0 to 100 (higher is more demanding),0,0
+NASA-TLX,Performance: how successful were you at what you set out to do?,"0 to 100 (0 is perfect, 100 is failure)",10,90
+NASA-TLX,Effort: how hard did you have to work to reach that level?,0 to 100 (higher is more demanding),50,90
+NASA-TLX,"Frustration: how insecure, discouraged, irritated, stressed or annoyed were you?",0 to 100 (higher is more demanding),25,90
+Fluency (adapted from Hoffman),My AI teammates and I worked fluently together.,1 (strongly disagree) to 7 (strongly agree),,1
+Fluency (adapted from Hoffman),My AI teammates contributed to the fluency of the play.,1 (strongly disagree) to 7 (strongly agree),,1
+Contribution (adapted from Hoffman),I had to carry the weight to make the team better.,1 (strongly disagree) to 7 (strongly agree),,7
+Contribution (adapted from Hoffman),My AI teammates contributed equally to the team's performance.,1 (strongly disagree) to 7 (strongly agree),,1
+Contribution (adapted from Hoffman),I was the most important member of the team.,1 (strongly disagree) to 7 (strongly agree),,7
+Trust (adapted from Hoffman),I trusted my AI teammates to do the right thing at the right time.,1 (strongly disagree) to 7 (strongly agree),,1
+Trust (adapted from Hoffman),My AI teammates were trustworthy.,1 (strongly disagree) to 7 (strongly agree),,1
+Understanding (adapted from Hoffman),My AI teammates were intelligent.,1 (strongly disagree) to 7 (strongly agree),,4
+Understanding (adapted from Hoffman),My AI teammates perceived accurately what my goals were.,1 (strongly disagree) to 7 (strongly agree),,1
+Understanding (adapted from Hoffman),My AI teammates did not understand what I was trying to accomplish.,1 (strongly disagree) to 7 (strongly agree),,7
+Understanding (adapted from Hoffman),What I was doing with my AI teammates was confusing.,1 (strongly disagree) to 7 (strongly agree),,7
+Added,I could predict what my AI teammates would do.,1 (strongly disagree) to 7 (strongly agree),,1
+Added,I adapted my play to my AI teammates.,1 (strongly disagree) to 7 (strongly agree),,5
+Added,My AI teammates adapted their play to me.,1 (strongly disagree) to 7 (strongly agree),,1

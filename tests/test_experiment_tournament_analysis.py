@@ -35,7 +35,8 @@ equal or fewer than three rated entrants have one; screen_measures takes each
 team metric's summary value per entrant and ranks the metrics by their
 correlation with the given Elo, over all entrants and without the scripted
 ones; write_outputs lists entrants from the highest Elo down and writes
-teamwork.csv (with each entrant's interval status), by_class.csv,
+teamwork.csv (with each entrant's interval status), by_class.csv, trends.csv
+(each measure's correlation with Elo, its exact p-value and its entrant count),
 elo_screen.csv, summary.md (with the correlations) and teamwork.png; main reads
 the saved Elo, joins profiles and class tables, records the replay's execution
 settings in analysis.json and refuses an entrant without a saved rating. Small
@@ -407,6 +408,15 @@ def test_write_outputs_lists_entrants_by_elo(tmp_path: Path) -> None:
     assert len(rows) == 2 * (3 * 25 + 5 * len(stage.VECTOR_TABLES))
     with (tmp_path / "elo_screen.csv").open(encoding="utf-8") as file:
         assert next(csv.DictReader(file))["correlation_all"] == "1.0"
+    with (tmp_path / "trends.csv").open(encoding="utf-8") as file:
+        trends = {row["measure"]: row for row in csv.DictReader(file)}
+    assert set(trends) == {measure for measure, _, _ in stage.MEASURES}
+    # Two entrants are too few for a correlation or its p-value.
+    assert (trends["margin"]["correlation"], trends["margin"]["p_value"]) == (
+        "nan",
+        "nan",
+    )
+    assert trends["margin"]["entrants"] == "2"
     summary_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert summary_text.index("| High | Low |") < summary_text.index("| margin |")
     # Two entrants are too few for a rank correlation.

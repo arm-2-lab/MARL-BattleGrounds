@@ -162,8 +162,9 @@ recurrent IPPO's 7 give p = 0.176. The full tables are in
 **What it shows.**
 
 - In Scenarios 2 and 5 to 8, Team B starts at 19 of the 20 points it needs, so
-  one Team A death loses the game. The field gives up that death at once:
-  12,767 of its 12,793 losses in these scenarios (99.8%) end within two ticks.
+  one Team A death loses the game. Across all ten systems, Random included,
+  that death comes at once: 12,767 of the 12,793 losses in these scenarios
+  (99.8%) end within two ticks.
 - Team B takes the kill from Team A's weakest agent: the 1 HP Priest in 97.0%
   of Scenario 5 losses and 99.9% of Scenario 8 losses, and the 7 HP Hunter in
   98.3% of Scenario 6 losses. Protecting a weak teammate in the first two ticks
@@ -322,7 +323,11 @@ kept places each stranger between recurrent IPPO's own agent (1) and Random
 (0) by point margin, with an interval from the same draws. Fit drivers asks
 which measure's change follows the cost within each class: the rank
 correlation over the five strangers in each class, averaged over the classes,
-with an exact permutation test.
+with an exact permutation test. Home spacing reads the Season 0 tournament,
+replayed with full metrics by the `tournament_analysis` stage, through the
+same `results.system_metrics` call: how far each class stands from its own
+teammates in its own team's games. Distance beyond home is how much farther a
+stranger stands from recurrent IPPO's agents than that.
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
@@ -331,93 +336,101 @@ python -m marl_battlegrounds.experiments.zero_shot_coordination \
     output_dir=artifacts/paper-experiments/zero-shot-coordination-season-0
 python -m marl_battlegrounds.experiments.zero_shot_coordination_analysis \
     zsc_dir=artifacts/paper-experiments/zero-shot-coordination-season-0 \
+    home_games_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out/replay/tournament_20261007_095226_96f9aa8c5e85 \
     output_dir=artifacts/paper-experiments/zero-shot-coordination-analysis
 ```
+
+`home_games_dir` is the replay folder the `tournament_analysis` stage made
+and printed.
 
 **Cost.** One RTX 5090, 128 games side by side, XLA's deterministic mode: 279
 runs and 55,800 games took 39 minutes of `evaluate` time (8.4 seconds per run
 of 200 games with full metrics on average, loading and compiling included),
-and 3.0 GB on disk. The analysis takes about 35 seconds on the CPU.
+and 3.0 GB on disk. The analysis takes about 37 seconds on the CPU, home
+spacing included.
 
 **Results.** Slot value kept, by the stranger's method and class, with 95%
 intervals of about ±0.02 (Mage) to ±0.06 (Rogue); recurrent IPPO alone scores
-+4.42 points per game against the nine members.
++4.42 points per game against the nine members. The last column is each
+method's mean change in point margin per game over its five classes.
 
-| Stranger (Season 0 Elo) | Mage | Warrior | Hunter | Rogue | Priest | Mean |
+| Stranger (Season 0 Elo) | Mage | Warrior | Hunter | Rogue | Priest | Mean change |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Recurrent MAPPO (1,304) | 0.91 | 0.89 | 0.90 | 0.96 | 0.83 | 0.90 |
-| QMIX (1,300) | 0.81 | 0.83 | 0.71 | 0.61 | 0.90 | 0.77 |
-| Feedforward IPPO (1,240) | 0.69 | 0.60 | 0.73 | 0.67 | 0.73 | 0.69 |
-| Feedforward MAPPO (1,140) | 0.57 | 0.59 | 0.64 | 0.55 | 0.67 | 0.60 |
-| PQN-VDN (1,358) | 0.60 | 0.54 | 0.55 | 0.59 | 0.69 | 0.60 |
-| Random: margin change | −16.85 | −8.17 | −7.91 | −5.03 | −14.52 | |
+| Recurrent MAPPO (1,304) | 0.91 | 0.89 | 0.90 | 0.96 | 0.83 | −1.17 |
+| QMIX (1,300) | 0.81 | 0.83 | 0.71 | 0.61 | 0.90 | −2.07 |
+| Feedforward IPPO (1,240) | 0.69 | 0.60 | 0.73 | 0.67 | 0.73 | −3.23 |
+| Feedforward MAPPO (1,140) | 0.57 | 0.59 | 0.64 | 0.55 | 0.67 | −4.08 |
+| PQN-VDN (1,358) | 0.60 | 0.54 | 0.55 | 0.59 | 0.69 | −4.11 |
+| Random: margin change | −16.85 | −8.17 | −7.91 | −5.03 | −14.52 | −10.49 |
 
 **Findings.**
 
 1. **Strangers cost points, and some break the team.** 24 of the 25 learned
-   strangers clearly lower the margin (−0.8 to −7.2 points per game) and keep
-   54-91% of the slot's value; recurrent MAPPO's Rogue is within noise of no
-   cost (0.96). A Mage from PQN-VDN or either feedforward method, or
-   feedforward MAPPO's Priest, turns the Season 0 winner into a team that
-   loses more games than it wins (499-602-699, 468-518-814, 500-603-697,
-   682-342-776).
-2. **The strongest stranger ties for the worst fit.** PQN-VDN, second in
-   Season 0, ties with feedforward MAPPO for the lowest slot value kept (0.60
-   and 0.60); recurrent MAPPO, third, keeps the most (0.90). Recurrent MAPPO
-   and QMIX are only 4 Elo apart.
-3. **The worst fits drift away from the fight.** Within each class, the
-   change in the stranger's distance from its teammates follows the cost
-   most consistently (mean rank correlation −0.84, exact p = 0.00002), with
-   its damage (+0.82), kill help (+0.76) and damage taken (+0.76) close
-   behind. The worst fits stand farther away, take less damage, deal less
-   and help fewer kills: feedforward MAPPO's strangers die less than the
-   agents they replace in four classes (the Priest's change is within noise)
-   and tie with PQN-VDN's for the largest cost. This is not a carried habit: PQN-VDN
-   is the tightest team in Season 0 (2.45 map units, against recurrent IPPO's
-   2.66), yet its agents stand 1.1 units farther from recurrent IPPO's agents
-   than the agents they replace. Recurrent MAPPO's add 0.4.
-4. **The auras show the cost, for the Mage.** A stranger Mage's aura covers
-   its teammates less, in exactly the order of its cost (recurrent IPPO's own Mage 0.56,
-   recurrent MAPPO's 0.46, QMIX's 0.43, feedforward IPPO's 0.36, PQN-VDN's
-   0.34, feedforward MAPPO's 0.27); a stranger Warrior's aura follows its
-   cost only weakly (rank correlation +0.4). A stranger Priest's useful
-   healing follows its fit (QMIX 2,161 per game, feedforward MAPPO 1,534).
-5. **The host does not adapt.** The four kept agents stand as far from each
-   other as they always do (changes of −0.12 to +0.11 map units; no link
-   to the cost), and recurrent IPPO's Priest gives a stranger less useful
-   healing per point of damage taken than it gave its own agent in 19 of 20
-   cases (Mage: 0.71 for its own, 0.55 to 0.63 for strangers).
-6. **The cost depends on the opponent.** Against the three scripted
-   opponents, recurrent MAPPO's, PQN-VDN's and feedforward IPPO's strangers
-   cost more (−2.4, −5.7, −4.2 points per game, against −0.6, −3.3, −2.8
-   against learned teams); QMIX's and feedforward MAPPO's cost less (−1.7
-   and −3.4, against −2.3 and −4.4).
-7. **The Mage and Priest slots matter most.** A random Mage or Priest costs
-   16.9 and 14.5 points per game, a random Rogue 5.0, and the largest learned
-   costs are in the Mage slot too.
+   strangers lower the margin, with 95% intervals entirely below zero (−0.8 to
+   −7.2 points per game), and keep 54-91% of the slot's value; recurrent
+   MAPPO's Rogue is within noise of no cost (0.96). A Mage from PQN-VDN or
+   either feedforward method, or feedforward MAPPO's Priest, turns the Season 0
+   winner into a team that loses more games than it wins (499-602-699,
+   468-518-814, 500-603-697, 682-342-776). The cost holds across
+   opponents: 44 of the 45 learned strangers' mean changes against single
+   opponents are below zero.
+2. **The Mage and Priest slots matter most.** A random Mage or Priest costs
+   16.9 and 14.5 points per game, a random Rogue 5.0, and the learned
+   strangers cost most there too: 4.8 points per game on average in the Mage
+   slot and 3.4 in the Priest slot, against 1.6 in the Rogue slot.
+3. **Strength alone does not decide fit.** Recurrent MAPPO, recurrent IPPO's closest
+   relative, fits best in every class but the Priest: its actor has the same
+   network, inputs, per-agent reward, memory and discount, and only its
+   training critic and its seed differ. Without PQN-VDN, the other four line up
+   exactly by Season 0 Elo; PQN-VDN, second in Season 0, ties with feedforward
+   MAPPO for the largest cost (−4.11 and −4.08 points per game).
+4. **Where a stranger stands follows its cost.** Within each class, the farther
+   a stranger stands from its teammates, the more points the team loses (mean
+   rank correlation −0.84; exact p = 0.00002 from shuffling strangers within
+   every class), and the worst fits also deal less damage (+0.82), receive less
+   useful healing (+0.78), help fewer kills (+0.76) and take less damage
+   (+0.76). The link is closest for the classes whose aura or heals reach only
+   nearby teammates (Mage and Priest −1.0, Warrior −0.9) and loosest for the
+   Rogue (−0.5), which stands farthest from its teammates (3.98 map units on
+   average, against 3.04 to 3.57 for the other classes) yet costs the least.
+5. **Strangers stray from their own team's spacing, in the exact order of
+   their cost.** Against the distance the same class keeps from its own
+   teammates in its own Season 0 games, recurrent MAPPO's strangers stand 0.08
+   map units closer to their new teammates, QMIX's 0.02 farther, feedforward
+   IPPO's 0.30, feedforward MAPPO's 0.58 and PQN-VDN's 1.37: the order of their
+   costs (−1.17, −2.07, −3.23, −4.08, −4.11). Recurrent IPPO's own agents match
+   their Season 0 spacing within 0.03. PQN-VDN is the tightest team in Season 0
+   (2.45 map units apart, against recurrent IPPO's 2.66), yet its agents keep
+   close only to agents like themselves.
+6. **The Mage's aura shows the cost.** A stranger Mage's aura covers its
+   teammates less, in exactly the order of its cost (recurrent IPPO's own Mage
+   0.56, recurrent MAPPO's 0.46, QMIX's 0.43, feedforward IPPO's 0.36,
+   PQN-VDN's 0.34, feedforward MAPPO's 0.27).
+7. **The host does not adapt.** The four kept agents keep their spacing
+   within 0.12 map units, and
+   recurrent IPPO's Priest gives 19 of the 20 non-Priest strangers less useful
+   healing per point of damage taken than it gave its own agent (Mage: 0.71
+   for its own, 0.55 to 0.63 for strangers).
 
 The full results are in `results/zero_shot_coordination_teams.csv` (every
-team and class, with each measure, its change and intervals, and the slot
-value kept with its interval), `results/zero_shot_coordination_fit_drivers.csv`
-(finding 3) and `results/zero_shot_coordination_map_ends.csv` (every team's
+team and class, with each measure, its change and intervals, the slot value
+kept with its interval, the Priest's useful healing per point of damage taken,
+the home spacing and the distance beyond it),
+`results/zero_shot_coordination_classes.csv` (finding 2),
+`results/zero_shot_coordination_newcomers.csv` (findings 3 and 5),
+`results/zero_shot_coordination_fit_drivers.csv` (finding 4),
+`results/zero_shot_coordination_by_opponent.csv` (each method's change against
+each opponent) and `results/zero_shot_coordination_map_ends.csv` (every team's
 margin, results and each class's distance to its teammates against each
 opponent on each map and spawn end).
 
-**Limits.** One host, one checkpoint per method, maps 47 to 51 and one seed per
-team: the intervals describe repeated games of these fixed teams, not other
-training runs. With five strangers, a trend across strangers rests on few
-points; the within-class test uses every class but still compares the same
-five methods. Measures that follow the cost show how strangers fail, not
-what causes the failure. Recurrent MAPPO is recurrent IPPO's closest
-relative (same trainer, per-agent reward, memory and discount), so its fit
-may come from shared training conventions. The rewards also split the
-strangers in two (per-agent for recurrent MAPPO and feedforward IPPO, team
-for PQN-VDN, QMIX and feedforward MAPPO), too few to test.
+**Scope.** One host, one checkpoint per method, maps 47 to 51 and one seed per
+team: the intervals describe repeated games of these fixed teams.
 
 ## Human Games Against And Alongside Recurrent IPPO
 
 **Question.** How does the Season 0 winner, recurrent IPPO, do against an
-expert human, and how does it do with one as a teammate it never trained with?
+expert human (the Expert Human below), and how does it do with one as a teammate it never trained with?
 
 **Method.** A person plays Team A in the BattleClient, in Agent POV: it shows
 only what Team A sees, the same shared team view recurrent IPPO's agents get.
@@ -476,9 +489,7 @@ its end, how long the BattleClient was open, and Team A's result, points, point
 margin (`score_difference`), kills, deaths and game length. The series folder
 holds `settings.json`, `results.csv` and `results.md`.
 
-**Hardware and cost.** One NVIDIA RTX 5090 and JAX 0.10.1. The BattleClient was
-open for 62 and 31 minutes for games 2 and 3 and for 7, 15 and 14 minutes for
-games 4 to 6, including setup; game 1's time was not recorded. Measuring the three against games with
+**Hardware and cost.** One NVIDIA RTX 5090 and JAX 0.10.1. Measuring the three against games with
 `marl_bgs.replay_metrics` on the CPU took 16 seconds, including loading, with a
 peak of 1.8 GB of RAM. Each replay takes 15 to 29 MB.
 
@@ -496,10 +507,31 @@ per game.
 
 The same rows are in [`results/human_games.csv`](results/human_games.csv).
 
+**Ratings.** After the series, the Expert Human rated each part. Workload uses
+the NASA Task Load Index (NASA-TLX; Hart and Staveland, 1988): six scales from
+0 to 100, where higher means more demanding and, for performance, 0 is perfect
+and 100 is failure. The raw score is the mean of the six: 22.5 for the games
+against recurrent IPPO and 57.5 for the games alongside it. For the alongside
+games they also rated their AI teammates from 1 (strongly disagree) to 7
+(strongly agree) on items adapted from Hoffman's fluency measures for
+human-robot teams (Hoffman, 2013 and 2019), plus three items on predictability
+and adaptation. Fluency, trust, being understood and predictability scored 1,
+the teammates' intelligence 4, and carrying the team 7. In their words,
+reworded: against recurrent IPPO, its agents could not anticipate or adapt to
+their advances and played poorly as a team once their formation broke, and the
+Expert Human made gos by first drawing out recurrent IPPO's Ultimates, then
+baiting one agent into attacking, collapsing on it, and using the numbers
+advantage to overrun the rest. Alongside it, the agents played all right as
+individuals but poorly as a unit, above all in how they moved, which often
+left the Mage stuck and unable to join the fight; the Expert Human played the
+Mage aggressively and away from the group, almost like a Rogue, to draw the
+team into fights, and the policy turned passive instead. Every item and answer
+is in [`results/human_games_ratings.csv`](results/human_games_ratings.csv).
+
 ### Analysis Of The Human Games
 
-**Question.** Where does the expert's play differ from the policy's, and how
-does a team of recurrent IPPO and the expert compare with recurrent IPPO alone?
+**Question.** Where does the Expert Human's play differ from the policy's, and how
+does a team of recurrent IPPO and the Expert Human compare with recurrent IPPO alone?
 
 **Method.** The `human_games_analysis` stage reads the series and the Season 0
 tournament's full-metrics replay (see `tournament_analysis`) with the public
@@ -514,9 +546,22 @@ same way in all three games; with three games, about one in four metrics
 that differ only by chance also pass this filter, so it is a screen, not a
 test. For the games beside recurrent IPPO, it compares each game with
 recurrent IPPO's own 20 games against PQN-VDN on the same map and spawn end.
-From the replays it times every Ultimate: the ticks since it was ready, the
-kills by its user's team in the next 10 ticks beside an average 10 ticks, and
-the ticks to the nearest teammate's Ultimate.
+Each measure also gets the person's lowest and highest game, the middle half
+(25th to 75th percentile) of all the reference games, and how many of them
+reach the person's level. From the replays it times every Ultimate: the ticks
+from the first tick it could be used again, the kills by its user's team in
+the next 10 ticks beside an average 10 ticks, and the ticks to the nearest
+teammate's Ultimate. To tell coordination from luck, it slides each agent's
+Ultimate times by a random number of ticks within its game, 2,000 times from
+seed 20261016 (`chance_shuffles`, `chance_seed`), and counts how often
+Ultimates still land within 4 ticks of a teammate's. Last, it puts the two
+teams of the against games side by side, choice by choice, against what the
+game allowed: the replay's action mask says on every tick which targets each
+agent could attack or heal and whether it could use its Ultimate (alive, not
+stunned, a target in range and in sight). A winning team can look better on
+any measure just for winning, so each of these measures is a test against
+luck, a comparison of a side with its own normal play, or a choice judged
+against what was possible at that moment.
 
 ```bash
 python -m marl_battlegrounds.experiments.human_games_analysis \
@@ -527,87 +572,102 @@ python -m marl_battlegrounds.experiments.human_games_analysis \
 
 It runs on the CPU in about 30 seconds, most of it loading the six replays.
 
-**Findings against recurrent IPPO** (per 100 ticks unless stated). Findings
-2 and 3 and the Burst damage in finding 1 hold against recurrent IPPO's
-lopsided wins too; the Ultimate timing in finding 1 comes from the replays of
-these three games.
+**Findings against recurrent IPPO, head to head** (`head_to_head.csv`: the
+two teams in the same three games; every finding points the same way in all
+three games).
 
-1. **The expert opens with Burst at contact and fires it with the Warrior's
-   Charge.** Both Mages use Burst soon after it is ready, but recurrent
-   IPPO's first Burst came 13 to 24 ticks before the first death of each
-   game and the expert's 4 to 7. The expert's Burst came within 4 ticks of
-   the Warrior's Ultimate (Charge) 15 of 15 times; recurrent IPPO's, 3 of 16.
-   29-45% of the expert's Mage damage came during Burst, against 16-18%
-   in recurrent IPPO's wins, and the expert's Bursts averaged 70-86 damage,
-   against 45-59 in its lopsided wins.
-2. **The expert's Priest heals slowed teammates.** Every Priest heal gives
-   its target Freedom, a short floor on its speed. Freedom held up a slowed
-   teammate's speed on 10-15% of the ticks it was active for the expert,
-   against 5-6% for recurrent IPPO.
-3. **The expert's Rogue takes the enemy's fire.** It took 456 damage per 100
-   ticks, against 272 for recurrent IPPO's Rogue in its lopsided wins, and 9
-   of the team's 13 deaths; the expert's Warrior took less in every game (323,
-   249 and 134, against 367, 589 and 520 on the same maps).
-4. **Differences that are mostly the size of the lead.** The expert's Priest
+1. **The Expert Human spends its Ultimates at the right moment.** Recurrent IPPO
+   used 51% of its Ultimates (34 of 67) on the first tick it could, the Expert Human
+   25% (16 of 63). Once it could, recurrent IPPO's Warrior charged after a
+   median of 0 ticks, the Expert Human's after 3.
+2. **The Expert Human's Bursts pay; recurrent IPPO's do not.** The Expert Human pressed
+   14 of its 15 Bursts with an enemy the Mage could attack, recurrent IPPO none
+   of its 16. In a Burst's window, the tick it is pressed and its boosted
+   ticks, the Expert Human's Mage dealt 2.9 times its own normal damage per tick,
+   recurrent IPPO's 0.8 times. The opening Bursts, at 0-0, dealt 76, 80 and
+   95 damage against 22, 0 and 0.
+3. **The Expert Human makes gos.** A go, in player-versus-player games such as
+   World of Warcraft, is a coordinated push in which a team spends its major
+   abilities together to force a kill. 56 of the Expert Human's 63 Ultimates (89%)
+   came within 4 ticks of a teammate's. Luck alone puts 60% together (95%
+   range 43-75%), and none of the 2,000 slides reached 89%; recurrent IPPO's
+   38 of 67 (57%) is what luck gives (61%; 77% of the slides reached it). The
+   expert's Mage pressed Burst within 4 ticks of the Warrior's Charge 15 of 15
+   times, recurrent IPPO's 3 of 16, and when one of the Expert Human's agents used its
+   Ultimate, 1.2 teammates on average could also have used theirs, against 0.6.
+4. **The Expert Human's Priest heals with care.** When it could heal a hurt teammate
+   (missing at least the 8 health one Basic heal restores), 94% of its Basic
+   heals went to one, against 81%. A teammate falling to 35% health or less
+   was healed within 2 ticks 74% of the time (32 of 43), against 49% (23 of
+   47), partly because the Expert Human's Priest could heal that teammate at once
+   more often (60% against 43%; the same in game 1).
+5. **Recurrent IPPO's targets.** When the Expert Human's Priest was one of the
+   enemies recurrent IPPO could attack, 5% of its attacks went to it, where an
+   even pick among those enemies gives 32%; it piled onto the Expert Human's Rogue,
+   88% against 37%. The Expert Human spread its attacks about as an even pick would
+   (40% and 41%, against 37% and 39%).
+
+**Against recurrent IPPO's own wins** (the screen, per 100 ticks unless
+stated; the reference is its wins on the same maps, and its 141 wins by 12
+points or more, with the middle half of those games in brackets).
+
+1. **More out of each Burst.** 29-45% of the Expert Human's Mage damage came during
+   Burst (13-21%; only 5 of the 141 wins reach 29%), and the Expert Human's Bursts
+   dealt 70-86 damage each (40-63).
+2. **Recurrent IPPO's fire went to the Expert Human's Rogue.** It took 456 damage
+   per 100 ticks, against 272 for recurrent IPPO's Rogue in its lopsided wins,
+   and 9 of the team's 13 deaths; the Expert Human's Warrior took less in every game
+   (323, 249 and 134, against 367, 589 and 520 on the same maps). Finding 5
+   above shows why: recurrent IPPO attacks the Rogue whenever it can.
+3. **Differences that are mostly the size of the lead.** The Expert Human's Priest
    took 42 damage per 100 ticks, against 141 in all of recurrent IPPO's wins
-   but 88 in its lopsided ones. 15 of the expert's kills, worth 30 of its 62
+   but 88 in its lopsided ones. 15 of the Expert Human's kills, worth 30 of its 62
    points, came inside recurrent IPPO's Red Zone; recurrent IPPO's own
    lopsided wins put more kills there on map 47 (6.4 per 100 ticks, against
-   the expert's 0.9) and fewer on maps 48 and 49 (0.6 and 1.0, against 2.5
-   and 5.7). Recurrent IPPO's Priest and Hunter were 40% of
-   the expert's kills, against 14% of recurrent IPPO's kills in its wins and
-   21% in its lopsided wins; which classes a team kills also depends on the
-   opponent, so this is not clear.
-5. **Similar, or better for the policy.** Kills per 100 ticks (7.6-9.9) were
-   close to recurrent IPPO's wins (8.6-9.3) and below its lopsided wins
-   (9.1-10.5). The expert dealt less damage per tick (1,282-1,796 against
-   1,774-2,124 in lopsided wins), used fewer Basic abilities, had fewer
-   ticks with two or more attackers, and wasted more Ultimate healing
-   (useful share 45-57%, against 60-71%).
+   the Expert Human's 0.9) and fewer on maps 48 and 49 (0.6 and 1.0, against 2.5
+   and 5.7).
+
+**How unusual the wins are.** In Season 0, recurrent IPPO played 960 games on
+maps 47 to 49 and won 606, drew 255 and lost 99, never by more than 14 points
+(`human_games_field_record.csv`). The Expert Human won by 17, 12 and 20.
 
 **Findings beside recurrent IPPO.**
 
-1. **No detectable difference from recurrent IPPO alone.** Margins were +17,
-   −5 and +7 (mean +6.3); recurrent IPPO alone averaged +19.4, −2.5 and +3.9
-   (mean +6.9) on the same maps and spawn ends in Season 0, a difference of
-   −0.6 points per game (95% interval −6.4 to +5.2, counting the spread of
-   both the three games and the Season 0 means).
-2. **The expert's Mage was at least as productive, in a different style.**
+1. **Within the range of recurrent IPPO alone.** Margins were +17, −5 and +7,
+   with 45 kills and 36 deaths in all. On the same map and spawn end,
+   recurrent IPPO's own 20 Season 0 games against PQN-VDN ranged from +17 to
+   +20, −13 to +6 and −10 to +18, so each margin lies within that range.
+2. **The Expert Human's Mage was at least as productive, in a different style.**
    Per 100 ticks over the three games, it helped make 4.86 kills against 4.62
    for recurrent IPPO's own Mage, dealt 718 damage against 683, and made 1.03
    kills alone against 0.47. It also died more (1.33 against 1.03), and its
    aura covered teammates less in all three games (39% against 52% of their
    ticks).
-3. **The team died more often and killed about as often.** It died 5.30
-   times per 100 ticks against 4.75 (more in games 4 and 5, the same in
-   game 6) and made 6.63 kills against 6.40 (more only in game 6).
-4. **Recurrent IPPO's Priest supported the stranger less.** Against PQN-VDN
-   on these maps, it gave the expert's Mage 0.56 points of useful healing per
-   point of damage taken, against 0.69 for its own Mage. Across all nine
-   opponents in the zero-shot coordination run, every learned stranger Mage
-   gets a similar cut (0.55 to 0.63, against 0.71).
-5. **Formation.** Over the three games, the expert's Mage stood farther from
+3. **Formation.** Over the three games, the Expert Human's Mage stood farther from
    the Hunter, Rogue and Priest (2.8, 3.6 and 2.8 map units, against 2.5, 3.0
    and 2.4 for recurrent IPPO's own Mage in Season 0) and as far from the
    Warrior (2.98 for both).
+4. **Ultimates came together only by luck.** With the Expert Human controlling only
+   the Mage, 56 of the mixed team's 86 Ultimates (65%) came within 4 ticks of
+   a teammate's, as luck alone gives (64%). The coordination in the games
+   against recurrent IPPO came with controlling all five agents.
 
 The full tables are in `results/human_games_against_screen.csv`,
 `human_games_against_screen_lead.csv`, `human_games_classes.csv`,
-`human_games_ultimates.csv`, `human_games_alongside.csv` and
-`human_games_alongside_screen.csv`.
+`human_games_ultimates.csv`, `human_games_ultimates_together.csv`,
+`human_games_head_to_head.csv`, `human_games_alongside.csv`,
+`human_games_alongside_screen.csv` and `human_games_field_record.csv`.
 
 **Limits.** The games are played by one expert, who designed the game, so they
 show what the policy does against and beside that player, not how people in
-general would do. Three games can show a large gap, not a small one. The game
+general would do. The game
 is turn-based with no time limit, so the person can think as long as they like
 before each move. In the games against the policy, one person plans all five
 agents, while the policy's five agents share one team view but each decides on
 its own. A person's moves cannot be repeated, so the saved replays are the
 record of the games. The analysis screens about 145 metrics in three games
-per kind: it describes these games and suggests where the policy falls short,
-but a single game can move a ratio a long way, and patterns need more games
-and more people before they are claims. The person is the developer, had
-played several games with and against this policy before the alongside games,
-and played them in a fixed order; they reported adapting to the policy's
-teammates, which the metrics cannot show. The policy is frozen, so it can
+per kind: it describes these games and shows where the policy falls short
+against this player. The person is the developer; they rated their own adaptation to the
+policy's agents 5 of 7 and the policy's adaptation to them 1 of 7 (see
+Ratings). The policy is frozen, so it can
 adapt only through its memory within a game.
