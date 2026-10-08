@@ -1314,18 +1314,18 @@ of classes.
 XLA_FLAGS=--xla_gpu_deterministic_ops=true XLA_PYTHON_CLIENT_PREALLOCATE=false \
   python -m marl_battlegrounds.experiments.tournament_analysis \
   tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
-  field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
+  field_file=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
   output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out
 ```
 
 To redo only the analysis from that saved replay, as for the results below
-(`field` is required but unused when `replay_dir` is given):
+(`field_file` is required but unused when `replay_dir` is given):
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false \
   python -m marl_battlegrounds.experiments.tournament_analysis \
   tournament_dir=artifacts/paper-experiments/hyperparameter-search/tournament-250m/runs/tournament_20261005_082220_ae54a3f293be \
-  field=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
+  field_file=artifacts/paper-experiments/hyperparameter-search/tournament-250m/field.json \
   replay_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/out/replay/tournament_20261007_095226_96f9aa8c5e85 \
   output_dir=artifacts/paper-experiments/tournament-analysis-season-0/full-metrics-timed/analysis-system-metrics
 ```

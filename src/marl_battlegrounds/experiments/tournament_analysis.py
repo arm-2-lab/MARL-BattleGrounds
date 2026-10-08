@@ -2,7 +2,7 @@
 
 Run with XLA_FLAGS=--xla_gpu_deterministic_ops=true python -m
 marl_battlegrounds.experiments.tournament_analysis tournament_dir=/path/saved-run
-field=/path/field.json output_dir=/path/out.
+field_file=/path/field.json output_dir=/path/out.
 
 A tournament saves priority metrics (results, points, kills and deaths) for
 every game, which is enough to rate the entrants but not to see how they play.
@@ -1261,7 +1261,7 @@ def main(config: DictConfig) -> dict[str, Any]:
     Parameters
     ----------
     config : omegaconf.DictConfig
-        ``tournament_dir`` (the exact saved tournament run); ``field`` (the
+        ``tournament_dir`` (the exact saved tournament run); ``field_file`` (the
         tournament declaration it was played from, given to
         ``marl_bgs.run_tournament`` as ``config``); ``names`` (display name
         for each entrant, keyed by the name the saved games record; entrants
@@ -1339,7 +1339,7 @@ def main(config: DictConfig) -> dict[str, Any]:
             )
         started = time.perf_counter()
         replay = marl_bgs.run_tournament(
-            config=path(settings["field"]),
+            config=path(settings["field_file"]),
             num_envs=settings["num_envs"],
             metrics="priority",
             full_metrics_episodes=sorted(int(game) for game in matches["episode_id"]),

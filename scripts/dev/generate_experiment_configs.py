@@ -733,7 +733,7 @@ def presets() -> dict[str, dict[str, Any]]:
     # leaves out.
     result["tournament_analysis.yaml"] = {
         "tournament_dir": "???",
-        "field": "???",
+        "field_file": "???",
         "names": dict(SEASON_0_RECORDED_NAMES),
         "scripted": ["TDM-Beta", "TDM-Gamma", "TDM-Alpha"],
         "num_envs": 128,

@@ -69,7 +69,7 @@ def test_settings_compose() -> None:
     ):
         config = compose(
             config_name="tournament_analysis",
-            overrides=["tournament_dir=t", "field=f", "output_dir=o"],
+            overrides=["tournament_dir=t", "field_file=f", "output_dir=o"],
         )
     assert len(config.names) == 9
     assert config.names["IPPO at step 250,675,200 (run)"] == "Recurrent IPPO"
@@ -487,7 +487,7 @@ def test_main_joins_saved_ratings_profiles_and_settings(
     config = OmegaConf.create(
         {
             "tournament_dir": str(tmp_path / "saved"),
-            "field": str(tmp_path / "field.json"),
+            "field_file": str(tmp_path / "field.json"),
             "names": {"x-run": "X"},
             "scripted": ["y"],
             "num_envs": 128,

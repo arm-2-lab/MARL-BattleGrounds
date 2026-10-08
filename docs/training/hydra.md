@@ -390,7 +390,7 @@ unit positions can differ in their last digits.
 ```bash
 XLA_FLAGS=--xla_gpu_deterministic_ops=true \
   python -m marl_battlegrounds.experiments.tournament_analysis \
-  tournament_dir=/runs/tournament/RUN field=/runs/field.json output_dir=/runs/teamwork
+  tournament_dir=/runs/tournament/RUN field_file=/runs/field.json output_dir=/runs/teamwork
 ```
 
 A tournament saves priority metrics (results, points, kills and deaths) for
