@@ -1,7 +1,8 @@
 """Check the zero_shot_coordination stage and its analysis on small stand-ins.
 
-Contracts: the packaged settings compose to recurrent IPPO hosting the other
-five learned Season 0 methods and Random, in all five classes, against the nine
+Contracts: the packaged settings compose, with no model folder, to the
+released recurrent IPPO hosting the other five learned Season 0 methods and
+Random, in all five classes, against the nine
 members on maps 47 to 51 with 200 full-metric games from seed 20261007, and the
 analysis to 2,000 draws from seed 20261007; folder_name keeps lowercase
 letters, digits and single hyphens; team_plan lists the host alone, then every
@@ -55,13 +56,14 @@ def test_settings_compose() -> None:
     ):
         run = compose(
             config_name="zero_shot_coordination",
-            overrides=["output_dir=o", "models_dir=m"],
+            overrides=["output_dir=o"],
         )
         study = compose(
             config_name="zero_shot_coordination_analysis",
             overrides=["zsc_dir=z", "output_dir=o"],
         )
     assert run.host == "Recurrent IPPO"
+    assert run.systems[0].method == "MARL-BattleGrounds/tdm-season-0-recurrent-ippo"
     assert list(run.newcomers)[-1] == "Random" and len(run.newcomers) == 6
     assert list(run.classes) == list(stage.CLASSES) and len(run.opponents) == 9
     assert (list(run.maps), run.num_episodes, run.seed) == (

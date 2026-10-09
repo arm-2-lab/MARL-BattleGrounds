@@ -3,7 +3,8 @@
 Contracts: the packaged settings compose to two parts, three games against
 recurrent IPPO (the Season 0 winner) on maps 47 to 49 from seed 20261007, then
 three games as the Mage beside recurrent IPPO against PQN-VDN on the same maps
-from seed 20261013, with models_dir filling the method paths; schedule()
+from seed 20261013, naming the released models by default and, with
+field=season_0_local, filling models_dir into the method paths; schedule()
 numbers games through the whole series, gives each part's game N the part's
 seed plus N - 1 and Team A on the left when N is odd, and refuses no parts, no
 maps, an unknown kind, an alongside part without partner or class, and a seed
@@ -54,7 +55,11 @@ def composed(*overrides: str) -> DictConfig:
 
 
 def test_settings_compose_the_two_parts() -> None:
-    config = composed("models_dir=/models", "output_dir=out")
+    released = composed("output_dir=out")
+    assert {entry.name: str(entry.method) for entry in released.systems}[
+        "Recurrent IPPO"
+    ] == "MARL-BattleGrounds/tdm-season-0-recurrent-ippo"
+    config = composed("field=season_0_local", "models_dir=/models", "output_dir=out")
     against, alongside = config.parts
     assert (against.kind, against.opponent, list(against.maps), against.seed) == (
         "against", "Recurrent IPPO", [47, 48, 49], 20261007,
@@ -219,7 +224,7 @@ def _record(game: Game) -> dict[str, Any]:
 
 def series(tmp_path: Path, *extra: str) -> DictConfig:
     return composed(
-        "models_dir=/models", f"output_dir={tmp_path}",
+        "field=season_0_local", "models_dir=/models", f"output_dir={tmp_path}",
         "parts.0.maps=[47]", "parts.0.seed=11", "parts.1.maps=[48,49]",
         "parts.1.seed=30", *extra,
     )  # fmt: skip
