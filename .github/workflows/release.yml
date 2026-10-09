@@ -3,7 +3,13 @@
 # them, write one constraints file per GPU choice from uv.lock, install the
 # wheel in clean environments on Linux and macOS and run the quick start, then
 # upload to PyPI by Trusted Publishing and attach the files to the Release.
-# A manual start is a dry run: everything except the upload and the attach.
+# The install-route jobs check the one-command install (start.sh) on Linux and
+# macOS, and build, check and push the two Docker images to GHCR:
+# ghcr.io/oceansystemslab/marl-battlegrounds:<version> (CPU, amd64 and arm64)
+# and :<version>-cuda12 (NVIDIA, amd64). Their builds download the six Season 0
+# models, so the Hugging Face repositories must be public first.
+# A manual start is a dry run: everything except the upload, the attach and the
+# image push.
 # The tag must equal "v" plus the version in pyproject.toml.
 name: Release
 
@@ -204,3 +210,137 @@ jobs:
         run: >-
           gh release upload "${TAG}" dist/* constraints/*.txt
           --clobber --repo "${GITHUB_REPOSITORY}"
+
+  start-script:
+    name: One-command install (${{ matrix.os }})
+    needs: [smoke-test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install with start.sh, as a user would
+        run: sh start.sh --help
+
+      - name: Run one evaluation in the installed folder
+        env:
+          JAX_PLATFORMS: cpu
+        run: |
+          # start.sh installs uv into ~/.local/bin when the runner has none.
+          export PATH="${HOME}/.local/bin:${PATH}"
+          uv run --no-sync python -m marl_battlegrounds evaluate \
+            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --output-dir start-script-evaluation
+
+  docker-cpu:
+    name: Docker image (CPU, amd64 and arm64)
+    needs: [smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/oceansystemslab/marl-battlegrounds
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Read the version from the tag
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: echo "VERSION=${TAG#v}" >> "${GITHUB_ENV}"
+
+      - name: Set up a builder for amd64 and arm64
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
+          docker buildx create --use --name multi-arch
+
+      - name: Build for amd64 and check it as a user runs it
+        run: |
+          docker buildx build -f docker/Dockerfile --platform linux/amd64 --load -t local/cpu .
+          mkdir -p "${RUNNER_TEMP}/work"
+          # The default command: the BattleClient against the baked-in Season 0 model.
+          docker run -d --name play -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 \
+            -v "${RUNNER_TEMP}/work:/work" local/cpu
+          until docker logs play 2>&1 | grep -q '#token='; do
+            docker ps -q -f name=play | grep -q . || { docker logs play; exit 1; }
+            sleep 2
+          done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost:8765' http://127.0.0.1:8765/)" = 403
+          docker stop play
+          # Offline, as the owner of the mounted folder: the models are in the image.
+          docker run --rm -e HF_HUB_OFFLINE=1 -v "${RUNNER_TEMP}/work:/work" local/cpu evaluate \
+            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --output-dir runs/check
+
+      - name: Build for arm64 and check it under emulation
+        run: |
+          docker buildx build -f docker/Dockerfile --platform linux/arm64 --load -t local/cpu-arm64 .
+          docker run --rm --platform linux/arm64 -e HF_HUB_OFFLINE=1 local/cpu-arm64 evaluate \
+            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --output-dir /tmp/check
+
+      - name: Push amd64 and arm64 to GHCR
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 --push \
+            --label org.opencontainers.image.source=https://github.com/oceansystemslab/MARL-BattleGrounds \
+            --label "org.opencontainers.image.description=MARL-BattleGrounds ${VERSION}, CPU" \
+            --label org.opencontainers.image.licenses=Apache-2.0 \
+            -t "${IMAGE}:${VERSION}" .
+
+  docker-cuda12:
+    name: Docker image (NVIDIA CUDA 12, amd64)
+    needs: [smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/oceansystemslab/marl-battlegrounds
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Read the version from the tag
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: echo "VERSION=${TAG#v}-cuda12" >> "${GITHUB_ENV}"
+
+      # The CUDA 12 image is about 10 GB; remove large preinstalled tools first.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h /
+
+      - name: Build and play two games with a built-in model on the CPU
+        run: |
+          docker build -f docker/Dockerfile --build-arg BUILD=cuda12 \
+            --label org.opencontainers.image.source=https://github.com/oceansystemslab/MARL-BattleGrounds \
+            --label "org.opencontainers.image.description=MARL-BattleGrounds ${VERSION}, NVIDIA CUDA 12" \
+            --label org.opencontainers.image.licenses=Apache-2.0 \
+            -t "${IMAGE}:${VERSION}" .
+          mkdir -p "${RUNNER_TEMP}/work"
+          docker run --rm -e HF_HUB_OFFLINE=1 -v "${RUNNER_TEMP}/work:/work" "${IMAGE}:${VERSION}" evaluate \
+            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --output-dir runs/check
+
+      - name: Push to GHCR
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker push "${IMAGE}:${VERSION}"

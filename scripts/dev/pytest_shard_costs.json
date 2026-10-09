@@ -167,6 +167,7 @@
     "tests/core/test_out_of_combat_regeneration.py": 193,
     "tests/cli/test_package_asset_commands.py": 1,
     "tests/cli/test_package_commands.py": 43,
+    "tests/cli/test_install_start_script.py": 1,
     "tests/viewer/test_package_viewer.py": 1,
     "tests/evaluation/test_point_margin_summary.py": 1,
     "tests/policies/test_policy_actor_adapter.py": 17,
