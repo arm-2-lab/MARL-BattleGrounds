@@ -1,7 +1,7 @@
 {
   "schema": "marl-bgs-pytest-shard-costs@1",
   "measured_on": "2026-10-08",
-  "measured_with": "Complete passing set of nineteen Python shard reports from artifacts/gates/2026-10-08-integration-run-1. Per-test JUnit time includes setup and teardown, summed per file and rounded up to whole seconds. Report origins, tested source and run conditions are recorded in timing_sources.md beside those reports. measured_commit is HEAD at refresh; it does not prove that clean HEAD was tested or qualify a candidate. On 9 October 2026 the keys were renamed when the test files moved into folders; the values did not change. tests/battle_client/test_battle_client_replay_port.py is a hand estimate: twice its single-file time.",
+  "measured_with": "Complete passing set of nineteen Python shard reports from artifacts/gates/2026-10-08-integration-run-1. Per-test JUnit time includes setup and teardown, summed per file and rounded up to whole seconds. Report origins, tested source and run conditions are recorded in timing_sources.md beside those reports. measured_commit is HEAD at refresh; it does not prove that clean HEAD was tested or qualify a candidate. On 9 October 2026 the keys were renamed when the test files moved into folders; the values did not change. tests/battle_client/test_battle_client_replay_port.py is a hand estimate: twice its single-file time. tests/evaluation/test_portable_models.py is a hand estimate: twice its unloaded single-file time.",
   "reserved_seconds": {
     "19": [
       0,
@@ -364,7 +364,8 @@
     "tests/visual_debugger/test_visual_debugger_static_renderer.py": 25,
     "tests/test_visual_debugger_systems.py": 17,
     "tests/visual_debugger/test_visual_debugger_targeting.py": 8,
-    "tests/battle_client/test_battle_client_replay_port.py": 15
+    "tests/battle_client/test_battle_client_replay_port.py": 15,
+    "tests/evaluation/test_portable_models.py": 180
   },
   "split_families": {
     "tests/training/test_training_continuation.py::test_full_parent_child_resume_and_second_extension": 1444,

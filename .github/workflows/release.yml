@@ -1,0 +1,206 @@
+# Build, check, install-test and publish a release of marl-battlegrounds.
+# Publishing a GitHub Release runs every job: build the wheel and sdist, check
+# them, write one constraints file per GPU choice from uv.lock, install the
+# wheel in clean environments on Linux and macOS and run the quick start, then
+# upload to PyPI by Trusted Publishing and attach the files to the Release.
+# A manual start is a dry run: everything except the upload and the attach.
+# The tag must equal "v" plus the version in pyproject.toml.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check the package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.16"
+
+      - name: Check the tag matches the package version
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [[ "${TAG}" != "v${version}" ]]; then
+            echo "Tag ${TAG} does not match package version ${version}."
+            exit 1
+          fi
+
+      - name: Build the wheel and sdist
+        run: uv build --out-dir dist
+
+      - name: Check the package metadata
+        run: uvx twine check --strict dist/*
+
+      - name: Check the wheel holds the browser files
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+          import zipfile
+
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          needed = (
+              "marl_battlegrounds/viewer/web/index.html",
+              "marl_battlegrounds/viewer/web/styles.css",
+          )
+          missing = [name for name in needed if name not in names]
+          if missing or not any(n.startswith("marl_battlegrounds/viewer/web/src/") for n in names):
+              sys.exit(f"wheel is missing browser files: {missing}")
+          PY
+
+      - name: Keep the package files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  constraints:
+    name: Write the constraints files
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.16"
+
+      - name: Export one constraints file per GPU choice
+        run: |
+          mkdir constraints
+          for choice in cpu cuda13 cuda12 rocm tpu; do
+            extra=()
+            if [[ "${choice}" != "cpu" ]]; then extra=(--extra "${choice}"); fi
+            uv export --frozen --no-hashes --no-annotate --no-emit-project \
+              --no-default-groups --format requirements-txt \
+              --extra all "${extra[@]}" --output-file "constraints/constraints-${choice}.txt"
+          done
+          if grep -qiE '^(nvidia-|jax-cuda|jax-rocm|libtpu)' constraints/constraints-cpu.txt; then
+            echo "The CPU constraints file names a GPU package."
+            exit 1
+          fi
+
+      - name: Keep the constraints files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: constraints
+          path: constraints/
+          if-no-files-found: error
+
+  smoke-test:
+    name: Install test (${{ matrix.os }})
+    needs: [build, constraints]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.16"
+
+      - name: Fetch the package files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Fetch the constraints files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: constraints
+          path: constraints
+
+      - name: Install the wheel with the CPU constraints
+        run: |
+          uv venv --python 3.14 "${RUNNER_TEMP}/release-env"
+          wheel="$(ls dist/*.whl)"
+          uv pip install --python "${RUNNER_TEMP}/release-env/bin/python" \
+            --constraint constraints/constraints-cpu.txt "${wheel}[all]"
+
+      - name: Run the quick start and one evaluation
+        working-directory: ${{ runner.temp }}
+        env:
+          JAX_PLATFORMS: cpu
+        run: |
+          python="${RUNNER_TEMP}/release-env/bin/python"
+          "${python}" - <<'PY'
+          import jax
+          import marl_battlegrounds as marl_bgs
+
+          env = marl_bgs.make("tdm", map_id=0, num_envs=2)
+          observation, state = env.reset(jax.random.key(0))
+          actions = env.sample_actions(jax.random.key(1), state)
+          observation, state, reward, done, info = env.step(jax.random.key(2), state, actions)
+          print("quick start ok")
+          PY
+          "${python}" -m marl_battlegrounds evaluate --system random --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --output-dir release-evaluation
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'release'
+    needs: [build, constraints, smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Fetch the package files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+
+  attach-files:
+    name: Attach the files to the Release
+    if: github.event_name == 'release'
+    needs: [publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Fetch the package files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Fetch the constraints files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: constraints
+          path: constraints
+
+      - name: Upload the files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: >-
+          gh release upload "${TAG}" dist/* constraints/*.txt
+          --clobber --repo "${GITHUB_REPOSITORY}"

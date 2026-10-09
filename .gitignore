@@ -71,8 +71,6 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local Codex milestone planning docs
-docs/dev/milestone*.md
 
 # Offline, source-verified baseline numerical reference.
 !tests/fixtures/baseline_donor/recurrent_mappo.npz
@@ -83,3 +81,6 @@ docs/dev/milestone*.md
 
 # Private local authoring product; public clients have no dependency on it.
 /.local/dev_client/
+
+# Replays saved by start.sh and play.py
+recordings/

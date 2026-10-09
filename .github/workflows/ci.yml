@@ -1,16 +1,33 @@
 # Run the full contributor correctness inventory on hosted CPU runners.
 # The Python shard plugin and browser profile manifest own test membership.
 # Keep nineteen Python shards, one browser profile and stable aggregate names.
-# Local GPU qualification is separate; see docs/dev/quality_gates.md.
+# Local GPU qualification is separate; see CONTRIBUTING.md.
 # Runs on pull requests and on pushes to main. A feature branch is tested only
 # through its pull request, so one push starts one run, not two. The summary
 # jobs report after a failure but not after a cancel (!cancelled()).
+# A manual start also runs the Python 3.12 and 3.13 suites and the wheel check
+# on Linux and macOS; the weekly run does the same once the repository is
+# public. The wheel check builds the package, installs it in a clean
+# environment and runs the quick start, one saved evaluation and the Replay
+# Viewer. On pushes to main it runs on Linux when packaging or source files
+# change. macOS jobs cost about ten times as much, so they run only by hand.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      released_model:
+        description: "Optional released model name to evaluate in the wheel check"
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
@@ -19,6 +36,7 @@ concurrency:
 jobs:
   python-test-gates:
     name: Python tests (${{ matrix.shard }}/19)
+    if: github.event_name != 'schedule' || !github.event.repository.private
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -28,7 +46,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
@@ -63,7 +81,7 @@ jobs:
 
   quality-gates:
     name: Quality gates
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || !github.event.repository.private) }}
     needs:
       - python-test-gates
     runs-on: ubuntu-latest
@@ -78,8 +96,137 @@ jobs:
             exit 1
           fi
 
+  older-python-suites:
+    name: Python ${{ matrix.python }} tests (${{ matrix.shard }}/19)
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'schedule' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.16"
+          enable-cache: true
+
+      - name: Install Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+
+      - name: Sync environment
+        run: >-
+          uv sync --locked --python ${{ matrix.python }}
+          --extra dev --extra viz --extra training --extra notebook
+
+      - name: Run Python test shard
+        run: >-
+          uv run --no-sync pytest
+          -p scripts.dev.pytest_shard
+          --ci-shard=${{ matrix.shard }}/19
+
+  wheel-changes:
+    name: Wheel check needed
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.paths.outputs.run }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Look for packaging or source changes
+        id: paths
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if git diff --name-only "${BEFORE}" "${AFTER}" 2>/dev/null \
+            | grep -qE '^(src/|web/visual_debugger/(index.html|styles.css|src/|assets/)|pyproject.toml|uv.lock|LICENSE|README.md)'; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+  wheel-check:
+    name: Wheel check (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: wheel-changes
+    if: >-
+      !cancelled() && (
+      (github.event_name == 'push' && needs.wheel-changes.outputs.run == 'true')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'schedule' && !github.event.repository.private))
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
+        python: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.16"
+
+      - name: Build the wheel and sdist
+        run: uv build --out-dir dist
+
+      - name: Install the wheel in a clean environment
+        run: |
+          uv venv --python ${{ matrix.python }} "${RUNNER_TEMP}/wheel-env"
+          uv pip install --python "${RUNNER_TEMP}/wheel-env/bin/python" dist/*.whl
+
+      - name: Run the quick start, a saved evaluation and the Replay Viewer
+        working-directory: ${{ runner.temp }}
+        env:
+          JAX_PLATFORMS: cpu
+          RELEASED_MODEL: ${{ github.event.inputs.released_model }}
+        run: |
+          python="${RUNNER_TEMP}/wheel-env/bin/python"
+          "${python}" - <<'PY'
+          import jax
+          import marl_battlegrounds as marl_bgs
+
+          env = marl_bgs.make("tdm", map_id=0, num_envs=2)
+          observation, state = env.reset(jax.random.key(0))
+          actions = env.sample_actions(jax.random.key(1), state)
+          observation, state, reward, done, info = env.step(jax.random.key(2), state, actions)
+          print("quick start ok")
+          PY
+          "${python}" -m marl_battlegrounds evaluate --system random --opponent tdm-alpha \
+            --episodes 2 --maps 47 --num-envs 2 --save-replays 1 --output-dir saved-evaluation
+          if [[ -n "${RELEASED_MODEL}" ]]; then
+            "${python}" -m marl_battlegrounds evaluate --system "${RELEASED_MODEL}" \
+              --opponent tdm-alpha --episodes 2 --maps 47 --num-envs 2
+          fi
+          replay="$(find saved-evaluation -name '*.marlbg-replay.json' | head -n 1)"
+          test -n "${replay}"
+          "${python}" -m marl_battlegrounds replay "${replay}" --no-open --port 8771 > viewer.log 2>&1 &
+          viewer=$!
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8771/ > page.html 2>/dev/null; then break; fi
+            sleep 1
+          done
+          kill "${viewer}"
+          grep -qi "<html" page.html
+
   frontend-browser-gates:
     name: Browser gates (${{ matrix.shard }}/1)
+    if: github.event_name != 'schedule' || !github.event.repository.private
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: true
@@ -89,7 +236,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
@@ -104,7 +251,7 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
           cache: npm
@@ -130,7 +277,7 @@ jobs:
 
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: visual-debugger-browser-failures-${{ matrix.shard }}-of-1
           path: web/visual_debugger/test-results
@@ -139,7 +286,7 @@ jobs:
 
   frontend-gates:
     name: Frontend and browser gates
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || !github.event.repository.private) }}
     needs:
       - frontend-browser-gates
     runs-on: ubuntu-24.04

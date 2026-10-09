@@ -4,13 +4,33 @@
 # learner or every adapter. CONTRIBUTING.md explains the dependency rules.
 [project]
 name = "marl-battlegrounds"
-version = "0.0.0"
-description = "A JAX-native environment suite and benchmark for heterogeneous adversarial multi-agent reinforcement learning."
+version = "1.0.0"
+description = "The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning."
 readme = "README.md"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [
-  { name = "Ulixes Tariq Hawili" }
+  { name = "Ulixes Tariq Hawili", email = "t.hawili@sms.ed.ac.uk" }
+]
+keywords = [
+  "multi-agent reinforcement learning",
+  "reinforcement learning",
+  "JAX",
+  "benchmark",
+  "heterogeneous agents",
+  "competitive games",
+  "team deathmatch",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
 ]
 dependencies = [
   "jax==0.10.1",
@@ -22,9 +42,25 @@ dependencies = [
   "flatbuffers>=24",
 ]
 
+[project.urls]
+Homepage = "https://marl-battlegrounds.com"
+Documentation = "https://marl-battlegrounds.com/#guides"
+Repository = "https://github.com/oceansystemslab/MARL-BattleGrounds"
+Issues = "https://github.com/oceansystemslab/MARL-BattleGrounds/issues"
+Changelog = "https://github.com/oceansystemslab/MARL-BattleGrounds/releases"
+
 [project.optional-dependencies]
 cuda13 = [
   "jax[cuda13]==0.10.1",
+]
+cuda12 = ["jax[cuda12]==0.10.1"]
+rocm = [
+  "jax[rocm7-local]==0.10.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "jax-rocm7-plugin==0.10.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+tpu = ["jax[tpu]==0.10.1; sys_platform == 'linux' and platform_machine == 'x86_64'"]
+all = [
+  "marl-battlegrounds[training,hydra,notebook,viz]",
 ]
 
 training = [
@@ -48,11 +84,6 @@ notebook = [
 
 wandb = [
   "wandb",
-]
-
-interop = [
-  "gymnasium",
-  "pettingzoo",
 ]
 
 viz = [
@@ -96,7 +127,11 @@ include = [
   "/web/visual_debugger/assets",
 ]
 
+[dependency-groups]
+jupyter = ["jupyterlab"]
+
 [tool.uv]
+conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }, { extra = "rocm" }, { extra = "tpu" }]]
 # Minimum safe versions of indirect dependencies with known vulnerabilities.
 constraint-dependencies = [
   "fsspec>=2026.6.0",
@@ -140,6 +175,7 @@ include = [
   "scripts/dev/benchmark_training_distributions.py",
   "scripts/dev/visual_debugger",
   "scripts/dev/replay_viewer.py",
+  "play.py",
 ]
 exclude = [
   "**/__pycache__",
