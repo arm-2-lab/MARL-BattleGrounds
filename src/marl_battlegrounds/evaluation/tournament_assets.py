@@ -1,9 +1,13 @@
 """Prepare immutable tournament assets and load only the active competitors.
 
 Configuration and result code use AssetVerifier for bounded, offline integrity
-checks. prepare_tournament_assets is the explicit download route; runners never
-download. Controller factories run only inside the loading helpers. Importing
-this module does not import JAX, providers, model code or the simulator.
+checks. prepare_tournament_assets is the explicit download route for declared
+assets; runners never fetch an asset URL. A version-2 reference to a released
+model (an ``hf://`` address) is fetched into Hugging Face's standard cache by
+load_method when its controller loads, before the first game, unless it is
+already cached. Controller factories run only inside the loading helpers.
+Importing this module does not import JAX, providers, model code or the
+simulator.
 """
 
 from __future__ import annotations
@@ -1200,12 +1204,14 @@ def load_tournament_controller(
     """Load and freeze one declared competitor, then verify its actual evidence.
 
     Builtins use the existing registry. Factories take no arguments. Version-2
-    references use the shared built-in/factory/actor-folder loader. Bundle
+    references use the shared built-in/factory/actor-folder/model loader. Bundle
     loaders receive a read-only asset-ID-to-path mapping. Factories are trusted
     installed code and may have their own effects; exceptions propagate without
     retries. Construction stays on the calling thread. Researchers own provider
-    processes and memory. This function never chooses an action or downloads a
-    missing model.
+    processes and memory. This function never chooses an action. It downloads
+    nothing except a version-2 reference to a released model (an ``hf://``
+    address), which load_method fetches into Hugging Face's standard cache when
+    it is not cached yet.
     """
     from marl_battlegrounds.evaluation.system_evaluation import freeze_evaluation_method
 

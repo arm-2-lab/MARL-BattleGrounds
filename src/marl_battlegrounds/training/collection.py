@@ -1598,6 +1598,30 @@ def _check_opponent_rosters(system: System, schedule: TrainingSchedule) -> None:
             )
 
 
+def _export_path(reference: str | None) -> Path | None:
+    """Return the local saved actor behind a reference, for exposure evidence.
+
+    A local actor folder or portable model file returns its path. A released
+    model (typed name, ``hf://`` address or released-layout folder) returns its
+    checked local file, downloading it into Hugging Face's standard cache only
+    when missing; the caller has normally just loaded it, so it is cached.
+    Built-ins, factories, live methods (None) and unknown names return None.
+    Raises ValueError when a released file cannot be found or checked.
+    """
+    if reference is None:
+        return None
+    kind = _reference_kind(reference)
+    if kind == "artifact":
+        return Path(reference)
+    if kind == "released":
+        from marl_battlegrounds.released_models import (
+            _fetch,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        return _fetch(reference).path
+    return None
+
+
 def _prepare_opponent_member(
     name: str,
     value: System | Policy | str,
@@ -1634,11 +1658,7 @@ def _prepare_opponent_member(
         if system.execution == "jax"
         else None,
     }
-    export = (
-        Path(reference)
-        if reference is not None and _reference_kind(reference) == "artifact"
-        else None
-    )
+    export = _export_path(reference)
     if reference is not None:
         record["input_identity"] = _reference_identity(reference)
     record["evidence"] = pinned_opponent_evidence(binding, method, export=export)
@@ -1719,7 +1739,8 @@ def init_training_collection(
         method plays every permanent-pin lane (assignment -2): a System or Policy
         object, or a reference
         string resolved by ``load_method`` (a built-in name, an absolute
-        actor-export or full learner checkpoint directory, or ``module:function``).
+        actor-export or full learner checkpoint directory or portable model
+        file, a released model's exact ``hf://`` address, or ``module:function``).
         Requires a positive
         pinned_opponent_share. It is frozen once with evaluation's
         ``freeze_evaluation_method`` and registered the way evaluation and
@@ -1985,11 +2006,7 @@ def init_training_collection(
                 1
             ]
         )
-        export = (
-            Path(reference)
-            if reference is not None and _reference_kind(reference) == "artifact"
-            else None
-        )
+        export = _export_path(reference)
         if system.execution == "host":
             host = HostOpponent(system, schedule.num_envs, external_selection=generic)
             pinned_system = HOST_ACTIONS_SYSTEM
@@ -2964,7 +2981,8 @@ def _bind_opponent_references(  # pyright: ignore[reportUnusedFunction]
     references must come from the runner's trusted loader results for this same
     collection. It preserves source paths lost when resolved Systems are passed
     into setup. Recompute exposure evidence with the frozen member and original
-    export path. This changes no registration, weights, memory or execution.
+    export path (a released member's checked local file). This changes no
+    registration, weights, memory or execution.
     Unknown names or invalid reference strings raise before returning a change.
     """
     if set(references) - set(collection.opponent_names):
@@ -2979,7 +2997,7 @@ def _bind_opponent_references(  # pyright: ignore[reportUnusedFunction]
             continue
         if not isinstance(cast(object, reference), str) or not reference.strip():
             raise ValueError("Opponent references must be nonempty strings")
-        export = Path(reference) if _reference_kind(reference) == "artifact" else None
+        export = _export_path(reference)
         records.append(
             {
                 **record,

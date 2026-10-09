@@ -760,7 +760,10 @@ def _export_origin(
     binding : TrainingContentBinding
         Today's verified training content.
     export : Path
-        Actor export or complete checkpoint, already checked by load_system.
+        Actor export or complete checkpoint, already checked by load_system,
+        or a portable model file, already checked by its loader. A portable
+        file's embedded original ``actor_details.json`` is read; it carries
+        no sibling learner, so only a capture export inside it can verify.
 
     Returns
     -------
@@ -776,7 +779,8 @@ def _export_origin(
     -----
     Capture-only exports carry their content binding and inherited exposure;
     they need no sibling learner checkpoint. Other actor exports read their
-    sibling learner description in the saved checkpoint directory without payloads.
+    sibling learner description in the saved checkpoint directory without
+    payloads; a portable model file other than a capture gives ("declared", None).
     Each description's
     own hash is verified. Writes nothing. The learner's saved binding may be
     any version (1, 2 or 3): it is only read as a record, never rebuilt. A
@@ -786,7 +790,12 @@ def _export_origin(
     """
     from marl_battlegrounds.training import checkpoints
 
-    details = checkpoints.read_checkpoint_description(export)
+    if export.is_file():
+        from marl_battlegrounds.portable_models import read_portable_model
+
+        details = read_portable_model(export).actor_details
+    else:
+        details = checkpoints.read_checkpoint_description(export)
     full_checkpoint = details["kind"] == "learner"
     metadata = cast(dict[str, object], details.get("metadata", {}))
     capture = metadata.get("capture_origin")
@@ -805,7 +814,7 @@ def _export_origin(
         status = "verified capture"
     else:
         identifier = metadata.get("checkpoint_id")
-        if not isinstance(identifier, str):
+        if not isinstance(identifier, str) or export.is_file():
             return "declared", None
         try:
             from marl_battlegrounds.training._checkpoint_metadata import (

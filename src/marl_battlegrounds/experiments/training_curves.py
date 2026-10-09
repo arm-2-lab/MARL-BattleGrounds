@@ -5,7 +5,12 @@ Use python -m marl_battlegrounds.experiments.training_curves
 output_dir=/path/curves for the Season 0 baselines, or give your own
 'lineages=[{name: Mine, runs: [/path/run]}]'. A lineage is one training
 history: a run, then any runs that continued it, in training order (for
-example a 40M run and its continuation to 250M). The stage reads every routine
+example a 40M run and its continuation to 250M). A lineage may name a released
+model repo instead of runs, '{name: QMIX, repo:
+MARL-BattleGrounds/tdm-season-0-qmix}': the stage then downloads only that
+repo's small training records (run details, status and validation results,
+not the update logs) into the Hugging Face cache and reads them in training
+order. The stage reads every routine
 validation check of every run through marl_battlegrounds.training.list_runs
 with progress=True and writes curves.csv, crossings.csv (the first check with
 a point margin above zero and the first that won half its games), curves.png
@@ -268,6 +273,34 @@ def first_crossings(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _released_runs(repo: str) -> list[str]:
+    """Fetch a released repo's training records and order them by training.
+
+    repo is a released model repo id such as
+    ``"MARL-BattleGrounds/tdm-season-0-qmix"``. Only the small record files
+    are downloaded into the Hugging Face cache (released_models owns this).
+    Returns the record folders, ordered by their first routine validation
+    step, so a run and its continuation read in training order. Raises
+    ValueError when the records cannot be fetched or a folder has no checks.
+    """
+    from marl_battlegrounds import training
+    from marl_battlegrounds.released_models import (
+        _training_records,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    _, folders = _training_records(repo)
+
+    def first_step(folder: Path) -> int:
+        """Return the step of the folder's first routine validation check."""
+        for row in training.list_runs(folder, progress=True):
+            checks = row.get("progress", {}).get("checks", [])  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType,reportUnknownVariableType] - list_runs documents this mapping.
+            if checks:
+                return min(int(check["env_steps"]) for check in checks)  # pyright: ignore[reportUnknownVariableType,reportUnknownArgumentType]
+        raise ValueError(f"{folder} holds no routine validation checks")
+
+    return [str(folder) for folder in sorted(folders, key=first_step)]
+
+
 @hydra.main(version_base="1.3", config_path="configs", config_name="training_curves")
 def main(config: DictConfig) -> dict[str, int]:
     """Read every lineage's validation checks and write the curve files.
@@ -275,11 +308,16 @@ def main(config: DictConfig) -> dict[str, int]:
     Parameters
     ----------
     config : omegaconf.DictConfig
-        ``lineages`` (a list of ``{name, runs}``; ``+training_runs=season_0``
-        fills the six Season 0 baselines and needs ``runs_dir``, the
-        hyperparameter-search root), ``opponents`` (validation opponent names
-        to keep, or null for all; see ``read_lineage``) and ``output_dir``.
-        Relative paths use the folder the command was started from.
+        ``lineages`` (a list of ``{name, runs}`` or ``{name, repo}``;
+        ``+training_runs=season_0`` fills the six Season 0 baselines and needs
+        ``runs_dir``, the hyperparameter-search root), ``opponents``
+        (validation opponent names to keep, or null for all; see
+        ``read_lineage``) and ``output_dir``. Relative paths use the folder
+        the command was started from. ``repo`` names a released model repo,
+        such as ``MARL-BattleGrounds/tdm-season-0-qmix``; its training records
+        are downloaded at the repo's pinned commit (or its latest commit, with
+        a warning), and its runs are read in the order of their first
+        validation check.
 
     Returns
     -------
@@ -289,8 +327,9 @@ def main(config: DictConfig) -> dict[str, int]:
     Raises
     ------
     ValueError
-        No lineage is given, the runs hold no routine checks, or
-        ``read_lineage`` rejects a run folder or an opponent name.
+        No lineage is given, a lineage gives both or neither of runs and repo,
+        a released repo's records cannot be fetched, the runs hold no routine
+        checks, or ``read_lineage`` rejects a run folder or an opponent name.
     """
     settings: dict[str, Any] = OmegaConf.to_container(config, resolve=True)  # pyright: ignore[reportAssignmentType] - the root is a mapping.
     if not settings["lineages"]:
@@ -298,9 +337,15 @@ def main(config: DictConfig) -> dict[str, int]:
     output = Path(to_absolute_path(str(Path(settings["output_dir"]).expanduser())))
     rows: list[dict[str, Any]] = []
     for lineage in settings["lineages"]:
-        runs = [
-            to_absolute_path(str(Path(run).expanduser())) for run in lineage["runs"]
-        ]
+        if ("runs" in lineage) == ("repo" in lineage):
+            raise ValueError(f"lineage {lineage['name']!r} needs runs or repo")
+        runs = (
+            _released_runs(lineage["repo"])
+            if "repo" in lineage
+            else [
+                to_absolute_path(str(Path(run).expanduser())) for run in lineage["runs"]
+            ]
+        )
         rows += read_lineage(lineage["name"], runs, settings.get("opponents"))
     if not rows:
         raise ValueError("the runs hold no routine validation checks")

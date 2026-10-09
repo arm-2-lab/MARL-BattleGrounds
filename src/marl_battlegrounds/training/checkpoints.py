@@ -17,6 +17,10 @@ Artifacts saved before Red Zone use actor input schema 1 (5,164 features).
 load_system still loads them, through the schema-1 System hooks, so they play
 exactly as before and keep their identities. They cannot be exported again,
 and their learner checkpoints cannot resume training in this version.
+
+load_initial_actor also starts a new run from a portable model file or a
+released model: the file's weights rebuild the same System load_system gives
+for the original actor folder.
 """
 
 from __future__ import annotations
@@ -2237,6 +2241,18 @@ def load_system(checkpoint: str | Path) -> System:
     """
     root = _directory(Path(checkpoint))
     details = read_checkpoint_details(root)
+    template = _checked_actor_template(details)
+    return _actor_system(details, _restore_arrays(root / "actor", template, None))
+
+
+def _checked_actor_template(details: dict[str, Any]) -> Tree:
+    """Build the installed actor template that a saved description needs.
+
+    details is a checked actor or learner description. Its method, actor input
+    schema, parameter sharing and normalization choose the template; its saved
+    actor_layout must equal the template's layout. Returns the template tree
+    (shapes and dtypes only). Raises ValueError when the layouts differ.
+    """
     method = _schema_method(details["schemas"])
     schema = cast(int, details["schemas"]["actor_input"])
     sharing = _actor_parameter_sharing(details)
@@ -2244,7 +2260,41 @@ def load_system(checkpoint: str | Path) -> System:
     template = _actor_template(method, schema, sharing, normalization)
     if details["actor_layout"] != _layout(template):
         raise ValueError("Actor artifact schema differs from the installed model")
-    actor = _restore_arrays(root / "actor", template, None)
+    return template
+
+
+def _actor_system(details: dict[str, Any], actor: Tree) -> System:
+    """Check restored actor variables and build the System load_system returns.
+
+    Parameters
+    ----------
+    details : dict
+        The actor's checked description (an actor export's or learner's).
+    actor : Tree
+        Its actor variables, restored from a folder or rebuilt from a portable
+        model file, already laid out like _checked_actor_template(details).
+
+    Returns
+    -------
+    System
+        The same System load_system builds for that description: PPO samples
+        legal actions, QMIX and PQN-VDN play greedily, labelled with the
+        inference digest.
+
+    Raises
+    ------
+    ValueError
+        The variables' digest differs from details["actor_digest"], a value is
+        not finite, or a PQN-VDN running variance is negative.
+
+    Notes
+    -----
+    Host-only. Reads every variable once to check its digest and values.
+    """
+    method = _schema_method(details["schemas"])
+    schema = cast(int, details["schemas"]["actor_input"])
+    sharing = _actor_parameter_sharing(details)
+    normalization = _actor_normalization(details)
     if tree_digest(actor) != details["actor_digest"] or not all(
         bool(jnp.all(jnp.isfinite(value))) for value in jax.tree.leaves(actor)
     ):
@@ -2321,16 +2371,45 @@ def load_initial_actor(
 ) -> tuple[System, dict[str, Any]]:
     """Load compatible built-in weights before a new training run opens files.
 
-    ``path`` names an actor export or full learner checkpoint. Only its actor
-    is imported. The method, current actor schema, input scale, spawn frame,
-    parameter sharing and (for PQN-VDN) hidden normalization must match;
-    load_system checks layout, dtypes, payload hashes and values.
+    ``path`` names an actor export or full learner checkpoint, a portable model
+    file, a released model name (such as
+    ``"MARL-BattleGrounds/tdm-season-0-qmix@final"``), its exact ``hf://``
+    address or a local released-layout folder. Only its actor is imported. The
+    method, current actor schema, input scale, spawn frame, parameter sharing
+    and (for PQN-VDN) hidden normalization must match. For a folder,
+    load_system checks layout, dtypes, payload hashes and values. For a model
+    file, portable_models.portable_actor_variables rebuilds the actor variables
+    from the file's weights and checks them against the embedded original
+    description; the returned System is the one load_system would build from
+    the original folder, so training starts from identical weights. A released
+    model is downloaded once into Hugging Face's standard cache when missing.
     Return that System and its verified description for provenance. This is a
     warm start with fresh learner state, not a continuation. Trainer setup reuses
     the same loaded artifact across roles; ordinary calls load independently.
     Generic Systems remain supported through opponents and researcher-owned loops.
+    Raises ValueError for an incompatible actor or a failed check.
     """
-    details = read_checkpoint_description(path)
+    from marl_battlegrounds._method_loading import (
+        _reference_kind,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    text = str(path)
+    model_file: Path | None = None
+    if _reference_kind(text) == "released":
+        from marl_battlegrounds.released_models import (
+            _fetch,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        model_file = _fetch(text).path
+    elif Path(path).expanduser().is_file():
+        model_file = Path(path).expanduser()
+    actor: Tree = None
+    if model_file is not None:
+        from marl_battlegrounds.portable_models import portable_actor_variables
+
+        actor, details = portable_actor_variables(model_file)
+    else:
+        details = read_checkpoint_description(path)
     if _schema_method(details["schemas"]) != method:
         raise ValueError("Initial actor method differs from the new learner")
     if details["schemas"] != checkpoint_schemas(method):
@@ -2343,6 +2422,12 @@ def load_initial_actor(
         raise ValueError("Initial actor parameter_sharing differs from the new learner")
     if _actor_normalization(details) != _pqn_normalization(normalization):
         raise ValueError("Initial actor normalization differs from the new learner")
+    if model_file is not None:
+        if _layout(actor) != details["actor_layout"]:
+            raise ValueError("Initial actor weights differ from their saved layout")
+        _checked_actor_template(details)
+        actor = jax.tree.map(jnp.asarray, actor)  # pyright: ignore[reportUnknownArgumentType]
+        return _actor_system(details, actor), details
     from marl_battlegrounds._method_loading import load_method
 
     # Training setup may already hold this same checked actor as a pool member.

@@ -1,14 +1,16 @@
-"""Resolve method references: built-in names, saved actors and factories.
+"""Resolve method references: built-in names, saved actors, models and factories.
 
 Command factories and tournament loaders share the ``module:function`` grammar
 through installed_callable. load_method is the one owner of the wider
 reference grammar used for training opponents: a built-in Policy name, an
-actor export or complete learner checkpoint directory, or a ``module:function``
-factory. Importing this
-module uses only the standard library; load_method imports the evaluation and
-training code it needs only when called. Calling a selected function remains
-the caller's responsibility; imported researcher code may have its own side
-effects.
+actor export or complete learner checkpoint directory, a portable model file,
+a released model (a typed name such as ``MARL-BattleGrounds/<repo>@100M``, an
+exact ``hf://`` address or a local released-layout folder; released_models owns
+those rules), or a ``module:function`` factory. Importing this module uses only
+the standard library; load_method imports the evaluation, training, portable
+model and download code it needs only when called. Calling a selected function
+remains the caller's responsibility; imported researcher code may have its own
+side effects.
 """
 
 from __future__ import annotations
@@ -72,15 +74,24 @@ def _release_setup_inputs() -> None:
 
 def _reference_kind(
     reference: str, *, base_dir: Path | None = None
-) -> Literal["builtin", "factory", "artifact", "unknown"]:
+) -> Literal["builtin", "factory", "artifact", "released", "unknown"]:
     """Classify a method reference without importing code or reading payloads.
 
     Built-in names win. A bare module:function is a factory even beside a folder
-    with that name. Explicit paths (including ./model:version) are artifacts;
-    other existing bare folders use base_dir, or the current directory. Missing
-    plain names stay unknown so the loading owner can report a useful error.
-    Reject nontext and blank references. This checks directory existence only.
+    with that name. Next come released models (released_models._released_form):
+    a local released-layout folder (optionally with an ``@`` step), and, when no
+    local path with that exact text exists, an ``hf://`` address or a typed name
+    such as ``MARL-BattleGrounds/<repo>@100M``. These are "released". Explicit
+    paths (including ./model:version) are artifacts; other existing bare folders
+    and bare portable model files use base_dir, or the current directory.
+    Missing plain names stay unknown so the loading owner can report a useful
+    error. Reject nontext and blank references. This checks path existence and
+    reads a bare existing file's ZIP index only; no network call is made.
     """
+    from marl_battlegrounds.released_models import (
+        _released_form,  # pyright: ignore[reportPrivateUsage]
+    )
+
     if not isinstance(cast(object, reference), str):
         raise TypeError("A method reference must be a string")
     if not reference.strip():
@@ -89,11 +100,19 @@ def _reference_kind(
         return "builtin"
     if ":" in reference and "/" not in reference and not reference.startswith("."):
         return "factory"
+    if _released_form(reference, base_dir) is not None:
+        return "released"
     path = Path(reference).expanduser()
     if path.is_absolute() or "/" in reference or reference.startswith("."):
         return "artifact"
-    if ((Path.cwd() if base_dir is None else base_dir) / path).is_dir():
+    local = (Path.cwd() if base_dir is None else base_dir) / path
+    if local.is_dir():
         return "artifact"
+    if local.is_file():
+        from marl_battlegrounds.portable_models import is_portable_model_file
+
+        if is_portable_model_file(local):
+            return "artifact"
     return "unknown"
 
 
@@ -216,15 +235,31 @@ def _reference_key(reference: str) -> str:
     Factories and built-ins keep their exact reference. Artifact directories use
     the existing checkpoint path guard before resolving dot/parent components.
     Equivalent ordinary paths then share loads and receipts; a symbolic-link
-    alias can never bypass the guard through a prior cached object.
+    alias can never bypass the guard through a prior cached object. A portable
+    model file uses its fully resolved path (its content identity is its hash).
+    A released model uses its saved form (released_models._saved_reference):
+    the exact ``hf://`` address, or the resolved path of the chosen local file,
+    so a typed name and its address share one load. Finding that form may
+    download the repo's small index files.
     """
-    if _reference_kind(reference) != "artifact":
+    kind = _reference_kind(reference)
+    if kind == "released":
+        from marl_battlegrounds.released_models import (
+            _saved_reference,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        saved = _saved_reference(reference)
+        return saved if saved.startswith("hf://") else str(Path(saved).resolve())
+    if kind != "artifact":
         return reference
+    path = Path(reference).expanduser()
+    if path.is_file():
+        return str(path.resolve())
     from marl_battlegrounds.training._checkpoint_metadata import (
         _directory,  # pyright: ignore[reportPrivateUsage]
     )
 
-    return str(_directory(Path(reference).expanduser()).resolve())
+    return str(_directory(path).resolve())
 
 
 def load_method(reference: str) -> Policy | System:
@@ -236,7 +271,17 @@ def load_method(reference: str) -> Policy | System:
         Checked in this order. A built-in Policy name ("random", "tdm-alpha",
         "tdm-beta" or "tdm-gamma", as ``policy`` defines them) gives that
         Policy. A bare module:function invokes that factory, even beside a folder
-        with the same name. Explicit paths and other existing folders load through
+        with the same name. A released model comes next: a local folder in the
+        released layout (``steps.csv`` and ``config.json``, for example after
+        ``hf download --local-dir``), optionally with an ``@`` step; then, when
+        no local path with that exact text exists, an exact address
+        ``hf://<owner>/<repo>@<commit>/<file>`` or a typed name such as
+        ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"`` (no suffix: the entered
+        save; ``@final``: the last save; ``@<N>M``: the nearest save at or
+        before N million steps; ``@100_139_008``: exactly that save). A
+        portable model file (a path to one ``.zip`` model file) loads through
+        ``marl_battlegrounds.portable_models``; neither form needs the training
+        extra. Explicit paths and other existing folders load through
         ``marl_battlegrounds.training.load_system``. Actor exports and complete
         learner checkpoints are supported, including historical actor inputs.
         Only actor arrays are restored; every payload file is checked. This needs
@@ -260,10 +305,17 @@ def load_method(reference: str) -> Policy | System:
         reference is not a string, or a factory returned something other than
         a Policy or System.
     ValueError
-        The text is empty, names no built-in, directory or valid factory, the
-        directory is incomplete, or its files fail their checks.
+        The text is empty, names no built-in, directory, model file, released
+        model or valid factory, the directory is incomplete, or its files fail
+        their checks. For a released model: the step does not exist (the
+        message lists the nearest saves), the ``@`` suffix is not a step, the
+        repo does not exist, a downloaded file's SHA-256 differs from its
+        repo's ``steps.csv``, the address names an original actor folder in a
+        dataset (download it to a local folder first), or Hugging Face is
+        offline and the file is not cached (the message gives the
+        ``models download`` command).
     OSError
-        An actor directory cannot be read.
+        An actor directory or model file cannot be read.
     ImportError
         A directory was given without the training extra installed, or a
         factory's module cannot be imported. Errors from a factory's call
@@ -273,11 +325,30 @@ def load_method(reference: str) -> Policy | System:
     -----
     Host-only. A directory is read and its file hashes are checked; a factory
     runs researcher code once. The trainer reuses each resolved reference during
-    its setup; ordinary independent calls do not share a cache. Nothing is written.
+    its setup; ordinary independent calls do not share a cache. Local paths and
+    factories write nothing. A released model is downloaded once into Hugging
+    Face's standard cache (``HF_HOME``, ``HF_HUB_CACHE``) when not already
+    there; a cached pinned model needs no network call. An unpinned repo uses
+    its latest commit with a warning. To record the exact file, save the form
+    ``released_models`` gives (the trainer and tournaments do this).
     """
     kind = _reference_kind(reference)
     cached = _setup_inputs.get()
-    key = _reference_key(reference)
+    model_file: Path | None = None
+    if kind == "released":
+        from marl_battlegrounds.released_models import (
+            _fetch,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        save = _fetch(reference)
+        model_file = save.path
+        key = (
+            save.reference
+            if save.reference.startswith("hf://")
+            else str(Path(save.reference).resolve())
+        )
+    else:
+        key = _reference_key(reference)
     if cached is not None and key in cached[0]:
         return cached[0][key]
     if kind == "builtin":
@@ -286,14 +357,26 @@ def load_method(reference: str) -> Policy | System:
         value = policy(reference)
     elif kind == "factory":
         value = load_factory(reference)
-    elif kind == "artifact":
-        from marl_battlegrounds.training.checkpoints import load_system
+    elif kind in ("artifact", "released"):
+        path = Path(reference).expanduser() if model_file is None else model_file
+        portable = model_file is not None
+        if not portable and path.is_file():
+            from marl_battlegrounds.portable_models import is_portable_model_file
 
-        value = load_system(Path(reference).expanduser())
+            portable = is_portable_model_file(path)
+        if portable:
+            from marl_battlegrounds.portable_models import load_portable_model
+
+            value = load_portable_model(path)
+        else:
+            from marl_battlegrounds.training.checkpoints import load_system
+
+            value = load_system(path)
     else:
         raise ValueError(
             f"Method reference {reference!r} is not a built-in name, an existing "
-            "actor export/checkpoint directory or a module:function factory"
+            "actor export/checkpoint directory, a model file, a released model "
+            "name or address, or a module:function factory"
         )
     if cached is not None:
         cached[0][key] = value
@@ -330,15 +413,36 @@ def _read_reference_identity(reference: str) -> dict[str, Any]:
     trusted factory code but never calls it.
     Mutable globals, closure values and remote provider state remain unknown.
     The returned identity excludes filesystem locations so a byte-identical
-    actor or defining file can move. Unknown reference names are rejected.
+    actor or defining file can move. Portable model files and released models
+    record ``{"kind": "portable_model", "sha256": <file SHA-256>}``, so a run can
+    move between a released name, its ``hf://`` address and the same file on
+    disk. A released model's hash comes from its repo's ``steps.csv`` (small
+    index downloads only); a local file is hashed. Unknown reference names are
+    rejected.
     """
     kind = _reference_kind(reference)
+    if kind == "released":
+        from marl_battlegrounds.released_models import (
+            _identity,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        return _identity(reference)
     if kind == "artifact":
+        path = Path(reference).expanduser()
+        if path.is_file():
+            from marl_battlegrounds.portable_models import is_portable_model_file
+            from marl_battlegrounds.released_models import (
+                _sha256,  # pyright: ignore[reportPrivateUsage]
+            )
+
+            if not is_portable_model_file(path):
+                raise ValueError(f"{reference!r} is not a portable model file")
+            return {"kind": "portable_model", "sha256": _sha256(path)}
         from marl_battlegrounds.training._checkpoint_metadata import (
             read_checkpoint_description,
         )
 
-        details = read_checkpoint_description(Path(reference).expanduser())
+        details = read_checkpoint_description(path)
         return {"kind": "artifact", "checkpoint_id": details["checkpoint_id"]}
     from marl_battlegrounds.evaluation.recording_identity import (
         _callable_evidence,  # pyright: ignore[reportPrivateUsage]
@@ -406,17 +510,28 @@ def validate_saved_method_reference(reference: str) -> None:
     """Check a durable method reference without opening files or calling factories.
 
     reference is a nonempty built-in Policy name, an absolute actor
-    export/checkpoint path, or
+    export/checkpoint or model file path, an exact released address
+    (``hf://<owner>/<repo>@<40-character commit>/<file>`` for a model file or
+    ``hf://datasets/<owner>/<repo>@<commit>/<folder>`` for a dataset folder), or
     module:function. Relative paths, including bare directory names, are refused
-    because their meaning changes with the working directory. Built-in names use
-    the existing Policy authority. Missing imports and artifact files are checked
-    later by load_method. Invalid types or grammar raise TypeError or ValueError.
+    because their meaning changes with the working directory; so are typed
+    released names, whose files can change (the trainer saves their address).
+    Built-in names use the existing Policy authority. Missing imports, artifact
+    files and downloads are checked later by load_method. Invalid types or
+    grammar raise TypeError or ValueError.
     """
     if not isinstance(cast(object, reference), str):
         raise TypeError("A saved method reference must be a string")
     if not reference.strip():
         raise ValueError("A saved method reference must not be empty")
     if reference in BUILTIN_POLICY_NAMES:
+        return
+    if reference.startswith("hf://"):
+        from marl_battlegrounds.released_models import (
+            _parse_address,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        _parse_address(reference)
         return
     if Path(reference).is_absolute():
         return
@@ -425,6 +540,6 @@ def validate_saved_method_reference(reference: str) -> None:
         if module and attribute and "." not in attribute and "/" not in reference:
             return
     raise ValueError(
-        "Method paths must be absolute; otherwise use a built-in name "
-        "or module:function"
+        "Method paths must be absolute; otherwise use a built-in name, "
+        "an hf:// address or module:function"
     )

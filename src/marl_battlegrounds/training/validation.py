@@ -745,10 +745,20 @@ def _artifact(path: str | Path) -> Record:
 
     An actor export has its own storage identity. Selection joins its original
     learner checkpoint, which the persistence owner verifies in export metadata.
+    A portable model file uses its embedded original actor description, after
+    its reader checks every part's SHA-256.
     """
     from marl_battlegrounds.training.checkpoints import artifact_identity
 
-    identity = artifact_identity(path)
+    if Path(path).is_file():
+        from marl_battlegrounds.portable_models import read_portable_model
+        from marl_battlegrounds.training._checkpoint_metadata import (
+            _artifact_identity,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        identity = _artifact_identity(read_portable_model(path).actor_details)
+    else:
+        identity = artifact_identity(path)
     return {
         **identity,
         "artifact_id": identity["checkpoint_id"],
@@ -793,7 +803,9 @@ def create_panel(
     opponents : sequence of System, Policy or str, optional
         Ordered methods. Repeated display names gain numbered panel labels;
         their original names and full identities stay unchanged. Strings are
-        built-in names, absolute actor paths or installed module:function factories.
+        built-in names, absolute actor or model file paths, released model
+        names or ``hf://`` addresses (saved as exact addresses) or installed
+        module:function factories.
         Factories run once; live methods are retained without serialization.
     output_dir : str or Path
         Folder for immutable panel.json. Conflicting contents are refused.
@@ -904,10 +916,12 @@ def create_panel(
 def _method_snapshot(value: object) -> tuple[Any, str, Record, str | None]:
     """Freeze one valid method and record exactly evaluation's normal registration.
 
-    Strings use the shared built-in/actor-folder/factory loader. A factory is called
-    once. Numerical values are frozen; opaque provider state stays declared as
-    unknown. Return the live method, registration ID, description and reload
-    reference. This performs no policy decision and serializes no client object.
+    Strings use the shared built-in/actor-folder/model/factory loader. A factory
+    is called once. A released model name becomes its exact ``hf://`` address,
+    which is the returned reload reference. Numerical values are frozen; opaque
+    provider state stays declared as unknown. Return the live method,
+    registration ID, description and reload reference. This performs no policy
+    decision and serializes no client object.
     """
     from marl_battlegrounds._method_loading import (
         load_method,
@@ -919,9 +933,13 @@ def _method_snapshot(value: object) -> tuple[Any, str, Record, str | None]:
         policy_description,
     )
     from marl_battlegrounds.evaluation.system_evaluation import freeze_evaluation_method
+    from marl_battlegrounds.released_models import (
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
 
     reference = value if isinstance(value, str) else None
     if reference is not None:
+        reference = _saved_reference(reference)
         validate_saved_method_reference(reference)
         value = load_method(reference)
     method = freeze_evaluation_method(cast(Any, value))
@@ -2819,9 +2837,11 @@ def _execute_request(request: Mapping[str, Any]) -> Path:
 
     request comes from a persisted task or its CPU worker file. It contains actor
     paths/digests, pass/schedule fields, the task's red_zone_depth (map units)
-    and a task-owned output parent. Panel and Random passes give the depth to
-    evaluate; slot passes build their explicit schedule at that depth. No learner
-    state is accepted. Evaluation owns scientific resume validation and all writer
+    and a task-owned output parent. A slot opponent path may name a portable
+    model file, which loads through portable_models. Panel and Random passes
+    give the depth to evaluate; slot passes build their explicit schedule at
+    that depth. No learner state is accepted. Evaluation owns scientific
+    resume validation and all writer
     recovery, including refusing a saved pass recorded under another depth.
     """
     from marl_battlegrounds.evaluation.evaluate import evaluate, evaluate_episodes
@@ -2837,7 +2857,12 @@ def _execute_request(request: Mapping[str, Any]) -> Path:
         identity = _artifact(request["opponent"])
         if identity["actor_digest"] != request["opponent_digest"]:
             raise ValueError("The evaluated opponent differs from the persisted task")
-        opponent = load_system(request["opponent"])
+        if Path(request["opponent"]).is_file():
+            from marl_battlegrounds.portable_models import load_portable_model
+
+            opponent = load_portable_model(request["opponent"])
+        else:
+            opponent = load_system(request["opponent"])
     parent = Path(request["output_parent"])
     run_dir = _saved_run(parent, request["pass_id"])
     reverse = request["kind"] == "slot" and int(request["focal_team"]) == 1
@@ -4109,7 +4134,9 @@ def run_slot_diagnostic(
     checkpoint : str or Path
         The focal final actor (an export or a complete learner checkpoint).
     opponent : str or Path
-        The fixed development-final actor.
+        The fixed development-final actor: an actor export or complete learner
+        checkpoint folder, or a portable model file (the trainer passes a
+        released slot_diagnostic_actor as its checked local file).
     output_dir : str or Path
         Folder owned by this exact task. Repeat the same call to resume
         interrupted matching passes.

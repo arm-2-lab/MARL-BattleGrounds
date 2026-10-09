@@ -11,8 +11,12 @@ Three routes write a protocol/ folder that later stages read:
   design and source records.
 
 Both opponent routes share one bundle check (_read_opponent_pool and
-_verify_opponent_members) and one publication step (_publish_protocol). No
-route launches training or plays games.
+_verify_opponent_members) and one publication step (_publish_protocol). When
+the command gives no opponent_bundle, both routes download the released
+training opponents (the training-opponents folder of the
+MARL-BattleGrounds/tdm-season-0-results dataset on Hugging Face) into
+output_dir/opponents and check that copy the same way. No route launches
+training or plays games.
 """
 
 from __future__ import annotations
@@ -820,11 +824,15 @@ def main(config: DictConfig) -> Path:
     config : DictConfig
         Packaged prepare settings. protocol chooses the route:
         "analysis_software_check" copies synthetic saved rows into output_dir;
-        "software_check" also needs opponent_bundle; "declared_study" needs
-        declaration and opponent_bundle, and reads the optional
+        "software_check" uses opponent_bundle; "declared_study" needs
+        declaration, uses opponent_bundle, and reads the optional
         expected_opponents (default: opponents.yaml beside the declaration)
-        and recipe_selection files. Relative command paths use the original
-        working directory; "~" expands to the home folder.
+        and recipe_selection files. Without opponent_bundle, the two opponent
+        routes download the released training opponents into
+        output_dir/opponents/training-opponents (ordinary files; Hugging Face
+        records the exact commit under output_dir/opponents/.cache) and print
+        their exact ``hf://datasets/...`` address. Relative command paths use
+        the original working directory; "~" expands to the home folder.
 
     Returns
     -------
@@ -835,9 +843,9 @@ def main(config: DictConfig) -> Path:
     Raises
     ------
     ValueError
-        The protocol is unknown, a required input is missing, or the chosen
-        route refuses its inputs. Failures happen before protocol output is
-        written.
+        The protocol is unknown, a required input is missing, the released
+        opponents cannot be downloaded, or the chosen route refuses its
+        inputs. Failures happen before protocol output is written.
 
     Notes
     -----
@@ -848,26 +856,38 @@ def main(config: DictConfig) -> Path:
         """Expand "~" and resolve one command path from the launch folder."""
         return to_absolute_path(str(Path(str(value)).expanduser()))
 
+    def bundle() -> str:
+        """Return the given bundle, or download the released one into output."""
+        if config.opponent_bundle:
+            return path(config.opponent_bundle)
+        from marl_battlegrounds.experiments.hydra import (
+            _preparation_paths,  # pyright: ignore[reportPrivateUsage]
+        )
+        from marl_battlegrounds.released_models import (
+            TRAINING_OPPONENTS,
+            _released_training_opponents,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        destination = Path(output) / "opponents"
+        # Check the output paths before the download writes anything.
+        _preparation_paths(destination / TRAINING_OPPONENTS, output)
+        address, folder = _released_training_opponents(destination)
+        print(f"Released Opponents: {address}")
+        return str(folder)
+
     output = path(config.output_dir)
     if config.protocol == "analysis_software_check":
         result = prepare_analysis_software_check(output)
     elif config.protocol == "software_check":
-        if not config.opponent_bundle:
-            raise ValueError(
-                "software_check needs opponent_bundle=/path/frozen-opponents"
-            )
-        result = prepare_software_check(path(config.opponent_bundle), output)
+        result = prepare_software_check(bundle(), output)
     elif config.protocol == "declared_study":
-        if not config.get("declaration") or not config.opponent_bundle:
-            raise ValueError(
-                "declared_study needs declaration=/path/study.yaml and "
-                "opponent_bundle=/path/opponents"
-            )
+        if not config.get("declaration"):
+            raise ValueError("declared_study needs declaration=/path/study.yaml")
         expected = config.get("expected_opponents")
         picks = config.get("recipe_selection")
         result = prepare_declared_study(
             path(config.declaration),
-            path(config.opponent_bundle),
+            bundle(),
             output,
             expected_opponents=path(expected) if expected else None,
             recipe_selection=path(picks) if picks else None,

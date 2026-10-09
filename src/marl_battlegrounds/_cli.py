@@ -423,7 +423,18 @@ def build_parser() -> argparse.ArgumentParser:
     download = operations.add_parser(
         "download",
         allow_abbrev=False,
-        help="Inspect and confirm missing asset downloads",
+        help=(
+            "Download released models by name, or inspect and confirm missing "
+            "tournament asset downloads"
+        ),
+    )
+    download.add_argument(
+        "names",
+        nargs="*",
+        help=(
+            "Released model names to download for offline use, for example "
+            "MARL-BattleGrounds/tdm-season-0-qmix@final; omit for tournament assets"
+        ),
     )
     download.add_argument(
         "--config", help="Snapshot/config JSON path; default: installed release"
@@ -505,11 +516,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _load_method(reference: str) -> System | Policy | str:
-    """Resolve saved actors and trusted factories through the shared loader.
+    """Resolve saved actors, models and trusted factories through the shared loader.
 
     Bare names stay strings for the evaluator. Bare module:function strings are
     factories; use ./ or an absolute path for a folder containing a colon.
     Both actor exports and complete learner checkpoints load only their actor arrays.
+    Portable model files and released models (for example
+    MARL-BattleGrounds/tdm-season-0-qmix@100M) load through the same loader;
+    a released model is downloaded once into Hugging Face's cache if missing.
     Factory errors retain their original cause through _FactoryError. Folder errors
     retain their loader error type. No action is chosen and no learner is constructed.
     """
@@ -519,7 +533,7 @@ def _load_method(reference: str) -> System | Policy | str:
     )
 
     kind = _reference_kind(reference)
-    if kind == "artifact":
+    if kind in ("artifact", "released"):
         return load_method(reference)
     if kind != "factory":
         return reference
@@ -529,6 +543,54 @@ def _load_method(reference: str) -> System | Policy | str:
         raise _FactoryError(str(error)) from error
     except Exception as error:
         raise _FactoryError(f"Factory {reference!r} failed: {error}") from error
+
+
+def _download_names(
+    namespace: argparse.Namespace, parser: argparse.ArgumentParser
+) -> int:
+    """Download released models named on the command line and print each file.
+
+    Parameters
+    ----------
+    namespace : argparse.Namespace
+        Parsed ``models download`` arguments with at least one name. The
+        tournament-asset options (--config, --roles, --output-config,
+        --cache-dir, --dry-run) belong to the other route and are refused.
+    parser : argparse.ArgumentParser
+        The command parser, used to report refused options (exit status 2).
+
+    Returns
+    -------
+    int
+        0 after every name is downloaded and checked.
+
+    Notes
+    -----
+    Prints, for each name, its exact saved address and its local file in
+    Hugging Face's standard cache. Errors from released_models propagate to
+    main, which prints them and returns 1. Afterwards the files load with
+    ``HF_HUB_OFFLINE=1``.
+    """
+    from marl_battlegrounds.released_models import (
+        _fetch,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    if (
+        namespace.config
+        or tuple(namespace.roles) != ("model",)
+        or namespace.output_config
+        or namespace.cache_dir
+        or namespace.dry_run
+    ):
+        parser.error(
+            "Released model names take no --config, --roles, --output-config, "
+            "--cache-dir or --dry-run; Hugging Face's HF_HOME chooses the cache"
+        )
+    for name in namespace.names:
+        save = _fetch(name)
+        print(f"{name}: {save.reference}")
+        print(f"Local File: {save.path}")
+    return 0
 
 
 def _cell(value: object) -> str:
@@ -913,6 +975,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(result, indent=2, allow_nan=False))
             return 0 if result["status"] == "complete" else 1
         elif command == "models":
+            if namespace.operation == "download" and namespace.names:
+                return _download_names(namespace, parser)
             from marl_battlegrounds._cli_assets import run_models
 
             return run_models(namespace, parser)

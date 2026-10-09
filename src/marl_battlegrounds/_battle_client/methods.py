@@ -24,6 +24,7 @@ from marl_battlegrounds._battle_client.protocol import ExecutionInformationMode
 from marl_battlegrounds._battle_client.setup import BattleSetup, Controller
 from marl_battlegrounds._method_loading import (
     _reference_key,  # pyright: ignore[reportPrivateUsage]
+    _reference_kind,  # pyright: ignore[reportPrivateUsage]
     load_method,
 )
 from marl_battlegrounds.evaluation.policy_execution import (
@@ -61,19 +62,41 @@ class LoadedControllers:
     original_methods: tuple[Policy | System, ...] = ()
 
 
-def load_checkpoint_path(path: str | Path) -> Policy | System:
-    """Load an existing checkpoint directory from private browser input.
+def _is_model_file(path: Path) -> bool:
+    """Return whether path is an existing portable model file (a checked ZIP)."""
+    if not path.is_file():
+        return False
+    from marl_battlegrounds.portable_models import is_portable_model_file
 
+    return is_portable_model_file(path)
+
+
+def load_checkpoint_path(path: str | Path) -> Policy | System:
+    """Load a saved model from private browser input.
+
+    Accepted: an existing checkpoint directory, a portable model file, or a
+    released model (a typed name such as
+    ``MARL-BattleGrounds/tdm-season-0-qmix@final``, an ``hf://`` address or a
+    released-layout folder), through the shared load_method grammar. A released
+    model is downloaded once into Hugging Face's standard cache when missing.
     Relative paths use the server's working directory. Expansion of ~ is allowed.
-    Reject missing paths and files before calling the shared loader. Browser text
-    is never interpreted as a Python factory expression. Reject symbolic links
-    before resolving the path. Native checkpoint checks and optional training
-    dependencies remain with the shared loader.
+    Reject missing paths and other files before calling the shared loader.
+    Browser text is never interpreted as a Python factory expression or a
+    built-in name. Reject symbolic links in checkpoint folders before resolving
+    the path. Native checkpoint checks and optional training dependencies remain
+    with the shared loader. Raises ValueError for anything else.
     """
-    folder = Path(path).expanduser().absolute()
-    if not folder.is_dir():
-        raise ValueError("Choose an existing checkpoint folder.")
-    return load_method(_reference_key(str(folder)))
+    if isinstance(path, str) and path.strip() and _reference_kind(path) == "released":
+        return load_method(_reference_key(path))
+    target = Path(path).expanduser().absolute()
+    if _is_model_file(target):
+        return load_method(_reference_key(str(target)))
+    if not target.is_dir():
+        raise ValueError(
+            "Choose an existing checkpoint folder, a model file or a released "
+            "model name."
+        )
+    return load_method(_reference_key(str(target)))
 
 
 def validate_controller_information(
@@ -130,6 +153,8 @@ def resolve_controllers(
     equivalent paths share one load. Other strings keep their exact reference.
     Direct objects share only by identity. A distinct object never merges because
     of equality.
+    Released model names and portable model files load through the same
+    shared loader; a name and its exact address share one load.
     Whole-team Systems retain their identity; Policy adaptation retains the
     original callable and variable leaves. Each slot's label is its method's
     name for that slot (team_controller_names), so a whole-team team(...)
@@ -170,7 +195,7 @@ def resolve_controllers(
                 return manual
             if isinstance(source, Path):
                 path = source.expanduser().absolute()
-                if not path.is_dir():
+                if not path.is_dir() and not _is_model_file(path):
                     raise ValueError(f"Checkpoint folder does not exist: {path}")
                 text = str(path)
             else:

@@ -7,7 +7,9 @@ host logging and file handling. CLI commands use these same public functions.
 All methods share the run layout, validation, selection and reports; the
 saved method chooses the learner, its settings block and its host counts.
 A new or child run saves its records only after it holds its folder's run lock
-and finds the folder still empty apart from the lock file.
+and finds the folder still empty apart from the lock file. Released model names
+in the settings and population bindings become exact ``hf://`` addresses before
+any run file is written (released_models owns those rules).
 """
 
 from __future__ import annotations
@@ -341,20 +343,98 @@ def _history_setup(
     }
 
 
+def _released_config(
+    config: TrainConfig, *, commits: Mapping[str, str | None] | None = None
+) -> TrainConfig:
+    """Turn released names in a config's model fields into exact saved forms.
+
+    Parameters
+    ----------
+    config : TrainConfig
+        Settings as the caller gave them.
+    commits : mapping or None, default=None
+        Commits a saved run recorded (released_models._recorded_commits). On
+        resume they win over the package pins, so a supplied config with typed
+        names compares equal to the saved run. None for a new run.
+
+    Returns
+    -------
+    TrainConfig
+        The same object when nothing changes. Otherwise a copy where
+        pinned_opponent, initial_actor, slot_diagnostic_actor, every
+        validation_opponents entry and every validation_partners value that is
+        a typed released name holds its exact ``hf://`` address, and a local
+        released-layout folder holds the absolute path of its chosen file.
+        Opponent and partner names stay as typed; their bindings are resolved
+        by _population_bindings.
+
+    Raises
+    ------
+    ValueError
+        A released name cannot be resolved (see released_models), or a
+        pinned_opponent, validation opponent or slot_diagnostic_actor is still
+        a relative local path after resolution (saved runs need absolute paths).
+
+    Notes
+    -----
+    Host-only. May download small index files, never a model file.
+    """
+    from marl_battlegrounds._method_loading import validate_saved_method_reference
+    from marl_battlegrounds.released_models import (
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    def saved(value: str) -> str:
+        """Return one model field's saved form."""
+        return _saved_reference(value, commits=commits)
+
+    changes: dict[str, Any] = {}
+    for name in ("pinned_opponent", "initial_actor", "slot_diagnostic_actor"):
+        value = getattr(config, name)
+        if isinstance(value, str) and (resolved := saved(value)) != value:
+            changes[name] = resolved
+    if config.validation_opponents is not None:
+        opponents = tuple(saved(value) for value in config.validation_opponents)
+        if opponents != config.validation_opponents:
+            changes["validation_opponents"] = opponents
+    if config.validation_partners is not None:
+        partners = {
+            name: saved(value) for name, value in config.validation_partners.items()
+        }
+        if partners != dict(config.validation_partners):
+            changes["validation_partners"] = partners
+    result = replace(config, **changes) if changes else config
+    for value in (
+        result.pinned_opponent,
+        result.slot_diagnostic_actor,
+        *(result.validation_opponents or ()),
+    ):
+        if value is not None:
+            validate_saved_method_reference(value)
+    return result
+
+
 def _population_bindings(
     selection: Mapping[str, float] | Sequence[str] | None,
     bindings: Mapping[str, Any] | None,
     *,
     saved_names: Sequence[str] | None = None,
+    commits: Mapping[str, str | None] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, str]]:
     """Resolve declared external members in stable order before output setup.
 
     Selected references use the ordinary method loader. A live alias wins over
     reference resolution. Extra live bindings remain declared, so a later rule
     can select them without changing the population's structure. Reserved self
-    and past names always belong to the learner/history owner.
+    and past names always belong to the learner/history owner. A released
+    model name becomes its exact ``hf://`` address in the returned references
+    (the saved binding receipt), using commits first when given (a resumed
+    run's recorded commits); the member name stays as typed.
     """
     from marl_battlegrounds._method_loading import load_method
+    from marl_battlegrounds.released_models import (
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
     from marl_battlegrounds.training.opponents import opponent_selection_names
 
     names = opponent_selection_names(selection)
@@ -381,11 +461,15 @@ def _population_bindings(
         *ordered,
     }:
         raise ValueError("Resume opponent names differ from the saved population")
-    original = {
-        name: supplied.get(name, name)
-        for name in ordered
-        if name not in {"self", "past"}
-    }
+    original: dict[str, Any] = {}
+    for name in ordered:
+        if name not in {"self", "past"}:
+            value = supplied.get(name, name)
+            original[name] = (
+                _saved_reference(value, commits=commits)
+                if isinstance(value, str)
+                else value
+            )
     references = {
         name: value for name, value in original.items() if isinstance(value, str)
     }
@@ -414,8 +498,15 @@ def _bind_training_population(
     current selection. Restore uses saved alias order and reference bindings;
     live-only aliases require explicit rebinding. Only a declared child can add
     members. Load all references before output, leaving resource scopes to train.
+    Released names given on resume or continuation use the commits the saved
+    run recorded, so newer package pins never change a resumed run.
     """
+    from marl_battlegrounds.released_models import (
+        _recorded_commits,  # pyright: ignore[reportPrivateUsage]
+    )
     from marl_battlegrounds.training.opponents import opponent_selection_names
+
+    commits = None if saved is None else _recorded_commits(saved)
 
     supplied = {} if bindings is None else dict(bindings)
     saved_members: list[dict[str, Any]] = (
@@ -443,7 +534,7 @@ def _bind_training_population(
         if changes is None and set(supplied) - set(parent_bindings):
             raise ValueError(f"Resume cannot add {kind}s; use extend_training")
     population, references = _population_bindings(
-        selection, parent_bindings, saved_names=saved_names
+        selection, parent_bindings, saved_names=saved_names, commits=commits
     )
     additions: dict[str, Any] = {}
     added_references: dict[str, str] = {}
@@ -461,7 +552,9 @@ def _bind_training_population(
             raise ValueError(f"Added {kind}s need an explicit selection")
         if additional_bindings:
             resolved, added_references = _population_bindings(
-                {name: 1.0 for name in additional_bindings}, additional_bindings
+                {name: 1.0 for name in additional_bindings},
+                additional_bindings,
+                commits=commits,
             )
             additions = resolved or {}
 
@@ -520,8 +613,14 @@ def _validation_setup(
     Default maps leave the declaration unchanged, so runs without
     validation_maps keep their historical task identities. Native scoring
     rules are unchanged. Host-only; extra partner references may be loaded.
+    A released model name becomes its exact ``hf://`` address in references,
+    using the saved run's recorded commits first on resume.
     """
     from marl_battlegrounds._method_loading import load_method
+    from marl_battlegrounds.released_models import (
+        _recorded_commits,  # pyright: ignore[reportPrivateUsage]
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
     from marl_battlegrounds.tasks import canonical_tournament_rosters
     from marl_battlegrounds.training.validation import freeze_validation_partners
 
@@ -539,11 +638,14 @@ def _validation_setup(
             "Validation partner names already belong to training partners: "
             f"{sorted(overlap)}"
         )
+    commits = None if saved is None else _recorded_commits(saved)
     references = {
-        name: value for name, value in extras.items() if isinstance(value, str)
+        name: _saved_reference(value, commits=commits)
+        for name, value in extras.items()
+        if isinstance(value, str)
     }
     extras = {
-        name: load_method(value) if isinstance(value, str) else value
+        name: load_method(references[name]) if isinstance(value, str) else value
         for name, value in extras.items()
     }
     labels = dict(config.validation_partner_labels or {})
@@ -606,6 +708,23 @@ def _validation_setup(
             "and all five validation maps"
         )
     return options, declaration, references
+
+
+def _local_actor(reference: str) -> str:
+    """Return a slot-diagnostic actor's local path, downloading a released one.
+
+    An ``hf://`` address becomes its checked file in Hugging Face's standard
+    cache (downloaded once when missing); any other reference, an absolute
+    actor folder or model file path, is returned unchanged. Raises ValueError
+    when a released file cannot be found or checked.
+    """
+    if not reference.startswith("hf://"):
+        return reference
+    from marl_battlegrounds.released_models import (
+        _fetch,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    return str(_fetch(reference).path)
 
 
 def _check_panel_purpose(config: TrainConfig, panel: FrozenPanel | None) -> None:
@@ -1314,6 +1433,12 @@ def _train(
                 f"but the saved run uses {inherited.red_zone_depth}. The depth is "
                 "fixed for a run; start a new run to use another depth."
             )
+        if config is not None:
+            from marl_battlegrounds.released_models import (
+                _recorded_commits,  # pyright: ignore[reportPrivateUsage]
+            )
+
+            config = _released_config(config, commits=_recorded_commits(saved))
         if config is not None and config_to_dict(config) != config_to_dict(inherited):
             raise ValueError("Resume config differs from the saved experiment")
         config = inherited
@@ -1326,6 +1451,8 @@ def _train(
     else:
         if not isinstance(config, TrainConfig):
             raise TypeError("A new run requires TrainConfig")
+        # Saved settings hold exact addresses, never names whose files can move.
+        config = _released_config(config)
         root = Path(str(output_dir)).resolve()
         _require_new_output(root)
     assert config is not None
@@ -1452,12 +1579,21 @@ def _train(
             if config.pqn is not None
             else variables
         )
+        initial_export = Path(config.initial_actor)
+        if config.initial_actor.startswith("hf://"):
+            from marl_battlegrounds.released_models import (
+                _fetch,  # pyright: ignore[reportPrivateUsage]
+            )
+
+            initial_export = cast(Path, _fetch(config.initial_actor).path)
         initial_origin = {
-            "path": str(Path(config.initial_actor).resolve()),
+            "path": config.initial_actor
+            if config.initial_actor.startswith("hf://")
+            else str(Path(config.initial_actor).resolve()),
             "actor_digest": initial_details["actor_digest"],
             "checkpoint_id": initial_details["checkpoint_id"],
             "evidence": pinned_opponent_evidence(
-                prepared.binding, initial_system, export=Path(config.initial_actor)
+                prepared.binding, initial_system, export=initial_export
             ),
         }
     # Freeze identities before allocation; publish only after roster preflight.
@@ -1481,7 +1617,13 @@ def _train(
         panel = None
     _check_panel_purpose(config, panel)
     if config.slot_diagnostic and config.slot_diagnostic_actor:
-        checkpoints.artifact_identity(config.slot_diagnostic_actor)
+        slot_actor = _local_actor(config.slot_diagnostic_actor)
+        if Path(slot_actor).is_file():
+            from marl_battlegrounds.portable_models import read_portable_model
+
+            read_portable_model(slot_actor)
+        else:
+            checkpoints.artifact_identity(slot_actor)
 
     with ExitStack() as stack:
         from marl_battlegrounds.evaluation.policy_execution import System
@@ -5484,7 +5626,11 @@ class _Run:
         assert self.panel is not None
         self.set_status("slot_diagnostic")
         started = time.monotonic()
-        opponent = self.config.slot_diagnostic_actor or self.panel.members[-1].path
+        opponent = (
+            None
+            if self.config.slot_diagnostic_actor is None
+            else _local_actor(self.config.slot_diagnostic_actor)
+        ) or self.panel.members[-1].path
         assert opponent is not None
         result = run_slot_diagnostic(
             Path(self.host["final_actor"]),

@@ -272,9 +272,12 @@ def battle_client(
         Supply exactly one. Packaged maps are 0 through 51; fixed scenarios are
         1 through 8. There is no silently chosen map.
     team_a, team_b : controller or ordered sequence
-        Manual, a built-in name, checkpoint folder, trusted module:function
-        factory, or a live Policy/System; a list assigns one per roster slot.
-        Ordinary teams default to Manual. A fixed scenario accepts only Team A.
+        Manual, a built-in name, checkpoint folder, portable model file, released
+        model name (for example ``"MARL-BattleGrounds/tdm-season-0-qmix@final"``,
+        downloaded once into Hugging Face's cache) or its ``hf://`` address,
+        trusted module:function factory, or a live Policy/System; a list assigns
+        one per roster slot. Ordinary teams default to Manual. A fixed scenario
+        accepts only Team A.
     team_a_roster, team_b_roster : sequence of class names or Omitted
         Ordinary teams independently have one to five agents, including repeated
         classes. Defaults use mage, warrior, hunter, rogue, priest in that order.
@@ -365,7 +368,8 @@ def battle_client(
     panels, which developer tools can read.
 
     Requires installed browser assets, no Node or Docker. Custom methods supply
-    their own dependencies. Checkpoints use the training extra. A custom checkpoint
+    their own dependencies. Checkpoint folders use the training extra; portable
+    model files and released models do not. A custom checkpoint
     format can be loaded by the researcher's Python code and passed as a System.
     Borrowed methods run on this call's original thread and context. Their
     descriptors and parameters are retained, so keep their external behavior and

@@ -2,7 +2,9 @@
 
 Short JSON fields and live entrant lists become checked version-2 descriptions
 with inline metadata. The existing loaders, map, registration and schedule
-owners supply the facts. No games run and no result or asset file is written.
+owners supply the facts. No games run and no result or asset file is written;
+a released model entrant is saved as its exact ``hf://`` address and is
+downloaded once into the Hugging Face cache when missing.
 Opaque live providers remain caller-owned and need the same live binding on
 resume. Preparation enters no resource scope; execution owns that later step
 for unfinished games. Unknown controller content never becomes verified evidence.
@@ -144,9 +146,19 @@ def _reference(value: str, base: Path) -> str:
     The shared loader owns name priority. Built-ins and bare module:factory
     references stay unchanged even beside same-named folders. Explicit paths
     and other existing folders become absolute; use ./ for a colon-named folder.
-    Unknown names stay unchanged so the loader can explain the failure.
+    A released model name becomes its exact ``hf://`` address and a
+    released-layout folder its chosen file's absolute path
+    (released_models._saved_reference), so the saved field names the exact
+    file. Unknown names stay unchanged so the loader can explain the failure.
     """
-    if _reference_kind(value, base_dir=base) != "artifact":
+    kind = _reference_kind(value, base_dir=base)
+    if kind == "released":
+        from marl_battlegrounds.released_models import (
+            _saved_reference,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        return _saved_reference(value, base_dir=base)
+    if kind != "artifact":
         return value
     candidate = Path(value).expanduser()
     if not candidate.is_absolute():

@@ -9,6 +9,9 @@ run_canonical_tournament uses a released tournament snapshot and verified record
 It requires a separately installed, qualified bundle; none is fabricated here.
 select_initial_population freezes a declared choice from saved tournament games.
 export_model writes one trained actor as a portable JAX file that load_method reads.
+download_models fetches released models by name (for example
+"MARL-BattleGrounds/tdm-season-0-qmix@final") so later runs work offline;
+load_method and every other model input accept the same names.
 
 Exports load their owning module when first requested and are then cached here.
 Importing this package alone does not import the environment or start JAX.
@@ -73,6 +76,7 @@ if TYPE_CHECKING:
         run_tournament,
     )
     from marl_battlegrounds.portable_models import export_model
+    from marl_battlegrounds.released_models import download_models
     from marl_battlegrounds.tasks import (
         balanced_spawn_configs,
         canonical_tournament_rosters,
@@ -103,6 +107,7 @@ __all__ = [
     "battle_client",
     "canonical_tournament_rosters",
     "collect_rollout",
+    "download_models",
     "evaluate",
     "evaluate_episodes",
     "evaluate_scenarios",
@@ -135,6 +140,7 @@ _MODULES = {
     "load_method": "_method_loading",
     "AutoReset": "autoreset",
     "collect_rollout": "collection",
+    "download_models": "released_models",
     "export_bundle": "bundles",
     "export_model": "portable_models",
     "prepare_bundle": "bundles",

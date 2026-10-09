@@ -607,6 +607,35 @@ def _study_sweep(  # pyright: ignore[reportUnusedFunction]
     return result
 
 
+def _actor_description(reference: str | Path) -> dict[str, Any]:
+    """Read a saved actor's checked description from any saved-actor form.
+
+    reference is an actor export or learner folder (read_checkpoint_description,
+    exactly as before), a portable model file (its embedded original
+    ``actor_details.json``, after every part's SHA-256 is checked) or an
+    ``hf://`` model address (the released file, downloaded once into Hugging
+    Face's standard cache when missing and checked against its repo's
+    ``steps.csv``). Returns the description dict. Raises ValueError when a
+    check fails or the reference is none of these.
+    """
+    from marl_battlegrounds.training._checkpoint_metadata import (
+        read_checkpoint_description,
+    )
+
+    text = str(reference)
+    if text.startswith("hf://"):
+        from marl_battlegrounds.released_models import (
+            _fetch,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        reference = cast(Path, _fetch(text).path)
+    if Path(reference).is_file():
+        from marl_battlegrounds.portable_models import read_portable_model
+
+        return read_portable_model(reference).actor_details
+    return read_checkpoint_description(reference)
+
+
 def _evaluation_paths(
     checkpoint: object,
     opponent: object,
@@ -616,15 +645,21 @@ def _evaluation_paths(
     output_dir: object = None,
     resume_from: object = None,
     compilation_cache: object = None,
-) -> tuple[Path, str]:
+) -> tuple[Path | str, str]:
     """Check evaluation destinations before any launcher or evaluator writes.
 
-    checkpoint names an existing artifact directory; opponent uses the shared
-    reference grammar. Relative paths use base_dir. launch_dir and its .hydra
-    receipts, output_dir and optional compilation_cache must be outside input
-    artifacts. Launcher/cache records also stay outside a resumed result folder.
-    Reject links before resolving parent components. Return the absolute actor
-    path and normalized opponent reference. No payloads or factories are read.
+    checkpoint names an existing artifact directory, a portable model file or
+    a released model (a typed name such as
+    ``MARL-BattleGrounds/tdm-season-0-qmix@final``, an ``hf://`` address or a
+    released-layout folder); opponent uses the shared reference grammar.
+    Relative paths use base_dir. launch_dir and its .hydra receipts, output_dir
+    and optional compilation_cache must be outside local input artifacts.
+    Launcher/cache records also stay outside a resumed result folder. Reject
+    links before resolving parent components. Return the absolute actor path
+    (or a released model's saved form, its exact ``hf://`` address or chosen
+    file path) and the normalized opponent reference, released names included.
+    No payloads or factories are read; a typed name may read its repo's small
+    index files.
     """
     from marl_battlegrounds._method_loading import (
         _reference_kind,  # pyright: ignore[reportPrivateUsage]
@@ -646,15 +681,31 @@ def _evaluation_paths(
             raise ValueError(f"{label} must not follow symbolic links")
         return target.resolve()
 
-    actor = _directory(path(checkpoint, "checkpoint"))
+    from marl_battlegrounds.released_models import (
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    inputs: list[Path] = []
+    actor: Path | str
+    if (
+        isinstance(checkpoint, str)
+        and _reference_kind(checkpoint, base_dir=base_dir) == "released"
+    ):
+        actor = _saved_reference(checkpoint, base_dir=base_dir)
+    else:
+        actor = path(checkpoint, "checkpoint")
+        actor = actor if actor.is_file() else _directory(actor)
+        inputs.append(actor)
     if not isinstance(opponent, str):
         raise TypeError("opponent must be a method reference string")
     kind = _reference_kind(opponent, base_dir=base_dir)
-    inputs = [actor]
     if kind == "artifact":
-        other = _directory(path(opponent, "opponent"))
+        other = path(opponent, "opponent")
+        other = other if other.is_file() else _directory(other)
         inputs.append(other)
         opponent = str(other)
+    elif kind == "released":
+        opponent = _saved_reference(opponent, base_dir=base_dir)
     elif kind == "unknown":
         raise ValueError(f"Unknown opponent reference: {opponent}")
     launch = path(launch_dir, "launch_dir")
@@ -847,7 +898,8 @@ def _resume_settings(
     Inherit saved defaults through the runner's continuation-aware reader. Merge
     only learner setting leaves; replace complete population/list declarations.
     Omitted scientific settings return None for train's config argument. Explicit
-    null or a differing effective setting raises before recovery writes. Returns
+    null or a differing effective setting raises before recovery writes. Released
+    model names resolve against the commits the saved run recorded. Returns
     checkpoint path, inherited/equal effective config and optional asserted config.
     """
     from marl_battlegrounds.baselines.methods import method_settings_field
@@ -874,10 +926,18 @@ def _resume_settings(
         overlay["opponents"] = plain["opponent_pool"]
     if not overlay:
         return checkpoint, inherited, None
+    from marl_battlegrounds.released_models import (
+        _recorded_commits,  # pyright: ignore[reportPrivateUsage]
+    )
+
     saved = config_to_dict(inherited)
     base = base_dir.expanduser().resolve()
+    # Released names resolve to the commits the saved run recorded.
     supplied = _config_paths(
-        overlay, base, runtime=_runtime_paths(plain.get("runtime", {}), base)
+        overlay,
+        base,
+        runtime=_runtime_paths(plain.get("runtime", {}), base),
+        commits=_recorded_commits(description),
     )
     selected = method_settings_field(inherited.method)
     for key, item in supplied.items():
@@ -1068,8 +1128,12 @@ def run_evaluation(
     Parameters
     ----------
     value : DictConfig or mapping
-        checkpoint is an actor or complete learner directory. opponent is a
-        built-in name, saved artifact path or trusted module:function factory.
+        checkpoint is an actor or complete learner directory, a portable model
+        file or a released model (a typed name such as
+        ``MARL-BattleGrounds/tdm-season-0-qmix@final``, an ``hf://`` address or
+        a released-layout folder). opponent is a built-in name, saved artifact
+        or model file path, released model or trusted module:function factory.
+        Released names are recorded as their exact ``hf://`` addresses.
         evaluation holds serializable evaluate keywords; writer and live objects
         belong to Python evaluate calls. Sparse resume omits scientific settings
         to inherit them; supplied values remain assertions. Missing resume counts
@@ -1105,8 +1169,11 @@ def run_evaluation(
     Applies explicit process resources before numerical imports. Loads each
     distinct reference once during setup. The evaluator owns snapshots, memory,
     information rights, recovery, metrics, replay and writing. No training,
-    selection, hidden retry, download or alternate evaluator runs here. Preview
-    does not verify payloads, import factories or initialize a numerical backend.
+    selection, hidden retry or alternate evaluator runs here. A released model
+    is downloaded once into Hugging Face's standard cache when missing, also
+    in preview, because its description is inside the model file. Otherwise
+    preview does not verify payloads, import factories or initialize a
+    numerical backend.
     Hydra itself can create launch records before this function is called.
     """
     from marl_battlegrounds._method_loading import (
@@ -1118,7 +1185,6 @@ def run_evaluation(
     from marl_battlegrounds.training._checkpoint_metadata import (
         _artifact_identity,  # pyright: ignore[reportPrivateUsage]
         _schema_method,  # pyright: ignore[reportPrivateUsage]
-        read_checkpoint_description,
     )
     from marl_battlegrounds.training._run_io import atomic_json
     from marl_battlegrounds.training.config import (
@@ -1155,8 +1221,19 @@ def run_evaluation(
         result = Path(value).expanduser()
         return (result if result.is_absolute() else base / result).absolute()
 
-    checkpoint = path(plain.get("checkpoint"), "checkpoint")
-    description = read_checkpoint_description(checkpoint)
+    from marl_battlegrounds.released_models import (
+        _saved_reference,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    raw_checkpoint = plain.get("checkpoint")
+    checkpoint: Path | str = (
+        _saved_reference(raw_checkpoint, base_dir=base)
+        if isinstance(raw_checkpoint, str)
+        and raw_checkpoint.strip()
+        and _reference_kind(raw_checkpoint, base_dir=base) == "released"
+        else path(raw_checkpoint, "checkpoint")
+    )
+    description = _actor_description(checkpoint)
     observed = _schema_method(description["schemas"])
     if observed != expected_method:
         raise ValueError(
@@ -1167,7 +1244,10 @@ def run_evaluation(
     opponent_description = None
     if kind == "artifact":
         opponent = str(path(opponent, "opponent"))
-        opponent_description = read_checkpoint_description(opponent)
+        opponent_description = _actor_description(opponent)
+    elif kind == "released":
+        opponent = _saved_reference(opponent, base_dir=base)
+        opponent_description = _actor_description(opponent)
     elif kind == "unknown":
         raise ValueError(f"Unknown opponent reference: {opponent}")
     for name in ("output_dir", "resume_from"):
@@ -1289,7 +1369,7 @@ def run_evaluation(
             if (
                 getattr(loaded, "checkpoint", None)
                 != _artifact_identity(original)["actor_digest"]
-                or read_checkpoint_description(reference)["checkpoint_id"]
+                or _actor_description(reference)["checkpoint_id"]
                 != original["checkpoint_id"]
             ):
                 raise ValueError("Saved actor identity changed during evaluation setup")

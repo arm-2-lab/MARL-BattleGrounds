@@ -2,7 +2,8 @@
 
 TrainConfig and the JSON readers share the baseline settings and host checks.
 The runner and original helper modules retain exact aliases for compatibility.
-No config construction opens artifacts, calls a policy factory or starts JAX.
+No config construction opens artifacts, calls a policy factory, starts JAX or
+uses the network; released model names are checked for spelling only.
 Array-valued shaping checks stay with training.shaping; ordinary configurations
 use real host numbers. Numerical callers share the same scalar limits.
 """
@@ -45,8 +46,26 @@ from marl_battlegrounds.baselines.methods import (
 from marl_battlegrounds.evaluation.models import (
     _validate_recorded_red_zone_depth,  # pyright: ignore[reportPrivateUsage]
 )
+from marl_battlegrounds.released_models import (
+    _typed_name,  # pyright: ignore[reportPrivateUsage]
+)
 
 _FLOAT32_MAX = float.fromhex("0x1.fffffep+127")
+
+
+def _validate_model_reference(reference: str) -> None:
+    """Check one model field's spelling without files or the network.
+
+    A typed released name such as ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"``
+    passes when its ``@`` suffix is a step form; the trainer later turns it
+    into its exact ``hf://`` address and refuses it there if it is really a
+    relative local path. Every other value must pass
+    validate_saved_method_reference, so other relative paths stay refused here,
+    as before. Raises TypeError or ValueError otherwise.
+    """
+    if not isinstance(cast(object, reference), str) or _typed_name(reference) is None:
+        validate_saved_method_reference(reference)
+
 
 # The five held-out validation maps, in ID order. This module owns the list so
 # TrainConfig can check validation_maps without importing the validator;
@@ -174,6 +193,9 @@ default="mappo"
     opponents : mapping[str, float] or sequence[str] or None, default=None
         Named weights or a repeating game-start order. Names are "self", "past",
         method references, or aliases supplied by train's opponents argument.
+        A name may be a released model name such as
+        ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"``; the name stays as typed
+        and its saved binding records the exact ``hf://`` address.
         Weights are normalized. New games choose in ascending lane order;
         unfinished games keep their member. None preserves the default self/past
         recipe and the legacy pin settings. Explicit populations cannot also
@@ -201,11 +223,13 @@ default="mappo"
         least one active learner slot. Frozen partners fill the other active slots.
     partners : mapping or sequence or None, default=None
         Frozen partner names with relative weights, or a repeating game-start
-        order, using the same choice rule as opponents. Bind live members in
+        order, using the same choice rule and released-name handling as
+        opponents. Bind live members in
         train(partners=...). The learner and its self/past mirrors retain these
         partners on their other slots. Fixed partners receive no learner update.
     validation_partners : mapping of str to str or None, default=None
-        Additional named method references for deployed-team validation. Live
+        Additional named method references for deployed-team validation;
+        released model names are saved as their exact ``hf://`` addresses. Live
         members may be supplied through train(validation_partners=...). Training
         partners already receive their own familiar rows by default.
     validation_partner_labels : mapping of str to str or None, default=None
@@ -229,10 +253,14 @@ default="mappo"
         None keeps the pinned share playing that first-update actor. Otherwise
         a method reference that plays the pinned share instead: a built-in name
         ("random", "tdm-alpha", "tdm-beta", "tdm-gamma"), an absolute path to
-        an actor export or complete learner checkpoint directory (relative paths fail),
-        or a
+        an actor export, complete learner checkpoint directory or portable
+        model file (relative paths fail), a released model name such as
+        ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"`` or its exact ``hf://``
+        address, or a
         ``module:function`` factory, resolved by
-        ``load_method`` when the run is set up and again on resume. Requires a
+        ``load_method`` when the run is set up and again on resume. Construction
+        checks a released name's spelling only; train turns it into its exact
+        ``hf://`` address before any run file is written. Requires a
         positive pinned_opponent_share. JAX methods and host methods (for
         example LLM agents) are both accepted. Training does not enter a pinned
         System's resource_scope: supply an already open caller-owned LLM client,
@@ -243,11 +271,16 @@ default="mappo"
         is a training opponent: results against it, and its evidence of
         protected-controller exposure, are recorded with the run.
     initial_actor : str or None, default=None
-        Compatible saved actor weights for a new run. The critic, optimizer,
+        Compatible saved actor weights for a new run: an actor export or
+        complete learner checkpoint folder, a portable model file, a released
+        model name such as ``"MARL-BattleGrounds/tdm-season-0-qmix@final"`` or
+        its exact ``hf://`` address. A relative path uses the current directory.
+        The critic, optimizer,
         memory and counters start fresh. PQN also imports running statistics;
         QMIX starts its target Q from the same weights and uses fresh mixers.
         Resume restores the full saved learner and never reloads this path.
-        The source identity and known protected-controller exposure are kept.
+        The source identity and known protected-controller exposure are kept;
+        a released name is saved as its exact ``hf://`` address.
     ppo : PPOConfig, default=PPOConfig()
         Immutable donor network update settings, including rollout length,
         input scale and spawn frame. A shared random initialization result can
@@ -276,12 +309,14 @@ default="mappo"
         Existing frozen panel.json path. Use this or validation_opponents.
         Demonstration needs a panel by train setup; development may omit it.
     validation_opponents : tuple[str, ...] or None, default=None
-        Built-in names, absolute actor export/checkpoint paths or
-        module:function factories.
+        Built-in names, absolute actor export/checkpoint or model file paths,
+        released model names or ``hf://`` addresses, or module:function
+        factories. Released names are saved as their exact addresses.
         Freeze these once before training. Live methods instead belong in
         train's validation_opponents keyword. Conflicting declarations fail.
     slot_diagnostic_actor : str or None, default=None
-        Explicit absolute actor export (matching the run's method)
+        Explicit absolute actor export or model file path, released model
+        name or ``hf://`` address (matching the run's method)
         for the optional slot comparison with a
         new System panel. Historical panels keep their final actor by default.
         Enabled diagnostics verify this artifact before learner setup.
@@ -528,7 +563,10 @@ default="mappo"
             not isinstance(cast(object, self.initial_actor), str)
             or not self.initial_actor.strip()
         ):
-            raise ValueError("initial_actor must be a nonempty artifact path or None")
+            raise ValueError(
+                "initial_actor must be a nonempty actor path, model file, "
+                "released model name or hf:// address, or None"
+            )
         if self.learner_slots is not None:
             slots = tuple(self.learner_slots)
             if (
@@ -629,7 +667,7 @@ default="mappo"
                 raise ValueError(
                     "pinned_opponent needs a positive pinned_opponent_share"
                 )
-            validate_saved_method_reference(self.pinned_opponent)
+            _validate_model_reference(self.pinned_opponent)
         if self.purpose not in ("development", "demonstration"):
             raise ValueError("purpose must be development or demonstration")
         if self.validation_panel is not None and (
@@ -662,16 +700,27 @@ default="mappo"
                     "validation_opponents must be a nonempty tuple of references"
                 )
             for reference in self.validation_opponents:
-                validate_saved_method_reference(reference)
+                _validate_model_reference(reference)
             if self.validation_panel is not None:
                 raise ValueError(
                     "Declare validation_panel or validation_opponents, not both"
                 )
         if self.slot_diagnostic_actor is not None and (
             not isinstance(cast(object, self.slot_diagnostic_actor), str)
-            or not Path(self.slot_diagnostic_actor).is_absolute()
+            or not (
+                Path(self.slot_diagnostic_actor).is_absolute()
+                or self.slot_diagnostic_actor.startswith("hf://")
+                or _typed_name(self.slot_diagnostic_actor) is not None
+            )
         ):
-            raise ValueError("slot_diagnostic_actor must be an absolute actor path")
+            raise ValueError(
+                "slot_diagnostic_actor must be an absolute actor or model file "
+                "path, a released model name or an hf:// address"
+            )
+        if self.slot_diagnostic_actor is not None and (
+            self.slot_diagnostic_actor.startswith("hf://")
+        ):
+            validate_saved_method_reference(self.slot_diagnostic_actor)
         if self.slot_diagnostic and not (
             self.validation_panel
             or self.validation_opponents

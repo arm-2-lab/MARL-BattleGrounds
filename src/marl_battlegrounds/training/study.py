@@ -7,6 +7,8 @@ Explicit resources admit bounded workers through the same case owner. A
 declared GPU missing at start is paused while the other devices keep working.
 Import, status, the progress view (study_status with progress=True) and stop
 use no numerical backend and query no GPU. Workers preserve Python import paths.
+Released model names in a declaration become exact ``hf://`` addresses once,
+while the declaration is read, so every case uses the same files.
 """
 
 from __future__ import annotations
@@ -106,27 +108,38 @@ def _path(value: object, base: Path, name: str) -> str:
     return str((base / path).resolve() if not path.is_absolute() else path.resolve())
 
 
-def _reference(value: object, base: Path) -> object:
+def _reference(
+    value: object, base: Path, commits: Mapping[str, str | None] | None = None
+) -> object:
     """Resolve explicit folders; keep registered names and factory strings.
 
     A bare module:function is always a factory. Spell a colon-containing folder
     as ./model:version or an absolute path to remove that ambiguity. Other bare
     existing directories retain their historical declaration-relative meaning.
-    No factory is imported or invoked by this path-only step.
+    A released model name becomes its exact ``hf://`` address here, once,
+    before any case starts, so every case of the study uses the same commit;
+    a released-layout folder becomes its chosen file's absolute path.
+    commits, when given (a resumed run's recorded commits from
+    released_models._recorded_commits), win over the package pins. No
+    factory is imported or invoked by this path-only step.
     """
     if not isinstance(value, str):
         return value
     from marl_battlegrounds._method_loading import _reference_kind
+    from marl_battlegrounds.released_models import _saved_reference
 
-    return (
-        _path(value, base, "System reference")
-        if _reference_kind(value, base_dir=base) == "artifact"
-        else value
-    )
+    kind = _reference_kind(value, base_dir=base)
+    if kind == "released":
+        return _saved_reference(value, base_dir=base, commits=commits)
+    return _path(value, base, "System reference") if kind == "artifact" else value
 
 
 def _config_paths(
-    value: Record, base: Path, *, runtime: Mapping[str, Any] | None = None
+    value: Record,
+    base: Path,
+    *,
+    runtime: Mapping[str, Any] | None = None,
+    commits: Mapping[str, str | None] | None = None,
 ) -> Record:
     """Copy settings and resolve declared input paths against base.
 
@@ -134,6 +147,8 @@ def _config_paths(
     references retain their meaning. Unknown settings remain for the config
     parser to reject. base is the original launch directory or declaration parent.
     runtime aliases keep their exact names even beside a folder with that name.
+    Released model names become exact ``hf://`` addresses (see _reference);
+    commits, when given for a resume, win over the package pins.
     """
     config = dict(value)
     for name in ("validation_panel", "random_initialization_result"):
@@ -141,10 +156,10 @@ def _config_paths(
             config[name] = _path(config[name], base, name)
     for name in ("initial_actor", "pinned_opponent", "slot_diagnostic_actor"):
         if config.get(name) is not None:
-            config[name] = _reference(config[name], base)
+            config[name] = _reference(config[name], base, commits)
     if isinstance(config.get("validation_opponents"), (list, tuple)):
         config["validation_opponents"] = [
-            _reference(value, base) for value in config["validation_opponents"]
+            _reference(value, base, commits) for value in config["validation_opponents"]
         ]
     for name in ("opponents", "partners", "validation_partners"):
         declared = config.get(name)
@@ -158,14 +173,15 @@ def _config_paths(
                 item
                 if isinstance(item, str)
                 and (item in ("self", "past") or item in aliases)
-                else _reference(item, base)
+                else _reference(item, base, commits)
             )
 
         if isinstance(declared, dict):
             declared = cast(Record, declared)
             if name == "validation_partners":
                 config[name] = {
-                    key: _reference(item, base) for key, item in declared.items()
+                    key: _reference(item, base, commits)
+                    for key, item in declared.items()
                 }
             else:
                 resolved: Record = {}
@@ -375,8 +391,10 @@ def _file_inputs(case: Record) -> Record:
 
     Panel/result files keep exact byte hashes. The existing panel owner resolves
     member references, including portable and historical paths. Method inputs
-    use checked artifact descriptions or installed/factory code evidence; factory
-    bodies and numerical model loads do not run. The trainer later checks full
+    use checked artifact descriptions or installed/factory code evidence; a
+    released model (an ``hf://`` address) uses its file SHA-256 from its repo's
+    ``steps.csv``, which may be downloaded once into the Hugging Face cache.
+    Factory bodies and numerical model loads do not run. The trainer later checks full
     payloads and frozen registrations. Aliases and zero-share members remain in
     the declaration. Each distinct input is inspected once per call. Unknown
     external service state stays unknown rather than being called reproducible.

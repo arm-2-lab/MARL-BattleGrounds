@@ -292,9 +292,18 @@ def _controller(value: object, assets: Mapping[str, Any], *, version: int = 1) -
         _text(row["name"], "builtin name")
     elif kind == "reference":
         reference = _text(row["reference"], "controller reference")
-        if not Path(reference).is_absolute():
+        if reference.startswith("hf://"):
+            from marl_battlegrounds.released_models import (
+                _parse_address,  # pyright: ignore[reportPrivateUsage]
+            )
+
+            _parse_address(reference)
+        elif not Path(reference).is_absolute():
             if "/" in reference or "\\" in reference:
-                raise ValueError("Controller folder references must be absolute")
+                raise ValueError(
+                    "Controller folder references must be absolute paths "
+                    "or hf:// addresses"
+                )
             if ":" in reference:
                 pieces = reference.split(":")
                 if len(pieces) != 2 or not all(pieces) or "." in pieces[1]:
