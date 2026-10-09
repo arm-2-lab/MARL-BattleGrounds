@@ -11,8 +11,8 @@
  * To Default Configuration returns the shipped defaults; and a banned-word
  * scan of every switch label, help line, group, preset text and command help
  * line (no Host, Azure, Crimson, today, Mock, Blue, Red as a team name, or the
- * retired names), plus Title Case labels and a help line that says what Off
- * shows.
+ * retired names; "pale blue", the Rest color, and "Red Zone" are allowed), plus
+ * Title Case labels and a help line that says what Off shows.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -179,7 +179,8 @@ const BANNED = [
   /\bCrimson\b/u,
   /\btoday\b/iu,
   /\bMock\b/iu,
-  /\bBlue\b/iu,
+  // "pale blue" is the Rest color (Moon Dew), not a team name.
+  /(?<!\bpale )\bBlue\b/iu,
   /\bRed\b(?! Zone)/iu,
   /\bheroe?s?\b/iu,
   /\bshowroom\b/iu,

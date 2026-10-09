@@ -8,7 +8,11 @@
  * when an Ultimate reached the champion or the change killed it; an unchanged
  * body and a switched-off battle text give no number; in Agent POV a number
  * shows only for a champion seen at both ends of the tick, never after it
- * returned to its pad, always ivory (a heal reads "neutral") and always 13 px;
+ * returned to its pad, and always 13 px; on both teams an Agent POV heal and
+ * Rest number equal Oracle View's exactly (text, gold "heal" or Moon Dew "rest"
+ * tone, size) and draw the same data-tone, and a plan-less call (unknown
+ * audience) uses the same color; a heal or Rest on a champion the team did not
+ * see at both ends draws no number;
  * build() draws one export-safe `text.combat-number` with no ID and no leader
  * line (the connector group stays empty), re-decides the number from mount.plan, and queues one 4 px pop at the event's phaseStart with
  * fill "backwards" (none when settled); the FOOTPRINT keys the plan reads stay;
@@ -218,7 +222,7 @@ test("Oracle View numbers use tone and size from the audience's own plan", async
   assert.equal(healthText.lifeNumber(off.event, off.plan), null);
 });
 
-test("Agent POV numbers are ivory, 13 px and only for bodies seen at both ends", async () => {
+test("Agent POV losses are ivory, 13 px and only for bodies seen at both ends", async () => {
   for (const name of [
     "replay_shared_obs_agent_pov",
     "replay_no_shared_obs_agent_pov",
@@ -227,8 +231,6 @@ test("Agent POV numbers are ivory, 13 px and only for bodies seen at both ends",
     assert.equal(loss.plan.audience, "agent_pov");
     const number = healthText.lifeNumber(loss.event, loss.plan);
     assert.deepEqual({ ...number }, { text: "−50", tone: "damage", size: 13 }, name);
-    const heal = await planFor(name, { start: 150, after: 160 });
-    assert.equal(healthText.lifeNumber(heal.event, heal.plan)?.tone, "neutral", name);
     const key = loss.event.recipientPresentationKey;
     const arrived = {
       ...loss.plan,
@@ -249,6 +251,105 @@ test("Agent POV numbers are ivory, 13 px and only for bodies seen at both ends",
       null,
       `${name} unseen body`,
     );
+  }
+});
+
+test("Agent POV colors every number it shows like Oracle View, on both teams, and hides unseen heals", async () => {
+  const oracle = await planFor("replay_oracle", { start: 150, after: 160 });
+  const oracleHeal = { ...healthText.lifeNumber(oracle.event, oracle.plan) };
+  assert.deepEqual(oracleHeal, { text: "+10", tone: "heal", size: 13 });
+  const restOf = (/** @type {Record<string, any>} */ event) => ({
+    ...event,
+    kind: "regeneration",
+    value: 3,
+  });
+  const oracleRest = { ...healthText.lifeNumber(restOf(oracle.event), oracle.plan) };
+  assert.deepEqual(oracleRest, { text: "+3", tone: "rest", size: 13 });
+  /**
+   * @param {Record<string, any>} event
+   * @param {Record<string, any>} plan
+   */
+  const drawnTone = (event, plan) =>
+    drawEvent(event, plan, { motionMode: "normal", settled: true })
+      .group.querySelector(".combat-number")
+      ?.getAttribute("data-tone") ?? null;
+  const oracleTones = {
+    heal: drawnTone(oracle.event, oracle.plan),
+    rest: drawnTone(restOf(oracle.event), oracle.plan),
+  };
+  assert.deepEqual(oracleTones, { heal: "heal", rest: "rest" });
+  // A plan-less call (unknown audience) uses the same color rule.
+  assert.deepEqual(
+    { ...healthText.lifeNumber({ kind: "net_health", netDelta: 10 }, null) },
+    oracleHeal,
+  );
+  assert.deepEqual(
+    { ...healthText.lifeNumber({ kind: "regeneration", value: 3 }, null) },
+    oracleRest,
+  );
+  for (const name of [
+    "replay_shared_obs_agent_pov",
+    "replay_no_shared_obs_agent_pov",
+  ]) {
+    const heal = await planFor(name, { start: 150, after: 160 });
+    assert.equal(heal.plan.audience, "agent_pov");
+    const key = heal.event.recipientPresentationKey;
+    /**
+     * @param {Record<string, any>} plan
+     * @param {string} wanted
+     */
+    const bodyOf = (plan, wanted) =>
+      plan.bodies.find(
+        (/** @type {Record<string, any>} */ entry) => entry.presentationKey === wanted,
+      );
+    // audienceKey is [session, view kind, POV recipient's presentation key].
+    const ownTeam = bodyOf(heal.plan, JSON.parse(heal.plan.audienceKey)[2])?.teamId;
+    assert.ok(ownTeam === 1 || ownTeam === 2, name);
+    assert.equal(bodyOf(heal.plan, key)?.teamId, ownTeam, `${name} own champion`);
+    const enemyPlan = {
+      ...heal.plan,
+      bodies: heal.plan.bodies.map((/** @type {Record<string, any>} */ entry) =>
+        entry.presentationKey === key ? { ...entry, teamId: 3 - ownTeam } : entry,
+      ),
+    };
+    /** @type {Array<[string, Record<string, any>]>} */
+    const teams = [
+      ["own team", heal.plan],
+      ["other team", enemyPlan],
+    ];
+    for (const [team, plan] of teams) {
+      const where = `${name} ${team}`;
+      const rest = restOf(heal.event);
+      assert.deepEqual(
+        { ...healthText.lifeNumber(heal.event, plan) },
+        oracleHeal,
+        where,
+      );
+      assert.deepEqual({ ...healthText.lifeNumber(rest, plan) }, oracleRest, where);
+      assert.equal(drawnTone(heal.event, plan), oracleTones.heal, where);
+      assert.equal(drawnTone(rest, plan), oracleTones.rest, where);
+      const arrived = {
+        ...plan,
+        bodies: plan.bodies.map((/** @type {Record<string, any>} */ entry) =>
+          entry.presentationKey === key ? { ...entry, start: null } : entry,
+        ),
+      };
+      assert.equal(
+        healthText.lifeNumber(heal.event, arrived),
+        null,
+        `${where} arrival`,
+      );
+      assert.equal(drawnTone(heal.event, arrived), null, `${where} arrival`);
+      const unseen = {
+        ...plan,
+        bodies: plan.bodies.filter(
+          (/** @type {Record<string, any>} */ entry) => entry.presentationKey !== key,
+        ),
+      };
+      assert.equal(healthText.lifeNumber(heal.event, unseen), null, `${where} unseen`);
+      assert.equal(drawnTone(heal.event, unseen), null, `${where} unseen`);
+      assert.equal(drawnTone(rest, unseen), null, `${where} unseen Rest`);
+    }
   }
 });
 

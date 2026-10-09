@@ -64,13 +64,16 @@
  * switches and the render's projection (only to test the Beyond Death tag's
  * room against the plan's own bodies and boxes). In Agent POV a number (and a
  * Last Breath) shows only for a champion the team saw at both ends of the tick
- * (its plan body has a start),
- * never on a tick it came into sight or returned to its pad (no "+100" on a
- * respawn); every number is Life Ivory (a gold or Moon Dew number would tell the
- * team what healed it) and 13 px unless Battle Text Detail sizes it from the
- * observed change (the Ultimate size would reveal an unseen caster). Saved Beat,
- * the share underline and Beyond Death are never drawn there. Nothing here reads
- * a researcher view, a match summary or a body outside the plan.
+ * (its plan body has a start), never on a tick it came into sight or returned
+ * to its pad (no "+100" on a respawn). A number that shows has Oracle View's
+ * color, on both teams: Life Ivory for a loss, Dawn Gold for a heal, Moon Dew
+ * for Rest. The color tells the team nothing new: its own rows already carry a
+ * seen champion's heal and its Rest as separate events, and the Life Vessel
+ * already pours them in gold and Moon Dew. Every Agent POV number is 13 px
+ * unless Battle Text Detail sizes it from the observed change (the Ultimate size
+ * would reveal an unseen caster). Saved Beat, the share underline and Beyond
+ * Death are never drawn there. Nothing here reads a researcher view, a match
+ * summary or a body outside the plan.
  */
 import { explainNetHealth } from "../explanations.js";
 import { DEFAULT_VISUAL_FILTER_STATE } from "../visual-filters.js";
@@ -102,15 +105,15 @@ import {
  *   more ("large").
  * @typedef {Readonly<{
  *   text: string,
- *   tone: "damage" | "heal" | "rest" | "neutral",
+ *   tone: "damage" | "heal" | "rest",
  *   size: 13 | 15 | 18,
  *   weight?: LifeWeight,
  * }>} LifeNumber
- *   One drawn number: text (for example "−20" or "+12"), tone (the color:
- *   damage and neutral Life Ivory, heal Dawn Gold, rest Moon Dew), size in px,
- *   and weight, the Battle Text Detail tier that sized it (absent while that
- *   switch is off, for a Rest number, or when the champion's maximum life is
- *   unknown).
+ *   One drawn number: text (for example "−20" or "+12"), tone (the color, the
+ *   same in both views: damage Life Ivory, heal Dawn Gold, rest Moon Dew), size
+ *   in px, and weight, the Battle Text Detail tier that sized it (absent while
+ *   that switch is off, for a Rest number, or when the champion's maximum life
+ *   is unknown).
  * @typedef {Readonly<{
  *   savedBeat: boolean,
  *   lastBreath: boolean,
@@ -423,12 +426,14 @@ function weightSize(weight) {
  * - No number when the change is zero or unknown, when its battle text is off
  *   (paint part battleText), or when the champion returned to its pad this tick
  *   (plan.bodies returned).
- * - Oracle View: tone damage, heal or rest; 15 px when the change killed the
- *   champion (healthAfter 0) or an Ultimate activation in plan.events targets it,
- *   else 13 px.
+ * - Tone (every audience, both teams): rest for a "regeneration" event, else
+ *   damage for a loss and heal for a gain. It reads only the event's own kind and
+ *   sign, so Agent POV and an unknown audience (no plan, and an event that is not
+ *   a "recipient_cue" row) get the same color as Oracle View.
+ * - Oracle View: 15 px when the change killed the champion (healthAfter 0) or an
+ *   Ultimate activation in plan.events targets it, else 13 px.
  * - Agent POV (or an unknown audience): only when the champion's plan body has a
- *   start (seen at both ends; an unknown audience needs no body); tone damage or
- *   neutral (ivory); 13 px.
+ *   start (seen at both ends; an unknown audience needs no body); 13 px.
  * - Battle Text Detail (health changes only, both views): weight is lifeWeight
  *   and the size is the larger of the tier's size and the plain size above (Agent
  *   POV therefore never gets the Ultimate floor). Without a known tier, and for a
@@ -458,10 +463,10 @@ export function lifeNumber(event, plan, options = {}) {
   if (audience === "agent_pov" && (body === null || body.start == null)) {
     return null;
   }
+  /** @type {LifeNumber["tone"]} */
+  const tone = isRest ? "rest" : delta < 0 ? "damage" : "heal";
   /** @type {13 | 15} */
   let plain = NUMBER_SIZES.ordinary;
-  /** @type {LifeNumber["tone"]} */
-  let tone = delta < 0 ? "damage" : "neutral";
   if (audience === "researcher") {
     const lethal = !isRest && Number(event.healthAfter) === 0;
     const ultimate = (Array.isArray(plan?.events) ? plan.events : []).some(
@@ -472,7 +477,6 @@ export function lifeNumber(event, plan, options = {}) {
         other.targetPresentationKey === key,
     );
     plain = lethal || ultimate ? NUMBER_SIZES.large : NUMBER_SIZES.ordinary;
-    tone = isRest ? "rest" : delta < 0 ? "damage" : "heal";
   }
   const weight = options.detail === true && !isRest ? lifeWeight(event) : null;
   if (weight === null) {

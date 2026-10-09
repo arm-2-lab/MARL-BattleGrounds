@@ -297,7 +297,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     BOTH,
-    "Rest (Regeneration), the life won back while out of combat, pours a pale silver light into the champion's life. Off: the life level still rises, with no pour.",
+    "Rest (Regeneration), the life won back while out of combat, pours a pale blue light into the champion's life. Off: the life level still rises, with no pour.",
   ],
   [
     "cooldown_effects",
@@ -387,7 +387,7 @@ const REGISTRY_ROWS = [
     true,
     "arena",
     BOTH,
-    "One number above each champion whose life changed this tick: ivory for a loss, gold for a gain and pale silver for Rest. Off: no numbers; the life level still shows the change.",
+    "One number above each champion whose life changed this tick: ivory for a loss, gold for a gain and pale blue for Rest. Off: no numbers; the life level still shows the change.",
   ],
   [
     "death_announcer",

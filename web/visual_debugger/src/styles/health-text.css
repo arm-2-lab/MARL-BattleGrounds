@@ -4,11 +4,12 @@
  * Battle Text Detail. styles.css imports this file at its top.
  *
  * Colors come only from the tokens in styles.css :root (and the High Contrast
- * palette's overrides): Life Ivory for a loss (and every Agent POV number),
- * Dawn Gold for a heal, "Saved" and its rim flash, Moon Dew for Rest, Cinder
- * for the Last Breath smolder, the class tokens for the share underline (Rime
- * for a Freezing Trap, Dawn Gold for healing) and an Ink outline drawn under
- * every text fill (paint-order is a presentation attribute set by the look).
+ * palette's overrides): Life Ivory for a loss, Dawn Gold for a heal, "Saved"
+ * and its rim flash, Moon Dew for Rest, Cinder for the Last Breath smolder, the
+ * class tokens for the share underline (Rime for a Freezing Trap, Dawn Gold for
+ * healing) and an Ink outline drawn under every text fill (paint-order is a
+ * presentation attribute set by the look). A number has the same color in Agent
+ * POV and Oracle View, on both teams.
  * Size, weight, outline width, stroke widths and opacities (the Beyond Death
  * tag's 75% fill too) are presentation attributes. No animations or
  * transitions here: every pop, rise, flash and fade is a Web Animation from the
@@ -30,8 +31,7 @@
   transform-origin: center;
 }
 
-.combat-number[data-tone="damage"],
-.combat-number[data-tone="neutral"] {
+.combat-number[data-tone="damage"] {
   fill: var(--life-ivory);
 }
 
