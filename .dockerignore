@@ -1,0 +1,18 @@
+# The Docker build sees only the files the image needs (docker/Dockerfile).
+# Everything is excluded first, then the needed paths are let back in, so
+# private notes, artifacts, caches and node_modules can never enter an image.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!.python-version
+!src/
+!web/visual_debugger/index.html
+!web/visual_debugger/styles.css
+!web/visual_debugger/src/
+!web/visual_debugger/assets/
+!play.py
+!docker/entrypoint.sh
+**/__pycache__
+**/*.py[cod]
