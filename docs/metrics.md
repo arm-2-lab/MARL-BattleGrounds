@@ -115,7 +115,7 @@ denominator and blank rule. Agent POV still shows the full record.
 ```python
 import pandas as pd
 
-games = pd.DataFrame(result.table("full_metrics"))
+games = pd.DataFrame(result.table("full_metrics"))  # result.iter_table(...) reads a big table in parts
 print(games["agent_4_effective_healing_done"].describe())  # blanks stay NaN
 ```
 

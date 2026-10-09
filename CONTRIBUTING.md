@@ -8,7 +8,7 @@ Report security problems privately, as [SECURITY.md](SECURITY.md) explains.
 Fork the repository, clone your fork, install [uv](https://docs.astral.sh/uv/) and run:
 
 ```bash
-uv sync --locked --extra dev --extra training --extra hydra --extra viz
+uv sync --locked --extra dev --extra training --extra hydra --extra viz --extra notebook
 scripts/dev/format.sh
 scripts/dev/check.sh --static-only
 JAX_PLATFORMS=cpu uv run --no-sync pytest tests/<folder>/<file>.py
@@ -19,7 +19,7 @@ JAX_PLATFORMS=cpu uv run --no-sync pytest tests/<folder>/<file>.py
 3. `check.sh --static-only` runs the fast checks (Ruff and Pyright).
 4. `pytest` runs the tests for the files you changed, on the CPU.
 
-Then open the pull request and fill in its form. GitHub runs the full test suite.
+Then open the pull request and fill in its form. Maintainers run the full test suite before each release.
 
 ## Where Things Live
 
@@ -41,8 +41,8 @@ Then open the pull request and fill in its form. GitHub runs the full test suite
   timeouts. If a test hangs, fix the cause.
 - Put new tests in small files, so they fit the shards (groups of tests that run
   side by side). Time each new file once and add its time in whole seconds to
-  `files` in `scripts/dev/pytest_shard_costs.json`. The routine for rebalancing
-  the shards is at the top of `scripts/dev/shard_costs.py`.
+  `files` in `scripts/dev/pytest_shard_costs.json`. When the slowest shard drifts by
+  minutes, rebalance with the routine at the top of `scripts/dev/shard_costs.py`.
 
 ## Documentation Rules
 

@@ -128,14 +128,14 @@ actions: a network, a planner, a language model or a mix.
 | [Game Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/game_rules.md) | Classes, abilities, scoring, Red Zone, scenarios | [game](https://marl-battlegrounds.com/#game) |
 | [Your Method](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/your_method.md) | Plug in your own model or learner, with JAX's jit, vmap and scan | [your-method](https://marl-battlegrounds.com/#your-method) |
 | [Training](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/training.md) | The six learners, opponents, curriculum, rewards, checkpoints | [training](https://marl-battlegrounds.com/#training) |
-| [Hydra](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/hydra.md) | Settings files, overrides, sweeps, studies and the experiment stages | [configs](https://marl-battlegrounds.com/#configs) |
+| [Hydra Configs](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/hydra.md) | Settings files, overrides, sweeps, studies and the experiment stages | [configs](https://marl-battlegrounds.com/#configs) |
 | [Evaluation](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/evaluation.md) | Fair games, validation and test maps, scenarios, saved results | [evaluate](https://marl-battlegrounds.com/#evaluate) |
 | [Metrics](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/metrics.md) | What is measured and how to read it | [metrics](https://marl-battlegrounds.com/#metrics) |
 | [Tournaments](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournaments.md) | Round robins, Elo ratings and tiers | [round-robin](https://marl-battlegrounds.com/#round-robin) |
 | [Tournament Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) | The leaderboard rulebook | [rules](https://marl-battlegrounds.com/#rules) |
 | [Replays](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the Replay Viewer | [replay-format](https://marl-battlegrounds.com/#replay-format) |
 | [BattleClient](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/battle_client.md) | Play against or beside your own agents in the browser | [battleclient](https://marl-battlegrounds.com/#battleclient) |
-| [Language Models](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
+| [LLM Agents](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
 | [Performance](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/performance.md) | Speed and memory, and how to measure them on your machine | [performance](https://marl-battlegrounds.com/#performance) |
 | [Method Sources](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/method_sources.md) | Where the built-in learners come from | [method-sources](https://marl-battlegrounds.com/#method-sources) |
 | [API Reference](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/api.md) | Every public name on one page | [api](https://marl-battlegrounds.com/#api) |

@@ -1,13 +1,13 @@
 """Check that the public Markdown guides stay true to the code.
 
-Contracts: every relative link in every tracked Markdown file names a file that
-exists, and every absolute link into this repository maps to a tracked path;
-the README quick start and the first Python block of every guide in docs/ run
-on the CPU (except llm.md, which needs a model server, and battle_client.md,
-which opens a browser); every other Python block parses, every public name it
-reaches through an import (its own or an earlier block's in the same file)
-exists, and every keyword it passes to a public callable is one of that
-callable's parameters; every ``python -m
+Contracts: every relative link in every tracked Markdown file names a tracked
+file or folder, and every absolute link into this repository maps to a tracked
+path; the README quick start and the first Python block of every guide in docs/
+run on the CPU (except llm.md, which needs a model server, and
+battle_client.md, which opens a browser); every other Python block parses,
+every public name it reaches through an import (its own or an earlier block's
+in the same file) exists, and every keyword it passes to a public callable is
+one of that callable's parameters; every ``python -m
 marl_battlegrounds.experiments.<stage>`` command and every Hydra example
 command composes with ``--cfg job`` (a sweep composes the first choice of each
 override, since Hydra refuses ``--cfg`` with ``-m``), other ``python
@@ -15,8 +15,9 @@ examples/*.py`` commands print ``--help``, and every ``python -m
 marl_battlegrounds`` command parses with the real argument parser without
 running; every example is listed in examples/README.md and the guide named
 there links it; the README repeats performance.md's headline speed sentence
-word for word; and docs/api.md is current. Guide code runs in a temporary
-folder with JAX on the CPU.
+word for word; CITATION.cff gives pyproject.toml's version, and every
+repository and website address is written one way; and docs/api.md is current.
+Guide code runs in a temporary folder with JAX on the CPU.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -71,15 +73,30 @@ FENCE = re.compile(r"^```([A-Za-z]*)[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 
 
+def tracked_files() -> set[str]:
+    return set(
+        subprocess.run(
+            ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.split()
+    )
+
+
+TRACKED = tracked_files()
+TRACKED_FOLDERS = {
+    str(parent)
+    for name in TRACKED
+    for parent in Path(name).parents
+    if str(parent) != "."
+}
+
+
+def is_tracked(path: Path) -> bool:
+    relative = os.path.relpath(path.resolve(), ROOT)
+    return relative in TRACKED or relative in TRACKED_FOLDERS
+
+
 def tracked_markdown() -> list[Path]:
-    files = subprocess.run(
-        ["git", "ls-files", "*.md"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    return [ROOT / name for name in files]
+    return [ROOT / name for name in sorted(TRACKED) if name.endswith(".md")]
 
 
 def guides() -> list[Path]:
@@ -113,11 +130,11 @@ def test_links_resolve(path: Path) -> None:
                 rf"{re.escape(REPOSITORY_URL)}/(?:blob|tree)/main/(.+)", location
             )
             if match is not None:
-                assert (ROOT / match.group(1)).exists(), f"{path.name}: {target}"
+                assert is_tracked(ROOT / match.group(1)), f"{path.name}: {target}"
             continue
         if re.match(r"^[a-z]+://", target):
             continue
-        assert (path.parent / location).exists(), f"{path.name}: broken link {target}"
+        assert is_tracked(path.parent / location), f"{path.name}: broken link {target}"
 
 
 def first_python_blocks() -> Iterator[tuple[str, str]]:
@@ -298,9 +315,11 @@ def test_stage_and_example_commands_compose(
 def test_every_example_is_indexed_and_linked_from_its_guide() -> None:
     index = (ROOT / "examples" / "README.md").read_text()
     examples = sorted(
-        path.name
-        for path in (ROOT / "examples").iterdir()
-        if path.suffix in (".py", ".ipynb") and not path.name.startswith("_")
+        Path(name).name
+        for name in TRACKED
+        if Path(name).parent == Path("examples")
+        and Path(name).suffix in (".py", ".ipynb")
+        and not Path(name).name.startswith("_")
     )
     for example in examples:
         rows = [
@@ -334,3 +353,20 @@ def test_api_reference_is_current() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_versions_and_addresses_agree() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    citation = (ROOT / "CITATION.cff").read_text()
+    assert f'version: "{project["version"]}"' in citation
+    for name in sorted(TRACKED):
+        if not name.endswith((".md", ".cff", ".toml", ".yml", ".yaml")):
+            continue
+        text = (ROOT / name).read_text()
+        for found in re.findall(r"github\.com/[\w.-]+/MARL-BattleGrounds", text, re.I):
+            assert f"https://{found}" == REPOSITORY_URL, f"{name}: {found}"
+        for found in re.findall(r"[\w.:/-]*marl-battlegrounds\.com", text):
+            assert found in (
+                "https://marl-battlegrounds.com",
+                "marl-battlegrounds.com",
+            ), f"{name}: {found}"

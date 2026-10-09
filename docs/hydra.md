@@ -42,7 +42,7 @@ python -m marl_battlegrounds.experiments.train preview=true recipe=software_chec
 | Group | Choices | What It Sets |
 | --- | --- | --- |
 | `method=` | `mappo` (default), `ippo`, `ff_mappo`, `ff_ippo`, `qmix`, `pqn_vdn` | The learner and its block: `ppo.*`, `qmix.*` or `pqn.*`. |
-| `recipe=` | `default`, `software_check` | `default`: each method's tuned recipe, 250,675,200 transitions, validation maps 42, 43, 44 and 46. `software_check`: 32 games, 20,480 transitions. |
+| `recipe=` | `default`, `software_check` | `default`: each method's tuned learner, games and reward, 250,675,200 transitions, validation maps 42, 43, 44 and 46; no opponent pool or validation opponents (add `pool=scripted` and `validation_opponents`). `software_check`: 32 games, 20,480 transitions. |
 | `pool=` | `none`, `scripted` | `scripted`: 60% self, 20% past, 20% over tdm-alpha, tdm-beta and tdm-gamma. |
 | `curriculum_preset=` | `none`, `staged` | `staged` turns on the 17-stage curriculum. |
 | `resources=` | `inherit`, `cpu` | Keep the calling process's device, or use the CPU. |
@@ -91,7 +91,8 @@ has an `id`, a training `config` and a `seeds` list, or continues a full
 `checkpoint` with `additional_env_steps`. `study start` runs in the background;
 `study stop` stops only that study. See [training_study.py](../examples/training_study.py).
 
-**Watch Out:** a study never adds seeds, picks recipes or changes budgets.
+**Watch Out:** a study never adds seeds, picks recipes or changes budgets. Its workers refuse
+an installed source or input file that changed after launch: start long studies from a frozen copy.
 Inside a Git checkout, write outputs to an ignored folder (`runs/`, `outputs/`,
 `artifacts/`) or outside it. Tiny cases need `"keep_past": 0`.
 

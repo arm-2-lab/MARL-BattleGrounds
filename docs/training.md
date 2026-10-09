@@ -28,12 +28,15 @@ From a checkout, [train.py](../examples/train.py) is the Hydra launcher and [map
 
 **Watch Out:** the output folder must be new or empty. Short runs need
 `keep_past=0`: past copies must be a full game apart, or the run stops at setup.
-`TrainConfig()` means 32 games and 10,000,000 transitions; Hydra's
-`recipe=default` means each method's tuned recipe and 250,675,200 transitions.
+A transition is one game step: one tick of one game. `TrainConfig()` means 32 games
+and 10,000,000 transitions; Hydra's `recipe=default` sets each method's tuned learner,
+games, reward and 250,675,200 transitions, but no opponent pool and no validation: add
+`pool=scripted` and `'validation_opponents=[tdm-alpha,tdm-beta,tdm-gamma]'` for a best
+checkpoint, and `retain_all_actors=false` unless you want gigabytes of actor exports.
 
 | Setting | Default | What It Does |
 | --- | --- | --- |
-| `num_envs` | 32 | Games played side by side. Even; on a GPU use 32, 64, 128, 512 or 1024. |
+| `num_envs` | 32 | Games played side by side. Even, and it must fit the budget and the method's minibatch rules; the tuned recipes use 512 (PPO) and 768 (QMIX, PQN-VDN). |
 | `total_env_steps` | 10,000,000 | Exact real transitions; must divide by `num_envs`. |
 
 ## The Six Learners
@@ -58,13 +61,15 @@ config = training.TrainConfig(method="qmix", qmix=QMIXConfig(q_lr=1e-4))
 | `pqn_vdn` | Recurrent PQN-VDN | 512-wide recurrent Q-network, no replay | Sum of the agents' values |
 
 PPO methods take `ppo=PPOConfig(...)`, QMIX `qmix=QMIXConfig(...)` and PQN-VDN `pqn=PQNConfig(...)`.
-Loaded PPO actors sample; QMIX and PQN-VDN play greedily. `parameter_sharing` picks one shared actor
+Loaded PPO actors sample; QMIX and PQN-VDN play greedily. Each block's `parameter_sharing`
+(for example `ppo=PPOConfig(parameter_sharing="class")`) picks one shared actor
 (`"all"`, default), one per class (`"class"`) or one per slot (`"none"`); each agent keeps its own memory.
 Tutorials, from a checkout: [qmix_training.py](../examples/qmix_training.py), [pqn_training.py](../examples/pqn_training.py).
 
 **Watch Out:** another method's settings block is an error. Recurrent PPO needs
 `num_envs` divisible by `groups` × `minibatches` (4); PQN-VDN by `num_minibatches` (16).
-PQN-VDN first plays 132 random rounds (by default) that count in the budget.
+PQN-VDN first plays 132 random rounds (one round is one tick of every game in the batch)
+that count in the budget.
 QMIX saves its replay in every checkpoint; 512 games with the default 1,000 rows
 do not fit a 32 GB card.
 
@@ -192,7 +197,7 @@ and validation. `TrainConfig(initial_actor=PATH)` starts a new run from saved ac
 
 **Watch Out:** resume and extend need the exact Python and library versions the
 run recorded (`dependencies` in `run_details.json`), the same device kind and
-`XLA_FLAGS`. Install an exact Python with `uv python install 3.14.5`. Extending needs a full `checkpoints/` folder, not an actor export.
+`XLA_FLAGS`. Install the recorded Python with uv, for example `uv python install 3.14.5` for the released models. Extending needs a full `checkpoints/` folder, not an actor export.
 A child continues the same training history; it is not a new seed. See [training_continuation.py](../examples/training_continuation.py).
 
 ## Logs, Reports And Models
@@ -214,8 +219,27 @@ them to Weights & Biases (W&B). `collect_actors` gathers models with a `catalog.
 `marl_bgs.export_bundle("models", output_dir="share", metadata=facts)` zips them
 with `source`, `environment`, `license` and `citation` facts; `prepare_bundle` unpacks.
 
+A run folder holds `actors/`, `checkpoints/`, `run_summary.md`, `learning_curves.png`,
+`validation_cells.csv` and `training_updates.jsonl`; `python -m marl_battlegrounds runs ROOT`
+lists every run under a folder with its status, method, seed and steps.
+
 **Watch Out:** a recovery can send a row twice: use `run_id` and `env_steps`. If
 your callback raises, training stops with the row saved. Move a model library as one folder.
+
+## Compare Methods Across Seeds
+
+```bash
+python -m marl_battlegrounds analyze-training runs/a-1 runs/a-2 runs/b-1 runs/b-2 --grouping grouping.json --output-dir runs/compare
+```
+
+The grouping file gives each run a `group` (a method or recipe) and a `unit` (one independent
+training run, usually one seed), plus the maps, opponents and Red Zone depth the runs were
+validated with; `help(training.analyze)` shows the full format. The report then compares
+groups with one result per unit. `training.analyze(run_dirs, output_dir=..., grouping=...)`
+does the same from Python.
+
+**Watch Out:** three seeds with 100 games each are three independent results, not 300. Game
+counts shrink intervals over games, not over training seeds; compare methods across seeds.
 
 ## Next
 

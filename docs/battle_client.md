@@ -102,7 +102,8 @@ python -m marl_battlegrounds replay recordings/GAME.marlbg-replay.json
 
 A finished game saves itself in the background; Finish And Save keeps an unfinished
 game's turns. Open Replay shows it in the Replay Viewer, and the command above reopens any
-saved file. Restart starts the same match with fresh memory and a new file. To measure a
+saved file. After Open Replay, Exit closes the game only: the call keeps serving the Replay
+Viewer until you exit it too or press Ctrl+C. Restart starts the same match with fresh memory and a new file. To measure a
 saved game, call `marl_bgs.replay_metrics(path, metrics="full")` ([metrics.md](metrics.md)).
 
 **Watch Out:** if saving fails, use Retry Save, or Save As with a new `.marlbg-replay.json`

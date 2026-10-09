@@ -66,8 +66,8 @@ python -m marl_battlegrounds.experiments.train method=mappo output_dir=runs/mapp
 
 Recurrent MAPPO in pure self-play, 1,024 games, 32-tick rollouts: 29,878 game steps per
 second (median of the 37 updates after warm-up), 5.0 GB peak JAX memory, 4.8 GB peak RAM.
-The six baselines each trained from 40 million to 250,675,200 transitions against an
-opponent pool, one RTX 5090 per run; hours include setup and 20 validation checks.
+The table times each baseline's continuation from 40,108,032 to 250,675,200 transitions,
+against an opponent pool, one RTX 5090 per run; hours include setup and 20 validation checks.
 
 | Method | Parallel Games | Hours | Transitions Per Second | JAX Memory In Use | Host RAM |
 | --- | --- | --- | --- | --- | --- |

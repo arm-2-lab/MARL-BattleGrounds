@@ -44,7 +44,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `train_against_released_models.py` | Train against saves of the six released Season 0 models | [Training](../docs/training.md) |
 | `training_selection.py` | Choose a checkpoint by your own rule | [Training](../docs/training.md) |
 | `population_selection.py` | Declare a population choice before games, then test it | [Training](../docs/training.md) |
-| `training_study.py` | Run a small declared study of several runs | [Hydra](../docs/hydra.md) |
+| `training_study.py` | Run a small declared study of several runs | [Hydra Configs](../docs/hydra.md) |
 
 ## Evaluate
 
@@ -55,12 +55,12 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `baseline_system.py` | Run an untrained recurrent MAPPO actor through your own loop | [Evaluation](../docs/evaluation.md) |
 | `scenario_evaluation.py` | Evaluate any method at the eight packaged scenario starts | [Evaluation](../docs/evaluation.md) |
 | `cross_play_and_zsc.py` | Fixed partners and opponents, including a local host partner | [Evaluation](../docs/evaluation.md) |
-| `evaluate_recurrent_ippo.py` | Evaluate a saved recurrent IPPO model | [Hydra](../docs/hydra.md) |
-| `evaluate_recurrent_mappo.py` | Evaluate a saved recurrent MAPPO model | [Hydra](../docs/hydra.md) |
-| `evaluate_feedforward_ippo.py` | Evaluate a saved feedforward IPPO model | [Hydra](../docs/hydra.md) |
-| `evaluate_feedforward_mappo.py` | Evaluate a saved feedforward MAPPO model | [Hydra](../docs/hydra.md) |
-| `evaluate_pqn_vdn.py` | Evaluate a saved PQN-VDN model | [Hydra](../docs/hydra.md) |
-| `evaluate_qmix.py` | Evaluate a saved QMIX model | [Hydra](../docs/hydra.md) |
+| `evaluate_recurrent_ippo.py` | Evaluate a saved recurrent IPPO model | [Hydra Configs](../docs/hydra.md) |
+| `evaluate_recurrent_mappo.py` | Evaluate a saved recurrent MAPPO model | [Hydra Configs](../docs/hydra.md) |
+| `evaluate_feedforward_ippo.py` | Evaluate a saved feedforward IPPO model | [Hydra Configs](../docs/hydra.md) |
+| `evaluate_feedforward_mappo.py` | Evaluate a saved feedforward MAPPO model | [Hydra Configs](../docs/hydra.md) |
+| `evaluate_pqn_vdn.py` | Evaluate a saved PQN-VDN model | [Hydra Configs](../docs/hydra.md) |
+| `evaluate_qmix.py` | Evaluate a saved QMIX model | [Hydra Configs](../docs/hydra.md) |
 | `evaluation_analysis.ipynb` | Explore saved results: outcomes, metrics, roles and replays | [Metrics](../docs/metrics.md) |
 
 ## Tournaments
@@ -77,5 +77,5 @@ JAX_PLATFORMS=cpu python examples/environment.py
 |---|---|---|
 | `battle_client.py` | Play your saved methods in the BattleClient | [BattleClient](../docs/battle_client.md) |
 | `prepare_battle_client.py` | Write six untrained actor folders for the BattleClient examples | [BattleClient](../docs/battle_client.md) |
-| `llm.py` | Evaluate a served language model with standard or custom prompts | [Language Models](../docs/llm.md) |
+| `llm.py` | Evaluate a served language model with standard or custom prompts | [LLM Agents](../docs/llm.md) |
 | `replays/` | Saved replays to open in the Replay Viewer | [Replays](../docs/replays.md) |

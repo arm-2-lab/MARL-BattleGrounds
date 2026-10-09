@@ -60,7 +60,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
 python -m marl_battlegrounds study status \
   /data/hyperparameter-search/shapes-and-ppo/study --progress --summary --follow
 python scripts/paper_experiments/analyze.py \
-  study_dirs=[/data/hyperparameter-search/shapes-and-ppo/study] \
+  'study_dirs=[/data/hyperparameter-search/shapes-and-ppo/study]' \
   grouping=/data/hyperparameter-search/shapes-and-ppo/protocol/grouping.yaml \
   output_dir=/data/hyperparameter-search/shapes-and-ppo/analysis
 ```
@@ -81,7 +81,7 @@ with its base's study 1 runs on the same seeds, so it reads both studies:
 cp scripts/paper_experiments/hyperparameter_search/q_settings_grouping.yaml \
   /data/hyperparameter-search/q-settings/protocol/
 python scripts/paper_experiments/analyze.py \
-  study_dirs=[/data/hyperparameter-search/shapes-and-ppo/study,/data/hyperparameter-search/q-settings/study] \
+  'study_dirs=[/data/hyperparameter-search/shapes-and-ppo/study,/data/hyperparameter-search/q-settings/study]' \
   grouping=/data/hyperparameter-search/q-settings/protocol/q_settings_grouping.yaml \
   output_dir=/data/hyperparameter-search/q-settings/analysis
 ```
