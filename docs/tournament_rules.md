@@ -138,9 +138,9 @@ published.
 7.4 **Unfinished work rolls forward** to the next season and keeps its place
 in the queue.
 
-7.5 On a GPU, our run does not repeat your home run exactly, so a lucky seed
-may not carry over. Your script may turn on XLA's deterministic mode, which
-repeats training exactly but trains much slower.
+7.5 On a GPU, our run does not repeat your home run exactly. You may turn on
+deterministic mode: it repeats on an RTX 5090, but trains 3.6 times slower in
+the same 8 hours. Very likely not worth a lucky seed.
 
 ## Rule 8. The Evaluation
 
