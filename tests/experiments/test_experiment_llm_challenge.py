@@ -141,7 +141,7 @@ def test_settings_compose() -> None:
         config = compose(config_name="llm_challenge", overrides=["output_dir=x"])
         field = compose(
             config_name="llm_challenge",
-            overrides=["+field=season_0", "models_dir=/m", "output_dir=x"],
+            overrides=["+field=season_0", "output_dir=x"],
         )
     assert (config.model, config.model_revision) == (
         "qwen3.5-9b-fp8",

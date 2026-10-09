@@ -1,8 +1,9 @@
 """Test whether a team still plays well with a teammate it never trained with.
 
 Use XLA_FLAGS=--xla_gpu_deterministic_ops=true python -m
-marl_battlegrounds.experiments.zero_shot_coordination models_dir=/path/models
-output_dir=/path/run.
+marl_battlegrounds.experiments.zero_shot_coordination output_dir=/path/run.
+The Season 0 field's six released models download once from Hugging Face; add
+field=season_0_local models_dir=/path/models to use local actor folders.
 
 A team trained by self-play learns habits that only its own teammates share,
 for example who starts a fight or where the healer stands. This stage checks
@@ -246,8 +247,9 @@ def main(config: DictConfig) -> dict[str, Any]:
         settings), ``host`` and ``newcomers`` and ``opponents`` (names from
         ``systems``), ``classes``, ``maps``, ``num_episodes`` (per opponent),
         ``seed``, ``num_envs``, ``metrics`` and the required ``output_dir``;
-        ``models_dir`` fills ``${models_dir}`` in method paths. Relative paths
-        use the folder the command was started from.
+        ``models_dir`` fills ``${models_dir}`` in method paths (the
+        ``season_0_local`` field). Relative paths use the folder the command
+        was started from.
 
     Returns
     -------

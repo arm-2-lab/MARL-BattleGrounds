@@ -3,8 +3,10 @@
 Contracts: the evaluator builds one authored scenario start per batch for lanes
 that share the same start and configuration, keeps ordinary resets per lane, and
 stacks one row per lane; the packaged scenarios settings compose to the four
-built-in systems by default and to the nine-system Season 0 field plus Random
-with +field=season_0, filling models_dir into the six actor paths; the stage counts
+built-in systems by default, to the nine-system Season 0 field plus Random
+with +field=season_0, whose six learned systems are the released model names,
+and with +field=season_0_local to the same field with models_dir filled into
+the six actor paths; the stage counts
 wins, draws and losses from Team A's outcome column and writes results.csv and
 results.md in system order. The scenario_analysis stage's Fisher's exact test
 matches known p-values and rejects impossible counts; it matches full-metrics
@@ -76,7 +78,7 @@ def test_default_and_season_0_fields_compose() -> None:
     ]
     assert list(default.scenario_ids) == list(range(1, 9))
 
-    season = composed("+field=season_0", "models_dir=/models", "output_dir=out")
+    season = composed("+field=season_0", "output_dir=out")
     names = [entry.name for entry in season.systems]
     assert names[0] == "Recurrent IPPO" and names[-4:] == [
         "TDM-Beta",
@@ -85,7 +87,14 @@ def test_default_and_season_0_fields_compose() -> None:
         "Random",
     ]
     assert len(names) == 10
-    assert all(str(entry.method).startswith("/models/") for entry in season.systems[:6])
+    assert season.systems[0].method == "MARL-BattleGrounds/tdm-season-0-recurrent-ippo"
+    assert all(
+        str(entry.method).startswith("MARL-BattleGrounds/tdm-season-0-")
+        for entry in season.systems[:6]
+    )
+    local = composed("+field=season_0_local", "models_dir=/models", "output_dir=out")
+    assert [entry.name for entry in local.systems] == names
+    assert all(str(entry.method).startswith("/models/") for entry in local.systems[:6])
 
 
 def test_tables_count_team_a_outcomes(

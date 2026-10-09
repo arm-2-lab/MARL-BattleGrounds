@@ -58,6 +58,7 @@ HYDRA_EXAMPLES = {
     "population_selection",
     "llm",
     "canonical_tournament",
+    "train_against_released_models",
     "train",
     "evaluate_recurrent_ippo",
     "evaluate_recurrent_mappo",

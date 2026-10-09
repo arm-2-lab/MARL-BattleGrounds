@@ -41,6 +41,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `partner_training.py` | Train part of a team beside frozen partners | [Training](../docs/training.md) |
 | `training_distributions.py` | Sample training games through the collection API | [Training](../docs/training.md) |
 | `training_continuation.py` | Extend a finished run into a new child run | [Training](../docs/training.md) |
+| `train_against_released_models.py` | Train against saves of the six released Season 0 models | [Training](../docs/training.md) |
 | `training_selection.py` | Choose a checkpoint by your own rule | [Training](../docs/training.md) |
 | `population_selection.py` | Declare a population choice before games, then test it | [Training](../docs/training.md) |
 | `training_study.py` | Run a small declared study of several runs | [Hydra](../docs/hydra.md) |

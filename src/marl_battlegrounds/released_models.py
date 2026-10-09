@@ -67,9 +67,28 @@ RESULTS_DATASET = "MARL-BattleGrounds/tdm-season-0-results"
 TRAINING_OPPONENTS = "training-opponents"
 """Folder in RESULTS_DATASET with the training and validation opponent bundle."""
 
-PINNED_COMMITS: dict[str, str] = {}
+PINNED_COMMITS: dict[str, str] = {
+    "MARL-BattleGrounds/tdm-season-0-recurrent-ippo": (
+        "48a062ae79167835fb81dfc906bd3aa1711f4483"
+    ),
+    "MARL-BattleGrounds/tdm-season-0-recurrent-mappo": (
+        "b27435d2b153817b1baa204f5751303c9bf7ff60"
+    ),
+    "MARL-BattleGrounds/tdm-season-0-feedforward-ippo": (
+        "ffdbd94424959854cad687186037464789e12ef7"
+    ),
+    "MARL-BattleGrounds/tdm-season-0-feedforward-mappo": (
+        "aea78b3d6122932b92ca0c24a57932e283962f02"
+    ),
+    "MARL-BattleGrounds/tdm-season-0-pqn-vdn": (
+        "34d7075272c7e95cba12c6a8dd8ff2b72b30ce80"
+    ),
+    "MARL-BattleGrounds/tdm-season-0-qmix": "73f2a413d2b214d7d8ac41c404da87965bea6f7a",
+    RESULTS_DATASET: "4b8844694a2c5fe4d8fa5cdbb3b70a14afdb1680",
+}
 """Repo id to the full 40-character commit of its release.
 
+The six Season 0 model repos and the results dataset (RESULTS_DATASET).
 Keys use HF's exact spelling; lookups ignore case. A repo listed here resolves
 to this commit with no network call when its files are already cached. A repo
 missing here resolves its latest ``main`` commit once per process, with a

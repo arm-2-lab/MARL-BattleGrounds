@@ -211,6 +211,19 @@ SEASON_0_RECORDED_NAMES = {
 }
 
 
+# The released Hugging Face repo of each Season 0 baseline. A repo id with no @
+# step loads the save that entered the Season 0 tournament, the same save as
+# SEASON_0_FIELD, and its training records hold both runs of SEASON_0_LINEAGES.
+SEASON_0_REPOS = {
+    "Recurrent IPPO": "MARL-BattleGrounds/tdm-season-0-recurrent-ippo",
+    "PQN-VDN": "MARL-BattleGrounds/tdm-season-0-pqn-vdn",
+    "Recurrent MAPPO": "MARL-BattleGrounds/tdm-season-0-recurrent-mappo",
+    "QMIX": "MARL-BattleGrounds/tdm-season-0-qmix",
+    "Feedforward IPPO": "MARL-BattleGrounds/tdm-season-0-feedforward-ippo",
+    "Feedforward MAPPO": "MARL-BattleGrounds/tdm-season-0-feedforward-mappo",
+}
+
+
 # The training history of each Season 0 baseline in rank order: its 40M run, then the
 # run that continued it to 250M, relative to runs_dir, the hyperparameter-search root
 # (scripts/paper_experiments/hyperparameter_search.md, "The six tournament policies").
@@ -286,6 +299,7 @@ def _example_presets() -> dict[str, dict[str, Any]]:
         "population_selection",
         "llm",
         "canonical_tournament",
+        "train_against_released_models",
     )
     result: dict[str, dict[str, Any]] = {}
     for name in examples:
@@ -696,7 +710,15 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    # The field names the released models; the local copy keeps the actor
+    # folders under models_dir, for copies on disk such as the website downloads.
     result["field/season_0.yaml"] = {
+        "systems": [
+            {"name": name, "method": SEASON_0_REPOS.get(name, method)}
+            for name, method in SEASON_0_FIELD
+        ],
+    }
+    result["field/season_0_local.yaml"] = {
         "models_dir": "???",
         "systems": [
             {"name": name, "method": method} for name, method in SEASON_0_FIELD
@@ -722,7 +744,15 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    # The lineages read the released training records; the local copy reads
+    # the run folders under runs_dir.
     result["training_runs/season_0.yaml"] = {
+        "lineages": [
+            {"name": name, "repo": SEASON_0_REPOS[name]}
+            for name, *_ in SEASON_0_LINEAGES
+        ],
+    }
+    result["training_runs/season_0_local.yaml"] = {
         "runs_dir": "???",
         "lineages": [
             {

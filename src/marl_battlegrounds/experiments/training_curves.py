@@ -1,8 +1,9 @@
 """Plot point margin, kills and deaths over training from saved validation checks.
 
 Use python -m marl_battlegrounds.experiments.training_curves
-+training_runs=season_0 runs_dir=/path/hyperparameter-search
-output_dir=/path/curves for the Season 0 baselines, or give your own
++training_runs=season_0 output_dir=/path/curves for the Season 0 baselines
+(their released training records), +training_runs=season_0_local
+runs_dir=/path/hyperparameter-search for local run folders, or give your own
 'lineages=[{name: Mine, runs: [/path/run]}]'. A lineage is one training
 history: a run, then any runs that continued it, in training order (for
 example a 40M run and its continuation to 250M). A lineage may name a released
@@ -309,7 +310,8 @@ def main(config: DictConfig) -> dict[str, int]:
     ----------
     config : omegaconf.DictConfig
         ``lineages`` (a list of ``{name, runs}`` or ``{name, repo}``;
-        ``+training_runs=season_0`` fills the six Season 0 baselines and needs
+        ``+training_runs=season_0`` fills the six Season 0 baselines' released
+        repos, and ``+training_runs=season_0_local`` their run folders under
         ``runs_dir``, the hyperparameter-search root), ``opponents``
         (validation opponent names to keep, or null for all; see
         ``read_lineage``) and ``output_dir``. Relative paths use the folder

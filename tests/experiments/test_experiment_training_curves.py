@@ -1,17 +1,18 @@
 """Check the training_curves experiment stage.
 
 Contracts: the packaged settings with +training_runs=season_0 compose to the six
-Season 0 baselines in rank order, each with its 40M run and then its 250M
-continuation under runs_dir; the stage joins each lineage's routine validation
-checks in training order, numbers the runs, sums the check's games and copies
-margin, kills (kills_for) and deaths (kills_against) and the share of games
-won; given opponents, every value covers only those opponents, each weighted
-equally, and a missing name is rejected; it rejects runs listed out of order or
-overlapping, and a folder that is not exactly one training run; it writes
-curves.csv, crossings.csv, summary.md (first, best and last check) and
-curves.png; first_crossings gives each system's first check with a margin above
-zero and its first that won at least half its games, None when none did. A fake
-training.list_runs replaces saved run folders.
+Season 0 baselines in rank order, each named by its released repo, and with
++training_runs=season_0_local to the same baselines, each with its 40M run and
+then its 250M continuation under runs_dir; the stage joins each lineage's
+routine validation checks in training order, numbers the runs, sums the check's
+games and copies margin, kills (kills_for) and deaths (kills_against) and the
+share of games won; given opponents, every value covers only those opponents,
+each weighted equally, and a missing name is rejected; it rejects runs listed
+out of order or overlapping, and a folder that is not exactly one training run;
+it writes curves.csv, crossings.csv, summary.md (first, best and last check)
+and curves.png; first_crossings gives each system's first check with a margin
+above zero and its first that won at least half its games, None when none did.
+A fake training.list_runs replaces saved run folders.
 """
 
 import csv
@@ -76,11 +77,31 @@ def test_season_0_runs_compose() -> None:
     with initialize_config_module(
         config_module="marl_battlegrounds.experiments.configs", version_base="1.3"
     ):
+        released = compose(
+            config_name="training_curves",
+            overrides=["+training_runs=season_0", "output_dir=out"],
+        )
         config = compose(
             config_name="training_curves",
-            overrides=["+training_runs=season_0", "runs_dir=/r", "output_dir=out"],
+            overrides=[
+                "+training_runs=season_0_local",
+                "runs_dir=/r",
+                "output_dir=out",
+            ],
         )
+    assert [lineage.repo for lineage in released.lineages] == [
+        f"MARL-BattleGrounds/tdm-season-0-{name}"
+        for name in (
+            "recurrent-ippo",
+            "pqn-vdn",
+            "recurrent-mappo",
+            "qmix",
+            "feedforward-ippo",
+            "feedforward-mappo",
+        )
+    ]
     names = [lineage.name for lineage in config.lineages]
+    assert [lineage.name for lineage in released.lineages] == names
     assert names == [
         "Recurrent IPPO",
         "PQN-VDN",

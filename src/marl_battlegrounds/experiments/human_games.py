@@ -1,7 +1,8 @@
 """Play recorded games against, and alongside, trained Systems in the BattleClient.
 
-Use python -m marl_battlegrounds.experiments.human_games models_dir=/path/models
-output_dir=/path/series. A person plays Team A in the BattleClient
+Use python -m marl_battlegrounds.experiments.human_games output_dir=/path/series
+(add field=season_0_local models_dir=/path/models for local actor folders
+instead of the released models). A person plays Team A in the BattleClient
 (marl_bgs.battle_client), in Agent POV; the opponent System plays Team B. The
 series is a list of parts, played in order, each with its own settings:
 
@@ -516,8 +517,9 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
         ``systems`` (name and method of every System, from the field
         settings); ``parts`` (see ``schedule``; ``opponent`` and ``partner``
         are names from ``systems``) and the required ``output_dir``.
-        ``models_dir`` fills ``${models_dir}`` in method paths. Relative paths
-        use the folder the command was started from.
+        ``models_dir`` fills ``${models_dir}`` in method paths (the
+        ``season_0_local`` field). Relative paths use the folder the command
+        was started from.
 
     Returns
     -------

@@ -2,9 +2,10 @@
 
 Use python -m marl_battlegrounds.experiments.scenarios output_dir=/path/run.
 By default the field is the built-in systems TDM-Beta, TDM-Gamma, TDM-Alpha and
-Random. Add +field=season_0 models_dir=/path/models to play the Season 0 field
-(the six released baselines and the three scripted systems) and Random as a
-reference. Override systems=
+Random. Add +field=season_0 to play the Season 0 field (the six released
+baselines, downloaded once from Hugging Face, and the three scripted systems)
+and Random as a reference; +field=season_0_local models_dir=/path/models plays
+local copies of the six actor folders instead. Override systems=
 to play any other methods. Each system meets every scenario's own scripted
 opponent through marl_bgs.evaluate_scenarios; the table is read back from the
 saved games with marl_bgs.load_results. This stage trains nothing.
@@ -251,7 +252,8 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
     config : omegaconf.DictConfig
         ``systems`` (a list of ``name`` and ``method``), ``scenario_ids``,
         ``num_episodes``, ``num_envs``, ``seed``, ``metrics`` and the required
-        ``output_dir``; ``models_dir`` fills ``${models_dir}`` in method paths.
+        ``output_dir``; ``models_dir`` fills ``${models_dir}`` in method paths
+        (the ``season_0_local`` field).
         Relative paths use the folder the command was started from.
 
     Returns

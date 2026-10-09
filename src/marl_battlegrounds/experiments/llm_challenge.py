@@ -4,7 +4,7 @@ Start a model server first (docs/llm.md shows how), then play the
 Season 0 field, the eight endgame scenarios, or both:
 
     JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
-        +field=season_0 models_dir=/path/hyperparameter-search output_dir=/path/field
+        +field=season_0 output_dir=/path/field
     JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
         'maps=[]' 'scenario_ids=[1,2,3,4,5,6,7,8]' output_dir=/path/scenarios
 
@@ -508,10 +508,11 @@ def main(config: DictConfig) -> dict[str, list[dict[str, Any]]]:
         ``history_turns``, ``failure_policy`` and ``records`` (passed to
         ``marl_bgs.llm.make_system``); for the field, ``systems`` (a list of
         ``name`` and ``method``; ``models_dir`` fills ``${models_dir}`` in
-        method paths), ``skip`` and the ``play_field`` settings; for the
-        scenarios, the ``play_scenarios`` settings; ``metrics``; and the
-        required ``output_dir``. An empty ``maps`` or ``scenario_ids`` skips
-        that mode. Relative paths use the folder the command was started from.
+        the ``season_0_local`` field's method paths), ``skip`` and the
+        ``play_field`` settings; for the scenarios, the ``play_scenarios``
+        settings; ``metrics``; and the required ``output_dir``. An empty
+        ``maps`` or ``scenario_ids`` skips that mode. Relative paths use the
+        folder the command was started from.
 
     Returns
     -------

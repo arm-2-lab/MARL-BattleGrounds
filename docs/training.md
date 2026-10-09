@@ -93,6 +93,31 @@ saved actor paths, `module:function` factories or live Systems. With no `opponen
 Pass live objects again on resume. `train(..., matchmaking=pfsp)` (from
 `marl_battlegrounds.experiments.callbacks`) favors opponents you beat least. See [competitive_training.py](../examples/competitive_training.py) and [partner_training.py](../examples/partner_training.py).
 
+## Use A Released Season 0 Model
+
+```bash
+python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-qmix@final
+```
+
+```python
+import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import training
+qmix = marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-qmix@100M")  # an ordinary System
+config = training.TrainConfig(opponents={"self": 0.5, "MARL-BattleGrounds/tdm-season-0-qmix": 0.5})
+```
+
+The six Season 0 models are on Hugging Face with every save from 0 to 250M steps.
+Type a name anywhere a model goes: opponents, partners, `initial_actor`, evaluation,
+tournaments and the BattleClient. No `@` gives the save the model entered Season 0 with,
+`@final` the last save, `@100M` the last save at or before 100,000,000 steps, and
+`@99_950_592` exactly that save. Each name downloads one file (3 to 19 MB) once into the
+Hugging Face cache. Saved runs record its exact `hf://...@<commit>/...` address, so resume
+uses the same file. `marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in
+the same portable format. See [train_against_released_models.py](../examples/train_against_released_models.py).
+
+**Watch Out:** a step that does not exist fails and lists the nearest saves. On machines
+without internet, run `models download` first, then set `HF_HUB_OFFLINE=1`.
+
 ## Curriculum And Rewards
 
 ```bash
