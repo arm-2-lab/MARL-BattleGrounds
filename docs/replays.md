@@ -50,7 +50,7 @@ python -m marl_battlegrounds replay PATH/TO/game.marlbg-replay.json
 
 The Replay Viewer checks the file, prints a local address and opens your browser.
 It runs only on your computer and needs no source checkout or Node.js. It only
-reads: it never changes the file, runs a policy or plays new ticks. Press Ctrl+C
+reads: it never changes the file, runs a policy or plays new ticks. Press Ctrl-C
 in the terminal to stop it.
 
 **Watch Out:** Agent POV hides what one agent could not see, but the file itself

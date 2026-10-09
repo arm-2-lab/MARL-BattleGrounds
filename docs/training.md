@@ -233,9 +233,10 @@ python -m marl_battlegrounds analyze-training runs/a-1 runs/a-2 runs/b-1 runs/b-
 ```
 
 The grouping file gives each run a `group` (a method or recipe) and a `unit` (one independent
-training run, usually one seed), plus the maps, opponents and Red Zone depth the runs were
-validated with; `help(training.analyze)` shows the full format. The report then compares
-groups with one result per unit. `training.analyze(run_dirs, output_dir=..., grouping=...)`
+training run, usually one seed), plus the maps, opponents, Red Zone depth and `panel_digest`
+(copied from a run's `run_details.json`) the runs were validated with, and optional
+`comparisons` between groups; `help(training.analyze)` shows the full format. The report
+gives each group's spread across units, and each listed comparison. `training.analyze(run_dirs, output_dir=..., grouping=...)`
 does the same from Python.
 
 **Watch Out:** three seeds with 100 games each are three independent results, not 300. Game
