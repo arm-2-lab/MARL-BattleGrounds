@@ -2142,7 +2142,9 @@ def evaluate_episodes(
     Parameters
     ----------
     system, opponent : System | Policy | str
-        Team A and Team B methods, or built-in names. Numerical values are frozen
+        Team A and Team B methods, or reference strings as evaluate takes them
+        (built-in names, saved actors, model files, released model names or
+        factories, loaded through load_method). Numerical values are frozen
         once for this pass. Memories are fresh for each team and episode. Host
         sessions remain caller-owned; keep their external behavior fixed.
     episodes : sequence of EpisodeSpec
@@ -2372,8 +2374,12 @@ def evaluate(
     system, opponent : System | Policy | str
         Team A and Team B methods, kept on those teams throughout the pass.
         Accept shared/independent adapters, recurrent JAX methods, host methods
-        and built-in names. Numerical values are snapshotted once; each game gets
-        fresh memory. Opaque provider sessions cannot be numerically frozen.
+        and any reference string load_method takes: a built-in name, a saved
+        actor folder, a portable model file, a released model name such as
+        ``"MARL-BattleGrounds/tdm-season-0-qmix@final"`` (downloaded once into
+        the Hugging Face cache) or a ``module:function`` factory. Numerical
+        values are snapshotted once; each game gets fresh memory. Opaque
+        provider sessions cannot be numerically frozen.
     num_episodes : int
         Positive total game count, excluding bool, within int32 IDs. Paired mode
         needs an even count. This is not a per-map or per-opponent budget.

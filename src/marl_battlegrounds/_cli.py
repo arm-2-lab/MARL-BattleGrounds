@@ -244,12 +244,18 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--system",
         required=True,
-        help="Team A name, actor export/checkpoint folder or module:factory",
+        help=(
+            "Team A name, actor export/checkpoint folder, model file, released "
+            "model name or module:factory"
+        ),
     )
     evaluate.add_argument(
         "--opponent",
         required=True,
-        help="Team B name, actor export/checkpoint folder or module:factory",
+        help=(
+            "Team B name, actor export/checkpoint folder, model file, released "
+            "model name or module:factory"
+        ),
     )
     evaluate.add_argument(
         "--episodes",
@@ -348,8 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=_tokens,
         default=argparse.SUPPRESS,
         help=(
-            "Comma-separated names, actor/checkpoint folders or "
-            "module:factory references"
+            "Comma-separated names, actor/checkpoint folders, model files, "
+            "released model names or module:factory references"
         ),
     )
     tournament.add_argument(

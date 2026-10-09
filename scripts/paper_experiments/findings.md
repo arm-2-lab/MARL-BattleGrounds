@@ -20,13 +20,13 @@ system and reads the saved games back with `marl_bgs.load_results`. Wins,
 draws and losses come from each game's `outcome` column, which is Team A's
 result.
 
-**Command.** From the repository root, with the six released actor folders
-under `models_dir`:
+**Command.** From the repository root. The six released models download once
+from Hugging Face (`+field=season_0_local models_dir=PATH` plays local copies of
+the actor folders instead):
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
 python -m marl_battlegrounds.experiments.scenarios +field=season_0 \
-    models_dir=artifacts/paper-experiments/hyperparameter-search \
     output_dir=artifacts/paper-experiments/scenario-evaluation-season-0
 ```
 
@@ -100,7 +100,6 @@ each system's wins with Random's using Fisher's exact test.
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
 python -m marl_battlegrounds.experiments.scenarios +field=season_0 metrics=full \
-    models_dir=artifacts/paper-experiments/hyperparameter-search \
     output_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics
 XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.scenario_analysis \
     scenarios_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics \
@@ -184,8 +183,7 @@ sets the pace; the last command only reads saved files:
 
 ```bash
 JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
-    +field=season_0 models_dir=artifacts/paper-experiments/hyperparameter-search \
-    output_dir=artifacts/paper-experiments/llm-challenge-season-0/games
+    +field=season_0 output_dir=artifacts/paper-experiments/llm-challenge-season-0/games
 JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \
     'maps=[]' 'scenario_ids=[1,2,3,4,5,6,7,8]' \
     output_dir=artifacts/paper-experiments/llm-challenge-season-0/scenario-games
@@ -306,7 +304,6 @@ stranger stands from recurrent IPPO's agents than that.
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
 python -m marl_battlegrounds.experiments.zero_shot_coordination \
-    models_dir=artifacts/paper-experiments/hyperparameter-search \
     output_dir=artifacts/paper-experiments/zero-shot-coordination-season-0
 python -m marl_battlegrounds.experiments.zero_shot_coordination_analysis \
     zsc_dir=artifacts/paper-experiments/zero-shot-coordination-season-0 \
@@ -430,12 +427,13 @@ Restart. Run the same command again to continue the series: recorded games are
 skipped, a finished game that was not measured yet is measured, and a game
 exited before its end is opened again.
 
-**Command.** From the repository root, with the released actor folders under
-`models_dir`:
+**Command.** From the repository root. The recorded series used local copies of
+the six actor folders, so continuing it names them with `field=season_0_local`
+and `models_dir`; a new series can leave out both and use the released models:
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_deterministic_ops=true \
-python -m marl_battlegrounds.experiments.human_games \
+python -m marl_battlegrounds.experiments.human_games field=season_0_local \
     models_dir=artifacts/paper-experiments/hyperparameter-search \
     output_dir=artifacts/paper-experiments/human-games
 ```

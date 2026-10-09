@@ -611,11 +611,13 @@ every point from step 0 to 250,675,200 transitions. All are in
 **Plot them with the public stage.** One command reads every routine check of
 the six lineages, each 40M run followed by its continuation, through
 `training.list_runs(progress=True)`, and draws point margin and kills per game
-against transitions:
+against transitions. It downloads only the small training records of the six
+released models (`+training_runs=season_0_local runs_dir=PATH` reads local run
+folders instead):
 
 ```bash
 python -m marl_battlegrounds.experiments.training_curves +training_runs=season_0 \
-  runs_dir=artifacts/paper-experiments/hyperparameter-search output_dir=artifacts/paper-experiments/training-curves-season-0
+  output_dir=artifacts/paper-experiments/training-curves-season-0
 ```
 
 It writes `curves.csv` (margin, kills and deaths per game at all 186 checks),

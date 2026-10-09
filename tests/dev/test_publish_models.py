@@ -14,7 +14,8 @@ and a fake Hugging Face client. They check these contracts of
   parser, and the card states the chosen "same games" claim only.
 - The secret scan refuses every token pattern, the saved token and a secret in
   a compressed ZIP member, and never prints the secret.
-- ``upload`` refuses to change an existing model file on the Hub; ``redo``
+- ``upload`` checks every uploaded file's SHA-256 against the Hub's record and
+  prints the commit; it refuses to change an existing model file on the Hub; ``redo``
   refuses a public repository; ``--dry-run`` makes no Hugging Face call.
 """
 

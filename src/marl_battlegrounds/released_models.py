@@ -12,7 +12,7 @@ What people type (a "typed name"):
 - ``MARL-BattleGrounds/<repo>@final``: the last save.
 - ``MARL-BattleGrounds/<repo>@100M``: the nearest save at or before
   100,000,000 steps.
-- ``MARL-BattleGrounds/<repo>@100_139_008`` or ``@100139008``: exactly that save.
+- ``MARL-BattleGrounds/<repo>@99_950_592`` or ``@99950592``: exactly that save.
 
 Any other ``@`` suffix, such as a commit hash or a branch name, is refused.
 Typed names belong to the MARL-BattleGrounds organization (any letter case),
@@ -202,7 +202,7 @@ def _check_suffix(suffix: str | None, text: str) -> None:
 
     Accepted: no suffix, ``final``, ``<N>M`` (``final`` and ``M`` in any
     letter case) and an exact step written as plain digits or in groups of
-    three with underscores (``100_139_008``).
+    three with underscores (``99_950_592``).
     Raises ValueError naming text and the accepted forms otherwise, for
     example for a commit hash or a branch name.
     """
@@ -213,7 +213,7 @@ def _check_suffix(suffix: str | None, text: str) -> None:
     raise ValueError(
         f"In the released name {text!r}, @ must choose a training step: "
         "@final, @<N>M (for example @100M) or an exact step such as "
-        "@100_139_008. Commits and branch names are not accepted after @; "
+        "@99_950_592. Commits and branch names are not accepted after @; "
         "to use an exact commit, give the full address "
         "hf://<owner>/<repo>@<commit>/<file>"
     )
@@ -423,7 +423,7 @@ def _commit_for(
                 f"{repo} is not pinned by this package, so finding its latest "
                 "commit needs the network, but HF_HUB_OFFLINE is set. Run "
                 f"`{_prefetch_hint(reference)}` while online and use the hf:// "
-                "address it prints"
+                f"address it prints.{_released_list()}"
             )
         api = hub.HfApi(library_name=_LIBRARY)
         try:
@@ -435,7 +435,8 @@ def _commit_for(
         except hub.errors.RepositoryNotFoundError as error:
             raise ValueError(
                 f"{reference!r} is not a local path, and Hugging Face has no "
-                f"released model repo {repo!r} (or it needs a login token)"
+                f"released model repo {repo!r} (or it needs a login token)."
+                f"{_released_list()}"
             ) from error
         _MAIN_COMMITS[key] = (str(info.id), str(info.sha))
         warnings.warn(
@@ -445,6 +446,12 @@ def _commit_for(
             skip_file_prefixes=(_PACKAGE_FOLDER,),
         )
     return _MAIN_COMMITS[key]
+
+
+def _released_list() -> str:
+    """Return a sentence listing the pinned model repos, to catch typos."""
+    models = [name for name in PINNED_COMMITS if name != RESULTS_DATASET]
+    return " Check the spelling; the released models are: " + ", ".join(models)
 
 
 def _hub_file(repo: str, filename: str, commit: str, *, reference: str) -> Path:
@@ -579,7 +586,7 @@ def _read_index(steps: bytes, config: bytes, where: str) -> _Index:
 
 
 def _nearest(index: _Index, target: int) -> str:
-    """List up to two saves on each side of target, written like 100_139_008."""
+    """List up to two saves on each side of target, written like 99_950_592."""
     steps = [row["step"] for row in index.rows]
     below = [step for step in steps if step < target][-2:]
     above = [step for step in steps if step > target][:2]
@@ -997,7 +1004,8 @@ def _training_records(
     ------
     ValueError
         repo is not a repo id, cannot be resolved, is offline without a
-        cached copy, or has no training records at that commit.
+        cached copy, or has no complete training records (all three record
+        files in every run folder) at that commit.
     """
     split = _split_name(repo)
     if split is None or split[1] is not None:
@@ -1029,8 +1037,16 @@ def _training_records(
         if records.is_dir()
         else []
     )
-    if not folders:
-        raise ValueError(f"{name}@{commit} has no training records")
+    complete = all(
+        (folder / file).is_file() for folder in folders for file in _RECORD_FILES
+    )
+    if not folders or not complete:
+        if hub.constants.is_offline_mode():
+            raise ValueError(
+                f"The training records of {name} are not fully cached and "
+                "HF_HUB_OFFLINE is set; run this once with network access"
+            )
+        raise ValueError(f"{name}@{commit} has no complete training records")
     return f"hf://{name}@{commit}/training-records", folders
 
 

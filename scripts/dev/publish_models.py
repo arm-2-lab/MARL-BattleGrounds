@@ -151,15 +151,18 @@ _CONFIG_CLASSES = {
 }
 SAME_GAMES = {
     "identical": (
-        "This file holds the original save's weights and plays the same games as "
-        "the original save: in the release check, 1,080 games per model against "
-        "TDM-Alpha, TDM-Beta and TDM-Gamma on test maps 47-51 (one RTX 5090, "
-        "normal GPU mode, same seeds) matched the original game for game."
+        "Every file in this repository holds its save's exact weights and the "
+        "model's one decision program (checked for every save). The Season 0 "
+        "save's file plays the same games as the original save folder: in the "
+        "release check, 1,080 games against TDM-Alpha, TDM-Beta and TDM-Gamma "
+        "on test maps 47-51 (one RTX 5090, normal GPU mode, same seeds) matched "
+        "the original game for game."
     ),
     "slightly-different": (
-        "This file holds the original save's weights and decision program. Its "
-        "games can differ slightly from the original save's recorded games, "
-        "about as much as the original differs from itself between two GPU runs."
+        "Every file in this repository holds its save's exact weights and the "
+        "model's one decision program (checked for every save). Its games can "
+        "differ slightly from the original save's recorded games, about as much "
+        "as the original differs from itself between two GPU runs."
     ),
 }
 _SAME_INPUTS = (
@@ -1235,7 +1238,9 @@ Apache-2.0. Questions: {CONTACT}.
 
 ```bibtex
 @software{{marl_battlegrounds,
+  author  = {{Hawili, Ulixes Tariq}},
   title   = {{MARL-BattleGrounds}},
+  version = {{1.0.0}},
   url     = {{{CODE_URL}}},
   license = {{Apache-2.0}},
   year    = {{2026}}
@@ -1462,7 +1467,7 @@ the ratings, the original save folders and the training opponents.
 | Path | Holds |
 |---|---|
 | `season-0-ratings/` | The Season 0 tables: `ratings.csv` (rank, Elo with its 95% interval, tier, wins, draws, losses, point margin, kills and deaths), `head_to_head.csv`, `map_results.csv`, `final_policies.csv` (each model's training settings) and `RESULTS.md`. |
-| `season-0-games/` | The tournament's run folder, unchanged: one row per game (`match_results.csv`), per-pair and per-map tables, the tournament settings (`tournament_config.json`) and `full_metrics.csv`, every game's full metrics. That file has 11,222 columns, too wide for the viewer, so it stays a plain CSV file. |
+| `season-0-games/` | A replay of the Season 0 round robin that also saved every game's full metrics. Every game's result matches the original run game for game. One row per game (`match_results.csv`), per-pair and per-map tables, the tournament settings (`tournament_config.json`) and `full_metrics.csv`, every game's full metrics. That file has 11,222 columns, too wide for the viewer, so it stays a plain CSV file. |
 | `entrants.csv` | Each trained entrant's tournament name, released name, exact step and original checkpoint id. |
 | `season-0-originals/<repo>/` | The original save folder each model played Season 0 with, unchanged. The official Season 0 snapshot uses these, so its recorded games stay exact. |
 | `training-opponents/` | The training and validation opponents (`pool.json` and `models/`). The model repositories' validation results were measured against {panel} from here, with TDM-Alpha, TDM-Beta and TDM-Gamma. |
@@ -1493,7 +1498,9 @@ Apache-2.0. Questions: {CONTACT}.
 
 ```bibtex
 @software{{marl_battlegrounds,
+  author  = {{Hawili, Ulixes Tariq}},
   title   = {{MARL-BattleGrounds}},
+  version = {{1.0.0}},
   url     = {{{CODE_URL}}},
   license = {{Apache-2.0}},
   year    = {{2026}}

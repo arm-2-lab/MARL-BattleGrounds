@@ -3,8 +3,9 @@
 These host setup helpers preserve original Policy descriptions while exposing
 stable callables and dynamic values to the shared System execution authority.
 They never choose an action, write a recording, or define random stream numbers.
-The evaluator owns scheduled keys and configuration validation. Opaque provider
-objects remain caller-owned; numerical snapshots do not freeze external services.
+The evaluator owns scheduled keys and configuration validation. A method given as
+a reference string is loaded through load_method first. Opaque provider objects
+remain caller-owned; numerical snapshots do not freeze external services.
 """
 
 # Runner helpers deliberately share private execution descriptors and adapters.
@@ -33,7 +34,6 @@ from marl_battlegrounds.evaluation.policy_execution import (
     _SystemExecution,
     _validate_adapter_roster,
     freeze_variables,
-    policy,
     shared_policy,
 )
 
@@ -65,7 +65,11 @@ def freeze_evaluation_method(value: System | Policy | str) -> System | Policy:
     Parameters
     ----------
     value : System | Policy | str
-        A researcher method, scalar Policy, or supported built-in Policy name.
+        A researcher method, scalar Policy, or a method reference string that
+        load_method accepts: a built-in Policy name, a saved actor folder or
+        portable model file, a released model name such as
+        ``"MARL-BattleGrounds/tdm-season-0-qmix@final"`` (downloaded once into
+        the Hugging Face cache) or a ``module:function`` factory (called once).
         Policy parameters and templates must remain numerical. Generic host
         Systems may also contain opaque provider leaves.
 
@@ -84,7 +88,8 @@ def freeze_evaluation_method(value: System | Policy | str) -> System | Policy:
         value has another type or a numerical method/template contains an
         unsupported leaf. Component metadata must keep its valid JSON structure.
     ValueError
-        A built-in name or reconstructed descriptor is invalid.
+        A reference string names no loadable method, or a reconstructed
+        descriptor is invalid. load_method's other errors propagate.
 
     Notes
     -----
@@ -95,10 +100,13 @@ def freeze_evaluation_method(value: System | Policy | str) -> System | Policy:
     and action methods are not invoked; recorded identity is the writer's job.
     """
     if isinstance(value, str):
-        value = policy(value)
+        from marl_battlegrounds._method_loading import load_method
+
+        # Built-in names give policy(value), exactly as before.
+        value = load_method(value)
     if not isinstance(cast(object, value), (System, Policy)):
         raise TypeError(
-            "evaluation methods must be Systems, Policies or built-in names"
+            "evaluation methods must be Systems, Policies or method references"
         )
     transform = (
         _freeze_host_variables

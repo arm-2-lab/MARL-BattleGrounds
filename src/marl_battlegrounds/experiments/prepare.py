@@ -12,10 +12,11 @@ Three routes write a protocol/ folder that later stages read:
 
 Both opponent routes share one bundle check (_read_opponent_pool and
 _verify_opponent_members) and one publication step (_publish_protocol). When
-the command gives no opponent_bundle, both routes download the released
+a declared_study command gives no opponent_bundle, it downloads the released
 training opponents (the training-opponents folder of the
 MARL-BattleGrounds/tdm-season-0-results dataset on Hugging Face) into
-output_dir/opponents and check that copy the same way. No route launches
+output_dir/opponents and checks that copy the same way. software_check uses a
+different frozen bundle and always needs opponent_bundle. No route launches
 training or plays games.
 """
 
@@ -824,11 +825,11 @@ def main(config: DictConfig) -> Path:
     config : DictConfig
         Packaged prepare settings. protocol chooses the route:
         "analysis_software_check" copies synthetic saved rows into output_dir;
-        "software_check" uses opponent_bundle; "declared_study" needs
+        "software_check" also needs opponent_bundle; "declared_study" needs
         declaration, uses opponent_bundle, and reads the optional
         expected_opponents (default: opponents.yaml beside the declaration)
-        and recipe_selection files. Without opponent_bundle, the two opponent
-        routes download the released training opponents into
+        and recipe_selection files. Without opponent_bundle, declared_study
+        downloads the released training opponents into
         output_dir/opponents/training-opponents (ordinary files; Hugging Face
         records the exact commit under output_dir/opponents/.cache) and print
         their exact ``hf://datasets/...`` address. Relative command paths use
@@ -879,7 +880,11 @@ def main(config: DictConfig) -> Path:
     if config.protocol == "analysis_software_check":
         result = prepare_analysis_software_check(output)
     elif config.protocol == "software_check":
-        result = prepare_software_check(bundle(), output)
+        if not config.opponent_bundle:
+            raise ValueError(
+                "software_check needs opponent_bundle=/path/frozen-opponents"
+            )
+        result = prepare_software_check(path(config.opponent_bundle), output)
     elif config.protocol == "declared_study":
         if not config.get("declaration"):
             raise ValueError("declared_study needs declaration=/path/study.yaml")

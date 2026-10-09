@@ -43,7 +43,9 @@ repeat the reported tournament game for game.
 
 All steps write under one search root, here `/data/hyperparameter-search`, with
 one folder per step: `shapes-and-ppo/`, `q-settings/`, `ff-mappo-levers/`,
-`250m/` and `tournament-250m/` (and `opponents/` for the bundle).
+`250m/` and `tournament-250m/` (and `opponents/` for the bundle). Leave out
+`opponent_bundle` and `prepare.py` downloads the released training opponents from
+Hugging Face into `OUTPUT_DIR/opponents/` and checks them the same way.
 
 ### Step 1: Shapes And PPO Recipes (54 Runs, About 45 GPU-Hours)
 

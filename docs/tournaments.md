@@ -22,7 +22,9 @@ python -m marl_battlegrounds tournament --entrants random,tdm-alpha,tdm-beta \
 
 Everyone plays everyone. Each pair plays `games_per_opponent` games in total,
 spread evenly over the maps and both spawn ends. Entrants can be built-in names,
-saved actor folders, `module:function` factories or (in Python) live Systems.
+saved actor folders, model files, released names such as
+`MARL-BattleGrounds/tdm-season-0-qmix@final`, `module:function` factories or (in Python)
+live Systems.
 The tiny example above is a wiring check: four short games prove no skill.
 
 **Watch Out:** the budget must divide by twice the number of maps (ten for five

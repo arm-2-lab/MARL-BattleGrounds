@@ -36,8 +36,10 @@ The decision program takes ``(weights, memory, actor_input, action_mask,
 key_data)`` for R independent agent rows and returns the chosen action (three
 int32 heads), the next memory and the teacher outputs: the 198 joint-action
 log-probabilities (PPO) or action values (QMIX, PQN-VDN) in the world frame,
-with illegal actions at negative infinity. Rows never see each other, so each
-agent's information limits hold by construction.
+with illegal actions at negative infinity. In programs written by
+``export_model``, rows never see each other, so each agent's information limits
+hold by construction. The loader cannot prove this for a program made some
+other way: such a program gets all R rows in one call.
 
 Loading needs only JAX, NumPy and the ``flatbuffers`` package; exporting a
 built-in actor folder also needs the training extra.
@@ -228,7 +230,9 @@ def is_portable_model_file(path: str | Path) -> bool:
 
     Notes
     -----
-    Host-only and cheap: reads the ZIP directory and one small member.
+    Host-only and cheap: reads the ZIP directory and one small member. A
+    compressed ``model.json`` or one larger than 1 MiB returns False without
+    being read, so a small crafted file cannot use up memory here.
     """
     candidate = Path(path)
     if not candidate.is_file() or not zipfile.is_zipfile(candidate):
@@ -236,6 +240,9 @@ def is_portable_model_file(path: str | Path) -> bool:
     try:
         with zipfile.ZipFile(candidate) as archive:
             if "model.json" not in archive.namelist():
+                return False
+            info = archive.getinfo("model.json")
+            if info.compress_type != zipfile.ZIP_STORED or info.file_size > 1 << 20:
                 return False
             model = cast(object, json.loads(archive.read("model.json")))
     except (OSError, ValueError, zipfile.BadZipFile):
@@ -288,7 +295,21 @@ def read_portable_model(path: str | Path) -> PortableModel:
 def _arrays(
     blob: bytes, rows: Sequence[Mapping[str, Any]], what: str
 ) -> tuple[Array, ...]:
-    """Read named NumPy arrays in model.json order and check shape and dtype."""
+    """Read named NumPy arrays in model.json order and check shape and dtype.
+
+    blob is an uncompressed ``.npz`` part. A compressed member is refused
+    before any array is read (ValueError), so reading never needs more memory
+    than the part itself.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            stored = all(
+                info.compress_type == zipfile.ZIP_STORED for info in archive.infolist()
+            )
+    except zipfile.BadZipFile as error:
+        raise ValueError(f"{what} are not an .npz file") from error
+    if not stored:
+        raise ValueError(f"{what} have compressed arrays; format 1 stores them")
     with np.load(io.BytesIO(blob), allow_pickle=False) as saved:
         if sorted(saved.files) != sorted(str(row["path"]) for row in rows):
             raise ValueError(f"{what} do not match the arrays model.json lists")
@@ -575,13 +596,18 @@ def _program(
     shares one apply and init object and therefore one compiled program. The
     input and memory layout is part of the program, so the first file's
     record serves all. The hooks are tiny and fixed: saved runs record their
-    code digest, and a test pins it.
+    code digest, and a test pins it. Raises ValueError when the program turns
+    off any of JAX's own safety checks (for example its shape assertions).
     """
     if blob_sha256 in _PROGRAMS:
         return _PROGRAMS[blob_sha256]
     from jax import export
 
     exported = export.deserialize(bytearray(blob))
+    if exported.disabled_safety_checks:
+        raise ValueError(
+            "A portable model program must not turn off JAX's safety checks"
+        )
     program = _Program(
         _vmappable(cast(Callable[..., PolicyTree], exported.call)),
         tuple(model["inputs"]["actor_input"]),
@@ -632,8 +658,9 @@ def load_portable_model(path: str | Path) -> System:
     Raises
     ------
     ValueError
-        The file fails ``read_portable_model``'s checks or its arrays do not
-        match ``model.json``. A later call refuses inputs whose layout differs
+        The file fails ``read_portable_model``'s checks, its arrays are
+        compressed or do not match ``model.json``, or its program turns off
+        JAX's safety checks. A later call refuses inputs whose layout differs
         from the file's record, and non-Threefry typed keys.
     OSError
         The file cannot be read.
@@ -1340,6 +1367,8 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
         it was trained with ``parameter_sharing`` other than ``"all"`` (format
         1 has no per-slot or per-class weights), or the Policy runs on the
         host (for example a language-model team).
+    TypeError
+        source is neither a Policy nor a folder path.
     OSError
         Reading the source or writing the file failed.
 
@@ -1357,8 +1386,9 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
     Examples
     --------
     >>> import marl_battlegrounds as marl_bgs
-    >>> folder = "runs/my-run/actors/step-100"
-    >>> marl_bgs.export_model(folder, "my-model.zip")  # doctest: +SKIP
+    >>> from marl_battlegrounds import training
+    >>> run = training.load_run("runs/my-run")  # doctest: +SKIP
+    >>> marl_bgs.export_model(run.final_actor, "my-model.zip")  # doctest: +SKIP
     """
     target = Path(path)
     if isinstance(source, Policy):

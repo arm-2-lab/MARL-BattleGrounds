@@ -20,8 +20,8 @@ whether those habits break when one teammate is a stranger:
    of the host team alone, and the analysis can compare them game by game.
 
 The settings come from configs/zero_shot_coordination.yaml, which takes the
-method paths from configs/field/season_0.yaml. Run the same command again to
-continue: finished games are kept and skipped. Outputs in output_dir:
+methods from configs/field/season_0.yaml (the released models). Run the same
+command again to continue: finished games are kept and skipped. Outputs in output_dir:
 settings.json (the settings of the first launch; a later launch with other
 settings is refused), and teams/<team>/<opponent>/ with each evaluate run,
 indexed by teams/<team>/runs.json. This stage trains nothing.

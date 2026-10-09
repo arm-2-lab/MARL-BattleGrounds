@@ -39,8 +39,9 @@ marl_bgs.battle_client(map_id=0, team_a=["manual", mine, mine, mine, mine], team
 ```
 
 A controller is `"manual"`, a built-in name (`"random"`, `"tdm-alpha"`, `"tdm-beta"`,
-`"tdm-gamma"`), a saved model folder (needs the `training` extra), your own `Policy` or
-`System`, or a trusted `"module:function"` factory. Repeated entries load once; each team
+`"tdm-gamma"`), a saved model folder (needs the `training` extra), a model file, a released
+name such as `"MARL-BattleGrounds/tdm-season-0-qmix@final"`, your own `Policy` or `System`,
+or a trusted `"module:function"` factory. Repeated entries load once; each team
 keeps its own memory. Policies choose from their own inputs and never see your orders.
 
 **Watch Out:** name a folder that looks like a built-in as `Path("my_actor")` or

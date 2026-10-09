@@ -48,7 +48,8 @@ python -m marl_battlegrounds.experiments.train preview=true recipe=software_chec
 | `resources=` | `inherit`, `cpu` | Keep the calling process's device, or use the CPU. |
 
 Fields keep their Python names from `TrainConfig`. `runtime.opponents`, `runtime.partners`
-and `runtime.validation_partners` map names to saved actor folders, built-in names or
+and `runtime.validation_partners` map names to saved actor folders, model files, released
+names such as `MARL-BattleGrounds/tdm-season-0-qmix@final`, built-in names or
 `module:function` factories. `runtime.on_update` and `runtime.matchmaking` take a
 `factory` and its `kwargs` (W&B needs the `wandb` extra). Add `+` for a key no preset defines.
 
@@ -134,7 +135,8 @@ games = marl_bgs.evaluate(marl_bgs.load_method("MODEL"), "tdm-beta", num_episode
 
 From a checkout, one script per method: [recurrent MAPPO](../examples/evaluate_recurrent_mappo.py), [feedforward MAPPO](../examples/evaluate_feedforward_mappo.py),
 [recurrent IPPO](../examples/evaluate_recurrent_ippo.py), [feedforward IPPO](../examples/evaluate_feedforward_ippo.py), [QMIX](../examples/evaluate_qmix.py), [PQN-VDN](../examples/evaluate_pqn_vdn.py).
-`MODEL` is an actor export or full checkpoint folder. Default: 32 paired games against
+`MODEL` is an actor export, a full checkpoint folder, a model file or a released name such
+as `MARL-BattleGrounds/tdm-season-0-qmix@final`. Default: 32 paired games against
 `tdm-alpha`; `evaluation=full` adds full metrics for every game and replays of games 1 and 2.
 
 **Watch Out:** `evaluation.output_dir` is a parent; the script prints the real

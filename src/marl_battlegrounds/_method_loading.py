@@ -278,7 +278,7 @@ def load_method(reference: str) -> Policy | System:
         ``hf://<owner>/<repo>@<commit>/<file>`` or a typed name such as
         ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"`` (no suffix: the entered
         save; ``@final``: the last save; ``@<N>M``: the nearest save at or
-        before N million steps; ``@100_139_008``: exactly that save). A
+        before N million steps; ``@99_950_592``: exactly that save). A
         portable model file (a path to one ``.zip`` model file) loads through
         ``marl_battlegrounds.portable_models``; neither form needs the training
         extra. Explicit paths and other existing folders load through
