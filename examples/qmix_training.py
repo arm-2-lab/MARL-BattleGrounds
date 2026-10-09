@@ -6,6 +6,7 @@ Install training and hydra, then use JAX_PLATFORMS=cpu::
     python examples/qmix_training.py resume_from=CHECKPOINT evaluate=true
 
 The four-game, 192-transition defaults cover replay warmup and learner updates.
+No past copies are kept (keep_past=0), since a run this short has no room for them.
 They are software-check settings. config accepts the ordinary JSON settings or
 an inline mapping. Loading uses the selected actor when available, otherwise
 final. Optional evaluation games remain separate from training.
@@ -76,6 +77,7 @@ def run(
         parsed_config = training.TrainConfig(
             method="qmix",
             seed=42,
+            keep_past=0,
             num_envs=4,
             total_env_steps=192,
             qmix=QMIXConfig(

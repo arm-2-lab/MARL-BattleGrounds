@@ -6,6 +6,7 @@ Install training and hydra, then use JAX_PLATFORMS=cpu::
     python examples/pqn_training.py output_dir=artifacts/pqn-shaped shaping=true
 
 Four games and 176 real transitions cover the small lesson's warmup and updates.
+No past copies are kept (keep_past=0), since a run this short has no room for them.
 These budgets establish no learning claim. curriculum=true and shaping=true
 apply only to the tiny fresh recipe; config and resume_from own their settings.
 config accepts the existing JSON file or a plain mapping. evaluate=true adds
@@ -96,6 +97,7 @@ def run(
         parsed_config = training.TrainConfig(
             method="pqn_vdn",
             seed=42,
+            keep_past=0,
             num_envs=4,
             total_env_steps=176,
             curriculum=curriculum,

@@ -6,7 +6,8 @@ Install the training and hydra extras, then run with JAX_PLATFORMS=cpu::
     python examples/mappo_training.py method=ippo output_dir=artifacts/ippo-example
     python examples/mappo_training.py resume_from=CHECKPOINT evaluate=true
 
-Defaults are recurrent MAPPO, four games and 32 real transitions. They check
+Defaults are recurrent MAPPO, four games and 32 real transitions, with no past
+copies kept (keep_past=0), since a run this short has no room for them. They check
 software wiring, not learning. config accepts the existing JSON settings or an
 inline mapping. The selected actor, or final actor when none is selected, is
 loaded; saved-run reports go under analysis/. Optional evaluation plays two
@@ -87,6 +88,7 @@ def run(
         parsed_config = training.TrainConfig(
             method=method or "mappo",
             seed=42,
+            keep_past=0,
             num_envs=4,
             total_env_steps=32,
             ppo=PPOConfig(rollout_length=4, epochs=1),
