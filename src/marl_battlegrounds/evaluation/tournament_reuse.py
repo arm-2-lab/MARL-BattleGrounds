@@ -1148,7 +1148,7 @@ def resolve_reuse_plan(
 def analysis_schedule(
     plan: ReusePlan | Sequence[Mapping[str, Any]],
     participant_names: Mapping[str, str] | None = None,
-) -> tuple[TournamentMatch, ...]:
+) -> "tuple[TournamentMatch, ...]":
     """Project verified logical records into the existing statistical schedule.
 
     Parameters

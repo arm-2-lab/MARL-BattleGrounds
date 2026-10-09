@@ -282,7 +282,7 @@ def test_dns_is_resolved_once_and_resolution_timeout_is_reaped(
 
     def start(
         args: Sequence[str], *, stdout: int, stderr: int, text: Literal[True]
-    ) -> subprocess.Popen[str]:
+    ) -> "subprocess.Popen[str]":
         result = real_popen(args, stdout=stdout, stderr=stderr, text=text)
         processes.append(result)
         return result
@@ -299,7 +299,7 @@ def test_dns_is_resolved_once_and_resolution_timeout_is_reaped(
 
     def stalled(
         _args: Sequence[str], *, stdout: int, stderr: int, text: Literal[True]
-    ) -> subprocess.Popen[str]:
+    ) -> "subprocess.Popen[str]":
         return start(
             [sys.executable, "-I", "-c", "import time; time.sleep(30)"],
             stdout=stdout,

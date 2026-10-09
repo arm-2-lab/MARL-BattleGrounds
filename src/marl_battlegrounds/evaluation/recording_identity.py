@@ -67,7 +67,7 @@ def _source_bank_values_equal(  # pyright: ignore[reportUnusedFunction]
 
 
 def ordered_source_bank_identity(
-    source_configs: EnvConfig,
+    source_configs: "EnvConfig",
 ) -> tuple[str, list[str], dict[str, object]]:
     """Hash the complete contents and order of an immutable source bank.
 
@@ -184,7 +184,7 @@ def callable_name(function: object) -> str:
 
 
 def policy_description(
-    team: Policy,
+    team: "Policy",
     variables: object,
     initial_carry: object,
     *,
@@ -238,7 +238,7 @@ def _numerical_evidence(value: object) -> str | None:
     """Hash supported numerical leaves, leaving opaque provider content unknown."""
     try:
         return tree_digest(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -420,7 +420,7 @@ def normalize_system_registration(
 
 
 def team_controller_names(
-    method: Policy | System, class_ids: Sequence[int]
+    method: "Policy | System", class_ids: Sequence[int]
 ) -> tuple[str, str, str, str, str]:
     """Name the controller that chooses each of one team's five slots.
 

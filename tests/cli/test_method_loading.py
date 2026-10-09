@@ -16,24 +16,24 @@ scenarios familiar, a researcher factory as
 unknown exposure, and an export without its sibling learner description as a
 declared export with unknown exposure.
 Actors trained before Red Zone (actor input schema 1) still play exactly as
-they did. The fixture ``baseline_donor/actor_input_schema_1.json`` and its
-``.npz`` hold six methods' outputs captured from the pre-Red-Zone source: 14
-cases (scale 1.0 in the world frame and 0.01 in the left frame, plus epsilon
-0.25 for QMIX and PQN-VDN) on map 42 and on two banks centred exactly at
-widths 17.3 and 20.3, three chained steps at B2. This file rebuilds the same
-games on today's source (map 42 at Red Zone depths 0.0 and 5.0, the centred
-banks at 5.0) and the same NumPy weights from the schema-1 template, and
-checks: schema_1_actor_input reproduces the recorded 19-column inputs and
-features bit for bit; the rebuilt weights with the default hooks give the
-recorded registration IDs; Systems built with actor_input_schema=1 give the
-recorded actions exactly and their learning outputs and final memory within
-rtol 1e-5 and atol 1e-6; their registration IDs are new and pinned; on the
-centred banks the schema-2 flag reads lane 0 Team A as left while the
-schema-1 flag keeps the old reading, right; and the schema-1 encoding equals
-the schema-2 encoding with flat feature 1128 (the depth) deleted at depths
-0.0, 5.0 and 6.0.
-Setup checks also cover factory/folder ambiguity, one load per reference and
-release of cached factory objects before the training loop.
+they did (checked on Python 3.14, the Python that recorded them). The fixture
+``baseline_donor/actor_input_schema_1.json`` and its ``.npz`` hold six methods'
+outputs captured from the pre-Red-Zone source: 14 cases (scale 1.0 in the world
+frame and 0.01 in the left frame, plus epsilon 0.25 for QMIX and PQN-VDN) on
+map 42 and on two banks centred exactly at widths 17.3 and 20.3, three chained
+steps at B2. This file rebuilds the same games on today's source (map 42 at Red
+Zone depths 0.0 and 5.0, the centred banks at 5.0) and the same NumPy weights
+from the schema-1 template, and checks: schema_1_actor_input reproduces the
+recorded 19-column inputs and features bit for bit; the rebuilt weights with
+the default hooks give the recorded registration IDs; Systems built with
+actor_input_schema=1 give the recorded actions exactly and their learning
+outputs and final memory within rtol 1e-5 and atol 1e-6; their registration IDs
+are new and pinned; on the centred banks the schema-2 flag reads lane 0 Team A
+as left while the schema-1 flag keeps the old reading, right; and the schema-1
+encoding equals the schema-2 encoding with flat feature 1128 (the depth)
+deleted at depths 0.0, 5.0 and 6.0. Setup checks also cover factory/folder
+ambiguity, one load per reference and release of cached factory objects before
+the training loop.
 """
 
 # pyright: reportPrivateUsage=false
@@ -427,6 +427,10 @@ def test_schema_1_inputs_rebuild_exactly_and_keep_their_old_spawn_side(
             assert not new[0].any() and old[0].all()
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="Saved code digests reproduce only on the Python that made them",
+)
 def test_schema_1_systems_reproduce_their_pre_red_zone_outputs(
     schema_1_games: dict[str, list[SystemInput]],
 ) -> None:

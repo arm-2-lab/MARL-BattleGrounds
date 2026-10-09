@@ -4218,7 +4218,7 @@ def _export_update_rows(
                     if not isinstance(row, dict) or not line.endswith(b"\n"):
                         raise ValueError("Incomplete training update")
                     json.dumps(row, allow_nan=False)
-                except ValueError, UnicodeError:
+                except (ValueError, UnicodeError):
                     if status == "Accepted":
                         raise ValueError("Invalid accepted training update") from None
                     row = {

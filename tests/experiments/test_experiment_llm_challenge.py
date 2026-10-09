@@ -45,7 +45,7 @@ class FakeSystem:
         self.components: tuple[dict[str, str], ...] = ({"parameters_digest": digest},)
 
 
-def record(run_dir: Path, system: FakeSystem) -> FakeResult:
+def record(run_dir: Path, system: FakeSystem) -> "FakeResult":
     run_dir.mkdir(parents=True, exist_ok=True)
     details: dict[str, Any] = {
         "passes": {

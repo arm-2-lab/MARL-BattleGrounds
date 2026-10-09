@@ -82,7 +82,7 @@ def fixture(
     print("Resumed Status:", resumed.status)
 
 
-def show_entrants(result: TournamentResult, table: str) -> None:
+def show_entrants(result: "TournamentResult", table: str) -> None:
     """Print every entrant's own-side margin and kills, with Elo, one per line.
 
     result is any tournament result; table is "priority_metrics" or

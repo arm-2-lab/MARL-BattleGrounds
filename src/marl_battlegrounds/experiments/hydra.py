@@ -1,7 +1,7 @@
 """Compose, preview and launch experiments through the existing public API.
 
 Install marl-battlegrounds[hydra] to use this module. Hydra composes settings;
-MARL-BGs owns validation, execution and saved records. The pinned Python 3.14
+MARL-BGs owns validation, execution and saved records. On Python 3.14 a small
 compatibility patch affects only Hydra parser creation, before worker startup.
 It never edits installed dependencies or leaves argparse validation disabled.
 """

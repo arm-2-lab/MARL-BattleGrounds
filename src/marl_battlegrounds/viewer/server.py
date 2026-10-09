@@ -1261,7 +1261,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 self._send_model(
                     HTTPStatus.OK, snapshot, response_headers=(("ETag", etag),)
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1276,7 +1276,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self._send_model(HTTPStatus.OK, frame)
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1294,7 +1294,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self._send_model(status, payload)
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1314,7 +1314,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                         ("Content-Disposition", f'attachment; filename="{filename}"'),
                     ),
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1331,7 +1331,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     payload,
                     content_type=_METRIC_REPORT_CONTENT_TYPE,
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1348,7 +1348,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     payload,
                     content_type=_METRIC_REPORT_CONTENT_TYPE,
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1398,7 +1398,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     error_code="invalid_cursor",
                     message="Metric cursor is outside the captured replay.",
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1449,7 +1449,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                         ),
                     ),
                 )
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1468,7 +1468,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self._send_model(HTTPStatus.OK, timeline)
-            except BrokenPipeError, ConnectionError, TimeoutError:
+            except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True
             except Exception:
                 self._send_internal_error(coordinator)
@@ -1567,7 +1567,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
             self._send_model(status, payload)
             if shutdown_requested:
                 self.wfile.flush()
-        except BrokenPipeError, ConnectionError, TimeoutError:
+        except (BrokenPipeError, ConnectionError, TimeoutError):
             self.close_connection = True
         except Exception:
             self._send_internal_error(coordinator)
@@ -1728,14 +1728,14 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
         if length > _MAX_COMMAND_BODY_BYTES:
             self._send_api_error(
                 coordinator,
-                HTTPStatus.CONTENT_TOO_LARGE,
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                 error_code="payload_too_large",
                 message="Command request exceeds the debugger body limit.",
             )
             return None
         try:
             body = self.rfile.read(length)
-        except TimeoutError, OSError:
+        except (TimeoutError, OSError):
             self._send_api_error(
                 coordinator,
                 HTTPStatus.REQUEST_TIMEOUT,

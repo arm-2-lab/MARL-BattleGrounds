@@ -958,7 +958,7 @@ class _MetricTable:
     values: NDArray[np.float32]
 
     @classmethod
-    def create(cls, names: tuple[str, ...], ids: Iterable[int]) -> _MetricTable:
+    def create(cls, names: tuple[str, ...], ids: Iterable[int]) -> "_MetricTable":
         """Allocate rows in sorted ID order; an empty selection allocates no value
         rows.
         """

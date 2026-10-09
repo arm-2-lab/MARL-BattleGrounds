@@ -1,8 +1,9 @@
 """Check PPO variant actor rights, empty memory and shared masked updates.
 
 Historical MAPPO registrations are compared with records captured before the
-variant work, using the exact stored parameters behind those records (their
-initialization rounds differently with other CPU thread counts). Real
+variant work (on Python 3.14 only, the Python that recorded them), using the
+exact stored parameters behind those records (their initialization rounds
+differently with other CPU thread counts). Real
 permitted inputs exercise both spawn frames, action legality and same-call
 probabilities. Feedforward actors keep no recurrent parameters,
 state or network loop. Masked updates preserve unused optimizers and ignore
@@ -16,6 +17,7 @@ contracts, not learned skill or GPU cost.
 
 # pyright: reportPrivateUsage=false
 import json
+import sys
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -100,6 +102,10 @@ def actor_inputs() -> SystemInput:
     return env.policy_inputs(observations, state)
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="Saved code digests reproduce only on the Python that made them",
+)
 def test_historical_mappo_system_registrations_stay_exact() -> None:
     path = (
         Path(__file__).parents[1]

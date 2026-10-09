@@ -161,7 +161,7 @@ def resolve_reward(
         source_digest = (
             None if source is None else sha256(Path(source).read_bytes()).hexdigest()
         )
-    except OSError, TypeError:
+    except (OSError, TypeError):
         source_digest = None
     accepts_config, _ = _reward_config_parameter(reward)
     identity: dict[str, object] = {

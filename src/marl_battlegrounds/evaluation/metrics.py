@@ -2600,7 +2600,7 @@ class EvaluationEpisodeObserverV1:
                         evaluator._context, start, transition, successor
                     )
                 )
-        except RuntimeError, ValueError, TypeError:
+        except (RuntimeError, ValueError, TypeError):
             if evaluator._processing_failure is None:
                 raise
         self._reducers = evaluator._reducers

@@ -328,7 +328,7 @@ def process_identity(pid: int | None = None) -> dict[str, Any]:
         stat = Path(f"/proc/{selected}/stat").read_text()
         start: str | None = stat.rsplit(")", 1)[1].split()[19]
         boot: str | None = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-    except OSError, IndexError:
+    except (OSError, IndexError):
         start, boot = None, None
     return {"pid": selected, "start_ticks": start, "boot_id": boot}
 

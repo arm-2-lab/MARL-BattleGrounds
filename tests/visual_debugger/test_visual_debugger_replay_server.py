@@ -2118,7 +2118,7 @@ def test_replay_routes_reuse_host_origin_token_and_size_protections(
 
     assert bad_host.status == bad_origin.status == cross_site.status == 403
     assert unauthorized.status == HTTPStatus.UNAUTHORIZED
-    assert oversized.status == HTTPStatus.CONTENT_TOO_LARGE
+    assert oversized.status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
     assert oversized.getheader("Connection") == "close"
     assert service.timeline_calls == service.command_calls == 0
 

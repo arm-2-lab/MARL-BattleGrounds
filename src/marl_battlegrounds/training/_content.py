@@ -814,7 +814,7 @@ def _export_origin(
 
             source = _actor_origin_directory(export, details)
             learner = checkpoints.read_checkpoint_description(source)
-        except OSError, ValueError:
+        except (OSError, ValueError):
             return "declared", None
         saved = cast(dict[str, object], learner.get("metadata", {}))
         collection = cast(dict[str, object], learner.get("collection", {}))

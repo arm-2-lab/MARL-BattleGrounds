@@ -99,8 +99,8 @@ def test_replay_modules_import_without_array_or_capture_dependencies(
     module_name: str,
 ) -> None:
     script = f"""
-import annotationlib
 import importlib
+import inspect
 import sys
 
 module = importlib.import_module({module_name!r})
@@ -110,10 +110,14 @@ if {module_name!r} == "marl_battlegrounds.evaluation.actor_projection":
     annotations = reconstruction.__annotations__
     if annotations.get("return") != "SharedObsSensorSourceBankV1":
         raise SystemExit("SharedObs reconstruction return annotation did not resolve")
-    string_annotations = annotationlib.get_annotations(
-        reconstruction,
-        format=annotationlib.Format.STRING,
-    )
+    if sys.version_info >= (3, 14):
+        import annotationlib
+        string_annotations = annotationlib.get_annotations(
+            reconstruction,
+            format=annotationlib.Format.STRING,
+        )
+    else:
+        string_annotations = inspect.get_annotations(reconstruction)
     if string_annotations.get("return") != "SharedObsSensorSourceBankV1":
         raise SystemExit("SharedObs reconstruction annotation is not introspectable")
 

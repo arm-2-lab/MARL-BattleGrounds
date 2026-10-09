@@ -322,7 +322,7 @@ def prepare_screen(
         Full UUID of the authorized internal RTX 5090. It is checked with
         nvidia-smi, which allocates no GPU memory.
     python : str, default=sys.executable
-        The existing Python 3.14 interpreter that uv uses to build the
+        The existing Python interpreter that uv uses to build the
         package's own environment.
 
     Returns

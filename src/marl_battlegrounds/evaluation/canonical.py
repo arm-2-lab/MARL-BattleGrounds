@@ -742,7 +742,7 @@ def _recorded_method_sampling(
                         if len({fact["determinism"] for fact in selected}) > 1
                         else combine_sampling_facts(selected)
                     )
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     value = {
                         "determinism": "unknown",
                         "basis": "Original sampling facts are invalid",

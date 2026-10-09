@@ -228,7 +228,7 @@ def check_saved_system(system: System, run_dir: str) -> None:
             ]
             for entry in details["passes"].values()
         }
-    except OSError, ValueError, KeyError, IndexError, TypeError, AttributeError:
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError):
         saved = set[object]()
     if not saved:
         raise ValueError(

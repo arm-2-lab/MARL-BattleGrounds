@@ -1987,7 +1987,7 @@ def test_shared_outgoing_selective_used_epoch_and_action_poisons_reject(
                 outgoing_transition=poisoned,
                 final_frame_index=3,
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         pytest.fail(f"Shared used-path poison {poison_index} was accepted")
 

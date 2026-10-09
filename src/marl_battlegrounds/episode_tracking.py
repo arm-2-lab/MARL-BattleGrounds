@@ -125,7 +125,7 @@ class EpisodeTrackingState:
 
     def begin_stage(
         self, state: EnvironmentState, *, total_env_steps: int
-    ) -> EpisodeTrackingState:
+    ) -> "EpisodeTrackingState":
         """Begin a balanced stage while preserving all live episode bindings.
 
         Parameters
@@ -367,7 +367,7 @@ def _bind(
 
 
 def init_episode_tracking(
-    env: Environment | AutoReset,
+    env: "Environment | AutoReset",
     state: EnvironmentState,
     *,
     source_configs: EnvConfig | None = None,

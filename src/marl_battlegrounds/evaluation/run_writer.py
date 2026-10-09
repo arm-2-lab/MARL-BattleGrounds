@@ -3986,7 +3986,7 @@ class RunWriter:
                 if changed:
                     _atomic_json(path, durable)
                     os.fsync(self._lock)
-            except OSError, ValueError:
+            except (OSError, ValueError):
                 pass
             try:
                 with (self.run_dir / "failures.jsonl").open("ab") as stream:

@@ -1075,7 +1075,7 @@ def _group_members(group: int) -> list[int]:
             fields = (path / "stat").read_text().rsplit(")", 1)[1].split()
             if fields[0] != "Z" and int(fields[2]) == int(fields[3]) == group:
                 members.append(int(path.name))
-        except OSError, IndexError, ValueError:
+        except (OSError, IndexError, ValueError):
             continue
     return members
 
@@ -1100,7 +1100,7 @@ def _alive(record: Record) -> bool:
             stat = Path(f"/proc/{identity['pid']}/stat").read_text()
             if stat.rsplit(")", 1)[1].split()[0] != "Z":
                 return True
-        except OSError, IndexError:
+        except (OSError, IndexError):
             continue
     group = record.get("trainer_group")
     if not isinstance(group, dict):

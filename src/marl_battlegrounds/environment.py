@@ -351,9 +351,9 @@ class EpisodeInfo(NamedTuple):
     episode_length: Array
     team_scores: Array
     lifecycle_error: Array
-    episode_start_records: EpisodeStartRecords | None = None
+    episode_start_records: "EpisodeStartRecords | None" = None
     episode_tracking_error: Array | None = None
-    final: FinalEpisodeData | None = None
+    final: "FinalEpisodeData | None" = None
     training_facts: TrainingFacts | None = None
 
     @property
@@ -693,7 +693,7 @@ class Environment:
 
     def policy_inputs(
         self, observations: Observations, state: EnvironmentState, team: int = 0
-    ) -> SystemInput:
+    ) -> "SystemInput":
         """Prepare one team's separate permitted inputs for this decision.
 
         Parameters

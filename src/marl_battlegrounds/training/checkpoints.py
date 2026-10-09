@@ -393,7 +393,7 @@ def _pending_writer_status(writer: Mapping[str, Any]) -> str:
         os.kill(writer["pid"], 0)
     except ProcessLookupError:
         return "dead"
-    except PermissionError, OSError:
+    except (PermissionError, OSError):
         pass
     return "unknown"
 

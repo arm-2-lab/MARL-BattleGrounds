@@ -614,7 +614,7 @@ def _is_game_list(path: Path) -> bool:
         prefix = stream.readline(_BUFFER_BYTES)
     try:
         value: object = json.loads(prefix)
-    except ValueError, UnicodeDecodeError:
+    except (ValueError, UnicodeDecodeError):
         return False
     return isinstance(value, dict) and "logical_game_id" in value
 

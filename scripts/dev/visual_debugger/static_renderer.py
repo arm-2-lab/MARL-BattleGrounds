@@ -26,9 +26,9 @@ if TYPE_CHECKING:
 
 def run_static_renderer(
     *,
-    scenario: DebuggerScenario,
+    scenario: "DebuggerScenario",
     seed: int,
-    evaluation_launch_specification: DebuggerEvaluationLaunchSpecificationV1,
+    evaluation_launch_specification: "DebuggerEvaluationLaunchSpecificationV1",
     controlled_global_slot: int | None,
     verbose: bool,
     show_ranges: bool,

@@ -254,7 +254,7 @@ class Client:
                 poller.register(sock, select.POLLIN)
                 return bool(poller.poll(0))
             readable, _, _ = select.select([sock], [], [], 0)
-        except OSError, ValueError:
+        except (OSError, ValueError):
             return True
         return bool(readable)
 
@@ -484,7 +484,7 @@ class Client:
                 if response.status in (400, 413, 422):
                     try:
                         error = json.loads(data).get("error", {})
-                    except ValueError, AttributeError:
+                    except (ValueError, AttributeError):
                         error = {}
                     code = (
                         cast(dict[str, object], error).get("code")

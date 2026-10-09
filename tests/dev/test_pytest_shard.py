@@ -5,9 +5,10 @@ and fixtures together. They also cover the measured cost table: the scheduler
 uses the checked-in table as is, ignores entries for tests that no longer
 exist, and the loader rejects malformed or inconsistent tables. The rebalancing
 tool maps JUnit timings to test families, including tests inside folders of
-tests/, and refuses missing, failed or partial timings, reads Playwright timings as (spec file, title) rows, splits only
-oversized files at function boundaries the scheduler allows, and predicts shard
-costs with the scheduler's own packing.
+tests/, and refuses missing, failed or partial timings, reads Playwright
+timings as (spec file, title) rows, splits only oversized files at function
+boundaries the scheduler allows, and predicts shard costs with the scheduler's
+own packing.
 """
 
 import json

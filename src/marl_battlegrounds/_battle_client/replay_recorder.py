@@ -349,7 +349,7 @@ class DebuggerReplayRecorder:
                 raise ValueError(
                     "recording transition must join adjacent captured frames"
                 )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             self._failed_append = True
             raise
         self._transitions.append(transition)
@@ -661,7 +661,7 @@ class DebuggerReplayRecorder:
             raise RuntimeError("recovery requires a failed publication")
         try:
             self._prepare()
-        except ReplaySaveError, TypeError, ValueError:
+        except (ReplaySaveError, TypeError, ValueError):
             return "persistence_failed"
         prepared = self.prepared_replay
         if prepared is None:

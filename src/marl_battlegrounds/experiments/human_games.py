@@ -591,7 +591,7 @@ def main(config: DictConfig) -> list[dict[str, Any]]:
             )
             try:
                 input("Press Enter to open it, or Ctrl-C to stop. ")
-            except KeyboardInterrupt, EOFError:
+            except (KeyboardInterrupt, EOFError):
                 print("\nStopped. Run the same command to continue.")
                 break
             folder.mkdir(parents=True, exist_ok=True)

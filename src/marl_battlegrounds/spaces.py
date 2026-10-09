@@ -87,7 +87,7 @@ class ArraySpace:
                 and array.dtype == self.dtype
                 and np.all((array >= self.low) & (array <= self.high))
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return False
 
 
@@ -110,7 +110,7 @@ class StructuredSpace:
     and bounds, not Core validity or actor information rights.
     """
 
-    fields: Mapping[str, ArraySpace | StructuredSpace]
+    fields: "Mapping[str, ArraySpace | StructuredSpace]"
     """Named child spaces in the same order as the matching NamedTuple fields."""
 
     def contains(self, value: object) -> bool:

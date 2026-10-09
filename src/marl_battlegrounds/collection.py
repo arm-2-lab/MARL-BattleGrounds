@@ -783,7 +783,7 @@ def _collect(
     return carry, output
 
 
-def _check_collection_writer(writer: RunWriter, *, has_steps: bool) -> None:
+def _check_collection_writer(writer: "RunWriter", *, has_steps: bool) -> None:
     """Reject unusable recording ownership before any policy or provider call.
 
     writer must be an open, healthy RunWriter outside another collection.
@@ -810,7 +810,7 @@ def collect_rollout(
     carry: object,
     *,
     num_steps: int,
-    writer: RunWriter,
+    writer: "RunWriter",
     record_capacity: int | None = None,
     source_configs: EnvConfig | None = None,
     output_steps: int | None = None,

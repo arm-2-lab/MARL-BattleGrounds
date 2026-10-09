@@ -28,7 +28,7 @@ def _find_malloc_trim() -> Callable[[int], int] | None:
         return None
     try:
         return ctypes.CDLL("libc.so.6").malloc_trim
-    except OSError, AttributeError:
+    except (OSError, AttributeError):
         return None
 
 

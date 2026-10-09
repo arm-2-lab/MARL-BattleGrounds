@@ -66,7 +66,7 @@ _CODE_REVISION: TypeAdapter[CodeRevisionV1 | CodeRevisionV2] = TypeAdapter(
 
 
 def controller_names_by_slot(
-    team_a: Policy | System, team_b: Policy | System, config: EnvConfig
+    team_a: "Policy | System", team_b: "Policy | System", config: EnvConfig
 ) -> tuple[str | None, ...]:
     """Name the controller of each of a game's ten champion slots.
 

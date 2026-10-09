@@ -23,7 +23,7 @@ from marl_battlegrounds.experiments import hydra as adapter
 def entry(tmp_path: Path) -> Path:
     path = tmp_path / "launch.py"
     path.write_text("""import argparse, json, sys
-before = argparse.ArgumentParser._check_help
+before = getattr(argparse.ArgumentParser, "_check_help", None)
 from marl_battlegrounds.experiments.hydra import prepare_hydra
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -34,7 +34,7 @@ def main(cfg: DictConfig):
 try:
     main()
 finally:
-    assert getattr(argparse.ArgumentParser, "_check_help") is before  # noqa: B009
+    assert getattr(argparse.ArgumentParser, "_check_help", None) is before
     assert not {'jax', 'jaxlib', 'flax', 'optax', 'flashbax'} & sys.modules.keys()
 """)
     return path
@@ -80,6 +80,9 @@ def test_hydra_cli_matrix(
         assert not output.exists()
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="Python 3.14 parser backport only"
+)
 def test_parser_state_is_restored_after_success_and_failure() -> None:
     before = getattr(argparse.ArgumentParser, "_check_help")  # noqa: B009
     utils = importlib.import_module("hydra._internal.utils")
@@ -97,6 +100,9 @@ def test_parser_state_is_restored_after_success_and_failure() -> None:
         argparse.ArgumentParser().add_argument("--bad", help=cast(str, object()))
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="Python 3.14 parser backport only"
+)
 def test_ordinary_bad_help_is_not_hidden_inside_wrapper() -> None:
     def malformed() -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser()
@@ -115,6 +121,9 @@ def test_bootstrap_is_idempotent() -> None:
     assert utils.get_args_parser is main.get_args_parser is before
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="Python 3.14 parser backport only"
+)
 def test_unqualified_hydra_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(adapter, "_parser_patched", False)
 
@@ -126,6 +135,9 @@ def test_unqualified_hydra_version_is_rejected(monkeypatch: pytest.MonkeyPatch) 
         adapter.prepare_hydra()
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="Python 3.14 parser backport only"
+)
 def test_pinned_upstream_parser_still_needs_the_backport() -> None:
     utils = importlib.import_module("hydra._internal.utils")
     upstream = utils.get_args_parser.__wrapped__

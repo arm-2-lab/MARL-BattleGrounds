@@ -97,7 +97,7 @@ def run_static_replay_renderer(
 
 def run_static_replay_artifact_renderer(
     *,
-    replay: ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: "ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4",
     frame_index: int,
     show_ranges: bool,
 ) -> int:

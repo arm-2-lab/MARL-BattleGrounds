@@ -685,7 +685,7 @@ def _current_commit() -> str:
             text=True,
             check=True,
         )
-    except OSError, subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return result.stdout.strip() or "unknown"
 
