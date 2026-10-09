@@ -113,7 +113,7 @@ def test_every_serializable_public_evaluation_keyword_has_one_route() -> None:
 def test_six_entry_help_and_settings_need_no_numerical_imports(
     method: str, arguments: list[str], tmp_path: Path
 ) -> None:
-    script = REPO / "scripts/paper_experiments" / f"evaluate_{METHODS[method]}.py"
+    script = REPO / "examples" / f"evaluate_{METHODS[method]}.py"
     program = f"""
 import importlib.abc, runpy, sys
 class Guard(importlib.abc.MetaPathFinder):
@@ -291,7 +291,7 @@ def test_hydra_rejects_actor_child_before_creating_launch_records(
 ) -> None:
     method, path = actor
     target = path / "forbidden-launch"
-    script = REPO / "scripts/paper_experiments" / f"evaluate_{METHODS[method]}.py"
+    script = REPO / "examples" / f"evaluate_{METHODS[method]}.py"
     result = subprocess.run(
         [
             sys.executable,

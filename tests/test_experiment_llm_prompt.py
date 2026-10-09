@@ -4,9 +4,10 @@ Contracts: the packaged settings are TDM-Alpha against TDM-Beta on map 47, seed
 0, from tick 12 to tick 120; first_attack_view rejects a tick range with a
 negative start or a start after its end before making a game; main writes the
 prompt text to prompt.txt and everything else first_attack_view returns to
-menu.json, and returns that menu; the committed results/llm_prompt.txt and
-llm_prompt.json agree on size and format version, the version is the current
-llm.TEXT_VERSION, and the text is in the left frame. The full run's evidence is
+menu.json, and returns that menu; the committed
+scripts/paper_experiments/results/llm_prompt.txt and llm_prompt.json agree on
+size and format version, the version is the current llm.TEXT_VERSION, and the
+text is in the left frame. The full run's evidence is
 the committed result itself, made by the stage's documented command.
 """
 
@@ -21,7 +22,7 @@ from omegaconf import OmegaConf
 from marl_battlegrounds import llm
 from marl_battlegrounds.experiments import llm_prompt
 
-RESULTS = Path(llm_prompt.__file__).parent / "results"
+RESULTS = Path(__file__).resolve().parents[1] / "scripts/paper_experiments/results"
 
 
 def test_settings_compose() -> None:

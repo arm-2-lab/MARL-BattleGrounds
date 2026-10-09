@@ -12,7 +12,7 @@ saved record file, and [Where Everything Is](#where-everything-is) gives the
 location of each one.
 
 The commands that prepare, run, watch and analyze the study are in
-[the paper experiment scripts](../../scripts/paper_experiments/README.md).
+[the paper experiment scripts](README.md).
 
 ## Question
 
@@ -53,7 +53,7 @@ the comparison.
 | Recurrent QMIX | Mava `rec_qmix` | [`baselines/qmix.py`](../../src/marl_battlegrounds/baselines/qmix.py) |
 | Recurrent PQN-VDN | JaxMARL `pqn_vdn_rnn` | [`baselines/pqn.py`](../../src/marl_battlegrounds/baselines/pqn.py) |
 
-Every change from the donors is listed in the [source ledger](source_reuse.md).
+Every change from the donors is listed in the [source ledger](../../docs/training/source_reuse.md).
 The four PPO methods share one learner,
 [`training/learner.py`](../../src/marl_battlegrounds/training/learner.py).
 
@@ -145,7 +145,7 @@ opponents (current weights and saved copies) choose greedily except for the
 exploration rate saved with them, which is each Q method's ordinary way of
 acting during training. The fixed models and scripted bots are identical for
 every method. Identity hashes of every fixed model are recorded in
-[`opponents.yaml`](../../scripts/paper_experiments/hyperparameter_search/opponents.yaml).
+[`opponents.yaml`](hyperparameter_search/opponents.yaml).
 
 ## Training Protocol
 
@@ -174,7 +174,7 @@ and seeds therefore does not give the same weights, checkpoints or selected
 steps as the runs reported here. We did not measure how far such a retrain
 drifts; we expect differences of the kind seen between seeds of one recipe
 (see the seed tables of studies 1 and 2). The saved checkpoints do repeat the
-tournament game for game ([Repeatability On GPUs](../evaluation/repeatability.md)).
+tournament game for game ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)).
 
 ## Validation And Selection
 
@@ -310,7 +310,7 @@ recipe. For four of those methods it is the best run of the final recipe; for
 QMIX it comes from a recipe that was not chosen as the final recipe (see
 Final Recipes). For feedforward MAPPO it is a 40M run of its team-reward
 recipe on seed 12259871, trained with study 1's protocol and opponent mix
-([`ff_mappo_team_reward.yaml`](../../scripts/paper_experiments/hyperparameter_search/ff_mappo_team_reward.yaml),
+([`ff_mappo_team_reward.yaml`](hyperparameter_search/ff_mappo_team_reward.yaml),
 decision 11). Each run continues from its full learner checkpoint at
 40,108,032 transitions by 210,567,168 transitions to 250,675,200, the length
 of the pooled 250M model. Every run also keeps a full learner state at step 0
@@ -366,7 +366,7 @@ represented by that earlier checkpoint, and the report says so.
 **Tournament on the test maps** (after study 3). The six study 3 policies and
 the three scripted bots play one round robin on the held-out test maps, which
 no baseline's training, tuning or checkpoint choice ever used. The field is declared in
-[`tournament_250m.json`](../../scripts/paper_experiments/hyperparameter_search/tournament_250m.json)
+[`tournament_250m.json`](hyperparameter_search/tournament_250m.json)
 and runs through the public `run_tournament` API.
 
 | Setting | Value |
@@ -377,8 +377,8 @@ and runs through the public `run_tournament` API.
 | Rules | First to 20 points, 300 ticks, Red Zone depth 5.0 (as in training and validation) |
 | Seed root | 20261004 |
 | Play | PPO actors sample their actions; QMIX and PQN-VDN actors act greedily (no exploration), as the library loads them; the scripted bots are deterministic |
-| Ratings | The tool's joint Elo fit with draws (`centered-davidson-v1`), field average 1,200, 95% intervals from 5,000 bootstrap resamples; tiers and divisions from [the protocol](../evaluation/protocol.md#leaderboard-tiers) |
-| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability On GPUs](../evaluation/repeatability.md)) |
+| Ratings | The tool's joint Elo fit with draws (`centered-davidson-v1`), field average 1,200, 95% intervals from 5,000 bootstrap resamples; tiers and divisions from [the protocol](../../docs/evaluation/protocol.md#leaderboard-tiers) |
+| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)) |
 | Games at a time | 128, the command's default |
 | Cost | 8.2 minutes on one RTX 5090 |
 
@@ -436,7 +436,7 @@ and the games still play out differently.
    play out differently between two runs, because GPU floating-point rounding
    can flip a near-tied action choice. This is ordinary floating-point noise,
    not a simulator defect; see
-   [Repeatability On GPUs](../evaluation/repeatability.md).
+   [Repeatability On GPUs](../../docs/evaluation/repeatability.md).
 
 ## Decisions During The Search
 
@@ -462,7 +462,7 @@ saved results, and each is applied in the sections that follow.
 | 15 | Each method enters the tournament with its selected study 3 checkpoint | Runs are compared by their checkpoints chosen under the declared rule, never by their final checkpoints by default; each final checkpoint is recorded beside it |
 | 16 | The tournament plays 200 games per pair on the test maps | Twice the API default of 100, for narrower rating intervals at a cost of minutes |
 | 17 | QMIX and PQN-VDN are evaluated greedily, as the library loads them, and pairs whose games repeat are reported as such | Greedy play is the usual way to evaluate Q-learners (in PyMARL, the QMIX authors' code, [test mode sets epsilon to 0](https://github.com/oxwhirl/pymarl/blob/master/src/components/action_selectors.py)). The tournament tool flags every pair between two deterministic entrants and gives it no sampling interval (see Tournament) |
-| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability On GPUs](../evaluation/repeatability.md)) |
+| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)) |
 
 ## Inputs
 
@@ -511,7 +511,7 @@ Every path below is relative to the search root,
 `artifacts/paper-experiments/hyperparameter-search/` in this checkout. That
 folder is kept locally, outside Git, and will be released with the trained
 models. Every declaration is in
-[`scripts/paper_experiments/hyperparameter_search/`](../../scripts/paper_experiments/hyperparameter_search/).
+[`scripts/paper_experiments/hyperparameter_search/`](hyperparameter_search/).
 A run folder is `<study folder>/study/cases/<case>/run/`, where `<case>` is
 `<method>-<recipe>--seed-<seed>`, for example
 `shapes-and-ppo/study/cases/mappo-reference--seed-20261002/run/`.
@@ -523,7 +523,7 @@ A run folder is `<study folder>/study/cases/<case>/run/`, where `<case>` is
 | Feedforward MAPPO's 40M run | `ff_mappo_team_reward.yaml` | `ff-mappo-levers/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` (its parent segment) |
 | Study 3 | `continue_to_250m.yaml` | `250m/study/cases/` (five methods); feedforward MAPPO's continuation ran in its own folder, `ff-mappo-250m/study/cases/ff_mappo-team-reward--seed-12259871/run/` | `results/250m/` |
 | Tournament | `tournament_250m.json` | `tournament-250m/runs/tournament_20261005_082220_ae54a3f293be/` (field `tournament-250m/field.json`, log `tournament-250m/tournament.log`) | `results/tournament-250m/` |
-| Teamwork in the tournament | the `tournament_analysis` stage's packaged settings | `../tournament-analysis-season-0/full-metrics-timed/` (replay and analysis) and `../tournament-analysis-season-0/priority-only-timed/` (the timing reference) | [`season_0_teamwork.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork.csv), [`season_0_teamwork_by_class.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_by_class.csv), [`season_0_teamwork_screen.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_screen.csv), [`season_0_teamwork_trends.csv`](../../src/marl_battlegrounds/experiments/results/season_0_teamwork_trends.csv) |
+| Teamwork in the tournament | the `tournament_analysis` stage's packaged settings | `../tournament-analysis-season-0/full-metrics-timed/` (replay and analysis) and `../tournament-analysis-season-0/priority-only-timed/` (the timing reference) | [`season_0_teamwork.csv`](results/season_0_teamwork.csv), [`season_0_teamwork_by_class.csv`](results/season_0_teamwork_by_class.csv), [`season_0_teamwork_screen.csv`](results/season_0_teamwork_screen.csv), [`season_0_teamwork_trends.csv`](results/season_0_teamwork_trends.csv) |
 | Fixed opponents | `opponents.yaml` | `opponents/models/` (the six training models and the pooled 250M model) | – |
 
 **The six tournament policies.** Each lineage is its 40M run followed by its
@@ -622,17 +622,17 @@ It writes `curves.csv` (margin, kills and deaths per game at all 186 checks),
 `curves.png` and `summary.md` in 19 seconds on the CPU (2.0 GB peak RAM), and
 plays no games. Its curves match `lineage_curves.csv` at every check. The 186
 rows are in
-[`season_0_training_curves.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves.csv).
+[`season_0_training_curves.csv`](results/season_0_training_curves.csv).
 
 The same command with `'opponents=[tdm-alpha,tdm-beta,tdm-gamma]'` reads the
 same checks against the three scripted opponents alone (96 of each check's 128
 games) and adds the share of those games each baseline won:
-[`season_0_training_curves_scripted.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_scripted.csv).
+[`season_0_training_curves_scripted.csv`](results/season_0_training_curves_scripted.csv).
 Each run also writes `crossings.csv`, the first check where a baseline's point
 margin was above zero and the first where it won at least half its games:
-[`season_0_training_curves_crossings.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_crossings.csv)
+[`season_0_training_curves_crossings.csv`](results/season_0_training_curves_crossings.csv)
 against the whole panel and
-[`season_0_training_curves_scripted_crossings.csv`](../../src/marl_battlegrounds/experiments/results/season_0_training_curves_scripted_crossings.csv)
+[`season_0_training_curves_scripted_crossings.csv`](results/season_0_training_curves_scripted_crossings.csv)
 against the scripted opponents. Every baseline first won half its games against
 the scripted opponents between 50,651,136 (QMIX) and 166,461,440 (feedforward
 IPPO) game steps, and first crossed a margin of zero against the whole panel
@@ -1282,7 +1282,7 @@ the weakest?
 `tournament_analysis` stage played its schedule again on the same RTX 5090 in
 XLA's deterministic mode, recording all full metrics for every game. All
 7,200 games repeated exactly. One call to
-[`system_metrics`](../evaluation/workflows.md#compare-every-systems-metrics)
+[`system_metrics`](../../docs/evaluation/workflows.md#compare-every-systems-metrics)
 then reads every entrant's games from the side it played, as Team A or Team B,
 over all 1,600 of its games, and its point margin against each opponent equals
 the saved head-to-head result. Games combine by each column's catalog rule:
@@ -1477,7 +1477,7 @@ frame; validation on maps 42, 43, 44 and 46 with checkpoints chosen by point
 margin. The PPO methods also use Adam epsilon 1e-5 and 2 groups. The same
 values, with every remaining saved setting and each policy's file paths, are in
 `final_policies.csv`. The training scripts' default recipe (`recipe=default`
-in [Hydra training](hydra.md)) applies each method's settings and seed from
+in [Hydra training](../../docs/training/hydra.md)) applies each method's settings and seed from
 this table.
 
 ## Our Reading
