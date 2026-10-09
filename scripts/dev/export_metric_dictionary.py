@@ -1,10 +1,10 @@
 """Generate metric-column documentation from the shared metric catalog.
 
-Run ``python -m scripts.dev.export_metric_dictionary`` at the repository root to
-update ``docs/metric_columns.csv`` and the generated tables in ``docs/metrics.md``.
-Add ``--check`` to compare existing text without writing. The catalog remains the measurement
-naming/meaning authority; this module formats its data rather than computing
-metrics or replaying episodes.
+Run ``python -m scripts.dev.export_metric_dictionary`` at the repository root
+to update ``docs/metric_columns.csv`` and the generated tables in
+``docs/metrics.md``. Add ``--check`` to compare existing text without writing.
+The catalog remains the measurement naming/meaning authority; this module
+formats its data rather than computing metrics or replaying episodes.
 """
 
 import argparse
@@ -445,9 +445,7 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
-    parser.add_argument(
-        "--output", type=Path, default=Path("docs/metric_columns.csv")
-    )
+    parser.add_argument("--output", type=Path, default=Path("docs/metric_columns.csv"))
     args = parser.parse_args()
     expected = dictionary_csv()
     specification = _SPECIFICATION.read_text()
