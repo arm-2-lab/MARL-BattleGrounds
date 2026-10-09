@@ -9,6 +9,7 @@
       "seeds": [190601, 190602],
       "config": {
         "method": "ff_ippo",
+        "keep_past": 0,
         "num_envs": 32,
         "total_env_steps": 128,
         "ppo": {

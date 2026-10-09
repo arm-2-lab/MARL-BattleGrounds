@@ -4,8 +4,9 @@ From the repository root, run::
 
     python examples/training_study.py output_dir=artifacts/example-study
 
-The default JSON declares two short FF-IPPO runs. It checks the workflow, not
-learning quality. Pass another config for a real declared experiment. To
+The default JSON declares two short FF-IPPO runs that keep no past copies
+(keep_past=0, since runs this short have no room for them). It checks the
+workflow, not learning quality. Pass another config for a real declared experiment. To
 resume, use resume_from instead of output_dir; the first launch's deadline
 still applies. Use background=true for a detached launch. The package CLI provides
 matching study run/start/status/stop commands. No GPU is selected by this script.
