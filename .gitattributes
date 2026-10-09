@@ -1,3 +1,6 @@
+# Keep every file's bytes exactly as committed on every checkout and system:
+# no line-ending conversion, so packaged data matches its recorded digests.
+* -text
 # These two fixtures preserve exact upstream bytes, including trailing spaces.
 # Keep all other whitespace checks active, including checks on ordinary source.
 tests/fixtures/value_norm_donor/r_mappo.py.txt whitespace=-blank-at-eol
