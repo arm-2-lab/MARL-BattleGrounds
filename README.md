@@ -75,11 +75,13 @@ On one RTX 5090 with 1,024 parallel 5v5 games, the simulator alone runs 50,416 g
 
 ## Train
 
-One command trains recurrent IPPO with the tested Season 0 recipe (250 million
-game steps, a few hours on one RTX 5090):
+One command trains recurrent IPPO with the Season 0 learner settings (250 million game
+steps, a few hours on one RTX 5090) against scripted opponents, and keeps its best
+checkpoint on the validation maps:
 
 ```bash
-python -m marl_battlegrounds.experiments.train method=ippo output_dir=runs/my-ippo
+python -m marl_battlegrounds.experiments.train method=ippo pool=scripted \
+  'validation_opponents=[tdm-alpha,tdm-beta,tdm-gamma]' output_dir=runs/my-ippo
 ```
 
 ## Evaluate
@@ -116,6 +118,10 @@ marl_bgs.battle_client(team_b="tdm-alpha")  # play in your browser against a scr
 | Feedforward IPPO | `ff_ippo` | None | One per agent |
 | QMIX | `qmix` | Recurrent | QMIX mixer |
 | PQN-VDN | `pqn_vdn` | Recurrent | Sum of agent values |
+
+The six trained Season 0 models, with every save from 0 to 250M steps, load by name,
+for example `marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-qmix@final")`
+([Training](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/training.md#use-a-released-season-0-model)).
 
 Your own method can be anything that turns permitted observations into legal
 actions: a network, a planner, a language model or a mix.
