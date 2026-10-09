@@ -1,7 +1,9 @@
 """Keep live recording and a separate saved Replay Viewer under one lifetime.
 
 The live HTTP router never changes. Explicit Open Replay requests start or reuse
-one child Viewer with public assets and its own loopback token. The launcher
+one child Viewer with public assets and its own loopback token. The child
+listens on a free loopback port chosen by the operating system, or on a fixed
+``replay_port`` (for example one that Docker publishes in advance). The launcher
 closes this coordinator before releasing assets; recording and persistence stay
 with the live service. Browser tabs do not own either server's lifetime.
 
@@ -126,14 +128,22 @@ class RecordingDebuggerCoordinator:
         fences new opens but leaves the running child serving, and the launcher
         takes it with release_kept_viewer. False stops the child as soon as
         Exit is accepted.
+    replay_port : int, default=0
+        Loopback port for every child Viewer, from 0 through 65535. Zero asks
+        the operating system for a free port at each start. A fixed port has
+        room for one child, so opening a different replay stops the old child
+        before the new one starts there; if that start then fails, no Viewer
+        runs until the next Open Replay. With zero, the new child starts first
+        and the old one keeps serving if the start fails.
 
     Raises
     ------
     TypeError
-        The service is not the exact supported type, or keep_viewer_after_exit
-        is not a bool.
+        The service is not the exact supported type, keep_viewer_after_exit
+        is not a bool, or replay_port is not an int.
     ValueError
-        The live service has no recording status.
+        The live service has no recording status, or replay_port is outside
+        0 through 65535.
 
     Notes
     -----
@@ -148,6 +158,7 @@ class RecordingDebuggerCoordinator:
         "_closed",
         "_keep_viewer_after_exit",
         "_live_binding",
+        "_replay_port",
         "_router",
         "_service",
         "_viewer_lock",
@@ -162,6 +173,7 @@ class RecordingDebuggerCoordinator:
         *,
         asset_root: Path,
         keep_viewer_after_exit: bool = False,
+        replay_port: int = 0,
     ) -> None:
         """Bind the recording service and retain its explicit public asset root.
 
@@ -171,11 +183,16 @@ class RecordingDebuggerCoordinator:
             raise TypeError("recording coordinator requires exact DebuggerService")
         if type(keep_viewer_after_exit) is not bool:
             raise TypeError("keep_viewer_after_exit must be a bool")
+        if type(replay_port) is not int:
+            raise TypeError("replay_port must be an int")
+        if not 0 <= replay_port <= 65535:
+            raise ValueError("replay_port must be from 0 through 65535")
         if service.recording_status is None:
             raise ValueError("recording coordinator requires recording-enabled service")
         self._service = service
         self._asset_root = asset_root
         self._keep_viewer_after_exit = keep_viewer_after_exit
+        self._replay_port = replay_port
         self._viewer_lock = Lock()
         self._viewer_server: DebuggerHTTPServer | None = None
         self._viewer_thread: Thread | None = None
@@ -227,7 +244,9 @@ class RecordingDebuggerCoordinator:
         checks that a candidate actually serves before replacing the prior
         Viewer. Startup has a 2-second network limit. Failures close candidate
         resources and leave any prior Viewer intact; exceptions reach the
-        command owner, which returns a path-free retry notice.
+        command owner, which returns a path-free retry notice. With a fixed
+        replay_port the prior Viewer holds that port, so it stops first, and a
+        failed start leaves no Viewer until the next Open Replay.
 
         A new child serves at once but holds its page (create_server
         page_ready) while a daemon thread named
@@ -259,11 +278,23 @@ class RecordingDebuggerCoordinator:
         ):
             return f"{current.expected_origin}/#token={current.capability_token}"
 
+        if (
+            self._replay_port != 0
+            and current is not None
+            and current_thread is not None
+        ):
+            # A fixed port has room for one Viewer: free it before the new start.
+            self._viewer_server = None
+            self._viewer_thread = None
+            self._viewer_replay_id = None
+            self._stop_viewer(current, current_thread)
+            current = None
+            current_thread = None
         page_ready = Event()
         candidate = create_server(
             viewer,
             asset_root=self._asset_root,
-            port=0,
+            port=self._replay_port,
             coordinator=replay_http_binding(viewer),
             page_ready=page_ready,
         )

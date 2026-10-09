@@ -83,14 +83,18 @@ def _launch_setup(
     capture_replay: bool,
     asset_root: Path | None = None,
     view_mode: ViewMode = "pov",
+    replay_port: int = 0,
 ) -> int:
     """Serve prepared content while keeping its resources and recorder alive.
 
     setup contains validated scientific inputs. port and flags are checked by the
     caller. output_dir is an explicit destination, touched only when capture is
-    enabled. asset_root is an explicit public frontend for internal source tools;
-    None uses installed resources, or the running checkout's own
-    web/visual_debugger when there are none (viewer.launch.checkout_browser_files).
+    enabled. replay_port is the Open Replay Viewer's loopback port, checked by
+    the caller and passed to RecordingDebuggerCoordinator (0, the default, picks
+    a free port at each start; unused when capture is off). asset_root is an
+    explicit public frontend for internal source tools; None uses installed
+    resources, or the running checkout's own web/visual_debugger when there are
+    none (viewer.launch.checkout_browser_files).
     view_mode is the starting view: "pov" (the default, Agent POV, what the
     public BattleClient uses so a player sees only what the viewing team sees)
     or "researcher" (Oracle View, for the browser test harness and the
@@ -208,7 +212,10 @@ def _launch_setup(
                     None
                     if recorder is None
                     else RecordingDebuggerCoordinator(
-                        service, asset_root=root, keep_viewer_after_exit=True
+                        service,
+                        asset_root=root,
+                        keep_viewer_after_exit=True,
+                        replay_port=replay_port,
                     )
                 )
                 try:
@@ -252,6 +259,7 @@ def battle_client(
     red_zone_depth: float | Omitted = OMITTED,
     spawn_mode: str | Omitted = OMITTED,
     port: int = 0,
+    replay_port: int = 0,
     open_browser: bool = True,
     output_dir: str | Path = "./recordings",
     capture_replay: bool = True,
@@ -288,6 +296,15 @@ def battle_client(
         across many games, so one live game rejects it.
     port : int, default=0
         Loopback port. Zero asks the operating system for an available port.
+    replay_port : int, default=0
+        Loopback port of the Replay Viewer that Open Replay starts. Zero asks
+        the operating system for an available port each time. Set it when the
+        port must be known in advance, for example so Docker can publish it
+        (the project's Docker image uses 8767). With a set port, opening a
+        different replay first stops the Replay Viewer already on that port;
+        if the new one then cannot start, the page says to try Open Replay
+        again. A nonzero replay_port must differ from a nonzero port. Unused
+        when capture_replay is False.
     open_browser : bool, default=True
         Open the printed local URL. Browser-open failure leaves the URL usable.
     output_dir : str or pathlib.Path, default='./recordings'
@@ -315,6 +332,9 @@ def battle_client(
         Invalid setup or controller input. Fixed scenarios reject explicit Team B,
         map, roster, seed, rule or spawn_mode overrides even when equal to the
         fixed value.
+    ValueError
+        port or replay_port is not an integer from 0 through 65535, or both
+        name the same nonzero port. This check runs before any setup.
     OSError
         A required asset/output path cannot be used or the server cannot bind.
     ImportError
@@ -359,6 +379,10 @@ def battle_client(
     """
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 through 65535.")
+    if type(replay_port) is not int or not 0 <= replay_port <= 65535:
+        raise ValueError("replay_port must be an integer from 0 through 65535.")
+    if replay_port != 0 and replay_port == port:
+        raise ValueError("replay_port must differ from port.")
     if type(open_browser) is not bool or type(capture_replay) is not bool:
         raise TypeError("open_browser and capture_replay must be booleans.")
     if not isinstance(cast(object, output_dir), (str, Path)):
@@ -389,4 +413,5 @@ def battle_client(
         open_browser=open_browser,
         output_dir=destination,
         capture_replay=capture_replay,
+        replay_port=replay_port,
     )

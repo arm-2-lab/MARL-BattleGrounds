@@ -147,6 +147,7 @@ def test_public_signature_has_only_approved_keyword_options() -> None:
     defaults = {
         "team_a": "manual",
         "port": 0,
+        "replay_port": 0,
         "open_browser": True,
         "output_dir": "./recordings",
         "capture_replay": True,
