@@ -105,7 +105,7 @@ class ShardPrediction:
     units : int
         Number of whole work units assigned to it.
     largest_unit : str
-        Identifier of its most costly unit, such as ``file:tests/test_x.py``.
+        Identifier of its most costly unit, such as ``file:tests/core/test_x.py``.
     """
 
     shard: int
@@ -120,9 +120,10 @@ def family_nodeid_from_junit(classname: str, name: str) -> str:
     Parameters
     ----------
     classname : str
-        Pytest's dotted JUnit class name, such as ``tests.test_x`` or
-        ``tests.test_x.TestGroup``. The first two parts name the test file
-        (all test files sit directly in ``tests/``); later parts are classes.
+        Pytest's dotted JUnit class name, such as ``tests.core.test_x`` or
+        ``tests.core.test_x.TestGroup``. The parts up to the first one that
+        starts with ``test_`` name the test file (test files sit in ``tests/``
+        or one of its folders); later parts are classes.
     name : str
         Test case name. A parameter suffix such as ``[case-1]`` is removed so
         every parameter case maps to its one family.
@@ -130,7 +131,7 @@ def family_nodeid_from_junit(classname: str, name: str) -> str:
     Returns
     -------
     str
-        Family node ID such as ``tests/test_x.py::TestGroup::test_y``.
+        Family node ID such as ``tests/core/test_x.py::TestGroup::test_y``.
 
     Raises
     ------
@@ -144,16 +145,20 @@ def _case_nodeid_from_junit(classname: str, name: str) -> str:
     """Return a pytest case ID, keeping its parameter suffix.
 
     ``classname`` is pytest's dotted ``tests`` module and optional classes;
-    ``name`` is its nonempty case name. Raises ValueError for another module or
-    an empty name. This repository keeps Python test files directly in tests/.
+    ``name`` is its nonempty case name. The file is the dotted path up to the
+    first part that starts with ``test_`` (folders such as ``tests.core`` come
+    before it). Raises ValueError for another module or an empty name.
     """
     parts = classname.split(".")
-    if len(parts) < 2 or parts[0] != "tests" or not parts[1]:
+    file_end = next(
+        (index for index, part in enumerate(parts) if part.startswith("test_")), None
+    )
+    if parts[0] != "tests" or file_end is None:
         raise ValueError(f"JUnit class name is not a tests/ module: {classname!r}")
-    path = f"{parts[0]}/{parts[1]}.py"
+    path = "/".join(parts[: file_end + 1]) + ".py"
     if not name:
         raise ValueError("JUnit test case name must be nonempty")
-    return "::".join((path, *parts[2:], name))
+    return "::".join((path, *parts[file_end + 1 :], name))
 
 
 def read_junit_seconds(

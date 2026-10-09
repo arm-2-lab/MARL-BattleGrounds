@@ -41,6 +41,7 @@ from scripts.dev.visual_debugger.presentation_protocol import (
 )
 from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.evaluation.test_evaluation_pov import _runtime_provenance
 from tests.evaluation_fixtures import current_captured_evaluation_trajectory
 from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
 from tests.red_zone_scene_cases import (
@@ -49,12 +50,12 @@ from tests.red_zone_scene_cases import (
     RedZoneGeometryCase,
     red_zone_env_config,
 )
-from tests.test_evaluation_pov import _runtime_provenance
-from tests.test_rendering_authorized_inspection import (
+from tests.rendering.test_rendering_authorized_inspection import (
     _InspectionCases,
     inspection_cases,
 )
-from tests.test_visual_debugger_presentation_protocol_v1 import (
+from tests.test_visual_debugger_service import _service
+from tests.visual_debugger.test_visual_debugger_presentation_protocol_v1 import (
     _FiveFrames,
     _live_no_shared_at,
     _live_oracle_at,
@@ -63,12 +64,11 @@ from tests.test_visual_debugger_presentation_protocol_v1 import (
     _replay_shared_at,
     five_frames,
 )
-from tests.test_visual_debugger_replay_service import (
+from tests.visual_debugger.test_visual_debugger_replay_service import (
     _presentation_service,
     _ServiceCases,
     service_cases,
 )
-from tests.test_visual_debugger_service import _service
 from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session

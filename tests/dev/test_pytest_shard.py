@@ -1,0 +1,1047 @@
+"""Check deterministic assignment of Python tests to CI shards.
+
+The checks cover weighted groups, exact coverage and keeping related test cases
+and fixtures together. They also cover the measured cost table: the scheduler
+uses the checked-in table as is, ignores entries for tests that no longer
+exist, and the loader rejects malformed or inconsistent tables. The rebalancing
+tool maps JUnit timings to test families, including tests inside folders of
+tests/, and refuses missing, failed or partial timings, reads Playwright timings as (spec file, title) rows, splits only
+oversized files at function boundaries the scheduler allows, and predicts shard
+costs with the scheduler's own packing.
+"""
+
+import json
+from collections import Counter
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+
+import pytest
+from _pytest.nodes import Item
+from scripts.dev import shard_costs as shard_costs_module
+from scripts.dev.pytest_shard import (
+    CI_SHARD_COST_PROFILE,
+    MEASURED_COSTS_PATH,
+    MEASURED_COSTS_SCHEMA,
+    ShardCostProfile,
+    TestFamilyKey,
+    assign_test_families,
+    build_test_work_units,
+    dynamic_fixture_request_sites_from_item,
+    family_key_from_metadata,
+    load_measured_cost_profile,
+    module_fixture_keys_from_item,
+    parse_shard_spec,
+    shard_costs,
+    shard_loads,
+    validate_split_dynamic_fixture_requests,
+    validate_split_fixture_affinity,
+)
+from scripts.dev.shard_costs import (
+    CollectedTests,
+    build_cost_table,
+    family_nodeid_from_junit,
+    predict_shards,
+    read_browser_seconds,
+    read_junit_seconds,
+)
+
+
+@pytest.fixture(scope="module")
+def module_affinity_anchor() -> object:
+    return object()
+
+
+@pytest.fixture
+def indirect_affinity_anchor(module_affinity_anchor: object) -> object:
+    return module_affinity_anchor
+
+
+def test_parse_shard_spec_uses_one_based_cli_and_zero_based_internal_index() -> None:
+    assert parse_shard_spec("1/12") == (0, 12)
+    assert parse_shard_spec("12/12") == (11, 12)
+    assert parse_shard_spec("1/19") == (0, 19)
+    assert parse_shard_spec("19/19") == (18, 19)
+
+
+@pytest.mark.parametrize("value", ("0/12", "13/12", "1/0", "1", "x/12", "1/x"))
+def test_parse_shard_spec_rejects_invalid_selectors(value: str) -> None:
+    with pytest.raises(pytest.UsageError):
+        parse_shard_spec(value)
+
+
+def test_family_key_uses_unparameterized_pytest_metadata() -> None:
+    path = "tests/groups[test]/test_alpha.py"
+
+    assert family_key_from_metadata(
+        path=path,
+        parent_nodeid="tests/groups[test]/test_alpha.py::TestAlpha",
+        item_name="test_value[case-a]",
+        original_name="test_value",
+    ) == (path, "tests/groups[test]/test_alpha.py::TestAlpha::test_value")
+    assert family_key_from_metadata(
+        path=path,
+        parent_nodeid="tests/groups[test]/test_alpha.py::TestAlpha",
+        item_name="test_value[open[::case]",
+        original_name="test_value",
+    ) == (path, "tests/groups[test]/test_alpha.py::TestAlpha::test_value")
+    assert family_key_from_metadata(
+        path=path,
+        parent_nodeid="tests/groups[test]/test_alpha.py::TestAlpha",
+        item_name="test_value[close]::case]",
+        original_name="test_value",
+    ) == (path, "tests/groups[test]/test_alpha.py::TestAlpha::test_value")
+    assert family_key_from_metadata(
+        path=path,
+        parent_nodeid="tests/groups[test]/test_alpha.py::TestAlpha",
+        item_name="test_value",
+        original_name=None,
+    ) == (path, "tests/groups[test]/test_alpha.py::TestAlpha::test_value")
+
+
+def test_family_assignment_is_deterministic_exact_and_balanced() -> None:
+    counts = {
+        ("tests/test_alpha.py", "tests/test_alpha.py::test_a"): 8,
+        ("tests/test_alpha.py", "tests/test_alpha.py::test_b"): 7,
+        ("tests/test_beta.py", "tests/test_beta.py::test_c"): 6,
+        ("tests/test_beta.py", "tests/test_beta.py::test_d"): 5,
+        ("tests/test_gamma.py", "tests/test_gamma.py::test_e"): 4,
+        ("tests/test_gamma.py", "tests/test_gamma.py::test_f"): 3,
+    }
+
+    first = assign_test_families(counts, 3)
+    second = assign_test_families(dict(reversed(tuple(counts.items()))), 3)
+
+    assert first == second
+    flattened = tuple(family for shard in first for family in shard)
+    assert len(flattened) == len(set(flattened))
+    assert set(flattened) == set(counts)
+    loads = shard_loads(first, counts)
+    assert max(loads) - min(loads) <= max(counts.values())
+
+
+def test_parameterized_instances_form_one_atomic_family() -> None:
+    path = "tests/test_alpha.py"
+    nodeids = tuple(
+        f"{path}::test_parameterized[{parameter_id}]"
+        for parameter_id in ("a", "b", "c")
+    )
+    family = family_key_from_metadata(
+        path=path,
+        parent_nodeid=path,
+        item_name="test_parameterized[a]",
+        original_name="test_parameterized",
+    )
+
+    assert all(
+        family_key_from_metadata(
+            path=path,
+            parent_nodeid=path,
+            item_name=nodeid.rsplit("::", 1)[-1],
+            original_name="test_parameterized",
+        )
+        == family
+        for nodeid in nodeids
+    )
+    assignments = assign_test_families(
+        {
+            family: len(nodeids),
+            (
+                "tests/test_beta.py",
+                "tests/test_beta.py::test_independent",
+            ): 1,
+        },
+        2,
+    )
+    assert sum(family in shard for shard in assignments) == 1
+
+
+def test_ordinary_independent_families_in_one_file_share_one_shard() -> None:
+    path = "tests/test_alpha.py"
+    dominant = (path, f"{path}::test_dominant")
+    independent = (path, f"{path}::test_independent")
+    other = ("tests/test_beta.py", "tests/test_beta.py::test_other")
+
+    assignments = assign_test_families({dominant: 100, independent: 1, other: 1}, 2)
+
+    assert sum(dominant in shard and independent in shard for shard in assignments) == 1
+    assert sum(other in shard for shard in assignments) == 1
+
+
+def test_assignment_rejects_more_shards_than_test_work_units() -> None:
+    counts = {
+        ("tests/test_alpha.py", f"tests/test_alpha.py::test_{index}"): 1
+        for index in range(9)
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="shard_count cannot exceed the number of test work units",
+    ):
+        assign_test_families(counts, 10)
+
+
+def test_declared_slow_family_is_atomic_and_residual_file_stays_together() -> None:
+    path = "tests/test_slow.py"
+    extracted = (path, f"{path}::test_slow_family")
+    residual_a = (path, f"{path}::test_residual_a")
+    residual_b = (path, f"{path}::test_residual_b")
+    ordinary = ("tests/test_ordinary.py", "tests/test_ordinary.py::test_value")
+    counts: dict[TestFamilyKey, int] = {
+        extracted: 5,
+        residual_a: 2,
+        residual_b: 3,
+        ordinary: 1,
+    }
+    profile = ShardCostProfile(
+        extracted_family_costs={extracted[1]: 100},
+        residual_file_costs={path: 40},
+        strict=True,
+    )
+
+    assignments = assign_test_families(counts, 3, cost_profile=profile)
+
+    assert sum(extracted in shard for shard in assignments) == 1
+    assert (
+        sum(residual_a in shard and residual_b in shard for shard in assignments) == 1
+    )
+    assert (
+        sum(
+            extracted in shard and (residual_a in shard or residual_b in shard)
+            for shard in assignments
+        )
+        == 0
+    )
+
+
+def test_split_fixture_affinity_rejects_every_shared_module_fixture_definition(
+    request: pytest.FixtureRequest,
+    indirect_affinity_anchor: object,
+) -> None:
+    del indirect_affinity_anchor
+    path = "tests/dev/test_pytest_shard.py"
+    extracted = (
+        path,
+        f"{path}::test_split_fixture_affinity_rejects_every_shared_module_fixture_definition",
+    )
+    second_extracted = (path, f"{path}::test_second_extracted_family")
+    residual = (path, f"{path}::test_fixture_consumer")
+    node = cast(Item, request.node)
+    fixture_keys = module_fixture_keys_from_item(node)
+    request_sites = dynamic_fixture_request_sites_from_item(node)
+    module_fixture = (path, "module_affinity_anchor")
+    assert module_fixture in fixture_keys
+    assert node.nodeid in request_sites
+    profile = ShardCostProfile(
+        extracted_family_costs={extracted[1]: 100},
+        residual_file_costs={path: 40},
+        strict=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="split test families cannot share module-scoped fixtures",
+    ):
+        validate_split_fixture_affinity(
+            {
+                extracted: fixture_keys,
+                residual: frozenset({module_fixture}),
+            },
+            profile,
+        )
+
+    repeatable_profile = ShardCostProfile(
+        split_file_family_cost_floors={path: 10},
+        repeatable_module_fixtures=frozenset({module_fixture}),
+        strict=True,
+    )
+    validate_split_fixture_affinity(
+        {
+            extracted: fixture_keys,
+            residual: frozenset({module_fixture}),
+        },
+        repeatable_profile,
+    )
+    same_name_override = ("tests/parent.py", module_fixture[1])
+    with pytest.raises(
+        ValueError,
+        match="split test families cannot share module-scoped fixtures",
+    ):
+        validate_split_fixture_affinity(
+            {
+                extracted: frozenset({module_fixture, same_name_override}),
+                residual: frozenset({module_fixture, same_name_override}),
+            },
+            repeatable_profile,
+        )
+    with pytest.raises(ValueError, match="stale repeatable module fixture profile"):
+        validate_split_fixture_affinity(
+            {
+                extracted: fixture_keys,
+                residual: frozenset({module_fixture}),
+            },
+            ShardCostProfile(
+                split_file_family_cost_floors={path: 10},
+                repeatable_module_fixtures=frozenset(
+                    {(path, "renamed_module_fixture")}
+                ),
+                strict=True,
+            ),
+        )
+
+    extracted_pair_profile = ShardCostProfile(
+        extracted_family_costs={
+            extracted[1]: 100,
+            second_extracted[1]: 90,
+        },
+        residual_file_costs={path: 40},
+        strict=True,
+    )
+    with pytest.raises(
+        ValueError,
+        match="split test families cannot share module-scoped fixtures",
+    ):
+        validate_split_fixture_affinity(
+            {
+                extracted: fixture_keys,
+                second_extracted: fixture_keys,
+                residual: frozenset({(path, "independent_module_fixture")}),
+            },
+            extracted_pair_profile,
+        )
+
+    validate_split_fixture_affinity(
+        {
+            extracted: fixture_keys,
+            residual: frozenset({(path, "independent_module_fixture")}),
+        },
+        profile,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="split test files cannot use pytest's dynamic request fixture API",
+    ):
+        validate_split_dynamic_fixture_requests(
+            {
+                extracted: request_sites,
+                residual: frozenset(),
+            },
+            profile,
+        )
+    validate_split_dynamic_fixture_requests(
+        {
+            extracted: frozenset(),
+            residual: frozenset(),
+        },
+        profile,
+    )
+
+    overridden_item = cast(
+        Item,
+        SimpleNamespace(
+            _fixtureinfo=SimpleNamespace(
+                name2fixturedefs={
+                    "shared_fixture": (
+                        SimpleNamespace(scope="module", baseid="tests/parent.py"),
+                        SimpleNamespace(scope="function", baseid=path),
+                    )
+                }
+            )
+        ),
+    )
+    assert ("tests/parent.py", "shared_fixture") in module_fixture_keys_from_item(
+        overridden_item
+    )
+
+    def project_fixture() -> None:
+        return None
+
+    dynamic_fixture_item = cast(
+        Item,
+        SimpleNamespace(
+            nodeid=f"{path}::test_dynamic_fixture_consumer",
+            _fixtureinfo=SimpleNamespace(
+                argnames=(),
+                name2fixturedefs={
+                    "project_fixture": (
+                        SimpleNamespace(
+                            argname="project_fixture",
+                            argnames=("request",),
+                            baseid=path,
+                            func=project_fixture,
+                            scope="function",
+                        ),
+                    )
+                },
+            ),
+        ),
+    )
+    assert dynamic_fixture_request_sites_from_item(dynamic_fixture_item) == frozenset(
+        {f"{path}::project_fixture"}
+    )
+
+
+def test_indivisible_measured_file_never_splits_between_shards() -> None:
+    path = "tests/test_expensive_fixture.py"
+    first = (path, f"{path}::test_first")
+    second = (path, f"{path}::test_second")
+    other = ("tests/test_other.py", "tests/test_other.py::test_other")
+    profile = ShardCostProfile(
+        file_cost_overrides={path: 400},
+        strict=True,
+    )
+
+    assignments = assign_test_families(
+        {first: 10, second: 10, other: 1},
+        2,
+        cost_profile=profile,
+    )
+
+    assert sum(first in shard and second in shard for shard in assignments) == 1
+
+
+def test_declared_hotspot_splits_only_at_atomic_family_boundaries() -> None:
+    path = "tests/test_hotspot.py"
+    parameterized = (path, f"{path}::test_parameterized")
+    first = (path, f"{path}::test_first")
+    second = (path, f"{path}::test_second")
+    profile = ShardCostProfile(
+        split_file_family_cost_floors={path: 20},
+        strict=True,
+    )
+    counts: dict[TestFamilyKey, int] = {
+        parameterized: 7,
+        first: 1,
+        second: 2,
+    }
+
+    units = build_test_work_units(counts, profile)
+    assignments = assign_test_families(counts, 3, cost_profile=profile)
+
+    assert {unit.identifier for unit in units} == {
+        f"family:{parameterized[1]}",
+        f"family:{first[1]}",
+        f"family:{second[1]}",
+    }
+    assert {unit.cost for unit in units} == {20}
+    assert all(len(unit.families) == 1 for unit in units)
+    assert sum(parameterized in shard for shard in assignments) == 1
+    assert set(family for shard in assignments for family in shard) == set(counts)
+
+
+def test_weighted_assignment_is_stable_and_reserves_static_gate_capacity() -> None:
+    counts = {
+        (f"tests/test_{index}.py", f"tests/test_{index}.py::test_value"): cost
+        for index, cost in enumerate((100, 90, 80, 70, 60, 50, 40, 30))
+    }
+    profile = ShardCostProfile(
+        reserved_costs_by_shard_count={2: (0, 50)},
+    )
+
+    first = assign_test_families(counts, 2, cost_profile=profile)
+    second = assign_test_families(
+        dict(reversed(tuple(counts.items()))),
+        2,
+        cost_profile=profile,
+    )
+
+    assert first == second
+    assert shard_loads(first, counts)[1] < shard_loads(first, counts)[0]
+    assert shard_costs(first, counts, cost_profile=profile) == (280, 290)
+    duplicated = (first[0] + (first[1][0],), first[1])
+    with pytest.raises(
+        ValueError,
+        match="assignments must own every test family exactly once",
+    ):
+        shard_costs(duplicated, counts, cost_profile=profile)
+    families = {
+        (f"tests/test_{name}.py", f"tests/test_{name}.py::test_value"): cost
+        for name, cost in (("a", 100), ("b", 90), ("c", 80), ("d", 70))
+    }
+    relocated_identifier = "file:tests/test_d.py"
+    profile = ShardCostProfile(
+        relocations_by_shard_count={
+            3: ((relocated_identifier, 3, 2),),
+        }
+    )
+
+    assignments = assign_test_families(families, 3, cost_profile=profile)
+    relocated_family = ("tests/test_d.py", "tests/test_d.py::test_value")
+
+    assert assignments == assign_test_families(
+        dict(reversed(tuple(families.items()))),
+        3,
+        cost_profile=profile,
+    )
+    assert relocated_family not in assignments[2]
+    assert relocated_family in assignments[1]
+    assert sorted(family for shard in assignments for family in shard) == sorted(
+        families
+    )
+
+    wrong_source = ShardCostProfile(
+        relocations_by_shard_count={
+            3: ((relocated_identifier, 1, 2),),
+        }
+    )
+    with pytest.raises(ValueError, match="CI shard relocation source drift"):
+        assign_test_families(families, 3, cost_profile=wrong_source)
+
+    stale_unit = ShardCostProfile(
+        relocations_by_shard_count={
+            3: (("file:tests/test_missing.py", 3, 2),),
+        }
+    )
+    with pytest.raises(ValueError, match="stale CI shard relocation work unit"):
+        assign_test_families(families, 3, cost_profile=stale_unit)
+
+    invalid_profiles = (
+        (
+            ShardCostProfile(
+                relocations_by_shard_count={
+                    3: ((relocated_identifier, 0, 2),),
+                }
+            ),
+            "relocation indexes must use one-based shard IDs",
+        ),
+        (
+            ShardCostProfile(
+                relocations_by_shard_count={
+                    3: ((relocated_identifier, 3, 3),),
+                }
+            ),
+            "relocation must change the owning shard",
+        ),
+        (
+            ShardCostProfile(
+                relocations_by_shard_count={
+                    3: (
+                        (relocated_identifier, 3, 2),
+                        (relocated_identifier, 3, 1),
+                    ),
+                }
+            ),
+            "duplicate CI shard relocation",
+        ),
+        (
+            ShardCostProfile(
+                relocations_by_shard_count={
+                    3: (("file:tests/test_a.py", 1, 2),),
+                }
+            ),
+            "weighted CI shard assignment produced an empty shard",
+        ),
+    )
+    for invalid_profile, message in invalid_profiles:
+        with pytest.raises(ValueError, match=message):
+            assign_test_families(families, 3, cost_profile=invalid_profile)
+
+    for invalid_index in (True, 1.5, "1"):
+        for invalid_relocation in (
+            (relocated_identifier, invalid_index, 2),
+            (relocated_identifier, 3, invalid_index),
+        ):
+            invalid_type = ShardCostProfile(
+                relocations_by_shard_count={
+                    3: (invalid_relocation,),  # type: ignore[arg-type]
+                }
+            )
+            with pytest.raises(
+                ValueError,
+                match="relocation indexes must be integer shard IDs",
+            ):
+                assign_test_families(families, 3, cost_profile=invalid_type)
+
+
+def test_weighted_assignment_rejects_an_empty_reserved_shard() -> None:
+    counts = {
+        (f"tests/test_{index}.py", f"tests/test_{index}.py::test_value"): 1
+        for index in range(3)
+    }
+    profile = ShardCostProfile(
+        reserved_costs_by_shard_count={3: (0, 0, 1_000)},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="weighted CI shard assignment produced an empty shard",
+    ):
+        assign_test_families(counts, 3, cost_profile=profile)
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    (
+        (
+            ShardCostProfile(
+                file_cost_overrides={"tests/test_missing.py": 10},
+                strict=True,
+            ),
+            "stale CI shard file cost profile",
+        ),
+        (
+            ShardCostProfile(
+                split_file_family_cost_floors={"tests/test_missing.py": 10},
+                strict=True,
+            ),
+            "stale CI shard file cost profile",
+        ),
+        (
+            ShardCostProfile(
+                extracted_family_costs={
+                    "tests/test_present.py::test_missing": 10,
+                },
+                residual_file_costs={"tests/test_present.py": 5},
+                strict=True,
+            ),
+            "stale CI shard family cost profile",
+        ),
+        (
+            ShardCostProfile(
+                residual_file_costs={"tests/test_present.py": 5},
+                strict=True,
+            ),
+            "every split test file must have exactly one residual cost override",
+        ),
+    ),
+)
+def test_strict_cost_profile_rejects_stale_entries(
+    profile: ShardCostProfile,
+    message: str,
+) -> None:
+    present = (
+        "tests/test_present.py",
+        "tests/test_present.py::test_present",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        build_test_work_units({present: 1}, profile)
+
+
+def test_production_profile_is_the_checked_in_measured_cost_table() -> None:
+    table = json.loads(MEASURED_COSTS_PATH.read_text(encoding="utf-8"))
+    assert table["schema"] == MEASURED_COSTS_SCHEMA
+    assert load_measured_cost_profile() == CI_SHARD_COST_PROFILE
+    assert not CI_SHARD_COST_PROFILE.strict
+    assert CI_SHARD_COST_PROFILE.file_cost_overrides == table["files"]
+    assert CI_SHARD_COST_PROFILE.extracted_family_costs == table["split_families"]
+    assert CI_SHARD_COST_PROFILE.residual_file_costs == table["split_residuals"]
+    assert CI_SHARD_COST_PROFILE.split_file_family_cost_floors == {}
+    assert CI_SHARD_COST_PROFILE.relocations_by_shard_count == {}
+    assert CI_SHARD_COST_PROFILE.repeatable_module_fixtures == frozenset()
+    assert CI_SHARD_COST_PROFILE.reserved_costs_by_shard_count[19] == (
+        (0,) * 18 + (50,)
+    )
+    split_paths = {
+        nodeid.split("::", maxsplit=1)[0]
+        for nodeid in CI_SHARD_COST_PROFILE.extracted_family_costs
+    }
+    assert split_paths == set(CI_SHARD_COST_PROFILE.residual_file_costs)
+    assert not split_paths & set(CI_SHARD_COST_PROFILE.file_cost_overrides)
+    repository = Path(__file__).resolve().parents[2]
+    assert all(
+        (repository / path).is_file()
+        for path in (*CI_SHARD_COST_PROFILE.file_cost_overrides, *split_paths)
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"schema": "other@1"}, "must use"),
+        ({"unexpected": 1}, "unknown measured shard cost keys"),
+        ({"files": {"tests/test_a.py": 0}}, "positive whole seconds"),
+        ({"files": {"tests/test_a.py": 1.5}}, "positive whole seconds"),
+        ({"files": {"tests/test_a.py": True}}, "positive whole seconds"),
+        ({"files": {"tests/test_b.py": 4}}, "cannot also be listed whole"),
+        ({"split_residuals": {}}, "exactly one split_residuals"),
+        ({"reserved_seconds": {"2": [0]}}, "one whole-second value per shard"),
+        ({"reserved_seconds": {"02": [0, 5]}}, "one whole-second value per shard"),
+        ({"files": {"": 3}}, "must be test paths"),
+        ({"split_families": []}, "must be an object"),
+        ({"reserved_seconds": {"2": [-1, 0]}}, "reserved_seconds must map"),
+        ({"reserved_seconds": {"twelve": [0]}}, "reserved_seconds must map"),
+    ],
+)
+def test_measured_cost_table_loader_rejects_malformed_tables(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    valid = {
+        "schema": MEASURED_COSTS_SCHEMA,
+        "measured_on": "2026-01-01",
+        "files": {"tests/test_a.py": 3},
+        "split_families": {"tests/test_b.py::test_slow": 9},
+        "split_residuals": {"tests/test_b.py": 2},
+        "reserved_seconds": {"2": [0, 5]},
+    }
+    path = tmp_path / "costs.json"
+    path.write_text(json.dumps(valid), encoding="utf-8")
+    profile = load_measured_cost_profile(path)
+    assert profile.file_cost_overrides == {"tests/test_a.py": 3}
+    assert profile.extracted_family_costs == {"tests/test_b.py::test_slow": 9}
+    assert profile.residual_file_costs == {"tests/test_b.py": 2}
+    assert profile.reserved_costs_by_shard_count == {2: (0, 5)}
+    assert not profile.strict
+    present = {
+        ("tests/test_a.py", "tests/test_a.py::test_x"): 2,
+        ("tests/test_c.py", "tests/test_c.py::test_y"): 5,
+    }
+    # Entries for files and functions that are gone are ignored, not fatal.
+    units = {
+        unit.identifier: unit.cost for unit in build_test_work_units(present, profile)
+    }
+    assert units == {"file:tests/test_a.py": 3, "file:tests/test_c.py": 5}
+
+    path.write_text(json.dumps({**valid, **change}), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        load_measured_cost_profile(path)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="not JSON"):
+        load_measured_cost_profile(path)
+
+
+def test_junit_timings_map_to_scheduler_family_ids(tmp_path: Path) -> None:
+    assert family_nodeid_from_junit("tests.test_a", "test_x") == (
+        "tests/test_a.py::test_x"
+    )
+    assert family_nodeid_from_junit("tests.test_a", "test_x[case-1]") == (
+        "tests/test_a.py::test_x"
+    )
+    assert family_nodeid_from_junit("tests.test_a.TestGroup", "test_y[p]") == (
+        "tests/test_a.py::TestGroup::test_y"
+    )
+    assert family_nodeid_from_junit("tests.dev.test_a.TestGroup", "test_y[p]") == (
+        "tests/dev/test_a.py::TestGroup::test_y"
+    )
+    with pytest.raises(ValueError, match="not a tests/ module"):
+        family_nodeid_from_junit("scripts.dev", "test_z")
+    (tmp_path / "python-shard-1.xml").write_text(
+        "<testsuites><testsuite>"
+        '<testcase classname="tests.test_a" name="test_x[1]" time="1.25"/>'
+        '<testcase classname="tests.test_a" name="test_x[2]" time="0.75"/>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    (tmp_path / "python-shard-2.xml").write_text(
+        '<testsuites><testsuite><testcase classname="tests.test_b" name="test_y"'
+        ' time="4.0"/></testsuite></testsuites>',
+        encoding="utf-8",
+    )
+    assert read_junit_seconds(tmp_path, shard_count=2) == {
+        "tests/test_a.py::test_x": 2.0,
+        "tests/test_b.py::test_y": 4.0,
+    }
+    with pytest.raises(FileNotFoundError, match="shard 3"):
+        read_junit_seconds(tmp_path, shard_count=3)
+    for content, message in (
+        ('<testsuite tests="0"></testsuite>', "did not pass completely"),
+        (
+            '<testsuite failures="1"><testcase classname="tests.test_b" '
+            'name="test_y" time="1"/></testsuite>',
+            "did not pass completely",
+        ),
+        (
+            '<testsuite><testcase classname="" name="tests.test_b" time="0"/>'
+            "</testsuite>",
+            "collection error",
+        ),
+    ):
+        (tmp_path / "python-shard-2.xml").write_text(content, encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            read_junit_seconds(tmp_path, shard_count=2)
+
+
+def _collected(
+    counts: dict[str, int],
+    fixtures: dict[str, frozenset[tuple[str, str]]] | None = None,
+) -> CollectedTests:
+    families = {
+        (nodeid.split("::")[0], nodeid): count for nodeid, count in counts.items()
+    }
+    shared = fixtures or {}
+    return CollectedTests(
+        item_counts=families,
+        module_fixtures_by_family={
+            family: shared.get(family[1], frozenset()) for family in families
+        },
+        request_sites_by_family={family: frozenset() for family in families},
+        item_nodeids=frozenset(counts),
+    )
+
+
+@pytest.mark.parametrize(
+    ("names", "expected", "message"),
+    (
+        (("test_x[1]", "test_x[1]"), ("test_x[1]",), "duplicate JUnit case"),
+        (("test_x[1]",), ("test_x[1]", "test_x[2]"), "1 missing, 0 unexpected"),
+        (("test_x[2]",), ("test_x[1]",), "1 missing, 1 unexpected"),
+        (("test_x[1]", "test_y"), ("test_x[1]",), "0 missing, 1 unexpected"),
+    ),
+)
+def test_junit_rejects_duplicate_missing_and_stale_exact_cases(
+    tmp_path: Path, names: tuple[str, ...], expected: tuple[str, ...], message: str
+) -> None:
+    for index, name in enumerate(names, 1):
+        (tmp_path / f"python-shard-{index}.xml").write_text(
+            f'<testsuite><testcase classname="tests.test_a" name="{name}" '
+            'time="1"/></testsuite>',
+            encoding="utf-8",
+        )
+    with pytest.raises(ValueError, match=message):
+        read_junit_seconds(
+            tmp_path,
+            shard_count=len(names),
+            expected_cases={f"tests/test_a.py::{name}" for name in expected},
+        )
+
+
+@pytest.mark.parametrize("duration", ("nan", "inf", "-1"))
+def test_junit_rejects_invalid_durations(tmp_path: Path, duration: str) -> None:
+    (tmp_path / "python-shard-1.xml").write_text(
+        '<testsuite><testcase classname="tests.test_a" name="test_x" '
+        f'time="{duration}"/></testsuite>',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="invalid JUnit duration"):
+        read_junit_seconds(tmp_path, shard_count=1)
+
+
+def test_cost_update_refuses_partial_reports_before_touching_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shard_count = shard_costs_module.DEFAULT_SHARD_COUNT
+    expected = {f"tests/test_a.py::test_x[{i}]": 1 for i in range(shard_count + 1)}
+    monkeypatch.setattr(
+        shard_costs_module, "collect_tests", lambda: _collected(expected)
+    )
+    table = tmp_path / "costs.json"
+    table.write_text("preserve this table\n", encoding="utf-8")
+    monkeypatch.setattr(shard_costs_module, "MEASURED_COSTS_PATH", table)
+    for index in range(1, shard_count + 1):
+        (tmp_path / f"python-shard-{index}.xml").write_text(
+            '<testsuite><testcase classname="tests.test_a" '
+            f'name="test_x[{index}]" time="1"/></testsuite>',
+            encoding="utf-8",
+        )
+    with pytest.raises(ValueError, match="1 missing, 0 unexpected"):
+        shard_costs_module.main(("update", str(tmp_path)))
+    assert table.read_text(encoding="utf-8") == "preserve this table\n"
+    assert not table.with_suffix(".json.new").exists()
+
+
+def test_cost_table_splits_only_oversized_files_at_allowed_function_boundaries() -> (
+    None
+):
+    anchor = ("tests/test_shared.py", "anchor")
+    collected = _collected(
+        {
+            "tests/test_small.py::test_a": 1,
+            "tests/test_big.py::test_slow": 3,
+            "tests/test_big.py::test_mid": 1,
+            "tests/test_big.py::test_fast": 1,
+            "tests/test_single.py::test_huge": 1,
+            "tests/test_shared.py::test_one": 1,
+            "tests/test_shared.py::test_two": 1,
+        },
+        {
+            "tests/test_shared.py::test_one": frozenset({anchor}),
+            "tests/test_shared.py::test_two": frozenset({anchor}),
+        },
+    )
+    table, warnings = build_cost_table(
+        {
+            "tests/test_small.py::test_a": 4.2,
+            "tests/test_big.py::test_slow": 60.0,
+            "tests/test_big.py::test_mid": 30.0,
+            "tests/test_big.py::test_fast": 5.0,
+            "tests/test_single.py::test_huge": 80.0,
+            "tests/test_shared.py::test_one": 30.0,
+            "tests/test_shared.py::test_two": 30.0,
+            "tests/test_gone.py::test_old": 99.0,
+        },
+        collected,
+        max_unit_seconds=40,
+        measured_on="2026-01-01",
+        measured_with="Synthetic timings.",
+    )
+    assert table["files"] == {
+        "tests/test_shared.py": 60,
+        "tests/test_single.py": 80,
+        "tests/test_small.py": 5,
+    }
+    assert table["split_families"] == {"tests/test_big.py::test_slow": 60}
+    assert table["split_residuals"] == {"tests/test_big.py": 35}
+    assert any("test_single.py alone" in warning for warning in warnings)
+    assert any(
+        "test_shared.py" in warning and "cannot split" in warning
+        for warning in warnings
+    )
+    assert any("test_slow alone" in warning for warning in warnings)
+
+
+def test_shard_predictions_use_the_scheduler_packing(tmp_path: Path) -> None:
+    collected = _collected(
+        {
+            "tests/test_a.py::test_x": 1,
+            "tests/test_b.py::test_y": 1,
+            "tests/test_c.py::test_z": 1,
+        }
+    )
+    path = tmp_path / "costs.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": MEASURED_COSTS_SCHEMA,
+                "files": {"tests/test_a.py": 10, "tests/test_b.py": 6},
+                "reserved_seconds": {"2": [0, 1]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    profile = load_measured_cost_profile(path)
+    predictions = predict_shards(profile, collected, shard_count=2)
+    assignments = assign_test_families(collected.item_counts, 2, cost_profile=profile)
+    assert [row.seconds for row in predictions] == list(
+        shard_costs(assignments, collected.item_counts, cost_profile=profile)
+    )
+    assert [row.seconds for row in predictions] == [10, 8]
+    assert predictions[0].largest_unit == "file:tests/test_a.py"
+    assert sum(row.units for row in predictions) == 3
+
+
+def test_browser_reports_sum_attempt_durations_per_spec(tmp_path: Path) -> None:
+    report = {
+        "suites": [
+            {
+                "file": "replay.spec.js",
+                "specs": [
+                    {
+                        "title": "opens a replay",
+                        "tests": [{"results": [{"duration": 1500}, {"duration": 500}]}],
+                    }
+                ],
+                "suites": [
+                    {
+                        "specs": [
+                            {
+                                "title": "nested",
+                                "tests": [{"results": [{"duration": 250}]}],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    (tmp_path / "browser-profile-3.json").write_text(
+        json.dumps(report), encoding="utf-8"
+    )
+    assert read_browser_seconds(tmp_path) == {
+        3: [
+            ("replay.spec.js", "opens a replay", 2.0),
+            ("replay.spec.js", "nested", 0.25),
+        ]
+    }
+    with pytest.raises(FileNotFoundError):
+        read_browser_seconds(tmp_path / "missing")
+
+
+def test_dominant_units_preserve_hotspot_affinity_and_exact_ownership() -> None:
+    semantic_path = "tests/test_semantic_inventory.py"
+    preflight_path = "tests/test_hosted_preflight.py"
+    sample_path = "tests/test_sample_replays.py"
+    semantic = (semantic_path, f"{semantic_path}::test_every_mechanic")
+    preflight = (preflight_path, f"{preflight_path}::test_every_case")
+    independent_generation = (
+        sample_path,
+        f"{sample_path}::test_checked_samples_match_fresh_generation",
+    )
+    semantic_residual = (semantic_path, f"{semantic_path}::test_residual")
+    preflight_residual = (preflight_path, f"{preflight_path}::test_residual")
+    first_fixture_consumer = (sample_path, f"{sample_path}::test_first_fixture_user")
+    second_fixture_consumer = (sample_path, f"{sample_path}::test_second_fixture_user")
+    ordinary = {
+        (f"tests/test_{index}.py", f"tests/test_{index}.py::test_value"): 100
+        for index in range(10)
+    }
+    counts: dict[TestFamilyKey, int] = {
+        semantic: 1,
+        preflight: 30,
+        independent_generation: 1,
+        semantic_residual: 5,
+        preflight_residual: 5,
+        first_fixture_consumer: 20,
+        second_fixture_consumer: 39,
+        **ordinary,
+    }
+    profile = ShardCostProfile(
+        extracted_family_costs={
+            semantic[1]: 500,
+            preflight[1]: 500,
+            independent_generation[1]: 400,
+        },
+        residual_file_costs={
+            semantic_path: 100,
+            preflight_path: 100,
+            sample_path: 500,
+        },
+        strict=True,
+    )
+
+    assignments = assign_test_families(counts, 12, cost_profile=profile)
+
+    semantic_owner = next(shard for shard in assignments if semantic in shard)
+    preflight_owner = next(shard for shard in assignments if preflight in shard)
+    sample_residual_owner = next(
+        shard for shard in assignments if first_fixture_consumer in shard
+    )
+    assert semantic_owner == (semantic,)
+    assert preflight_owner == (preflight,)
+    assert sample_residual_owner == (
+        first_fixture_consumer,
+        second_fixture_consumer,
+    )
+    assert independent_generation not in sample_residual_owner
+    assert sum(independent_generation in shard for shard in assignments) == 1
+    flattened = tuple(family for shard in assignments for family in shard)
+    assert set(flattened) == set(counts)
+    assert len(flattened) == len(set(flattened))
+    assert all(assignments)
+
+
+def test_collected_items_have_one_owner_across_twelve_nonempty_shards() -> None:
+    nodeids = tuple(
+        f"tests/test_{index}.py::TestGroup[class-{class_index}]::test_value[case-{case}]"
+        for index in range(12)
+        for class_index in range(2)
+        for case in range(1 + (index % 3))
+    )
+    families = tuple(
+        family_key_from_metadata(
+            path=f"tests/test_{index}.py",
+            parent_nodeid=f"tests/test_{index}.py::TestGroup[class-{class_index}]",
+            item_name=f"test_value[case-{case}]",
+            original_name="test_value",
+        )
+        for index in range(12)
+        for class_index in range(2)
+        for case in range(1 + (index % 3))
+    )
+    counts = Counter(families)
+
+    assignments = assign_test_families(counts, 12)
+    owned_item_indexes = tuple(
+        tuple(index for index, family in enumerate(families) if family in set(shard))
+        for shard in assignments
+    )
+    flattened = tuple(index for shard in owned_item_indexes for index in shard)
+
+    assert all(owned_item_indexes)
+    assert len(flattened) == len(set(flattened))
+    assert sorted(flattened) == list(range(len(nodeids)))
+    for path in {family[0] for family in families}:
+        assert (
+            sum(any(family[0] == path for family in shard) for shard in assignments)
+            == 1
+        )

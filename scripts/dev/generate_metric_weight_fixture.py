@@ -20,7 +20,8 @@ The games are chosen so that wrong summary-weight links show up:
   start must be counted the same way by a fraction and its weight.
 
 These games prove nothing about learning. Rebuild the fixture whenever the
-metric schema version changes; tests/test_metric_mirror.py checks the version.
+metric schema version changes; tests/evaluation/test_metric_mirror.py checks
+the version.
 """
 
 from __future__ import annotations

@@ -57,7 +57,7 @@
  * in it). The end is place + speed x the step's compass direction,
  * MOVE_DIRECTIONS, a copy of Core's fixed table
  * (`core/axis_mappings.py`, UNIT_DIRECTION_VECTOR_BY_MOVEMENT_ACTION);
- * `tests/test_battle_client_step_ghost.py` checks the copy and the result
+ * `tests/battle_client/test_battle_client_step_ghost.py` checks the copy and the result
  * against Core's own planned movement.
  *
  * Sizes: every size is the vision's size on its 25 px body times (body radius
@@ -166,7 +166,7 @@ export const PAINT_PARTS = paintParts([
  * North-West, South-East, South-West. A copy of Core's fixed table
  * UNIT_DIRECTION_VECTOR_BY_MOVEMENT_ACTION (`core/axis_mappings.py`);
  * diagonals are 0.7071067690849304 (Core's float32 value) on each axis.
- * `tests/test_battle_client_step_ghost.py` checks that this copy equals Core.
+ * `tests/battle_client/test_battle_client_step_ghost.py` checks that this copy equals Core.
  */
 export const MOVE_DIRECTIONS = Object.freeze([
   Object.freeze([0, 0]),

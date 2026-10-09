@@ -16,7 +16,7 @@
  * - The damaging-blow table (a Basic deals damage unless it is the Priest's;
  *   an Ultimate for the Warrior, Hunter and Rogue) equals the browser's
  *   activation tokens (vocabulary.js activationImpactSemantic) for all five
- *   classes. tests/test_viewer_recent_falls.py checks the same table against
+ *   classes. tests/viewer/test_viewer_recent_falls.py checks the same table against
  *   the server rule (viewer.champion_streaks), so a drift fails loudly.
  */
 import assert from "node:assert/strict";
@@ -31,7 +31,7 @@ import {
 } from "../src/vocabulary.js";
 
 // (Basic deals damage, Ultimate deals damage) per class ID. Keep equal to
-// DAMAGING_BY_CLASS in tests/test_viewer_recent_falls.py.
+// DAMAGING_BY_CLASS in tests/viewer/test_viewer_recent_falls.py.
 const DAMAGING_BY_CLASS = Object.freeze({
   1: [true, false],
   2: [true, true],

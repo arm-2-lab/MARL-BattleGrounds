@@ -1746,7 +1746,7 @@ def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
     The event starts exist for the private parity tools: each Visual Filters
     switch must be judged on a turn where its event really happens. Their
     events are proven with Core steps in
-    tests/test_battle_client_vision_moment.py (for ``"saved"`` with the
+    tests/battle_client/test_battle_client_vision_moment.py (for ``"saved"`` with the
     tdm-beta Priest's own choice, and for ``"streak"`` over its five turns,
     the fifth for every action the Team B Mage may take).
 
