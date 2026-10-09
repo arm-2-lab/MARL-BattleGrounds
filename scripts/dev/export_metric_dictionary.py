@@ -1,8 +1,8 @@
 """Generate metric-column documentation from the shared metric catalog.
 
 Run ``python -m scripts.dev.export_metric_dictionary`` at the repository root to
-update the CSV dictionary and generated specification tables. Add ``--check`` to
-compare existing text without writing. The catalog remains the measurement
+update ``docs/metric_columns.csv`` and the generated tables in ``docs/metrics.md``.
+Add ``--check`` to compare existing text without writing. The catalog remains the measurement
 naming/meaning authority; this module formats its data rather than computing
 metrics or replaying episodes.
 """
@@ -31,7 +31,7 @@ _SUMMARY_START = "<!-- metric-family-summary:start -->"
 _SUMMARY_END = "<!-- metric-family-summary:end -->"
 _NAVIGATION_START = "<!-- metric-navigation:start -->"
 _NAVIGATION_END = "<!-- metric-navigation:end -->"
-_SPECIFICATION = Path("docs/evaluation/metric_specification.md")
+_SPECIFICATION = Path("docs/metrics.md")
 
 # Count each column once in the paper, even if several viewer groups show it.
 _MANUSCRIPT_FAMILIES = (
@@ -170,7 +170,7 @@ def specification_with_summary(text: str) -> str:
     Parameters
     ----------
     text : str
-        Complete specification text with one ordered marker pair for each table.
+        Complete metrics guide text with one ordered marker pair for each table.
 
     Returns
     -------
@@ -187,14 +187,14 @@ def specification_with_summary(text: str) -> str:
     This transforms a string only. The caller owns reading and writing the file.
     """
     if text.count(_SUMMARY_START) != 1 or text.count(_SUMMARY_END) != 1:
-        raise ValueError("metric specification must contain one family-summary block")
+        raise ValueError("metrics guide must contain one family-summary block")
     start = text.index(_SUMMARY_START)
     end = text.index(_SUMMARY_END) + len(_SUMMARY_END)
     if end < start:
         raise ValueError("metric family-summary markers are reversed")
     text = text[:start] + family_summary_markdown() + text[end:]
     if text.count(_NAVIGATION_START) != 1 or text.count(_NAVIGATION_END) != 1:
-        raise ValueError("metric specification must contain one navigation table")
+        raise ValueError("metrics guide must contain one navigation table")
     start = text.index(_NAVIGATION_START)
     end = text.index(_NAVIGATION_END) + len(_NAVIGATION_END)
     if end < start:
@@ -427,10 +427,10 @@ def dictionary_csv() -> str:
 
 
 def main() -> int:
-    """Write or check the metric dictionary and the specification's family summary.
+    """Write or check the metric dictionary and the metrics guide's generated tables.
 
     ``--check`` compares existing text without writing. Normal mode updates the
-    requested CSV and changes the specification only when its summary differs.
+    requested CSV and changes the guide only when a generated table differs.
 
     Returns
     -------
@@ -446,7 +446,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument(
-        "--output", type=Path, default=Path("docs/evaluation/metric_columns.csv")
+        "--output", type=Path, default=Path("docs/metric_columns.csv")
     )
     args = parser.parse_args()
     expected = dictionary_csv()

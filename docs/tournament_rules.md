@@ -4,7 +4,7 @@
 tournament for Team Deathmatch, from Season 1 onward. King of the Hills and
 Capture the Flag get their own ladders and numbers later. How games become
 ratings is defined in the
-[tournament protocol](protocol.md#big-nine-tournament-and-baseline-library);
+[tournaments guide](tournaments.md);
 this rulebook sets who may enter, what a run may use, and the limits.
 
 ## Words Used Here
@@ -113,8 +113,9 @@ maps, entry type and any starting models with their hashes.
 it once without losing your submission or your place in the queue.
 
 6.6 **Everything is open-sourced** under Apache-2.0, the license MARL-BGs
-uses: code, results and all checkpoints, admitted or not, published with the
-season's table.
+uses: code, results and every saved model (a portable model file at least
+every 5,000,000 steps, plus the entered save), admitted or not, published with
+the season's table. Training state is not released.
 
 6.7 **Every entrant is released** into one general pool you can download,
 whether or not it joins the field. Each season's Big Nine also gets its own
@@ -211,7 +212,7 @@ the cutoff. Each table names its rulebook version.
 - **255 million game steps and 8 hours** sit just above our own slowest
   baseline. Our six baselines took about 3.6 to 7.0 hours to reach 250 million
   game steps on one RTX 5090, counting each first run and its continuation (see the
-  [hyperparameter search record](../training/hyperparameter_search.md)), so
+  [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)), so
   every Season 0 learned entrant meets the limits a challenger faces.
 - **The play limits** exist because every entrant becomes a downloadable
   training opponent for later challengers, so a slow or memory-hungry entrant

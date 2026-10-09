@@ -1122,7 +1122,7 @@ def replay_metrics(
     -------
     dict of str to float
         Column name to value, in the catalog order of
-        ``docs/evaluation/metric_columns.csv``, with the same names as the
+        ``docs/metric_columns.csv``, with the same names as the
         ``priority_metrics`` and ``full_metrics`` tables of ``load_results``.
         A measurement that does not apply to this game, or that the replay
         cannot provide, is NaN, as in those tables; a real zero stays 0.0. For

@@ -53,7 +53,7 @@ the comparison.
 | Recurrent QMIX | Mava `rec_qmix` | [`baselines/qmix.py`](../../src/marl_battlegrounds/baselines/qmix.py) |
 | Recurrent PQN-VDN | JaxMARL `pqn_vdn_rnn` | [`baselines/pqn.py`](../../src/marl_battlegrounds/baselines/pqn.py) |
 
-Every change from the donors is listed in the [source ledger](../../docs/training/source_reuse.md).
+Every change from the donors is listed in the [source ledger](../../docs/method_sources.md).
 The four PPO methods share one learner,
 [`training/learner.py`](../../src/marl_battlegrounds/training/learner.py).
 
@@ -174,7 +174,7 @@ and seeds therefore does not give the same weights, checkpoints or selected
 steps as the runs reported here. We did not measure how far such a retrain
 drifts; we expect differences of the kind seen between seeds of one recipe
 (see the seed tables of studies 1 and 2). The saved checkpoints do repeat the
-tournament game for game ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)).
+tournament game for game ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)).
 
 ## Validation And Selection
 
@@ -377,8 +377,8 @@ and runs through the public `run_tournament` API.
 | Rules | First to 20 points, 300 ticks, Red Zone depth 5.0 (as in training and validation) |
 | Seed root | 20261004 |
 | Play | PPO actors sample their actions; QMIX and PQN-VDN actors act greedily (no exploration), as the library loads them; the scripted bots are deterministic |
-| Ratings | The tool's joint Elo fit with draws (`centered-davidson-v1`), field average 1,200, 95% intervals from 5,000 bootstrap resamples; tiers and divisions from [the protocol](../../docs/evaluation/protocol.md#leaderboard-tiers) |
-| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)) |
+| Ratings | The tool's joint Elo fit with draws (`centered-davidson-v1`), field average 1,200, 95% intervals from 5,000 bootstrap resamples; tiers and divisions from [the protocol](../../docs/tournaments.md#tiers) |
+| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)) |
 | Games at a time | 128, the command's default |
 | Cost | 8.2 minutes on one RTX 5090 |
 
@@ -436,7 +436,7 @@ and the games still play out differently.
    play out differently between two runs, because GPU floating-point rounding
    can flip a near-tied action choice. This is ordinary floating-point noise,
    not a simulator defect; see
-   [Repeatability On GPUs](../../docs/evaluation/repeatability.md).
+   [Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game).
 
 ## Decisions During The Search
 
@@ -462,7 +462,7 @@ saved results, and each is applied in the sections that follow.
 | 15 | Each method enters the tournament with its selected study 3 checkpoint | Runs are compared by their checkpoints chosen under the declared rule, never by their final checkpoints by default; each final checkpoint is recorded beside it |
 | 16 | The tournament plays 200 games per pair on the test maps | Twice the API default of 100, for narrower rating intervals at a cost of minutes |
 | 17 | QMIX and PQN-VDN are evaluated greedily, as the library loads them, and pairs whose games repeat are reported as such | Greedy play is the usual way to evaluate Q-learners (in PyMARL, the QMIX authors' code, [test mode sets epsilon to 0](https://github.com/oxwhirl/pymarl/blob/master/src/components/action_selectors.py)). The tournament tool flags every pair between two deterministic entrants and gives it no sampling interval (see Tournament) |
-| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability On GPUs](../../docs/evaluation/repeatability.md)) |
+| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)) |
 
 ## Inputs
 
@@ -1282,7 +1282,7 @@ the weakest?
 `tournament_analysis` stage played its schedule again on the same RTX 5090 in
 XLA's deterministic mode, recording all full metrics for every game. All
 7,200 games repeated exactly. One call to
-[`system_metrics`](../../docs/evaluation/workflows.md#compare-every-systems-metrics)
+[`system_metrics`](../../docs/metrics.md#compare-every-systems-metrics)
 then reads every entrant's games from the side it played, as Team A or Team B,
 over all 1,600 of its games, and its point margin against each opponent equals
 the saved head-to-head result. Games combine by each column's catalog rule:
@@ -1477,7 +1477,7 @@ frame; validation on maps 42, 43, 44 and 46 with checkpoints chosen by point
 margin. The PPO methods also use Adam epsilon 1e-5 and 2 groups. The same
 values, with every remaining saved setting and each policy's file paths, are in
 `final_policies.csv`. The training scripts' default recipe (`recipe=default`
-in [Hydra training](../../docs/training/hydra.md)) applies each method's settings and seed from
+in [Hydra training](../../docs/hydra.md)) applies each method's settings and seed from
 this table.
 
 ## Our Reading

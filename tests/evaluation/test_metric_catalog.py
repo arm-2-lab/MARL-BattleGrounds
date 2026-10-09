@@ -1788,8 +1788,8 @@ def test_generated_dictionary_and_manuscript_summary_match_catalog() -> None:
         family_summary_markdown,
     )
 
-    assert Path("docs/evaluation/metric_columns.csv").read_text() == dictionary_csv()
-    specification = Path("docs/evaluation/metric_specification.md").read_text()
+    assert Path("docs/metric_columns.csv").read_text() == dictionary_csv()
+    specification = Path("docs/metrics.md").read_text()
     assert family_summary_markdown() in specification
     assert "**11,192**" in family_summary_markdown()
 

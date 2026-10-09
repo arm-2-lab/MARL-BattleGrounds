@@ -169,7 +169,7 @@ with the same tools as any other System, and how does a small one do?
 so the commands below play version 2 games, and the stage refuses to add them
 to a folder of version 1 games.
 
-**Method.** Serve Qwen3.5-9B with [the Qwen recipe](../../docs/llm/qwen_recipe.md)'s
+**Method.** Serve Qwen3.5-9B with [the Qwen recipe](../../docs/llm.md)'s
 vLLM settings (dynamic FP8 weights, thinking off), on one GPU. The
 `llm_challenge` stage turns it into a System with `llm.make_system`
 (temperature 0, no earlier turns, a bad reply becomes standing still) and

@@ -1,482 +1,139 @@
 # MARL-BattleGrounds
 
-MARL-BattleGrounds lets researchers train and compare teams of agents in
-competitive games. Agents have different classes and abilities, so a team
-must combine movement, attacks, healing and support. The simulator uses JAX
-for compiled, batched GPU execution.
+**The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning.**
 
-The project is under development. Team Deathmatch, the native researcher API,
-evaluation, recording and canonical tournament machinery are implemented.
-Trained baseline qualification, a released official tournament field and
-manuscript results remain future work. Six learner implementations are available;
-software checks do not establish learned skill.
+[![PyPI](https://img.shields.io/pypi/v/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
+[![Python](https://img.shields.io/pypi/pyversions/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/LICENSE)
+[![Website](https://img.shields.io/badge/website-marl--battlegrounds.com-2b6cb0)](https://marl-battlegrounds.com)
 
-The installed package also has terminal commands:
+![Two teams of five fight on a MARL-BattleGrounds map](https://marl-battlegrounds.com/assets/art/key-art-preview.jpg)
+
+Two teams of up to five agents fight Team Deathmatch on 52 maps. Each agent
+is a Mage, Warrior, Hunter, Rogue or Priest, so a team wins by combining
+movement, attacks, healing and support. The whole game is written in JAX, so
+thousands of games run at once on one GPU. You bring the method; MARL-BGs
+gives you the game, training helpers, evaluation, tournaments and replays.
+
+## Install
 
 ```bash
-python -m marl_battlegrounds --help
-python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32
-python -m marl_battlegrounds replay /path/to/saved-replay.json
+pip install "marl-battlegrounds[all]"
 ```
 
-Evaluation prints a short result preview. Add `--output-dir runs/my-evaluation`
-to keep the complete results. Replay viewing needs an existing replay file; it
-does not require this checkout or Node. See the [complete workflows](docs/evaluation/workflows.md)
-for factories, saved-first resume, explicit asset preparation and analysis.
+On Linux with an NVIDIA GPU, add CUDA: `pip install "marl-battlegrounds[all,cuda13]"`.
+Python 3.12, 3.13 and 3.14 are supported; 3.14 is recommended.
 
-## Take a First Step
-
-The package includes 52 Team Deathmatch maps and eight fixed scenarios. Prepare
-128 games, sample legal actions and advance them together:
+## Quick Start
 
 ```python
 import jax
 import marl_battlegrounds as marl_bgs
 
-reset_key, action_key, step_key, next_reset_key = jax.random.split(jax.random.key(42), 4)
-env = marl_bgs.make("tdm", map_id=0, num_envs=128)
-observation, state = env.reset(reset_key)
-actions = env.sample_actions(action_key, state)
-observation, state, reward, done, info = env.step(step_key, state, actions)
-observation, state = env.reset_done(next_reset_key, state)
+env = marl_bgs.make("tdm", map_id=0, num_envs=4)  # four games at once
+key = jax.random.key(0)
+observation, state = env.reset(key)
+for _ in range(50):
+    key, act_key, step_key, reset_key = jax.random.split(key, 4)
+    actions = env.sample_actions(act_key, state)  # legal random actions
+    observation, state, reward, done, info = env.step(step_key, state, actions)
+    observation, state = env.reset_done(reset_key, state)  # restart finished games
 ```
 
-Keep the returned state for the next call. `reset_done` replaces only completed
-games; continuing games keep their exact state. The environment supplies episode
-IDs and legal action sampling. It does not reset inside `step`.
+On one RTX 5090 with 1,024 parallel 5v5 games, the simulator alone runs 50,416 game steps per second (random legal actions, compilation excluded), and recurrent MAPPO trains at 29,878 game steps per second in pure self-play.
 
-Map-based setup balances spawn locations by default: half the lanes keep the
-map's ordered spawn banks and half exchange both banks. Team identities, rosters
-and world directions stay fixed. Automatic balance needs an even positive batch.
-For a scalar or odd batch, set `balance_spawn_locations=False`. An explicit
-`env_config` remains exact and overrides automatic preparation. Equal episode
-counts alone do not establish equal training steps from both spawn locations.
+## Train
 
-Team Deathmatch counts points, and one enemy death is not always one point.
-Each team's Red Zone is the full-height strip at its own spawn edge, 5.0 map
-units deep by default. When an agent dies with its centre inside its own team's Red Zone, the
-enemy team gets 2 points instead of 1. It is still one kill and one death, so
-kill counts and K/D do not double. Set the depth with `red_zone_depth`:
-
-```python
-deeper = marl_bgs.make("tdm", map_id=0, num_envs=128, red_zone_depth=6.0)
-one_point = marl_bgs.make("tdm", map_id=0, num_envs=128, red_zone_depth=0.0)
-```
-
-`0.0` turns the rule off, so every death gives 1 point. `evaluate` and
-`run_tournament` take the same keyword, the `evaluate` command takes
-`--red-zone-depth`, and training sets `red_zone_depth` in its config. An exact
-`env_config` keeps its own depth. Results saved before this rule keep their
-original one-point meaning. See
-[A44](docs/design/specification_amendments.md#a44-team-deathmatch-red-zone-scoring).
-
-See [examples/environment.py](examples/environment.py) for a runnable loop
-with both depth choices and [Ubuntu setup](docs/dev/setup_ubuntu.md) for the
-locked GPU environment.
-
-## Choose Maps and Rosters
-
-`marl_bgs.list_tdm_maps()` and `marl_bgs.list_tdm_scenarios()` list names and source
-identities. `marl_bgs.load_tdm_scenario(1)` returns a configuration, exact initial
-state and notes. Pass that object to `env.reset(key, scenario=scenario)`.
-Each team may contain one through five agents, including repeated classes.
-Supplied roster order fills the first team-local slots; it does not reserve a
-fixed slot for each class. `marl_bgs.canonical_tournament_rosters()` returns the
-shared default roster order.
-
-The factory
-`marl_battlegrounds.tasks.make_canonical_team_deathmatch_evaluation_config(map_id=47)`
-fixes mirrored Mage/Warrior/Hunter/Rogue/Priest teams, first to 20 points, the
-default Red Zone depth of 5.0 (pass `red_zone_depth` to change it), a
-300-transition horizon, five-transition respawn waves and canonical shields. Canonical map IDs
-are 47–51. Training maps are 0–41, including curriculum maps 0–11; validation
-maps are 42–46. Numbered map names, authored IDs and saved-map folders use the
-same IDs. See the
-[map ID change guide](docs/evaluation/workflows.md#map-id-change--2026-09-12)
-when using saved IDs. The [training guide](docs/training/README.md#requested-stages-and-played-exposure)
-explains the built-in curriculum; the [complete curriculum example](examples/curriculum.py)
-shows researcher-defined stages.
-
-## Train, Evaluate and Read Results
-
-Hydra and OmegaConf are the standard project launcher workflow. They compose
-settings; the public API still owns the work. From a checkout:
+One command trains recurrent IPPO with the tested Season 0 recipe (250 million
+game steps, a few hours on one RTX 5090):
 
 ```bash
-pip install -e '.[training,hydra,notebook,viz]'
-python examples/train.py method=ff_ippo recipe=software_check preview=true \
-  output_dir=/scratch/demo/run
+python -m marl_battlegrounds.experiments.train method=ippo output_dir=runs/my-ippo
 ```
 
-This preview starts no learner. Remove `preview=true` to execute the bounded
-software check; its settings are not a paper search or evidence of learning.
-For an installed package use `python -m marl_battlegrounds.experiments.train`.
-See the [Hydra guide](docs/training/hydra.md) for all six methods, YAML overrides,
-sweeps, resources, paths and resume.
-
-After a completed run, resolve its exact actor with the public API:
-
-```python
-from marl_battlegrounds import training
-
-run = training.load_run("/scratch/demo/run")
-print(run.final_actor)  # Final saved actor; this does not claim it is best.
-```
-
-Use that printed path in the matching method's evaluation command:
-
-```bash
-python scripts/paper_experiments/evaluate_feedforward_ippo.py \
-  checkpoint=EXACT_ACTOR_PATH opponent=tdm-alpha evaluation=full \
-  evaluation.output_dir=/scratch/demo/evaluation
-```
-
-The [checkpoint evaluation guide](docs/evaluation/checkpoints.md) also shows how
-to use a selected actor and resume an evaluation. Open the
-[pandas analysis notebook](docs/evaluation/analysis.md) with the printed saved
-result folder for metric topics, behavioral questions, charts and replays.
-Training stays lean; full metrics and replays belong to this later evaluation.
-The Python and custom-loop routes below remain available without Hydra.
-
-Researchers own their models, sampling and learning update. Use JAX `jit`,
-`vmap` and `lax.scan` around the same `reset`/`step` contract. Configuration,
-current legal-action masks and episode counters travel in environment state.
-Use `reset_done` for ordinary terminal resets, or explicit `reset` arguments
-for custom episode starts. A mask describes current legal actions; a structural
-action space alone cannot express every coupled action constraint.
-
-The optional [training package](docs/training/README.md) adds recurrent and
-feedforward MAPPO and IPPO, recurrent QMIX with compact replay, recurrent
-PQN-VDN, complete save/resume, frozen actor loading and learning reports.
-Choose the method in one `TrainConfig`; the workflow stays the same. The
-[baseline System example](examples/baseline_system.py) uses initialized,
-**untrained** weights through the same public workflow. The
-[complete training example](examples/mappo_training.py) exercises the public
-Python route; the [QMIX example](examples/qmix_training.py) and the
-[PQN-VDN example](examples/pqn_training.py) do the same for those methods.
-Working execution and useful learned behavior need separate evidence.
-
-Use `team()` to assign methods to physical agent slots and `pool()` to choose a
-method for each game. Both return ordinary Systems. Training accepts named
-opponent and partner populations, weighted draws or explicit game-start orders,
-and a Python callback for your own selection rule. Shared, per-class and
-per-slot actors use the same six built-in learners. The
-[competitive MARL guide](docs/training/competitive_marl.md) includes complete
-examples for self-play, league rules, PBT, PSRO, frozen partners and a researcher-owned
-CTDE update. See [cross-play and ZSC](examples/cross_play_and_zsc.py) for evaluating
-fixed learner, partner and opponent combinations with recoverable results.
-
-Use one callable for frozen-System validation and evaluation:
+## Evaluate
 
 ```python
 import marl_battlegrounds as marl_bgs
 
-result = marl_bgs.evaluate(
-    "tdm-alpha", "tdm-beta", maps=[47, 48, 49, 50, 51],
-    num_episodes=100, num_envs=128, seed=42,
-    metrics="full", replay_episodes=range(1, 11),
-    output_dir="runs/evaluation",
-)
-print(result.paths)
-print(result.table("episodes")["system_game_score"])
+results = marl_bgs.evaluate("random", "tdm-alpha", num_episodes=32, num_envs=32)
+print(results.head_to_head())  # games, wins, draws, losses, point margin
 ```
 
-`Policy(name, apply, variables, initial_carry)` adapts a learned policy through
-`apply(variables, carry, actor_input, action_mask, key) -> (action, next_carry)`.
-Variables stay frozen during evaluation; recurrent memory resets per actor and
-episode. The authorized SharedObs input remains structured. Custom encoders and
-training algorithms remain the researcher's choice.
-Shared, independent, recurrent and host `System` methods use the same evaluator.
-The researcher stays Team A. The default runs complete pairs with exchanged
-spawn locations; `spawn_mode="default"` or `"swapped"` runs a fixed choice.
-Omitted maps use validation maps for `phase="validation"` and test maps for
-`phase="evaluation"`. Custom phases require explicit maps.
-Actor inputs use self/ally/enemy roles and a local self row, with no simulator
-team ID or global slot. See the [input contract](docs/evaluation/workflows.md#policy-inputs)
-for shapes and the recording-version change.
+Your method is always Team A, and paired games swap the spawn ends, so a map's
+layout cannot favor either side.
 
-Metrics use `"none"`, `"priority"` (default), or `"full"`. Select extra full episodes
-with `full_metrics_episodes=range(1000, 50_001, 1000)` and replays independently
-with `replay_episodes=range(49_951, 50_001)` when those IDs exist in the run.
-No replay is needed for metrics.
-Without an output directory, results are column arrays suitable for
-`pandas.DataFrame(result.full_metrics)`, and no files are created. Each output
-request creates a unique child run; `resume_from` explicitly resumes a run.
-`load_results(run_dir)` reads saved tables without loading the simulator or
-changing files. Use `iter_table("full_metrics", rows=128)` for bounded reading.
-See the [complete evaluation examples](examples/evaluation_results.py) for
-validation, exact authored episodes, resume and tournament analysis.
+## Watch And Play
 
-The [metric specification and data dictionary](docs/evaluation/metric_specification.md)
-explain scalar columns, missing values, attribution and recording. The
-[evaluation protocol](docs/evaluation/protocol.md) defines held-out evaluation,
-paired tournaments, ratings and uncertainty.
-The [workflow guide](docs/evaluation/workflows.md) includes runnable evaluation,
-shared-writer validation, replay and tournament commands.
-
-## BattleClient
-
-Play locally in your browser. Python loads your methods and runs the match:
+```bash
+python -m marl_battlegrounds replay path/to/game.marlbg-replay.json
+```
 
 ```python
 import marl_battlegrounds as marl_bgs
 
-marl_bgs.battle_client(map_id=0, team_a="manual", team_b="tdm-alpha")
+marl_bgs.battle_client(team_b="tdm-alpha")  # play in your browser against a scripted team
 ```
 
-Use one method for a whole team or give each roster slot its own controller.
-Manual, built-in policies, saved native checkpoints and your own Policy/System
-objects use the same launch. Teams can independently contain one to five agents.
-Fixed packaged scenarios accept Team A controllers only; their opponent and
-starting state stay fixed.
+## The Six Built-In Learners
 
-Plan Manual actions in the Tactics Turn deck and press Lock In Turn, or use
-Run/Pause when every configured slot has a policy. The page opens in Agent POV,
-which shows only what the viewing team sees; Oracle View shows everything. Save a
-replay, open the separate Viewer and restart. Browser views never expand a
-loaded method's information rights. Recording starts at frame zero by default
-and saves under `./recordings/` in your launch directory.
+| Method | Name | Memory | Critic |
+|---|---|---|---|
+| Recurrent MAPPO | `mappo` | Recurrent | Centralized |
+| Feedforward MAPPO | `ff_mappo` | None | Centralized |
+| Recurrent IPPO | `ippo` | Recurrent | One per agent |
+| Feedforward IPPO | `ff_ippo` | None | One per agent |
+| QMIX | `qmix` | Recurrent | QMIX mixer |
+| PQN-VDN | `pqn_vdn` | Recurrent | Sum of agent values |
 
-The [BattleClient guide](docs/battle_client.md) covers installation, method
-loading, fixed scenarios, controls and replay recovery. The package includes its
-browser files; no checkout, Node, Docker or hosted service is needed.
-Follow [Play Your Saved Methods](docs/battle_client_tutorial.md) for downloadable
-simple, mixed-policy, ten-controller and fixed-scenario examples, including
-checkpoint preparation and the save/view/restart workflow.
+Your own method can be anything that turns permitted observations into legal
+actions: a network, a planner, a language model or a mix.
 
-## Replay Viewer
+## Guides
 
-Open an immutable replay, discover checked samples or inspect a scripted demo:
+| Guide | What It Covers | Website |
+|---|---|---|
+| [Getting Started](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/getting_started.md) | Install, your first games, maps, rosters, what agents see | [start](https://marl-battlegrounds.com/#start) |
+| [Game Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/game_rules.md) | Classes, abilities, scoring, Red Zone, scenarios | [game](https://marl-battlegrounds.com/#game) |
+| [Your Method](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/your_method.md) | Plug in your own model or learner, with JAX's jit, vmap and scan | [your-method](https://marl-battlegrounds.com/#your-method) |
+| [Training](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/training.md) | The six learners, opponents, curriculum, rewards, checkpoints | [training](https://marl-battlegrounds.com/#training) |
+| [Hydra](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/hydra.md) | Settings files, overrides, sweeps, studies and the experiment stages | [configs](https://marl-battlegrounds.com/#configs) |
+| [Evaluation](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/evaluation.md) | Fair games, validation and test maps, scenarios, saved results | [evaluate](https://marl-battlegrounds.com/#evaluate) |
+| [Metrics](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/metrics.md) | What is measured and how to read it | [metrics](https://marl-battlegrounds.com/#metrics) |
+| [Tournaments](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournaments.md) | Round robins, Elo ratings and tiers | [round-robin](https://marl-battlegrounds.com/#round-robin) |
+| [Tournament Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) | The leaderboard rulebook | [rules](https://marl-battlegrounds.com/#rules) |
+| [Replays](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the Replay Viewer | [replay-format](https://marl-battlegrounds.com/#replay-format) |
+| [BattleClient](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/battle_client.md) | Play against or beside your own agents in the browser | [battleclient](https://marl-battlegrounds.com/#battleclient) |
+| [Language Models](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
+| [Performance](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/performance.md) | Speed and memory, and how to measure them on your machine | [performance](https://marl-battlegrounds.com/#performance) |
+| [Method Sources](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/method_sources.md) | Where the built-in learners come from | [method-sources](https://marl-battlegrounds.com/#method-sources) |
+| [API Reference](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/api.md) | Every public name on one page | [api](https://marl-battlegrounds.com/#api) |
 
-```bash
-./scripts/dev/run_replay_viewer.sh --replay episode.marlbg-replay.json
-./scripts/dev/run_replay_viewer.sh --list-sample-replays
-./scripts/dev/run_replay_viewer.sh --sample-replay death-respawn-shield
-./scripts/dev/run_replay_viewer.sh --list-scenarios
-./scripts/dev/run_replay_viewer.sh --scenario stacked_team_auras
+## Reproduce The Paper
+
+The paper's commands, frozen settings and result tables are in
+[`scripts/paper_experiments/`](https://github.com/oceansystemslab/MARL-BattleGrounds/tree/main/scripts/paper_experiments).
+
+## Cite
+
+Use the "Cite this repository" button on GitHub, or:
+
+```bibtex
+@software{marl_battlegrounds,
+  author = {Hawili, Ulixes Tariq},
+  title = {{MARL-BattleGrounds}: The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning},
+  version = {1.0.0},
+  year = {2026},
+  url = {https://github.com/oceansystemslab/MARL-BattleGrounds}
+}
 ```
-
-The Viewer validates saved evidence before serving it. A scripted-demo request
-first materializes its replay in a separate preparation step. The read-only
-Viewer then navigates exact frames, plays recorded transitions and provides
-participant/score summaries, configurable effects and provenance-bearing PNG
-exports. It cannot submit simulator actions. It opens in Oracle View at 1x speed;
-press ? in the page for its keys.
-
-Open the **Metrics** tab and choose **Up To Tick N** or **Whole Game**.
-**Download Metrics CSV** exports the selected boundary through the same scalar
-metric authority as evaluation. Current replay files need no metric sidecar;
-historical files keep their readers. Metrics are computed on request. A visual
-POV changes the battlefield view, not the researcher-level metric ownership.
-
-See the [Viewer guide](docs/dev/replay_viewer.md) for transport, cameras,
-audience limits, exports and recovery. The
-[migration guide](docs/dev/visual_debugger.md) explains the former combined tool.
-Both clients use local HTML, CSS, SVG and JavaScript served by Python. Researchers
-need neither Node.js nor npm. SharedObs visual union is a rendering contract,
-separate from the structured actor input, as described in
-[A17](docs/design/specification_amendments.md#a17-sharedobs-recorded-visual-union-presentation).
-
-## Actor Information Regimes
-
-Paper 1 uses canonical SharedObs: each actor receives its own permitted view
-plus authorized teammate sensor rows. Official recordings require the complete
-configured-active, same-team, off-diagonal availability matrix at every frame.
-A configured dead teammate remains an authorized source, with no live sensor
-material. The input adapter does not reveal simulator team IDs or global slots.
-
-Current recording binds SharedObs actor projection 2; historical projection 1
-files retain their original meaning. Always use the recorded version rather
-than treating equal tensor widths as compatibility. Base observations and exact
-availability are recorded without storing a second materialized source bank.
-
-Generic execution and historical readers also support homogeneous NoSharedObs
-for custom research and diagnostics. It is not the official Paper 1 comparison
-axis. Assets are regime-independent; official eligibility is checked after
-loading. [A25](docs/design/specification_amendments.md#a25-sharedobs-only-canonical-benchmark-execution)
-records the original canonical decision and historical version context.
-
-Researchers choose their networks, encoders and learning algorithms. The API
-fixes permitted information, shapes, categorical meanings, masks and provenance;
-it does not require one-hot features, embeddings, attention or a particular
-model framework.
-
-<a id="planned-scenario-evaluations-and-big-12"></a>
-
-## Scenario Evaluations And The Official Tournament
-
-[Run any valid System on exact scenarios](docs/evaluation/scenarios.md) with the
-public evaluator and Hydra tutorial, including saved results and replay inspection.
-
-The approved TDM suite contains eight scenarios. Seven use five-transition
-horizons; Scenario 3 uses ten transitions to examine sustained body blocking,
-while retaining the canonical five-transition respawn period. The scenario and
-map designs are approved. Packaged definitions and a bounded complete-suite
-qualification use the shared episode executor, metrics and replay APIs.
-These plumbing controls do not replace learned-policy behavioral ablations.
-
-The public scenario suite is primarily a controlled behavioral-ablation
-instrument. Each manuscript comparison will compare a complete method
-with its matched ablation under the same scenario revision, embedded map and
-initial state, deterministic reactive pressure controller, canonical SharedObs
-contract, seeds and sides, training budget, checkpoint-selection rule, and
-primary endpoint. Scenario pressure controllers follow versioned rules and
-authoritative action masks rather than replaying hard-coded action tapes. An
-evaluation definition may bind Reactive TDM or a specialist; it remains
-separate from the saved, controller-independent DevClient scenario. Diagnostic
-controller availability does not qualify an official evaluation. Scenario results
-provide evidence for a specific behavioral claim under frozen conditions; they
-do not contribute to Elo or establish general strength. See
-[specification amendment A26](docs/design/specification_amendments.md#a26-scenario-pressure-controllers-and-behavioral-ablations).
-
-The current sequence is M7 TDM Benchmark and Researcher Tools → M8 Policy
-Execution and Evaluation → M9 Training Distributions and Curriculum → M10
-Learning Platform and Baselines → M11 LLM-Agent Integration → M12 Manuscript
-Experiments and Release. M12 starts by cleaning up the whole repository: a
-refactor, an audit of all documentation, and a profiler-driven optimization audit
-of runtime, VRAM, RAM and disk costs across the research workflow. The manuscript
-experiments then run on the cleaned code. M12 ends with the public release,
-including a documentation website and tutorials. KOTH (M13) and CTF (M14) follow
-manuscript submission.
-[Amendment A36](docs/design/specification_amendments.md#a36-submission-roadmap-approved-tdm-content-and-m7-closeout)
-records the roadmap and the historical milestone-number mapping.
-
-M8's native API scope is complete. Training distributions, curricula and six
-learners are implemented. Their integration checks establish software behavior,
-not scientific qualification. Finish the software before running the scientific
-campaign. The growing-pool example shows how to use the API; it does not choose
-an approved experimental curriculum.
-Gymnasium/PettingZoo adapters are deferred until a specific learner integration
-shows a need. The optional `interop` dependencies do not provide those adapters.
-The native JAX workflow is the supported route; see the
-[researcher workflows](docs/evaluation/workflows.md).
-
-Public evaluation scenarios and their complete content closure must not inform
-training, checkpoint selection, early stopping, hyperparameters, prompts,
-curricula, population weights, or any other adaptive choice. The shared training
-content checks keep declared training, validation and evaluation content separate.
-Official systems must also retain complete provenance for maintainer
-reproduction. This is a reproducibility and eligibility boundary,
-not a claim that open-source software can make deliberate misconduct
-impossible.
-
-The official ladder uses a frozen population, the **Big Nine**. Each entrant
-is one fixed System with one Elo value. The software takes N from a release's
-participant list, with at least two entrants, so custom tournaments may use any
-size; the official field holds nine. Historical version-1 official snapshots
-keep exactly twelve entrants and their original rules and hashes.
-
-The initial scientific plan covers eighteen settings from six learners:
-
-| Learner | Planned Settings |
-| --- | --- |
-| Recurrent MAPPO, recurrent IPPO, QMIX and PQN-VDN | Plain, curriculum, reward shaping, and curriculum plus reward shaping for each learner |
-| Feedforward MAPPO and feedforward IPPO | Plain only |
-
-These are candidate settings, not eighteen qualified Systems. The initial
-campaign plan uses three independent training seeds per setting. That is a
-starting scientific plan, not evidence that three seeds are enough. Declare
-comparable search and extension effort, or disclose differences. Each setting
-supplies one fixed candidate through a rule declared before training; keep all
-run, checkpoint and selection records.
-
-Freeze the candidate field and selection rule before its validation games. Fit
-joint Elo on the complete eligible field, take the top N, and break cutoff ties
-by expected score against that same field, then by declared entrant order. Freeze
-membership before any selected-field refit or separate test-map evaluation. A
-refit may change ratings and order, but cannot choose different members. Weak
-valid candidates stay eligible; failed work stays visible and missing evidence
-must not turn into invented results or replacement seeds.
-
-From Season 1, any JAX System may enter the official ladder, within the
-[Tournament Rulebook](docs/evaluation/tournament_rules.md)'s training budget and
-play limits; each entry is labeled by type. Valid host Systems remain usable in
-custom tournaments and local comparisons against the released field. Their
-diagnostic, scenario and declared competence-evaluation roles remain separate.
-Loading a valid actor does not require official training provenance; loading it
-does not grant official eligibility.
-
-A field has N*(N-1)/2 unordered matchups; one challenger adds N. Twelve entrants
-at 100 games per pairing give 6,600 games. That is a historical workload example,
-not the official budget. The official field holds nine, with 200 games per
-pairing; the budget and resource rules are in the
-[Tournament Rulebook](docs/evaluation/tournament_rules.md).
-
-The raw win/draw/loss matrix remains authoritative. The compact report is Policy,
-Elo with uncertainty, Expected Score with uncertainty, Win %, Draw % and Loss %,
-with full matchup and per-map results beside it. Tactical metrics are optional
-for local tournaments. K/D divides total kills by total deaths and stays blank
-when deaths are zero; it is descriptive evidence, not a rating input.
-
-The shared runner resolves one config, reuses compatible incumbent games and
-runs the required new games. Saved-first resume keeps the run's original field.
-Local runs neither admit nor publish a controller. Separate maintainer admission
-works against a pinned field; fixture checks do not create an official release.
-See [Canonical Tournaments](docs/evaluation/canonical_tournaments.md).
-
-The Paper 1 field stays frozen. Later releases follow the accepted monthly
-process; a promotion replaces one incumbent and keeps that release's N. Ratings
-from different populations are not directly comparable over time. The Baseline
-Library retains current and former entrants with their identities and evidence;
-its growth does not enlarge the active field. See
-[amendment A27](docs/design/specification_amendments.md#a27-rolling-big-n-and-baseline-library-governance),
-the [tournament protocol](docs/evaluation/protocol.md#big-nine-tournament-and-baseline-library)
-and the [Tournament Rulebook](docs/evaluation/tournament_rules.md).
-
-## Static Snapshots
-
-The optional `viz` dependency is activated automatically by the Replay Viewer
-shell launcher when `--static` is present:
-
-```bash
-# One exact frame from an immutable replay.
-./scripts/dev/run_replay_viewer.sh \
-  --replay episode.marlbg-replay.json --static --frame-index 0
-```
-
-Static rendering starts no browser server. For direct Python calls, prepare the
-optional painter with `uv sync --locked --extra viz`. Browser launch does not
-require Matplotlib.
-
-## Design and Evaluation
-
-- [LLM Systems](docs/llm/README.md) shows default and custom formats, actor
-  history, evaluation, tournaments and the qualified local Qwen recipe.
-
-- [Specification amendments](docs/design/specification_amendments.md) are the
-  controlling public authority for accepted departures from the historical
-  design PDF.
-- [Evaluation metric specification](docs/evaluation/metric_specification.md)
-  defines metric meanings, attribution limits, scorecard surfaces, and
-  candidate dispositions.
-- [Evaluation protocol](docs/evaluation/protocol.md) defines evaluation cells,
-  aggregation, inference, cross-play, scenarios, failure handling, and
-  canonical actor-information provenance.
-- [Tournament Rulebook](docs/evaluation/tournament_rules.md) sets who may enter
-  the official tournament, the training budget, the play limits and how
-  challengers are admitted.
-- [Standard replay format](docs/evaluation/replay_format.md) defines the
-  versioned semantic replay normal form, whole-artifact validation boundary,
-  companion artifacts, and canonical bounded local persistence.
-- [Same seed, same game](docs/evaluation/repeatability.md) explains why two GPU
-  runs can differ in a few games, why that is ordinary floating-point noise and
-  not a simulator defect, and how to get exact game-for-game repeats.
-- [Dependency policy](docs/dev/dependency_policy.md) separates researcher
-  runtime requirements from optional and contributor-only tooling.
 
 ## Contribute
 
-Use the locked dependencies and the [quality gates](docs/dev/quality_gates.md).
-GPU/JAX speed, memory, compilation reuse and data movement are the performance
-targets. CPU checks establish correctness and compatibility; their timings help
-balance CI jobs and are not simulator performance claims.
-
-Documentation is part of every change. The shared
-[Documentation Standard](docs/dev/documentation_standard.md)
-requires clear file descriptions and complete, source-checked function contracts.
-Python uses NumPy-style docstrings; browser code uses JSDoc. Test files keep one
-file-level description and necessary type directives, with no function or class
-docstrings. Examples must show working public calls and label future designs.
+Pull requests are welcome. Start with
+[CONTRIBUTING.md](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/CONTRIBUTING.md),
+and open an [issue](https://github.com/oceansystemslab/MARL-BattleGrounds/issues)
+for bugs, ideas, questions and leaderboard submissions.
 
 ## Author
 
