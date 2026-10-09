@@ -8,6 +8,7 @@ Setup helpers and the existing Policy adapter use the same package entry point.
 run_canonical_tournament uses a released tournament snapshot and verified records.
 It requires a separately installed, qualified bundle; none is fabricated here.
 select_initial_population freezes a declared choice from saved tournament games.
+export_model writes one trained actor as a portable JAX file that load_method reads.
 
 Exports load their owning module when first requested and are then cached here.
 Importing this package alone does not import the environment or start JAX.
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
         TournamentResult,
         run_tournament,
     )
+    from marl_battlegrounds.portable_models import export_model
     from marl_battlegrounds.tasks import (
         balanced_spawn_configs,
         canonical_tournament_rosters,
@@ -105,6 +107,7 @@ __all__ = [
     "evaluate_episodes",
     "evaluate_scenarios",
     "export_bundle",
+    "export_model",
     "independent_policies",
     "init_episode_tracking",
     "init_systems",
@@ -133,6 +136,7 @@ _MODULES = {
     "AutoReset": "autoreset",
     "collect_rollout": "collection",
     "export_bundle": "bundles",
+    "export_model": "portable_models",
     "prepare_bundle": "bundles",
     "EpisodeTrackingState": "episode_tracking",
     "init_episode_tracking": "episode_tracking",

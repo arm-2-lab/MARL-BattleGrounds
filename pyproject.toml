@@ -18,6 +18,8 @@ dependencies = [
   "scipy",
   "chex",
   "pydantic",
+  "huggingface_hub>=2.2,<3",
+  "flatbuffers>=24",
 ]
 
 [project.optional-dependencies]
