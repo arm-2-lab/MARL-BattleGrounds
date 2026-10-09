@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guides
+    url: https://marl-battlegrounds.com/#guides
+    about: Short guides for every part of MARL-BattleGrounds. Many questions are answered there.
+  - name: Security Reports
+    url: https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/SECURITY.md
+    about: Report a security problem privately. Never post it in a public issue.

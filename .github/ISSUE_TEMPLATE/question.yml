@@ -1,0 +1,45 @@
+name: Question
+description: Ask how to do something with MARL-BattleGrounds.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Many answers are in the [guides](https://marl-battlegrounds.com/#guides). If they do not help, ask here.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of MARL-BattleGrounds is this about?
+      options:
+        - Install
+        - Environment and game rules
+        - Training and built-in learners
+        - Evaluation and results
+        - Metrics
+        - Tournaments and leaderboard
+        - Replays and Replay Viewer
+        - BattleClient
+        - LLM Systems
+        - Hydra and experiment stages
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What do you want to do, and what is unclear?
+    validations:
+      required: true
+
+  - type: textarea
+    id: read-or-tried
+    attributes:
+      label: What You Read Or Tried
+      description: The guides or examples you read, and what you tried. Paste any code and the full error text.
+    validations:
+      required: true

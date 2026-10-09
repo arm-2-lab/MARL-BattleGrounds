@@ -1,0 +1,95 @@
+name: Feature Request
+description: Ask for a new feature or an easier way to do something.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the idea. Tell us what you want to do, and show the code you wish you could write.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of MARL-BattleGrounds is this about?
+      options:
+        - Install
+        - Environment and game rules
+        - Training and built-in learners
+        - Evaluation and results
+        - Metrics
+        - Tournaments and leaderboard
+        - Replays and Replay Viewer
+        - BattleClient
+        - LLM Systems
+        - Hydra and experiment stages
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: research-goal
+    attributes:
+      label: Your Research Goal
+      description: What do you want to find out or build? Say how this feature would help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-you-tried
+    attributes:
+      label: What You Tried
+      description: What you tried with the current tools, and where it fell short.
+    validations:
+      required: false
+
+  - type: textarea
+    id: wished-code
+    attributes:
+      label: The Code You Wish You Could Write
+      description: A few lines that show how you would like to use the feature. They do not need to run today.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways to reach your goal that you thought about.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: changes-rules
+    attributes:
+      label: Does This Change Game Rules, What An Agent May See, Or Saved Formats?
+      description: Saved formats include saved runs, results, replays and model files. Changes like these are agreed in this issue before anyone writes code.
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pull-request
+    attributes:
+      label: Would You Send A Pull Request?
+      options:
+        - "Yes"
+        - With help
+        - "No"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues, and this feature is not asked for yet.
+          required: true
+        - label: I read the matching guide on [the website](https://marl-battlegrounds.com/#guides) or in `docs/`.
+          required: true

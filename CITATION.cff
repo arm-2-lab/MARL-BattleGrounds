@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "MARL-BattleGrounds"
+type: software
+authors:
+  - given-names: "Ulixes Tariq"
+    family-names: "Hawili"
+    email: "t.hawili@sms.ed.ac.uk"
+version: "1.0.0"
+date-released: "2026-10-10"
+license: "Apache-2.0"
+repository-code: "https://github.com/oceansystemslab/MARL-BattleGrounds"
+url: "https://marl-battlegrounds.com"
+abstract: "The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning."
+keywords:
+  - "multi-agent reinforcement learning"
+  - "JAX"
+  - "benchmark"
+  - "heterogeneous agents"
+  - "competitive games"

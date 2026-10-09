@@ -1,0 +1,107 @@
+name: Leaderboard Submission
+description: Enter your system in a monthly Team Deathmatch season.
+labels: ["submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the [Tournament Rulebook](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) first. The rule numbers on this form are the rulebook's numbers.
+        This form asks for everything Rule 6.3 needs. Use your system's name as the issue title.
+        Submissions for a season close 72 hours before its table is published.
+
+  - type: textarea
+    id: team
+    attributes:
+      label: Team Members And Labs
+      description: Every person on your team, each with their lab. A team is its people and their labs (Rule 6.1).
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      description: The Git repository we clone (Rule 6.3).
+      placeholder: https://github.com/your-team/your-system
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: The full 40-character commit SHA we run (Rule 6.3). Not a branch or a tag.
+    validations:
+      required: true
+
+  - type: textarea
+    id: train-command
+    attributes:
+      label: Train Command
+      description: The one command we run to train. It must keep its chosen entry saved in its output folder (Rule 6.3).
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: lock-file
+    attributes:
+      label: Lock File
+      description: The path, inside your repository, of the lock file that pins every dependency (Rule 6.3).
+      placeholder: uv.lock
+    validations:
+      required: true
+
+  - type: input
+    id: load-function
+    attributes:
+      label: Load Function
+      description: Written as `module:function`. It loads only your chosen entry, in at most 10 minutes (Rule 6.3).
+      placeholder: my_system.entry:load
+    validations:
+      required: true
+
+  - type: textarea
+    id: config-and-maps
+    attributes:
+      label: Config And Training Maps
+      description: Your config, pasted or as a path in your repository, and the maps your run trains and validates on (Rule 6.3). Maps 0 to 46 are yours to use (Rule 3.4).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entry-type
+    attributes:
+      label: Entry Type
+      description: The type the table shows beside your entry (Rule 1.2).
+      options:
+        - Learned
+        - Scripted
+        - Hybrid
+        - Language Model
+    validations:
+      required: true
+
+  - type: textarea
+    id: starting-models
+    attributes:
+      label: Starting Models
+      description: Every model your run starts from or builds on, each with its SHA-256 hash (Rule 6.3). This includes released MARL-BGs models (Rule 3.1) and outside pretrained models (Rule 3.2). Write none if there are none.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: agreements
+    attributes:
+      label: Agreements
+      options:
+        - label: I read the Tournament Rulebook, Version 1.
+          required: true
+        - label: My run never touched test maps 47 to 51 or the scenarios, and I chose nothing by results on maps 47 to 51 (Rule 3.4).
+          required: true
+        - label: This is my team's only submission this season (Rule 6.1).
+          required: true
+        - label: My code, results and every saved model are released under Apache-2.0, whether or not my system is admitted (Rule 6.6).
+          required: true
+        - label: My entry joins the general pool that anyone can download, whether or not it joins the field (Rule 6.7).
+          required: true

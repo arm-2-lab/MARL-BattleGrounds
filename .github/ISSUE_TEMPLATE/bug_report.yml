@@ -1,0 +1,123 @@
+name: Bug Report
+description: Something does not work, shows an error or gives a wrong result.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. A short example that we can run helps us fix it fast.
+        Found a security problem? Do not open an issue. Follow [SECURITY.md](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/SECURITY.md) instead.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of MARL-BattleGrounds is this about?
+      options:
+        - Install
+        - Environment and game rules
+        - Training and built-in learners
+        - Evaluation and results
+        - Metrics
+        - Tournaments and leaderboard
+        - Replays and Replay Viewer
+        - BattleClient
+        - LLM Systems
+        - Hydra and experiment stages
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What Happened
+      description: Say what you did and what went wrong. Paste the full error text, from its first line to its last.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What You Expected
+      description: Say what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Smallest Code Or Command That Shows It
+      description: The shortest code or command that shows the bug. Include every import and setting it needs.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Paste the output of this command:
+
+        `python -c "import importlib.metadata as m, jax; print('marl-battlegrounds', m.version('marl-battlegrounds')); jax.print_environment_info()"`
+
+        It prints the versions of MARL-BGs, jax, jaxlib, numpy and Python, your operating system, your devices and your GPU driver. You may remove your host name.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How You Installed It
+      options:
+        - PyPI with pip
+        - uv
+        - Source checkout
+        - Editable install
+    validations:
+      required: true
+
+  - type: input
+    id: extras
+    attributes:
+      label: Extras You Installed
+      description: The extras in brackets when you installed, for example `all, cuda13`. Write none if you installed no extras.
+      placeholder: all, cuda13
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Does It Happen Every Time?
+      description: If the same seed gives different results between runs, read [Same Seed, Same Game](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/evaluation.md#same-seed-same-game) first.
+      options:
+        - Every time
+        - Sometimes
+        - Once
+        - Results differ between runs
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Files That Help
+      description: Attach or paste anything that helps us repeat the bug, such as a replay, `run_details.json`, the seed, your Hydra overrides and your XLA flags (`XLA_FLAGS`). You can drag files into this box.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues, and this bug is not reported yet.
+          required: true
+        - label: I tried the latest release.
+          required: true
+        - label: The code above runs on its own. It has every import and setting it needs.
+          required: true
