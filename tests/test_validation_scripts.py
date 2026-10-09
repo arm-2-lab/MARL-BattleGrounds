@@ -2,12 +2,15 @@
 including the --timings mode that saves one per-test timing file per Python shard
 and per browser profile.
 All Python shards and static checks start together without a worker cap.
+Shards and the browser profile run every test, even after a failure; the Python
+gate then lists each failing test once and prints one command that reruns them.
 Copied candidate indexes stay with the parent gate; child checks use their own
 repositories. Raw donor fixtures keep their bytes without weakening source checks.
 """
 
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -122,6 +125,7 @@ def _fake_tool_script() -> str:
         fi
         if [[ -n "${FAKE_FAIL_MATCH-}" && "$arguments" == *"$FAKE_FAIL_MATCH"* ]]; then
           printf 'failed\t%s\t%s\n' "$tool" "$arguments" >> "$FAKE_TOOL_LOG"
+          printf '%b' "${FAKE_FAIL_OUTPUT-}"
           exit "${FAKE_FAIL_STATUS:-23}"
         fi
         if [[ -n "${FAKE_MUTATE_MATCH-}" && \
@@ -227,6 +231,7 @@ def test_python_gate_is_root_independent_cpu_only_and_exactly_sharded(
     assert shard_selectors == {f"{index}/19" for index in range(1, 20)}
     assert sum("ruff format --check ." in invocation for invocation in invocations) == 1
     assert not any("--junitxml" in invocation for invocation in invocations)
+    assert not any("--maxfail" in invocation for invocation in invocations)
     assert sum("ruff check ." in invocation for invocation in invocations) == 1
     assert (
         sum(
@@ -414,7 +419,7 @@ def test_frontend_gate_timings_save_one_json_report_per_profile(
         for index in range(1, 2)
     }
     assert all("--reporter=line,json" in record[5] for record in node_records)
-    assert all("--max-failures=1" in record[5] for record in node_records)
+    assert not any("--max-failures" in record[5] for record in node_records)
 
 
 def test_python_gate_waits_for_all_workers_before_reporting_failure(
@@ -434,6 +439,14 @@ def test_python_gate_waits_for_all_workers_before_reporting_failure(
             fake_bin,
             log_path,
             FAKE_FAIL_MATCH="--ci-shard=1/19 ",
+            FAKE_FAIL_OUTPUT=(
+                "FAILED captured output, not a summary line\\n"
+                "=========== short test summary info ===========\\n"
+                "FAILED tests/test_a.py::test_one[two words] - AssertionError: x\\n"
+                "ERROR tests/test_b.py - ImportError: y\\n"
+                "ERROR tests/test_a.py::test_one[two words] - teardown\\n"
+                "======= 1 failed, 1 error in 0.10s =======\\n"
+            ),
             FAKE_SLEEP_MATCH="--ci-shard=19/19 ",
             FAKE_SLEEP_SECONDS="0.3",
         ),
@@ -444,6 +457,24 @@ def test_python_gate_waits_for_all_workers_before_reporting_failure(
     assert len([record for record in starts if record[1] == "uv"]) == 22
     finishes = _log_records(log_path, "finish")
     assert any("19/19" in record[2] for record in finishes)
+    failing = ["tests/test_a.py::test_one[two words]", "tests/test_b.py"]
+    listed = result.stdout.split("===== failing Python tests (2) =====\n", 1)[1]
+    assert listed.startswith("\n".join(failing) + "\n")
+    rerun = next(
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith("JAX_PLATFORMS=cpu uv run")
+    )
+    assert shlex.split(rerun) == [
+        "JAX_PLATFORMS=cpu",
+        "uv",
+        "run",
+        "--no-sync",
+        "pytest",
+        "-p",
+        "no:cacheprovider",
+        *failing,
+    ]
 
 
 def test_precommit_gate_rejects_index_mutation_during_validation(

@@ -34,7 +34,7 @@ training = [
 ]
 
 hydra = [
-  "hydra-core==1.3.6",
+  "hydra-core==1.3.7",
   "omegaconf==2.3.0",
 ]
 
@@ -62,7 +62,7 @@ dev = [
   "ruff",
   "pyright",
   "pre-commit",
-  "hydra-core==1.3.6",
+  "hydra-core==1.3.7",
   "omegaconf==2.3.0",
 ]
 
@@ -95,9 +95,12 @@ include = [
 ]
 
 [tool.uv]
+# Minimum safe versions of indirect dependencies with known vulnerabilities.
 constraint-dependencies = [
+  "fsspec>=2026.6.0",
   "msgpack>=1.2.1",
   "pillow>=12.3.0",
+  "virtualenv>=21.7.13",
 ]
 
 [tool.ruff]

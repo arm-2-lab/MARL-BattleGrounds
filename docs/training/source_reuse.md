@@ -940,7 +940,7 @@ future rules and cumulative counts. Related children are not independent seeds.
 
 ## Hydra Parser Compatibility
 
-The optional launcher supports `hydra-core==1.3.6` and `omegaconf==2.3.0` on
+The optional launcher supports `hydra-core==1.3.7` and `omegaconf==2.3.0` on
 Python 3.14. Hydra's `get_args_parser` passes its nested `LazyCompletionHelp`
 object to argparse. Python 3.14 checks help strings while adding actions; this
 particular lazy object needs to defer that check until help is rendered.
@@ -951,9 +951,10 @@ for the exact nested help type and `shell_completion` action. Every other action
 uses the original check. A `finally` block restores argparse after success or
 failure. No installed file changes. The upstream implementation is in
 [Hydra's parser owner](https://github.com/facebookresearch/hydra/blob/main/hydra/_internal/utils.py);
-the qualified source is the installed 1.3.6 distribution recorded in `uv.lock`,
-not a claim about that moving branch. The shim uses our own wrapper; no Hydra
-parser body or completion implementation is copied.
+the qualified source is the installed 1.3.7 distribution recorded in `uv.lock`,
+not a claim about that moving branch. Hydra 1.3.7 is a security release; its
+parser file is byte-identical to 1.3.6, so the same shim applies. The shim uses
+our own wrapper; no Hydra parser body or completion implementation is copied.
 
 The compatibility tests exercise run, both help routes, configuration display,
 resolution, overrides, finite BasicSweeper jobs, completion help, completion

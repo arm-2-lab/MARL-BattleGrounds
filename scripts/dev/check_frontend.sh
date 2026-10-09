@@ -10,7 +10,9 @@
 # Requires Node.js 24/npm, installed frontend/browser dependencies and the prepared
 # uv environment for local servers. Python uses CPU; this is a correctness gate.
 # Full runs remove temporary browser outputs on success and retain them on failure.
-# Every failing task makes the full command fail.
+# The browser profile runs every test, even after a failure; Playwright's summary
+# then lists each failing test by file and line. Every failing task makes the full
+# command fail.
 set -euo pipefail
 
 CALLER_DIR="${PWD}"
@@ -125,14 +127,12 @@ run_complete_frontend_gate() {
       run_e2e_shard_timed \
       "1/1" \
       "${timings_dir}/browser-profile-1.json" \
-      --max-failures=1 \
       --output "${output_root}/profile-1"
   else
     marl_validation_start \
       "Browser profile 1/1" \
       run_e2e_shard \
       "1/1" \
-      --max-failures=1 \
       --output "${output_root}/profile-1"
   fi
   marl_validation_start "Frontend static and unit gates" run_static

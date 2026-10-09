@@ -359,8 +359,11 @@ or deadlines. A slow step on a busy machine then waits instead of failing. A
 hung test stays hung: find and fix its cause. Only three kinds of limit stay:
 waits that are meant to expire (for example, "nothing happens within 0.1 s"),
 product timing settings under test, and checks of the product's own speed.
-Canonical gates stop a red shard at its first failure; successful runs still
-execute the complete inventory.
+Canonical gates run every test, even after a failure, so one run finds every
+failing test. The Python gate ends with a list of the failing test IDs and one
+command that reruns only those; the browser profile's Playwright summary lists
+each failing test by file and line. Fix the failures, then rerun only those
+tests instead of the whole gate.
 
 No time limit does not mean waiting for something that can never come. A wait
 for a result that a child process, thread or server must produce also watches

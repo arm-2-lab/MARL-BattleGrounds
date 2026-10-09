@@ -54,7 +54,7 @@ _parser_patched = False
 def _compatible_args_parser(
     factory: Callable[[], argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
-    """Build Hydra 1.3.6's parser under Python 3.14's stricter help check.
+    """Build Hydra 1.3.7's parser under Python 3.14's stricter help check.
 
     factory is the original Hydra parser constructor. Only its exact nested
     LazyCompletionHelp object for shell_completion bypasses _check_help; normal
@@ -88,7 +88,7 @@ def _compatible_args_parser(
 
 
 def prepare_hydra() -> None:
-    """Install the narrow parser backport once for Python 3.14 and Hydra 1.3.6.
+    """Install the narrow parser backport once for Python 3.14 and Hydra 1.3.7.
 
     Other Python versions use the upstream parser unchanged. On Python 3.14 an
     unqualified Hydra version raises RuntimeError with the supported install
@@ -99,9 +99,9 @@ def prepare_hydra() -> None:
     global _parser_patched
     if _parser_patched or sys.version_info[:2] != (3, 14):
         return
-    if version("hydra-core") != "1.3.6":
+    if version("hydra-core") != "1.3.7":
         raise RuntimeError(
-            "Python 3.14 Hydra launchers require the qualified hydra-core==1.3.6. "
+            "Python 3.14 Hydra launchers require the qualified hydra-core==1.3.7. "
             "Install marl-battlegrounds[hydra]."
         )
     if current_thread() is not main_thread():

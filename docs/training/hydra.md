@@ -30,7 +30,7 @@ start a logging session, open a network connection or change training.
 
 ## Compatibility
 
-The qualified pair is Hydra 1.3.6 and OmegaConf 2.3.0 on Python 3.14. Import
+The qualified pair is Hydra 1.3.7 and OmegaConf 2.3.0 on Python 3.14. Import
 `marl_battlegrounds.experiments.hydra` before using a Hydra entry point. This
 module applies the narrow parser fix described in the
 [source-reuse record](source_reuse.md#hydra-parser-compatibility).

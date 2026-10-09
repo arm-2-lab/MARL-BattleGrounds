@@ -7,8 +7,10 @@
 # --timings DIR runs the same full gate and also saves each shard's per-test
 # times as DIR/python-shard-N.xml (JUnit) for scripts/dev/shard_costs.py.
 # Run after preparing the locked uv environment; this command never syncs it.
-# The shard plugin owns test assignment. Output includes each task's exit code and
-# elapsed seconds. Failures return nonzero. No commit or GPU speed claim is made.
+# The shard plugin owns test assignment. Every shard runs all its tests, even after
+# a failure. Output includes each task's exit code and elapsed seconds; when tests
+# fail, it ends with every failing test ID and one command that reruns only those.
+# Failures return nonzero. No commit or GPU speed claim is made.
 set -euo pipefail
 
 CALLER_DIR="${PWD}"
@@ -44,8 +46,9 @@ require_canonical_python_environment() {
 }
 
 # Run shard selector $1 through the sole pytest assignment plugin; forward the
-# remaining arguments to pytest. Disable its cache and stop after the first failure.
-# The outer command validates the selector. Return pytest/uv status.
+# remaining arguments to pytest. Disable its cache. Every selected test runs, even
+# after a failure, so one gate run finds every failing test. The outer command
+# validates the selector. Return pytest/uv status.
 run_python_shard() {
   local shard="$1"
   shift
@@ -53,12 +56,55 @@ run_python_shard() {
     -p scripts.dev.pytest_shard \
     "--ci-shard=${shard}" \
     -p no:cacheprovider \
-    --maxfail=1 \
     "$@"
 }
 
-# Run all nineteen Python shards in parallel, print their results and clean worker
-# logs. No arguments. Return 1 if any shard fails; otherwise return 0.
+# After the pool finishes, print every failing Python test ID once, then one
+# command that reruns only those tests. Read only the "short test summary info"
+# section of each "Python tests" worker log, where pytest writes "FAILED <id>" or
+# "ERROR <id>", optionally followed by " - <message>". No test ID in this suite
+# contains " - ". Call after marl_validation_finish and before
+# marl_validation_cleanup, while the logs exist. Print nothing when no test
+# failed. No arguments; always return 0.
+print_failing_python_tests() {
+  local task_id=""
+  local -a logs=()
+  local -a failing=()
+
+  for task_id in "${MARL_VALIDATION_TASK_ORDER[@]}"; do
+    if [[ "${MARL_VALIDATION_LABEL_BY_TASK[${task_id}]}" == "Python tests "* \
+          && -f "${MARL_VALIDATION_LOG_BY_TASK[${task_id}]}" ]]; then
+      logs+=("${MARL_VALIDATION_LOG_BY_TASK[${task_id}]}")
+    fi
+  done
+  if (( ${#logs[@]} == 0 )); then
+    return 0
+  fi
+  mapfile -t failing < <(
+    awk '
+      /^=+ short test summary info =+$/ { summary = 1; next }
+      summary && /^=/ { summary = 0 }
+      summary && /^(FAILED|ERROR) / {
+        sub(/^(FAILED|ERROR) /, "")
+        sub(/ - .*$/, "")
+        if (!seen[$0]++) print
+      }
+    ' "${logs[@]}"
+  )
+  if (( ${#failing[@]} == 0 )); then
+    return 0
+  fi
+  printf '\n===== failing Python tests (%s) =====\n' "${#failing[@]}"
+  printf '%s\n' "${failing[@]}"
+  printf '\nRerun only these tests:\n'
+  printf 'JAX_PLATFORMS=cpu uv run --no-sync pytest -p no:cacheprovider'
+  printf ' %q' "${failing[@]}"
+  printf '\n'
+}
+
+# Run all nineteen Python shards in parallel, print their results and any failing
+# tests, then clean worker logs. No arguments. Return 1 if any shard fails;
+# otherwise return 0.
 run_all_python_tests() {
   local shard_number=""
   local status=0
@@ -72,6 +118,7 @@ run_all_python_tests() {
   if ! marl_validation_finish; then
     status=1
   fi
+  print_failing_python_tests
   marl_validation_cleanup
   return "${status}"
 }
@@ -94,8 +141,8 @@ run_python_static() {
 
 # Start all nineteen shards and three static checks together without a worker cap.
 # Optional $1 is an existing directory; when given, each shard also writes
-# its per-test times to $1/python-shard-N.xml. Print every result, clean logs and
-# return 1 on any failure.
+# its per-test times to $1/python-shard-N.xml. Print every result and any failing
+# tests, clean logs and return 1 on any failure.
 run_complete_python_gate() {
   local timings_dir="${1:-}"
   local shard_number=""
@@ -118,6 +165,7 @@ run_complete_python_gate() {
   if ! marl_validation_finish; then
     status=1
   fi
+  print_failing_python_tests
   marl_validation_cleanup
   return "${status}"
 }

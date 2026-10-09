@@ -17,7 +17,7 @@ versions used by reproducible installs and qualification.
 | `training` | Optimizers, models, checkpoints, learning replay and Matplotlib reports for complete training runs |
 | `interop` | Optional Gymnasium/PettingZoo libraries; not a promise that all adapters exist |
 | `viz` | Matplotlib for static/headless snapshots |
-| `hydra` | Optional Hydra 1.3.6 and OmegaConf 2.3.0 launcher settings |
+| `hydra` | Optional Hydra 1.3.7 and OmegaConf 2.3.0 launcher settings |
 | `notebook` | Jupyter kernel and saved notebook execution/export; add `viz` for plots |
 | `wandb` | Optional Weights & Biases SDK; unused unless explicitly enabled |
 | `dev` | Pytest, Ruff, Pyright, pre-commit and Hydra/OmegaConf for donor and launcher tests |
