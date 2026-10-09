@@ -322,9 +322,8 @@ def _finish(service: DebuggerService) -> None:
 
     from marl_battlegrounds._battle_client.protocol import FinishSystemCommandV1
 
-    while service.current_frame().system_operation is not None:
-        operation = service.current_frame().system_operation
-        assert operation is not None
+    # Read the operation once per pass: it can finish between two reads.
+    while (operation := service.current_frame().system_operation) is not None:
         assert operation.state != "failed"
         _send(service, FinishSystemCommandV1(operation_id=operation.operation_id))
         assert not service.faulted
