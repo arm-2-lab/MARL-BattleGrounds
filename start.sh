@@ -14,7 +14,7 @@
 #   2. Picks the JAX build for this machine (see "The build" below).
 #   3. Runs `uv sync --locked --extra all --group jupyter [--extra BUILD]`.
 #      The first time, uv downloads Python 3.14 and the exact locked packages
-#      (about 3.5 GB with a GPU build), including JupyterLab for the example
+#      (up to 3.5 GB with a GPU build), including JupyterLab for the example
 #      notebooks. This sync is exact: it removes any other extra or build
 #      installed in this folder before, so rerun start.sh, or use `uv run`,
 #      never a plain `uv sync`.

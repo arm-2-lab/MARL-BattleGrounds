@@ -62,7 +62,7 @@ RUN extra=""; if [ "$BUILD" != cpu ]; then extra="--extra $BUILD"; fi \
 RUN --mount=type=secret,id=hf_token,env=HF_TOKEN,required=false \
     mkdir -p "$HF_HUB_CACHE" \
     && if [ "$SEASON_0_MODELS" = 1 ]; then \
-        python -m marl_battlegrounds models download --yes \
+        python -m marl_battlegrounds models download \
             MARL-BattleGrounds/tdm-season-0-recurrent-mappo \
             MARL-BattleGrounds/tdm-season-0-recurrent-ippo \
             MARL-BattleGrounds/tdm-season-0-feedforward-mappo \
@@ -70,7 +70,8 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN,required=false \
             MARL-BattleGrounds/tdm-season-0-qmix \
             MARL-BattleGrounds/tdm-season-0-pqn-vdn; \
     fi \
-    && chmod -R a+rwX "$HF_HUB_CACHE"
+    && chmod -R a+rwX "$HF_HUB_CACHE" \
+    && rm -rf /root/.cache
 COPY --chmod=0755 play.py docker/entrypoint.sh /opt/marl-bgs/
 
 WORKDIR /work

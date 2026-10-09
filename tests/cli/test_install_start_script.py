@@ -25,6 +25,12 @@ there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else none.
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), and ``play.py``, the Dockerfile and the
 quick start notebook name the same six released Season 0 models.
+
+``play.py`` prints a plain message instead of a traceback when the
+BattleClient refuses a setting (status 2) or the system refuses (status 1),
+for example after a mistyped or released team name. It keeps the traceback
+when a team runs your own code or files: a ``module:function`` factory or a
+file or folder that exists.
 """
 
 from __future__ import annotations
@@ -216,6 +222,15 @@ def test_the_install_cell_matches_the_notebook_service(
     assert calls == expected
 
 
+def _play_module() -> ModuleType:
+    sys.path.insert(0, str(_REPOSITORY))
+    try:
+        import play
+    finally:
+        sys.path.remove(str(_REPOSITORY))
+    return play
+
+
 def test_one_list_of_builds_and_released_models() -> None:
     pyproject = tomllib.loads((_REPOSITORY / "pyproject.toml").read_text())
     conflicts = pyproject["tool"]["uv"]["conflicts"][0]
@@ -225,11 +240,7 @@ def test_one_list_of_builds_and_released_models() -> None:
     assert set(builds.group(1).split(" | ")) == {"cpu"} | {
         item["extra"] for item in conflicts
     }
-    sys.path.insert(0, str(_REPOSITORY))
-    try:
-        import play
-    finally:
-        sys.path.remove(str(_REPOSITORY))
+    play = _play_module()
     released = {play.RELEASED_PREFIX + name for name in play.TRAINED_TEAMS.values()}
     pattern = r"MARL-BattleGrounds/tdm-season-0-[a-z-]+"
     dockerfile = (_REPOSITORY / "docker" / "Dockerfile").read_text(encoding="utf-8")
@@ -239,3 +250,40 @@ def test_one_list_of_builds_and_released_models() -> None:
     assert len(released) == 6
     assert set(re.findall(pattern, dockerfile)) == released
     assert set(re.findall(pattern, notebook)) == released
+
+
+@pytest.mark.parametrize(
+    ("team_b", "error", "status"),
+    [
+        ("qmx", ValueError, 2),
+        ("mappo", ValueError, 2),
+        ("mappo", OSError, 1),
+        ("my_teams:make", ValueError, None),
+        ("saved-model", ValueError, None),
+    ],
+)
+def test_play_keeps_the_traceback_of_your_own_code(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    team_b: str,
+    error: type[Exception],
+    status: int | None,
+) -> None:
+    import marl_battlegrounds
+
+    def refuse(**_: object) -> int:
+        raise error("refused")
+
+    monkeypatch.setattr(marl_battlegrounds, "battle_client", refuse)
+    monkeypatch.setenv("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "saved-model").mkdir()
+    play = _play_module()
+    arguments = ["--team-b", team_b, "--no-browser"]
+    if status is None:
+        with pytest.raises(error, match="refused"):
+            play.main(arguments)
+    else:
+        assert play.main(arguments) == status
+        assert "play.py: refused" in capsys.readouterr().err

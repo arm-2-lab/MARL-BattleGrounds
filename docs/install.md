@@ -9,7 +9,7 @@ Website: https://marl-battlegrounds.com/#start
 | Your machine | Route | GPU | Tested |
 |---|---|---|---|
 | Linux (x86_64 or ARM) | [One command](#one-command) | NVIDIA, picked for you | Yes (Ubuntu x86_64 with NVIDIA; CPU by every release) |
-| Apple Silicon Mac | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Yes, by every release |
+| Apple Silicon Mac | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Install and evaluation, by every release; the BattleClient not tested yet |
 | Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Not tested yet |
 | Intel Mac, old Linux, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Yes (Linux host, CPU and NVIDIA; the arm64 image by every release, under emulation) |
 | Your own Python project | [pip](#pip) | You choose | Yes (Linux and macOS, by every release) |
@@ -27,7 +27,7 @@ cd MARL-BattleGrounds-1.0.0
 sh start.sh
 ```
 
-`start.sh` installs [uv](https://docs.astral.sh/uv/) if you do not have it, picks the right JAX build for your machine, installs Python 3.14 and the exact tested packages, then opens the BattleClient in your browser. The first run downloads about 3.5 GB with a GPU build (less on CPU); later runs start in seconds.
+`start.sh` installs [uv](https://docs.astral.sh/uv/) if you do not have it, picks the right JAX build for your machine, installs Python 3.14 and the exact tested packages, then opens the BattleClient in your browser. The first run downloads up to 3.5 GB with a GPU build (about 0.3 GB on the CPU); later runs start in seconds.
 By default you play Team A against the trained Recurrent MAPPO team on map 47. Press `?` in the page for How To Play. Each game's replay is saved in `recordings/`.
 Without curl, use `wget -qO- <the same link> | tar xz`. With git: `git clone --branch v1.0.0 https://github.com/oceansystemslab/MARL-BattleGrounds.git`, then `cd MARL-BattleGrounds` and `sh start.sh`.
 
@@ -70,7 +70,7 @@ Check which device JAX uses: `uv run --no-sync python -c "import jax; print(jax.
 ## pip
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate   # a fresh environment, Python 3.12 or newer
+python3 -m venv .venv && . .venv/bin/activate   # a fresh environment, Python 3.12 to 3.14
 pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA, driver 580+ (or cuda12, rocm, tpu)
 ```
@@ -105,7 +105,7 @@ In Windows Command Prompt, write `-v "%cd%:/work"` instead. PowerShell, bash and
 JupyterLab, run from the unpacked release folder so `examples/` is there:
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0 jupyter lab --ip 0.0.0.0 --no-browser --allow-root
+docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0 jupyter lab --ip 0.0.0.0 --no-browser --allow-root -y
 ```
 
 **Watch Out**
@@ -114,7 +114,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/oceansystem
 - A language model server on your computer is `host.docker.internal` from inside the container, not `127.0.0.1`. On Linux, add `--add-host=host.docker.internal:host-gateway`, and make the server listen on more than `127.0.0.1`.
 - In Git Bash on Windows, put `MSYS_NO_PATHCONV=1` before `docker run`. On Fedora, RHEL and other SELinux systems, write `-v "${PWD}:/work:z"`.
 - A GPU image on a machine without a usable GPU (for example, run without `--gpus all`) prints a long "Jax plugin configuration error", then runs on the CPU.
-- Docker Desktop is free for personal use, education, non-commercial open source and small businesses; larger companies need a paid plan. Podman should work; it is not tested yet.
+- Docker Desktop is free for personal use, education, non-commercial open source and small businesses; larger organizations and government bodies need a paid plan. Podman should work; it is not tested yet.
 
 | Limit | What to do |
 |---|---|
@@ -138,8 +138,8 @@ On Kaggle, turn on Internet in the notebook's settings (it needs a phone-verifie
 ## Clusters And Remote Machines
 
 Remote GPU machine: start the client there with `sh start.sh --port 8765 --replay-port 8767 --no-browser`. On your laptop run `ssh -N -L 8765:127.0.0.1:8765 -L 8767:127.0.0.1:8767 <host>`, then open the printed `127.0.0.1` link.
-Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then run `apptainer pull marl-bgs.sif docker://ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0-cuda12` once. On a compute node: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
-Cluster with uv: unpack the release on scratch storage (the environment is about 3.5 GB), set `UV_CACHE_DIR` there, run `MARL_BGS_ACCELERATOR=cuda12 sh start.sh --help` on the login node, open a new shell (so `uv` is on your `PATH`), and on a compute node `uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`. Compute nodes often have no internet: on the login node, download the models first with `uv run --no-sync python -m marl_battlegrounds models download --yes MARL-BattleGrounds/tdm-season-0-recurrent-mappo` (and any others), then set `HF_HUB_OFFLINE=1` on the compute node. Linux needs glibc 2.27 or newer (Ubuntu 18.04+, Debian 10+, RHEL 8+); older systems use Apptainer.
+Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then, in a scratch folder, run `apptainer pull marl-bgs.sif docker://ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0-cuda12` once (the image file lands in the current folder). On a compute node, in that folder: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
+Cluster with uv: unpack the release on scratch storage (the environment is about 6 GB), set `UV_CACHE_DIR` there, run `MARL_BGS_ACCELERATOR=cuda12 sh start.sh --help` on the login node, open a new shell (so `uv` is on your `PATH`), and on a compute node `uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`. Compute nodes often have no internet: on the login node, download the models first with `uv run --no-sync python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-recurrent-mappo` (and any others), then set `HF_HUB_OFFLINE=1` on the compute node. Linux needs glibc 2.27 or newer (Ubuntu 18.04+, Debian 10+, RHEL 8+); older systems use Apptainer.
 
 ## Offline Use
 
@@ -147,7 +147,7 @@ Trained models download from the [MARL-BattleGrounds Hugging Face organization](
 
 ## Watch Out: Saved Runs Need The Same Python
 
-Extending a saved training run checks the exact Python version that trained it, down to the last number (for example 3.14.5), and the exact versions of `jax`, `jaxlib`, `numpy`, `flax`, `optax` and `orbax-checkpoint` (and `flashbax` for QMIX). `uv python upgrade`, or upgrading any of those packages, stops a run saved before from being extended. The one command and the constraints files keep them fixed. Starting a new run from any saved model needs no version match.
+Extending a saved training run checks the exact Python version that trained it, down to the last number (for example 3.14.5), and the exact versions of `jax`, `jaxlib`, `numpy`, `flax`, `optax` and `orbax-checkpoint` (and `flashbax` for QMIX). `uv python upgrade`, or upgrading any of those packages, stops a run saved before from being extended. The one command and the constraints files keep those packages fixed, but not Python's last number: `start.sh` may pick any Python 3.14. To extend a run saved with another Python, pin it in the folder and run the command again, for example `uv python pin 3.14.5`, then `sh start.sh`. The Docker image already has 3.14.5. Starting a new run from any saved model needs no version match.
 
 ## Next
 

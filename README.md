@@ -39,7 +39,7 @@ docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/wo
 
 | Route | Works on | Tested |
 |---|---|---|
-| One command, `sh start.sh` | Linux, Apple Silicon Mac, Windows with WSL2 | Linux with NVIDIA; Linux and Mac on the CPU, by every release; WSL2 not tested yet |
+| One command, `sh start.sh` | Linux, Apple Silicon Mac, Windows with WSL2 | Linux with NVIDIA; install and evaluation on Linux and Mac CPUs, by every release; WSL2 not tested yet |
 | pip | Linux, Apple Silicon Mac, WSL2 | Linux and Apple Silicon Mac, by every release |
 | Docker | Any system with Docker; NVIDIA on Linux and Windows hosts | Linux, CPU and NVIDIA; the arm64 image by every release, under emulation; Docker Desktop not tested yet |
 | Colab and Kaggle, [Open in Colab](https://colab.research.google.com/github/oceansystemslab/MARL-BattleGrounds/blob/v1.0.0/examples/quickstart.ipynb) | A browser | Not tested yet |

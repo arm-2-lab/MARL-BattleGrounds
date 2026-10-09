@@ -254,6 +254,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Read the version from the tag
         env:
@@ -316,6 +318,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Read the version from the tag
         env:
@@ -329,7 +333,7 @@ jobs:
           docker system prune -af
           df -h /
 
-      - name: Build and play two games with a built-in model on the CPU
+      - name: Build and play two games with the baked-in Season 0 model on the CPU
         run: |
           docker build -f docker/Dockerfile --build-arg BUILD=cuda12 \
             --label org.opencontainers.image.source=https://github.com/oceansystemslab/MARL-BattleGrounds \

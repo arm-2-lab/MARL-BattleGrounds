@@ -68,6 +68,27 @@ def team(name: str) -> str:
     return name
 
 
+def runs_own_code(reference: str) -> bool:
+    """Say whether a team runs the researcher's own code or files.
+
+    Parameters
+    ----------
+    reference : str
+        A team after ``team`` has turned short names into released names.
+
+    Returns
+    -------
+    bool
+        True for a ``module:function`` factory (any value with a colon, except
+        an ``hf://`` address) or a file or folder that exists, such as a saved
+        model. False for ``manual``, built-in names, released names and typos.
+        ``main`` keeps the traceback of an error from such a team, because it
+        points into that code.
+    """
+    has_factory = ":" in reference and not reference.startswith("hf://")
+    return has_factory or os.path.exists(reference)
+
+
 def parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     """Read the command line.
 
@@ -152,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
         refuses (for example a port already in use). Then a plain message is
         printed instead of a traceback, with the team names for a setting.
 
+    Raises
+    ------
+    ValueError, OSError
+        Only when a team runs your own code or files (see ``runs_own_code``):
+        then the error keeps its traceback, which points into that code.
+
     Notes
     -----
     Sets ``XLA_PYTHON_CLIENT_PREALLOCATE=false`` unless it is already set, so
@@ -168,26 +195,28 @@ def main(argv: list[str] | None = None) -> int:
             "(use 127.0.0.1, not localhost).",
             flush=True,
         )
+    teams = (team(arguments.team_a), team(arguments.team_b))
     try:
         return marl_bgs.battle_client(
             map_id=arguments.map,
-            team_a=team(arguments.team_a),
-            team_b=team(arguments.team_b),
+            team_a=teams[0],
+            team_b=teams[1],
             port=arguments.port,
             replay_port=arguments.replay_port,
             open_browser=not arguments.no_browser,
         )
-    except ValueError as error:
+    except (ValueError, OSError) as error:
+        if any(runs_own_code(reference) for reference in teams):
+            raise
         print(f"play.py: {error}", file=sys.stderr)
+        if isinstance(error, OSError):
+            return 1
         print(
             "Teams: manual, " + ", ".join(TRAINED_TEAMS) + ", tdm-alpha, tdm-beta, "
             "tdm-gamma, random, or a saved model folder. Maps: 0 to 51.",
             file=sys.stderr,
         )
         return 2
-    except OSError as error:
-        print(f"play.py: {error}", file=sys.stderr)
-        return 1
 
 
 if __name__ == "__main__":
