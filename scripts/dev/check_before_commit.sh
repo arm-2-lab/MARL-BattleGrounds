@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Check an already frozen, nonempty staged candidate before a Codex commit.
+# Check an already frozen, nonempty staged candidate before a commit.
 # Usage: scripts/dev/check_before_commit.sh [--timings DIR]. Requires Git, the
 # prepared uv environment, Node/npm and installed browser dependencies. Reject
 # tracked unstaged changes and nonignored untracked files. Run the complete Python
@@ -44,7 +44,7 @@ require_frozen_staged_candidate() {
   local untracked=""
 
   if git -C "${REPO_ROOT}" diff --cached --quiet --exit-code HEAD --; then
-    echo "error: the Codex pre-commit gate requires a nonempty staged candidate." >&2
+    echo "error: the pre-commit gate requires a nonempty staged candidate." >&2
     return 2
   fi
   if ! git -C "${REPO_ROOT}" diff --quiet --exit-code --; then

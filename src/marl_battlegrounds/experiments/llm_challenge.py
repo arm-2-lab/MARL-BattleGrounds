@@ -1,6 +1,6 @@
 """Play a language-model System against a field and in the endgame scenarios.
 
-Start a model server first (docs/llm/qwen_recipe.md shows how), then play the
+Start a model server first (docs/llm.md shows how), then play the
 Season 0 field, the eight endgame scenarios, or both:
 
     JAX_PLATFORMS=cpu python -m marl_battlegrounds.experiments.llm_challenge \

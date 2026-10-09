@@ -1,7 +1,7 @@
 """Check the shared outer-JIT policy and read-only continuation identity.
 
 Each caller receives its own options dictionary. The identity records current
-JAX settings and stable M8 runtime fields, including random-number settings that
+JAX settings and stable evaluation runtime fields, including random-number settings that
 can change the next draw. Capturing it does not alter process settings. These
 host checks do not establish numerical equivalence or GPU compilation cost.
 """

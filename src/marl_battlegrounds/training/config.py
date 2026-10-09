@@ -337,7 +337,7 @@ default="mappo"
         actor is selected from these results. None skips this optional work.
     random_initialization_result : str or None, default=None
         Original runner result copied to a JSON file for initialization reuse.
-        Requires Random diagnostics. Its actor inference, task and complete M8
+        Requires Random diagnostics. Its actor inference, task and complete evaluation
         evidence must match before output or recovery changes. Original evidence
         paths must remain available; later captures still run their own games.
     slot_diagnostic : bool, default=False

@@ -1,8 +1,7 @@
 /*
  * BattleClient base: the tokens, type and small shared parts of the live
  * combat screen (the BattleClient and the DevClient combat screen), ported
- * from the approved BattleClient vision page
- * (artifacts/visual-overhaul-20260927/battleclient/vision_template.html).
+ * from the approved BattleClient vision page (a maintainers' design file).
  *
  * Owns: the vision's color tokens on #bc, the #bc root (font, size, color,
  * no text selection), the page background and one-screen body for live play,

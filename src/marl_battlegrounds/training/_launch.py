@@ -1,4 +1,4 @@
-"""Prepare and run a fixed local PPO package without an active Codex session.
+"""Prepare and run a fixed local PPO package without an active terminal session.
 
 Preparation reads a committed Git tree or freezes current working files, builds
 a separate pinned environment and copies the frozen panel when needed.

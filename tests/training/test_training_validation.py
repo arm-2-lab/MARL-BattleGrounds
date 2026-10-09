@@ -1,4 +1,4 @@
-"""Check exact validation schedules, frozen panels and resumed M8 game tasks.
+"""Check exact validation schedules, frozen panels and resumed evaluation game tasks.
 
 CPU artifact fixtures use untrained MAPPO only. A short-horizon fixture exercises
 the real writer/evaluator recovery path; it is not an admitted learning trial.

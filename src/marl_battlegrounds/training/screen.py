@@ -1,12 +1,12 @@
 """Prepare and run the declared five-minute MAPPO configuration screen.
 
 This host driver owns one fixed twelve-case experiment, its deadline and launch
-commands. The ordinary trainer owns learning and recovery; M8 owns evaluation;
-the shared analysis module owns reports. Importing this module or reading status
-does not import JAX. Run ``python -m marl_battlegrounds.training.screen --help``
-for preparation and launch commands. Preparation never starts the experiment.
-The screen keeps its original scoring: its declaration pins red_zone_depth 0.0
-(one point per death) for training, content identity and Random checks.
+commands. The ordinary trainer owns learning and recovery; the evaluation package owns
+games; the shared analysis module owns reports. Importing this module or reading status
+does not import JAX. Run ``python -m marl_battlegrounds.training.screen --help`` for
+preparation and launch commands. Preparation never starts the experiment. The screen
+keeps its original scoring: its declaration pins red_zone_depth 0.0 (one point per
+death) for training, content identity and Random checks.
 """
 
 from __future__ import annotations

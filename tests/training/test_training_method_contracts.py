@@ -1,43 +1,37 @@
 """Check approved additions against frozen method contracts.
 
-The fixture ``tests/fixtures/method_contracts.json`` was captured on CPU before
-PQN-VDN existed, for MAPPO, IPPO, feedforward MAPPO, feedforward IPPO and QMIX,
-and stays byte-identical. It holds SHA256 digests, so
-``tests/fixtures/method_contracts_raw_v1.json`` holds the raw pre-Red-Zone
-values behind three of them (actor layout, learner-state layout at 4 games
-and blocks of 4 rounds, and collection details). This file first proves the
-raw file genuine: each raw value's digest equals the committed digest. It then
-requires each current value to equal the old one after exactly these
-differences and nothing else: in the actor layout, only the input kernel's
-rows go from 5,164 to 5,165; in the learner state, every leaf with a 5,164
-axis goes to 5,165 (MAPPO 4 leaves, IPPO 7, FF-MAPPO 4, FF-IPPO 7, QMIX 5),
-every leaf with a 919 axis goes to 920 (MAPPO 3, FF-MAPPO 3, QMIX 25, IPPO
-and FF-IPPO none), every context_features leaf's last axis goes from 19 to 20
-(2 each for the PPO methods, 3 for QMIX), and exactly three float32
-team_deathmatch_red_zone_depth leaves appear, each right after its
-team_deathmatch_score_threshold leaf (the env default config (4,), the state
-config (4,) and the tracked source configs (42,)). M11.5 adds exactly the nine
-listed rolling-history fields, one spare history slot (20 to 21), and one
-permanent-pin counter row (21 to 22). Final leaf counts are 348 (MAPPO, IPPO),
-275 (FF) and 427 (QMIX). Collection details add history_capture_capacity=20 and
-opponent_rows=22; only the existing content_binding may differ. In the schema
-dictionary
-only actor_input and training_state go from 1 to 2, and the frozen
-pre-Red-Zone dictionary equals the recorded one. The schema-1 actor template
-equals the old actor layout exactly. Historical method settings gain only
-explicit parameter_sharing="all" (and QMIX reward_scale=1.0, which saved
-configs leave out at that value). The default ``config_to_dict`` equals the
-recorded one plus the explicitly listed history/partner defaults,
-retain_all_actors=False and "red_zone_depth": 5.0, placed right after
-score_threshold_curriculum. Older settings remain exact. The original fixture
-is not rewritten when an approved optional setting is added.
-Unchanged exactly: the dependency names
-(Flashbax for QMIX only), the inference identity of one fixed synthetic actor
-description in the left frame, the System registration IDs of all-ones
-schema-1-shaped actors with the default hooks at scale 1.0 in the world frame
-and scale 0.01 in the left frame (the factories do not check widths), and the
-launch probe's source text. Only values that do not depend on the run, the
-machine or the CPU thread count are compared.
+The fixture ``tests/fixtures/method_contracts.json`` was captured on CPU before PQN-VDN
+existed, for MAPPO, IPPO, feedforward MAPPO, feedforward IPPO and QMIX, and stays
+byte-identical. It holds SHA256 digests, so
+``tests/fixtures/method_contracts_raw_v1.json`` holds the raw pre-Red-Zone values behind
+three of them (actor layout, learner-state layout at 4 games and blocks of 4 rounds, and
+collection details). This file first proves the raw file genuine: each raw value's
+digest equals the committed digest. It then requires each current value to equal the old
+one after exactly these differences and nothing else: in the actor layout, only the
+input kernel's rows go from 5,164 to 5,165; in the learner state, every leaf with a
+5,164 axis goes to 5,165 (MAPPO 4 leaves, IPPO 7, FF-MAPPO 4, FF-IPPO 7, QMIX 5), every
+leaf with a 919 axis goes to 920 (MAPPO 3, FF-MAPPO 3, QMIX 25, IPPO and FF-IPPO none),
+every context_features leaf's last axis goes from 19 to 20 (2 each for the PPO methods,
+3 for QMIX), and exactly three float32 team_deathmatch_red_zone_depth leaves appear,
+each right after its team_deathmatch_score_threshold leaf (the env default config (4,),
+the state config (4,) and the tracked source configs (42,)). History captures add
+exactly the nine listed rolling-history fields, one spare history slot (20 to 21), and
+one permanent-pin counter row (21 to 22). Final leaf counts are 348 (MAPPO, IPPO), 275
+(FF) and 427 (QMIX). Collection details add history_capture_capacity=20 and
+opponent_rows=22; only the existing content_binding may differ. In the schema dictionary
+only actor_input and training_state go from 1 to 2, and the frozen pre-Red-Zone
+dictionary equals the recorded one. The schema-1 actor template equals the old actor
+layout exactly. Historical method settings gain only explicit parameter_sharing="all"
+(and QMIX reward_scale=1.0, which saved configs leave out at that value). The default
+``config_to_dict`` equals the recorded one plus the explicitly listed history/partner
+defaults, retain_all_actors=False and "red_zone_depth": 5.0, placed right after
+score_threshold_curriculum. Older settings remain exact. The original fixture is not
+rewritten when an approved optional setting is added. Unchanged exactly: the dependency
+names (Flashbax for QMIX only), the inference identity of one fixed synthetic actor
+description in the left frame, the System registration IDs of all-ones schema-1-shaped
+actors with the default hooks at scale 1.0 in the world frame and scale 0.01 in the left
+frame (the factories do not check widths), and the launch probe's source text. Only
+values that do not depend on the run, the machine or the CPU thread count are compared.
 """
 
 # pyright: reportPrivateUsage=false

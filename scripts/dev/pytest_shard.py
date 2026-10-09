@@ -7,8 +7,8 @@ file's cost in seconds, may pull known slow function families out of their
 file, and keeps every parameterized family indivisible. Files missing from the
 table cost one unit per collected test, and table entries for tests that no
 longer exist are ignored. ``scripts/dev/shard_costs.py`` refreshes the table
-from timings saved by ``scripts/dev/check.sh --timings``;
-docs/dev/quality_gates.md explains the routine.
+from timings saved by ``scripts/dev/check.sh --timings``; its docstring gives
+the routine.
 """
 
 from __future__ import annotations

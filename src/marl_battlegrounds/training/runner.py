@@ -819,7 +819,7 @@ def train(
     Runs synchronously and owns its files/process lock until completion. Device
     selection belongs to the caller's environment before importing JAX. No
     budget extension, replacement seed or silent retry occurs. Validation uses
-    independent frozen Systems and keys, with its own saved M8 records, and
+    independent frozen Systems and keys, with its own saved evaluation records, and
     plays under the run's red_zone_depth. Setup prepares the training content
     once (checking the depth against every map width) before a new
     validation panel is published, and passes it to the learner; a ranked
@@ -2902,10 +2902,10 @@ def _identity(value: Any) -> Any:  # noqa: ANN401
 
 
 def _runtime_details(package_version: str, num_envs: int) -> dict[str, Any]:
-    """Read M8 runtime facts and declared device selectors once per attempt.
+    """Read evaluation runtime facts and declared device selectors once per attempt.
 
     package_version is the verified source version and num_envs is the declared
-    positive batch. Reuse M8's backend/device/precision record after setup has
+    positive batch. Reuse evaluation's backend/device/precision record after setup has
     selected JAX. Environment values describe selectors, not verified physical
     GPU identities; the frozen launch package owns its UUID/PCI verification.
     No model call, timing, transfer, file write or driver query occurs here.
@@ -4036,9 +4036,9 @@ class _Run:
     def prune_recovery(self) -> None:
         """Keep two recent recovery payloads and explicitly used candidate boundaries.
 
-        Only payload directories of older checkpoints from this active attempt's
-        saved recovery list are removed after a new durable pointer. Small
-        ancestry descriptions, actor exports and all M8 recording bundles remain.
+        Only payload directories of older checkpoints from this active attempt's saved
+        recovery list are removed after a new durable pointer. Small ancestry
+        descriptions, actor exports and all evaluation recording bundles remain.
         """
         from marl_battlegrounds.training.checkpoints import artifact_directory
 
@@ -4393,7 +4393,7 @@ class _Run:
         actor is this saved boundary's immutable export. Initialization may reuse
         the fully verified original result configured by the caller. Capture
         timings describe this run just before evaluation/reuse. Original task,
-        actor, checkpoint and M8 pass identities stay unchanged on reuse.
+        actor, checkpoint and evaluation pass identities stay unchanged on reuse.
         Publish the accumulated records and existing host game and combat means.
         Combat changes compare equal-map mean kills minus deaths with the
         verified initialization. They are early learning clues, not native wins.

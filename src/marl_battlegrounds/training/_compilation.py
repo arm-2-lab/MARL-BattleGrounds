@@ -37,7 +37,7 @@ def execution_identity(
     Parameters
     ----------
     runtime : mapping or None, default None
-        Current M8 runtime-provenance JSON, when already captured by the caller.
+        Current evaluation runtime-provenance JSON, when already captured by the caller.
         Reuse its backend, device kind, runtime version and precision. None calls
         that shared capture owner and may initialize JAX's selected backend.
         Do not pass a saved or guessed record as the current runtime.

@@ -1138,7 +1138,7 @@ def validate_host_state(
     validation_options : mapping or None, default=None
         Already frozen partner bindings from the runner's validation setup.
         Required when saved panel games contain deployed teams. Their recorded
-        slots and rosters rebuild the actual teams for M8 identity verification;
+        slots and rosters rebuild the actual teams for evaluation identity verification;
         no client is serialized and no policy is called. Bare tasks need no value.
 
     Returns

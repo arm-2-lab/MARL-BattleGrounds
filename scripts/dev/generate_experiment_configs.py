@@ -1,13 +1,13 @@
 """Generate packaged Hydra settings from the existing configuration records.
 
-Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or
-add ``--check`` to reject drift without writing. Requires the hydra extra.
-Only packaged YAML changes. This tool starts no numerical backend or training;
-software_check values exercise wiring and are not paper hyperparameters.
-The default recipe holds the settings of each method's tournament policy run
-(SELECTED_RECIPES; docs/training/hyperparameter_search.md, Final Policies): its
-seed, learner settings, games, reward and 250,675,200-transition budget, and the
-search's training and validation settings. The dataclass defaults are unchanged.
+Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or add
+``--check`` to reject drift without writing. Requires the hydra extra. Only packaged
+YAML changes. This tool starts no numerical backend or training; software_check values
+exercise wiring and are not paper hyperparameters. The default recipe holds the settings
+of each method's tournament policy run (SELECTED_RECIPES;
+scripts/paper_experiments/hyperparameter_search.md, Final Policies): its seed, learner
+settings, games, reward and 250,675,200-transition budget, and the search's training and
+validation settings. The dataclass defaults are unchanged.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ _TOURNAMENT_PROTOCOL: dict[str, Any] = {
     "retain_all_actors": True,
 }
 # The settings of each method's tournament policy run, with its seed
-# (docs/training/hyperparameter_search.md, Final Policies). recipe=default
+# (scripts/paper_experiments/hyperparameter_search.md, Final Policies). recipe=default
 # applies them over the dataclass defaults; every value is that run's saved
 # one. For QMIX that run's recipe differs from the method's final recipe
 # (target copies every 128 updates instead of reward scale 10).
@@ -154,10 +154,10 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
 }
 
 
-# The Season 0 field in rank order: the six tournament actors (relative to
-# models_dir, the hyperparameter-search root; docs/training/hyperparameter_search.md,
-# "The six tournament policies") and the three scripted systems, then Random as
-# a reference floor that is not a member of the field.
+# The Season 0 field in rank order: the six tournament actors (relative to models_dir,
+# the hyperparameter-search root; scripts/paper_experiments/hyperparameter_search.md,
+# "The six tournament policies") and the three scripted systems, then Random as a
+# reference floor that is not a member of the field.
 SEASON_0_FIELD = (
     (
         "Recurrent IPPO",
@@ -211,10 +211,9 @@ SEASON_0_RECORDED_NAMES = {
 }
 
 
-# The training history of each Season 0 baseline in rank order: its 40M run,
-# then the run that continued it to 250M, relative to runs_dir, the
-# hyperparameter-search root (docs/training/hyperparameter_search.md, "The six
-# tournament policies").
+# The training history of each Season 0 baseline in rank order: its 40M run, then the
+# run that continued it to 250M, relative to runs_dir, the hyperparameter-search root
+# (scripts/paper_experiments/hyperparameter_search.md, "The six tournament policies").
 SEASON_0_LINEAGES = (
     ("Recurrent IPPO", "shapes-and-ppo", "250m", "ippo-reference--seed-20261001"),
     (
@@ -604,7 +603,7 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
-    # The qualified local Qwen recipe (docs/llm/qwen_recipe.md) with the 9B
+    # The qualified local Qwen recipe (docs/llm.md) with the 9B
     # model; the server is started separately with the recipe's settings.
     result["llm_challenge.yaml"] = {
         "defaults": ["_self_"],

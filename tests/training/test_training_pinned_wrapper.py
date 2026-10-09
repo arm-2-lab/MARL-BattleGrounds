@@ -1,22 +1,20 @@
 """Check a named pinned System inside the compiled Team B opponent wrapper.
 
-With a JAX System pinned, lanes on the separate permanent-pin route (-2) act
-exactly as Team B of M8's own apply_systems with that System, for rosters of three and
-five actors, and the other lanes act exactly as the unpinned wrapper; a step
-with no pinned lane never calls the pinned System and leaves its memory
-unchanged; Systems that return a 2-tuple, a 3-tuple or a SystemOutput route
-alike; a Policy adapter uses the smallest fitting quarter, half or full batch,
-with no repeated capacities for tiny batches. Exact actor call counts cover
-zero pins and both capacity boundaries; actions, memory and the full random
-key words equal M8's in every route; when a
-game ends, the new game's pinned lane starts from fresh memory and a lane
-moved off the pinned System stops using it, exactly as M8 resets memory, for a
-generic System and a Policy adapter, including switches between all three
-capacities; a Policy whose NumPy memory template is
-changed after setup still starts pinned games from the snapshot; a pinned
-System with its own reset_memory hook and a lane-second memory layout runs
-through the wrapper's combined hook and matches M8's direct route; and a
-host-execution System is refused as the wrapper's pinned System.
+With a JAX System pinned, lanes on the separate permanent-pin route (-2) act exactly as
+Team B of evaluation's own apply_systems with that System, for rosters of three and five
+actors, and the other lanes act exactly as the unpinned wrapper; a step with no pinned
+lane never calls the pinned System and leaves its memory unchanged; Systems that return
+a 2-tuple, a 3-tuple or a SystemOutput route alike; a Policy adapter uses the smallest
+fitting quarter, half or full batch, with no repeated capacities for tiny batches. Exact
+actor call counts cover zero pins and both capacity boundaries; actions, memory and the
+full random key words equal evaluation's in every route; when a game ends, the new
+game's pinned lane starts from fresh memory and a lane moved off the pinned System stops
+using it, exactly as evaluation resets memory, for a generic System and a Policy
+adapter, including switches between all three capacities; a Policy whose NumPy memory
+template is changed after setup still starts pinned games from the snapshot; a pinned
+System with its own reset_memory hook and a lane-second memory layout runs through the
+wrapper's combined hook and matches evaluation's direct route; and a host-execution
+System is refused as the wrapper's pinned System.
 """
 
 from __future__ import annotations

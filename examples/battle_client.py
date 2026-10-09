@@ -2,7 +2,7 @@
 
 Copy this file anywhere after installing MARL-BattleGrounds with its training
 extra. Run ``python battle_client.py --help`` for modes and each mode's ``--help``
-for paths. The companion guide is docs/battle_client_tutorial.md in the source
+for paths. The companion guide is docs/battle_client.md in the source
 release. No checkout, other example, private file or test module is imported.
 
 Interactive modes save under recordings/MODE by default and block until Exit or

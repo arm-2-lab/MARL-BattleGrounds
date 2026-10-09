@@ -1,7 +1,7 @@
 """Check opt-in Random captures, shared evidence and exact runner recovery.
 
 Small CPU learners use real K20/H300 Random games on the five fixed validation
-maps. The checks keep native M8 records, prove diagnostics do not change learner
+maps. The checks keep native evaluation records, prove diagnostics do not change learner
 state or keys, and reject altered shared evidence before recovery writes.
 New Random records retain sampling facts and unavailable public bounds through
 initialization reuse and resume; one paired draw per map is not an interval.
@@ -612,8 +612,8 @@ def test_screen_analysis_reads_real_random_game_evidence(
     run = package / "jobs" / "b4-t1-fixture" / "run"
     run.mkdir(parents=True)
     source = random_runs["first"].run_dir
-    # Keep original absolute actor and M8 evidence paths. Only small host records
-    # need copying; this one CPU case does not pretend to be the 12-case study.
+    # Keep original absolute actor and evaluation evidence paths. Only small host
+    # records need copying; this one CPU case does not pretend to be the 12-case study.
     for name in (
         "run_details.json",
         "status.json",

@@ -1,12 +1,12 @@
 """Check saved-only selection evidence, using small signed files and known game rows.
 
 Actor payload hashes and learner descriptions use the real checkpoint readers.
-The M8 table reader is replaced with fixed completed games, so these tests check
+The evaluation table reader is replaced with fixed completed games, so these tests check
 joins and rejection boundaries without playing games or constructing a model.
 They cover original and fresh confirmations, historical rules, actor corruption,
 pruned parent payloads, incomplete runs, saved score/identity changes, sampling
 facts bound to exact passes, and files changed during inspection. A separate
-retained real-run check covers M8 CSV reads.
+retained real-run check covers evaluation CSV reads.
 """
 
 # pyright: reportPrivateUsage=false

@@ -13,7 +13,8 @@
 # limitations under the License.
 #
 # Adapted from Mava for MARL-BGs.
-# See docs/training/source_reuse.md for source identities and deliberate changes.
+# See docs/method_sources.md in the source repository for source identities
+# and deliberate changes.
 #
 # Value normalization follows on-policy under the following MIT terms.
 # MIT License

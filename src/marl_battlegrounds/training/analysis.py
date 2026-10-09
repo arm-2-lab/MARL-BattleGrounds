@@ -1,7 +1,7 @@
 """Summarize saved training and frozen validation without running a learner.
 
 The runner, CLI and researchers share selection, paired uncertainty and report
-generation here. M8 remains the owner of recorded game scores and metrics.
+generation here. Evaluation remains the owner of recorded game scores and metrics.
 Score fields are points and kill fields are kills: under the Red Zone rule a
 death can give 2 points but is still one kill, so _kill_columns names where each
 result's kills live. Reports read committed trainer records and never rewrite
@@ -176,7 +176,7 @@ def list_runs(
 # training/reward_recipes.py (_KILL, _RED_ZONE_KILL, _DAMAGE, _PRIEST_HEAL,
 # _HEAL_RANGE, _DEATH, _RED_ZONE_DEATH, _ZONE_TICK). They are repeated here so
 # the progress view can turn saved amounts back into counts without importing
-# JAX; tests/test_training_study_progress.py checks that both copies agree.
+# JAX. Keep both copies equal when a price changes.
 _RECIPE_PRICES: dict[str, float] = {
     "enemy_death_credit": 0.05,
     "enemy_red_zone_death_credit": 0.10,
@@ -629,10 +629,10 @@ def summarize_validation(
     Parameters
     ----------
     rows : sequence of mappings
-        Saved M8 rows augmented with opponent and spawn_locations. Required fields
-        are map_id, seed_id, opponent, spawn_locations and system_game_score. Each
-        map/seed/opponent has exactly two ends. Optional scores (points), kills
-        and lengths are reported only when every game in that cell supplies them.
+        Saved evaluation rows augmented with opponent and spawn_locations. Required
+        fields are map_id, seed_id, opponent, spawn_locations and system_game_score.
+        Each map/seed/opponent has exactly two ends. Optional scores (points), kills and
+        lengths are reported only when every game in that cell supplies them.
     maps, opponents : sequences
         Nonempty distinct map IDs and frozen opponent labels in declared order.
     seed_pairs : int
@@ -648,7 +648,7 @@ def summarize_validation(
         result fields unchanged.
     actual_kills : bool, default=False
         True means the rows also carry recorded kills (team_a_kills and
-        team_b_kills from M8's priority metrics). Each cell then also reports
+        team_b_kills from evaluation's priority metrics). Each cell then also reports
         mean_team_a_kills and mean_team_b_kills, and mean_kill_difference uses
         these kills. Use it for every result built with a Red Zone depth,
         because a Red Zone death gives 2 points but is still one kill. False
@@ -1180,13 +1180,13 @@ def summarize_slot_diagnostic(
 ) -> Record:
     """Compare a fixed focal model across slot blocks while keeping its side fixed.
 
-    Rows require map_id, seed_id, focal_team (0/1), spawn_locations (0/1) and M8's
-    system_game_score. Four games form each independent map/seed block. Team B's
-    focal score is one minus M8's Team A score. maps are distinct and equally
-    weighted; seed_blocks is at least two. Return primary side-balanced and both
-    physical-side effects, normal p-values, Holm-adjusted side p-values and counts.
-    The independent seeds, unchanged physical conditions and numerical equivalence
-    of checkpoints are caller evidence obligations. Missing, duplicate or malformed
+    Rows require map_id, seed_id, focal_team (0/1), spawn_locations (0/1) and
+    evaluation's system_game_score. Four games form each independent map/seed block.
+    Team B's focal score is one minus evaluation's Team A score. maps are distinct and
+    equally weighted; seed_blocks is at least two. Return primary side-balanced and both
+    physical-side effects, normal p-values, Holm-adjusted side p-values and counts. The
+    independent seeds, unchanged physical conditions and numerical equivalence of
+    checkpoints are caller evidence obligations. Missing, duplicate or malformed
     conditions raise ValueError. This host-only helper changes no files or inputs.
     """
     _integer(seed_blocks, "seed_blocks", minimum=2)
@@ -1628,7 +1628,7 @@ def _summary(directory: Path) -> Record:
 
 
 def _runtime_text(runtime: object) -> str:
-    """Describe saved M8 runtime facts; missing historical fields stay unknown."""
+    """Describe saved evaluation runtime facts; missing old fields stay unknown."""
     if not isinstance(runtime, dict):
         return "Unknown; no runtime record was saved."
     record = cast(Record, runtime)
@@ -5717,7 +5717,7 @@ def _screen_evidence(
     seed: int | None,
     deployment: Mapping[str, Any] | None = None,
 ) -> tuple[Record, list[Record]]:
-    """Verify one saved Random task and return its summary and original M8 rows.
+    """Verify one saved Random task and return its summary and original evaluation rows.
 
     result is a runner random_diagnostics entry, including original task and
     artifact identities. run_id and seed bind a fresh capture to its own run;
@@ -5727,7 +5727,7 @@ def _screen_evidence(
     The result's own red_zone_depth (None when it was saved before the Red Zone
     rule) selects the task layout and whether rows carry recorded kills.
     Existing validation owns task and score verification;
-    M8 owns CSV loading. No actor is applied and no game or file is changed.
+    Evaluation owns CSV loading. No actor is applied and no game or file is changed.
     """
     from marl_battlegrounds.training.validation import (
         _verified_random_result,  # pyright: ignore[reportPrivateUsage]
@@ -6086,14 +6086,14 @@ def analyze_screen(
     Parameters
     ----------
     package_dir : path
-        Frozen screen package with declaration.json and its ordered cases list.
-        Optional study.json and budgets.json hold lifecycle facts and fixed
-        timing-based budgets. Trials use jobs/<name>/run and ordinary trainer
-        records, including random_diagnostics.json. Referenced shared initial
-        results retain their original task/checkpoint/actor IDs and raw M8 paths.
-        Initial actors are shared only within one training seed. Started cases
-        keep their frozen config, latest checkpoint pointer and
-        ancestor descriptions. Original actor and M8 evidence remain readable.
+        Frozen screen package with declaration.json and its ordered cases list. Optional
+        study.json and budgets.json hold lifecycle facts and fixed timing-based budgets.
+        Trials use jobs/<name>/run and ordinary trainer records, including
+        random_diagnostics.json. Referenced shared initial results retain their original
+        task/checkpoint/actor IDs and raw evaluation paths. Initial actors are shared
+        only within one training seed. Started cases keep their frozen config, latest
+        checkpoint pointer and ancestor descriptions. Original actor and evaluation
+        evidence remain readable.
     output_dir : path or None, default=None
         Destination for derived reports, default package_dir/reports. Replace only
         run_summary.md, baseline_trials.csv, validation_cells.csv,

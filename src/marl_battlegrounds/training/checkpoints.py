@@ -3,7 +3,7 @@
 The runner owns its run lock, immutable settings and training logs. This module
 owns synchronous Orbax payloads, file integrity, publication and checked numerical
 restore. Restore reads everything before the optional recording recovery helper
-can rewind M8 files. Actor exports need neither training content nor a learner.
+can rewind evaluation files. Actor exports need neither training content nor a learner.
 All methods share the file layout; the saved model schema names the method.
 A QMIX learner checkpoint's actor payload holds only the Q-network parameters;
 its epsilon, targets, mixer, optimizer and replay are in the state payload.
@@ -966,7 +966,7 @@ def _check_recording_registration(record: dict[str, Any], writer_path: Path) -> 
     """Match constructor facts to the writer's already-durable registration.
 
     This reads the public run manifest before asking the writer to make a token.
-    M8 still owns all token/table/replay checks and every recording mutation.
+    Evaluation still owns all token/table/replay checks and every recording mutation.
     """
     details = _read_json(writer_path / "run_details.json")
     key = json.dumps((record["phase"], record["pass_id"]), separators=(",", ":"))
@@ -1602,7 +1602,7 @@ def _require_finished_host_games(unfinished: np.ndarray, name: str) -> None:
 def resume_recording(
     restored: RestoredCheckpoint, run_dir: str | Path
 ) -> RunWriter | None:
-    """Mark checked recovery, then open M8 with its original token/registrations.
+    """Mark checked recovery, then open the evaluation writer with its saved token.
 
     The caller holds the run lock and must pass restore_checkpoint's result.
     Returns an open writer when recording was enabled, otherwise None. The

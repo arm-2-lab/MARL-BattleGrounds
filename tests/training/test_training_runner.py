@@ -372,7 +372,7 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     def short_horizon(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         return original_evaluate(*args, **kwargs, max_steps=1)
 
-    # Only the fixture's game horizon changes. M8 still owns actual games,
+    # Only the fixture's game horizon changes. Evaluation still owns actual games,
     # saved outcomes and their scores; production selection stays untouched.
     monkeypatch.setattr(evaluator, "evaluate", short_horizon)
 

@@ -40,9 +40,8 @@
  *
  * Boundary: pure geometry. No image download, HTML parsing, simulator lookup
  * or game fact; callers choose accessible names, size, paint and placement.
- * The sigil geometry is generated data from the design store
- * (artifacts/visual-overhaul-20260927/skins/icons-and-emblems.js GEO), written
- * by artifacts/runefield-implementation/b2-statuses-icons/gen_sigil_data.py.
+ * The sigil geometry is generated data from the maintainers' design files,
+ * written into the GENERATED block below by a maintainer script.
  * Export-safe SVG only: flat fills, strokes, opacity and transforms.
  */
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";

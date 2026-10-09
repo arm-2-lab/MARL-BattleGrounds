@@ -736,7 +736,8 @@ def _validate_training_continuation(  # pyright: ignore[reportUnusedFunction]
     It raises ValueError on incompatible evidence. It does not authenticate
     arbitrary objects, detect a discarded matching branch or implement durable
     learner resume. Preserve descriptor and carry together, with lane order
-    unchanged. Packet 4 owns serializing and validating a full learner checkpoint.
+    unchanged. The checkpoint module owns serializing and validating a full learner
+    checkpoint.
     """
     _check_training_schedule(collection.schedule)
     if recheck_installed_content:
@@ -1720,7 +1721,7 @@ def init_training_collection(
         string resolved by ``load_method`` (a built-in name, an absolute
         actor-export or full learner checkpoint directory, or ``module:function``).
         Requires a positive
-        pinned_opponent_share. It is frozen once with M8's
+        pinned_opponent_share. It is frozen once with evaluation's
         ``freeze_evaluation_method`` and registered the way evaluation and
         validation register it. A JAX method runs inside the compiled step,
         with its variables and memory template in the carry as uncommitted
@@ -2874,7 +2875,7 @@ def collect_training_rollout(
     This function synchronizes small counters and is not itself jittable.
 
     When the pinned opponent is a host method, each real round runs as: a
-    compiled reset of finished games, one host call through M8's _host_apply
+    compiled reset of finished games, one host call through evaluation's _host_apply
     for the pinned lanes (HostOpponent.act, which serves each round once), and
     the ordinary compiled step with those actions as data; with a writer, each
     round goes through the same bounded recorder. The rows, padding and
@@ -3672,7 +3673,7 @@ def _host_decision(collection: TrainingCollection, carry: TrainingCarry) -> Tree
     Team B action keys, Team B initialization keys, reset generations (B,),
     completed rounds, failure flag). Resets happen exactly as
     _advance_training_step would do them, so the step that follows finds no
-    pending reset. Keys are derived as M8 derives them for Team B. Pure.
+    pending reset. Keys are derived as evaluation derives them for Team B. Pure.
     """
 
     def reset(values: TrainingCarry) -> TrainingCarry:

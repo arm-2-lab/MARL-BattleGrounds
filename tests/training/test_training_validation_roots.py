@@ -1,12 +1,12 @@
 """Check fresh Random validation roots without running a learning experiment.
 
-The real validation and M8 schedule builders pass roots to a stubbed numerical
+The real validation and evaluation schedule builders pass roots to a stubbed numerical
 executor. Known game rows cover task hashes, native options, strict saved-result
 checks, and unchanged shared initialization. The stub supplies a real frozen
 Policy and its shared registration so sampling facts keep their identity checks.
 CPU JAX key derivation checks the
 routine and confirmation schedules use distinct reset/game/policy start keys.
-A new Random record carries red_zone_depth 5.0 in its schema 3 task and M8
+A new Random record carries red_zone_depth 5.0 in its schema 3 task and evaluation
 options and verifies only at that depth. The same games rewritten as a record
 saved before the Red Zone rule (schema 1 task, no depth option, kills read from
 scores) verify, and are reusable as a shared initialization, only when the

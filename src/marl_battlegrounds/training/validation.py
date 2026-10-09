@@ -1,7 +1,7 @@
-"""Run fixed training-validation tasks through the existing M8 evaluator.
+"""Run fixed training-validation tasks through the existing evaluator.
 
-New panels retain any valid System or Policy and its normal M8 registration.
-Tasks preserve frozen method identities, paired schedules and durable M8 passes.
+New panels retain any valid System or Policy and its normal evaluation registration.
+Tasks preserve frozen method identities, paired schedules and durable evaluation passes.
 Live candidates use those same registrations; custom map and roster conditions
 are recorded before evaluation. Repeated names get distinct panel labels.
 The learner never enters this module. New tasks keep fixed batches and live
@@ -902,7 +902,7 @@ def create_panel(
 
 
 def _method_snapshot(value: object) -> tuple[Any, str, Record, str | None]:
-    """Freeze one valid method and record exactly M8's normal registration.
+    """Freeze one valid method and record exactly evaluation's normal registration.
 
     Strings use the shared built-in/actor-folder/factory loader. A factory is called
     once. Numerical values are frozen; opaque provider state stays declared as
@@ -1496,12 +1496,12 @@ def _load_system_panel(
 ) -> FrozenPanel:
     """Verify a new panel and retain its methods instead of reopening them per pass.
 
-    Supplied bindings replace reload references only when their normal M8 identity
-    matches. Missing live-only methods fail before any writer is opened. Factories
-    are called once on load; later validation rechecks these live snapshots.
-    red_zone_depth names the new task, not an actor-admission rule. Ranking
-    evidence retains its own depth and is checked for valid saved structure.
-    No saved ranking or game is relabelled or reused under different rules.
+    Supplied bindings replace reload references only when their normal evaluation
+    identity matches. Missing live-only methods fail before any writer is opened.
+    Factories are called once on load; later validation rechecks these live snapshots.
+    red_zone_depth names the new task, not an actor-admission rule. Ranking evidence
+    retains its own depth and is checked for valid saved structure. No saved ranking or
+    game is relabelled or reused under different rules.
     """
     entries = content.get("members")
     if (
@@ -1589,7 +1589,7 @@ def panel_task_description(
     env_steps : int or None
         Saved training transitions, 0 or more. None for a live candidate.
     candidate : mapping or None, default=None
-        A frozen M8 method registration. With this route, the task records the
+        A frozen evaluation method registration. With this route, the task records the
         System identity without inventing a learner checkpoint or training step.
     maps : sequence of int or None, default=None
         Distinct installed map IDs. None uses development maps 42 through 46.
@@ -1824,7 +1824,7 @@ def _verify_panel_pass(
     System-panel task: schema 2, schema 4 with depth, or schema 5 with a live
     candidate or custom conditions. member_index chooses its ordered opponent/root.
     num_envs and chunk_size are the intended execution settings. Recorded depth,
-    maps and rosters are asserted against the saved pass. The M8 owner verifies
+    maps and rosters are asserted against the saved pass. The evaluation owner verifies
     generated conditions, actual registrations and saved declarations. It opens
     no writer and calls neither method. A mismatch raises ValueError.
     """
@@ -2167,7 +2167,7 @@ def _validate_system_panel(
     partner_labels: Mapping[str, str] | None = None,
     expected_task: Mapping[str, Any] | None = None,
 ) -> Record:
-    """Run retained methods in stable batches using the ordinary M8 evaluator.
+    """Run retained methods in stable batches using the ordinary evaluator.
 
     Each opponent keeps independent paired game keys. Interrupted tails remain in
     this process with inactive padding, so opaque clients are never serialized.
@@ -2566,7 +2566,7 @@ def _qualify_random(identity: Mapping[str, Any], result: Mapping[str, Any]) -> R
 
 
 def validation_pass_id(task_id: str, opponent: str) -> str:
-    """Identify one fixed-panel M8 pass by its task hash and opponent member name.
+    """Identify one fixed-panel evaluation pass by task hash and opponent name.
 
     Both arguments must be nonempty strings. Return the deterministic SHA-256
     identity used by execution and saved-host validation. No files or games run.
@@ -2615,7 +2615,7 @@ def load_panel(
         panel.json or its directory. Export paths in packaged manifests may be
         relative to the panel directory; historical paths keep their old rule.
     bindings : sequence or None, default=None
-        The existing new-panel methods in saved order; each normal M8 identity
+        The existing new-panel methods in saved order; each normal evaluation identity
         must match. None reloads built-in/actor-folder/factory references once.
         Live-only members require bindings. Historical panels take none.
     red_zone_depth : float or None, default=None
@@ -2760,7 +2760,7 @@ def _pass_directory(
 
 
 def _saved_run(parent: Path, pass_id: str) -> Path | None:
-    """Find the sole M8 run in a task-owned pass folder, rejecting ambiguity.
+    """Find the sole evaluation run in a task-owned pass folder, rejecting ambiguity.
 
     This folder belongs to exactly one persisted task. It is never a general
     newest-run lookup. A malformed or different pass is rejected before recovery.
@@ -2815,13 +2815,13 @@ def evaluation_backend(pending: int, backend: str) -> str:
 
 
 def _execute_request(request: Mapping[str, Any]) -> Path:
-    """Load checked frozen actors and execute one exact M8 pass in this process.
+    """Load checked frozen actors and execute one exact evaluation pass in this process.
 
     request comes from a persisted task or its CPU worker file. It contains actor
     paths/digests, pass/schedule fields, the task's red_zone_depth (map units)
     and a task-owned output parent. Panel and Random passes give the depth to
     evaluate; slot passes build their explicit schedule at that depth. No learner
-    state is accepted. M8 owns scientific resume validation and all writer
+    state is accepted. Evaluation owns scientific resume validation and all writer
     recovery, including refusing a saved pass recorded under another depth.
     """
     from marl_battlegrounds.evaluation.evaluate import evaluate, evaluate_episodes
@@ -2957,12 +2957,12 @@ def _rows(
     focal_team: int | None = None,
     kills: bool = False,
 ) -> list[Record]:
-    """Join M8's complete saved rows to exact schedule conditions after resume.
+    """Join evaluation's complete saved rows to exact schedule conditions after resume.
 
     Parameters
     ----------
     run_dir : Path
-        One complete M8 validation pass.
+        One complete evaluation validation pass.
     pass_id : str
         Its exact pass ID.
     opponent : str
@@ -3042,7 +3042,7 @@ def _validate(
     root_seed: int | None = None,
     expected_task: Mapping[str, Any] | None = None,
 ) -> Record:
-    """Own one exact checkpoint/panel task and reduce its complete saved M8 rows.
+    """Own one exact checkpoint/panel task; reduce its complete saved evaluation rows.
 
     A QMIX or PQN-VDN actor's summary also carries method and optimizer_steps
     from _method_fields; PPO summaries are unchanged. Every game uses
@@ -3233,7 +3233,7 @@ def validate_checkpoint(
     -------
     dict
         Complete native score, paired uncertainty, per-cell results and saved
-        M8 paths. Scores are points; cells also carry mean_team_a_kills and
+        evaluation paths. Scores are points; cells also carry mean_team_a_kills and
         mean_team_b_kills from recorded kills. New panels also report
         mean_kill_difference as a descriptive column; new checkpoint selection
         uses only mean point margin. A QMIX or PQN-VDN actor's summary carries
@@ -3417,7 +3417,7 @@ def validate_random(
         Complete scientific summary, including actual root, task and actor IDs,
         red_zone_depth, native scores (points), recorded kills per cell
         (mean_team_a_kills and mean_team_b_kills), paired-game uncertainty, and
-        saved M8 pass paths. A QMIX or PQN-VDN actor's summary also carries its
+        saved evaluation pass paths. A QMIX or PQN-VDN actor's summary also carries its
         method and its optimizer_steps.
 
     Raises
@@ -3519,7 +3519,7 @@ def read_random_initialization(
 
     deployment : mapping or None, default=None
         Frozen validation_deployment from the owning run. It binds partner
-        registrations, learner slots and custom conditions to saved M8 evidence.
+        registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
 
     Returns
@@ -3601,14 +3601,14 @@ def verify_random_result(
         initial actor identity instead and leaves out a different run's
         run_id and seed.
     red_zone_depth : float or None, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
-        Expected Red Zone depth in map units. The task (schema 3), the M8
+        Expected Red Zone depth in map units. The task (schema 3), the evaluation
         options and the summary, with recorded kills, must all match it. None
         expects a record saved before the Red Zone rule (schema 1 task, no
         depth option, kills read from scores).
 
     deployment : mapping or None, default=None
         Frozen validation_deployment from the owning run. It binds partner
-        registrations, learner slots and custom conditions to saved M8 evidence.
+        registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
 
     Returns
@@ -3621,7 +3621,7 @@ def verify_random_result(
     TypeError
         red_zone_depth is neither None nor a Python float.
     ValueError, OSError
-        Missing or changed evidence: actor files, task, native M8 options,
+        Missing or changed evidence: actor files, task, native evaluation options,
         games or summary, including a record saved under another depth or
         before the rule.
 
@@ -3658,15 +3658,15 @@ def _verified_random_result(
     red_zone_depth: float | None = DEFAULT_TDM_RED_ZONE_DEPTH,
     deployment: Mapping[str, Any] | None = None,
 ) -> tuple[Record, list[Record]]:
-    """Verify a runner's Random result against its original complete M8 evidence.
+    """Verify a runner's Random result against its original evaluation evidence.
 
     Parameters
     ----------
     result : mapping
         One random_diagnostics.json entry, including its original actor_path and
-        summary_path, optional reference_path, reuse flag and capture timings.
-        A shared initialization reference must point to an original, unreused
-        entry. Original task, actor, checkpoint and M8 pass identities stay intact.
+        summary_path, optional reference_path, reuse flag and capture timings. A shared
+        initialization reference must point to an original, unreused entry. Original
+        task, actor, checkpoint and evaluation pass identities stay intact.
     actor_digest : str
         Expected inference identity, including the input scale. Reused initial
         results must match the new learner's initial actor exactly.
@@ -3686,20 +3686,20 @@ def _verified_random_result(
         separately instead of passing a different run's identity here.
     red_zone_depth : float or None, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
         Expected Red Zone depth in map units. A float expects the schema 3
-        task, a "red_zone_depth" M8 option equal to it, and rows and cells
+        task, a "red_zone_depth" evaluation option equal to it, and rows and cells
         with recorded kills. None expects a record saved before the Red Zone
         rule: the schema 1 task, no depth option and kills read from scores.
 
     deployment : mapping or None, default=None
         Frozen validation_deployment from the owning run. It binds partner
-        registrations, learner slots and custom conditions to saved M8 evidence.
+        registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
 
     Returns
     -------
     tuple of dict and list of dict
         Original scientific summary without runner capture fields, followed by
-        its verified M8 episode rows (with team_a_kills and team_b_kills when a
+        its verified evaluation episode rows (with team_a_kills and team_b_kills when a
         depth is expected). Analysis can reuse these host rows without reading
         or reducing the same files again.
 
@@ -3714,20 +3714,19 @@ def _verified_random_result(
 
     Notes
     -----
-    Read-only host work. Verify actor file hashes and reduce saved M8 rows through
-    summarize_validation. New sampling metadata is rebuilt from the saved pass's
+    Read-only host work. Verify actor file hashes and reduce saved evaluation rows
+    through summarize_validation. New sampling metadata is rebuilt from the saved pass's
     checked method facts; its public and conditional bounds must match. Historical
-    summaries without that metadata keep their original conditional calculation.
-    For a QMIX or PQN-VDN actor the M8 focal variables
-    digest in a bare-actor pass is compared with the loaded greedy System's variables
-    (the Q-network plus epsilon 0; for PQN-VDN the network is its parameters
-    plus its frozen normalization statistics, so a statistics-only change
-    breaks reuse), and the rebuilt summary carries its method and
-    optimizer_steps. Deployed passes instead bind the native actor component and
-    declared partner through the existing sampling sidecar and actual pass IDs.
-    This verifies recorded constituents, not unavailable partner weights.
-    No policy call, learner change, writer recovery or new
-    evaluation occurs. This is an integrity check, not a usefulness gate.
+    summaries without that metadata keep their original conditional calculation. For a
+    QMIX or PQN-VDN actor the evaluation focal variables digest in a bare-actor pass is
+    compared with the loaded greedy System's variables (the Q-network plus epsilon 0;
+    for PQN-VDN the network is its parameters plus its frozen normalization statistics,
+    so a statistics-only change breaks reuse), and the rebuilt summary carries its
+    method and optimizer_steps. Deployed passes instead bind the native actor component
+    and declared partner through the existing sampling sidecar and actual pass IDs. This
+    verifies recorded constituents, not unavailable partner weights. No policy call,
+    learner change, writer recovery or new evaluation occurs. This is an integrity
+    check, not a usefulness gate.
     """
     from marl_battlegrounds.evaluation.results import load_results
 
@@ -3890,7 +3889,7 @@ def _verified_random_result(
     focal, opponent = policies["team_a"], policies["team_b"]
     contract = details["evaluation_contract"]
     # A QMIX or PQN-VDN System's variables hold its network and the greedy
-    # epsilon (PQN-VDN also its statistics), so M8 digests that tree; compare
+    # epsilon (PQN-VDN also its statistics), so evaluation digests that tree; compare
     # with the verified loaded System's variables.
     expected_variables = actor["weight_digest"]
     if actor.get("method") in ("qmix", "pqn_vdn"):
@@ -4103,7 +4102,7 @@ def run_slot_diagnostic(
     event_callback: EventCallback | None = None,
     red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
 ) -> Record:
-    """Run the predeclared frozen two-model slot comparison through M8.
+    """Run the predeclared frozen two-model slot comparison through evaluation.
 
     Parameters
     ----------
@@ -4148,7 +4147,7 @@ def run_slot_diagnostic(
 
     Notes
     -----
-    Writes task.json, one M8 pass folder per focal team and
+    Writes task.json, one evaluation pass folder per focal team and
     slot_diagnostic.json under output_dir. This function does not decide when
     trained-model execution is authorized or whether either actor learned
     useful behavior; the runner owns those gates. Every installed map is 20.0

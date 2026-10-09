@@ -1,7 +1,7 @@
 """Check any-System validation, retained host clients and exact panel selection.
 
 Built-ins, independent policies, mixtures, exported actors, JAX methods, host
-methods and import factories share M8 registrations. A local text-JSON client
+methods and import factories share evaluation registrations. A local text-JSON client
 stands in for a language-model service. The real short-horizon CPU evaluator
 proves 32-lane padded execution, complete saved rows and no extra provider calls
 after a task completes. No network client is used. Existing tests keep the old
@@ -13,7 +13,7 @@ depth (read from its recorded configurations, 5.0 or 6.0) with evidence schema
 at a separately declared depth. Setup-order tests supply the source horizon
 without preparing full content, then stop at learner initialization. They check
 frozen identities before allocation and no output before roster preflight.
-Continuation binding tests complete real short CPU training and one-step M8
+Continuation binding tests complete real short CPU training and one-step evaluation
 validation, then resume with retained clients. They omit inherited candidate
 discovery; separate H300 tests verify inherited games and parent ranking. Their
 runtime identity and recording provenance stay fixed while other packet files
@@ -1075,7 +1075,7 @@ def test_live_panel_continuation_rebinds_clients_and_keeps_json_clean(
     def no_candidates(checkpoint: Path, *, declaration: object) -> list[object]:
         return []
 
-    # This checks client wiring with real saved one-step M8 games. The separate
+    # This checks client wiring with real saved one-step evaluation games. The separate
     # H300 continuation test owns inherited-game verification and parent ranking.
     monkeypatch.setattr(evaluator, "evaluate", short)
     monkeypatch.setattr(evaluator, "_verify_evaluation", short_verify)

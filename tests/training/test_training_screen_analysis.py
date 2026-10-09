@@ -4,7 +4,7 @@ Known tables prove native scores, kill margins and whole-block paired changes.
 Training and validation depth labels retain their own recorded values.
 Synthetic run records exercise shared initialization identity, missing evidence,
 unfinished cases, timing scopes and immutable inputs. One report renders real
-headless plots; other cases replace plotting only. M8 loading has its own tests.
+headless plots; other cases replace plotting only. Evaluation loading has its own tests.
 A result that carries a Red Zone depth reads kills from its recorded kill
 columns (two points but one kill for a Red Zone death); an older result reads
 them from its scores, where the two were equal.

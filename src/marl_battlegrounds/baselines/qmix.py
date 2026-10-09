@@ -13,7 +13,8 @@
 # limitations under the License.
 #
 # Adapted from Mava for MARL-BGs.
-# See docs/training/source_reuse.md for source identities and deliberate changes.
+# See docs/method_sources.md in the source repository for source identities
+# and deliberate changes.
 """Provide recurrent QMIX networks, its actor System and one sampled update.
 
 This module adapts Mava's recurrent QMIX (``rec_qmix``) at revision

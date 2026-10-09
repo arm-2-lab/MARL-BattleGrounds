@@ -13,7 +13,8 @@
 # limitations under the License.
 #
 # Adapted from JaxMARL for MARL-BGs.
-# See docs/training/source_reuse.md for source identities and deliberate changes.
+# See docs/method_sources.md in the source repository for source identities
+# and deliberate changes.
 """Provide recurrent PQN-VDN networks, its actor System and one minibatch update.
 
 This module adapts JaxMARL's recurrent PQN-VDN (``pqn_vdn_rnn.py``) at

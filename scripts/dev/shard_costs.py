@@ -20,8 +20,8 @@ profile, spec file and test, for editing
 
 ``update`` and ``plan`` collect (but do not run) the whole Python test suite on
 the CPU to learn the current test families. The scheduler rules themselves
-live in ``scripts/dev/pytest_shard.py``; this tool reuses them. See the
-"Rebalancing the test shards" section of ``docs/dev/quality_gates.md``.
+live in ``scripts/dev/pytest_shard.py``; this tool reuses them. The commands
+above are the whole rebalancing routine; ``CONTRIBUTING.md`` says when to run it.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ case) and hard target copies every 2 steps. A 192-transition run has three
 warmup blocks and then one optimizer step per block. Contracts checked here:
 the plain run validates against Alpha at initialization, during warmup and
 after learning, never selects a warmup actor, confirms, selects, exports,
-loads and evaluates the greedy actor with its real M8 registration, runs the
+loads and evaluates the greedy actor with its real evaluation registration, runs the
 slot comparison, and writes QMIX reports with the QMIX columns and summary
 lines; a recorded run interrupted after a save resumes to the same learner
 numbers, exposure and sampled-use totals as an uninterrupted run without a

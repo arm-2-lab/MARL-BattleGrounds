@@ -221,8 +221,8 @@ def training_keys(
     Supports jit/vmap with dynamic keys/counters and static stream. Traced
     counters must already satisfy numerical bounds. Save root bits, Threefry
     implementation, schema version, batch/lane order and counters for resume.
-    Pass action keys directly to M8, which owns team and actor key derivation.
-    Arbitrary stochastic System initialization may also use M8 episode IDs;
+    Pass action keys directly to evaluation, which owns team and actor key derivation.
+    Arbitrary stochastic System initialization may also use evaluation episode IDs;
     this helper does not promise identical initialization across reset schedules.
     """
     if stream not in _STREAM_TAGS:

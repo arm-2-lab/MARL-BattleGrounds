@@ -1,6 +1,6 @@
 """Check public child validation, frozen roots and original parent actor ownership.
 
-Short CPU learners use real schema-2 M8 validation under the fixed H300 rules.
+Short CPU learners use real schema-2 evaluation validation under the fixed H300 rules.
 These tests inspect saved games and identities; they make no learning or speed
 claim. Small direct selection fixtures prove a better parent can remain selected
 while final always belongs to the child. Historical score-only fixtures request

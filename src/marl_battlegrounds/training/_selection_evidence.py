@@ -2,7 +2,7 @@
 
 The selection owner calls ``read_run_evidence`` before creating a new decision.
 Checkpoint helpers verify actor files and retained learner descriptions; validation
-owns task descriptions and score reduction; M8 owns saved episode tables. This
+owns task descriptions and score reduction; evaluation owns saved episode tables. This
 module joins those records, checks their declared conditions and records the bytes
 read. Continuation references bind original learner, actor and task owners without
 copying parent logs or rewriting their identities. It does not restore arrays,
@@ -101,7 +101,7 @@ def _panel(path: Path, snapshot: _Snapshot) -> validation.FrozenPanel:
     ValueError. No opponent artifact is loaded.
 
     Hashing and root rules use the validation owner. Serialized method identities
-    use M8's normal registration owner. Historical opponent payloads need not
+    use evaluation's normal registration owner. Historical opponent payloads need not
     remain available just to inspect games already played against them.
     """
     from marl_battlegrounds.evaluation.recording_identity import (
@@ -285,7 +285,7 @@ def _pass_rows(
     index: int,
     snapshot: _Snapshot,
 ) -> list[Record]:
-    """Check one saved M8 pass's methods, rules and roots, then read its rows.
+    """Check one saved evaluation pass's methods, rules and roots, then read its rows.
 
     path names the recorded pass directory. task is the checked validation task,
     actor is its verified frozen actor, and index selects the opponent in panel.
@@ -317,7 +317,7 @@ def _pass_rows(
     focal, opponent = policies["team_a"], policies["team_b"]
     if "partners" in task:
         # This binds the recorded assembly, not unavailable constituent weights.
-        # Runtime reuse separately verifies the actual composed System in M8.
+        # Runtime reuse separately verifies the actual composed System in evaluation.
         evidence = _object(
             snapshot.read(path.parent / "sampling_facts.json"), "Deployment evidence"
         )
@@ -403,7 +403,7 @@ def _pass_rows(
     if set(episodes) != {str(value) for value in range(1, games + 1)}:
         raise ValueError("Saved validation schedule has missing or extra games")
     for identifier, episode in episodes.items():
-        # Generated M8 passes cycle through maps once per pair of spawn ends.
+        # Generated evaluation passes cycle through maps once per pair of spawn ends.
         # Read this integer schedule without restoring configs or actor arrays.
         game = int(identifier)
         pair = (game - 1) // 2

@@ -7,7 +7,7 @@ three learning blocks of two optimizer steps each. Contracts checked here:
 the plain run with an Alpha panel on the five validation maps validates at
 initialization, after initial collection and after learning, captures every
 declared boundary, never selects an actor saved before learning, confirms,
-selects, exports, loads and evaluates the greedy actor with its real M8
+selects, exports, loads and evaluates the greedy actor with its real evaluation
 registration and its saved parameters and statistics, plays a two-entrant
 tournament whose match and ranking tables are saved, and writes PQN-VDN
 reports (columns, figure and summary line); a recorded run interrupted after

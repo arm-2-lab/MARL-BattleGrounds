@@ -13,7 +13,8 @@
 # limitations under the License.
 #
 # Adapted from Mava for MARL-BGs.
-# See docs/training/source_reuse.md for source identities and deliberate changes.
+# See docs/method_sources.md in the source repository for source identities
+# and deliberate changes.
 #
 # Value normalization follows on-policy under the following MIT terms.
 # MIT License
@@ -37,12 +38,12 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-"""Provide recurrent and feedforward PPO calculations and actor-only M8 Systems.
+"""Provide recurrent and feedforward PPO calculations and actor-only Systems.
 
 This module adapts Mava's networks, GAE and grouped PPO updates. It owns no
 environment loop, checkpoint writer, curriculum or training run. initialize_ppo
 creates untrained actor/critic parameters and separate optimizer states.
-make_ppo_system exposes only actor parameters to M8; make_recurrent_mappo_system
+make_ppo_system exposes only actor parameters to evaluation; make_recurrent_mappo_system
 keeps its existing MAPPO interface. IPPO critics use each actor's permitted
 view. MAPPO critics use separate physical training data. Learners retain the
 compact rollout and construct only the selected minibatch's expanded features.

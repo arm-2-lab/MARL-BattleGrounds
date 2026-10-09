@@ -15,8 +15,7 @@
  * Callers: `scene.js` calls records, then build, and puts the nodes at the
  * bottom of the arena, under the Red Zone and everything else. `obstacles.js`
  * may call taleStoneRecords, then build, to draw a map's tale stones.
- * `visual-filters.js` reads PAINT_PARTS. The converter script
- * `artifacts/runefield-implementation/a1-map-skins/convert-map-skins.mjs`
+ * `visual-filters.js` reads PAINT_PARTS. The maintainers' map-skin converter
  * imports mapGeometryKey so the data and the browser share one key rule.
  *
  * Static: nothing here moves or reads a beat. records caches its result by

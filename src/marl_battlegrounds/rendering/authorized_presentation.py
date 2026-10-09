@@ -2512,7 +2512,7 @@ class AuthorizedTeamSightTurnShapeV1:
     champion's light at its Fall beat and gaining one at its Return beat.
     ``rendering.team_sight`` computes one shape per set of lighting champions
     the browser may need, so the browser only picks and paints (it never tests
-    stone; amendment A17). The geometry rules are those of AuthorizedTeamSightV1.
+    stone). The geometry rules are those of AuthorizedTeamSightV1.
 
     All constructor fields are required keyword arguments; instances are frozen.
 
@@ -2587,7 +2587,7 @@ class AuthorizedTeamSightV1:
     map's stones, with rays stopped by stones and the floor edge, as Core's
     line of sight is. Stones block sight; other champions do not. So the dark
     floor is every blind spot: beyond reach and behind stone. The browser only
-    paints it, so line of sight is never rebuilt there (amendment A17). Agent
+    paints it, so line of sight is never rebuilt there. Agent
     POV frames carry it, live and replayed; Oracle View scenes carry None. It
     names no enemy and holds no enemy position.
 

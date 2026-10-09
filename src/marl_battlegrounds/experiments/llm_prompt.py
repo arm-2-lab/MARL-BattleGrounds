@@ -13,13 +13,13 @@ llm.make_system would send for that agent:
    the frame every language-model System reads.
 3. llm.format_actor_view renders the view and its legal menu.
 
-It writes prompt.txt (that text) and menu.json (the tick, the agent's slot,
-whether the view was reflected, the text format version, the text's size and
-the legal move and combat names from llm.legal_action_names). No model is
-called and no file outside output_dir changes. results/llm_prompt.txt and
-results/llm_prompt.json are this stage's output with the default settings on
-the CPU (JAX_PLATFORMS=cpu), so anyone can reproduce their exact bytes; they are
-the example printed in the paper's supplement.
+It writes prompt.txt (that text) and menu.json (the tick, the agent's slot, whether the
+view was reflected, the text format version, the text's size and the legal move and
+combat names from llm.legal_action_names). No model is called and no file outside
+output_dir changes. The paper's scripts/paper_experiments/results/llm_prompt.txt and
+llm_prompt.json are this stage's output with the default settings on the CPU
+(JAX_PLATFORMS=cpu), so anyone can reproduce their exact bytes; they are the example
+printed in the paper's supplement.
 """
 
 from __future__ import annotations

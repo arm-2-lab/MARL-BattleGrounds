@@ -9,8 +9,8 @@ Core's line of sight makes between two centers (``core.geometry
 .has_clear_line_of_sight``: stones block sight, champions do not). The lit
 areas of the team's sensors are merged into closed rings, so an even-odd fill
 of the floor plus the rings darkens exactly the team's blind spots: beyond
-reach and behind stone. The browser only paints the rings (amendment A17
-keeps line of sight out of the browser).
+reach and behind stone. The browser only paints the rings, which keeps line of
+sight out of the browser.
 
 Entry points:
 

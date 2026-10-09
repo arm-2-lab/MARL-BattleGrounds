@@ -4,7 +4,7 @@ One counting rule written twice, as a JAX System and as a host System with
 Python list memory, gives identical rollout rows, padding and budget suffix
 through collect_training_rollout on fresh collections, and again when both
 collections record through a writer. Setup opens no host memory for any lane.
-The host holder equals M8's own full-batch host call round by round, for a
+The host holder equals evaluation's own full-batch host call round by round, for a
 generic System and for a Policy adapter that uses its keys: it computes a
 Policy on active slots in pinned games only, makes no call in a round with no
 pinned game, returns zero actions for games it does not play, leaves inactive
@@ -14,7 +14,7 @@ A host method's error keeps its own type, KeyboardInterrupt included, and
 afterwards the collection refuses every call; a carry from an earlier round is
 refused even after success, so host memory never meets an older game state. A
 host method with no init, no reset hook and no template counts as memory-free,
-and M8's own reset rule refuses any memory it returns. scan_training_rollout
+and evaluation's own reset rule refuses any memory it returns. scan_training_rollout
 and advance_training_step refuse a host-pinned collection because they cannot
 call the host.
 """
@@ -203,7 +203,7 @@ def _steps_apply(
     return ActorAction(move, zero, zero), jnp.asarray(carry) + 1.0
 
 
-# Pinned lanes, reset generations, and the lanes M8 must start afresh per round.
+# Pinned lanes, reset generations, and the lanes evaluation must start afresh per round.
 ROUNDS = (
     ((False, True, False, True), (0, 0, 0, 0), (False, True, False, True)),
     ((False, False, False, False), (0, 0, 0, 0), (False, False, False, False)),

@@ -3,7 +3,7 @@
 Initialize a bounded rolling bank on the host, draw assignments at game starts,
 and publish updated actor variables after learning with refresh_opponents.
 make_opponent_system applies those choices through the actor's existing System,
-and can play a named pinned System on the lanes assigned to -2 through M8's
+and can play a named pinned System on the lanes assigned to -2 through evaluation's
 own one-team helpers. A pinned host method runs outside compiled code through
 HostOpponent, and HOST_ACTIONS_SYSTEM hands its actions to the compiled step.
 Recurrent memory belongs to SystemState.team_b, never to this bank. These helpers
@@ -22,7 +22,7 @@ from jax import Array
 from jax.core import Tracer
 from jax.typing import DTypeLike
 
-# One owner for per-team execution: the pinned opponent reuses M8's helpers.
+# One owner for per-team execution: the pinned opponent reuses evaluation's helpers.
 # pyright: reportPrivateUsage=false
 from marl_battlegrounds.evaluation.policy_execution import (
     System,
@@ -1227,7 +1227,7 @@ def make_opponent_system(
                 return SystemOutput(ActorAction(zero, zero, zero), memory)
 
             # Frozen lanes are replaced below; other lanes outside live are
-            # invalid, so M8 keeps their memory either way.
+            # invalid, so evaluation keeps their memory either way.
             shared = cast(
                 SystemOutput,
                 jax.lax.cond(jnp.any(live), shared_call, no_shared_call, None),
@@ -1372,7 +1372,7 @@ def make_opponent_system(
         )
         next_network = network.next_memory
         if pinned_reset is not None:
-            # A wrapper reset hook turns off M8's padding protection, so keep
+            # A wrapper reset hook turns off evaluation's padding protection, so keep
             # invalid lanes of the network half here.
             next_network = select_policy_carry(
                 native_inputs.valid, next_network, network_memory

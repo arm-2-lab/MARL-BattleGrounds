@@ -1158,9 +1158,9 @@ def replay_metrics(
     game: on a CPU, and on a GPU in XLA's deterministic mode. In the GPU's
     normal mode a few sums of fractional amounts, such as damage, differed in
     the last digits, because the GPU may add numbers in another order
-    (``docs/evaluation/repeatability.md``); counts, kills, scores and outcomes
-    matched. ``docs/evaluation/workflows.md``, "Measure A Saved Game", lists
-    the checks.
+    (``docs/evaluation.md``, "Same Seed, Same Game"); counts, kills, scores and
+    outcomes matched. ``docs/metrics.md``, "Measure A Saved Game", lists the
+    checks.
 
     Examples
     --------

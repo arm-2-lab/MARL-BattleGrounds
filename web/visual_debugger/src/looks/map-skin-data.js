@@ -3,9 +3,8 @@
  * kits and the tale floor and tale stones of each catalogue map (0-51) and
  * scenario (1-8), keyed by the map's technical name.
  *
- * GENERATED FILE. Do not edit by hand. The converter
- * `artifacts/runefield-implementation/a1-map-skins/convert-map-skins.mjs`
- * writes it from the design store's tale skins (`skins/maps/*.js`) and the
+ * GENERATED FILE. Do not edit by hand. The maintainers' map-skin converter
+ * writes it from their tale skins and the
  * real map catalogue (`src/marl_battlegrounds/data/tdm`). Plain data and small
  * pure lookups only: no DOM, network, storage or timers. `map-skins.js` reads
  * the floors; `obstacles.js` may read the stones through `map-skins.js`.

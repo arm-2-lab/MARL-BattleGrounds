@@ -4,7 +4,7 @@ The config module provides settings without numerical dependencies.
 The inputs and actions modules use base JAX dependencies. The ppo, qmix and
 pqn modules need the training extra. Importing this package alone loads neither
 JAX nor Flax. Use ppo.make_ppo_system, qmix.make_qmix_system or
-pqn.make_pqn_system for an initialized, untrained M8 System; these components
+pqn.make_pqn_system for an initialized, untrained System; these components
 do not start training or load a deployment checkpoint.
 """
 
