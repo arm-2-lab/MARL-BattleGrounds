@@ -1161,6 +1161,10 @@ def _base_model(display_name: str) -> dict[str, Any]:
     }
 
 
+# Serialized programs of built-in actors, keyed by family, settings and layout.
+_BUILTIN_PROGRAMS: dict[str, bytes] = {}
+
+
 def _export_builtin(folder: Path, path: Path) -> Path:
     """Export a saved built-in actor folder (see export_model)."""
     from marl_battlegrounds.training._checkpoint_metadata import (
@@ -1204,8 +1208,15 @@ def _export_builtin(folder: Path, path: Path) -> Path:
         raise ValueError(f"{folder}: restored weights do not match the actor digest")
     hidden = {"mappo": 128, "ippo": 128, "qmix": 256, "pqn_vdn": 512}.get(method)
     memory = {"memory": np.zeros((hidden,), np.float32)} if hidden else {}
-    decide = _builtin_decide(method, settings)
-    exported = _export_program(decide, actor, memory, _NUM_ACTIONS)
+    # The program depends only on the family, its settings and the weight
+    # layout, so every save of one model shares it; export it once.
+    program_key = json.dumps(
+        [method, settings, details["actor_layout"]], sort_keys=True
+    )
+    if program_key not in _BUILTIN_PROGRAMS:
+        decide = _builtin_decide(method, settings)
+        exported = _export_program(decide, actor, memory, _NUM_ACTIONS)
+        _BUILTIN_PROGRAMS[program_key] = bytes(exported.serialize())
     metadata = details.get("metadata", {})
     display = metadata.get("display_name") or method
     raw = (folder / "actor_details.json").read_bytes()
@@ -1235,7 +1246,7 @@ def _export_builtin(folder: Path, path: Path) -> Path:
         path,
         model,
         {
-            "decide.jaxexport": bytes(exported.serialize()),
+            "decide.jaxexport": _BUILTIN_PROGRAMS[program_key],
             "weights.npz": _npz(_leaf_rows(actor), jax.tree.leaves(actor)),
             "initial_memory.npz": _npz(_leaf_rows(memory), jax.tree.leaves(memory)),
             "actor_details.json": raw,
@@ -1338,8 +1349,10 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
     number of agent rows, so the same file serves any batch size. Built-in
     actors also get teacher outputs (198 log-probabilities or action values in
     the world frame). Exporting the same source twice gives identical bytes.
-    Exporting a built-in actor folder needs the training extra. Files are
-    written to a temporary name first and then renamed.
+    Exporting a built-in actor folder needs the training extra. Saves of one
+    built-in model share one program, so the process exports it once and
+    reuses it for later saves. Files are written to a temporary name first
+    and then renamed.
 
     Examples
     --------
