@@ -488,6 +488,7 @@ def test_open_replay_answers_at_once_and_holds_only_the_page(
     coordinator._viewer_server = None
     coordinator._viewer_thread = None
     coordinator._viewer_replay_id = None
+    coordinator._replay_port = 0
     coordinator._asset_root = _ASSET_ROOT
     # Returns while the prepare is still held.
     url = coordinator._open_viewer(service)
