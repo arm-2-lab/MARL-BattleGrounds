@@ -17,6 +17,18 @@ and a fake Hugging Face client. They check these contracts of
 - ``upload`` checks every uploaded file's SHA-256 against the Hub's record and
   prints the commit; it refuses to change an existing model file on the Hub; ``redo``
   refuses a public repository; ``--dry-run`` makes no Hugging Face call.
+- The shared local path rule (``released_models._local_path_findings``) finds
+  home folders, Windows user folders and GPU ids, also inside a model file's
+  JSON, and skips URLs, ``hf://`` addresses, author names and binary data.
+- ``public_text`` gives each kind of local path its public name: training
+  opponents (dataset address outside the dataset, folder inside it), released
+  saves, unreleased saves, checkpoints and past copies, run folders, the Season 0
+  originals in the games folder, GPU ids and the old repository address.
+- A re-signed description keeps the ID rule, names its old ID in
+  ``metadata.derived_from`` and keeps the run's own ID; a cleaned model file
+  keeps its program, weights and memory bytes.
+- Cards cite the paper from the README's citation, never the software;
+  ``with_citation`` replaces only that section and adds the arXiv tag.
 """
 
 # The fake inputs reuse the tool's private artifact paths.
@@ -25,6 +37,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import os
 import zipfile
@@ -113,9 +126,27 @@ def _run(
     return ids
 
 
+PAPER = """@article{hawili2026marlbattlegrounds,
+  title   = {{MARL-BattleGrounds}: A Benchmark},
+  author  = {Hawili, Ulixes Tariq and Ramamoorthy, Subramanian},
+  journal = {arXiv preprint},
+  year    = {2026}
+}"""
+
+
 @pytest.fixture(autouse=True)
 def no_saved_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(publish, "get_token", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def paper_readme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        f"# X\n\n## Citation\n\nCite:\n\n```bibtex\n{PAPER}\n```\n\n## License\n"
+    )
+    monkeypatch.setattr(publish, "_README", readme)
+    return readme
 
 
 @pytest.fixture
@@ -278,6 +309,8 @@ def test_build_writes_index_config_records_and_card(
     assert "t.hawili@sms.ed.ac.uk" in text
     assert "@99_950_592" in text
     assert "recurrent-mappo-pooled" in text
+    assert PAPER in text and "@software" not in text
+    assert publish.GUIDE_URL in text
 
 
 class FakeHub:
@@ -387,7 +420,7 @@ def test_redo_refuses_a_public_repository() -> None:
     [
         ["upload", "{folder}", "--private"],
         ["collections", "--private"],
-        ["org-card", "--private"],
+        ["cards"],
         ["publish"],
         ["redo", MODEL.repo],
     ],
@@ -444,3 +477,190 @@ def test_scan_refuses_the_saved_token_without_printing_it(
     output = capsys.readouterr().out
     assert "the saved Hugging Face token" in output
     assert token not in output
+
+
+def test_local_path_rule_finds_paths_and_skips_names_urls_and_binary() -> None:
+    from marl_battlegrounds.released_models import _local_path_findings
+
+    assert _local_path_findings("a.json", b'{"r": "/home/sam/runs/actors/a"}') == [
+        "a folder on this computer: /home/sam/runs/actors/a"
+    ]
+    clean = (
+        b"Hawili, Ulixes Tariq; https://github.com/arm-2-lab/x; hf://datasets/o/r@c/x"
+    )
+    assert _local_path_findings("card.md", clean) == []
+    table = b"ref\n/Users/sam/y\nC:\\Users\\sam\\x\n"
+    assert _local_path_findings("t.csv", table) == [
+        "a folder on this computer: /Users/sam/y",
+        "a folder on this computer: C:\\Users\\sam\\x",
+    ]
+    gpu = b'{"d": "GPU-6b11a0c4-14e8-6782-8932-1df56d599796"}'
+    assert _local_path_findings("d.json", gpu) == [
+        "a GPU id: GPU-6b11a0c4-14e8-6782-8932-1df56d599796"
+    ]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("actor_details.json", '{"r": "/home/sam/opp"}')
+        archive.writestr("weights.npz", b"/home/zzz/" * 3)
+    assert _local_path_findings("m.zip", buffer.getvalue()) == [
+        "a folder on this computer: /home/sam/opp"
+    ]
+    assert _local_path_findings("w.npz", b"\x00/home/abc/def") == []
+
+
+SEARCH = "/home/sam/artifacts/paper-experiments/hyperparameter-search"
+RUN = f"{SEARCH}/250m/study/cases/qmix--seed-1/run"
+SAVE = f"{RUN}/actors/qmix_actor_step_000000000100_{'a' * 64}"
+ORIGINAL = f"{RUN}/actors/qmix_actor_step_000000000200_{'b' * 64}"
+PATHS = publish.PathMap(
+    search=SEARCH,
+    runs={RUN: (MODEL.repo, "40m-250m")},
+    released={SAVE: f"{publish.ORG}/{MODEL.repo}@100", ORIGINAL: "x@200"},
+    originals={ORIGINAL: MODEL.repo},
+    dataset_commit="c" * 40,
+)
+
+
+@pytest.mark.parametrize(
+    ("path", "role", "public"),
+    [
+        (
+            f"{SEARCH}/opponents/models/opp-step-5",
+            "outside",
+            f"hf://datasets/{publish.ORG}/{publish.DATASET_REPO}@{'c' * 40}"
+            "/training-opponents/models/opp-step-5",
+        ),
+        (
+            f"{SEARCH}/opponents/models/opp-step-5",
+            "dataset",
+            "training-opponents/models/opp-step-5",
+        ),
+        (SAVE, "outside", f"{publish.ORG}/{MODEL.repo}@100"),
+        (
+            f"{SAVE}/actor/_METADATA",
+            "outside",
+            f"{publish.ORG}/{MODEL.repo}@100/actor/_METADATA",
+        ),
+        (
+            f"{RUN}/actors/qmix_actor_step_000000000300_{'d' * 64}",
+            "outside",
+            "not published (save at step 300)",
+        ),
+        (
+            f"{RUN}/checkpoints/qmix_checkpoint_step_000040108032_{'e' * 64}/x.json",
+            "outside",
+            "not published (checkpoint at step 40,108,032)/x.json",
+        ),
+        (
+            f"{RUN}/past_copies/qmix_past_step_1376256_capture_000000",
+            "outside",
+            "not published (past copy at step 1,376,256)",
+        ),
+        (RUN, "outside", "training-records/40m-250m"),
+        (
+            f"{RUN}/validation/panel.json",
+            "dataset",
+            f"{publish.ORG}/{MODEL.repo}/training-records/40m-250m/validation/panel.json",
+        ),
+        (
+            ORIGINAL,
+            "games",
+            f"hf://datasets/{publish.ORG}/{publish.DATASET_REPO}@{'c' * 40}"
+            f"/season-0-originals/{MODEL.repo}",
+        ),
+        (ORIGINAL, "dataset", "x@200"),
+        ("/home/sam/elsewhere/x", "outside", "/home/sam/elsewhere/x"),
+    ],
+)
+def test_public_path_names_every_kind_of_local_path(
+    path: str, role: publish.Role, public: str
+) -> None:
+    assert publish.public_path(path, role, PATHS) == public
+
+
+def test_public_text_replaces_paths_gpu_ids_and_the_old_address() -> None:
+    text = (
+        f'{{"a": "{SAVE}", "gpu": "GPU-6b11a0c4-14e8-6782-8932-1df56d599796", '
+        f'"code": "{publish.OLD_CODE_URL}/blob/main/x"}}\n`{RUN}`.'
+    )
+    assert publish.public_text(text, "outside", PATHS) == (
+        f'{{"a": "{publish.ORG}/{MODEL.repo}@100", "gpu": "GPU-<id>", '
+        f'"code": "{publish.CODE_URL}/blob/main/x"}}\n`training-records/40m-250m`.'
+    )
+
+
+def _description(reference: str) -> bytes:
+    body = {
+        "actor_digest": "d",
+        "metadata": {
+            "checkpoint_id": "run-id",
+            "opponent_members": [{"reference": reference}],
+        },
+    }
+    details = {
+        **body,
+        "checkpoint_id": hashlib.sha256(publish._json_line(body)).hexdigest(),
+    }
+    return publish._json_line(details)
+
+
+def test_resign_description_keeps_the_id_rule_and_names_the_old_id() -> None:
+    raw = _description(f"{SEARCH}/opponents/models/opp")
+    old = json.loads(raw)
+    new = json.loads(cast(bytes, publish.resign_description(raw, "dataset", PATHS)))
+    body = {key: value for key, value in new.items() if key != "checkpoint_id"}
+    assert new["checkpoint_id"] == hashlib.sha256(publish._json_line(body)).hexdigest()
+    assert new["metadata"]["derived_from"] == old["checkpoint_id"]
+    assert new["metadata"]["checkpoint_id"] == "run-id"
+    assert new["metadata"]["opponent_members"] == [
+        {"reference": "training-opponents/models/opp"}
+    ]
+    assert (
+        publish.resign_description(_description("tdm-alpha"), "dataset", PATHS) is None
+    )
+    with pytest.raises(publish.PublishError, match="does not match"):
+        publish.resign_description(raw.replace(b'"d"', b'"e"'), "dataset", PATHS)
+
+
+def test_clean_model_file_keeps_program_weights_and_memory(tmp_path: Path) -> None:
+    from marl_battlegrounds import portable_models
+
+    parts = {
+        "decide.jaxexport": b"program",
+        "weights.npz": b"weights /home/x/ by chance",
+        "initial_memory.npz": b"memory",
+        "actor_details.json": _description(f"{SEARCH}/opponents/models/opp"),
+    }
+    source = portable_models._write(
+        tmp_path / "old.zip",
+        {"checkpoint_id": json.loads(parts["actor_details.json"])["checkpoint_id"]},
+        parts,
+    )
+    assert publish.clean_model_file(source, tmp_path / "new.zip", PATHS)
+    with zipfile.ZipFile(tmp_path / "new.zip") as archive:
+        new = {name: archive.read(name) for name in archive.namelist()}
+    for name in ("decide.jaxexport", "weights.npz", "initial_memory.npz"):
+        assert new[name] == parts[name]
+    model = json.loads(new["model.json"])
+    details = json.loads(new["actor_details.json"])
+    assert model["checkpoint_id"] == details["checkpoint_id"]
+    assert (
+        model["parts"]["actor_details.json"]
+        == hashlib.sha256(new["actor_details.json"]).hexdigest()
+    )
+    assert "/home/" not in new["actor_details.json"].decode()
+
+
+def test_cards_cite_the_paper_and_take_its_arxiv_number(paper_readme: Path) -> None:
+    entry, arxiv = publish.paper_citation(paper_readme.read_text())
+    assert (entry, arxiv) == (PAPER, None)
+    with pytest.raises(publish.PublishError, match="software"):
+        publish.paper_citation("## Citation\n\n```bibtex\n@software{x,\n}\n```\n")
+    section = publish.citation_section(entry, None)
+    card = f"---\ntags:\n- jax\n---\n\n# X\n\n{section}\n## License\n\nApache.\n"
+    numbered = PAPER.replace("arXiv preprint", "arXiv preprint arXiv:2610.01234")
+    new = publish.with_citation(card, numbered, "2610.01234")
+    assert "tags:\n- arxiv:2610.01234\n- jax\n" in new
+    assert "Paper: https://arxiv.org/abs/2610.01234" in new and numbered in new
+    assert new.endswith("## License\n\nApache.\n")
+    assert publish.with_citation(new, numbered, "2610.01234") == new

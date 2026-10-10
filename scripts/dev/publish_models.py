@@ -9,12 +9,17 @@ makes the release public. Everything goes to the Hugging Face organization
     uv run --no-sync python scripts/dev/publish_models.py build \\
         --models-root CONVERTED --out RELEASE --same-games slightly-different
     uv run --no-sync python scripts/dev/publish_models.py build-dataset --out RELEASE
+    uv run --no-sync python scripts/dev/publish_models.py clean \\
+        RELEASE/tdm-season-0-results --out CLEAN
+    uv run --no-sync python scripts/dev/publish_models.py clean \\
+        RELEASE/tdm-season-0-* --out CLEAN2 --dataset-commit COMMIT
     uv run --no-sync python scripts/dev/publish_models.py scan RELEASE
     uv run --no-sync python scripts/dev/publish_models.py upload \\
         RELEASE/tdm-season-0-recurrent-ippo --private
     uv run --no-sync python scripts/dev/publish_models.py collections --private
-    uv run --no-sync python scripts/dev/publish_models.py org-card --private
+    uv run --no-sync python scripts/dev/publish_models.py org-card --release RELEASE
     uv run --no-sync python scripts/dev/publish_models.py publish
+    uv run --no-sync python scripts/dev/publish_models.py cards
     uv run --no-sync python scripts/dev/publish_models.py redo tdm-season-0-qmix
 
 What each command reads and writes:
@@ -30,13 +35,23 @@ What each command reads and writes:
 - ``build-dataset`` writes ``RELEASE/tdm-season-0-results/``: the Season 0
   tournament run folder and rating tables, ``entrants.csv``, the original
   Season 0 save folders and the training opponents, with a dataset card.
+- ``clean`` writes a copy of built folders in which no file names a local
+  folder of this computer: paths become released names, dataset addresses and
+  ``training-records/`` folders (see public_path), saved descriptions get a new
+  ID, and model files keep their program and weights byte for byte. Without
+  ``--dataset-commit`` it cleans the dataset without its two games files, which
+  name the dataset's own commit; with it, everything else.
 - ``scan`` reads every file in a folder and refuses if any file holds a secret
-  token. It names the files, never the text it found.
+  token or a local folder path. It names the files, never a secret it found.
 - ``upload`` scans one built folder, creates its repository as private if it
   does not exist yet, refuses to change any released file, uploads the folder
   and checks every uploaded file's SHA-256 against the Hub's own record.
-- ``collections`` and ``org-card`` create the two collections and the
-  organization card (the Space ``MARL-BattleGrounds/README``) as private.
+- ``collections`` creates the two collections as private. ``org-card`` writes
+  the organization card (``README.md`` of the Space ``MARL-BattleGrounds/README``)
+  from a built release and removes the Space's default page.
+- ``cards`` brings the citation of every card (six models, the dataset and the
+  organization) up to date with the README's ``## Citation``. Run it after the
+  citation in ``CITATION.cff`` changes.
 - ``publish`` makes the six model repositories, the dataset, the two
   collections and the organization card public.
 - ``redo`` deletes and recreates one ``tdm-season-0-*`` repository, only while
@@ -55,7 +70,10 @@ organization.
 Released model files are never replaced or deleted. ``upload`` refuses to
 change any existing file other than ``README.md``, ``steps.csv`` and
 ``config.json``, and it never deletes. A repository may be deleted and made
-again (``redo``) only while it is private.
+again (``redo``) only while it is private. The one exception was the
+re-release of 10 October 2026, which replaced every file once with its
+``clean`` copy (same programs and weights) and squashed each repository's
+history, so no earlier commit still names a local folder.
 
 JAX refresh rule
 ----------------
@@ -99,17 +117,28 @@ from huggingface_hub.errors import (
 )
 from huggingface_hub.hf_api import CommitInfo, RepoFile
 
+from marl_battlegrounds.released_models import (
+    _local_path_findings,  # pyright: ignore[reportPrivateUsage]
+)
+
 ORG = "MARL-BattleGrounds"
 DATASET_REPO = "tdm-season-0-results"
 ORG_CARD_REPO = f"{ORG}/README"
 CONTACT = "t.hawili@sms.ed.ac.uk"
-CODE_URL = "https://github.com/oceansystemslab/MARL-BattleGrounds"
+CODE_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds"
+# The repository's address before it moved; cleaned text names CODE_URL instead.
+OLD_CODE_URL = "https://github.com/oceansystemslab/MARL-BattleGrounds"
+GUIDE_URL = f"{CODE_URL}/blob/main/docs/released_models.md"
+# The day the clean copy replaced every released file, once (see clean).
+RE_RELEASE_DAY = "10 October 2026"
 DATASET_URL = f"https://huggingface.co/datasets/{ORG}/{DATASET_REPO}"
 PORTABLE_FORMAT = "marl-bgs-portable-model"
 FILE_FORMAT = "portable-model-1"
 SEASON = 0
 
 _ARTIFACTS = Path(__file__).resolve().parents[2] / "artifacts"
+# The repository's README; its "## Citation" section is the one citation source.
+_README = Path(__file__).resolve().parents[2] / "README.md"
 _SEARCH = Path("paper-experiments/hyperparameter-search")
 _RATINGS = _SEARCH / "results/tournament-250m/ratings.csv"
 _RATING_TABLES = _SEARCH / "results/tournament-250m"
@@ -168,8 +197,8 @@ SAME_GAMES = {
 _SAME_INPUTS = (
     "On CPU, or on GPU in deterministic mode, the same file with the same inputs "
     "and settings replays the same games. The Season 0 tournament played the "
-    "original save folder, which the results dataset keeps unchanged under "
-    "`season-0-originals/`."
+    "original save folder, which the results dataset keeps under "
+    "`season-0-originals/` with its weights unchanged."
 )
 # One pattern per kind of secret. Each starts with fixed text, which lets the
 # regular expression engine skip quickly through large files.
@@ -186,6 +215,110 @@ _SAVED_TOKEN = "the saved Hugging Face token"
 
 class PublishError(Exception):
     """A check failed, so the command stopped before doing anything unsafe."""
+
+
+_ARXIV_ID = re.compile(r"(?:arXiv:|arxiv\.org/abs/)(\d{4}\.\d{4,5})")
+_CITE_HEADING = "## Cite This Work"
+
+
+def paper_citation(readme: str) -> tuple[str, str | None]:
+    """Return the paper's BibTeX entry and arXiv id from the README's citation.
+
+    Parameters
+    ----------
+    readme : str
+        The text of the repository's ``README.md``. Its ``## Citation`` section
+        is the one source of the citation the cards show.
+
+    Returns
+    -------
+    tuple of (str, str or None)
+        The first ``bibtex`` code block of that section, without the fences,
+        and the arXiv id (such as ``"2610.01234"``) when the entry names one,
+        else None.
+
+    Raises
+    ------
+    PublishError
+        The README has no ``## Citation`` section with a BibTeX block, or the
+        block cites the software (``@software``) instead of the paper.
+    """
+    heading = re.search(r"^## Citation\b", readme, re.MULTILINE)
+    start = heading.start() if heading else -1
+    end = readme.find("\n## ", start + 1) if start >= 0 else -1
+    section = readme[start : end if end >= 0 else len(readme)] if start >= 0 else ""
+    match = re.search(r"```bibtex\n(.*?)\n```", section, re.DOTALL)
+    if match is None:
+        raise PublishError("README.md has no ## Citation section with a BibTeX block")
+    entry = match.group(1).strip()
+    if entry.lower().startswith("@software"):
+        raise PublishError("README.md cites the software; cards cite the paper")
+    found = _ARXIV_ID.search(entry)
+    return entry, found.group(1) if found else None
+
+
+def citation_section(entry: str, arxiv: str | None) -> str:
+    """Return the cards' "Cite This Work" section for one BibTeX entry.
+
+    Parameters
+    ----------
+    entry : str
+        The paper's BibTeX entry (see paper_citation).
+    arxiv : str or None
+        The paper's arXiv id. When given, a link to its arXiv page comes first.
+
+    Returns
+    -------
+    str
+        The section, starting with its heading and ending with one newline.
+    """
+    link = f"Paper: https://arxiv.org/abs/{arxiv}\n\n" if arxiv else ""
+    return (
+        f"{_CITE_HEADING}\n\nIf you use this work, please cite the paper.\n\n"
+        f"{link}```bibtex\n{entry}\n```\n"
+    )
+
+
+def with_citation(card: str, entry: str, arxiv: str | None) -> str:
+    """Return a card with its citation section and arXiv tag brought up to date.
+
+    Parameters
+    ----------
+    card : str
+        A model card, the dataset card or the organization card, as uploaded.
+    entry : str
+        The paper's BibTeX entry.
+    arxiv : str or None
+        The paper's arXiv id, or None before it has one.
+
+    Returns
+    -------
+    str
+        The same card with its ``## Cite This Work`` section replaced (up to the
+        next ``## `` heading) and, when ``arxiv`` is given and the YAML header
+        has a ``tags:`` list, an ``arxiv:<id>`` tag added. Hugging Face lists
+        a repository with that tag on the paper's page.
+
+    Raises
+    ------
+    PublishError
+        The card has no ``## Cite This Work`` section.
+    """
+    start = card.find(_CITE_HEADING)
+    if start < 0:
+        raise PublishError(f"The card has no {_CITE_HEADING!r} section")
+    end = card.find("\n## ", start + 1)
+    after = card[end + 1 :] if end >= 0 else ""
+    card = (
+        card[:start] + citation_section(entry, arxiv) + ("\n" + after if after else "")
+    )
+    if arxiv and card.startswith("---\n") and f"arxiv:{arxiv}" not in card:
+        header_end = card.find("\n---", 4)
+        tags = card.find("\ntags:\n", 0, header_end)
+        if tags >= 0:
+            at = tags + len("\ntags:\n")
+            card = card[:at] + f"- arxiv:{arxiv}\n" + card[at:]
+    return card
 
 
 @dataclass(frozen=True)
@@ -270,13 +403,13 @@ _MODEL_ITEMS: tuple[_Item, ...] = tuple(
 # (title, description, items). Hugging Face keeps collection descriptions short.
 COLLECTIONS: tuple[tuple[str, str, tuple[_Item, ...]], ...] = (
     (
-        "TDM Season 0 Big Nine",
+        "Season 0 Big Nine (TDM)",
         "Season 0 Team Deathmatch: six trained models and the results. TDM-Alpha, "
         "TDM-Beta and TDM-Gamma ship inside the package, so the field is nine.",
         (*_MODEL_ITEMS, (f"{ORG}/{DATASET_REPO}", "dataset")),
     ),
     (
-        "General Pool",
+        "General Pool (TDM)",
         "Every released Team Deathmatch entrant. Use any of them by name as an "
         "opponent, a teammate or a starting point.",
         _MODEL_ITEMS,
@@ -1008,6 +1141,7 @@ def model_card(
     same_games: str,
     input_scale: float,
     repo_bytes: int,
+    citation: tuple[str, str | None],
 ) -> str:
     """Return the model card (``README.md``) of one model repository.
 
@@ -1028,11 +1162,14 @@ def model_card(
     repo_bytes : int
         Total size in bytes of the repository's other files, for the
         download note.
+    citation : tuple of (str, str or None)
+        The paper's BibTeX entry and arXiv id (see paper_citation).
 
     Returns
     -------
     str
-        Hugging Face YAML metadata, then the card in plain English.
+        Hugging Face YAML metadata, then the card in plain English, ending
+        with "Cite This Work" and "License And Contact".
 
     Raises
     ------
@@ -1058,6 +1195,7 @@ def model_card(
             "jax",
             "marl-battlegrounds",
             "team-deathmatch",
+            *([f"arxiv:{citation[1]}"] if citation[1] else []),
         ],
         model_name=model.repo,
         eval_results=[
@@ -1116,8 +1254,9 @@ name to pick another save:
   error that lists the nearest saves.
 
 A name works anywhere MARL-BGs takes a model: an opponent, a pool member, a
-teammate, an evaluation and the BattleClient's model box. Each file downloads
-once and is checked against `steps.csv` before use.
+teammate, an evaluation and the BattleClient. Each file downloads once and is
+checked against `steps.csv` before use. The
+[Released Models guide]({GUIDE_URL}) shows the whole workflow.
 
 ### Train Against A Ladder Of Its Saves
 
@@ -1221,36 +1360,38 @@ run's routine checks; its larger confirmation checks are in
 
 ## Keeping Files Loadable
 
-Each file runs on JAX up to 6 months newer than the JAX that made it (the JAX
-version is in the file's `model.json`). MARL-BGs pins its JAX version, so each
-MARL-BGs version runs the JAX its released files were made with. Before
+Each file runs on JAX up to 6 months newer than the JAX that made it, as
+[JAX promises for exported programs](https://docs.jax.dev/en/latest/export/export.html#compatibility-guarantees)
+(the JAX version is in the file's `model.json`). MARL-BGs pins its JAX version,
+so each MARL-BGs version runs the JAX its released files were made with. Before
 MARL-BGs moves to a JAX outside that window, every file is republished in a
-newer format as a new file. Released files are never replaced or deleted.
+newer format as a new file.
+
+Every file was re-released once, on {RE_RELEASE_DAY}, to remove local folder
+paths from the saved descriptions; the programs and weights are byte-identical.
+Files are never replaced again: MARL-BGs 1.0.1 and later pin these exact
+commits.
 
 ## Season 0 Results
 
 Every Season 0 game, rating and original save folder is in the dataset
 [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
-## License, Citation And Contact
+{citation_section(*citation)}
+## License And Contact
 
 Apache-2.0. Questions: {CONTACT}.
-
-```bibtex
-@software{{marl_battlegrounds,
-  author  = {{Hawili, Ulixes Tariq}},
-  title   = {{MARL-BattleGrounds}},
-  version = {{1.0.0}},
-  url     = {{{CODE_URL}}},
-  license = {{Apache-2.0}},
-  year    = {{2026}}
-}}
-```
 """  # noqa: E501
 
 
 def build_model_repo(
-    model: Model, *, models_root: Path, out: Path, artifacts: Path, same_games: str
+    model: Model,
+    *,
+    models_root: Path,
+    out: Path,
+    artifacts: Path,
+    same_games: str,
+    citation: tuple[str, str | None],
 ) -> Path:
     """Build one model repository folder and print what it holds.
 
@@ -1266,6 +1407,9 @@ def build_model_repo(
         The project's ``artifacts/`` folder. It is only read.
     same_games : {"identical", "slightly-different"}
         The model card's "same games" claim.
+    citation : tuple of (str, str or None)
+        The paper's BibTeX entry and arXiv id for the card (see
+        paper_citation).
 
     Returns
     -------
@@ -1334,6 +1478,7 @@ def build_model_repo(
         same_games,
         input_scale,
         model_bytes + record_bytes + small,
+        citation,
     )
     (target / "README.md").write_text(card)
     print(
@@ -1410,7 +1555,12 @@ _VIEWER_TABLES = (
 )
 
 
-def dataset_card(games: int, maps: Sequence[int], panel_models: Sequence[str]) -> str:
+def dataset_card(
+    games: int,
+    maps: Sequence[int],
+    panel_models: Sequence[str],
+    citation: tuple[str, str | None],
+) -> str:
     """Return the results dataset card (``README.md``).
 
     Parameters
@@ -1422,6 +1572,8 @@ def dataset_card(games: int, maps: Sequence[int], panel_models: Sequence[str]) -
     panel_models : sequence of str
         Folder names of the saved models in the model repositories' validation
         panels; each is under ``training-opponents/models/``.
+    citation : tuple of (str, str or None)
+        The paper's BibTeX entry and arXiv id (see paper_citation).
 
     Returns
     -------
@@ -1437,6 +1589,7 @@ def dataset_card(games: int, maps: Sequence[int], panel_models: Sequence[str]) -
             "multi-agent-reinforcement-learning",
             "marl-battlegrounds",
             "team-deathmatch",
+            *([f"arxiv:{citation[1]}"] if citation[1] else []),
         ],
         configs=[
             {
@@ -1469,7 +1622,7 @@ the ratings, the original save folders and the training opponents.
 | `season-0-ratings/` | The Season 0 tables: `ratings.csv` (rank, Elo with its 95% interval, tier, wins, draws, losses, point margin, kills and deaths), `head_to_head.csv`, `map_results.csv`, `final_policies.csv` (each model's training settings) and `RESULTS.md`. |
 | `season-0-games/` | A replay of the Season 0 round robin that also saved every game's full metrics. Every game's result matches the original run game for game. One row per game (`match_results.csv`), per-pair and per-map tables, the tournament settings (`tournament_config.json`) and `full_metrics.csv`, every game's full metrics. That file has 11,222 columns, too wide for the viewer, so it stays a plain CSV file. |
 | `entrants.csv` | Each trained entrant's tournament name, released name, exact step and original checkpoint id. |
-| `season-0-originals/<repo>/` | The original save folder each model played Season 0 with, unchanged. The official Season 0 snapshot uses these, so its recorded games stay exact. |
+| `season-0-originals/<repo>/` | The original save folder each model played Season 0 with, with its weights unchanged. The official Season 0 snapshot uses these, so its recorded games stay exact. |
 | `training-opponents/` | The training and validation opponents (`pool.json` and `models/`). The model repositories' validation results were measured against {panel} from here, with TDM-Alpha, TDM-Beta and TDM-Gamma. |
 
 The six models, one portable file per save:
@@ -1481,35 +1634,40 @@ The six models, one portable file per save:
 ## Use It
 
 ```python
-import pandas as pd
+import csv
 
-ratings = pd.read_csv(
-    "hf://datasets/{ORG}/{DATASET_REPO}/season-0-ratings/ratings.csv"
+from huggingface_hub import hf_hub_download
+
+path = hf_hub_download(
+    "{ORG}/{DATASET_REPO}", "season-0-ratings/ratings.csv", repo_type="dataset"
 )
+with open(path, newline="") as file:
+    ratings = list(csv.DictReader(file))
+print(ratings[0]["label"], ratings[0]["elo"])
 ```
 
 ```bash
 hf download {ORG}/{DATASET_REPO} --repo-type dataset --local-dir {DATASET_REPO}
 ```
 
-## License, Citation And Contact
+Every file was re-released once, on {RE_RELEASE_DAY}, to remove local folder
+paths: saved descriptions and records now name models by their released names
+and dataset addresses, and the weights are byte-identical.
+
+{citation_section(*citation)}
+## License And Contact
 
 Apache-2.0. Questions: {CONTACT}.
-
-```bibtex
-@software{{marl_battlegrounds,
-  author  = {{Hawili, Ulixes Tariq}},
-  title   = {{MARL-BattleGrounds}},
-  version = {{1.0.0}},
-  url     = {{{CODE_URL}}},
-  license = {{Apache-2.0}},
-  year    = {{2026}}
-}}
-```
 """  # noqa: E501
 
 
-def build_dataset(*, out: Path, artifacts: Path, opponents: Path) -> Path:
+def build_dataset(
+    *,
+    out: Path,
+    artifacts: Path,
+    opponents: Path,
+    citation: tuple[str, str | None],
+) -> Path:
     """Build the results dataset folder and print what it holds.
 
     Parameters
@@ -1521,6 +1679,9 @@ def build_dataset(*, out: Path, artifacts: Path, opponents: Path) -> Path:
     opponents : Path
         The training opponents bundle: a folder or a ZIP (see
         ``_copy_opponents``).
+    citation : tuple of (str, str or None)
+        The paper's BibTeX entry and arXiv id for the card (see
+        paper_citation).
 
     Returns
     -------
@@ -1592,7 +1753,9 @@ def build_dataset(*, out: Path, artifacts: Path, opponents: Path) -> Path:
     missing = [path for _, path in _VIEWER_TABLES if not (target / path).is_file()]
     if missing:
         raise PublishError(f"Viewer tables missing: {missing}")
-    (target / "README.md").write_text(dataset_card(games, maps, sorted(panel_models)))
+    (target / "README.md").write_text(
+        dataset_card(games, maps, sorted(panel_models), citation)
+    )
     for part in sorted(target.iterdir()):
         size = _folder_bytes(part) if part.is_dir() else part.stat().st_size
         print(f"{DATASET_REPO}/{part.name}: {_size(size)}")
@@ -1604,16 +1767,112 @@ def build_dataset(*, out: Path, artifacts: Path, opponents: Path) -> Path:
     return target
 
 
-def org_card() -> str:
+@dataclass(frozen=True)
+class OrgRow:
+    """One model's row in the organization card's table.
+
+    Attributes
+    ----------
+    repo : str
+        Repository name inside the organization.
+    label : str
+        The model's display name, such as ``"Recurrent IPPO"``.
+    rank : int
+        Season 0 rank (1 is the top).
+    elo : float
+        Season 0 Elo.
+    tier : str
+        Season 0 tier, such as ``"Gold 3"``.
+    saves : int
+        Number of released saves (rows of ``steps.csv``).
+    """
+
+    repo: str
+    label: str
+    rank: int
+    elo: float
+    tier: str
+    saves: int
+
+
+def org_rows(release: Path) -> list[OrgRow]:
+    """Read the organization card's table from a built release folder.
+
+    Parameters
+    ----------
+    release : Path
+        The ``--out`` folder of ``build`` and ``build-dataset``: it holds the six
+        model repository folders and ``tdm-season-0-results/``. Only read.
+
+    Returns
+    -------
+    list of OrgRow
+        One row per model, in Season 0 rank order.
+
+    Raises
+    ------
+    PublishError
+        A repository folder, ``entrants.csv`` or ``ratings.csv`` is missing, or
+        a model has no ratings row.
+    """
+    dataset = release / DATASET_REPO
+    try:
+        with (dataset / "entrants.csv").open(newline="") as file:
+            entrants = {row["entrant"]: row for row in csv.DictReader(file)}
+        with (dataset / "season-0-ratings/ratings.csv").open(newline="") as file:
+            ratings = {row["entrant"]: row for row in csv.DictReader(file)}
+        rows: list[OrgRow] = []
+        for model in MODELS:
+            with (release / model.repo / "steps.csv").open(newline="") as file:
+                saves = sum(1 for _ in csv.DictReader(file))
+            entrant = next(
+                name
+                for name, row in entrants.items()
+                if row["released_name"].startswith(f"{ORG}/{model.repo}@")
+            )
+            rating = ratings[entrant]
+            rows.append(
+                OrgRow(
+                    model.repo,
+                    rating["label"],
+                    int(rating["rank"]),
+                    float(rating["elo"]),
+                    rating["tier"],
+                    saves,
+                )
+            )
+    except (OSError, KeyError, StopIteration, ValueError) as error:
+        raise PublishError(
+            f"Cannot read the card table from {release}: {error}"
+        ) from error
+    return sorted(rows, key=lambda row: row.rank)
+
+
+def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     """Return the organization card: the ``README.md`` of the Space ``README``.
+
+    Parameters
+    ----------
+    rows : sequence of OrgRow
+        The released models, in the order to show (see org_rows).
+    citation : tuple of (str, str or None)
+        The paper's BibTeX entry and arXiv id (see paper_citation).
 
     Returns
     -------
     str
-        Space YAML metadata (static SDK), then the card in plain English: the
-        opponent pool, the one-line names, the collections and the contact.
+        Space YAML metadata (static SDK), then the card in plain English: what
+        MARL-BGs is, the models with their Season 0 results, the one-line names,
+        three lines of code, links, the citation and the contact. Hugging Face
+        shows this file as the organization card when the Space has no
+        ``index.html``.
     """
     example = f"{ORG}/tdm-season-0-recurrent-ippo"
+    table = "\n".join(
+        f"| [{row.label}](https://huggingface.co/{ORG}/{row.repo}) | {row.rank} | "
+        f"{round(row.elo):,} | {row.tier} | {row.saves:,} |"
+        for row in rows
+    )
     return f"""---
 title: MARL-BattleGrounds
 sdk: static
@@ -1622,49 +1881,429 @@ pinned: false
 
 # MARL-BattleGrounds
 
-[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is a JAX benchmark for
-team-against-team multi-agent reinforcement learning. Two teams of up to five
-agents (Mage, Warrior, Hunter, Rogue and Priest) fight on 52 maps.
+[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
+benchmark for heterogeneous and competitive team-vs-team multi-agent
+reinforcement learning (MARL). MARL-BGs fills the missing middle: rich team
+play, with fast and cheap experiments on one GPU.
 
-## The Opponent Pool
+## The Season 0 Models
 
-Every model here is a released entrant. Each repository holds one model: a
-portable JAX file for every save from the start of its training to the end,
-`steps.csv` (one row per save, with its validation result) and the training
-records. Use the models as opponents, as teammates, or as starting points for
-your own training.
+Each repository holds one trained model: a portable JAX file for every save
+from the start of its training to 250 million steps, `steps.csv` (one row per
+save, with its validation result) and the training records. Use them as
+opponents, as teammates, or as starting points for your own training.
 
-## One-Line Names
+| Model | Season 0 rank | Elo | Tier | Saves |
+|---|---|---|---|---|
+{table}
 
-Write a model's name anywhere MARL-BGs takes a model:
+The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package,
+so the Season 0 field is nine. Every game, rating and original save folder is in
+the dataset [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
-| Name | Gives |
-|---|---|
-| `{example}` | The save that played its season |
-| `{example}@final` | The last save |
-| `{example}@100M` | The nearest save at or before 100,000,000 steps |
-| `{example}@250_675_200` | Exactly the save at step 250,675,200 |
+## Use One In Three Lines
 
 ```python
 import marl_battlegrounds as marl_bgs
 
-system = marl_bgs.load_method("{example}@100M")
+system = marl_bgs.load_method("{example}@final")
+result = marl_bgs.evaluate(system, "tdm-alpha", num_episodes=20)
 ```
 
-Each file downloads once and is checked before use. Saved results record the
-exact file and commit, so resuming a run loads the same file.
+Add `@final` (the last save), `@100M` (the nearest save at or before
+100,000,000 steps) or an exact step such as `@99_942_400` to pick a save; with
+no `@`, a name gives the save that played Season 0. Each file downloads once and
+is checked before use. Saved results record the exact file and commit, so
+resuming a run loads the same file. No account or token is needed.
 
-## Collections
+## Links
 
-- **TDM Season 0 Big Nine:** the six trained Season 0 models and the results.
-  The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package,
-  so the field is nine.
-- **General Pool:** every released entrant.
+- Code: [{CODE_URL.removeprefix("https://")}]({CODE_URL})
+- Install: `pip install marl-battlegrounds` ([PyPI](https://pypi.org/project/marl-battlegrounds/))
+- How to use the released models: [the Released Models guide]({GUIDE_URL})
+- Website: [marl-battlegrounds.com](https://marl-battlegrounds.com)
+- Collections: **Season 0 Big Nine (TDM)** (the six models and the results) and
+  **General Pool (TDM)** (every released entrant)
 
+{citation_section(*citation)}
 ## Contact
 
 Questions: {CONTACT}. Everything here is released under Apache-2.0.
 """
+
+
+_GPU_ID = re.compile(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
+_SAVE_STEP = re.compile(r"_(?:actor|checkpoint|past)_step_(\d+)_")
+# Where each kind of text file sits decides how a training opponent is named:
+# files outside the dataset name the dataset with its commit; files inside it
+# name the folder; the games folder also names the original save folders.
+type Role = Literal["outside", "dataset", "games"]
+
+
+@dataclass(frozen=True)
+class PathMap:
+    """Everything needed to turn this computer's paths into public names.
+
+    Attributes
+    ----------
+    search : str
+        Absolute path of ``artifacts/paper-experiments/hyperparameter-search``
+        as it appears in the built files.
+    runs : mapping of str to tuple of (str, str)
+        Each training run folder's absolute path to its model repository and
+        records label (``FIRST_RECORDS`` or ``SECOND_RECORDS``).
+    released : mapping of str to str
+        Each released save's absolute actor folder to its released name with
+        its exact step, such as ``MARL-BattleGrounds/tdm-season-0-qmix@40_108_032``.
+    originals : mapping of str to str
+        Each Season 0 save's absolute actor folder to its model repository.
+    dataset_commit : str or None
+        The dataset commit that ``hf://`` addresses name. None while the
+        dataset itself is being cleaned, before that commit exists.
+    """
+
+    search: str
+    runs: Mapping[str, tuple[str, str]]
+    released: Mapping[str, str]
+    originals: Mapping[str, str]
+    dataset_commit: str | None
+
+
+def path_map(artifacts: Path, dataset_commit: str | None) -> PathMap:
+    """Return the PathMap of the Season 0 release built from ``artifacts``.
+
+    Parameters
+    ----------
+    artifacts : Path
+        The ``artifacts/`` folder the release was built from. Only read.
+    dataset_commit : str or None
+        The dataset's squashed commit (40 hexadecimal characters), or None.
+
+    Returns
+    -------
+    PathMap
+        Built from the same runs, saves and ratings as ``build``.
+    """
+    root = Path(str(artifacts.resolve()))
+    search = root / _SEARCH
+    runs: dict[str, tuple[str, str]] = {}
+    released: dict[str, str] = {}
+    originals: dict[str, str] = {}
+    for model in MODELS:
+        first, second = search / model.first_run, search / model.second_run
+        runs[str(first)] = (model.repo, FIRST_RECORDS)
+        runs[str(second)] = (model.repo, SECOND_RECORDS)
+        saves = read_saves(first, second)
+        for step, save in saves.items():
+            released[str(save.folder)] = f"{ORG}/{model.repo}@{step_text(step)}"
+        entrant = read_entrant(root / _RATINGS, model.case)
+        originals[str(_entered_save(saves, entrant).folder)] = model.repo
+    return PathMap(str(search), runs, released, originals, dataset_commit)
+
+
+def _dataset_address(paths: PathMap, folder: str) -> str:
+    """Return the exact ``hf://`` address of a folder in the results dataset."""
+    if paths.dataset_commit is None:
+        raise PublishError(f"The dataset commit is needed to name {folder}")
+    return f"hf://datasets/{ORG}/{DATASET_REPO}@{paths.dataset_commit}/{folder}"
+
+
+def public_path(path: str, role: Role, paths: PathMap) -> str:
+    """Return the public name of one local path from the release's build.
+
+    Parameters
+    ----------
+    path : str
+        An absolute path under ``paths.search``.
+    role : {"outside", "dataset", "games"}
+        Where the text sits: a model repository, the results dataset, or the
+        dataset's games folder.
+    paths : PathMap
+        The release's path map.
+
+    Returns
+    -------
+    str
+        - A training opponent: ``training-opponents/models/<name>`` inside the
+          dataset, else that folder's ``hf://`` dataset address.
+        - A released save: its released name with its exact step; in the games
+          folder, a Season 0 save names its original folder in the dataset.
+        - A save, checkpoint or past copy that is not released:
+          ``not published (<kind> at step N)``.
+        - A run folder: ``training-records/<label>`` in its own repository,
+          else ``MARL-BattleGrounds/<repo>/training-records/<label>``.
+        A path inside a folder keeps its remaining part after the new name.
+        Any other path is returned unchanged, so the local path scan refuses it.
+    """
+    if not path.startswith(paths.search + "/"):
+        return path
+    rest = path[len(paths.search) + 1 :]
+    if rest.startswith("opponents/models/"):
+        folder = f"training-opponents/models/{rest.removeprefix('opponents/models/')}"
+        return folder if role != "outside" else _dataset_address(paths, folder)
+    for run, (repo, label) in paths.runs.items():
+        if path != run and not path.startswith(run + "/"):
+            continue
+        records = (
+            f"training-records/{label}"
+            if role == "outside"
+            else f"{ORG}/{repo}/training-records/{label}"
+        )
+        inside = path[len(run) + 1 :]
+        head, _, below = inside.partition("/")
+        if head not in ("actors", "checkpoints", "past_copies") or not below:
+            return records if path == run else f"{records}/{inside}"
+        folder, _, more = below.partition("/")
+        full = f"{run}/{head}/{folder}"
+        if role == "games" and full in paths.originals:
+            name = _dataset_address(
+                paths, f"season-0-originals/{paths.originals[full]}"
+            )
+        elif head == "actors" and full in paths.released:
+            name = paths.released[full]
+        else:
+            found = _SAVE_STEP.search(folder)
+            kind = {"actors": "save", "checkpoints": "checkpoint"}.get(
+                head, "past copy"
+            )
+            step = f" at step {int(found.group(1)):,}" if found else ""
+            name = f"not published ({kind}{step})"
+        return f"{name}/{more}" if more else name
+    return path
+
+
+def public_text(text: str, role: Role, paths: PathMap) -> str:
+    """Return a text file's content with every local name made public.
+
+    Parameters
+    ----------
+    text : str
+        The file's text.
+    role : {"outside", "dataset", "games"}
+        Where the file sits (see public_path).
+    paths : PathMap
+        The release's path map.
+
+    Returns
+    -------
+    str
+        The text with each path under ``paths.search`` replaced by public_path,
+        each GPU id (``GPU-<uuid>``) replaced by ``GPU-<id>``, and the old
+        repository address replaced by CODE_URL. Everything else is unchanged.
+    """
+    pattern = re.compile(re.escape(paths.search) + r"[^\s\"'`,;)\]}>|]*")
+    text = pattern.sub(lambda match: public_path(match.group(0), role, paths), text)
+    return _GPU_ID.sub("GPU-<id>", text).replace(OLD_CODE_URL, CODE_URL)
+
+
+def _json_line(value: object) -> bytes:
+    """Encode JSON as saved actor descriptions are: compact, sorted, one line."""
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+    ).encode()
+
+
+def resign_description(raw: bytes, role: Role, paths: PathMap) -> bytes | None:
+    """Return a saved actor description with public names and a new ID.
+
+    Parameters
+    ----------
+    raw : bytes
+        An ``actor_details.json``: compact sorted JSON whose ``checkpoint_id``
+        is the SHA-256 of the description without that field.
+    role : {"outside", "dataset", "games"}
+        Where the description sits (see public_path).
+    paths : PathMap
+        The release's path map.
+
+    Returns
+    -------
+    bytes or None
+        None when nothing changes. Otherwise the cleaned description, with
+        ``metadata.derived_from`` set to the old ``checkpoint_id`` and a new
+        ``checkpoint_id`` computed by the same rule. The training run's own id,
+        ``metadata.checkpoint_id``, never changes.
+
+    Raises
+    ------
+    PublishError
+        The old ``checkpoint_id`` does not match the description, so it was
+        not a saved description.
+    """
+    details = _object(json.loads(raw))
+    old = details.get("checkpoint_id")
+    body = {key: value for key, value in details.items() if key != "checkpoint_id"}
+    if old != hashlib.sha256(_json_line(body)).hexdigest() or raw != _json_line(
+        details
+    ):
+        raise PublishError("A description's checkpoint_id does not match its content")
+    cleaned = _object(json.loads(public_text(raw.decode(), role, paths)))
+    if cleaned == details:
+        return None
+    cleaned.pop("checkpoint_id")
+    cleaned["metadata"] = {**_object(cleaned.get("metadata")), "derived_from": old}
+    cleaned["checkpoint_id"] = hashlib.sha256(_json_line(cleaned)).hexdigest()
+    return _json_line(cleaned)
+
+
+def clean_model_file(source: Path, target: Path, paths: PathMap) -> bool:
+    """Write a portable model file whose description names no local path.
+
+    Parameters
+    ----------
+    source : Path
+        A format 1 portable model file. Only read.
+    target : Path
+        Where to write the result. It must not exist yet.
+    paths : PathMap
+        The release's path map, with its dataset commit.
+
+    Returns
+    -------
+    bool
+        True when the description changed; False when the file is copied
+        byte for byte.
+
+    Notes
+    -----
+    Only ``actor_details.json`` and ``model.json`` change: the new description
+    and, in ``model.json``, its ``checkpoint_id`` and part hash. The file is
+    written by the portable model module's own writer, so the program, weights
+    and initial memory keep their exact bytes.
+    """
+    from marl_battlegrounds import portable_models
+
+    with zipfile.ZipFile(source) as archive:
+        parts = {name: archive.read(name) for name in archive.namelist()}
+    new = resign_description(parts["actor_details.json"], "outside", paths)
+    if new is None:
+        shutil.copyfile(source, target)
+        return False
+    model = _object(json.loads(parts.pop("model.json")))
+    model.pop("parts", None)
+    model["checkpoint_id"] = json.loads(new)["checkpoint_id"]
+    parts["actor_details.json"] = new
+    portable_models._write(target, model, parts)  # pyright: ignore[reportPrivateUsage]
+    return True
+
+
+def _clean_games(source: Path, target: Path, paths: PathMap) -> None:
+    """Write the games folder's settings and record with public names.
+
+    ``tournament_config.json`` gets public controller references and its
+    ``snapshot_id`` recomputed by the package's own rule;
+    ``run_details.json`` gets the same references, the new settings, the new
+    snapshot ID and the new SHA-256 of ``tournament_config.json``.
+    """
+    from marl_battlegrounds.evaluation.tournament_config import snapshot_identity
+
+    old_config_bytes = (source / "tournament_config.json").read_bytes()
+    config = _object(json.loads(public_text(old_config_bytes.decode(), "games", paths)))
+    old_snapshot = str(config["snapshot_id"])
+    config["snapshot_id"] = snapshot_identity(config)
+    config_bytes = _json_line(config)
+    (target / "tournament_config.json").write_bytes(config_bytes)
+    text = public_text((source / "run_details.json").read_text(), "games", paths)
+    text = text.replace(old_snapshot, str(config["snapshot_id"])).replace(
+        hashlib.sha256(old_config_bytes).hexdigest(),
+        hashlib.sha256(config_bytes).hexdigest(),
+    )
+    details = _object(json.loads(text))
+    _object(details["details"])["canonical_config"] = config
+    (target / "run_details.json").write_bytes(_json_line(details))
+
+
+_GAMES_FILES = (
+    "season-0-games/run_details.json",
+    "season-0-games/tournament_config.json",
+)
+
+
+def clean_repo(source: Path, target: Path, paths: PathMap) -> int:
+    """Write a copy of one built repository folder that names no local path.
+
+    Parameters
+    ----------
+    source : Path
+        A built model repository folder, or the built results dataset folder
+        (its name decides which). Only read.
+    target : Path
+        A new folder for the copy. It must not exist yet.
+    paths : PathMap
+        The release's path map. A model repository needs its
+        ``dataset_commit``; without one the dataset is cleaned without its two
+        games files, which name that commit.
+
+    Returns
+    -------
+    int
+        The number of files whose content changed.
+
+    Raises
+    ------
+    PublishError
+        ``target`` exists, a description's ID does not match its content, or a
+        model repository is cleaned without the dataset commit.
+
+    Notes
+    -----
+    Text files get public_text. Saved descriptions (``actor_details.json``,
+    also inside model files) are re-signed (see resign_description). A model
+    repository's ``steps.csv`` gets each model file's new size and SHA-256, and
+    ``config.json`` the new SHA-256 of ``steps.csv``. Other files are hard
+    links when possible, else copies. Weights and programs never change.
+    """
+    if target.exists():
+        raise PublishError(f"{target} already exists; choose a new --out folder")
+    dataset = source.name == DATASET_REPO
+    if not dataset and paths.dataset_commit is None:
+        raise PublishError(f"{source.name} needs --dataset-commit")
+    changed = 0
+    files: dict[str, tuple[int, str]] = {}
+    for path in sorted(source.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source).as_posix()
+        out = target / relative
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if relative in _GAMES_FILES or relative in ("steps.csv", "config.json"):
+            continue
+        role: Role = "dataset" if dataset else "outside"
+        if path.suffix == ".zip" and relative.startswith("models/"):
+            changed += clean_model_file(path, out, paths)
+            files[relative] = (out.stat().st_size, _sha256(out))
+            continue
+        data = path.read_bytes()
+        if path.name == "actor_details.json":
+            new = resign_description(data, role, paths)
+        elif path.suffix in (".json", ".jsonl", ".csv", ".md", ".yaml", ".txt"):
+            text = public_text(data.decode(), role, paths)
+            new = None if text == data.decode() else text.encode()
+        else:
+            new = None
+        if new is None:
+            _link_or_copy(path, out)
+        else:
+            out.write_bytes(new)
+            changed += 1
+    if dataset and paths.dataset_commit is not None:
+        _clean_games(source / "season-0-games", target / "season-0-games", paths)
+        changed += 2
+    if not dataset:
+        with (source / "steps.csv").open(newline="") as file:
+            rows = list(csv.reader(file))
+        header, body = rows[0], rows[1:]
+        where = {name: header.index(name) for name in ("file", "bytes", "sha256")}
+        for row in body:
+            size, digest = files[row[where["file"]]]
+            row[where["bytes"]], row[where["sha256"]] = str(size), digest
+        _write_csv(target / "steps.csv", header, body)
+        config = _read_json(source / "config.json")
+        config["steps_csv_sha256"] = _sha256(target / "steps.csv")
+        (target / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+        changed += 2
+    print(f"{source.name}: {changed} files changed, written to {target}")
+    return changed
 
 
 def _token_bytes() -> bytes | None:
@@ -1701,7 +2340,7 @@ def scan_bytes(data: bytes | mmap.mmap, token: bytes | None) -> set[str]:
 
 
 def scan_folder(folder: Path) -> tuple[int, list[tuple[Path, list[str]]]]:
-    """Search every file under ``folder`` for secret tokens.
+    """Search every file under ``folder`` for secret tokens and local paths.
 
     Parameters
     ----------
@@ -1713,7 +2352,10 @@ def scan_folder(folder: Path) -> tuple[int, list[tuple[Path, list[str]]]]:
     -------
     tuple of (int, list)
         The number of files scanned, and each file with findings and its
-        sorted kinds. An unreadable ZIP counts as a finding.
+        sorted kinds. An unreadable ZIP counts as a finding. A local folder
+        path or GPU id (see ``released_models._local_path_findings``) counts as
+        ``"local path"``, with the first one found, because a path is not a
+        secret and naming it shows where to fix it.
     """
     token = _token_bytes()
     findings: list[tuple[Path, list[str]]] = []
@@ -1733,6 +2375,9 @@ def scan_folder(folder: Path) -> tuple[int, list[tuple[Path, list[str]]]]:
                         found |= scan_bytes(archive.read(entry), token)
             except (OSError, zipfile.BadZipFile):
                 found.add("unreadable ZIP file")
+        local = _local_path_findings(path.name, path.read_bytes())
+        if local:
+            found.add(f"local path ({len(local)} found, first: {local[0]})")
         if found:
             findings.append((path, sorted(found)))
     return len(paths), findings
@@ -1742,9 +2387,12 @@ def _report_scan(folder: Path) -> bool:
     """Scan a folder, print the result and return True when it is clean."""
     count, findings = scan_folder(folder)
     if not findings:
-        print(f"scan: {count} files in {folder}, no secrets found")
+        print(f"scan: {count} files in {folder}, no secrets or local paths found")
         return True
-    print(f"refused: {len(findings)} of {count} files in {folder} may hold secrets:")
+    print(
+        f"refused: {len(findings)} of {count} files in {folder} may hold secrets "
+        "or local paths:"
+    )
     for path, kinds in findings:
         print(f"  {path.relative_to(folder)}: {', '.join(kinds)}")
     return False
@@ -2004,33 +2652,62 @@ def collections(api: HfApi, *, private: bool, dry_run: bool) -> int:
     return 0
 
 
-def org_card_command(api: HfApi, *, private: bool, dry_run: bool) -> int:
-    """Create the organization card Space as private and upload its card.
+# The static Space's default page. With it, Hugging Face shows that page as the
+# organization card; without it, Hugging Face shows README.md.
+_SPACE_DEFAULTS = ("index.html", "style.css")
+
+
+def _drop_space_defaults(api: HfApi, *, dry_run: bool) -> None:
+    """Delete the Space's default index.html and style.css if they exist."""
+    listed = _call(dry_run, api.list_repo_files, ORG_CARD_REPO, repo_type="space")
+    present = set(_SPACE_DEFAULTS) if listed is None else set(listed)
+    for name in _SPACE_DEFAULTS:
+        if name in present:
+            _call(
+                dry_run,
+                api.delete_file,
+                name,
+                repo_id=ORG_CARD_REPO,
+                repo_type="space",
+                commit_message=f"Remove the default {name}",
+            )
+
+
+def org_card_command(api: HfApi, release: Path, *, private: bool, dry_run: bool) -> int:
+    """Upload the organization card, creating its Space when it does not exist.
 
     Parameters
     ----------
     api : HfApi
         The Hub client.
+    release : Path
+        The built release folder, read for the card's table (see org_rows).
     private : bool
-        Must be True; ``publish`` makes it public later.
+        Visibility for a Space this call creates. An existing Space keeps its
+        visibility.
     dry_run : bool
         True prints the calls and the card text and makes no call.
 
     Returns
     -------
     int
-        0 after the upload; 1 when the card text fails the secret scan.
+        0 after the upload; 1 when the card text fails the secret or local path
+        scan.
 
     Raises
     ------
     PublishError
-        ``private`` is False.
+        The release folder lacks what the table needs, or README.md has no paper
+        citation.
+
+    Notes
+    -----
+    The Space's default ``index.html`` and ``style.css`` are deleted, so Hugging
+    Face shows ``README.md`` as the organization card.
     """
-    if not private:
-        raise PublishError("the organization card is created private; pass --private")
-    text = org_card().encode()
-    if scan_bytes(text, _token_bytes()):
-        print("refused: the organization card may hold a secret")
+    text = org_card(org_rows(release), paper_citation(_README.read_text())).encode()
+    if scan_bytes(text, _token_bytes()) or _local_path_findings("README.md", text):
+        print("refused: the organization card may hold a secret or a local path")
         return 1
     _call(
         dry_run,
@@ -2038,7 +2715,7 @@ def org_card_command(api: HfApi, *, private: bool, dry_run: bool) -> int:
         ORG_CARD_REPO,
         repo_type="space",
         space_sdk="static",
-        private=True,
+        private=private,
         exist_ok=True,
     )
     _call(
@@ -2050,8 +2727,75 @@ def org_card_command(api: HfApi, *, private: bool, dry_run: bool) -> int:
         repo_type="space",
         commit_message="Update the organization card",
     )
+    _drop_space_defaults(api, dry_run=dry_run)
     if dry_run:
         print(text.decode())
+    return 0
+
+
+def cards(api: HfApi, *, dry_run: bool) -> int:
+    """Bring every card's citation up to date with the README's.
+
+    Run after the citation in ``CITATION.cff`` and ``README.md`` changes, for
+    example when the paper gets its arXiv number.
+
+    Parameters
+    ----------
+    api : HfApi
+        The Hub client.
+    dry_run : bool
+        True prints the calls and makes none, not even downloads.
+
+    Returns
+    -------
+    int
+        0 after every card is current; 1 when a new card fails the scans.
+
+    Raises
+    ------
+    PublishError
+        README.md has no paper citation, or a card has no "Cite This Work"
+        section.
+
+    Notes
+    -----
+    Reads the six model cards, the dataset card and the organization card from
+    Hugging Face, replaces only their "Cite This Work" sections and arXiv tags
+    (see with_citation), and uploads only the cards that changed. Only
+    ``README.md`` files change, so no model file or pinned commit changes. Needs
+    nothing but this checkout's README.md and a token that can write to the
+    organization.
+    """
+    citation = paper_citation(_README.read_text())
+    targets = [
+        *(_repo(name) for name in (*MODEL_REPOS, DATASET_REPO)),
+        (ORG_CARD_REPO, "space"),
+    ]
+    for repo_id, repo_type in targets:
+        if dry_run:
+            print(f"dry run: would refresh the citation in {repo_id}")
+            continue
+        path = api.hf_hub_download(repo_id, "README.md", repo_type=repo_type)
+        old = Path(path).read_text()
+        new = with_citation(old, *citation)
+        if new == old:
+            print(f"{repo_id}: card already current")
+            continue
+        data = new.encode()
+        if scan_bytes(data, _token_bytes()) or _local_path_findings("README.md", data):
+            print(f"refused: the new card of {repo_id} may hold a secret or a path")
+            return 1
+        _call(
+            dry_run,
+            api.upload_file,
+            path_or_fileobj=data,
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type=repo_type,
+            commit_message="Update the citation",
+        )
+        print(f"{repo_id}: card updated")
+    _drop_space_defaults(api, dry_run=dry_run)
     return 0
 
 
@@ -2195,12 +2939,37 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
             default=_ARTIFACTS,
             help="the project's artifacts folder (read only)",
         )
-    scan = commands.add_parser("scan", help="refuse when any file holds a secret")
+    scan = commands.add_parser(
+        "scan", help="refuse when any file holds a secret or a local path"
+    )
     scan.add_argument("folder", type=Path)
+    clean = commands.add_parser(
+        "clean", help="copy built folders with local paths made public"
+    )
+    clean.add_argument("folders", type=Path, nargs="+", help="built repository folders")
+    clean.add_argument("--out", type=Path, required=True, help="output parent folder")
+    clean.add_argument(
+        "--dataset-commit",
+        default=None,
+        help="the dataset's squashed commit; needed for model repositories and "
+        "the dataset's games files",
+    )
+    clean.add_argument(
+        "--artifacts",
+        type=Path,
+        default=_ARTIFACTS,
+        help="the artifacts folder the release was built from (read only)",
+    )
     send = commands.add_parser("upload", help="upload one built folder, private")
     send.add_argument("folder", type=Path)
     gather = commands.add_parser("collections", help="create the two collections")
     card = commands.add_parser("org-card", help="upload the organization card")
+    card.add_argument(
+        "--release", type=Path, required=True, help="the built release folder"
+    )
+    refresh = commands.add_parser(
+        "cards", help="bring every card's citation up to date with README.md"
+    )
     public = commands.add_parser("publish", help="make the whole release public")
     again = commands.add_parser("redo", help="delete and recreate a private repository")
     again.add_argument("repo")
@@ -2208,9 +2977,9 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
         command.add_argument(
             "--private",
             action="store_true",
-            help="required: create private repositories",
+            help="create private repositories (required for upload and collections)",
         )
-    for command in (send, gather, card, public, again):
+    for command in (send, gather, card, refresh, public, again):
         command.add_argument(
             "--dry-run", action="store_true", help="print the calls and make none"
         )
@@ -2219,6 +2988,7 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
         match arguments.command:
             case "build":
                 chosen = set(arguments.repo or MODEL_REPOS)
+                citation = paper_citation(_README.read_text())
                 for model in MODELS:
                     if model.repo in chosen:
                         build_model_repo(
@@ -2227,6 +2997,7 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
                             out=arguments.out,
                             artifacts=arguments.artifacts,
                             same_games=arguments.same_games,
+                            citation=citation,
                         )
                 return 0
             case "build-dataset":
@@ -2234,11 +3005,22 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
                     arguments.opponents_source or arguments.artifacts / _OPPONENTS_ZIP
                 )
                 build_dataset(
-                    out=arguments.out, artifacts=arguments.artifacts, opponents=source
+                    out=arguments.out,
+                    artifacts=arguments.artifacts,
+                    opponents=source,
+                    citation=paper_citation(_README.read_text()),
                 )
                 return 0
             case "scan":
                 return 0 if _report_scan(arguments.folder) else 1
+            case "clean":
+                paths = path_map(arguments.artifacts, arguments.dataset_commit)
+                for folder in arguments.folders:
+                    target = arguments.out / folder.name
+                    clean_repo(folder, target, paths)
+                    if not _report_scan(target):
+                        return 1
+                return 0
             case _:
                 pass
         hub = api if api is not None else HfApi()
@@ -2256,8 +3038,13 @@ def main(argv: Sequence[str] | None = None, api: HfApi | None = None) -> int:
                 )
             case "org-card":
                 return org_card_command(
-                    hub, private=arguments.private, dry_run=arguments.dry_run
+                    hub,
+                    arguments.release,
+                    private=arguments.private,
+                    dry_run=arguments.dry_run,
                 )
+            case "cards":
+                return cards(hub, dry_run=arguments.dry_run)
             case "publish":
                 return publish(hub, dry_run=arguments.dry_run)
             case _:

@@ -35,6 +35,9 @@ Public entry point: download_models, the prefetch used by
 ``python -m marl_battlegrounds models download <name>...``. The other helpers
 are private and shared by the package's loading and saving owners
 (_method_loading, training, evaluation, experiments and the BattleClient).
+_local_path_findings is the one rule for "does this file reveal someone's
+computer?" (local folder paths and GPU ids); the model publishing tool and
+``entry check`` both use it.
 Importing this module uses only the standard library; huggingface_hub is
 imported only when a name must be resolved or a file downloaded.
 """
@@ -147,6 +150,116 @@ class _Address:
     commit: str
     path: str
     dataset: bool
+
+
+# A local folder path: an absolute path, not part of a URL or an hf:// address.
+_ABSOLUTE_PATH = re.compile(
+    r"(?<![\w.:/\\~-])(/(?:[\w.@+~-]+/)*[\w.@+~-]+|[A-Za-z]:(?:\\{1,2}[\w.@+~ -]+)+)"
+)
+# Home folders on Linux, macOS and Windows, as a path starts.
+_HOME_FOLDER = re.compile(
+    r"/home/[^/]+|/Users/[^/]+|/root(?:/|$)|[A-Za-z]:\\{1,2}Users\\"
+)
+_GPU_ID = re.compile(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
+# Files read as text. A file with another suffix (or none) is read as text only
+# when it is valid UTF-8 without NUL bytes, so weights and other binary data,
+# whose random bytes can look like "/home/" or "C:\", are never searched.
+_TEXT_SUFFIXES = frozenset(
+    (".json", ".jsonl", ".csv", ".md", ".yaml", ".yml", ".txt", ".html", ".svg")
+)
+_BINARY_SUFFIXES = frozenset((".npy", ".npz", ".jaxexport", ".png", ".gif", ".bin"))
+
+
+def _local_names() -> tuple[str, ...]:
+    """Return this computer's user name and host name, lowercase, when known."""
+    import getpass
+    import socket
+
+    names: list[str] = []
+    for read in (getpass.getuser, socket.gethostname):
+        try:
+            name = read().strip().lower()
+        except (OSError, KeyError):
+            continue
+        if len(name) >= 3:
+            names.append(name)
+    return tuple(names)
+
+
+def _text_findings(text: str, local_names: tuple[str, ...]) -> list[str]:
+    """Return the local folder paths and GPU ids in one text, in first-seen order."""
+    found: dict[str, None] = {}
+    for match in _ABSOLUTE_PATH.finditer(text):
+        path = match.group(1)
+        parts = {part.lower() for part in re.split(r"[/\\]+", path) if part}
+        if _HOME_FOLDER.match(path) or parts & set(local_names):
+            found[f"a folder on this computer: {path}"] = None
+    for match in _GPU_ID.finditer(text):
+        found[f"a GPU id: {match.group(0)}"] = None
+    return list(found)
+
+
+def _local_path_findings(name: str, data: bytes) -> list[str]:
+    r"""Return every local folder path and GPU id one file would reveal.
+
+    The one rule for "does this file reveal someone's computer?". The model
+    publishing tool runs it on every file it releases, and ``entry check``
+    runs it on an entrant's exported model file.
+
+    Parameters
+    ----------
+    name : str
+        The file's name or path. Only its suffix is used: ``.zip`` files are
+        opened as ZIP archives and only their ``.json`` members are read (a
+        portable model file's ``model.json`` and ``actor_details.json``).
+    data : bytes
+        The file's bytes. They are only read.
+
+    Returns
+    -------
+    list of str
+        One plain-English finding per distinct item, in first-seen order, such
+        as ``"a folder on this computer: /home/sam/runs/opponent"`` or
+        ``"a GPU id: GPU-6b11a0c4-..."``. Empty when the file is clean. A
+        finding names what was found, so only show it to that computer's owner.
+
+    Notes
+    -----
+    A folder counts when it is an absolute path that starts in a home folder
+    (``/home/<user>``, ``/Users/<user>``, ``/root``, ``C:\Users``) or that has
+    this computer's user name or host name as one of its folder names. URLs and
+    ``hf://`` addresses never count, and neither does a name outside a path,
+    such as an author's name in a citation. Text is read from text suffixes,
+    from JSON members of ZIP files, and from any other file that is valid UTF-8
+    without NUL bytes; binary data such as weights is skipped, because its
+    random bytes can look like a path. An unreadable ZIP gives one finding.
+    """
+    names = _local_names()
+    suffix = os.path.splitext(name)[1].lower()
+    if suffix == ".zip":
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                texts = [
+                    archive.read(entry).decode("utf-8", "replace")
+                    for entry in archive.infolist()
+                    if entry.filename.lower().endswith(".json")
+                ]
+        except (zipfile.BadZipFile, OSError, ValueError):
+            return [f"an unreadable ZIP file: {name}"]
+        return [finding for text in texts for finding in _text_findings(text, names)]
+    if suffix in _BINARY_SUFFIXES:
+        return []
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        if suffix not in _TEXT_SUFFIXES:
+            return []
+        text = data.decode("utf-8", "replace")
+    if "\x00" in text and suffix not in _TEXT_SUFFIXES:
+        return []
+    return _text_findings(text, names)
 
 
 def _hub() -> ModuleType:
