@@ -30,13 +30,16 @@ rewritten when an approved optional setting is added. Unchanged exactly: the dep
 names (Flashbax for QMIX only), the inference identity of one fixed synthetic actor
 description in the left frame, the System registration IDs of all-ones schema-1-shaped
 actors with the default hooks at scale 1.0 in the world frame and scale 0.01 in the left
-frame (the factories do not check widths), and the launch probe's source text. Only
+frame (the factories do not check widths; checked on Python 3.14 only, because these IDs
+include code digests, which reproduce only on the Python that made them), and the launch
+probe's source text. Only
 values that do not depend on the run, the machine or the CPU thread count are compared.
 """
 
 # pyright: reportPrivateUsage=false
 import hashlib
 import json
+import sys
 from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
@@ -276,6 +279,16 @@ def test_the_raw_pre_red_zone_values_hash_to_the_committed_digests() -> None:
         assert details == expected["collection_details_sha256"]
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="Saved code digests reproduce only on the Python that made them",
+)
+@pytest.mark.parametrize("method", _METHODS)
+def test_an_older_method_keeps_its_registration_ids(method: TrainingMethod) -> None:
+    expected = _fixture()["methods"][method]
+    assert _registrations(method) == expected["registrations"]
+
+
 @pytest.mark.parametrize("method", _METHODS)
 def test_an_older_method_keeps_its_saved_contracts(method: TrainingMethod) -> None:
     expected = _fixture()["methods"][method]
@@ -323,7 +336,6 @@ def test_an_older_method_keeps_its_saved_contracts(method: TrainingMethod) -> No
     ]
     assert sum(_path(row) == _INPUT_KERNEL[method] for row in actor) == 1
     assert _inference(method) == expected["inference_digest"]
-    assert _registrations(method) == expected["registrations"]
     collection, state = _learner(method)
     layout = checkpoints._layout(jax.eval_shape(_same, state))
     widened, counts, added = _expected_state(old["state_layout"])
