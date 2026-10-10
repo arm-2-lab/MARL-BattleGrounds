@@ -18,7 +18,7 @@ import numpy as np
 import optax  # pyright: ignore[reportMissingTypeStubs]
 from jax import Array
 from tests.baseline_donor_reference import build_same_stack_reference
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.baselines.actions import categorical_action_mask, decode_actions
 from marl_battlegrounds.baselines.inputs import (

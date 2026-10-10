@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.training_continuation_helpers import fixed_source, latest
+from tests.helpers.training_continuation_helpers import fixed_source, latest
 
 from marl_battlegrounds.baselines.ppo import PPOConfig
 from marl_battlegrounds.training import TrainConfig, extend_training, runner, train

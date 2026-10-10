@@ -13,8 +13,9 @@ command composes with ``--cfg job`` (a sweep composes the first choice of each
 override, since Hydra refuses ``--cfg`` with ``-m``), other ``python
 examples/*.py`` commands print ``--help``, and every ``python -m
 marl_battlegrounds`` command parses with the real argument parser without
-running; every example is listed in examples/README.md and the guide named
-there links it; the README repeats performance.md's headline speed sentence
+running; every example (in any folder under examples/) is listed in
+examples/README.md by its path inside examples/, and the guide named there
+links it; the README repeats performance.md's headline speed sentence
 word for word; CITATION.cff gives pyproject.toml's version, and every
 repository and website address is written one way; and docs/api.md is current.
 Guide code runs in a temporary folder with JAX on the CPU.
@@ -315,9 +316,9 @@ def test_stage_and_example_commands_compose(
 def test_every_example_is_indexed_and_linked_from_its_guide() -> None:
     index = (ROOT / "examples" / "README.md").read_text()
     examples = sorted(
-        Path(name).name
+        Path(name).relative_to("examples").as_posix()
         for name in TRACKED
-        if Path(name).parent == Path("examples")
+        if Path(name).is_relative_to("examples")
         and Path(name).suffix in (".py", ".ipynb")
         and not Path(name).name.startswith("_")
     )

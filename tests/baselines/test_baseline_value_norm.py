@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from jax import Array
 from tests.baselines.test_baseline_ppo import numerical_batch as numerical_batch
-from tests.training_learner_helpers import equal
+from tests.helpers.training_learner_helpers import equal
 
 from marl_battlegrounds.baselines import ppo
 

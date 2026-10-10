@@ -1,0 +1,815 @@
+"""Export Python's authorized presentation records for browser tests.
+
+The output lets browser tests compare their decoding with the Python-owned
+record format. This is test infrastructure, not a researcher command.
+
+red_zone_cases hold sealed presentations whose map is AuthorizedMapV2: real
+Replay Oracle, NoSharedObs and SharedObs presentations from replay V4 games at
+Red Zone depth 5, and real live Oracle presentations from DevClient sessions
+on each other shared geometry case of tests.helpers.red_zone_scene_cases (depths 6,
+5.5 with swapped banks, 12 and 20 on width 20, both banks on the left, depth 0
+as null, depth 0.1 on width 17.3, a 12 x 12 map, and the edge depths
+float32(1e-8) on widths 20 and 12.1 and float32(12.1) on width 12.1), with every
+agent and pad inside its map. One more live Oracle case repeats depth 6 with a
+wall across Team A's strip edge (x = 6) and a pillar across Team B's (x = 14),
+so the browser can check that obstacles stay on top of the tint.
+red_zone_contract_cases copy the shared numeric contract table. The legacy V1
+compatibility case keeps AuthorizedMapV1.
+"""
+
+# pyright: reportPrivateUsage=false
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import fields, replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Protocol, cast
+
+import jax
+import jax.numpy as jnp
+from scripts.dev.visual_debugger.presentation_protocol import (
+    LiveNoSharedObsAuthorizedPresentationFrameV1,
+    LiveOracleAuthorizedPresentationFrameV1,
+    LiveOraclePresentationSourceIdentityV1,
+    ReplayNoSharedObsAuthorizedPresentationFrameV1,
+    _seal_oracle_authorized_current_endpoint_v1,
+)
+from scripts.dev.visual_debugger.replay_service import ReplayViewerService
+from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.evaluation.replays.test_evaluation_pov import _runtime_provenance
+from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
+from tests.helpers.evaluation_fixtures import current_captured_evaluation_trajectory
+from tests.helpers.red_zone_scene_cases import (
+    RED_ZONE_CONTRACT_CASES,
+    RED_ZONE_GEOMETRY_CASES,
+    RedZoneGeometryCase,
+    red_zone_env_config,
+)
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.rendering.test_rendering_authorized_inspection import (
+    _InspectionCases,
+    inspection_cases,
+)
+from tests.visual_debugger.test_visual_debugger_presentation_protocol_v1 import (
+    _FiveFrames,
+    _live_no_shared_at,
+    _live_oracle_at,
+    _replay_no_shared_at,
+    _replay_oracle_at,
+    _replay_shared_at,
+    five_frames,
+)
+from tests.visual_debugger.test_visual_debugger_replay_service import (
+    _presentation_service,
+    _ServiceCases,
+    service_cases,
+)
+from tests.visual_debugger.test_visual_debugger_service import _service
+
+from marl_battlegrounds._battle_client.control import create_session
+from marl_battlegrounds._battle_client.model import DebuggerScenario
+from marl_battlegrounds._battle_client.protocol import (
+    CommandRequestV1,
+    KeyboardCommandV1,
+)
+from marl_battlegrounds._battle_client.service import DebuggerService
+from marl_battlegrounds.core.env import initialize_scenario_state, reset
+from marl_battlegrounds.core.types import (
+    MAX_OBSTACLE_SLOTS,
+    OBSTACLE_FEATURES,
+    OBSTACLE_TYPE_PILLAR,
+    OBSTACLE_TYPE_WALL,
+    EnvConfig,
+    EnvState,
+)
+from marl_battlegrounds.evaluation._recording.capture import (
+    capture_initial_evaluation_frame_v3,
+)
+from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
+from marl_battlegrounds.evaluation.models import ExecutionInformationMode
+from marl_battlegrounds.evaluation.replay_io import (
+    REPLAY_FILE_SUFFIX_V1,
+    load_replay,
+    load_replay_bundle_v1,
+    save_replay,
+    save_replay_bundle_v1,
+)
+from marl_battlegrounds.rendering.authorized_pov_scene import pov_presentation_key_v1
+from marl_battlegrounds.rendering.authorized_presentation import (
+    AgentPovVisualIncomingAgentPhaseTrajectoryV1,
+    AuthorizedBattlefieldSceneV1,
+    AuthorizedClassMechanicsV1,
+    AuthorizedClassMechanicsV2,
+    AuthorizedMapV1,
+    AuthorizedSpawnShieldMechanicsAvailableV1,
+    AuthorizedSpawnShieldMechanicsAvailableV2,
+    ReplayIncomingAbilityActivatedEventV1,
+    ReplayIncomingAgentAnchorV1,
+    ReplayIncomingAgentLeftCombatEventV1,
+)
+
+
+class _WrappedFixture0[T](Protocol):
+    __wrapped__: Callable[[], T]
+
+
+class _WrappedFixture1[T, R](Protocol):
+    __wrapped__: Callable[[T], R]
+
+
+def _live_pov_service() -> DebuggerService:
+    session = create_session(
+        get_scenario("arena_5v5"),
+        seed=0,
+        evaluation_launch_specification=debugger_test_launch_specification(),
+        controlled_global_slot=None,
+        show_ranges=True,
+        verbose_logging=False,
+    )
+    return DebuggerService(
+        session,
+        view_mode="pov",
+        preset="analysis",
+        include_stress=False,
+        session_id="cp2-7-live-pov-fixture",
+    )
+
+
+def _live_shared_pov_service() -> DebuggerService:
+    session = create_session(
+        get_scenario("arena_5v5"),
+        seed=0,
+        evaluation_launch_specification=debugger_test_launch_specification(),
+        controlled_global_slot=0,
+        show_ranges=True,
+        verbose_logging=False,
+        execution_information_mode="shared_obs",
+    )
+    service = DebuggerService(
+        session,
+        view_mode="pov",
+        preset="analysis",
+        include_stress=False,
+        session_id="cp2-7-live-shared-pov-fixture",
+    )
+    result = service.apply_command(
+        CommandRequestV1(
+            client_id="fixture-client",
+            command_id="submit-live-shared-turn",
+            base_revision=0,
+            command=KeyboardCommandV1(key="Enter"),
+        )
+    )
+    if result.outcome != "response":
+        raise RuntimeError("live SharedObs fixture could not submit one turn")
+    return service
+
+
+def _live_corpse_overlay_frame() -> LiveNoSharedObsAuthorizedPresentationFrameV1:
+    session = create_session(
+        get_scenario("arena_5v5"),
+        seed=0,
+        evaluation_launch_specification=debugger_test_launch_specification(),
+        controlled_global_slot=0,
+        show_ranges=True,
+        verbose_logging=False,
+    )
+    authored_state = session.state._replace(
+        agent_positions=session.state.agent_positions.at[5].set((4.0, 1.0)),
+        alive_mask=session.state.alive_mask.at[5].set(False),
+        current_health=session.state.current_health.at[5].set(0.0),
+    )
+    state, observation, action_mask, _ = initialize_scenario_state(
+        authored_state,
+        session.config,
+    )
+    frame = capture_initial_evaluation_frame_v3(
+        session.evaluation_context,
+        state,
+        observation,
+        action_mask,
+    )
+    service = DebuggerService(
+        replace(
+            session,
+            state=state,
+            observation=observation,
+            action_mask=action_mask,
+            current_evaluation_frame=frame,
+            raw_continuation_identity=None,
+        ),
+        view_mode="pov",
+        preset="analysis",
+        include_stress=False,
+        session_id="browser-live-no-shared-corpse-overlay",
+    )
+    result = service.current_presentation()
+    if (
+        result.outcome != "response"
+        or type(result.payload) is not LiveNoSharedObsAuthorizedPresentationFrameV1
+        or len(result.payload.local_oracle_corpse_overlay.corpse_observations) != 1
+    ):
+        raise RuntimeError("live corpse-overlay fixture did not authorize one corpse")
+    return result.payload
+
+
+def _pair(service: DebuggerService | ReplayViewerService) -> dict[str, object]:
+    raw = service.current_frame()
+    result = service.current_presentation()
+    if result.outcome != "response":
+        raise RuntimeError("fixture service did not produce a presentation response")
+    pair: dict[str, object] = {
+        "transport": raw.model_dump(mode="json"),
+        "presentation": result.payload.model_dump(mode="json"),
+    }
+    if isinstance(service, ReplayViewerService):
+        pair["timeline"] = service.current_timeline().model_dump(mode="json")
+    return pair
+
+
+def _corpse_overlay_browser_cases() -> tuple[
+    ReplayNoSharedObsAuthorizedPresentationFrameV1,
+    ReplayNoSharedObsAuthorizedPresentationFrameV1,
+    dict[str, str],
+]:
+    bundle = build_corpse_overlay_bundle(execution_information_mode="no_shared_obs")
+    with TemporaryDirectory(prefix="marl-corpse-overlay-fixture-") as directory:
+        path = Path(directory) / f"corpse{REPLAY_FILE_SUFFIX_V1}"
+        save_replay_bundle_v1(bundle, path)
+        loaded = load_replay_bundle_v1(path, require_metric_report=True)
+        service = ReplayViewerService(
+            loaded,
+            initial_frame_index=0,
+            view_mode="pov",
+            pov_global_slot=0,
+            viewer_session_id="browser-replay-no-shared-corpse-overlay",
+            show_ranges=True,
+        )
+        result = service.current_presentation()
+        persistent_service = ReplayViewerService(
+            loaded,
+            initial_frame_index=1,
+            view_mode="pov",
+            pov_global_slot=0,
+            viewer_session_id="browser-replay-no-shared-persistent-corpse-overlay",
+            show_ranges=True,
+        )
+        persistent_result = persistent_service.current_presentation()
+    if (
+        result.outcome != "response"
+        or type(result.payload) is not ReplayNoSharedObsAuthorizedPresentationFrameV1
+    ):
+        raise RuntimeError(
+            "corpse-overlay fixture did not produce NoSharedObs Agent POV"
+        )
+    frame = result.payload
+    if len(frame.local_oracle_corpse_overlay.corpse_observations) != 1:
+        raise RuntimeError(
+            "corpse-overlay fixture requires exactly one projected corpse"
+        )
+    if (
+        persistent_result.outcome != "response"
+        or type(persistent_result.payload)
+        is not ReplayNoSharedObsAuthorizedPresentationFrameV1
+    ):
+        raise RuntimeError(
+            "persistent corpse-overlay fixture did not produce NoSharedObs Agent POV"
+        )
+    persistent_frame = persistent_result.payload
+    persistent_visual = persistent_frame.visual_events
+    persistent_corpses = (
+        persistent_frame.local_oracle_corpse_overlay.corpse_observations
+    )
+    if persistent_visual is None or len(persistent_corpses) != 1:
+        raise RuntimeError(
+            "persistent corpse-overlay fixture requires one projected corpse"
+        )
+    persistent_corpse_id = persistent_corpses[0].corpse.public_agent_id
+    if any(
+        row.agent_public_agent_id == persistent_corpse_id
+        for row in persistent_visual.agent_phase_trajectories
+    ):
+        raise RuntimeError(
+            "persistent corpse overlay entered the causal trajectory inventory"
+        )
+
+    def reseal(payload: dict[str, object]) -> None:
+        overlay = cast(dict[str, object], payload["local_oracle_corpse_overlay"])
+        content = {
+            key: value
+            for key, value in overlay.items()
+            if key != "authorized_overlay_digest_sha256"
+        }
+        overlay["authorized_overlay_digest_sha256"] = hashlib.sha256(
+            json.dumps(
+                content,
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+
+    corpse_fact_mismatch = cast(
+        dict[str, object], deepcopy(frame.model_dump(mode="json"))
+    )
+    mismatch_overlay = cast(
+        dict[str, object], corpse_fact_mismatch["local_oracle_corpse_overlay"]
+    )
+    mismatch_observation = cast(
+        dict[str, object],
+        cast(list[object], mismatch_overlay["corpse_observations"])[0],
+    )
+    mismatch_corpse = cast(dict[str, object], mismatch_observation["corpse"])
+    mismatch_position = cast(list[float], mismatch_corpse["position"])
+    mismatch_position[0] += 0.25
+    reseal(corpse_fact_mismatch)
+
+    class_mechanics_mismatch = cast(
+        dict[str, object], deepcopy(frame.model_dump(mode="json"))
+    )
+    class_overlay = cast(
+        dict[str, object], class_mechanics_mismatch["local_oracle_corpse_overlay"]
+    )
+    class_observation = cast(
+        dict[str, object], cast(list[object], class_overlay["corpse_observations"])[0]
+    )
+    class_corpse = cast(dict[str, object], class_observation["corpse"])
+    class_facts = cast(dict[str, object], class_observation["oracle_public_facts"])
+    class_corpse["radius"] = cast(float, class_corpse["radius"]) + 0.125
+    class_facts["radius"] = cast(float, class_facts["radius"]) + 0.125
+    reseal(class_mechanics_mismatch)
+
+    return (
+        frame,
+        persistent_frame,
+        {
+            "resealed_corpse_public_facts_mismatch": cast(
+                str,
+                cast(
+                    dict[str, object],
+                    corpse_fact_mismatch["local_oracle_corpse_overlay"],
+                )["authorized_overlay_digest_sha256"],
+            ),
+            "resealed_corpse_class_mechanics_mismatch": cast(
+                str,
+                cast(
+                    dict[str, object],
+                    class_mechanics_mismatch["local_oracle_corpse_overlay"],
+                )["authorized_overlay_digest_sha256"],
+            ),
+        },
+    )
+
+
+def _legacy_v1_scene(
+    scene: AuthorizedBattlefieldSceneV1,
+) -> AuthorizedBattlefieldSceneV1:
+    shield = scene.spawn_shield_mechanics
+    if type(shield) is not AuthorizedSpawnShieldMechanicsAvailableV2:
+        raise RuntimeError("canonical fixture requires available Spawn Shield V2")
+    legacy_class_rows: list[AuthorizedClassMechanicsV1] = []
+    for row in scene.class_mechanics:
+        if type(row) is not AuthorizedClassMechanicsV2:
+            raise RuntimeError("canonical fixture requires class mechanics V2")
+        legacy_class_rows.append(
+            AuthorizedClassMechanicsV1(
+                **{
+                    field.name: getattr(row, field.name)
+                    for field in fields(AuthorizedClassMechanicsV1)
+                }
+            )
+        )
+    return replace(
+        scene,
+        map=AuthorizedMapV1(
+            width=scene.map.width,
+            height=scene.map.height,
+            obstacles=scene.map.obstacles,
+        ),
+        class_mechanics=tuple(legacy_class_rows),
+        spawn_shield_mechanics=AuthorizedSpawnShieldMechanicsAvailableV1(
+            availability_kind="available",
+            configured_duration_steps=shield.configured_duration_steps,
+            movement_speed=shield.movement_speed,
+        ),
+    )
+
+
+def _resealed_live_oracle(
+    frame: LiveOracleAuthorizedPresentationFrameV1,
+    scene: AuthorizedBattlefieldSceneV1,
+) -> LiveOracleAuthorizedPresentationFrameV1:
+    endpoint = frame.current_endpoint
+    sealed_endpoint = _seal_oracle_authorized_current_endpoint_v1(
+        episode_id=endpoint.episode_id,
+        frame_index=endpoint.frame_index,
+        frame_id=endpoint.frame_id,
+        simulator_step_count=endpoint.simulator_step_count,
+        scene=scene,
+        identity_directory=endpoint.identity_directory,
+        action_axis=endpoint.action_axis,
+    )
+    source_values = {
+        name: getattr(frame.source, name)
+        for name in LiveOraclePresentationSourceIdentityV1.model_fields
+    }
+    source_values["source_authorized_endpoint_digest_sha256"] = (
+        sealed_endpoint.authorized_endpoint_digest_sha256
+    )
+    frame_values = {
+        name: getattr(frame, name)
+        for name in LiveOracleAuthorizedPresentationFrameV1.model_fields
+    }
+    frame_values["source"] = LiveOraclePresentationSourceIdentityV1(**source_values)
+    frame_values["current_endpoint"] = sealed_endpoint
+    return LiveOracleAuthorizedPresentationFrameV1(**frame_values)
+
+
+def _legacy_v1_compatibility_presentation(
+    frame: LiveOracleAuthorizedPresentationFrameV1,
+) -> LiveOracleAuthorizedPresentationFrameV1:
+    return _resealed_live_oracle(frame, _legacy_v1_scene(frame.current_endpoint.scene))
+
+
+# A 2 x 1 wall across x = 6 and a radius-0.75 pillar across x = 14, as obstacle
+# rows (type, x, y, radius, width, height, theta, active).
+_STRIP_EDGE_OBSTACLES = (
+    jnp.zeros((MAX_OBSTACLE_SLOTS, OBSTACLE_FEATURES), dtype=jnp.float32)
+    .at[0]
+    .set(jnp.asarray((OBSTACLE_TYPE_WALL, 6.0, 6.0, 0.0, 2.0, 1.0, 0.0, 1.0)))
+    .at[1]
+    .set(jnp.asarray((OBSTACLE_TYPE_PILLAR, 14.0, 3.0, 0.75, 0.0, 0.0, 0.0, 1.0)))
+)
+
+
+def _live_oracle_red_zone_presentation(
+    geometry: RedZoneGeometryCase,
+    *,
+    with_edge_obstacles: bool = False,
+) -> LiveOracleAuthorizedPresentationFrameV1:
+    config = red_zone_env_config(geometry)
+    if with_edge_obstacles:
+        config = config._replace(obstacles=_STRIP_EDGE_OBSTACLES)
+
+    def build_scenario() -> tuple[EnvConfig, EnvState]:
+        state, _, _, _ = reset(config, jax.random.PRNGKey(0))
+        return config, state
+
+    session = create_session(
+        DebuggerScenario(
+            name="red_zone_fixture",
+            title="Red Zone Fixture",
+            description=f"Red Zone map: {geometry.label}.",
+            mode="interactive",
+            build_scenario=build_scenario,
+            frames=(),
+            default_controlled_slot=0,
+        ),
+        seed=0,
+        evaluation_launch_specification=debugger_test_launch_specification(),
+        controlled_global_slot=None,
+        show_ranges=True,
+        verbose_logging=False,
+    )
+    result = DebuggerService(
+        session,
+        view_mode="researcher",
+        preset="analysis",
+        include_stress=False,
+        session_id="browser-red-zone-live-oracle",
+    ).current_presentation()
+    if (
+        result.outcome != "response"
+        or type(result.payload) is not LiveOracleAuthorizedPresentationFrameV1
+    ):
+        raise RuntimeError("Red Zone live fixture has no Oracle presentation")
+    return result.payload
+
+
+def _red_zone_browser_cases() -> dict[str, dict[str, object]]:
+    depth_5 = next(case for case in RED_ZONE_GEOMETRY_CASES if case.label == "depth 5")
+    cases: dict[str, dict[str, object]] = {}
+    with TemporaryDirectory(prefix="marl-red-zone-fixture-") as directory:
+        recordings: tuple[tuple[ExecutionInformationMode, tuple[str, ...]], ...] = (
+            ("no_shared_obs", ("replay_oracle", "replay_no_shared_obs_agent_pov")),
+            ("shared_obs", ("replay_shared_obs_agent_pov",)),
+        )
+        for mode, audiences in recordings:
+            trajectory = current_captured_evaluation_trajectory(
+                transition_count=2,
+                execution_information_mode=mode,
+                config=red_zone_env_config(depth_5)._replace(max_steps=2),
+            )
+            replay = build_replay_v4(
+                trajectory.context,
+                trajectory.frames,
+                trajectory.transitions,
+                runtime_provenance=_runtime_provenance(),
+            )
+            path = Path(directory) / f"red-zone-{mode}{REPLAY_FILE_SUFFIX_V1}"
+            save_replay(replay, path)
+            loaded = load_replay(path)
+            for audience in audiences:
+                service = ReplayViewerService(
+                    loaded,
+                    initial_frame_index=1,
+                    view_mode="researcher" if audience == "replay_oracle" else "pov",
+                    pov_global_slot=0,
+                    viewer_session_id=f"browser-red-zone-{audience}",
+                    show_ranges=True,
+                )
+                result = service.current_presentation()
+                if result.outcome != "response":
+                    raise RuntimeError("Red Zone replay fixture has no presentation")
+                cases[f"{audience}_depth_5"] = result.payload.model_dump(mode="json")
+    for geometry in RED_ZONE_GEOMETRY_CASES:
+        if geometry is depth_5:
+            continue
+        name = "live_oracle_" + geometry.label.replace(" ", "_").replace(".", "_")
+        cases[name] = _live_oracle_red_zone_presentation(geometry).model_dump(
+            mode="json"
+        )
+    depth_6 = next(case for case in RED_ZONE_GEOMETRY_CASES if case.label == "depth 6")
+    cases["live_oracle_depth_6_obstacles_on_strip_edges"] = (
+        _live_oracle_red_zone_presentation(
+            depth_6, with_edge_obstacles=True
+        ).model_dump(mode="json")
+    )
+    return cases
+
+
+def _with_visual_events(
+    frame: ReplayNoSharedObsAuthorizedPresentationFrameV1,
+    *,
+    trajectories: tuple[AgentPovVisualIncomingAgentPhaseTrajectoryV1, ...],
+    event: ReplayIncomingAbilityActivatedEventV1 | ReplayIncomingAgentLeftCombatEventV1,
+) -> ReplayNoSharedObsAuthorizedPresentationFrameV1:
+    visual = frame.visual_events
+    if visual is None or visual.events:
+        raise RuntimeError("adjacent-fog fixture requires an empty incoming inventory")
+    event_id = f"{visual.incoming_recipient_transition_id}:visual-event:0000"
+    bound_event = replace(event, event_id=event_id)
+    bound_visual = replace(
+        visual,
+        agent_phase_trajectories=trajectories,
+        ordered_event_ids=(event_id,),
+        ordered_event_kinds=(bound_event.event_kind,),
+        events=(bound_event,),
+        event_count=1,
+    )
+    values = {
+        name: getattr(frame, name)
+        for name in ReplayNoSharedObsAuthorizedPresentationFrameV1.model_fields
+    }
+    values["visual_events"] = bound_visual
+    return ReplayNoSharedObsAuthorizedPresentationFrameV1(**values)
+
+
+def _adjacent_fog_state_cases(
+    frame: ReplayNoSharedObsAuthorizedPresentationFrameV1,
+) -> dict[str, ReplayNoSharedObsAuthorizedPresentationFrameV1]:
+    visual = frame.visual_events
+    if visual is None or visual.events:
+        raise RuntimeError("adjacent-fog fixture requires a noninitial empty frame")
+    recipient = next(
+        row
+        for row in visual.agent_phase_trajectories
+        if row.agent_presentation_key == visual.recipient_presentation_key
+    )
+    if recipient.transition_start is None:
+        raise RuntimeError("adjacent-fog fixture recipient requires a start anchor")
+
+    disappearing_public_id = "agent-slot-5"
+    disappearing_key = pov_presentation_key_v1(
+        authority_session_id=frame.source.source_session_id,
+        recipient_public_agent_id=visual.recipient_public_agent_id,
+        public_agent_id=disappearing_public_id,
+    )
+    disappearing_anchor = ReplayIncomingAgentAnchorV1(
+        phase="transition_start",
+        presentation_key=disappearing_key,
+        public_agent_id=disappearing_public_id,
+        position=(8.0, 4.0),
+    )
+    disappearing = AgentPovVisualIncomingAgentPhaseTrajectoryV1(
+        agent_presentation_key=disappearing_key,
+        agent_public_agent_id=disappearing_public_id,
+        agent_class_id=1,
+        transition_start=disappearing_anchor,
+        successor=None,
+    )
+    disappearance = _with_visual_events(
+        frame,
+        trajectories=(*visual.agent_phase_trajectories, disappearing),
+        event=ReplayIncomingAbilityActivatedEventV1(
+            event_id="pending-local-id",
+            ordinal=0,
+            phase_rank=20,
+            event_kind="ability_activated",
+            ability_component="basic",
+            source_anchor=disappearing_anchor,
+            recipient_anchor=recipient.transition_start,
+        ),
+    )
+
+    appearing_index = next(
+        index
+        for index, row in enumerate(visual.agent_phase_trajectories)
+        if row.agent_presentation_key != visual.recipient_presentation_key
+        and row.successor is not None
+    )
+    appearing = replace(
+        visual.agent_phase_trajectories[appearing_index],
+        transition_start=None,
+    )
+    appearance_trajectories = (
+        *(
+            row
+            for index, row in enumerate(visual.agent_phase_trajectories)
+            if index != appearing_index
+        ),
+        appearing,
+    )
+    if appearing.successor is None:
+        raise RuntimeError("adjacent-fog fixture appearance requires a successor")
+    appearance = _with_visual_events(
+        frame,
+        trajectories=appearance_trajectories,
+        event=ReplayIncomingAgentLeftCombatEventV1(
+            event_id="pending-local-id",
+            ordinal=0,
+            phase_rank=50,
+            event_kind="agent_left_combat",
+            agent_anchor=appearing.successor,
+        ),
+    )
+    return {
+        "replay_no_shared_agent_disappearance": disappearance,
+        "replay_no_shared_agent_appearance": appearance,
+    }
+
+
+def render_fixture() -> str:
+    cases = cast("_WrappedFixture0[_InspectionCases]", inspection_cases).__wrapped__()
+    frames = cast(
+        "_WrappedFixture1[_InspectionCases, _FiveFrames]", five_frames
+    ).__wrapped__(cases)
+    replay_cases = cast("_WrappedFixture0[_ServiceCases]", service_cases).__wrapped__()
+    (
+        corpse_overlay_frame,
+        persistent_corpse_overlay_frame,
+        corpse_overlay_negative_digests,
+    ) = _corpse_overlay_browser_cases()
+    live_shared_service = _live_shared_pov_service()
+    pair_services = {
+        "live_oracle": _service(),
+        "live_no_shared_obs_agent_pov": _live_pov_service(),
+        "live_shared_obs_agent_pov": live_shared_service,
+        "replay_oracle": _presentation_service(
+            replay_cases,
+            "oracle",
+            viewer_session_id="cp2-7-replay-oracle-fixture",
+        ),
+        "replay_no_shared_obs_agent_pov": _presentation_service(
+            replay_cases,
+            "no_shared_obs",
+            viewer_session_id="cp2-7-replay-no-shared-fixture",
+        ),
+        "replay_shared_obs_agent_pov": _presentation_service(
+            replay_cases,
+            "shared_obs",
+            viewer_session_id="cp2-7-replay-shared-fixture",
+        ),
+    }
+    pairs = {kind: _pair(service) for kind, service in pair_services.items()}
+    red_zone_cases = _red_zone_browser_cases()
+    continuity_session = "cp2-7-replay-audience-switch-fixture"
+    continuity_pairs = {
+        "oracle": _pair(
+            ReplayViewerService(
+                replay_cases.shared.bundle,
+                initial_frame_index=1,
+                view_mode="researcher",
+                selected_global_slot=0,
+                viewer_session_id=continuity_session,
+                show_ranges=True,
+            )
+        ),
+        "shared_obs": _pair(
+            ReplayViewerService(
+                replay_cases.shared.bundle,
+                initial_frame_index=1,
+                view_mode="pov",
+                pov_global_slot=0,
+                viewer_session_id=continuity_session,
+                show_ranges=True,
+            )
+        ),
+    }
+    final_index = len(cases.no_shared.transitions)
+    shared_final_index = len(cases.shared.transitions)
+    replay_no_shared_final = _replay_no_shared_at(
+        cases,
+        frame_index=final_index,
+        session="cp2-7-replay-no-shared-final",
+    )
+    state_cases = {
+        "live_oracle_frame_zero": _live_oracle_at(
+            cases,
+            frame_index=0,
+            session="cp2-7-live-oracle-zero",
+        ),
+        "live_no_shared_frame_zero": _live_no_shared_at(
+            cases,
+            frame_index=0,
+            session="cp2-7-live-no-shared-zero",
+        ),
+        "live_no_shared_editable_corpse_overlay": _live_corpse_overlay_frame(),
+        "replay_oracle_frame_zero": _replay_oracle_at(
+            cases,
+            frame_index=0,
+            selected_internal_slot=0,
+            session="cp2-7-replay-oracle-zero",
+        ),
+        "replay_oracle_final_selected": _replay_oracle_at(
+            cases,
+            frame_index=final_index,
+            selected_internal_slot=0,
+            session="cp2-7-replay-oracle-final-selected",
+        ),
+        "replay_oracle_final_unselected": _replay_oracle_at(
+            cases,
+            frame_index=final_index,
+            selected_internal_slot=None,
+            session="cp2-7-replay-oracle-final-unselected",
+        ),
+        "replay_no_shared_frame_zero": _replay_no_shared_at(
+            cases,
+            frame_index=0,
+            session="cp2-7-replay-no-shared-zero",
+        ),
+        "replay_no_shared_final": replay_no_shared_final,
+        "replay_shared_frame_zero": _replay_shared_at(
+            cases,
+            frame_index=0,
+            session="browser-replay-shared-source-material-metric-processing",
+        ),
+        "replay_shared_final": _replay_shared_at(
+            cases,
+            frame_index=shared_final_index,
+            session="cp2-7-replay-shared-final",
+        ),
+        "replay_no_shared_corpse_overlay": corpse_overlay_frame,
+        "replay_no_shared_persistent_corpse_overlay": (persistent_corpse_overlay_frame),
+    }
+    state_cases.update(_adjacent_fog_state_cases(replay_no_shared_final))
+    payload = {
+        "schema_version": 1,
+        "presentations": {
+            **{
+                frame.presentation_kind: frame.model_dump(mode="json")
+                for frame in frames.rows
+            },
+            "live_shared_obs_agent_pov": pairs["live_shared_obs_agent_pov"][
+                "presentation"
+            ],
+        },
+        "pairs": pairs,
+        "continuity_pairs": continuity_pairs,
+        "state_cases": {
+            name: frame.model_dump(mode="json") for name, frame in state_cases.items()
+        },
+        "compatibility_cases": {
+            "legacy_v1": _legacy_v1_compatibility_presentation(
+                frames.live_oracle
+            ).model_dump(mode="json")
+        },
+        "corpse_overlay_negative_digests": corpse_overlay_negative_digests,
+        "red_zone_cases": red_zone_cases,
+        "red_zone_contract_cases": list(RED_ZONE_CONTRACT_CASES),
+    }
+    return json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+
+
+def main() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    destination = (
+        repository_root
+        / "web"
+        / "visual_debugger"
+        / "tests"
+        / "fixtures"
+        / "authorized-presentations-v1.json"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(render_fixture(), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

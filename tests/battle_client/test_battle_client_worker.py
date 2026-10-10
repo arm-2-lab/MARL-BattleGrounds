@@ -20,8 +20,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.test_visual_debugger_systems import _send
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.visual_debugger.test_visual_debugger_systems import _send
 
 from marl_battlegrounds._battle_client import control, launch
 from marl_battlegrounds._battle_client import service as service_module

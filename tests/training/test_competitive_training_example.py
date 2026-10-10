@@ -15,10 +15,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from examples import competitive_training as example
+from examples.training import competitive_training as example
 
 # pyright: reportPrivateUsage=false
-from tests.training_continuation_helpers import capture_runs, fixed_source
+from tests.helpers.training_continuation_helpers import capture_runs, fixed_source
 
 import marl_battlegrounds as marl_bgs
 

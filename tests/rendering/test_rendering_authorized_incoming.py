@@ -24,12 +24,12 @@ from scripts.dev.visual_debugger.no_shared_visual import (
     build_replay_no_shared_obs_visual_content_v1,
 )
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     neutral_action,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -39,20 +39,15 @@ from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_launch_specification_v1,
 )
 from marl_battlegrounds.core.types import Action
-from marl_battlegrounds.evaluation import pov as pov_module
-from marl_battlegrounds.evaluation.actor_projection import (
-    NO_SHARED_OBS_ACTOR_PROJECTION_V2,
-)
-from marl_battlegrounds.evaluation.metrics import (
+from marl_battlegrounds.evaluation._metrics.metrics import (
     EvaluationTransitionViewV1,
     build_evaluation_observer_v1,
 )
-from marl_battlegrounds.evaluation.models import (
-    EvaluationFrameV1,
-    EvaluationTransitionV1,
-    canonical_digest_sha256,
+from marl_battlegrounds.evaluation._replays import pov as pov_module
+from marl_battlegrounds.evaluation._replays.actor_projection import (
+    NO_SHARED_OBS_ACTOR_PROJECTION_V2,
 )
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAdjacentTransitionSlice,
     ActorPovAxisMappingV1,
     ActorPovFrame,
@@ -64,11 +59,16 @@ from marl_battlegrounds.evaluation.pov import (
     export_actor_pov_replay_v1,
     export_actor_pov_replay_v3,
 )
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._replays.replay import (
     RuntimeProvenanceV1,
     build_replay_bundle_v1,
 )
-from marl_battlegrounds.evaluation.replay_v4 import build_replay_v4
+from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
+from marl_battlegrounds.evaluation.models import (
+    EvaluationFrameV1,
+    EvaluationTransitionV1,
+    canonical_digest_sha256,
+)
 from marl_battlegrounds.rendering.authorized_incoming import (
     NoSharedObsIncomingSummaryV1,
     NoSharedObsOwnStatusChangedIncomingCueV1,

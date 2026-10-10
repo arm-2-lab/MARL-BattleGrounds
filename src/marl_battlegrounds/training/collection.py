@@ -49,7 +49,7 @@ from marl_battlegrounds.episode_tracking import (
     _boundary_snapshot,
     init_episode_tracking,
 )
-from marl_battlegrounds.evaluation.episode_metrics import MetricValues
+from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
 from marl_battlegrounds.evaluation.policy_execution import (
     Policy,

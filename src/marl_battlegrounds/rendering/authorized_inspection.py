@@ -25,20 +25,7 @@ from typing import Annotated, ClassVar, Literal, cast
 
 from pydantic import ConfigDict, Field
 
-from marl_battlegrounds.evaluation.models import (
-    ActionAcceptanceFactsV1,
-    ActionMaskV1,
-    EvaluationEpisodeContext,
-    EvaluationFrame,
-    EvaluationFrameV1,
-    EvaluationFrameV2,
-    EvaluationFrameV3,
-    EvaluationTransitionV1,
-    JointActionV1,
-    TransitionFactsV1,
-    evaluation_context_type,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovActionMaskV1,
     ActorPovAxisMapping,
     ActorPovAxisMappingV1,
@@ -51,11 +38,24 @@ from marl_battlegrounds.evaluation.pov import (
     ActorPovTransitionV1,
     validate_actor_pov_replay_content,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     MAX_AGENT_SLOTS_V1,
     NUM_MOVE_ACTIONS_V1,
     NUM_TARGET_ACTIONS_V1,
     NUM_ULTIMATE_ACTIONS_V1,
+)
+from marl_battlegrounds.evaluation.models import (
+    ActionAcceptanceFactsV1,
+    ActionMaskV1,
+    EvaluationEpisodeContext,
+    EvaluationFrame,
+    EvaluationFrameV1,
+    EvaluationFrameV2,
+    EvaluationFrameV3,
+    EvaluationTransitionV1,
+    JointActionV1,
+    TransitionFactsV1,
+    evaluation_context_type,
 )
 from marl_battlegrounds.rendering.authorized_pov_scene import (
     NoSharedObsAuthorizedScenePartsV1,

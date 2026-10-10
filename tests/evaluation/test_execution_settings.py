@@ -210,7 +210,7 @@ def test_training_identity_reads_the_same_string(
 def test_canonical_results_merge_source_passes_only_when_asked(
     tmp_path: Path,
 ) -> None:
-    from tests.evaluation.test_system_metrics import _canonical
+    from tests.evaluation.metrics.test_system_metrics import _canonical
 
     path, _, _ = _canonical(tmp_path)
     results = load_results(path)

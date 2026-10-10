@@ -15,7 +15,7 @@ policies play the scenario's default one starts focused on your champion
 
 from __future__ import annotations
 
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds._battle_client.methods import resolve_controllers

@@ -27,13 +27,7 @@ from typing import ClassVar, Literal, cast
 
 from pydantic import ConfigDict, TypeAdapter
 
-from marl_battlegrounds.evaluation.models import (
-    AuraMechanicV1,
-    ClassMechanicsV1,
-    StaticMechanicsCatalogV1,
-    StatusMechanicV1,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovActionMaskV1,
     ActorPovAdjacentTransitionSlice,
     ActorPovAdjacentTransitionSliceV1,
@@ -54,9 +48,15 @@ from marl_battlegrounds.evaluation.pov import (
     ActorPovReplayContentV3,
     ActorPovSpawnLifecycleV1,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     MAX_AGENT_SLOTS_V1,
     MAX_AGENTS_PER_TEAM_V1,
+)
+from marl_battlegrounds.evaluation.models import (
+    AuraMechanicV1,
+    ClassMechanicsV1,
+    StaticMechanicsCatalogV1,
+    StatusMechanicV1,
 )
 from marl_battlegrounds.rendering.authorized_presentation import (
     AUTHORIZED_PRESENTATION_SCHEMA_VERSION,

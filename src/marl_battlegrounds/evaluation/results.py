@@ -38,6 +38,16 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from marl_battlegrounds.evaluation._metrics.scalar_reports import (
+    has_members,
+    iter_policy_assignments,
+    iter_scalar_rows,
+    iter_summary_rows,
+)
+from marl_battlegrounds.evaluation._recording.sampling_evidence import (
+    CONDITIONAL_INTERVAL_ASSUMPTION,
+    CONDITIONAL_INTERVAL_STATUS,
+)
 from marl_battlegrounds.evaluation.metric_catalog import (
     FULL_METRIC_NAMES,
     FULL_METRIC_NAMES_BY_SCHEMA_VERSION,
@@ -53,20 +63,12 @@ from marl_battlegrounds.evaluation.run_writer import (
     IDENTITY_COLUMNS,
     MATCH_COLUMNS,
 )
-from marl_battlegrounds.evaluation.sampling_evidence import (
-    CONDITIONAL_INTERVAL_ASSUMPTION,
-    CONDITIONAL_INTERVAL_STATUS,
-)
-from marl_battlegrounds.evaluation.scalar_reports import (
-    has_members,
-    iter_policy_assignments,
-    iter_scalar_rows,
-    iter_summary_rows,
-)
 
 if TYPE_CHECKING:
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
-    from marl_battlegrounds.evaluation.tournament_records import TournamentRecords
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._tournaments.tournament_records import (
+        TournamentRecords,
+    )
 
 Columns = dict[str, NDArray[np.generic]]
 Row = dict[str, Any]
@@ -486,7 +488,7 @@ def _pass_facts(entry: Row, pass_complete: bool) -> Row:
     a supported protocol) and sampling: stochastic, deterministic or unknown,
     combined from both teams' recorded method facts.
     """
-    from marl_battlegrounds.evaluation.sampling_evidence import (
+    from marl_battlegrounds.evaluation._recording.sampling_evidence import (
         combine_sampling_facts,
     )
 
@@ -2688,7 +2690,9 @@ def _result_view(
 ) -> _View:
     """Dispatch additive canonical references without importing execution code."""
     if "tournament_reuse" in manifest:
-        from marl_battlegrounds.evaluation.canonical_results import CanonicalView
+        from marl_battlegrounds.evaluation._tournaments.canonical_results import (
+            CanonicalView,
+        )
 
         return CanonicalView(
             manifest, run_dir=run_dir, phase=phase, pass_id=pass_id, memory=memory

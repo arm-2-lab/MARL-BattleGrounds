@@ -29,7 +29,7 @@ from scripts.dev.visual_debugger.scenarios import (
     STRESS_SCENARIOS,
     get_scenario,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_context_v1,
@@ -96,10 +96,12 @@ def test_recording_launch_metadata_accepts_installed_policy_execution(
 
 
 def _write_valid_replay(tmp_path: Path) -> Path:
-    from tests.evaluation_fixtures import captured_evaluation_trajectory
+    from tests.helpers.evaluation_fixtures import captured_evaluation_trajectory
 
-    from marl_battlegrounds.evaluation.metrics import build_evaluation_observer_v1
-    from marl_battlegrounds.evaluation.replay import (
+    from marl_battlegrounds.evaluation._metrics.metrics import (
+        build_evaluation_observer_v1,
+    )
+    from marl_battlegrounds.evaluation._replays.replay import (
         RuntimeProvenanceV1,
         build_replay_bundle_v1,
     )
@@ -1267,9 +1269,9 @@ def test_scripted_scenario_materializes_in_an_isolated_cpu_child(
 def test_real_scripted_materializer_publishes_a_publicly_loadable_bundle(
     tmp_path: Path,
 ) -> None:
+    from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
     from marl_battlegrounds.evaluation.analysis import analyze_replay
     from marl_battlegrounds.evaluation.replay_io import load_replay
-    from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactV2
 
     destination = tmp_path / "basic-support.marlbg-replay.json"
     result = subprocess.run(

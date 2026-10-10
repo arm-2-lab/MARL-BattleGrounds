@@ -13,7 +13,10 @@ Contracts checked:
 # pyright: reportPrivateUsage=false
 from pathlib import Path
 
-from tests.test_visual_debugger_service import _recording_service, _request
+from tests.visual_debugger.test_visual_debugger_service import (
+    _recording_service,
+    _request,
+)
 
 from marl_battlegrounds._battle_client.protocol import (
     CommandResponseV2,

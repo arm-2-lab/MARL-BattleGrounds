@@ -7,14 +7,14 @@ from typing import cast
 
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.catalog_propagation_fixture import (
+from tests.helpers.catalog_propagation_fixture import (
     CatalogPropagationExpectationV1,
     build_catalog_propagation_fixture,
     catalog_propagation_values,
     derive_catalog_propagation_context,
     replace_catalog_propagation_values,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds.rendering.scene import to_jsonable

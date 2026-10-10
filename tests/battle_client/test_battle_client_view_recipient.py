@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client import input as input_module
 from marl_battlegrounds._battle_client.control import (
@@ -55,7 +55,7 @@ from marl_battlegrounds._battle_client.recording import (
 from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds._battle_client.setup import prepare_battle_setup
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.replay_io import preflight_replay_destination
 from marl_battlegrounds.rendering.vocabulary import class_token_from_id
 

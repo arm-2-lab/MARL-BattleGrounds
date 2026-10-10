@@ -21,25 +21,25 @@ from typing import cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     current_captured_evaluation_trajectory,
 )
-from tests.red_zone_scene_cases import (
+from tests.helpers.red_zone_scene_cases import (
     RED_ZONE_GEOMETRY_CASES,
     RedZoneGeometryCase,
     red_zone_env_config,
 )
 
-from marl_battlegrounds.evaluation.models import (
-    StaticMechanicsCatalogV1,
-    canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovSpawnLifecycleV1,
     build_actor_pov_current_slice_v1,
+)
+from marl_battlegrounds.evaluation.models import (
+    StaticMechanicsCatalogV1,
+    canonical_digest_sha256,
 )
 from marl_battlegrounds.rendering import evaluation_adapter as adapter
 from marl_battlegrounds.rendering.authorized_pov_scene import (

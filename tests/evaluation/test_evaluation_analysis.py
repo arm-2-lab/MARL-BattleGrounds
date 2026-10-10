@@ -19,33 +19,45 @@ from typing import cast
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from tests.evaluation.test_evaluation_replay import (
+from tests.evaluation.replays.test_evaluation_replay import (
     runtime_provenance as runtime_provenance,
 )
-from tests.evaluation_fixtures import captured_evaluation_trajectory, evaluation_context
+from tests.helpers.evaluation_fixtures import (
+    captured_evaluation_trajectory,
+    evaluation_context,
+)
 
 from marl_battlegrounds.core.types import ActionMask, Info, Reward
 from marl_battlegrounds.evaluation import analysis as analysis_module
+from marl_battlegrounds.evaluation._metrics.episode_metrics import (
+    initialize_priority,
+    priority_values,
+    update_priority,
+)
+from marl_battlegrounds.evaluation._metrics.full_metrics import (
+    full_values,
+    initialize_full,
+    update_full,
+)
+from marl_battlegrounds.evaluation._metrics.metrics import (
+    EvaluationEpisodeCompletionV1,
+    EvaluationEpisodeObserverV1,
+)
+from marl_battlegrounds.evaluation._recording.capture import (
+    reconstruct_env_state_v1,
+    reconstruct_transition_facts_v1,
+)
+from marl_battlegrounds.evaluation._replays.replay import (
+    RuntimeProvenanceV1,
+    build_replay_bundle_v1,
+)
+from marl_battlegrounds.evaluation._replays.replay_v2 import build_replay_v2
 from marl_battlegrounds.evaluation.analysis import (
     REPLAY_IDENTITY_COLUMNS,
     ReplayAnalysis,
     analyze_replay,
 )
-from marl_battlegrounds.evaluation.capture import (
-    reconstruct_env_state_v1,
-    reconstruct_transition_facts_v1,
-)
 from marl_battlegrounds.evaluation.catalog import reconstruct_env_config_v1
-from marl_battlegrounds.evaluation.episode_metrics import (
-    initialize_priority,
-    priority_values,
-    update_priority,
-)
-from marl_battlegrounds.evaluation.full_metrics import (
-    full_values,
-    initialize_full,
-    update_full,
-)
 from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_COLUMNS,
     METRIC_COLUMNS_BY_NAME,
@@ -54,16 +66,7 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_VIEW_LABELS,
     PRIORITY_METRIC_COLUMNS,
 )
-from marl_battlegrounds.evaluation.metrics import (
-    EvaluationEpisodeCompletionV1,
-    EvaluationEpisodeObserverV1,
-)
-from marl_battlegrounds.evaluation.replay import (
-    RuntimeProvenanceV1,
-    build_replay_bundle_v1,
-)
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay, LoadedReplayBundleV1
-from marl_battlegrounds.evaluation.replay_v2 import build_replay_v2
 from marl_battlegrounds.tasks import (
     AgentClassName,
     make_standard_team_deathmatch_config,

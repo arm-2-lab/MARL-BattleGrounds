@@ -26,7 +26,11 @@ from marl_battlegrounds._battle_client.recording import (
     recording_persistence_error_code,
     recording_policy_execution_included,
 )
-from marl_battlegrounds.evaluation.metrics import ObserverLifecycleState
+from marl_battlegrounds.evaluation._metrics.metrics import ObserverLifecycleState
+from marl_battlegrounds.evaluation._replays.replay_v4 import (
+    ReplayArtifactV4,
+    build_replay_v4,
+)
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
     EvaluationFrame,
@@ -45,10 +49,6 @@ from marl_battlegrounds.evaluation.replay_io import (
     load_replay,
     preflight_replay_destination,
     publish_prepared_replay,
-)
-from marl_battlegrounds.evaluation.replay_v4 import (
-    ReplayArtifactV4,
-    build_replay_v4,
 )
 
 

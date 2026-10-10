@@ -26,10 +26,10 @@ Then open the pull request and fill in its form. Maintainers run the full test s
 | Folder | What It Holds |
 |---|---|
 | `src/marl_battlegrounds/` | The package |
-| `tests/` | The tests, in 14 folders that mirror the package |
+| `tests/` | The tests, in 14 folders that mirror the package; the large ones have topic subfolders |
 | `examples/` | Short runnable lessons, listed in `examples/README.md` |
 | `docs/` | Short guides |
-| `scripts/dev/` | Contributor tools: checks, generators and benchmarks |
+| `scripts/dev/` | Contributor tools: checks and generators, with the benchmarks in `benchmarks/` |
 | `scripts/paper_experiments/` | The paper's experiment records |
 | `web/visual_debugger/` | The browser code shared by the Replay Viewer and the BattleClient. It keeps this folder name because tools and the wheel build depend on it. |
 

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-NOTEBOOK = REPO / "examples/evaluation_analysis.ipynb"
+NOTEBOOK = REPO / "examples/evaluate/evaluation_analysis.ipynb"
 BUNDLE = REPO / "src/marl_battlegrounds/examples_data/evaluation"
 
 

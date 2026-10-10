@@ -90,7 +90,7 @@ report = training.run_study("my_study.json", output_dir="runs/my-study-3")  # sa
 A declaration holds `"schema_version": 1`, a `name` and ordered `cases`; each case
 has an `id`, a training `config` and a `seeds` list, or continues a full
 `checkpoint` with `additional_env_steps`. `study start` runs in the background;
-`study stop` stops only that study. See [training_study.py](../examples/training_study.py).
+`study stop` stops only that study. See [training_study.py](../examples/training/training_study.py).
 
 **Watch Out:** a study never adds seeds, picks recipes or changes budgets. Its workers refuse
 an installed source or input file that changed after launch: start long studies from a frozen copy.
@@ -123,9 +123,9 @@ command fails unless the run used `3e-4`. To change future settings, use `extend
 ## Evaluate A Saved Model
 
 ```bash
-python examples/evaluate_qmix.py checkpoint=MODEL evaluation.output_dir=runs/evaluation
-python examples/evaluate_qmix.py checkpoint=MODEL opponent=tdm-beta evaluation=full '+evaluation.maps=[47]' evaluation.output_dir=runs/evaluation
-python examples/evaluate_qmix.py --config-name evaluate_resume checkpoint=MODEL opponent=tdm-beta evaluation.resume_from=runs/evaluation/EXACT_RUN
+python examples/evaluate/evaluate_qmix.py checkpoint=MODEL evaluation.output_dir=runs/evaluation
+python examples/evaluate/evaluate_qmix.py checkpoint=MODEL opponent=tdm-beta evaluation=full '+evaluation.maps=[47]' evaluation.output_dir=runs/evaluation
+python examples/evaluate/evaluate_qmix.py --config-name evaluate_resume checkpoint=MODEL opponent=tdm-beta evaluation.resume_from=runs/evaluation/EXACT_RUN
 ```
 
 ```python
@@ -133,8 +133,8 @@ import marl_battlegrounds as marl_bgs
 games = marl_bgs.evaluate(marl_bgs.load_method("MODEL"), "tdm-beta", num_episodes=32, maps=[47], output_dir="runs/evaluation")
 ```
 
-From a checkout, one script per method: [recurrent MAPPO](../examples/evaluate_recurrent_mappo.py), [feedforward MAPPO](../examples/evaluate_feedforward_mappo.py),
-[recurrent IPPO](../examples/evaluate_recurrent_ippo.py), [feedforward IPPO](../examples/evaluate_feedforward_ippo.py), [QMIX](../examples/evaluate_qmix.py), [PQN-VDN](../examples/evaluate_pqn_vdn.py).
+From a checkout, one script per method: [recurrent MAPPO](../examples/evaluate/evaluate_recurrent_mappo.py), [feedforward MAPPO](../examples/evaluate/evaluate_feedforward_mappo.py),
+[recurrent IPPO](../examples/evaluate/evaluate_recurrent_ippo.py), [feedforward IPPO](../examples/evaluate/evaluate_feedforward_ippo.py), [QMIX](../examples/evaluate/evaluate_qmix.py), [PQN-VDN](../examples/evaluate/evaluate_pqn_vdn.py).
 `MODEL` is an actor export, a full checkpoint folder, a model file or a released name such
 as `MARL-BattleGrounds/tdm-season-0-qmix@final`. Default: 32 paired games against
 `tdm-alpha`; `evaluation=full` adds full metrics for every game and replays of games 1 and 2.

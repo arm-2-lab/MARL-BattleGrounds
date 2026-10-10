@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from math import isclose, isfinite
 from typing import Literal, cast
 
-from marl_battlegrounds.evaluation.wire_shapes import MAX_AGENT_SLOTS_V1
+from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.rendering.vocabulary import (
     CATALOG_STATUS_ID_BY_CHANNEL,
     ActivationTokenId,

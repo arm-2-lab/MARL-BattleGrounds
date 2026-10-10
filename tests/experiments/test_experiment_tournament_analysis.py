@@ -155,7 +155,7 @@ def test_team_profiles_read_measures_and_withheld_intervals() -> None:
 def test_team_profiles_keep_an_entrant_with_unknown_sampling(
     tmp_path: Path,
 ) -> None:
-    from tests.evaluation.test_system_metrics import _run
+    from tests.evaluation.metrics.test_system_metrics import _run
 
     path = _run(
         tmp_path,
@@ -426,7 +426,7 @@ def test_write_outputs_lists_entrants_by_elo(tmp_path: Path) -> None:
 
 
 def test_stage_calls_work_on_a_saved_tournament(tmp_path: Path) -> None:
-    from tests.evaluation.test_system_metrics import _canonical
+    from tests.evaluation.metrics.test_system_metrics import _canonical
 
     path, _, _ = _canonical(tmp_path)
     results = load_results(path)

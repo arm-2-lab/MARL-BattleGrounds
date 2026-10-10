@@ -1,7 +1,7 @@
 """Check Oracle presentation records and the functions that build them.
 
 Map records: AuthorizedMapV2 accepts exactly the rows of the shared Red Zone
-contract table (tests.red_zone_scene_cases) marked accepted and refuses the
+contract table (tests.helpers.red_zone_scene_cases) marked accepted and refuses the
 rest through the strict wire adapter; the battlefield scene accepts an exact
 V1 or V2 map; build_authorized_map_v2 records depth 0 as red_zone=None and
 refuses bad bases, depths and pad shapes; an Oracle scene from a context whose
@@ -45,7 +45,7 @@ from scripts.dev.visual_debugger.replay_protocol import (
     ReplayProcessingBadgeV1,
     ResearcherReplayViewerFrameV1,
 )
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     neutral_action,
@@ -53,15 +53,15 @@ from tests.evaluation_fixtures import (
 
 import marl_battlegrounds.rendering as rendering_package
 from marl_battlegrounds.core.types import Action
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayArtifactReferenceV1,
+    build_replay_artifact_reference_v1,
+)
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
     EvaluationTransitionV1,
     canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.replay import (
-    ReplayArtifactReferenceV1,
-    build_replay_artifact_reference_v1,
 )
 from marl_battlegrounds.evaluation.replay_io import load_replay_bundle_v1
 from marl_battlegrounds.rendering import (
@@ -1603,7 +1603,7 @@ def test_rendering_projection_source_has_no_forbidden_ownership_imports() -> Non
         "jaxlib",
         "numpy",
         "marl_battlegrounds.core",
-        "marl_battlegrounds.evaluation.replay",
+        "marl_battlegrounds.evaluation._replays.replay",
         "marl_battlegrounds.evaluation.replay_io",
         "scripts.dev",
     )
@@ -1629,7 +1629,7 @@ def test_outgoing_builder_accepts_transition_not_transition_view() -> None:
 
 
 def test_red_zone_map_record_accepts_only_the_exact_scoring_strips() -> None:
-    from tests.red_zone_scene_cases import RED_ZONE_CONTRACT_CASES
+    from tests.helpers.red_zone_scene_cases import RED_ZONE_CONTRACT_CASES
 
     from marl_battlegrounds.rendering.authorized_presentation import (
         AuthorizedMapV1,

@@ -28,7 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.autoreset import AutoReset
 from marl_battlegrounds.core import env as core

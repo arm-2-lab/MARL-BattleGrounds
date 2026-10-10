@@ -82,6 +82,9 @@ from marl_battlegrounds.policies.actor import ActorAction
 if TYPE_CHECKING:
     from marl_battlegrounds.autoreset import FinalEpisodeData
     from marl_battlegrounds.episode_tracking import EpisodeTrackingState
+    from marl_battlegrounds.evaluation._recording.recording_types import (
+        EpisodeStartRecords,
+    )
     from marl_battlegrounds.evaluation.policy_execution import (
         PolicyTrace,
         System,
@@ -90,7 +93,6 @@ if TYPE_CHECKING:
         SystemState,
         SystemStepData,
     )
-    from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
 
 __all__ = [
     "Action",
@@ -143,7 +145,8 @@ def __getattr__(name: str) -> object:
         return value
     if name == "EpisodeStartRecords":
         value = getattr(
-            import_module("marl_battlegrounds.evaluation.recording_types"), name
+            import_module("marl_battlegrounds.evaluation._recording.recording_types"),
+            name,
         )
         globals()[name] = value
         return value

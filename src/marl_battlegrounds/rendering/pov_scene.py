@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Literal, cast
 
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovActionMaskV1,
     ActorPovAxisMapping,
     ActorPovAxisMappingV1,

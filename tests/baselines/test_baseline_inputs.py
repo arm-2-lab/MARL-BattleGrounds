@@ -46,7 +46,7 @@ import numpy as np
 import pytest
 from jax import Array
 from jax.typing import ArrayLike
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_OFFSETS,

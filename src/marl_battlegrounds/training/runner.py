@@ -76,7 +76,9 @@ if TYPE_CHECKING:
 
     from marl_battlegrounds.core.types import EnvState
     from marl_battlegrounds.environment import TrainingFacts
-    from marl_battlegrounds.evaluation.recording_checkpoint import PreparedRecordingFork
+    from marl_battlegrounds.evaluation._recording.recording_checkpoint import (
+        PreparedRecordingFork,
+    )
     from marl_battlegrounds.evaluation.run_writer import RunWriter
     from marl_battlegrounds.training._content import PreparedTrainingContent
     from marl_battlegrounds.training.checkpoints import RestoredCheckpoint
@@ -2782,7 +2784,7 @@ def _prepare_extension_recording(
     """
     import numpy as np
 
-    from marl_battlegrounds.evaluation.recording_checkpoint import (
+    from marl_battlegrounds.evaluation._recording.recording_checkpoint import (
         prepare_recording_fork,
     )
 
@@ -2950,7 +2952,7 @@ def _start_extension(
     }
     writer = None
     if config.recording:
-        from marl_battlegrounds.evaluation.recording_checkpoint import (
+        from marl_battlegrounds.evaluation._recording.recording_checkpoint import (
             attach_recording_fork,
         )
         from marl_battlegrounds.evaluation.run_writer import RunWriter

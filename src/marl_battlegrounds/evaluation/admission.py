@@ -30,9 +30,11 @@ from marl_battlegrounds.evaluation.tournament_config import (
 )
 
 if TYPE_CHECKING:
+    from marl_battlegrounds.evaluation._tournaments.tournament_records import (
+        TournamentRecords,
+    )
     from marl_battlegrounds.evaluation.results import CanonicalTournamentResult
     from marl_battlegrounds.evaluation.tournament_assets import AssetVerifier
-    from marl_battlegrounds.evaluation.tournament_records import TournamentRecords
     from marl_battlegrounds.evaluation.tournament_reuse import ReusePlan
 
 _STATE_FORMAT = "marlbg-admission-state"
@@ -529,8 +531,12 @@ def _population_evidence(
     the checked population; ordinary researcher execution never calls this
     stricter full-coverage admission boundary.
     """
-    from marl_battlegrounds.evaluation.tournament_evidence import prepare_reuse_evidence
-    from marl_battlegrounds.evaluation.tournament_records import TournamentRecords
+    from marl_battlegrounds.evaluation._tournaments.tournament_evidence import (
+        prepare_reuse_evidence,
+    )
+    from marl_battlegrounds.evaluation._tournaments.tournament_records import (
+        TournamentRecords,
+    )
     from marl_battlegrounds.evaluation.tournament_reuse import (
         analysis_schedule,
         resolve_reuse_plan,
@@ -838,7 +844,9 @@ def execute_admission(
     games run; the selected run writer owns its own execution lock. Exceptions
     propagate and leave the prepared schedule available for an explicit retry.
     """
-    from marl_battlegrounds.evaluation.canonical import _run_resolved_tournament
+    from marl_battlegrounds.evaluation._tournaments.canonical import (
+        _run_resolved_tournament,
+    )
     from marl_battlegrounds.evaluation.tournament_reuse import ReusePlan
 
     if (output_dir is None) == (resume_from is None):
@@ -1306,8 +1314,10 @@ def _admission_evidence(
     model. The existing summary transaction binds the stored unrounded ratings
     to the complete game evidence. Only narrow summaries are retained here.
     """
+    from marl_battlegrounds.evaluation._tournaments.tournament_evidence import (
+        prepare_reuse_evidence,
+    )
     from marl_battlegrounds.evaluation.run_writer import _json_bytes, _json_value
-    from marl_battlegrounds.evaluation.tournament_evidence import prepare_reuse_evidence
     from marl_battlegrounds.evaluation.tournament_reuse import analysis_schedule
 
     tournament, metadata, records, plan = _result_context(result)
@@ -1586,8 +1596,8 @@ def _retained_admission_snapshot(
     """
     from dataclasses import replace
 
+    from marl_battlegrounds.evaluation._tournaments.tournament_records import origin_key
     from marl_battlegrounds.evaluation.run_writer import RunWriter
-    from marl_battlegrounds.evaluation.tournament_records import origin_key
     from marl_battlegrounds.evaluation.tournament_reuse import (
         analysis_schedule,
         rebuild_companion,

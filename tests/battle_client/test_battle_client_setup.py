@@ -24,7 +24,7 @@ from unittest.mock import Mock
 import jax
 import numpy as np
 import pytest
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 import marl_battlegrounds._battle_client.setup as battle_setup
 from marl_battlegrounds._battle_client.control import create_session, reset_session

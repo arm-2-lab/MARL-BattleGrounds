@@ -506,8 +506,8 @@ def test_default_capture_saves_frame_zero_with_installed_v2_identity(
         KeyboardCommandV1,
     )
     from marl_battlegrounds._battle_client.service import DebuggerService
+    from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
     from marl_battlegrounds.evaluation.models import CodeRevisionV2
-    from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
     from marl_battlegrounds.evaluation.replay_io import load_replay
 
     revision = CodeRevisionV2(package_version="9.8.7")

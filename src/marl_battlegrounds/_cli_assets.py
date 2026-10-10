@@ -79,7 +79,7 @@ def _print_next(
 
 def _download(namespace: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Inspect once, confirm missing bytes and publish verified paths if requested."""
-    from marl_battlegrounds.evaluation._asset_commands import (
+    from marl_battlegrounds.evaluation._tournaments._asset_commands import (
         _preflight_prepared_config,
     )
     from marl_battlegrounds.evaluation.tournament_assets import (
@@ -137,7 +137,9 @@ def _download(namespace: argparse.Namespace, parser: argparse.ArgumentParser) ->
 
 def _clean(namespace: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Preview explicit cache entries and remove them only after confirmation."""
-    from marl_battlegrounds.evaluation._asset_commands import _inspect_cache_cleanup
+    from marl_battlegrounds.evaluation._tournaments._asset_commands import (
+        _inspect_cache_cleanup,
+    )
 
     if namespace.dry_run and namespace.yes:
         parser.error("--dry-run cannot be combined with --yes")

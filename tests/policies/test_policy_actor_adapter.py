@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 import marl_battlegrounds.policies.actor as actor_module
 from marl_battlegrounds.core.env import reset

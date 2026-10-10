@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import jax
 import jax.numpy as jnp
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     captured_evaluation_trajectory,
     captured_team_deathmatch_threshold_trajectory,
     evaluation_env_config,
@@ -30,22 +30,22 @@ from tests.evaluation_fixtures import (
     neutral_action,
     valid_shared_availability,
 )
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     historical_initialize_scenario_state as initialize_scenario_state,
 )
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     historical_reset as reset,
 )
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     historical_step as step,
 )
 
-from marl_battlegrounds.evaluation.capture import (
+from marl_battlegrounds.evaluation._metrics.metrics import build_evaluation_observer_v1
+from marl_battlegrounds.evaluation._recording.capture import (
     capture_evaluation_transition_unit_v1,
     capture_initial_evaluation_frame_v1,
 )
-from marl_battlegrounds.evaluation.metrics import build_evaluation_observer_v1
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._replays.replay import (
     ReplayBundleV1,
     RuntimeProvenanceV1,
     build_replay_bundle_v1,
@@ -59,7 +59,7 @@ from marl_battlegrounds.evaluation.replay_io import (
 if TYPE_CHECKING:
     from marl_battlegrounds._battle_client.model import ActorCommand
     from marl_battlegrounds.core.types import EnvConfig, EnvState
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 
 type _CompletionState = Literal["complete", "partial"]
 type _InformationMode = Literal["no_shared_obs", "shared_obs"]
@@ -388,7 +388,9 @@ def _one_step_devclient_replay(
     description: str,
     frame_description: str,
 ) -> tuple[ReplayArtifactV4, tuple[int, ...], tuple[int, int]]:
-    from tests.visual_debugger_fixtures import debugger_test_launch_specification
+    from tests.helpers.visual_debugger_fixtures import (
+        debugger_test_launch_specification,
+    )
 
     from marl_battlegrounds._battle_client.control import (
         create_session,
@@ -398,7 +400,7 @@ def _one_step_devclient_replay(
         build_debugger_evaluation_launch_specification_v1,
     )
     from marl_battlegrounds._battle_client.model import DebuggerScenario, ScenarioFrame
-    from marl_battlegrounds.evaluation.replay_v4 import build_replay_v4
+    from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
 
     scenario = DebuggerScenario(
         name=name,

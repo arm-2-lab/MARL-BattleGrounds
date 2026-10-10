@@ -251,7 +251,7 @@ def test_public_resume_and_continuation_verify_learner_inventory_once(
         verbose=False,
         **kwargs,
     )
-    from tests.training_continuation_helpers import fixed_source
+    from tests.helpers.training_continuation_helpers import fixed_source
 
     fixed_source(monkeypatch, method)
     reached: list[Any] = []

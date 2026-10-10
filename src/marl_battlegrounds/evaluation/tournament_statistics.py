@@ -19,13 +19,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import linalg, optimize, special  # pyright: ignore[reportMissingTypeStubs]
 
-from marl_battlegrounds.evaluation.sampling_evidence import (
+from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     CONDITIONAL_INTERVAL_ASSUMPTION,
     CONDITIONAL_INTERVAL_STATUS,
     combine_sampling_facts,
     summarize_sampling_evidence,
 )
-from marl_battlegrounds.evaluation.tournament_schedule import (
+from marl_battlegrounds.evaluation._tournaments.tournament_schedule import (
     TournamentMatch,
     valid_policy_name,
 )

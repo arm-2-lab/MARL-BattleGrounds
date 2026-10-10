@@ -47,12 +47,12 @@ from marl_battlegrounds._battle_client.recording_coordinator import (
 )
 from marl_battlegrounds._battle_client.replay_recorder import DebuggerReplayRecorder
 from marl_battlegrounds._battle_client.service import DebuggerService
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     CodeRevisionV2,
     canonical_json_bytes,
 )
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.replay_io import (
     LoadedReplay,
     LoadedReplayBundleV1,

@@ -10,50 +10,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from marl_battlegrounds.evaluation.actor_projection import (
-        NO_SHARED_OBS_ACTOR_PROJECTION_ID,
-        NO_SHARED_OBS_ACTOR_PROJECTION_V2,
-        NO_SHARED_OBS_ACTOR_PROJECTION_V3,
-        NO_SHARED_OBS_ACTOR_PROJECTION_V4,
-        NO_SHARED_OBS_ACTOR_PROJECTION_VERSION,
-        SHARED_OBS_ACTOR_PROJECTION_ID,
-        SHARED_OBS_ACTOR_PROJECTION_V1,
-        SHARED_OBS_ACTOR_PROJECTION_V2,
-        SHARED_OBS_ACTOR_PROJECTION_V3,
-        SHARED_OBS_ACTOR_PROJECTION_VERSION,
-        reconstruct_actor_class_ids_by_team_v2,
-        reconstruct_actor_class_ids_by_team_v3,
-        reconstruct_class_ids_by_agent_by_team_v2,
-        reconstruct_class_ids_by_agent_by_team_v3,
-        reconstruct_shared_obs_sensor_source_bank_v1,
-        reconstruct_shared_obs_sensor_source_bank_v2,
-        validate_class_ids_by_agent_by_team_against_context_v1,
-    )
-    from marl_battlegrounds.evaluation.capture import (
-        capture_evaluation_transition_unit_v1,
-        capture_evaluation_transition_unit_v2,
-        capture_evaluation_transition_unit_v3,
-        capture_initial_evaluation_frame_v1,
-        capture_initial_evaluation_frame_v2,
-        capture_initial_evaluation_frame_v3,
-        normalize_transition_facts_v1,
-    )
-    from marl_battlegrounds.evaluation.catalog import (
-        build_evaluation_episode_context_v1,
-        build_evaluation_episode_context_v2,
-        build_evaluation_episode_context_v3,
-        build_evaluation_episode_context_v4,
-        build_resolved_env_config_v2,
-        build_static_mechanics_catalog_v1,
-    )
-    from marl_battlegrounds.evaluation.evaluate import (
-        EpisodeSpec,
-        evaluate,
-        evaluate_episodes,
-        evaluate_scenarios,
-    )
-    from marl_battlegrounds.evaluation.events import decode_evaluation_events_v1
-    from marl_battlegrounds.evaluation.metrics import (
+    from marl_battlegrounds.evaluation._metrics.metrics import (
         AgentPairStatisticSubjectV1,
         AgentStatisticSubjectV1,
         CountComponentV1,
@@ -81,6 +38,158 @@ if TYPE_CHECKING:
         TeamStatisticSubjectV1,
         build_evaluation_observer_v1,
         validate_evaluation_processing_progress_v1,
+    )
+    from marl_battlegrounds.evaluation._recording.capture import (
+        capture_evaluation_transition_unit_v1,
+        capture_evaluation_transition_unit_v2,
+        capture_evaluation_transition_unit_v3,
+        capture_initial_evaluation_frame_v1,
+        capture_initial_evaluation_frame_v2,
+        capture_initial_evaluation_frame_v3,
+        normalize_transition_facts_v1,
+    )
+    from marl_battlegrounds.evaluation._recording.events import (
+        decode_evaluation_events_v1,
+    )
+    from marl_battlegrounds.evaluation._recording.validation import (
+        validate_evaluation_transition_unit,
+        validate_evaluation_transition_unit_v1,
+        validate_initial_evaluation_frame,
+        validate_initial_evaluation_frame_v1,
+    )
+    from marl_battlegrounds.evaluation._replays.actor_projection import (
+        NO_SHARED_OBS_ACTOR_PROJECTION_ID,
+        NO_SHARED_OBS_ACTOR_PROJECTION_V2,
+        NO_SHARED_OBS_ACTOR_PROJECTION_V3,
+        NO_SHARED_OBS_ACTOR_PROJECTION_V4,
+        NO_SHARED_OBS_ACTOR_PROJECTION_VERSION,
+        SHARED_OBS_ACTOR_PROJECTION_ID,
+        SHARED_OBS_ACTOR_PROJECTION_V1,
+        SHARED_OBS_ACTOR_PROJECTION_V2,
+        SHARED_OBS_ACTOR_PROJECTION_V3,
+        SHARED_OBS_ACTOR_PROJECTION_VERSION,
+        reconstruct_actor_class_ids_by_team_v2,
+        reconstruct_actor_class_ids_by_team_v3,
+        reconstruct_class_ids_by_agent_by_team_v2,
+        reconstruct_class_ids_by_agent_by_team_v3,
+        reconstruct_shared_obs_sensor_source_bank_v1,
+        reconstruct_shared_obs_sensor_source_bank_v2,
+        validate_class_ids_by_agent_by_team_against_context_v1,
+    )
+    from marl_battlegrounds.evaluation._replays.pov import (
+        ACTOR_POV_ARTIFACT_SCHEMA_ID,
+        ACTOR_POV_AXIS_MAPPING_SCHEMA_ID,
+        ACTOR_POV_CONTENT_SCHEMA_ID,
+        ACTOR_POV_SCHEMA_VERSION,
+        ACTOR_POV_SCHEMA_VERSION_V2,
+        ACTOR_POV_SCHEMA_VERSION_V3,
+        ActorPovAcceptedActionV1,
+        ActorPovActionMaskV1,
+        ActorPovAdjacentTransitionSlice,
+        ActorPovAdjacentTransitionSliceV2,
+        ActorPovAdjacentTransitionSliceV3,
+        ActorPovAxisMapping,
+        ActorPovAxisMappingV1,
+        ActorPovAxisMappingV2,
+        ActorPovAxisMappingV3,
+        ActorPovCurrentSlice,
+        ActorPovCurrentSliceV2,
+        ActorPovCurrentSliceV3,
+        ActorPovEpisodeCompletionV1,
+        ActorPovEpisodeEndedCueV1,
+        ActorPovFrame,
+        ActorPovFrameV1,
+        ActorPovFrameV2,
+        ActorPovFrameV3,
+        ActorPovOwnActionOutcomeCueV1,
+        ActorPovOwnCooldownChangedCueV1,
+        ActorPovOwnHealthChangedCueV1,
+        ActorPovOwnLifecycleChangedCueV1,
+        ActorPovOwnPositionChangedCueV1,
+        ActorPovOwnStatusChangedCueV1,
+        ActorPovPresentationCueV1,
+        ActorPovPreviousTimestepActionsV1,
+        ActorPovReplayArtifact,
+        ActorPovReplayArtifactV1,
+        ActorPovReplayArtifactV2,
+        ActorPovReplayArtifactV3,
+        ActorPovReplayContent,
+        ActorPovReplayContentV1,
+        ActorPovReplayContentV2,
+        ActorPovReplayContentV3,
+        ActorPovSpawnLifecycleV1,
+        ActorPovSubmittedActionV1,
+        ActorPovTransitionV1,
+        ActorPovVisibleBodyObservationChangedCueV1,
+        canonical_actor_pov_content_json_bytes_v1,
+        canonical_actor_pov_replay_json_bytes_v1,
+        canonical_actor_pov_replay_json_bytes_v2,
+        canonical_actor_pov_replay_json_bytes_v3,
+        export_actor_pov_replay_v1,
+        export_actor_pov_replay_v2,
+        export_actor_pov_replay_v3,
+        validate_actor_pov_replay_against_replay_v1,
+        validate_actor_pov_replay_against_replay_v2,
+        validate_actor_pov_replay_against_replay_v3,
+        validate_actor_pov_replay_artifact_v1,
+        validate_actor_pov_replay_artifact_v2,
+        validate_actor_pov_replay_artifact_v3,
+        validate_actor_pov_replay_content,
+        validate_actor_pov_replay_content_v1,
+    )
+    from marl_battlegrounds.evaluation._replays.replay import (
+        EvaluationMetricReportArtifactV1,
+        MetricReportReferenceV1,
+        ReplayArtifactHeaderV1,
+        ReplayArtifactReferenceV1,
+        ReplayArtifactV1,
+        ReplayBundleV1,
+        ReplayTrajectoryContentReferenceV1,
+        ReplayWrapperMetadataV1,
+        RuntimeProvenanceV1,
+        build_replay_artifact_reference_v1,
+        build_replay_artifact_v1,
+        build_replay_bundle_v1,
+        iter_replay_transition_views_v1,
+        validate_metric_report_artifact_against_replay_v1,
+        validate_replay_artifact_v1,
+    )
+    from marl_battlegrounds.evaluation._replays.replay_v2 import (
+        ReplayArtifactHeaderV2,
+        ReplayArtifactReferenceV2,
+        ReplayArtifactV2,
+        build_replay_v2,
+    )
+    from marl_battlegrounds.evaluation._replays.replay_v3 import (
+        ReplayArtifactHeaderV3,
+        ReplayArtifactReferenceV3,
+        ReplayArtifactV3,
+        build_replay_v3,
+        replay_reference_v3,
+        validate_replay_artifact_v3,
+    )
+    from marl_battlegrounds.evaluation._replays.replay_v4 import (
+        ReplayArtifactHeaderV4,
+        ReplayArtifactReferenceV4,
+        ReplayArtifactV4,
+        build_replay_v4,
+        replay_from_packets,
+        replay_reference_v4,
+        validate_replay_artifact_v4,
+    )
+    from marl_battlegrounds.evaluation.catalog import (
+        build_evaluation_episode_context_v1,
+        build_evaluation_episode_context_v2,
+        build_evaluation_episode_context_v3,
+        build_evaluation_episode_context_v4,
+        build_resolved_env_config_v2,
+        build_static_mechanics_catalog_v1,
+    )
+    from marl_battlegrounds.evaluation.evaluate import (
+        EpisodeSpec,
+        evaluate,
+        evaluate_episodes,
+        evaluate_scenarios,
     )
     from marl_battlegrounds.evaluation.models import (
         AbilityActivatedEventV1,
@@ -165,84 +274,6 @@ if TYPE_CHECKING:
         TransitionFactsV1,
         VersionedIdentityV1,
     )
-    from marl_battlegrounds.evaluation.pov import (
-        ACTOR_POV_ARTIFACT_SCHEMA_ID,
-        ACTOR_POV_AXIS_MAPPING_SCHEMA_ID,
-        ACTOR_POV_CONTENT_SCHEMA_ID,
-        ACTOR_POV_SCHEMA_VERSION,
-        ACTOR_POV_SCHEMA_VERSION_V2,
-        ACTOR_POV_SCHEMA_VERSION_V3,
-        ActorPovAcceptedActionV1,
-        ActorPovActionMaskV1,
-        ActorPovAdjacentTransitionSlice,
-        ActorPovAdjacentTransitionSliceV2,
-        ActorPovAdjacentTransitionSliceV3,
-        ActorPovAxisMapping,
-        ActorPovAxisMappingV1,
-        ActorPovAxisMappingV2,
-        ActorPovAxisMappingV3,
-        ActorPovCurrentSlice,
-        ActorPovCurrentSliceV2,
-        ActorPovCurrentSliceV3,
-        ActorPovEpisodeCompletionV1,
-        ActorPovEpisodeEndedCueV1,
-        ActorPovFrame,
-        ActorPovFrameV1,
-        ActorPovFrameV2,
-        ActorPovFrameV3,
-        ActorPovOwnActionOutcomeCueV1,
-        ActorPovOwnCooldownChangedCueV1,
-        ActorPovOwnHealthChangedCueV1,
-        ActorPovOwnLifecycleChangedCueV1,
-        ActorPovOwnPositionChangedCueV1,
-        ActorPovOwnStatusChangedCueV1,
-        ActorPovPresentationCueV1,
-        ActorPovPreviousTimestepActionsV1,
-        ActorPovReplayArtifact,
-        ActorPovReplayArtifactV1,
-        ActorPovReplayArtifactV2,
-        ActorPovReplayArtifactV3,
-        ActorPovReplayContent,
-        ActorPovReplayContentV1,
-        ActorPovReplayContentV2,
-        ActorPovReplayContentV3,
-        ActorPovSpawnLifecycleV1,
-        ActorPovSubmittedActionV1,
-        ActorPovTransitionV1,
-        ActorPovVisibleBodyObservationChangedCueV1,
-        canonical_actor_pov_content_json_bytes_v1,
-        canonical_actor_pov_replay_json_bytes_v1,
-        canonical_actor_pov_replay_json_bytes_v2,
-        canonical_actor_pov_replay_json_bytes_v3,
-        export_actor_pov_replay_v1,
-        export_actor_pov_replay_v2,
-        export_actor_pov_replay_v3,
-        validate_actor_pov_replay_against_replay_v1,
-        validate_actor_pov_replay_against_replay_v2,
-        validate_actor_pov_replay_against_replay_v3,
-        validate_actor_pov_replay_artifact_v1,
-        validate_actor_pov_replay_artifact_v2,
-        validate_actor_pov_replay_artifact_v3,
-        validate_actor_pov_replay_content,
-        validate_actor_pov_replay_content_v1,
-    )
-    from marl_battlegrounds.evaluation.replay import (
-        EvaluationMetricReportArtifactV1,
-        MetricReportReferenceV1,
-        ReplayArtifactHeaderV1,
-        ReplayArtifactReferenceV1,
-        ReplayArtifactV1,
-        ReplayBundleV1,
-        ReplayTrajectoryContentReferenceV1,
-        ReplayWrapperMetadataV1,
-        RuntimeProvenanceV1,
-        build_replay_artifact_reference_v1,
-        build_replay_artifact_v1,
-        build_replay_bundle_v1,
-        iter_replay_transition_views_v1,
-        validate_metric_report_artifact_against_replay_v1,
-        validate_replay_artifact_v1,
-    )
     from marl_battlegrounds.evaluation.replay_io import (
         ACTOR_POV_FILE_SUFFIX_V1,
         DEFAULT_MAX_REPLAY_FILE_SIZE_BYTES_V1,
@@ -285,29 +316,6 @@ if TYPE_CHECKING:
         save_scenario_evaluation_record_v3,
         save_scenario_evaluation_record_v4,
         save_scenario_evaluation_record_v5,
-    )
-    from marl_battlegrounds.evaluation.replay_v2 import (
-        ReplayArtifactHeaderV2,
-        ReplayArtifactReferenceV2,
-        ReplayArtifactV2,
-        build_replay_v2,
-    )
-    from marl_battlegrounds.evaluation.replay_v3 import (
-        ReplayArtifactHeaderV3,
-        ReplayArtifactReferenceV3,
-        ReplayArtifactV3,
-        build_replay_v3,
-        replay_reference_v3,
-        validate_replay_artifact_v3,
-    )
-    from marl_battlegrounds.evaluation.replay_v4 import (
-        ReplayArtifactHeaderV4,
-        ReplayArtifactReferenceV4,
-        ReplayArtifactV4,
-        build_replay_v4,
-        replay_from_packets,
-        replay_reference_v4,
-        validate_replay_artifact_v4,
     )
     from marl_battlegrounds.evaluation.results import (
         CanonicalTournamentResult,
@@ -352,12 +360,6 @@ if TYPE_CHECKING:
         validate_scenario_evaluation_record_v4,
         validate_scenario_evaluation_record_v5,
     )
-    from marl_battlegrounds.evaluation.validation import (
-        validate_evaluation_transition_unit,
-        validate_evaluation_transition_unit_v1,
-        validate_initial_evaluation_frame,
-        validate_initial_evaluation_frame_v1,
-    )
 
 _LAZY_EXPORT_MODULE_BY_NAME: dict[str, str] = {}
 
@@ -373,7 +375,7 @@ def _register_lazy_exports(module_name: str, names: tuple[str, ...]) -> None:
 
 
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.actor_projection",
+    "marl_battlegrounds.evaluation._replays.actor_projection",
     (
         "NO_SHARED_OBS_ACTOR_PROJECTION_ID",
         "NO_SHARED_OBS_ACTOR_PROJECTION_V2",
@@ -393,7 +395,7 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.capture",
+    "marl_battlegrounds.evaluation._recording.capture",
     (
         "capture_evaluation_transition_unit_v1",
         "capture_evaluation_transition_unit_v2",
@@ -410,11 +412,11 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.events",
+    "marl_battlegrounds.evaluation._recording.events",
     ("decode_evaluation_events_v1",),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.metrics",
+    "marl_battlegrounds.evaluation._metrics.metrics",
     (
         "AgentPairStatisticSubjectV1",
         "AgentStatisticSubjectV1",
@@ -519,7 +521,7 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.pov",
+    "marl_battlegrounds.evaluation._replays.pov",
     (
         "ACTOR_POV_ARTIFACT_SCHEMA_ID",
         "ACTOR_POV_AXIS_MAPPING_SCHEMA_ID",
@@ -554,7 +556,7 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.replay",
+    "marl_battlegrounds.evaluation._replays.replay",
     (
         "EvaluationMetricReportArtifactV1",
         "MetricReportReferenceV1",
@@ -653,7 +655,7 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.validation",
+    "marl_battlegrounds.evaluation._recording.validation",
     (
         "validate_evaluation_transition_unit_v1",
         "validate_evaluation_transition_unit",
@@ -1001,7 +1003,7 @@ _register_lazy_exports(
     ("build_evaluation_episode_context_v2", "build_evaluation_episode_context_v3"),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.replay_v2",
+    "marl_battlegrounds.evaluation._replays.replay_v2",
     (
         "ReplayArtifactHeaderV2",
         "ReplayArtifactV2",
@@ -1015,7 +1017,7 @@ _register_lazy_exports(
 )
 
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.replay_v3",
+    "marl_battlegrounds.evaluation._replays.replay_v3",
     (
         "ReplayArtifactHeaderV3",
         "ReplayArtifactReferenceV3",
@@ -1027,7 +1029,7 @@ _register_lazy_exports(
 )
 
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.pov",
+    "marl_battlegrounds.evaluation._replays.pov",
     (
         "ACTOR_POV_SCHEMA_VERSION_V2",
         "ActorPovAdjacentTransitionSlice",
@@ -1068,7 +1070,7 @@ _register_lazy_exports(
 
 # Red Zone records: context V4, frame V3, resolved config V2 and replay V4.
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.capture",
+    "marl_battlegrounds.evaluation._recording.capture",
     ("capture_evaluation_transition_unit_v3", "capture_initial_evaluation_frame_v3"),
 )
 _register_lazy_exports(
@@ -1086,7 +1088,7 @@ _register_lazy_exports(
     ),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.replay_v4",
+    "marl_battlegrounds.evaluation._replays.replay_v4",
     (
         "ReplayArtifactHeaderV4",
         "ReplayArtifactReferenceV4",
@@ -1099,11 +1101,11 @@ _register_lazy_exports(
 )
 # Red Zone actor views: projections SharedObs V3 / NoSharedObs V4 and POV V3.
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.actor_projection",
+    "marl_battlegrounds.evaluation._replays.actor_projection",
     ("NO_SHARED_OBS_ACTOR_PROJECTION_V4", "SHARED_OBS_ACTOR_PROJECTION_V3"),
 )
 _register_lazy_exports(
-    "marl_battlegrounds.evaluation.pov",
+    "marl_battlegrounds.evaluation._replays.pov",
     (
         "ACTOR_POV_SCHEMA_VERSION_V3",
         "ActorPovAdjacentTransitionSliceV3",

@@ -25,7 +25,7 @@ from marl_battlegrounds.environment import (
     _checked_increment,  # pyright: ignore[reportPrivateUsage]
     episode_advanced,
 )
-from marl_battlegrounds.evaluation.recording_types import (
+from marl_battlegrounds.evaluation._recording.recording_types import (
     TRACKING_ERROR_ACCOUNTING,
     TRACKING_ERROR_DECLARATION,
     TRACKING_ERROR_OVERFLOW,

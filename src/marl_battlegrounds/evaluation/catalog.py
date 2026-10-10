@@ -87,7 +87,7 @@ from marl_battlegrounds.core.types import (
     EnvConfig,
     ResolvedAgentProfile,
 )
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     SHARED_OBS_ACTOR_PROJECTION_V1,
     SHARED_OBS_ACTOR_PROJECTION_V2,
     SHARED_OBS_ACTOR_PROJECTION_V3,
@@ -1535,7 +1535,9 @@ def _validate_official_scenario_context(
     if build_roster_v1(config, public_agent_ids) != roster:
         raise ValueError("loaded roster does not exactly reproject")
 
-    from marl_battlegrounds.evaluation.capture import reconstruct_env_state_v1
+    from marl_battlegrounds.evaluation._recording.capture import (
+        reconstruct_env_state_v1,
+    )
 
     initial_state = reconstruct_env_state_v1(initial_frame)
     validate_scenario_initial_state(config, initial_state)

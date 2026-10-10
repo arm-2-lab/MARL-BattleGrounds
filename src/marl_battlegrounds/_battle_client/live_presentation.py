@@ -45,7 +45,17 @@ from marl_battlegrounds._battle_client.protocol import (
     SharedObsAgentPovLiveDebuggerFrameV2,
     TargetReferenceV1,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovAdjacentTransitionSlice,
+    ActorPovAdjacentTransitionSliceV1,
+    ActorPovAdjacentTransitionSliceV2,
+    ActorPovAdjacentTransitionSliceV3,
+    ActorPovCurrentSlice,
+    ActorPovCurrentSliceV1,
+    ActorPovCurrentSliceV2,
+    ActorPovCurrentSliceV3,
+)
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
     EvaluationEpisodeContext,
@@ -55,16 +65,6 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV3,
     StaticMechanicsCatalogV1,
     evaluation_context_type,
-)
-from marl_battlegrounds.evaluation.pov import (
-    ActorPovAdjacentTransitionSlice,
-    ActorPovAdjacentTransitionSliceV1,
-    ActorPovAdjacentTransitionSliceV2,
-    ActorPovAdjacentTransitionSliceV3,
-    ActorPovCurrentSlice,
-    ActorPovCurrentSliceV1,
-    ActorPovCurrentSliceV2,
-    ActorPovCurrentSliceV3,
 )
 from marl_battlegrounds.rendering.authorized_incoming import (
     build_live_no_shared_obs_incoming_summary_v1,

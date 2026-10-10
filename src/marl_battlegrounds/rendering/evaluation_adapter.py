@@ -21,7 +21,32 @@ from math import isfinite
 from threading import Lock
 from typing import Literal, TypedDict, cast, overload
 
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._recording.validation import (
+    validate_context_joined_evaluation_frame_v1,
+    validate_initial_evaluation_frame_v1,
+)
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovActionMaskV1,
+    ActorPovAxisMapping,
+    ActorPovAxisMappingV1,
+    ActorPovAxisMappingV2,
+    ActorPovAxisMappingV3,
+    ActorPovPreviousTimestepActionsV1,
+    ActorPovSpawnLifecycleV1,
+)
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
+    CONTEXT_FEATURES_V1,
+    CONTEXT_FEATURES_V2,
+    MAX_AGENT_SLOTS_V1,
+    MAX_AGENTS_PER_TEAM_V1,
+    MAX_OBJECTIVE_SLOTS_V1,
+    MAX_OBSTACLE_SLOTS_V1,
+    OBJECTIVE_FEATURES_V1,
+    OBSTACLE_FEATURES_V1,
+    SELF_FEATURES_V1,
+    UNIT_FEATURES_V1,
+)
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1 as EvaluationAbilityActivatedEventV1,
 )
@@ -106,31 +131,6 @@ from marl_battlegrounds.evaluation.models import (
 )
 from marl_battlegrounds.evaluation.models import (
     TeamDeathmatchScoreChangedEventV1 as EvaluationTeamDeathmatchScoreChangedEventV1,
-)
-from marl_battlegrounds.evaluation.pov import (
-    ActorPovActionMaskV1,
-    ActorPovAxisMapping,
-    ActorPovAxisMappingV1,
-    ActorPovAxisMappingV2,
-    ActorPovAxisMappingV3,
-    ActorPovPreviousTimestepActionsV1,
-    ActorPovSpawnLifecycleV1,
-)
-from marl_battlegrounds.evaluation.validation import (
-    validate_context_joined_evaluation_frame_v1,
-    validate_initial_evaluation_frame_v1,
-)
-from marl_battlegrounds.evaluation.wire_shapes import (
-    CONTEXT_FEATURES_V1,
-    CONTEXT_FEATURES_V2,
-    MAX_AGENT_SLOTS_V1,
-    MAX_AGENTS_PER_TEAM_V1,
-    MAX_OBJECTIVE_SLOTS_V1,
-    MAX_OBSTACLE_SLOTS_V1,
-    OBJECTIVE_FEATURES_V1,
-    OBSTACLE_FEATURES_V1,
-    SELF_FEATURES_V1,
-    UNIT_FEATURES_V1,
 )
 from marl_battlegrounds.rendering.evaluation_wire_features import (
     AGENT_FEATURE_ACTIVE_V1,

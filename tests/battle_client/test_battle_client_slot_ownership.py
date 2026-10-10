@@ -11,7 +11,7 @@ from typing import cast
 import jax
 import numpy as np
 import pytest
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client import control
 from marl_battlegrounds._battle_client.methods import resolve_controllers

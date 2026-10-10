@@ -14,7 +14,7 @@ AuthorizedRedZoneV1 row holds each team's exact float32 strip;
 build_authorized_map_v2 builds it for the Oracle and Agent POV scenes alike.
 Each incoming agent_died row carries home_fall (the death scored double);
 ``visual_batch_home_fall_slots_v1`` feeds the shared rule in
-evaluation.events, and an Agent POV summary carries the flag only for falls
+evaluation._recording.events, and an Agent POV summary carries the flag only for falls
 that audience saw. An Agent POV scene, live or replayed, carries
 AuthorizedTeamSightV1: the merged floor the viewing team sees, with the shapes
 the veil passes through while the incoming turn plays
@@ -36,7 +36,14 @@ from typing import Annotated, ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_core import PydanticSerializationError
 
-from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
+from marl_battlegrounds.evaluation._recording.events import (
+    team_deathmatch_home_fall_slots_v1,
+)
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
+    NUM_MOVE_ACTIONS_V1,
+    NUM_TARGET_ACTIONS_V1,
+    NUM_ULTIMATE_ACTIONS_V1,
+)
 from marl_battlegrounds.evaluation.models import (
     FLOAT32_SMALLEST_NORMAL,
     EvaluationEpisodeContext,
@@ -47,11 +54,6 @@ from marl_battlegrounds.evaluation.models import (
     float32_value,
     red_zone_team_on_right,
     red_zone_x_range,
-)
-from marl_battlegrounds.evaluation.wire_shapes import (
-    NUM_MOVE_ACTIONS_V1,
-    NUM_TARGET_ACTIONS_V1,
-    NUM_ULTIMATE_ACTIONS_V1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import (
     validate_oracle_scene_static_authority_v1,
@@ -4210,7 +4212,7 @@ class ReplayIncomingAgentDiedEventV1(_ReplayIncomingEventBaseV1):
     home_fall : bool
         True when this death started inside the victim's own team's Red Zone
         and so gave the other team 2 points (decided by
-        evaluation.events.team_deathmatch_home_fall_slots_v1). Default False:
+        evaluation._recording.events.team_deathmatch_home_fall_slots_v1). Default False:
         an ordinary fall, a non-Team-Deathmatch task, or a payload written
         before this field existed.
     Raises
@@ -7719,7 +7721,7 @@ def visual_batch_home_fall_slots_v1(
 
     The batch's transition-start trajectory anchors give the start positions
     and its agent_died events give the new deaths. The rule itself belongs to
-    evaluation.events.team_deathmatch_home_fall_slots_v1; this helper only
+    evaluation._recording.events.team_deathmatch_home_fall_slots_v1; this helper only
     feeds it.
 
     Parameters

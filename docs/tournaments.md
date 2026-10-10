@@ -130,8 +130,8 @@ official tournament snapshot is installed; prepare an approved bundle or use
 run_tournament with a custom config". A changed `games_per_opponent` makes a
 research run (`protocol_compliant` is False). Local runs never admit or publish.
 
-**From A Checkout:** `python examples/canonical_tournament.py command=fixture directory=runs/fixture save=true` runs the route
-on artificial records built by [`canonical_fixture.py`](../examples/canonical_fixture.py); [`canonical_admission.py`](../examples/canonical_admission.py) shows a maintainer admission.
+**From A Checkout:** `python examples/tournaments/canonical_tournament.py command=fixture directory=runs/fixture save=true` runs the route
+on artificial records built by [`canonical_fixture.py`](../examples/tournaments/canonical_fixture.py); [`canonical_admission.py`](../examples/tournaments/canonical_admission.py) shows a maintainer admission.
 
 ## Select A Field
 
@@ -151,11 +151,11 @@ writes `population.json` (with a content hash, `population_id`) and a separate
 `refit.json`; a later field with `"selection": {"stage": "test", ...}` tests them on maps 47-51.
 
 **Watch Out:** an unfinished field writes `status="incomplete"` and selects nobody.
-The command needs the exact run folder, as [`population_selection.py`](../examples/population_selection.py) shows:
+The command needs the exact run folder, as [`population_selection.py`](../examples/training/population_selection.py) shows:
 `python -m marl_battlegrounds select-population selection-games/RUN_ID --output-dir population`.
 
 ## Next
 
 - [Tournament Rules](tournament_rules.md): who may enter the official ladder.
 - [Metrics](metrics.md): compare every entrant's play, each from its own side.
-- [`canonical_tournament.py`](../examples/canonical_tournament.py): a runnable tour of released fields.
+- [`canonical_tournament.py`](../examples/tournaments/canonical_tournament.py): a runnable tour of released fields.

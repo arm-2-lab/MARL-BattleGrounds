@@ -17,7 +17,7 @@ import jax
 import pytest
 from tests.battle_client.test_battle_client_mixed_control import _host, _session
 from tests.battle_client.test_battle_client_worker import _finish, _service
-from tests.test_visual_debugger_systems import _send
+from tests.visual_debugger.test_visual_debugger_systems import _send
 
 from marl_battlegrounds._battle_client import launch, system_worker
 from marl_battlegrounds._battle_client.protocol import (

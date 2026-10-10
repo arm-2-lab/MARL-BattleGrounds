@@ -20,13 +20,13 @@ from pydantic import (
     model_validator,
 )
 
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     MAX_AGENT_SLOTS_V1 as MAX_AGENT_SLOTS,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_MOVE_ACTIONS_V1 as NUM_MOVE_ACTIONS,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_TARGET_ACTIONS_V1 as NUM_TARGET_ACTIONS,
 )
 from marl_battlegrounds.rendering.pov_scene import ActorPovAnalyzerProjectionV1

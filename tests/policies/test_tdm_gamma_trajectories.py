@@ -5,7 +5,7 @@ GAMMA plays Team B; Team A units follow fixed scripted actions. Every
 submitted action is accepted unchanged, and every Trap reading also checks
 that the enemy row is visible. The class-order check and the kept-rule checks
 call the controllers directly on edited Scenario 1 observations from
-tests.tdm_gamma_fixtures. Where a version 2 rule decides the answer, the test
+tests.helpers.tdm_gamma_fixtures. Where a version 2 rule decides the answer, the test
 also runs BETA on the same actor inputs and shows that BETA chooses
 differently, so BETA's code would fail it.
 
@@ -54,8 +54,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.scenario_controller_fixtures import ControllerScenario, load_controller_input
-from tests.tdm_gamma_fixtures import (
+from tests.helpers.scenario_controller_fixtures import (
+    ControllerScenario,
+    load_controller_input,
+)
+from tests.helpers.tdm_gamma_fixtures import (
     BETA,
     GAMMA,
     act,

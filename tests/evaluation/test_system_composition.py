@@ -537,7 +537,7 @@ def test_compositions_use_ordinary_saved_evaluation(tmp_path: Path) -> None:
 def test_composition_example_runs_all_public_workflows(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    from examples.systems import composition_examples
+    from examples.your_method.systems import composition_examples
 
     composition_examples(tmp_path)
     output = capsys.readouterr().out

@@ -689,7 +689,7 @@ def _validate(config: dict[str, Any], *, official: bool) -> None:
             if moment.tzinfo is None or moment.utcoffset() is None:
                 raise ValueError(f"{key} must include its UTC offset")
     if "selection" in config:
-        from marl_battlegrounds.evaluation.population_selection import (
+        from marl_battlegrounds.evaluation._tournaments.population_selection import (
             validate_bound_selection,
         )
 

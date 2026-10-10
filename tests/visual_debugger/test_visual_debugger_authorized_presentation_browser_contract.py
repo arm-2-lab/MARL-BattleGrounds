@@ -16,7 +16,7 @@ from scripts.dev.visual_debugger.export_authorized_presentation_browser_schema i
     _validate_schema_keywords,
     render_browser_schema_module,
 )
-from tests.export_authorized_presentation_browser_fixture import render_fixture
+from tests.helpers.export_authorized_presentation_browser_fixture import render_fixture
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_ASSET = (

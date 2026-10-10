@@ -29,11 +29,11 @@ from marl_battlegrounds.episode_tracking import (
     track_episode_step,
 )
 from marl_battlegrounds.evaluation import recording_identity, run_writer
+from marl_battlegrounds.evaluation._recording.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation.policy_execution import PolicyTrace, System
 from marl_battlegrounds.evaluation.recording_identity import (
     ordered_source_bank_identity,
 )
-from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation.run_writer import RunWriter, configuration_identity
 from marl_battlegrounds.tasks import (
     balanced_spawn_configs,

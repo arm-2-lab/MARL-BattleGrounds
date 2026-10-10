@@ -65,8 +65,8 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.scenario_controller_fixtures import load_scenario_1
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.scenario_controller_fixtures import load_scenario_1
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 import marl_battlegrounds._battle_client.control as control
 import marl_battlegrounds._battle_client.evaluation_bridge as evaluation_bridge
@@ -101,6 +101,8 @@ from marl_battlegrounds.core.types import (
     EnvConfig,
     EnvState,
 )
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV2,
     ContentAddressedIdentityV1,
@@ -112,12 +114,10 @@ from marl_battlegrounds.evaluation.models import (
     canonical_json_bytes,
 )
 from marl_battlegrounds.evaluation.policy_execution import controller_identity, policy
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.replay_io import (
     load_replay,
     preflight_replay_destination,
 )
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.reactive_tdm_alpha import (
     reactive_tdm_alpha_controller_descriptor,

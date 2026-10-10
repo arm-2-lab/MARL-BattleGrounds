@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from tests.training_continuation_helpers import fixed_source
+from tests.helpers.training_continuation_helpers import fixed_source
 
 from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
 from marl_battlegrounds.training import _run_io, checkpoints, runner

@@ -21,13 +21,13 @@ from itertools import pairwise
 from math import isfinite
 from typing import TYPE_CHECKING, Literal, TypeGuard, cast
 
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     MAX_AGENT_SLOTS_V1 as MAX_AGENT_SLOTS,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_MOVE_ACTIONS_V1 as NUM_MOVE_ACTIONS,
 )
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_TARGET_ACTIONS_V1 as NUM_TARGET_ACTIONS,
 )
 
@@ -42,7 +42,9 @@ if TYPE_CHECKING:
         Observation,
     )
     from marl_battlegrounds.environment import EnvironmentState
-    from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+    from marl_battlegrounds.evaluation._metrics.metrics import (
+        EvaluationTransitionViewV1,
+    )
     from marl_battlegrounds.evaluation.models import (
         EvaluationEpisodeContextV4,
         EvaluationFrameV3,
@@ -836,7 +838,9 @@ class DebuggerSession:
         """Bind the exact continuation objects and validate the host endpoint
         contract.
         """
-        from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+        from marl_battlegrounds.evaluation._metrics.metrics import (
+            EvaluationTransitionViewV1,
+        )
         from marl_battlegrounds.evaluation.models import (
             AssignedPolicySlotV2,
             EvaluationEpisodeContextV4,
@@ -1090,7 +1094,7 @@ class DebuggerSession:
                     team = 0 if roster_row.configured_team_id == team_a_id else 1
                     if self.system_ids is None:
                         raise ValueError("System identities must be bound at setup")
-                    from marl_battlegrounds.evaluation.recording_context import (
+                    from marl_battlegrounds.evaluation._recording.recording_context import (  # noqa: E501
                         recorded_policy_assignment,
                     )
 

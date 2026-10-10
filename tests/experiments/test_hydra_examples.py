@@ -20,6 +20,12 @@ from scripts.dev.generate_experiment_configs import _example_presets
 
 EXAMPLES = tuple(Path(name).stem for name in _example_presets())
 REPO = Path(__file__).resolve().parents[2]
+# Lessons are found by file name, as the preset generator finds them.
+EXAMPLE_PATHS = {path.stem: path for path in (REPO / "examples").rglob("*.py")}
+EXAMPLE_MODULES = {
+    name: ".".join(path.relative_to(REPO).with_suffix("").parts)
+    for name, path in EXAMPLE_PATHS.items()
+}
 GUARD = """
 import importlib.abc
 import sys
@@ -56,7 +62,7 @@ import importlib
 import json
 import os
 from pathlib import Path
-module = importlib.import_module('examples.{name}')
+module = importlib.import_module({EXAMPLE_MODULES[name]!r})
 entry = {"launch" if name == "cross_play_and_zsc" else "run"!r}
 original = getattr(module, entry)
 @functools.wraps(original)
@@ -99,7 +105,7 @@ def test_all_tutorial_help_and_config_skip_numerical_imports(
         GUARD
         + f"""
 import runpy
-runpy.run_path({str(REPO / "examples")!r} + '/{name}.py', run_name='__main__')
+runpy.run_path({str(EXAMPLE_PATHS[name])!r}, run_name='__main__')
 """
     )
     result = _process(
@@ -254,7 +260,7 @@ def test_plain_lesson_rejects_text_flags_before_work(
         + f"""
 import importlib
 import inspect
-module = importlib.import_module('examples.{name}')
+module = importlib.import_module({EXAMPLE_MODULES[name]!r})
 parameters = inspect.signature(module.run).parameters
 settings = {{key: 'unused' for key, value in parameters.items()
     if value.default is inspect.Parameter.empty}}
@@ -279,7 +285,7 @@ def test_hydra_rejects_quoted_boolean_without_fixture_or_download(
     program = (
         GUARD
         + """
-from examples.canonical_tournament import main
+from examples.tournaments.canonical_tournament import main
 raise SystemExit(main())
 """
     )
@@ -308,12 +314,12 @@ def test_canonical_destinations_stay_outside_hydra_records(
 def test_canonical_fixture_runs_as_callable_module_and_script(
     tmp_path: Path, entry: str
 ) -> None:
-    fixture_path = REPO / "examples/canonical_tournament.py"
+    fixture_path = REPO / "examples/tournaments/canonical_tournament.py"
     if entry == "import":
         program = (
             ""
             + """
-from examples.canonical_tournament import run
+from examples.tournaments.canonical_tournament import run
 run(command='fixture', entrants=2)
 """
         )
@@ -323,7 +329,8 @@ run(command='fixture', entrants=2)
             ""
             + "\nimport runpy\n"
             + (
-                "runpy.run_module('examples.canonical_tournament', run_name='__main__')"
+                "runpy.run_module("
+                "'examples.tournaments.canonical_tournament', run_name='__main__')"
                 if entry == "module"
                 else (f"runpy.run_path({str(fixture_path)!r}, run_name='__main__')")
             )
@@ -332,7 +339,7 @@ run(command='fixture', entrants=2)
         if entry == "script":
             program = program.replace(
                 "import runpy",
-                f"import runpy, sys\nsys.path.insert(0, {str(REPO / 'examples')!r})",
+                f"import runpy, sys\nsys.path.insert(0, {str(fixture_path.parent)!r})",
             )
         arguments = ["entrants=2"]
     result = _process(tmp_path, program, arguments)

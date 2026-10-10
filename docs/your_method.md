@@ -103,7 +103,7 @@ share; returning a whole team's actions grants no extra rights. `info`, `env.tra
 training facts reveal hidden facts: they may feed a critic, a mixer or a reward, never an actor.
 
 **Watch Out:** predicting hidden facts from allowed inputs is fine; reading them is not. See
-[own_learner.py](../examples/own_learner.py), a complete small CTDE learner (centralized training, decentralized execution).
+[own_learner.py](../examples/your_method/own_learner.py), a complete small CTDE learner (centralized training, decentralized execution).
 
 ## Collection Helpers
 
@@ -121,7 +121,7 @@ print(training.training_summary(collection, carry)["env_steps"])
 
 These calls give exact experience budgets, the built-in curriculum, reward shaping and self-play
 history, and leave the loss, critic and optimizer to you. `rollout.transitions` holds compact rows,
-time first; `scan_training_rollout` fits a larger compiled loop ([training_collection.py](../examples/training_collection.py)).
+time first; `scan_training_rollout` fits a larger compiled loop ([training_collection.py](../examples/your_method/training_collection.py)).
 
 **Watch Out:** `total_env_steps` must divide by an even `num_envs`, and a curriculum needs one
 round per stage. The actor must be a JAX System whose memory has a leading game axis.
@@ -139,7 +139,7 @@ with marl_bgs.RunWriter("runs/my-learner", phase="training", policies={"team_a":
 `collect_rollout` runs your scan step in compiled chunks and saves game records in a new run inside
 `runs/my-learner` (`writer.run_dir`). To restore, reopen `RunWriter(resume_from=writer.run_dir,
 recording_checkpoint=token, phase="training", policies=...)`; the records rewind to your restored
-learner. See [recorded_rollout.py](../examples/recorded_rollout.py) and [systems.py](../examples/systems.py).
+learner. See [recorded_rollout.py](../examples/your_method/recorded_rollout.py) and [systems.py](../examples/your_method/systems.py).
 
 **Watch Out:** use one training writer per learner, pass every `info` (not only the last) and keep each token's files.
 
@@ -147,4 +147,4 @@ learner. See [recorded_rollout.py](../examples/recorded_rollout.py) and [systems
 
 - [training.md](training.md): the built-in trainer and its six learners.
 - [evaluation.md](evaluation.md): test your System on the test maps.
-- [research_methods.py](../examples/research_methods.py): name your method as `module:function`.
+- [research_methods.py](../examples/your_method/research_methods.py): name your method as `module:function`.

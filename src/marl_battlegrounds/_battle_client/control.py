@@ -109,11 +109,11 @@ from marl_battlegrounds.environment import (
     make,
 )
 from marl_battlegrounds.evaluation import policy_execution
-from marl_battlegrounds.evaluation.capture import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._recording.capture import (
     capture_evaluation_transition_unit_v3,
     capture_initial_evaluation_frame_v3,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
     ActionMaskV1,
     EvaluationEpisodeContextV4,

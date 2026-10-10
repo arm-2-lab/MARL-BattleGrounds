@@ -61,7 +61,8 @@ from marl_battlegrounds._method_loading import (
     validate_saved_method_reference,
 )
 from marl_battlegrounds.baselines.ppo import initialize_ppo
-from marl_battlegrounds.evaluation import tournament_config, tournament_inputs
+from marl_battlegrounds.evaluation import tournament_config
+from marl_battlegrounds.evaluation._tournaments import tournament_inputs
 from marl_battlegrounds.training import checkpoints, collection, runner, study
 from marl_battlegrounds.training.config import TrainConfig
 

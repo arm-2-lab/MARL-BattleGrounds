@@ -74,7 +74,7 @@ from scripts.dev.visual_debugger.scenarios import (
     build_vision_moment,
     vision_moment_scenario,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds._battle_client.evaluation_bridge import (
@@ -106,7 +106,7 @@ from marl_battlegrounds.core.types import (
     EnvConfig,
     EnvState,
 )
-from marl_battlegrounds.evaluation.map_identity import recorded_map
+from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.reactive_tdm_beta import reactive_tdm_beta_policy
 from marl_battlegrounds.policies.shared_obs import (

@@ -32,12 +32,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from examples import episode_tracking as curriculum
-from examples import evaluation as evaluation_example
-from examples import mappo_training as training_example
-from examples import own_learner, research_methods
-from examples import pqn_training as pqn_example
-from examples import qmix_training as qmix_example
-from examples import recorded_rollout as recorded
+from examples.evaluate import evaluation as evaluation_example
+from examples.training import mappo_training as training_example
+from examples.training import pqn_training as pqn_example
+from examples.training import qmix_training as qmix_example
+from examples.your_method import own_learner, research_methods
+from examples.your_method import recorded_rollout as recorded
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.tasks import list_tdm_maps
@@ -450,7 +450,7 @@ def test_cross_play_saves_fixed_cells_and_resumes_with_live_members(
     import json
     from importlib import import_module
 
-    from examples import cross_play_and_zsc as example
+    from examples.evaluate import cross_play_and_zsc as example
 
     evaluator = import_module("marl_battlegrounds.evaluation.evaluate")
     provenance = evaluator.capture_recording_provenance(num_envs=2)
@@ -542,7 +542,7 @@ def test_cross_play_cli_forwards_explicit_references_and_budget(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from examples import cross_play_and_zsc as example
+    from examples.evaluate import cross_play_and_zsc as example
 
     observed: dict[str, Tree] = {}
 
@@ -718,7 +718,7 @@ def test_declared_curriculum_example_trains_loads_and_evaluates(
 ) -> None:
     import json
 
-    from examples import curriculum as example
+    from examples.training import curriculum as example
 
     from marl_battlegrounds.training import checkpoints
 
@@ -788,7 +788,7 @@ def test_scenario_entry_uses_exact_starts_shared_pressure_and_sparse_resume(
 ) -> None:
     import importlib
 
-    from examples import scenario_evaluation
+    from examples.evaluate import scenario_evaluation
 
     from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
 
@@ -894,7 +894,7 @@ def test_scenario_trial_count_is_checked_before_method_loading(count: int) -> No
 def test_all_exact_scenarios_complete_save_metrics_and_preserve_replay_start(
     tmp_path: Path,
 ) -> None:
-    from marl_battlegrounds.evaluation.capture import (
+    from marl_battlegrounds.evaluation._recording.capture import (
         _normalize_snapshot_v1,  # pyright: ignore[reportPrivateUsage]
     )
     from marl_battlegrounds.evaluation.replay_io import load_replay

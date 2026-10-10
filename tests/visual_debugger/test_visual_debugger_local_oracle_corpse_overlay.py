@@ -35,7 +35,8 @@ from scripts.dev.visual_debugger.presentation_protocol import (
 )
 from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import (
+from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     evaluation_env_config,
@@ -43,8 +44,7 @@ from tests.evaluation_fixtures import (
     historical_reset,
     valid_shared_availability,
 )
-from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds.core.env import (
@@ -53,17 +53,17 @@ from marl_battlegrounds.core.env import (
     reset,
 )
 from marl_battlegrounds.core.geometry import has_clear_line_of_sight
-from marl_battlegrounds.evaluation.capture import (
+from marl_battlegrounds.evaluation._recording.capture import (
     capture_initial_evaluation_frame_v1,
     capture_initial_evaluation_frame_v3,
 )
+from marl_battlegrounds.evaluation._replays.pov import build_actor_pov_current_slice_v1
+from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_OBSTACLE_SLOTS_V1
 from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     ResolvedObstacleV1,
 )
-from marl_battlegrounds.evaluation.pov import build_actor_pov_current_slice_v1
 from marl_battlegrounds.evaluation.replay_io import LoadedReplayBundleV1
-from marl_battlegrounds.evaluation.wire_shapes import MAX_OBSTACLE_SLOTS_V1
 from marl_battlegrounds.rendering.authorized_pov_scene import (
     SharedObsAuthorizedScenePartsV1,
     build_no_shared_obs_authorized_scene_v1,

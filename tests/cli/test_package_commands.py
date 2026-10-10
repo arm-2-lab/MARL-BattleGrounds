@@ -676,7 +676,8 @@ def test_custom_command_uses_existing_results_without_refitting_on_resume(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from canonical_record_fixtures import build_record_bundle
+    from tests.helpers.canonical_record_fixtures import build_record_bundle
+
     from marl_battlegrounds.evaluation import tournament_statistics
 
     bundle = build_record_bundle(tmp_path / "inputs", entrants=3, maps=1)
@@ -745,11 +746,12 @@ def test_canonical_command_reuses_twelve_and_resumes_saved_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from tests.evaluation.test_canonical_tournament import _pin
+    from tests.evaluation.tournaments.test_canonical_tournament import _pin
+    from tests.helpers.canonical_record_fixtures import build_record_bundle
 
-    from canonical_record_fixtures import build_record_bundle
-    from marl_battlegrounds.evaluation import canonical, tournament_statistics
     from marl_battlegrounds.evaluation import tournament_config as configs
+    from marl_battlegrounds.evaluation import tournament_statistics
+    from marl_battlegrounds.evaluation._tournaments import canonical
 
     bundle = build_record_bundle(tmp_path / "inputs")
     selected = _pin(monkeypatch, bundle["config"])
@@ -796,8 +798,9 @@ def test_thirteen_entry_command_shows_complete_rankings_without_models(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from canonical_record_fixtures import build_record_bundle
-    from marl_battlegrounds.evaluation import canonical
+    from tests.helpers.canonical_record_fixtures import build_record_bundle
+
+    from marl_battlegrounds.evaluation._tournaments import canonical
 
     bundle = build_record_bundle(tmp_path / "inputs", entrants=13, maps=1)
     config = tmp_path / "population.json"

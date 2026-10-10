@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from tests.test_visual_debugger_service import _recording_service, _request
+from tests.visual_debugger.test_visual_debugger_service import (
+    _recording_service,
+    _request,
+)
 
 import marl_battlegrounds._battle_client.launch as launch
 from marl_battlegrounds._battle_client.protocol import (

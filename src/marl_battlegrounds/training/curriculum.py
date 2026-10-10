@@ -30,7 +30,7 @@ from marl_battlegrounds.episode_tracking import (
     EpisodeTrackingState,
     _begin_stage_numerical,  # pyright: ignore[reportPrivateUsage]
 )
-from marl_battlegrounds.evaluation.recording_types import (
+from marl_battlegrounds.evaluation._recording.recording_types import (
     TRACKING_ERROR_ACCOUNTING,
     TRACKING_ERROR_OVERFLOW,
 )

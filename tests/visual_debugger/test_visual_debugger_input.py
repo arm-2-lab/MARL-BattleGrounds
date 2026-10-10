@@ -16,7 +16,7 @@ from scripts.dev.visual_debugger.no_shared_visual import (
     build_live_no_shared_obs_visual_current_slice_v1,
 )
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 import marl_battlegrounds._battle_client.control as control_module
 import marl_battlegrounds._battle_client.input as input_module

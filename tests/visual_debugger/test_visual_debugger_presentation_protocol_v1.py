@@ -68,7 +68,8 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     seal_local_oracle_corpse_overlay_v1,
 )
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import CapturedEvaluationTrajectory
+from tests.helpers.evaluation_fixtures import CapturedEvaluationTrajectory
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 from tests.rendering.test_rendering_authorized_inspection import (
     _InspectionCases,
     _no_shared_current,
@@ -83,7 +84,6 @@ from tests.rendering.test_rendering_authorized_inspection import (
 from tests.visual_debugger.test_visual_debugger_authorized_presentation import (
     _build_raw_frames,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -99,16 +99,16 @@ from marl_battlegrounds._battle_client.live_presentation import (
     build_live_researcher_space_v1,
 )
 from marl_battlegrounds._battle_client.protocol import ResearcherLiveDebuggerFrameV2
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovAxisMappingV1,
+    ActorPovTransitionV1,
+)
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
     EvaluationFrameV1,
     StaticMechanicsCatalogV1,
     canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.pov import (
-    ActorPovAxisMappingV1,
-    ActorPovTransitionV1,
 )
 from marl_battlegrounds.rendering import evaluation_wire_features as wire
 from marl_battlegrounds.rendering.authorized_incoming import (

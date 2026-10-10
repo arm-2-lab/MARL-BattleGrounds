@@ -46,13 +46,16 @@ from scripts.dev.visual_debugger.sample_replays import (
 
 import marl_battlegrounds.evaluation.replay_io as replay_io_module
 from marl_battlegrounds._battle_client.model import DebuggerScenario
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayArtifactV1,
+    RuntimeProvenanceV1,
+)
 from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     CodeRevisionV2,
     canonical_digest_sha256,
 )
-from marl_battlegrounds.evaluation.replay import ReplayArtifactV1, RuntimeProvenanceV1
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _GENERATOR_SCRIPT = (
@@ -92,7 +95,7 @@ from pathlib import Path
 import scripts.dev.generate_visual_debugger_sample_replays as generator
 import marl_battlegrounds._battle_client.control as control
 from marl_battlegrounds.evaluation.models import CodeRevisionV1
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from scripts.dev.visual_debugger.sample_replays import (
     SAMPLE_REPLAYS,
     load_verified_sample_replay,
@@ -1534,11 +1537,11 @@ def test_current_sample_rejects_rehashed_event_fact_disagreement(
     generated_sample_directories: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
     from marl_battlegrounds.evaluation.models import (
         canonical_digest_sha256,
         canonical_json_bytes,
     )
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 
     first, _second = generated_sample_directories
     copied = tmp_path / "event-disagreement"
@@ -1596,11 +1599,11 @@ def test_current_sample_rejects_rehashed_root_seed_disagreement(
     generated_sample_directories: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
     from marl_battlegrounds.evaluation.models import (
         canonical_digest_sha256,
         canonical_json_bytes,
     )
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 
     first, _second = generated_sample_directories
     copied = tmp_path / "seed-disagreement"
@@ -1642,11 +1645,11 @@ def test_current_sample_rejects_rehashed_completion_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from marl_battlegrounds.core.types import TASK_MODE_TDM
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
     from marl_battlegrounds.evaluation.models import (
         canonical_digest_sha256,
         canonical_json_bytes,
     )
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 
     first, _second = generated_sample_directories
     copied = tmp_path / "completion-disagreement"

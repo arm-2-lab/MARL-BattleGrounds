@@ -172,7 +172,7 @@ include = [
   "scripts/paper_experiments",
   "scripts/dev/generate_experiment_configs.py",
   "scripts/dev/training_distribution_reference.py",
-  "scripts/dev/benchmark_training_distributions.py",
+  "scripts/dev/benchmarks/benchmark_training_distributions.py",
   "scripts/dev/visual_debugger",
   "scripts/dev/replay_viewer.py",
   "play.py",

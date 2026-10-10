@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from marl_battlegrounds.evaluation._replays.replay_v4 import (
+    ReplayArtifactV4,
+    build_replay_v4,
+)
 from marl_battlegrounds.evaluation.evaluate import (
     Columns,
     EpisodeSpec,
@@ -29,7 +33,6 @@ from marl_battlegrounds.evaluation.replay_io import (
     load_scenario_evaluation_record_v5,
     save_scenario_evaluation_record_v5,
 )
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4, build_replay_v4
 from marl_battlegrounds.evaluation.revision import discover_code_revision_v2
 from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS, RunWriter
 from marl_battlegrounds.evaluation.scenario import (

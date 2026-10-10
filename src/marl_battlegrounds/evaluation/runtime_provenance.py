@@ -18,8 +18,8 @@ from collections.abc import Mapping, Sequence
 from importlib.metadata import version
 from typing import Protocol, cast
 
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.models import CodeRevisionV1
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 
 
 class _RuntimeClient(Protocol):

@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from marl_battlegrounds._task_settings import DEFAULT_TDM_RED_ZONE_DEPTH, AgentClassName
-from marl_battlegrounds.evaluation.sampling_evidence import (
+from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     combine_sampling_facts,
     method_sampling_fact,
     summarize_sampling_evidence,
@@ -1154,15 +1154,17 @@ def _rank_panel(
     registration IDs. The returned evidence has "schema_version": 2 and the
     ranked "red_zone_depth", which stays attached to that historical ranking.
     """
+    from marl_battlegrounds.evaluation._tournaments.tournament import (
+        _prepare_pair_evidence,  # pyright: ignore[reportPrivateUsage]
+    )
+    from marl_battlegrounds.evaluation._tournaments.tournament_schedule import (
+        TournamentMatch,
+    )
     from marl_battlegrounds.evaluation.evaluation_conditions import (
         config_record,
         restore_recorded_config,
     )
     from marl_battlegrounds.evaluation.results import TournamentResult, load_results
-    from marl_battlegrounds.evaluation.tournament import (
-        _prepare_pair_evidence,  # pyright: ignore[reportPrivateUsage]
-    )
-    from marl_battlegrounds.evaluation.tournament_schedule import TournamentMatch
     from marl_battlegrounds.tasks import (
         canonical_tournament_rosters,
         make_standard_team_deathmatch_config,

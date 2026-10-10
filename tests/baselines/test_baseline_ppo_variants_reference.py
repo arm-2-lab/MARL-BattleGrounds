@@ -38,7 +38,7 @@ from tests.baseline_donor_reference import (
     reference_optimizers,
     reference_tree,
 )
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.baselines import ppo
 from marl_battlegrounds.baselines.actions import (

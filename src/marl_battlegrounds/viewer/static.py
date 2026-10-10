@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Protocol, cast
 from marl_battlegrounds.rendering import render_scene_geometry
 
 if TYPE_CHECKING:
-    from marl_battlegrounds.evaluation.replay import ReplayArtifactV1
-    from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactV2
-    from marl_battlegrounds.evaluation.replay_v3 import ReplayArtifactV3
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._replays.replay import ReplayArtifactV1
+    from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
+    from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 
 
 class _PyplotLike(Protocol):
@@ -133,11 +133,13 @@ def run_static_replay_artifact_renderer(
     Builds recorded status-source evidence and the authorized researcher projection.
     It opens a window without advancing simulator state or changing the replay.
     """
-    from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-    from marl_battlegrounds.evaluation.replay import ReplayArtifactV1
-    from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactV2
-    from marl_battlegrounds.evaluation.replay_v3 import ReplayArtifactV3
-    from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._metrics.metrics import (
+        EvaluationTransitionViewV1,
+    )
+    from marl_battlegrounds.evaluation._replays.replay import ReplayArtifactV1
+    from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
+    from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
+    from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
     from marl_battlegrounds.rendering.evaluation_adapter import (
         EvaluationScenePresentationStateV1,
         build_researcher_analyzer_projection_v2,

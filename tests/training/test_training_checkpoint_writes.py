@@ -253,7 +253,7 @@ def saved_family(
         )
         return collection, state, _metadata(), {"method": method, "ppo": PPO}
     if method == "qmix":
-        from tests.training.test_training_qmix_checkpoints import (
+        from tests.training.learners.test_training_qmix_checkpoints import (
             _CONFIG,
             _learner,
             _metadata,
@@ -261,7 +261,7 @@ def saved_family(
 
         collection, state = _learner()
         return collection, state, _metadata(), {"method": method, "qmix": _CONFIG}
-    from tests.training.test_training_pqn_checkpoints import (
+    from tests.training.learners.test_training_pqn_checkpoints import (
         _CONFIG,
         _learner,
         _metadata,

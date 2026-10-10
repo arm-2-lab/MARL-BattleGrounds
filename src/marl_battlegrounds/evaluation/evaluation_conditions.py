@@ -644,12 +644,12 @@ def prepare_schedule(
         ):
             declared["map_metadata"] = map_keys[spec.map_id, source_id or resolved]
         elif spec.map_id is not None:
-            from marl_battlegrounds.evaluation.catalog import (
-                build_resolved_env_config_v2,
-            )
-            from marl_battlegrounds.evaluation.map_identity import (
+            from marl_battlegrounds.evaluation._recording.map_identity import (
                 _snapshot_map_metadata,
                 registered_map_metadata,
+            )
+            from marl_battlegrounds.evaluation.catalog import (
+                build_resolved_env_config_v2,
             )
 
             # V2 records any Red Zone depth; only the map geometry is compared.
@@ -764,8 +764,10 @@ def prepare_source_choices(
     and opens no files. Map evidence uses the V2 resolved config, which records
     any Red Zone depth.
     """
+    from marl_battlegrounds.evaluation._recording.map_identity import (
+        registered_map_metadata,
+    )
     from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
-    from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
 
     evidence = {
         (row["map_id"], row["source_config_id"]): row.get("map_metadata", [])

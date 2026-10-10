@@ -42,7 +42,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds._battle_client.methods import resolve_controllers

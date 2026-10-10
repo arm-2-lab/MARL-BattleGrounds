@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass, field
 from functools import partial
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from typing import Literal, NamedTuple, cast
 
 import jax
@@ -42,26 +43,27 @@ from marl_battlegrounds.core.types import (
     Info,
     Reward,
 )
-from marl_battlegrounds.evaluation.capture import (
-    reconstruct_env_state_v1,
-    reconstruct_transition_facts_v1,
-)
-from marl_battlegrounds.evaluation.catalog import (
-    build_static_mechanics_catalog_v1,
-    reconstruct_env_config_v1,
-)
-from marl_battlegrounds.evaluation.episode_metrics import (
+from marl_battlegrounds.evaluation._metrics.episode_metrics import (
     MetricValues,
     PriorityTotals,
     initialize_priority,
     priority_values,
     update_priority,
 )
-from marl_battlegrounds.evaluation.full_metrics import (
+from marl_battlegrounds.evaluation._metrics.full_metrics import (
     FullTotals,
     full_values,
     initialize_full,
     update_full,
+)
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationEpisodeCompletionV1
+from marl_battlegrounds.evaluation._recording.capture import (
+    reconstruct_env_state_v1,
+    reconstruct_transition_facts_v1,
+)
+from marl_battlegrounds.evaluation.catalog import (
+    build_static_mechanics_catalog_v1,
+    reconstruct_env_config_v1,
 )
 from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_COLUMNS,
@@ -80,7 +82,6 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     metric_search_terms,
     metric_topic_text,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationEpisodeCompletionV1
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
     ResolvedEnvConfigV2,
@@ -148,14 +149,29 @@ class _Transition(NamedTuple):
 def _source_digest() -> str:
     """Hash installed evaluation/Core source bytes so analyzed values identify their
     producer.
+
+    Every ``.py`` file under each package folder counts, including its
+    subfolders (``evaluation/_metrics/`` and the others). Files are hashed in
+    the order of their POSIX path relative to the package folder, and each is
+    labeled ``<package>/<relative path>``, so a file's place in a subfolder is
+    part of the digest.
     """
     digest = hashlib.sha256()
     for package in ("marl_battlegrounds.evaluation", "marl_battlegrounds.core"):
-        for path in sorted(files(package).iterdir(), key=lambda path: path.name):
-            if path.name.endswith(".py"):
-                digest.update(f"{package}/{path.name}\0".encode())
-                digest.update(path.read_bytes())
-                digest.update(b"\0")
+        sources: list[tuple[str, Traversable]] = []
+        folders: list[tuple[str, Traversable]] = [("", files(package))]
+        while folders:
+            prefix, folder = folders.pop()
+            for path in folder.iterdir():
+                if path.is_dir():
+                    if path.name != "__pycache__":
+                        folders.append((f"{prefix}{path.name}/", path))
+                elif path.name.endswith(".py"):
+                    sources.append((f"{prefix}{path.name}", path))
+        for relative, path in sorted(sources, key=lambda item: item[0]):
+            digest.update(f"{package}/{relative}\0".encode())
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
     return digest.hexdigest()
 
 

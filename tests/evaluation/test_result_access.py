@@ -441,7 +441,7 @@ def test_current_metric_blanks_use_nan_and_historical_headers_stay_exact(
 def test_wide_reader_stops_after_requested_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from marl_battlegrounds.evaluation import scalar_reports
+    from marl_battlegrounds.evaluation._metrics import scalar_reports
     from marl_battlegrounds.evaluation.metric_catalog import FULL_METRIC_NAMES
 
     directory, manifest = _fixture(tmp_path, modes=("full",))

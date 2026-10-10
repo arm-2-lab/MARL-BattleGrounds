@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import scripts.dev.visual_debugger.static_renderer as static_renderer
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds.rendering.scene import (
     BattlefieldSceneV2,
@@ -69,14 +69,14 @@ def test_static_renderer_opens_current_replay_without_a_metric_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from tests.evaluation.test_evaluation_pov import (
+    from tests.evaluation.replays.test_evaluation_pov import (
         _runtime_provenance,  # pyright: ignore[reportPrivateUsage]
     )
-    from tests.evaluation_fixtures import current_captured_evaluation_trajectory
+    from tests.helpers.evaluation_fixtures import current_captured_evaluation_trajectory
 
     import marl_battlegrounds.viewer.static as static_renderer
+    from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
     from marl_battlegrounds.evaluation.replay_io import save_replay
-    from marl_battlegrounds.evaluation.replay_v4 import build_replay_v4
 
     trajectory = current_captured_evaluation_trajectory(transition_count=1)
     replay = build_replay_v4(

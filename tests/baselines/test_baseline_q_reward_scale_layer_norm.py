@@ -32,12 +32,14 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.baselines import pqn, qmix
 from marl_battlegrounds.baselines.config import PPOConfig, saved_settings
-from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
+from marl_battlegrounds.evaluation._recording.sampling_evidence import (
+    method_sampling_fact,
+)
 from marl_battlegrounds.tasks import balanced_spawn_configs
 from marl_battlegrounds.training import checkpoints
 from marl_battlegrounds.training.config import (

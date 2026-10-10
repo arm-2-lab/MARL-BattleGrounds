@@ -20,20 +20,20 @@ from scripts.dev.visual_debugger.match_summary import (
     build_match_summary_v1,
 )
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     captured_evaluation_trajectory,
     captured_team_deathmatch_threshold_trajectory,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds._battle_client.model import DebuggerScenarioProvenance
+from marl_battlegrounds.evaluation._replays.replay_v2 import context_v2
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     AssignedPolicySlotV1,
     ContentAddressedIdentityV1,
 )
-from marl_battlegrounds.evaluation.replay_v2 import context_v2
 
 
 def test_match_summary_uses_captured_task_scores_policy_identity_and_result() -> None:

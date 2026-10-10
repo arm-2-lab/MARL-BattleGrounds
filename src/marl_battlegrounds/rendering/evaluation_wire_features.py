@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Final
 
-from marl_battlegrounds.evaluation.wire_shapes import SELF_FEATURES_V1
+from marl_battlegrounds.evaluation._replays.wire_shapes import SELF_FEATURES_V1
 
 AGENT_FEATURE_X_V1: Final = 0
 AGENT_FEATURE_Y_V1: Final = 1

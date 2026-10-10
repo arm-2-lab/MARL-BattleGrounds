@@ -116,12 +116,12 @@ method, save the game, exit and launch again (the client cannot undo your Python
 From A Checkout (examples are not in the installed package):
 
 ```bash
-python examples/prepare_battle_client.py --output actors --seed 17
-python examples/battle_client.py simple --policy-a actors/mappo --policy-b actors/qmix
+python examples/play/prepare_battle_client.py --output actors --seed 17
+python examples/play/battle_client.py simple --policy-a actors/mappo --policy-b actors/qmix
 ```
 
-[prepare_battle_client.py](../examples/prepare_battle_client.py) writes six untrained actor
-folders, one per built-in learner: they test loading, not skill. [battle_client.py](../examples/battle_client.py)
+[prepare_battle_client.py](../examples/play/prepare_battle_client.py) writes six untrained actor
+folders, one per built-in learner: they test loading, not skill. [battle_client.py](../examples/play/battle_client.py)
 has seven modes, from `simple` to `scenario-partners`; `--help` lists them all. The `hard`
 and `scenario-llm` modes need a model server you start yourself ([llm.md](llm.md)).
 

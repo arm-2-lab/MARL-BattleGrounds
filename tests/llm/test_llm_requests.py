@@ -25,7 +25,7 @@ from typing import Any, cast
 
 import jax
 import pytest
-from tests.llm_fixtures import FakeModel, send, server
+from tests.helpers.llm_fixtures import FakeModel, send, server
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds import llm

@@ -24,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from scripts.dev.visual_debugger.scenarios import get_scenario
     from scripts.dev.visual_debugger.server import serve_browser_debugger
-    from tests.visual_debugger_fixtures import (
+    from tests.helpers.visual_debugger_fixtures import (
         debugger_test_launch_specification,
     )
 

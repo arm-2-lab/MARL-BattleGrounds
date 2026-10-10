@@ -19,12 +19,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.core.types import TASK_MODE_TDM, EnvConfig
 from marl_battlegrounds.evaluation import evaluation_conditions
+from marl_battlegrounds.evaluation._recording.evaluation_capture import _rows
 from marl_battlegrounds.evaluation.evaluate import EpisodeSpec, evaluate_episodes
-from marl_battlegrounds.evaluation.evaluation_capture import _rows
 from marl_battlegrounds.evaluation.metric_catalog import FULL_METRIC_NAMES
 from marl_battlegrounds.evaluation.policy_execution import (
     PolicyTree,

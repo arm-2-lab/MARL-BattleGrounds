@@ -21,10 +21,10 @@ from pydantic import (
     model_validator,
 )
 
-from marl_battlegrounds.evaluation.replay import ReplayArtifactReferenceV1
-from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactReferenceV2
-from marl_battlegrounds.evaluation.replay_v3 import ReplayArtifactReferenceV3
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactReferenceV4
+from marl_battlegrounds.evaluation._replays.replay import ReplayArtifactReferenceV1
+from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactReferenceV2
+from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactReferenceV3
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactReferenceV4
 from marl_battlegrounds.rendering.evaluation_adapter import (
     SharedObsSourceMaterialProjection,
     SharedObsSourceMaterialProjectionV1,

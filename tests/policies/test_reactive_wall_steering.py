@@ -16,15 +16,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
+from tests.helpers.scenario_controller_fixtures import (
+    ControllerScenario,
+    load_controller_input,
+    load_scenario_1,
+)
 from tests.policies.test_reactive_tdm import (
     _mask,  # pyright: ignore[reportPrivateUsage]
     _observation,  # pyright: ignore[reportPrivateUsage]
     _scalar,  # pyright: ignore[reportPrivateUsage]
-)
-from tests.scenario_controller_fixtures import (
-    ControllerScenario,
-    load_controller_input,
-    load_scenario_1,
 )
 
 from marl_battlegrounds.core.env import initialize_scenario_state, step

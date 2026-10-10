@@ -104,10 +104,10 @@ actor's own team, itself included. `llm.legal_action_names(masks)` lists this ti
 **Watch Out:** keep both functions pure; fitting history may call them again. Declare a
 `custom_version` and `custom_settings`: a resume with changed code or settings is rejected.
 
-From A Checkout, [llm.py](../examples/llm.py) runs the default, a note or this two-word format:
+From A Checkout, [llm.py](../examples/play/llm.py) runs the default, a note or this two-word format:
 
 ```bash
-python examples/llm.py model=my-served-model format=words history_turns=2 output_dir=runs/llm-words
+python examples/play/llm.py model=my-served-model format=words history_turns=2 output_dir=runs/llm-words
 ```
 
 ## Reasoning Settings

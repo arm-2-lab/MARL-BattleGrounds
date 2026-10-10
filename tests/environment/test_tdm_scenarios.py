@@ -21,7 +21,11 @@ from scripts.dev.qualify_tdm_scenarios import (
     capture_tdm_qualification_episode,
 )
 
-from marl_battlegrounds.evaluation import recording_context
+from marl_battlegrounds.evaluation._recording import recording_context
+from marl_battlegrounds.evaluation._replays.replay_v4 import (
+    ReplayArtifactV4,
+    build_replay_v4,
+)
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.metric_catalog import FULL_METRIC_NAMES
 from marl_battlegrounds.evaluation.models import (
@@ -39,7 +43,6 @@ from marl_battlegrounds.evaluation.replay_io import (
     save_replay,
     save_scenario_evaluation_record_v5,
 )
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4, build_replay_v4
 from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS
 from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
 from marl_battlegrounds.evaluation.tdm_scenarios import (

@@ -278,6 +278,8 @@ def _example_presets() -> dict[str, dict[str, Any]]:
     Each named lesson owns its keyword arguments. Required arguments become
     OmegaConf missing values; tuples become YAML lists. Refuse a nonliteral
     default rather than duplicate it here. This reads source files only.
+    Each lesson is found by its file name anywhere under ``examples/``, so a
+    lesson keeps its preset when it moves between example folders.
     """
     examples = (
         "mappo_training",
@@ -301,10 +303,11 @@ def _example_presets() -> dict[str, dict[str, Any]]:
         "canonical_tournament",
         "train_against_released_models",
     )
+    paths = {path.stem: path for path in (ROOT.parents[3] / "examples").rglob("*.py")}
     result: dict[str, dict[str, Any]] = {}
     for name in examples:
         entry = "launch" if name == "cross_play_and_zsc" else "run"
-        tree = ast.parse((ROOT.parents[3] / "examples" / f"{name}.py").read_text())
+        tree = ast.parse(paths[name].read_text())
         function = next(
             node
             for node in tree.body

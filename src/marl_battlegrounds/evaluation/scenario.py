@@ -20,6 +20,33 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BeforeValidator, Field, StringConstraints, model_validator
 
+from marl_battlegrounds.evaluation._recording.validation import (
+    validate_declared_model_tree,
+)
+from marl_battlegrounds.evaluation._replays.replay import (
+    EvaluationMetricReportArtifactV1,
+    MetricReportReferenceV1,
+    ReplayArtifactReferenceV1,
+    ReplayArtifactV1,
+    _build_replay_artifact_reference_from_validated_v1,  # pyright: ignore[reportPrivateUsage]
+    _validate_metric_report_artifact_against_validated_replay_v1,  # pyright: ignore[reportPrivateUsage]
+    validate_replay_artifact_v1,
+)
+from marl_battlegrounds.evaluation._replays.replay_v2 import (
+    ReplayArtifactReferenceV2,
+    ReplayArtifactV2,
+    replay_reference_v2,
+)
+from marl_battlegrounds.evaluation._replays.replay_v3 import (
+    ReplayArtifactReferenceV3,
+    ReplayArtifactV3,
+    replay_reference_v3,
+)
+from marl_battlegrounds.evaluation._replays.replay_v4 import (
+    ReplayArtifactReferenceV4,
+    ReplayArtifactV4,
+    replay_reference_v4,
+)
 from marl_battlegrounds.evaluation.models import (
     MAX_AGENT_SLOTS,
     MAX_AGENTS_PER_TEAM,
@@ -37,31 +64,6 @@ from marl_battlegrounds.evaluation.models import (
     canonical_digest_sha256,
     evaluation_frame_type,
 )
-from marl_battlegrounds.evaluation.replay import (
-    EvaluationMetricReportArtifactV1,
-    MetricReportReferenceV1,
-    ReplayArtifactReferenceV1,
-    ReplayArtifactV1,
-    _build_replay_artifact_reference_from_validated_v1,  # pyright: ignore[reportPrivateUsage]
-    _validate_metric_report_artifact_against_validated_replay_v1,  # pyright: ignore[reportPrivateUsage]
-    validate_replay_artifact_v1,
-)
-from marl_battlegrounds.evaluation.replay_v2 import (
-    ReplayArtifactReferenceV2,
-    ReplayArtifactV2,
-    replay_reference_v2,
-)
-from marl_battlegrounds.evaluation.replay_v3 import (
-    ReplayArtifactReferenceV3,
-    ReplayArtifactV3,
-    replay_reference_v3,
-)
-from marl_battlegrounds.evaluation.replay_v4 import (
-    ReplayArtifactReferenceV4,
-    ReplayArtifactV4,
-    replay_reference_v4,
-)
-from marl_battlegrounds.evaluation.validation import validate_declared_model_tree
 
 SCENARIO_SPECIFICATION_SCHEMA_ID = (
     "marl_battlegrounds.evaluation.resolved_scenario_specification"

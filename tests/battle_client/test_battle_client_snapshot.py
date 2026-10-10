@@ -20,11 +20,16 @@ import jax
 import pytest
 from tests.battle_client.test_battle_client_run import _autonomous
 from tests.battle_client.test_battle_client_worker import _method
-from tests.test_visual_debugger_server import _ASSET_ROOT, _TOKEN, _exchange, _service
-from tests.test_visual_debugger_systems import _send
 from tests.visual_debugger.test_visual_debugger_recording_coordinator import (
     _coordinator_and_recorder,
 )
+from tests.visual_debugger.test_visual_debugger_server import (
+    _ASSET_ROOT,
+    _TOKEN,
+    _exchange,
+    _service,
+)
+from tests.visual_debugger.test_visual_debugger_systems import _send
 
 from marl_battlegrounds._battle_client.protocol import RunCommandV1
 from marl_battlegrounds._battle_client.service import DebuggerService

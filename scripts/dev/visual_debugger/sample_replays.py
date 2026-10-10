@@ -807,8 +807,8 @@ def _read_sample_replay_manifest_from_directory_descriptor(
     )
     from pydantic import ValidationError
 
+    from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
     from marl_battlegrounds.evaluation.models import CodeRevisionV1, CodeRevisionV2
-    from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 
     try:
         code_type = CodeRevisionV1 if schema_version == 1 else CodeRevisionV2
@@ -1045,7 +1045,7 @@ def _load_verified_sample_replay_from_snapshot(
         )
     replay = loaded.replay
     if not historical:
-        from marl_battlegrounds.evaluation.validation import (
+        from marl_battlegrounds.evaluation._recording.validation import (
             validate_evaluation_transition_unit,
             validate_initial_evaluation_frame,
         )

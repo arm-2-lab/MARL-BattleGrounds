@@ -17,7 +17,8 @@ import pytest
 
 from marl_battlegrounds.core import config as core_config
 from marl_battlegrounds.core import types as core_types
-from marl_battlegrounds.evaluation import models, wire_shapes
+from marl_battlegrounds.evaluation import models
+from marl_battlegrounds.evaluation._replays import wire_shapes
 
 _WIRE_SHAPE_PARITY = (
     (wire_shapes.CONTEXT_FEATURES_V2, core_types.CONTEXT_FEATURES),
@@ -42,7 +43,7 @@ _WIRE_SHAPE_PARITY = (
 _FORBIDDEN_HOST_IMPORT_PREFIXES = ("jax", "jaxlib", "numpy")
 _FORBIDDEN_DIRECT_MODULES = (
     "marl_battlegrounds.core.types",
-    "marl_battlegrounds.evaluation.capture",
+    "marl_battlegrounds.evaluation._recording.capture",
     "marl_battlegrounds.evaluation.catalog",
 )
 
@@ -88,10 +89,10 @@ def test_host_team_deathmatch_points_and_bound_match_core() -> None:
 @pytest.mark.parametrize(
     "module_name",
     (
-        "marl_battlegrounds.evaluation.actor_projection",
-        "marl_battlegrounds.evaluation.replay",
+        "marl_battlegrounds.evaluation._replays.actor_projection",
+        "marl_battlegrounds.evaluation._replays.replay",
         "marl_battlegrounds.evaluation.replay_io",
-        "marl_battlegrounds.evaluation.pov",
+        "marl_battlegrounds.evaluation._replays.pov",
         "marl_battlegrounds.evaluation.scenario",
     ),
 )
@@ -105,7 +106,7 @@ import sys
 
 module = importlib.import_module({module_name!r})
 
-if {module_name!r} == "marl_battlegrounds.evaluation.actor_projection":
+if {module_name!r} == "marl_battlegrounds.evaluation._replays.actor_projection":
     reconstruction = module.reconstruct_shared_obs_sensor_source_bank_v1
     annotations = reconstruction.__annotations__
     if annotations.get("return") != "SharedObsSensorSourceBankV1":

@@ -28,8 +28,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import evaluation_env_config
-from tests.training_learner_helpers import equal, finite
+from tests.helpers.evaluation_fixtures import evaluation_env_config
+from tests.helpers.training_learner_helpers import equal, finite
 
 from marl_battlegrounds.baselines import ppo, pqn, qmix
 from marl_battlegrounds.baselines.actions import (

@@ -28,7 +28,8 @@ from uuid import uuid4
 
 import numpy as np
 
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._metrics.scalar_reports import has_members
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
     SHARED_OBS_ACTOR_PROJECTION_V3,
 )
@@ -39,19 +40,20 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     PRIORITY_METRIC_NAMES,
     PRIORITY_OUTCOME_CODES,
 )
-from marl_battlegrounds.evaluation.scalar_reports import has_members
 
 if TYPE_CHECKING:
     from jax import Array
 
     from marl_battlegrounds.core.types import EnvConfig
     from marl_battlegrounds.environment import EpisodeInfo
+    from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
+    from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
+    from marl_battlegrounds.evaluation._replays.replay_recording import ReplayCollector
+    from marl_battlegrounds.evaluation._tournaments.tournament_records import (
+        TournamentRecords,
+    )
     from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
     from marl_battlegrounds.evaluation.policy_execution import Policy, System
-    from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
-    from marl_battlegrounds.evaluation.replay_capture import ReplayPackets
-    from marl_battlegrounds.evaluation.replay_recording import ReplayCollector
-    from marl_battlegrounds.evaluation.tournament_records import TournamentRecords
     from marl_battlegrounds.evaluation.tournament_statistics import TournamentStatistics
 
 IDENTITY_COLUMNS = (
@@ -717,7 +719,7 @@ class RunWriter:
                 ):
                     raise ValueError("run_id differs from the recorded run")
                 if recording_checkpoint is not None:
-                    from marl_battlegrounds.evaluation.recording_checkpoint import (
+                    from marl_battlegrounds.evaluation._recording.recording_checkpoint import (  # noqa: E501
                         begin_restore,
                         prepare_restore,
                     )
@@ -757,7 +759,7 @@ class RunWriter:
             if restoration is None:
                 self.flush()
             else:
-                from marl_battlegrounds.evaluation.recording_checkpoint import (
+                from marl_battlegrounds.evaluation._recording.recording_checkpoint import (  # noqa: E501
                     finish_restore,
                 )
 
@@ -1407,7 +1409,9 @@ class RunWriter:
         that data must become durable. Mutable banks are still hashed on resupply.
         """
         self._check_open()
-        from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
+        from marl_battlegrounds.evaluation._recording.recording_types import (
+            EpisodeStartRecords,
+        )
 
         entry = self._details["passes"][self._pass_key]
         if isinstance(schedule, EpisodeStartRecords):
@@ -1601,7 +1605,9 @@ class RunWriter:
         """
         import jax
 
-        from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
+        from marl_battlegrounds.evaluation._recording.recording_types import (
+            EpisodeStartRecords,
+        )
 
         if not isinstance(starts, EpisodeStartRecords):
             raise TypeError("episode_start_records must be EpisodeStartRecords")
@@ -1963,7 +1969,7 @@ class RunWriter:
         evaluate supplied the live methods (_name_replay_controllers), the
         context also records each champion slot's controller name.
         """
-        from marl_battlegrounds.evaluation.recording_context import (
+        from marl_battlegrounds.evaluation._recording.recording_context import (
             build_recording_context,
             capture_recording_provenance,
             controller_names_by_slot,
@@ -2052,6 +2058,9 @@ class RunWriter:
         holds one replay at a time. Unfinished episodes keep using their existing
         numerical spools. File failures keep the usual partial-publication limits.
         """
+        from marl_battlegrounds.evaluation._replays.replay_recording import (
+            ReplayCollector,
+        )
         from marl_battlegrounds.evaluation.replay_io import (
             PreparedReplay,
             _publish_staged_replays,  # pyright: ignore[reportPrivateUsage]
@@ -2059,7 +2068,6 @@ class RunWriter:
             preflight_replay_destination,
             publish_prepared_replay,
         )
-        from marl_battlegrounds.evaluation.replay_recording import ReplayCollector
 
         try:
             packets = prepared.packets
@@ -2180,7 +2188,7 @@ class RunWriter:
         self._check_open()
         import jax
 
-        from marl_battlegrounds.evaluation.recording_types import (
+        from marl_battlegrounds.evaluation._recording.recording_types import (
             validate_recording_errors,
         )
 
@@ -2337,8 +2345,10 @@ class RunWriter:
         self._check_open()
         import jax
 
-        from marl_battlegrounds.evaluation.collection_types import CollectedBatch
-        from marl_battlegrounds.evaluation.recording_types import (
+        from marl_battlegrounds.evaluation._recording.collection_types import (
+            CollectedBatch,
+        )
+        from marl_battlegrounds.evaluation._recording.recording_types import (
             validate_recording_errors,
         )
 
@@ -2705,7 +2715,9 @@ class RunWriter:
         """
         import jax
 
-        from marl_battlegrounds.evaluation.replay_recording import ReplayCollector
+        from marl_battlegrounds.evaluation._replays.replay_recording import (
+            ReplayCollector,
+        )
 
         entry = self._details["passes"][self._pass_key]
         for episode_id, expected_config in bindings.items():
@@ -3391,7 +3403,7 @@ class RunWriter:
         """Validate metric width/finiteness and replace unavailable values with empty
         cells.
         """
-        from marl_battlegrounds.evaluation.episode_metrics import MetricValues
+        from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 
         metric = cast(MetricValues, values)
         valid = np.asarray(metric.valid[index])
@@ -3673,7 +3685,7 @@ class RunWriter:
                 raise ValueError("qualified tournament summary tables must be nonempty")
             names = tuple(rows[0])
             if filename == "tournament_headline_metrics.csv":
-                from marl_battlegrounds.evaluation.tournament_headlines import (
+                from marl_battlegrounds.evaluation._tournaments.tournament_headlines import (  # noqa: E501
                     HEADLINE_COLUMNS,
                 )
 
@@ -3683,8 +3695,10 @@ class RunWriter:
                 raise ValueError("tournament summary rows must have the same columns")
             tables[filename] = names, [[row[name] for name in names] for row in rows]
         if qualification is not None:
-            from marl_battlegrounds.evaluation.scalar_reports import iter_scalar_rows
-            from marl_battlegrounds.evaluation.tournament_headlines import (
+            from marl_battlegrounds.evaluation._metrics.scalar_reports import (
+                iter_scalar_rows,
+            )
+            from marl_battlegrounds.evaluation._tournaments.tournament_headlines import (  # noqa: E501
                 validate_evidence,
             )
 
@@ -3789,7 +3803,9 @@ class RunWriter:
         referenced replay files while its learner checkpoint is needed. Resume
         with the explicit token and original registered System descriptions.
         """
-        from marl_battlegrounds.evaluation.recording_checkpoint import create_checkpoint
+        from marl_battlegrounds.evaluation._recording.recording_checkpoint import (
+            create_checkpoint,
+        )
 
         return create_checkpoint(self)
 

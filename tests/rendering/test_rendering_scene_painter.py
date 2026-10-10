@@ -8,18 +8,18 @@ from typing import Protocol, cast
 
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     captured_evaluation_trajectory,
     captured_team_deathmatch_threshold_trajectory,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
     submit_next_script_frame,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.pov import build_actor_pov_current_slice_v1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import build_actor_pov_current_slice_v1
 from marl_battlegrounds.rendering import (
     RenderResult,
     SceneRenderOptions,

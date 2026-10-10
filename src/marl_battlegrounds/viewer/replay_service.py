@@ -52,47 +52,49 @@ from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._recording.events import (
+    team_deathmatch_home_fall_slots_v1,
+)
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V2,
 )
-from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
-from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.models import (
-    AssignedPolicySlotV1,
-    AssignedPolicySlotV2,
-    canonical_json_bytes,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovReplayContent,
     export_actor_pov_replay_v1,
     export_actor_pov_replay_v2,
     export_actor_pov_replay_v3,
 )
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._replays.replay import (
     ReplayArtifactReferenceV1,
     ReplayArtifactV1,
+)
+from marl_battlegrounds.evaluation._replays.replay_v2 import (
+    ReplayArtifactReferenceV2,
+    ReplayArtifactV2,
+    replay_reference_v2,
+)
+from marl_battlegrounds.evaluation._replays.replay_v3 import (
+    ReplayArtifactReferenceV3,
+    ReplayArtifactV3,
+    replay_reference_v3,
+)
+from marl_battlegrounds.evaluation._replays.replay_v4 import (
+    ReplayArtifactReferenceV4,
+    ReplayArtifactV4,
+    replay_reference_v4,
+)
+from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
+from marl_battlegrounds.evaluation.models import (
+    AssignedPolicySlotV1,
+    AssignedPolicySlotV2,
+    canonical_json_bytes,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     LoadedReplay,
     LoadedReplayBundle,
     LoadedReplayBundleV1,
     canonical_metric_report_artifact_json_bytes_v1,
-)
-from marl_battlegrounds.evaluation.replay_v2 import (
-    ReplayArtifactReferenceV2,
-    ReplayArtifactV2,
-    replay_reference_v2,
-)
-from marl_battlegrounds.evaluation.replay_v3 import (
-    ReplayArtifactReferenceV3,
-    ReplayArtifactV3,
-    replay_reference_v3,
-)
-from marl_battlegrounds.evaluation.replay_v4 import (
-    ReplayArtifactReferenceV4,
-    ReplayArtifactV4,
-    replay_reference_v4,
 )
 from marl_battlegrounds.rendering.authorized_pov_scene import (
     build_no_shared_obs_authorized_scene_v1,

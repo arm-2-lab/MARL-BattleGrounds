@@ -135,7 +135,9 @@ class _Opaque:
 
 
 def test_borrowed_system_and_storage_survive_turns_and_restart() -> None:
-    from tests.visual_debugger_fixtures import debugger_test_launch_specification
+    from tests.helpers.visual_debugger_fixtures import (
+        debugger_test_launch_specification,
+    )
 
     from marl_battlegrounds._battle_client import control
     from marl_battlegrounds._battle_client.setup import prepare_battle_setup
@@ -276,7 +278,7 @@ def _install_launch_server(
 def test_public_launch_preserves_caller_context_leases_and_method_across_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, through_factory: bool
 ) -> None:
-    from tests.test_visual_debugger_systems import (
+    from tests.visual_debugger.test_visual_debugger_systems import (
         _finish,  # pyright: ignore[reportPrivateUsage]
         _send,  # pyright: ignore[reportPrivateUsage]
     )

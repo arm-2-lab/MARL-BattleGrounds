@@ -30,7 +30,7 @@ import pytest
 from jax import Array
 from jax.typing import ArrayLike
 from tests.baseline_donor_reference import load_reference, reference_tree
-from tests.evaluation_fixtures import evaluation_env_config
+from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 from marl_battlegrounds.baselines.actions import (
     action_log_prob,
@@ -883,7 +883,7 @@ def test_reflected_system_matches_explicit_reflected_features_and_world_actions(
 def test_benchmark_reference_keeps_left_frame_actions_and_memory(
     networks: PPOTrainState, padding: bool
 ) -> None:
-    from scripts.dev import benchmark_baseline as benchmark
+    from scripts.dev.benchmarks import benchmark_baseline as benchmark
 
     env, observations, state = _balanced_setup()
     inputs = env.policy_inputs(observations, state)

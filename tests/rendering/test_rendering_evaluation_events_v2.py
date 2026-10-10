@@ -9,21 +9,21 @@ from typing import Protocol, cast
 
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     mage_target_none_ultimate_action,
     neutral_action,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
     submit_next_script_frame,
 )
 from marl_battlegrounds.core.types import EnvConfig, EnvState
-from marl_battlegrounds.evaluation.events import decode_evaluation_events_v1
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._recording.events import decode_evaluation_events_v1
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1,
     ActionRejectedEventV1,

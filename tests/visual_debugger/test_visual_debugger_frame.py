@@ -19,7 +19,7 @@ from scripts.dev.visual_debugger.scenarios import (
     get_scenario,
     list_scenarios,
 )
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     arm_ultimate,
@@ -48,7 +48,7 @@ from marl_battlegrounds._battle_client.protocol import (
 )
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action
 from marl_battlegrounds.core.types import MOVE_EAST, MOVE_NORTH, NUM_MOVE_ACTIONS
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
 )
 

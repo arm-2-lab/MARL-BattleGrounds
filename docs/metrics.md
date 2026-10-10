@@ -175,11 +175,11 @@ end-of-game columns such as `team_a_win` stay NaN.
 
 ```bash
 export MARL_BGS_RESULTS=/scratch/results/EXACT_RUN MARL_BGS_REPORT_DIR=/scratch/reports/eval
-python -m jupyter nbconvert --to notebook --execute examples/evaluation_analysis.ipynb \
+python -m jupyter nbconvert --to notebook --execute examples/evaluate/evaluation_analysis.ipynb \
   --output /scratch/reports/eval.executed.ipynb
 ```
 
-[`evaluation_analysis.ipynb`](../examples/evaluation_analysis.ipynb) turns one saved
+[`evaluation_analysis.ipynb`](../examples/evaluate/evaluation_analysis.ipynb) turns one saved
 run into charts, CSV tables and a testable claim. `MARL_BGS_RESULTS` is the exact
 folder holding `run_details.json`; leave it unset for a tiny demo. Optional
 `MARL_BGS_PHASE` and `MARL_BGS_PASS_ID` pick one saved pass.

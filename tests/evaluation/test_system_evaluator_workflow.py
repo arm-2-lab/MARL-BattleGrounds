@@ -27,6 +27,7 @@ import pytest
 from jax import Array
 
 import marl_battlegrounds as marl_bgs
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.evaluate import (
     EpisodeSpec,
     evaluate,
@@ -42,7 +43,6 @@ from marl_battlegrounds.evaluation.policy_execution import (
     shared_policy,
 )
 from marl_battlegrounds.evaluation.replay_io import load_replay
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.results import EvaluationResult
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.random_valid import random_policy

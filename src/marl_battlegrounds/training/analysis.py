@@ -799,7 +799,7 @@ def _validation_sampling_interval(
     """
     if evidence is None:
         return summary
-    from marl_battlegrounds.evaluation.sampling_evidence import (
+    from marl_battlegrounds.evaluation._recording.sampling_evidence import (
         validate_sampling_evidence,
     )
 

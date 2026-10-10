@@ -40,7 +40,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 from jax import Array
-from tests.tdm_gamma_fixtures import (
+from tests.helpers.tdm_gamma_fixtures import (
     act,
     ally,
     as_ints,

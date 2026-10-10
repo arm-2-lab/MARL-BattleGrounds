@@ -19,7 +19,7 @@ from typing import Any, cast
 import jax.numpy as jnp
 import pytest
 from pydantic import TypeAdapter
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     evaluation_env_config,
@@ -34,10 +34,20 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURE_Y,
     OBSTACLE_TYPE_PILLAR,
 )
-from marl_battlegrounds.evaluation.metrics import (
+from marl_battlegrounds.evaluation._metrics.metrics import (
     EvaluationEpisodeObserverV1,
     EvaluationTransitionViewV1,
     build_evaluation_observer_v1,
+)
+from marl_battlegrounds.evaluation._replays.pov import (
+    build_actor_pov_current_slice_v1,
+    export_actor_pov_replay_v1,
+)
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayArtifactV1,
+    ReplayBundleV1,
+    RuntimeProvenanceV1,
+    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
@@ -45,16 +55,6 @@ from marl_battlegrounds.evaluation.models import (
     ResolvedEnvConfigV1,
     StaticMechanicsCatalogV1,
     canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.pov import (
-    build_actor_pov_current_slice_v1,
-    export_actor_pov_replay_v1,
-)
-from marl_battlegrounds.evaluation.replay import (
-    ReplayArtifactV1,
-    ReplayBundleV1,
-    RuntimeProvenanceV1,
-    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     load_replay_artifact_v1,
@@ -1252,7 +1252,7 @@ def test_rendering_surface_exports_stabilized_cp7_projection_seams() -> None:
 
 
 def test_shared_base_sensor_frame_versions_pair_with_their_context_width() -> None:
-    from tests.evaluation_fixtures import (
+    from tests.helpers.evaluation_fixtures import (
         current_captured_evaluation_trajectory,
         pre_red_zone_captured_evaluation_trajectory,
     )

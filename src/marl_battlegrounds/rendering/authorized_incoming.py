@@ -21,8 +21,7 @@ from typing import Annotated, ClassVar, Literal, TypedDict, cast
 
 from pydantic import ConfigDict, Field, TypeAdapter
 
-from marl_battlegrounds.evaluation.models import StaticMechanicsCatalogV1
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAdjacentTransitionSlice,
     ActorPovAdjacentTransitionSliceV1,
     ActorPovAdjacentTransitionSliceV2,
@@ -42,6 +41,7 @@ from marl_battlegrounds.evaluation.pov import (
     ActorPovTransitionV1,
     ActorPovVisibleBodyObservationChangedCueV1,
 )
+from marl_battlegrounds.evaluation.models import StaticMechanicsCatalogV1
 from marl_battlegrounds.rendering.authorized_pov_scene import (
     NoSharedObsAuthorizedScenePartsV1,
     SharedObsAgentObservationProvenanceV1,

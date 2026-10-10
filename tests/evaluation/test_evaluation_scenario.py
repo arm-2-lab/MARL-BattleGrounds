@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 from pydantic import ValidationError
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     captured_team_deathmatch_threshold_trajectory,
@@ -16,11 +16,20 @@ from tests.evaluation_fixtures import (
 import marl_battlegrounds.evaluation.catalog as catalog_module
 import marl_battlegrounds.evaluation.scenario as scenario_module
 from marl_battlegrounds.core.types import MAX_AGENTS_PER_TEAM
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._metrics.metrics import build_evaluation_observer_v1
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V2,
     SHARED_OBS_ACTOR_PROJECTION_V1,
 )
-from marl_battlegrounds.evaluation.metrics import build_evaluation_observer_v1
+from marl_battlegrounds.evaluation._replays.replay import (
+    EvaluationMetricReportArtifactV1,
+    ReplayArtifactReferenceV1,
+    ReplayArtifactV1,
+    ReplayBundleV1,
+    RuntimeProvenanceV1,
+    build_replay_artifact_reference_v1,
+    build_replay_bundle_v1,
+)
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
     ContentAddressedIdentityV1,
@@ -32,15 +41,6 @@ from marl_battlegrounds.evaluation.models import (
     StaticMechanicsCatalogV1,
     VersionedIdentityV1,
     canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.replay import (
-    EvaluationMetricReportArtifactV1,
-    ReplayArtifactReferenceV1,
-    ReplayArtifactV1,
-    ReplayBundleV1,
-    RuntimeProvenanceV1,
-    build_replay_artifact_reference_v1,
-    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.scenario import (
     SCENARIO_EVALUATION_RECORD_SCHEMA_ID,

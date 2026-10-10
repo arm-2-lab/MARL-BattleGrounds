@@ -45,13 +45,16 @@ from marl_battlegrounds._battle_client.protocol import (
     TerminalStateV2,
     ViewMode,
 )
-from marl_battlegrounds.evaluation.models import EvaluationEpisodeContext
-from marl_battlegrounds.evaluation.pov import ActorPovAxisMapping, ActorPovCurrentSlice
-from marl_battlegrounds.evaluation.wire_shapes import (
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovAxisMapping,
+    ActorPovCurrentSlice,
+)
+from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_MOVE_ACTIONS_V1,
     NUM_TARGET_ACTIONS_V1,
     NUM_ULTIMATE_ACTIONS_V1,
 )
+from marl_battlegrounds.evaluation.models import EvaluationEpisodeContext
 from marl_battlegrounds.rendering.evaluation_adapter import (
     EvaluationScenePresentationStateV1,
     build_researcher_analyzer_projection_v2,

@@ -16,7 +16,7 @@ and the two commands, installs nothing and does not install uv):
   line, and every other option goes to ``play.py`` unchanged, in order.
 
 The notebooks (``examples/quickstart.ipynb`` and
-``examples/evaluation_analysis.ipynb``) are saved unexecuted, every code cell
+``examples/evaluate/evaluation_analysis.ipynb``) are saved unexecuted, every code cell
 compiles as plain Python, and both start with the same install cell. That cell
 installs nothing outside Colab and Kaggle. On them it pip-installs
 ``marl-battlegrounds[all]==1.0.0`` plus the build of the JAX plugin already
@@ -49,7 +49,7 @@ import pytest
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _START = _REPOSITORY / "start.sh"
-_NOTEBOOKS = ("quickstart.ipynb", "evaluation_analysis.ipynb")
+_NOTEBOOKS = ("quickstart.ipynb", "evaluate/evaluation_analysis.ipynb")
 
 
 def _dry_run(

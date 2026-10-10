@@ -27,7 +27,10 @@ from pathlib import Path
 from threading import Event, Thread
 
 import pytest
-from tests.test_visual_debugger_service import _recording_service, _request
+from tests.visual_debugger.test_visual_debugger_service import (
+    _recording_service,
+    _request,
+)
 
 from marl_battlegrounds._battle_client.protocol import (
     CommandResponseV2,

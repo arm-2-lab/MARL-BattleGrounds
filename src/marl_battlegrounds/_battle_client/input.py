@@ -73,7 +73,7 @@ from marl_battlegrounds.core.types import (
     MOVE_STAY,
     MOVE_WEST,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.rendering.authorized_pov_scene import (
     build_shared_obs_authorized_scene_v1,
 )

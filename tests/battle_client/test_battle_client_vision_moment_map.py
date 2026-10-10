@@ -30,7 +30,7 @@ from marl_battlegrounds._battle_client.evaluation_bridge import (
 from marl_battlegrounds._battle_client.model import DebuggerScenario
 from marl_battlegrounds.core.env import reset
 from marl_battlegrounds.core.types import EnvConfig
-from marl_battlegrounds.evaluation.map_identity import recorded_map
+from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     EvaluationEpisodeContextV4,

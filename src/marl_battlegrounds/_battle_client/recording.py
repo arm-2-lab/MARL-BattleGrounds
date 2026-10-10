@@ -23,11 +23,21 @@ from marl_battlegrounds._battle_client.protocol import (
     RecordingPersistenceErrorCodeV1,
     RecordingStatusV1,
 )
-from marl_battlegrounds.evaluation.metrics import (
+from marl_battlegrounds.evaluation._metrics.metrics import (
     EvaluationEpisodeObserverV1,
     EvaluationMetricReducerV1,
     ObserverLifecycleState,
     RolloutFailureOrigin,
+)
+from marl_battlegrounds.evaluation._metrics.reducers import build_tdm_metric_reducers
+from marl_battlegrounds.evaluation._recording.validation import (
+    validate_declared_model_tree,
+)
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayBundleV1,
+    ReplayWrapperMetadataV1,
+    RuntimeProvenanceV1,
+    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
@@ -38,13 +48,6 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationModel,
     EvaluationTransitionV1,
     canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.reducers import build_tdm_metric_reducers
-from marl_battlegrounds.evaluation.replay import (
-    ReplayBundleV1,
-    ReplayWrapperMetadataV1,
-    RuntimeProvenanceV1,
-    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     REPLAY_FILE_SUFFIX_V1,
@@ -60,7 +63,6 @@ from marl_battlegrounds.evaluation.replay_io import (
     prepare_replay_bundle_v1,
     publish_prepared_replay_bundle_v1,
 )
-from marl_battlegrounds.evaluation.validation import validate_declared_model_tree
 
 DEBUGGER_RECORDING_SCHEMA_VERSION: Literal[1] = 1
 DEBUGGER_RECORDING_SPECIFICATION_SCHEMA_ID = (

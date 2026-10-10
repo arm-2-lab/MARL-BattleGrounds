@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import pytest
-from tests.llm_fixtures import send, server
+from tests.helpers.llm_fixtures import send, server
 
 from marl_battlegrounds.llm.client import (
     Client,

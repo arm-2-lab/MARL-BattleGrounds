@@ -347,7 +347,7 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
 
     from marl_battlegrounds import training
     from marl_battlegrounds.baselines.ppo import PPOConfig, initialize_ppo
-    from marl_battlegrounds.evaluation.recording_context import (
+    from marl_battlegrounds.evaluation._recording.recording_context import (
         capture_recording_provenance,
     )
     from marl_battlegrounds.evaluation.recording_identity import tree_digest
@@ -1071,8 +1071,8 @@ def test_report_archive_preserves_raw_bytes_and_is_idempotent(tmp_path: Path) ->
 def test_actor_warm_start_and_resume_keep_distinct_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tests.training_continuation_helpers import capture_runs
-    from tests.training_learner_helpers import equal
+    from tests.helpers.training_continuation_helpers import capture_runs
+    from tests.helpers.training_learner_helpers import equal
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.training import checkpoints, runner
@@ -1149,8 +1149,8 @@ def test_custom_curriculum_config_round_trip_and_rejection() -> None:
 def test_custom_stages_extend_and_resume_with_the_full_source_bank(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tests.training_continuation_helpers import capture_runs
-    from tests.training_learner_helpers import equal
+    from tests.helpers.training_continuation_helpers import capture_runs
+    from tests.helpers.training_learner_helpers import equal
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.training import checkpoints, runner
@@ -1199,7 +1199,7 @@ def test_live_update_callback_matches_saved_rows_and_isolates_mutation(
     monkeypatch: pytest.MonkeyPatch,
     method: Literal["ff_ippo", "qmix", "pqn_vdn"],
 ) -> None:
-    from tests.training_continuation_helpers import fixed_source
+    from tests.helpers.training_continuation_helpers import fixed_source
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.baselines.pqn import PQNConfig
@@ -1288,7 +1288,7 @@ def test_callback_failure_keeps_saved_row_and_resumes_from_normal_checkpoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from tests.training_continuation_helpers import fixed_source, latest
+    from tests.helpers.training_continuation_helpers import fixed_source, latest
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.training import checkpoints, runner
@@ -1465,8 +1465,8 @@ def test_child_history_growth_preserves_named_member_statistics() -> None:
 def test_named_population_callback_append_and_exact_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: bool
 ) -> None:
-    from tests.training_continuation_helpers import capture_runs, fixed_source
-    from tests.training_learner_helpers import equal
+    from tests.helpers.training_continuation_helpers import capture_runs, fixed_source
+    from tests.helpers.training_learner_helpers import equal
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.training import checkpoints, runner
@@ -1535,8 +1535,8 @@ def test_partner_population_append_preserves_games_and_resumes(
     monkeypatch: pytest.MonkeyPatch,
     method: Literal["ff_ippo", "qmix", "pqn_vdn"],
 ) -> None:
-    from tests.training_continuation_helpers import capture_runs, fixed_source
-    from tests.training_learner_helpers import equal
+    from tests.helpers.training_continuation_helpers import capture_runs, fixed_source
+    from tests.helpers.training_learner_helpers import equal
 
     from marl_battlegrounds.baselines.ppo import PPOConfig
     from marl_battlegrounds.baselines.pqn import PQNConfig
@@ -1722,7 +1722,7 @@ def test_eleven_member_pool_relocates_resumes_and_rejects_changed_actor_before_w
     from collections import Counter
 
     import jax
-    from tests.training_continuation_helpers import fixed_source
+    from tests.helpers.training_continuation_helpers import fixed_source
 
     from marl_battlegrounds.baselines.ppo import PPOConfig, initialize_ppo
     from marl_battlegrounds.training import checkpoints, runner

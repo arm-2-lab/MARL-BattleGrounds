@@ -20,7 +20,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     evaluation_context,
     evaluation_env_config,
     historical_observation,
@@ -44,13 +44,15 @@ from marl_battlegrounds.core.types import (
     EnvConfig,
     Observation,
 )
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._recording.capture import (
+    capture_initial_evaluation_frame_v1,
+)
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     SHARED_OBS_ACTOR_PROJECTION_ID,
     SHARED_OBS_ACTOR_PROJECTION_V1,
     SHARED_OBS_ACTOR_PROJECTION_VERSION,
     reconstruct_shared_obs_sensor_source_bank_v1,
 )
-from marl_battlegrounds.evaluation.capture import capture_initial_evaluation_frame_v1
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
     StaticMechanicsCatalogV1,
@@ -942,12 +944,12 @@ def test_shared_projection_identity_and_reconstruction_fail_closed() -> None:
 
 
 def test_current_shared_bank_pairs_each_context_with_its_own_frame_version() -> None:
-    from tests.evaluation_fixtures import (
+    from tests.helpers.evaluation_fixtures import (
         current_captured_evaluation_trajectory,
         pre_red_zone_captured_evaluation_trajectory,
     )
 
-    from marl_battlegrounds.evaluation.actor_projection import (
+    from marl_battlegrounds.evaluation._replays.actor_projection import (
         reconstruct_shared_obs_sensor_source_bank_v2,
     )
 

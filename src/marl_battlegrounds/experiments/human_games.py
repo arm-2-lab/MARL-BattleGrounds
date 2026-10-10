@@ -311,10 +311,10 @@ def check_replay(game: Game, loaded: LoadedReplay) -> None:
         ends, another seed than ``game.seed``, or a person ("Manual") in other
         slots than ``person_slots(game)``.
     """
-    from marl_battlegrounds.evaluation.controller_names import (
+    from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
+    from marl_battlegrounds.evaluation._replays.controller_names import (
         recorded_slot_controller_names,
     )
-    from marl_battlegrounds.evaluation.map_identity import recorded_map
 
     replay = loaded.replay
     context = replay.header.context
@@ -380,7 +380,7 @@ def record_game(
         written then.
     """
     import marl_battlegrounds as marl_bgs
-    from marl_battlegrounds.evaluation.controller_names import (
+    from marl_battlegrounds.evaluation._replays.controller_names import (
         recorded_slot_controller_names,
     )
 

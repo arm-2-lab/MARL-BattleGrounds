@@ -58,6 +58,13 @@ from pydantic import (
     model_validator,
 )
 
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovActionMaskV1,
+    ActorPovAxisMapping,
+    ActorPovAxisMappingV1,
+    ActorPovAxisMappingV2,
+    ActorPovAxisMappingV3,
+)
 from marl_battlegrounds.evaluation.models import (
     ActionAcceptanceFactsV1,
     EvaluationEpisodeContext,
@@ -65,13 +72,6 @@ from marl_battlegrounds.evaluation.models import (
     JointActionV1,
     TransitionFactsV1,
     evaluation_context_type,
-)
-from marl_battlegrounds.evaluation.pov import (
-    ActorPovActionMaskV1,
-    ActorPovAxisMapping,
-    ActorPovAxisMappingV1,
-    ActorPovAxisMappingV2,
-    ActorPovAxisMappingV3,
 )
 from marl_battlegrounds.rendering.authorized_incoming import (
     AgentIncomingObservationV1,
@@ -2963,7 +2963,7 @@ _WIRE_MODEL_MODULE_NAMES = (
     __name__,
     "marl_battlegrounds.viewer.match_summary",
     "marl_battlegrounds.viewer.match_moments",
-    "marl_battlegrounds.evaluation.pov",
+    "marl_battlegrounds.evaluation._replays.pov",
     "marl_battlegrounds.rendering.authorized_incoming",
     "marl_battlegrounds.rendering.authorized_inspection",
     "marl_battlegrounds.rendering.authorized_pov_scene",

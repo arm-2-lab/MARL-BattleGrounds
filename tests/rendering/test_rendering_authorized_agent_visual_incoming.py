@@ -6,10 +6,10 @@ from dataclasses import dataclass, fields, replace
 
 import pytest
 from pydantic import TypeAdapter
-from tests.evaluation_fixtures import captured_evaluation_trajectory
+from tests.helpers.evaluation_fixtures import captured_evaluation_trajectory
 
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import (
     build_actor_pov_adjacent_transition_slice_v1,
 )
 from marl_battlegrounds.rendering.authorized_pov_scene import (

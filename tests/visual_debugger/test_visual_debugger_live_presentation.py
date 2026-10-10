@@ -31,7 +31,7 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     LiveScriptedPlaybackInspectionV1,
     PresentationResourceResultV1,
 )
-from tests.test_visual_debugger_service import (
+from tests.visual_debugger.test_visual_debugger_service import (
     _recording_service,  # pyright: ignore[reportPrivateUsage]
     _request,  # pyright: ignore[reportPrivateUsage]
     _service,  # pyright: ignore[reportPrivateUsage]
@@ -54,7 +54,7 @@ from marl_battlegrounds._battle_client.protocol import (
     RosterSelectionCommandV1,
     SetViewCommandV1,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
     EvaluationFrameV1,

@@ -16,13 +16,13 @@ from scripts.dev.visual_debugger.no_shared_visual import (
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
 )
-from tests.test_visual_debugger_service import (
-    _request,  # pyright: ignore[reportPrivateUsage]
-    _service,  # pyright: ignore[reportPrivateUsage]
-)
 from tests.visual_debugger.test_visual_debugger_live_presentation import (
     _step_once,  # pyright: ignore[reportPrivateUsage]
     _switch_to_pov,  # pyright: ignore[reportPrivateUsage]
+)
+from tests.visual_debugger.test_visual_debugger_service import (
+    _request,  # pyright: ignore[reportPrivateUsage]
+    _service,  # pyright: ignore[reportPrivateUsage]
 )
 
 from marl_battlegrounds._battle_client.live_presentation import (
@@ -34,14 +34,14 @@ from marl_battlegrounds._battle_client.protocol import (
     RosterSelectionCommandV1,
 )
 from marl_battlegrounds._battle_client.service import DebuggerService
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovAdjacentTransitionSlice,
+    ActorPovCurrentSlice,
+)
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
     AssignedPolicySlotV2,
-)
-from marl_battlegrounds.evaluation.pov import (
-    ActorPovAdjacentTransitionSlice,
-    ActorPovCurrentSlice,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import build_visual_event_batch_v2
 

@@ -28,8 +28,8 @@ import numpy as np
 import pytest
 from tests.battle_client.test_battle_client_mixed_control import _host, _session
 from tests.battle_client.test_battle_client_worker import _finish, _service
-from tests.test_visual_debugger_systems import _send
 from tests.training.test_training_checkpoints import _equal as _same_tree
+from tests.visual_debugger.test_visual_debugger_systems import _send
 
 from marl_battlegrounds._battle_client import methods
 from marl_battlegrounds._battle_client.evaluation_bridge import (

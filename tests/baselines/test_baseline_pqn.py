@@ -49,8 +49,8 @@ from jax import Array
 from tests.baselines.test_baseline_inputs import (
     _two_lane_reset,  # pyright: ignore[reportPrivateUsage]
 )
-from tests.evaluation_fixtures import evaluation_env_config
-from tests.training_learner_helpers import equal
+from tests.helpers.evaluation_fixtures import evaluation_env_config
+from tests.helpers.training_learner_helpers import equal
 
 from marl_battlegrounds.baselines import pqn, qmix
 from marl_battlegrounds.baselines.actions import (

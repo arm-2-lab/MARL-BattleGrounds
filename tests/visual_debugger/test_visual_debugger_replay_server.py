@@ -43,11 +43,11 @@ from scripts.dev.visual_debugger.server import (
     create_server,
     serve_browser_debugger,
 )
-from tests.evaluation_fixtures import captured_evaluation_trajectory
 from tests.export_visual_debugger_replay_artifacts import export_artifacts
+from tests.helpers.evaluation_fixtures import captured_evaluation_trajectory
 
-from marl_battlegrounds.evaluation.metrics import build_evaluation_observer_v1
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._metrics.metrics import build_evaluation_observer_v1
+from marl_battlegrounds.evaluation._replays.replay import (
     RuntimeProvenanceV1,
     build_replay_bundle_v1,
 )
@@ -1030,7 +1030,7 @@ forbidden = (
     'jaxlib',
     'numpy',
     'marl_battlegrounds.core',
-    'marl_battlegrounds.evaluation.capture',
+    'marl_battlegrounds.evaluation._recording.capture',
     'marl_battlegrounds._battle_client.control',
     'marl_battlegrounds._battle_client.protocol',
     'scripts.dev.visual_debugger.presentation',

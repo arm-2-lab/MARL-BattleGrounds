@@ -15,24 +15,16 @@ from typing import cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     neutral_action,
 )
 
 from marl_battlegrounds.core.types import Action
-from marl_battlegrounds.evaluation import pov as pov_module
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.models import (
-    ActionAcceptanceFactsV1,
-    EvaluationFrameV1,
-    EvaluationTransitionV1,
-    JointActionV1,
-    TransitionFactsV1,
-    canonical_digest_sha256,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays import pov as pov_module
+from marl_battlegrounds.evaluation._replays.pov import (
     ACTOR_POV_CONTENT_SCHEMA_ID,
     ACTOR_POV_SCHEMA_VERSION,
     ActorPovAcceptedActionV1,
@@ -44,6 +36,14 @@ from marl_battlegrounds.evaluation.pov import (
     ActorPovReplayContentV1,
     ActorPovTransitionV1,
     build_actor_pov_current_slice_v1,
+)
+from marl_battlegrounds.evaluation.models import (
+    ActionAcceptanceFactsV1,
+    EvaluationFrameV1,
+    EvaluationTransitionV1,
+    JointActionV1,
+    TransitionFactsV1,
+    canonical_digest_sha256,
 )
 from marl_battlegrounds.rendering import authorized_inspection as inspection_module
 from marl_battlegrounds.rendering import evaluation_adapter as evaluation_adapter_module

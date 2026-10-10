@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.training.test_training_uncertainty import _grouping, _reduce, _run
+from tests.training.selection.test_training_uncertainty import _grouping, _reduce, _run
 
 from marl_battlegrounds.training import analysis
 

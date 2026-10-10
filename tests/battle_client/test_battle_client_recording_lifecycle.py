@@ -18,12 +18,12 @@ import pytest
 from pydantic import ValidationError
 from tests.battle_client.test_battle_client_policy_trace import _varying
 from tests.battle_client.test_battle_client_worker import _finish, _method
-from tests.test_visual_debugger_service import (
+from tests.visual_debugger.test_visual_debugger_service import (
     _close_recording_in_lifecycle,
     _recording_service,
     _request,
 )
-from tests.test_visual_debugger_systems import _send
+from tests.visual_debugger.test_visual_debugger_systems import _send
 
 from marl_battlegrounds._battle_client import launch, replay_recorder
 from marl_battlegrounds._battle_client import service as service_module

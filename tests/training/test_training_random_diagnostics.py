@@ -227,7 +227,7 @@ def test_pqn_initialization_reuse_binds_parameters_and_statistics(
 
 @pytest.fixture(scope="module")
 def random_runs(tmp_path_factory: pytest.TempPathFactory) -> Any:  # noqa: ANN401
-    from marl_battlegrounds.evaluation.recording_context import (
+    from marl_battlegrounds.evaluation._recording.recording_context import (
         capture_recording_provenance,
     )
 

@@ -57,14 +57,14 @@ from scripts.dev.visual_debugger.replay_protocol import (
     SharedObsSourceMaterialReplayTimelineV1,
     SharedObsSourceMaterialReplayViewerFrameV1,
 )
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     captured_evaluation_trajectory,
     mage_target_none_ultimate_action,
 )
 
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.pov import build_actor_pov_current_slice_v1
-from marl_battlegrounds.evaluation.replay import ReplayArtifactReferenceV1
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import build_actor_pov_current_slice_v1
+from marl_battlegrounds.evaluation._replays.replay import ReplayArtifactReferenceV1
 from marl_battlegrounds.rendering.evaluation_adapter import (
     EvaluationScenePresentationStateV1,
     SharedObsSourceMaterialProjectionV1,

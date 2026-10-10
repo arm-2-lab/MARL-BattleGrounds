@@ -17,7 +17,7 @@ import jax.numpy as jnp
 import pytest
 from jax import Array
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 import marl_battlegrounds._battle_client.control as control
 from marl_battlegrounds._battle_client.control import (

@@ -79,26 +79,22 @@ from scripts.dev.visual_debugger.replay_service import (
     ReplayServiceCommandResultV1,
     ReplayViewerService,
 )
-from tests.evaluation_fixtures import (
+from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     evaluation_env_config,
 )
-from tests.export_visual_debugger_replay_artifacts import build_corpse_overlay_bundle
 
 import marl_battlegrounds._battle_client.control as live_control_module
 import marl_battlegrounds.core.env as core_env_module
 import marl_battlegrounds.core.geometry as core_geometry_module
+import marl_battlegrounds.evaluation._recording.capture as evaluation_capture_module
+import marl_battlegrounds.evaluation._recording.events as evaluation_events_module
 import marl_battlegrounds.evaluation.analysis as analysis_module
-import marl_battlegrounds.evaluation.capture as evaluation_capture_module
-import marl_battlegrounds.evaluation.events as evaluation_events_module
 import marl_battlegrounds.rendering.evaluation_adapter as evaluation_adapter_module
 import marl_battlegrounds.viewer.static as static_renderer_module
-from marl_battlegrounds.evaluation.actor_projection import (
-    NO_SHARED_OBS_ACTOR_PROJECTION_V2,
-)
-from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v1
-from marl_battlegrounds.evaluation.metrics import (
+from marl_battlegrounds.evaluation._metrics.metrics import (
     CompletionState,
     EvaluationEpisodeCompletionV1,
     EvaluationMetricReducerStateV1,
@@ -110,6 +106,16 @@ from marl_battlegrounds.evaluation.metrics import (
     SufficientStatisticDraftV1,
     build_evaluation_observer_v1,
 )
+from marl_battlegrounds.evaluation._replays.actor_projection import (
+    NO_SHARED_OBS_ACTOR_PROJECTION_V2,
+)
+from marl_battlegrounds.evaluation._replays.pov import export_actor_pov_replay_v1
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayBundleV1,
+    RuntimeProvenanceV1,
+    build_replay_bundle_v1,
+)
+from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v1
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
     AgentRespawnedEventV1,
@@ -119,12 +125,6 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationTransitionV1,
     JointActionV1,
     canonical_json_bytes,
-)
-from marl_battlegrounds.evaluation.pov import export_actor_pov_replay_v1
-from marl_battlegrounds.evaluation.replay import (
-    ReplayBundleV1,
-    RuntimeProvenanceV1,
-    build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     LoadedReplayBundleV1,
@@ -4960,7 +4960,7 @@ banned = (
     'jaxlib',
     'numpy',
     'marl_battlegrounds.core',
-    'marl_battlegrounds.evaluation.capture',
+    'marl_battlegrounds.evaluation._recording.capture',
     'marl_battlegrounds.policy',
     'marl_battlegrounds.policies',
     'marl_battlegrounds.runner',

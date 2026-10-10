@@ -4,7 +4,7 @@ MatchSummaryV1.previous_scores is each team's score before the tick (equal to
 scores on frame zero and on ticks with no score); returned_agent_ids names the
 champions that return on the tick; MatchDeathV1.home_fall is True only for a
 death that started in the victim's own Red Zone and so scored double. The rule
-has one owner, evaluation.events.team_deathmatch_home_fall_slots_v1, used by
+has one owner, evaluation._recording.events.team_deathmatch_home_fall_slots_v1, used by
 the score check itself: two ordinary falls in one tick, one home fall plus one
 ordinary fall, a Team B home fall and the swapped spawn ends all agree with the
 recorded score edges. Without the start frame, previous scores come from the
@@ -25,7 +25,7 @@ from typing import cast
 
 import pytest
 from pydantic import ValidationError
-from tests.evaluation.test_evaluation_events import (
+from tests.evaluation.recording.test_evaluation_events import (
     _FALSE_10,
     _frame,
     _neutral_facts,
@@ -36,7 +36,7 @@ from tests.evaluation.test_evaluation_events import (
 
 import marl_battlegrounds.rendering.authorized_presentation as authorized_module
 import marl_battlegrounds.viewer.presentation as presentation_module
-from marl_battlegrounds.evaluation.events import (
+from marl_battlegrounds.evaluation._recording.events import (
     decode_evaluation_events_v1,
     team_deathmatch_home_fall_slots_v1,
 )

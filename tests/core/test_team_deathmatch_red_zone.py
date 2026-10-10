@@ -45,7 +45,7 @@ from tests.core.test_team_deathmatch_semantics import (
     _take_step,  # pyright: ignore[reportPrivateUsage]
     _task_config,  # pyright: ignore[reportPrivateUsage]
 )
-from tests.evaluation_fixtures import current_evaluation_context
+from tests.helpers.evaluation_fixtures import current_evaluation_context
 
 from marl_battlegrounds.core.config import validate_env_config, validate_env_state
 from marl_battlegrounds.core.env import reset, step
@@ -70,7 +70,7 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
-from marl_battlegrounds.evaluation.capture import (
+from marl_battlegrounds.evaluation._recording.capture import (
     capture_evaluation_transition_unit_v3,
     capture_initial_evaluation_frame_v3,
 )

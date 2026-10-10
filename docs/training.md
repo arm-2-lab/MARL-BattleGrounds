@@ -24,7 +24,7 @@ actor = training.load_system(result.selected_actor or result.final_actor)  # an 
 `train` plays games, updates the learner, saves checkpoints and writes a report. It returns
 `run_dir`, `final_actor`, `selected_actor` (`None` without validation) and `final_checkpoint`.
 The same fields work from JSON (plus `"schema_version": 1`): `python -m marl_battlegrounds train --config CONFIG.json --output-dir RUN`.
-From a checkout, [train.py](../examples/train.py) is the Hydra launcher and [mappo_training.py](../examples/mappo_training.py) a full tutorial.
+From a checkout, [train.py](../examples/train.py) is the Hydra launcher and [mappo_training.py](../examples/training/mappo_training.py) a full tutorial.
 
 **Watch Out:** the output folder must be new or empty. Short runs need
 `keep_past=0`: past copies must be a full game apart, or the run stops at setup.
@@ -64,7 +64,7 @@ PPO methods take `ppo=PPOConfig(...)`, QMIX `qmix=QMIXConfig(...)` and PQN-VDN `
 Loaded PPO actors sample; QMIX and PQN-VDN play greedily. Each block's `parameter_sharing`
 (for example `ppo=PPOConfig(parameter_sharing="class")`) picks one shared actor
 (`"all"`, default), one per class (`"class"`) or one per slot (`"none"`); each agent keeps its own memory.
-Tutorials, from a checkout: [qmix_training.py](../examples/qmix_training.py), [pqn_training.py](../examples/pqn_training.py).
+Tutorials, from a checkout: [qmix_training.py](../examples/training/qmix_training.py), [pqn_training.py](../examples/training/pqn_training.py).
 
 **Watch Out:** another method's settings block is an error. Recurrent PPO needs
 `num_envs` divisible by `groups` × `minibatches` (4); PQN-VDN by `num_minibatches` (16).
@@ -96,7 +96,7 @@ saved actor paths, `module:function` factories or live Systems. With no `opponen
 
 **Watch Out:** a running game keeps its opponent; new shares affect new games.
 Pass live objects again on resume. `train(..., matchmaking=pfsp)` (from
-`marl_battlegrounds.experiments.callbacks`) favors opponents you beat least. See [competitive_training.py](../examples/competitive_training.py) and [partner_training.py](../examples/partner_training.py).
+`marl_battlegrounds.experiments.callbacks`) favors opponents you beat least. See [competitive_training.py](../examples/training/competitive_training.py) and [partner_training.py](../examples/training/partner_training.py).
 
 ## Use A Released Season 0 Model
 
@@ -120,7 +120,7 @@ entered Season 0 with, `@final` the last save, `@100M` the last save at or befor
 `hf://...@<commit>/...` address, so resume uses the same file.
 `marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in the same portable
 format (actors trained with the default `parameter_sharing="all"`). See
-[train_against_released_models.py](../examples/train_against_released_models.py).
+[train_against_released_models.py](../examples/training/train_against_released_models.py).
 
 **Watch Out:** a step that does not exist fails and lists the nearest saves. On machines
 without internet, run `models download` first, then set `HF_HUB_OFFLINE=1`.
@@ -147,7 +147,7 @@ changes it. A custom `reward(before, facts, after, progress)` returns float32 `(
 **Watch Out:** stages change only when a game resets; `exposure.json` shows what
 was played. QMIX and PQN-VDN learn one team-average reward: give them
 `combat_support_team_reward`. Actors must never read `before`, `facts` or `after`.
-See [curriculum.py](../examples/curriculum.py) and [training_distributions.py](../examples/training_distributions.py).
+See [curriculum.py](../examples/training/curriculum.py) and [training_distributions.py](../examples/training/training_distributions.py).
 
 ## Validation And The Best Checkpoint
 
@@ -176,7 +176,7 @@ the highest mean point margin (our points minus theirs) wins.
 **Watch Out:** no validation opponents means no selected actor. Keep test maps
 47-51 for final evaluation. To choose again from saved results, use
 `python -m marl_battlegrounds reselect-checkpoint RUN --declaration choice.json --output-dir NEW`
-([training_selection.py](../examples/training_selection.py), [population_selection.py](../examples/population_selection.py)).
+([training_selection.py](../examples/training/training_selection.py), [population_selection.py](../examples/training/population_selection.py)).
 
 ## Save, Resume And Extend
 
@@ -200,7 +200,7 @@ and validation. `TrainConfig(initial_actor=PATH)` starts a new run from saved ac
 **Watch Out:** resume and extend need the exact Python and library versions the
 run recorded (`dependencies` in `run_details.json`), the same device kind and
 `XLA_FLAGS`. Install the recorded Python with uv, for example `uv python install 3.14.5` for the released models. Extending needs a full `checkpoints/` folder, not an actor export.
-A child continues the same training history; it is not a new seed. See [training_continuation.py](../examples/training_continuation.py).
+A child continues the same training history; it is not a new seed. See [training_continuation.py](../examples/training/training_continuation.py).
 
 ## Logs, Reports And Models
 

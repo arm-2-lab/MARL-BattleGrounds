@@ -1401,7 +1401,7 @@ def test_named_population_keeps_live_choices_and_records_actual_members(
 def test_appending_member_keeps_full_live_memory_and_old_signed_ids(
     prepared: PreparedTrainingContent, host: bool
 ) -> None:
-    from tests.training.test_training_pinned_host import (
+    from tests.training.opponents.test_training_pinned_host import (
         _Counter,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -1465,7 +1465,7 @@ def test_recording_fork_keeps_old_component_indices_when_history_and_members_gro
 ) -> None:
     import csv
 
-    from marl_battlegrounds.evaluation.recording_checkpoint import (
+    from marl_battlegrounds.evaluation._recording.recording_checkpoint import (
         attach_recording_fork,
         prepare_recording_fork,
     )
@@ -1795,7 +1795,7 @@ def test_partner_append_keeps_both_live_memories_and_changes_only_new_games(
     prepared: PreparedTrainingContent,
     host: bool,
 ) -> None:
-    from tests.training.test_training_pinned_host import (
+    from tests.training.opponents.test_training_pinned_host import (
         _Counter,  # pyright: ignore[reportPrivateUsage]
     )
 

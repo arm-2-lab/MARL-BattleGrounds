@@ -18,8 +18,8 @@ import jax
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.battle_client.test_battle_client_worker import _method, _service
-from tests.test_visual_debugger_systems import _create, _send
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.visual_debugger.test_visual_debugger_systems import _create, _send
 
 from marl_battlegrounds._battle_client import control
 from marl_battlegrounds._battle_client.methods import resolve_controllers

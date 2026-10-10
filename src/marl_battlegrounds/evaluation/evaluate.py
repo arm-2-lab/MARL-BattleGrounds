@@ -43,9 +43,26 @@ from marl_battlegrounds.environment import (
     MetricMode,
     make,
 )
-from marl_battlegrounds.evaluation.collection_types import CollectedAssignments
-from marl_battlegrounds.evaluation.episode_metrics import MetricValues
-from marl_battlegrounds.evaluation.evaluation_capture import evaluation_record_batch
+from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
+from marl_battlegrounds.evaluation._metrics.scalar_reports import has_members
+from marl_battlegrounds.evaluation._recording.collection_types import (
+    CollectedAssignments,
+)
+from marl_battlegrounds.evaluation._recording.evaluation_capture import (
+    evaluation_record_batch,
+)
+from marl_battlegrounds.evaluation._recording.recording_context import (
+    build_recording_context,
+    capture_recording_provenance,
+    controller_names_by_slot,
+)
+from marl_battlegrounds.evaluation._recording.recording_types import (
+    validate_recording_errors,
+)
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
+from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
+from marl_battlegrounds.evaluation._replays.replay_recording import ReplayCollector
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.evaluation_conditions import (
     OMITTED,
     Omitted,
@@ -84,11 +101,6 @@ from marl_battlegrounds.evaluation.policy_execution import (
     initial_policy_carry,
     select_policy_carry,
 )
-from marl_battlegrounds.evaluation.recording_context import (
-    build_recording_context,
-    capture_recording_provenance,
-    controller_names_by_slot,
-)
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
     policy_description,
@@ -96,11 +108,6 @@ from marl_battlegrounds.evaluation.recording_identity import (
 from marl_battlegrounds.evaluation.recording_identity import (
     tree_digest as _tree_digest,
 )
-from marl_battlegrounds.evaluation.recording_types import validate_recording_errors
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
-from marl_battlegrounds.evaluation.replay_capture import ReplayPackets
-from marl_battlegrounds.evaluation.replay_recording import ReplayCollector
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.results import EpisodeResult, EvaluationResult
 from marl_battlegrounds.evaluation.run_writer import (
     IDENTITY_COLUMNS,
@@ -110,7 +117,6 @@ from marl_battlegrounds.evaluation.run_writer import (
     _prepare_pass_identity,
     configuration_identity,
 )
-from marl_battlegrounds.evaluation.scalar_reports import has_members
 from marl_battlegrounds.evaluation.system_evaluation import (
     freeze_evaluation_method,
     prepare_evaluation_system,
@@ -1315,7 +1321,9 @@ def _run_evaluation(
     }
     if not legacy:
         metadata["rng_protocol"] = "evaluation-systems-v1"
-    from marl_battlegrounds.evaluation.sampling_evidence import method_sampling_fact
+    from marl_battlegrounds.evaluation._recording.sampling_evidence import (
+        method_sampling_fact,
+    )
 
     if recording:
         from marl_battlegrounds.evaluation.evaluation_conditions import read_saved_pass

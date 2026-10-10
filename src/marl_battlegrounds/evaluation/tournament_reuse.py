@@ -23,7 +23,9 @@ from marl_battlegrounds.evaluation.tournament_config import (
 )
 
 if TYPE_CHECKING:
-    from marl_battlegrounds.evaluation.tournament_schedule import TournamentMatch
+    from marl_battlegrounds.evaluation._tournaments.tournament_schedule import (
+        TournamentMatch,
+    )
 
 _INT32_MAX = 2**31 - 1
 _UINT32_MAX = 2**32 - 1
@@ -1173,7 +1175,9 @@ def analysis_schedule(
     ValueError
         Labels are incomplete/nonunique or logical block/seed limits are exceeded.
     """
-    from marl_battlegrounds.evaluation.tournament_schedule import TournamentMatch
+    from marl_battlegrounds.evaluation._tournaments.tournament_schedule import (
+        TournamentMatch,
+    )
 
     games = plan.games if isinstance(plan, ReusePlan) else plan
     participant_ids = (

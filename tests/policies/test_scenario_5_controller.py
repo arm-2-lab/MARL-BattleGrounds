@@ -10,7 +10,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.scenario_controller_fixtures import ControllerScenario, load_scenario_1
+from tests.helpers.scenario_controller_fixtures import (
+    ControllerScenario,
+    load_scenario_1,
+)
 
 from marl_battlegrounds.core.geometry import GEOMETRY_TOLERANCE
 from marl_battlegrounds.core.types import (

@@ -33,7 +33,7 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-import marl_battlegrounds.evaluation.wire_shapes as _wire_shapes
+import marl_battlegrounds.evaluation._replays.wire_shapes as _wire_shapes
 
 CONTEXT_FEATURES = _wire_shapes.CONTEXT_FEATURES_V1
 ENVIRONMENT_DIMENSIONS = _wire_shapes.ENVIRONMENT_DIMENSIONS_V1
@@ -2062,7 +2062,7 @@ class EvaluationEpisodeContextV3(EvaluationModel):
             != REQUIRED_SCHEMA_BINDINGS_V3
         ):
             raise ValueError("schema_versions must equal the V3 context bindings")
-        from marl_battlegrounds.evaluation.actor_projection import (
+        from marl_battlegrounds.evaluation._replays.actor_projection import (
             NO_SHARED_OBS_ACTOR_PROJECTION_V3,
             SHARED_OBS_ACTOR_PROJECTION_V2,
         )
@@ -2187,7 +2187,7 @@ class EvaluationEpisodeContextV4(EvaluationModel):
             != REQUIRED_SCHEMA_BINDINGS_V4
         ):
             raise ValueError("schema_versions must equal the V4 context bindings")
-        from marl_battlegrounds.evaluation.actor_projection import (
+        from marl_battlegrounds.evaluation._replays.actor_projection import (
             NO_SHARED_OBS_ACTOR_PROJECTION_V4,
             SHARED_OBS_ACTOR_PROJECTION_V3,
         )

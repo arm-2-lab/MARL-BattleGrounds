@@ -36,8 +36,8 @@ import jax.numpy as jnp
 import pytest
 from pydantic import BaseModel, ValidationError
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
-from tests.evaluation.test_evaluation_pov import _runtime_provenance
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.evaluation.replays.test_evaluation_pov import _runtime_provenance
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -46,8 +46,8 @@ from marl_battlegrounds._battle_client.control import (
 from marl_battlegrounds._battle_client.model import DebuggerSession
 from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.types import Action
+from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay
-from marl_battlegrounds.evaluation.replay_v4 import build_replay_v4
 from marl_battlegrounds.viewer.match_summary import (
     MatchAgentV1,
     MatchHonorsV1,

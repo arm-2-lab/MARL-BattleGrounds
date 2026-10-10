@@ -37,18 +37,21 @@ from marl_battlegrounds.core.types import (
     TEAM_A_ID,
     EnvConfig,
 )
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._recording.recording_context import (
+    recorded_policy_assignment,
+)
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
     SHARED_OBS_ACTOR_PROJECTION_V3,
+)
+from marl_battlegrounds.evaluation._replays.controller_names import (
+    slot_controller_name_keys,
+    team_controller_name_key,
 )
 from marl_battlegrounds.evaluation.catalog import (
     build_evaluation_episode_context_v4,
     build_evaluation_seed_protocol_v1,
     build_resolved_env_config_v2,
-)
-from marl_battlegrounds.evaluation.controller_names import (
-    slot_controller_name_keys,
-    team_controller_name_key,
 )
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
@@ -68,7 +71,6 @@ from marl_battlegrounds.evaluation.models import (
     canonical_digest_sha256,
     canonical_json_bytes,
 )
-from marl_battlegrounds.evaluation.recording_context import recorded_policy_assignment
 from marl_battlegrounds.policies.reactive_tdm_alpha import (
     reactive_tdm_alpha_controller_descriptor,
 )
@@ -282,8 +284,10 @@ def _packaged_map_keys(
     Host-only. It reads the packaged catalog and hashes the config; it starts
     no episode and writes no file.
     """
+    from marl_battlegrounds.evaluation._recording.map_identity import (
+        registered_map_metadata,
+    )
     from marl_battlegrounds.evaluation.evaluation_conditions import config_record
-    from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
 
     packaged_map = scenario.packaged_map
     if packaged_map is None:
@@ -1205,7 +1209,9 @@ def build_debugger_evaluation_context_v1(
     if packaged_map_keys is not None:
         aggregation_keys.extend(packaged_map_keys)
     elif scenario.provenance is not None and scenario.provenance.map_id is not None:
-        from marl_battlegrounds.evaluation.map_identity import registered_map_metadata
+        from marl_battlegrounds.evaluation._recording.map_identity import (
+            registered_map_metadata,
+        )
 
         # Frozen Pydantic models provide their runtime hash for this host cache.
         aggregation_keys.extend(

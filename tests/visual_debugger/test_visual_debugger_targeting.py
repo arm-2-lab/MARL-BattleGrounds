@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client.control import (
     create_session,

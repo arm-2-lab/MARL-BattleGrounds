@@ -17,7 +17,7 @@ from scripts.dev.visual_debugger.presentation_protocol import (
     PresentationResourceResultV1,
 )
 from scripts.dev.visual_debugger.server import DebuggerHTTPServer, create_server
-from tests.test_visual_debugger_service import (
+from tests.visual_debugger.test_visual_debugger_service import (
     _service,  # pyright: ignore[reportPrivateUsage]
 )
 

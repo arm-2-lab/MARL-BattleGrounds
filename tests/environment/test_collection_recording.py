@@ -22,7 +22,7 @@ import pytest
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core.types import Action, EnvConfig
 from marl_battlegrounds.environment import EpisodeInfo
-from marl_battlegrounds.evaluation.collection_types import (
+from marl_battlegrounds.evaluation._recording.collection_types import (
     CollectedAssignments,
     CollectedBatch,
     CollectedBuffers,
@@ -32,12 +32,12 @@ from marl_battlegrounds.evaluation.collection_types import (
     CollectionErrors,
     ConfigEvidence,
 )
+from marl_battlegrounds.evaluation._recording.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation.models import CodeRevisionV2
 from marl_battlegrounds.evaluation.policy_execution import PolicyTrace, System
 from marl_battlegrounds.evaluation.recording_identity import (
     ordered_source_bank_identity,
 )
-from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation.run_writer import RunWriter, configuration_identity
 from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
 from marl_battlegrounds.tasks import make_standard_team_deathmatch_config
@@ -656,7 +656,7 @@ def test_replay_preparation_has_no_live_spool_or_metadata_effects(
     monkeypatch: pytest.MonkeyPatch,
     provenance: dict[str, object],
 ) -> None:
-    import marl_battlegrounds.evaluation.recording_context as context_module
+    import marl_battlegrounds.evaluation._recording.recording_context as context_module
 
     calls: list[int] = []
 
@@ -785,11 +785,11 @@ def test_replay_staging_keeps_one_model_and_serializes_each_completion_once(
     import weakref
     from collections.abc import Iterable
 
+    import marl_battlegrounds.evaluation._replays.replay_v4 as replay_v4
     import marl_battlegrounds.evaluation.replay_io as replay_io
-    import marl_battlegrounds.evaluation.replay_v4 as replay_v4
+    from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
+    from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
     from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
-    from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
-    from marl_battlegrounds.evaluation.replay_capture import ReplayPackets
 
     assert terminal.replay is not None
     references: list[weakref.ReferenceType[object]] = []

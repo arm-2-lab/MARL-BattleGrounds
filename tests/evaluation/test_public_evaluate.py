@@ -35,6 +35,9 @@ from jax import Array
 from marl_battlegrounds.baselines import ppo
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import TASK_MODE_OUTCOME_DRAW, ActionMask, EnvConfig
+from marl_battlegrounds.evaluation._recording.recording_context import (
+    capture_recording_provenance,
+)
 from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.evaluate import (
     EpisodeSpec,
@@ -52,7 +55,6 @@ from marl_battlegrounds.evaluation.policy_execution import (
     System,
     policy,
 )
-from marl_battlegrounds.evaluation.recording_context import capture_recording_provenance
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay
 from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS, RunWriter
 from marl_battlegrounds.evaluation.runtime_provenance import (
@@ -716,7 +718,7 @@ def test_resume_skips_durable_episodes_and_rejects_changed_inputs(
         raise AssertionError("Resume inferred past sampling from a current actor")
 
     monkeypatch.setattr(
-        import_module("marl_battlegrounds.evaluation.sampling_evidence"),
+        import_module("marl_battlegrounds.evaluation._recording.sampling_evidence"),
         "method_sampling_fact",
         unexpected_sampling,
     )

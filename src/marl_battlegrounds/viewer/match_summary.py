@@ -10,11 +10,12 @@ caller owns score history: the Replay Viewer reads its recorded frames and the
 live service keeps a short tail in its session; the browser never keeps one.
 Scores and outcomes stay owned by
 recorded task evidence; which deaths scored double is owned by
-``evaluation.events.team_deathmatch_home_fall_slots_v1``. Complete kill credit
+``evaluation._recording.events.team_deathmatch_home_fall_slots_v1``. Complete kill
+credit
 uses the shared metric calculation on CPU; sparse evidence leaves credit
 unknown. The module does not write files or advance the simulator.
 
-Controller names come from the record (``evaluation.controller_names``) and are
+Controller names come from the record (``evaluation._replays.controller_names``) and are
 shown exactly as recorded: each champion slot's name when the replay has them
 (``slot_controller_names``; each team's ``display_name`` joins its slots'
 names). Without them, Team B of a proven fixed scenario keeps its scenario
@@ -51,12 +52,17 @@ from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from marl_battlegrounds.evaluation.controller_names import (
+from marl_battlegrounds.evaluation._recording.events import (
+    team_deathmatch_home_fall_slots_v1,
+)
+from marl_battlegrounds.evaluation._recording.map_identity import (
+    RecordedMap,
+    recorded_map,
+)
+from marl_battlegrounds.evaluation._replays.controller_names import (
     recorded_slot_controller_names,
     recorded_team_controller_name,
 )
-from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
-from marl_battlegrounds.evaluation.map_identity import RecordedMap, recorded_map
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1,
     AgentDiedEventV1,

@@ -21,7 +21,8 @@ from numpy.typing import DTypeLike
 
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.environment import EpisodeInfo
-from marl_battlegrounds.evaluation.collection_types import (
+from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
+from marl_battlegrounds.evaluation._recording.collection_types import (
     CollectedAssignments,
     CollectedBatch,
     CollectedBuffers,
@@ -31,14 +32,13 @@ from marl_battlegrounds.evaluation.collection_types import (
     CollectionErrors,
     ConfigEvidence,
 )
-from marl_battlegrounds.evaluation.episode_metrics import MetricValues
+from marl_battlegrounds.evaluation._recording.recording_types import EpisodeStartRecords
+from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
 from marl_battlegrounds.evaluation.metric_catalog import (
     FULL_METRIC_NAMES,
     PRIORITY_METRIC_NAMES,
 )
 from marl_battlegrounds.evaluation.policy_execution import PolicyTrace
-from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
-from marl_battlegrounds.evaluation.replay_capture import ReplayPackets
 
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation.run_writer import RunWriter

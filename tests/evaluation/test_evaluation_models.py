@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from jax import Array
 from pydantic import ValidationError
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     current_evaluation_context,
     evaluation_context,
     evaluation_env_config,
@@ -77,6 +77,8 @@ from marl_battlegrounds.core.types import (
 from marl_battlegrounds.core.types import (
     TransitionFacts as CoreTransitionFacts,
 )
+from marl_battlegrounds.evaluation._replays.replay_v2 import context_v2
+from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_OBSTACLE_SLOTS_V1
 from marl_battlegrounds.evaluation.catalog import (
     build_code_revision_v1,
     build_resolved_env_config_v1,
@@ -128,8 +130,6 @@ from marl_battlegrounds.evaluation.models import (
     canonical_json_bytes,
     evaluation_frame_type_for_context,
 )
-from marl_battlegrounds.evaluation.replay_v2 import context_v2
-from marl_battlegrounds.evaluation.wire_shapes import MAX_OBSTACLE_SLOTS_V1
 
 # Replay V3 recorded before Red Zone from evaluation_env_config(max_steps=2).
 _PRE_RED_ZONE_REPLAY = (

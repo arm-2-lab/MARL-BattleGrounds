@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.battle_client.test_battle_client_mixed_control import _draft, _host, _session
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 from marl_battlegrounds._battle_client import control
 from marl_battlegrounds._battle_client.model import DebuggerSession

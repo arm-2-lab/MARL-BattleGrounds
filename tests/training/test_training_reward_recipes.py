@@ -21,7 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax import Array
-from tests.evaluation_fixtures import evaluation_env_config, neutral_action
+from tests.helpers.evaluation_fixtures import evaluation_env_config, neutral_action
 
 from marl_battlegrounds.baselines.qmix import team_task_reward
 from marl_battlegrounds.core.axis_mappings import global_slot_to_target_action

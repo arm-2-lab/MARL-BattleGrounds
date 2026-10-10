@@ -2,7 +2,7 @@
 
 import pytest
 from scripts.dev.visual_debugger.scenarios import get_scenario
-from tests.visual_debugger_fixtures import (
+from tests.helpers.visual_debugger_fixtures import (
     debugger_test_launch_specification,
     rejection_lane_scenario,
     submit_fixture_frame,

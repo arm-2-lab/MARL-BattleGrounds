@@ -18,7 +18,7 @@ print(result.head_to_head())
 `evaluate` plays the first method (your team) against the second (the opponent).
 `num_episodes` is the total number of games. `head_to_head` gives games, wins,
 draws, losses and the mean point margin (your points minus theirs), both ways.
-[`evaluation.py`](../examples/evaluation.py) and [`evaluation_results.py`](../examples/evaluation_results.py) run these calls end to end.
+[`evaluation.py`](../examples/evaluate/evaluation.py) and [`evaluation_results.py`](../examples/evaluate/evaluation_results.py) run these calls end to end.
 
 **Watch Out:** no `output_dir`, no files. The results then live only in memory.
 
@@ -53,7 +53,7 @@ one end only). Other phase names need explicit `maps`.
 ## Evaluate A Saved Model
 
 ```bash
-python examples/evaluate_recurrent_mappo.py checkpoint=RUN/checkpoints/CHECKPOINT_ID \
+python examples/evaluate/evaluate_recurrent_mappo.py checkpoint=RUN/checkpoints/CHECKPOINT_ID \
   evaluation.output_dir=runs/evaluation
 ```
 
@@ -113,7 +113,7 @@ for partner in ("tdm-alpha", "random"):
 ```
 
 Your trained (focal) team plays slots 0-3 and a partner it may never have met plays
-slot 4. [`cross_play_and_zsc.py`](../examples/cross_play_and_zsc.py) plays every
+slot 4. [`cross_play_and_zsc.py`](../examples/evaluate/cross_play_and_zsc.py) plays every
 focal, partner and opponent combination with paired spawns and saves `games.csv`.
 
 **Watch Out:** its "familiar" and "held out" labels are what you declare, not a
@@ -177,5 +177,5 @@ shows whether it was set. To watch a run's exact games, record them in that run.
 
 - [Metrics](metrics.md): choose a level and read the numbers.
 - [Tournaments](tournaments.md): rank many methods with one Elo fit.
-- [`scenario_evaluation.py`](../examples/scenario_evaluation.py): all eight scenarios, with saving and resume.
-- [`baseline_system.py`](../examples/baseline_system.py): an untrained recurrent MAPPO actor in your own compiled loop.
+- [`scenario_evaluation.py`](../examples/evaluate/scenario_evaluation.py): all eight scenarios, with saving and resume.
+- [`baseline_system.py`](../examples/evaluate/baseline_system.py): an untrained recurrent MAPPO actor in your own compiled loop.

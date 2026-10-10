@@ -15,7 +15,7 @@ from typing import Any
 import jax
 import numpy as np
 import pytest
-from scripts.dev import benchmark_canonical as bench
+from scripts.dev.benchmarks import benchmark_canonical as bench
 
 
 def test_workload_rejects_silent_batch_or_version_changes(tmp_path: Path) -> None:

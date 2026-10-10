@@ -12,7 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from tests.scenario_witness_assertions import assert_witness_tick
+from tests.helpers.scenario_witness_assertions import assert_witness_tick
 
 from marl_battlegrounds.core.env import initialize_scenario_state, step
 from marl_battlegrounds.core.types import (

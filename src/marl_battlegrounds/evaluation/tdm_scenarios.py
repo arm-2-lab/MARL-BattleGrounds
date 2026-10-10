@@ -10,6 +10,7 @@ plumbing and is not a manuscript sampling plan.
 from __future__ import annotations
 
 from marl_battlegrounds._tdm_assets import ScenarioContent, scenario_content
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.catalog import (
     build_resolved_env_config_v2,
     build_roster_v1,
@@ -21,7 +22,6 @@ from marl_battlegrounds.evaluation.models import (
     VersionedIdentityV1,
     canonical_digest_sha256,
 )
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.scenario import (
     ResolvedScenarioSpecificationV3,
     ScenarioEvaluationRecordV5,

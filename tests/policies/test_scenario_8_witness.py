@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from tests.scenario_controller_fixtures import (
+from tests.helpers.scenario_controller_fixtures import (
     SCENARIO_8_FIXTURE_PATH,
     SCENARIO_8_SEMANTIC_DIGEST,
     load_scenario_8,

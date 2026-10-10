@@ -1,6 +1,7 @@
 """Check GAMMA version 2's search and Trap-hold rules, and that all else is BETA.
 
-Every case edits the real Scenario 1 observation through tests.tdm_gamma_fixtures
+Every case edits the real Scenario 1 observation through
+tests.helpers.tdm_gamma_fixtures
 and runs the jitted GAMMA and BETA controllers. Enemy row r is target r + 6.
 Each behaviour case first checks that BETA, or the wrong rule, gives a
 different answer on the same geometry, so BETA's code fails it and no case
@@ -49,7 +50,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 from jax import Array
-from tests.tdm_gamma_fixtures import (
+from tests.helpers.tdm_gamma_fixtures import (
     CANONICAL_CLASSES,
     OPPOSING_PADS,
     OWN_PADS,

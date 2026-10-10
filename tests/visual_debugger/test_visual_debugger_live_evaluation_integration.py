@@ -17,7 +17,7 @@ from scripts.dev.visual_debugger.scenarios import get_scenario
 
 import marl_battlegrounds._battle_client.control as control_module
 import marl_battlegrounds._battle_client.service as service_module
-import marl_battlegrounds.evaluation.capture as capture_module
+import marl_battlegrounds.evaluation._recording.capture as capture_module
 from marl_battlegrounds._battle_client.control import create_session
 from marl_battlegrounds._battle_client.evaluation_bridge import (
     DebuggerEvaluationLaunchSpecificationV1,

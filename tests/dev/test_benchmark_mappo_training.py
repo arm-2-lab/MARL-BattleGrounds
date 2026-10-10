@@ -20,7 +20,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scripts.dev import benchmark_mappo_training as bench
+from scripts.dev.benchmarks import benchmark_mappo_training as bench
 
 from marl_battlegrounds.baselines.ppo import PPOMetrics
 from marl_battlegrounds.training._compilation import training_compiler_options

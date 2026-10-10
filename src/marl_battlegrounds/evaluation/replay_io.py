@@ -30,17 +30,10 @@ from typing import Literal, cast
 
 from pydantic import ValidationError
 
-from marl_battlegrounds.evaluation.models import (
-    AssignedPolicySlotV1,
-    AssignedPolicySlotV2,
-    EvaluationEpisodeContext,
-    EvaluationFrame,
-    EvaluationFrameV1,
-    EvaluationModel,
-    EvaluationTransitionV1,
-    canonical_json_bytes,
+from marl_battlegrounds.evaluation._recording.validation import (
+    validate_declared_model_tree,
 )
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ACTOR_POV_ARTIFACT_SCHEMA_ID,
     ActorPovReplayArtifactV1,
     ActorPovReplayArtifactV2,
@@ -52,7 +45,7 @@ from marl_battlegrounds.evaluation.pov import (
     validate_actor_pov_replay_artifact_v2,
     validate_actor_pov_replay_artifact_v3,
 )
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._replays.replay import (
     METRIC_REPORT_ARTIFACT_SCHEMA_ID,
     REPLAY_ARTIFACT_SCHEMA_ID,
     REPLAY_SCHEMA_VERSION,
@@ -62,9 +55,19 @@ from marl_battlegrounds.evaluation.replay import (
     _validate_metric_report_artifact_against_validated_replay_v1,  # pyright: ignore[reportPrivateUsage]
     validate_replay_artifact_v1,
 )
-from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactV2
-from marl_battlegrounds.evaluation.replay_v3 import ReplayArtifactV3
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
+from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
+from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+from marl_battlegrounds.evaluation.models import (
+    AssignedPolicySlotV1,
+    AssignedPolicySlotV2,
+    EvaluationEpisodeContext,
+    EvaluationFrame,
+    EvaluationFrameV1,
+    EvaluationModel,
+    EvaluationTransitionV1,
+    canonical_json_bytes,
+)
 from marl_battlegrounds.evaluation.scenario import (
     SCENARIO_EVALUATION_RECORD_SCHEMA_ID,
     SCENARIO_SCHEMA_VERSION_V2,
@@ -79,7 +82,6 @@ from marl_battlegrounds.evaluation.scenario import (
     validate_scenario_evaluation_record_v4,
     validate_scenario_evaluation_record_v5,
 )
-from marl_battlegrounds.evaluation.validation import validate_declared_model_tree
 
 DEFAULT_MAX_REPLAY_FILE_SIZE_BYTES_V1 = 1024**3
 DEFAULT_MAX_REPLAY_JSON_DEPTH_V1 = 128
@@ -1836,7 +1838,7 @@ def generated_replay_filename(
     identity is never shortened. Unknown seeds remain
     unknown. This helper neither reserves a path nor alters explicit caller paths.
     """
-    from marl_battlegrounds.evaluation.map_identity import recorded_map
+    from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
 
     if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
         raise ValueError("replay filename requires its full SHA-256 digest")

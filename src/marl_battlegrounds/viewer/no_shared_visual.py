@@ -8,19 +8,12 @@ helpers with validated frames. They return in-memory projections without writing
 artifacts or advancing the simulator.
 """
 
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_ID,
     NO_SHARED_OBS_ACTOR_PROJECTION_V2,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.models import (
-    EvaluationEpisodeContext,
-    EvaluationFrame,
-    VersionedIdentityV1,
-    canonical_digest_sha256,
-    evaluation_context_type,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._replays.pov import (
     ACTOR_POV_CONTENT_SCHEMA_ID,
     ACTOR_POV_SCHEMA_VERSION,
     ActorPovAdjacentTransitionSlice,
@@ -31,11 +24,18 @@ from marl_battlegrounds.evaluation.pov import (
     build_actor_pov_adjacent_transition_slice_v1,
     build_actor_pov_current_slice_v1,
 )
-from marl_battlegrounds.evaluation.replay import (
+from marl_battlegrounds.evaluation._replays.replay import (
     ReplayArtifactV1,
     validate_replay_artifact_v1,
 )
-from marl_battlegrounds.evaluation.replay_v2 import ReplayArtifactV2
+from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
+from marl_battlegrounds.evaluation.models import (
+    EvaluationEpisodeContext,
+    EvaluationFrame,
+    VersionedIdentityV1,
+    canonical_digest_sha256,
+    evaluation_context_type,
+)
 
 _VISUAL_PROJECTION_V1 = VersionedIdentityV1(
     identifier=NO_SHARED_OBS_ACTOR_PROJECTION_ID,

@@ -20,7 +20,8 @@ but unmeasured game without playing it again, opens the BattleClient with each
 game's map, seed, spawn_mode and controllers, stops cleanly at Ctrl-C or after
 an unfinished game, reads recorded games on a later run, and writes
 results.csv and results.md. Fakes replace the BattleClient, replays and
-metrics, so no JAX program is compiled; tests/evaluation/test_replay_metrics.py runs
+metrics, so no JAX program is compiled;
+tests/evaluation/replays/test_replay_metrics.py runs
 check_replay and record_game on real replays.
 """
 
@@ -148,7 +149,8 @@ def _recorded_map(context: Any) -> SimpleNamespace:  # noqa: ANN401
 
 def test_check_replay_names_every_difference(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "marl_battlegrounds.evaluation.map_identity.recorded_map", _recorded_map
+        "marl_battlegrounds.evaluation._recording.map_identity.recorded_map",
+        _recorded_map,
     )
     game = schedule([AGAINST])[1]  # Map 48, Team A on the right, seed 8.
     human_games.check_replay(game, _replay())

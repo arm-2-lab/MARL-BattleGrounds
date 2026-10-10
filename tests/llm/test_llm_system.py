@@ -20,8 +20,8 @@ import jax
 import numpy as np
 import pytest
 from jax import Array
-from tests.llm_fixtures import FakeModel as Model
-from tests.llm_fixtures import send, server
+from tests.helpers.llm_fixtures import FakeModel as Model
+from tests.helpers.llm_fixtures import send, server
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core.types import (
@@ -397,7 +397,7 @@ def test_partial_game_reset_replaces_only_that_lanes_history(
 
 def test_public_death_and_respawn_preserve_living_turn_history() -> None:
     import jax.numpy as jnp
-    from tests.evaluation_fixtures import evaluation_env_config
+    from tests.helpers.evaluation_fixtures import evaluation_env_config
 
     from marl_battlegrounds.core import env as core
 

@@ -60,13 +60,15 @@ from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from marl_battlegrounds.evaluation.events import team_deathmatch_home_fall_slots_v1
+from marl_battlegrounds.evaluation._recording.events import (
+    team_deathmatch_home_fall_slots_v1,
+)
+from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1,
     AgentDiedEventV1,
     LethalDamageContributionEventV1,
 )
-from marl_battlegrounds.evaluation.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.rendering.scene import (
     AbilityActivatedEventV2,
     AgentDiedEventV2,
@@ -242,7 +244,7 @@ def oracle_tick_takedowns_v1(
     start_positions : sequence of (x, y) or None, optional, keyword-only
         Every global slot's position at the transition start (usually the
         start frame's ``snapshot.agent_positions``), for the home-fall rule
-        (``evaluation.events.team_deathmatch_home_fall_slots_v1``). None (the
+        (``evaluation._recording.events.team_deathmatch_home_fall_slots_v1``). None (the
         default) leaves ``home_falls`` None (points unknown).
 
     Returns

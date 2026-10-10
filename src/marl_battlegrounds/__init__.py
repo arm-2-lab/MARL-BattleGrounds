@@ -38,8 +38,17 @@ if TYPE_CHECKING:
         init_episode_tracking,
         track_episode_step,
     )
+    from marl_battlegrounds.evaluation._tournaments.canonical import (
+        run_canonical_tournament,
+    )
+    from marl_battlegrounds.evaluation._tournaments.population_selection import (
+        select_initial_population,
+    )
+    from marl_battlegrounds.evaluation._tournaments.tournament import (
+        TournamentResult,
+        run_tournament,
+    )
     from marl_battlegrounds.evaluation.analysis import replay_metrics
-    from marl_battlegrounds.evaluation.canonical import run_canonical_tournament
     from marl_battlegrounds.evaluation.evaluate import (
         EpisodeSpec,
         evaluate,
@@ -62,19 +71,12 @@ if TYPE_CHECKING:
         system_step_data,
         team,
     )
-    from marl_battlegrounds.evaluation.population_selection import (
-        select_initial_population,
-    )
     from marl_battlegrounds.evaluation.results import (
         CanonicalTournamentResult,
         EvaluationResult,
         load_results,
     )
     from marl_battlegrounds.evaluation.run_writer import RunWriter
-    from marl_battlegrounds.evaluation.tournament import (
-        TournamentResult,
-        run_tournament,
-    )
     from marl_battlegrounds.portable_models import export_model
     from marl_battlegrounds.released_models import download_models
     from marl_battlegrounds.tasks import (
@@ -174,10 +176,10 @@ _MODULES = {
     "shared_policy": "evaluation.policy_execution",
     "system_step_data": "evaluation.policy_execution",
     "RunWriter": "evaluation.run_writer",
-    "TournamentResult": "evaluation.tournament",
-    "run_tournament": "evaluation.tournament",
-    "run_canonical_tournament": "evaluation.canonical",
-    "select_initial_population": "evaluation.population_selection",
+    "TournamentResult": "evaluation._tournaments.tournament",
+    "run_tournament": "evaluation._tournaments.tournament",
+    "run_canonical_tournament": "evaluation._tournaments.canonical",
+    "select_initial_population": "evaluation._tournaments.population_selection",
     "balanced_spawn_configs": "tasks",
     "canonical_tournament_rosters": "tasks",
     "list_tdm_maps": "tasks",

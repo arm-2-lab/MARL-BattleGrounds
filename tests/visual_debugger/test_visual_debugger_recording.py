@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     captured_team_deathmatch_threshold_trajectory,
@@ -24,7 +24,7 @@ from marl_battlegrounds._battle_client.recording import (
     DebuggerReplayRecorderV1,
     build_debugger_recording_specification_v1,
 )
-from marl_battlegrounds.evaluation.metrics import (
+from marl_battlegrounds.evaluation._metrics.metrics import (
     EvaluationEpisodeCompletionV1,
     EvaluationEpisodeObserverV1,
     EvaluationMetricReducerStateV1,
@@ -33,15 +33,15 @@ from marl_battlegrounds.evaluation.metrics import (
     EvaluationTransitionViewV1,
     SufficientStatisticDraftV1,
 )
+from marl_battlegrounds.evaluation._replays.replay import (
+    ReplayBundleV1,
+    ReplayWrapperMetadataV1,
+    RuntimeProvenanceV1,
+)
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     EvaluationEpisodeContextV1,
     EvaluationFrameV1,
-)
-from marl_battlegrounds.evaluation.replay import (
-    ReplayBundleV1,
-    ReplayWrapperMetadataV1,
-    RuntimeProvenanceV1,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     LoadedReplayBundleV1,

@@ -18,8 +18,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from examples.llm import parse_words, prompt_for_words, run
-from tests.llm_fixtures import FakeModel, server
+from examples.play.llm import parse_words, prompt_for_words, run
+from tests.helpers.llm_fixtures import FakeModel, server
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds import llm
@@ -355,7 +355,7 @@ def test_package_factory_command_and_resume_use_the_same_llm_system(
         return original(reference)
 
     monkeypatch.setattr(_method_loading, "load_factory", load)
-    reference = "examples.llm:" + (
+    reference = "examples.play.llm:" + (
         "make_custom_system" if custom else "make_default_system"
     )
     with server(model.serve) as url:
@@ -663,10 +663,10 @@ def test_partial_tournament_resume_acquires_no_finished_llm_client(
     from dataclasses import replace
     from typing import cast
 
-    from marl_battlegrounds.evaluation.policy_execution import PolicyTree, policy
-    from marl_battlegrounds.evaluation.recording_context import (
+    from marl_battlegrounds.evaluation._recording.recording_context import (
         capture_recording_provenance,
     )
+    from marl_battlegrounds.evaluation.policy_execution import PolicyTree, policy
 
     provenance = capture_recording_provenance()
     evaluator = import_module("marl_battlegrounds.evaluation.evaluate")
@@ -734,12 +734,12 @@ def test_historical_resume_keeps_one_llm_client_across_pending_pairs(
 ) -> None:
     from dataclasses import replace
 
-    from tests.tournament_legacy_fixtures import create_legacy_tournament
+    from tests.helpers.tournament_legacy_fixtures import create_legacy_tournament
 
-    from marl_battlegrounds.evaluation.policy_execution import policy
-    from marl_battlegrounds.evaluation.recording_context import (
+    from marl_battlegrounds.evaluation._recording.recording_context import (
         capture_recording_provenance,
     )
+    from marl_battlegrounds.evaluation.policy_execution import policy
 
     provenance = capture_recording_provenance()
     evaluator = import_module("marl_battlegrounds.evaluation.evaluate")

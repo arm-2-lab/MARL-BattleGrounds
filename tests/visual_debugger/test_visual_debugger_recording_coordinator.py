@@ -44,7 +44,7 @@ from scripts.dev.visual_debugger.replay_service import ReplayViewerService
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from scripts.dev.visual_debugger.server import DebuggerHTTPServer, create_server
 from tests.export_visual_debugger_replay_artifacts import export_artifacts
-from tests.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
 
 import marl_battlegrounds._battle_client.recording_coordinator as coordinator_module
 import marl_battlegrounds._battle_client.service as debugger_service_module
@@ -74,21 +74,21 @@ from marl_battlegrounds._battle_client.service import (
     DebuggerService,
     ServiceCommandResult,
 )
-from marl_battlegrounds.evaluation.actor_projection import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationEpisodeObserverV1
+from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
 )
-from marl_battlegrounds.evaluation.metrics import EvaluationEpisodeObserverV1
+from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV3,
     EvaluationTransitionV1,
 )
-from marl_battlegrounds.evaluation.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.replay_io import (
     load_replay,
     load_replay_bundle_v1,
     preflight_replay_destination,
 )
-from marl_battlegrounds.evaluation.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.viewer.server import HttpCoordinatorSnapshot
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]

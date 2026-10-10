@@ -37,22 +37,25 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
-from marl_battlegrounds.evaluation.episode_metrics import (
+from marl_battlegrounds.evaluation._metrics.episode_metrics import (
     MetricValues,
     PriorityTotals,
     initialize_priority,
     priority_values,
     update_priority,
 )
-from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
-from marl_battlegrounds.evaluation.full_metrics import (
+from marl_battlegrounds.evaluation._metrics.full_metrics import (
     FullTotals,
     full_values,
     initialize_full,
     update_full,
 )
+from marl_battlegrounds.evaluation._replays.replay_capture import (
+    ReplayPackets,
+    capture_packets,
+)
+from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
 from marl_battlegrounds.evaluation.metric_catalog import FULL_METRIC_NAMES
-from marl_battlegrounds.evaluation.replay_capture import ReplayPackets, capture_packets
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
@@ -84,8 +87,10 @@ from marl_battlegrounds.tasks import (
 
 if TYPE_CHECKING:
     from marl_battlegrounds.autoreset import FinalEpisodeData
+    from marl_battlegrounds.evaluation._recording.recording_types import (
+        EpisodeStartRecords,
+    )
     from marl_battlegrounds.evaluation.policy_execution import SystemInput
-    from marl_battlegrounds.evaluation.recording_types import EpisodeStartRecords
 
 type MetricMode = Literal["none", "priority", "full"]
 type CoreStepResult = tuple[EnvState, Observation, Reward, DoneFlags, ActionMask, Info]

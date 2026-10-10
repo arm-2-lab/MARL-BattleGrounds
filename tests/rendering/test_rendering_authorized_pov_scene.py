@@ -1,6 +1,7 @@
 """Check NoSharedObs scene decoding and its information limits.
 
-Red Zone scene records: for every shared geometry case (tests.red_zone_scene_cases)
+Red Zone scene records: for every shared geometry case
+(tests.helpers.red_zone_scene_cases)
 the Oracle scene of a context with resolved config V2 carries AuthorizedMapV2
 whose strips come from Core's side rule and the float32 strip rule, the stored
 bounds are the bounds Core's classifier red_zone_death_mask uses under jit (each
@@ -29,13 +30,13 @@ import numpy as np
 import pytest
 from jax import Array
 from pydantic import TypeAdapter, ValidationError
-from tests.evaluation_fixtures import (
+from tests.helpers.evaluation_fixtures import (
     CapturedEvaluationTrajectory,
     captured_evaluation_trajectory,
     current_captured_evaluation_trajectory,
     pre_red_zone_captured_evaluation_trajectory,
 )
-from tests.red_zone_scene_cases import (
+from tests.helpers.red_zone_scene_cases import (
     RED_ZONE_GEOMETRY_CASES,
     RedZoneGeometryCase,
     expected_red_zone,
@@ -44,14 +45,8 @@ from tests.red_zone_scene_cases import (
 
 from marl_battlegrounds.core.env import red_zone_death_mask
 from marl_battlegrounds.core.types import EnvConfig
-from marl_battlegrounds.evaluation.metrics import EvaluationTransitionViewV1
-from marl_battlegrounds.evaluation.models import (
-    EvaluationEpisodeContextV1,
-    StaticMechanicsCatalogV1,
-    canonical_digest_sha256,
-    float32_value,
-)
-from marl_battlegrounds.evaluation.pov import (
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
+from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovActionMaskV1,
     ActorPovAxisMappingV1,
     ActorPovCurrentSliceV1,
@@ -59,6 +54,12 @@ from marl_battlegrounds.evaluation.pov import (
     ActorPovSpawnLifecycleV1,
     build_actor_pov_adjacent_transition_slice_v1,
     build_actor_pov_current_slice_v1,
+)
+from marl_battlegrounds.evaluation.models import (
+    EvaluationEpisodeContextV1,
+    StaticMechanicsCatalogV1,
+    canonical_digest_sha256,
+    float32_value,
 )
 from marl_battlegrounds.rendering import evaluation_wire_features as wire
 from marl_battlegrounds.rendering.authorized_pov_scene import (

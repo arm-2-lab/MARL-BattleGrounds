@@ -16,7 +16,7 @@ from scripts.dev.visual_debugger.scenarios import (
     iter_scenario_summaries,
     list_scenarios,
 )
-from tests.visual_debugger_fixtures import (
+from tests.helpers.visual_debugger_fixtures import (
     debugger_test_launch_specification,
     rejection_lane_scenario,
     submit_fixture_frame,

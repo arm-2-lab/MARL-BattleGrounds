@@ -203,7 +203,7 @@ PY
 uv run --no-sync pytest \
   tests/environment/test_gpu_workflows.py::test_native_and_external_batch_match_through_jit_and_scan \
   tests/environment/test_gpu_workflows.py::test_dynamic_system_scan_preserves_memory_and_partial_resets \
-  tests/evaluation/test_gpu_metrics.py::test_selected_metrics_match_full_across_chunks_and_resets \
+  tests/evaluation/metrics/test_gpu_metrics.py::test_selected_metrics_match_full_across_chunks_and_resets \
   tests/policies/test_gpu_policy.py::test_policy_actor_memory_and_dynamic_values_remain_separate \
   tests/environment/test_gpu_workflows.py::test_selected_replay_evaluation_needs_no_metrics_or_files \
   -q \

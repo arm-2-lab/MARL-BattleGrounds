@@ -58,12 +58,12 @@ from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.evaluation.models import (
     AbilityActivatedEventV1,
     RecipientHealthResolutionEventV1,
     SourceDamageOutputEventV1,
 )
-from marl_battlegrounds.evaluation.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.rendering.scene import (
     AbilityActivatedEventV2,
     RecipientHealthResolutionEventV2,

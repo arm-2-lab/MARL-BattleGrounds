@@ -677,7 +677,7 @@ def test_gpu_gate_distinguishes_clean_qualification_from_dirty_diagnostic(
         "test_native_and_external_batch_match_through_jit_and_scan",
         "tests/environment/test_gpu_workflows.py::"
         "test_dynamic_system_scan_preserves_memory_and_partial_resets",
-        "tests/evaluation/test_gpu_metrics.py::"
+        "tests/evaluation/metrics/test_gpu_metrics.py::"
         "test_selected_metrics_match_full_across_chunks_and_resets",
         "tests/policies/test_gpu_policy.py::"
         "test_policy_actor_memory_and_dynamic_values_remain_separate",
