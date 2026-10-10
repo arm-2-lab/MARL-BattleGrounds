@@ -11,12 +11,14 @@ Contracts checked with a tiny untrained per-agent Policy on CPU:
 - tampered, padded and non-format files are refused or recognized;
 - host Policies are refused;
 - the loader's apply and init hooks keep their pinned code digests, because
-  saved runs record them.
+  saved runs record them (checked on Python 3.14, which made the pins: the
+  digest is of Python bytecode, which differs between versions).
 The six real Season 0 models are checked against their originals by the
 release proof in artifacts, not here.
 """
 
 import json
+import sys
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -285,6 +287,10 @@ def test_host_policies_are_refused(tmp_path: Path) -> None:
     assert not Path(tmp_path / "host.zip").exists()
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="Saved code digests reproduce only on the Python that made them",
+)
 def test_loader_hooks_keep_their_recorded_code_digest(
     made: tuple[Path, Path, Path],
 ) -> None:
