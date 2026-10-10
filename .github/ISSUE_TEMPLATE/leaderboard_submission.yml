@@ -96,7 +96,7 @@ body:
     id: starting-models
     attributes:
       label: Starting Models
-      description: Every model your run starts from or builds on, each with its SHA-256 hash (Rule 6.3). This includes released MARL-BGs models (Rule 3.1) and outside pretrained models (Rule 3.2). Write none if there are none.
+      description: Every model your run downloads or uses (opponents, teammates and starting weights), each with its SHA-256 hash (Rules 2.3 and 6.3). This includes released MARL-BGs models (Rule 3.1) and outside pretrained models (Rule 3.2). Write none if there are none.
     validations:
       required: true
 

@@ -117,7 +117,12 @@ _STEPS: tuple[tuple[int, str, str, StepGroup], ...] = (
     (2, "6.3", "A fresh clone of the commit", "must pass"),
     (3, "3.1, 3.4, 6.3", "entry.yaml is present and valid", "must pass"),
     (4, "2.3, 6.3", "Install from uv.lock and fetch starting models", "must pass"),
-    (5, "2.2, 6.5", "The train command runs offline, then stops", "must pass"),
+    (
+        5,
+        "2.2, 6.5",
+        "The train command runs with downloads off, then stops",
+        "must pass",
+    ),
     (6, "6.3", "The load function returns a Policy or System", "must pass"),
     (7, "6.6", "Export to a portable model file", "must pass"),
     (8, "7.1", "A choice saved within the training time", "measured here"),
@@ -132,7 +137,8 @@ class CheckStep:
     Attributes
     ----------
     number : int
-        The step number, 1 to 9, as in the tournaments guide.
+        The step number, 1 to 9, as in ``check_entry``'s list and the lines it
+        prints.
     rules : str
         The rulebook rules this step checks, for example ``"2.3, 6.3"``.
     title : str
@@ -725,7 +731,10 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
         ["uv", "lock"], cwd=folder, capture_output=True, text=True, check=False
     )
     if done.returncode != 0:
-        raise RuntimeError(f"uv lock failed:\n{_tail(done.stderr)}")
+        raise RuntimeError(
+            f"uv lock failed:\n{_tail(done.stderr)}\n"
+            f"Fix the cause, then run uv lock in {folder}."
+        )
     print(
         "Next:\n"
         f"  cd {folder}\n"
@@ -750,6 +759,30 @@ def _machine() -> str:
             if done.returncode == 0 and names:
                 return names[0].strip()
     return "No NVIDIA GPU found"
+
+
+_FOREIGN_SETTINGS = (
+    "VIRTUAL_ENV",
+    "UV_PROJECT_ENVIRONMENT",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+)
+
+
+def _own_environment() -> dict[str, str]:
+    """Return this process's environment without settings that leak into the entry.
+
+    ``VIRTUAL_ENV``, ``UV_PROJECT_ENVIRONMENT``, ``PYTHONPATH`` and
+    ``PYTHONHOME`` would run the entry's code in another Python environment;
+    ``HF_HUB_CACHE`` and ``HUGGINGFACE_HUB_CACHE`` would let it read models
+    from a shared cache instead of the check's fresh ``HF_HOME``, so an
+    undeclared model could pass here and fail in the official run.
+    """
+    return {
+        key: value for key, value in os.environ.items() if key not in _FOREIGN_SETTINGS
+    }
 
 
 def _sha256(path: Path) -> str:
@@ -857,13 +890,10 @@ class _Checker:
 
         The clone's .venv comes first on PATH, uv never syncs again, and
         HF_HOME is the check's own fresh cache. Offline adds HF_HUB_OFFLINE
-        and UV_OFFLINE. The caller's PYTHONPATH and VIRTUAL_ENV are dropped.
+        and UV_OFFLINE. Settings that would point the entry at another
+        environment or model cache are dropped (see _own_environment).
         """
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key not in ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME")
-        }
+        env = _own_environment()
         venv = self.clone / ".venv"
         env.update(
             VIRTUAL_ENV=str(venv),
@@ -957,11 +987,7 @@ class _Checker:
             raise _StepFailedError(
                 f"uv is not installed. Install it with: {UV_INSTALL}"
             )
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key not in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH")
-        }
+        env = _own_environment()
         env["CUDA_VISIBLE_DEVICES"] = ""
         started = time.monotonic()
         code, _, err = _run(
@@ -1347,10 +1373,16 @@ def check_entry(
         text = json.dumps(result.to_dict(), indent=2) + "\n"
         target.write_text(text, encoding="utf-8")
     verdict = (
-        "Passed: every must-pass step passed."
+        "Passed: no must-pass step failed."
         if result.passed
         else "Failed: a must-pass step failed."
     )
+    waiting = [step.number for step in result.must_pass if step.status == "skipped"]
+    if result.passed and waiting:
+        verdict += (
+            f" Steps {', '.join(map(str, waiting))} were not checked: no choice was "
+            "saved yet (see step 8)."
+        )
     print(verdict + (f" Record: {result.record}" if result.record else ""))
     return result
 
@@ -1370,7 +1402,9 @@ def _remote_url(root: Path, commit: str) -> str:
 
     Raises ValueError when no remote branch holds the commit. An SSH address
     such as ``git@github.com:team/entry.git`` becomes
-    ``https://github.com/team/entry``.
+    ``https://github.com/team/entry``. A user name or token inside the
+    address (``https://user:TOKEN@github.com/...``) is removed, so it never
+    reaches the printed link or the public issue.
     """
     branches = _git(root, "branch", "-r", "--contains", commit).splitlines()
     branches = [line.strip() for line in branches if "->" not in line]
@@ -1382,6 +1416,12 @@ def _remote_url(root: Path, commit: str) -> str:
     ssh = re.fullmatch(r"(?:ssh://)?git@([^:/]+)[:/](.+)", url)
     if ssh:
         url = f"https://{ssh.group(1)}/{ssh.group(2)}"
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme in ("http", "https") and "@" in parts.netloc:
+        host = parts.hostname or ""
+        url = parts._replace(
+            netloc=host + (f":{parts.port}" if parts.port else "")
+        ).geturl()
     return url.removesuffix(".git")
 
 

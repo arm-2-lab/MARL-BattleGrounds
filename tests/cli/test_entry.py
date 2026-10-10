@@ -18,7 +18,8 @@ clones, validates entry.yaml and saves its record under .git, where
 submit_entry reads it.
 
 submit_entry refuses uncommitted changes, a commit on no remote branch and a
-commit without a passing check. Its link fills exactly the form's text fields
+commit without a passing check. A user name or token inside the remote's
+address never reaches the link. Its link fills exactly the form's text fields
 other than team (read from .github/ISSUE_TEMPLATE/leaderboard_submission.yml)
 plus the title; a link over the length limit falls back to the title alone
 and prints the values. play_limits plays 2 self-play games on the CPU through
@@ -202,6 +203,8 @@ def test_check_and_submit(
     _git(starter, "push", "--quiet", "origin", "HEAD:refs/heads/main")
     with pytest.raises(ValueError, match="no passing check"):
         entry.submit_entry(starter, open_browser=False)
+    _git(starter, "remote", "set-url", "origin", "https://me:FAKE@github.com/t/e.git")
+    assert entry._remote_url(starter, commit) == "https://github.com/t/e"
 
 
 def test_form_fields_are_the_form_files_text_fields() -> None:

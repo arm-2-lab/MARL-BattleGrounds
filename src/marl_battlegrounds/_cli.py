@@ -897,9 +897,11 @@ def _run_entry(namespace: argparse.Namespace, parser: argparse.ArgumentParser) -
     Returns
     -------
     int
-        0 when the function finishes. For ``check``, 0 when every must-pass
-        step passed and 1 when one failed; the steps measured on this machine
-        never change it.
+        0 when the function finishes. For ``check``, 0 when no must-pass step
+        failed and 1 when one failed; the steps measured on this machine never
+        change it. 1, with the message on standard error, when the function
+        raises RuntimeError: Git is missing, a Git command fails (for example
+        outside a Git repository), or ``uv lock`` fails.
 
     Raises
     ------
@@ -926,14 +928,18 @@ def _run_entry(namespace: argparse.Namespace, parser: argparse.ArgumentParser) -
         parser.error("entry check takes a folder or --repository, not both")
     from marl_battlegrounds.entry import check_entry, new_entry, submit_entry
 
-    if action == "new":
-        assert folder is not None  # argparse requires the new folder.
-        new_entry(folder, name=namespace.name)
-        return 0
-    if action == "submit":
-        submit_entry(folder or ".", open_browser=not namespace.no_browser)
-        return 0
-    result = check_entry(folder or ".", repository=repository, commit=commit)
+    try:
+        if action == "new":
+            assert folder is not None  # argparse requires the new folder.
+            new_entry(folder, name=namespace.name)
+            return 0
+        if action == "submit":
+            submit_entry(folder or ".", open_browser=not namespace.no_browser)
+            return 0
+        result = check_entry(folder or ".", repository=repository, commit=commit)
+    except RuntimeError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
     if result.passed:
         print("Entry Check: Passed")
         return 0

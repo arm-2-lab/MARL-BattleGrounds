@@ -161,6 +161,8 @@ python -m marl_battlegrounds entry new my-entry
 cd my-entry
 git add . && git commit -m "First entry"
 python -m marl_battlegrounds entry check
+git remote add origin <your GitHub repository URL>
+git push -u origin HEAD
 python -m marl_battlegrounds entry submit
 ```
 
@@ -170,8 +172,10 @@ python -m marl_battlegrounds entry submit
 | `entry check` | Checks your current commit the way we will: a fresh clone, install from `uv.lock`, your starting models and their hashes, a 15-minute training test, loading, export to a portable model file and the play limits (Rule 4). Saves the result in `.git/marl-bgs-entry-check/COMMIT.json`. |
 | `entry submit` | Opens the GitHub issue form with your answers filled in and prints the same link (`--no-browser` only prints). It refuses uncommitted changes, a commit on no remote branch and a commit without a passing check. |
 
-The check has two groups. Must-pass steps run the same on any machine, and a
-failure blocks `entry submit`. Measured-here steps (a choice saved within the
+The check has two groups. A failed must-pass step blocks `entry submit`.
+Loading and export (steps 6 and 7) wait until the run has saved a choice: on
+a machine too slow to reach its first check in 15 minutes they are skipped,
+not passed, and the check says so. Measured-here steps (a choice saved within the
 15 minutes, and the play limits) show this machine's GPU and never block: we
 decide them on our RTX 5090. Your load function must load what your run last
 saved as its choice; for the built-in trainer,
@@ -182,6 +186,11 @@ names it.
 minutes, so run it on a machine with a GPU; without one the play limits say
 "Not measured". The issue's number and time are your arrival receipt (Rule
 7.3). If your repository is private, tick the box on the form (Rule 6.4).
+An entry that uses an outside pretrained model (Rule 3.2) cannot pass step 4
+yet, because the check cannot fetch it: fill in the form by hand instead.
+
+Tested: the starter, from `entry new` to a passing `entry check`, on Linux with
+an RTX 5090. Other systems: not tested yet; they should work.
 
 ## Next
 
