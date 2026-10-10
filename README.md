@@ -11,6 +11,8 @@
 
 [Installation](#installation) | [Quick Start](#quick-start) | [Baselines](#baselines) | [Guides](#guides) | [See Also](#see-also) | [Citation](#citation)
 
+![Two teams fight a Team Deathmatch game in the analytical Replay Viewer](https://github.com/arm-2-lab/MARL-BattleGrounds/raw/main/docs/images/battle.gif)
+
 **MARL-BattleGrounds (MARL-BGs)** is an easy-to-use, JAX-native benchmark
 for heterogeneous and competitive team-vs-team multi-agent reinforcement
 learning (MARL). It is designed to be sample-efficient, computationally

@@ -54,6 +54,8 @@ mlruns/
 # Large generated media/data artifacts
 *.mp4
 *.gif
+# The README's battle clip is the one tracked GIF.
+!docs/images/battle.gif
 *.webm
 *.npz
 *.npy
