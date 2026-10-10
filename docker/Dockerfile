@@ -6,8 +6,8 @@
 #   docker build -f docker/Dockerfile -t marl-battlegrounds .                       # CPU
 #   docker build -f docker/Dockerfile --build-arg BUILD=cuda12 -t marl-battlegrounds:cuda12 .
 # Published images are built by the release workflow from the release tag:
-#   ghcr.io/oceansystemslab/marl-battlegrounds:<version>         (CPU; amd64, arm64)
-#   ghcr.io/oceansystemslab/marl-battlegrounds:<version>-cuda12  (NVIDIA; amd64)
+#   ghcr.io/arm-2-lab/marl-battlegrounds:<version>         (CPU; amd64, arm64)
+#   ghcr.io/arm-2-lab/marl-battlegrounds:<version>-cuda12  (NVIDIA; amd64)
 # How to run them: docs/install.md. docker/entrypoint.sh starts the commands.
 #
 # Build arguments:

@@ -18,13 +18,16 @@ and the two commands, installs nothing and does not install uv):
 The notebooks (``examples/quickstart.ipynb`` and
 ``examples/evaluate/evaluation_analysis.ipynb``) are saved unexecuted, every code cell
 compiles as plain Python, and both start with the same install cell. That cell
-installs nothing outside Colab and Kaggle. On them it pip-installs
-``marl-battlegrounds[all]==1.0.0`` plus the build of the JAX plugin already
-there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else none.
+installs nothing outside Colab. In Colab, when its ``VERSION`` (always the
+package's own version) is already installed, it installs nothing; otherwise it
+pip-installs ``marl-battlegrounds[all]==VERSION`` plus the build of the JAX
+plugin already there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else
+none, and then restarts the runtime with ``exit(0)``.
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
-``pyproject.toml`` (plus ``cpu``), and ``play.py``, the Dockerfile and the
-quick start notebook name the same six released Season 0 models.
+``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
+six released Season 0 models, and every released model the quick start
+notebook names is one of them.
 
 ``play.py`` prints a plain message instead of a traceback when the
 BattleClient refuses a setting (status 2) or the system refuses (status 1),
@@ -163,25 +166,41 @@ def _install_cells() -> list[str]:
 
 
 def _run_install_cell(
-    monkeypatch: pytest.MonkeyPatch, *, service: str | None, plugins: tuple[str, ...]
-) -> list[list[str]]:
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    colab: bool,
+    plugins: tuple[str, ...] = ("jax",),
+    installed: str | None = None,
+) -> tuple[list[list[str]], bool]:
     cell = _install_cells()[0]
     calls: list[list[str]] = []
 
     def record(command: list[str], **_kwargs: object) -> None:
         calls.append(command)
 
+    def version(name: str) -> str:
+        if installed is None:
+            raise importlib.metadata.PackageNotFoundError(name)
+        return installed
+
     distributions = [SimpleNamespace(metadata={"Name": name}) for name in plugins]
     monkeypatch.setattr(subprocess, "run", record)
     monkeypatch.setattr(importlib.metadata, "distributions", lambda: distributions)
-    monkeypatch.delenv("KAGGLE_KERNEL_RUN_TYPE", raising=False)
+    monkeypatch.setattr(importlib.metadata, "version", version)
     monkeypatch.delitem(sys.modules, "google.colab", raising=False)
-    if service == "colab":
+    if colab:
         monkeypatch.setitem(sys.modules, "google.colab", ModuleType("google.colab"))
-    elif service == "kaggle":
-        monkeypatch.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
-    exec(cell, {})
-    return calls
+    try:
+        exec(cell, {})
+    except SystemExit as stop:
+        assert stop.code == 0
+        return calls, True
+    return calls, False
+
+
+def _package_version() -> str:
+    pyproject = tomllib.loads((_REPOSITORY / "pyproject.toml").read_text())
+    return pyproject["project"]["version"]
 
 
 def test_both_notebooks_start_with_the_same_install_cell() -> None:
@@ -190,36 +209,33 @@ def test_both_notebooks_start_with_the_same_install_cell() -> None:
 
 
 @pytest.mark.parametrize(
-    ("service", "plugins", "package"),
+    ("plugins", "extras"),
     [
-        (
-            "colab",
-            ("jax", "jax-cuda13-plugin"),
-            "marl-battlegrounds[all,cuda13]==1.0.0",
-        ),
-        (
-            "colab",
-            ("jax", "jax-cuda12-plugin"),
-            "marl-battlegrounds[all,cuda12]==1.0.0",
-        ),
-        ("kaggle", ("jax", "libtpu"), "marl-battlegrounds[all,tpu]==1.0.0"),
-        ("kaggle", ("jax",), "marl-battlegrounds[all]==1.0.0"),
-        (None, ("jax", "jax-cuda13-plugin"), None),
+        (("jax", "jax-cuda13-plugin"), "all,cuda13"),
+        (("jax", "jax-cuda12-plugin"), "all,cuda12"),
+        (("jax", "libtpu"), "all,tpu"),
+        (("jax",), "all"),
     ],
 )
-def test_the_install_cell_matches_the_notebook_service(
-    monkeypatch: pytest.MonkeyPatch,
-    service: str | None,
-    plugins: tuple[str, ...],
-    package: str | None,
+def test_colab_installs_the_matching_build_and_restarts(
+    monkeypatch: pytest.MonkeyPatch, plugins: tuple[str, ...], extras: str
 ) -> None:
-    calls = _run_install_cell(monkeypatch, service=service, plugins=plugins)
-    expected = (
-        []
-        if package is None
-        else [[sys.executable, "-m", "pip", "install", "-q", package]]
-    )
-    assert calls == expected
+    calls, restarted = _run_install_cell(monkeypatch, colab=True, plugins=plugins)
+    package = f"marl-battlegrounds[{extras}]=={_package_version()}"
+    assert calls == [[sys.executable, "-m", "pip", "install", "-q", package]]
+    assert restarted
+
+
+@pytest.mark.parametrize(
+    ("colab", "installed"), [(False, None), (True, "VERSION"), (False, "VERSION")]
+)
+def test_the_install_cell_does_nothing_when_not_needed(
+    monkeypatch: pytest.MonkeyPatch, colab: bool, installed: str | None
+) -> None:
+    version = _package_version() if installed else None
+    calls, restarted = _run_install_cell(monkeypatch, colab=colab, installed=version)
+    assert calls == []
+    assert not restarted
 
 
 def _play_module() -> ModuleType:
@@ -249,7 +265,8 @@ def test_one_list_of_builds_and_released_models() -> None:
     )
     assert len(released) == 6
     assert set(re.findall(pattern, dockerfile)) == released
-    assert set(re.findall(pattern, notebook)) == released
+    named = set(re.findall(pattern, notebook))
+    assert named and named <= released
 
 
 @pytest.mark.parametrize(
