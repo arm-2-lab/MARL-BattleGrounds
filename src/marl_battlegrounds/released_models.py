@@ -153,12 +153,14 @@ class _Address:
 
 
 # A local folder path: an absolute path, not part of a URL or an hf:// address.
+# A path after a colon counts too, as in PATH lists and host:/home/sam.
 _ABSOLUTE_PATH = re.compile(
-    r"(?<![\w.:/\\~-])(/(?:[\w.@+~-]+/)*[\w.@+~-]+|[A-Za-z]:(?:\\{1,2}[\w.@+~ -]+)+)"
+    r"(?<![\w./\\~-])(/(?:[\w.@+~-]+/)*[\w.@+~-]+|[A-Za-z]:(?:[\\/]{1,2}[\w.@+~ -]+)+)"
 )
-# Home folders on Linux, macOS and Windows, as a path starts.
+# Home folders on Linux, macOS and Windows, anywhere in a path, so WSL's
+# /mnt/c/Users/sam counts; /root only as a path's start.
 _HOME_FOLDER = re.compile(
-    r"/home/[^/]+|/Users/[^/]+|/root(?:/|$)|[A-Za-z]:\\{1,2}Users\\"
+    r"/home/[^/]+|/Users/[^/]+|^/root(?:/|$)|[A-Za-z]:[\\/]{1,2}Users[\\/]"
 )
 _GPU_ID = re.compile(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 # Files read as text. A file with another suffix (or none) is read as text only
@@ -189,10 +191,11 @@ def _local_names() -> tuple[str, ...]:
 def _text_findings(text: str, local_names: tuple[str, ...]) -> list[str]:
     """Return the local folder paths and GPU ids in one text, in first-seen order."""
     found: dict[str, None] = {}
-    for match in _ABSOLUTE_PATH.finditer(text):
+    # A file:// URL names a local path: read it as that path.
+    for match in _ABSOLUTE_PATH.finditer(text.replace("file://", " ")):
         path = match.group(1)
         parts = {part.lower() for part in re.split(r"[/\\]+", path) if part}
-        if _HOME_FOLDER.match(path) or parts & set(local_names):
+        if _HOME_FOLDER.search(path) or parts & set(local_names):
             found[f"a folder on this computer: {path}"] = None
     for match in _GPU_ID.finditer(text):
         found[f"a GPU id: {match.group(0)}"] = None
@@ -225,11 +228,13 @@ def _local_path_findings(name: str, data: bytes) -> list[str]:
 
     Notes
     -----
-    A folder counts when it is an absolute path that starts in a home folder
-    (``/home/<user>``, ``/Users/<user>``, ``/root``, ``C:\Users``) or that has
-    this computer's user name or host name as one of its folder names. URLs and
-    ``hf://`` addresses never count, and neither does a name outside a path,
-    such as an author's name in a citation. Text is read from text suffixes,
+    A folder counts when it is an absolute path that passes through a home
+    folder (``/home/<user>``, ``/Users/<user>``, ``/mnt/c/Users/<user>``,
+    ``C:\Users`` or ``C:/Users``), starts at ``/root``, or has this computer's
+    user name or host name as one of its folder names. Paths in PATH lists,
+    after ``host:`` and in ``file://`` URLs count. Other URLs and ``hf://``
+    addresses never count, and neither does a name outside a path, such as an
+    author's name in a citation. Text is read from text suffixes,
     from JSON members of ZIP files, and from any other file that is valid UTF-8
     without NUL bytes; binary data such as weights is skipped, because its
     random bytes can look like a path. An unreadable ZIP gives one finding.

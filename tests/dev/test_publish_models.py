@@ -19,7 +19,9 @@ and a fake Hugging Face client. They check these contracts of
   refuses a public repository; ``--dry-run`` makes no Hugging Face call.
 - The shared local path rule (``released_models._local_path_findings``) finds
   home folders, Windows user folders and GPU ids, also inside a model file's
-  JSON, and skips URLs, ``hf://`` addresses, author names and binary data.
+  JSON, in PATH lists, after ``host:``, in WSL's ``/mnt/c/Users`` and in
+  ``file://`` URLs, and skips URLs, ``hf://`` addresses, author names and
+  binary data.
 - ``public_text`` gives each kind of local path its public name: training
   opponents (dataset address outside the dataset, folder inside it), released
   saves, unreleased saves, checkpoints and past copies, run folders, the Season 0
@@ -28,7 +30,9 @@ and a fake Hugging Face client. They check these contracts of
   ``metadata.derived_from`` and keeps the run's own ID; a cleaned model file
   keeps its program, weights and memory bytes.
 - Cards cite the paper from the README's citation, never the software;
-  ``with_citation`` replaces only that section and adds the arXiv tag.
+  ``with_citation`` replaces only that section and adds the arXiv tag. The
+  real README's paper citation names the same title and authors, in order, as
+  ``CITATION.cff``'s preferred citation.
 """
 
 # The fake inputs reuse the tool's private artifact paths.
@@ -40,6 +44,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import zipfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -494,6 +499,17 @@ def test_local_path_rule_finds_paths_and_skips_names_urls_and_binary() -> None:
         "a folder on this computer: /Users/sam/y",
         "a folder on this computer: C:\\Users\\sam\\x",
     ]
+    hidden = (
+        b"PATH=/usr/bin:/home/sam/bin\nhost:/home/kim/a\nC:/Users/sam/w\n"
+        b"/mnt/c/Users/sam/v\nfile:///home/lee/u\n"
+    )
+    assert _local_path_findings("e.txt", hidden) == [
+        "a folder on this computer: /home/sam/bin",
+        "a folder on this computer: /home/kim/a",
+        "a folder on this computer: C:/Users/sam/w",
+        "a folder on this computer: /mnt/c/Users/sam/v",
+        "a folder on this computer: /home/lee/u",
+    ]
     gpu = b'{"d": "GPU-6b11a0c4-14e8-6782-8932-1df56d599796"}'
     assert _local_path_findings("d.json", gpu) == [
         "a GPU id: GPU-6b11a0c4-14e8-6782-8932-1df56d599796"
@@ -664,3 +680,18 @@ def test_cards_cite_the_paper_and_take_its_arxiv_number(paper_readme: Path) -> N
     assert "Paper: https://arxiv.org/abs/2610.01234" in new and numbered in new
     assert new.endswith("## License\n\nApache.\n")
     assert publish.with_citation(new, numbered, "2610.01234") == new
+
+
+def test_readme_citation_matches_citation_cff() -> None:
+    root = Path(publish.__file__).resolve().parents[2]
+    entry, _ = publish.paper_citation((root / "README.md").read_text())
+    preferred = (root / "CITATION.cff").read_text().split("preferred-citation:", 1)[1]
+    title = re.search(r"^\s+title: \"(.+)\"$", preferred, re.MULTILINE)
+    bib_title = re.search(r"title\s*=\s*\{(.+)\},", entry)
+    bib_authors = re.search(r"author\s*=\s*\{(.+)\},", entry)
+    assert title and bib_title and bib_authors
+    assert bib_title.group(1).replace("{", "").replace("}", "") == title.group(1)
+    given = re.findall(r'given-names: "(.+)"', preferred)
+    family = re.findall(r'family-names: "(.+)"', preferred)
+    expected = [f"{last}, {first}" for first, last in zip(given, family, strict=True)]
+    assert bib_authors.group(1).split(" and ") == expected

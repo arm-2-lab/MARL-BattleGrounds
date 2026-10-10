@@ -11,13 +11,15 @@ makes the release public. Everything goes to the Hugging Face organization
     uv run --no-sync python scripts/dev/publish_models.py build-dataset --out RELEASE
     uv run --no-sync python scripts/dev/publish_models.py clean \\
         RELEASE/tdm-season-0-results --out CLEAN
+    uv run --no-sync python scripts/dev/publish_models.py upload \\
+        CLEAN/tdm-season-0-results --private
     uv run --no-sync python scripts/dev/publish_models.py clean \\
         RELEASE/tdm-season-0-* --out CLEAN2 --dataset-commit COMMIT
-    uv run --no-sync python scripts/dev/publish_models.py scan RELEASE
+    uv run --no-sync python scripts/dev/publish_models.py scan CLEAN2
     uv run --no-sync python scripts/dev/publish_models.py upload \\
-        RELEASE/tdm-season-0-recurrent-ippo --private
+        CLEAN2/tdm-season-0-recurrent-ippo --private
     uv run --no-sync python scripts/dev/publish_models.py collections --private
-    uv run --no-sync python scripts/dev/publish_models.py org-card --release RELEASE
+    uv run --no-sync python scripts/dev/publish_models.py org-card --release CLEAN2
     uv run --no-sync python scripts/dev/publish_models.py publish
     uv run --no-sync python scripts/dev/publish_models.py cards
     uv run --no-sync python scripts/dev/publish_models.py redo tdm-season-0-qmix
@@ -40,7 +42,10 @@ What each command reads and writes:
   ``training-records/`` folders (see public_path), saved descriptions get a new
   ID, and model files keep their program and weights byte for byte. Without
   ``--dataset-commit`` it cleans the dataset without its two games files, which
-  name the dataset's own commit; with it, everything else.
+  name the dataset's own commit; with it, everything else. ``COMMIT`` is the
+  commit that uploading ``CLEAN/tdm-season-0-results`` prints. Only the clean
+  copies pass ``scan`` and ``upload``, because the built folders still hold
+  local paths.
 - ``scan`` reads every file in a folder and refuses if any file holds a secret
   token or a local folder path. It names the files, never a secret it found.
 - ``upload`` scans one built folder, creates its repository as private if it
@@ -50,8 +55,9 @@ What each command reads and writes:
   the organization card (``README.md`` of the Space ``MARL-BattleGrounds/README``)
   from a built release and removes the Space's default page.
 - ``cards`` brings the citation of every card (six models, the dataset and the
-  organization) up to date with the README's ``## Citation``. Run it after the
-  citation in ``CITATION.cff`` changes.
+  organization) up to date with the README's ``## Citation``. Run it after that
+  section changes; keep ``CITATION.cff``'s preferred citation the same (a test
+  checks that they agree).
 - ``publish`` makes the six model repositories, the dataset, the two
   collections and the organization card public.
 - ``redo`` deletes and recreates one ``tdm-season-0-*`` repository, only while
@@ -59,8 +65,8 @@ What each command reads and writes:
 
 Every Hugging Face command takes ``--dry-run``: it prints the calls it would
 make and makes none, not even reads. Every command prints what it did. The tool
-never prints a token. It only reads ``artifacts/``; it writes only under
-``--out`` and to Hugging Face.
+never prints a token. It reads ``artifacts/`` and ``README.md``; it writes only
+under ``--out`` and to Hugging Face.
 
 Prerequisites: the locked environment with ``huggingface_hub``; the run folders
 under ``artifacts/paper-experiments/``; the converted model files; and, for the
@@ -73,7 +79,9 @@ change any existing file other than ``README.md``, ``steps.csv`` and
 again (``redo``) only while it is private. The one exception was the
 re-release of 10 October 2026, which replaced every file once with its
 ``clean`` copy (same programs and weights) and squashed each repository's
-history, so no earlier commit still names a local folder.
+history, so no earlier commit still names a local folder. Never squash or
+rewrite the dataset's history again: the model files and ``season-0-games``
+name its commit ``e8bc31c1f7c2dd679d115074ce953b1307d486d9``.
 
 JAX refresh rule
 ----------------
@@ -118,6 +126,7 @@ from huggingface_hub.errors import (
 from huggingface_hub.hf_api import CommitInfo, RepoFile
 
 from marl_battlegrounds.released_models import (
+    _GPU_ID,  # pyright: ignore[reportPrivateUsage]
     _local_path_findings,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -1890,8 +1899,9 @@ play, with fast and cheap experiments on one GPU.
 
 Each repository holds one trained model: a portable JAX file for every save
 from the start of its training to 250 million steps, `steps.csv` (one row per
-save, with its validation result) and the training records. Use them as
-opponents, as teammates, or as starting points for your own training.
+save, with its validation result where training checked that save) and the
+training records. Use them as opponents, as teammates, or as starting points
+for your own training.
 
 | Model | Season 0 rank | Elo | Tier | Saves |
 |---|---|---|---|---|
@@ -1932,7 +1942,6 @@ Questions: {CONTACT}. Everything here is released under Apache-2.0.
 """
 
 
-_GPU_ID = re.compile(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 _SAVE_STEP = re.compile(r"_(?:actor|checkpoint|past)_step_(\d+)_")
 # Where each kind of text file sits decides how a training opponent is named:
 # files outside the dataset name the dataset with its commit; files inside it
@@ -2030,8 +2039,9 @@ def public_path(path: str, role: Role, paths: PathMap) -> str:
           folder, a Season 0 save names its original folder in the dataset.
         - A save, checkpoint or past copy that is not released:
           ``not published (<kind> at step N)``.
-        - A run folder: ``training-records/<label>`` in its own repository,
-          else ``MARL-BattleGrounds/<repo>/training-records/<label>``.
+        - A run folder: ``training-records/<label>`` for role "outside" (a
+          file of a model repository names only that model's own runs), else
+          ``MARL-BattleGrounds/<repo>/training-records/<label>``.
         A path inside a folder keeps its remaining part after the new name.
         Any other path is returned unchanged, so the local path scan refuses it.
     """
@@ -2251,7 +2261,9 @@ def clean_repo(source: Path, target: Path, paths: PathMap) -> int:
     also inside model files) are re-signed (see resign_description). A model
     repository's ``steps.csv`` gets each model file's new size and SHA-256, and
     ``config.json`` the new SHA-256 of ``steps.csv``. Other files are hard
-    links when possible, else copies. Weights and programs never change.
+    links when possible, else copies. Weights and programs never change. The
+    card's "about N GB" line keeps the built folder's size; check it against
+    the copy, since shorter paths can make the copy smaller.
     """
     if target.exists():
         raise PublishError(f"{target} already exists; choose a new --out folder")
@@ -2736,8 +2748,9 @@ def org_card_command(api: HfApi, release: Path, *, private: bool, dry_run: bool)
 def cards(api: HfApi, *, dry_run: bool) -> int:
     """Bring every card's citation up to date with the README's.
 
-    Run after the citation in ``CITATION.cff`` and ``README.md`` changes, for
-    example when the paper gets its arXiv number.
+    Run after README.md's ``## Citation`` changes, for example when the paper
+    gets its arXiv number. Keep ``CITATION.cff``'s preferred citation the same;
+    a test checks that the two agree.
 
     Parameters
     ----------
