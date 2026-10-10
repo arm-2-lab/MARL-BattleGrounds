@@ -100,30 +100,15 @@ Pass live objects again on resume. `train(..., matchmaking=pfsp)` (from
 
 ## Use A Released Season 0 Model
 
-```bash
-python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-qmix@final
-```
-
-```python
-import marl_battlegrounds as marl_bgs
-from marl_battlegrounds import training
-qmix = marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-qmix@100M")  # an ordinary System
-config = training.TrainConfig(opponents={"self": 0.5, "MARL-BattleGrounds/tdm-season-0-qmix": 0.5})
-```
-
-The six Season 0 models are on Hugging Face with every save from 0 to 250M steps.
-Type a name anywhere a model goes: `load_method`, `evaluate`, opponents, partners,
-`initial_actor`, tournaments and the BattleClient. No `@` gives the save the model
-entered Season 0 with, `@final` the last save, `@100M` the last save at or before
-100,000,000 steps, and `@99_950_592` exactly that save. Each name downloads one file
-(3 to 19 MB) once into the Hugging Face cache. Saved runs record its exact
-`hf://...@<commit>/...` address, so resume uses the same file.
-`marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in the same portable
-format (actors trained with the default `parameter_sharing="all"`). See
+The six Season 0 models are on Hugging Face with every save from 0 to 250M steps. Type a
+name anywhere a model goes: training opponents, as in
+`opponents={"self": 0.5, "MARL-BattleGrounds/tdm-season-0-recurrent-ippo@100M": 0.5}`,
+partners, and `initial_actor` (copy the method and input scale from the model card).
+[Released Models](released_models.md) covers names and saves, the Hydra alias form,
+starting from a model, offline use and the results dataset. See
 [train_against_released_models.py](../examples/training/train_against_released_models.py).
-
-**Watch Out:** a step that does not exist fails and lists the nearest saves. On machines
-without internet, run `models download` first, then set `HF_HUB_OFFLINE=1`.
+`marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in the same
+portable format (actors trained with the default `parameter_sharing="all"`).
 
 ## Curriculum And Rewards
 
