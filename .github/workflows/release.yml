@@ -1,15 +1,20 @@
 # Build, check, install-test and publish a release of marl-battlegrounds.
-# Publishing a GitHub Release runs every job: build the wheel and sdist, check
-# them, write one constraints file per GPU choice from uv.lock, install the
-# wheel in clean environments on Linux and macOS and run the quick start, then
-# upload to PyPI by Trusted Publishing and attach the files to the Release.
-# The install-route jobs check the one-command install (start.sh) on Linux and
-# macOS, and build, check and push the two Docker images to GHCR:
-# ghcr.io/oceansystemslab/marl-battlegrounds:<version> (CPU, amd64 and arm64)
-# and :<version>-cuda12 (NVIDIA, amd64). Their builds download the six Season 0
-# models, so the Hugging Face repositories must be public first.
-# A manual start is a dry run: everything except the upload, the attach and the
-# image push.
+# A manual start is the release's dry run, run on the exact commit that is
+# tagged afterwards. It proves every published install route, the way a user
+# runs it, with .github/scripts/check_install.sh: pip with Python 3.12, 3.13 and
+# 3.14 on Linux x86_64, Linux ARM and an Apple Silicon Mac; the one command
+# (start.sh), the BattleClient and every notebook on those three; the oldest
+# Linux the install guide names (Ubuntu 20.04, Debian 10, RHEL 8) on x86_64 and
+# ARM; the Docker images with Docker and Podman, natively on ARM, and with
+# Apptainer. It uploads, attaches and pushes nothing.
+# Publishing a GitHub Release runs the publishing jobs: build the wheel and
+# sdist, check them, write one constraints file per GPU choice from uv.lock,
+# install the wheel on Linux and macOS (the publish guard), upload to PyPI by
+# Trusted Publishing, attach the files to the Release, and build, check and
+# push the two Docker images to GHCR: ghcr.io/arm-2-lab/marl-battlegrounds:
+# <version> (CPU, amd64 and arm64) and :<version>-cuda12 (NVIDIA, amd64). Their
+# builds download the six Season 0 models, so the Hugging Face repositories
+# must be public first.
 # The tag must equal "v" plus the version in pyproject.toml.
 name: Release
 
@@ -115,16 +120,23 @@ jobs:
           path: constraints/
           if-no-files-found: error
 
+  # A release runs only the publish guard (Python 3.14 on Linux and macOS); the
+  # dry run on the same commit already ran every cell. On a Mac, the dry run's
+  # pip checks run in the mac-install job instead (macOS minutes cost 10x).
   smoke-test:
-    name: Install test (${{ matrix.os }})
+    name: pip install (${{ matrix.os }}, Python ${{ matrix.python }})
     needs: [build, constraints]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+      matrix: ${{ fromJSON(github.event_name == 'release' && '{"include":[{"os":"ubuntu-latest","python":"3.14"},{"os":"macos-latest","python":"3.14"}]}' || '{"os":["ubuntu-latest","ubuntu-24.04-arm"],"python":["3.12","3.13","3.14"]}') }}
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
@@ -142,31 +154,46 @@ jobs:
           name: constraints
           path: constraints
 
-      - name: Install the wheel with the CPU constraints
-        run: |
-          uv venv --python 3.14 "${RUNNER_TEMP}/release-env"
-          wheel="$(ls dist/*.whl)"
-          uv pip install --python "${RUNNER_TEMP}/release-env/bin/python" \
-            --constraint constraints/constraints-cpu.txt "${wheel}[all]"
-
-      - name: Run the quick start and one evaluation
-        working-directory: ${{ runner.temp }}
+      - name: pip install, the quick start and a released model by name
         env:
-          JAX_PLATFORMS: cpu
-        run: |
-          python="${RUNNER_TEMP}/release-env/bin/python"
-          "${python}" - <<'PY'
-          import jax
-          import marl_battlegrounds as marl_bgs
+          PYTHON: ${{ matrix.python }}
+          CONSTRAINTS: ${{ matrix.python == '3.14' && 'constraints' || '' }}
+        run: sh .github/scripts/check_install.sh pip "${PYTHON}" ${CONSTRAINTS}
 
-          env = marl_bgs.make("tdm", map_id=0, num_envs=2)
-          observation, state = env.reset(jax.random.key(0))
-          actions = env.sample_actions(jax.random.key(1), state)
-          observation, state, reward, done, info = env.step(jax.random.key(2), state, actions)
-          print("quick start ok")
-          PY
-          "${python}" -m marl_battlegrounds evaluate --system random --opponent tdm-alpha \
-            --episodes 2 --maps 47 --num-envs 2 --output-dir release-evaluation
+  mac-install:
+    name: Every route on an Apple Silicon Mac
+    if: github.event_name != 'release'
+    needs: [build, constraints]
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the package files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Fetch the constraints files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: constraints
+          path: constraints
+
+      # First, because start.sh must install uv itself, as on a new Mac.
+      - name: The one command, the BattleClient, a released model and the notebooks
+        run: sh .github/scripts/check_install.sh start
+
+      - name: pip install on Python 3.12, 3.13 and 3.14
+        run: |
+          export PATH="${HOME}/.local/bin:${PATH}"
+          sh .github/scripts/check_install.sh pip 3.12
+          sh .github/scripts/check_install.sh pip 3.13
+          sh .github/scripts/check_install.sh pip 3.14 constraints
 
   publish-pypi:
     name: Publish to PyPI
@@ -217,29 +244,45 @@ jobs:
 
   start-script:
     name: One-command install (${{ matrix.os }})
+    if: github.event_name != 'release'
     needs: [smoke-test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm]
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install with start.sh, as a user would
-        run: sh start.sh --help
+      - name: The one command, the BattleClient, a released model and the notebooks
+        run: sh .github/scripts/check_install.sh start
 
-      - name: Run one evaluation in the installed folder
-        env:
-          JAX_PLATFORMS: cpu
+  oldest-linux:
+    name: Oldest Linux the install guide names (${{ matrix.os }})
+    if: github.event_name != 'release'
+    needs: [smoke-test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # glibc 2.31, 2.28 and 2.28: the floor the install guide states.
+      - name: Install and evaluate on Ubuntu 20.04, Debian 10 and RHEL 8
         run: |
-          # start.sh installs uv into ~/.local/bin when the runner has none.
-          export PATH="${HOME}/.local/bin:${PATH}"
-          uv run --no-sync python -m marl_battlegrounds evaluate \
-            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
-            --episodes 2 --maps 47 --num-envs 2 --output-dir start-script-evaluation
+          for image in buildpack-deps:focal-curl buildpack-deps:buster-curl rockylinux:8; do
+            sh .github/scripts/check_install.sh oldest "${image}"
+          done
 
   docker-cpu:
     name: Docker image (CPU, amd64 and arm64)
@@ -249,7 +292,7 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE: ghcr.io/oceansystemslab/marl-battlegrounds
+      IMAGE: ghcr.io/arm-2-lab/marl-battlegrounds
 
     steps:
       - name: Check out repository
@@ -267,24 +310,19 @@ jobs:
           docker run --privileged --rm tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
           docker buildx create --use --name multi-arch
 
+      # The BattleClient against the baked-in Season 0 model, then an offline
+      # evaluation as the owner of the mounted folder.
       - name: Build for amd64 and check it as a user runs it
         run: |
           docker buildx build -f docker/Dockerfile --platform linux/amd64 --load -t local/cpu .
-          mkdir -p "${RUNNER_TEMP}/work"
-          # The default command: the BattleClient against the baked-in Season 0 model.
-          docker run -d --name play -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 \
-            -v "${RUNNER_TEMP}/work:/work" local/cpu
-          until docker logs play 2>&1 | grep -q '#token='; do
-            docker ps -q -f name=play | grep -q . || { docker logs play; exit 1; }
-            sleep 2
-          done
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost:8765' http://127.0.0.1:8765/)" = 403
-          docker stop play
-          # Offline, as the owner of the mounted folder: the models are in the image.
-          docker run --rm -e HF_HUB_OFFLINE=1 -v "${RUNNER_TEMP}/work:/work" local/cpu evaluate \
-            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
-            --episodes 2 --maps 47 --num-envs 2 --output-dir runs/check
+          sh .github/scripts/check_install.sh container docker local/cpu
+
+      - name: Run the same image with Podman
+        if: github.event_name != 'release'
+        run: |
+          docker tag local/cpu localhost/marl-bgs-cpu:check
+          docker save localhost/marl-bgs-cpu:check | podman load
+          sh .github/scripts/check_install.sh container podman localhost/marl-bgs-cpu:check
 
       - name: Build for arm64 and check it under emulation
         run: |
@@ -300,10 +338,27 @@ jobs:
         run: |
           echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
           docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 --push \
-            --label org.opencontainers.image.source=https://github.com/oceansystemslab/MARL-BattleGrounds \
+            --label org.opencontainers.image.source=https://github.com/arm-2-lab/MARL-BattleGrounds \
             --label "org.opencontainers.image.description=MARL-BattleGrounds ${VERSION}, CPU" \
             --label org.opencontainers.image.licenses=Apache-2.0 \
             -t "${IMAGE}:${VERSION}" .
+
+  docker-arm64-native:
+    name: Docker image (CPU, arm64, on an ARM machine)
+    if: github.event_name != 'release'
+    needs: [smoke-test]
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build natively and check it as a user runs it
+        run: |
+          docker build -f docker/Dockerfile -t local/cpu .
+          sh .github/scripts/check_install.sh container docker local/cpu
 
   docker-cuda12:
     name: Docker image (NVIDIA CUDA 12, amd64)
@@ -313,7 +368,7 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE: ghcr.io/oceansystemslab/marl-battlegrounds
+      IMAGE: ghcr.io/arm-2-lab/marl-battlegrounds
 
     steps:
       - name: Check out repository
@@ -333,17 +388,23 @@ jobs:
           docker system prune -af
           df -h /
 
-      - name: Build and play two games with the baked-in Season 0 model on the CPU
+      - name: Build and check it as a user runs it, on the CPU
         run: |
           docker build -f docker/Dockerfile --build-arg BUILD=cuda12 \
-            --label org.opencontainers.image.source=https://github.com/oceansystemslab/MARL-BattleGrounds \
+            --label org.opencontainers.image.source=https://github.com/arm-2-lab/MARL-BattleGrounds \
             --label "org.opencontainers.image.description=MARL-BattleGrounds ${VERSION}, NVIDIA CUDA 12" \
             --label org.opencontainers.image.licenses=Apache-2.0 \
             -t "${IMAGE}:${VERSION}" .
-          mkdir -p "${RUNNER_TEMP}/work"
-          docker run --rm -e HF_HUB_OFFLINE=1 -v "${RUNNER_TEMP}/work:/work" "${IMAGE}:${VERSION}" evaluate \
-            --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
-            --episodes 2 --maps 47 --num-envs 2 --output-dir runs/check
+          sh .github/scripts/check_install.sh container docker "${IMAGE}:${VERSION}"
+
+      # The install guide's cluster route; this runner has no GPU, so no --nv.
+      - name: Run the image with Apptainer on the CPU
+        if: github.event_name != 'release'
+        run: |
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q apptainer
+          sh .github/scripts/check_install.sh apptainer "${IMAGE}:${VERSION}"
 
       - name: Push to GHCR
         if: github.event_name == 'release'
