@@ -481,6 +481,60 @@ def build_parser() -> argparse.ArgumentParser:
             help="Confirm the displayed work without prompting",
         )
 
+    entry = commands.add_parser(
+        "entry",
+        allow_abbrev=False,
+        help="Make, check and submit a leaderboard entry",
+    )
+    entry_actions = entry.add_subparsers(dest="entry_action", required=True)
+    starter = entry_actions.add_parser(
+        "new",
+        allow_abbrev=False,
+        help="Write a starter entry in a new folder and make it a Git repository",
+    )
+    starter.add_argument("path", help="The new folder for your entry")
+    starter.add_argument(
+        "--name",
+        help=(
+            "Your entry's name; it becomes the submission issue's title "
+            "(default: the folder's name)"
+        ),
+    )
+    check = entry_actions.add_parser(
+        "check",
+        allow_abbrev=False,
+        help=(
+            "Check an entry's commit the way we will: clone, install, "
+            "a 15-minute training test, loading, export and play limits"
+        ),
+    )
+    check.add_argument(
+        "path", nargs="?", help="Your entry's Git folder (default: this folder)"
+    )
+    check.add_argument(
+        "--repository",
+        help="Check a Git repository by its URL instead of a folder; needs --commit",
+    )
+    check.add_argument(
+        "--commit", help="The full commit SHA to check; needs --repository"
+    )
+    submit = entry_actions.add_parser(
+        "submit",
+        allow_abbrev=False,
+        help="Open the submission form, filled in, for a checked commit",
+    )
+    submit.add_argument(
+        "path",
+        nargs="?",
+        default=".",
+        help="Your entry's Git folder (default: this folder)",
+    )
+    submit.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Print the form link without opening a browser",
+    )
+
     replay = commands.add_parser(
         "replay", allow_abbrev=False, help="Open an existing replay"
     )
@@ -829,6 +883,64 @@ def _study_progress(
         return 0
 
 
+def _run_entry(namespace: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Call the one Python function behind ``entry new``, ``check`` or ``submit``.
+
+    Parameters
+    ----------
+    namespace : argparse.Namespace
+        Parsed ``entry`` arguments. ``entry_action`` is ``"new"``, ``"check"``
+        or ``"submit"``; the other fields are that action's flags.
+    parser : argparse.ArgumentParser
+        The package parser, used only to report a usage error.
+
+    Returns
+    -------
+    int
+        0 when the function finishes. For ``check``, 0 when every must-pass
+        step passed and 1 when one failed; the steps measured on this machine
+        never change it.
+
+    Raises
+    ------
+    SystemExit
+        Exit code 2 through ``parser.error`` when ``check`` gets only one of
+        ``--repository`` and ``--commit``, or gets them together with a
+        folder. This happens before the entry module is imported.
+
+    Notes
+    -----
+    ``marl_battlegrounds.entry`` owns all the work and prints its own progress,
+    links and next steps; this helper adds only the final pass or fail line of
+    ``check``. Errors such as ValueError and OSError reach ``main``, which
+    prints them and returns 1. File, process and network effects are those of
+    ``new_entry``, ``check_entry`` and ``submit_entry``.
+    """
+    action: str = namespace.entry_action
+    folder: str | None = namespace.path
+    repository: str | None = getattr(namespace, "repository", None)
+    commit: str | None = getattr(namespace, "commit", None)
+    if (repository is None) != (commit is None):
+        parser.error("entry check needs --repository and --commit together")
+    if repository is not None and folder is not None:
+        parser.error("entry check takes a folder or --repository, not both")
+    from marl_battlegrounds.entry import check_entry, new_entry, submit_entry
+
+    if action == "new":
+        assert folder is not None  # argparse requires the new folder.
+        new_entry(folder, name=namespace.name)
+        return 0
+    if action == "submit":
+        submit_entry(folder or ".", open_browser=not namespace.no_browser)
+        return 0
+    result = check_entry(folder or ".", repository=repository, commit=commit)
+    if result.passed:
+        print("Entry Check: Passed")
+        return 0
+    print("Entry Check: Failed (a must-pass step failed)")
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one command, returning 0, 1 or 130; argparse exits with 0 or 2.
 
@@ -986,6 +1098,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             from marl_battlegrounds._cli_assets import run_models
 
             return run_models(namespace, parser)
+        elif command == "entry":
+            return _run_entry(namespace, parser)
         else:
             from marl_battlegrounds.viewer.launch import launch_replay
             from marl_battlegrounds.viewer.options import (

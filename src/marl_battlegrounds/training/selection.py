@@ -1,8 +1,11 @@
-"""Write separate checkpoint decisions from saved, verified validation games.
+"""Read checkpoint choices and write separate decisions from saved validation.
 
-``reselect_checkpoint`` owns declaration files and decision history. The pure
-ranking helpers remain in analysis; _selection_evidence verifies stored actors
-and games without restoring models. This module never trains or plays games.
+``current_choice`` names the actor folder a built-in training run counts as
+its choice right now, while it trains, after it stops or after it ends. It
+reads saved files only. ``reselect_checkpoint`` owns declaration files and
+decision history. The pure ranking helpers remain in analysis;
+_selection_evidence verifies stored actors and games without restoring models.
+This module never trains or plays games.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -124,6 +128,122 @@ def _declaration(
         result["previous_decision"] = str((base / Path(prior).expanduser()).resolve())
     _digest(result)
     return result
+
+
+def current_choice(run_dir: str | os.PathLike[str]) -> Path | None:
+    """Name the actor folder a built-in training run counts as its choice now.
+
+    Use it while a run trains, after it stops, or after it ends. It reads the
+    run's saved files and ranks them the way the trainer does. It never trains,
+    plays games or writes files.
+
+    Parameters
+    ----------
+    run_dir : str or os.PathLike
+        The run folder that ``training.train`` writes (its ``output_dir``).
+        A relative path starts from the working directory; ``~`` is expanded.
+
+    Returns
+    -------
+    Path or None
+        An absolute path to one saved actor folder under ``run_dir/actors/``
+        (an inherited selected actor of a finished child run may live in its
+        parent's folder). Pass it to ``training.load_system`` or
+        ``training.export_actor``. ``None`` means no choice exists yet: the run
+        has no saved routine validation of a trained checkpoint (the step-0
+        check is never eligible, nor a QMIX or PQN-VDN checkpoint with no
+        optimizer steps), or it has no validation opponents and has not ended.
+
+    Raises
+    ------
+    FileNotFoundError
+        ``run_dir`` is not a folder.
+    ValueError
+        A saved record is malformed or inconsistent, for example a validation
+        row without whole-number steps, an incomplete row, rows that mix
+        different validation conditions, or a finished run whose saved actors
+        disagree with its records. Only the trainer's own "No eligible trained
+        checkpoint is available" error becomes ``None``.
+    OSError
+        A saved file cannot be read.
+
+    Notes
+    -----
+    A finished run (``status.json`` says complete and no recovery is pending)
+    returns ``training.load_run(run_dir).selected_actor``, or its
+    ``final_actor`` when the run had no validation opponents.
+
+    Any other run (still training, stopped or failed) keeps only the
+    ``purpose == "routine"`` rows of ``validation_results.json`` and ranks them
+    with the trainer's ``confirmation_candidates``. The rule is
+    ``run_details.json``'s ``selection_rule`` (``"saved"`` when absent, as the
+    trainer does); new runs use ``"point_margin"``: the highest mean point
+    margin wins, and a tie goes to the earlier step. The routine row with the
+    most steps stands in for the final checkpoint. The first candidate is the
+    overall best, and its actor folder is returned.
+
+    The choice can change when a run ends. At the end the trainer plays fresh
+    confirmation games for its two best checkpoints and its final one, and the
+    winner of those becomes ``selected_actor``. A continued run
+    (``extend_training``) also weighs its parent's candidates at the end, so its
+    running choice, which ranks only its own rows, can differ from its final
+    one. The returned folder normally exists. If the run's actors were moved
+    away, the path does not exist and ``load_system`` reports the missing
+    folder. Reading a finished run imports the trainer module, which may load
+    JAX; nothing runs on a device.
+
+    Examples
+    --------
+    >>> from marl_battlegrounds import training
+    >>> actor = training.current_choice("runs/entry")  # doctest: +SKIP
+    >>> if actor is not None:  # doctest: +SKIP
+    ...     system = training.load_system(actor)
+
+    See Also
+    --------
+    marl_battlegrounds.training.load_run : The finished run's saved paths.
+    reselect_checkpoint : A separate, declared choice from saved games.
+    """
+    root = Path(run_dir).expanduser().resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Training run folder not found: {root}")
+    status = root / "status.json"
+    if (
+        status.is_file()
+        and _read(status).get("status") == "complete"
+        and not (root / "checkpoint_recovery.json").exists()
+    ):
+        from marl_battlegrounds.training.runner import load_run
+
+        finished = load_run(root)
+        return finished.selected_actor or finished.final_actor
+    results = root / "validation_results.json"
+    if not results.is_file():
+        return None
+    rows = json.loads(results.read_text(encoding="utf-8"))
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict) for row in cast(list[object], rows)
+    ):
+        raise ValueError(f"Expected a JSON list of validation rows: {results}")
+    routine = [
+        row for row in cast(list[Record], rows) if row.get("purpose") == "routine"
+    ]
+    if not routine:
+        return None
+    latest = max(routine, key=lambda row: _integer(row.get("env_steps"), "env_steps"))
+    rule = _read(root / "run_details.json").get("selection_rule", "saved")
+    from marl_battlegrounds.training._checkpoint_metadata import artifact_directory
+    from marl_battlegrounds.training.analysis import confirmation_candidates
+
+    try:
+        best = confirmation_candidates(
+            routine, final_checkpoint_id=latest.get("checkpoint_id", ""), rule=rule
+        )[0]
+    except ValueError as error:
+        if error.args == ("No eligible trained checkpoint is available",):
+            return None
+        raise
+    return artifact_directory(root, "actors", best)
 
 
 def _key(row: Mapping[str, Any], rule: str) -> tuple[float, float, int, str]:

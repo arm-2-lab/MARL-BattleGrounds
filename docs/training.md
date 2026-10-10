@@ -173,6 +173,8 @@ the highest mean point margin (our points minus theirs) wins.
 | `routine_seed_pairs` | 10 | One pair is 10 games per opponent (two ends, five maps). |
 | `confirmation_seed_pairs` | 50 | Fresh pairs for each finalist. |
 
+`training.current_choice(run_dir)` names the actor folder a run counts as its choice: while it trains or after it stops, its best routine check past step 0 (`None` before then); after it ends, its selected actor (its final one without validation). It only reads files.
+
 **Watch Out:** no validation opponents means no selected actor. Keep test maps
 47-51 for final evaluation. To choose again from saved results, use
 `python -m marl_battlegrounds reselect-checkpoint RUN --declaration choice.json --output-dir NEW`

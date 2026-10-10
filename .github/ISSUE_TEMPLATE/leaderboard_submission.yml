@@ -5,8 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Read the [Tournament Rulebook](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) first. The rule numbers on this form are the rulebook's numbers.
+        Read the [Tournament Rulebook](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) first. The rule numbers on this form are the rulebook's numbers.
         This form asks for everything Rule 6.3 needs. Use your system's name as the issue title.
+        `python -m marl_battlegrounds entry submit` opens this form with your answers filled in, after `entry check` passes (Rule 6.4).
         Submissions for a season close 72 hours before its table is published.
 
   - type: textarea
@@ -25,6 +26,15 @@ body:
       placeholder: https://github.com/your-team/your-system
     validations:
       required: true
+
+  - type: checkboxes
+    id: private-repository
+    attributes:
+      label: Private Repository
+      description: Tick this only if we need a key to clone your repository. We post a read-only key for this one entry in the issue. Add it under Settings > Deploy keys with write access off, within 7 days of our reply, and your arrival time stays this issue's time (Rule 6.4).
+      options:
+        - label: My repository is private (we reply with a read-only key)
+          required: false
 
   - type: input
     id: commit
@@ -47,7 +57,7 @@ body:
     id: lock-file
     attributes:
       label: Lock File
-      description: The path, inside your repository, of the lock file that pins every dependency (Rule 6.3).
+      description: The path, inside your repository, of the uv lock file that pins every dependency and installs a CUDA build of JAX (Rule 6.3).
       placeholder: uv.lock
     validations:
       required: true

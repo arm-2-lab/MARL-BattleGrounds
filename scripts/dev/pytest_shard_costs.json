@@ -94,6 +94,7 @@
     "tests/core/test_core_spine.py": 57,
     "tests/core/test_death_lifecycle.py": 224,
     "tests/core/test_decision_context.py": 39,
+    "tests/cli/test_entry.py": 35,
     "tests/environment/test_environment.py": 411,
     "tests/environment/test_environment_discovery.py": 90,
     "tests/environment/test_environment_lifecycle.py": 20,

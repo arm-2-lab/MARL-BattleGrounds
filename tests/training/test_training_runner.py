@@ -5,6 +5,9 @@ The composed tests below exercise real CPU collection, updates and persistence;
 these are engineering checks, not evidence that a short run learned a policy.
 The test-only panel path also checks real validation, interruption, selection,
 loading and reports while proving validation leaves training results unchanged.
+On that path current_choice names the best routine actor past step 0 (by mean
+point margin, then earlier steps) and its folder exists while the run is
+unfinished; after the resume it equals the run's selected_actor.
 Changed execution settings reject before array restoration or recording rewind.
 Scaled actor exports survive pending-output recovery; a changed export scale is
 rejected before recording or logs change, even when weight bytes still match.
@@ -61,6 +64,7 @@ any run file changes. It is not the scientific pool or a learning experiment.
 # pyright: reportPrivateUsage=false
 
 import json
+import math
 import shutil
 import time
 from dataclasses import replace
@@ -459,6 +463,25 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     )
     assert len(interrupted_results) == 3
     assert all(row["complete"] and row["games"] == 4 for row in interrupted_results)
+    # Unfinished: the best routine actor past step 0 by mean point margin, then
+    # earlier steps, recomputed here from the saved cells.
+    best = min(
+        (row for row in interrupted_results if row["env_steps"] > 0),
+        key=lambda row: (
+            -math.fsum(
+                (cell["mean_team_a_score"] - cell["mean_team_b_score"])
+                / len(row["cells"])
+                for cell in row["cells"]
+            ),
+            row["env_steps"],
+        ),
+    )
+    choice = training.current_choice(destination)
+    assert choice is not None and choice.is_dir()
+    assert (
+        checkpoints.artifact_identity(choice)["metadata"]["checkpoint_id"]
+        == best["checkpoint_id"]
+    )
     previous_games = {
         path: path.read_bytes() for path in (destination / "validation").rglob("*.csv")
     }
@@ -565,6 +588,7 @@ def test_panel_backed_public_run_resume_selection_and_validation_isolation(
     assert all(set(row["memory"]) == set(status["memory"]) for row in terminal)
     assert terminal[-1]["memory"] == status["memory"]
     assert restored.selected_actor is not None
+    assert training.current_choice(destination) == restored.selected_actor
     selected_identity = checkpoints.artifact_identity(restored.selected_actor)
     selection = json.loads((destination / "selection.json").read_text())
     assert selection["purpose"] == "confirmation"

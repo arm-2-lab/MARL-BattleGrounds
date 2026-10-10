@@ -7,6 +7,12 @@ ratings is defined in the
 [tournaments guide](tournaments.md);
 this rulebook sets who may enter, what a run may use, and the limits.
 
+**Submission edits, 10 October 2026.** Rules 4, 6.3 and 6.4 now name the
+`entry` commands that check and send an entry, the `uv.lock` and `entry.yaml`
+files a submission holds, and read-only keys for private repositories. These
+edits change how you submit, not any limit or rating rule, so this is still
+Version 1.
+
 ## Words Used Here
 
 - **Game step:** one tick of one game. In 5v5, one game step holds 10 agent
@@ -73,9 +79,10 @@ maps 47-51 or the scenarios. At home you may test a finished system on maps
 
 ## Rule 4. Play Limits
 
-Measured with our public check command: your system plays itself, 512 games
-at once, on one RTX 5090. This is playing speed with the game running, not
-training speed. We also check it in its official games.
+Measured with our public check command,
+`python -m marl_battlegrounds entry check`: your system plays itself, 512
+games at once, on one RTX 5090. This is playing speed with the game running,
+not training speed. We also check it in its official games.
 
 4.1 **At least 5,000 game steps per second.**
 
@@ -103,11 +110,20 @@ if it rates higher. The Season 0 systems are exempt. The maintainers count as
 one team.
 
 6.3 **Send a Git repository at one commit** with: a train command that keeps
-its chosen entry saved in its output folder; a lock file; a load function
-that only loads that entry, in at most 10 minutes; your config, training
-maps, entry type and any starting models with their hashes.
+its chosen entry saved in its output folder; a `uv.lock` file that installs
+a CUDA build of JAX; a load function that only loads that entry, in at most
+10 minutes; and an `entry.yaml` file that names your train command, load
+function, config, training maps, entry type and any starting models with
+their hashes. `python -m marl_battlegrounds entry new FOLDER` writes a
+starter that has them all.
 
-6.4 Send it through the GitHub issue form.
+6.4 **Send it through the GitHub issue form.**
+`python -m marl_battlegrounds entry submit` opens the form with your answers
+filled in, once `entry check` has passed on that commit. If your repository
+is private, tick the box on the form: we reply with a read-only key for that
+one entry, and you add it to your repository as a deploy key, with write
+access off. If you add it within 7 days of our reply, your arrival time is
+the issue's time; otherwise your entry arrives when you add the key.
 
 6.5 We first run it for 15 minutes as a test. If the test fails, you may fix
 it once without losing your submission or your place in the queue.

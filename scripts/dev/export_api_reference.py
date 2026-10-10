@@ -42,6 +42,7 @@ MODULES = (
     ("marl_battlegrounds", "Top Level (`import marl_battlegrounds as marl_bgs`)"),
     ("marl_battlegrounds.training", "Training (`marl_bgs.training`)"),
     ("marl_battlegrounds.llm", "Language-Model Systems (`marl_bgs.llm`)"),
+    ("marl_battlegrounds.entry", "Leaderboard Entries (`entry`)"),
     ("marl_battlegrounds.baselines.config", "Learner Settings (`baselines.config`)"),
     ("marl_battlegrounds.policies", "Built-In Policies (`policies`)"),
     ("marl_battlegrounds.policies.input", "Policy Inputs (`policies.input`)"),

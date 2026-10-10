@@ -4,8 +4,10 @@ Content preparation, schedules, shaping, self-play and compact collection use
 base dependencies. The package alone imports no JAX or PPO. Baseline actors need
 the existing training extra. train owns complete PPO, QMIX and PQN-VDN runs;
 load_system reads frozen actors and analyze uses the optional viz extra for
-saved-result plots. reselect_checkpoint writes a separate decision from saved
-actor and game evidence; it never replaces the original run selection.
+saved-result plots. current_choice names the actor a run counts as its choice
+while it trains or after it ends. reselect_checkpoint writes a separate
+decision from saved actor and game evidence; it never replaces the original
+run selection.
 """
 
 # pyright: reportUnsupportedDunderAll=false
@@ -114,6 +116,9 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.runner import train as train
     from marl_battlegrounds.training.screen import prepare_screen as prepare_screen
     from marl_battlegrounds.training.selection import (
+        current_choice as current_choice,
+    )
+    from marl_battlegrounds.training.selection import (
         reselect_checkpoint as reselect_checkpoint,
     )
     from marl_battlegrounds.training.shaping import RewardOutput as RewardOutput
@@ -156,6 +161,7 @@ _OWNERS = {
     "load_system": "checkpoints",
     "analyze": "analysis",
     "analyze_screen": "analysis",
+    "current_choice": "selection",
     "reselect_checkpoint": "selection",
     "prepare_screen": "screen",
     "preview_study": "study",
@@ -221,6 +227,7 @@ __all__ = [
     "combat_support_reward",
     "combat_support_team_reward",
     "create_panel",
+    "current_choice",
     "export_actor",
     "export_study_data",
     "extend_training",

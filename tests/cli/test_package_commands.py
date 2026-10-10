@@ -10,6 +10,10 @@ capacities pass through unchanged. Fresh-execution flags preserve explicit true
 and false values; omission inherits saved settings. Canonical conditions remain
 owned by its released field. The head-to-head preview prints the shared
 accessor's counts and points, with exact IDs beside possibly repeated names.
+The entry commands (new, check, submit) each call their one entry function
+once with the parsed values; check returns 1 when a must-pass step failed;
+check refuses --repository without --commit, or with a folder, before the
+entry module loads; and their help imports no runtime modules.
 """
 
 from __future__ import annotations
@@ -43,6 +47,8 @@ from marl_battlegrounds.evaluation.results import EvaluationResult, TournamentRe
         ("models",),
         ("models", "download"),
         ("models", "clean"),
+        ("entry",),
+        ("entry", "check"),
         ("replay",),
     ),
 )
@@ -57,7 +63,8 @@ try:
 except SystemExit as error:
     assert error.code == 0
 blocked = ('jax', 'numpy', 'matplotlib', 'marl_battlegrounds.evaluation',
-           'marl_battlegrounds.viewer', 'marl_battlegrounds._cli_assets')
+           'marl_battlegrounds.viewer', 'marl_battlegrounds._cli_assets',
+           'marl_battlegrounds.entry')
 assert not [name for name in sys.modules
             if any(name == p or name.startswith(p + '.') for p in blocked)]
 """
@@ -430,6 +437,9 @@ def test_ordered_rosters_and_all_explicit_evaluation_options(
         ["tournament", "--entrants", "random,tdm-alpha", "--config", "field.json"],
         ["tournament", "--entrants", "random,tdm-alpha", "--red-zone-depth", "nan"],
         ["canonical", "--red-zone-depth", "5.0"],
+        ["entry"],
+        ["entry", "check", "--commit", "0" * 40],
+        ["entry", "check", "mine", "--repository", "url", "--commit", "0" * 40],
     ),
 )
 def test_usage_errors_do_not_load_methods(
@@ -442,6 +452,65 @@ def test_usage_errors_do_not_load_methods(
     with pytest.raises(SystemExit) as error:
         _cli.main(arguments)
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("command", "call", "passed"),
+    (
+        (["entry", "new", "mine"], ("new_entry", ("mine",), {"name": None}), True),
+        (
+            ["entry", "new", "mine", "--name", "Mine"],
+            ("new_entry", ("mine",), {"name": "Mine"}),
+            True,
+        ),
+        (
+            ["entry", "check"],
+            ("check_entry", (".",), {"repository": None, "commit": None}),
+            True,
+        ),
+        (
+            ["entry", "check", "mine"],
+            ("check_entry", ("mine",), {"repository": None, "commit": None}),
+            False,
+        ),
+        (
+            ["entry", "check", "--repository", "url", "--commit", "0" * 40],
+            ("check_entry", (".",), {"repository": "url", "commit": "0" * 40}),
+            True,
+        ),
+        (["entry", "submit"], ("submit_entry", (".",), {"open_browser": True}), True),
+        (
+            ["entry", "submit", "mine", "--no-browser"],
+            ("submit_entry", ("mine",), {"open_browser": False}),
+            True,
+        ),
+    ),
+)
+def test_entry_commands_call_their_python_function_once(
+    command: list[str],
+    call: tuple[str, tuple[str, ...], dict[str, Any]],
+    passed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+    results: dict[str, object] = {
+        "new_entry": Path("mine"),
+        "check_entry": types.SimpleNamespace(passed=passed),
+        "submit_entry": "link",
+    }
+    fake = types.ModuleType("marl_battlegrounds.entry")
+    for name, result in results.items():
+
+        def record(
+            *args: object, _name: str = name, _result: object = result, **kwargs: object
+        ) -> object:
+            calls.append((_name, args, kwargs))
+            return _result
+
+        setattr(fake, name, record)
+    monkeypatch.setitem(sys.modules, "marl_battlegrounds.entry", fake)
+    assert _cli.main(command) == (0 if passed else 1)
+    assert calls == [call]
 
 
 @pytest.mark.parametrize(
