@@ -129,7 +129,7 @@ marl_bgs.battle_client(map_id=47, team_a="manual", team_b="tdm-beta")
 
 Before the page opens, the BattleClient compiles the first turn: 4-7 s on CPU and 12.5 s on
 one RTX 5090 for a recurrent learned policy against TDM-Beta; later turns took 0.02 s plus
-your method's own time. The Replay Viewer prepares every agent's view first: 12.8 s for a
+your method's own time. The analytical Replay Viewer prepares every agent's view first: 12.8 s for a
 253-frame replay on CPU, then 38-41 ms per agent switch, with about 60 MiB more memory.
 
 ## The Knobs

@@ -31,7 +31,7 @@ Then open the pull request and fill in its form. Maintainers run the full test s
 | `docs/` | Short guides |
 | `scripts/dev/` | Contributor tools: checks and generators, with the benchmarks in `benchmarks/` |
 | `scripts/paper_experiments/` | The paper's experiment records |
-| `web/visual_debugger/` | The browser code shared by the Replay Viewer and the BattleClient. It keeps this folder name because tools and the wheel build depend on it. |
+| `web/visual_debugger/` | The browser code shared by the analytical Replay Viewer and the BattleClient. It keeps this folder name because tools and the wheel build depend on it. |
 
 ## Test Rules
 

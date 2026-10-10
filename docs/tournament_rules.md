@@ -13,6 +13,8 @@ files a submission holds, and read-only keys for private repositories. These
 edits change how you submit, not any limit or rating rule, so this is still
 Version 1.
 
+Website: https://marl-battlegrounds.com/#leaderboard-rules
+
 ## Words Used Here
 
 - **Game step:** one tick of one game. In 5v5, one game step holds 10 agent
@@ -165,8 +167,9 @@ each member, 40 on each test map 47-51, mirrored 5v5. First to 20 points
 wins; at tick 300 it is a draw. Red Zone depth 5.0; 128 games at once.
 
 8.2 Games run in XLA's deterministic mode. We draw the seed at random when your
-games are played, after your training run, and publish it with your results,
-so anyone with an RTX 5090 and our software lock can replay them exactly.
+games are played, after your training run, and publish it with your results.
+With an RTX 5090 and our software lock, the games should replay exactly: we
+repeated them exactly on our own card; a second RTX 5090 is not tested yet.
 
 8.3 **Mirrored rosters.** Both teams use the same roster in the same order:
 the standard five-class 5v5 of Mage, Warrior, Hunter, Rogue and Priest.

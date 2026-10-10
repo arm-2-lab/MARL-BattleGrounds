@@ -1,8 +1,8 @@
 # Replays
 
-Record chosen games, watch them tick by tick in the Replay Viewer and read the saved files.
+Record chosen games, watch them tick by tick in the analytical Replay Viewer and read the saved files.
 
-Website: https://marl-battlegrounds.com/#replay-format
+Website: https://marl-battlegrounds.com/#record
 
 ## Record A Replay
 

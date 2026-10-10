@@ -14,7 +14,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 
 | Example | What It Teaches | Guide |
 |---|---|---|
-| `quickstart.ipynb` | Play games, evaluate a trained team and play the Season 0 teams on Colab or Kaggle | [Install](../docs/install.md) |
+| `quickstart.ipynb` | Play games, evaluate a trained team and play the Season 0 teams on Colab | [Install](../docs/install.md) |
 | `environment.py` | Make a batch of games, take legal random actions, reset finished games | [Getting Started](../docs/getting_started.md) |
 | `episode_tracking.py` | Curricula, automatic resets and optional recording in your own loop | [Getting Started](../docs/getting_started.md) |
 | `train.py` | Launch any built-in learner with packaged settings | [Training](../docs/training.md) |
@@ -78,4 +78,4 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `play/battle_client.py` | Play your saved methods in the BattleClient | [BattleClient](../docs/battle_client.md) |
 | `play/prepare_battle_client.py` | Write six untrained actor folders for the BattleClient examples | [BattleClient](../docs/battle_client.md) |
 | `play/llm.py` | Evaluate a served language model with standard or custom prompts | [LLM Agents](../docs/llm.md) |
-| `replays/` | Saved replays to open in the Replay Viewer (they stay at `examples/replays/`) | [Replays](../docs/replays.md) |
+| `replays/` | Saved replays to open in the analytical Replay Viewer (they stay at `examples/replays/`) | [Replays](../docs/replays.md) |

@@ -26,7 +26,7 @@ address and waits until you press Exit or Ctrl-C. The page ships in the package:
 | `team_a_roster`, `team_b_roster` | Mage, Warrior, Hunter, Rogue, Priest | One to five classes per team, repeats allowed |
 | `seed`, `max_steps`, `score_threshold`, `red_zone_depth` | `0`, `300`, `20`, `5.0` | The ordinary game rules |
 | `spawn_mode` | `"default"` | `"swapped"` puts Team A on the right |
-| `port`, `replay_port` | `0` | Local ports for the game and for the Replay Viewer that Open Replay starts; `0` picks a free one |
+| `port`, `replay_port` | `0` | Local ports for the game and for the analytical Replay Viewer that Open Replay starts; `0` picks a free one |
 | `output_dir`, `capture_replay` | `"./recordings"`, `True` | Where replays go, relative to your launch folder; `False` skips recording and its cost |
 
 ## Controllers Per Slot
