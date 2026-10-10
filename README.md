@@ -63,8 +63,8 @@ You do not need to install JAX first: each route installs the right JAX for your
 On Linux, an Apple Silicon Mac or Windows with WSL2, one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
 
 ```bash
-curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.0.tar.gz | tar xz
-cd MARL-BattleGrounds-1.0.0 && sh start.sh
+curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.1.tar.gz | tar xz
+cd MARL-BattleGrounds-1.0.1 && sh start.sh
 ```
 
 In your own Python project (Python 3.12 to 3.14; 3.14 recommended):
@@ -74,10 +74,10 @@ pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA GPU, driver 580 or newer
 ```
 
-With Docker or Podman, on any system (add `--gpus all` and the `1.0.0-cuda12` tag for an NVIDIA GPU):
+With Docker or Podman, on any system (add `--gpus all` and the `1.0.1-cuda12` tag for an NVIDIA GPU):
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.0
+docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1
 ```
 
 | Route | Works on | Tested |
@@ -95,7 +95,7 @@ Docker runs everything: play, replays, training, evaluation, tournaments, analys
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
-| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.0`, then `RUN uv pip install <package>` |
+| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1`, then `RUN uv pip install <package>` |
 | Docker Desktop (Mac, Windows) limits the container's memory | Raise the memory limit in Docker Desktop's settings for large training runs |
 
 Every route, the GPU builds, Windows, clusters and offline use: [the install guide](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md).
@@ -190,7 +190,7 @@ actions: a network, a planner, a language model or a mix.
 | [Metrics](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/metrics.md) | What is measured and how to read it | [metrics](https://marl-battlegrounds.com/#metrics) |
 | [Tournaments](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournaments.md) | Round robins, Elo ratings and tiers | [round-robin](https://marl-battlegrounds.com/#round-robin) |
 | [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) | The leaderboard rulebook | [leaderboard-rules](https://marl-battlegrounds.com/#leaderboard-rules) |
-| [Replays](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the analytical Replay Viewer | [replay-format](https://marl-battlegrounds.com/#replay-format) |
+| [Replays](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the analytical Replay Viewer | [record](https://marl-battlegrounds.com/#record) |
 | [BattleClient](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/battle_client.md) | Play against or beside your own agents in the browser | [battleclient](https://marl-battlegrounds.com/#battleclient) |
 | [LLM Agents](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
 | [Performance](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/performance.md) | Speed and memory, and how to measure them on your machine | [performance](https://marl-battlegrounds.com/#performance) |
