@@ -24,6 +24,7 @@ import io
 import json
 import math
 import os
+import sys
 import tempfile
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -43,6 +44,23 @@ Record = dict[str, Any]
 # death gives 2 points but is still one kill, so the two can differ.
 _KILL_COLUMNS = ("team_a_kills", "team_b_kills")
 _SCORE_COLUMNS = ("team_a_score", "team_b_score")
+
+
+def _prepare_plot_backend() -> None:
+    """Choose Matplotlib's file-only Agg backend, unless pyplot is already loaded.
+
+    The plot helpers in this package save image files and close every figure
+    they make. On a machine without a display, the Agg backend lets them work.
+    When pyplot is already loaded, for example in a notebook or an interactive
+    session, the caller's backend stays: switching it would stop that notebook
+    from showing its own figures afterwards. Call this just before importing
+    matplotlib.pyplot. It changes Matplotlib's global backend at most once, on
+    the first plot, and opens no window.
+    """
+    if "matplotlib.pyplot" not in sys.modules:
+        import matplotlib
+
+        matplotlib.use("Agg")
 
 
 def list_runs(
@@ -3655,9 +3673,7 @@ def analyze(
     if point_cells is not None and selection is None:
         point_cells.update(_recover_selection_points(run_dirs))
     details_by_path: dict[str, Mapping[str, Any]] = {}
-    import matplotlib
-
-    matplotlib.use("Agg")
+    _prepare_plot_backend()
     import matplotlib.pyplot as plt
 
     destination = Path(output_dir).expanduser()
@@ -5954,9 +5970,7 @@ def _screen_plot(points: Sequence[Record], destination: Path) -> dict[str, str]:
     The first row uses paired kill-margin change since initialization, which can
     distinguish short-run combat progress even when every game ends in a draw.
     """
-    import matplotlib
-
-    matplotlib.use("Agg")
+    _prepare_plot_backend()
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(2, 3, figsize=(16, 9), constrained_layout=True)

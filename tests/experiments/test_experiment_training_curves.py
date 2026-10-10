@@ -12,10 +12,15 @@ out of order or overlapping, and a folder that is not exactly one training run;
 it writes curves.csv, crossings.csv, summary.md (first, best and last check)
 and curves.png; first_crossings gives each system's first check with a margin
 above zero and its first that won at least half its games, None when none did.
+Plotting keeps a backend the caller already uses: when pyplot is loaded (as in
+a notebook), the package's plot helpers leave its backend alone; when it is
+not, they choose the file-only Agg backend (each case in a fresh Python).
 A fake training.list_runs replaces saved run folders.
 """
 
 import csv
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -188,3 +193,21 @@ def test_stage_keeps_only_the_named_opponents(fake_runs: None) -> None:
     assert (both[1]["margin"], both[1]["games"]) == (-8.0, 64)
     with pytest.raises(ValueError, match="no opponent 'other'"):
         training_curves.read_lineage("Mine", ["first"], opponents=["other"])
+
+
+@pytest.mark.parametrize(
+    ("preload", "backend"),
+    [("import matplotlib.pyplot; matplotlib.use('svg'); ", "svg"), ("", "agg")],
+)
+def test_plotting_keeps_a_backend_the_caller_already_uses(
+    preload: str, backend: str
+) -> None:
+    code = (
+        f"import matplotlib; {preload}"
+        "from marl_battlegrounds.training.analysis import _prepare_plot_backend; "
+        "_prepare_plot_backend(); print(matplotlib.get_backend().lower())"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert done.stdout.strip() == backend

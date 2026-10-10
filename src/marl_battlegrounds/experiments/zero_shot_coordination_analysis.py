@@ -945,9 +945,11 @@ def write_figure(rows: Sequence[Mapping[str, Any]], host: str, path: Path) -> No
     interval; the ``FLOOR`` newcomer is a grey cross. Zero, the dashed line,
     is the host's own agent. Needs matplotlib (the viz extra).
     """
-    import matplotlib
+    from marl_battlegrounds.training.analysis import (
+        _prepare_plot_backend,  # pyright: ignore[reportPrivateUsage]
+    )
 
-    matplotlib.use("Agg")
+    _prepare_plot_backend()
     import matplotlib.pyplot as plt
 
     classes = list(dict.fromkeys(str(row["newcomer_class"]) for row in rows))

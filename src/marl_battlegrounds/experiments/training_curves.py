@@ -158,9 +158,11 @@ def plot_curves(rows: Sequence[dict[str, Any]], path: Path) -> None:
     at 0, where a team scores as many points as its validation opponents, and
     the panel of games won has one at 50%.
     """
-    import matplotlib
+    from marl_battlegrounds.training.analysis import (
+        _prepare_plot_backend,  # pyright: ignore[reportPrivateUsage]
+    )
 
-    matplotlib.use("Agg")
+    _prepare_plot_backend()
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(1, 3, figsize=(16, 4), constrained_layout=True)

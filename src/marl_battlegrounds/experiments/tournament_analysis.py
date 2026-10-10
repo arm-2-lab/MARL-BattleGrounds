@@ -1114,9 +1114,11 @@ def write_outputs(
             lines.append("| " + " | ".join([*cells, row["description"]]) + " |")
     (output_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    import matplotlib
+    from marl_battlegrounds.training.analysis import (
+        _prepare_plot_backend,  # pyright: ignore[reportPrivateUsage]
+    )
 
-    matplotlib.use("Agg")
+    _prepare_plot_backend()
     import matplotlib.pyplot as plt
 
     shown = [measure for measure in MEASURES if measure[0] not in RESULTS]
