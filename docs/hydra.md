@@ -107,8 +107,10 @@ Use the full UUID from `nvidia-smi --query-gpu=uuid --format=csv,noheader`. A ru
 uses one device with `max_workers: 1`. A study puts the same `resources` mapping
 at the top of its declaration and can list several devices and workers.
 
-**Watch Out:** a missing declared GPU is an error, never a silent CPU fallback. Workers
-sharing a GPU need fractions adding up to at most one; a fraction is not a hard memory cap.
+**Watch Out:** a missing declared GPU never falls back to the CPU. A single run fails. A
+study pauses that GPU (its report records "missing at start"), runs on the others, and
+fails only when every declared GPU is missing. Workers sharing a GPU need fractions adding
+up to at most one; a fraction is not a hard memory cap.
 
 ## Resume Without Changing Settings
 

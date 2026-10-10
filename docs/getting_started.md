@@ -13,14 +13,14 @@ pip install "marl-battlegrounds[all,cuda13]"   # Linux with an NVIDIA GPU
 
 `all` adds the six built-in learners, Hydra launchers, notebook tools and still
 frames. Python 3.12, 3.13 and 3.14 work; 3.14 is recommended. For every other
-route (uv, Docker, Windows, Colab, Kaggle, clusters), see [install.md](install.md).
+route (uv, Docker, Windows, Colab, clusters), see [install.md](install.md).
 
 | Your Machine | What Works |
 | --- | --- |
 | Linux with an NVIDIA GPU | Everything, on the GPU. CUDA 13 needs driver 580 or newer and a card with compute capability 7.5 or newer. |
 | Linux without a GPU | Everything, on the CPU, only slower. |
 | Mac with Apple Silicon | Everything, on the CPU. Every release is install-tested on macOS. |
-| Intel Mac | Not supported (JAX does not support it). |
+| Intel Mac | Through Docker only, not tested yet (JAX has no native Intel Mac build). |
 | Windows | Through WSL2, which runs Ubuntu inside Windows. |
 
 **Watch Out:** canonical tournaments and adding games to a saved tournament need

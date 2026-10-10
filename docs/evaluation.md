@@ -70,7 +70,7 @@ priority metrics; `evaluation=full` adds full metrics and replays of games 1 and
 `run.selected_actor` is the checkpoint the trainer chose on validation maps. The
 command line (`--system`, `--opponent`), `evaluate`, `team`, `pool` and `run_tournament` take every reference below.
 
-**From A Checkout:** the six `evaluate_<method>.py` scripts live in `examples/` ([Hydra](hydra.md)).
+**From A Checkout:** the six `evaluate_<method>.py` scripts live in `examples/evaluate/` ([Hydra](hydra.md)).
 
 **Watch Out:** `checkpoint=` needs an actor export, checkpoint folder, model file or released
 name, not a run folder. `run.selected_actor` is None without validation; then pick

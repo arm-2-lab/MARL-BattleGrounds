@@ -65,13 +65,13 @@ and `agent_0_and_agent_1_...` is a pair of teammates. Slots 0-4 are Team A, 5-9 
 | **Total** | **11,192** | **Unique numerical columns; shared viewer appearances are counted once.** |
 <!-- metric-family-summary:end -->
 
-## Topics In The Replay Viewer
+## Topics In The Analytical Replay Viewer
 
 ```bash
 python -m marl_battlegrounds replay PATH/TO/game.marlbg-replay.json
 ```
 
-The Replay Viewer's **Metrics** tab sorts the full measures into 28 topics in six
+The analytical Replay Viewer's **Metrics** tab sorts the full measures into 28 topics in six
 groups, many with **Totals** and **By Recipient** tables. **Find A Measurement** takes
 plain words or exact CSV names, and hovering a row shows its CSV column, numerator,
 denominator and blank rule. Agent POV still shows the full record.
@@ -184,7 +184,7 @@ run into charts, CSV tables and a testable claim. `MARL_BGS_RESULTS` is the exac
 folder holding `run_details.json`; leave it unset for a tiny demo. Optional
 `MARL_BGS_PHASE` and `MARL_BGS_PASS_ID` pick one saved pass.
 
-**From A Checkout:** the notebook lives in `examples/` and needs the `viz` and `notebook` extras.
+**From A Checkout:** the notebook lives in `examples/evaluate/` and needs the `viz` and `notebook` extras.
 
 **Watch Out:** the report folder must be new or empty and outside the run folder.
 Detailed plots read at most 200 games. The demo's tiny Random games are not evidence.
