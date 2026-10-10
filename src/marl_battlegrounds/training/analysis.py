@@ -47,17 +47,19 @@ _SCORE_COLUMNS = ("team_a_score", "team_b_score")
 
 
 def _prepare_plot_backend() -> None:
-    """Choose Matplotlib's file-only Agg backend, unless pyplot is already loaded.
+    """Choose Matplotlib's file-only Agg backend, unless the caller has its own.
 
     The plot helpers in this package save image files and close every figure
     they make. On a machine without a display, the Agg backend lets them work.
-    When pyplot is already loaded, for example in a notebook or an interactive
-    session, the caller's backend stays: switching it would stop that notebook
-    from showing its own figures afterwards. Call this just before importing
-    matplotlib.pyplot. It changes Matplotlib's global backend at most once, on
-    the first plot, and opens no window.
+    The caller's backend stays when pyplot is already loaded (an interactive
+    session) or when this runs inside a Jupyter or Colab kernel (``ipykernel``
+    is loaded; the kernel names its inline backend in ``MPLBACKEND`` before
+    pyplot loads). Switching it would stop that notebook from showing its own
+    figures afterwards. Call this just before importing matplotlib.pyplot. It
+    changes Matplotlib's global backend at most once, on the first plot, and
+    opens no window.
     """
-    if "matplotlib.pyplot" not in sys.modules:
+    if "matplotlib.pyplot" not in sys.modules and "ipykernel" not in sys.modules:
         import matplotlib
 
         matplotlib.use("Agg")

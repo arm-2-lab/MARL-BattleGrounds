@@ -65,8 +65,10 @@ wait_for_link() {
     fi
     sleep 2
   done
-  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)" = 200
-  test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost:8765' http://127.0.0.1:8765/)" = 403
+  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)" = 200 ||
+    { echo "check_install.sh: the BattleClient page did not answer." >&2; exit 1; }
+  test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost:8765' http://127.0.0.1:8765/)" = 403 ||
+    { echo "check_install.sh: the BattleClient did not refuse a localhost address." >&2; exit 1; }
   echo "BattleClient ok"
 }
 
@@ -75,12 +77,12 @@ pip_route() {
   env="$work/pip-$1"
   uv venv --seed --python "$1" "$env"
   "$env/bin/pip" install "${wheel}[all]"
-  quick_start "$env/bin/python" "pip-$1"
+  quick_start "$env/bin/python" "eval-pip-$1"
   if [ "${2:-}" = constraints ]; then
     env="$work/pip-$1-constraints"
     uv venv --seed --python "$1" "$env"
     "$env/bin/pip" install "${wheel}[all]" -c "$PWD/constraints/constraints-cpu.txt"
-    quick_start "$env/bin/python" "pip-$1-constraints"
+    quick_start "$env/bin/python" "eval-pip-$1-constraints"
   fi
 }
 
@@ -108,7 +110,7 @@ oldest_route() {
   place="$work/oldest-$(echo "$1" | tr -c 'A-Za-z0-9\n' '-')"
   mkdir -p "$place"
   git archive --prefix="$folder/" HEAD | tar -x -C "$place"
-  docker run --rm -v "$place/$folder:/root/$folder" -w "/root/$folder" "$1" sh -c '
+  docker run --rm -v "$place/$folder:/root/$folder" -w "/root/$folder" "$1" sh -ec '
     sh start.sh --help
     "$HOME/.local/bin/uv" run --no-sync python -m marl_battlegrounds evaluate \
       --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check'
@@ -128,7 +130,8 @@ container_route() {
   "$engine" run --rm -e HF_HUB_OFFLINE=1 -v "$mount:/work" "$2" evaluate \
     --system MARL-BattleGrounds/tdm-season-0-recurrent-mappo --opponent tdm-alpha \
     --episodes 2 --maps 47 --num-envs 2 --output-dir runs/check
-  test "$(stat -c %u "$mount/runs/check")" = "$(id -u)"
+  test "$(stat -c %u "$mount/runs/check")" = "$(id -u)" ||
+    { echo "check_install.sh: the results do not belong to the folder's owner." >&2; exit 1; }
   echo "$engine ok: $2"
 }
 

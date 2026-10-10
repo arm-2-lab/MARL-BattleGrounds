@@ -12,13 +12,15 @@ out of order or overlapping, and a folder that is not exactly one training run;
 it writes curves.csv, crossings.csv, summary.md (first, best and last check)
 and curves.png; first_crossings gives each system's first check with a margin
 above zero and its first that won at least half its games, None when none did.
-Plotting keeps a backend the caller already uses: when pyplot is loaded (as in
-a notebook), the package's plot helpers leave its backend alone; when it is
-not, they choose the file-only Agg backend (each case in a fresh Python).
+Plotting keeps a backend the caller already uses: when pyplot is loaded, or
+inside a Jupyter kernel (its backend named in MPLBACKEND before pyplot loads),
+the package's plot helpers leave the backend alone; otherwise they choose the
+file-only Agg backend (each case in a fresh Python).
 A fake training.list_runs replaces saved run folders.
 """
 
 import csv
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -195,19 +197,34 @@ def test_stage_keeps_only_the_named_opponents(fake_runs: None) -> None:
         training_curves.read_lineage("Mine", ["first"], opponents=["other"])
 
 
+KERNEL = "import sys, types; sys.modules['ipykernel'] = types.ModuleType('k'); "
+
+
 @pytest.mark.parametrize(
-    ("preload", "backend"),
-    [("import matplotlib.pyplot; matplotlib.use('svg'); ", "svg"), ("", "agg")],
+    ("preload", "environment", "backend"),
+    [
+        ("import matplotlib.pyplot; matplotlib.use('svg'); ", None, "svg"),
+        (KERNEL, "svg", "svg"),
+        ("", None, "agg"),
+    ],
 )
 def test_plotting_keeps_a_backend_the_caller_already_uses(
-    preload: str, backend: str
+    preload: str, environment: str | None, backend: str
 ) -> None:
     code = (
-        f"import matplotlib; {preload}"
+        f"{preload}import matplotlib; "
         "from marl_battlegrounds.training.analysis import _prepare_plot_backend; "
-        "_prepare_plot_backend(); print(matplotlib.get_backend().lower())"
+        "_prepare_plot_backend(); import matplotlib.pyplot; "
+        "print(matplotlib.get_backend().lower())"
     )
+    env = {key: value for key, value in os.environ.items() if key != "MPLBACKEND"}
+    if environment is not None:
+        env["MPLBACKEND"] = environment
     done = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
     )
     assert done.stdout.strip() == backend
