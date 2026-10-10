@@ -13,7 +13,7 @@ Website: https://marl-battlegrounds.com/#models
 | `pip install marl-battlegrounds` | Load and evaluate released models, read the results dataset |
 | `pip install "marl-battlegrounds[training]"` | Also train against them and start training from them |
 | `pip install "marl-battlegrounds[training,hydra]"` | Also the evaluate scripts and the Hydra training commands |
-| `pip install "marl-battlegrounds[hydra,viz]"` | Also draw training curves from their records |
+| `pip install "marl-battlegrounds[hydra,viz]"` | Load and evaluate, plus draw training curves from their records (no training) |
 
 On a GPU, add its build as the [install guide](install.md) shows, for example
 `[training,cuda13]`. No Hugging Face account or token is needed.
@@ -120,7 +120,10 @@ python -m marl_battlegrounds.experiments.train method=mappo \
 ```
 
 [train_against_released_models.py](../examples/training/train_against_released_models.py)
-is a runnable version.
+is a runnable version. As a frozen teammate, a name goes in `partners` with
+`learner_slots`, for example
+`partners={"MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final": 1.0}`; see
+[Training](training.md#opponents-and-partners).
 
 ## Start Training From One
 
@@ -143,7 +146,7 @@ uses `input_scale=1.0` and the other five use `0.01`. A wrong value fails with
 ## Evaluate, Tournaments And The BattleClient
 
 - [Evaluation](evaluation.md): `marl_bgs.evaluate(name, "tdm-alpha", num_episodes=20)`,
-  or a script such as
+  or, from a clone of the repository, a script such as
   `python examples/evaluate/evaluate_recurrent_ippo.py checkpoint=MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final evaluation.output_dir=runs/eval`
   (needs `[training,hydra]`).
 - [Tournaments](tournaments.md): a name is one entrant.
