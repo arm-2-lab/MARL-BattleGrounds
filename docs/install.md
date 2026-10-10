@@ -23,7 +23,7 @@ You do not need to install JAX first: each route installs the right JAX for your
 | Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Not tested yet; it should work |
 | Intel Mac, old Linux, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
 | Your own Python project | [pip](#pip) | You choose | Tested: Linux x86_64 and ARM and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14 |
-| Only a browser | [Colab](#colab) | Colab's free T4 | Tested |
+| Only a browser | [Colab](#colab) | Colab's free T4 | Not tested yet; it should work |
 | A cluster or a remote GPU machine | [Clusters and remote machines](#clusters-and-remote-machines) | NVIDIA | Tested on one Linux machine: the uv steps with the network cut off, and Apptainer on the CPU. Not tested yet; it should work: a real cluster, Apptainer with a GPU, the SSH tunnel |
 | AMD GPU or Google TPU | [GPU builds](#gpu-builds) | AMD or TPU | Not tested yet; it should work |
 
@@ -71,7 +71,7 @@ Open the example notebooks with `uv run --no-sync jupyter lab`, then `examples/q
 
 | Build | For | Needs | Tested |
 |---|---|---|---|
-| `cuda13` | NVIDIA RTX 20-series and newer | Driver 580 or newer, compute capability 7.5 or higher | Tested (an RTX 5090, and Colab's T4) |
+| `cuda13` | NVIDIA RTX 20-series and newer | Driver 580 or newer, compute capability 7.5 or higher | Tested (an RTX 5090) |
 | `cuda12` | Older NVIDIA GPUs and older drivers | Driver 525 or newer, compute capability 5.2 or higher | Tested on an RTX 5090 (driver 580) only. Older GPUs: not tested yet; they should work |
 | `cpu` | Everything else | Nothing | Tested |
 | `rocm` | AMD GPUs on Linux x86_64 | ROCm 7 installed on the machine | Not tested yet; it should work |
