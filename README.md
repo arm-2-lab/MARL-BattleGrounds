@@ -82,7 +82,7 @@ With Docker or Podman, on any system (add `--gpus all` and the `1.0.1-cuda12` ta
 docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1
 ```
 
-| Route | Works on | Tested |
+| Route | For | Tested |
 |---|---|---|
 | One command, `sh start.sh` | Linux (x86_64 and ARM), Apple Silicon Mac, Windows with WSL2 | Tested: Linux x86_64 with an NVIDIA RTX 5090; Linux x86_64 and ARM, and an Apple Silicon Mac, on the CPU. Not tested yet; it should work: WSL2 |
 | pip | Linux, Apple Silicon Mac, WSL2; Python 3.12 to 3.14 | Tested: Linux x86_64 and ARM, and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14. Not tested yet; it should work: WSL2 |

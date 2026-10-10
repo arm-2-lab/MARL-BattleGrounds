@@ -14,7 +14,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 
 | Example | What It Teaches | Guide |
 |---|---|---|
-| `quickstart.ipynb` | Play games, evaluate a trained team and play the Season 0 teams on Colab | [Install](../docs/install.md) |
+| `quickstart.ipynb` | The walkthrough: the API with a drawn game, the speed, a short training run and the trained Season 0 teams; opens in Colab | [Install](../docs/install.md) |
 | `environment.py` | Make a batch of games, take legal random actions, reset finished games | [Getting Started](../docs/getting_started.md) |
 | `episode_tracking.py` | Curricula, automatic resets and optional recording in your own loop | [Getting Started](../docs/getting_started.md) |
 | `train.py` | Launch any built-in learner with packaged settings | [Training](../docs/training.md) |
