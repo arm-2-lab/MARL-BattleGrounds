@@ -4,23 +4,66 @@
 
 [![PyPI](https://img.shields.io/pypi/v/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![Python](https://img.shields.io/pypi/pyversions/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/LICENSE)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-MARL--BattleGrounds-ffcc4d)](https://huggingface.co/MARL-BattleGrounds)
 [![Website](https://img.shields.io/badge/website-marl--battlegrounds.com-2b6cb0)](https://marl-battlegrounds.com)
 
-![Two teams of five fight on a MARL-BattleGrounds map](https://marl-battlegrounds.com/assets/art/key-art-preview.jpg)
+[Installation](#installation) | [Quick Start](#quick-start) | [Baselines](#baselines) | [Guides](#guides) | [See Also](#see-also) | [Citation](#citation)
 
-Two teams of up to five agents fight Team Deathmatch on 52 maps. Each agent
-is a Mage, Warrior, Hunter, Rogue or Priest, so a team wins by combining
-movement, attacks, healing and support. The whole game is written in JAX, so
-thousands of games run at once on one GPU. You bring the method; MARL-BGs
-gives you the game, training helpers, evaluation, tournaments and replays.
+**MARL-BattleGrounds (MARL-BGs)** is an easy-to-use, JAX-native benchmark
+for heterogeneous and competitive team-vs-team multi-agent reinforcement
+learning (MARL). It is designed to be sample-efficient, computationally
+efficient and researcher-centric. Most MARL benchmarks are either fast
+but simple, like SMAX, where winning comes down to unit micromanagement,
+or rich but costly, like Dota 2, which took OpenAI Five ten months of
+training on large clusters. MARL-BGs fills the missing middle: rich team
+play, with fast and cheap experiments on one GPU.
 
-## Install
+- **The Game.** In Team Deathmatch, two teams of up to five agents fight
+  on 52 hand-designed maps. Each agent is a Mage, Warrior, Hunter, Rogue
+  or Priest. Each class has its own Basic ability, passive and Ultimate,
+  built to help allies and counter enemies, so a team wins by working
+  together. Obstacles block sight and attacks, so each agent sees only
+  part of the map. Maps 0-11 form a curriculum, maps 0-41 are for
+  training, maps 42-46 for validation and maps 47-51 for testing.
+- **The Evaluation.** Eight hand-crafted endgame scenarios, each with a
+  verified winning line, test skills such as agent modeling and
+  multi-step planning. A monthly tournament retrains every entry on equal
+  compute, plays it against the current "Big Nine" on the test maps, and
+  rates it with draw-aware Elo and confidence intervals. Every entrant is
+  released as a downloadable opponent. Up to 11,192 metrics per game, in
+  28 topics, show how a team won, such as how much the Priest healed each
+  ally.
+- **The Tools.** Bring your own learner through plain JAX `reset` and
+  `step`, or start from six tuned baselines. Their trained Season 0
+  models, and every save from 0 to 250 million steps, load by name from
+  Hugging Face. Training helpers cover self-play, opponent pools,
+  curricula and reward shaping. One call evaluates any mix of policies,
+  so cross-play and zero-shot coordination tests come out of the box.
+  MARL-BGs also ships three strong scripted opponents, an LLM API that
+  turns a language model into a team, the BattleClient for playing
+  alongside or against your policies, and the analytical Replay Viewer
+  for stepping through any game tick by tick.
+
+Try it in your browser: the [Colab notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) walks through the API, the speed, training a team and the trained Season 0 teams.
+
+## Installation
+
+Start here:
+
+| You want to | Do this |
+|---|---|
+| Look around in your browser, with nothing to install | [Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb): the API, the speed, training a team and the trained Season 0 teams |
+| Play the game | The one command below |
+| Use MARL-BattleGrounds in your own project | pip, below |
+
+You do not need to install JAX first: each route installs the right JAX for your machine.
 
 On Linux, an Apple Silicon Mac or Windows with WSL2, one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
 
 ```bash
-curl -L https://github.com/oceansystemslab/MARL-BattleGrounds/archive/refs/tags/v1.0.0.tar.gz | tar xz
+curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.0.tar.gz | tar xz
 cd MARL-BattleGrounds-1.0.0 && sh start.sh
 ```
 
@@ -31,18 +74,20 @@ pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA GPU, driver 580 or newer
 ```
 
-With Docker, on any system (add `--gpus all` and the `1.0.0-cuda12` tag for an NVIDIA GPU):
+With Docker or Podman, on any system (add `--gpus all` and the `1.0.0-cuda12` tag for an NVIDIA GPU):
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0
+docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.0
 ```
 
 | Route | Works on | Tested |
 |---|---|---|
-| One command, `sh start.sh` | Linux, Apple Silicon Mac, Windows with WSL2 | Linux with NVIDIA; install and evaluation on Linux and Mac CPUs, by every release; WSL2 not tested yet |
-| pip | Linux, Apple Silicon Mac, WSL2 | Linux and Apple Silicon Mac, by every release |
-| Docker | Any system with Docker; NVIDIA on Linux and Windows hosts | Linux, CPU and NVIDIA; the arm64 image by every release, under emulation; Docker Desktop not tested yet |
-| Colab and Kaggle, [Open in Colab](https://colab.research.google.com/github/oceansystemslab/MARL-BattleGrounds/blob/v1.0.0/examples/quickstart.ipynb) | A browser | Not tested yet |
+| One command, `sh start.sh` | Linux (x86_64 and ARM), Apple Silicon Mac, Windows with WSL2 | Tested: Linux x86_64 with an NVIDIA RTX 5090; Linux x86_64 and ARM, and an Apple Silicon Mac, on the CPU. Not tested yet; it should work: WSL2 |
+| pip | Linux, Apple Silicon Mac, WSL2; Python 3.12 to 3.14 | Tested: Linux x86_64 and ARM, and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14. Not tested yet; it should work: WSL2 |
+| Docker | Any system with Docker or Podman; NVIDIA GPUs on Linux and Windows | Tested: Linux with Docker (CPU, and an NVIDIA GPU with the CUDA 12 image), Linux with Podman, the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
+| Colab, [Open in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) | A browser | Tested: Colab's free T4 GPU |
+
+"Tested" means we ran exactly these instructions on that system for this release.
 
 Docker runs everything: play, replays, training, evaluation, tournaments, analysis and notebooks. Its limits:
 
@@ -50,12 +95,15 @@ Docker runs everything: play, replays, training, evaluation, tournaments, analys
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
-| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/oceansystemslab/marl-battlegrounds:1.0.0`, then `RUN uv pip install <package>` |
+| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.0`, then `RUN uv pip install <package>` |
 | Docker Desktop (Mac, Windows) limits the container's memory | Raise the memory limit in Docker Desktop's settings for large training runs |
 
-Every route, the GPU builds, Windows, clusters and offline use: [the install guide](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/install.md).
+Every route, the GPU builds, Windows, clusters and offline use: [the install guide](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md).
 
 ## Quick Start
+
+`make`, `reset` and `step` take and return the same things as in JaxMARL, and
+compile under `jit`, `vmap` and `lax.scan`.
 
 ```python
 import jax
@@ -76,8 +124,9 @@ On one RTX 5090 with 1,024 parallel 5v5 games, the simulator alone runs 50,416 g
 ## Train
 
 One command trains recurrent IPPO with the Season 0 learner settings (250 million game
-steps, a few hours on one RTX 5090) against scripted opponents, and keeps its best
-checkpoint on the validation maps:
+steps) against scripted opponents, and keeps its best checkpoint on the validation
+maps. [What Training Costs](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/performance.md#what-training-costs)
+gives the time and memory on one GPU.
 
 ```bash
 python -m marl_battlegrounds.experiments.train method=ippo pool=scripted \
@@ -108,20 +157,21 @@ import marl_battlegrounds as marl_bgs
 marl_bgs.battle_client(team_b="tdm-alpha")  # play in your browser against a scripted team
 ```
 
-## The Six Built-In Learners
+## Baselines
 
-| Method | Name | Memory | Critic |
-|---|---|---|---|
-| Recurrent MAPPO | `mappo` | Recurrent | Centralized |
-| Feedforward MAPPO | `ff_mappo` | None | Centralized |
-| Recurrent IPPO | `ippo` | Recurrent | One per agent |
-| Feedforward IPPO | `ff_ippo` | None | One per agent |
-| QMIX | `qmix` | Recurrent | QMIX mixer |
-| PQN-VDN | `pqn_vdn` | Recurrent | Sum of agent values |
+| Method | Name | Memory | Critic | Reference | Source |
+|---|---|---|---|---|---|
+| Recurrent MAPPO | `mappo` | Recurrent | Centralized | [Yu et al., 2022](https://arxiv.org/abs/2103.01955) | [`ppo.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/ppo.py) |
+| Feedforward MAPPO | `ff_mappo` | None | Centralized | [Yu et al., 2022](https://arxiv.org/abs/2103.01955) | [`ppo.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/ppo.py) |
+| Recurrent IPPO | `ippo` | Recurrent | One per agent | [de Witt et al., 2020](https://arxiv.org/abs/2011.09533) | [`ppo.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/ppo.py) |
+| Feedforward IPPO | `ff_ippo` | None | One per agent | [de Witt et al., 2020](https://arxiv.org/abs/2011.09533) | [`ppo.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/ppo.py) |
+| QMIX | `qmix` | Recurrent | QMIX mixer | [Rashid et al., 2018](https://arxiv.org/abs/1803.11485) | [`qmix.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/qmix.py) |
+| PQN-VDN | `pqn_vdn` | Recurrent | Sum of agent values | [Gallici et al., 2024](https://arxiv.org/abs/2407.04811); [Sunehag et al., 2017](https://arxiv.org/abs/1706.05296) | [`pqn.py`](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/src/marl_battlegrounds/baselines/pqn.py) |
 
-The six trained Season 0 models, with every save from 0 to 250M steps, load by name,
-for example `marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-qmix@final")`
-([Training](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/training.md#use-a-released-season-0-model)).
+Every save of the six Season 0 models, from 0 to 250 million steps, loads by name from
+[Hugging Face](https://huggingface.co/MARL-BattleGrounds), for example
+`marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final")`
+([Released Models](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/released_models.md)).
 
 Your own method can be anything that turns permitted observations into legal
 actions: a network, a planner, a language model or a mix.
@@ -130,52 +180,65 @@ actions: a network, a planner, a language model or a mix.
 
 | Guide | What It Covers | Website |
 |---|---|---|
-| [Getting Started](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/getting_started.md) | Install, your first games, maps, rosters, what agents see | [start](https://marl-battlegrounds.com/#start) |
-| [Game Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/game_rules.md) | Classes, abilities, scoring, Red Zone, scenarios | [game](https://marl-battlegrounds.com/#game) |
-| [Your Method](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/your_method.md) | Plug in your own model or learner, with JAX's jit, vmap and scan | [your-method](https://marl-battlegrounds.com/#your-method) |
-| [Training](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/training.md) | The six learners, opponents, curriculum, rewards, checkpoints | [training](https://marl-battlegrounds.com/#training) |
-| [Hydra Configs](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/hydra.md) | Settings files, overrides, sweeps, studies and the experiment stages | [configs](https://marl-battlegrounds.com/#configs) |
-| [Evaluation](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/evaluation.md) | Fair games, validation and test maps, scenarios, saved results | [evaluate](https://marl-battlegrounds.com/#evaluate) |
-| [Metrics](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/metrics.md) | What is measured and how to read it | [metrics](https://marl-battlegrounds.com/#metrics) |
-| [Tournaments](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournaments.md) | Round robins, Elo ratings and tiers | [round-robin](https://marl-battlegrounds.com/#round-robin) |
-| [Tournament Rules](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) | The leaderboard rulebook | [rules](https://marl-battlegrounds.com/#rules) |
-| [Replays](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the Replay Viewer | [replay-format](https://marl-battlegrounds.com/#replay-format) |
-| [BattleClient](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/battle_client.md) | Play against or beside your own agents in the browser | [battleclient](https://marl-battlegrounds.com/#battleclient) |
-| [LLM Agents](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
-| [Performance](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/performance.md) | Speed and memory, and how to measure them on your machine | [performance](https://marl-battlegrounds.com/#performance) |
-| [Method Sources](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/method_sources.md) | Where the built-in learners come from | [method-sources](https://marl-battlegrounds.com/#method-sources) |
-| [API Reference](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/api.md) | Every public name on one page | [api](https://marl-battlegrounds.com/#api) |
+| [Getting Started](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/getting_started.md) | Install, your first games, maps, rosters, what agents see | [start](https://marl-battlegrounds.com/#start) |
+| [Game Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/game_rules.md) | Classes, abilities, scoring, Red Zone, scenarios | [game](https://marl-battlegrounds.com/#game) |
+| [Your Method](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/your_method.md) | Plug in your own model or learner, with JAX's jit, vmap and scan | [your-method](https://marl-battlegrounds.com/#your-method) |
+| [Training](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/training.md) | The six learners, opponents, curriculum, rewards, checkpoints | [training](https://marl-battlegrounds.com/#training) |
+| [Released Models](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/released_models.md) | Load, play, train against or start from the six trained Season 0 models | [models](https://marl-battlegrounds.com/#models) |
+| [Hydra Configs](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/hydra.md) | Settings files, overrides, sweeps, studies and the experiment stages | [configs](https://marl-battlegrounds.com/#configs) |
+| [Evaluation](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/evaluation.md) | Fair games, validation and test maps, scenarios, saved results | [evaluate](https://marl-battlegrounds.com/#evaluate) |
+| [Metrics](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/metrics.md) | What is measured and how to read it | [metrics](https://marl-battlegrounds.com/#metrics) |
+| [Tournaments](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournaments.md) | Round robins, Elo ratings and tiers | [round-robin](https://marl-battlegrounds.com/#round-robin) |
+| [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) | The leaderboard rulebook | [leaderboard-rules](https://marl-battlegrounds.com/#leaderboard-rules) |
+| [Replays](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/replays.md) | Save games and watch them in the analytical Replay Viewer | [replay-format](https://marl-battlegrounds.com/#replay-format) |
+| [BattleClient](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/battle_client.md) | Play against or beside your own agents in the browser | [battleclient](https://marl-battlegrounds.com/#battleclient) |
+| [LLM Agents](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/llm.md) | Run a language model as a team | [llm](https://marl-battlegrounds.com/#llm) |
+| [Performance](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/performance.md) | Speed and memory, and how to measure them on your machine | [performance](https://marl-battlegrounds.com/#performance) |
+| [Method Sources](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/method_sources.md) | Where the built-in learners come from | [method-sources](https://marl-battlegrounds.com/#method-sources) |
+| [API Reference](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/api.md) | Every public name on one page | [api](https://marl-battlegrounds.com/#api) |
 
 ## Reproduce The Paper
 
 The paper's commands, frozen settings and result tables are in
-[`scripts/paper_experiments/`](https://github.com/oceansystemslab/MARL-BattleGrounds/tree/main/scripts/paper_experiments).
+[`scripts/paper_experiments/`](https://github.com/arm-2-lab/MARL-BattleGrounds/tree/main/scripts/paper_experiments).
 
-## Cite
+## See Also
 
-Use the "Cite this repository" button on GitHub, or:
+JAX-native environments:
+
+- [JaxMARL](https://github.com/bold-lab-ai/JaxMARL): Multi-Agent RL Environments and Algorithms in JAX.
+- [Gymnax](https://github.com/RobertTLange/gymnax): classic RL environments in JAX.
+- [Jumanji](https://github.com/instadeepai/jumanji): combinatorial and planning environments in JAX.
+- [Pgx](https://github.com/sotetsuk/pgx): board games in JAX.
+- [Brax](https://github.com/google/brax): physics simulation for robot learning in JAX.
+- [XLand-MiniGrid](https://github.com/dunnolab/xland-minigrid): open-ended grid worlds for meta-RL in JAX.
+- [Craftax](https://github.com/MichaelTMatthews/Craftax): an open-ended survival game in JAX.
+
+JAX-native algorithms:
+
+- [Mava](https://github.com/instadeepai/Mava): JAX implementations of popular MARL algorithms.
+- [PureJaxRL](https://github.com/luchris429/purejaxrl): JAX implementation of PPO, and demonstration of end-to-end JAX-based RL training.
+
+## Citation
+
+If you use MARL-BattleGrounds in your work, please cite the paper:
 
 ```bibtex
-@software{marl_battlegrounds,
-  author = {Hawili, Ulixes Tariq},
-  title = {{MARL-BattleGrounds}: The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning},
-  version = {1.0.0},
-  year = {2026},
-  url = {https://github.com/oceansystemslab/MARL-BattleGrounds}
+@article{hawili2026marlbattlegrounds,
+  title   = {{MARL-BattleGrounds}: A Novel {JAX}-native Benchmark for Heterogeneous and Competitive Multi-agent {RL}},
+  author  = {Hawili, Ulixes Tariq and Ramamoorthy, Subramanian and Altmann, Yoann and Carlucho, Ignacio},
+  journal = {arXiv preprint},
+  month   = oct,
+  year    = {2026}
 }
 ```
 
 ## Contribute
 
 Pull requests are welcome. Start with
-[CONTRIBUTING.md](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/CONTRIBUTING.md),
-and open an [issue](https://github.com/oceansystemslab/MARL-BattleGrounds/issues)
+[CONTRIBUTING.md](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/CONTRIBUTING.md),
+and open an [issue](https://github.com/arm-2-lab/MARL-BattleGrounds/issues)
 for bugs, ideas, questions and leaderboard submissions.
-
-## Author
-
-MARL-BattleGrounds is developed by Ulixes Tariq Hawili as part of the SPADS CDT,
-University of Edinburgh School of Engineering, and the Ocean Systems Lab at HWU.
 
 ## License
 

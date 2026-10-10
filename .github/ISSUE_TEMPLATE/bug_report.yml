@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thank you for reporting a bug. A short example that we can run helps us fix it fast.
-        Found a security problem? Do not open an issue. Follow [SECURITY.md](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/SECURITY.md) instead.
+        Found a security problem? Do not open an issue. Follow [SECURITY.md](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/SECURITY.md) instead.
 
   - type: dropdown
     id: area
@@ -93,7 +93,7 @@ body:
     id: frequency
     attributes:
       label: Does It Happen Every Time?
-      description: If the same seed gives different results between runs, read [Same Seed, Same Game](https://github.com/oceansystemslab/MARL-BattleGrounds/blob/main/docs/evaluation.md#same-seed-same-game) first.
+      description: If the same seed gives different results between runs, read [Same Seed, Same Game](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/evaluation.md#same-seed-same-game) first.
       options:
         - Every time
         - Sometimes

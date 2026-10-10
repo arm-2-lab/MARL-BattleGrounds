@@ -39,7 +39,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
-REPOSITORY_URL = "https://github.com/oceansystemslab/MARL-BattleGrounds"
+REPOSITORY_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds"
 NOT_RUN = {"llm.md", "battle_client.md"}
 HYDRA_EXAMPLES = {
     "mappo_training",
@@ -128,7 +128,7 @@ def test_links_resolve(path: Path) -> None:
         location = target.split("#", 1)[0]
         if target.startswith(REPOSITORY_URL):
             match = re.match(
-                rf"{re.escape(REPOSITORY_URL)}/(?:blob|tree)/main/(.+)", location
+                rf"{re.escape(REPOSITORY_URL)}/(?:blob|tree|raw)/main/(.+)", location
             )
             if match is not None:
                 assert is_tracked(ROOT / match.group(1)), f"{path.name}: {target}"

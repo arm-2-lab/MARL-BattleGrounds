@@ -2,7 +2,7 @@
 
 Report a security problem privately. Never post it in a public issue. Email
 t.hawili@sms.ed.ac.uk, or use **Report a vulnerability** on the repository's
-[Security tab](https://github.com/oceansystemslab/MARL-BattleGrounds/security)
+[Security tab](https://github.com/arm-2-lab/MARL-BattleGrounds/security)
 when private vulnerability reporting is turned on there.
 
 - The Replay Viewer and the BattleClient serve their pages on 127.0.0.1 only. In Docker,

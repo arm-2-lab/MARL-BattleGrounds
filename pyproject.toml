@@ -12,6 +12,9 @@ license = "Apache-2.0"
 authors = [
   { name = "Ulixes Tariq Hawili", email = "t.hawili@sms.ed.ac.uk" }
 ]
+maintainers = [
+  { name = "Ulixes Tariq Hawili", email = "t.hawili@sms.ed.ac.uk" }
+]
 keywords = [
   "multi-agent reinforcement learning",
   "reinforcement learning",
@@ -45,9 +48,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://marl-battlegrounds.com"
 Documentation = "https://marl-battlegrounds.com/#guides"
-Repository = "https://github.com/oceansystemslab/MARL-BattleGrounds"
-Issues = "https://github.com/oceansystemslab/MARL-BattleGrounds/issues"
-Changelog = "https://github.com/oceansystemslab/MARL-BattleGrounds/releases"
+Repository = "https://github.com/arm-2-lab/MARL-BattleGrounds"
+Issues = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues"
+Changelog = "https://github.com/arm-2-lab/MARL-BattleGrounds/releases"
 
 [project.optional-dependencies]
 cuda13 = [

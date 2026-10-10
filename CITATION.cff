@@ -1,15 +1,21 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+message: "If you use MARL-BattleGrounds, please cite the paper below."
 title: "MARL-BattleGrounds"
 type: software
 authors:
   - given-names: "Ulixes Tariq"
     family-names: "Hawili"
     email: "t.hawili@sms.ed.ac.uk"
+  - given-names: "Subramanian"
+    family-names: "Ramamoorthy"
+  - given-names: "Yoann"
+    family-names: "Altmann"
+  - given-names: "Ignacio"
+    family-names: "Carlucho"
 version: "1.0.0"
 date-released: "2026-10-10"
 license: "Apache-2.0"
-repository-code: "https://github.com/oceansystemslab/MARL-BattleGrounds"
+repository-code: "https://github.com/arm-2-lab/MARL-BattleGrounds"
 url: "https://marl-battlegrounds.com"
 abstract: "The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning."
 keywords:
@@ -18,3 +24,18 @@ keywords:
   - "benchmark"
   - "heterogeneous agents"
   - "competitive games"
+preferred-citation:
+  type: article
+  title: "MARL-BattleGrounds: A Novel JAX-native Benchmark for Heterogeneous and Competitive Multi-agent RL"
+  authors:
+    - given-names: "Ulixes Tariq"
+      family-names: "Hawili"
+    - given-names: "Subramanian"
+      family-names: "Ramamoorthy"
+    - given-names: "Yoann"
+      family-names: "Altmann"
+    - given-names: "Ignacio"
+      family-names: "Carlucho"
+  journal: "arXiv preprint"
+  year: 2026
+  month: 10
