@@ -12,6 +12,7 @@ import json
 import os
 import re
 import stat
+import sys
 import tempfile
 import zipfile
 from collections.abc import Mapping
@@ -252,7 +253,11 @@ def export_bundle(
                 digest, size = sha256(), 0
                 info = zipfile.ZipInfo(name)
                 info.compress_type = zipfile.ZIP_DEFLATED
-                info.compress_level = 1
+                # Python 3.13 renamed ZipInfo's level from _compresslevel.
+                if sys.version_info >= (3, 13):
+                    info.compress_level = 1
+                else:
+                    info._compresslevel = 1  # pyright: ignore[reportAttributeAccessIssue]
                 info.external_attr = (stat.S_IFREG | 0o644) << 16
                 with (
                     path.open("rb") as stream,
