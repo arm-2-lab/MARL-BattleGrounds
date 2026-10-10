@@ -111,7 +111,7 @@ In Windows Command Prompt, write `-v "%cd%:/work"` instead. PowerShell, bash and
 | Command after the image name | What it does |
 |---|---|
 | (nothing), or `play --team-b qmix --map 12` | The BattleClient, with the same team and map options as `start.sh` |
-| `replay recordings/<file>.marlbg-replay.json` | Opens a saved replay in the Replay Viewer |
+| `replay recordings/<file>.marlbg-replay.json` | Opens a saved replay in the analytical Replay Viewer |
 | `evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check` | Any MARL-BattleGrounds command, such as `train`, `evaluate`, `tournament` or `models` |
 | `python` or `bash` | Any other program, run as given |
 

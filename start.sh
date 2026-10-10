@@ -136,7 +136,7 @@ fi
 
 # shellcheck disable=SC2086  # $extras is a list of flags.
 if ! uv sync --locked $extras; then
-  echo "The install failed. Intel Macs and Linux older than glibc 2.27 need Docker (see docs/install.md). If uv is old, update it the way you installed it, for example 'uv self update'." >&2
+  echo "The install failed. Intel Macs and Linux older than glibc 2.28 need Docker or Apptainer (see docs/install.md). If uv is old, update it the way you installed it, for example 'uv self update'." >&2
   exit 1
 fi
 exec uv run --no-sync python play.py "$@"
