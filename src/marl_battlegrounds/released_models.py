@@ -72,22 +72,22 @@ TRAINING_OPPONENTS = "training-opponents"
 
 PINNED_COMMITS: dict[str, str] = {
     "MARL-BattleGrounds/tdm-season-0-recurrent-ippo": (
-        "48a062ae79167835fb81dfc906bd3aa1711f4483"
+        "5d3b20c4092751756950704d4bcc7c92496bef75"
     ),
     "MARL-BattleGrounds/tdm-season-0-recurrent-mappo": (
-        "b27435d2b153817b1baa204f5751303c9bf7ff60"
+        "5e655b32e9e66115a6ca71640692afb4874cd5b0"
     ),
     "MARL-BattleGrounds/tdm-season-0-feedforward-ippo": (
-        "ffdbd94424959854cad687186037464789e12ef7"
+        "623069e1919d5f7677e29da806e6e839ca0300d7"
     ),
     "MARL-BattleGrounds/tdm-season-0-feedforward-mappo": (
-        "aea78b3d6122932b92ca0c24a57932e283962f02"
+        "b085bb8f9e888f615c151151fc20d01dd3b1aecc"
     ),
     "MARL-BattleGrounds/tdm-season-0-pqn-vdn": (
-        "34d7075272c7e95cba12c6a8dd8ff2b72b30ce80"
+        "59b93be519c82d2c6952f894b7dcf536a19d0cd2"
     ),
-    "MARL-BattleGrounds/tdm-season-0-qmix": "73f2a413d2b214d7d8ac41c404da87965bea6f7a",
-    RESULTS_DATASET: "4b8844694a2c5fe4d8fa5cdbb3b70a14afdb1680",
+    "MARL-BattleGrounds/tdm-season-0-qmix": "bf4893c33c1a6631cc72dfdefed47ae1d8da5188",
+    RESULTS_DATASET: "3180e9c7f2ca3e6144f862a47b1e997dd18a0651",
 }
 """Repo id to the full 40-character commit of its release.
 
