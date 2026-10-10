@@ -21,7 +21,7 @@ route (uv, Docker, Windows, Colab, clusters), see [install.md](install.md).
 | Linux without a GPU | Everything, on the CPU, only slower. |
 | Mac with Apple Silicon | Everything, on the CPU. Every release is install-tested on macOS. |
 | Intel Mac | Through Docker only, not tested yet (JAX has no native Intel Mac build). |
-| Windows | Through WSL2, which runs Ubuntu inside Windows. |
+| Windows | Through WSL2, which runs Ubuntu inside Windows. Not tested yet; it should work. |
 
 **Watch Out:** canonical tournaments and adding games to a saved tournament need
 Python 3.14. Extending a saved training run needs the exact Python it recorded.

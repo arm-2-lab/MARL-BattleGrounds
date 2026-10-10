@@ -19,7 +19,7 @@ body:
         - Evaluation and results
         - Metrics
         - Tournaments and leaderboard
-        - Replays and Replay Viewer
+        - Replays and the analytical Replay Viewer
         - BattleClient
         - LLM Systems
         - Hydra and experiment stages

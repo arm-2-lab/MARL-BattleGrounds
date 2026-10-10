@@ -104,8 +104,8 @@ Every route, the GPU builds, Windows, clusters and offline use: [the install gui
 
 ## Quick Start
 
-`make`, `reset` and `step` take and return the same things as in JaxMARL, and
-compile under `jit`, `vmap` and `lax.scan`.
+`make`, `reset` and `step` use JaxMARL's call order (`reset(key)`, `step(key, state,
+actions)`), and compile under `jit`, `vmap` and `lax.scan`.
 
 ```python
 import jax
@@ -126,8 +126,8 @@ On one RTX 5090 with 1,024 parallel 5v5 games, the simulator alone runs 50,416 g
 ## Train
 
 One command trains recurrent IPPO with the Season 0 learner settings (250 million game
-steps) against scripted opponents, and keeps its best checkpoint on the validation
-maps. [What Training Costs](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/performance.md#what-training-costs)
+steps) against itself, its past copies and the three scripted opponents, and keeps its
+best checkpoint on the validation maps. [What Training Costs](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/performance.md#what-training-costs)
 gives the time and memory on one GPU.
 
 ```bash

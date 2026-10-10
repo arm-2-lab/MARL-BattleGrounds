@@ -20,7 +20,7 @@ body:
         - Evaluation and results
         - Metrics
         - Tournaments and leaderboard
-        - Replays and Replay Viewer
+        - Replays and the analytical Replay Viewer
         - BattleClient
         - LLM Systems
         - Hydra and experiment stages
@@ -74,6 +74,9 @@ body:
       label: How You Installed It
       options:
         - PyPI with pip
+        - The one command (start.sh)
+        - Docker or Podman
+        - Colab
         - uv
         - Source checkout
         - Editable install
