@@ -148,3 +148,5 @@ agent ([your_method.md](your_method.md) explains the limits).
 - [game_rules.md](game_rules.md): how a match works, class by class.
 - [your_method.md](your_method.md): plug in your own model and compile the loop.
 - [training.md](training.md): train one of the six built-in learners.
+- [released_models.md](released_models.md): play, train against or start from the six
+  trained Season 0 models on Hugging Face.

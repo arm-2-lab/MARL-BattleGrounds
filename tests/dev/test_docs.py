@@ -3,8 +3,9 @@
 Contracts: every relative link in every tracked Markdown file names a tracked
 file or folder, and every absolute link into this repository maps to a tracked
 path; the README quick start and the first Python block of every guide in docs/
-run on the CPU (except llm.md, which needs a model server, and
-battle_client.md, which opens a browser); every other Python block parses,
+run on the CPU (except llm.md, which needs a model server, battle_client.md,
+which opens a browser, and released_models.md, which downloads from Hugging
+Face); every other Python block parses,
 every public name it reaches through an import (its own or an earlier block's
 in the same file) exists, and every keyword it passes to a public callable is
 one of that callable's parameters; every ``python -m
@@ -40,7 +41,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 REPOSITORY_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds"
-NOT_RUN = {"llm.md", "battle_client.md"}
+NOT_RUN = {"llm.md", "battle_client.md", "released_models.md"}
 HYDRA_EXAMPLES = {
     "mappo_training",
     "qmix_training",

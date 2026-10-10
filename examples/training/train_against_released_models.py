@@ -5,8 +5,9 @@ Install training and hydra, then use JAX_PLATFORMS=cpu::
     python examples/training/train_against_released_models.py \
         output_dir=artifacts/ladder
 
-Three saves of the released QMIX model (at 25M and 100M training steps, and
-its last save) join self-play as training opponents. Each name downloads one
+Three saves of the released Recurrent IPPO model, the Season 0 winner (at 10M
+and 100M training steps, and its last save), join self-play as training
+opponents. Each name downloads one
 portable model file once (a few MB) into the standard Hugging Face cache; after
 that the run works offline with HF_HUB_OFFLINE=1. The saved run records every
 opponent as Hugging Face's exact file address (``hf://...@<commit>/...``), so
@@ -19,9 +20,9 @@ from __future__ import annotations
 from pathlib import Path
 
 LADDER = {
-    "qmix_25m": "MARL-BattleGrounds/tdm-season-0-qmix@25M",
-    "qmix_100m": "MARL-BattleGrounds/tdm-season-0-qmix@100M",
-    "qmix_final": "MARL-BattleGrounds/tdm-season-0-qmix@final",
+    "ippo_10m": "MARL-BattleGrounds/tdm-season-0-recurrent-ippo@10M",
+    "ippo_100m": "MARL-BattleGrounds/tdm-season-0-recurrent-ippo@100M",
+    "ippo_final": "MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final",
 }
 
 

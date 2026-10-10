@@ -80,7 +80,7 @@ name, not a run folder. `run.selected_actor` is None without validation; then pi
 | --- | --- | --- |
 | A built-in name | `"random"`, `"tdm-alpha"`, `"tdm-beta"`, `"tdm-gamma"` | Random legal actions or a scripted opponent |
 | A saved actor | `"runs/my-run/checkpoints/CHECKPOINT_ID"` | The trained actor (needs the `training` extra) |
-| A released model | `"MARL-BattleGrounds/tdm-season-0-qmix@final"` | That save, downloaded once from Hugging Face ([Training](training.md#use-a-released-season-0-model)) |
+| A released model | `"MARL-BattleGrounds/tdm-season-0-qmix@final"` | That save, downloaded once from Hugging Face ([Released Models](released_models.md)) |
 | A model file | `"mine.zip"` | A model saved by `export_model` |
 | A factory | `"my_module:load_my_system"` | What your trusted installed function returns, called once with no arguments |
 
