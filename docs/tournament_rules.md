@@ -11,7 +11,8 @@ this rulebook sets who may enter, what a run may use, and the limits.
 `entry` commands that check and send an entry, the `uv.lock` and `entry.yaml`
 files a submission holds, and read-only keys for private repositories. These
 edits change how you submit, not any limit or rating rule, so this is still
-Version 1.
+Version 1. One more submission edit, 11 October 2026: Rule 6.3 now asks that
+`uv.lock` install a released marl-battlegrounds from PyPI.
 
 Website: https://marl-battlegrounds.com/#leaderboard-rules
 
@@ -113,7 +114,8 @@ one team.
 
 6.3 **Send a Git repository at one commit** with: a train command that keeps
 its chosen entry saved in its output folder; a `uv.lock` file that installs
-a CUDA build of JAX; a load function that only loads that entry, in at most
+a CUDA build of JAX and a released marl-battlegrounds from PyPI (any
+version, never a changed copy); a load function that only loads that entry, in at most
 10 minutes; and an `entry.yaml` file that names your train command, load
 function, config, training maps, entry type and any starting models with
 their hashes. `python -m marl_battlegrounds entry new FOLDER` writes a

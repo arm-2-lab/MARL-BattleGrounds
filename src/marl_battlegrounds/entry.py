@@ -89,6 +89,8 @@ UV_INSTALL = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 _RECORD_FOLDER = "marl-bgs-entry-check"
 _ENTRY_FILE = "entry.yaml"
 _CUDA_JAX = frozenset({"jax-cuda13-plugin", "jax-cuda12-plugin"})
+_PYPI_INDEX = "https://pypi.org/simple"
+_PYPI_FILES = "https://files.pythonhosted.org/"
 _INSTALL_SECONDS = 3600.0
 _STOP_GRACE_SECONDS = 60.0
 _LOAD_SECONDS = 600.0
@@ -794,6 +796,74 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _released_package(lock: Mapping[str, Any]) -> str:
+    """Return the marl-battlegrounds version that a parsed uv.lock installs.
+
+    Rule 6.3: an entry trains and plays on a released marl-battlegrounds from
+    PyPI, never on a changed copy. Every package named marl-battlegrounds in
+    the lock must come from the PyPI index, and each of its files must be that
+    version's own file on PyPI's file server
+    (``https://files.pythonhosted.org/``), so ``uv sync --locked`` can only
+    install the published package. Any released version passes, older or
+    newer than the one running the check: whether an older release still
+    suits a season is the maintainers' call, not this check's. Step 4 calls
+    this before installing. It reads only ``lock``: no network and no files.
+
+    Parameters
+    ----------
+    lock : Mapping
+        The whole ``uv.lock`` file as ``tomllib`` parses it. Its
+        ``[[package]]`` tables sit under the key ``"package"``.
+
+    Returns
+    -------
+    str
+        The locked version, for example ``"1.0.1"``. A lock that holds
+        different versions for different platforms gives them all, sorted
+        and joined by ", ".
+
+    Raises
+    ------
+    _StepFailedError
+        The lock installs no marl-battlegrounds; installs it from somewhere
+        other than PyPI (a Git repository, a folder, a web address or another
+        index); or names a file that is not on PyPI's file server or is not
+        that version's own file.
+    """
+    packages = cast(list[dict[str, Any]], lock.get("package", []))
+    found = [item for item in packages if item.get("name") == "marl-battlegrounds"]
+    if not found:
+        raise _StepFailedError(
+            "uv.lock does not install marl-battlegrounds. Depend on it in "
+            "pyproject.toml, then run uv lock."
+        )
+    versions: set[str] = set()
+    for package in found:
+        version = str(package.get("version", ""))
+        source = cast(dict[str, object], package.get("source", {}))
+        if source != {"registry": _PYPI_INDEX}:
+            where = ", ".join(f"{kind} {value}" for kind, value in source.items())
+            raise _StepFailedError(
+                f"uv.lock installs marl-battlegrounds from {where or 'nowhere'}, "
+                "not from PyPI. Depend on a released version, for example "
+                f"marl-battlegrounds=={_package_version()}, then run uv lock "
+                "(Rule 6.3)."
+            )
+        stem = f"marl_battlegrounds-{version}"
+        files = [package.get("sdist"), *package.get("wheels", [])]
+        for url in (str(file.get("url", "")) for file in files if file):
+            name = url.rsplit("/", 1)[-1]
+            if not url.startswith(_PYPI_FILES) or not (
+                name == f"{stem}.tar.gz" or name.startswith(f"{stem}-")
+            ):
+                raise _StepFailedError(
+                    f"uv.lock fetches marl-battlegrounds {version} from {url}, "
+                    "which is not its file on PyPI. Run uv lock again (Rule 6.3)."
+                )
+        versions.add(version)
+    return ", ".join(sorted(versions))
+
+
 # Child programs run inside the entry's environment with ``python -c``.
 _LOAD_CODE = """\
 import json, sys
@@ -981,12 +1051,27 @@ class _Checker:
         return f"Name {self.entry.name!r}; load {self.entry.load}."
 
     def step_4(self) -> str:
-        """Install from uv.lock without the GPU; check CUDA JAX and starting models."""
+        """Check the locked marl-battlegrounds, install, then check JAX and models.
+
+        Before installing, uv.lock must exist and install a released
+        marl-battlegrounds from PyPI (``_released_package``). Then
+        ``uv sync --locked`` runs with the GPU hidden, uv.lock must hold a CUDA
+        build of JAX, and every starting model is fetched and its SHA-256
+        compared.
+        """
         assert self.entry is not None
         if shutil.which("uv") is None:
             raise _StepFailedError(
                 f"uv is not installed. Install it with: {UV_INSTALL}"
             )
+        lock_file = self.clone / "uv.lock"
+        if not lock_file.is_file():
+            raise _StepFailedError(
+                "No uv.lock at the top of the repository. Run uv lock, then "
+                "commit uv.lock."
+            )
+        lock = tomllib.loads(lock_file.read_text(encoding="utf-8"))
+        version = _released_package(lock)
         env = _own_environment()
         env["CUDA_VISIBLE_DEVICES"] = ""
         started = time.monotonic()
@@ -1001,7 +1086,7 @@ class _Checker:
             raise _StepFailedError("Installing took more than 1 hour (Rule 2.3).")
         if code != 0:
             raise _StepFailedError(f"uv sync --locked failed:\n{_tail(err)}")
-        lock = tomllib.loads((self.clone / "uv.lock").read_text(encoding="utf-8"))
+        # uv sync --locked never rewrites uv.lock, so the parse above still holds.
         packages = cast(list[dict[str, object]], lock.get("package", []))
         if not {str(item.get("name")) for item in packages} & _CUDA_JAX:
             raise _StepFailedError(
@@ -1012,7 +1097,8 @@ class _Checker:
         for model, digest in self.entry.starting_models:
             self.fetch(model, digest)
         return (
-            f"Installed in {seconds / 60:.1f} minutes without the GPU; "
+            f"marl-battlegrounds {version} from PyPI. Installed in "
+            f"{seconds / 60:.1f} minutes without the GPU; "
             f"{len(self.entry.starting_models)} starting models checked."
         )
 
@@ -1244,9 +1330,11 @@ def check_entry(
     1. The tree is clean and the commit is recorded (Rule 6.3).
     2. A fresh clone of that commit in a temporary folder.
     3. ``entry.yaml`` is present and valid (Rules 3.1, 3.4, 6.3).
-    4. ``uv sync --locked`` with the GPU hidden, in at most 1 hour; ``uv.lock``
-       holds a CUDA build of JAX; every starting model is fetched into a fresh
-       ``HF_HOME`` in the clone and its SHA-256 checked (Rules 2.3, 6.3).
+    4. ``uv.lock`` installs a released marl-battlegrounds from PyPI, any
+       version (checked before installing); ``uv sync --locked`` with the
+       GPU hidden, in at most 1 hour; ``uv.lock`` holds a CUDA build of JAX;
+       every starting model is fetched into a fresh ``HF_HOME`` in the clone
+       and its SHA-256 checked (Rules 2.3, 6.3).
     5. The train command runs for ``train_minutes`` with ``HF_HUB_OFFLINE=1``,
        then gets a stop signal (SIGINT) to its process group, 60 seconds'
        grace, then a kill (Rules 2.2, 6.5).

@@ -10,6 +10,13 @@ maps entry.yaml declares. Without uv it prints the uv install line and stops
 before locking. entry.yaml refuses maps outside 0-46 and models without a
 SHA-256.
 
+Step 4 accepts a uv.lock only when every marl-battlegrounds in it is a release
+from PyPI's index, with each file that version's own file on PyPI's file
+server; any released version passes, older or newer (1.0.0, 1.0.1, 1.2.0). It
+refuses a missing package, a Git, folder or other-index source, and a file
+elsewhere or of another package. A missing or bad uv.lock fails step 4 before
+anything is installed.
+
 check_entry sorts steps 1-7 as must pass and 8-9 as measured here: a failed
 measured step never fails the check, a failed must-pass step does. A dirty
 tree fails step 1, skips the rest and saves no record. With install, training
@@ -125,6 +132,79 @@ def test_entry_yaml_refuses_bad_settings(
     path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **change}))
     with pytest.raises(ValueError, match=message):
         entry._read_entry(starter)
+
+
+PYPI_FILES = "https://files.pythonhosted.org/packages/89/5d/0d"
+
+
+def _locked(**change: object) -> dict[str, object]:
+    package = {
+        "name": "marl-battlegrounds",
+        "version": "1.0.1",
+        "source": {"registry": "https://pypi.org/simple"},
+        "sdist": {"url": f"{PYPI_FILES}/marl_battlegrounds-1.0.1.tar.gz"},
+        "wheels": [{"url": f"{PYPI_FILES}/marl_battlegrounds-1.0.1-py3-none-any.whl"}],
+    }
+    return {
+        "package": [{"name": "my-entry", "source": {"virtual": "."}}, package | change]
+    }
+
+
+def test_lock_must_install_a_released_package_from_pypi() -> None:
+    assert entry._released_package(_locked()) == "1.0.1"
+    for version in ("1.0.0", "1.2.0"):
+        older_or_newer: dict[str, object] = {
+            "version": version,
+            "sdist": {"url": f"{PYPI_FILES}/marl_battlegrounds-{version}.tar.gz"},
+            "wheels": [],
+        }
+        assert entry._released_package(_locked(**older_or_newer)) == version
+    refused: list[tuple[dict[str, object], str]] = [
+        ({"name": "something-else"}, "does not install"),
+        ({"source": {"git": "https://github.com/me/fork"}}, "git https://"),
+        ({"source": {"editable": "../marl-bgs"}}, "editable ../marl-bgs"),
+        ({"source": {"registry": "https://mirror.example/simple"}}, "not from PyPI"),
+        (
+            {"wheels": [{"url": "https://example.com/marl_battlegrounds-1.0.1-a.whl"}]},
+            "example.com",
+        ),
+        (
+            {"wheels": [{"url": f"{PYPI_FILES}/other_package-1.0.1-a.whl"}]},
+            "not its file",
+        ),
+    ]
+    for change, message in refused:
+        with pytest.raises(entry._StepFailedError, match=message):
+            entry._released_package(_locked(**change))
+
+
+def test_step_4_refuses_a_bad_lock_before_installing(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def found(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    def no_install(*args: object, **kwargs: object) -> object:
+        raise AssertionError("installed despite a bad uv.lock")
+
+    monkeypatch.setattr(entry.shutil, "which", found)
+    monkeypatch.setattr(entry, "_run", no_install)
+    checker = entry._Checker(str(starter), None, starter.parent, 1.0, None)
+    checker.clone, checker.entry = starter, entry._read_entry(starter)
+    with pytest.raises(entry._StepFailedError, match=r"No uv\.lock"):
+        checker.step_4()
+    lines = "\n".join(
+        [
+            "version = 1",
+            "[[package]]",
+            'name = "marl-battlegrounds"',
+            'version = "1.0.1"',
+            'source = { git = "https://github.com/me/fork" }',
+        ]
+    )
+    (starter / "uv.lock").write_text(lines + "\n")
+    with pytest.raises(entry._StepFailedError, match="not from PyPI"):
+        checker.step_4()
 
 
 def test_steps_sort_into_must_pass_and_measured_here() -> None:
