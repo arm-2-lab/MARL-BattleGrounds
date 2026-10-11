@@ -16,8 +16,10 @@ and the two commands, installs nothing and does not install uv):
   line, and every other option goes to ``play.py`` unchanged, in order.
 
 The notebooks (``examples/quickstart.ipynb`` and
-``examples/evaluate/evaluation_analysis.ipynb``) are saved unexecuted, every code cell
-compiles as plain Python, and both start with the same install cell. That cell
+``examples/evaluate/evaluation_analysis.ipynb``) are saved with the outputs of one
+complete run, so readers see every result before running anything: every code
+cell ran once, in order, with no error output. Every code cell compiles as plain
+Python, and both start with the same install cell. That cell
 installs nothing outside Colab. In Colab, when its ``VERSION`` (always the
 package's own version) is already installed, it installs nothing; otherwise it
 pip-installs ``marl-battlegrounds[all]==VERSION`` plus the build of the JAX
@@ -158,8 +160,11 @@ def _install_cells() -> list[str]:
         path = _REPOSITORY / "examples" / name
         notebook = json.loads(path.read_text(encoding="utf-8"))
         code = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+        assert [cell["execution_count"] for cell in code] == list(
+            range(1, len(code) + 1)
+        )
         for cell in code:
-            assert cell["execution_count"] is None and cell["outputs"] == []
+            assert all(output["output_type"] != "error" for output in cell["outputs"])
             compile("".join(cell["source"]), str(path), "exec")
         cells.append("".join(code[0]["source"]))
     return cells

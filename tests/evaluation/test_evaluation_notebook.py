@@ -1,13 +1,17 @@
-"""Execute the saved-results notebook without simulation or changing raw inputs.
+"""Check the analysis notebook: its saved run, and a run on your own tournament.
 
-The optional notebook extra supplies the real kernel and nbconvert runner. Tests
-copy the actual notebook to another directory, retain source hashes and block
-training backend imports. Ordinary source checks still run without that extra.
+Contracts: the saved notebook holds the outputs of one complete run, with all six
+charts and no local folder in any output (the run order and error checks for both
+notebooks live in ``tests/cli/test_install_start_script.py``). With
+``MARL_BGS_RESULTS`` naming a small saved tournament of its own (three entrants
+on one map, full metrics), the notebook runs from top to bottom in another
+directory, draws the same six charts, never imports JAX, Flax or Optax, and
+leaves the saved tournament and the notebook unchanged. The second check needs
+the optional notebook extra and skips without it.
 """
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import os
@@ -15,12 +19,15 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import marl_battlegrounds as marl_bgs
+
 REPO = Path(__file__).resolve().parents[2]
 NOTEBOOK = REPO / "examples/evaluate/evaluation_analysis.ipynb"
-BUNDLE = REPO / "src/marl_battlegrounds/examples_data/evaluation"
+CHARTS = 6
 
 
 def _hashes(root: Path) -> dict[str, str]:
@@ -31,28 +38,37 @@ def _hashes(root: Path) -> dict[str, str]:
     }
 
 
-def test_notebook_is_unexecuted_and_demo_is_small() -> None:
-    data = json.loads(NOTEBOOK.read_text())
-    for cell in data["cells"]:
-        if cell["cell_type"] == "code":
-            assert cell["execution_count"] is None and cell["outputs"] == []
-            compile("".join(cell["source"]), str(NOTEBOOK), "exec")
-    assert (
-        sum(path.stat().st_size for path in BUNDLE.rglob("*") if path.is_file())
-        < 5 * 1024**2
+def _pictures(notebook: dict[str, Any]) -> int:
+    return sum(
+        "image/png" in output.get("data", {})
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+        for output in cell["outputs"]
     )
-    assert (BUNDLE / "run_details.json").is_file()
-    assert len(list((BUNDLE / "replays").glob("*.json"))) == 2
 
 
-@pytest.mark.parametrize("case", ["demo", "missing", "overlap", "nonempty"])
-def test_actual_notebook_reads_or_reports_invalid_paths_without_training(
-    tmp_path: Path, case: str
-) -> None:
+def test_saved_run_shows_every_chart_and_no_local_folder() -> None:
+    text = NOTEBOOK.read_text(encoding="utf-8")
+    assert _pictures(json.loads(text)) == CHARTS
+    for folder in ("/home/", "/tmp/", "/Users/", "C:\\\\"):
+        assert folder not in text
+
+
+def test_notebook_runs_on_your_own_tournament_without_jax(tmp_path: Path) -> None:
     pytest.importorskip("nbconvert", reason="Install the optional notebook extra")
     pytest.importorskip("ipykernel", reason="Install the optional notebook extra")
     pytest.importorskip("pandas", reason="Install the optional notebook extra")
-    before = _hashes(BUNDLE)
+    saved = marl_bgs.run_tournament(
+        ["tdm-alpha", "tdm-beta", "random"],
+        maps=[47],
+        episodes_per_pair=2,
+        max_steps=150,
+        num_envs=2,
+        metrics="full",
+        output_dir=tmp_path / "tournament",
+    ).run_dir
+    assert saved is not None
+    before = _hashes(saved)
     notebook_hash = hashlib.sha256(NOTEBOOK.read_bytes()).hexdigest()
     work = tmp_path / "different-directory"
     work.mkdir()
@@ -83,13 +99,7 @@ sys.meta_path.insert(0, NoTraining())
         capture_output=True,
         text=True,
     )
-    report = tmp_path / "report"
-    report.mkdir()
-    if case == "nonempty":
-        (report / "selected_metrics.csv").write_text("Existing report data\n")
-    report_before = _hashes(report)
     cache = tmp_path / "cache"
-    cache.mkdir()
     env = {
         key: value
         for key, value in os.environ.items()
@@ -100,18 +110,14 @@ sys.meta_path.insert(0, NoTraining())
             "PYTHONDONTWRITEBYTECODE": "1",
             "CUDA_VISIBLE_DEVICES": "",
             "PYTHONPATH": os.pathsep.join((str(guard), str(REPO / "src"))),
-            "MARL_BGS_REPORT_DIR": str(report),
+            "MARL_BGS_RESULTS": str(saved),
             "JUPYTER_PATH": str(kernel / "share/jupyter"),
-            "MPLBACKEND": "Agg",
             "MPLCONFIGDIR": str(cache / "matplotlib"),
             "IPYTHONDIR": str(cache / "ipython"),
             "JUPYTER_RUNTIME_DIR": str(cache / "jupyter"),
         }
     )
-    if case == "missing":
-        env["MARL_BGS_RESULTS"] = str(tmp_path / "missing")
-    elif case == "overlap":
-        env["MARL_BGS_REPORT_DIR"] = str(BUNDLE / "forbidden")
+    executed = tmp_path / "executed.ipynb"
     result = subprocess.run(
         [
             sys.executable,
@@ -123,7 +129,7 @@ sys.meta_path.insert(0, NoTraining())
             "--execute",
             str(copied),
             "--output",
-            str(report / "executed.ipynb"),
+            str(executed),
             "--ExecutePreprocessor.timeout=-1",
             "--ExecutePreprocessor.kernel_name=marl-bgs-notebook-test",
         ],
@@ -132,92 +138,7 @@ sys.meta_path.insert(0, NoTraining())
         text=True,
         capture_output=True,
     )
-    assert _hashes(BUNDLE) == before
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _hashes(saved) == before
     assert hashlib.sha256(NOTEBOOK.read_bytes()).hexdigest() == notebook_hash
-    assert hashlib.sha256(copied.read_bytes()).hexdigest() == notebook_hash
-    if case == "demo":
-        assert result.returncode == 0, result.stdout + result.stderr
-        summary = json.loads((report / "analysis_preview.json").read_text())
-        import marl_battlegrounds as marl_bgs
-
-        saved = marl_bgs.load_results(BUNDLE)
-        for name, facts in saved.metadata["tables"].items():
-            for key in (
-                "missing_historical_fields",
-                "unavailable_columns",
-                "missing_passes",
-            ):
-                assert key in summary["coverage"]["tables"][name]
-                assert summary["coverage"]["tables"][name][key] == json.loads(
-                    json.dumps(facts.get(key))
-                )
-        assert summary["software_demo"] is True
-        assert Path(summary["kernel_directory"]) == work
-        assert len(summary["game_preview"]) == 2
-        assert len(summary["metric_preview"]) == 1
-        assert len(summary["replays"]) == 2
-        assert summary["point_margins"][0]["ci_low"] is None
-        assert summary["point_margins"][0]["unavailable_reason"]
-        assert (report / "point_margins.png").is_file()
-        from marl_battlegrounds.evaluation.metric_catalog import METRIC_TOPICS
-
-        assert {row["topic"] for row in summary["topic_coverage"]} == {
-            topic.name for topic in METRIC_TOPICS
-        }
-        assert {
-            row["scope"] for row in summary["metric_groups"] if row["finite_values"]
-        } == {
-            "episode",
-            "team",
-            "agent",
-            "team_recipient",
-            "source_recipient",
-            "ally_pair",
-        }
-        with (report / "selected_metrics.csv").open() as stream:
-            values = {row["name"]: row["value"] for row in csv.DictReader(stream)}
-        assert float(values["agent_4_to_agent_3_healing_done"]) == 8
-        assert float(values["team_b_healing_done"]) == 208
-        assert float(values["team_a_rescue_opportunities"]) == 0
-        assert values["team_a_rescue_rate"] == ""
-        assert summary["behavior_sample"]["examined_games"] == 1
-        selected = [
-            row for row in summary["replay_index"] if row["selected_detail_game"]
-        ]
-        assert len(selected) == 1
-        assert selected[0]["config_id"] == summary["detail_game"]["config_id"]
-        assert str(selected[0]["episode_id"]) == str(
-            summary["detail_game"]["episode_id"]
-        )
-        for chart in summary["charts"]:
-            assert (report / chart["png"]).is_file()
-            assert (report / chart["svg"]).is_file()
-            assert chart["data"] and (report / chart["data"]).is_file()
-        with (report / "relationships.csv").open() as stream:
-            relationships = list(csv.DictReader(stream))
-        team_recipients = [
-            row for row in relationships if row["scope"] == "team_recipient"
-        ]
-        assert team_recipients
-        assert {row["stem"] for row in team_recipients} == {"basic_applications"}
-        assert {row["unit"] for row in team_recipients} == {"count"}
-        assert all(row["value"] == values[row["name"]] for row in team_recipients)
-        executed = json.loads((report / "executed.ipynb").read_text())
-        pictures = [
-            output
-            for cell in executed["cells"]
-            if cell["cell_type"] == "code"
-            for output in cell["outputs"]
-            if "image/png" in output.get("data", {})
-        ]
-        assert len(pictures) == len(summary["charts"])
-    else:
-        assert result.returncode != 0
-        message = {
-            "missing": "exact saved result folder",
-            "overlap": "outside the saved input",
-            "nonempty": "new or empty report folder",
-        }[case]
-        assert message in result.stdout + result.stderr
-        assert not (report / "analysis_preview.json").exists()
-        assert _hashes(report) == report_before
+    assert _pictures(json.loads(executed.read_text(encoding="utf-8"))) == CHARTS

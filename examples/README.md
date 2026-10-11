@@ -61,7 +61,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `evaluate/evaluate_feedforward_mappo.py` | Evaluate a saved feedforward MAPPO model | [Hydra Configs](../docs/hydra.md) |
 | `evaluate/evaluate_pqn_vdn.py` | Evaluate a saved PQN-VDN model | [Hydra Configs](../docs/hydra.md) |
 | `evaluate/evaluate_qmix.py` | Evaluate a saved QMIX model | [Hydra Configs](../docs/hydra.md) |
-| `evaluate/evaluation_analysis.ipynb` | Explore saved results: outcomes, metrics, roles and replays | [Metrics](../docs/metrics.md) |
+| `evaluate/evaluation_analysis.ipynb` | The paper's analysis of all 7,200 Season 0 games, or of your own tournament: the ladder, matchups, teamwork and who helps whom | [Metrics](../docs/metrics.md) |
 
 ## Tournaments: `tournaments/`
 

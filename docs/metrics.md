@@ -173,21 +173,27 @@ end-of-game columns such as `team_a_win` stay NaN.
 
 ## The Analysis Notebook
 
+[`evaluation_analysis.ipynb`](../examples/evaluate/evaluation_analysis.ipynb)
+([open it in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb))
+rebuilds the paper's analysis of the 7,200 Season 0 games from the
+[results dataset](https://huggingface.co/datasets/MARL-BattleGrounds/tdm-season-0-results):
+the ladder, who beats whom on each map, the teamwork that follows Elo, who helps
+whom class by class, and every metric topic. It is saved with its charts, so you
+can read it without running it. It plays no games and needs no GPU.
+
+To analyze your own tournament, run it with `metrics="full"` and name its folder:
+
 ```bash
-export MARL_BGS_RESULTS=/scratch/results/EXACT_RUN MARL_BGS_REPORT_DIR=/scratch/reports/eval
+export MARL_BGS_RESULTS=/scratch/results/EXACT_TOURNAMENT_RUN
 python -m jupyter nbconvert --to notebook --execute examples/evaluate/evaluation_analysis.ipynb \
-  --output /scratch/reports/eval.executed.ipynb
+  --output /scratch/reports/analysis.executed.ipynb
 ```
 
-[`evaluation_analysis.ipynb`](../examples/evaluate/evaluation_analysis.ipynb) turns one saved
-run into charts, CSV tables and a testable claim. `MARL_BGS_RESULTS` is the exact
-folder holding `run_details.json`; leave it unset for a tiny demo. Optional
-`MARL_BGS_PHASE` and `MARL_BGS_PASS_ID` pick one saved pass.
+`MARL_BGS_RESULTS` is the exact folder holding the tournament's `run_details.json`.
+Without it, the notebook downloads Season 0 (about 390 MB) into
+`~/tdm-season-0-results` and reuses it on later runs.
 
 **From A Checkout:** the notebook lives in `examples/evaluate/` and needs the `viz` and `notebook` extras.
-
-**Watch Out:** the report folder must be new or empty and outside the run folder.
-Detailed plots read at most 200 games. The demo's tiny Random games are not evidence.
 
 ## Next
 

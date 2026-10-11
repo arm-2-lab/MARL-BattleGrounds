@@ -23,7 +23,7 @@ You do not need to install JAX first: each route installs the right JAX for your
 | Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Not tested yet; it should work |
 | Intel Mac, old Linux, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
 | Your own Python project | [pip](#pip) | You choose | Tested: Linux x86_64 and ARM and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14 |
-| Only a browser | [Colab](#colab) | Colab's free T4 | Not tested yet; it should work |
+| Only a browser | [Colab](#colab) | Colab's free T4 | Tested |
 | A cluster or a remote GPU machine | [Clusters and remote machines](#clusters-and-remote-machines) | NVIDIA | Tested on Linux: the uv steps with the network cut off, and the image under Apptainer on the CPU. Not tested yet; it should work: a real cluster, Apptainer with a GPU, `apptainer pull` from the registry, the SSH tunnel |
 | AMD GPU or Google TPU | [GPU builds](#gpu-builds) | AMD or TPU | Not tested yet; it should work |
 
