@@ -37,7 +37,9 @@ are private and shared by the package's loading and saving owners
 (_method_loading, training, evaluation, experiments and the BattleClient).
 _local_path_findings is the one rule for "does this file reveal someone's
 computer?" (local folder paths and GPU ids); the model publishing tool and
-``entry check`` both use it.
+``entry check`` both use it. _public_local_text replaces what that rule finds
+with plain labels; ``export_model`` uses it so shared model files never name
+a folder on the trainer's computer.
 Importing this module uses only the standard library; huggingface_hub is
 imported only when a name must be resolved or a file downloaded.
 """
@@ -188,18 +190,69 @@ def _local_names() -> tuple[str, ...]:
     return tuple(names)
 
 
-def _text_findings(text: str, local_names: tuple[str, ...]) -> list[str]:
-    """Return the local folder paths and GPU ids in one text, in first-seen order."""
-    found: dict[str, None] = {}
-    # A file:// URL names a local path: read it as that path.
-    for match in _ABSOLUTE_PATH.finditer(text.replace("file://", " ")):
+# What export_model writes in place of a folder on the trainer's computer
+# and in place of a GPU's unique id.
+_LOCAL_FOLDER_LABEL = "a local folder (not shared)"
+_GPU_ID_LABEL = "GPU-<id>"
+
+
+def _local_folders(text: str, local_names: tuple[str, ...]) -> list[tuple[int, int]]:
+    """Return the start and end of each local folder path in one text, in order.
+
+    The one rule for which paths count (see _local_path_findings). A
+    ``file://`` URL counts as its path, and its span includes the
+    ``file://`` prefix, so replacing a span removes the whole URL.
+    """
+    prefix = "file://"
+    # Blank out file:// with spaces of the same length, so offsets still match.
+    padded = text.replace(prefix, " " * len(prefix))
+    spans: list[tuple[int, int]] = []
+    for match in _ABSOLUTE_PATH.finditer(padded):
         path = match.group(1)
         parts = {part.lower() for part in re.split(r"[/\\]+", path) if part}
         if _HOME_FOLDER.search(path) or parts & set(local_names):
-            found[f"a folder on this computer: {path}"] = None
+            start = match.start(1)
+            if text[max(0, start - len(prefix)) : start] == prefix:
+                start -= len(prefix)
+            spans.append((start, match.end(1)))
+    return spans
+
+
+def _text_findings(text: str, local_names: tuple[str, ...]) -> list[str]:
+    """Return the local folder paths and GPU ids in one text, in first-seen order."""
+    found: dict[str, None] = {}
+    for start, end in _local_folders(text, local_names):
+        path = text[start:end].removeprefix("file://")
+        found[f"a folder on this computer: {path}"] = None
     for match in _GPU_ID.finditer(text):
         found[f"a GPU id: {match.group(0)}"] = None
     return list(found)
+
+
+def _public_local_text(text: str, local_names: tuple[str, ...]) -> str:
+    """Return ``text`` with every local folder and GPU id replaced by a label.
+
+    Each span that _local_folders finds becomes ``_LOCAL_FOLDER_LABEL`` and
+    each GPU id becomes ``_GPU_ID_LABEL``; everything else is kept exactly.
+    The labels hold no quote or backslash, so JSON text stays valid JSON.
+    Afterwards ``_text_findings`` finds nothing in the result.
+
+    Parameters
+    ----------
+    text : str
+        Any text, such as a saved actor description's JSON.
+    local_names : tuple of str
+        This computer's user name and host name, lowercase (``_local_names``).
+
+    Returns
+    -------
+    str
+        The text with the labels in place; ``text`` itself when nothing was
+        found.
+    """
+    for start, end in reversed(_local_folders(text, local_names)):
+        text = text[:start] + _LOCAL_FOLDER_LABEL + text[end:]
+    return _GPU_ID.sub(_GPU_ID_LABEL, text)
 
 
 def _local_path_findings(name: str, data: bytes) -> list[str]:

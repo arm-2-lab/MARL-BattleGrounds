@@ -30,6 +30,8 @@ Part                        Holds
 ``weights.npz``             The weights, keyed by their path
 ``initial_memory.npz``      One agent's starting memory, keyed by its path
 ``actor_details.json``      The original actor description, byte for byte
+                            when it names no folder on the exporting
+                            computer (see export_model)
 ==========================  ===================================================
 
 The decision program takes ``(weights, memory, actor_input, action_mask,
@@ -1192,6 +1194,65 @@ def _base_model(display_name: str) -> dict[str, Any]:
 _BUILTIN_PROGRAMS: dict[str, bytes] = {}
 
 
+def _public(text: str) -> str:
+    """Return ``text`` with each local folder and GPU id replaced by a label.
+
+    Uses the one rule for "does this reveal someone's computer?"
+    (``released_models._local_path_findings``): a folder on this computer
+    becomes "a local folder (not shared)" and a GPU id becomes ``GPU-<id>``.
+    Everything else, including released names, ``hf://`` addresses and
+    relative paths, is kept exactly.
+    """
+    from marl_battlegrounds.released_models import (
+        _local_names,  # pyright: ignore[reportPrivateUsage]
+        _public_local_text,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    return _public_local_text(text, _local_names())
+
+
+def _shareable_description(raw: bytes) -> bytes:
+    """Return a saved actor description that names no folder on this computer.
+
+    Parameters
+    ----------
+    raw : bytes
+        A checked ``actor_details.json``: compact, sorted JSON plus a newline,
+        whose ``checkpoint_id`` is the SHA-256 of the description without it.
+
+    Returns
+    -------
+    bytes
+        ``raw`` itself, byte for byte, when it names no local folder and no
+        GPU id. Otherwise the description with each one replaced by a label
+        (see _public), the old ``checkpoint_id`` kept as
+        ``metadata.derived_from`` and a new ``checkpoint_id`` computed by the
+        same rule, so the copy is checked like any saved description. The
+        training run's own id, ``metadata.checkpoint_id``, never changes.
+
+    Notes
+    -----
+    A trainer records each training opponent as the researcher named it,
+    for example ``/home/sam/runs/old-model``, and resuming that run needs
+    the folder, so the run's own files keep it. Only the shared file gets
+    the label. Nothing reads these names from a portable file. The model
+    publishing tool re-signed the released models the same way.
+    """
+    from marl_battlegrounds.training._checkpoint_metadata import (
+        _json_bytes,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    text = raw.decode("utf-8")
+    public = _public(text)
+    if public == text:
+        return raw
+    details = cast(dict[str, Any], json.loads(public))
+    original = details.pop("checkpoint_id")
+    details["metadata"] = {**details.get("metadata", {}), "derived_from": original}
+    details["checkpoint_id"] = hashlib.sha256(_json_bytes(details)).hexdigest()
+    return _json_bytes(details)
+
+
 def _export_builtin(folder: Path, path: Path) -> Path:
     """Export a saved built-in actor folder (see export_model)."""
     from marl_battlegrounds.training._checkpoint_metadata import (
@@ -1246,12 +1307,12 @@ def _export_builtin(folder: Path, path: Path) -> Path:
         _BUILTIN_PROGRAMS[program_key] = bytes(exported.serialize())
     metadata = details.get("metadata", {})
     display = metadata.get("display_name") or method
-    raw = (folder / "actor_details.json").read_bytes()
+    raw = _shareable_description((folder / "actor_details.json").read_bytes())
     model = {
-        **_base_model(str(display)),
+        **_base_model(_public(str(display))),
         "method": method,
         "training_step": metadata.get("env_steps"),
-        "checkpoint_id": details.get("checkpoint_id"),
+        "checkpoint_id": json.loads(raw)["checkpoint_id"],
         "inference_digest": _inference_digest(details),
         "actor_digest": details["actor_digest"],
         "actor_input_schema": settings["actor_input_schema"],
@@ -1304,17 +1365,15 @@ def _export_policy(policy: Policy, path: Path) -> Path:
         return action, tuple(jax.tree.leaves(after)), jnp.zeros((0,), jnp.float32)
 
     exported = _export_program(decide, policy.variables, policy.initial_carry, 0)
-    description = {
-        "kind": "policy",
-        "name": policy.name,
-        "checkpoint": policy.checkpoint,
-    }
+    name = _public(policy.name)
+    checkpoint = None if policy.checkpoint is None else _public(policy.checkpoint)
+    description = {"kind": "policy", "name": name, "checkpoint": checkpoint}
     model = {
-        **_base_model(policy.name),
+        **_base_model(name),
         "method": "policy",
         "training_step": None,
-        "checkpoint_id": policy.checkpoint,
-        "inference_digest": policy.checkpoint,
+        "checkpoint_id": checkpoint,
+        "inference_digest": checkpoint,
         "actor_digest": tree_digest(policy.variables),
         "weights": _leaf_rows(policy.variables),
         "memory": _leaf_rows(policy.initial_carry),
@@ -1382,6 +1441,17 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
     built-in model share one program, so the process exports it once and
     reuses it for later saves. Files are written to a temporary name first
     and then renamed.
+
+    Shared files never name the exporting computer. A local folder in the
+    saved description (a training opponent or starting model the researcher
+    gave by its full path, such as ``/home/sam/runs/old-model``) becomes "a
+    local folder (not shared)", and a GPU id becomes ``GPU-<id>``. The
+    description is then signed again: its new ``checkpoint_id`` follows the
+    usual rule and ``metadata.derived_from`` keeps the original one. A
+    Policy's name and checkpoint label get the same labels. Released names,
+    ``hf://`` addresses and relative paths are kept. The run's own files are
+    never changed, so resuming it still finds its opponents. A description
+    with nothing to replace is copied byte for byte.
 
     Examples
     --------

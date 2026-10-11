@@ -108,7 +108,10 @@ partners, and `initial_actor` (copy the method and input scale from the model ca
 starting from a model, offline use and the results dataset. See
 [train_against_released_models.py](../examples/training/train_against_released_models.py).
 `marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in the same
-portable format (actors trained with the default `parameter_sharing="all"`).
+portable format (actors trained with the default `parameter_sharing="all"`). The file
+is safe to share: an opponent you trained against by a folder on your computer, such
+as `/home/sam/runs/old-model`, is written as "a local folder (not shared)". Your run's
+own files keep the folder, so resuming still works.
 
 ## Curriculum And Rewards
 

@@ -21,7 +21,10 @@ and a fake Hugging Face client. They check these contracts of
   home folders, Windows user folders and GPU ids, also inside a model file's
   JSON, in PATH lists, after ``host:``, in WSL's ``/mnt/c/Users`` and in
   ``file://`` URLs, and skips URLs, ``hf://`` addresses, author names and
-  binary data.
+  binary data. Its replacing half (``_public_local_text``, used by
+  ``export_model``) turns exactly those folders into "a local folder (not
+  shared)" and GPU ids into ``GPU-<id>``, keeps relative paths, released names,
+  ``hf://`` addresses and web URLs, and leaves valid JSON with nothing found.
 - ``public_text`` gives each kind of local path its public name: training
   opponents (dataset address outside the dataset, folder inside it), released
   saves, unreleased saves, checkpoints and past copies, run folders, the Season 0
@@ -522,6 +525,33 @@ def test_local_path_rule_finds_paths_and_skips_names_urls_and_binary() -> None:
         "a folder on this computer: /home/sam/opp"
     ]
     assert _local_path_findings("w.npz", b"\x00/home/abc/def") == []
+
+
+def test_public_text_rule_replaces_exactly_what_the_finding_rule_finds() -> None:
+    from marl_battlegrounds.released_models import _public_local_text, _text_findings
+
+    names = ("sam",)
+    kept = [
+        "runs/relative",
+        "MARL-BattleGrounds/tdm-season-0-qmix@final",
+        "hf://datasets/o/r@c/x",
+        "https://example.com/home/sam",
+    ]
+    local = [
+        "/home/sam/runs/a",
+        "file:///home/lee/u",
+        "C:\\Users\\sam\\x",
+        "/data/sam/r",
+    ]
+    gpu = "GPU-6b11a0c4-14e8-6782-8932-1df56d599796"
+    text = json.dumps({"refs": [*local, *kept], "gpu": f"on {gpu}"})
+    public = _public_local_text(text, names)
+    assert _text_findings(text, names) and _text_findings(public, names) == []
+    assert json.loads(public) == {
+        "refs": ["a local folder (not shared)"] * len(local) + kept,
+        "gpu": "on GPU-<id>",
+    }
+    assert _public_local_text("nothing local here", names) == "nothing local here"
 
 
 SEARCH = "/home/sam/artifacts/paper-experiments/hyperparameter-search"

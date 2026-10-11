@@ -8,6 +8,13 @@ Contracts checked with a tiny untrained per-agent Policy on CPU:
 - a Policy that calls a loaded file's program exports again and gives the
   same actions (the JAX-upgrade refresh route);
 - exporting twice gives identical bytes, with no file paths inside;
+- a shared file names no folder on the exporting computer: a saved actor
+  description's local opponent folder becomes "a local folder (not shared)"
+  (a released name is kept), the old ID moves to metadata.derived_from, the
+  new ID follows the usual rule, the run's own ID is unchanged, and a
+  description with nothing local comes back byte for byte; a Policy named by
+  a home folder with a GPU id as its checkpoint label exports with labels and
+  passes the shared local-path rule;
 - tampered, padded and non-format files are refused or recognized;
 - host Policies are refused;
 - the loader's apply and init hooks keep their pinned code digests, because
@@ -17,6 +24,8 @@ The six real Season 0 models are checked against their originals by the
 release proof in artifacts, not here.
 """
 
+# pyright: reportPrivateUsage=false
+import hashlib
 import json
 import sys
 import zipfile
@@ -278,6 +287,55 @@ def test_files_are_reproducible_checked_and_recognized(
     with pytest.raises(ValueError, match="built-in actor"):
         portable_models.portable_actor_variables(first)
     assert json.loads(parts["model.json"])["parts"]["weights.npz"]
+
+
+def test_shared_files_name_no_folder_on_the_exporting_computer(
+    tmp_path: Path,
+) -> None:
+    from marl_battlegrounds.released_models import _local_path_findings
+    from marl_battlegrounds.training._checkpoint_metadata import _json_bytes
+
+    def signed(body: dict[str, Any]) -> bytes:
+        identity = hashlib.sha256(_json_bytes(body)).hexdigest()
+        return _json_bytes({**body, "checkpoint_id": identity})
+
+    members = [
+        {"name": "old", "reference": "/home/sam/runs/old"},
+        {"name": "alpha", "reference": "tdm-alpha"},
+    ]
+    body = {"kind": "actor", "metadata": {"checkpoint_id": "run-id"}}
+    raw = signed(
+        {**body, "metadata": {"checkpoint_id": "run-id", "opponent_members": members}}
+    )
+    shared = json.loads(portable_models._shareable_description(raw))
+    metadata = shared["metadata"]
+    assert [m["reference"] for m in metadata["opponent_members"]] == [
+        "a local folder (not shared)",
+        "tdm-alpha",
+    ]
+    assert metadata["derived_from"] == json.loads(raw)["checkpoint_id"]
+    assert metadata["checkpoint_id"] == "run-id"
+    assert signed({k: v for k, v in shared.items() if k != "checkpoint_id"}) == (
+        portable_models._shareable_description(raw)
+    )
+    clean = signed(body)
+    assert portable_models._shareable_description(clean) is clean
+
+    gpu = "GPU-6b11a0c4-14e8-6782-8932-1df56d599796"
+    policy = marl_bgs.Policy(
+        "/home/sam/runs/tiny",
+        _apply,
+        variables=_policy().variables,
+        initial_carry=_policy().initial_carry,
+        checkpoint=gpu,
+    )
+    path = portable_models.export_model(policy, tmp_path / "named.zip")
+    assert _local_path_findings(path.name, path.read_bytes()) == []
+    record = portable_models.read_portable_model(path)
+    assert record.actor_details["name"] == record.model["display_name"]
+    assert record.actor_details["name"] == "a local folder (not shared)"
+    assert record.model["checkpoint_id"] == record.actor_details["checkpoint"]
+    assert record.model["checkpoint_id"] == "GPU-<id>"
 
 
 def test_host_policies_are_refused(tmp_path: Path) -> None:

@@ -1231,7 +1231,8 @@ class _Checker:
             raise _StepFailedError(
                 " ".join(
                     f"{target.name} names {finding}. Train against a released "
-                    "name or a model inside your repository."
+                    "name or a model inside your repository, or lock a newer "
+                    "marl-battlegrounds, whose export leaves local folders out."
                     for finding in findings
                 )
             )
