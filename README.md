@@ -48,7 +48,7 @@ play, with fast and cheap experiments on one GPU.
   alongside or against your policies, and the analytical Replay Viewer
   for stepping through any game tick by tick.
 
-Try it in your browser: the [Colab notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) walks through the API, the speed, training a team and the trained Season 0 teams.
+Try it in your browser: the [walkthrough](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) covers the API, the speed, training a team and the trained Season 0 teams, and the [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) rebuilds the paper's analysis of all 7,200 Season 0 games.
 
 ## Installation
 
@@ -147,6 +147,10 @@ print(results.head_to_head())  # games, wins, draws, losses, point margin
 Your method is always Team A, and paired games swap the spawn ends, so a map's
 layout cannot favor either side.
 
+The [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) shows what full metrics
+reveal: the Season 0 ladder, who beats whom on each map, the teamwork that follows
+Elo and who helps whom. Point it at your own tournament with `MARL_BGS_RESULTS`.
+
 ## Watch And Play
 
 ```bash
@@ -203,6 +207,8 @@ actions: a network, a planner, a language model or a mix.
 
 The paper's commands, frozen settings and result tables are in
 [`scripts/paper_experiments/`](https://github.com/arm-2-lab/MARL-BattleGrounds/tree/main/scripts/paper_experiments).
+The Season 0 ladder and teamwork figures also rebuild in the
+[analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb), with nothing to install.
 
 ## See Also
 
