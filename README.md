@@ -62,7 +62,7 @@ Start here:
 
 You do not need to install JAX first: each route installs the right JAX for your machine.
 
-On Linux, an Apple Silicon Mac or Windows with WSL2, one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
+On Linux, an Apple Silicon Mac or [Windows with WSL2](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md#windows), one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
 
 ```bash
 curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.1.tar.gz | tar xz

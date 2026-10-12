@@ -138,7 +138,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/m
 
 ## Windows
 
-In PowerShell: `wsl --install`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs should work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and it is not tested yet. Or use [Docker](#docker) Desktop.
+In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Windows 11): `wsl --install`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs should work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and it is not tested yet. Or use [Docker](#docker) Desktop.
 
 **Watch Out:** cloning with Git for Windows and then using the folder from WSL or Docker works, because the repository turns off line-ending conversion.
 
