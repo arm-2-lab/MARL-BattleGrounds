@@ -1198,10 +1198,11 @@ def _public(text: str) -> str:
     """Return ``text`` with each local folder and GPU id replaced by a label.
 
     Uses the one rule for "does this reveal someone's computer?"
-    (``released_models._local_path_findings``): a folder on this computer
-    becomes "a local folder (not shared)" and a GPU id becomes ``GPU-<id>``.
-    Everything else, including released names, ``hf://`` addresses and
-    relative paths, is kept exactly.
+    (``released_models._local_path_findings``): a full path that goes
+    through a home folder or a folder named after this computer's user or
+    host becomes "a local folder (not shared)" and a GPU id becomes
+    ``GPU-<id>``. Everything else, including other full paths, released
+    names, ``hf://`` addresses and relative paths, is kept exactly.
     """
     from marl_battlegrounds.released_models import (
         _local_names,  # pyright: ignore[reportPrivateUsage]
@@ -1442,14 +1443,17 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
     reuses it for later saves. Files are written to a temporary name first
     and then renamed.
 
-    Shared files never name the exporting computer. A local folder in the
+    Shared files never show the exporter's home folder. A full path in the
     saved description (a training opponent or starting model the researcher
-    gave by its full path, such as ``/home/sam/runs/old-model``) becomes "a
-    local folder (not shared)", and a GPU id becomes ``GPU-<id>``. The
-    description is then signed again: its new ``checkpoint_id`` follows the
-    usual rule and ``metadata.derived_from`` keeps the original one. A
-    Policy's name and checkpoint label get the same labels. Released names,
-    ``hf://`` addresses and relative paths are kept. The run's own files are
+    gave by its full path) that goes through a home folder (``/home/<user>``,
+    ``/Users/<user>``, ``/root`` or a Windows ``Users`` folder) or through a
+    folder named after this computer's user or host, such as
+    ``/home/sam/runs/old-model``, becomes "a local folder (not shared)", and
+    a GPU id becomes ``GPU-<id>``. The description is then signed again: its
+    new ``checkpoint_id`` follows the usual rule and ``metadata.derived_from``
+    keeps the original one. A Policy's name and checkpoint label get the same
+    labels. Other full paths, such as ``/data/runs/old-model``, released
+    names, ``hf://`` addresses and relative paths are kept. The run's own files are
     never changed, so resuming it still finds its opponents. A description
     with nothing to replace is copied byte for byte.
 

@@ -109,9 +109,11 @@ starting from a model, offline use and the results dataset. See
 [train_against_released_models.py](../examples/training/train_against_released_models.py).
 `marl_bgs.export_model(actor_folder, "mine.zip")` saves your own model in the same
 portable format (actors trained with the default `parameter_sharing="all"`). The file
-is safe to share: an opponent you trained against by a folder on your computer, such
-as `/home/sam/runs/old-model`, is written as "a local folder (not shared)". Your run's
-own files keep the folder, so resuming still works.
+does not show your home folder: an opponent you trained against by a folder that goes
+through your home folder or a folder named after your user or computer, such as
+`/home/sam/runs/old-model`, is written as "a local folder (not shared)", and a GPU id
+as `GPU-<id>`. Other full paths, such as `/data/runs/old-model`, stay as they are.
+Your run's own files keep the folder, so resuming still works.
 
 ## Curriculum And Rewards
 
