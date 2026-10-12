@@ -7,6 +7,8 @@ context through a small queue. Only that execution owner enters/exits scopes.
 Model-call files stay beside the
 recorder's destination; they never decide whether replay data is safely saved.
 No worker, factory or connection starts until the service requests work.
+remove_unplayed_evidence, run after every worker has closed, deletes the call
+folders of matches nobody played, which hold only their setup record.
 """
 
 from __future__ import annotations
@@ -851,3 +853,44 @@ class SystemWorker:
         self._closed = True
         if self._executor is not None:
             self._executor.shutdown(wait=False)
+
+
+def remove_unplayed_evidence(folder: Path) -> None:
+    """Delete call folders that hold only the setup of a match nobody played.
+
+    Parameters
+    ----------
+    folder : pathlib.Path
+        A recorder's evidence folder: ``<replay>.model-calls`` beside the
+        replay file, with one ``generation-N`` folder below it for each later
+        match of the same launch. A missing folder does nothing.
+
+    Notes
+    -----
+    Call this only after every SystemWorker writing into ``folder`` has
+    closed. A match folder goes only when its one entry is ``session.json``
+    and that file records ``accepted_turns`` 0 and no ``saved_prefixes``: no
+    decision, policy trace or model call was ever written there. The top
+    folder goes too when that leaves nothing else in it. Every other folder
+    stays, including one whose ``session.json`` cannot be read, and a file
+    that cannot be deleted is left in place rather than raising.
+    """
+    if not folder.is_dir():
+        return
+    for candidate in [*sorted(folder.glob("generation-*")), folder]:
+        record = candidate / "session.json"
+        if not candidate.is_dir() or [e.name for e in candidate.iterdir()] != [
+            record.name
+        ]:
+            continue
+        try:
+            details = json.loads(record.read_text(encoding="utf-8"))
+            if (
+                isinstance(details, dict)
+                and details.get("accepted_turns") == 0
+                and details.get("saved_prefixes") == []
+            ):
+                record.unlink()
+                candidate.rmdir()
+        except (OSError, ValueError):
+            continue

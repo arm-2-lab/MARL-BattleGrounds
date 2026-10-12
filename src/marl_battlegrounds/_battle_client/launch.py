@@ -50,7 +50,10 @@ from marl_battlegrounds._battle_client.setup import (
     TeamControllers,
     prepare_battle_setup,
 )
-from marl_battlegrounds._battle_client.system_worker import SystemWorker
+from marl_battlegrounds._battle_client.system_worker import (
+    SystemWorker,
+    remove_unplayed_evidence,
+)
 from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
 from marl_battlegrounds.evaluation.replay_io import (
     REPLAY_FILE_SUFFIX_V1,
@@ -107,8 +110,12 @@ def _launch_setup(
     Replay Viewer opened with Open Replay outlives Exit: after the live game,
     its methods and its assets are released, this call keeps serving that
     Viewer (KeptReplayViewer.serve_until_closed) until the Viewer's own Exit
-    or Ctrl-C. Return the existing server exit status. Setup, resource and
-    server errors propagate, every created service is closed, and a kept
+    or Ctrl-C. Once the live game has closed, the call folder of any match
+    nobody played (``<replay>.model-calls``, which then holds only its setup
+    record) is deleted (system_worker.remove_unplayed_evidence); folders with
+    a played turn or a model call stay. Return the existing server exit
+    status. Setup, resource and server errors propagate, every created service
+    is closed, and a kept
     Viewer is stopped when an error follows its release.
     """
     resolved = resolve_controllers(setup)
@@ -240,6 +247,9 @@ def _launch_setup(
         finally:
             # Waits for a background save, so the replay file exists first.
             service.close()
+    if recorder is not None:
+        # Every worker has closed and any save has finished.
+        remove_unplayed_evidence(recorder.evidence_directory)
     if kept_viewer is not None:
         kept_viewer.serve_until_closed()
     return exit_code
