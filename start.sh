@@ -114,8 +114,17 @@ if [ "$dry_run" = 1 ]; then
   exit 0
 fi
 
+# A uv installed earlier but not on this shell's PATH yet, for example when
+# start.sh runs again in the window that installed it. Add a folder only when
+# uv is in it: uv's installer leaves the shell startup files alone when its
+# folder is already on PATH, and then new terminals would not find uv.
 if ! command -v uv >/dev/null 2>&1; then
-  PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+  for folder in "$HOME/.local/bin" "$HOME/.cargo/bin"; do
+    if [ -x "$folder/uv" ]; then
+      PATH="$folder:$PATH"
+      break
+    fi
+  done
 fi
 if ! command -v uv >/dev/null 2>&1; then
   echo "Installing uv, the Python package manager (https://docs.astral.sh/uv/) ..."

@@ -15,6 +15,17 @@ and the two commands, installs nothing and does not install uv):
   ``--extra BUILD`` for a GPU build. ``--dry-run`` may stand anywhere on the
   line, and every other option goes to ``play.py`` unchanged, in order.
 
+``start.sh`` without uv, run for real with stand-ins for ``curl``, uv's
+installer and uv: the installer runs while ``~/.local/bin`` is not yet on
+``PATH`` (uv's installer writes that folder into the shell startup files, so
+new terminals find ``uv``, only when the folder is not on ``PATH``). A uv
+already in ``~/.local/bin`` but not on ``PATH`` is found and used, with no
+installer run.
+
+Every tracked path is at most 150 characters, so ``git clone`` works with Git
+for Windows: it keeps ``core.longpaths`` off, so a full path, including the
+folder the clone goes in, stops at 260 characters.
+
 The notebooks (``examples/quickstart.ipynb`` and
 ``examples/evaluate/evaluation_analysis.ipynb``) are saved with the outputs of one
 complete run, so readers see every result before running anything: every code
@@ -152,6 +163,72 @@ def test_other_options_go_to_play(tmp_path: Path) -> None:
     assert result.stdout.splitlines()[2] == (
         "uv run --no-sync python play.py --team-b qmix --map 12"
     )
+
+
+def _run_needing_uv(
+    tmp_path: Path, *, earlier_uv: bool
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    home = tmp_path / "home"
+    local_bin = home / ".local" / "bin"
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    for name in ("awk", "dirname", "sh", "cat", "mkdir", "chmod"):
+        found = shutil.which(name)
+        assert found is not None
+        (tools / name).symlink_to(found)
+    record = tmp_path / "path-while-installing"
+    # A stand-in uv that fails its sync, so start.sh stops before play.py.
+    make_uv = (
+        'mkdir -p "$HOME/.local/bin"\n'
+        "printf '#!/bin/sh\\nexit 3\\n' > \"$HOME/.local/bin/uv\"\n"
+        'chmod +x "$HOME/.local/bin/uv"\n'
+    )
+    if earlier_uv:
+        subprocess.run(["sh", "-c", make_uv], env={"HOME": str(home)}, check=True)
+    else:
+        # A stand-in for uv's installer, which curl hands to sh.
+        installer = f"printf '%s' \"$PATH\" > '{record}'\n" + make_uv
+        curl = tools / "curl"
+        curl.write_text(f"#!/bin/sh\ncat <<'END'\n{installer}END\n", encoding="utf-8")
+        curl.chmod(0o755)
+    shell = shutil.which("sh")
+    assert shell is not None
+    result = subprocess.run(
+        [shell, str(_START)],
+        env={"PATH": str(tools), "HOME": str(home), "MARL_BGS_ACCELERATOR": "cpu"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result, record, local_bin
+
+
+def test_uv_installer_runs_before_its_folder_is_on_path(tmp_path: Path) -> None:
+    result, record, local_bin = _run_needing_uv(tmp_path, earlier_uv=False)
+    assert "Installing uv" in result.stdout
+    assert str(local_bin) not in record.read_text(encoding="utf-8").split(":")
+    assert result.returncode == 1
+    assert "The install failed" in result.stderr
+
+
+def test_every_path_fits_a_git_for_windows_clone() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=_REPOSITORY,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert tracked
+    assert [path for path in tracked if len(path) > 150] == []
+
+
+def test_an_earlier_uv_is_found_without_the_installer(tmp_path: Path) -> None:
+    result, record, _ = _run_needing_uv(tmp_path, earlier_uv=True)
+    assert "Installing uv" not in result.stdout
+    assert not record.exists()
+    assert result.returncode == 1
+    assert "The install failed" in result.stderr
 
 
 def _install_cells() -> list[str]:
