@@ -891,7 +891,7 @@ def test_missing_required_runtime_asset_fails_before_browser_open(
         opened_urls.append(url)
         return True
 
-    monkeypatch.setattr(server_module.webbrowser, "open", record_browser_open)
+    monkeypatch.setattr(server_module, "open_in_browser", record_browser_open)
 
     with pytest.raises(ValueError, match="required browser asset is missing"):
         serve_browser_debugger(
@@ -913,7 +913,7 @@ def test_occupied_port_fails_before_browser_open(
         opened_urls.append(url)
         return True
 
-    monkeypatch.setattr(server_module.webbrowser, "open", record_browser_open)
+    monkeypatch.setattr(server_module, "open_in_browser", record_browser_open)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
         occupied.bind(("127.0.0.1", 0))
         occupied.listen()

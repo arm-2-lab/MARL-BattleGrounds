@@ -651,7 +651,7 @@ def test_browser_open_failure_keeps_the_printed_url_and_server_alive(
             raise OSError("No desktop browser")
         return False
 
-    monkeypatch.setattr(server.webbrowser, "open", browser_open)
+    monkeypatch.setattr(server, "open_in_browser", browser_open)
     assert (
         server.serve_debugger_server(
             cast("server.DebuggerHTTPServer", FakeServer()), open_browser=True

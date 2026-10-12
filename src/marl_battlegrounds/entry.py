@@ -39,13 +39,14 @@ import tempfile
 import time
 import tomllib
 import urllib.parse
-import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal, cast
+
+from marl_battlegrounds._browser import open_in_browser
 
 FORM_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues/new"
 """The GitHub page that opens a new issue in the MARL-BattleGrounds repository."""
@@ -1533,8 +1534,8 @@ def submit_entry(
         A folder inside the entry's Git repository. Its last commit is
         submitted.
     open_browser : bool, default=True
-        Open the link in the default web browser. The link is printed either
-        way.
+        Open the link in the default web browser (from WSL2, the Windows
+        default browser). The link is printed either way.
 
     Returns
     -------
@@ -1618,7 +1619,7 @@ def submit_entry(
         'private" if it is. Then press Submit new issue.'
     )
     if open_browser:
-        webbrowser.open(link)
+        open_in_browser(link)
     return link
 
 

@@ -22,7 +22,6 @@ import json
 import re
 import secrets
 import sys
-import webbrowser
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -36,6 +35,8 @@ from time import monotonic
 from typing import Any, Literal, Protocol, cast, get_args
 
 from pydantic import BaseModel, ValidationError
+
+from marl_battlegrounds._browser import open_in_browser
 
 _LIVE_SNAPSHOT_ROUTE = "/api/live/snapshot"
 _TOKEN_HEADER = "X-MARL-Debugger-Token"
@@ -2002,7 +2003,8 @@ def serve_debugger_server(
     server : DebuggerHTTPServer
         Bound server whose assets and request handler are already installed.
     open_browser : bool
-        Open the printed token URL in the default browser when True.
+        Open the printed token URL in the default browser when True (from
+        WSL2, the Windows default browser).
     graceful_close : callable or None, optional
         No-argument closeout callback for Ctrl-C; None stops without closeout.
     product_title : str or None, optional
@@ -2043,7 +2045,7 @@ def serve_debugger_server(
         print(f"{startup_title}: {url}", flush=True)
         if open_browser:
             try:
-                opened = webbrowser.open(url)
+                opened = open_in_browser(url)
             except Exception as exc:  # Browser integration is platform-owned.
                 print(
                     f"warning: browser could not be opened ({exc}); use the URL above.",
