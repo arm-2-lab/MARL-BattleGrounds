@@ -215,6 +215,7 @@ The Season 0 ladder and teamwork figures also rebuild in the
 JAX-native environments:
 
 - [JaxMARL](https://github.com/bold-lab-ai/JaxMARL): Multi-Agent RL Environments and Algorithms in JAX.
+- [JaxAHT](https://github.com/LARG/jax-aht): a benchmark for ad hoc teamwork (working with teammates never met in training) in JAX.
 - [Gymnax](https://github.com/RobertTLange/gymnax): classic RL environments in JAX.
 - [Jumanji](https://github.com/instadeepai/jumanji): combinatorial and planning environments in JAX.
 - [Pgx](https://github.com/sotetsuk/pgx): board games in JAX.
