@@ -18,10 +18,10 @@ You do not need to install JAX first: each route installs the right JAX for your
 
 | Your machine | Route | GPU | Tested |
 |---|---|---|---|
-| Linux (x86_64 or ARM) | [One command](#one-command) | NVIDIA, picked for you | Tested: x86_64 with an NVIDIA RTX 5090; x86_64 and ARM on the CPU |
-| Apple Silicon Mac | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Tested (macOS 26, CPU) |
+| Linux (x86_64 or ARM), glibc 2.28 or newer (Ubuntu 20.04+, Debian 10+, RHEL 8+) | [One command](#one-command) | NVIDIA, picked for you | Tested: x86_64 with an NVIDIA RTX 5090; x86_64 and ARM on the CPU |
+| Apple Silicon Mac, macOS 12 or newer | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Tested (macOS 26, CPU) |
 | Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Not tested yet; it should work |
-| Intel Mac, old Linux, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
+| Intel Mac, Linux older than glibc 2.28, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
 | Your own Python project | [pip](#pip) | You choose | Tested: Linux x86_64 and ARM and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14 |
 | Only a browser | [Colab](#colab) | Colab's free T4 | Tested |
 | A cluster or a remote GPU machine | [Clusters and remote machines](#clusters-and-remote-machines) | NVIDIA | Tested on Linux: the uv steps with the network cut off, and the image under Apptainer on the CPU. Not tested yet; it should work: a real cluster, Apptainer with a GPU, `apptainer pull` from the registry, the SSH tunnel |
@@ -138,7 +138,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/m
 
 ## Windows
 
-In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Windows 11): `wsl --install`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs should work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and it is not tested yet. Or use [Docker](#docker) Desktop.
+In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Windows 11): `wsl --install -d Ubuntu`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs should work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and it is not tested yet. Or use [Docker](#docker) Desktop.
 
 **Watch Out:** cloning with Git for Windows and then using the folder from WSL or Docker works, because the repository turns off line-ending conversion.
 
@@ -151,7 +151,7 @@ The browser clients (BattleClient and Replay Viewer) do not run inside Colab, be
 
 Remote GPU machine: start the client there with `sh start.sh --port 8765 --replay-port 8767 --no-browser`. On your laptop run `ssh -N -L 8765:127.0.0.1:8765 -L 8767:127.0.0.1:8767 <host>`, then open the printed `127.0.0.1` link.
 Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then, in a scratch folder, run `apptainer pull marl-bgs.sif docker://ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1-cuda12` once (the image file lands in the current folder). On a compute node, in that folder: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
-Cluster with uv: unpack the release on scratch storage (the environment is about 6 GB), set `UV_CACHE_DIR` there, run `MARL_BGS_ACCELERATOR=cuda12 sh start.sh --help` on the login node, open a new shell (so `uv` is on your `PATH`), and on a compute node `uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`. Compute nodes often have no internet: on the login node, download the models first with `uv run --no-sync python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-recurrent-mappo` (and any others), then set `HF_HUB_OFFLINE=1` on the compute node. Linux needs glibc 2.28 or newer (Ubuntu 20.04+, Debian 10+, RHEL 8+); older systems use Apptainer.
+Cluster with uv: unpack the release on scratch storage (the environment is about 6 GB), set `UV_CACHE_DIR` there, run `MARL_BGS_ACCELERATOR=cuda12 sh start.sh --help` on the login node, open a new shell (so `uv` is on your `PATH`), and on a compute node `uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`. Compute nodes often have no internet: on the login node, download the models first with `uv run --no-sync python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-recurrent-mappo` (and any others), then set `HF_HUB_OFFLINE=1` on the compute node. On Linux older than glibc 2.28, use Apptainer.
 
 ## Offline Use
 
