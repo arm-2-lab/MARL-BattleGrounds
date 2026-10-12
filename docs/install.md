@@ -13,6 +13,7 @@ Website: https://marl-battlegrounds.com/#start
 | Use MARL-BattleGrounds in your own project | [pip](#pip) |
 
 You do not need to install JAX first: each route installs the right JAX for your machine.
+An NVIDIA GPU is optional but recommended: without one, everything runs on the CPU, only slower.
 
 ## Pick Your Route
 

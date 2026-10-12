@@ -61,6 +61,7 @@ Start here:
 | Use MARL-BattleGrounds in your own project | pip, below |
 
 You do not need to install JAX first: each route installs the right JAX for your machine.
+An NVIDIA GPU is optional but recommended: without one, everything runs on the CPU, only slower.
 
 On Linux, an Apple Silicon Mac or [Windows with WSL2](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md#windows), one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
 
