@@ -82,6 +82,7 @@ Check which device JAX uses: `uv run --no-sync python -c "import jax; print(jax.
 ## pip
 
 ```bash
+sudo apt update && sudo apt install python3-venv   # Ubuntu, Debian and WSL2, once
 python3 -m venv .venv && . .venv/bin/activate   # a fresh environment, Python 3.12 to 3.14
 pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA, driver 580+ (or cuda12, rocm, tpu)
