@@ -84,9 +84,9 @@ docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/wo
 
 | Route | For | Tested |
 |---|---|---|
-| One command, `sh start.sh` | Linux (x86_64 and ARM), Apple Silicon Mac, Windows with WSL2 | Tested: Linux x86_64 with an NVIDIA RTX 5090; Linux x86_64 and ARM, and an Apple Silicon Mac, on the CPU. Not tested yet; it should work: WSL2 |
-| pip | Linux, Apple Silicon Mac, WSL2; Python 3.12 to 3.14 | Tested: Linux x86_64 and ARM, and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14. Not tested yet; it should work: WSL2 |
-| Docker | Any system with Docker or Podman; NVIDIA GPUs on Linux and Windows | Tested: Linux with Docker (CPU, and an NVIDIA GPU with the CUDA 12 image), Linux with Podman, the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
+| One command, `sh start.sh` | Linux (x86_64 and ARM), Apple Silicon Mac, Windows with WSL2 | Tested: Linux x86_64 with an NVIDIA RTX 5090; Linux x86_64 and ARM, and an Apple Silicon Mac, on the CPU; Windows 11 with WSL2 (Ubuntu 24.04) and an NVIDIA RTX 5090 |
+| pip | Linux, Apple Silicon Mac, WSL2; Python 3.12 to 3.14 | Tested: Linux x86_64 and ARM, and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14; Windows 11 with WSL2 (Ubuntu 24.04, Python 3.12) and an NVIDIA RTX 5090 |
+| Docker | Any system with Docker or Podman; NVIDIA GPUs on Linux and Windows | Tested: Linux with Docker (CPU, and an NVIDIA GPU with the CUDA 12 image), Linux with Podman, the ARM image on ARM Linux, Docker Desktop on Windows 11 (CPU, and an NVIDIA RTX 5090 with the CUDA 12 image). Not tested yet; it should work: Docker Desktop on a Mac |
 | Colab, [Open in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) | A browser | Tested: Colab's free T4 GPU |
 
 "Tested" means we ran exactly these instructions on that system for this release.

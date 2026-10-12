@@ -20,9 +20,9 @@ You do not need to install JAX first: each route installs the right JAX for your
 |---|---|---|---|
 | Linux (x86_64 or ARM), glibc 2.28 or newer (Ubuntu 20.04+, Debian 10+, RHEL 8+) | [One command](#one-command) | NVIDIA, picked for you | Tested: x86_64 with an NVIDIA RTX 5090; x86_64 and ARM on the CPU |
 | Apple Silicon Mac, macOS 12 or newer | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Tested (macOS 26, CPU) |
-| Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Not tested yet; it should work |
-| Intel Mac, Linux older than glibc 2.28, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux. Not tested yet; it should work: Docker Desktop on a Mac or Windows |
-| Your own Python project | [pip](#pip) | You choose | Tested: Linux x86_64 and ARM and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14 |
+| Windows | [WSL2](#windows), then the one command; or [Docker](#docker) | NVIDIA through WSL2 or Docker | Tested: Windows 11 with an NVIDIA RTX 5090: WSL2 (Ubuntu 24.04) with the one command and pip, and Docker Desktop with the CPU and CUDA 12 images |
+| Intel Mac, Linux older than glibc 2.28, or you prefer containers | [Docker](#docker) | NVIDIA on Linux and Windows hosts | Tested: Linux with Docker (CPU, and NVIDIA with the CUDA 12 image) and with Podman; the ARM image on ARM Linux; Docker Desktop on Windows 11 (CPU, and NVIDIA with the CUDA 12 image). Not tested yet; it should work: Docker Desktop on a Mac |
+| Your own Python project | [pip](#pip) | You choose | Tested: Linux x86_64 and ARM and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14; Windows 11 with WSL2 (Ubuntu 24.04, Python 3.12) and an NVIDIA RTX 5090 |
 | Only a browser | [Colab](#colab) | Colab's free T4 | Tested |
 | A cluster or a remote GPU machine | [Clusters and remote machines](#clusters-and-remote-machines) | NVIDIA | Tested on Linux: the uv steps with the network cut off, and the image under Apptainer on the CPU. Not tested yet; it should work: a real cluster, Apptainer with a GPU, `apptainer pull` from the registry, the SSH tunnel |
 | AMD GPU or Google TPU | [GPU builds](#gpu-builds) | AMD or TPU | Not tested yet; it should work |
@@ -139,7 +139,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/m
 
 ## Windows
 
-In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Windows 11): `wsl --install -d Ubuntu`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs should work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and it is not tested yet. Or use [Docker](#docker) Desktop.
+In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Windows 11): `wsl --install -d Ubuntu`, then restart. Open the Ubuntu app and run the [one command](#one-command) in your WSL home folder (`cd ~` first, not `/mnt/c/...`, which is much slower). NVIDIA GPUs work inside WSL2 with the normal Windows NVIDIA driver (install no driver inside Ubuntu); JAX calls this experimental, and we tested it on an RTX 5090. Or use [Docker](#docker) Desktop.
 
 **Watch Out:** cloning with Git for Windows and then using the folder from WSL or Docker works, because the repository turns off line-ending conversion.
 
