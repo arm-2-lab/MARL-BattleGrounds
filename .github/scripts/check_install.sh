@@ -13,10 +13,13 @@
 #       repeat it in a second environment with constraints/constraints-cpu.txt.
 #   check_install.sh start
 #       Run the one command, sh start.sh --no-browser --port 8765
-#       --replay-port 8767, in this folder: it installs everything and opens
-#       the BattleClient. Check that the page answers and that a localhost
-#       address is refused, then stop it. Then evaluate a released model and run
-#       every notebook under examples/ from top to bottom on the CPU.
+#       --replay-port 8767, in this folder, with a new computer's PATH: it
+#       installs everything and opens the BattleClient. Check that the page
+#       answers and that a localhost address is refused, then stop it. When
+#       start.sh installed uv (always on CI, where uv is absent), check that
+#       uv's installer added uv to the shell startup files a new terminal
+#       reads. Then evaluate a released model and run every notebook under
+#       examples/ from top to bottom on the CPU.
 #   check_install.sh oldest IMAGE
 #       Unpack this commit as the release tarball holds it, then run the install
 #       guide's sh start.sh --help and its evaluate command inside the Linux
@@ -88,10 +91,31 @@ pip_route() {
 
 start_route() {
   log="$work/start.log"
-  sh start.sh --no-browser --port 8765 --replay-port 8767 >"$log" 2>&1 &
+  # A new computer's PATH. GitHub's runners already have uv's folder,
+  # ~/.local/bin, on PATH, and uv's installer then leaves the shell startup
+  # files alone, which would hide whether a new terminal can find uv.
+  env PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+    sh start.sh --no-browser --port 8765 --replay-port 8767 >"$log" 2>&1 &
   pid=$!
   wait_for_link "cat $log" "kill -0 $pid 2>/dev/null"
   kill "$pid" 2>/dev/null || true
+  if grep -q "Installing uv" "$log"; then
+    # The files a new terminal reads: zsh on a Mac, sh and bash on Linux.
+    case "$(uname -s)" in
+      Darwin) startup=".zshrc .zshenv" ;;
+      *) startup=".profile .bashrc .bash_profile .bash_login" ;;
+    esac
+    found=no
+    for file in $startup; do
+      if grep -qs 'local/bin/env' "$HOME/$file"; then found=yes; fi
+    done
+    test "$found" = yes ||
+      { echo "check_install.sh: uv's installer added uv to none of $startup, so a new terminal would not find uv." >&2; exit 1; }
+    echo "new terminal ok: uv is in the shell startup files"
+  elif [ "${CI:-}" = true ]; then
+    echo "check_install.sh: start.sh did not install uv on this runner, so the new terminal check could not run." >&2
+    exit 1
+  fi
   PATH="$HOME/.local/bin:$PATH"
   export PATH
   JAX_PLATFORMS=cpu uv run --no-sync python -m marl_battlegrounds evaluate \
