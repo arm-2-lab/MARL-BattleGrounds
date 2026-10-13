@@ -156,6 +156,10 @@ The command needs the exact run folder, as [`population_selection.py`](../exampl
 
 ## Enter The Leaderboard
 
+We train every entry once on our machine, under the same budget for everyone: 255
+million game steps and 8 hours on one RTX 5090 (see the [Tournament Rules](tournament_rules.md)).
+So the leaderboard rewards methods that are efficient in both samples and compute.
+
 ```bash
 python -m marl_battlegrounds entry new my-entry
 cd my-entry

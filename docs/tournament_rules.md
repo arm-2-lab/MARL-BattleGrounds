@@ -6,6 +6,8 @@ Capture the Flag get their own ladders and numbers later. How games become
 ratings is defined in the
 [tournaments guide](tournaments.md);
 this rulebook sets who may enter, what a run may use, and the limits.
+Every entry trains under the same budget on the same machine, so the rules
+reward MARL methods that are efficient in both samples and compute.
 
 **Submission edits, 10 October 2026.** Rules 4, 6.3 and 6.4 now name the
 `entry` commands that check and send an entry, the `uv.lock` and `entry.yaml`
@@ -17,8 +19,9 @@ Version 1. One more submission edit, 11 October 2026: Rule 6.3 now asks that
 **Season 1 edits, October 2026.** The Season now opens Season 1 early, with
 version 1.0.2, gives its dates and Season 2's, and says where tables are
 published. Rule 2.1 now says who stops the run at each limit. Rule 2.2 now
-says what your code may do, instead of describing a sealed machine. No limit
-or rating rule changed, so this is still Version 1.
+says what your code may do, instead of describing a sealed machine. Rule 1.2
+adds five cost columns. The opening says what the shared budget rewards. No
+limit or rating rule changed, so this is still Version 1.
 
 Website: https://marl-battlegrounds.com/#leaderboard-rules
 
@@ -59,7 +62,11 @@ built on a language model. It must run as pure JAX and export to our
 portable file.
 
 1.2 The table shows each entry's type (Learned, Scripted, Hybrid or Language
-Model) and whether it uses an outside pretrained model.
+Model) and whether it uses an outside pretrained model. It also shows five
+costs from our official run and our Rule 4 check: Steps To Entry (the game
+steps of training behind the entered save), Run Steps (every game the run
+played, as counted in Rule 2.1), Training Time, Play Speed and Play Memory.
+They never change rank, rating or admission.
 
 1.3 Season 0's three scripted bots are reference opponents built as part of
 the benchmark. Rules 2 and 3 do not apply to them.
@@ -251,6 +258,9 @@ the cutoff. Each table names its rulebook version.
   game steps on one RTX 5090, counting each first run and its continuation (see the
   [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)), so
   every Season 0 learned entrant meets the limits a challenger faces.
+- **One budget for everyone** means an entry wins by learning more from each
+  game step and doing more with each hour on the card. That rewards methods
+  that are efficient in both samples and compute.
 - **The play limits** exist because every entrant becomes a downloadable
   training opponent for later challengers, so a slow or memory-hungry entrant
   would slow down everyone who trains against it. Every Season 0 entrant

@@ -187,7 +187,7 @@ actions: a network, a planner, a language model or a mix.
 
 **Season 1:** submissions are open until 00:00 UK time on December 29, 2026, and the first table is published at 00:00 UK time on January 1, 2027, on the [leaderboard](https://marl-battlegrounds.com/#leaderboard). Season 2 follows, with a new table each month.
 
-We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Your entry then plays the current Big Nine (Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. Every entrant is released as a downloadable opponent.
+We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Every entry gets the same budget on the same machine, so the leaderboard rewards MARL methods that are efficient in both samples and compute. Your entry then plays the current Big Nine (Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. The table also shows what each entry cost to train and to play. Every entrant is released as a downloadable opponent.
 
 ```bash
 python -m marl_battlegrounds entry new my-entry   # a starter entry
