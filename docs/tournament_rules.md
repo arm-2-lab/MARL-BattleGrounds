@@ -14,6 +14,12 @@ edits change how you submit, not any limit or rating rule, so this is still
 Version 1. One more submission edit, 11 October 2026: Rule 6.3 now asks that
 `uv.lock` install a released marl-battlegrounds from PyPI.
 
+**Season 1 edits, October 2026.** The Season now opens Season 1 early, with
+version 1.0.2, gives its dates and Season 2's, and says where tables are
+published. Rule 2.1 now says who stops the run at each limit. Rule 2.2 now
+says what your code may do, instead of describing a sealed machine. No limit
+or rating rule changed, so this is still Version 1.
+
 Website: https://marl-battlegrounds.com/#leaderboard-rules
 
 ## Words Used Here
@@ -35,8 +41,16 @@ Website: https://marl-battlegrounds.com/#leaderboard-rules
   hours before its table is published.
 - **The Big Nine.** Every season's field holds nine systems.
 - **Season 0** is our six baselines and three scripted bots, rated on the
-  test maps. **Season 1 begins January 1, 2027.** Season 2 is February 2027,
-  and so on.
+  test maps.
+- **Season 1** opens with version 1.0.2. Submissions close at 00:00 UK time
+  on December 29, 2026, and its table is published at 00:00 UK time on
+  January 1, 2027.
+- **Season 2** is February 2027: submissions from the Season 1 cutoff until
+  00:00 UK time on January 29, 2027, and its table on February 1. After that,
+  one season a month, named after the month its table stands.
+- **Where:** each table is published on the website's
+  [leaderboard](https://marl-battlegrounds.com/#leaderboard), and the season's
+  games and every entrant on Hugging Face.
 
 ## Rule 1. Who May Enter
 
@@ -53,11 +67,13 @@ the benchmark. Rules 2 and 3 do not apply to them.
 ## Rule 2. Budget And Machine
 
 2.1 **At most 255 million game steps and 8 hours.** Every game your run plays
-counts, validation included. We stop the run at whichever limit comes first.
+counts, validation included. Your run must stop by itself within 255
+million game steps; we stop it at 8 hours.
 
 2.2 **The machine:** one RTX 5090 (32 GB), an AMD Ryzen 9 9950X3D (16 cores,
-32 threads), 48 GB of RAM and 50 GB of disk. Your code runs sealed off: no
-network, and it sees only its own folder.
+32 threads), 48 GB of RAM and 50 GB of disk. **Your code may not use the
+network, and may read and write only its own folder and the starting models
+it lists (Rule 2.3).** We read your code before we run it.
 
 2.3 Installing happens before the clock, without the GPU, in at most 1 hour.
 List every download with its hash.

@@ -1409,8 +1409,8 @@ def check_entry(
     Only steps 2 and 4 use the network. Steps 5 to 9 set
     ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``; this asks tools to stay
     offline but does not seal the network. Steps 5 to 9 may use the GPU.
-    Outside code runs on this machine: maintainers run it only inside the
-    sealed container (Rule 2.2).
+    Outside code runs on this machine: maintainers run an entry only after
+    reading its code (Rule 2.2).
 
     Examples
     --------

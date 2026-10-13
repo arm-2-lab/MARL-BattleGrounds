@@ -1,5 +1,5 @@
 name: Leaderboard Submission
-description: Enter your system in a monthly Team Deathmatch season.
+description: Enter your system in a Team Deathmatch season.
 labels: ["submission"]
 body:
   - type: markdown

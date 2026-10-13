@@ -183,6 +183,20 @@ Every save of the six Season 0 models, from 0 to 250 million steps, loads by nam
 Your own method can be anything that turns permitted observations into legal
 actions: a network, a planner, a language model or a mix.
 
+## Leaderboard
+
+**Season 1:** submissions are open until 00:00 UK time on December 29, 2026, and the first table is published at 00:00 UK time on January 1, 2027, on the [leaderboard](https://marl-battlegrounds.com/#leaderboard). Season 2 follows, with a new table each month.
+
+We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Your entry then plays the current Big Nine (Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. Every entrant is released as a downloadable opponent.
+
+```bash
+python -m marl_battlegrounds entry new my-entry   # a starter entry
+python -m marl_battlegrounds entry check          # checks it the way we will
+python -m marl_battlegrounds entry submit         # opens the GitHub issue form
+```
+
+The [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) say who may enter and set the limits. [Enter The Leaderboard](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournaments.md#enter-the-leaderboard) walks through the three commands.
+
 ## Guides
 
 | Guide | What It Covers | Website |
