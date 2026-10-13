@@ -59,7 +59,7 @@
  * red, and "200 / 200"; owner, 2 October 2026), or words where the champion
  * has fallen or is out of sight (paintLife).
  *
- * Controller names: the Policies block, the "Played By" names (the deck's
+ * Controller names: the Policies block, the "Played by" names (the deck's
  * chip, Watch Only and the Class Guide note) and the message line's "played
  * by ..." all come from the one controller model (controllerRosterFromFrame
  * in match-summary.js, built from the combat configuration and the identity
@@ -67,7 +67,7 @@
  * controller-names.js owns the model and the words). The Policies block
  * lists every policy of both teams with its crest, its full name (wrapping,
  * never cut) and "N Champions", exactly the hover lists' rows without "You";
- * a "Played By" name is cut with "…" past the fixed name width and hovering
+ * a "Played by" name is cut with "…" past the fixed name width and hovering
  * it while cut drops down its team's list.
  *
  * Phases come from real states: You Plan (nothing in flight), Lock In (a
@@ -3596,7 +3596,7 @@ export function createTacticsTurn(context) {
    * `controllers` is the one controller model (controllerRosterFromFrame in
    * match-summary.js, from the combat configuration and the identity
    * directory, the facts the scorebug's lines use), NO_CONTROLLER_ROSTER
-   * outside live play; the Policies list and every "Played By" name read it.
+   * outside live play; the Policies list and every "Played by" name read it.
    */
   function deckData() {
     const presentation = state.presentation;
@@ -3660,7 +3660,7 @@ export function createTacticsTurn(context) {
       ? servedManualOrdersOf(presentation, rosterRows, shownManualIds)
       : servedManualOrdersOf(null, []);
     // The one controller model (controller-names.js): the rail's Policies
-    // list and every "Played By" name come from it, as the scorebug's lines
+    // list and every "Played by" name come from it, as the scorebug's lines
     // and hover lists do.
     const controllers = live
       ? controllerRosterFromFrame(presentation, configuration)
@@ -4717,7 +4717,7 @@ export function createTacticsTurn(context) {
           ? ""
           : focusedManual
             ? escapeHtml(DECK_LABELS.youControl)
-            : `Played By&nbsp;${controllerHtml}`,
+            : `Played by&nbsp;${controllerHtml}`,
       );
     }
     // The champion in view's life: the shared Life bar (owner, 2 October

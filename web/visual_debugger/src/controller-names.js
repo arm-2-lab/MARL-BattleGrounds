@@ -764,7 +764,7 @@ export function publishedControllerRoster(doc) {
  * Mark an element as a controller name or line of one team, so hovering or
  * focusing it drops down that team's list. mode "line" (a scorebug or team
  * line) always opens it; mode "name" (a name inside other words, such as
- * "Played By ...") opens it only while CSS cuts the name with "…". Side
+ * "Played by ...") opens it only while CSS cuts the name with "…". Side
  * effects: data-controller-team and data-controller-list on the element, and
  * the document's listeners on first use.
  *

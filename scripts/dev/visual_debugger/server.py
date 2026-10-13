@@ -18,6 +18,5 @@ if TYPE_CHECKING:
     _legacy_live_binding = (
         _implementation._legacy_live_binding  # pyright: ignore[reportPrivateUsage]
     )
-    webbrowser = _implementation.webbrowser
 
 sys.modules[__name__] = _implementation

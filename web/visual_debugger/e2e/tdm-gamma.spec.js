@@ -4,7 +4,7 @@
  * the shared scorebug names Team B "tdm-gamma" and Team A "You" in live play or the
  * recorded "Manual" in the Replay Viewer, and the match summary keeps every policy
  * reference. In live play, a click on GAMMA's Priest sends one control request
- * and the deck shows Watch Only: the Priest's class, Agent ID and "Played By
+ * and the deck shows Watch Only: the Priest's class, Agent ID and "Played by
  * tdm-gamma", with every Allowed Now pick disabled. Lock In then accepts one
  * step, and the Recording pill's popover shows the kept tick and saves the
  * replay with its Finish and Save.
@@ -228,7 +228,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
   await expect(watchOnly.locator(".eyebrow")).toHaveText("Watch Only");
   await expect(page.locator("#wo-name")).toHaveText(/^Priest · /u);
   await expect(page.locator("#wo-meta")).toHaveText(
-    /^Agent ID \d+ · Played By tdm-gamma$/u,
+    /^Agent ID \d+ · Played by tdm-gamma$/u,
   );
   await expect(page.locator("#wo-meta .controller-name")).toHaveText(GAMMA_LABEL);
   await expect(watchOnly).toContainText(
