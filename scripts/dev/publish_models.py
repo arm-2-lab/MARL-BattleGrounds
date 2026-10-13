@@ -138,6 +138,8 @@ CODE_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds"
 # The repository's address before it moved; cleaned text names CODE_URL instead.
 OLD_CODE_URL = "https://github.com/oceansystemslab/MARL-BattleGrounds"
 GUIDE_URL = f"{CODE_URL}/blob/main/docs/released_models.md"
+# The public rulebook; the dataset and organization cards link its leaderboard.
+RULES_URL = f"{CODE_URL}/blob/main/docs/tournament_rules.md"
 # The day the clean copy replaced every released file, once (see clean).
 RE_RELEASE_DAY = "10 October 2026"
 DATASET_URL = f"https://huggingface.co/datasets/{ORG}/{DATASET_REPO}"
@@ -1626,6 +1628,11 @@ TDM-Alpha, TDM-Beta and TDM-Gamma, which ship inside the package. They played
 {games:,} games on test maps {_numbers_text(maps)}. This dataset holds every game,
 the ratings, the original save folders and the training opponents.
 
+Each of the six models comes from a run of about 250 million game steps.
+Every entry on the [leaderboard]({RULES_URL}) gets the same budget on the same
+machine, so the leaderboard rewards MARL methods that are efficient in both
+samples and compute.
+
 | Path | Holds |
 |---|---|
 | `season-0-ratings/` | The Season 0 tables: `ratings.csv` (rank, Elo with its 95% interval, tier, wins, draws, losses, point margin, kills and deaths), `head_to_head.csv`, `map_results.csv`, `final_policies.csv` (each model's training settings) and `RESULTS.md`. |
@@ -1871,10 +1878,10 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     -------
     str
         Space YAML metadata (static SDK), then the card in plain English: what
-        MARL-BGs is, the models with their Season 0 results, the one-line names,
-        three lines of code, links, the citation and the contact. Hugging Face
-        shows this file as the organization card when the Space has no
-        ``index.html``.
+        MARL-BGs is and what its leaderboard rewards, the models with their
+        Season 0 results, the one-line names, three lines of code, links, the
+        citation and the contact. Hugging Face shows this file as the
+        organization card when the Space has no ``index.html``.
     """
     example = f"{ORG}/tdm-season-0-recurrent-ippo"
     table = "\n".join(
@@ -1894,6 +1901,10 @@ pinned: false
 benchmark for heterogeneous and competitive team-vs-team multi-agent
 reinforcement learning (MARL). MARL-BGs fills the missing middle: rich team
 play, with fast and cheap experiments on one GPU.
+
+Every entry on its [leaderboard]({RULES_URL}) gets the same budget on the same
+machine, so the leaderboard rewards MARL methods that are efficient in both
+samples and compute.
 
 ## The Season 0 Models
 
