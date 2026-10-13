@@ -20,6 +20,14 @@
 #       uv's installer added uv to the shell startup files a new terminal
 #       reads. Then evaluate a released model and run every notebook under
 #       examples/ from top to bottom on the CPU.
+#   check_install.sh start-readonly-config
+#       Run the one command again as on a computer whose ~/.config this user
+#       cannot write. First remove uv (~/.local/bin/uv and uvx) and the
+#       ~/.config/fish and ~/.config/uv folders an earlier install made, then
+#       make ~/.config read-only (writable again on exit). uv's installer
+#       then puts uv in place and fails creating ~/.config/fish; start.sh
+#       must say so, carry on and open the BattleClient on ports 8775 and
+#       8777, so a BattleClient left from "start" cannot answer for it.
 #   check_install.sh oldest IMAGE
 #       Unpack this commit as the release tarball holds it, then run the install
 #       guide's sh start.sh --help and its evaluate command inside the Linux
@@ -58,8 +66,10 @@ PY
 }
 
 # Wait for the BattleClient link in the output that command $1 prints, while
-# process $2 (or, for a container, the name check in $3) is still running.
+# the check $2 (its process, or its container, is still running) passes. Then
+# check the page on port $3 (default 8765).
 wait_for_link() {
+  port="${3:-8765}"
   until $1 2>&1 | grep -q '#token='; do
     if ! eval "$2"; then
       $1 2>&1 || true
@@ -68,9 +78,9 @@ wait_for_link() {
     fi
     sleep 2
   done
-  test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/)" = 200 ||
+  test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")" = 200 ||
     { echo "check_install.sh: the BattleClient page did not answer." >&2; exit 1; }
-  test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost:8765' http://127.0.0.1:8765/)" = 403 ||
+  test "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:$port" "http://127.0.0.1:$port/")" = 403 ||
     { echo "check_install.sh: the BattleClient did not refuse a localhost address." >&2; exit 1; }
   echo "BattleClient ok"
 }
@@ -128,6 +138,29 @@ start_route() {
   done
 }
 
+readonly_config_route() {
+  log="$work/start-readonly-config.log"
+  # Undo the earlier install, so start.sh installs uv again and the installer
+  # must create ~/.config/fish (a folder already there would hide the failure).
+  rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"
+  rm -rf "$HOME/.config/fish" "$HOME/.config/uv"
+  mkdir -p "$HOME/.config"
+  chmod a-w "$HOME/.config"
+  trap 'chmod u+w "$HOME/.config"' EXIT
+  env PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+    sh start.sh --no-browser --port 8775 --replay-port 8777 >"$log" 2>&1 &
+  pid=$!
+  wait_for_link "cat $log" "kill -0 $pid 2>/dev/null" 8775
+  kill "$pid" 2>/dev/null || true
+  grep -q "Installing uv" "$log" ||
+    { echo "check_install.sh: start.sh did not install uv again." >&2; exit 1; }
+  grep -q '\.config/fish' "$log" ||
+    { echo "check_install.sh: uv's installer never met the read-only ~/.config, so this run tested nothing." >&2; exit 1; }
+  grep -q "so start.sh carries on" "$log" ||
+    { echo "check_install.sh: start.sh did not say the installer stopped late." >&2; exit 1; }
+  echo "read-only ~/.config ok: uv installed, and start.sh carried on to the BattleClient"
+}
+
 oldest_route() {
   version="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)"
   folder="MARL-BattleGrounds-$version"
@@ -173,11 +206,12 @@ apptainer_route() {
 case "${1:-}" in
   pip) pip_route "$2" "${3:-}" ;;
   start) start_route ;;
+  start-readonly-config) readonly_config_route ;;
   oldest) oldest_route "$2" ;;
   container) container_route "$2" "$3" ;;
   apptainer) apptainer_route "$2" ;;
   *)
-    echo "usage: check_install.sh pip PYTHON [constraints] | start | oldest IMAGE | container ENGINE IMAGE | apptainer IMAGE" >&2
+    echo "usage: check_install.sh pip PYTHON [constraints] | start | start-readonly-config | oldest IMAGE | container ENGINE IMAGE | apptainer IMAGE" >&2
     exit 2
     ;;
 esac

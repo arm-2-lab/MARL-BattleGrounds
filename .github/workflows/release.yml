@@ -188,6 +188,11 @@ jobs:
       - name: The one command, the BattleClient, a released model and the notebooks
         run: sh .github/scripts/check_install.sh start
 
+      # A ~/.config this user cannot write, as on one tester's Mac: uv's
+      # installer then fails after putting uv in place, and start.sh must carry on.
+      - name: The one command again, with a read-only ~/.config
+        run: sh .github/scripts/check_install.sh start-readonly-config
+
       - name: pip install on Python 3.12, 3.13 and 3.14
         run: |
           export PATH="${HOME}/.local/bin:${PATH}"
