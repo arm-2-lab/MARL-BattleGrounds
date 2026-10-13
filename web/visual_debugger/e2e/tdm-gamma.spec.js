@@ -7,7 +7,7 @@
  * and the deck shows Watch Only: the Priest's class, Agent ID and "Played By
  * tdm-gamma", with every Allowed Now pick disabled. Lock In then accepts one
  * step, and the Recording pill's popover shows the kept tick and saves the
- * replay with its Finish And Save.
+ * replay with its Finish and Save.
  * Private controller-menu behavior is checked in the local editor test suite.
  */
 import { expect, test } from "@playwright/test";
@@ -256,7 +256,7 @@ test("Team B GAMMA records one real step and reopens with its identity", async (
     captured_transition_count: 1,
   });
 
-  // The Recording pill opens the Replay Recording popover; its Finish And Save
+  // The Recording pill opens the Replay Recording popover; its Finish and Save
   // saves the replay.
   await openRecordingPanel(page);
   await expect(page.locator("#pop-state")).toHaveText("1 Tick Kept Since Tick 0");

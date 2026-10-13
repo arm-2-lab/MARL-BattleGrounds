@@ -24,7 +24,7 @@ moves. Use it wherever a System goes: `evaluate`, `run_tournament`, `team`, `bat
 **Watch Out:** each actor gets only its own view. Returning a whole team's actions does not
 let actors share private inputs or memory. The model, not the simulator, sets the pace.
 
-## Settings And Endpoint Rules
+## Settings and Endpoint Rules
 
 ```python
 with llm.Client("http://127.0.0.1:8000/v1", concurrency=16, timeout=60.0) as client:
@@ -77,7 +77,7 @@ new recipe that needs its own checks. Pass the pinned `model_revision` in every 
 To share one GPU, set `JAX_PLATFORMS=cuda,cpu`, `XLA_PYTHON_CLIENT_PREALLOCATE=false`,
 `XLA_CLIENT_MEM_FRACTION=0.10` and `XLA_PYTHON_CLIENT_ALLOCATOR=bfc` before Python starts.
 
-## Your Own Prompt And Reply
+## Your Own Prompt and Reply
 
 ```python
 import json
@@ -104,7 +104,7 @@ actor's own team, itself included. `llm.legal_action_names(masks)` lists this ti
 **Watch Out:** keep both functions pure; fitting history may call them again. Declare a
 `custom_version` and `custom_settings`: a resume with changed code or settings is rejected.
 
-From A Checkout, [llm.py](../examples/play/llm.py) runs the default, a note or this two-word format:
+From a Checkout, [llm.py](../examples/play/llm.py) runs the default, a note or this two-word format:
 
 ```bash
 python examples/play/llm.py model=my-served-model format=words history_turns=2 output_dir=runs/llm-words
@@ -132,7 +132,7 @@ may refuse fields: an editor can drop them or rename `max_tokens` to `max_comple
 **Watch Out:** `max_tokens` covers thinking and answer; a cut-off reply is a failure, so
 raise the server's `--max-model-len` too. The editor must keep the model, one choice and no streaming.
 
-## Calls, Failures And Costs
+## Calls, Failures and Costs
 
 ```python
 summary = llm.call_summary(result)  # all_attempts, completed_games and by_system
@@ -148,13 +148,13 @@ make no new requests, and unfinished games restart with empty history.
 **Watch Out:** report both teams' fallback counts beside win rates. Temperature 0 does not
 promise the same fresh answers; saved replays replay the saved choices without the model.
 
-| Records | What Is Kept | Call Files For 32 Games Of 8 Ticks (Fake Model) |
+| Records | What Is Kept | Call Files for 32 Games of 8 Ticks (Fake Model) |
 | --- | --- | --- |
 | `"none"` | Failure and cost counters only | 0 MB |
 | `"light"` | Request hash, reply and checked action | 0.813 MB |
 | `"full"` | Also the exact request text | 16.19 MB |
 
-## Play A Field And The Scenarios
+## Play a Field and the Scenarios
 
 ```bash
 python -m marl_battlegrounds.experiments.llm_prompt output_dir=runs/llm-prompt

@@ -2347,7 +2347,7 @@ test("standalone serialized status events keep exact presentation meanings", asy
       );
     }
     if (eventKind === "status_cleared_by_new_death") {
-      assert.match(explanation.title, /^Cleared .+ On Death$/u);
+      assert.match(explanation.title, /^Cleared .+ on Death$/u);
       assert.equal(explanation.summary, null);
     }
   }

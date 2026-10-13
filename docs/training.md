@@ -4,7 +4,7 @@ Train any of the six built-in learners, keep its best checkpoint and continue it
 
 Website: https://marl-battlegrounds.com/#training
 
-## Train A Team
+## Train a Team
 
 ```bash
 python -m marl_battlegrounds.experiments.train method=mappo recipe=software_check output_dir=runs/first-hydra
@@ -51,7 +51,7 @@ from marl_battlegrounds.baselines.config import QMIXConfig
 config = training.TrainConfig(method="qmix", qmix=QMIXConfig(q_lr=1e-4))
 ```
 
-| Method | Learner | Actor | Critic Or Team Value |
+| Method | Learner | Actor | Critic or Team Value |
 | --- | --- | --- | --- |
 | `mappo` | Recurrent MAPPO | 128-wide recurrent network | Critic reads the full game state, which actors never see |
 | `ippo` | Recurrent IPPO | Same | Critic reads only its actor's own view |
@@ -73,7 +73,7 @@ that count in the budget.
 QMIX saves its replay in every checkpoint; 512 games with the default 1,000 rows
 do not fit a 32 GB card.
 
-## Opponents And Partners
+## Opponents and Partners
 
 ```bash
 python -m marl_battlegrounds.experiments.train 'opponents={self:0.6,past:0.2,tdm-alpha:0.1,tdm-beta:0.1}' keep_past=20 past_capture_interval=5000000 output_dir=runs/league
@@ -98,7 +98,7 @@ saved actor paths, `module:function` factories or live Systems. With no `opponen
 Pass live objects again on resume. `train(..., matchmaking=pfsp)` (from
 `marl_battlegrounds.experiments.callbacks`) favors opponents you beat least. See [competitive_training.py](../examples/training/competitive_training.py) and [partner_training.py](../examples/training/partner_training.py).
 
-## Use A Released Season 0 Model
+## Use a Released Season 0 Model
 
 The six Season 0 models are on Hugging Face with every save from 0 to 250M steps. Type a
 name anywhere a model goes: training opponents, as in
@@ -115,7 +115,7 @@ through your home folder or a folder named after your user or computer, such as
 as `GPU-<id>`. Other full paths, such as `/data/runs/old-model`, stay as they are.
 Your run's own files keep the folder, so resuming still works.
 
-## Curriculum And Rewards
+## Curriculum and Rewards
 
 ```bash
 python -m marl_battlegrounds.experiments.train curriculum_preset=staged shaping=false reward=marl_battlegrounds.training.reward_recipes:combat_support_reward recipe=software_check
@@ -139,7 +139,7 @@ was played. QMIX and PQN-VDN learn one team-average reward: give them
 `combat_support_team_reward`. Actors must never read `before`, `facts` or `after`.
 See [curriculum.py](../examples/training/curriculum.py) and [training_distributions.py](../examples/training/training_distributions.py).
 
-## Validation And The Best Checkpoint
+## Validation and the Best Checkpoint
 
 ```bash
 python -m marl_battlegrounds.experiments.train 'validation_opponents=[tdm-alpha,tdm-beta]' routine_seed_pairs=4 confirmation_seed_pairs=10 recipe=software_check
@@ -170,7 +170,7 @@ the highest mean point margin (our points minus theirs) wins.
 `python -m marl_battlegrounds reselect-checkpoint RUN --declaration choice.json --output-dir NEW`
 ([training_selection.py](../examples/training/training_selection.py), [population_selection.py](../examples/training/population_selection.py)).
 
-## Save, Resume And Extend
+## Save, Resume and Extend
 
 ```bash
 python -m marl_battlegrounds extend-training runs/first/checkpoints/SAVED_CHECKPOINT --additional-env-steps 1048576 --output-dir runs/child
@@ -194,7 +194,7 @@ run recorded (`dependencies` in `run_details.json`), the same device kind and
 `XLA_FLAGS`. Install the recorded Python with uv, for example `uv python install 3.14.5` for the released models. Extending needs a full `checkpoints/` folder, not an actor export.
 A child continues the same training history; it is not a new seed. See [training_continuation.py](../examples/training/training_continuation.py).
 
-## Logs, Reports And Models
+## Logs, Reports and Models
 
 ```bash
 python -m marl_battlegrounds analyze-training runs/first --output-dir runs/report

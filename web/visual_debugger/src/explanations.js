@@ -177,7 +177,7 @@ export { canonicalAgentIdentity } from "./agent-identity.js";
 /**
  * Build the tip of a fall card (a grouped death event; the BattleClient, the
  * DevClient combat screen and the Replay Viewer show it on the arena). event
- * supplies eventId, label (the title, for example "Fallen On Tick 98") and
+ * supplies eventId, label (the title, for example "Fallen on Tick 98") and
  * members with title, killingTeamId and contributor rows. Every word is plain
  * player English (DEATH_CREDIT_SENTENCE, then "This champion fell." per
  * fallen champion); no internal word such as "transition" or "agent" shows.

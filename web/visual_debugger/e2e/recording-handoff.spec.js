@@ -6,7 +6,7 @@
  * The BattleClient shows the recording in its top bar. The Recording pill
  * (#rec-pill-text) and its popover's state line (#pop-state) name the tick and
  * the kept ticks, then Saved or Save Failed. The top bar's save button reads
- * Finish And Save, Saving Replay… while a save waits, then Open Replay or Retry
+ * Finish and Save, Saving Replay… while a save waits, then Open Replay or Retry
  * Save. The Recording popover (#rec-pop) holds Open Replay (disabled until a
  * save exists), Retry Save, Save As and the fallback link. Restart's Save This
  * Game First? dialog focuses Save. Live notices show on the deck's message line
@@ -20,7 +20,7 @@
  * never a path, and the line is gone once Save As saves; the page stays Connected: the View
  * buttons, Visual Filters (with Ranges) and Exit stay in the Tab order, while
  * the arena, the deck's keys, the Allowed Now picks and Lock In do not. Agent
- * POV closeout lists every champion by team, with unseen enemies Out Of Sight.
+ * POV closeout lists every champion by team, with unseen enemies Out of Sight.
  *
  * Exit must end the server with exit code 0 and no
  * signal, checked strictly by expectServerShutdown. A server that dies before its
@@ -209,7 +209,7 @@ async function expectReplaySaving(page) {
 async function expectFinishAndSave(page) {
   const save = page.locator("#recording-finish-button");
   await expect(save).toBeVisible();
-  await expect(save).toHaveText("Finish And Save");
+  await expect(save).toHaveText("Finish and Save");
   await expect(save).toHaveAttribute("data-action", "finish");
 }
 
@@ -561,7 +561,7 @@ test("confirmed prefix discard and save keep live inspection, separate replay an
   expect(initial.recording).not.toHaveProperty("path");
   await expectFinishAndSave(page);
   await expect(page.locator("#recording-finish-button")).toBeEnabled();
-  // The Recording popover: Finish And Save works; Open Replay stays in view but
+  // The Recording popover: Finish and Save works; Open Replay stays in view but
   // waits for a save; Retry Save and Save As appear only after a failed save.
   await openRecordingPanel(page);
   await expect(page.locator("#pop-finish")).toBeVisible();
@@ -1222,13 +1222,13 @@ test("target race remains Connected and fenced until Save As recovers cached art
   const agentCloseoutBodies = page.locator("#battlefield .agent[role='button']");
   await expect.poll(() => agentCloseoutBodies.count()).toBeGreaterThan(0);
   // Agent POV still lists every champion under its team. Enemies the team
-  // cannot see read Out Of Sight, in the list and on the scorebug.
+  // cannot see read Out of Sight, in the list and on the scorebug.
   const agentCloseoutRows = page.locator("#checklist .cl-row");
   await expect.poll(() => agentCloseoutRows.count()).toBeGreaterThan(1);
   await expect(page.locator("#checklist > .cl-head")).toHaveText(["Team A", "Team B"]);
   const unseenRows = page.locator('#checklist .cl-row[data-sight="out"]');
   await expect(unseenRows.first()).toBeVisible();
-  await expect(unseenRows.first()).toContainText("Out Of Sight");
+  await expect(unseenRows.first()).toContainText("Out of Sight");
   await expect(
     page.locator('#checklist .cl-row:not([data-sight="out"])').first(),
   ).toBeVisible();
@@ -1389,7 +1389,7 @@ test("Reconnect completes a lost Finish response without retrying publication", 
     page,
     "Command outcome is unknown because the connection failed",
   );
-  // The lost answer ends the saving state: the button is Finish And Save
+  // The lost answer ends the saving state: the button is Finish and Save
   // again, disabled until Reconnect.
   await expectFinishAndSave(page);
   await expect(page.locator("#recording-finish-button")).toBeDisabled();

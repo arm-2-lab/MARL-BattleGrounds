@@ -4,7 +4,7 @@ Play your frozen team against any opponent and read who won, by how much and why
 
 Website: https://marl-battlegrounds.com/#evaluate
 
-## Evaluate A System
+## Evaluate a System
 
 ```python
 import marl_battlegrounds as marl_bgs
@@ -32,7 +32,7 @@ draws, losses and the mean point margin (your points minus theirs), both ways.
 | `score_threshold`, `max_steps`, `red_zone_depth` | 20, 300, 5.0 | Points to win; ticks before a draw; Red Zone depth, `0.0` for off ([Game Rules](game_rules.md)) |
 | `seed` | 0 | Root of every random number in the run |
 
-## Team A, Spawn Pairs And Map Splits
+## Team A, Spawn Pairs and Map Splits
 
 ```python
 result = marl_bgs.evaluate(
@@ -50,7 +50,7 @@ With no `maps`, `phase="validation"` plays maps 42-46 and the default
 answer once. An odd total fails with paired spawns (`spawn_mode="default"` plays
 one end only). Other phase names need explicit `maps`.
 
-## Evaluate A Saved Model
+## Evaluate a Saved Model
 
 ```bash
 python examples/evaluate/evaluate_recurrent_mappo.py checkpoint=RUN/checkpoints/CHECKPOINT_ID \
@@ -70,7 +70,7 @@ priority metrics; `evaluation=full` adds full metrics and replays of games 1 and
 `run.selected_actor` is the checkpoint the trainer chose on validation maps. The
 command line (`--system`, `--opponent`), `evaluate`, `team`, `pool` and `run_tournament` take every reference below.
 
-**From A Checkout:** the six `evaluate_<method>.py` scripts live in `examples/evaluate/` ([Hydra](hydra.md)).
+**From a Checkout:** the six `evaluate_<method>.py` scripts live in `examples/evaluate/` ([Hydra](hydra.md)).
 
 **Watch Out:** `checkpoint=` needs an actor export, checkpoint folder, model file or released
 name, not a run folder. `run.selected_actor` is None without validation; then pick
@@ -84,7 +84,7 @@ name, not a run folder. `run.selected_actor` is None without validation; then pi
 | A model file | `"mine.zip"` | A model saved by `export_model` |
 | A factory | `"my_module:load_my_system"` | What your trusted installed function returns, called once with no arguments |
 
-## Mixed Teams And Opponent Pools
+## Mixed Teams and Opponent Pools
 
 ```python
 researcher = marl_bgs.team("random", "tdm-alpha", slots=[[0, 1], [2, 3, 4]])
@@ -134,7 +134,7 @@ opponent unless you pass `opponent=`. Each trial starts fresh from that state.
 **Watch Out:** never train or tune on scenarios. Keep dead agents in their slots:
 every scenario has five slots per team and several agents start dead.
 
-## Results And Resume
+## Results and Resume
 
 ```python
 saved = marl_bgs.load_results("runs/evaluation/RUN_FOLDER")
@@ -167,7 +167,7 @@ Recording replays or metrics never changes which games are played.
 **Watch Out:** set the flag before JAX starts; `load_results(...).execution_settings`
 shows whether it was set. To watch a run's exact games, record them in that run.
 
-| Where It Runs | Same Seed And Settings Give |
+| Where It Runs | Same Seed and Settings Give |
 | --- | --- |
 | CPU | The same games every time |
 | GPU in XLA's deterministic mode | The same games every time, on the same GPU model, JAX and CUDA versions |

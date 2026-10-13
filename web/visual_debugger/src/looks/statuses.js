@@ -1,5 +1,5 @@
 /**
- * @file The Statuses And Auras look (V5 Rune Zones) for all three clients.
+ * @file The Statuses and Auras look (V5 Rune Zones) for all three clients.
  *
  * It draws:
  * - Rune Zones: status marks inside each living champion's token, at most 3
@@ -18,7 +18,7 @@
  * - Thaw (a wet ring) and Shatter (a crack across the token at Impact and six
  *   shards at Settle) when a Freezing Trap ends or breaks, kept for that tick.
  *   Switch freezing_trap_break: off, the ice simply cuts out at Settle.
- * - Status Clear On Death (switch status_clear_on_death, same part): a
+ * - Status Clear on Death (switch status_clear_on_death, same part): a
  *   champion that falls this tick keeps its tick-start marks and Rune Ring
  *   until its Fall beat. On, they turn to Ash and fade over 160 ms; off, they
  *   cut out at the Fall.
@@ -211,7 +211,7 @@ export const PAINT_PARTS = paintParts([
  *   counted from the Settle beat.
  * - crackFadeMs, crackOpacity: the Shatter crack comes in over 60 ms at Impact
  *   and stays at 80% for the tick (spec: Ice Crack, 1 px at 80%).
- * - giveWayMs, ashFadeMs: Status Clear On Death. At a champion's Fall its
+ * - giveWayMs, ashFadeMs: Status Clear on Death. At a champion's Fall its
  *   marks give way in 53 ms (the first third) while their Ash copy flashes in
  *   and fades by 160 ms (store: Ash over 160 ms from the Fall).
  * - collarRadius (1.06R), collarRestOpacity (35%), collarInMs (80 ms) and
@@ -1495,7 +1495,7 @@ function ashPaint(paint) {
  * startPieces are its tick-start marks and Rune Ring (bodyPieces). They form
  * one batch ("fall", see RuneDrawPiece) drawn "before" the champion's own Fall
  * beat (keyed by the champion by the caller): the batch shows from tick start
- * and goes out at the Fall, each piece at its own opacity. With Status Clear On
+ * and goes out at the Fall, each piece at its own opacity. With Status Clear on
  * Death on (clearOn) the batch gives way over giveWayMs while an Ash copy (batch
  * "fall.ash", paint ashPaint, id suffix ".ash") flashes in to each piece's own
  * opacity and fades by ashFadeMs; off, the batch simply cuts at the Fall. Two

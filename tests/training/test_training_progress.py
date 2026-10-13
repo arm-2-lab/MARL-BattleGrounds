@@ -15,7 +15,7 @@ kept-row pairs and exposure marginals must match the closed-form totals,
 also beyond int32; routine validation at 4,224 and 8,320 transitions is
 accepted while a result at 8,192 (the old rule's point) is rejected; and the
 initial-collection phase is labelled "Initial Random Collection". A training
-score threshold is shown in points ("Need 3 Points To Win"), never kills,
+score threshold is shown in points ("Need 3 Points to Win"), never kills,
 because a Red Zone death gives 2 points. Saved validation tasks are rebuilt at
 the saved config's red_zone_depth (none for a config saved before the rule), so
 a task saved at another depth, or without one, is rejected.
@@ -87,8 +87,8 @@ def test_eta_waits_for_warm_updates_and_starts_over_after_resume() -> None:
 
 def test_progress_separates_training_threshold_from_validation() -> None:
     text = io_helpers.progress_text({"score_threshold": 3})
-    assert "New Training Games Need 3 Points To Win" in text
-    assert "Kills To Win" not in text
+    assert "New Training Games Need 3 Points to Win" in text
+    assert "Kills to Win" not in text
     assert "Validation Still Needs 20" in text
     assert "New Training Games" not in io_helpers.progress_text({})
 
@@ -691,9 +691,9 @@ def test_readable_progress_separates_combat_from_optimizer_numbers() -> None:
         },
     }
     text = io_helpers.progress_text(status)
-    assert "Run Time At That Check: 1m 30s" in text
+    assert "Run Time at That Check: 1m 30s" in text
     assert "Our Team Kills 4.00" in text and "Our Team Deaths 2.00" in text
-    assert "Change In Kill Difference Since Untrained: +1.50 Per Game" in text
+    assert "Change in Kill Difference Since Untrained: +1.50 per Game" in text
     assert "0 Wins, 40 Draws, 0 Losses" in text
     assert "Draws Can Still Show Combat Improvement" in text
     assert "Policy Loss" not in text and "Shaping" not in text

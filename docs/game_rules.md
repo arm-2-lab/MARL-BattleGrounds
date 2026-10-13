@@ -4,7 +4,7 @@ Learn how a Team Deathmatch match works: classes, ticks, damage, scoring, respaw
 
 Website: https://marl-battlegrounds.com/#game
 
-## A Match At A Glance
+## A Match at a Glance
 
 ```python
 import jax
@@ -30,7 +30,7 @@ from marl_battlegrounds.core import combat
 print(combat.MAX_HEALTH_BY_CLASS)  # [0. 80. 200. 100. 100. 100.]: padding, then IDs 1-5
 ```
 
-| Class (ID) | Health | Basic, Every Tick | Ultimate, 30-Tick Cooldown | Aura Or Passive |
+| Class (ID) | Health | Basic, Every Tick | Ultimate, 30-Tick Cooldown | Aura or Passive |
 | --- | --- | --- | --- | --- |
 | Mage (1) | 80 | Arcane Blast: 13 damage, reach 3.0 | Burst: its own damage ×1.5 for 5 ticks, no target | Sorcerer's Empowerment: allies within 2.0 deal ×1.15 |
 | Warrior (2) | 200 | Shield Bash: 8 damage, reach 1.5 | Charge: rushes to an enemy within 5.75; 20 damage, stun 1 tick, half speed for 5 | Guardian's Barrier: allies within 2.0 take ×0.85 |
@@ -43,7 +43,7 @@ Ultimate timer keeps running while a champion is fallen. Bodies are circles of r
 0.5, and reach is measured center to center. Auras include the caster, pass through
 walls and stack to at most ×1.3225 (Mage) or ×0.7225 (Warrior).
 
-## One Tick In Order
+## One Tick in Order
 
 ```python
 mask = env.get_action_mask(state).select_target_use_ultimate_joint_mask  # (2, 10, 11, 2)
@@ -57,7 +57,7 @@ health fall, statuses update, a due respawn wave returns earlier falls, and poin
 **Watch Out:** a masked move becomes stay, and a masked target and Ultimate pair becomes
 no combat. A champion that falls this tick still delivers the action it chose.
 
-## Targets, Damage And Healing
+## Targets, Damage and Healing
 
 ```python
 print(combat.BASIC_DAMAGE_BY_CLASS, combat.ULTIMATE_DAMAGE_BY_CLASS)
@@ -71,7 +71,7 @@ combat, a champion recovers 4% of its maximum health per tick; Crippling Poison 
 **Watch Out:** damage and healing in one tick add up first, so a heal can cancel a killing
 blow. A new status counts from the target's next decision: a 1-tick stun costs one decision.
 
-## Respawns And The Red Zone
+## Respawns and the Red Zone
 
 ```python
 print(env.training_state(state).team_respawn_wave_countdowns)  # ticks to each team's next wave
@@ -85,7 +85,7 @@ or 2 inside the fallen champion's own Red Zone: still one kill and one death.
 **Watch Out:** the Red Zone is the strip at a team's own spawn edge, 5.0 units deep by default
 (`red_zone_depth=0.0` turns it off). Spawn pads sit inside it, so hiding at home pays double.
 
-## Winning, Drawing And Rewards
+## Winning, Drawing and Rewards
 
 ```python
 actions = env.sample_actions(jax.random.key(1), state)

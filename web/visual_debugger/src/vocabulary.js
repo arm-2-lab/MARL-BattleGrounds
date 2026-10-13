@@ -448,7 +448,7 @@ const LIFECYCLE_TOKENS = Object.freeze({
   }),
   cleared_by_death: token({
     tokenId: "cleared_by_death",
-    label: "Cleared On Death",
+    label: "Cleared on Death",
     shortLabel: "Death Clear",
     accessibleName: "Status cleared because the champion fell",
     glyphKey: "lifecycle-death-clear",

@@ -96,7 +96,7 @@ const DRAW = {
   tick: 300,
   basis: "horizon",
   pointsToWin: 20,
-  teams: { 1: { name: "You" }, 2: { name: "Recurrent MAPPO With A Very Long Name" } },
+  teams: { 1: { name: "You" }, 2: { name: "Recurrent MAPPO With a Very Long Name" } },
   honours: [
     {
       label: "Kill Contributions",
@@ -125,7 +125,7 @@ test("the full verdict follows the home ends, names controllers, honors ties and
   });
   assert.equal(card.kind, "herald-verdict");
   assert.equal(card.eyebrow, "Tick 300 · No Team Reached 20");
-  assert.equal(card.lead, "A Lead At Tick 300 Wins Nothing");
+  assert.equal(card.lead, "A Lead at Tick 300 Wins Nothing");
   assert.deepEqual(
     card.columns.map((/** @type {any} */ column) => [
       column.teamId,
@@ -244,7 +244,7 @@ test("Show Arena and full cards off give the band plate in the top band", () => 
     const [node] = heralds.build([plate], fakeDocument());
     assert.equal(
       byClass(node, "herald__lead")[0].textContent,
-      " · A Lead At Tick 300 Wins Nothing",
+      " · A Lead at Tick 300 Wins Nothing",
     );
     assert.equal(heralds.tooltip(plate)?.title, "Draw");
   }
@@ -422,6 +422,6 @@ test("the host's Honors fact feeds the verdict and the Match Summary sheet", () 
   );
   assert.equal(
     byClass(empty, "match-summary-sheet__empty")[0].textContent,
-    "No Match Summary For This Game.",
+    "No Match Summary for This Game.",
   );
 });

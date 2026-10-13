@@ -12,7 +12,7 @@
  * tale's homeland ground, only at the depth the tale was drawn for),
  * arena_rim and survey_frame (which hides the rim). Oracle View and Agent POV
  * get the same floor, except Map 47's Legion Mist, which is left out in Agent
- * POV while the Sight Reach veil is on. Map 50's Heart Of Petals is never in
+ * POV while the Sight Reach veil is on. Map 50's Heart of Petals is never in
  * the data. Tale stones come only for an exact layout with obstacle skins on.
  * Every built node is export-safe: flat paint, no url(), gradient, mask,
  * filter, clip path, image, use, id or style attribute.
@@ -402,7 +402,7 @@ test("Oracle View and Agent POV share the floor except Map 47's Legion Mist", ()
   assert.equal(mist({ audience: "agent_pov", filters: { pov_sight_veil: true } }), 0);
 });
 
-test("Map 50's Heart Of Petals is never in the data", () => {
+test("Map 50's Heart of Petals is never in the data", () => {
   const text = JSON.stringify(taleFloorTree(MAP_50));
   assert.ok(text.length > 1000);
   assert.ok(!text.includes("#2A2724"), "no heart colour");

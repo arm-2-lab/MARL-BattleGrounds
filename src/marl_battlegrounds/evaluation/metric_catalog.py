@@ -3337,7 +3337,7 @@ def _build_columns() -> tuple[MetricColumn, ...]:
         )
         add(
             f"{status}_active_steps",
-            "Time With Status On {subject}",
+            "Time With Status on {subject}",
             "status_active_steps",
             "agent_steps",
             (
@@ -3738,7 +3738,7 @@ def _build_columns() -> tuple[MetricColumn, ...]:
     )
     add(
         "healing_prevented_by_poison",
-        "Priest Healing Prevented On {subject}",
+        "Priest Healing Prevented on {subject}",
         "poison",
         "health",
         (

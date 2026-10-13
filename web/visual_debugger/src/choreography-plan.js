@@ -3767,7 +3767,7 @@ function planBodies(
  * trajectories its joined anchors. Return a frozen record:
  * - bodies: every living, falling or returning body with its START (or null) and
  *   END world spots and state ("living", "falling" or "returning"). Corpses from
- *   earlier ticks are left out. Everyone In View fits these spots.
+ *   earlier ticks are left out. Everyone in View fits these spots.
  * - fights: one entry per Basic or Ultimate activation with the world spots of its
  *   source and target (START for a source that left sight), and one per seen fall
  *   at the victim's END spot. Battle Cam frames these.

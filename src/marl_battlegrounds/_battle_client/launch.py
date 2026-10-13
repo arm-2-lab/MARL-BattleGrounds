@@ -324,7 +324,7 @@ def battle_client(
         Replay folder, relative to the caller's working directory. Created only
         with capture enabled. Each launch gets a separate replay destination.
     capture_replay : bool, default=True
-        Capture from frame zero for later Save or Finish And Save. When a game
+        Capture from frame zero for later Save or Finish and Save. When a game
         ends, its replay saves by itself in the background: game over shows at
         once, the Recording pill reads "Saving Replay…" and then "Saved".
         Exit or Ctrl-C before the first tick writes no replay. False skips

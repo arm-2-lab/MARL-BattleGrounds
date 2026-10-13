@@ -579,7 +579,7 @@ def run(
         ),
         "Episode Resets": int(np.asarray(jnp.sum(carry.state.reset_generation))),
         "Actor": "Untrained MAPPO" if mappo else "Random",
-        "Recording": "Disabled" if output_dir is None else "Restored And Reproduced",
+        "Recording": "Disabled" if output_dir is None else "Restored and Reproduced",
     }
 
 

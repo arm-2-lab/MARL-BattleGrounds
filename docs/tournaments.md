@@ -4,7 +4,7 @@ Rank any set of methods with one Elo fit, or add your method to a released field
 
 Website: https://marl-battlegrounds.com/#round-robin
 
-## Run A Round Robin
+## Run a Round Robin
 
 ```python
 import marl_battlegrounds as marl_bgs
@@ -39,7 +39,7 @@ maps), or the call fails before any game. Every entrant needs its own name.
 | `seed` | 0 | Root of the games' random numbers and of the rating resamples |
 | `output_dir`, `resume_from` | None | Save a new run, or continue a saved one |
 
-## Save A Field And Reuse It
+## Save a Field and Reuse It
 
 ```json
 {"entrants": ["random", "tdm-alpha", "tdm-beta"], "maps": [47, 48, 49, 50, 51],
@@ -56,7 +56,7 @@ that file, not to where you run the command (a Python mapping uses the current
 folder). Unknown fields fail. A call argument may fill an empty field, but if
 both give a value they must agree.
 
-## Read The Ratings
+## Read the Ratings
 
 ```python
 ranks = result.table("tournament_rankings")
@@ -99,7 +99,7 @@ never change rank, rating or admission, and the library does not print them.
 | Gold, Silver, Bronze | 1,200-1,399; 1,000-1,199; 800-999 | Five of 40 Elo each: Silver 5 is 1,000-1,039, Silver 1 is 1,160-1,199 |
 | Iron | Below 800 | Counts down from the top: Iron 1 is 760-799 and Iron 5 is everything below 640 |
 
-## Add A Challenger
+## Add a Challenger
 
 ```python
 challenged = marl_bgs.run_tournament(config="field.json", challenger="tdm-gamma")
@@ -130,10 +130,10 @@ official tournament snapshot is installed; prepare an approved bundle or use
 run_tournament with a custom config". A changed `games_per_opponent` makes a
 research run (`protocol_compliant` is False). Local runs never admit or publish.
 
-**From A Checkout:** `python examples/tournaments/canonical_tournament.py command=fixture directory=runs/fixture save=true` runs the route
+**From a Checkout:** `python examples/tournaments/canonical_tournament.py command=fixture directory=runs/fixture save=true` runs the route
 on artificial records built by [`canonical_fixture.py`](../examples/tournaments/canonical_fixture.py); [`canonical_admission.py`](../examples/tournaments/canonical_admission.py) shows a maintainer admission.
 
-## Select A Field
+## Select a Field
 
 ```python
 field = {
@@ -154,7 +154,7 @@ writes `population.json` (with a content hash, `population_id`) and a separate
 The command needs the exact run folder, as [`population_selection.py`](../examples/training/population_selection.py) shows:
 `python -m marl_battlegrounds select-population selection-games/RUN_ID --output-dir population`.
 
-## Enter The Leaderboard
+## Enter the Leaderboard
 
 We train every entry once on our machine, under the same budget for everyone: 255
 million game steps and 8 hours on one RTX 5090 (see the [Tournament Rules](tournament_rules.md)).

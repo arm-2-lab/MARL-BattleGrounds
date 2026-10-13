@@ -19,13 +19,13 @@
  * Icons From Marks switch turns roster status icons into plain icons. Actions read
  * in words with the recorded codes underneath ("Moves Northwest · Arcane Blast
  * → Agent 2" over "Move 6 · Target 8 · Ultimate 0"); in the Replay Viewer the
- * Actions In Words switch turns that off and shows today's Submitted and
+ * Actions in Words switch turns that off and shows today's Submitted and
  * Accepted boxes.
  *
  * Agent POV boundary (plan P5 and P23):
  * - Replay Viewer: the docked panels are the researcher's full record. In Agent
  *   POV they list every champion and carry the chip "Full Record · Not Limited
- *   To Agent N's View". Nothing here is drawn on or over the arena.
+ *   to Agent N's View". Nothing here is drawn on or over the arena.
  * - BattleClient and DevClient (viewer_mode "live"): in Agent POV every panel
  *   reads only the POV arena scene, its own latest transition and its visual
  *   events. A champion the team cannot see reads "Unseen" with no life, status
@@ -137,7 +137,7 @@ import {
  *   visualFilterState?: unknown,
  * }} PanelInteractionState
  * visualFilterState (optional) is the page's complete switch state; it decides
- * Panel Tokens, Ledger Heraldry and Actions In Words, and the beat clock's
+ * Panel Tokens, Ledger Heraldry and Actions in Words, and the beat clock's
  * Fall and Return beats. Absent or invalid means the shipped defaults.
  */
 
@@ -225,7 +225,7 @@ export function isLiveAgentPovPanel(presentation) {
 
 /**
  * Return the Full Record chip words for a Replay Viewer frame in Agent POV,
- * for example "Full Record · Not Limited To Agent 3's View", or null for any
+ * for example "Full Record · Not Limited to Agent 3's View", or null for any
  * other frame. The POV agent comes from the frame's own authority; its label
  * and the words from agent-identity.js (fullRecordChipWords; "This Agent" when
  * the recipient has no identity row), so they match ledger.js and the HUD. Pure.
@@ -656,7 +656,7 @@ function championName(agent, tokens, onPick, label = null) {
  *
  * Each row shows the actor (chip or plain name, with its class), the action
  * in words with the target as a chip, the recorded codes underneath, and
- * "Changed By The Game" with the submitted codes when the game changed the
+ * "Changed by the Game" with the submitted codes when the game changed the
  * order. With pending true the codes are the staged Manual order and the row
  * keeps one "Pending" box. A row marked notObserved reads "Not Observed" (in
  * BattleClient and DevClient Agent POV: a teammate's last action, or another
@@ -747,7 +747,7 @@ function authorizedTransitionList(rows, options) {
       if (changed) {
         item.dataset.changed = "true";
         item.append(
-          htmlElement("span", "accepted-action-row__changed", "Changed By The Game"),
+          htmlElement("span", "accepted-action-row__changed", "Changed by the Game"),
           htmlElement(
             "p",
             "accepted-action-row__submitted",
@@ -1049,7 +1049,7 @@ function setBeatHold(element, kind, key, side) {
  * Write a champion's life (and, with withUltimate, its Ultimate) into
  * element: the shared Life bar of `life-bar.js` ("Life", a thin bar and
  * "87 / 100", owner, 2 October 2026), then, with withUltimate, the words
- * "Ultimate Ready In 3 Ticks" in a `span.panel-life__ultimate`; "Fallen" for
+ * "Ultimate Ready in 3 Ticks" in a `span.panel-life__ultimate`; "Fallen" for
  * a fallen champion. A record without life numbers falls back to the words
  * "Life — / —". When fall is a beat-view entry (the champion fell this tick
  * and the audience saw it), two parts share one grid cell: the Life bar at
@@ -1071,7 +1071,7 @@ function renderLifeText(element, agent, fall, withUltimate) {
   const ultimate = Number.isInteger(agent.ultimate_cooldown_remaining)
     ? agent.ultimate_cooldown_remaining === 0
       ? "Ultimate Ready"
-      : `Ultimate Ready In ${agent.ultimate_cooldown_remaining} ${agent.ultimate_cooldown_remaining === 1 ? "Tick" : "Ticks"}`
+      : `Ultimate Ready in ${agent.ultimate_cooldown_remaining} ${agent.ultimate_cooldown_remaining === 1 ? "Tick" : "Ticks"}`
     : "Ultimate —";
   /**
    * The Life bar for one life value, or its words when a number is missing.
@@ -2210,7 +2210,7 @@ export class DebuggerPanels {
    * class card from explanations.js (overview; role, strength and weakness;
    * Basic, Ultimate and passive with the host's numbers), then Lore (the
    * fantasy line). BattleClient and DevClient Agent POV: a selected champion
-   * the team cannot see reads "Unseen" with its Out Of Sight chip and no facts;
+   * the team cannot see reads "Unseen" with its Out of Sight chip and no facts;
    * status sources follow the Agent POV rule ("from a hidden source" unless the
    * team saw the status applied this tick).
    *
@@ -2312,7 +2312,7 @@ export class DebuggerPanels {
       Number.isInteger(cooldown)
         ? cooldown === 0
           ? "Ready"
-          : `Ready In ${cooldown} ${cooldown === 1 ? "Tick" : "Ticks"}`
+          : `Ready in ${cooldown} ${cooldown === 1 ? "Tick" : "Ticks"}`
         : "—",
     );
     const combatTicks = owner.steps_until_out_of_combat;
@@ -2321,7 +2321,7 @@ export class DebuggerPanels {
       "Combat",
       Number.isInteger(combatTicks) && combatTicks > 0
         ? `In Combat · ${combatTicks} ${combatTicks === 1 ? "Tick" : "Ticks"} Left`
-        : "Out Of Combat",
+        : "Out of Combat",
     );
     if (Number.isFinite(owner.effective_movement_speed)) {
       addFact(

@@ -288,8 +288,8 @@
   color: var(--cc-muted);
 }
 
-/* The footer under the rows: "+3 more" and "Hold Shift For All", or, while
-   Shift is held, "All 7 statuses" and "Release Shift To Shrink". */
+/* The footer under the rows: "+3 more" and "Hold Shift for All", or, while
+   Shift is held, "All 7 statuses" and "Release Shift to Shrink". */
 .champion-card__more {
   display: flex;
   justify-content: space-between;

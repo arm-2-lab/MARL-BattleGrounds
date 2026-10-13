@@ -11,7 +11,7 @@
  * The connection pill keeps its priority order with Title Case words
  * ("Connected", not "Online"; a lost server reads "Disconnected" before
  * "Resync Required"), and autoplay's own fetch (quietBusy) keeps "Connected"
- * while a user's press shows "Command In Flight". The Replay Viewer's POV agent chip names the
+ * while a user's press shows "Command in Flight". The Replay Viewer's POV agent chip names the
  * POV agent ("Hunter · Agent 2") and its picker lists only agents a roster row
  * could switch to, Team A first, with identity only (no life, place or
  * status). Popovers open under their button and stay inside the window. The
@@ -83,8 +83,8 @@ test("applyProductHeader writes the tab title, product name and Help labels", ()
         "combat_debugger",
         "MARL-BattleGrounds BattleClient",
         "BattleClient",
-        "How To Play",
-        "How To Play ",
+        "How to Play",
+        "How to Play ",
       ],
       [
         "replay_viewer",
@@ -136,7 +136,7 @@ test("the place title names a scenario by its tale and a map by name and ID", ()
     number: 8,
   });
   assert.deepEqual(scenarioTale("scenario_5"), {
-    title: "Turning The Tide",
+    title: "Turning the Tide",
     number: 5,
   });
   // The layout name a live scenario game and its replay record (3 Oct 2026:
@@ -235,16 +235,16 @@ test("the connection pill keeps its priority order in Title Case", () => {
     status: "offline",
   });
   const busy = { ...calm, busy: true, offline: true };
-  assert.equal(connectionPill(busy, null).label, "Command In Flight");
+  assert.equal(connectionPill(busy, null).label, "Command in Flight");
   // Autoplay's own next-frame fetch keeps the pill as it was: no blink to
-  // "Command In Flight" before every played tick; a user press still shows it.
+  // "Command in Flight" before every played tick; a user press still shows it.
   assert.deepEqual(connectionPill({ ...calm, busy: true, quietBusy: true }, null), {
     label: "Connected",
     status: "online",
   });
   assert.equal(
     connectionPill({ ...calm, busy: true, quietBusy: false }, null).label,
-    "Command In Flight",
+    "Command in Flight",
   );
   assert.equal(
     connectionPill(busy, { deferredDrafts: [{}], deferredSubmit: null }).label,
@@ -252,7 +252,7 @@ test("the connection pill keeps its priority order in Title Case", () => {
   );
   assert.equal(
     connectionPill(busy, { deferredDrafts: [], deferredSubmit: null }).label,
-    "Command In Flight",
+    "Command in Flight",
   );
   assert.equal(
     connectionPill(busy, { deferredDrafts: [{}], deferredSubmit: {} }).label,

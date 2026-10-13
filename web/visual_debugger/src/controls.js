@@ -6,7 +6,7 @@
  *
  * Which live keys exist comes from the one command set (`command-set.js`): the
  * battlefield forwards only the keys that table sends to Python (N, one tick,
- * is among them; the arrows are not), opens How To Play on ?, and hands V and F to their
+ * is among them; the arrows are not), opens How to Play on ?, and hands V and F to their
  * local handlers in the browser, never to Python. B does nothing in live play.
  * ? works at any time the battlefield has focus (also at game over and while a
  * command is out); R and G still reach the page at game over when the caller
@@ -33,7 +33,7 @@ import {
 } from "./system-controls.js";
 
 // The keys the focused battlefield owns in live play: every key the command
-// set forwards to Python from the field, plus ? for How To Play (local).
+// set forwards to Python from the field, plus ? for How to Play (local).
 const GAME_KEYS = new Set([...forwardedFieldKeys("combat_debugger"), "?"]);
 
 const RECORDING_LIFECYCLE_COMMANDS = new Set([
@@ -287,7 +287,7 @@ export function recordingCommandDecision(frame, command) {
   const replacement = recordingReplacementCommand(frame, command);
   if (replacement) {
     // The game-over save is already running ("Saving Replay…"): there is
-    // nothing to choose, so the restart goes out as Save And Replace, which
+    // nothing to choose, so the restart goes out as Save and Replace, which
     // the server holds until the save ends and then restarts.
     if (status.lifecycle === "sealed" || status.lifecycle === "finalized_unsaved") {
       return Object.freeze({
@@ -382,7 +382,7 @@ function keyboardCommandFromEvent(event) {
 
 /**
  * Return whether event.key is a live key the battlefield forwards to Python
- * or opens How To Play with (?). The set comes from the command set: W A S D
+ * or opens How to Play with (?). The set comes from the command set: W A S D
  * Q E Z C, X, 0 1 2, Space, Enter, N, R, G, Tab, Escape and ?. Arrow keys,
  * V, B and F return false (the arrows do nothing live; V and F are local
  * jobs). Ctrl, Alt or Meta combinations always
@@ -507,7 +507,7 @@ function pointInSvg(svg, event) {
  * handler owns its own Agent POV limits.
  *
  * Keys while orders are closed (isInteractive() is false): ? still calls
- * onHelp (How To Play is local and safe at any time, also at game over and
+ * onHelp (How to Play is local and safe at any time, also at game over and
  * while a command is out). A forwarded key for which allowsWhileClosed(command)
  * returns true still goes to onCommand (main.js allows R and G at game over).
  * Every other key goes to onFencedCommand as before. A Tab that
@@ -585,7 +585,7 @@ export function bindBattlefieldControls({
       return;
     }
     if (event.key === "?" && ownsLocalCommands()) {
-      // How To Play is local: it opens at any time, also at game over.
+      // How to Play is local: it opens at any time, also at game over.
       event.preventDefault();
       event.stopPropagation();
       onHelp();

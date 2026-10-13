@@ -7,7 +7,7 @@ complete recipes on a fixed budget of 40,108,032 transitions per run. Study 3
 continues one run per method to 250,675,200 transitions, and the six continued
 policies play a round robin on the held-out test maps. The search does not
 claim to find a global optimum. Choices made from saved results are listed
-with their reasons in Decisions During The Search. Every number comes from a
+with their reasons in Decisions During the Search. Every number comes from a
 saved record file, and [Where Everything Is](#where-everything-is) gives the
 location of each one.
 
@@ -22,7 +22,7 @@ search, because no good batch size or rollout length was known for them on
 this game. The four PPO methods test two learning rates around a known good
 recurrent MAPPO learner.
 
-## Game, Maps And Splits
+## Game, Maps and Splits
 
 Every game is canonical 5v5 Team Deathmatch with the environment defaults: the
 first team to 20 points wins. A game is a draw when 300 ticks pass with neither
@@ -92,7 +92,7 @@ team size. The team form gives every slot the same amount instead: the shared
 parts once, plus the team total of every agent's own parts. After the average,
 each event pays the team exactly what it pays the per-agent learner it happens to:
 
-| Event In 5v5 | Each PPO Agent | Team Average, Per-Agent Form | Team Average, Team Form |
+| Event in 5v5 | Each PPO Agent | Team Average, Per-Agent Form | Team Average, Team Form |
 | --- | --- | --- | --- |
 | A teammate dies | -0.05 to every agent | -0.05 | -0.05 |
 | Our Mage gets kill credit | +0.05 to the Mage | +0.01 | +0.05 |
@@ -104,7 +104,7 @@ The game reward counts once in both. One difference remains by design: with
 one team reward, every agent's value also gains from a teammate's own events.
 For the same reason, a team's total shaped reward per game is larger than one
 PPO agent's, because it adds five agents' events. The totals of every part in
-every learner update are in the training records (see Curves From 0 To 250M).
+every learner update are in the training records (see Curves From 0 to 250M).
 
 **Reward scale (QMIX and PQN-VDN only).** `reward_scale` multiplies the whole
 team reward, the game reward and every part above together, before the
@@ -174,9 +174,9 @@ and seeds therefore does not give the same weights, checkpoints or selected
 steps as the runs reported here. We did not measure how far such a retrain
 drifts; we expect differences of the kind seen between seeds of one recipe
 (see the seed tables of studies 1 and 2). The saved checkpoints do repeat the
-tournament game for game ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)).
+tournament game for game ([Repeatability on GPUs](../../docs/evaluation.md#same-seed-same-game)).
 
-## Validation And Selection
+## Validation and Selection
 
 | Setting | Value |
 | --- | --- |
@@ -378,11 +378,11 @@ and runs through the public `run_tournament` API.
 | Seed root | 20261004 |
 | Play | PPO actors sample their actions; QMIX and PQN-VDN actors act greedily (no exploration), as the library loads them; the scripted bots are deterministic |
 | Ratings | The tool's joint Elo fit with draws (`centered-davidson-v1`), field average 1,200, 95% intervals from 5,000 bootstrap resamples; tiers and divisions from [the protocol](../../docs/tournaments.md#tiers) |
-| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)) |
+| GPU mode | Deterministic (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`), so a repeat run plays the same games, game for game ([Repeatability on GPUs](../../docs/evaluation.md#same-seed-same-game)) |
 | Games at a time | 128, the command's default |
 | Cost | 8.2 minutes on one RTX 5090 |
 
-## How The Tournament Works
+## How the Tournament Works
 
 **Schedule.** Every entrant plays every other entrant once: 36 pairings of 200
 games, 7,200 games in all. A pairing plays 40 games on each of the five test
@@ -403,7 +403,7 @@ and the games still play out differently.
 
 **What a seed changes.** Only the actions of entrants that use randomness:
 
-| Part Of A Game | Uses The Seed? | Why |
+| Part of a Game | Uses the Seed? | Why |
 | --- | --- | --- |
 | Map, roster, spawn positions | No | The canonical game uses fixed spawn pads and the fixed mirrored roster; the environment's reset ignores its random key |
 | Combat and movement | No | The simulator draws no random numbers; the same actions always give the same next state |
@@ -436,9 +436,9 @@ and the games still play out differently.
    play out differently between two runs, because GPU floating-point rounding
    can flip a near-tied action choice. This is ordinary floating-point noise,
    not a simulator defect; see
-   [Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game).
+   [Repeatability on GPUs](../../docs/evaluation.md#same-seed-same-game).
 
-## Decisions During The Search
+## Decisions During the Search
 
 Study 1's design was fixed before it started. These decisions were made from
 saved results, and each is applied in the sections that follow.
@@ -462,7 +462,7 @@ saved results, and each is applied in the sections that follow.
 | 15 | Each method enters the tournament with its selected study 3 checkpoint | Runs are compared by their checkpoints chosen under the declared rule, never by their final checkpoints by default; each final checkpoint is recorded beside it |
 | 16 | The tournament plays 200 games per pair on the test maps | Twice the API default of 100, for narrower rating intervals at a cost of minutes |
 | 17 | QMIX and PQN-VDN are evaluated greedily, as the library loads them, and pairs whose games repeat are reported as such | Greedy play is the usual way to evaluate Q-learners (in PyMARL, the QMIX authors' code, [test mode sets epsilon to 0](https://github.com/oxwhirl/pymarl/blob/master/src/components/action_selectors.py)). The tournament tool flags every pair between two deterministic entrants and gives it no sampling interval (see Tournament) |
-| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability On GPUs](../../docs/evaluation.md#same-seed-same-game)) |
+| 18 | Paper tournament and evaluation runs use XLA's deterministic GPU mode (`XLA_FLAGS=--xla_gpu_deterministic_ops=true`); training keeps the normal mode | Repeat runs then match game for game at no measured cost in evaluation ([Repeatability on GPUs](../../docs/evaluation.md#same-seed-same-game)) |
 
 ## Inputs
 
@@ -541,7 +541,7 @@ with `marl_bgs.load_method(path)`.
 
 **Files in every run folder.**
 
-| File Or Folder | Contents |
+| File or Folder | Contents |
 | --- | --- |
 | `run_details.json` | Every setting of the run (`config`), its source identity, and for a continuation the `continuation` record naming the parent checkpoint and the declared changes |
 | `status.json` | Final state, training and wall seconds, transitions per second, peak JAX memory and process RAM |
@@ -602,7 +602,7 @@ game length), `matchup_results.csv`, `map_results.csv`,
 `tournament_games.jsonl` (each game's map, spawn end and teams),
 `tournament_config.json` and `run_details.json`.
 
-### Curves From 0 To 250M
+### Curves From 0 to 250M
 
 For each of the six tournament policies, these measures can be plotted at
 every point from step 0 to 250,675,200 transitions. All are in
@@ -693,7 +693,7 @@ of drawn games against its own current weights over time is `draws / games`
 for `opponent_kind == "self"`. Kills are not recorded for training games;
 deaths come from the `own_team_deaths` reward part.
 
-### Study 1: Shapes And PPO Recipes
+### Study 1: Shapes and PPO Recipes
 
 Study 1 ran all 54 runs to 40,108,032 transitions with no failed run. It took
 22 hours 43 minutes on two RTX 5090s, or 44.8 GPU-hours (planned: 49).
@@ -898,7 +898,7 @@ shapes.
 **Cost per run, measured.** Minutes include setup and validation. Memory is
 the process's peak with preallocation off.
 
-| Method | Runs | Transitions Per Second | Minutes Per Run | JAX Memory In Use | Host RAM |
+| Method | Runs | Transitions per Second | Minutes per Run | JAX Memory in Use | Host RAM |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Recurrent MAPPO | 6 | 19,485 | 41 | 3.1 GB | 8.4 GB |
 | Recurrent IPPO | 9 | 17,834 | 44-45 | 3.0 GB | 7.8 GB |
@@ -955,7 +955,7 @@ seeds, and it makes at least 2 kills per game against each scripted bot (the
 engagement floor). Each candidate shows its mean margin / kills / deaths per
 game.
 
-| Pick | Candidates (Margin / Kills / Deaths) | Mean Gain | Seeds Won | Fewest Kills Against A Bot | Result |
+| Pick | Candidates (Margin / Kills / Deaths) | Mean Gain | Seeds Won | Fewest Kills Against a Bot | Result |
 | --- | --- | ---: | ---: | ---: | --- |
 | QMIX `reward_scale = 10` | Base −10.2 / 6.2 / 16.4; change −4.3 / 12.4 / 16.6 | +5.9 | 3 | 13.6 | Passes |
 | QMIX `update_period = 128` (`target-faster`) | Base −10.2 / 6.2 / 16.4; change −5.2 / 11.5 / 15.9 | +5.0 | 3 | 12.8 | Passes |
@@ -1073,7 +1073,7 @@ the three seeds; checks as in study 1.
 
 **Cost per run, measured** (study 2 runs only):
 
-| Method | Runs | Transitions Per Second | Minutes Per Run | JAX Memory In Use | Host RAM |
+| Method | Runs | Transitions per Second | Minutes per Run | JAX Memory in Use | Host RAM |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | QMIX | 12 | 12,700 | 55-80 | 12.1 GB | 14.1 GB |
 | PQN-VDN | 18 | 10,537 | 68-70 | 15.0 GB | 11.0 GB |
@@ -1106,7 +1106,7 @@ GPU-hours. Each lineage is represented by its selected checkpoint, chosen and
 confirmed exactly as in studies 1 and 2, with the parent's checkpoints eligible
 too. ⭐ marks seed 12259871.
 
-| Method | Run | Seed | Selected Checkpoint | Margin | Kills | Deaths | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma | 40M Run's Selection: Margin / Kills / Deaths | Final Check At 250.7M: Margin / Kills / Deaths |
+| Method | Run | Seed | Selected Checkpoint | Margin | Kills | Deaths | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma | 40M Run's Selection: Margin / Kills / Deaths | Final Check at 250.7M: Margin / Kills / Deaths |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
 | PQN-VDN | `reward-x10` | 12259871 ⭐ | 240,156,672 | +7.3 | 19.4 | 12.4 | 234-16-6 | +3.2 | +8.5 | +8.9 | +8.6 | −5.1 / 13.1 / 17.1 | +5.2 / 19.2 / 14.4 |
 | Recurrent IPPO | `reference` | 20261001 | 250,675,200 | +5.9 | 19.1 | 12.6 | 205-26-25 | +0.9 | +8.3 | +7.7 | +6.8 | −8.5 / 11.1 / 15.4 | +5.9 / 19.1 / 12.6 |
@@ -1162,7 +1162,7 @@ Every check is in `lineage_curves.csv` and the figure.
 
 **Cost per continuation, measured.**
 
-| Method | Hours | Transitions Per Wall Second | JAX Memory In Use | Host RAM |
+| Method | Hours | Transitions per Wall Second | JAX Memory in Use | Host RAM |
 | --- | ---: | ---: | ---: | ---: |
 | PQN-VDN | 5.79 | 10,103 | 15.2 GB | 12.7 GB |
 | QMIX | 4.50 | 13,008 | 12.1 GB | 18.6 GB |
@@ -1239,7 +1239,7 @@ per pair).
 | tdm-gamma | 0.51 | 0.27 | 0.15 | 0.17 | 0.32 |
 | tdm-alpha | 0.55 | 0.17 | 0.32 | 0.09 | 0.17 |
 
-**Repeated games** (see How The Tournament Works). QMIX and PQN-VDN act
+**Repeated games** (see How the Tournament Works). QMIX and PQN-VDN act
 greedily and the scripted bots are deterministic, so within a run a game
 between two of these five repeats exactly for a given map and spawn end. Each
 such pair's 200 games are copies of at most 10 distinct games (5 maps x 2
@@ -1275,7 +1275,7 @@ at most 10 distinct games per pair.
    against the five learned entrants, most against feedforward IPPO (130 of
    200).
 
-### Teamwork In The Tournament
+### Teamwork in the Tournament
 
 **Question.** Which teamwork separates the strongest Season 0 entrants from
 the weakest?

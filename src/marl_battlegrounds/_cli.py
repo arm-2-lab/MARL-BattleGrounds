@@ -704,7 +704,7 @@ def _print_result(
         close = getattr(iterator, "close", None)
         if close is not None:
             close()
-    print(f"{table.replace('_', ' ').title()} — Up To 32 Rows")
+    print(f"{table.replace('_', ' ').title()} — Up to 32 Rows")
     selected = [name for name in names if columns is not None and name in columns]
     if selected and columns is not None:
         print("\t".join(selected))
@@ -717,9 +717,9 @@ def _print_result(
     except ValueError as error:
         if "unavailable:" not in str(error):
             raise
-        print(f"Head To Head: Unavailable ({error})")
+        print(f"Head to Head: Unavailable ({error})")
     else:
-        print("Head To Head — Up To 32 Rows")
+        print("Head to Head — Up to 32 Rows")
         fields = (
             "system_id",
             "system_name",

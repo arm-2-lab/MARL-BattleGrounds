@@ -1,5 +1,5 @@
 /**
- * @file The Spawns And Bases look (Moon Waystones): one rune circle per claimed
+ * @file The Spawns and Bases look (Moon Waystones): one rune circle per claimed
  * spawn pad in the `spawns` layer, and the Call when a champion returns.
  *
  * The waystone (durable, drawn every render): a rim of radius 0.56 world units

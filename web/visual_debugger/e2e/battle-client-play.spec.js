@@ -12,7 +12,7 @@
  * exactly the targets the policy's mask allows and all disabled, its No Combat
  * slot saying the policy has not chosen its action, Lock In still enabled and
  * every draft unchanged. The Watch Only card names the policy and offers Back
- * To Your <Class>, the last Manual champion focused. Agent POV keeps that
+ * to Your <Class>, the last Manual champion focused. Agent POV keeps that
  * Manual champion's view, never the policy champion's. A key typed while a
  * deck button has focus sends nothing; only the focused arena takes order
  * keys. Two quick Lock In clicks play one turn, and a refresh keeps the tick.
@@ -27,7 +27,7 @@
  * A fixed scenario keeps all five Manual slots and its packaged clock ("Tick
  * 295 of 300"); Your Turn keeps a row for each fallen champion you play,
  * marked Fallen, counts only the living ones in its set pill, and Lock In
- * stays enabled. Finish And Save, in the top bar and in the Recording popover,
+ * stays enabled. Finish and Save, in the top bar and in the Recording popover,
  * waits while the accepted turn's policy evidence is written, then saves from
  * the popover.
  */
@@ -167,15 +167,15 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
     "data-policy-controller-read-only",
     "true",
   );
-  await expect(page.locator("#ag-chip")).toHaveText(`Played By ${policyLabel}`);
+  await expect(page.locator("#ag-chip")).toHaveText(`Played by ${policyLabel}`);
   await expect(page.locator("#wo-name")).toHaveText(
     new RegExp(`^${policy.class_name} · `, "u"),
   );
   await expect(page.locator("#wo-meta")).toHaveText(
-    `Agent ID ${policy.public_agent_id} · Played By ${policyLabel}`,
+    `Agent ID ${policy.public_agent_id} · Played by ${policyLabel}`,
   );
   await expect(page.locator("#wo-back")).toHaveText(
-    `Back To Your ${second.class_name}`,
+    `Back to Your ${second.class_name}`,
   );
   await expect(page.locator("#command-target-select")).toBeDisabled();
   await expect(page.locator("#submit-turn-button")).toBeEnabled();
@@ -258,7 +258,7 @@ test("Manual drafts survive focus changes and policy inspection stays read-only"
     second.public_agent_id,
   );
   await expect(page.locator("#wo-back")).toHaveText(
-    `Back To Your ${second.class_name}`,
+    `Back to Your ${second.class_name}`,
   );
   await page.locator('#view-switch button[data-view-mode="researcher"]').click();
   await expect(page.locator("html")).toHaveAttribute("data-audience", "researcher");
@@ -423,12 +423,12 @@ test("Fixed scenarios keep dead Manual slots and the packaged clock", async ({
     }
   }
   await expect(page.locator("#set-pill")).toHaveText(
-    `0 Of ${ours.length - fallen.length} Set`,
+    `0 of ${ours.length - fallen.length} Set`,
   );
   await expect(page.locator("#submit-turn-button")).toBeEnabled();
 });
 
-test("Finish And Save waits for the accepted turn's evidence to settle", async ({
+test("Finish and Save waits for the accepted turn's evidence to settle", async ({
   page,
 }, testInfo) => {
   const directory = testInfo.outputPath("finishing");
@@ -466,7 +466,7 @@ test("Finish And Save waits for the accepted turn's evidence to settle", async (
     );
     await openRecordingPanel(page);
     await page.locator("#pop-finish").click();
-    // Finish And Save closes the popover itself.
+    // Finish and Save closes the popover itself.
     await expect(page.locator("#rec-pop")).toBeHidden();
     expect((await response).status()).toBe(200);
     await expect(page.locator("html")).toHaveAttribute(

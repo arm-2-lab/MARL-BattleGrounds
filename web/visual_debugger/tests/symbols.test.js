@@ -96,7 +96,7 @@ const PLAIN_NAMES = [
   "x2 Mark",
   "Spawn Pad",
   "Stone",
-  "Out Of Sight",
+  "Out of Sight",
   "Score",
   "Tick",
   "Event Track",
@@ -104,7 +104,7 @@ const PLAIN_NAMES = [
   "Healing",
   "Team A",
   "Team B",
-  "Everyone In View",
+  "Everyone in View",
   "Battle Cam",
   "Frame Explanation",
 ];
@@ -118,15 +118,15 @@ function assertRecursivelyFrozen(value) {
 
 test("the list holds 58 frozen symbols in the nine symbol groups", () => {
   assert.deepEqual(SYMBOL_GROUPS, [
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Classes",
     "Statuses",
     "Basics",
     "Ultimates",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Zones",
     "HUD Marks",
-    "Camera And Keys",
+    "Camera and Keys",
   ]);
   assert.equal(SYMBOLS.length, 58);
   assertRecursivelyFrozen(SYMBOLS);
@@ -294,7 +294,7 @@ test("the camera and explanation symbols carry the keys V, B and F", () => {
       entry.key,
     ]),
     [
-      ["camera_everyone_in_view", "Everyone In View", "V"],
+      ["camera_everyone_in_view", "Everyone in View", "V"],
       ["camera_battle_cam", "Battle Cam", "B"],
       ["frame_explanation", "Frame Explanation", "F"],
     ],
@@ -309,7 +309,7 @@ test("the camera and explanation symbols carry the keys V, B and F", () => {
 
 test("the sight veil says it darkens every blind spot, stone shadows included", () => {
   const veil = symbolById("sight_veil");
-  assert.equal(veil?.name, "Out Of Sight");
+  assert.equal(veil?.name, "Out of Sight");
   assert.equal(
     veil?.eli5,
     "In Agent POV the ground is dark wherever your team cannot see: beyond each champion's sight reach and in the shadow behind every stone. Enemies just back on their pads stay hidden even in the light.",
@@ -382,7 +382,7 @@ test("no retired name, look name or team colour name is shown", () => {
     /Ghost Ring/u,
     /Muster/u,
     /Night Veil/u,
-    /First To 20/u,
+    /First to 20/u,
     /Match Clock/u,
     /Score Tides/u,
     /Waystone/u,

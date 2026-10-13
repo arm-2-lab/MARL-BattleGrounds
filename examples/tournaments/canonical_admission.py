@@ -154,7 +154,7 @@ def run(directory: Path) -> None:
         prepared = admission.prepare_release(store, release_at)
         assert admission.prepare_release(store, release_at) == prepared
     assert not (store / "catalog.json").exists()
-    print("Artificial Admission — Not An Official Release")
+    print("Artificial Admission — Not an Official Release")
     print("Imported Package:", marl_bgs.__file__)
     print("Saved Run:", result.run_dir)
     print("Reused Games:", result.reused_games)

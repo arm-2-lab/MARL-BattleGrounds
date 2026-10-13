@@ -1,5 +1,5 @@
 /*
- * Styles for the Basic Attacks look, Cleave And Bloom (src/looks/basics.js).
+ * Styles for the Basic Attacks look, Cleave and Bloom (src/looks/basics.js).
  * styles.css imports this file. Every colour is a token from the :root block
  * in styles.css; a part's class colour comes from data-basic-class on its
  * group. Stroke widths, positions and the still opacities are SVG attributes

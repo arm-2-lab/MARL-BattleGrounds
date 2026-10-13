@@ -7,8 +7,8 @@
  * (Team A one ring, Team B a double ring) followed by "Agent N", the same token
  * the champion wears on the arena. Two other forms exist:
  *
- * - Out Of Sight: the class emblem with no team ring and the words
- *   "Warrior · ID 6 · Out Of Sight". It never shows life, position or a ring.
+ * - Out of Sight: the class emblem with no team ring and the words
+ *   "Warrior · ID 6 · Out of Sight". It never shows life, position or a ring.
  * - Plain: today's text, "Agent ID 6", used when the Panel Tokens switch is
  *   off.
  *
@@ -74,8 +74,8 @@ function isRecord(value) {
  * Describe one chip as plain data, with no DOM.
  *
  * The words follow agent-identity.js: "Agent 5" for a token chip, "Agent ID 5"
- * for a plain chip and "Mage · ID 5 · Out Of Sight" for an Out Of Sight chip.
- * Out Of Sight wins over plain, because the words "Out Of Sight" are a fact the
+ * for a plain chip and "Mage · ID 5 · Out of Sight" for an Out of Sight chip.
+ * Out of Sight wins over plain, because the words "Out of Sight" are a fact the
  * reader needs in either style.
  *
  * @param {unknown} agent A record with the champion's identity fields:
@@ -84,15 +84,15 @@ function isRecord(value) {
  *   the public ID). Only these fields are read. Anything else gives a chip with
  *   "Unknown" class words, as agent-identity.js does.
  * @param {TokenChipOptions} [options] outOfSight (default false): the
- *   champion is out of its audience's sight, so show the Out Of Sight form.
+ *   champion is out of its audience's sight, so show the Out of Sight form.
  *   plain (default false): show today's plain text instead of the token. label
  *   (default null): words that replace "Agent N" in a token chip, for example
  *   "Itself"; ignored for the other forms. pickable (default false): the chip
  *   picks its champion on a click, so the tip says so.
  * @returns {TokenChipModel} A frozen record. mode is the form; text the visible
- *   words; ariaLabel the full spoken name ("Agent ID 5, Mage, Team A"; Out Of
+ *   words; ariaLabel the full spoken name ("Agent ID 5, Mage, Team A"; Out of
  *   Sight leaves the team out because the ring is not drawn); ring "single"
- *   (Team A), "double" (Team B) or "none" (Out Of Sight, plain, or an unknown
+ *   (Team A), "double" (Team B) or "none" (Out of Sight, plain, or an unknown
  *   team); classKey, glyphKey and teamKey are the vocabulary CSS and icon keys;
  *   tipTitle and tipSummary are the hover words.
  */
@@ -154,8 +154,8 @@ export function tokenChipModel(agent, options = {}) {
  * The element is a span (a button when onPick is given) with class
  * "token-chip", data-chip-mode ("token", "out_of_sight" or "plain"),
  * data-token-class (class CSS key), data-token-team (team CSS key; absent for
- * Out Of Sight) and data-token-ring ("single", "double" or "none"). A token or
- * Out Of Sight chip holds a span.token-chip__token with the class emblem SVG
+ * Out of Sight) and data-token-ring ("single", "double" or "none"). A token or
+ * Out of Sight chip holds a span.token-chip__token with the class emblem SVG
  * (decorative); the ring is drawn by panels.css from data-token-ring. The
  * visible words sit in span.token-chip__text. The chip registers a hover and
  * focus tip through tooltip.js (identity only) unless tooltip is false. No

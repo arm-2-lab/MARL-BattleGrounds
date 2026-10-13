@@ -50,7 +50,7 @@
  *
  * `openRecordingPanel` and `closeRecordingPanel` open and close the top bar's
  * Replay Recording popover (#rec-pop, opened by the #recording-badge pill), so
- * tests can reach Finish And Save, Open Replay, Retry Save and Save As. Opening
+ * tests can reach Finish and Save, Open Replay, Retry Save and Save As. Opening
  * leaves an open panel alone; closing leaves a closed panel alone.
  */
 import { spawn } from "node:child_process";

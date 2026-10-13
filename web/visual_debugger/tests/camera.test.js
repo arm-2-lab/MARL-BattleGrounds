@@ -1,5 +1,5 @@
 /**
- * @file Check the Camera look (src/looks/camera.js). Everyone In View frames
+ * @file Check the Camera look (src/looks/camera.js). Everyone in View frames
  * the START and END spots of every living, falling and returning body with a
  * 1.5-unit margin, keeps the map's aspect, zooms only in 0.25 steps up to 2x,
  * stays within 0.45 units of the map, sits near the map centre and never cuts a
@@ -161,19 +161,19 @@ test("cameras, keys, framing switch and tip texts follow the command set", () =>
   assert.equal(nextCamera("whole_map", "x", "replay_viewer"), "whole_map");
   assert.equal(
     cameraChangeTip("battle_cam", "replay_viewer"),
-    "Battle Cam on · B: back to Whole Map · V: Everyone In View",
+    "Battle Cam on · B: back to Whole Map · V: Everyone in View",
   );
   assert.equal(
     cameraChangeTip("everyone_in_view", "replay_viewer"),
-    "Everyone In View on · V: back to Whole Map · B: Battle Cam",
+    "Everyone in View on · V: back to Whole Map · B: Battle Cam",
   );
   assert.equal(
     cameraChangeTip("everyone_in_view", "combat_debugger"),
-    "Everyone In View on · V: back to Whole Map",
+    "Everyone in View on · V: back to Whole Map",
   );
   assert.equal(
     cameraChangeTip("whole_map", "combat_debugger"),
-    "Whole Map on · V: Everyone In View",
+    "Whole Map on · V: Everyone in View",
   );
   assert.equal(
     FIRST_OPEN_TIP,
@@ -181,7 +181,7 @@ test("cameras, keys, framing switch and tip texts follow the command set", () =>
   );
   assert.deepEqual(CAMERA_NAMES, {
     whole_map: "Whole Map",
-    everyone_in_view: "Everyone In View",
+    everyone_in_view: "Everyone in View",
     battle_cam: "Battle Cam",
   });
   assert.equal(cameraEase({ reason: "camera" }), "ease");
@@ -200,7 +200,7 @@ test("the remembered camera maps old names and survives every storage failure", 
   assert.equal(readRememberedCamera(store("director")), "battle_cam");
   assert.equal(readRememberedCamera(store("Battle Director")), "battle_cam");
   assert.equal(readRememberedCamera(store("everyone_in_view")), "everyone_in_view");
-  assert.equal(readRememberedCamera(store("Everyone In View")), "everyone_in_view");
+  assert.equal(readRememberedCamera(store("Everyone in View")), "everyone_in_view");
   assert.equal(readRememberedCamera(store("zoom")), "whole_map");
   assert.equal(readRememberedCamera(store(null)), "whole_map");
   assert.equal(readRememberedCamera(null), "whole_map");
@@ -230,7 +230,7 @@ test("the remembered camera maps old names and survives every storage failure", 
   assert.equal(saved.get(REMEMBERED_CAMERA_KEY), "battle_cam");
 });
 
-test("Everyone In View keeps every spot, zooms in 0.25 steps and never cuts a body", () => {
+test("Everyone in View keeps every spot, zooms in 0.25 steps and never cuts a body", () => {
   const random = seeded(7);
   let zoomed = 0;
   for (let trial = 0; trial < 400; trial += 1) {
@@ -315,7 +315,7 @@ function clampAny(value, low, high) {
   return Math.min(high, Math.max(low, value));
 }
 
-test("Everyone In View sits near the map centre, and is the Whole Map with no bodies", () => {
+test("Everyone in View sits near the map centre, and is the Whole Map with no bodies", () => {
   const empty = everyoneInViewFrame({
     camera: campCamera([], []),
     worldWidth: W,
@@ -846,7 +846,7 @@ test("the switch remembers the camera, shows tips, handles V and B, and applies 
     assert.equal(tip.hidden, false);
     assert.equal(
       tip.textContent,
-      "Everyone In View on · V: back to Whole Map · B: Battle Cam",
+      "Everyone in View on · V: back to Whole Map · B: Battle Cam",
     );
     assert.equal(firstTip.hidden, true, "a camera change ends the first-open tip");
     assert.ok(pending.some((entry) => entry.ms === CHANGE_TIP_MS && !entry.cleared));

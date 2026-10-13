@@ -22,7 +22,7 @@
  * Keys: bindReplayTimelineControls registers this module's Replay Viewer handlers
  * in the one command set (command-set.js: replay_play_pause, replay_one_tick,
  * replay_tick_step, replay_tick_jump, replay_escape) and dispatches every Replay
- * Viewer key through runLocalCommand, so V (Everyone In View), B (Battle Cam) and F
+ * Viewer key through runLocalCommand, so V (Everyone in View), B (Battle Cam) and F
  * (Frame Explanation; in play it pauses first) reach the handlers their owners
  * register. DOM helpers bind controls and render availability without changing
  * recorded replay data. The dock readout is plain words ("Tick 98 / 122" and

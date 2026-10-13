@@ -1,7 +1,7 @@
 /**
  * @file Check the token chip contract (src/token-chip.js): a token chip reads
  * "Agent N" with the class emblem in a single (Team A) or double (Team B) ring;
- * the Out Of Sight chip reads "Warrior · ID 6 · Out Of Sight" with no ring and
+ * the Out of Sight chip reads "Warrior · ID 6 · Out of Sight" with no ring and
  * no team; the plain chip reads "Agent ID N"; "Itself" replaces only a token
  * chip's words; the chip carries identity only (no life or position field is
  * read or written); no chip node sets a data-class attribute; a pickable chip
@@ -103,7 +103,7 @@ test("chip words and rings follow the label owner", () => {
 
   const unseen = tokenChipModel(WARRIOR_B, { outOfSight: true, plain: true });
   assert.equal(unseen.mode, "out_of_sight");
-  assert.equal(unseen.text, "Warrior · ID 6 · Out Of Sight");
+  assert.equal(unseen.text, "Warrior · ID 6 · Out of Sight");
   assert.equal(unseen.ring, "none");
   assert.doesNotMatch(unseen.ariaLabel, /Team/u);
   assert.doesNotMatch(unseen.tipTitle, /Team/u);

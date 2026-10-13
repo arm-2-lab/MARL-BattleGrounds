@@ -24,7 +24,7 @@
  *   reads the frame again and nothing is sent twice. A stale tab adopts the
  *   latest Ranges state from the Visual Filters drawer.
  * - The Class Guide changes only when a champion is activated.
- * - Space on How To Play opens the How To Play card and sends nothing.
+ * - Space on How to Play opens the How to Play card and sends nothing.
  * - The developer cards (Roster, Agent Details, Technical Frame) sit in the
  *   Developer drawer, which only the DevClient shows; the page still keeps
  *   their open state, which the tests set directly.
@@ -343,7 +343,7 @@ async function expectRetainedDisclosureAuthority(
     "data-presentation-authority",
     "retained",
   );
-  await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+  await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
   await expect(page.locator("#battlefield-shell")).toHaveAttribute("aria-busy", "true");
   await expect(page.locator("#scenario-description")).toContainText("Last confirmed");
   await expect(page.locator("#scenario-description")).toContainText("update pending");
@@ -495,7 +495,7 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
     await page.locator("#battlefield").focus();
     await page.keyboard.press("w");
     await expect(northKey).toHaveClass(/\bshake\b/u);
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     expect(commands).toHaveLength(2);
     heldSubmitPresentation.release();
   } finally {
@@ -528,7 +528,7 @@ test("authorized draft edit and rapid Submit install exactly one successor", asy
     /.+/u,
   );
   await expect(page.locator("#accepted-card .accepted-action-row")).not.toHaveCount(0);
-  // Actions In Words is on by default: every observed row shows its words and
+  // Actions in Words is on by default: every observed row shows its words and
   // its recorded codes.
   await expect(
     page.locator("#accepted-card .accepted-action-row__words"),
@@ -569,7 +569,7 @@ test("pointer draft keeps battlefield focus and queues one Enter exactly once", 
   try {
     await movement.click();
     await heldDraftPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await expect.poll(() => requests.length).toBe(1);
 
@@ -585,7 +585,7 @@ test("pointer draft keeps battlefield focus and queues one Enter exactly once", 
     heldDraftPresentation.release();
     await heldSubmitPresentation.held;
     await expect.poll(() => requests.length).toBe(2);
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
     await battlefield.dispatchEvent("keydown", {
@@ -645,7 +645,7 @@ test("pointer draft keeps battlefield focus and queues one Enter exactly once", 
     await keyboardMovement.press("Enter");
     await heldKeyboardPresentation.held;
     expect((await keyboardDraftResponse).status()).toBe(200);
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
     await expect.poll(() => requests.length).toBe(3);
@@ -702,7 +702,7 @@ test("Enter follows a coherent idempotent draft exactly once", async ({ page }) 
   try {
     await selectedMovement.click();
     await heldNoOpPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
@@ -809,7 +809,7 @@ test("Allowed Now picks queue one Lock In behind pointer and keyboard picks", as
   try {
     await allowedNowPick(page, pointerTarget).click();
     await heldPointerPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator("#connection-status")).toHaveText("Submit Queued");
@@ -846,7 +846,7 @@ test("Allowed Now picks queue one Lock In behind pointer and keyboard picks", as
     await keyboardPick.focus();
     await page.keyboard.press("Enter");
     await heldKeyboardPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await page.keyboard.press("Enter");
     await expect.poll(() => requests.length).toBe(3);
@@ -915,7 +915,7 @@ test("Agent pointer Your Turn selection queues movement before one Enter", async
   try {
     await hiddenChampionRow.click();
     await heldRosterPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await expect.poll(() => requests.length).toBe(1);
 
@@ -991,7 +991,7 @@ test("Agent keyboard Your Turn selection gives the arena the keys without submit
   try {
     await hiddenChampionRow.press("Enter");
     await heldRosterPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect.poll(() => requests.length).toBe(1);
     heldRosterPresentation.release();
   } finally {
@@ -1081,7 +1081,7 @@ test("Agent keyboard battlefield activation rebinds focus to the authorized succ
   try {
     await target.press("Enter");
     await heldPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect.poll(() => requests.length).toBe(1);
     heldPresentation.release();
   } finally {
@@ -1637,7 +1637,7 @@ test("WASD followed immediately by Enter submits the installed draft once", asyn
   try {
     await page.keyboard.press("w");
     await heldDraftPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await page.keyboard.press("Enter");
     await expect.poll(() => requests.length).toBe(1);
     heldDraftPresentation.release();
@@ -1690,7 +1690,7 @@ for (const [viewLabel, viewValue] of /** @type {const} */ ([
     try {
       await page.keyboard.press("Enter");
       await heldSubmitPresentation.held;
-      await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+      await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
       await expect.poll(() => requests.length).toBe(1);
       await expect(battlefield).toBeFocused();
 
@@ -1702,7 +1702,7 @@ for (const [viewLabel, viewValue] of /** @type {const} */ ([
       await page.keyboard.press("Enter");
       await page.keyboard.press("a");
       await expect(westKey).toHaveClass(/\bshake\b/u);
-      await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+      await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
       expect(requests).toHaveLength(1);
       heldSubmitPresentation.release();
     } finally {
@@ -1768,7 +1768,7 @@ test("queued Escape preserves its direct battlefield focus release", async ({
   try {
     await page.keyboard.press("Enter");
     await heldSubmitPresentation.held;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect.poll(() => requests.length).toBe(1);
 
     await page.keyboard.press("Escape");
@@ -1822,7 +1822,7 @@ test("battlefield Space submits once and consumes busy repeats without scrolling
       "data-presentation-authority",
       "retained",
     );
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await expect(battlefield).toBeFocused();
     await expect.poll(() => commands.length).toBe(1);
     expect(commands[0]).toEqual({
@@ -1860,8 +1860,8 @@ test("battlefield Space submits once and consumes busy repeats without scrolling
   );
   await expect.poll(() => commands.length).toBe(1);
 
-  // Space on the focused How To Play button stays native: it opens the How
-  // To Play card over the arena and sends nothing.
+  // Space on the focused How to Play button stays native: it opens the How
+  // to Play card over the arena and sends nothing.
   const helpButton = page.locator("#help-button");
   await helpButton.focus();
   await page.keyboard.press("Space");
@@ -1971,7 +1971,7 @@ test("a lost applied response requires GET resync and never replays submit", asy
     await battlefield.focus();
     await page.keyboard.press("Enter");
     await appliedResponseHeld;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await page.keyboard.press("Escape");
     await expect(page.locator("#connection-status")).toHaveText("Input Queued");
     await expect.poll(() => interceptedCommands).toBe(1);
@@ -2060,7 +2060,7 @@ test("a command authorization failure clears the retained battlefield", async ({
     await page.locator("#battlefield").focus();
     await page.keyboard.press("w");
     await commandHeld;
-    await expect(page.locator("#connection-status")).toHaveText("Command In Flight");
+    await expect(page.locator("#connection-status")).toHaveText("Command in Flight");
     await page.keyboard.press("Enter");
   } finally {
     releaseCommand();

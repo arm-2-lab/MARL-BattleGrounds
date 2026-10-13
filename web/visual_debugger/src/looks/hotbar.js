@@ -11,7 +11,7 @@
  *   vision's 25 px body), 2 px at 90% with a 6% silver disc. It means "whose
  *   hands" (the Agent POV ring at 0.98 radii means "whose eyes"). A fallen
  *   champion keeps an ashen ring at 45%. Every other Manual champion the
- *   scene draws (One On Each Team) gets the same ring dimmed to 45% with no
+ *   scene draws (One on Each Team) gets the same ring dimmed to 45% with no
  *   disc, and its studs at 65% when its staged lane is known.
  * - Order Studs: four marks on the ring at the diagonals. Silver dots
  *   (r 2.2) for No Combat, class-color dots (r 3.2) for the Basic, class-color
@@ -632,7 +632,7 @@ function studsRecords(champion, center, lane, legal, away) {
  *   `pending_joint_action.action_rows` (the staged Manual drafts; never the
  *   researcher view's copy). They give another Manual champion's staged lane.
  *   Every other Manual champion this scene draws gets a dimmed Command Ring
- *   (and its studs when its lane is known), as the vision draws One On Each
+ *   (and its studs when its lane is known), as the vision draws One on Each
  *   Team: the champion you order at full strength, the other at 45%.
  *
  * When the inspection is a policy's read-only view (`inspection_kind`

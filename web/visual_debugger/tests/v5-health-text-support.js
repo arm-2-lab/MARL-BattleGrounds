@@ -1,5 +1,5 @@
 /**
- * @file Test-only support for the V5 Health And Combat Text add-on tests
+ * @file Test-only support for the V5 Health and Combat Text add-on tests
  * (`v5-saved-beat`, `v5-last-breath` and `v5-battle-text-detail`). It holds a
  * tiny fake SVG document (enough for `src/looks/health-text.js` build and
  * update: attributes, dataset, text, children, class lookups and markup), plain

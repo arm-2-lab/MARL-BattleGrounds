@@ -1,4 +1,4 @@
-# Reproduce The Paper
+# Reproduce the Paper
 
 This folder holds everything needed to repeat the paper's experiments with the
 public MARL-BGs API: the frozen search declarations, four launch scripts, the
@@ -32,7 +32,7 @@ training runs in XLA's normal GPU mode, where sums can round differently from
 run to run. The tournament runs in deterministic mode, so the released models
 repeat the reported tournament game for game.
 
-| File In `hyperparameter_search/` | Step | What It Holds |
+| File in `hyperparameter_search/` | Step | What It Holds |
 |---|---|---|
 | `opponents.yaml` | 1-3 | The expected identity and role of each fixed opponent |
 | `shapes_and_ppo.yaml`, `shapes_and_ppo_picks.yaml` | 1 | Study 1: 18 cases, three seeds each (54 runs), and its declared picks |
@@ -47,7 +47,7 @@ one folder per step: `shapes-and-ppo/`, `q-settings/`, `ff-mappo-levers/`,
 `opponent_bundle` and `prepare.py` downloads the released training opponents from
 Hugging Face into `OUTPUT_DIR/opponents/` and checks them the same way.
 
-### Step 1: Shapes And PPO Recipes (54 Runs, About 45 GPU-Hours)
+### Step 1: Shapes and PPO Recipes (54 Runs, About 45 GPU-Hours)
 
 ```bash
 JAX_PLATFORMS=cpu python scripts/paper_experiments/prepare.py \
@@ -104,7 +104,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
   --output-dir /data/hyperparameter-search/ff-mappo-levers/study
 ```
 
-### Step 4: Continue Each Method's Run To 250M (6 Runs, About 23 GPU-Hours)
+### Step 4: Continue Each Method's Run to 250M (6 Runs, About 23 GPU-Hours)
 
 Study 3 continues saved runs, so it needs no preparation. Each case names one
 run's full checkpoint at 40,108,032 transitions; replace each checkpoint folder
@@ -122,7 +122,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
 A continuation's records continue its parent's step count, so the parent's
 `validation_results.json` followed by the child's gives one 0-250M curve.
 
-### Step 5: Tournament On The Test Maps (7,200 Games, Minutes)
+### Step 5: Tournament on the Test Maps (7,200 Games, Minutes)
 
 The field lists each method's selected study 3 actor and the three scripted
 bots, with paths relative to the field file. Point the six actors at your own
@@ -147,18 +147,18 @@ repeat ours exactly (see "Same Seed, Same Game" in the
 `tournament_headline_metrics.csv`. Tiers come from the rounded Elo, as the
 [tournaments guide](../../docs/tournaments.md) explains.
 
-## The Experiments That Run As Hydra Stages
+## The Experiments That Run as Hydra Stages
 
 Each of these is one or two `python -m marl_battlegrounds.experiments.<stage>`
 commands, given in full in its section of [`findings.md`](findings.md), with
 its result tables in [`results/`](results/).
 
-| Experiment | Stages | Section Of `findings.md` |
+| Experiment | Stages | Section of `findings.md` |
 |---|---|---|
-| The Season 0 field in the eight scenarios | `scenarios`, `scenario_analysis` | Scenario Evaluation Of The Season 0 Field |
-| A language model against the Season 0 field | `llm_challenge`, `llm_analysis`, `llm_prompt` | A Language Model Against The Season 0 Field |
+| The Season 0 field in the eight scenarios | `scenarios`, `scenario_analysis` | Scenario Evaluation of the Season 0 Field |
+| A language model against the Season 0 field | `llm_challenge`, `llm_analysis`, `llm_prompt` | A Language Model Against the Season 0 Field |
 | Zero-shot coordination with recurrent IPPO | `zero_shot_coordination`, `zero_shot_coordination_analysis` | Zero-Shot Coordination With Recurrent IPPO |
-| Human games against and alongside recurrent IPPO | `human_games`, `human_games_analysis` | Human Games Against And Alongside Recurrent IPPO |
+| Human games against and alongside recurrent IPPO | `human_games`, `human_games_analysis` | Human Games Against and Alongside Recurrent IPPO |
 
 The Season 0 teamwork tables (`results/season_0_teamwork*.csv`) come from the
 `tournament_analysis` stage, and the training-curve tables

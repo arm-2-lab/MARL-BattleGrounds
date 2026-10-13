@@ -288,7 +288,7 @@ def save_actor(directory: Path, parameters: Parameters, *, env_steps: int) -> Pa
     details = {
         "checkpoint_id": hashlib.sha256(path.read_bytes()).hexdigest(),
         "env_steps": env_steps,
-        "name": f"Own CTDE Actor At {env_steps:,} Steps",
+        "name": f"Own CTDE Actor at {env_steps:,} Steps",
     }
     (directory / "actor.json").write_text(json.dumps(details, indent=2) + "\n")
     return directory

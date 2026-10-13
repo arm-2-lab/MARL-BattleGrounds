@@ -285,7 +285,7 @@ test("the Class Guide card markup is one owner for both clients", () => {
     /^<p class="eyebrow">Class Guide<\/p><h3>Warrior<span>The Undying<\/span><\/h3>/u,
   );
   assert.match(card, /<use href="#ab-bash"\/>/u);
-  assert.match(card, /<b>Charge<\/b><em>Ultimate · Ready In 3 Ticks<\/em>/u);
+  assert.match(card, /<b>Charge<\/b><em>Ultimate · Ready in 3 Ticks<\/em>/u);
   assert.match(
     card,
     /8 damage to one enemy within 1\.5\.<\/p><span class="now ok">Allowed on: Mage 5<\/span>/u,

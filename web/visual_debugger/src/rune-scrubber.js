@@ -394,7 +394,7 @@ export function scrubberReadout(playback, options = {}) {
  *
  * "Playing" while playback runs; "Moving" while a seek is in flight; after the
  * viewer paused, "Paused · Strike" when pausedBeat names the beat the tick was
- * frozen in (Freeze On Pause), else "Paused"; otherwise "Settled" (a step, a
+ * frozen in (Freeze on Pause), else "Paused"; otherwise "Settled" (a step, a
  * seek, the first load or the end of the replay).
  *
  * @param {ScrubberPlayback} playback A playback snapshot.
@@ -1513,7 +1513,7 @@ export function createRuneScrubber(container, options) {
 
   /**
    * Return the beat a mid-tick pause froze in ("Strike"), or null. It names a
-   * beat only after a pause by the viewer with Freeze On Pause on, on the tick
+   * beat only after a pause by the viewer with Freeze on Pause on, on the tick
    * presentTick() last started; the time is read once at the first paused
    * render and then kept, so the label holds as still as the arena does.
    *
@@ -1556,7 +1556,7 @@ export function createRuneScrubber(container, options) {
   /**
    * Draw everything from the last update: visibility, readout, beat label,
    * track and the data-marks state. A pause made by the viewer holds the beat
-   * animations when Freeze On Pause is on (the arena holds its moment too); any
+   * animations when Freeze on Pause is on (the arena holds its moment too); any
    * other stop cancels them, showing the settled end.
    */
   const render = () => {

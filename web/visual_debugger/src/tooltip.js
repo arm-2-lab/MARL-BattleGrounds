@@ -30,9 +30,9 @@
  * icon, its approved name, its time left, what it does with the exact number
  * and where it comes from by class, and a line that drains as the ticks run
  * out; stuns first, then slows, then the rest; at most four, then "+N more"
- * with "Hold Shift For All"), and who plays it and "Your Target". A champion
+ * with "Hold Shift for All"), and who plays it and "Your Target". A champion
  * the viewing team cannot see gets the reduced card (name, calling, crest, ID
- * and "Unseen"); a fallen one shows life 0 and "Fallen · Returns In N" from
+ * and "Unseen"); a fallen one shows life 0 and "Fallen · Returns in N" from
  * its team's public wave clock. championCardFactsFromAgent reads a scene row into facts,
  * championCardModel turns facts into words and shares, renderChampionCard
  * draws it, and championCardText writes it as text.
@@ -42,7 +42,7 @@
  * The plain card is always one column ("Fewer rows", owner, 2 October 2026):
  * when the box is too short for all its rows, renderFittedChampionCard draws
  * it with as many rows as fit (at least one; championCardRowsThatFit decides
- * from measured heights), then "+N more · Hold Shift For All". Only the Hold
+ * from measured heights), then "+N more · Hold Shift for All". Only the Hold
  * Shift card spreads its rows into two (or, in a small window, three or four)
  * columns when it would be taller than the box; only when even that is too
  * tall is a card scaled down to fit. When the Hold Shift card would need a
@@ -53,7 +53,7 @@
  * places it).
  * Hold Shift (createShiftHold): Shift held by itself for about 300 ms
  * (CHAMPION_CARD_HOLD_MS) while the pointer rests on the champion shows every
- * status in place ("All 7 statuses", "Release Shift To Shrink"); releasing
+ * status in place ("All 7 statuses", "Release Shift to Shrink"); releasing
  * Shift, any other key, any click and any pointer movement shrink it at once,
  * so every Shift combination keeps its own job, and the gesture never sends
  * anything. Live play (BattleClient and DevClient combat screen) shows the
@@ -1143,7 +1143,7 @@ function measureTooltipForPlacement(input) {
  *   options.championCardBox returns an element with an area (the Replay
  *   Viewer's arena box), the plain card is drawn one column wide with as
  *   many status rows as fit that box (renderFittedChampionCard, at least
- *   one, then "+N more · Hold Shift For All") and placed fully inside it by
+ *   one, then "+N more · Hold Shift for All") and placed fully inside it by
  *   placeChampionCard, the live hover card's rules, whether the owner is an
  *   arena body or a docked frame outside the box; otherwise it shows up to
  *   four rows and is placed like any other card. The Hold Shift gesture
@@ -2113,7 +2113,7 @@ export const CHAMPION_CARD_BOX_MARGIN = 8;
  * - ultimate: the Ultimate's name ("Burst"), ticks until it is ready (0 means
  *   Ready) and its full recharge in ticks (null when unknown), or null.
  * - statuses: every status, in any order (the card sorts them).
- * - note: one extra muted line, or null: "Fallen · Returns In 3" or "Fallen"
+ * - note: one extra muted line, or null: "Fallen · Returns in 3" or "Fallen"
  *   for a fallen champion (championCardFactsFromAgent writes it), else null.
  * - you: true when the viewer plays this champion ("You play this champion").
  * - playedBy: who plays it ("tdm-beta"), or null.
@@ -2242,7 +2242,7 @@ function tickWords(count, titleCase = false) {
  * steps_until_out_of_combat, out_of_combat_delay_steps,
  * out_of_combat_health_regeneration_fraction_per_step and aura_modifiers
  * (aura_id, multiplier). A fallen champion shows life 0, no Ultimate or
- * status, and the note "Fallen · Returns In N" (N = its team's
+ * status, and the note "Fallen · Returns in N" (N = its team's
  * countdown_steps + 1 in context.respawnWaves, the public wave clock that the
  * HUD's fallen frame and the scorebug also count), or just "Fallen" when the
  * scene has no clock for its team; this is the one place the card's fallen
@@ -2368,7 +2368,7 @@ export function championCardFactsFromAgent(agent, context = {}) {
   const note = alive
     ? null
     : Number.isInteger(countdown) && countdown >= 0
-      ? `Fallen · Returns In ${countdown + 1}`
+      ? `Fallen · Returns in ${countdown + 1}`
       : "Fallen";
   return Object.freeze({
     state: /** @type {const} */ ("seen"),
@@ -2541,9 +2541,9 @@ export function championCardModel(facts, options = {}) {
 
 /**
  * Return the words of a Champion Card's footer line under its rows, or null
- * when it has none: ["+3 more", "Hold Shift For All"] when rows were left out
+ * when it has none: ["+3 more", "Hold Shift for All"] when rows were left out
  * (by the four-row limit, or by a short arena box's rowLimit), and ["All 7
- * statuses", "Release Shift To Shrink"] for the Hold Shift card when it shows
+ * statuses", "Release Shift to Shrink"] for the Hold Shift card when it shows
  * more than CHAMPION_CARD_STATUS_LIMIT rows (owner, 2 October 2026). A Hold
  * Shift card of four rows or fewer (a short arena box had cut the plain card)
  * has no footer, so it needs no extra height in that short box. Pure.
@@ -2552,9 +2552,9 @@ export function championCardModel(facts, options = {}) {
  * @returns {readonly [string, string] | null}
  */
 export function championCardFooter(model) {
-  if (model.more > 0) return [`+${model.more} more`, "Hold Shift For All"];
+  if (model.more > 0) return [`+${model.more} more`, "Hold Shift for All"];
   if (model.expanded && model.total > CHAMPION_CARD_STATUS_LIMIT) {
-    return [`All ${model.total} statuses`, "Release Shift To Shrink"];
+    return [`All ${model.total} statuses`, "Release Shift to Shrink"];
   }
   return null;
 }
@@ -2564,7 +2564,7 @@ export function championCardFooter(model) {
  * DOM stand-ins without element creation: the title, the ID line, then
  * "Unseen · ..." or "Life 77 / 80", "Burst 30 ticks", one line per status
  * row ("Burst (Damage Boost) · 5 ticks left · Its attacks deal ×1.5 damage.
- * From its own Ultimate."), the footer ("+2 more · Hold Shift For All"), the
+ * From its own Ultimate."), the footer ("+2 more · Hold Shift for All"), the
  * note, who plays it and "Your Target". Pure.
  *
  * @param {ChampionCardModel} model
@@ -2602,7 +2602,7 @@ export function championCardText(model) {
  * data-paint: the status icon from `icons.js`, the name with its effect in a
  * dimmer `small`, the time on the right, the sentence line and the drain
  * line), the footer (`div.champion-card__more`, championCardFooter: "+3 more"
- * and "Hold Shift For All", or "All 7 statuses" and "Release Shift To
+ * and "Hold Shift for All", or "All 7 statuses" and "Release Shift to
  * Shrink", with Shift drawn as a `kbd`), the note, "Played by ..."
  * (span.champion-card__played: one line, a long controller name cut with "…"
  * at the card's edge, the controller-name rule of controller-names.js) or
@@ -2715,7 +2715,7 @@ export function renderChampionCard(host, model) {
     const line = el("div", "champion-card__more");
     const [count, gesture] = footer;
     const hint = el("span", "champion-card__hint");
-    // "Hold Shift For All" with Shift drawn as a key.
+    // "Hold Shift for All" with Shift drawn as a key.
     const [before, after] = gesture.split("Shift");
     hint.append(before, el("kbd", "champion-card__key", "Shift"), after);
     line.append(el(model.more > 0 ? "b" : "span", "", count), hint);
@@ -2914,7 +2914,7 @@ export const CHAMPION_CARD_MAX_COLUMNS = 4;
  *
  * All the rows fit: they are all shown. Otherwise the card shows the most
  * leading rows (rows keep their order: stuns, then slows, then the rest) for
- * which frame, plus those rows, plus footer (the "+N more · Hold Shift For
+ * which frame, plus those rows, plus footer (the "+N more · Hold Shift for
  * All" line that appears once a row is left out) is no taller than
  * available. It always shows at least one row, even when one row does not
  * fit; placeChampionCard then scales that card down so it stays inside the
@@ -2973,7 +2973,7 @@ export function championCardRowsThatFit(input) {
  * Steps: draw championCardModel(facts) (at most CHAMPION_CARD_STATUS_LIMIT
  * rows, one column) and measure surface. When the card fits the box's height
  * less two CHAMPION_CARD_BOX_MARGIN, or it has one row or none, keep it.
- * Otherwise measure each row, the footer line ("+N more · Hold Shift For
+ * Otherwise measure each row, the footer line ("+N more · Hold Shift for
  * All"; when the card has none yet, it is drawn once with one row fewer to
  * measure it) and the rest of the card, ask championCardRowsThatFit how many
  * rows fit, and draw the card again with that rowLimit. The header, Life and
@@ -3646,7 +3646,7 @@ export function hoverCardSubject(element) {
  * inside the arena box that box() returns (#arena), never over the deck,
  * rail, Lock In, scorebug or top bar. The plain card is always one column:
  * renderFittedChampionCard draws it with as many status rows as fit the box
- * (at least one, then "+N more · Hold Shift For All"), every time it is drawn
+ * (at least one, then "+N more · Hold Shift for All"), every time it is drawn
  * or refreshed. placeChampionCard places it beside the pointer (or, for a
  * keyboard focus, beside the focused element's lower left corner), spreads
  * only the Hold Shift card into more columns, and keeps it 8 px inside the
@@ -3659,10 +3659,10 @@ export function hoverCardSubject(element) {
  * (placeChampionCard; its card root then has data-past-arena "true").
  *
  * Hold Shift (createShiftHold): when the card leaves rows out ("+3 more",
- * "Hold Shift For All", by the four-row limit or because the box is short)
+ * "Hold Shift for All", by the four-row limit or because the box is short)
  * and Shift is held by itself for CHAMPION_CARD_HOLD_MS while the pointer
  * rests on the champion, the card shows every status in place ("All 7
- * statuses", "Release Shift To Shrink"); releasing Shift, any other key, any
+ * statuses", "Release Shift to Shrink"); releasing Shift, any other key, any
  * click and any pointer movement shrink it back at once to the fitted plain
  * card. A card shown for a keyboard focus never expands. Expanding and
  * shrinking read the facts again, as refresh does.

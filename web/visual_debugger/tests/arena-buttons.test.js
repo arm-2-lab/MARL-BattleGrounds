@@ -1,7 +1,7 @@
 /**
  * @file Check the arena's on-screen key stack (src/arena-buttons.js
  * wireArenaButtons, and its markup in index.html): wiring shows the group;
- * a click on Everyone In View presses "v" through the one command set,
+ * a click on Everyone in View presses "v" through the one command set,
  * reaching the registered camera_everyone_in_view handler with the button as
  * the target, no modifier keys and the caller's context plus source
  * "arena_buttons"; in the Replay Viewer a click on Battle Cam presses "b"
@@ -72,7 +72,7 @@ function mount(product) {
   return { parts, wired };
 }
 
-test("Everyone In View presses V through the one command set", () => {
+test("Everyone in View presses V through the one command set", () => {
   /** @type {any[]} */
   const calls = [];
   const off = registerLocalCommandHandler(
@@ -106,7 +106,7 @@ test("Everyone In View presses V through the one command set", () => {
   }
 });
 
-test("Everyone In View and Battle Cam light while they are the camera and hide with the switch", () => {
+test("Everyone in View and Battle Cam light while they are the camera and hide with the switch", () => {
   const { parts, wired } = mount("replay_viewer");
   assert.equal(parts.everyoneInView.getAttribute("aria-pressed"), "false");
   assert.equal(parts.battleCam.getAttribute("aria-pressed"), "false");
@@ -188,7 +188,7 @@ test("index.html has the hidden group with the four key-only buttons in order", 
   assert.deepEqual(keys, [
     [
       "arena-everyone-in-view-button",
-      "Everyone In View",
+      "Everyone in View",
       '<kbd aria-hidden="true">V</kbd>',
     ],
     ["arena-battle-cam-button", "Battle Cam", '<kbd aria-hidden="true">B</kbd>'],

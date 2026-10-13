@@ -1438,7 +1438,7 @@ def write_outputs(record: Mapping[str, Any], output_dir: Path) -> None:
     table("head_to_head.csv", record["head_to_head"])
     table("alongside.csv", record["alongside"])
     table("field_record.csv", record.get("field_record", []))
-    lines = ["# The Person's Games Beside The Systems' Own", ""]
+    lines = ["# The Person's Games Beside the Systems' Own", ""]
     lines.append(
         "Found by screening many metrics in a few games: a description of these "
         "games, not a test."

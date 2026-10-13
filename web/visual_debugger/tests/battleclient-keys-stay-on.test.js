@@ -2,7 +2,7 @@
  * @file Check the keys and clicks rules of the BattleClient (owner, 3 October
  * 2026):
  * - keepKeysOnForTopBarPress (main.js) prevents the mouse press default on a
- *   button inside the top bar, on the arena's two on-screen keys (Everyone In
+ *   button inside the top bar, on the arena's two on-screen keys (Everyone in
  *   View and Frame Explanation), on the game-over Verdict card's two buttons
  *   and on the Match Summary sheet's Close (KEYS_KEPT_BUTTONS) only while
  *   the battlefield has focus and only
@@ -319,7 +319,7 @@ test("keys turning on make a stale keys-off status line true again", () => {
   blurred.paint();
   assert.deepEqual(blurred.notices, [], "keys off keep the sentence");
   assert.equal(blurred.chip.classList.on.off, true);
-  assert.equal(blurred.text.textContent, "Keys Off · Click The Arena");
+  assert.equal(blurred.text.textContent, "Keys Off · Click the Arena");
   const closed = keysPainter({ focused: true, shown: "", closed: true });
   closed.paint();
   assert.equal(closed.chip.classList.on.off, true, "no key works after Exit");

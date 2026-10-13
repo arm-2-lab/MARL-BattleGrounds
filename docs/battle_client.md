@@ -29,7 +29,7 @@ address and waits until you press Exit or Ctrl-C. The page ships in the package:
 | `port`, `replay_port` | `0` | Local ports for the game and for the analytical Replay Viewer that Open Replay starts; `0` picks a free one |
 | `output_dir`, `capture_replay` | `"./recordings"`, `True` | Where replays go, relative to your launch folder; `False` skips recording and its cost |
 
-## Controllers Per Slot
+## Controllers per Slot
 
 ```python
 from marl_battlegrounds.training import load_system
@@ -47,7 +47,7 @@ keeps its own memory. Policies choose from their own inputs and never see your o
 **Watch Out:** name a folder that looks like a built-in as `Path("my_actor")` or
 `"./my_actor"`, without symbolic links. Loading never changes a roster.
 
-## Play A Turn
+## Play a Turn
 
 ```python
 marl_bgs.battle_client(map_id=47, team_a="tdm-beta", team_b="tdm-alpha")  # no Manual slot: watch
@@ -95,13 +95,13 @@ its slot, so a list needs all five entries.
 **Watch Out:** passing `team_b`, a map, rosters, a seed, a rule or `spawn_mode` is rejected,
 even with the fixed value. One game proves nothing; use `evaluate_scenarios` ([evaluation.md](evaluation.md)).
 
-## Save And Continue
+## Save and Continue
 
 ```bash
 python -m marl_battlegrounds replay recordings/GAME.marlbg-replay.json
 ```
 
-A finished game saves itself in the background; Finish And Save keeps an unfinished
+A finished game saves itself in the background; Finish and Save keeps an unfinished
 game's turns. Open Replay shows it in the Replay Viewer, and the command above reopens any
 saved file. After Open Replay, Exit closes the game only: the call keeps serving the Replay
 Viewer until you exit it too or press Ctrl-C. Restart starts the same match with fresh memory and a new file. To measure a
@@ -113,7 +113,7 @@ method, save the game, exit and launch again (the client cannot undo your Python
 
 ## The Example Scripts
 
-From A Checkout (examples are not in the installed package):
+From a Checkout (examples are not in the installed package):
 
 ```bash
 python examples/play/prepare_battle_client.py --output actors --seed 17

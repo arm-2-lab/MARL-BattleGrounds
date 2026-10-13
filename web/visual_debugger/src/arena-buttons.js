@@ -1,7 +1,7 @@
 /**
  * @file The arena's on-screen keys, stacked at its top right, key only (owner,
  * 4 Oct 2026; earlier, 3 Oct: one button for each job, in the place that
- * leaves the battlefield the most room): V Everyone In View, B Battle Cam
+ * leaves the battlefield the most room): V Everyone in View, B Battle Cam
  * (Replay Viewer only), F Frame Explanation and Esc Clear Selection (Replay
  * Viewer only). Each button's name is its aria-label and its hover card
  * (main.js CONTROL_HELP); only its keycap shows. The Replay Viewer first, the
@@ -32,7 +32,7 @@ import { runLocalCommand } from "./command-set.js";
  *   context?: () => Readonly<Record<string, unknown>>,
  * }} ArenaButtonsOptions
  *   group: the #arena-buttons group (shown by wireArenaButtons);
- *   everyoneInView: its Everyone In View button (V); battleCam and
+ *   everyoneInView: its Everyone in View button (V); battleCam and
  *   clearSelection: its Battle Cam (B) and Clear Selection (Esc) buttons,
  *   used only in the Replay Viewer (default null; in live play they stay
  *   hidden); product: whose command table the keys use; cameraSlot: the

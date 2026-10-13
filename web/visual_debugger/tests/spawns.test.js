@@ -1,5 +1,5 @@
 /**
- * @file Checks the Spawns And Bases look (Moon Waystones, `src/looks/spawns.js`):
+ * @file Checks the Spawns and Bases look (Moon Waystones, `src/looks/spawns.js`):
  * records() states and opacities per claimed pad (Dormant 22%, Vigil 40% with
  * pips when Vigil Pips is off, quiet when it is on, Wake 60%), the rim gap facing
  * the nearer floor edge, Team B's extra inner ring, beat holds for a return and a

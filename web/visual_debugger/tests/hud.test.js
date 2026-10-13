@@ -202,7 +202,7 @@ test("Replay Viewer Agent POV lists the full record but limits tips on unseen ch
   assert.equal(ofKind(list, "hud_view")[0].fullRecord, true);
   assert.match(
     ofKind(list, "hud_view")[0].fullRecordLabel,
-    /^Full Record · Not Limited To Agent \d's View$/u,
+    /^Full Record · Not Limited to Agent \d's View$/u,
   );
   const seen = new Set(
     frame.scene.agents.map((/** @type {any} */ body) => body.public_agent_id),
@@ -717,7 +717,7 @@ test("built frames keep END in the DOM and add hidden before nodes for held beat
   const frame = root
     .querySelectorAll("[data-hud-symbol]")
     .find((node) => node.getAttribute("data-public-agent-id") === "agent-slot-1");
-  assert.match(frame?.textContent ?? "", /Returns In 3/u);
+  assert.match(frame?.textContent ?? "", /Returns in 3/u);
   assert.deepEqual(
     build(
       recordsOf(sources({ sceneAgents: [agent({})] }), {

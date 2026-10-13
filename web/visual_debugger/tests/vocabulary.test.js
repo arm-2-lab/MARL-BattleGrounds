@@ -149,7 +149,7 @@ test("status lifecycle copy identifies the exact durable status and applies life
     ["decremented", "Aged"],
     ["expired", "Expired"],
     ["trap_broken", "Broken"],
-    ["cleared_by_death", "Cleared On Death"],
+    ["cleared_by_death", "Cleared on Death"],
     ["cleared_unclassified", "Ended"],
     ["trap_broken_and_reapplied", "Broken, Then Reapplied"],
     ["reapplied", "Reapplied"],
@@ -166,7 +166,7 @@ test("status lifecycle copy identifies the exact durable status and applies life
           : trap && lifecycleTokenId === "trap_broken_and_reapplied"
             ? "Freezing Trap (Stun Broken), Then Reapplied"
             : lifecycleTokenId === "cleared_by_death"
-              ? `Cleared ${subject} On Death`
+              ? `Cleared ${subject} on Death`
               : lifecycleTokenId === "expired" && statusTokenId === "in_combat"
                 ? "Out of Combat"
                 : `${prefix} ${subject}`;
@@ -204,7 +204,7 @@ test("death clear is distinct from natural expiry and damage break", () => {
   const expired = resolveVisualToken("lifecycle", "expired");
   const damageBreak = resolveVisualToken("lifecycle", "trap_broken");
 
-  assert.equal(deathClear.label, "Cleared On Death");
+  assert.equal(deathClear.label, "Cleared on Death");
   assert.match(deathClear.accessibleName, /cleared because the champion fell/u);
   assert.notEqual(deathClear.glyphKey, expired.glyphKey);
   assert.notEqual(deathClear.glyphKey, damageBreak.glyphKey);
@@ -220,7 +220,7 @@ test("status compositor outcomes use the exact locked lifecycle vocabulary", () 
     reapplied: "Reapplied",
     trap_broken: "Freezing Trap (Stun Broken)",
     expired: "Expired",
-    cleared_by_death: "Cleared On Death",
+    cleared_by_death: "Cleared on Death",
   });
   for (const [tokenId, label] of Object.entries(labels)) {
     assert.equal(resolveVisualToken("lifecycle", tokenId).label, label, tokenId);

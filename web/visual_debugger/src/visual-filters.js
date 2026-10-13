@@ -202,7 +202,7 @@ export const VISUAL_FILTER_GROUPS = Object.freeze([
   "Arena",
   "Bodies",
   "Combat",
-  "Life And Death",
+  "Life and Death",
   "Moments",
   "Motion",
   "Vision",
@@ -337,7 +337,7 @@ const REGISTRY_ROWS = [
   ],
   [
     "status_clear_on_death",
-    "Status Clear On Death",
+    "Status Clear on Death",
     "Bodies",
     false,
     "arena",
@@ -347,7 +347,7 @@ const REGISTRY_ROWS = [
   [
     "death_effects",
     "Death Effects",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -356,7 +356,7 @@ const REGISTRY_ROWS = [
   [
     "respawn_wave",
     "Respawn Wave",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -365,7 +365,7 @@ const REGISTRY_ROWS = [
   [
     "resurrection_effects",
     "Resurrection Effects",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -374,7 +374,7 @@ const REGISTRY_ROWS = [
   [
     "spawn_shield_expiry",
     "Spawn Shield Expiry",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -392,7 +392,7 @@ const REGISTRY_ROWS = [
   [
     "death_announcer",
     "Fallen Feed",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -517,7 +517,7 @@ const REGISTRY_ROWS = [
   ],
   [
     "time_of_night",
-    "Time Of Night",
+    "Time of Night",
     "Arena",
     false,
     "arena",
@@ -789,7 +789,7 @@ const REGISTRY_ROWS = [
   [
     "vigil_pips",
     "Vigil Pips",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     BOTH,
@@ -798,7 +798,7 @@ const REGISTRY_ROWS = [
   [
     "kill_credit_glint",
     "Kill Credit Glint",
-    "Life And Death",
+    "Life and Death",
     false,
     "arena",
     BOTH,
@@ -815,7 +815,7 @@ const REGISTRY_ROWS = [
   ],
   [
     "moment_full_cards",
-    "Full Lineup And Verdict",
+    "Full Lineup and Verdict",
     "Moments",
     true,
     "arena",
@@ -838,7 +838,7 @@ const REGISTRY_ROWS = [
     true,
     "interface",
     BOTH,
-    "The camera switch: Whole Map, Everyone In View (V) and, in the Replay Viewer, Battle Cam (B). Off: the camera stays on Whole Map and V and B do nothing.",
+    "The camera switch: Whole Map, Everyone in View (V) and, in the Replay Viewer, Battle Cam (B). Off: the camera stays on Whole Map and V and B do nothing.",
   ],
   [
     "camera_change_tip",
@@ -847,7 +847,7 @@ const REGISTRY_ROWS = [
     true,
     "interface",
     BOTH,
-    "After each camera change, a short tip beside the switch says which camera is on and how to leave it, for example 'Everyone In View on · V: back to Whole Map'. It fades after about 4 seconds or at the next click or key. Off: no tip.",
+    "After each camera change, a short tip beside the switch says which camera is on and how to leave it, for example 'Everyone in View on · V: back to Whole Map'. It fades after about 4 seconds or at the next click or key. Off: no tip.",
   ],
   [
     "camera_tip",
@@ -987,7 +987,7 @@ const REGISTRY_ROWS = [
   ],
   [
     "freeze_on_pause",
-    "Freeze On Pause",
+    "Freeze on Pause",
     "HUD",
     true,
     "interface",
@@ -1410,7 +1410,7 @@ export function visualFilterPresetState(presetId) {
 /**
  * List the switches changed by hand: those whose value in state differs from
  * what presetId gives. The preset row shows the count, for example
- * "Researcher · 2 switches changed by hand", and Reset To Default Configuration
+ * "Researcher · 2 switches changed by hand", and Reset to Default Configuration
  * is grayed out when this list is empty for "default".
  *
  * @param {unknown} state A complete switch state (validated like every helper).
@@ -1647,7 +1647,7 @@ export function disableAllVisualFilters(state) {
  * state uses the shared state validator. action.type is one of:
  * - "set": exactly {type, filterId, enabled}; one switch changes.
  * - "enable_all" / "disable_all": exactly {type}; every switch on or off.
- * - "restore_defaults": exactly {type}; Reset To Default Configuration.
+ * - "restore_defaults": exactly {type}; Reset to Default Configuration.
  * - "apply_preset": exactly {type, presetId}; the preset's full state
  *   (visualFilterPresetState), which drops every change made by hand.
  *

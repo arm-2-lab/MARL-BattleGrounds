@@ -9,12 +9,12 @@
  * - The token-chip text "Agent 5" (the chip itself draws the class emblem in its
  *   team ring).
  * - The source name "Hunter ID 7", used in "from Hunter ID 7's Serrated Arrows".
- * - The Out Of Sight chip text "Warrior · ID 6 · Out Of Sight".
+ * - The Out of Sight chip text "Warrior · ID 6 · Out of Sight".
  * - The plain accessible identity "Agent ID 5".
  * - Class names (Mage, Warrior, Hunter, Rogue, Priest), team names ("Team A",
  *   "Team B" only) and tick counts ("1 Tick", "2 Ticks" for labels; "1 tick",
  *   "2 ticks" inside sentences).
- * - The Full Record chip words ("Full Record · Not Limited To Agent 3's View").
+ * - The Full Record chip words ("Full Record · Not Limited to Agent 3's View").
  *
  * `vocabulary.js` builds its class and team display tokens from the two tables
  * here, and `class-documentation.js` reads the class names, so each name has one
@@ -58,8 +58,8 @@
  * - publicIdentity: the plain accessible identity, for example "Agent ID 5".
  * - chipText: the token-chip text, for example "Agent 5".
  * - sourceName: the name used in source wording, for example "Mage ID 5".
- * - outOfSightLabel: the Out Of Sight chip text, for example
- *   "Mage · ID 5 · Out Of Sight".
+ * - outOfSightLabel: the Out of Sight chip text, for example
+ *   "Mage · ID 5 · Out of Sight".
  * - classLabel: "Mage" … "Priest", or "Unknown".
  * - teamLabel: "Team A", "Team B" or "Unknown". Labels above never carry it.
  * - accent: the class accent key, or "none" for an unknown class.
@@ -187,7 +187,7 @@ export function tickCountLabel(count) {
 }
 
 /**
- * Write the Full Record chip words: "Full Record · Not Limited To Agent 3's
+ * Write the Full Record chip words: "Full Record · Not Limited to Agent 3's
  * View".
  *
  * chipText is the POV agent's token-chip text ("Agent 3"), or null, undefined
@@ -203,7 +203,7 @@ export function tickCountLabel(count) {
 export function fullRecordChipWords(chipText) {
   const name =
     typeof chipText === "string" && chipText.trim() !== "" ? chipText : "This Agent";
-  return `Full Record · Not Limited To ${name}'s View`;
+  return `Full Record · Not Limited to ${name}'s View`;
 }
 
 /**
@@ -332,7 +332,7 @@ function formatIdentity(publicAgentId, classId, teamId, displayId) {
     publicIdentity: shownId === null ? "Agent ID unavailable" : `Agent ID ${shownId}`,
     chipText: shownId === null ? "Agent unavailable" : `Agent ${shownId}`,
     sourceName: `${classLabel} ${idText}`,
-    outOfSightLabel: `${classLabel} · ${idText} · Out Of Sight`,
+    outOfSightLabel: `${classLabel} · ${idText} · Out of Sight`,
     classLabel,
     teamLabel,
     accent: classIdentity?.tokenId ?? /** @type {const} */ ("none"),

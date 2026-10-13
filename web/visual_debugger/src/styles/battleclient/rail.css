@@ -2,11 +2,11 @@
  * BattleClient rail cards, ported from the approved vision page: the Your
  * Turn card (#turn-card: tick, title, set pill, the Guide / Hints / Off
  * switch, Do This Now, the four phases and the turn checklist), the Class
- * Guide (#class-card) and the short How To Play card (#howto-card). The rail
+ * Guide (#class-card) and the short How to Play card (#howto-card). The rail
  * frame itself (340 px, scrolls on its own) is in layout.css. src/tactics-turn.js
  * writes the card contents (checklist rows .cl-row with their Set, Default
  * or Fallen tag .cl-state, the Policies block .cl-pol, the Policies Only
- * line .cl-note, the Class Guide note .cg-note, and the How To Play lines)
+ * line .cl-note, the Class Guide note .cg-note, and the How to Play lines)
  * and moves the Guide level's dashed .beacon onto the control Do This Now
  * names.
  *
@@ -534,7 +534,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   color: var(--muted);
 }
 
-/* The short How To Play card: four numbered steps and Full Guide. */
+/* The short How to Play card: four numbered steps and Full Guide. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .htmini
@@ -618,7 +618,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 }
 
 /* Frame Explanation list (F). src/main.js inserts #frame-explanation-list
-   after the hidden #this-turn slot, which sits under the How To Play card,
+   after the hidden #this-turn slot, which sits under the How to Play card,
    below the bottom of the screen. The rail is a flex column, so order puts
    the Your Turn card first and the list right under it, where the reader
    looks after pressing F; every other rail child keeps its markup order.

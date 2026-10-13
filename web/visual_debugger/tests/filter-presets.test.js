@@ -8,11 +8,13 @@
  * or a "palette" setting, and every preset keeps the High Contrast switch at
  * its default, on; applying a preset drops hand changes and the "changed
  * by hand" list counts the switches that differ from the preset in use; Reset
- * To Default Configuration returns the shipped defaults; and a banned-word
+ * to Default Configuration returns the shipped defaults; and a banned-word
  * scan of every switch label, help line, group, preset text and command help
  * line (no Host, Azure, Crimson, today, Mock, Blue, Red as a team name, or the
  * retired names; "pale blue", the Rest color, and "Red Zone" are allowed), plus
- * Title Case labels and a help line that says what Off shows.
+ * Title Case labels in AP style (short words such as "and", "of" and "on" are
+ * lowercase unless they come first or last) and a help line that says what
+ * Off shows.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -30,6 +32,11 @@ import {
   visualFilterHandChanges,
   visualFilterPresetState,
 } from "../src/visual-filters.js";
+
+// AP headline style: these words are lowercase inside a label.
+const AP_SMALL_WORDS = new Set(
+  "a an the and but or nor as at by for in of on per to via vs so yet".split(" "),
+);
 
 /** @param {string[]} on @param {string[]} off */
 function choices(on, off) {
@@ -215,7 +222,7 @@ test("four presets, Default Configuration first, with the approved switch choice
     assert.ok(entry.purpose.length > 10);
   }
   // Broadcast is gone; the owner's defaults keep its motes and dimming on and
-  // Time Of Night off (4 Oct 2026).
+  // Time of Night off (4 Oct 2026).
   assert.throws(() => visualFilterPresetState("broadcast"), RangeError);
   for (const [id, on] of /** @type {const} */ ([
     ["moon_motes", true],
@@ -319,7 +326,7 @@ test("applying a preset drops hand changes; the hand-change list counts differen
   );
 });
 
-test("Reset To Default Configuration returns the shipped defaults from any state", () => {
+test("Reset to Default Configuration returns the shipped defaults from any state", () => {
   for (const id of VISUAL_FILTER_PRESET_IDS) {
     const state = setVisualFilterEnabled(
       visualFilterPresetState(id),
@@ -344,9 +351,16 @@ test("labels and help follow the owner's naming rules; help always says what Off
   const texts = [];
   for (const { id, label, help, group } of VISUAL_FILTER_REGISTRY) {
     texts.push([`${id}.label`, label], [`${id}.help`, help], [`${id}.group`, group]);
-    for (const word of label.split(" ")) {
-      assert.match(word, /^[A-Z0-9]/u, `${id} label "${label}" is not Title Case`);
-    }
+    const words = label.split(" ");
+    words.forEach((word, index) => {
+      const inside = index > 0 && index < words.length - 1;
+      const small = inside && AP_SMALL_WORDS.has(word.toLowerCase());
+      assert.match(
+        word,
+        small ? /^[a-z]/u : /^[A-Z0-9]/u,
+        `${id} label "${label}" is not AP Title Case`,
+      );
+    });
     assert.match(help, /\bOff\b/u, `${id} help must say what Off shows`);
     assert.ok(VISUAL_FILTER_GROUPS.includes(group), id);
   }

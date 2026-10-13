@@ -719,7 +719,7 @@ function audienceSources(frame, scene, visualFilters) {
       : null;
   // The tick after this transition; on a frame with no transition into it (a
   // fresh start or an installed start such as tick 299) the presentation's own
-  // public tick, so a still shows the Time Of Night step for its tick.
+  // public tick, so a still shows the Time of Night step for its tick.
   const tick = Number.isInteger(events?.incoming_successor_simulator_step_count)
     ? Number(events?.incoming_successor_simulator_step_count)
     : authorizedPresentationCurrentTick(frame);

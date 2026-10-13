@@ -1,6 +1,6 @@
 /*
  * The Replay Viewer rail's contents (src/ledger.js and src/metrics-panel.js):
- * the Metrics card (its header with Scope, Topic, View and Find A
+ * the Metrics card (its header with Scope, Topic, View and Find a
  * Measurement, a fixed block above the scrolling card in the Replay Viewer,
  * the Match Summary and the measurement table), the Technical
  * Frame groups (This Frame, This Game, This File) with Copy, the Replay File
@@ -55,7 +55,7 @@
   display: contents;
 }
 
-/* Ledger header: Scope, Topic, View and Find A Measurement. In the Replay
+/* Ledger header: Scope, Topic, View and Find a Measurement. In the Replay
    Viewer it is its own block at the top of the Metrics tab, outside the card
    that scrolls (owner, 4 Oct 2026: nothing scrolls behind it); the rules here
    are scoped to the card or the tab so they reach it in either place. */
@@ -373,7 +373,7 @@
   font-weight: 400;
 }
 
-/* Find A Measurement results: three lines, Moon Silver active option. */
+/* Find a Measurement results: three lines, Moon Silver active option. */
 :is(#evaluation-metrics.ledger, #replay-rail-metrics) .metric-search-results {
   border: 1px solid rgb(201 212 232 / 45%);
   border-radius: 6px;

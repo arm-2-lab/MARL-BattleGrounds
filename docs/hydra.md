@@ -4,7 +4,7 @@ Compose experiment settings from YAML and command-line overrides, preview them a
 
 Website: https://marl-battlegrounds.com/#configs
 
-## Install And Preview
+## Install and Preview
 
 ```bash
 pip install "marl-battlegrounds[training,hydra]"
@@ -31,7 +31,7 @@ does. `output_dir` is the exact run folder; Hydra's records go beside it in
 `runs/demo.launches/<launch-id>/` (or under `artifacts/experiments/` without it).
 Relative paths start from the folder you launch in.
 
-## Groups And Overrides
+## Groups and Overrides
 
 ```bash
 python -m marl_battlegrounds.experiments.train preview=true pool=scripted curriculum_preset=staged resources=cpu 'ppo.critic_lr=${ppo.actor_lr}'
@@ -75,7 +75,7 @@ them with one set of recovery rules and reports. `output_dir` is the study folde
 must suit every method in the sweep. Running a sweep again into its old folder
 is not a resume: use `study run --resume-from`.
 
-## Run A Declared Study
+## Run a Declared Study
 
 ```bash
 python -m marl_battlegrounds.experiments.study declaration=my_study.json output_dir=runs/my-study
@@ -97,7 +97,7 @@ an installed source or input file that changed after launch: start long studies 
 Inside a Git checkout, write outputs to an ignored folder (`runs/`, `outputs/`,
 `artifacts/`) or outside it. Tiny cases need `"keep_past": 0`.
 
-## Devices And Workers
+## Devices and Workers
 
 ```bash
 python -m marl_battlegrounds.experiments.train recipe=software_check 'resources={devices:[{device:GPU-00000000-0000-0000-0000-000000000000,max_workers:1,memory_fraction:0.5}]}'
@@ -122,7 +122,7 @@ python -m marl_battlegrounds.experiments.train --config-name resume resume_from=
 Omitted settings come from the saved run. A supplied setting is only checked: the second
 command fails unless the run used `3e-4`. To change future settings, use `extend_training` ([training.md](training.md)).
 
-## Evaluate A Saved Model
+## Evaluate a Saved Model
 
 ```bash
 python examples/evaluate/evaluate_qmix.py checkpoint=MODEL evaluation.output_dir=runs/evaluation

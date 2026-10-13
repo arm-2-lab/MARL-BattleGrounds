@@ -1,9 +1,9 @@
 /**
- * @file The Fog And Vision look: in Agent POV, the Sight Reach veil, the
+ * @file The Fog and Vision look: in Agent POV, the Sight Reach veil, the
  * recipient rim, the Last Seen ring and the Spotted Glint. Oracle View draws
  * nothing.
  *
- * What it draws (store part "Fog And Vision", plan P18 and P19):
+ * What it draws (store part "Fog and Vision", plan P18 and P19):
  * - Sight veil (`pov_sight_veil`, the Stone Shadows look): every blind spot
  *   of the viewing team is darkened with Ink at 45%: the floor beyond its
  *   living sensors' sight reach and the shadows that stones cast. The lit
@@ -100,7 +100,7 @@ import {
  */
 
 /**
- * The fixed numbers of this look, from the store (Fog And Vision, Stone
+ * The fixed numbers of this look, from the store (Fog and Vision, Stone
  * Shadows) and plan P18. Lengths ending in Factor multiply the body radius R in
  * CSS pixels; Ms values are milliseconds of 1x tick time; opacities are 0..1.
  */

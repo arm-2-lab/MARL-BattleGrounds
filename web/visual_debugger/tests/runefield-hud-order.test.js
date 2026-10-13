@@ -135,15 +135,15 @@ test("Agent POV, Oracle View and the BattleClient all keep shown-ID order", () =
 
 test("the Full Record chip names the POV agent like its strip frame", () => {
   const list = records({ sources: sources({}) });
-  assert.equal(label(list), "Full Record · Not Limited To Agent 0's View");
+  assert.equal(label(list), "Full Record · Not Limited to Agent 0's View");
   const own = list.find(
     (record) => record.kind === "champion" && record.publicAgentId === "agent-slot-0",
   );
-  assert.equal(label(list), `Full Record · Not Limited To ${own?.chipText}'s View`);
+  assert.equal(label(list), `Full Record · Not Limited to ${own?.chipText}'s View`);
   assert.doesNotMatch(String(label(list)), /agent-slot/u);
   assert.equal(
     label(records({ sources: sources({ recipientPublicAgentId: null }) })),
-    "Full Record · Not Limited To This Agent's View",
+    "Full Record · Not Limited to This Agent's View",
   );
   assert.equal(
     label(
@@ -172,6 +172,6 @@ test("on a recorded Replay Viewer Agent POV frame the chip matches the POV agent
       record.publicAgentId === gathered?.recipientPublicAgentId,
   );
   assert.ok(own);
-  assert.equal(label(list), `Full Record · Not Limited To ${own.chipText}'s View`);
-  assert.match(String(label(list)), /^Full Record · Not Limited To Agent \d's View$/u);
+  assert.equal(label(list), `Full Record · Not Limited to ${own.chipText}'s View`);
+  assert.match(String(label(list)), /^Full Record · Not Limited to Agent \d's View$/u);
 });

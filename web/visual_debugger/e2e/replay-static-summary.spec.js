@@ -29,7 +29,7 @@ test.use({ screenshot: "off" });
 
 const FILTER_INPUT = 'input[type="checkbox"][data-visual-filter-id]';
 // The Visuals tab shows only the Replay Viewer's switches; the count line reads
-// "N Of M On" where M adds one for the Ranges button.
+// "N of M On" where M adds one for the Ranges button.
 const REPLAY_FILTER_IDS = visualFiltersForProduct("replay_viewer").map(({ id }) => id);
 // Status lifecycle events paint nothing on the arena now, so the selective
 // filter proof turns off Ultimates, whose routes and cues are placed here.
@@ -1113,7 +1113,7 @@ test("paused replay installs a complete deterministic static summary at both sup
     (id) => /** @type {Record<string, boolean>} */ (DEFAULT_VISUAL_FILTER_STATE)[id],
   ).length;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${defaultOn} Of ${REPLAY_FILTER_IDS.length + 1} On`,
+    `${defaultOn} of ${REPLAY_FILTER_IDS.length + 1} On`,
   );
   // This full-summary proof explicitly requests every paint family while
   // keeping ranges and target selection off.
@@ -1126,7 +1126,7 @@ test("paused replay installs a complete deterministic static summary at both sup
     );
   }
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${REPLAY_FILTER_IDS.length - 1} Of ${REPLAY_FILTER_IDS.length + 1} On`,
+    `${REPLAY_FILTER_IDS.length - 1} of ${REPLAY_FILTER_IDS.length + 1} On`,
   );
 
   /** @type {Awaited<ReturnType<typeof staticDomSignature>> | null} */

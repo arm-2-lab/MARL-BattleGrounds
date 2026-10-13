@@ -381,7 +381,7 @@ def test_complete_screen_keeps_shared_task_once_and_renders_actual_axes(
     svg = Path(result["artifacts"]["svg"]).read_text()
     assert "Elapsed Run Time (Minutes, Including Overhead)" in svg
     assert "Environment Transitions" in svg
-    assert "Change In Kills Minus Deaths Per Game" in svg
+    assert "Change in Kills Minus Deaths per Game" in svg
     assert "Win = 1, Draw = 0.5, Loss = 0" in svg
     assert "Validation Red Zone: Unknown (not recorded)" in svg
     assert all(row["red_zone_depth"] == "" for row in initial_points + cells)
@@ -403,7 +403,7 @@ def test_complete_screen_keeps_shared_task_once_and_renders_actual_axes(
     assert "first case pays" in summary
     assert "Wins are not required" in summary
     assert "They do not show that nothing was learned" in summary
-    assert "Kills / Deaths Per Game" in summary
+    assert "Kills / Deaths per Game" in summary
     assert "Paired Game Interval: +2.00 to +2.00" in summary
     assert "30s" in summary
     assert all((package / name).read_bytes() == value for name, value in before.items())

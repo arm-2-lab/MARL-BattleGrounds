@@ -585,7 +585,7 @@ def test_a_pqn_report_uses_its_settings_summary_line_and_figure(
     assert report["runs"][0]["input_scale"] == 1.0
     assert report["runs"][0]["spawn_frame"] == "left"
     assert Path(report["artifacts"]["pqn_png"]).read_bytes().startswith(b"\x89PNG")
-    assert "Share Of Used Pairs" in Path(report["artifacts"]["pqn_svg"]).read_text()
+    assert "Share of Used Pairs" in Path(report["artifacts"]["pqn_svg"]).read_text()
     header = Path(report["artifacts"]["curve"]).read_text().splitlines()[0]
     assert "used_prefix_td_pairs" in header and "used_exposure" not in header
     summary = Path(report["artifacts"]["summary"]).read_text()

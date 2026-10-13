@@ -4,7 +4,7 @@
  * draw on the Replay Viewer battlefield (a frozen list that must still match the
  * registry, now with High Contrast, Next Step Ghost and All Staged Orders) and the camera frame, a
  * world rectangle that is the painted map for Whole Map when no camera is given;
- * Everyone In View and Battle Cam frames are recorded as given and malformed frames
+ * Everyone in View and Battle Cam frames are recorded as given and malformed frames
  * are rejected. Version-4 provenance (version 5 without High Contrast),
  * version-3 provenance with its 70 filters and a camera frame,
  * version-2 provenance with its 20 filters and version-1 provenance with its 19

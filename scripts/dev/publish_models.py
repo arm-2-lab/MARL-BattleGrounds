@@ -1178,7 +1178,7 @@ def model_card(
     -------
     str
         Hugging Face YAML metadata, then the card in plain English, ending
-        with "Cite This Work" and "License And Contact".
+        with "Cite This Work" and "License and Contact".
 
     Raises
     ------
@@ -1267,7 +1267,7 @@ teammate, an evaluation and the BattleClient. Each file downloads once and is
 checked against `steps.csv` before use. The
 [Released Models guide]({GUIDE_URL}) shows the whole workflow.
 
-### Train Against A Ladder Of Its Saves
+### Train Against a Ladder of Its Saves
 
 ```python
 from marl_battlegrounds import training
@@ -1303,7 +1303,7 @@ input scale must match this model's. Training state is not released, so a
 released run cannot continue exactly where it stopped; start a new run from any
 save instead.
 
-### Choose A Save By Its Validation Result
+### Choose a Save by Its Validation Result
 
 ```python
 import csv
@@ -1317,7 +1317,7 @@ best = max(rows, key=lambda row: float(row["validation_point_margin"]))
 system = marl_bgs.load_method(f"{{name}}@{{best['step']}}")
 ```
 
-### Offline Use And Clusters
+### Offline Use and Clusters
 
 ```bash
 python -m marl_battlegrounds models download {name}@final
@@ -1327,7 +1327,7 @@ HF_HUB_OFFLINE=1 python my_experiment.py
 The first command fills the Hugging Face cache. With `HF_HUB_OFFLINE=1`, later
 runs, for example on compute nodes that share the cache, never use the network.
 
-### Download The Files Yourself
+### Download the Files Yourself
 
 ```bash
 hf download {name} --local-dir {model.repo}
@@ -1339,7 +1339,7 @@ second fetches one file. A downloaded folder takes the same `@` names, as in
 `marl_bgs.load_method("{model.repo}@100M")`, and one file loads by its path,
 as in `marl_bgs.load_method("{model.repo}/models/{model_file_name(near)}")`.
 
-## What Is In This Repository
+## What Is in This Repository
 
 | Path | Holds |
 |---|---|
@@ -1352,7 +1352,7 @@ as in `marl_bgs.load_method("{model.repo}/models/{model_file_name(near)}")`.
 Both runs hold the save at step {boundary:,}; this repository releases the first
 run's copy.
 
-## Validation Results In `steps.csv`
+## Validation Results in `steps.csv`
 
 During training, the run checked some saves against a fixed panel: \
 {_members_text(panel)}, on validation maps {_numbers_text(panel.maps)}, \
@@ -1387,7 +1387,7 @@ Every Season 0 game, rating and original save folder is in the dataset
 [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
 {citation_section(*citation)}
-## License And Contact
+## License and Contact
 
 Apache-2.0. Questions: {CONTACT}.
 """  # noqa: E501
@@ -1664,7 +1664,7 @@ paths: saved descriptions and records now name models by their released names
 and dataset addresses, and the weights are byte-identical.
 
 {citation_section(*citation)}
-## License And Contact
+## License and Contact
 
 Apache-2.0. Questions: {CONTACT}.
 """  # noqa: E501
@@ -1911,7 +1911,7 @@ The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package,
 so the Season 0 field is nine. Every game, rating and original save folder is in
 the dataset [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
-## Use One In Three Lines
+## Use One in Three Lines
 
 ```python
 import marl_battlegrounds as marl_bgs

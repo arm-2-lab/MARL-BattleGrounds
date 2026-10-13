@@ -10,7 +10,7 @@
  *   play the rest." only when a policy plays, and how to order another
  *   champion; Policies Only names Run, Play One Turn and Pause and no order
  *   keys.
- * - gameOverStep: the game-over step offers Finish And Save only while that
+ * - gameOverStep: the game-over step offers Finish and Save only while that
  *   button works, says the game saved once it has, says "Saving the replay…"
  *   while the server saves in the background, and names Retry Save and Save
  *   As after a failed save.
@@ -66,7 +66,7 @@ test("the first sentence counts your champions on each team", () => {
   );
 });
 
-test("How To Play is the vision's card for one champion and true for the rest", async () => {
+test("How to Play is the vision's card for one champion and true for the rest", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   const card = html.slice(html.indexOf('id="howto-card"'));
   const list = card.slice(card.indexOf("<ol>") + 4, card.indexOf("</ol>"));
@@ -96,7 +96,7 @@ test("How To Play is the vision's card for one champion and true for the rest", 
 test("the game-over step names only what the save state offers", () => {
   assert.equal(
     gameOverStep({ lifecycle: "recording", finish_available: true }),
-    "The game is over. Press Restart for a new match, or Finish And Save.",
+    "The game is over. Press Restart for a new match, or Finish and Save.",
   );
   for (const lifecycle of ["saved", "reviewing"]) {
     const step = gameOverStep({ lifecycle, finish_available: false });
@@ -104,7 +104,7 @@ test("the game-over step names only what the save state offers", () => {
       step,
       "The game is over and saved. Press Restart for a new match, or Open Replay to watch it.",
     );
-    assert.doesNotMatch(step, /Finish And Save/u);
+    assert.doesNotMatch(step, /Finish and Save/u);
   }
   for (const lifecycle of ["sealed", "finalized_unsaved"]) {
     assert.equal(gameOverStep({ lifecycle }), "The game is over. Saving the replay…");
@@ -119,10 +119,10 @@ test("the game-over step names only what the save state offers", () => {
       "The game is over. Press Restart for a new match.",
     );
   }
-  // A recording that cannot finish any more never offers Finish And Save.
+  // A recording that cannot finish any more never offers Finish and Save.
   assert.doesNotMatch(
     gameOverStep({ lifecycle: "recording", finish_available: false }),
-    /Finish And Save/u,
+    /Finish and Save/u,
   );
 });
 

@@ -161,18 +161,18 @@ async function source(name) {
 test("the Full Record words have one owner that every caller uses", async () => {
   assert.equal(
     fullRecordChipWords("Agent 3"),
-    "Full Record · Not Limited To Agent 3's View",
+    "Full Record · Not Limited to Agent 3's View",
   );
   for (const unknown of [null, undefined, "", "  "]) {
     assert.equal(
       fullRecordChipWords(unknown),
-      "Full Record · Not Limited To This Agent's View",
+      "Full Record · Not Limited to This Agent's View",
     );
   }
   for (const file of ["panels.js", "ledger.js", "looks/hud.js"]) {
     const code = await source(file);
     assert.match(code, /fullRecordChipWords\(/u, file);
-    assert.doesNotMatch(code, /Not Limited To \$\{/u, file);
+    assert.doesNotMatch(code, /Not Limited to \$\{/iu, file);
   }
 });
 
@@ -290,7 +290,7 @@ test("the scorebug draws its goal and wave pips", async () => {
   assert.equal(lit(teams[1]), 5);
   assert.equal(
     teams[1].byClass("match-strip__waves")[0].getAttribute("aria-label"),
-    "Next Wave In 1 Tick",
+    "Next Wave in 1 Tick",
   );
 });
 

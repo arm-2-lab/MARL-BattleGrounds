@@ -28,7 +28,7 @@ test("the control-help table speaks plain English", () => {
     /authoriz|immutable|captured|transition|Python|artifact|serialized|clamped|deterministic|prefix|wire/iu,
   );
   for (const row of [
-    '["#help-button", "How To Play", "Open the guide to the keys and controls."]',
+    '["#help-button", "How to Play", "Open the guide to the keys and controls."]',
     '"Close the client and stop its server safely."',
     '"Start a new match. If this game is not saved, you choose Save, Discard or Cancel first."',
     '"Drag to pick a tick; the replay jumps there when you let go."',

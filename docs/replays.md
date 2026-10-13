@@ -4,7 +4,7 @@ Record chosen games, watch them tick by tick in the analytical Replay Viewer and
 
 Website: https://marl-battlegrounds.com/#record
 
-## Record A Replay
+## Record a Replay
 
 ```python
 import marl_battlegrounds as marl_bgs
@@ -24,7 +24,7 @@ A replay is one saved game: every tick, every agent's view and every event.
 
 **Watch Out:** without `output_dir` a replay stays in memory and has no file to open.
 
-## Choose Which Games To Record
+## Choose Which Games to Record
 
 ```python
 result = marl_bgs.evaluate(
@@ -42,7 +42,7 @@ needs full metrics, and full metrics never need a replay.
 training; record the checkpoints you care about later, in a separate evaluation.
 Recording never changes which games are played ([Same Seed, Same Game](evaluation.md#same-seed-same-game)).
 
-## Open The Replay Viewer
+## Open the Replay Viewer
 
 ```bash
 python -m marl_battlegrounds replay PATH/TO/game.marlbg-replay.json
@@ -111,7 +111,7 @@ Saving never overwrites a file.
 python -m marl_battlegrounds replay examples/replays/v1/mirrored-five-class-ultimates.marlbg-replay.json
 ```
 
-**From A Checkout:** [`examples/replays/v1/`](../examples/replays/v1/) holds three short scripted V1 games, each with
+**From a Checkout:** [`examples/replays/v1/`](../examples/replays/v1/) holds three short scripted V1 games, each with
 a `.marlbg-metrics.json` report. They show mechanics; they are not benchmark results.
 
 | File | What It Shows | Frames |

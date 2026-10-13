@@ -8,7 +8,7 @@
  * Full Record chip only in Replay Viewer Agent POV; and the BattleClient Agent
  * POV boundary: an unseen champion's roster row reads "Unseen" with no life,
  * status or modifier (a seen row shows the shared Life bar, "Life" and
- * "200 / 200"), and its selected details read Out Of Sight with no facts;
+ * "200 / 200"), and its selected details read Out of Sight with no facts;
  * its Pending Manual Actions card shows only the POV agent's own staged order,
  * taken from its own POV draft, and reads "Not Observed" (no move, target or
  * code) for every other staged order (a teammate's or another team's); the
@@ -269,7 +269,7 @@ test("only the Replay Viewer's Agent POV panels carry the Full Record chip", asy
   assert.ok(recipient);
   assert.equal(
     fullRecordLabel(replayPov),
-    `Full Record · Not Limited To Agent ${recipient.agent.display_agent_id}'s View`,
+    `Full Record · Not Limited to Agent ${recipient.agent.display_agent_id}'s View`,
   );
   assert.equal(fullRecordLabel(await presentation("replay_oracle")), null);
   assert.equal(
@@ -328,7 +328,7 @@ test("BattleClient Agent POV panels show unseen champions as Unseen only", async
       assert.match(dom.text(row.health), /^(?:Life \d+ +\/ \d+|Fallen)/u);
     }
     const details = dom.text(nodes.selectionCard);
-    assert.match(details, /Out Of Sight/u);
+    assert.match(details, /Out of Sight/u);
     assert.match(details, /Unseen/u);
     assert.doesNotMatch(details, /Life|Right Now|Statuses|Class Overview/u);
   });

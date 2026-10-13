@@ -6,15 +6,15 @@
  * switch, then the Replay Viewer's Next Step Ghost and All Staged Orders,
  * both off), with no switch for an unbuilt part such as instant replay, none
  * of the removed Chronicle and Scribe's Ledger switches (Fight Chapters,
- * Bookmarks, Ledger Heraldry, Actions In Words, Seen And Not Seen, Reference
+ * Bookmarks, Ledger Heraldry, Actions in Words, Seen and Not Seen, Reference
  * Chip) and no Camera Inset; the owner's 4 Oct 2026 defaults (High Contrast,
  * Class Seals, Moon Motes, Death Dimming, Spawn Shield Expiry, Saved Beat,
  * Champion Streaks, Momentum, Kill Cam and Kill Slow Motion on; Moonlight,
- * Floor Grid and Time Of Night off); each
+ * Floor Grid and Time of Night off); each
  * with its exact label, group, default, surface (arena or interface) and
  * products; the twelve V5 switches the shared looks draw (Class Seals, Kill
  * Credit Glint, Saved Beat, Last Breath, Battle Text Detail, Aura Glints,
- * Barrier Held, Spawn Shield Expiry, Status Clear On Death, Freezing Trap
+ * Barrier Held, Spawn Shield Expiry, Status Clear on Death, Freezing Trap
  * Break, Champion Streaks and Momentum) listed in both live play and the
  * Replay Viewer; 79 switches on by
  * default; the v4 paint key; one switch list per product (95 in the Replay
@@ -73,13 +73,13 @@ const EXPECTED_FILTERS = Object.freeze([
   ["status_application", "Status Application", "Bodies", true, "arena", "both"],
   ["natural_status_expiry", "Natural Status Expiry", "Bodies", true, "arena", "both"],
   ["freezing_trap_break", "Freezing Trap Break", "Bodies", true, "arena", "both"],
-  ["status_clear_on_death", "Status Clear On Death", "Bodies", false, "arena", "both"],
-  ["death_effects", "Death Effects", "Life And Death", true, "arena", "both"],
-  ["respawn_wave", "Respawn Wave", "Life And Death", true, "arena", "both"],
+  ["status_clear_on_death", "Status Clear on Death", "Bodies", false, "arena", "both"],
+  ["death_effects", "Death Effects", "Life and Death", true, "arena", "both"],
+  ["respawn_wave", "Respawn Wave", "Life and Death", true, "arena", "both"],
   [
     "resurrection_effects",
     "Resurrection Effects",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     "both",
@@ -87,13 +87,13 @@ const EXPECTED_FILTERS = Object.freeze([
   [
     "spawn_shield_expiry",
     "Spawn Shield Expiry",
-    "Life And Death",
+    "Life and Death",
     true,
     "arena",
     "both",
   ],
   ["scrolling_battle_text", "Scrolling Battle Text", "Combat", true, "arena", "both"],
-  ["death_announcer", "Fallen Feed", "Life And Death", true, "arena", "both"],
+  ["death_announcer", "Fallen Feed", "Life and Death", true, "arena", "both"],
   ["red_zone_floors", "Red Zone Floors", "Arena", true, "arena", "both"],
   ["map_skins", "Map Skins", "Arena", true, "arena", "both"],
   ["moonlight", "Moonlight", "Arena", false, "arena", "both"],
@@ -107,7 +107,7 @@ const EXPECTED_FILTERS = Object.freeze([
   ["red_zone_home_fall", "Red Zone Home Fall", "Moments", true, "arena", "both"],
   ["soft_glow", "Soft Glow", "Combat", true, "arena", "both"],
   ["moon_motes", "Moon Motes", "Arena", true, "arena", "both"],
-  ["time_of_night", "Time Of Night", "Arena", false, "arena", "both"],
+  ["time_of_night", "Time of Night", "Arena", false, "arena", "both"],
   ["death_dimming", "Death Dimming", "Moments", true, "arena", "both"],
   ["pov_sight_veil", "Sight Reach Veil", "Vision", true, "arena", "both"],
   ["pov_recipient_rim", "Agent POV Rim", "Vision", true, "arena", "replay_viewer"],
@@ -137,10 +137,10 @@ const EXPECTED_FILTERS = Object.freeze([
   ["saved_beat", "Saved Beat", "Moments", true, "arena", "both"],
   ["last_breath", "Last Breath", "Combat", false, "arena", "both"],
   ["battle_text_detail", "Battle Text Detail", "Combat", false, "arena", "both"],
-  ["vigil_pips", "Vigil Pips", "Life And Death", true, "arena", "both"],
-  ["kill_credit_glint", "Kill Credit Glint", "Life And Death", false, "arena", "both"],
+  ["vigil_pips", "Vigil Pips", "Life and Death", true, "arena", "both"],
+  ["kill_credit_glint", "Kill Credit Glint", "Life and Death", false, "arena", "both"],
   ["match_moments", "Match Moments", "Moments", true, "arena", "both"],
-  ["moment_full_cards", "Full Lineup And Verdict", "Moments", true, "arena", "both"],
+  ["moment_full_cards", "Full Lineup and Verdict", "Moments", true, "arena", "both"],
   ["champion_streaks", "Champion Streaks", "Moments", true, "arena", "both"],
   ["camera_framing", "Camera Framing", "Camera", true, "interface", "both"],
   ["camera_change_tip", "Camera Change Tip", "Camera", true, "interface", "both"],
@@ -187,7 +187,7 @@ const EXPECTED_FILTERS = Object.freeze([
     "replay_viewer",
   ],
   ["beat_label", "Beat Label", "HUD", true, "interface", "replay_viewer"],
-  ["freeze_on_pause", "Freeze On Pause", "HUD", true, "interface", "replay_viewer"],
+  ["freeze_on_pause", "Freeze on Pause", "HUD", true, "interface", "replay_viewer"],
   ["hide_marks_ahead", "Hide Marks Ahead", "HUD", false, "interface", "replay_viewer"],
   ["class_guide", "Class Guide", "Panels", true, "interface", "both"],
   ["ledger_summary", "Match Summary", "Panels", true, "interface", "replay_viewer"],

@@ -105,10 +105,10 @@ test("Red Zone metrics separate kills from points with keyboard search and help"
       ["red_zone", "Red Zone"],
     ]);
 
-    // Up To Tick 0: counts are real zeros, shares are dashes.
+    // Up to Tick 0: counts are real zeros, shares are dashes.
     await page.locator("#metric-selection").selectOption("red_zone");
     await expect(page.locator("#metric-view-field")).toBeHidden();
-    await expect(page.locator("#metric-status")).toHaveText("Up To Tick 0");
+    await expect(page.locator("#metric-status")).toHaveText("Up to Tick 0");
     expect(
       await page
         .locator("#metric-rows tr[data-metric]")

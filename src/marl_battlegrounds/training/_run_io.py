@@ -458,7 +458,7 @@ def progress_text(status: dict[str, Any]) -> str:
         "warmup": "Warmup: Filling Replay Before Learning",
         "initial_collection": "Initial Random Collection",
         "complete": "Run Finished",
-        "failed": "Run Stopped With An Error",
+        "failed": "Run Stopped With an Error",
         "recovering": "Restoring Saved Progress",
     }
     label = labels.get(phase, phase.replace("_", " ").title())
@@ -472,13 +472,13 @@ def progress_text(status: dict[str, Any]) -> str:
         f"{label} | Steps: {steps:,} / {total:,} ({steps / total:.1%})"
         if total
         else f"{label} | Steps: {steps:,}",
-        counts + f"Time Spent In This Run: {duration(status.get('elapsed_seconds'))} | "
+        counts + f"Time Spent in This Run: {duration(status.get('elapsed_seconds'))} | "
         f"Training Time Left (Estimate): {duration(remaining)} | "
         f"Whole Run Time Left (Estimate): {duration(eta)}",
     ]
     if status.get("score_threshold") is not None:
         lines.append(
-            f"New Training Games Need {status['score_threshold']} Points To Win "
+            f"New Training Games Need {status['score_threshold']} Points to Win "
             "| Validation Still Needs 20"
         )
     if rate or recent:
@@ -490,7 +490,7 @@ def progress_text(status: dict[str, Any]) -> str:
         lines.append(
             "Training Speed: "
             + "; ".join(speeds)
-            + " (Includes Compilation; Excludes Checks And Saving)"
+            + " (Includes Compilation; Excludes Checks and Saving)"
         )
     check = status.get("random_validation")
     if isinstance(check, dict) and check.get("games"):
@@ -503,7 +503,7 @@ def progress_text(status: dict[str, Any]) -> str:
         lines.append(
             f"Latest Check Against Random: {check['games']:,} Games "
             f"After {check.get('env_steps', 0):,} Training Steps; "
-            f"Run Time At That Check: {captured_at}"
+            f"Run Time at That Check: {captured_at}"
         )
         kills, deaths, margin = (
             check.get(name)
@@ -518,12 +518,12 @@ def progress_text(status: dict[str, Any]) -> str:
             change = check.get("kill_margin_change")
             if change is not None:
                 lines.append(
-                    "Change In Kill Difference Since Untrained: "
-                    f"{change:+.2f} Per Game "
+                    "Change in Kill Difference Since Untrained: "
+                    f"{change:+.2f} per Game "
                     "(One Training Run; More Tests Needed)"
                 )
         else:
-            lines.append("Kills And Deaths: Not Available In This Saved Check")
+            lines.append("Kills and Deaths: Not Available in This Saved Check")
         lines.append(
             f"Game Results: {check['wins']} Wins, {check['draws']} Draws, "
             f"{check['losses']} Losses | Draws Can Still Show Combat Improvement"
@@ -545,7 +545,7 @@ def progress_text(status: dict[str, Any]) -> str:
     if status.get("latest_checkpoint"):
         lines.append("Recovery: Saved Progress Is Available")
     if status.get("error"):
-        lines.append(f"Reason For Stopping: {status['error']}")
+        lines.append(f"Reason for Stopping: {status['error']}")
     return "\n".join(lines)
 
 

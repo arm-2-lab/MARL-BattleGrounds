@@ -7,7 +7,7 @@ vision's frame: tick 91 of 300, Team A 2 and Team B 4 of 20, every champion
 alive at the vision's position and life, the vision's Ultimate cooldowns, the
 Team A Rogue's 2-tick spawn shield, the Team B Mage's 5 ticks of Burst,
 Blessing of Freedom on both Mages, respawn-wave clocks (2, 2) (one below the
-recording's (3, 3), so the vision's "Respawn Wave In 3 Ticks" is true: Core
+recording's (3, 3), so the vision's "Respawn Wave in 3 Ticks" is true: Core
 brings the fallen back in clock + 1 ticks), the recorded out-of-combat
 countdowns and no action history. Its action masks allow what
 the vision page allows: the Team A Warrior only Charge on the Team B Mage
@@ -52,7 +52,7 @@ with the other four fallen, fells the five trapped 1-life Team B champions
 with one Basic a turn, the fifth whatever the then free Team B Mage does, and
 never falls, so the fifth turn is its 5th takedown without falling.
 
-The vision's "Respawn Wave In 3 Ticks" is true of the Vision Moment: a Team A
+The vision's "Respawn Wave in 3 Ticks" is true of the Vision Moment: a Team A
 champion fallen at tick 91 is still fallen after two still Core steps and back
 after the third (tick 94).
 """

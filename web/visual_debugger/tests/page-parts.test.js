@@ -3,10 +3,10 @@
  * shell.js, tactics-turn.js and filter-controls.js load in Node with no page.
  * The deck's key helpers sort Step, action, submit, Tab and Escape keys; the
  * shell names each product and audience ("View Unavailable" for anything else)
- * and writes the product header (tab title, product name, How To Play or
+ * and writes the product header (tab title, product name, How to Play or
  * Replay Viewer Help); the
  * Visual Filters help rows keep their page order (the four presets with
- * Default Configuration first, Reset To Default Configuration, Enable All,
+ * Default Configuration first, Reset to Default Configuration, Enable All,
  * Disable All, then each switch; a switch renamed for live play gets one row
  * per client, each with the label that client shows), and every preset and
  * Reset tip says the
@@ -15,11 +15,11 @@
  * hide or retitle, and one hidden, empty slot per planned interface piece, none
  * marked for a product (the shell would un-hide it). The side rail (#rail)
  * starts with the live Your Turn card, then the Fallen panel (right under Your
- * Turn in live play, owner 4 Oct 2026), the Class Guide and How To Play
- * cards, the This Turn and How To Play slots and the Replay Viewer rail,
+ * Turn in live play, owner 4 Oct 2026), the Class Guide and How to Play
+ * cards, the This Turn and How to Play slots and the Replay Viewer rail,
  * whose six tab panels start with Roster. The toolbar holds Help,
  * Visual Filters (starting hidden and marked for no product; it opens and
- * closes the #visual-filters-drawer popover), Finish And Save (starting
+ * closes the #visual-filters-drawer popover), Finish and Save (starting
  * hidden, unmarked), Restart (live only) and Exit; no Visual Key and no
  * top-bar Frame Explanation (owner, 3 and 4 Oct 2026).
  */
@@ -137,13 +137,13 @@ test("shell names each product and audience and writes the product header", () =
   Reflect.set(globalThis, "document", fakeDocument);
   try {
     // The tab title keeps the official name; the header shows the product name
-    // after the MARL-BGs lockup; Help is How To Play in the BattleClient.
+    // after the MARL-BGs lockup; Help is How to Play in the BattleClient.
     for (const [productKind, title, name, help] of /** @type {const} */ ([
       [
         "combat_debugger",
         "MARL-BattleGrounds BattleClient",
         "BattleClient",
-        "How To Play",
+        "How to Play",
       ],
       [
         "replay_viewer",
@@ -177,7 +177,7 @@ test("Visual Filters help rows keep their page order", () => {
       ["[data-visual-filter-preset='researcher']", "Researcher"],
       ["[data-visual-filter-preset='manuscript']", "Manuscript"],
       ["[data-visual-filter-preset='minimal']", "Minimal"],
-      ["#reset-visual-filters-button", "Reset To Default Configuration"],
+      ["#reset-visual-filters-button", "Reset to Default Configuration"],
       ["#enable-all-visual-filters-button", "Enable All"],
       ["#disable-all-visual-filters-button", "Disable All"],
     ],
@@ -382,13 +382,13 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
   // No Visual Key and no top-bar Frame Explanation (its one button is the
   // arena corner's): owner, 3 and 4 Oct 2026.
   assert.doesNotMatch(markup, /id="(?:visual-key|frame-explanation)-button"/u);
-  // Finish And Save starts hidden and unmarked (src/main.js shows it while
+  // Finish and Save starts hidden and unmarked (src/main.js shows it while
   // the match records; topbar.css hides it in the Replay Viewer); Restart is
   // live play's (data-live-only).
   const finish = openingTag(markup, "recording-finish-button");
   assert.match(finish[0], /^<button\b(?=[^>]*\btype="button")(?=[^>]*\shidden[\s>])/u);
   assert.doesNotMatch(finish[0], /data-(?:live|replay)-only/u);
-  assert.match(markup, /id="recording-finish-button"[^>]*>Finish And Save<\/button>/u);
+  assert.match(markup, /id="recording-finish-button"[^>]*>Finish and Save<\/button>/u);
   const restart = openingTag(markup, "reset-button");
   assert.match(restart[0], /\sdata-live-only[\s>]/u);
   assert.match(restart[0], /\bdata-key="r"/u);

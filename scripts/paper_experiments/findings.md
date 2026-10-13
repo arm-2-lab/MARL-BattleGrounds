@@ -3,7 +3,7 @@
 The five experiments of the paper that run as Hydra stages, with their commands,
 results and limits. The result tables sit in [`results/`](results/).
 
-## Scenario Evaluation Of The Season 0 Field
+## Scenario Evaluation of the Season 0 Field
 
 **Question.** How often does each member of the Season 0 field win the eight
 endgame scenarios? The field is the six tuned baselines, trained to about 250
@@ -82,7 +82,7 @@ feed their training, selection or Elo. 256 games measure a sampling policy's
 win rate to within a few points; a cell with 0 wins does not prove the policy
 can never win.
 
-## Why The Field Loses The Scenarios
+## Why the Field Loses the Scenarios
 
 **Question.** What goes wrong in the games the field loses, and does any
 system win Scenario 1 more often than Random?
@@ -158,13 +158,13 @@ the tables say whether something happened, not when. The test compares each
 system with Random separately and does not correct for making several
 comparisons; correcting would only raise the p-values.
 
-## A Language Model Against The Season 0 Field
+## A Language Model Against the Season 0 Field
 
 **Question.** Can a language-model team be evaluated for team coordination
 with the same tools as any other System, and how does a small one do?
 
 **Prompt version.** The results below were made with prompt version 1
-(`actor-text-v1`). The stage now sends version 2 (see What The Model Reads),
+(`actor-text-v1`). The stage now sends version 2 (see What the Model Reads),
 so the commands below play version 2 games, and the stage refuses to add them
 to a folder of version 1 games.
 
@@ -246,7 +246,7 @@ spreads out and dies mostly at its own spawn. These results come from one
 small model with 8-bit weights, thinking off and no memory of earlier turns;
 they do not show how well larger reasoning models coordinate.
 
-### What The Model Reads
+### What the Model Reads
 
 The `llm_prompt` stage shows the exact text a language-model team reads. It
 lets TDM-Alpha play TDM-Beta on test map 47 and stops at tick 12, the first
@@ -398,7 +398,7 @@ opponent on each map and spawn end).
 **Scope.** One host, one checkpoint per method, maps 47 to 51 and one seed per
 team: the intervals describe repeated games of these fixed teams.
 
-## Human Games Against And Alongside Recurrent IPPO
+## Human Games Against and Alongside Recurrent IPPO
 
 **Question.** How does the Season 0 winner, recurrent IPPO, do against an
 expert human (the Expert Human below), and how does it do with one as a teammate it never trained with?
@@ -500,7 +500,7 @@ Mage aggressively and away from the group, almost like a Rogue, to draw the
 team into fights, and the policy turned passive instead. Every item and answer
 is in [`results/human_games_ratings.csv`](results/human_games_ratings.csv).
 
-### Analysis Of The Human Games
+### Analysis of the Human Games
 
 **Question.** Where does the Expert Human's play differ from the policy's, and how
 does a team of recurrent IPPO and the Expert Human compare with recurrent IPPO alone?

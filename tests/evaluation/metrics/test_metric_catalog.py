@@ -1056,7 +1056,7 @@ def test_plain_descriptions_separate_effects_counts_and_opportunity_meanings() -
     assert "Team A" in METRIC_COLUMNS_BY_NAME["score_difference"].description
     assert "final" not in METRIC_COLUMNS_BY_NAME["score_difference"].description
     poison = METRIC_COLUMNS_BY_NAME["agent_0_healing_prevented_by_poison"]
-    assert poison.label == "Priest Healing Prevented On This Agent"
+    assert poison.label == "Priest Healing Prevented on This Agent"
     assert "before the maximum-health limit" in poison.description
     assert "at the start of the tick" in poison.description
     assert "Does not include regeneration" in poison.description

@@ -22,7 +22,7 @@
  *   pad, X is Stay, and the name of the chosen step; the arrow keys do
  *   nothing), 2 Target (the target chip in its four forms: No Target Yet,
  *   Burst Needs No Target, a seen body with its life, and "Warrior · ID 6 ·
- *   Out Of Sight"; the × Esc clear button; the Allowed Now buttons, the
+ *   Out of Sight"; the × Esc clear button; the Allowed Now buttons, the
  *   vision's pills while they fit, else a grid of short buttons, fitPicks), 3 Action
  *   (None, the class's real Basic and Ultimate with reach, the Rune Ring and
  *   the Armed, Auto and Not Allowed tags, and a shake on a refused press) and
@@ -31,7 +31,7 @@
  *   order list of its own (owner, 4 Oct 2026: the rail's This Turn checklist
  *   already lists every order, so the deck is shorter and the arena taller).
  * - The deck overlays: Watch Only (a policy's champion is in view, with its
- *   life; Back To Your Warrior), Stopped (policy work was cancelled; Finish And Save; the
+ *   life; Back to Your Warrior), Stopped (policy work was cancelled; Finish and Save; the
  *   phases then rest on You Plan with the policies Waiting) and
  *   the Watching bar when nobody is Manual (Run or Pause and Play One Turn).
  * - The deck's header line (#status-line, owner, 4 Oct 2026: it replaced the
@@ -44,13 +44,13 @@
  *   closedSentence; host notices in the player's words, plainHostNotice) and
  *   Keys On or Keys Off. Restart (in the top bar) is wired here too. The
  *   words of main.js's Recording pill and popover (recordingWords) and of
- *   its top-bar save button (saveButtonState: Finish And Save, Saving
+ *   its top-bar save button (saveButtonState: Finish and Save, Saving
  *   Replay…, Open Replay or Retry Save) have one owner here.
  * - The rail cards: This Turn (#turn-card: tick, title, set pill, Guide /
  *   Hints / Off, Do This Now, the four phases You Plan · Lock In · Policies
  *   Choose · All Act, the checklist of the champions you play and the
  *   Policies block), the Class Guide (#class-card, hidden while the
- *   class_guide switch is off) and the How To Play card (#howto-card, shown
+ *   class_guide switch is off) and the How to Play card (#howto-card, shown
  *   at the Guide level, its lines true for the roster mix, howToPlayLines;
  *   Full Guide opens the help).
  *
@@ -86,17 +86,17 @@
  * (authorizedPresentationInspectionState: its draft and its masks, which in
  * Agent POV name only bodies the team may know). Allowed Now lists only bodies
  * that scene draws; the target chip shows life only for a drawn body (a kept
- * target out of sight reads "Warrior · ID 6 · Out Of Sight" with no life or
+ * target out of sight reads "Warrior · ID 6 · Out of Sight" with no life or
  * token); class facts come from the scene's class_mechanics. The researcher
  * branch is read only as command plumbing that is never drawn: which champion
  * is in focus (an ID the host lets the POV team focus: its own champions or an
  * enemy it sees now), whether a policy plays it, the button legality tooltips
  * of the champion you order, the global command slot a click sends, and the
  * staged orders of your own team's Manual champions (your own orders, ruling
- * P1, 3 Oct 2026). The rail rows, the "N Of M Set" pill, Do This Now and the
+ * P1, 3 Oct 2026). The rail rows, the "N of M Set" pill, Do This Now and the
  * Lock In order list show staged orders only for the viewing team's Manual
  * champions (shownManualIdsOf, ruling L18; another team's Manual champion
- * keeps its clickable rail row with no order, which reads "Out Of Sight"
+ * keeps its clickable rail row with no order, which reads "Out of Sight"
  * when this view cannot see it and "In Sight · Order Hidden" when it can).
  * "Set" in the pill and the rail means the server holds an order that is not
  * the default Stay + No Combat (owner, 3 Oct 2026), so a reload and both
@@ -327,7 +327,7 @@ export const DECK_LABELS = Object.freeze({
   cancelPolicyWork: "Cancel Policy Work",
   restart: "Restart",
   keysOn: "Keys On",
-  keysOff: "Keys Off · Click The Arena",
+  keysOff: "Keys Off · Click the Arena",
   keysClosed: "Keys Off",
   noTargetYet: "No Target Yet",
   targetOutOfSight: "Your team cannot see it.",
@@ -336,7 +336,7 @@ export const DECK_LABELS = Object.freeze({
   gameStopped: "Game Stopped",
   gameOver: "Game Over",
   closed: "Closed",
-  outOfSight: "Out Of Sight",
+  outOfSight: "Out of Sight",
   orderHidden: "In Sight · Order Hidden",
   policiesChoosing: "Policies Choosing",
   policiesOnly: "Policies Only",
@@ -361,7 +361,7 @@ export const WATCH_PHASES = Object.freeze([
 
 /**
  * The This Turn help levels: "guide" (Do This Now, the dashed beacon on the
- * control it names and the How To Play card; the default), "hints" (Do This
+ * control it names and the How to Play card; the default), "hints" (Do This
  * Now only) and "off" (all three hidden). The choice is remembered per browser.
  */
 export const GUIDE_MODES = /** @type {ReadonlyArray<"guide" | "hints" | "off">} */ (
@@ -976,14 +976,14 @@ export function turnTitles(input) {
 /**
  * Write the game-over step: the rail's Do This Now at game over and the
  * deck's message line on the tick the game ends. It names only what really exists
- * for the replay's save state, so it never offers Finish And Save once the
+ * for the replay's save state, so it never offers Finish and Save once the
  * game has saved itself.
  *
  * - No recording (null or not an object): "The game is over. Press Restart
  *   for a new match."
  * - lifecycle "saved" or "reviewing": the game is saved; the top bar's save
  *   button now reads Open Replay.
- * - lifecycle "recording" with finish_available true: Finish And Save is
+ * - lifecycle "recording" with finish_available true: Finish and Save is
  *   offered (its button shows).
  * - lifecycle "sealed" or "finalized_unsaved": the capture is closed and the
  *   server is saving the replay in the background: "Saving the replay…" (the
@@ -1008,7 +1008,7 @@ export function gameOverStep(recording) {
     return "The game is over and saved. Press Restart for a new match, or Open Replay to watch it.";
   }
   if (lifecycle === "recording" && status?.finish_available === true) {
-    return "The game is over. Press Restart for a new match, or Finish And Save.";
+    return "The game is over. Press Restart for a new match, or Finish and Save.";
   }
   if (lifecycle === "sealed" || lifecycle === "finalized_unsaved") {
     return "The game is over. Saving the replay…";
@@ -1148,10 +1148,10 @@ export function saveFailedReason(recording) {
 
 /**
  * Pick what live play's save button in the top bar (#recording-finish-button)
- * shows for one recording state. Owner, 4 Oct 2026: Finish And Save turns
+ * shows for one recording state. Owner, 4 Oct 2026: Finish and Save turns
  * into Open Replay once the replay is saved, instead of disappearing.
  *
- * - "recording": "Finish And Save" (action "finish"); usable while
+ * - "recording": "Finish and Save" (action "finish"); usable while
  *   finish_available is true.
  * - "sealed" or "finalized_unsaved" (the server saves a finished game), or
  *   options.saving (this page's save request is waiting for its answer):
@@ -1203,7 +1203,7 @@ export function saveButtonState(recording, options = {}) {
   }
   if (lifecycle === "recording") {
     return state(
-      "Finish And Save",
+      "Finish and Save",
       "finish",
       recording.finish_available === true,
       "Save this game and keep it on screen to look over. Restart begins another match.",
@@ -1368,7 +1368,7 @@ const NUMBER_WORDS = Object.freeze([
 ]);
 
 /**
- * The How To Play card's lines for one Manual champion, exactly as on the
+ * The How to Play card's lines for one Manual champion, exactly as on the
  * approved vision page (index.html holds the same markup).
  */
 const HOW_TO_PLAY_STEP =
@@ -1377,7 +1377,7 @@ const HOW_TO_PLAY_TARGET =
   "Hold <kbd>Shift</kbd> and click a body with a <b>dashed ring</b>. Then pick <kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd>.";
 
 /**
- * Return the How To Play card's lines (HTML of each list item's text), true
+ * Return the How to Play card's lines (HTML of each list item's text), true
  * for the roster mix.
  *
  * - One Manual champion: the vision page's four lines ("The silver ring is
@@ -1533,7 +1533,7 @@ export function doThisNow(input) {
   }
   if (!input.focusedManual) {
     return step(
-      `You are looking at a policy's champion. Press Back To Your ${input.lastManualName} to give orders.`,
+      `You are looking at a policy's champion. Press Back to Your ${input.lastManualName} to give orders.`,
       "#wo-back",
     );
   }
@@ -1892,7 +1892,7 @@ function abilityIconHtml(doc, symbolId, glyphKey) {
  *   but no numbers).
  * @param {{cooldown?: number | null, basicNow?: string, ultimateNow?: string,
  *   note?: string}} [extras] cooldown: ticks until the Ultimate is ready (0
- *   reads "Ultimate · Ready", 3 reads "Ultimate · Ready In 3 Ticks"; null or
+ *   reads "Ultimate · Ready", 3 reads "Ultimate · Ready in 3 Ticks"; null or
  *   absent reads "Ultimate"). basicNow, ultimateNow: markup the caller has
  *   already escaped, added after the Basic and the Ultimate words. note:
  *   escaped markup added at the end of the card. Each defaults to "".
@@ -1913,7 +1913,7 @@ export function classGuideCardHtml(doc, classId, mechanics, extras = {}) {
   const readiness =
     cooldown === null
       ? "Ultimate"
-      : `Ultimate · ${cooldown === 0 ? "Ready" : `Ready In ${ticksText(cooldown, true)}`}`;
+      : `Ultimate · ${cooldown === 0 ? "Ready" : `Ready in ${ticksText(cooldown, true)}`}`;
   return `<p class="eyebrow">Class Guide</p><h3>${escapeHtml(guide.name)}<span>${escapeHtml(guide.calling)}</span></h3><p class="lore">${escapeHtml(guide.lore)}</p>${
     guide.stats === null ? "" : `<p class="stats">${escapeHtml(guide.stats)}</p>`
   }<ul class="abl"><li>${icons ? abilityIconHtml(doc, icons.basic, icons.basicGlyph) : ""}<div><b>${escapeHtml(guide.basicName)}</b><em>Basic</em>${
@@ -1975,7 +1975,7 @@ function orderWords(row) {
 
 /**
  * Write the words for a fallen champion that takes no orders until its
- * team's respawn wave: "Fallen · Returns In 3 Ticks" (Your Champion's life
+ * team's respawn wave: "Fallen · Returns in 3 Ticks" (Your Champion's life
  * and the rail's checklist row). "Fallen" alone when the wave clock is
  * unknown (returnsIn null).
  *
@@ -1987,11 +1987,11 @@ function orderWords(row) {
  */
 export function fallenWords(fallen) {
   if (fallen.returnsIn === null) return "Fallen";
-  return `Fallen · Returns In ${ticksText(fallen.returnsIn, true)}`;
+  return `Fallen · Returns in ${ticksText(fallen.returnsIn, true)}`;
 }
 
 /**
- * Return whether an order counts as Set in the "N Of M Set" pill and the
+ * Return whether an order counts as Set in the "N of M Set" pill and the
  * rail's Set or Default tag: the server holds an order for the champion
  * that is not the default one, Stay with No Combat (owner, 3 Oct 2026). A
  * kept target with No Combat is still the default (the server sends no
@@ -2011,7 +2011,7 @@ export function orderIsSet(order) {
 
 /**
  * Return the line of another team's Manual champion's rail row in Agent POV,
- * a row that shows no order (ruling L18): "Out Of Sight" when this view
+ * a row that shows no order (ruling L18): "Out of Sight" when this view
  * cannot see the champion (the owner's wording, 3 Oct 2026; the row then
  * shows nothing else about it), else "In Sight · Order Hidden". Never "Not
  * Observed".
@@ -3342,7 +3342,7 @@ export function createTacticsTurn(context) {
    * Show a champion's life in host: the one shared Life bar (`life-bar.js`:
    * "Life", a thin bar colored green, yellow or red, and "77 / 80"; owner, 2
    * October 2026) when words is null and model is given, else words as a
-   * muted `span.life-words` ("Fallen · Returns In 3 Ticks", "Out Of Sight"), or
+   * muted `span.life-words` ("Fallen · Returns in 3 Ticks", "Out of Sight"), or
    * nothing for "". The bar is rebuilt on every call, so it always shows the
    * current life. Agent POV: callers pass words, never a model, for a
    * champion the team cannot see.
@@ -3578,10 +3578,10 @@ export function createTacticsTurn(context) {
    * is the focus yours, the start greeting). `shownManualIds` is the part
    * the page may SHOW staged orders for (shownManualIdsOf): in Agent POV only
    * the viewing team's Manual champions (ruling L18), in Oracle View all of
-   * them. The "N Of M Set" pill, Do This Now's "still has the default order"
+   * them. The "N of M Set" pill, Do This Now's "still has the default order"
    * hint, the Lock In order list and the rail rows' orders read only
    * `shownManualIds`; the rail still lists every Manual champion, the others
-   * with no order ("Out Of Sight" or "In Sight · Order Hidden"). `servedOrders` holds the server's staged order of
+   * with no order ("Out of Sight" or "In Sight · Order Hidden"). `servedOrders` holds the server's staged order of
    * every champion in `shownManualIds` (servedManualOrdersOf: in Oracle View
    * every Manual champion, in Agent POV the viewing team's own, ruling P1);
    * a row not in view prefers it to this page's memory, so orders kept from
@@ -3730,7 +3730,7 @@ export function createTacticsTurn(context) {
        * brings them back on the transition that starts with a countdown of
        * 0, so this is countdown_steps + 1 (a countdown of 1 at tick 98 means
        * back at tick 100: "2 ticks"), the same number as the portraits'
-       * "Returns In" and the scorebug's "Respawn Wave In N Ticks". The wave
+       * "Returns In" and the scorebug's "Respawn Wave in N Ticks". The wave
        * clocks are public match facts, the same in Agent POV and Oracle View.
        *
        * @param {unknown} teamId Team 1 (Team A) or 2 (Team B).
@@ -4529,7 +4529,7 @@ export function createTacticsTurn(context) {
   }
 
   /**
-   * Write the How To Play card's lines for this game's roster mix
+   * Write the How to Play card's lines for this game's roster mix
    * (howToPlayLines), so the card never says "Policies play the rest" when
    * you play every champion, or asks for keys that do nothing in Policies
    * Only. With one Manual champion it writes the vision page's own lines.
@@ -4600,7 +4600,7 @@ export function createTacticsTurn(context) {
    *
    * Agent POV: life, reach, cooldowns and Allowed Now come only from the
    * audience's scene and inspection; a champion that scene does not draw
-   * shows "Out Of Sight" and no life. Your own team's staged orders show in
+   * shows "Out of Sight" and no life. Your own team's staged orders show in
    * both views (ruling P1); another team's never in Agent POV (L18).
    *
    * A champion that fell on the tick now playing shows as it was before the
@@ -4610,7 +4610,7 @@ export function createTacticsTurn(context) {
    * Side effects: DOM text, markup, `hidden`, classes, `data-*` and `aria-*`
    * changes in the deck, the message line and the rail cards (including the
    * deck's data-orders, which sizes the Lock In list in deck.css, and the How
-   * To Play card's lines); moves the `.beacon` mark; toggles `.keys-on` on
+   * to Play card's lines); moves the `.beacon` mark; toggles `.keys-on` on
    * #arena through paintKeys; may set one timer (the Fall beat repaint).
    *
    * @returns {void}
@@ -4730,7 +4730,7 @@ export function createTacticsTurn(context) {
           ? fallenWords(fallen)
           : seen && facts.life !== null
             ? null
-            : "Out Of Sight";
+            : "Out of Sight";
     // Until its Fall beat a falling champion keeps its life from before the
     // tick, as the scorebug portraits do.
     const held = data.focusId === null ? undefined : data.fallHolds.get(data.focusId);
@@ -4940,10 +4940,10 @@ export function createTacticsTurn(context) {
         parts.woMeta,
         facts === null || facts.team === null
           ? ""
-          : `${crestSvg(facts.team, 14)}Agent ID ${escapeHtml(facts.number)} · Played By ${controllerHtml}`,
+          : `${crestSvg(facts.team, 14)}Agent ID ${escapeHtml(facts.number)} · Played by ${controllerHtml}`,
       );
       paintLife(parts.woLife, lifeWords, facts?.life ?? null);
-      setText(parts.woBack, `Back To Your ${lastName}`);
+      setText(parts.woBack, `Back to Your ${lastName}`);
     }
     // main.js disables every deck button while no authority is installed and
     // only data-key buttons are re-enabled by the availability pass, so the
@@ -5007,7 +5007,7 @@ export function createTacticsTurn(context) {
    * Repaint the This Turn card: tick, title, set pill, Guide / Hints / Off,
    * Do This Now (hidden at Off), the four phases, the checklist and the
    * Policies block; then move the Guide level's beacon. The set pill's
-   * "N Of M Set" and Do This Now's untouched-champion hint count only
+   * "N of M Set" and Do This Now's untouched-champion hint count only
    * view.manualRows (data.shownManualIds: the viewing team's Manual
    * champions in Agent POV) that are not fallen: a fallen champion takes no
    * orders, so it is never counted or asked for orders. When every one of
@@ -5052,7 +5052,7 @@ export function createTacticsTurn(context) {
                 ? view.manualRows.length === 1
                   ? "Fallen"
                   : "All Fallen"
-                : `${orderable.filter((row) => row.touched).length} Of ${orderable.length} Set`,
+                : `${orderable.filter((row) => row.touched).length} of ${orderable.length} Set`,
       );
     }
     for (const button of parts.guideLevel?.querySelectorAll("button[data-level]") ??
@@ -5121,13 +5121,13 @@ export function createTacticsTurn(context) {
    * Repaint the checklist: one row per champion you play (data.manualIds), by
    * team. A row whose order this view may show (view.manualRows, built from
    * data.shownManualIds) has its step, its action and Set or Default, or,
-   * once its fall has reached its Fall beat, "Fallen · Returns In N Ticks"
+   * once its fall has reached its Fall beat, "Fallen · Returns in N Ticks"
    * with a Fallen tag and data-fallen="true" (it takes no orders); any
    * other row (Agent POV: another team's Manual champion, ruling L18) has
    * data-observed="false", no order and no Set or Default, yet a click on it
    * still gives that champion orders. When this view cannot see it
    * (data-sight="out") it shows only the champion's class and calling, the
-   * unseen token and "Out Of Sight" (owner, 3 Oct 2026); when this view sees
+   * unseen token and "Out of Sight" (owner, 3 Oct 2026); when this view sees
    * it (data-sight="in") its token from the audience's scene and "In Sight ·
    * Order Hidden". Its title says why (HIDDEN_ORDER_TITLE). Then the Policies block: every
    * policy of both teams from the one controller model (policyListRows of
@@ -5153,7 +5153,7 @@ export function createTacticsTurn(context) {
       // Every Manual champion keeps its row (a click gives it orders); a row
       // whose order this view may not show (Agent POV: another team's,
       // ruling L18) has no order and no Set or Default. Out of this view's
-      // sight it reads "Out Of Sight" (owner, 3 Oct 2026) with the unseen
+      // sight it reads "Out of Sight" (owner, 3 Oct 2026) with the unseen
       // token and nothing else; in sight it reads "In Sight · Order Hidden".
       const knownById = new Map(view.manualRows.map((row) => [row.publicId, row]));
       for (const team of /** @type {const} */ (["A", "B"])) {
@@ -5186,7 +5186,7 @@ export function createTacticsTurn(context) {
                 ),
                 targetShort: row.targetShort,
               })
-            : "Step: Stay · Action: Click To See";
+            : "Step: Stay · Action: Click to See";
           html += `<button type="button" class="cl-row${row.publicId === data.focusId ? " focus" : ""}" data-slot="${escapeHtml(row.publicId)}" data-help-title="${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}" data-help="${escapeHtml(`${line}. Click to give this champion orders. Set means its order is not the default Stay and No Combat.`)}">${championToken(row.facts, "XS", {}, { agent: sceneAgentById(data, row.publicId), scene: data.scene })}<span><b>${escapeHtml(`${row.facts?.name ?? "Champion"} · ${row.facts?.calling ?? ""}`)}</b><span>${escapeHtml(line)}</span></span><em class="cl-state${row.touched ? "" : " def"}">${row.touched ? "Set" : "Default"}</em></button>`;
         }
       }
@@ -5313,7 +5313,7 @@ export function createTacticsTurn(context) {
   }
 
   /**
-   * Send the focus to one champion you play (Back To Your Warrior, a checklist
+   * Send the focus to one champion you play (Back to Your Warrior, a checklist
    * row) through the same roster command a portrait click sends.
    *
    * @param {string | null} publicId The champion's public ID.
@@ -5342,8 +5342,8 @@ export function createTacticsTurn(context) {
    * battlefield and Shift + click on a body), the mousedown guard that keeps
    * the keys on while a deck button is pressed, and delegated clicks for the
    * parts the deck writes (Allowed Now, × Esc, checklist rows, Back, Finish
-   * And Save on Stopped). Full Guide (#full-guide) belongs to the help owner
-   * in main.js, which opens How To Play.
+   * and Save on Stopped). Full Guide (#full-guide) belongs to the help owner
+   * in main.js, which opens How to Play.
    *
    * Side effects: listeners on the document and on deck parts; reads
    * localStorage. Missing parts are skipped, so a page without the vision

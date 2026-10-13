@@ -9,7 +9,7 @@
  * parts hold the action rows and the Agent tab's Champion Frame stands in for
  * Agent Details, which stays in the hidden Developer drawer. An action row names
  * its actor (a token chip reading "Agent ID 0, Mage, Team A"), shows the accepted
- * codes and, when the game changed the order, "Changed By The Game" with the
+ * codes and, when the game changed the order, "Changed by the Game" with the
  * submitted codes. The Technical Frame lists its facts in This Frame, This Game
  * and This File. Agent Details reads Who, Right Now, Statuses, the class card
  * and Lore.
@@ -1248,7 +1248,7 @@ async function expectLatestTransitionDom(page, presentation) {
 }
 
 // A recorded action row shows the accepted codes; when the game changed the
-// order it also says "Changed By The Game" and shows the submitted codes.
+// order it also says "Changed by the Game" and shows the submitted codes.
 /** @param {import("@playwright/test").Locator} rendered
  * @param {Record<string, any>} row */
 async function expectRecordedActionCodes(rendered, row) {
@@ -1261,7 +1261,7 @@ async function expectRecordedActionCodes(rendered, row) {
   if (tupleText(row.submitted_action) !== tupleText(row.accepted_action)) {
     await expect(rendered).toHaveAttribute("data-changed", "true");
     await expect(rendered.locator(".accepted-action-row__changed")).toHaveText(
-      "Changed By The Game",
+      "Changed by the Game",
     );
     await expect(rendered.locator(".accepted-action-row__submitted")).toHaveText(
       `Submitted: ${tupleText(row.submitted_action)}`,
@@ -5742,7 +5742,7 @@ function expectedWaveLine(frame) {
         frame.current_endpoint.scene.respawn_waves
       ).map(({ countdown_steps }) => countdown_steps),
     ) + 1;
-  return `Respawn Wave In ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`;
+  return `Respawn Wave in ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`;
 }
 
 test("real death cycle retains truthful outward lifecycle cues at both review viewports", async ({

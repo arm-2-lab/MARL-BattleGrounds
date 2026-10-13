@@ -63,7 +63,7 @@ portable file.
 
 1.2 The table shows each entry's type (Learned, Scripted, Hybrid or Language
 Model) and whether it uses an outside pretrained model. It also shows five
-costs from our official run and our Rule 4 check: Steps To Entry (the game
+costs from our official run and our Rule 4 check: Steps to Entry (the game
 steps of training behind the entered save), Run Steps (every game the run
 played, as counted in Rule 2.1), Training Time, Play Speed and Play Memory.
 They never change rank, rating or admission.
@@ -71,7 +71,7 @@ They never change rank, rating or admission.
 1.3 Season 0's three scripted bots are reference opponents built as part of
 the benchmark. Rules 2 and 3 do not apply to them.
 
-## Rule 2. Budget And Machine
+## Rule 2. Budget and Machine
 
 2.1 **At most 255 million game steps and 8 hours.** Every game your run plays
 counts, validation included. Your run must stop by itself within 255

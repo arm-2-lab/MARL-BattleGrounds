@@ -16,7 +16,7 @@
  *
  * Agent POV: this module draws only the numbers its caller passes. A caller
  * never passes the life of a champion its audience cannot see; it shows its
- * own words instead (for example the Target chip's "Out Of Sight").
+ * own words instead (for example the Target chip's "Out of Sight").
  */
 import { formatLifeNumber, LOW_LIFE_FRACTION } from "./display.js";
 

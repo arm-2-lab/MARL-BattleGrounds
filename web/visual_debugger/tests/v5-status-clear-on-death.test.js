@@ -1,5 +1,5 @@
 /**
- * @file Check Status Clear On Death (switch status_clear_on_death, off by
+ * @file Check Status Clear on Death (switch status_clear_on_death, off by
  * default) in the Rune Zones look (src/looks/statuses.js). A champion that
  * falls this tick in this audience's view keeps its tick-start marks and Rune
  * Ring until its own Fall beat: tick-start statuses are rebuilt from this
@@ -150,7 +150,7 @@ test("a falling champion keeps its tick-start marks and Rune Ring until its Fall
   );
 });
 
-test("Status Clear On Death on turns the marks to Ash over 160 ms after the Fall", () => {
+test("Status Clear on Death on turns the marks to Ash over 160 ms after the Fall", () => {
   const [off] = marks();
   const [on] = marks({ switches: { statusClearOnDeath: true } });
   const colored = on.pieces.filter(

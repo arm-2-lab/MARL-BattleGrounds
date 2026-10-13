@@ -1175,7 +1175,7 @@ def replay_metrics(
     normal mode a few sums of fractional amounts, such as damage, differed in
     the last digits, because the GPU may add numbers in another order
     (``docs/evaluation.md``, "Same Seed, Same Game"); counts, kills, scores and
-    outcomes matched. ``docs/metrics.md``, "Measure A Saved Game", lists the
+    outcomes matched. ``docs/metrics.md``, "Measure a Saved Game", lists the
     checks.
 
     Examples

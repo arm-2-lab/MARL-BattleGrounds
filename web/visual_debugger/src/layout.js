@@ -3,7 +3,7 @@
  * createViewportTransform owns the fitted world/pixel conversion, including the
  * optional camera frame (a world rectangle; Whole Map when absent).
  * wholeMapCameraFrame gives the Whole Map frame, and the EVERYONE_IN_VIEW_*
- * constants are the Everyone In View margin and zoom steps; the Everyone In View
+ * constants are the Everyone in View margin and zoom steps; the Everyone in View
  * and Battle Cam rules themselves have one owner, looks/camera.js.
  * layoutStatusDocks
  * and layoutRequiredDocks place disclosed status payloads around protected bodies.
@@ -433,13 +433,13 @@ export function createViewportTransform(input) {
 }
 
 /**
- * Everyone In View keeps this much world space, in world units, around each body
- * (read by looks/camera.js, the one owner of the Everyone In View rule).
+ * Everyone in View keeps this much world space, in world units, around each body
+ * (read by looks/camera.js, the one owner of the Everyone in View rule).
  */
 export const EVERYONE_IN_VIEW_MARGIN = 1.5;
-/** Everyone In View never zooms in further than this, relative to the Whole Map. */
+/** Everyone in View never zooms in further than this, relative to the Whole Map. */
 export const EVERYONE_IN_VIEW_MAX_ZOOM = 2;
-/** Everyone In View zooms in steps of this size: 1, 1.25, 1.5, 1.75 or 2. */
+/** Everyone in View zooms in steps of this size: 1, 1.25, 1.5, 1.75 or 2. */
 export const EVERYONE_IN_VIEW_ZOOM_STEP = 0.25;
 
 /**

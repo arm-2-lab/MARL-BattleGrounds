@@ -1,7 +1,7 @@
 /*
  * Rune Zones (src/looks/statuses.js): status marks inside each champion's
  * token, the Rune Ring (Ultimate charge), Thaw and Shatter echoes, the Ash of
- * Status Clear On Death, the Barrier Held collar, the Ward Circles of the
+ * Status Clear on Death, the Barrier Held collar, the Ward Circles of the
  * Warrior's and Mage's auras with their Aura Glints and Barrier Held flash,
  * and the Ward Lift ring. Every color is a token from styles.css.
  * Beat-timed pieces (data-beat-hold) get no CSS animation or transition; the

@@ -16,7 +16,7 @@
  * spawn ends are swapped) in its left column and first band crest; the verdict shows in the Replay Viewer and at live game
  * over (BattleClient and DevClient), never for another product, and draws
  * exactly the Honours its caller passes (every champion in both views, since
- * they come only at game over); with Full Lineup And Verdict off the lineup turns into a
+ * they come only at game over); with Full Lineup and Verdict off the lineup turns into a
  * band and the verdict into its plate. There is no state chip any more (no
  * countdown, no "Match Point · Needs 1"): a "state" request draws nothing.
  * build() holds the
@@ -307,8 +307,8 @@ test("the lineup shows only the champions in the given scene, as a card or a ban
   );
   assert.equal(card.columns[1].medallions.length, 0);
   assert.deepEqual(card.rules, [
-    "First To 20 Wins · Draw At Tick 300",
-    "A Death In Its Own Red Zone Scores 2",
+    "First to 20 Wins · Draw at Tick 300",
+    "A Death in Its Own Red Zone Scores 2",
   ]);
   const [band] = heralds.records({
     part: "lineup",
@@ -403,7 +403,7 @@ test("the verdict shows in the Replay Viewer and at live game over, with the Hon
     bounds,
   });
   assert.equal(draw.eyebrow, "Tick 300 · No Team Reached 20");
-  assert.equal(draw.lead, "A Lead At Tick 300 Wins Nothing");
+  assert.equal(draw.lead, "A Lead at Tick 300 Wins Nothing");
 });
 
 test("there is no state chip: no countdown and no Match Point chip", () => {

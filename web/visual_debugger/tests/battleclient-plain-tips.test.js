@@ -146,7 +146,7 @@ test("stones use the store's plain names and the same card in every view", () =>
 test("the fall card's tip uses plain words", () => {
   const tip = explainDeathAnnouncement({
     eventId: "fall-98",
-    label: "Fallen On Tick 98",
+    label: "Fallen on Tick 98",
     members: [
       {
         title: "Priest · ID 4",
@@ -155,7 +155,7 @@ test("the fall card's tip uses plain words", () => {
       },
     ],
   });
-  assert.equal(tip.title, "Fallen On Tick 98");
+  assert.equal(tip.title, "Fallen on Tick 98");
   assert.equal(tip.summary, DEATH_CREDIT_SENTENCE);
   assert.equal(
     DEATH_CREDIT_SENTENCE,

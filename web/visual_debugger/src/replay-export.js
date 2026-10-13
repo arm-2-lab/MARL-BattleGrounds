@@ -6,7 +6,7 @@
  * Browser capture loads bundled fonts and uses SVG/Canvas, without saving
  * a file or binding UI events. The caller owns the eventual download.
  *
- * The PNG shows what is on screen: the current camera (Whole Map, Everyone In
+ * The PNG shows what is on screen: the current camera (Whole Map, Everyone in
  * View or Battle Cam) and the switches that draw on the battlefield, except the
  * match moment cards (EXPORT_OMIT_SELECTOR: every herald plate, the Lineup and
  * the Verdict), which are never exported because a figure shows the game

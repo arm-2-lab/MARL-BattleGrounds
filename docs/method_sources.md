@@ -80,7 +80,7 @@ print(QMIXConfig().reward_scale, QMIXConfig().spawn_frame)                      
 | A bad learning block is rejected and the last state kept | PQN-VDN | The donor has no rollback. |
 | 32 games by default, one learner per run | PQN-VDN | The donor used 128 games and several learners per process. |
 
-## How We Check The Match
+## How We Check the Match
 
 ```bash
 JAX_PLATFORMS=cpu python -m pytest tests/baselines/test_baseline_ppo_reference.py tests/baselines/test_baseline_qmix_reference.py tests/baselines/test_baseline_pqn_reference.py tests/baselines/test_baseline_value_norm.py

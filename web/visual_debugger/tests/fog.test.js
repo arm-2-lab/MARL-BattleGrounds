@@ -1,5 +1,5 @@
 /**
- * @file Check the Fog And Vision look (`src/looks/fog.js`): the Agent POV
+ * @file Check the Fog and Vision look (`src/looks/fog.js`): the Agent POV
  * Sight Reach veil, the recipient rim, the Spotted Glint and the Last Seen
  * ring. Contracts: the veil's pieces cover the floor exactly once and light
  * exactly the points inside a living sensor's reach circle (also for crossing

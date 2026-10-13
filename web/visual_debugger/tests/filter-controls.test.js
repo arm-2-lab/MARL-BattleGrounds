@@ -2,8 +2,8 @@
  * @file Check the Visual Filters panel contract (src/filter-controls.js): each
  * client shows only its own switches, grouped in VISUAL_FILTER_GROUPS order,
  * each switch exactly once with its visible one-line help and its shipped
- * default ("On By Default" or "Off By Default"), every group with an
- * "N Of M On" count; the five preset buttons follow Default Configuration in
+ * default ("On by Default" or "Off by Default"), every group with an
+ * "N of M On" count; the five preset buttons follow Default Configuration in
  * order and Default Configuration starts pressed; the preset status line
  * counts hand changes only among the shown switches, reads "Every switch as it
  * ships" at the default, and greys Reset only then; and the `omit` option
@@ -126,7 +126,7 @@ for (const product of /** @type {const} */ (["replay_viewer", "combat_debugger"]
         );
         assert.equal(
           count.textContent,
-          `${members.filter((entry) => entry.defaultEnabled).length} Of ${members.length} On`,
+          `${members.filter((entry) => entry.defaultEnabled).length} of ${members.length} On`,
         );
         for (const label of descendants(group).filter(
           (node) => node.dataset?.visualFilterOption !== undefined,
@@ -140,7 +140,7 @@ for (const product of /** @type {const} */ (["replay_viewer", "combat_debugger"]
           );
           assert.ok(texts.includes(entry.label));
           assert.ok(
-            texts.includes(entry.defaultEnabled ? "On By Default" : "Off By Default"),
+            texts.includes(entry.defaultEnabled ? "On by Default" : "Off by Default"),
           );
           const input = label.children[0];
           assert.equal(input.checked, entry.defaultEnabled);

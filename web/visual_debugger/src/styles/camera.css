@@ -5,7 +5,7 @@
  * 2026 it shows no buttons (the arena's V and B keys are the camera's
  * buttons, src/arena-buttons.js), only the words for screen readers. The BattleClient
  * and DevClient show no switch (#live-camera-switch stays hidden; their
- * on-screen V is the arena's Everyone In View key, src/arena-buttons.js);
+ * on-screen V is the arena's Everyone in View key, src/arena-buttons.js);
  * their change tip, #camera-tip, sits over the message of the deck's header
  * line (#status-line), placed there by src/looks/camera.js and styled in
  * battleclient/overlays.css, so it never covers the arena, the rail or the

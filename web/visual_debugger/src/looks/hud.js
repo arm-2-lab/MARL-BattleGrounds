@@ -43,7 +43,7 @@
  * the Ultimate Charge ring, full with four notches when Ready), "Agent N" over
  * the class name, a life bar with its number (whole from 10 up, one decimal
  * below 10; Cinder at 30% or less), and a tray of 2 status chips plus "+N".
- * A fallen frame shows "Returns In N" (the team's wave countdown + 1) and the
+ * A fallen frame shows "Returns in N" (the team's wave countdown + 1) and the
  * equal-size emblems of the champions credited with the fall, on the tick of
  * the fall only. A shielded frame shows "Spawn Shield N"; on its return tick
  * it shows "Returned" instead.
@@ -341,9 +341,9 @@ function field(value, key) {
  * Records, in display order:
  * 1. one `hud_view` record: {product, audience ("researcher" Oracle View or
  *    "agent_pov"), fullRecord (true in the Replay Viewer's Agent POV),
- *    fullRecordLabel ("Full Record · Not Limited To Agent 0's View", where
+ *    fullRecordLabel ("Full Record · Not Limited to Agent 0's View", where
  *    "Agent 0" is the POV agent's own champion chipText, so the chip and the
- *    strip always agree; "...Not Limited To This Agent's View" when the POV
+ *    strip always agree; "...Not Limited to This Agent's View" when the POV
  *    agent is unknown or not in the rows; null when fullRecord is false),
  *    povTeamId (the Agent POV agent's team, 1 or 2; null in Oracle View or
  *    when that agent is not in the rows), rosters (team_rosters switch),
@@ -586,7 +586,7 @@ export function records(input) {
               spawnShieldSteps:
                 sources.spawnShieldMechanics?.configured_duration_steps ?? null,
               trapBroke: (sources.trapBreakIds ?? []).includes(publicAgentId),
-              // The card writes its own "Fallen · Returns In N" from the
+              // The card writes its own "Fallen · Returns in N" from the
               // same public wave clock as returnsIn above.
               respawnWaves: sources.waves,
               you: base.you,
@@ -1034,7 +1034,7 @@ function lifeBar(doc, life) {
 }
 
 /**
- * Draw a fallen frame's body: "Returns In N" and the credited emblems joined
+ * Draw a fallen frame's body: "Returns in N" and the credited emblems joined
  * by "+".
  *
  * @param {Document} doc
@@ -1050,7 +1050,7 @@ function fallenBody(doc, record, returnsIn, tips, withCredits) {
     doc,
     "span",
     "arena-frame__returns-in",
-    returnsIn === null ? "Fallen" : `Returns In ${returnsIn}`,
+    returnsIn === null ? "Fallen" : `Returns in ${returnsIn}`,
   );
   body.append(text);
   if (withCredits) {
@@ -1307,7 +1307,7 @@ function frameNode(doc, record, tips) {
     record.state === "unseen"
       ? `${record.chipText}, ${record.className}, ${UNSEEN_LABEL}`
       : record.state === "fallen"
-        ? `${record.chipText}, ${record.className}, Fallen${record.returnsIn === null ? "" : `, Returns In ${record.returnsIn}`}`
+        ? `${record.chipText}, ${record.className}, Fallen${record.returnsIn === null ? "" : `, Returns in ${record.returnsIn}`}`
         : `${record.chipText}, ${record.className}${record.life?.text ? `, Life ${record.life.text}` : ""}`,
   );
   return item;
@@ -1744,7 +1744,7 @@ export function liveScorebugModel(hudRecords, sources, controllers) {
       ariaLabel: unseen
         ? `${record.className}, Agent ID ${record.displayId}, unseen by ${viewers}`
         : `${record.className}, Agent ID ${record.displayId}, ${teamWords}${manual ? ", yours" : ""}${record.state === "fallen" ? ", fallen" : ""}`,
-      // Your own Manual champion on the other team (One On Each Team) is
+      // Your own Manual champion on the other team (One on Each Team) is
       // unseen by this view but still yours: a click gives it the orders.
       refusal:
         unseen && !manual

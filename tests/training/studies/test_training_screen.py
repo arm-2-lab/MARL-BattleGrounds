@@ -750,7 +750,7 @@ def test_stopped_speed_check_cannot_look_like_finished_experiment() -> None:
     assert "Study Stopped Before Comparison Trials" in text
     assert "Speed Checks Finished: 12 / 12" in text
     assert "Comparison Trials Finished: 0 / 12" in text
-    assert "16m 16s" in text and "Reason For Stopping" in text
+    assert "16m 16s" in text and "Reason for Stopping" in text
     assert "Run Finished" not in text and "100.0%" not in text
 
 
@@ -766,7 +766,7 @@ def test_human_screen_status_shows_work_and_unknown_estimates() -> None:
             "remaining_deadline_seconds": 90,
         }
     )
-    assert "512 Parallel Games; 128 Steps Per Collection" in text
+    assert "512 Parallel Games; 128 Steps per Collection" in text
     assert "Study Time Left (Estimate): Estimating" in text
     assert "1m 30s" in text
 

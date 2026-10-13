@@ -1,5 +1,5 @@
 /**
- * @file Check the BattleClient's top bar, arena view tag, hover card, How To
+ * @file Check the BattleClient's top bar, arena view tag, hover card, How to
  * Play rule cards and Visual Filters drawer list against the approved vision
  * page and the owner's 1 October 2026 decisions.
  *
@@ -18,7 +18,7 @@
  * come from the audience scene (an enemy portrait in Agent POV gives the
  * reduced card, a seen champion the full card) and a seen champion's card is
  * the same in Agent POV and Oracle View, also in the Replay Viewer, where who
- * plays it is the team's name; the How To Play overlay has the vision's
+ * plays it is the team's name; the How to Play overlay has the vision's
  * four rule titles; the live Visual Filters list holds the V5 add-ons too
  * (Class Seals to Momentum, as in the Replay Viewer), lists Lore Emblems
  * (Bodies) in both clients, shows the V5
@@ -306,14 +306,14 @@ test("a seen champion's card is the same in Agent POV and Oracle View, live and 
   );
 });
 
-test("How To Play shows the vision's four rule cards", () => {
+test("How to Play shows the vision's four rule cards", () => {
   assert.deepEqual(
     HELP_OVERLAY_RULES.map(([title]) => title),
     [
-      "1 · Everyone Decides At Once",
+      "1 · Everyone Decides at Once",
       "2 · One Step, One Action",
       "3 · No Facing",
-      "4 · Points And Winning",
+      "4 · Points and Winning",
     ],
   );
 });
@@ -347,9 +347,9 @@ test("the live Visual Filters list shows the V5 add-ons, under their V5 names", 
   };
   assert.deepEqual(named(live, "death_announcer"), [
     "Death Announcer",
-    "Life And Death",
+    "Life and Death",
   ]);
-  assert.deepEqual(named(replay, "death_announcer"), ["Fallen Feed", "Life And Death"]);
+  assert.deepEqual(named(replay, "death_announcer"), ["Fallen Feed", "Life and Death"]);
   assert.deepEqual(named(live, "lore_emblems"), ["Lore Emblems", "Bodies"]);
   assert.deepEqual(named(replay, "lore_emblems"), ["Lore Emblems", "Bodies"]);
   assert.deepEqual(named(live, "pov_sight_veil"), ["POV Sight Veil", "HUD"]);

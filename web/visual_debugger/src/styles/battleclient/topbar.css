@@ -2,9 +2,9 @@
  * BattleClient top bar (.bc-top, the shared header of every client), ported
  * from the approved vision page: brand lockup (emblem, "MARL-BGs", product
  * name), the place line, the View switch, the Connected and Recording pills,
- * then the Visual Filters, How To Play (Help in the Replay Viewer) and Exit
+ * then the Visual Filters, How to Play (Help in the Replay Viewer) and Exit
  * buttons (owner, 4 Oct 2026: no Visual Key; hover tips, the Champion Card
- * and Frame Explanation explain every mark where it shows). Live play adds Finish And Save (it reads Saving
+ * and Frame Explanation explain every mark where it shows). Live play adds Finish and Save (it reads Saving
  * Replay… while the server saves and Open Replay once saved) and Restart
  * just before Exit (owner, 4 Oct 2026: they left the status line under the
  * deck); the Replay Viewer never shows them. The Replay Viewer adds its POV
@@ -410,7 +410,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   order: 7;
 }
 
-/* Finish And Save and Restart are live play's (the Replay Viewer has no
+/* Finish and Save and Restart are live play's (the Replay Viewer has no
    recording and no match to restart). */
 html[data-product-kind="replay_viewer"]
   .bc

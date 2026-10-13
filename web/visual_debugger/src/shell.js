@@ -24,7 +24,7 @@
  * bottom-right corner, page chrome only, off by default); the arena's
  * view tag in live play (#pov-tag: "Agent POV · Your Team's Sight · N Unseen"
  * or the amber "Oracle View · You See Everything"; the old #oracle-view-tag
- * stays hidden); the How To Play overlay's four rule cards (#htp-body); the
+ * stays hidden); the How to Play overlay's four rule cards (#htp-body); the
  * live hover card (#hcard): its facts, built from the audience's own scene
  * by championCardFacts, drawn by tooltip.js as the Champion Card and drawn
  * again from every new frame (refreshHoverCard, which main.js calls after
@@ -43,7 +43,7 @@
  * activateReplayPovAgent callback main.js passes. The scoreboard, recording
  * panel, replay metadata, command deck and control help keep their own
  * owners; renderSessionToolbar calls them in the same order as before.
- * main.js opens and closes the How To Play overlay; this file only fills it.
+ * main.js opens and closes the How to Play overlay; this file only fills it.
  *
  * DevClient: the private DevClient sets its own tab title, #app-title and
  * #help-heading after main.js has loaded. Keep those IDs, keep applyProductHeader
@@ -400,7 +400,7 @@ export function renderRuneWordmark(svg, text = BRAND_NAME, cap = 11) {
  * gets the tab title "MARL-BattleGrounds Replay Viewer", the header name
  * "Replay Viewer", the Help heading "Replay Viewer Help" and a "Help" button;
  * "combat_debugger" gets "MARL-BattleGrounds BattleClient", "BattleClient",
- * the heading "How To Play" and a "How To Play" button. Both buttons show the
+ * the heading "How to Play" and a "How to Play" button. Both buttons show the
  * ? keycap. The Exit label is painted later by renderSessionToolbar. Side
  * effects: sets `document.title`, the text of both elements, the Help button
  * (when `elements.helpButton` is given) and, when the page has an empty
@@ -423,12 +423,12 @@ export function applyProductHeader(elements, productKind) {
   const replay = productKind === "replay_viewer";
   document.title = PRODUCT_TITLES[productKind];
   elements.appTitle.textContent = PRODUCT_NAMES[productKind];
-  elements.helpHeading.textContent = replay ? "Replay Viewer Help" : "How To Play";
+  elements.helpHeading.textContent = replay ? "Replay Viewer Help" : "How to Play";
   const helpButton = elements.helpButton;
   if (helpButton && typeof helpButton.ownerDocument?.createElement === "function") {
     const keycap = helpButton.ownerDocument.createElement("kbd");
     keycap.textContent = "?";
-    helpButton.replaceChildren(replay ? "Help " : "How To Play ", keycap);
+    helpButton.replaceChildren(replay ? "Help " : "How to Play ", keycap);
     helpButton.dataset.product = productKind;
   }
   const wordmark =
@@ -464,7 +464,7 @@ export const SCENARIO_TALE_TITLES = Object.freeze({
   scenario_2_WP_vs_MR: "The Physic Garden",
   scenario_3_WH_vs_W: "The Living Wall",
   scenario_4_WR_vs_MWP: "The Gambit",
-  scenario_5_MWP_vs_MRP: "Turning The Tide",
+  scenario_5_MWP_vs_MRP: "Turning the Tide",
   scenario_6_MHP_vs_MWR: "The Lure",
   scenario_7_MWP_vs_MHR: "The Turning Moon",
   scenario_8_WRP_vs_RP: "The Waiting Hour",
@@ -707,7 +707,7 @@ export function liveViewTag(input) {
  * or else from the element's data-class-id; class is public), and never
  * life, place, Ultimate or status. In Oracle View, or in the Replay Viewer, a
  * champion with no body gets no card. A fallen champion's card ends with
- * "Fallen · Returns In N" from the scene's public respawn_waves clock (the
+ * "Fallen · Returns in N" from the scene's public respawn_waves clock (the
  * same note the Replay Viewer's frames show).
  *
  * Who plays it: live play reads the transport frame's combat configuration
@@ -950,7 +950,7 @@ function registerViewButtonHelp(button, title, summary) {
  * In this order of priority: "Closed" once Exit was accepted (the server is
  * closing and the page stops reading, so the pill never waits on a later
  * answer; the Replay Viewer a BattleClient kept open has its own pill); while
- * a request is in flight "Submit Queued", "Input Queued" or "Command In
+ * a request is in flight "Submit Queued", "Input Queued" or "Command in
  * Flight", except autoplay's own next-frame fetch (status.quietBusy), which
  * keeps the pill as it was, so it does not blink before every played tick;
  * then
@@ -961,7 +961,7 @@ function registerViewButtonHelp(button, title, summary) {
  * @param {{busy: boolean, quietBusy?: boolean, offline: boolean,
  *   resyncRequired: boolean, shuttingDown: boolean, hasFrame: boolean}} status
  *   Page flags. quietBusy (default false): the request in flight is
- *   autoplay's own fetch; a press the user made always shows "Command In
+ *   autoplay's own fetch; a press the user made always shows "Command in
  *   Flight".
  * @param {Readonly<{deferredDrafts: ReadonlyArray<unknown>, deferredSubmit: unknown}> | null}
  *   transaction The live command in flight, or null (its queued order keys,
@@ -977,7 +977,7 @@ export function connectionPill(status, transaction) {
         ? "Submit Queued"
         : (transaction?.deferredDrafts.length ?? 0) > 0
           ? "Input Queued"
-          : "Command In Flight",
+          : "Command in Flight",
       status: "busy",
     });
   }
@@ -1176,7 +1176,7 @@ export function renderCommandHelpLists(root) {
 }
 
 /**
- * The four rule cards of the How To Play overlay, in order, word for word from
+ * The four rule cards of the How to Play overlay, in order, word for word from
  * the approved vision page: [title, sentence].
  *
  * @type {ReadonlyArray<readonly [string, string]>}
@@ -1184,7 +1184,7 @@ export function renderCommandHelpLists(root) {
 export const HELP_OVERLAY_RULES = Object.freeze([
   Object.freeze(
     /** @type {const} */ ([
-      "1 · Everyone Decides At Once",
+      "1 · Everyone Decides at Once",
       "The game moves in ticks. In each tick every champion chooses at the same moment, then the whole tick plays at once. Nobody sees anyone else's choice first. Nothing moves until you lock in, and there is no timer.",
     ]),
   ),
@@ -1202,7 +1202,7 @@ export const HELP_OVERLAY_RULES = Object.freeze([
   ),
   Object.freeze(
     /** @type {const} */ ([
-      "4 · Points And Winning",
+      "4 · Points and Winning",
       "A knocked-out champion gives the other team 1 point, or 2 if it fell inside its own Red Zone. First team to 20 wins. At tick 300 the game is a draw, whatever the score. The fallen come back on the next respawn wave (every 5 ticks), shielded for 3 ticks.",
     ]),
   ),
@@ -1501,7 +1501,7 @@ function rulePicture(doc, index) {
 }
 
 /**
- * Fill the How To Play overlay's body (#htp-body) with the four rule cards,
+ * Fill the How to Play overlay's body (#htp-body) with the four rule cards,
  * as the vision page does when the overlay first opens.
  *
  * Writes one `.rules` grid with four `.rule` cards (picture, title h3 and
@@ -1700,7 +1700,7 @@ const TERMINAL_REPLAY_AGENT_BATTLEFIELD_INSTRUCTIONS =
  * activateReplayPovAgent), the Copy button (write the transition ID to the
  * clipboard), placement of the three popovers under their buttons when they
  * open, and the live Visual Filters drawer's top below the scorebug when it
- * opens and when the window resizes (bindVisualFiltersDrawer). It also fills the How To Play overlay's rule cards once
+ * opens and when the window resizes (bindVisualFiltersDrawer). It also fills the How to Play overlay's rule cards once
  * (renderHelpOverlayRules) and installs the live hover card on #bc
  * (createHoverCard from tooltip.js, with championCardFacts, the arena box
  * #arena as the box it always stays inside, and the Lock In button
@@ -2177,7 +2177,7 @@ export function createShell(context) {
     );
     const heading = doc.createElement("p");
     heading.className = "eyebrow";
-    heading.textContent = "Watch Through The Eyes Of";
+    heading.textContent = "Watch Through the Eyes Of";
     const rows = view.teams.map((team, index) => {
       const row = doc.createElement("div");
       row.className = "pov-agent-picker__row";
@@ -2562,7 +2562,7 @@ export function createShell(context) {
    * Read page state only; rendering a status does not reconnect or retry a command.
    *
    * The pill words and `data-state` come from connectionPill ("Connected",
-   * "Connecting", "Command In Flight" and so on). Side effects: pill text and
+   * "Connecting", "Command in Flight" and so on). Side effects: pill text and
    * `data-state`, the notice pill's text, `title`, `hidden` and
    * `data-level`, Reconnect's `hidden` (it shows only while offline or when
    * a resync is required), `aria-busy` on the battlefield shell, and the

@@ -19,7 +19,7 @@
  *
  * "Fewer rows" (owner, 2 October 2026): in a short arena box (290 px, as at
  * 1280x720) the plain card stays one column and shows only the leading rows
- * that fit, in order, then "+N more" with "Hold Shift For All", inside the
+ * that fit, in order, then "+N more" with "Hold Shift for All", inside the
  * box; Hold Shift shows every row in two columns, inside the box (four rows
  * have no footer, so no extra line); releasing shows the fitted card
  * again; a card whose rows all fit after a new frame shows no footer and
@@ -557,7 +557,7 @@ test("a short arena box: the plain card shows fewer rows, Shift shows all, relea
     // Four rows would need 355 px: the card shows the first two, in order,
     // then "+2 more", one column, inside the box.
     assert.deepEqual(shown(page.card)?.rows, ["stun_hunter_trap", "priest_freedom"]);
-    assert.equal(footer(), "+2 moreHold Shift For All");
+    assert.equal(footer(), "+2 moreHold Shift for All");
     assert.equal(root().dataset.columns, undefined);
     const top = Number.parseFloat(page.card.style.top);
     const height = page.card.getBoundingClientRect().height;

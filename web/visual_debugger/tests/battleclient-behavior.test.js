@@ -6,15 +6,15 @@
  * focus, Lock In, views, ranges, Restart, Run and Pause. (The first sentence
  * and the closed page's words have other owners: tactics-turn.js
  * startGreeting and closedSentence.)
- * (2) On the focused battlefield ? opens How To Play at any time (also while
+ * (2) On the focused battlefield ? opens How to Play at any time (also while
  * orders are closed, as at game over) and sends nothing; a key that
  * allowsWhileClosed accepts (R and G at game over) still reaches onCommand
  * while orders are closed; any other key then goes to onFencedCommand, and a
  * Tab it does not keep has its browser default stopped in live play
  * (ownsFencedTabDefault), so focus never walks onto the arena's marks; the
  * Replay Viewer's Tab is left alone.
- * (3) main.js wires the controls the vision page shows: How To Play on #htp,
- * the Recording popover's Finish And Save, Open Replay kept visible, the
+ * (3) main.js wires the controls the vision page shows: How to Play on #htp,
+ * the Recording popover's Finish and Save, Open Replay kept visible, the
  * Restart dialog's Save focus and "Restart cancelled" sentence (read from
  * its source), and the pill and popover words, which main.js imports from
  * their one owner, recordingWords in tactics-turn.js, and after a failed save
@@ -234,7 +234,7 @@ test("status sentences use the vision page's exact words", () => {
   assert.equal(statusSentence(/** @type {any} */ ({ kind: "unknown" })), "");
 });
 
-test("? opens How To Play at any time and R and G pass while orders are closed", () => {
+test("? opens How to Play at any time and R and G pass while orders are closed", () => {
   const battlefield = /** @type {any} */ (new EventTarget());
   let interactive = false;
   let help = 0;

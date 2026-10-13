@@ -5,7 +5,7 @@
  * viewport, zooms world positions and lengths only (the viewport and padding,
  * which set every fixed pixel size, stay the same), clips visibleMapBounds to
  * the screen and round-trips points. Bad frames throw. layout.js keeps only the
- * Everyone In View margin (1.5 units) and zoom steps (0.25 up to 2x); the rule
+ * Everyone in View margin (1.5 units) and zoom steps (0.25 up to 2x); the rule
  * itself is owned by looks/camera.js and checked in camera.test.js.
  */
 import assert from "node:assert/strict";
@@ -202,8 +202,8 @@ test("bad camera frames are refused", () => {
   assert.throws(() => wholeMapCameraFrame(0, 12), RangeError);
 });
 
-test("Everyone In View's margin and zoom steps are kept here for the camera look", () => {
-  // The Everyone In View rule itself has one owner, looks/camera.js (checked in
+test("Everyone in View's margin and zoom steps are kept here for the camera look", () => {
+  // The Everyone in View rule itself has one owner, looks/camera.js (checked in
   // camera.test.js); layout.js keeps only its numbers.
   assert.equal(EVERYONE_IN_VIEW_MARGIN, 1.5);
   assert.equal(EVERYONE_IN_VIEW_MAX_ZOOM, 2);

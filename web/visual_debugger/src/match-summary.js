@@ -8,7 +8,7 @@
  * strip in #match-scoreboard in the Replay Viewer, or, in live play, the
  * match facts of the vision scorebug #scorebug: scores, "/ 20", the First To
  * bars, "Tick 91 of 300" (in a replay, "of" its last recorded tick), "First
- * To 20", "Respawn Wave In N Ticks" and the
+ * to 20", "Respawn Wave in N Ticks" and the
  * side Team A sits on, through the pure liveScorebugView) and
  * hudSourcesFromFrame with
  * publicRosterIdentities and controllerRosterFromFrame (the one controller
@@ -23,7 +23,7 @@
  * "Team A" or "Team B", its policy name (its controller line: shown when it
  * fits, else "1 Policy", long names cut with "…", the team's controller list
  * on hover), its score in a fixed box with "/ N"
- * beside it, a First To N bar of segments (N = match_summary.score_threshold)
+ * beside it, a First to N bar of segments (N = match_summary.score_threshold)
  * with "+N" when a team goes past it, the team's wave pips (the public respawn
  * clock, when the caller passes the scene's respawn_waves), and in the
  * center "Tick N of E" (simulator_step_count, and E the replay's last recorded
@@ -498,7 +498,7 @@ export function controllerRosterFromFrame(presentation, combatConfiguration) {
 
 /**
  * Most segments one team's live First To bar draws (the vision draws 20 for
- * First To 20). A larger threshold draws this many, each worth
+ * First to 20). A larger threshold draws this many, each worth
  * threshold / LIVE_SEGMENT_LIMIT points.
  */
 export const LIVE_SEGMENT_LIMIT = 40;
@@ -635,8 +635,8 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   threshold light every segment.
  * - tickText: "Tick 91 of 300" live, or "Tick 91 of 156" in a replay that
  *   ended at tick 156 (summary.tick.text; "" when unknown).
- * - firstToText: "First To 20" ("" for a combat diagnostic).
- * - waveText: "Respawn Wave In 4 Ticks": the next wave of either team. Core
+ * - firstToText: "First to 20" ("" for a combat diagnostic).
+ * - waveText: "Respawn Wave in 4 Ticks": the next wave of either team. Core
  *   brings champions back on the transition that starts with a countdown of
  *   0, so the wave comes in countdown + 1 ticks, the same number a fallen
  *   champion's "Returns In" uses ("1 Tick" for one). "" with no wave rows.
@@ -727,11 +727,11 @@ export function liveScorebugView(summary, options = {}) {
     plain,
     teams: Object.freeze(teams),
     tickText: summary.tick?.text ?? "",
-    firstToText: threshold === null ? "" : `First To ${threshold}`,
+    firstToText: threshold === null ? "" : `First to ${threshold}`,
     waveText:
       ticks === null
         ? ""
-        : `Respawn Wave In ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`,
+        : `Respawn Wave in ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`,
   });
 }
 
@@ -1114,7 +1114,7 @@ function renderStripTeam(root, team, threshold, options) {
  * (1 to 10; period_steps outside that range or missing gives no pips). Lit pips
  * count the ticks gone toward the next wave: period - min(countdown, period - 1),
  * so a countdown of 0 (the wave comes next tick) lights them all. Returns a new
- * `span.match-strip__waves` (role "img", aria-label "Next Wave In N Ticks",
+ * `span.match-strip__waves` (role "img", aria-label "Next Wave in N Ticks",
  * N = countdown + 1) of `span.match-strip__wave` children, lit ones with class
  * "is-lit", or null. The wave clock is a public fact, the same in Oracle View
  * and Agent POV. Creates DOM nodes only.
@@ -1142,7 +1142,7 @@ function wavePips(doc, wave) {
   const ticks = countdown + 1;
   row.setAttribute(
     "aria-label",
-    `Next Wave In ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`,
+    `Next Wave in ${ticks} ${ticks === 1 ? "Tick" : "Ticks"}`,
   );
   for (let index = 0; index < period; index += 1) {
     const pip = doc.createElement("span");

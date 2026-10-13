@@ -1,6 +1,6 @@
 /**
  * @file Check who a click on a live scorebug portrait reaches in Agent POV
- * (liveScorebugModel, src/looks/hud.js), in One On Each Team (a Manual
+ * (liveScorebugModel, src/looks/hud.js), in One on Each Team (a Manual
  * champion on each team): an unseen enemy that is not yours keeps its
  * refusal sentence ("The Warrior (ID 6) is out of your team's sight. Agent
  * POV hides where it is and how it fares."), while your own Manual champion

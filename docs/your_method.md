@@ -4,7 +4,7 @@ Plug any model into MARL-BattleGrounds, run it in your own compiled loop and rec
 
 Website: https://marl-battlegrounds.com/#your-method
 
-## Write A System
+## Write a System
 
 ```python
 import jax
@@ -34,7 +34,7 @@ five separate permitted views (`actors`), legal choices (`action_mask`), slots i
 **Watch Out:** keep output structure, shapes and dtypes fixed. Memory resets only when a new game
 starts, not at death or respawn; memory without a leading game axis needs a `reset_memory` hook.
 
-## Policies, Host Methods And Mixed Teams
+## Policies, Host Methods and Mixed Teams
 
 ```python
 import numpy as np
@@ -91,7 +91,7 @@ This reuses `mine` and `weights` from the first block. `apply_systems` picks bot
 **Watch Out:** keep what your learner needs before `reset_done`; after it, the observation belongs
 to the new game. Pass changing weights as `variables_a`, never in a closure, or each update recompiles.
 
-## Information Limits And A Training-Only Critic
+## Information Limits and a Training-Only Critic
 
 ```python
 from marl_battlegrounds.baselines.inputs import encode_training_state

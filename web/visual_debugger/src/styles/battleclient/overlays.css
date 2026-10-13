@@ -5,7 +5,7 @@
  *   pointer over a champion, a portrait, an Allowed Now button or a checklist
  *   row. The card itself (.champion-card: box, bars, rows, team crest) is
  *   styled in src/styles/symbols-ui.css, shared with the Replay Viewer.
- * - The How To Play overlay (#htp): it covers the arena (8 px inside its
+ * - The How to Play overlay (#htp): it covers the arena (8 px inside its
  *   edge), never the deck, and holds the four rule cards (.rules, .rule with
  *   an .ill picture) and the key row (.keysrow). The pictures' team rings
  *   (.tok-ring--a, .tok-ring--b) and class studs (.tok-studs--<class>) take
@@ -54,7 +54,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   pointer-events: none;
 }
 
-/* How To Play overlay. */
+/* How to Play overlay. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .htp {
@@ -319,7 +319,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   white-space: nowrap;
 }
 
-/* "Read The Full Guide": a button that reads as a link. */
+/* "Read the Full Guide": a button that reads as a link. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   .linkbtn {

@@ -348,7 +348,7 @@ class DebuggerService:
             shows "saved" or "persistence_failed". Use it for interactive
             launchers (the BattleClient). False keeps the save inside that
             command, so a scripted caller sees "saved" as soon as the command
-            returns. Finish And Save, Exit, Retry Save, Save As, failure
+            returns. Finish and Save, Exit, Retry Save, Save As, failure
             closeouts and Ctrl-C always save inside their own call. Ignored
             without a recorder.
 
@@ -1343,7 +1343,7 @@ class DebuggerService:
                 return self._recording_no_op(
                     command_key=command_key,
                     fingerprint=fingerprint,
-                    notice="Finish And Save is unavailable in the current lifecycle.",
+                    notice="Finish and Save is unavailable in the current lifecycle.",
                 )
             success, failures = self._prepare_publication_responses(
                 command_key=command_key,
@@ -3527,9 +3527,9 @@ class DebuggerService:
         """Say whether a command must wait for a running background save.
 
         command is the request's command, possibly a replacement wrapper.
-        Return True for the recording commands (Finish And Save, Open Replay,
-        Retry Save, Save As, Exit), the replacement wrappers (Save And Replace,
-        Confirm Discard And Replace), scenario switches and every command that
+        Return True for the recording commands (Finish and Save, Open Replay,
+        Retry Save, Save As, Exit), the replacement wrappers (Save and Replace,
+        Confirm Discard and Replace), scenario switches and every command that
         would restart the match (input.recording_restart_intent_v1, for example
         R or a changed combat setup). Views, presets, focus, Run, Pause, System
         polls and the other keys never change the recorder, so they return

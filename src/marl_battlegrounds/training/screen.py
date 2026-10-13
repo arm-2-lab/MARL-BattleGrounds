@@ -760,7 +760,7 @@ def screen_status_text(status: Mapping[str, Any]) -> str:
         batch, length = str(case).removeprefix("b").split("-t")
         lines.append(
             f"Current Setup: {int(batch):,} Parallel Games; "
-            f"{int(length)} Steps Per Collection"
+            f"{int(length)} Steps per Collection"
         )
     current = status.get("run")
     if current and not stopped:
@@ -769,9 +769,9 @@ def screen_status_text(status: Mapping[str, Any]) -> str:
             view["phase"] = "speed_check"
         lines.append(progress_text(view))
     if status.get("failure"):
-        lines.append(f"Reason For Stopping: {status['failure']}")
+        lines.append(f"Reason for Stopping: {status['failure']}")
     if status.get("stop_requested_pids"):
-        lines.append("Stop Requested; Waiting For Running Work To Close")
+        lines.append("Stop Requested; Waiting for Running Work to Close")
     if status.get("stop_notice"):
         lines.append(str(status["stop_notice"]))
     return "\n".join(lines)
@@ -1362,7 +1362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(record, indent=2))
         else:
             print(
-                "Experiment Started In The Background. "
+                "Experiment Started in the Background. "
                 "Closing This Terminal Will Not Stop It."
             )
         print(

@@ -2,7 +2,7 @@
  * BattleClient deck (#command-deck) and its header line (#status-line),
  * ported from the approved vision page and compressed by the owner's
  * decisions of 4 Oct 2026: the status line under the deck is gone (Finish
- * And Save and Restart moved to the top bar, topbar.css; its sentence moved
+ * and Save and Restart moved to the top bar, topbar.css; its sentence moved
  * into the deck's header line), the Lock In column lost its order list (the
  * rail's This Turn checklist lists every order) and the columns are
  * shorter, so the arena gets the room.
@@ -223,8 +223,8 @@ html[data-product-kind="combat_debugger"] .bc .chip.pol {
 }
 
 /* The champion in view's life (#ag-life): the shared Life bar
-   (src/styles/life-bar.css), or its words ("Fallen · Returns In 3 Ticks",
-   "Out Of Sight"). The Watch Only overlay (#wo-life) and the target chip
+   (src/styles/life-bar.css), or its words ("Fallen · Returns in 3 Ticks",
+   "Out of Sight"). The Watch Only overlay (#wo-life) and the target chip
    (.tchip-life) show the same bar. */
 html[data-product-kind="combat_debugger"] .bc .ag-life {
   margin-top: 6px;

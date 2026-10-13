@@ -1,5 +1,5 @@
 /**
- * @file The Basic Attacks look, Cleave And Bloom: how every Basic (Arcane
+ * @file The Basic Attacks look, Cleave and Bloom: how every Basic (Arcane
  * Blast, Shield Bash, Serrated Arrows, Backstab and Lesser Heal) is drawn in
  * the BattleClient, the DevClient combat screen and the Replay Viewer.
  *
@@ -488,7 +488,7 @@ function bodyScale(input, event, target) {
  *
  * identity is the plan's authorized identity snapshot or null. A valid one
  * gives "Mage · ID 5" (agent-identity.js). Without one, a known classId gives
- * the class name alone, and otherwise "Out Of Sight" when redacted is true or
+ * the class name alone, and otherwise "Out of Sight" when redacted is true or
  * "Unknown Champion". Pure.
  *
  * @param {unknown} identity
@@ -503,7 +503,7 @@ function championLabel(identity, classId, redacted) {
       ? CLASS_IDENTITIES[/** @type {1|2|3|4|5} */ (classId)]?.label
       : undefined;
   if (classLabel) return classLabel;
-  return redacted ? "Out Of Sight" : "Unknown Champion";
+  return redacted ? "Out of Sight" : "Unknown Champion";
 }
 
 /**
@@ -2055,7 +2055,7 @@ export function update(nodes, records) {
  * own title, for example "Arcane Blast · Mage · ID 0 → Mage · ID 5 · 15
  * Damage"; with it off, the shared event explanation of the meaning mark.
  * Both read only the plan event, so in Agent POV a champion the team did not
- * see is named by class only ("Mage") or "Out Of Sight". Return a semantic
+ * see is named by class only ("Mage") or "Out of Sight". Return a semantic
  * tooltip descriptor (`tooltip.js`).
  *
  * @param {LookRecord} record

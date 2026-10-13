@@ -260,7 +260,7 @@ def test_recipe_curves_draw_every_seed_and_known_recipe_means(
         }
         assert len(thin) == 3 * len(groups)
         assert thick == {
-            f"{group}: Mean Of 3 Seeds": [
+            f"{group}: Mean of 3 Seeds": [
                 sum(step) / 3 for step in zip(*curves[group][1], strict=True)
             ]
             for group in groups
@@ -425,14 +425,14 @@ def test_gradient_norm_panel_handles_none_missing_keys_and_nonfinite(
         ],
     )
     lines = {line.get_label(): line for line in both.lines}
-    assert set(lines) == {"New: Mean", "New: Max", "Update With A Non-Finite Norm"}
+    assert set(lines) == {"New: Mean", "New: Max", "Update With a Non-Finite Norm"}
     np.testing.assert_array_equal(lines["New: Mean"].get_ydata(), [1.5, np.nan, 2.0])
     np.testing.assert_array_equal(lines["New: Max"].get_ydata(), [3.0, np.nan, np.nan])
-    assert list(lines["Update With A Non-Finite Norm"].get_xdata()) == [20, 20]
+    assert list(lines["Update With a Non-Finite Norm"].get_xdata()) == [20, 20]
     assert both.get_yscale() == "log"
     assert not legacy.lines and legacy.get_yscale() == "linear"
     assert [text.get_text() for text in legacy.texts] == [
-        "No Gradient Norms Saved In These Runs"
+        "No Gradient Norms Saved in These Runs"
     ]
     assert len(failed.lines) == 1 and failed.get_yscale() == "linear"
     plt.close(figure)

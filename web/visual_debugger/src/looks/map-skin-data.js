@@ -5,8 +5,9 @@
  *
  * GENERATED FILE. Do not edit by hand. The maintainers' map-skin converter
  * writes it from their tale skins and the
- * real map catalogue (`src/marl_battlegrounds/data/tdm`). Plain data and small
- * pure lookups only: no DOM, network, storage or timers. `map-skins.js` reads
+ * real map catalogue (`src/marl_battlegrounds/data/tdm`). One hand edit:
+ * scenario 5's title reads "Turning the Tide", in the AP heading case that
+ * shell.js uses. Plain data and small pure lookups only: no DOM, network, storage or timers. `map-skins.js` reads
  * the floors; `obstacles.js` may read the stones through `map-skins.js`.
  *
  * Tale trees are stored as JSON text per map and parsed on first use, so only
@@ -132,7 +133,7 @@ export const MAP_SKIN_ENTRIES = Object.freeze({
   "scenario_2_WP_vs_MR": Object.freeze({"kit":"sunfield","title":"The Physic Garden","geometry":"fnv1a:37a9a014","redZoneDepth":5,"tale":true,"scenarioId":2,"floorSwitches":1,"stoneSwitches":3}),
   "scenario_3_WH_vs_W": Object.freeze({"kit":"bastion","title":"The Living Wall","geometry":"fnv1a:7dedcf9f","redZoneDepth":5,"tale":true,"scenarioId":3,"floorSwitches":1,"stoneSwitches":3}),
   "scenario_4_WR_vs_MWP": Object.freeze({"kit":"wonderland","title":"The Gambit","geometry":"fnv1a:605ffee3","redZoneDepth":5,"tale":true,"scenarioId":4,"floorSwitches":1,"stoneSwitches":3}),
-  "scenario_5_MWP_vs_MRP": Object.freeze({"kit":"tidewrack","title":"Turning The Tide","geometry":"fnv1a:6ebe783e","redZoneDepth":5,"tale":true,"scenarioId":5,"floorSwitches":1,"stoneSwitches":3}),
+  "scenario_5_MWP_vs_MRP": Object.freeze({"kit":"tidewrack","title":"Turning the Tide","geometry":"fnv1a:6ebe783e","redZoneDepth":5,"tale":true,"scenarioId":5,"floorSwitches":1,"stoneSwitches":3}),
   "scenario_6_MHP_vs_MWR": Object.freeze({"kit":"deepwood","title":"The Lure","geometry":"fnv1a:cd462a22","redZoneDepth":5,"tale":true,"scenarioId":6,"floorSwitches":1,"stoneSwitches":3}),
   "scenario_7_MWP_vs_MHR": Object.freeze({"kit":"starfall","title":"The Turning Moon","geometry":"fnv1a:555b3ec0","redZoneDepth":5,"tale":true,"scenarioId":7,"floorSwitches":1,"stoneSwitches":3}),
   "scenario_8_WRP_vs_RP": Object.freeze({"kit":"dunes","title":"The Waiting Hour","geometry":"fnv1a:ecf496a7","redZoneDepth":5,"tale":true,"scenarioId":8,"floorSwitches":1,"stoneSwitches":3}),

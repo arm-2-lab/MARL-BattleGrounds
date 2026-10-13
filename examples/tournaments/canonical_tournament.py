@@ -63,7 +63,7 @@ def fixture(
         metrics=metrics,
         output_dir=directory / "results" if save else None,
     )
-    print("Artificial Fixture — Not A Released Snapshot")
+    print("Artificial Fixture — Not a Released Snapshot")
     print("Imported Package:", marl_bgs.__file__)
     print("Status:", result.status)
     print("Rankings:", result.table("tournament_rankings"))
@@ -71,7 +71,7 @@ def fixture(
         print("Headlines:", result.table("tournament_headline_metrics"))
         show_entrants(result, f"{metrics}_metrics")
     for batch in result.iter_table("matches", rows=32):
-        print("Original Games In This Batch:", len(batch["episode_id"]))
+        print("Original Games in This Batch:", len(batch["episode_id"]))
     if not save:
         assert result.run_dir is None
         return
@@ -97,7 +97,7 @@ def show_entrants(result: "TournamentResult", table: str) -> None:
     field = result.system_metrics(
         table, columns=["score_difference", "team_a_kills", "team_a_deaths"]
     )
-    print("Each Entrant As Team A:")
+    print("Each Entrant as Team A:")
     for row in range(len(field["system_id"])):
         print(
             f"  {field['system_name'][row]}: Elo {field['elo'][row]:.0f}, "

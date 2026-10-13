@@ -15,7 +15,7 @@
  * keyboard focus (live play never shows control hover cards, so there the card
  * stays hidden while the hover and focus still reach the switch), and
  * its checkbox's name is the switch name and its default tag ("Aura Fields Off
- * By Default"), and its description is the shared help and its own line. Turning Red
+ * by Default"), and its description is the shared help and its own line. Turning Red
  * Zone Floors off and on in Oracle, or Cooldown Effects off and on in Oracle
  * and Agent POV, sends no request and leaves the scientific data unchanged; the
  * Replay Viewer's This Tick and Next Tick are read from its Actions tab, live
@@ -383,7 +383,7 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
         return {
           id: input.dataset.visualFilterId,
           option: input.parentElement?.dataset.visualFilterOption,
-          // The first span holds the label; the second says "On By Default".
+          // The first span holds the label; the second says "On by Default".
           label: input.parentElement?.querySelector("span")?.textContent?.trim(),
           // Focus adds visual-tooltip for a moment; expectVisualFilterHelp checks it.
           describedBy: (input.getAttribute("aria-describedby") ?? "")
@@ -420,7 +420,7 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
     shown.filter(({ id }) => !expectedDisabled.has(id)).length +
     (rangesEnabled ? 1 : 0);
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${enabledCount} Of ${shown.length + 1} On`,
+    `${enabledCount} of ${shown.length + 1} On`,
   );
   const enableAll = page.locator("#enable-all-visual-filters-button");
   const disableAll = page.locator("#disable-all-visual-filters-button");
@@ -446,7 +446,7 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
     { id: "visual-filter-preset-researcher", text: "Researcher" },
     { id: "visual-filter-preset-manuscript", text: "Manuscript" },
     { id: "visual-filter-preset-minimal", text: "Minimal" },
-    { id: "reset-visual-filters-button", text: "Reset To Default Configuration" },
+    { id: "reset-visual-filters-button", text: "Reset to Default Configuration" },
     { id: "live-ranges-button", text: "Ranges" },
     { id: "replay-ranges-button", text: "Ranges" },
     { id: "enable-all-visual-filters-button", text: "Enable All" },
@@ -485,7 +485,7 @@ async function expectVisualFilterHelp(page) {
     await expect(input).toHaveAttribute("aria-describedby", ownDescribedBy);
     // The label wraps the name and its default tag, so both are in the name.
     await expect(input).toHaveAccessibleName(
-      `${label} ${defaultEnabled ? "On" : "Off"} By Default`,
+      `${label} ${defaultEnabled ? "On" : "Off"} by Default`,
     );
     await expect(input).toHaveAccessibleDescription(
       `${sectionHelp.replace(/\s+/gu, " ").trim()} ${help}`,

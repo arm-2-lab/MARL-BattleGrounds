@@ -18,7 +18,7 @@ import {
 
 const RECORDING = { lifecycle: "recording", finish_available: true };
 const GAME_OVER =
-  "The game is over. Press Restart for a new match, or Finish And Save.";
+  "The game is over. Press Restart for a new match, or Finish and Save.";
 
 test("the tick that ends the game says the game-over step", () => {
   assert.equal(gameOverStep(RECORDING), GAME_OVER);

@@ -71,7 +71,7 @@ JAX_PLATFORMS=cpu python examples/environment.py
 | `tournaments/canonical_admission.py` | A practice admission with artificial records | [Tournaments](../docs/tournaments.md) |
 | `tournaments/canonical_fixture.py` | Build artificial tournament records without playing games | [Tournaments](../docs/tournaments.md) |
 
-## Play, Watch And Language Models: `play/`
+## Play, Watch and Language Models: `play/`
 
 | Example | What It Teaches | Guide |
 |---|---|---|

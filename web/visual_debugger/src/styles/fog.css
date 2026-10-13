@@ -1,4 +1,4 @@
-/* Styles for the Fog And Vision look (src/looks/fog.js): the Agent POV Sight Reach veil, its Lift and Reach Edge, the recipient rim, the Spotted Glint and the Last Seen mark. styles.css imports this file. Colours come only from the :root tokens. Opacities live on the nodes as attributes (the beat fades read them), so no rule here sets opacity. */
+/* Styles for the Fog and Vision look (src/looks/fog.js): the Agent POV Sight Reach veil, its Lift and Reach Edge, the recipient rim, the Spotted Glint and the Last Seen mark. styles.css imports this file. Colours come only from the :root tokens. Opacities live on the nodes as attributes (the beat fades read them), so no rule here sets opacity. */
 
 .fog-sight,
 .fog-rim,

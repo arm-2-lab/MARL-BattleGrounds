@@ -109,7 +109,7 @@ def run(
     reports = training.analyze([result.run_dir], output_dir=result.run_dir / "analysis")
     print(f"Run: {result.run_dir}")
     print(f"Frozen Actor: {result.selected_actor or result.final_actor}")
-    print(f"Completed Updates (Optimizer Steps For QMIX): {result.completed_updates}")
+    print(f"Completed Updates (Optimizer Steps for QMIX): {result.completed_updates}")
     print(f"Summary: {reports['artifacts']['summary']}")
 
 

@@ -1027,7 +1027,7 @@ def write_outputs(
                 ]
             )
 
-    lines = ["# Teamwork Of Every Entrant", ""]
+    lines = ["# Teamwork of Every Entrant", ""]
     lines.append(
         "All games of each entrant, from its own side; 95% intervals from "
         "resampling whole game pairs within each opponent and map, where "

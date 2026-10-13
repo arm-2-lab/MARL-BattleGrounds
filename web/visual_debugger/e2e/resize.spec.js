@@ -257,7 +257,7 @@ async function expectIndependentRailLayout(page, viewport) {
   expect(initial.topBarLeft).toBeGreaterThanOrEqual(0);
   expect(initial.topBarRight).toBeLessThanOrEqual(viewport.width);
   expect(initial.topBarBottom).toBeLessThanOrEqual(viewport.height);
-  // The rail (Your Turn, Class Guide, How To Play) scrolls by itself.
+  // The rail (Your Turn, Class Guide, How to Play) scrolls by itself.
   expect(initial.railOverflowY).toBe("auto");
   expect(initial.railScrollHeight).toBeGreaterThan(initial.railClientHeight);
   // The command deck grows to its content and never clips it.

@@ -5,10 +5,10 @@
  *
  * Contracts checked:
  * - Scores: "/ 20", 20 segments lit up to the score, the side Team A sits on
- *   (its spawn end), "Tick 91 of 300" and "First To 20"; the Scorebug switch
+ *   (its spawn end), "Tick 91 of 300" and "First to 20"; the Scorebug switch
  *   off gives the plain "Score: 2/20" with no goal and no bar; a scoring tick
  *   keeps the old score and bar for the Fall beat; no summary gives nothing.
- * - Respawn wave: "Respawn Wave In N Ticks" with N = the soonest countdown + 1
+ * - Respawn wave: "Respawn Wave in N Ticks" with N = the soonest countdown + 1
  *   (Core brings champions back on the transition that starts at countdown
  *   0), and "1 Tick" for one.
  * - Controllers: controllerLine gives a team's full words, "You + <policy>"
@@ -147,7 +147,7 @@ test("the scorebug view gives scores, bars, side, tick and First To", () => {
   assert.equal(view.available, true);
   assert.equal(view.teamASide, "right");
   assert.equal(view.tickText, "Tick 91 of 300");
-  assert.equal(view.firstToText, "First To 20");
+  assert.equal(view.firstToText, "First to 20");
   const [a, b] = view.teams;
   assert.deepEqual(
     [a.key, a.scoreText, a.goalText, a.segments, a.lit, a.before],
@@ -190,8 +190,8 @@ test("the wave line counts the soonest wave as countdown + 1", () => {
         countdown_steps: countdown,
       })),
     }).waveText;
-  assert.equal(view([3, 3]), "Respawn Wave In 4 Ticks");
-  assert.equal(view([4, 0]), "Respawn Wave In 1 Tick");
+  assert.equal(view([3, 3]), "Respawn Wave in 4 Ticks");
+  assert.equal(view([4, 0]), "Respawn Wave in 1 Tick");
   assert.equal(view([]), "");
 });
 

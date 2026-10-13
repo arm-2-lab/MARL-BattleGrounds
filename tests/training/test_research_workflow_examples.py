@@ -745,8 +745,8 @@ def test_declared_curriculum_example_trains_loads_and_evaluates(
     )
     assert sum(steps) == exposure["env_steps"] == 32
     assert sum(starts) >= 4
-    assert f"Actual Transitions By Stage: {steps}" in printed
-    assert f"Actual Game Starts By Stage: {starts}" in printed
+    assert f"Actual Transitions by Stage: {steps}" in printed
+    assert f"Actual Game Starts by Stage: {starts}" in printed
     actor = Path(
         next(line[7:] for line in printed.splitlines() if line.startswith("Actor: "))
     )

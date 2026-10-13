@@ -13,7 +13,7 @@
  *
  * Who calls it: `controls.js` (which live keys are forwarded, and V and F on the
  * battlefield), `replay-controls.js` (Replay Viewer keys), the camera, Frame
- * Explanation, How To Play and Help (help lines). Local jobs run through a tiny
+ * Explanation, How to Play and Help (help lines). Local jobs run through a tiny
  * registry: the module that owns a job registers its handler once with
  * registerLocalCommandHandler, and key listeners call runLocalCommand.
  *
@@ -201,7 +201,7 @@ export const COMMAND_SET = Object.freeze([
     id: "help",
     keys: ["?"],
     keycaps: "?",
-    combat: local("help", "How To Play", "help"),
+    combat: local("help", "How to Play", "help"),
     replay: local("help", "Help", "help"),
   }),
   commandRow({
@@ -235,8 +235,8 @@ export const COMMAND_SET = Object.freeze([
     keycaps: "V",
     shift: "up",
     skipsTextAndDialogs: true,
-    combat: local("everyone_in_view", "Everyone In View", "camera_everyone_in_view"),
-    replay: local("everyone_in_view", "Everyone In View", "camera_everyone_in_view"),
+    combat: local("everyone_in_view", "Everyone in View", "camera_everyone_in_view"),
+    replay: local("everyone_in_view", "Everyone in View", "camera_everyone_in_view"),
   }),
   commandRow({
     id: "battle_cam",
@@ -342,7 +342,7 @@ export function forwardedFieldKeys(product) {
 
 /**
  * Return the help rows for one product, in table order: one row per table row
- * that has a job there. How To Play (BattleClient and DevClient) and Help
+ * that has a job there. How to Play (BattleClient and DevClient) and Help
  * (Replay Viewer) read these, so the help always matches what the keys do.
  *
  * @param {unknown} product "combat_debugger" or "replay_viewer".

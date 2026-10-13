@@ -3,7 +3,7 @@
  * Help key lists are empty `data-command-help` lists that shell.js fills from
  * the one command set (replay arrows step ticks; live play has no arrows and
  * no B; N has a job in both products). The Visual Filters preset row is a
- * fieldset that starts with Default Configuration pressed and Reset To
+ * fieldset that starts with Default Configuration pressed and Reset to
  * Default Configuration grayed. The Replay Viewer speed list selects 1.00× by
  * default. The top bar holds the brand lockup (emblem, an empty
  * #brand-wordmark SVG, divider, #app-title), the place title, the View switch
@@ -20,7 +20,7 @@
  * every client. The live deck keeps its controls in
  * #command-deck-body with the vision's Lock In Turn button and Prev and Next
  * buttons and its header line #status-line (the message and Keys On or
- * Off); Restart and Finish And Save sit in the top bar's toolbar actions. Retired copy stays out of main.js and the page parts it
+ * Off); Restart and Finish and Save sit in the top bar's toolbar actions. Retired copy stays out of main.js and the page parts it
  * starts (shell.js, tactics-turn.js, filter-controls.js); shell.js owns the
  * audience labels.
  */
@@ -157,7 +157,7 @@ test("Help key lists come from the one command set, with the replay arrows and E
   );
   assert.deepEqual(
     live.find(([keycaps]) => keycaps === "V"),
-    ["V", "Everyone In View"],
+    ["V", "Everyone in View"],
   );
 });
 
@@ -264,7 +264,7 @@ test("shared shell uses the requested details and visual-filter controls without
   );
   assert.match(
     markup,
-    /<button id="reset-visual-filters-button" type="button" disabled>Reset To Default Configuration<\/button>/u,
+    /<button id="reset-visual-filters-button" type="button" disabled>Reset to Default Configuration<\/button>/u,
   );
   assert.match(
     markup,

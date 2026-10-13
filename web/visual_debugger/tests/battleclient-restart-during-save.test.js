@@ -28,7 +28,7 @@ function frameWith(lifecycle, discard) {
   };
 }
 
-test("a restart during the background save goes out as Save And Replace", () => {
+test("a restart during the background save goes out as Save and Replace", () => {
   for (const lifecycle of ["sealed", "finalized_unsaved"]) {
     for (const command of [keyboardCommand("r"), { command_type: "reset" }]) {
       const decision = recordingCommandDecision(frameWith(lifecycle, true), command);

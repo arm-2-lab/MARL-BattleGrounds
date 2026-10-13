@@ -240,7 +240,7 @@ test("V and F reach their local handlers on the live battlefield and never Pytho
     assert.equal(replayView.defaultPrevented, false);
     assert.equal(calls.length, 3);
 
-    // ? still opens How To Play through onHelp, not a local handler.
+    // ? still opens How to Play through onHelp, not a local handler.
     ownsLocal = true;
     battlefield.dispatchEvent(cancelableKeydown("?"));
     assert.equal(helpCount, 1);

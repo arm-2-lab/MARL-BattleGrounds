@@ -4,7 +4,7 @@ Choose how much each game measures, then read the numbers without fooling yourse
 
 Website: https://marl-battlegrounds.com/#metrics
 
-## Choose A Level
+## Choose a Level
 
 ```python
 import marl_battlegrounds as marl_bgs
@@ -65,14 +65,14 @@ and `agent_0_and_agent_1_...` is a pair of teammates. Slots 0-4 are Team A, 5-9 
 | **Total** | **11,192** | **Unique numerical columns; shared viewer appearances are counted once.** |
 <!-- metric-family-summary:end -->
 
-## Topics In The Analytical Replay Viewer
+## Topics in the Analytical Replay Viewer
 
 ```bash
 python -m marl_battlegrounds replay PATH/TO/game.marlbg-replay.json
 ```
 
 The analytical Replay Viewer's **Metrics** tab sorts the full measures into 28 topics in six
-groups, many with **Totals** and **By Recipient** tables. **Find A Measurement** takes
+groups, many with **Totals** and **By Recipient** tables. **Find a Measurement** takes
 plain words or exact CSV names, and hovering a row shows its CSV column, numerator,
 denominator and blank rule. Agent POV still shows the full record.
 
@@ -150,7 +150,7 @@ to `agent_4` columns, even in games it played as Team B. `by` is `"system"`,
 methods, not training seeds; a System of your own gets "Conditional: Sampling not
 verified". A row is blank when full metrics cover only some of its games.
 
-## Measure A Saved Game
+## Measure a Saved Game
 
 ```python
 values = marl_bgs.replay_metrics("runs/eval/RUN/replays/GAME.marlbg-replay.json", metrics="full")
@@ -193,7 +193,7 @@ python -m jupyter nbconvert --to notebook --execute examples/evaluate/evaluation
 Without it, the notebook downloads Season 0 (about 390 MB) into
 `~/tdm-season-0-results` and reuses it on later runs.
 
-**From A Checkout:** the notebook lives in `examples/evaluate/` and needs the `viz` and `notebook` extras.
+**From a Checkout:** the notebook lives in `examples/evaluate/` and needs the `viz` and `notebook` extras.
 
 ## Next
 

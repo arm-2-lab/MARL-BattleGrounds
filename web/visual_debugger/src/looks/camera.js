@@ -1,5 +1,5 @@
 /**
- * @file The Camera look: Whole Map, Everyone In View (key V) and Battle Cam
+ * @file The Camera look: Whole Map, Everyone in View (key V) and Battle Cam
  * (key B, Replay Viewer only), with the camera switch and its tips. (The
  * Camera Inset picture was removed, owner 4 Oct 2026.)
  *
@@ -20,8 +20,8 @@
  *   nothing) and the Battle Cam words (for screen readers only), and
  *   remembers the last camera in localStorage. In the BattleClient and the DevClient combat
  *   screen no switch shows (owner, 1 October 2026): V alone toggles Everyone
- *   In View, and the change tip (#camera-tip, "Everyone In View on · V: back
- *   to Whole Map" or "Whole Map on · V: Everyone In View") shows under the
+ *   in View, and the change tip (#camera-tip, "Everyone in View on · V: back
+ *   to Whole Map" or "Whole Map on · V: Everyone in View") shows under the
  *   arena, over the deck header line's message, and goes after about 4 s or at
  *   the next input. Either way it registers the V and B handlers with
  *   `command-set.js`.
@@ -115,7 +115,7 @@ export const CAMERAS = Object.freeze(
 /** The name each camera shows on its button and in tips. */
 export const CAMERA_NAMES = Object.freeze({
   whole_map: "Whole Map",
-  everyone_in_view: "Everyone In View",
+  everyone_in_view: "Everyone in View",
   battle_cam: "Battle Cam",
 });
 
@@ -240,7 +240,7 @@ const CAMERA_ALIASES = Object.freeze({
  * Return the cameras a product offers, in switch order.
  *
  * product "replay_viewer" offers all three; "combat_debugger" (the BattleClient
- * and DevClient combat screen) offers Whole Map and Everyone In View only (B
+ * and DevClient combat screen) offers Whole Map and Everyone in View only (B
  * does nothing there). Any other value is treated as "combat_debugger". Pure.
  *
  * @param {unknown} product
@@ -274,7 +274,7 @@ export function effectiveCamera(camera, product, filters = null) {
 /**
  * Return the camera a key press chooses.
  *
- * key "v" or "V" toggles Everyone In View; "b" or "B" toggles Battle Cam (in
+ * key "v" or "V" toggles Everyone in View; "b" or "B" toggles Battle Cam (in
  * the Replay Viewer only). The lit key returns to Whole Map; the other key
  * switches straight across. Any other key, or B outside the Replay Viewer,
  * returns current unchanged. Pure.
@@ -296,11 +296,11 @@ export function nextCamera(current, key, product) {
 /**
  * Return the change tip for a camera, quoted exactly (plan 4.4, row 12).
  *
- * In the Replay Viewer: "Battle Cam on · B: back to Whole Map · V: Everyone In
- * View", "Everyone In View on · V: back to Whole Map · B: Battle Cam" and, for
- * Whole Map, "Whole Map on · V: Everyone In View · B: Battle Cam". In the
- * BattleClient and DevClient (any other product): "Everyone In View on · V:
- * back to Whole Map" and "Whole Map on · V: Everyone In View". The words name
+ * In the Replay Viewer: "Battle Cam on · B: back to Whole Map · V: Everyone in
+ * View", "Everyone in View on · V: back to Whole Map · B: Battle Cam" and, for
+ * Whole Map, "Whole Map on · V: Everyone in View · B: Battle Cam". In the
+ * BattleClient and DevClient (any other product): "Everyone in View on · V:
+ * back to Whole Map" and "Whole Map on · V: Everyone in View". The words name
  * cameras and keys only, so they are the same in Oracle View and Agent POV.
  * Pure.
  *
@@ -311,16 +311,16 @@ export function nextCamera(current, key, product) {
 export function cameraChangeTip(camera, product) {
   if (product === "replay_viewer") {
     if (camera === "battle_cam") {
-      return "Battle Cam on · B: back to Whole Map · V: Everyone In View";
+      return "Battle Cam on · B: back to Whole Map · V: Everyone in View";
     }
     if (camera === "everyone_in_view") {
-      return "Everyone In View on · V: back to Whole Map · B: Battle Cam";
+      return "Everyone in View on · V: back to Whole Map · B: Battle Cam";
     }
-    return "Whole Map on · V: Everyone In View · B: Battle Cam";
+    return "Whole Map on · V: Everyone in View · B: Battle Cam";
   }
   return camera === "everyone_in_view"
-    ? "Everyone In View on · V: back to Whole Map"
-    : "Whole Map on · V: Everyone In View";
+    ? "Everyone in View on · V: back to Whole Map"
+    : "Whole Map on · V: Everyone in View";
 }
 
 /**
@@ -328,7 +328,7 @@ export function cameraChangeTip(camera, product) {
  *
  * storage is a Storage-like object (window.localStorage) or null. A stored
  * camera name is returned as is; an older or spelled-out name ("director",
- * "Battle Director", "battle-cam", "Everyone In View", "whole_map" ...) maps to
+ * "Battle Director", "battle-cam", "Everyone in View", "whole_map" ...) maps to
  * its camera, so a viewer who left the old Battle Director lands on Battle Cam.
  * No storage, an empty or unknown value, or a storage error give "whole_map".
  * Never throws; reads storage only.
@@ -472,7 +472,7 @@ export function viewTagPlace(input) {
  * Return whether a camera change eases or cuts.
  *
  * reason is why the frame changed: "camera" (the viewer picked a camera),
- * "play" (a new tick in play: Everyone In View and Battle Cam move with the
+ * "play" (a new tick in play: Everyone in View and Battle Cam move with the
  * glide), "step" (one tick forward or back) ease; "seek", "view" (Oracle View
  * and Agent POV switch), "recipient" (a new POV champion), "resize" and any
  * other reason cut, so a POV change never eases. reducedMotion true always
@@ -489,7 +489,7 @@ export function cameraEase(input) {
 }
 
 /**
- * Choose the Everyone In View frame for one tick.
+ * Choose the Everyone in View frame for one tick.
  *
  * input.camera is the audience's plan camera record; input.worldWidth and
  * input.worldHeight are the map size in world units; input.scene (optional) is
@@ -923,8 +923,8 @@ export function tooltip(record) {
       : camera === "battle_cam"
         ? "Follows the fights for you: frames each fight, leans in on each fall and slows the fall in play. Press B again for the Whole Map."
         : live
-          ? "Shows the whole arena, still. Press V for Everyone In View."
-          : "Shows the whole arena, still. Press V for Everyone In View or B for Battle Cam.";
+          ? "Shows the whole arena, still. Press V for Everyone in View."
+          : "Shows the whole arena, still. Press V for Everyone in View or B for Battle Cam.";
   const key = CAMERA_KEYCAPS[camera];
   return createSemanticDescriptor({
     kind: "control",
@@ -980,7 +980,7 @@ export function tooltip(record) {
  * - product: "replay_viewer" (three cameras, a button each unless
  *   switchCameras leaves one out, B, remembered camera, first-open
  *   tip and Battle Cam words) or "combat_debugger" (Whole Map and
- *   Everyone In View only, by V alone; always opens on Whole Map). For
+ *   Everyone in View only, by V alone; always opens on Whole Map). For
  *   "combat_debugger" the change tip is one `span#camera-tip.camera-tip`
  *   (role status) appended to the deck's header line (#status-line) when the page
  *   has one, else to the slot's `.bc` page root (else the body, else the
@@ -1010,7 +1010,7 @@ export function tooltip(record) {
  *   this order (default every offered camera). A camera left out still works
  *   by its key and its other on-screen button; the slot's data-camera names
  *   it while it is on, and no switch button is lit then. The Replay Viewer
- *   passes ["whole_map", "battle_cam"]: Everyone In View has its one button
+ *   passes ["whole_map", "battle_cam"]: Everyone in View has its one button
  *   in the arena's corner (src/arena-buttons.js; owner, 3 Oct 2026).
  * - tipHost: Replay Viewer only, the element that holds the change tip and
  *   the first-open tip (default null: the slot holds them). The Replay
@@ -1677,7 +1677,7 @@ function zoomNeeded(world, points, margin) {
 
 /**
  * Centre on one axis of a frame of size that holds [low, high] plus margin, as
- * near the map centre as possible (Everyone In View's calm placement).
+ * near the map centre as possible (Everyone in View's calm placement).
  *
  * @param {number} low
  * @param {number} high

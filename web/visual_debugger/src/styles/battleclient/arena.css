@@ -2,9 +2,9 @@
  * BattleClient arena box (#arena), ported from the approved vision page: a
  * bordered box in the Surround color that holds the battlefield SVG, the
  * view tag (#pov-tag; its spot on the frame under the floor is set in
- * overlays.css), the How To Play overlay (#htp, styled in overlays.css) and
+ * overlays.css), the How to Play overlay (#htp, styled in overlays.css) and
  * the on-screen key stack in its top-right corner (#arena-buttons: V
- * Everyone In View, B Battle Cam, F Frame Explanation and Esc Clear
+ * Everyone in View, B Battle Cam, F Frame Explanation and Esc Clear
  * Selection, key only; styled at the end of this file).
  *
  * Size: as in the vision, the arena's height follows the stage's width, so

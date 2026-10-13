@@ -19,7 +19,7 @@
  * its Kill Contributors tip; Agent POV lists only the falls its team saw.
  * Metric checks use scalar schema 15 (11,192
  * measurements in 28 topics and 44 tables); the Metrics tab's header (Scope,
- * Topic, View and Find A Measurement) stays put while only the card under it
+ * Topic, View and Find a Measurement) stays put while only the card under it
  * scrolls, and the card keeps a few rows even at 200% zoom; a historical recording shows every
  * Red Zone row as a dash explaining that the rule was not recorded. Exit must
  * flush its replay response and end the server with exit code 0 and no signal,
@@ -111,7 +111,7 @@ const PAIRED_METRIC_TOPICS = new Set([
 
 /**
  * Pick the metric scope through the Metrics tab's Scope switch (it mirrors the
- * hidden native select) and wait for its status words: "Up To Tick N" or
+ * hidden native select) and wait for its status words: "Up to Tick N" or
  * "Whole Game · Tick N".
  *
  * @param {import("@playwright/test").Page} page
@@ -122,7 +122,7 @@ async function selectMetricScope(page, scope, tick) {
   await page.locator(`#metric-scope-switch [data-value="${scope}"]`).click();
   await expect(page.locator("#metric-scope")).toHaveValue(scope);
   await expect(page.locator("#metric-status")).toContainText(
-    scope === "cursor" ? `Up To Tick ${tick}` : `Whole Game · Tick ${tick}`,
+    scope === "cursor" ? `Up to Tick ${tick}` : `Whole Game · Tick ${tick}`,
   );
 }
 
@@ -1360,7 +1360,7 @@ async function enableAllReplayVisualFilters(page) {
   // Every listed switch plus Ranges: "96 Of 96 On".
   const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${controls} Of ${controls} On`,
+    `${controls} of ${controls} On`,
   );
   await expect(enableAll).toBeDisabled();
   await expect(page.locator("#disable-all-visual-filters-button")).toBeEnabled();
@@ -1404,7 +1404,7 @@ async function installRepresentativeReplayPresentationState(page, options = {}) 
   }
   const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${controls - REPRESENTATIVE_DISABLED_FILTERS.length} Of ${controls} On`,
+    `${controls - REPRESENTATIVE_DISABLED_FILTERS.length} of ${controls} On`,
   );
   if (options.proveVisibleUltimate === true) {
     await expect(ultimateEffects).toHaveCount(0);
@@ -2857,7 +2857,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       const poisonMeasure = page.locator(
         '[data-metric="team_a_healing_prevented_by_poison"] .metric-measure',
       );
-      await expect(poisonMeasure).toHaveText("Priest Healing Prevented On Team A");
+      await expect(poisonMeasure).toHaveText("Priest Healing Prevented on Team A");
       if (pov === "researcher") await poisonMeasure.hover();
       else await poisonMeasure.focus();
       await expect(page.locator("#visual-tooltip")).toContainText(
@@ -2878,19 +2878,19 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
         page.locator(
           '[data-metric="agent_0_healing_prevented_by_poison"] .metric-measure',
         ),
-      ).toHaveText("Priest Healing Prevented On This Agent");
+      ).toHaveText("Priest Healing Prevented on This Agent");
       await selectMetricTable(page, "ultimate_warrior");
       await expect(
         page.locator(
           '[data-metric="team_b_warrior_charge_slow_active_steps"] .metric-measure',
         ),
-      ).toHaveText("Time With Status On Team B");
+      ).toHaveText("Time With Status on Team B");
       await selectMetricTable(page, "ultimate_warrior", "recipients");
       await expect(
         page.locator(
           '[data-metric="agent_5_warrior_charge_slow_active_steps"] .metric-measure',
         ),
-      ).toHaveText("Time With Status On This Agent");
+      ).toHaveText("Time With Status on This Agent");
       await selectMetricTable(page, "respawn");
       expect(
         await page
@@ -2973,7 +2973,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
         '#metric-search-results [data-measurement="agent_0_healing_done"]',
       );
       // The tag is a label, so it reads in Title Case (owner's label rule).
-      await expect(hiddenHealing).toContainText("Not Applicable To This Roster");
+      await expect(hiddenHealing).toContainText("Not Applicable to This Roster");
       await hiddenHealing.click();
       await expect(page.locator("#metric-search-definition")).toBeFocused();
       await expect(page.locator("#metric-search-definition")).toContainText(
@@ -3596,7 +3596,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       ({ defaultEnabled }) => defaultEnabled,
     ).length;
     await expect(page.locator("#visual-filter-count")).toHaveText(
-      `${shippedOn + 1} Of ${REPLAY_VIEWER_FILTER_IDS.length + 1} On`,
+      `${shippedOn + 1} of ${REPLAY_VIEWER_FILTER_IDS.length + 1} On`,
     );
     await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
       "aria-pressed",
@@ -3669,7 +3669,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       document.documentElement.style.zoom = "";
     });
     // The death announcer is the Fallen panel at the top of the side rail now
-    // (page chrome, never on the arena; Runefield "Death, Respawn And Kills").
+    // (page chrome, never on the arena; Runefield "Death, Respawn and Kills").
     // Its switch sits in the Visuals tab.
     await page.locator("#replay-rail-tab-visuals").click();
     await page.locator("#visual-filter-death-announcer").check();
@@ -3795,7 +3795,7 @@ test("all eight scenario identities and dense authoritative deaths render in bot
     viewer = await startReplayViewer({ replayPath: acceptance.dense });
     await openReplay(page, viewer.url);
     // The death announcer is the Fallen panel at the top of the side rail now
-    // (page chrome, never on the arena; Runefield "Death, Respawn And Kills"):
+    // (page chrome, never on the arena; Runefield "Death, Respawn and Kills"):
     // newest first, at most 4 rows, each with its Kill Contributors tip. Its
     // switch sits in the Visuals tab.
     await page.locator("#replay-rail-tab-visuals").click();
@@ -3988,9 +3988,9 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
   }
   try {
     await openReplay(page, viewer.url);
-    // The shared scorebug: First To 1 (Team Deathmatch), each team's
+    // The shared scorebug: First to 1 (Team Deathmatch), each team's
     // controller line and score; no result before the Verdict card.
-    await expect(page.locator("#scorebug")).toContainText("First To 1");
+    await expect(page.locator("#scorebug")).toContainText("First to 1");
     await expect(page.locator("#ctl-a")).toContainText(
       "Policy 0 / Policy 1 / Policy 2",
     );
@@ -4020,7 +4020,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
     } finally {
       await initialMetrics.release();
     }
-    await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
+    await expect(page.locator("#metric-status")).toContainText("Up to Tick 0");
     await expect(page.locator("#metric-progress")).toBeHidden();
     await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "false");
     expect(
@@ -4177,8 +4177,8 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
     await expect(page.locator("#metric-view")).toHaveValue("recipients");
     await installReplayView(page, "pov");
     await expect(page.locator("#evaluation-metrics")).toBeVisible();
-    await expect(page.locator("#scorebug")).toContainText("First To 1");
-    await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
+    await expect(page.locator("#scorebug")).toContainText("First to 1");
+    await expect(page.locator("#metric-status")).toContainText("Up to Tick 0");
 
     const staleMetrics = await holdMetricResponse(
       "**/api/replay/metrics/1/cursor.json",
@@ -4197,9 +4197,9 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       await expect(page.locator("#metric-progress")).toBeHidden();
       await expect(page.locator("#metric-rows")).toHaveAttribute("aria-busy", "false");
       await expect(page.locator("#battlefield .herald--verdict")).toHaveCount(0);
-      await expect(page.locator("#metric-status")).not.toContainText("Up To Tick 1");
+      await expect(page.locator("#metric-status")).not.toContainText("Up to Tick 1");
       await staleMetrics.release();
-      await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
+      await expect(page.locator("#metric-status")).toContainText("Up to Tick 0");
     } finally {
       await staleMetrics.release();
     }
@@ -4213,7 +4213,7 @@ test("TDM scores and offline metric exports follow the cursor across POV changes
       await expect(page.locator("#metric-progress")).toBeVisible();
       await clickReplayCommand(page, "#replay-first-button");
       await staleFailure.release();
-      await expect(page.locator("#metric-status")).toContainText("Up To Tick 0");
+      await expect(page.locator("#metric-status")).toContainText("Up to Tick 0");
       await expect(page.locator("#metric-progress")).toBeHidden();
       await clickReplayCommand(page, "#replay-last-button");
       await expect(page.locator("#metric-status")).toContainText(

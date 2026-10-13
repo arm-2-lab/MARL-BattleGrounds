@@ -82,7 +82,7 @@ html[data-product-kind="combat_debugger"]
   color: var(--text);
 }
 
-/* The deck's "Played By <name>" chip: the name shrinks inside the chip. */
+/* The deck's "Played by <name>" chip: the name shrinks inside the chip. */
 html[data-product-kind="combat_debugger"] .bc .chip.pol:not(:empty) {
   display: inline-flex;
   max-width: 100%;

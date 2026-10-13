@@ -478,7 +478,7 @@ test("the frame view: hint, full record chip, status rule, Recent Ticks and Next
   const empty = frame.championFrameView(frameInput(oracle, null));
   assert.deepEqual(empty, {
     state: "empty",
-    hint: "Select A Champion To Inspect · Click Its Body Or Its Arena Frame",
+    hint: "Select a Champion to Inspect · Click Its Body or Its Arena Frame",
   });
   assert.equal(
     frame.championFrameView(frameInput(oracle, "agent-slot-99")).state,
@@ -529,7 +529,7 @@ test("the frame view: hint, full record chip, status rule, Recent Ticks and Next
   const hidden = /** @type {any} */ (
     frame.championFrameView(frameInput(pov, "agent-slot-5"))
   );
-  assert.equal(hidden.chip, "Full Record · Not Limited To Agent 0's View");
+  assert.equal(hidden.chip, "Full Record · Not Limited to Agent 0's View");
   assert.equal(hidden.title, "Hunter · ID 5", "the docked frame keeps the full record");
   assert.equal(hidden.recent.state, "not-visible");
   assert.equal(hidden.recent.damage, null);
@@ -545,7 +545,7 @@ test("the frame view: hint, full record chip, status rule, Recent Ticks and Next
   );
   assert.equal(last.nextText, "No Next Tick (Final Frame)");
   assert.equal(last.finalFrame, true);
-  assert.equal(last.ultimateText, "Burst · Ready In 29 Ticks");
+  assert.equal(last.ultimateText, "Burst · Ready in 29 Ticks");
 });
 
 test("Effective Speed shows the speed now, for a living champion only", async () => {
@@ -618,7 +618,7 @@ test("renderChampionFrame builds the hint row or the selected frame", async () =
   );
   assert.equal(
     container.children[0].textContent,
-    "Full Record · Not Limited To Agent 0's View",
+    "Full Record · Not Limited to Agent 0's View",
   );
   const portrait = container.children[1].children[0];
   assert.equal(portrait.getAttribute("viewBox"), "0 0 46 46");

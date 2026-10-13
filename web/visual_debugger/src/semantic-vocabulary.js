@@ -328,7 +328,7 @@ const STATUS_LIFECYCLE_PREFIX = Object.freeze({
   decremented: "Aged",
   expired: "Expired",
   trap_broken: "Broken",
-  cleared_by_death: "Cleared On Death",
+  cleared_by_death: "Cleared on Death",
   cleared_unclassified: "Ended",
   trap_broken_and_reapplied: "Broken, Then Reapplied",
   reapplied: "Reapplied",
@@ -378,7 +378,7 @@ export function statusPresentation(tokenId) {
  * lifecycleTokenId is trimmed and must name a known lifecycle. statusTokenId
  * selects a status definition, with the neutral fallback. Titles put the
  * lifecycle word before the status title ("Applied Serrated Arrows (Slow)",
- * "Cleared Serrated Arrows (Slow) On Death"). Three exact cases have their own
+ * "Cleared Serrated Arrows (Slow) on Death"). Three exact cases have their own
  * words, compared on the untrimmed status input: an expired "in_combat" is
  * "Out of Combat"; a "trap_broken" "stun_hunter_trap" is "Freezing Trap (Stun
  * Broken)"; and a "trap_broken_and_reapplied" "stun_hunter_trap" is "Freezing
@@ -406,7 +406,7 @@ export function statusLifecyclePresentation(statusTokenId, lifecycleTokenId) {
       ? brokenTitle
       : `${brokenTitle}, Then Reapplied`
     : lifecycleKey === "cleared_by_death"
-      ? `Cleared ${status.title} On Death`
+      ? `Cleared ${status.title} on Death`
       : lifecycleKey === "expired" && statusTokenId === "in_combat"
         ? "Out of Combat"
         : `${STATUS_LIFECYCLE_PREFIX[/** @type {keyof typeof STATUS_LIFECYCLE_PREFIX} */ (lifecycleKey)]} ${status.title}`;

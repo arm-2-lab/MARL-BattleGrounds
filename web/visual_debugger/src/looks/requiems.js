@@ -1,5 +1,5 @@
 /**
- * @file The Class Requiems look (Runefield part "Death, Respawn And Kills"):
+ * @file The Class Requiems look (Runefield part "Death, Respawn and Kills"):
  * how champions fall and come home, and the Fallen panel.
  *
  * It owns these drawings:
@@ -37,7 +37,7 @@
  *   Ultimate diamond when known, an arrow, the fallen champion and the points.
  * The `death_announcement` and `respawn_wave_occurred` plan pulses therefore
  * draw nothing on the arena (a fallen champion's scorebug portrait counts down
- * "Returns In N", looks/hud.js): records({event}) gives [] for them, and the plan
+ * "Returns in N", looks/hud.js): records({event}) gives [] for them, and the plan
  * gives them no anchor and no arena box.
  *
  * Callers: `choreography-painter.js` sends the fall and return pulses here
@@ -1178,7 +1178,7 @@ function buildFall(doc, mount, record) {
  *   1000-1160 (ease-in) and fade to half by 1500, where the ash relic takes
  *   over; crack and halves settle to scale 0.97 over 1000-1120; the ash dust
  *   ring widens from 1.0R to 1.2R and fades from 40% over 1040-1480.
- * - Hunter, Leaves On Frost: an Umber copy of the emblem (in over 880-1030,
+ * - Hunter, Leaves on Frost: an Umber copy of the emblem (in over 880-1030,
  *   out over 1130-1380); five leaves (0.11R by 0.05R, at 0.55R) and five
  *   Rime dots (r 0.8 px) that scale about the centre from 1 to 2.1 and fade
  *   (leaves from 80%, rime from 70%) over 940-1440.
@@ -2575,7 +2575,7 @@ function fallenRowTooltip(record) {
   if (record.killers.length > 0) {
     return explainDeathAnnouncement({
       eventId,
-      label: `Fallen On Tick ${record.tick}`,
+      label: `Fallen on Tick ${record.tick}`,
       members: [
         {
           title: record.victim.title,

@@ -51,7 +51,7 @@
  * glide request for the choreographer.
  *
  * In the BattleClient and DevClient it also owns the live controls' behavior:
- * How To Play over the arena (#htp: ?, the How To Play button, Close and Full
+ * How to Play over the arena (#htp: ?, the How to Play button, Close and Full
  * Guide); the deck's message line (#msg) in the vision page's words for the
  * player's own commands (ownOrderFacts, laneRefusal, acceptedCommandSentence,
  * hostNoticeSentence; the words come from statusSentence in controls.js);
@@ -61,10 +61,10 @@
  * view switch keeps keys on, and a click on the arena never pins a card);
  * R and G while orders are closed
  * (game over, after a save); the Recording pill and popover
- * (recordingWords); the top bar's save button (saveButtonState: Finish And
+ * (recordingWords); the top bar's save button (saveButtonState: Finish and
  * Save, Saving Replay…, then Open Replay once saved, or Retry Save), Finish
- * And Save in the popover and the Stopped overlay; the arena's on-screen V and
- * F keys (arena-buttons.js); Back To Your champion (Watch Only); the Restart dialog's
+ * and Save in the popover and the Stopped overlay; the arena's on-screen V and
+ * F keys (arena-buttons.js); Back to Your champion (Watch Only); the Restart dialog's
  * Save focus and Cancel sentence; Open Replay's new tab, which shows the dark
  * "Opening Replay" page (opening-replay-page.js) until the Replay Viewer's
  * page arrives; and the closed page after Exit. Agent POV: the renderer and the
@@ -329,7 +329,7 @@ const elements = {
   replayClearReferenceButton: requiredElement("replay-clear-reference-button"),
   reconnectButton: requiredElement("reconnect-button"),
   helpButton: requiredElement("help-button"),
-  // How To Play over the arena (BattleClient and DevClient); the Replay
+  // How to Play over the arena (BattleClient and DevClient); the Replay
   // Viewer keeps the Help dialog (#help-dialog).
   howToPlay: requiredElement("htp"),
   howToPlayCloseButton: requiredElement("help-close-button"),
@@ -454,7 +454,7 @@ let agentLocalRangesVisible = false;
 
 /**
  * The public ID of the last Manual champion the player gave orders to, or null
- * before any. Back To Your <Class> (Watch Only) returns there. Only the
+ * before any. Back to Your <Class> (Watch Only) returns there. Only the
  * player's own champions are stored, so it never names a hidden champion.
  *
  * @type {string | null}
@@ -949,7 +949,7 @@ const CONTROL_HELP = Object.freeze([
     "Switch between Oracle View (everything) and Agent POV (only what one team saw).",
   ],
   ["#reconnect-button", "Reconnect", "Load the newest game state again."],
-  ["#help-button", "How To Play", "Open the guide to the keys and controls."],
+  ["#help-button", "How to Play", "Open the guide to the keys and controls."],
   [
     "#visual-filters-button",
     "Visual Filters",
@@ -957,7 +957,7 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#arena-everyone-in-view-button",
-    "Everyone In View",
+    "Everyone in View",
     "Move the camera so every champion on the field is in view. Press it again for the whole map. You can also press V.",
   ],
   [
@@ -982,43 +982,43 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#help-close-button",
-    "Close How To Play",
+    "Close How to Play",
     "Close the guide to the keys and controls.",
   ],
   [
     "#full-guide",
     "Full Guide",
-    "Open How To Play over the arena: every key and control, in plain words. You can also press ?.",
+    "Open How to Play over the arena: every key and control, in plain words. You can also press ?.",
   ],
   [
     '#guide-level button[data-level="guide"]',
     "Guide",
-    "The most help: Do This Now, a dashed outline around the control to use next, and the How To Play card. Your choice is remembered.",
+    "The most help: Do This Now, a dashed outline around the control to use next, and the How to Play card. Your choice is remembered.",
   ],
   [
     '#guide-level button[data-level="hints"]',
     "Hints",
-    "Some help: Do This Now only, with no outline and no How To Play card. Your choice is remembered.",
+    "Some help: Do This Now only, with no outline and no How to Play card. Your choice is remembered.",
   ],
   [
     '#guide-level button[data-level="off"]',
     "Off",
-    "No help on this card: Do This Now, the outline and the How To Play card are hidden. Your choice is remembered.",
+    "No help on this card: Do This Now, the outline and the How to Play card are hidden. Your choice is remembered.",
   ],
   [
     "#recording-badge",
     "Replay Recording",
-    "Open the replay menu: how much of this game the replay has kept, where it is saved, Finish And Save, Open Replay, and Retry Save or Save As if a save fails.",
+    "Open the replay menu: how much of this game the replay has kept, where it is saved, Finish and Save, Open Replay, and Retry Save or Save As if a save fails.",
   ],
   [
     "#pop-finish",
-    "Finish And Save",
+    "Finish and Save",
     "Save this game and keep it on screen to look over. Restart begins another match.",
   ],
   ["#exit-button", "Exit", "Close the client and stop its server safely."],
   [
     "#recording-finish-button",
-    "Finish And Save",
+    "Finish and Save",
     "Save this game and keep it on screen to look over. Restart begins another match.",
   ],
   [
@@ -1050,7 +1050,7 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#recording-replay-link",
-    "Open Saved Replay In New Tab",
+    "Open Saved Replay in New Tab",
     "Open the separate local Replay Viewer.",
   ],
   ["#replay-first-button", "Start Replay Tick", "Go to tick 0."],
@@ -1078,7 +1078,7 @@ const CONTROL_HELP = Object.freeze([
   ],
   [
     "#live-run-button",
-    "Run Or Pause",
+    "Run or Pause",
     "Run advances matches with no Manual slots. Pause stops the next turn; a turn already choosing actions may finish.",
   ],
   [
@@ -1439,7 +1439,7 @@ const frameExplanation =
       });
 
 // The arena's on-screen keys, stacked at its top right (owner, 4 Oct 2026):
-// the only Everyone In View (V), Battle Cam (B), Frame Explanation (F) and
+// the only Everyone in View (V), Battle Cam (B), Frame Explanation (F) and
 // Clear Selection (Esc) buttons. V, B and Esc press their key through the one
 // command set; Frame Explanation is createFrameExplanation's own button
 // (above). The Replay Viewer first; live play (the BattleClient and the
@@ -1455,7 +1455,7 @@ if (replayProductPage && productIdentity !== null) {
   });
 }
 
-// Live play: the same two keys (owner, 4 Oct 2026). A click on Everyone In
+// Live play: the same two keys (owner, 4 Oct 2026). A click on Everyone in
 // View passes the same {interactive} fact the arena's V key passes
 // (controls.js bindBattlefieldControls), and its lit state follows the live
 // camera slot.
@@ -2809,7 +2809,7 @@ function requestedCombatConfigurationCommand(value) {
  *
  * action is one reduceVisualFilterState action: {type: "set", filterId,
  * enabled}, {type: "enable_all"}, {type: "disable_all"}, {type: "apply_preset",
- * presetId} or {type: "restore_defaults"} (Reset To Default Configuration).
+ * presetId} or {type: "restore_defaults"} (Reset to Default Configuration).
  * apply_preset makes presetId the preset in use and restore_defaults makes it
  * "default"; the other actions keep the preset in use, so their changes count
  * as hand changes. When the switch state changes: invalidate downloads, replace
@@ -2858,7 +2858,7 @@ function applyVisualFilterAction(action) {
 
 /**
  * Set the camera on screen. This is the one camera entry point; the camera
- * look (Whole Map, Everyone In View, Battle Cam) calls it.
+ * look (Whole Map, Everyone in View, Battle Cam) calls it.
  *
  * frame is null for Whole Map, or {camera, minX, minY, maxX, maxY}: camera is
  * "whole_map", "everyone_in_view" or "battle_cam", and the rectangle is the
@@ -3091,10 +3091,10 @@ function updateRuneScrubber(playback) {
  *
  * Live play: publicAgentId names a champion drawn in the shown audience's
  * arena scene, or your own Manual champion that this view cannot see, for
- * example yours on the other team in One On Each Team. A drawn champion:
+ * example yours on the other team in One on Each Team. A drawn champion:
  * find its presentation key in that scene and route activate_authorized_agent
  * through dispatchPanelCommand. Your unseen Manual champion: send
- * roster_selection (role "control") for its command slot, as Back To Your
+ * roster_selection (role "control") for its command slot, as Back to Your
  * Champion does; the host then shows its view. Any other champion not in the
  * scene does nothing. Side effects: the same as a Roster click.
  *
@@ -3203,7 +3203,7 @@ function renderChampionFrameForPage(presentation) {
  * Fill the Replay Viewer's Class Guide (#replay-class-card, under the
  * Champion Frame in the Agent tab) for the selected champion: its class's
  * guide with the numbers from the recorded class_mechanics and its Ultimate
- * readiness ("Ultimate · Ready In 3 Ticks"), in the BattleClient's words
+ * readiness ("Ultimate · Ready in 3 Ticks"), in the BattleClient's words
  * (classGuideCardHtml). With nobody selected, or the Class Guide switch
  * (class_guide) off, the card hides. It also fills or hides the Full Class
  * Details under it (renderReplayClassDetails). The Agent tab is a docked researcher
@@ -4477,7 +4477,7 @@ function renderReplayMetrics() {
     elements.metricStatus.textContent =
       summary.scope === "final"
         ? `Whole Game · Tick ${summary.simulator_step_count}`
-        : `Up To Tick ${summary.simulator_step_count}`;
+        : `Up to Tick ${summary.simulator_step_count}`;
     focusReplayMeasurement();
     return;
   }
@@ -4489,7 +4489,7 @@ function renderReplayMetrics() {
   }
   elements.metricProgress.hidden = false;
   elements.metricRows.setAttribute("aria-busy", "true");
-  elements.metricStatus.textContent = `${METRIC_PREPARATION_MESSAGE} Playback And POV Still Work.`;
+  elements.metricStatus.textContent = `${METRIC_PREPARATION_MESSAGE} Playback and POV Still Work.`;
   if (replayMetricRequest !== null) return;
   replayMetricRequest = context.key;
   void getReplayMetrics(state.token, context.frameIndex, context.scope)
@@ -4871,12 +4871,12 @@ function paintSaveFailedReason(recording) {
  * recordingWords (tactics-turn.js, the one owner of these words), and after a
  * failed save the reason line under it (#pop-reason, paintSaveFailedReason), with the
  * `saved` class once saved, and the top bar's save button through
- * saveButtonState and paintSaveButton (Finish And Save, Saving Replay…, Open
+ * saveButtonState and paintSaveButton (Finish and Save, Saving Replay…, Open
  * Replay or Retry Save; owner, 4 Oct 2026: it turns into Open Replay instead
- * of disappearing). Finish And Save in the popover and the Stopped overlay
+ * of disappearing). Finish and Save in the popover and the Stopped overlay
  * and Retry Save show only when they work; the popover's Open Replay stays
  * visible and is disabled until a save exists; after an accepted Exit, the
- * popover's Finish And Save and Retry Save and the top bar's save button
+ * popover's Finish and Save and Retry Save and the top bar's save button
  * are hidden. While the server
  * saves a finished game in the background (lifecycle "sealed"), the words
  * read "Saving Replay…" and the popover note says Open Replay works once it
@@ -4990,7 +4990,7 @@ function renderRecordingControls(installed) {
     recording.lifecycle === "recording" && recording.discard_available === true
       ? "Capture is active. Restart offers Save, Discard or Cancel."
       : recording.lifecycle === "recording"
-        ? "Capture starts at frame zero. Finish And Save ends this recording."
+        ? "Capture starts at frame zero. Finish and Save ends this recording."
         : recording.lifecycle === "persistence_failed"
           ? "Your recording is kept in memory. Retry Save or choose a new file name with Save As."
           : recording.lifecycle === "saved"
@@ -7029,7 +7029,7 @@ function renderPage() {
       ? null
       : (transportFrame?.focused_public_agent_id ?? null),
     // Live only: the Manual slots, so the hotbar dims a Command Ring round
-    // every other Manual champion this audience's scene draws (One On Each
+    // every other Manual champion this audience's scene draws (One on Each
     // Team). Agent POV still hides another team's staged order: the studs
     // need a staged row, and Agent POV frames carry none.
     manualSlots: isReplayMode()
@@ -7718,7 +7718,7 @@ const resentAfterStale = new WeakSet();
 
 /**
  * Return whether a live command keeps its meaning on a newer frame, so the
- * page sends it once more after a "stale" answer: Exit, and Save And Replace
+ * page sends it once more after a "stale" answer: Exit, and Save and Replace
  * (a restart pressed while the game-over save ran, or Save in the Restart
  * dialog). The game-over save installs a new revision when it ends, so a
  * command sent just before that moment arrives one revision late; every
@@ -7791,7 +7791,7 @@ function acceptExit(payload) {
  *
  * A restart (R) pressed while the game-over save runs ("Saving Replay…")
  * opens no Save, Discard or Cancel dialog: recordingCommandDecision turns it
- * into Save And Replace, which is sent instead with the same options, and the
+ * into Save and Replace, which is sent instead with the same options, and the
  * server starts the new match once the save has ended. Meanwhile the status
  * line says "The replay is still saving. The new match starts once it is
  * saved."
@@ -7803,7 +7803,7 @@ function acceptExit(payload) {
  * status ("The game so far is saved", "No tick was played, so no replay was
  * saved", or nothing about a replay when the match records nothing) and
  * turns keys off. Exit
- * and Save And Replace that get a "stale" answer (the game-over save ended
+ * and Save and Replace that get a "stale" answer (the game-over save ended
  * just before they arrived) are sent once more from the fresh frame
  * (resendsAfterStale), with the same source and quiet options, and the
  * stale answer itself writes no notice; any other stale command is not sent
@@ -8019,7 +8019,7 @@ async function dispatchCommand(
     recordingDecision.command !== undefined &&
     recordingDecision.command !== command
   ) {
-    // A restart pressed while the game-over save runs goes out as Save And
+    // A restart pressed while the game-over save runs goes out as Save and
     // Replace (no dialog); it passes the same fences as any other command.
     // The line says why nothing happens until the save ends.
     clearNotice("The replay is still saving. The new match starts once it is saved.");
@@ -8237,7 +8237,7 @@ async function dispatchCommand(
           (payload?.result === "no_op" && (clearsTarget || restatesOrder))
             ? acceptedCommandSentence(command, beforeFacts, afterFacts, source)
             : null));
-    // Exit, and a restart pressed while the game-over save ran (Save And
+    // Exit, and a restart pressed while the game-over save ran (Save and
     // Replace), keep their meaning on a newer frame: when the save ended just
     // before the command arrived, the server answers "stale", so the page
     // sends the same command once more from the fresh frame, and says
@@ -8291,7 +8291,7 @@ async function dispatchCommand(
           replayOpened = true;
         } else {
           setNotice(
-            "Replay ready. Use Open Saved Replay In New Tab below if your browser blocked the new tab.",
+            "Replay ready. Use Open Saved Replay in New Tab below if your browser blocked the new tab.",
             "info",
           );
         }
@@ -8648,7 +8648,7 @@ function ownChampionTabStep(command) {
 
 /**
  * Return whether a battlefield key still goes to Python while orders are
- * closed: at game over, after Finish And Save, or in scripted inspection. Only
+ * closed: at game over, after Finish and Save, or in scripted inspection. Only
  * R, G and, in scripted inspection only, N pass: R (Restart; it asks Save,
  * Discard or Cancel first when play is unsaved, and
  * restarts at once when the game is saved) and G (ranges; in Agent POV G stays
@@ -8716,7 +8716,7 @@ bindBattlefieldControls({
    */
   onCommand: (command) => dispatchCommand(command, { source: "field" }),
   /**
-   * Open or close How To Play (? on the battlefield) without a server request.
+   * Open or close How to Play (? on the battlefield) without a server request.
    */
   onHelp: () => toggleHowToPlay(),
   isInteractive: liveBattlefieldCommandsInteractive,
@@ -8747,7 +8747,7 @@ bindBattlefieldControls({
  * Show whether keys are on: they are on while the battlefield has keyboard
  * focus (a click on the arena gives it; Esc and a click elsewhere take it,
  * but a click on a top-bar button or a view switch keeps it).
- * Writes the message line's Keys chip ("Keys On" or "Keys Off · Click The
+ * Writes the message line's Keys chip ("Keys On" or "Keys Off · Click the
  * Arena", class `off`) and the `keys-on` class on #arena (its silver frame),
  * as on the vision page. BattleClient and DevClient only; in the Replay Viewer
  * the chip is not shown and #arena keeps no class.
@@ -8773,7 +8773,7 @@ function paintKeysState() {
     ? "Keys On"
     : state.shuttingDown
       ? "Keys Off"
-      : "Keys Off · Click The Arena";
+      : "Keys Off · Click the Arena";
   elements.arena.classList.toggle("keys-on", on);
   if (!on) return;
   const shown = elements.statusMessage.textContent ?? "";
@@ -8797,7 +8797,7 @@ let topBarPressKeptKeys = null;
 
 /**
  * The buttons whose mouse press keeps keys on (keepKeysOnForTopBarPress):
- * every top-bar button, the arena's two on-screen keys (Everyone In View and
+ * every top-bar button, the arena's two on-screen keys (Everyone in View and
  * Frame Explanation), the Verdict card's two buttons and the Match Summary
  * sheet's Close.
  */
@@ -8806,8 +8806,8 @@ const KEYS_KEPT_BUTTONS =
 
 /**
  * Keep keys on when a top-bar button is pressed with the mouse (owner, 3
- * October 2026): Agent POV, Oracle View, the Recording pill, How To Play,
- * Visual Filters, Finish And Save, Restart and Exit, the arena's Everyone In
+ * October 2026): Agent POV, Oracle View, the Recording pill, How to Play,
+ * Visual Filters, Finish and Save, Restart and Exit, the arena's Everyone in
  * View and Frame Explanation keys (4 Oct 2026), plus the game-over Verdict
  * card's
  * Match Summary and Show Arena buttons and the Match Summary sheet's Close
@@ -9005,7 +9005,7 @@ elements.viewSelect.addEventListener("change", () => {
 bindCommandDeck();
 
 /**
- * Finish And Save from the top bar, the Recording popover or the Stopped
+ * Finish and Save from the top bar, the Recording popover or the Stopped
  * overlay: close the popover, then send one finish_and_review. Python ends the
  * game and writes the replay file; the pill then reads Saved and the top
  * bar's button turns into Open Replay.
@@ -9048,7 +9048,7 @@ function saveButtonClick() {
 
 elements.recordingFinishButton.addEventListener("click", saveButtonClick);
 
-// Watch Only: Back To Your <Class> gives the orders back to your champion (the
+// Watch Only: Back to Your <Class> gives the orders back to your champion (the
 // last Manual champion you ordered, else the first Manual slot). The own
 // champion is always in the audience's scene, so selectAgentFromHud finds it.
 elements.watchOnlyBackButton.addEventListener("click", () => {
@@ -9184,7 +9184,7 @@ if (!isReplayMode()) {
 }
 
 /**
- * Open or close How To Play. In the BattleClient and DevClient it is the
+ * Open or close How to Play. In the BattleClient and DevClient it is the
  * overlay over the arena (#htp), as on the vision page; in the Replay Viewer it
  * is the Help dialog. Works at any time, also at game over and while a command
  * is out: it is page-local and sends nothing.
@@ -9204,7 +9204,7 @@ function toggleHowToPlay(open) {
 elements.helpButton.addEventListener("click", () => toggleHowToPlay());
 elements.howToPlayCloseButton.addEventListener("click", () => toggleHowToPlay(false));
 elements.railFullGuideButton.addEventListener("click", () => toggleHowToPlay());
-// Read The Full Guide: the full key guide is the Help dialog with every key.
+// Read the Full Guide: the full key guide is the Help dialog with every key.
 elements.howToPlayFullButton.addEventListener("click", () => {
   toggleHowToPlay(false);
   elements.helpDialog.showModal();

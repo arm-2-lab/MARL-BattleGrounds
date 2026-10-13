@@ -94,8 +94,8 @@ def run(
     )
     exposure = json.loads((result.run_dir / "exposure.json").read_text())
     print(f"Actor: {actor_path}")
-    print(f"Actual Transitions By Stage: {exposure['steps_by_episode_stage']}")
-    print(f"Actual Game Starts By Stage: {exposure['starts_by_episode_stage']}")
+    print(f"Actual Transitions by Stage: {exposure['steps_by_episode_stage']}")
+    print(f"Actual Game Starts by Stage: {exposure['starts_by_episode_stage']}")
     print(f"Evaluation: {evaluation.run_dir}")
 
 

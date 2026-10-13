@@ -48,19 +48,19 @@ import { classNamesV1 } from "./class-documentation.js";
 /**
  * The nine symbol groups, in the order a full symbol list shows them.
  *
- * @type {readonly ["Bodies And Rings", "Classes", "Statuses", "Basics", "Ultimates", "Deaths And Returns", "Zones", "HUD Marks", "Camera And Keys"]}
+ * @type {readonly ["Bodies and Rings", "Classes", "Statuses", "Basics", "Ultimates", "Deaths and Returns", "Zones", "HUD Marks", "Camera and Keys"]}
  */
 export const SYMBOL_GROUPS = Object.freeze(
   /** @type {const} */ ([
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Classes",
     "Statuses",
     "Basics",
     "Ultimates",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Zones",
     "HUD Marks",
-    "Camera And Keys",
+    "Camera and Keys",
   ]),
 );
 
@@ -494,7 +494,7 @@ function ultimateSymbols() {
 export const SYMBOLS = Object.freeze([
   symbol(
     "champion",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Champion",
     "Each circle is one champion, drawn at its real size; it sees all around itself, never only ahead.",
     {
@@ -507,21 +507,21 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "team_a",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Team A",
     "A blue ring with one band marks Team A; the color only says which side a champion is on.",
     { aliases: ["team_a_crest"] },
   ),
   symbol(
     "team_b",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Team B",
     "A red ring with two bands marks Team B; here red means this team, never danger.",
     { aliases: ["team_b_crest"] },
   ),
   symbol(
     "life_bar",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Life",
     "A champion's token fills with its team color from the bottom: the fuller it is, the more life it has left. Its bar in the HUD shows the same; at 0 it falls.",
     {
@@ -534,7 +534,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "rune_ring",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Ultimate Charge",
     "The ring fills while the Ultimate recharges, and a full glowing ring means the Ultimate is ready.",
     {
@@ -557,7 +557,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "imprint",
-    "Bodies And Rings",
+    "Bodies and Rings",
     "Start Spot",
     "A faint ring and hairline show where a champion stood when the tick began; the body shows where it ended.",
     { aliases: ["start_spot", "ghost", "last_move"] },
@@ -906,7 +906,7 @@ export const SYMBOLS = Object.freeze([
   ...ultimateSymbols(),
   symbol(
     "fall",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Fall",
     "A champion whose life reaches 0 falls, and the field holds still for a moment so you see it.",
     {
@@ -916,7 +916,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "fallen",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Fallen",
     "A fallen champion waits where it fell until its team's next wave calls it home.",
     {
@@ -933,7 +933,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "returns_in",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Returns In",
     "How many ticks until the fallen come back with their team's next wave.",
     {
@@ -949,7 +949,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "respawn",
-    "Deaths And Returns",
+    "Deaths and Returns",
     "Return",
     "The fallen come back at full life on their team's spawn pads, under a Spawn Shield.",
     {
@@ -1016,7 +1016,7 @@ export const SYMBOLS = Object.freeze([
   symbol(
     "sight_veil",
     "Zones",
-    "Out Of Sight",
+    "Out of Sight",
     "In Agent POV the ground is dark wherever your team cannot see: beyond each champion's sight reach and in the shadow behind every stone. Enemies just back on their pads stay hidden even in the light.",
     {
       aliases: ["fog", "veil", "sight_reach", "pov_sight_veil"],
@@ -1100,23 +1100,23 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "camera_whole_map",
-    "Camera And Keys",
+    "Camera and Keys",
     "Whole Map",
     "The camera shows the whole arena and stays still; every client opens on it, and pressing the key of the camera you are in again (V, or B in the Replay Viewer) comes back to it.",
     { aliases: ["whole_map", "camera_whole"] },
   ),
   symbol(
     "camera_everyone_in_view",
-    "Camera And Keys",
-    "Everyone In View",
+    "Camera and Keys",
+    "Everyone in View",
     "Press V and the camera fits every champion on the field without cutting one off; press V again for the Whole Map.",
     { key: "V", aliases: ["everyone_in_view", "camera_everyone", "key_v"] },
   ),
   symbol(
     "camera_battle_cam",
-    "Camera And Keys",
+    "Camera and Keys",
     "Battle Cam",
-    "Replay Viewer only: press B and the camera follows the fights for you (in Agent POV, only fights your team saw); press B again for the Whole Map, or V for Everyone In View.",
+    "Replay Viewer only: press B and the camera follows the fights for you (in Agent POV, only fights your team saw); press B again for the Whole Map, or V for Everyone in View.",
     {
       key: "B",
       aliases: [
@@ -1130,7 +1130,7 @@ export const SYMBOLS = Object.freeze([
   ),
   symbol(
     "frame_explanation",
-    "Camera And Keys",
+    "Camera and Keys",
     "Frame Explanation",
     "Press F and every mark of this tick gets a number, with a plain list of what happened; in the Replay Viewer it pauses first, and F again puts it away.",
     {

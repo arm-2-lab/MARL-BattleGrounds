@@ -1,4 +1,4 @@
-# Released Models On Hugging Face
+# Released Models on Hugging Face
 
 The six trained Season 0 models are on Hugging Face, with a file for every save from
 the start of training to 250 million steps. Load any save by its name, play against
@@ -18,7 +18,7 @@ Website: https://marl-battlegrounds.com/#models
 On a GPU, add its build as the [install guide](install.md) shows, for example
 `[training,cuda13]`. No Hugging Face account or token is needed.
 
-## Names And Saves
+## Names and Saves
 
 The six models, in Season 0 rank order:
 [`tdm-season-0-recurrent-ippo`](https://huggingface.co/MARL-BattleGrounds/tdm-season-0-recurrent-ippo),
@@ -58,7 +58,7 @@ best = max(rows, key=lambda row: float(row["validation_point_margin"]))
 system = marl_bgs.load_method(f"{name}@{best['step']}")
 ```
 
-## Watch The Winner Learn
+## Watch the Winner Learn
 
 The Season 0 winner, Recurrent IPPO, at 10 million steps, at 100 million steps and
 at its last save, each playing the same 32 games against the built-in TDM-Alpha
@@ -143,7 +143,7 @@ start fresh. Copy the method and the input scale from the model card: PQN-VDN
 uses `input_scale=1.0` and the other five use `0.01`. A wrong value fails with
 "Initial actor input_scale differs from the new learner".
 
-## Evaluate, Tournaments And The BattleClient
+## Evaluate, Tournaments and the BattleClient
 
 - [Evaluation](evaluation.md): `marl_bgs.evaluate(name, "tdm-alpha", num_episodes=20)`,
   or, from a clone of the repository, a script such as
@@ -153,7 +153,7 @@ uses `input_scale=1.0` and the other five use `0.01`. A wrong value fails with
 - [BattleClient](battle_client.md): a name is one controller, for example
   `team_b="MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final"`.
 
-## Downloads, Cache And Offline Use
+## Downloads, Cache and Offline Use
 
 A model file is 3 to 19 MB; a whole repository, with every save and the training
 records, is about 2 to 3 GB. Files go into the Hugging Face cache (`HF_HOME`,

@@ -1,5 +1,5 @@
 /**
- * @file Check the Basic Attacks look, Cleave And Bloom (`src/looks/basics.js`).
+ * @file Check the Basic Attacks look, Cleave and Bloom (`src/looks/basics.js`).
  * records() is pure data from one plan event: a ranged Mage, Hunter or Priest
  * draws its bolt, streak or ribbon from 2 px outside its rim to the target rim
  * and lands in its star, Shard Fan or Dawn Bloom; a Warrior or Rogue, or a
@@ -415,7 +415,7 @@ test("Agent POV: a leaver's blow starts at its Last Seen spot and names its clas
   const hiddenTarget = one(
     blow({ recipientIdentity: null, targetDisclosure: "redacted" }),
   );
-  assert.match(hiddenTarget.tooltipText, /→ Out Of Sight$/u);
+  assert.match(hiddenTarget.tooltipText, /→ Out of Sight$/u);
   const guarded = { event };
   for (const name of ["scene", "researcherSpace", "researcher_space", "matchSummary"]) {
     Object.defineProperty(guarded, name, {

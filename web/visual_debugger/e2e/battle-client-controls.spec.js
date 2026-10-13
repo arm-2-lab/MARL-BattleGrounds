@@ -1,13 +1,13 @@
 /**
  * @file Prove the BattleClient's controls do their real job against a real
- * server, in Chromium. ? on the focused arena opens and closes How To Play
- * (#htp) and sends nothing; How To Play's button and Close do the same. Esc
+ * server, in Chromium. ? on the focused arena opens and closes How to Play
+ * (#htp) and sends nothing; How to Play's button and Close do the same. Esc
  * says the target is cleared and keys are off. A 1 with no target is refused
  * by the page in the vision's words and never reaches Python. A right click
  * on the arena sends the secondary pointer. G in Oracle View sends keyboard g
  * and the deck's message line says the reach rings changed. N on the focused arena
  * is one tick: in interactive play it goes to Python as keyboard n and locks
- * in, so the tick advances by exactly one. The Recording pill opens its popover; Finish And Save there closes
+ * in, so the tick advances by exactly one. The Recording pill opens its popover; Finish and Save there closes
  * it and saves; the pill reads Saved, the top bar's save button turns into an
  * enabled Open Replay, and the popover's Open Replay stays visible and becomes
  * enabled. After the
@@ -102,7 +102,7 @@ test("every BattleClient control sends its command and shows its effect", async 
   await arena.click({ position: { x: 24, y: 24 } });
   await expect(page.locator("#keys-text")).toHaveText("Keys On");
 
-  // ? opens and closes How To Play and sends nothing.
+  // ? opens and closes How to Play and sends nothing.
   const sentBeforeHelp = commands.length;
   await page.keyboard.press("?");
   await expect(page.locator("#htp")).toBeVisible();
@@ -120,7 +120,7 @@ test("every BattleClient control sends its command and shows its effect", async 
   await expect(message).toHaveText(
     "Target cleared. Keys are off until you click the arena again.",
   );
-  await expect(page.locator("#keys-text")).toHaveText("Keys Off · Click The Arena");
+  await expect(page.locator("#keys-text")).toHaveText("Keys Off · Click the Arena");
   await arena.click({ position: { x: 24, y: 24 } });
   const sentBeforeRefusal = commands.length;
   await page.keyboard.press("1");
@@ -159,7 +159,7 @@ test("every BattleClient control sends its command and shows its effect", async 
       .filter((command) => command.command_type === "keyboard"),
   ).toEqual([expect.objectContaining({ key: "n" })]);
 
-  // The Recording pill opens its popover; Finish And Save there saves.
+  // The Recording pill opens its popover; Finish and Save there saves.
   await page.locator("#recording-badge").click();
   await expect(page.locator("#rec-pop")).toBeVisible();
   await expect(page.locator("#pop-state")).toHaveText(/Ticks? Kept Since Tick \d+$/u);

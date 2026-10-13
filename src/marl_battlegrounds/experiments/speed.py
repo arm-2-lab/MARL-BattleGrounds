@@ -243,7 +243,7 @@ def write_summary(
         "",
         f"Device: {device}. Compilation is excluded from every rate.",
         "",
-        "| Parallel Games | Game Steps Per Second | Agent Steps Per Second "
+        "| Parallel Games | Game Steps per Second | Agent Steps per Second "
         "| First Call (Compile + Run) | Warm Spread |",
         "| ---: | ---: | ---: | ---: | ---: |",
     ]

@@ -2,9 +2,9 @@
  * @file Check the Tactics Turn deck's pure contracts (src/tactics-turn.js):
  * the Step pad prints the nine key letters W A S D Q E Z C X with the vision's
  * step names and no arrow is a draft key; the fixed labels are "Lock In Turn",
- * "Cancel Policy Work", "Restart", "Keys On" and "Keys Off · Click The Arena";
+ * "Cancel Policy Work", "Restart", "Keys On" and "Keys Off · Click the Arena";
  * champions read "Mage · ID 5" with no team word; the target chip keeps an
- * out-of-sight pick as "Warrior · ID 6 · Out Of Sight" with no life; Allowed
+ * out-of-sight pick as "Warrior · ID 6 · Out of Sight" with no life; Allowed
  * Now lists only bodies the audience's arena scene draws and the audience's
  * own mask allows (checked on every live fixture frame, Oracle View and Agent
  * POV); the action slots carry the real Basic and Ultimate names, reach,
@@ -89,7 +89,7 @@ test("the deck's fixed labels use the V5 names", () => {
   assert.equal(DECK_LABELS.youControl, "You Control This Agent");
   assert.deepEqual(
     [DECK_LABELS.keysOn, DECK_LABELS.keysOff],
-    ["Keys On", "Keys Off · Click The Arena"],
+    ["Keys On", "Keys Off · Click the Arena"],
   );
   assert.deepEqual(TURN_PHASES, ["You Plan", "Lock In", "Policies Choose", "All Act"]);
   assert.deepEqual(GUIDE_MODES, ["guide", "hints", "off"]);
@@ -131,7 +131,7 @@ test("the target chip shows life only for a drawn body and keeps an unseen pick"
   assert.equal(unseen.state, "out_of_sight");
   assert.equal(
     unseen.state === "out_of_sight" && unseen.label,
-    "Warrior · ID 6 · Out Of Sight",
+    "Warrior · ID 6 · Out of Sight",
   );
   assert.equal(unseen.state === "out_of_sight" && unseen.facts?.lifeText, null);
 });
@@ -390,7 +390,7 @@ test("turn phases and Do This Now follow real states", () => {
   assert.equal(doThisNow({ ...plan, watchMode: true }).beacon, "#live-run-button");
   assert.equal(
     doThisNow({ ...plan, focusedManual: false }).text,
-    "You are looking at a policy's champion. Press Back To Your Warrior to give orders.",
+    "You are looking at a policy's champion. Press Back to Your Warrior to give orders.",
   );
   assert.equal(
     doThisNow({ ...plan, untouchedOther: { publicAgentId: "5", className: "Mage" } })

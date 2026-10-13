@@ -4,10 +4,10 @@
  * Core brings fallen champions back on the transition that starts with a
  * respawn-wave countdown of 0, so a countdown of N means "back in N + 1
  * ticks" (a recorded game: countdown 1 at tick 98, the Warrior back at tick
- * 100). Contracts: the scorebug's "Respawn Wave In N Ticks"
+ * 100). Contracts: the scorebug's "Respawn Wave in N Ticks"
  * (liveScorebugView) says countdown + 1; the deck's waveIn (the "It returns
- * in N ticks" sentence and the "Fallen · Returns In N" agent card) and the
- * portraits' "Returns In N" (looks/hud.js) add the same 1, so the three
+ * in N ticks" sentence and the "Fallen · Returns in N" agent card) and the
+ * portraits' "Returns in N" (looks/hud.js) add the same 1, so the three
  * never disagree on one screen.
  */
 import assert from "node:assert/strict";
@@ -34,11 +34,11 @@ test("the scorebug's wave says countdown + 1 ticks", () => {
       { team_id: 2, countdown_steps: 1 },
     ],
   });
-  assert.equal(view.waveText, "Respawn Wave In 2 Ticks");
+  assert.equal(view.waveText, "Respawn Wave in 2 Ticks");
   const due = liveScorebugView(summary, {
     waves: [{ team_id: 1, countdown_steps: 0 }],
   });
-  assert.equal(due.waveText, "Respawn Wave In 1 Tick");
+  assert.equal(due.waveText, "Respawn Wave in 1 Tick");
 });
 
 test("the deck and the portraits add the same 1 to the countdown", () => {

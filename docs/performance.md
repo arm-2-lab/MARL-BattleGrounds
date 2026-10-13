@@ -33,7 +33,7 @@ print(f"{4 * 100 / (time.perf_counter() - start):,.0f} game steps per second")
 A game step is one tick of one 5v5 game, or ten agent steps. The whole loop, restarts
 included, is one compiled program. Timed this way, speed still rises at 1,024 games:
 
-| Parallel Games | Game Steps Per Second | Agent Steps Per Second | First Call, Compile Included |
+| Parallel Games | Game Steps per Second | Agent Steps per Second | First Call, Compile Included |
 | --- | --- | --- | --- |
 | 32 | 4,919 | 49,194 | 10.61 s |
 | 64 | 10,122 | 101,221 | 10.31 s |
@@ -43,7 +43,7 @@ included, is one compiled program. Timed this way, speed still rises at 1,024 ga
 
 One RTX 5090 alone, JAX 0.10.1, test map 47, 500-tick rollouts, median of five calls ([raw rows](../scripts/paper_experiments/results/speed_rtx5090_simulator.csv)).
 
-## Measure It On Your Machine
+## Measure It on Your Machine
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.speed output_dir=runs/speed
@@ -69,7 +69,7 @@ second (median of the 37 updates after warm-up), 5.0 GB peak JAX memory, 4.8 GB 
 The table times each baseline's continuation from 40,108,032 to 250,675,200 transitions,
 against an opponent pool, one RTX 5090 per run; hours include setup and 20 validation checks.
 
-| Method | Parallel Games | Hours | Transitions Per Second | JAX Memory In Use | Host RAM |
+| Method | Parallel Games | Hours | Transitions per Second | JAX Memory in Use | Host RAM |
 | --- | --- | --- | --- | --- | --- |
 | Feedforward MAPPO | 512 | 2.98 | 19,628 | 2.8 GB | 13.5 GB |
 | Recurrent MAPPO | 512 | 3.22 | 18,168 | 3.1 GB | 14.5 GB |
@@ -90,7 +90,7 @@ actions, memory, learning = marl_bgs.apply_systems(team_a, team_b, memory, obser
 Choosing time per tick for one team of five through `apply_systems` (one RTX 5090, self-play
 on map 0, median of seven 100-tick rounds). A simulator step took 7.7-7.8 ms at 128 games.
 
-| System | 128 Games | 1,024 Games | Share Of The 19.7-21.7 ms Simulator Step At 1,024 |
+| System | 128 Games | 1,024 Games | Share of the 19.7-21.7 ms Simulator Step at 1,024 |
 | --- | --- | --- | --- |
 | Random | 0.011 ms | 0.012 ms | 0.06% |
 | Recurrent MAPPO | 0.082 ms | 0.30 ms | 1.5% |
@@ -101,7 +101,7 @@ on map 0, median of seven 100-tick rounds). A simulator step took 7.7-7.8 ms at 
 **Watch Out:** a scripted bot costs nearly a whole simulator step, so scripted self-play runs
 at about a third of the learned rate at 1,024 games. Pools with bots train slower.
 
-## What Metrics, Recording And Exact Repeats Cost
+## What Metrics, Recording and Exact Repeats Cost
 
 ```bash
 XLA_FLAGS=--xla_gpu_deterministic_ops=true python -m marl_battlegrounds tournament --config field.json

@@ -118,7 +118,7 @@ const PLAN_TABLE = [
     ["?"],
     "?",
     "any",
-    ["help", "How To Play", "local", "help", true],
+    ["help", "How to Play", "local", "help", true],
     ["help", "Help", "local", "help"],
   ],
   [
@@ -153,8 +153,8 @@ const PLAN_TABLE = [
     ["v"],
     "V",
     "up",
-    ["everyone_in_view", "Everyone In View", "local", "camera_everyone_in_view", true],
-    ["everyone_in_view", "Everyone In View", "local", "camera_everyone_in_view"],
+    ["everyone_in_view", "Everyone in View", "local", "camera_everyone_in_view", true],
+    ["everyone_in_view", "Everyone in View", "local", "camera_everyone_in_view"],
   ],
   [
     "battle_cam",
@@ -595,6 +595,6 @@ test("help rows and text are generated from the table for each product", () => {
   assert.equal(text.split("\n").length, replay.length);
   assert.match(text, /^Space: Play or pause$/mu);
   assert.match(text, /^B: Battle Cam$/mu);
-  assert.match(commandHelpText("combat_debugger"), /^V: Everyone In View$/mu);
+  assert.match(commandHelpText("combat_debugger"), /^V: Everyone in View$/mu);
   assert.doesNotMatch(commandHelpText("combat_debugger"), /Battle Cam|Arrow/u);
 });

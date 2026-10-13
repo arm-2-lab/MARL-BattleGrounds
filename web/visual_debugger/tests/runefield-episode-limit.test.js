@@ -3,7 +3,7 @@
  * authorizedPresentationEpisodeLimit returns match_summary.episode_limit (a
  * positive whole number of ticks) for an approved frame and the same number in
  * Oracle View and Agent POV, and null for an unapproved value or a missing, zero
- * or broken limit. With Time Of Night on, a tick near that limit gives a
+ * or broken limit. With Time of Night on, a tick near that limit gives a
  * last-watch-veil record in both audiences, and Oracle -> POV -> Oracle gives the
  * same veil. scene.js passes the helper's value to the atmosphere look and still
  * never names match_summary itself.
@@ -76,7 +76,7 @@ test("a missing, zero or broken limit gives null", async () => {
   }
 });
 
-test("Time Of Night draws the veil near the limit in both audiences", async () => {
+test("Time of Night draws the veil near the limit in both audiences", async () => {
   const oracle = await frameOf("live_oracle");
   const pov = await frameOf("live_no_shared_obs_agent_pov");
   assert.equal(veilFor(oracle, 100), undefined);

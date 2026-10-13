@@ -1,5 +1,5 @@
 /**
- * @file Checks the Health And Combat Text look (Ivory Numbers) in `src/looks/health-text.js`.
+ * @file Checks the Health and Combat Text look (Ivory Numbers) in `src/looks/health-text.js`.
  *
  * Contracts checked: lifeNumberText writes "−N" and "+N" with no "NET" and
  * nothing for no change, rounded the store's way ("−41" for 41.05, "−3.3" for

@@ -459,7 +459,7 @@ function primaryLocationLabel(row, topics) {
  * measure's label; line 2 who it is about and where it lives ("Agent ID 4 ·
  * Hunter · Team B → Agent ID 0 · Mage · Team A · Ability Activations: By
  * Recipient"); line 3 the exact CSV name. A row Python marks inapplicable adds
- * the tag "Not Applicable To This Roster". options defaults to {}:
+ * the tag "Not Applicable to This Roster". options defaults to {}:
  * options.agents is the catalog agent list (default none, so no chips);
  * options.subjectChip is passed to createMetricSubjectChips. Results are the full researcher record and never
  * follow Agent POV.
@@ -512,7 +512,7 @@ export function renderMetricSearchResults(
       element("code", row.name),
     );
     if (!row.applicable) {
-      const tag = element("small", "Not Applicable To This Roster");
+      const tag = element("small", "Not Applicable to This Roster");
       tag.className = "metric-search-results__tag";
       button.append(tag);
     }

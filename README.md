@@ -5,7 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![Python](https://img.shields.io/pypi/pyversions/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/LICENSE)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-MARL--BattleGrounds-ffcc4d)](https://huggingface.co/MARL-BattleGrounds)
 [![Website](https://img.shields.io/badge/website-marl--battlegrounds.com-2b6cb0)](https://marl-battlegrounds.com)
 
@@ -152,7 +152,7 @@ The [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-
 reveal: the Season 0 ladder, who beats whom on each map, the teamwork that follows
 Elo and who helps whom. Point it at your own tournament with `MARL_BGS_RESULTS`.
 
-## Watch And Play
+## Watch and Play
 
 ```bash
 python -m marl_battlegrounds replay path/to/game.marlbg-replay.json
@@ -195,7 +195,7 @@ python -m marl_battlegrounds entry check          # checks it the way we will
 python -m marl_battlegrounds entry submit         # opens the GitHub issue form
 ```
 
-The [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) say who may enter and set the limits. [Enter The Leaderboard](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournaments.md#enter-the-leaderboard) walks through the three commands.
+The [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) say who may enter and set the limits. [Enter the Leaderboard](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournaments.md#enter-the-leaderboard) walks through the three commands.
 
 ## Guides
 
@@ -218,7 +218,7 @@ The [Tournament Rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main
 | [Method Sources](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/method_sources.md) | Where the built-in learners come from | [method-sources](https://marl-battlegrounds.com/#method-sources) |
 | [API Reference](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/api.md) | Every public name on one page | [api](https://marl-battlegrounds.com/#api) |
 
-## Reproduce The Paper
+## Reproduce the Paper
 
 The paper's commands, frozen settings and result tables are in
 [`scripts/paper_experiments/`](https://github.com/arm-2-lab/MARL-BattleGrounds/tree/main/scripts/paper_experiments).

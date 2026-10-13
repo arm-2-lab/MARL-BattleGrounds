@@ -267,7 +267,7 @@ def run(
             print(rows)
         # Every System's margin and kills from its own side; {} when disabled.
         print(
-            "Each System As Team A:",
+            "Each System as Team A:",
             result.system_metrics(
                 "priority_metrics", columns=["score_difference", "team_a_kills"]
             ),
@@ -303,7 +303,7 @@ def run(
         field = result.system_metrics(
             "priority_metrics", columns=["score_difference", "team_a_kills"]
         )
-        print("Each System As Team A:", field)
+        print("Each System as Team A:", field)
         return
     fixed = workflow == "fixed"
     result = marl_bgs.evaluate(

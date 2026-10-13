@@ -46,7 +46,7 @@
  *
  * In the Replay Viewer rail's Agent tab (DOM, Replay Viewer only, plan P10;
  * src/ledger.js moves #champion-frame there) it builds the Champion Frame: a
- * hint row ("Select A Champion To Inspect · Click Its Body Or Its Arena
+ * hint row ("Select a Champion to Inspect · Click Its Body or Its Arena
  * Frame") until a champion is selected, then its token as a portrait (drawn by
  * the Champions look), its label, life, Ultimate, Effective Speed, every
  * status by the status rule, Recent Ticks (this tick only) and Next Target. main.js reads the
@@ -1035,7 +1035,7 @@ export function tooltip(record) {
 
 /** The hint row the Champion Frame (Agent tab) shows while no champion is selected. */
 export const CHAMPION_FRAME_HINT =
-  "Select A Champion To Inspect · Click Its Body Or Its Arena Frame";
+  "Select a Champion to Inspect · Click Its Body or Its Arena Frame";
 
 /** Next Target on the last frame of a replay, where no next tick exists. */
 export const FINAL_FRAME_NEXT = "No Next Tick (Final Frame)";
@@ -1152,7 +1152,7 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  * input is a ChampionFrameInput. No selection, or an ID missing from
  * input.agents, gives the empty view (the hint row). Otherwise the facts come
  * from that agent's record: label "Mage · ID 5", team, life "33.15 / 80" (or
- * "Fallen"), Ultimate ("Ultimate Ready" or "Burst · Ready In 28 Ticks"), the
+ * "Fallen"), Ultimate ("Ultimate Ready" or "Burst · Ready in 28 Ticks"), the
  * speed now ("Effective Speed 0.85", living champions only), every
  * status in Champion Card order (stuns, then slows, then the rest) by the
  * status rule (statusLineV1: the card row's words, the source named by class
@@ -1202,7 +1202,7 @@ export function championFrameView(input) {
     ultimateText: ultimateReady
       ? "Ultimate Ready"
       : Number.isInteger(cooldown)
-        ? `${ultimateName} · Ready In ${tickCountLabel(cooldown)}`
+        ? `${ultimateName} · Ready in ${tickCountLabel(cooldown)}`
         : ultimateName,
     ultimateReady,
     speedText:

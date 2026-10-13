@@ -7,7 +7,7 @@ release. No checkout, other example, private file or test module is imported.
 
 Interactive modes save under recordings/MODE by default and block until Exit or
 Ctrl-C. The page opens in Agent POV; Oracle View, which shows everything, is one
-switch away. Press ? in the page for How To Play and the key list. Ordinary
+switch away. Press ? in the page for How to Play and the key list. Ordinary
 maps keep BattleClient's defaults unless an explicit option changes them.
 Scenario modes keep the complete packaged scenario 5 unchanged. LLM modes use
 an already running service; this script starts no server, downloads no weights

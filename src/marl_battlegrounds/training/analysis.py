@@ -1813,7 +1813,7 @@ def _write_summary(summaries: Sequence[Record], destination: Path) -> Path:
             ]
         )
         if summary["attempt_runtimes"]:
-            lines.append("Recorded Runtime By Attempt:")
+            lines.append("Recorded Runtime by Attempt:")
             lines.append("")
             for attempt in summary["attempt_runtimes"]:
                 lines.append(
@@ -1933,7 +1933,7 @@ def _write_summary(summaries: Sequence[Record], destination: Path) -> Path:
             latest = cast(Record, update)
             lines.extend(
                 [
-                    "Recorded Active Time At The Last Update: "
+                    "Recorded Active Time at the Last Update: "
                     f"{latest.get('elapsed_seconds', 'Unavailable')} seconds. "
                     "Collection/update time: "
                     f"{latest.get('training_seconds', 'Unavailable')} seconds.",
@@ -3415,7 +3415,7 @@ def _write_recipe_curves(
                 color=color,
                 linewidth=2.8,
                 marker="o" if len(shared) == 1 else None,
-                label=f"{group}: Mean Of {len(seeds)} Seeds",
+                label=f"{group}: Mean of {len(seeds)} Seeds",
             )
         axis.axhline(0, color="0.6", linewidth=0.8)
         axis.set_title(f"Method: {method}")
@@ -3424,7 +3424,7 @@ def _write_recipe_curves(
         axis.grid(alpha=0.2)
         axis.legend(fontsize="small")
     figure.suptitle(
-        "Validation Point Margin By Recipe "
+        "Validation Point Margin by Recipe "
         "(Thin Lines: One Seed Each; Thick Lines: Recipe Mean)"
     )
     paths: dict[str, str] = {}
@@ -5433,7 +5433,7 @@ def _grad_norm_panel(
     above 0 gets a red dotted vertical line. Rows without these keys (runs saved
     before gradient norms were logged) add nothing. When no run has a positive
     finite norm or a non-finite count, the panel shows "No Gradient Norms Saved
-    In These Runs" instead. The panel sets its own labels, grid and legend.
+    in These Runs" instead. The panel sets its own labels, grid and legend.
     Only the given axis changes.
     """
     keys = ("grad_norm_mean", "grad_norm_max", "grad_norm_nonfinite")
@@ -5472,11 +5472,11 @@ def _grad_norm_panel(
                     color="tab:red",
                     linestyle=":",
                     alpha=0.6,
-                    label=None if marked else "Update With A Non-Finite Norm",
+                    label=None if marked else "Update With a Non-Finite Norm",
                 )
                 marked = True
     axis.set_xlabel("Environment Transitions")
-    axis.set_ylabel("Gradient Norm (Mean And Max)")
+    axis.set_ylabel("Gradient Norm (Mean and Max)")
     axis.grid(alpha=0.2)
     if any(line.get_linestyle() != ":" for line in axis.lines):
         axis.set_yscale("log")
@@ -5486,7 +5486,7 @@ def _grad_norm_panel(
         axis.text(
             0.5,
             0.5,
-            "No Gradient Norms Saved In These Runs",
+            "No Gradient Norms Saved in These Runs",
             ha="center",
             va="center",
             transform=axis.transAxes,
@@ -5531,8 +5531,8 @@ def _qmix_figure(
     grid.flat[5].set_visible(False)
     panels = (
         ("loss", "Mean Squared Team TD Error"),
-        ("replay_rows_per_lane", "Replay Rows Per Game"),
-        ("td_pairs_per_transition", "Used TD Pairs Per Transition"),
+        ("replay_rows_per_lane", "Replay Rows per Game"),
+        ("td_pairs_per_transition", "Used TD Pairs per Transition"),
         ("epsilon", "Exploration Rate"),
     )
     for axis, (name, label) in zip(axes.flat, panels, strict=True):
@@ -5613,11 +5613,11 @@ def _pqn_figure(
             lambda row: np.nan if row.get("loss") is None else float(row["loss"]),
         ),
         (
-            "Used TD Pairs Per Generated Transition",
+            "Used TD Pairs per Generated Transition",
             lambda row: ratio(row, "used_td_pairs", "env_steps"),
         ),
         (
-            "Share Of Used Pairs Starting On Kept Rows",
+            "Share of Used Pairs Starting on Kept Rows",
             lambda row: ratio(row, "used_prefix_td_pairs", "used_td_pairs"),
         ),
         (
@@ -6049,7 +6049,7 @@ def _screen_plot(points: Sequence[Record], destination: Path) -> dict[str, str]:
     ):
         for index, metric in enumerate(
             (
-                "Change In Kills Minus Deaths Per Game\n"
+                "Change in Kills Minus Deaths per Game\n"
                 "Since Before Training (Higher Is Better)",
                 "Game Result Score Against Random\nWin = 1, Draw = 0.5, Loss = 0",
             )
@@ -6073,7 +6073,7 @@ def _screen_plot(points: Sequence[Record], destination: Path) -> dict[str, str]:
     if handles:
         figure.legend(handles, labels, loc="outside lower center", ncol=4, fontsize=9)
     figure.suptitle(
-        "Short MAPPO Screen: Combat Improvement For Time Spent\n"
+        "Short MAPPO Screen: Combat Improvement for Time Spent\n"
         "Games Against Random; Error Bars Show Game Variation, "
         "Not Training-Seed Variation",
         fontsize=13,
@@ -6629,7 +6629,7 @@ def analyze_screen(
         "| Configuration | Training Red Zone Depth | Final Validation Red Zone Depth | "
         "State | Steps Completed | "
         "Elapsed Run Time | "
-        "Kills / Deaths Per Game | Change In Kills Minus Deaths | "
+        "Kills / Deaths per Game | Change in Kills Minus Deaths | "
         "Wins / Draws / Losses |",
         "| --- | --- | --- | --- | ---: | --- | ---: | ---: | --- |",
     ]
@@ -6680,13 +6680,13 @@ def analyze_screen(
                 else case.get("final_change_interval_status") or "Unavailable"
             )
             lines.append(
-                f"Change In Kills Minus Deaths: {change:+.2f} per game since "
+                f"Change in Kills Minus Deaths: {change:+.2f} per game since "
                 f"before training. Paired Game Interval: {interval}. "
                 "An available range reflects sampled games, not training seeds."
             )
         if case.get("error") or case.get("evidence_error"):
             lines.append(
-                "Saved Failure Or Evidence Error: "
+                "Saved Failure or Evidence Error: "
                 f"{case.get('evidence_error') or case.get('error')}."
             )
         if "phase_costs" in case:

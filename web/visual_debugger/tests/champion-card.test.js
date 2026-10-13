@@ -16,11 +16,11 @@
  * the life it mends, cut by Crippling Poison), the two auras and a broken
  * Freezing Trap come from the row (its sentence, "Damage broke the ice
  * early.", never says the champion is free, since another stun may hold it);
- * a fallen champion's note, "Fallen · Returns In N", comes from its team's
+ * a fallen champion's note, "Fallen · Returns in N", comes from its team's
  * public wave clock (countdown + 1), or reads "Fallen" without one; a
  * champion the team cannot see gets
  * the reduced card; renderChampionCard draws the rows, the drain lines, the
- * shared Life bar and the footer ("+N more" with "Hold Shift For All"); and a
+ * shared Life bar and the footer ("+N more" with "Hold Shift for All"); and a
  * Champion Card descriptor carries its model for the Replay Viewer's tooltip
  * controller.
  *
@@ -38,12 +38,12 @@
  * rows that fit with the "+N more" footer, never fewer than one, counting
  * the footer whenever the four-row limit already left rows out and never
  * skipping a tall first row for shorter ones; a model's rowLimit keeps the
- * row order, shows 1 to 4 rows with "+N more · Hold Shift For All", and the
+ * row order, shows 1 to 4 rows with "+N more · Hold Shift for All", and the
  * Hold Shift card ignores it; a Hold Shift card spreads into more columns
  * only when they make it shorter (four rows take two lines in two or three
  * columns, so it stays two columns and is scaled down instead).
  * Hold Shift (createShiftHold): Shift held by itself for 300 ms expands the
- * card to every status ("All 7 statuses", "Release Shift To Shrink"), a key
+ * card to every status ("All 7 statuses", "Release Shift to Shrink"), a key
  * repeat or a same-spot pointer move changes nothing, Shift with Ctrl, Alt or
  * Meta never expands, and releasing Shift, the window's blur, any other key,
  * any pointer press, any pointer movement and the wheel shrink it at once;
@@ -242,7 +242,7 @@ test("rows go stuns first, then slows, then the rest, four at most, then +N more
     model.rows.map((row) => row.drain),
     [0.8, 0.2, 0.4, 0.2],
   );
-  assert.equal(championCardText(model).at(-2), "+2 more · Hold Shift For All");
+  assert.equal(championCardText(model).at(-2), "+2 more · Hold Shift for All");
 });
 
 test("life is green above half, yellow at half or less, red at 30% or less", () => {
@@ -378,13 +378,13 @@ test("Spawn Shield, In Combat, a broken Freezing Trap and a fall come from the r
   assert.deepEqual(fallen.life, { current: 0, maximum: 80 });
   assert.equal(fallen.ultimate, null);
   assert.deepEqual(fallen.statuses, []);
-  assert.equal(fallen.note, "Fallen · Returns In 3");
+  assert.equal(fallen.note, "Fallen · Returns in 3");
   assert.equal(
     championCardFactsFromAgent(
       { ...MAGE_ROW, team_id: 1, alive: false },
       { respawnWaves: waves },
     ).note,
-    "Fallen · Returns In 1",
+    "Fallen · Returns in 1",
   );
   // No clock for its team: just "Fallen". A living champion has no note.
   assert.equal(
@@ -523,14 +523,14 @@ test("renderChampionCard draws the bars, rows, drain lines and +N more", () => {
     byClass(rows[0], "champion-card__drain")[0].children[0].style.width,
     "80.0%",
   );
-  // The footer: "+1 more" on the left, "Hold Shift For All" on the right, with
+  // The footer: "+1 more" on the left, "Hold Shift for All" on the right, with
   // Shift drawn as a key.
   const [footer] = byClass(root, "champion-card__more");
   assert.equal(footer.children[0].tagName, "B");
   assert.equal(footer.children[0].textContent, "+1 more");
   assert.equal(
     byClass(footer, "champion-card__hint")[0].textContent,
-    "Hold Shift For All",
+    "Hold Shift for All",
   );
   assert.equal(byClass(footer, "champion-card__key")[0].tagName, "KBD");
   // The Life bar is the shared one; the Ultimate keeps its own bar.
@@ -617,7 +617,7 @@ test("Hold Shift: the card shows every status, the footer says how to shrink it"
     [collapsed.rows.length, collapsed.more, collapsed.total, collapsed.expanded],
     [4, 3, 7, false],
   );
-  assert.deepEqual(championCardFooter(collapsed), ["+3 more", "Hold Shift For All"]);
+  assert.deepEqual(championCardFooter(collapsed), ["+3 more", "Hold Shift for All"]);
   const expanded = championCardModel(seven, { expanded: true });
   assert.deepEqual(
     [expanded.rows.length, expanded.more, expanded.total, expanded.expanded],
@@ -630,10 +630,10 @@ test("Hold Shift: the card shows every status, the footer says how to shrink it"
   );
   assert.deepEqual(championCardFooter(expanded), [
     "All 7 statuses",
-    "Release Shift To Shrink",
+    "Release Shift to Shrink",
   ]);
   assert.ok(
-    championCardText(expanded).includes("All 7 statuses · Release Shift To Shrink"),
+    championCardText(expanded).includes("All 7 statuses · Release Shift to Shrink"),
   );
   // A Mage's own aura reads "From its own aura." (owner, 2 October 2026).
   assert.equal(
@@ -663,7 +663,7 @@ test("Hold Shift: the card shows every status, the footer says how to shrink it"
   assert.equal(footer.children[0].textContent, "All 7 statuses");
   assert.equal(
     byClass(footer, "champion-card__hint")[0].textContent,
-    "Release Shift To Shrink",
+    "Release Shift to Shrink",
   );
 });
 
@@ -1145,8 +1145,8 @@ test("rowLimit: a short box's card keeps the order, shows fewer rows, then +N mo
     full.rows.slice(0, 2).map((row) => row.id),
   );
   assert.deepEqual([two.rows.length, two.more, two.total], [2, 2, 4]);
-  assert.deepEqual(championCardFooter(two), ["+2 more", "Hold Shift For All"]);
-  assert.ok(championCardText(two).includes("+2 more · Hold Shift For All"));
+  assert.deepEqual(championCardFooter(two), ["+2 more", "Hold Shift for All"]);
+  assert.ok(championCardText(two).includes("+2 more · Hold Shift for All"));
   // At least one row, at most the four-row limit; not a whole number: the limit.
   assert.equal(championCardModel(four, { rowLimit: 0 }).rows.length, 1);
   assert.equal(championCardModel(four, { rowLimit: 9 }).rows.length, 4);
@@ -1253,7 +1253,7 @@ test("every Shift combination keeps its job and never leaves the card expanded",
       "keydown",
       { key: "ArrowRight", shiftKey: true },
     ],
-    ["? (How To Play)", "keydown", { key: "?", shiftKey: true }],
+    ["? (How to Play)", "keydown", { key: "?", shiftKey: true }],
     ["Shift+R", "keydown", { key: "R", shiftKey: true }],
     ["any pointer movement", "pointermove", { shiftKey: true, clientX: 101 }],
     ["the wheel", "wheel", { shiftKey: true }],

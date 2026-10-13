@@ -1,6 +1,6 @@
 /**
  * @file The Atmosphere look (Moonlit Night): Moon Motes, the Last Watch Veil
- * (Time Of Night) and Death Dimming.
+ * (Time of Night) and Death Dimming.
  *
  * - Moon Motes (`moon_motes`): six seeded pairs of faint Moon Mote dots (radius
  *   0.05 world units, at least 1.2 px), an exact mirror about the floor's middle,
@@ -8,7 +8,7 @@
  *   nothing in the game. The store's slow breathing and drift are not ported:
  *   the motes always rest (as the store shows them in live play and in a still),
  *   so the air holds still through the dramatic hold by construction.
- * - Time Of Night (`time_of_night`): over the last fifth of the episode the floor
+ * - Time of Night (`time_of_night`): over the last fifth of the episode the floor
  *   greys in four steps, Last Watch Grey at 2.5%, 4%, 5.5% and 7% from ticks
  *   ceil(0.80 L), ceil(0.85 L), ceil(0.90 L) and ceil(0.95 L) of an episode limit
  *   L. On the tick a step changes, the new veil is beat-held to the Settle point
@@ -239,7 +239,7 @@ function floorPath(box, r) {
  * - Default part: {kind: "moon-motes", dots: [{cx, cy}], r, opacity} when Moon
  *   Motes is on and the scale is 20 px per unit or more; {kind:
  *   "last-watch-veil", x, y, width, height, rx, opacity, fromOpacity (null when
- *   the step did not change this tick)} when Time Of Night is on and the veil
+ *   the step did not change this tick)} when Time of Night is on and the veil
  *   is above 0.
  * - Part "dim": {kind: "death-dim", d, start, end} when Death Dimming is on, a
  *   Fall beat exists and motion is normal (d is the floor with two windows over

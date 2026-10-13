@@ -193,7 +193,7 @@ test("the live V tip covers only the status line's message", () => {
     assert.equal(tip.hidden, true);
     assert.equal(camera.pressKey("v"), true);
     assert.equal(tip.hidden, false);
-    assert.equal(tip.textContent, "Everyone In View on · V: back to Whole Map");
+    assert.equal(tip.textContent, "Everyone in View on · V: back to Whole Map");
     assert.deepEqual(
       [tip.style.left, tip.style.top, tip.style.width, tip.style.height],
       ["214px", "6px", "575px", "35px"],

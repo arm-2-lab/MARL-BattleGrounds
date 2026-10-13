@@ -51,7 +51,7 @@ def _print_next(
     roles = set(namespace.roles)
     full_args = ["--metrics", "full"] if "full_report" in roles else []
     if config.get("record_sources") and "outcomes_priority" not in roles:
-        print("Prepare The Separate Outcome Records Before Reuse")
+        print("Prepare the Separate Outcome Records Before Reuse")
         prepare = [
             *prefix,
             "models",

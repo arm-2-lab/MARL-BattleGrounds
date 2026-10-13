@@ -5,7 +5,7 @@
  * then its ability and target ("Step: Stay · Action: Arcane Blast → Warrior
  * 6"); No Combat reads its step; an Ultimate with no target names only the
  * Ultimate; a Basic with no target reads No Combat. A fallen champion reads
- * "Fallen · Returns In N Ticks" ("1 Tick" for one, "Fallen" with no wave
+ * "Fallen · Returns in N Ticks" ("1 Tick" for one, "Fallen" with no wave
  * clock; fallenWords).
  */
 import assert from "node:assert/strict";
@@ -58,7 +58,7 @@ test("a set order names its step, then its action and target", () => {
 });
 
 test("a fallen champion's words say when it returns", () => {
-  assert.equal(fallenWords({ returnsIn: 3 }), "Fallen · Returns In 3 Ticks");
-  assert.equal(fallenWords({ returnsIn: 1 }), "Fallen · Returns In 1 Tick");
+  assert.equal(fallenWords({ returnsIn: 3 }), "Fallen · Returns in 3 Ticks");
+  assert.equal(fallenWords({ returnsIn: 1 }), "Fallen · Returns in 1 Tick");
   assert.equal(fallenWords({ returnsIn: null }), "Fallen");
 });

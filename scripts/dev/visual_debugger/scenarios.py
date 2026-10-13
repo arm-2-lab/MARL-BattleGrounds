@@ -1549,7 +1549,7 @@ VISION_MOMENT_SCORES = (2, 4)
 # brings the fallen back in the transition that starts when a clock reads 0
 # (core/env.py, _build_was_respawned_this_transition_by_agent_array), so a
 # clock of c means "back in c + 1 ticks". The vision page writes "Respawn Wave
-# In 3 Ticks"; the owner's 2 Oct decision sets the clocks so that text is true.
+# in 3 Ticks"; the owner's 2 Oct decision sets the clocks so that text is true.
 VISION_MOMENT_RESPAWN_WAVES = (2, 2)
 # The Vision Moment and its other starts, each a small change away from it so
 # the parity tools reach a rare state in one turn instead of a long game:
@@ -1739,7 +1739,7 @@ def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
     The respawn-wave clocks are the one value set apart from the recording,
     which reads (3, 3) at tick 91. Core respawns the fallen in the transition
     that starts when a team's clock reads 0, so a clock of c brings them back
-    in c + 1 ticks. The vision page's "Respawn Wave In 3 Ticks" is therefore
+    in c + 1 ticks. The vision page's "Respawn Wave in 3 Ticks" is therefore
     true only for clocks of 2; the owner decided on 2 Oct 2026 that the moment
     must make the vision's text true, so the clocks are (2, 2).
 

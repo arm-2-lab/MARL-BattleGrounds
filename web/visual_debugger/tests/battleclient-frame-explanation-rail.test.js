@@ -2,7 +2,7 @@
  * @file Check where the BattleClient and DevClient combat screen show the
  * Frame Explanation list (F). src/main.js inserts #frame-explanation-list
  * after the hidden #this-turn slot, and index.html keeps that slot under the
- * How To Play card, below the bottom of a 1440 by 900 screen. The rail
+ * How to Play card, below the bottom of a 1440 by 900 screen. The rail
  * stylesheet (src/styles/battleclient/rail.css) must therefore order the Your
  * Turn card first and the list right under it, dress the list like a rail
  * card, and scope both rules to the rail shared by live play and the Replay
@@ -28,7 +28,7 @@ function ruleBody(selector) {
   return rail.slice(start, rail.indexOf("}", start));
 }
 
-test("the list still lands after the hidden slot under How To Play", () => {
+test("the list still lands after the hidden slot under How to Play", () => {
   assert.match(main, /elements\.thisTurn\.after\(frameExplanationList\)/u);
   assert.match(main, /frameExplanationList\.id = "frame-explanation-list"/u);
   assert.match(

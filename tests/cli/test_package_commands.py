@@ -667,8 +667,8 @@ def test_preview_reads_one_chunk_and_closes_iterator(
     assert state == ["read", "closed"]
     output = capsys.readouterr().out
     assert "Results Were Not Saved" in output
-    assert "Unavailable" in output and "Up To 32 Rows" in output
-    assert "Head To Head — Up To 32 Rows" in output
+    assert "Unavailable" in output and "Up to 32 Rows" in output
+    assert "Head to Head — Up to 32 Rows" in output
     assert "a\tSame\tb\tSame\t3\t1\t1\t1\t5.0\t2.0\t3.0" in output
 
 

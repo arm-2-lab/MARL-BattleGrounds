@@ -41,7 +41,7 @@ sh start.sh
 ```
 
 `start.sh` installs [uv](https://docs.astral.sh/uv/) if you do not have it, picks the right JAX build for your machine, installs Python 3.14 and the exact tested packages, then opens the BattleClient in your browser. The first run downloads up to 3.5 GB with a GPU build (about 0.3 GB on the CPU); later runs start in seconds.
-By default you play Team A against the trained Recurrent MAPPO team on map 47. Press `?` in the page for How To Play. Each game's replay is saved in `recordings/`.
+By default you play Team A against the trained Recurrent MAPPO team on map 47. Press `?` in the page for How to Play. Each game's replay is saved in `recordings/`.
 Without curl, use `wget -qO- <the same link> | tar xz`. With git: `git clone --branch v1.0.1 https://github.com/arm-2-lab/MARL-BattleGrounds.git`, then `cd MARL-BattleGrounds` and `sh start.sh`.
 
 Run everything else from the same folder with `uv run`, for example:
@@ -149,7 +149,7 @@ In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Wind
 [Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb). It opens on a free T4 GPU. Its first cell installs MARL-BattleGrounds with the JAX build for that GPU and restarts the runtime once by itself (Colab says the session crashed; that is expected), then Runtime > Run all again. It walks through the API with a drawn game, the speed, a short training run with the released curve, and the trained Season 0 teams from Hugging Face.
 The browser clients (BattleClient and Replay Viewer) do not run inside Colab, because their pages only accept `127.0.0.1`. Use the one command or Docker on your own machine for them.
 
-## Clusters And Remote Machines
+## Clusters and Remote Machines
 
 Remote GPU machine: start the client there with `sh start.sh --port 8765 --replay-port 8767 --no-browser`. On your laptop run `ssh -N -L 8765:127.0.0.1:8765 -L 8767:127.0.0.1:8767 <host>`, then open the printed `127.0.0.1` link.
 Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then, in a scratch folder, run `apptainer pull marl-bgs.sif docker://ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1-cuda12` once (the image file lands in the current folder). On a compute node, in that folder: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
@@ -160,7 +160,7 @@ Cluster with uv: unpack the release on scratch storage (the environment is about
 Trained models download from the [MARL-BattleGrounds Hugging Face organization](https://huggingface.co/MARL-BattleGrounds) the first time you use them and stay in your Hugging Face cache. After that, set `HF_HUB_OFFLINE=1` to run without a network. The Docker image already holds the six Season 0 models.
 Released models work offline too: download them once with `python -m marl_battlegrounds models download <name>`, then set `HF_HUB_OFFLINE=1`; see [Released Models](released_models.md#downloads-cache-and-offline-use).
 
-## Watch Out: Saved Runs Need The Same Python
+## Watch Out: Saved Runs Need the Same Python
 
 Extending a saved training run checks the exact Python version that trained it, down to the last number (for example 3.14.5), and the exact versions of `jax`, `jaxlib`, `numpy`, `flax`, `optax` and `orbax-checkpoint` (and `flashbax` for QMIX). `uv python upgrade`, or upgrading any of those packages, stops a run saved before from being extended. The one command and the constraints files keep those packages fixed, but not Python's last number: `start.sh` may pick any Python 3.14. To extend a run saved with another Python, pin it in the folder and run the command again, for example `uv python pin 3.14.5`, then `sh start.sh`. The Docker image already has 3.14.5. Starting a new run from any saved model needs no version match.
 

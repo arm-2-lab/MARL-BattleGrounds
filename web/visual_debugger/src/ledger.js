@@ -16,9 +16,9 @@
  *   keeps working (panels.js and filter-controls.js still draw the Roster,
  *   Actions and Visuals bodies).
  * - The Ledger Header of the Metrics tab: a sticky header with the Scope
- *   switch ("Up To Tick N | Whole Game", with "Shows the ending too."), the
+ *   switch ("Up to Tick N | Whole Game", with "Shows the ending too."), the
  *   Topic select with its section eyebrow, the View switch ("Totals | By
- *   Recipient"), and Find A Measurement. The switches mirror today's native
+ *   Recipient"), and Find a Measurement. The switches mirror today's native
  *   selects, so main.js keeps owning what a choice does.
  * - The Match Summary at the head of the Metrics tab (ledgerMatchSummary).
  * - The Technical Frame in three groups (This Frame, This Game, This File)
@@ -352,8 +352,8 @@ function copyButton(doc, text, label) {
  * own recipient ID, looked up in the frame's display-identity rows
  * (authorizedPresentationIdentityRows) and labelled by canonicalAgentIdentity,
  * the same way panels.js fullRecordLabel names it: "Full Record · Not Limited
- * To Agent 3's View", never the raw public ID ("agent-3"). When the recipient
- * has no identity row, it reads "...Not Limited To This Agent's View". The
+ * to Agent 3's View", never the raw public ID ("agent-3"). When the recipient
+ * has no identity row, it reads "...Not Limited to This Agent's View". The
  * words come from agent-identity.js fullRecordChipWords.
  * tooltip explains that the docked cards show every agent while the arena
  * shows only what that agent saw. Agent POV limit: it names only the POV agent
@@ -396,7 +396,7 @@ const MATCH_SUMMARY_STEMS = Object.freeze(["score", "kills", "deaths", "return"]
  *
  * heading: on the completion frame a verdict, for example "Team B Wins · 17 –
  * 20 · Score Limit Reached · Tick 204" or "Draw · 19 – 16 · No Team Reached
- * 20 · A Lead At Tick 300 Wins Nothing"; before it "Match In Progress · Up To
+ * 20 · A Lead at Tick 300 Wins Nothing"; before it "Match in Progress · Up to
  * Tick 118". teams: Team A first, then Team B; each lists Score, Total Kills,
  * Total Deaths and Return with the catalog's own labels, values and CSV names
  * from the Episode Results rows. The summary never shows the ending early:
@@ -434,12 +434,12 @@ export function ledgerMatchSummary(presentation, metricSummary) {
     const both = scoreA >= threshold && scoreB >= threshold;
     const lead =
       !both && scoreA !== scoreB && match.episode_limit
-        ? ` · A Lead At Tick ${match.episode_limit} Wins Nothing`
+        ? ` · A Lead at Tick ${match.episode_limit} Wins Nothing`
         : "";
     heading = `Draw · ${scoreA} – ${scoreB} · ${both ? "Both Teams Reached" : "No Team Reached"} ${threshold}${lead}`;
   } else {
     heading =
-      tick === null ? "Match In Progress" : `Match In Progress · Up To Tick ${tick}`;
+      tick === null ? "Match in Progress" : `Match in Progress · Up to Tick ${tick}`;
   }
   const useRows =
     metricSummary !== null &&
@@ -481,7 +481,7 @@ export function ledgerMatchSummary(presentation, metricSummary) {
   });
   const note =
     metricSummary !== null && !useRows
-      ? "Choose Up To Tick to see kills and deaths here. This summary never shows the ending early."
+      ? "Choose Up to Tick to see kills and deaths here. This summary never shows the ending early."
       : null;
   return Object.freeze({ heading, note, teams: Object.freeze(teams) });
 }
@@ -814,7 +814,7 @@ export function mountLedgerRail(doc, options = {}) {
  * visually hidden and taken out of the tab order and the accessibility tree,
  * because the switches replace them. No row, value, topic or note text
  * changes. Returns {refresh(presentation)} which rewrites the Scope switch's
- * first label as "Up To Tick N" from the frame's simulator tick ("Up To
+ * first label as "Up to Tick N" from the frame's simulator tick ("Up to
  * Current Tick" when unknown). Side effects: DOM moves and listeners.
  *
  * @param {Document} doc
@@ -896,7 +896,7 @@ export function mountLedgerHeader(doc) {
     fold.append(title, ...notes);
     rows.after(fold);
   }
-  let tickLabel = "Up To Current Tick";
+  let tickLabel = "Up to Current Tick";
   const syncScope = () =>
     renderChoiceSwitch(scopeSwitch, scope, [
       { name: "cursor", label: tickLabel },
@@ -929,7 +929,7 @@ export function mountLedgerHeader(doc) {
         (fact) => fact.id === "simulator_step",
       )?.value;
       tickLabel =
-        typeof tick === "number" ? `Up To Tick ${tick}` : "Up To Current Tick";
+        typeof tick === "number" ? `Up to Tick ${tick}` : "Up to Current Tick";
       syncScope();
     },
   });

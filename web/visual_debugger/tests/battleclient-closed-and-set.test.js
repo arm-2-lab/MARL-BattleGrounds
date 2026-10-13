@@ -9,7 +9,7 @@
  *   and once closed while still "recording" with no tick kept it says "No
  *   Replay" instead of a stale "Recording · Tick 0".
  * - saveButtonState (owner, 4 Oct 2026): the top bar's save button reads
- *   Finish And Save while recording, Saving Replay… while the server saves
+ *   Finish and Save while recording, Saving Replay… while the server saves
  *   or this page's save request is out (no action, never usable), Open
  *   Replay once saved (usable the first time through the server, then again
  *   when the page holds the Replay Viewer's link), Retry Save after a failed
@@ -20,12 +20,12 @@
  * - orderIsSet: Set only when the server's order is not Stay + No Combat (a
  *   kept target with No Combat is the default), so the pill is the same after
  *   a reload and in both views.
- * - hiddenOrderLine: another team's Manual champion reads "Out Of Sight" when
+ * - hiddenOrderLine: another team's Manual champion reads "Out of Sight" when
  *   the view cannot see it and "In Sight · Order Hidden" when it can, never
  *   "Not Observed".
  * - main.js: acceptExit keeps the Exit answer's recording status in
  *   state.exitRecording and says closedSentence; resendsAfterStale lets only
- *   Exit and Save And Replace be sent once more after a stale answer; Exit
+ *   Exit and Save and Replace be sent once more after a stale answer; Exit
  *   or R pressed while the game-over save runs says why nothing happens yet.
  */
 import assert from "node:assert/strict";
@@ -121,11 +121,11 @@ test("the top bar's save button turns into Open Replay once the replay is saved"
     state === null ? null : [state.label, state.action, state.usable];
   assert.deepEqual(
     shown(saveButtonState({ lifecycle: "recording", finish_available: true })),
-    ["Finish And Save", "finish", true],
+    ["Finish and Save", "finish", true],
   );
   assert.deepEqual(
     shown(saveButtonState({ lifecycle: "recording", finish_available: false })),
-    ["Finish And Save", "finish", false],
+    ["Finish and Save", "finish", false],
   );
   // This page's save request is out, or the server saves a finished game.
   for (const [recording, options] of /** @type {const} */ ([
@@ -196,8 +196,8 @@ test("Set means the server's order is not Stay with No Combat", () => {
   assert.equal(orderIsSet({ moveAction: 0, lane: "ultimate" }), true);
 });
 
-test("another team's champion reads Out Of Sight or In Sight, never Not Observed", () => {
-  assert.equal(hiddenOrderLine(false), "Out Of Sight");
+test("another team's champion reads Out of Sight or In Sight, never Not Observed", () => {
+  assert.equal(hiddenOrderLine(false), "Out of Sight");
   assert.equal(hiddenOrderLine(true), "In Sight · Order Hidden");
   const rail = readFileSync(new URL("../src/tactics-turn.js", import.meta.url), "utf8");
   assert.doesNotMatch(rail, /NOT_OBSERVED_LABEL/u);

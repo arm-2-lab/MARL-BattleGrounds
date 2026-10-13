@@ -13,7 +13,7 @@
  * out of hidden tabs, opens the Metrics card only while its tab is shown and
  * moves with Left, Right, Home and End; the Scope and View switches mirror the
  * native selects and fire their change events; the ledger header (Scope, Topic,
- * View and Find A Measurement) sits just before the Metrics card as its own
+ * View and Find a Measurement) sits just before the Metrics card as its own
  * block, so only the card under it scrolls; the Technical Frame sorts its
  * facts into This Frame, This Game and This File with Copy on ids and cuts
  * long ids in the middle; the Full Record chip appears only in Agent POV,
@@ -554,7 +554,7 @@ test("the ledger header mirrors Scope and View and folds the reading notes", () 
   assert.equal(scope.tabIndex, -1);
   assert.deepEqual(
     scopeSwitch.children.map((/** @type {any} */ button) => button.textContent),
-    ["Up To Current Tick", "Whole GameShows the ending too."],
+    ["Up to Current Tick", "Whole GameShows the ending too."],
   );
   scopeSwitch.children[1].click();
   assert.deepEqual(changes, ["final"]);
@@ -688,7 +688,7 @@ test("the Full Record chip shows only in Agent POV and names the POV agent", asy
   );
   const chip = fullRecordChip(pov);
   assert.ok(chip);
-  assert.match(chip.text, /^Full Record · Not Limited To Agent \d+'s View$/u);
+  assert.match(chip.text, /^Full Record · Not Limited to Agent \d+'s View$/u);
   assert.equal(chip.text, fullRecordLabel(pov));
   assert.doesNotMatch(chip.text, /agent-\d/u);
   assert.match(chip.tooltip, /every agent/u);
@@ -738,7 +738,7 @@ test("the Match Summary gives the verdict at the end and never shows the ending 
   });
   const cursor = ledgerMatchSummary(progress, rows("cursor"));
   assert.ok(cursor);
-  assert.equal(cursor.heading, "Match In Progress · Up To Tick 1");
+  assert.equal(cursor.heading, "Match in Progress · Up to Tick 1");
   assert.deepEqual(
     cursor.teams.map((team) => [
       team.label,
@@ -765,7 +765,7 @@ test("the Match Summary gives the verdict at the end and never shows the ending 
     [
       "draw",
       [19, 16],
-      "Draw · 19 – 16 · No Team Reached 20 · A Lead At Tick 3 Wins Nothing",
+      "Draw · 19 – 16 · No Team Reached 20 · A Lead at Tick 3 Wins Nothing",
     ],
   ]) {
     Object.assign(raw.match_summary, { outcome, scores });

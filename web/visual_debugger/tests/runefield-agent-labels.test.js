@@ -1,7 +1,7 @@
 /**
  * @file Check agent-identity.js as the one owner of label forms: the champion
  * label "Mage · ID 5" with no team word, the chip text "Agent 5", the source
- * name "Hunter ID 7", the Out Of Sight chip "Warrior · ID 6 · Out Of Sight",
+ * name "Hunter ID 7", the Out of Sight chip "Warrior · ID 6 · Out of Sight",
  * the frozen class and team tables (Team A and Team B only), integer-only class
  * and team lookups, and tick counts "1 Tick"/"2 Ticks" for labels and
  * "1 tick"/"2 ticks" inside sentences.
@@ -38,7 +38,7 @@ test("labels follow the owner's forms and never name a team", () => {
     publicIdentity: "Agent ID 6",
     chipText: "Agent 6",
     sourceName: "Warrior ID 6",
-    outOfSightLabel: "Warrior · ID 6 · Out Of Sight",
+    outOfSightLabel: "Warrior · ID 6 · Out of Sight",
     classLabel: "Warrior",
     teamLabel: "Team B",
     accent: "warrior",

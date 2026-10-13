@@ -85,7 +85,7 @@ button.token-chip:focus-visible {
   padding-left: 0.2rem;
 }
 
-/* Out Of Sight: no ring, muted words, never a life. */
+/* Out of Sight: no ring, muted words, never a life. */
 .token-chip[data-chip-mode="out_of_sight"] .token-chip__token {
   box-shadow: inset 0 0 0 1px var(--ash);
 }

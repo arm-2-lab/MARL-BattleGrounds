@@ -51,7 +51,7 @@ For restarts inside `step`, wrap the environment in `marl_bgs.AutoReset`, as
 [episode_tracking.py](../examples/episode_tracking.py) does. Keys are explicit:
 reusing a key repeats the same random choices.
 
-## Batches And Spawn Ends
+## Batches and Spawn Ends
 
 ```python
 scalar = marl_bgs.make("tdm", map_id=0, balance_spawn_locations=False)  # one game, no batch axis
@@ -66,7 +66,7 @@ half. Every reset takes a fresh block of episode IDs, so gaps are normal.
 even integer`; pass `balance_spawn_locations=False` for one game or an odd batch.
 A new `num_envs` compiles a new program; new keys and weights do not.
 
-## Maps And Splits
+## Maps and Splits
 
 ```python
 maps = marl_bgs.list_tdm_maps()                       # 52 maps, in ID order
@@ -85,7 +85,7 @@ one of eight hand-made end-game starts ([game_rules.md](game_rules.md)).
 
 **Watch Out:** never train or tune on test maps 47-51 or on the eight scenarios.
 
-## Rosters And Settings
+## Rosters and Settings
 
 ```python
 small = marl_bgs.make("tdm", map_id=12, num_envs=128,
@@ -105,7 +105,7 @@ order (Team A 0-4, Team B 5-9). Unused slots can only stay still and get 0 rewar
 | `red_zone_depth` | `5.0` | Red Zone depth in map units; `0.0` turns it off |
 | `metrics` | `"priority"` | `"none"`, `"priority"` or `"full"`; see [metrics.md](metrics.md) |
 
-## What Agents See And Do
+## What Agents See and Do
 
 ```python
 print(env.action_space("agent_0"))  # move 0-8, select_target 0-10, use_ultimate 0-1
@@ -131,7 +131,7 @@ masked move becomes stay; a masked pair becomes no combat. `info` and
 `env.training_state(state)` hold the whole game: never feed them to an acting
 agent ([your_method.md](your_method.md) explains the limits).
 
-## Coming From JaxMARL Or PettingZoo
+## Coming From JaxMARL or PettingZoo
 
 | Idea | JaxMARL | PettingZoo | MARL-BGs |
 | --- | --- | --- | --- |

@@ -1719,11 +1719,11 @@ function lineupRecord(input, bounds, full) {
   const rules = [];
   if (Number.isInteger(input.pointsToWin)) {
     rules.push(
-      `First To ${input.pointsToWin} Wins${Number.isInteger(input.tickLimit) ? ` · Draw At Tick ${input.tickLimit}` : ""}`,
+      `First to ${input.pointsToWin} Wins${Number.isInteger(input.tickLimit) ? ` · Draw at Tick ${input.tickLimit}` : ""}`,
     );
   }
   if (input.redZoneDoubles === true) {
-    rules.push("A Death In Its Own Red Zone Scores 2");
+    rules.push("A Death in Its Own Red Zone Scores 2");
   }
   const common = {
     eventId: "herald:lineup",
@@ -1799,7 +1799,7 @@ function verdictWords(verdict) {
       results: { 1: "Draw", 2: "Draw" },
       lead:
         !tied && Number(scores[1]) !== Number(scores[2])
-          ? `A Lead At Tick ${tick} Wins Nothing`
+          ? `A Lead at Tick ${tick} Wins Nothing`
           : null,
     };
   }
@@ -3153,7 +3153,7 @@ export function verdictHonours(matchHonors) {
  * ("Mage · ID 0"). It is short enough to fit in the BattleClient deck's
  * place below the arena. An unknown Kill Contributions reads "—". Numbers
  * use tabular figures. A null or malformed fact gives a sheet that says "No
- * Match Summary For This Game.". Side effects: creates DOM nodes and one
+ * Match Summary for This Game.". Side effects: creates DOM nodes and one
  * click listener; no timers or storage. Agent POV: shows exactly the fact
  * given; the host lists every champion in both views once the game is over
  * (a fact for one team reads "Your Team's Champions").
@@ -3204,7 +3204,7 @@ export function buildMatchSummarySheet(doc, matchHonors, options = {}) {
         doc,
         "p",
         { class: "match-summary-sheet__empty" },
-        "No Match Summary For This Game.",
+        "No Match Summary for This Game.",
       ),
     );
     return sheet;

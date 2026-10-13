@@ -1,7 +1,7 @@
 /**
  * @file Check immutable explanation records, exact vocabulary and public agent
  * identity in browser help: champion labels read "Mage · ID 5" (with the chip,
- * source and Out Of Sight forms beside them), statuses use the approved names
+ * source and Out of Sight forms beside them), statuses use the approved names
  * such as "Serrated Arrows (Slow)" and "Spawn Shield (Invulnerable)", auras
  * read "Sorcerer's Empowerment (Damage Boost)", ability titles read "Burst
  * (Mage Ultimate)" and
@@ -216,7 +216,7 @@ test("canonical agent identity covers every class and team without slot fallback
         publicIdentity: `Agent ID ${publicId}`,
         chipText: `Agent ${publicId}`,
         sourceName: `${classLabel} ID ${publicId}`,
-        outOfSightLabel: `${classLabel} · ID ${publicId} · Out Of Sight`,
+        outOfSightLabel: `${classLabel} · ID ${publicId} · Out of Sight`,
         classLabel,
         teamLabel,
         accent,
@@ -265,7 +265,7 @@ test("canonical agent identity covers every class and team without slot fallback
         publicIdentity: "Agent ID unavailable",
         chipText: "Agent unavailable",
         sourceName: "Mage ID unavailable",
-        outOfSightLabel: "Mage · ID unavailable · Out Of Sight",
+        outOfSightLabel: "Mage · ID unavailable · Out of Sight",
         classLabel: "Mage",
         teamLabel: "Team A",
         accent: "mage",

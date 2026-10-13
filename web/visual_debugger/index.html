@@ -11,13 +11,13 @@
   Live play (BattleClient and DevClient combat screen) follows the approved
   BattleClient vision page: one #bc grid with the top bar (.bc-top: brand,
   place line, View switch, Connected and Recording pills, Visual Filters,
-  How To Play, Finish And Save, Restart, Exit), the scorebug
+  How to Play, Finish and Save, Restart, Exit), the scorebug
   (#scorebug), the stage (#stage: the arena box #arena and the deck
   #command-deck, whose header line #status-line holds the message and Keys
   On or Off; owner, 4 Oct 2026: no status line under the deck) and a 340 px
   rail (#rail: Your Turn #turn-card, Class Guide
-  #class-card, How To Play #howto-card). Floating parts: the hover card
-  (#hcard), the How To Play overlay over the arena (#htp), the Replay
+  #class-card, How to Play #howto-card). Floating parts: the hover card
+  (#hcard), the How to Play overlay over the arena (#htp), the Replay
   Recording popover (#rec-pop), the Visual Filters drawer
   (#visual-filters-drawer) and the Restart dialog
   (#recording-discard-dialog). The DevClient shows the closed Developer
@@ -165,7 +165,7 @@
             class="shell-popover pov-agent-picker"
             popover
             role="dialog"
-            aria-label="Choose Whose View To Watch"
+            aria-label="Choose Whose View to Watch"
           ></div>
         </div>
         <button
@@ -226,12 +226,12 @@
             aria-haspopup="dialog"
             hidden
           >Visual Filters</button>
-          <!-- Live play: Finish And Save. It reads Saving Replay… while the
+          <!-- Live play: Finish and Save. It reads Saving Replay… while the
                server saves and turns into Open Replay once the replay is
                saved (src/main.js renderRecordingControls); hidden when the
                match records nothing. Then Restart. Never shown in the Replay
                Viewer (topbar.css). -->
-          <button id="recording-finish-button" class="tbtn" type="button" hidden disabled>Finish And Save</button>
+          <button id="recording-finish-button" class="tbtn" type="button" hidden disabled>Finish and Save</button>
           <button id="reset-button" class="tbtn" type="button" data-key="r" data-live-only>Restart <kbd>R</kbd></button>
           <button id="exit-button" class="button button--quiet tbtn" type="button" disabled>
             Exit
@@ -252,7 +252,7 @@
     >
       <div class="recording-panel__summary">
         <div>
-          <p class="eyebrow">Replay Of This Game</p>
+          <p class="eyebrow">Replay of This Game</p>
           <h2 id="recording-heading">Replay Recording</h2>
         </div>
         <dl class="recording-facts">
@@ -318,7 +318,7 @@
         <!-- Empty slot: party frames, one per champion, for both teams. -->
         <section id="party-frames" hidden></section>
 
-        <!-- The arena box: the field, its view tag and the How To Play overlay. -->
+        <!-- The arena box: the field, its view tag and the How to Play overlay. -->
         <div id="arena" class="arena">
         <div id="battlefield-shell" class="battlefield-shell" aria-busy="true">
           <svg
@@ -334,7 +334,7 @@
           </p>
           <!-- Empty slot: the Title Card shown while no frame has arrived. -->
           <section id="title-card" hidden></section>
-          <!-- Empty slot: live camera switch in the field corner (Whole Map, Everyone In View). -->
+          <!-- Empty slot: live camera switch in the field corner (Whole Map, Everyone in View). -->
           <div id="live-camera-switch" hidden></div>
           <!-- Live play in Oracle View only: a reminder that the player sees everything. -->
           <p id="oracle-view-tag" class="oracle-view-tag" hidden>
@@ -347,7 +347,7 @@
         </div>
           <!-- On-screen keys, stacked at the arena's top right, key only (owner,
                4 Oct 2026; the name is the button's label and its hover card):
-               V Everyone In View, B Battle Cam (Replay Viewer only), F Frame
+               V Everyone in View, B Battle Cam (Replay Viewer only), F Frame
                Explanation and Esc Clear Selection (Replay Viewer only). Each
                does exactly what its key does (src/arena-buttons.js wires and
                shows them; hidden until then). Match Summary shows only while
@@ -357,7 +357,7 @@
                which moment cards keep clear of (src/scene.js). -->
           <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of buttons; a fieldset would change how the page styles and disables it. -->
           <div id="arena-buttons" class="arena-buttons" role="group" aria-label="Arena Shortcuts" data-arena-chrome hidden>
-            <button type="button" class="sbtn arena-key" id="arena-everyone-in-view-button" aria-label="Everyone In View" aria-keyshortcuts="V" aria-pressed="false"><kbd aria-hidden="true">V</kbd></button>
+            <button type="button" class="sbtn arena-key" id="arena-everyone-in-view-button" aria-label="Everyone in View" aria-keyshortcuts="V" aria-pressed="false"><kbd aria-hidden="true">V</kbd></button>
             <button type="button" class="sbtn arena-key" id="arena-battle-cam-button" aria-label="Battle Cam" aria-keyshortcuts="B" aria-pressed="false" hidden><kbd aria-hidden="true">B</kbd></button>
             <button type="button" class="sbtn arena-key" id="arena-frame-explanation-button" aria-label="Frame Explanation" aria-keyshortcuts="F" aria-pressed="false"><kbd aria-hidden="true">F</kbd></button>
             <button type="button" class="sbtn arena-key" id="arena-clear-selection-button" aria-label="Clear Selection" aria-keyshortcuts="Escape" hidden><kbd aria-hidden="true">Esc</kbd></button>
@@ -365,11 +365,11 @@
           </div>
           <!-- Empty slot: the view tag ("Agent POV · …" or "Oracle View · …"). -->
           <p class="povtag" id="pov-tag" hidden></p>
-          <!-- How To Play over the arena (never the deck); ? or Close shuts it. -->
-          <div class="htp" id="htp" role="dialog" aria-label="How To Play" hidden>
-            <header><h3>How To Play</h3><button type="button" class="sbtn" id="help-close-button">Close <kbd>?</kbd></button></header>
+          <!-- How to Play over the arena (never the deck); ? or Close shuts it. -->
+          <div class="htp" id="htp" role="dialog" aria-label="How to Play" hidden>
+            <header><h3>How to Play</h3><button type="button" class="sbtn" id="help-close-button">Close <kbd>?</kbd></button></header>
             <div id="htp-body"></div>
-            <div class="foot"><span class="keysrow"><span><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>X</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd> Step</span><span><kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> Action</span><span><kbd>Shift</kbd> + Click Target</span><span><kbd>Space</kbd> Lock In</span><span><kbd>Esc</kbd> Clear Target</span><span><kbd>V</kbd> Everyone In View</span><span><kbd>F</kbd> Frame Explanation</span></span><button type="button" class="linkbtn" id="htp-full">Read The Full Guide</button></div>
+            <div class="foot"><span class="keysrow"><span><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>X</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd> Step</span><span><kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> Action</span><span><kbd>Shift</kbd> + Click Target</span><span><kbd>Space</kbd> Lock In</span><span><kbd>Esc</kbd> Clear Target</span><span><kbd>V</kbd> Everyone in View</span><span><kbd>F</kbd> Frame Explanation</span></span><button type="button" class="linkbtn" id="htp-full">Read the Full Guide</button></div>
           </div>
         </div>
         <div class="battlefield-support">
@@ -465,7 +465,7 @@
             <output id="replay-frame-position" for="replay-frame-slider" aria-live="polite">
               Tick 0 / 0
             </output>
-            <!-- Empty slot: camera switch (Whole Map, Everyone In View, Battle Cam). -->
+            <!-- Empty slot: camera switch (Whole Map, Everyone in View, Battle Cam). -->
             <div id="replay-camera-switch" hidden></div>
             <label class="replay-timeline__rate">
               <span>Speed</span>
@@ -523,7 +523,7 @@
                  line (#msg) and Keys On or Off. -->
             <div class="dstatus" id="status-line" data-live-only hidden>
               <p class="msg" id="msg" role="status" aria-live="polite"></p>
-              <span class="keys off" id="keys-chip"><i></i><span id="keys-text">Keys Off · Click The Arena</span></span>
+              <span class="keys off" id="keys-chip"><i></i><span id="keys-text">Keys Off · Click the Arena</span></span>
             </div>
             <div class="dk-agent">
               <div class="ag-top"><span id="ag-tok"></span><div><b id="ag-name"></b><em id="ag-epi"></em></div></div>
@@ -547,7 +547,7 @@
               </div>
             </div>
             <div class="dk-target">
-              <h4 class="dh"><i>2</i>Target <span>Shift + Click A Body</span></h4>
+              <h4 class="dh"><i>2</i>Target <span>Shift + Click a Body</span></h4>
               <div class="tchip none" id="tchip"></div>
               <p class="picks-h">Allowed Now</p>
               <!-- biome-ignore lint/a11y/useSemanticElements: a plain group of buttons, as on the vision page; a fieldset would change how script disables it. -->
@@ -574,7 +574,7 @@
             <div class="overlay" id="stopped" hidden>
               <span class="eyebrow alert">Stopped</span>
               <div><b>A Fresh Start Is Needed</b><p>Policy work was cancelled, so this game cannot go on. The game so far is kept. You can still look around, save it, or exit. Start a fresh match from Python to play again.</p></div>
-              <button type="button" class="bigbtn" id="stopped-save">Finish And Save</button>
+              <button type="button" class="bigbtn" id="stopped-save">Finish and Save</button>
             </div>
             <div class="watchwrap">
               <div class="watchbar">
@@ -623,9 +623,9 @@
         <section id="fallen-feed" hidden></section>
         <!-- Live play: the Class Guide of the champion in view. -->
         <section class="rc cg" id="class-card" aria-label="Class Guide" data-live-only hidden></section>
-        <!-- Live play: the short How To Play card. -->
-        <section class="rc htmini" id="howto-card" aria-label="How To Play" data-live-only hidden>
-          <div class="rc-head"><h3>How To Play</h3></div>
+        <!-- Live play: the short How to Play card. -->
+        <section class="rc htmini" id="howto-card" aria-label="How to Play" data-live-only hidden>
+          <div class="rc-head"><h3>How to Play</h3></div>
           <ol>
             <li><span>The <b>silver ring</b> is your champion. Policies play the rest.</span></li>
             <li><span>Step with <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd>. <kbd>X</kbd> is Stay.</span></li>
@@ -636,7 +636,7 @@
         </section>
         <!-- Empty slot: the Your Turn card (what to do now, turn checklist). -->
         <section id="this-turn" hidden></section>
-        <!-- Empty slot: the How To Play card. -->
+        <!-- Empty slot: the How to Play card. -->
         <section id="how-to-play" hidden></section>
         <!-- Empty slot: the Replay Viewer rail with its six tabs (src/ledger.js). -->
         <div id="replay-rail" hidden>
@@ -665,7 +665,7 @@
               <select id="metric-view"><option value="single">All Measurements</option></select>
             </div>
             <div id="metric-search-area" class="metric-search">
-              <label for="metric-search">Find A Measurement</label>
+              <label for="metric-search">Find a Measurement</label>
               <input id="metric-search" type="search" role="combobox" placeholder="Name, CSV column, or meaning" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="metric-search-results" aria-describedby="metric-search-status" disabled>
               <p id="metric-search-status" class="section-note" role="status">Search includes every numerical CSV column.</p>
               <div id="metric-search-content" hidden>
@@ -775,10 +775,10 @@
       <b id="pop-state"></b>
       <!-- After a failed save: why it failed (saveFailedReason in src/tactics-turn.js). -->
       <p id="pop-reason" hidden></p>
-      <p>Saves to <b id="pop-folder">./recordings</b> when the game ends, when you press Finish And Save, or when you Exit.</p>
-      <div class="row"><button type="button" class="sbtn" id="pop-finish">Finish And Save</button><button type="button" class="sbtn" id="recording-review-button" disabled>Open Replay</button><button type="button" class="sbtn" id="recording-retry-button" hidden disabled>Retry Save</button></div>
+      <p>Saves to <b id="pop-folder">./recordings</b> when the game ends, when you press Finish and Save, or when you Exit.</p>
+      <div class="row"><button type="button" class="sbtn" id="pop-finish">Finish and Save</button><button type="button" class="sbtn" id="recording-review-button" disabled>Open Replay</button><button type="button" class="sbtn" id="recording-retry-button" hidden disabled>Retry Save</button></div>
       <!-- biome-ignore lint/a11y/useValidAnchor: This link stays hidden until the server supplies its separate replay URL. -->
-      <a id="recording-replay-link" target="_blank" rel="noopener noreferrer" hidden>Open Saved Replay In New Tab</a>
+      <a id="recording-replay-link" target="_blank" rel="noopener noreferrer" hidden>Open Saved Replay in New Tab</a>
       <div id="recording-save-as-control" class="recording-save-as" hidden>
         <label for="recording-save-as-input">Save As File Name</label>
         <input
@@ -826,7 +826,7 @@
           </fieldset>
           <div class="visual-filters__actions visual-filters__preset-state">
             <span id="visual-filter-preset-status" class="section-note" role="status">Every switch as it ships</span>
-            <button id="reset-visual-filters-button" type="button" disabled>Reset To Default Configuration</button>
+            <button id="reset-visual-filters-button" type="button" disabled>Reset to Default Configuration</button>
           </div>
           <fieldset class="visual-filters__fieldset">
             <legend class="sr-only">Battlefield visual filters</legend>

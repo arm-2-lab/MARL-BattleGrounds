@@ -346,7 +346,7 @@ run(command='fixture', entrants=2)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Rankings:" in result.stdout
     # Every member is shown as Team A with an available interval.
-    assert "Each Entrant As Team A:" in result.stdout
+    assert "Each Entrant as Team A:" in result.stdout
     assert result.stdout.count("Interval: Available") == 2
 
 

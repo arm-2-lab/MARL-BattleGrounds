@@ -5,9 +5,9 @@
  * only built switches, under their V5 labels and groups; less any switch the
  * page omits, such as Panel Tokens in the BattleClient), grouped under those
  * group names, each with its one-line help visible under it and its shipped default
- * ("On By Default" or "Off By Default"); the "N Of M On" count for the panel
+ * ("On by Default" or "Off by Default"); the "N of M On" count for the panel
  * and for each group; the five preset buttons (Default Configuration first and
- * lit while in use); the preset status line; Reset To Default Configuration;
+ * lit while in use); the preset status line; Reset to Default Configuration;
  * and Enable All and Disable All.
  *
  * Who calls it: main.js calls installVisualFilterControls once, after it has
@@ -21,8 +21,8 @@
  * VISUAL_FILTER_GROUPS order and in registry order inside a group), the
  * preset buttons inside #visual-filter-presets, the hover and screen-reader help
  * of each switch (its registry help line, which always says what Off shows),
- * the "N Of M On" counts, the preset status line ("Researcher · 2 switches
- * changed by hand"), Reset To Default Configuration (grayed while nothing
+ * the "N of M On" counts, the preset status line ("Researcher · 2 switches
+ * changed by hand"), Reset to Default Configuration (grayed while nothing
  * differs from Default Configuration), the Enable All and Disable All buttons
  * and the panel's focus return when it closes.
  *
@@ -145,7 +145,7 @@ const PRESET_KEEPS_NOTE = "The view, Ranges and motion stay as they are.";
 
 /**
  * Control-help rows for the Visual Filters panel, in page order: the panel
- * summary, the five preset buttons (Default Configuration first), Reset To
+ * summary, the five preset buttons (Default Configuration first), Reset to
  * Default Configuration, Enable All, Disable All, then one row per entry of
  * VISUAL_FILTER_OPTION_HELP in registry order. A switch named in
  * LIVE_SWITCH_NAMES with a live label gets two rows instead, each scoped to
@@ -174,7 +174,7 @@ export const VISUAL_FILTER_CONTROL_HELP = Object.freeze([
   ),
   [
     "#reset-visual-filters-button",
-    "Reset To Default Configuration",
+    "Reset to Default Configuration",
     `Set every switch back to how it ships and use Default Configuration. ${PRESET_KEEPS_NOTE}`,
   ],
   [
@@ -252,7 +252,7 @@ function presetButtonSelector(presetId) {
  *   atDefault: boolean,
  * }>} `label` is the preset's button label; `handChanges` the count above;
  *   `atDefault` is true only for Default Configuration with no hand change,
- *   which is when Reset To Default Configuration is grayed out.
+ *   which is when Reset to Default Configuration is grayed out.
  * @throws {TypeError} When state is not a complete switch state.
  * @throws {RangeError} When presetId is not a known preset.
  */
@@ -299,12 +299,12 @@ export function visualFilterPresetStatus(state, presetId, switchIds) {
  * null, when startup was refused, shows none). They are grouped: one open
  * `<details class="visual-filters__group" data-visual-filter-group="<group>">`
  * per registry group that has a switch, in VISUAL_FILTER_GROUPS order, whose
- * summary holds the group name and an "N Of M On" count
+ * summary holds the group name and an "N of M On" count
  * (`data-visual-filter-group-count`); inside a group the switches keep
  * registry order. Replace the container's children so browser form
  * restoration cannot override a fresh page load. Each option label carries
  * `data-visual-filter-option` with its switch ID and ends with its shipped
- * default ("On By Default" or "Off By Default"); its help element (the
+ * default ("On by Default" or "Off by Default"); its help element (the
  * registry help line, shown under the switch) follows the label and is listed
  * in the checkbox's `aria-describedby` after `visual-filters-help`. Every
  * checkbox starts at its registry default.
@@ -364,7 +364,7 @@ export function installVisualFilterControls(elements, product, options = {}) {
     const count = document.createElement("span");
     count.className = "visual-filters__group-count";
     count.dataset.visualFilterGroupCount = group;
-    count.textContent = `${members.filter((entry) => entry.defaultEnabled).length} Of ${members.length} On`;
+    count.textContent = `${members.filter((entry) => entry.defaultEnabled).length} of ${members.length} On`;
     summary.append(title, count);
     const body = document.createElement("div");
     body.className = "visual-filters__group-body";
@@ -386,7 +386,7 @@ export function installVisualFilterControls(elements, product, options = {}) {
       text.textContent = label;
       const shipped = document.createElement("span");
       shipped.className = "visual-filters__option-default";
-      shipped.textContent = defaultEnabled ? "On By Default" : "Off By Default";
+      shipped.textContent = defaultEnabled ? "On by Default" : "Off by Default";
       option.append(input, text, shipped);
       const description = document.createElement("span");
       description.id = help.id;
@@ -426,7 +426,7 @@ export function installVisualFilterControls(elements, product, options = {}) {
  * @typedef {object} FilterControlElements
  * @property {any} visualFilters `#visual-filters`, the panel's `<details>`.
  * @property {any} visualFilterOptions `#visual-filter-options`, the checkbox list.
- * @property {any} visualFilterCount `#visual-filter-count`, the "N Of M On" badge.
+ * @property {any} visualFilterCount `#visual-filter-count`, the "N of M On" badge.
  * @property {any} visualFilterPresets `#visual-filter-presets`, the preset row.
  * @property {any} visualFilterPresetStatus `#visual-filter-preset-status`, the
  *   preset status line.
@@ -512,12 +512,12 @@ export function createFilterControls(context) {
    * Paint checkbox, preset and bulk-button state from one local snapshot.
    *
    * Sets each checkbox to its value in `snapshot`. The panel count reads
-   * "N Of M On": it covers the switches this client shows plus the Ranges
+   * "N of M On": it covers the switches this client shows plus the Ranges
    * toggle (on when ranges show for the installed presentation), which counts
-   * as one more control. Each group's count reads "N Of M On" for its own
+   * as one more control. Each group's count reads "N of M On" for its own
    * switches only. Enable All is disabled when every control is on; Disable All when
    * every control is off. The preset button of `presetId` is pressed
-   * (`aria-pressed="true"`) and the others are not; the status line and Reset To
+   * (`aria-pressed="true"`) and the others are not; the status line and Reset to
    * Default Configuration follow visualFilterPresetStatus (Reset is disabled
    * while Default Configuration is in use with no hand change). Changes the
    * DOM and, once the saved Title Card choice is restored, saves a changed
@@ -550,14 +550,14 @@ export function createFilterControls(context) {
     const rangesEnabled = installedPresentationRangesVisible(state.presentation);
     const visibleControlCount = switches.length + 1;
     const enabledControlCount = enabledCount + (rangesEnabled ? 1 : 0);
-    elements.visualFilterCount.textContent = `${enabledControlCount} Of ${visibleControlCount} On`;
+    elements.visualFilterCount.textContent = `${enabledControlCount} of ${visibleControlCount} On`;
     for (const count of elements.visualFilterOptions.querySelectorAll(
       "[data-visual-filter-group-count]",
     )) {
       const group = count.dataset.visualFilterGroupCount;
       const members = switches.filter((entry) => entry.group === group);
       const on = members.filter(({ id }) => isVisualFilterEnabled(snapshot, id)).length;
-      const text = `${on} Of ${members.length} On`;
+      const text = `${on} of ${members.length} On`;
       if (count.textContent !== text) count.textContent = text;
     }
     elements.enableAllVisualFiltersButton.disabled =
@@ -606,7 +606,7 @@ export function createFilterControls(context) {
    *
    * A checkbox change applies one `set` action for its switch. A preset button
    * applies `apply_preset` for its preset (Default Configuration included);
-   * Reset To Default Configuration applies `restore_defaults`. Neither touches
+   * Reset to Default Configuration applies `restore_defaults`. Neither touches
    * Ranges, the View, layout or motion. Enable All and Disable All change every
    * switch and ask for the same range visibility. Closing the panel while focus
    * is inside it moves focus to its summary so keyboard users are not lost. No

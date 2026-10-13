@@ -1,5 +1,5 @@
 /**
- * @file The Health And Combat Text look (Ivory Arc And Numbers): one life number per
+ * @file The Health and Combat Text look (Ivory Arc and Numbers): one life number per
  * changed body, plus the three V5 add-ons Saved Beat, Last Breath and Battle Text
  * Detail.
  *
