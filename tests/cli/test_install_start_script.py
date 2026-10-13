@@ -20,7 +20,11 @@ installer and uv: the installer runs while ``~/.local/bin`` is not yet on
 ``PATH`` (uv's installer writes that folder into the shell startup files, so
 new terminals find ``uv``, only when the folder is not on ``PATH``). A uv
 already in ``~/.local/bin`` but not on ``PATH`` is found and used, with no
-installer run.
+installer run. An installer that exits with an error after putting uv in place
+(as uv's does when ``~/.config`` is not writable) does not stop ``start.sh``: it
+says uv is installed and goes on to the sync. When uv is still missing, it
+stops with status 1, names the internet and home-folder causes and gives the
+``sudo chown -R "$USER" ~/.config ~/.local`` fix.
 
 Every tracked path is at most 150 characters, so ``git clone`` works with Git
 for Windows: it keeps ``core.longpaths`` off, so a full path, including the
@@ -166,7 +170,11 @@ def test_other_options_go_to_play(tmp_path: Path) -> None:
 
 
 def _run_needing_uv(
-    tmp_path: Path, *, earlier_uv: bool
+    tmp_path: Path,
+    *,
+    earlier_uv: bool,
+    installer_exit: int = 0,
+    installs_uv: bool = True,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     home = tmp_path / "home"
     local_bin = home / ".local" / "bin"
@@ -187,7 +195,11 @@ def _run_needing_uv(
         subprocess.run(["sh", "-c", make_uv], env={"HOME": str(home)}, check=True)
     else:
         # A stand-in for uv's installer, which curl hands to sh.
-        installer = f"printf '%s' \"$PATH\" > '{record}'\n" + make_uv
+        installer = (
+            f"printf '%s' \"$PATH\" > '{record}'\n"
+            + (make_uv if installs_uv else "")
+            + f"exit {installer_exit}\n"
+        )
         curl = tools / "curl"
         curl.write_text(f"#!/bin/sh\ncat <<'END'\n{installer}END\n", encoding="utf-8")
         curl.chmod(0o755)
@@ -209,6 +221,24 @@ def test_uv_installer_runs_before_its_folder_is_on_path(tmp_path: Path) -> None:
     assert str(local_bin) not in record.read_text(encoding="utf-8").split(":")
     assert result.returncode == 1
     assert "The install failed" in result.stderr
+
+
+def test_start_carries_on_when_the_installer_fails_after_uv(tmp_path: Path) -> None:
+    result, _, _ = _run_needing_uv(tmp_path, earlier_uv=False, installer_exit=1)
+    assert "uv is installed. Its installer stopped" in result.stdout
+    # It went on to the sync, which the stand-in uv fails.
+    assert "The install failed" in result.stderr
+    assert result.returncode == 1
+
+
+def test_a_failed_uv_install_names_the_folder_fix(tmp_path: Path) -> None:
+    result, _, _ = _run_needing_uv(
+        tmp_path, earlier_uv=False, installer_exit=1, installs_uv=False
+    )
+    assert "Could not install uv" in result.stderr
+    assert 'sudo chown -R "$USER" ~/.config ~/.local' in result.stderr
+    assert "The install failed" not in result.stderr
+    assert result.returncode == 1
 
 
 def test_every_path_fits_a_git_for_windows_clone() -> None:

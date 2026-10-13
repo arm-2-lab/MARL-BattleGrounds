@@ -10,7 +10,9 @@
 #   1. Installs uv, the Python package manager (https://docs.astral.sh/uv/),
 #      with its official installer when uv is missing. The installer adds
 #      ~/.local/bin to your shell's startup files, so `uv` works in new
-#      terminals.
+#      terminals. If the installer ends with an error after uv is in place
+#      (for example when ~/.config is not yours to write, often after an
+#      earlier `sudo`), start.sh says so and carries on.
 #   2. Picks the JAX build for this machine (see "The build" below).
 #   3. Runs `uv sync --locked --extra all --group jupyter [--extra BUILD]`.
 #      The first time, uv downloads Python 3.14 and the exact locked packages
@@ -128,18 +130,25 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 if ! command -v uv >/dev/null 2>&1; then
   echo "Installing uv, the Python package manager (https://docs.astral.sh/uv/) ..."
+  # uv's installer puts uv in place first, then can still fail on a later,
+  # optional step (a ~/.config folder it cannot write), so judge it by
+  # whether uv works, not by its exit status.
+  installer_failed=0
   if command -v curl >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh || installer_failed=1
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://astral.sh/uv/install.sh | sh
+    wget -qO- https://astral.sh/uv/install.sh | sh || installer_failed=1
   else
     echo "Please install curl or wget, or install uv yourself: https://docs.astral.sh/uv/" >&2
     exit 1
   fi
   PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
   if ! command -v uv >/dev/null 2>&1; then
-    echo "Could not install uv. Check your internet connection, or install uv yourself: https://docs.astral.sh/uv/" >&2
+    echo "Could not install uv (see its message above). Check your internet connection, and that the .config and .local folders in your home folder are yours (to fix that: sudo chown -R \"\$USER\" ~/.config ~/.local). Or install uv yourself: https://docs.astral.sh/uv/" >&2
     exit 1
+  fi
+  if [ "$installer_failed" = 1 ]; then
+    echo "uv is installed. Its installer stopped at a later step that MARL-BattleGrounds does not need (the error above), so start.sh carries on."
   fi
 fi
 

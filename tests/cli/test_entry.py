@@ -6,8 +6,9 @@ marl-battlegrounds version with the CUDA 13 build on Linux only,
 and entry.yaml passes the same validation entry check uses. Its train line
 composes through the packaged Hydra configs into the released Recurrent MAPPO
 recipe (250,675,200 steps, 512 games, every actor kept), validating on the
-maps entry.yaml declares. Without uv it prints the uv install line and stops
-before locking. entry.yaml refuses maps outside 0-46 and models without a
+maps entry.yaml declares. Without uv it prints the uv install line, then the
+note that an installer ERROR about ~/.config still leaves uv installed, and
+stops before locking. entry.yaml refuses maps outside 0-46 and models without a
 SHA-256.
 
 Step 4 accepts a uv.lock only when every marl-battlegrounds in it is a release
@@ -76,7 +77,9 @@ def starter(
     monkeypatch.setattr(entry.shutil, "which", which_without_uv)
     monkeypatch.setattr(entry, "_machine", lambda: "Test GPU")
     folder = entry.new_entry(tmp_path / "my-entry", name="Test Team MAPPO")
-    assert entry.UV_INSTALL in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert entry.UV_INSTALL in printed
+    assert entry.UV_INSTALL_NOTE in printed
     _git(folder, "add", "-A")
     _git(folder, "commit", "--quiet", "-m", "Start my entry")
     return folder

@@ -87,6 +87,14 @@ ENTRY_TYPES = ("learned", "scripted", "hybrid", "language model")
 UV_INSTALL = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 """The one-line uv install for Linux and macOS, from uv's own guide."""
 
+UV_INSTALL_NOTE = (
+    "If the installer ends with an ERROR about ~/.config, uv is still installed: "
+    "open a new terminal."
+)
+"""Printed under ``UV_INSTALL``: uv's installer puts uv in place, then can fail on
+a later step when ``~/.config`` is not the user's to write (often after an
+earlier ``sudo``)."""
+
 _RECORD_FOLDER = "marl-bgs-entry-check"
 _ENTRY_FILE = "entry.yaml"
 _CUDA_JAX = frozenset({"jax-cuda13-plugin", "jax-cuda12-plugin"})
@@ -701,7 +709,8 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     ``.gitignore``, ``entry.yaml``, ``my_entry/__init__.py`` and
     ``README.md``. Then it runs ``git init`` and, when uv is on PATH,
     ``uv lock``, which downloads package metadata from PyPI. When uv is
-    missing it prints the one-line uv install and stops before locking.
+    missing it prints the one-line uv install (``UV_INSTALL``) and
+    ``UV_INSTALL_NOTE``, and stops before locking.
     It prints the next commands. Nothing is committed. No GPU is used.
 
     Examples
@@ -728,6 +737,7 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     print(f"Wrote a starter entry in {folder}")
     if shutil.which("uv") is None:
         print(f"uv is not installed. Install it with:\n  {UV_INSTALL}")
+        print(UV_INSTALL_NOTE)
         print(f"Then lock the entry:\n  cd {folder}\n  uv lock")
         return folder
     done = subprocess.run(
@@ -1063,7 +1073,7 @@ class _Checker:
         assert self.entry is not None
         if shutil.which("uv") is None:
             raise _StepFailedError(
-                f"uv is not installed. Install it with: {UV_INSTALL}"
+                f"uv is not installed. Install it with: {UV_INSTALL}. {UV_INSTALL_NOTE}"
             )
         lock_file = self.clone / "uv.lock"
         if not lock_file.is_file():
