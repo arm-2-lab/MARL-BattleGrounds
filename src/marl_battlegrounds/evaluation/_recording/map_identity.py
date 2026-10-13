@@ -47,7 +47,7 @@ class RecordedMap(EvaluationModel):
     display_name : Annotated[str, Field(min_length=1)]
         Nonempty readable label. A registered map shows its technical name's
         words in title case ("Teutoburg Forest") unless it has its own
-        readable name ("Whispers of Nzoth" for map 19). Custom maps use
+        readable name ("Jamyla's Grove" for map 50). Custom maps use
         "Custom Map". The label is built when the record is read, never stored.
     split : Literal['training', 'validation', 'test'] | None
         "training", "validation", "test", or None when not established.
@@ -102,7 +102,19 @@ def approved_map_id(asset_id: str | None, semantic_digest: str) -> int | None:
 # technical name stays the map's stored identity in results, replays, file names
 # and training records. The key also matches older names of the same map under
 # its historical IDs (for example "tdm-map-id-7-nzoth-the-corruptor-training").
-_DISPLAY_NAMES: dict[str, str] = {"nzoth-the-corruptor": "Whispers of Nzoth"}
+_DISPLAY_NAMES: dict[str, str] = {
+    "pyramids-of-giza": "Pyramids of Giza",
+    "nimbus-class-v-wing": "Nimbus-class V-wing",
+    "x-wing-starfighter": "X-wing Starfighter",
+    "nzoth-the-corruptor": "Whispers of N'Zoth",
+    "crows-nest": "Crow's Nest",
+    "stairway-to-heaven": "Stairway to Heaven",
+    "blades-edge": "Blade's Edge",
+    "ufo": "UFO",
+    "wall-e": "WALL-E",
+    "three-body-problem": "Three-Body Problem",
+    "jamylas-grove": "Jamyla's Grove",
+}
 
 
 def _map_identity(
@@ -112,7 +124,7 @@ def _map_identity(
 
     The label is the technical name without its "tdm-map-id-N-" prefix and
     split suffix, in title case ("Teutoburg Forest"), unless _DISPLAY_NAMES
-    gives that map another name ("Whispers of Nzoth"). The technical name is
+    gives that map another name ("Jamyla's Grove"). The technical name is
     returned unchanged.
     """
     prefix = r"^tdm[-_]map[-_]id[-_]\d+[-_]"

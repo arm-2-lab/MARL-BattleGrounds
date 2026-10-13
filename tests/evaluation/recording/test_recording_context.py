@@ -3,7 +3,8 @@
 Old recordings retain their declared names and layouts. New evaluations require
 the current catalog; unknown sources never gain an ID from matching geometry.
 A map's readable name may differ from its technical name (map 19 shows
-"Whispers of Nzoth"); that changes only the label, never the stored name.
+"Whispers of N'Zoth", map 50 "Jamyla's Grove"), for hyphen and underscore
+technical names alike; that changes only the label, never the stored name.
 New recording contexts are context V4 with the NoSharedObs V4 projection; the
 old-map records here are resolved config V1 at Red Zone depth 0.0, as recorded
 before the rule.
@@ -114,7 +115,7 @@ def test_recorded_map_names_splits_geometry_and_safe_filenames(
     assert metadata.map_id == map_id
     assert metadata.technical_name == expected.name and metadata.split == expected.split
     if map_id == 48:
-        assert metadata.display_name == "Three Body Problem"
+        assert metadata.display_name == "Three-Body Problem"
     name = generated_replay_filename(context, "a" * 64, episode_id=17)
     display_name = expected.name.replace("-", "_")
     assert name.startswith(f"{display_name}__episode_17__seed_42__stream_23__a_")
@@ -449,14 +450,15 @@ def test_readable_map_name_changes_only_the_label() -> None:
         shown, current_id = map_identity._registered_map_by_name(name)  # pyright: ignore[reportPrivateUsage]
         assert (shown.map_id, current_id) == (map_id, 19)
         assert shown.technical_name == name
-        assert shown.display_name == "Whispers of Nzoth"
+        assert shown.display_name == "Whispers of N'Zoth"
     labels = {
         info.map_id: map_identity._registered_map(info.map_id).display_name  # pyright: ignore[reportPrivateUsage]
         for info in list_tdm_maps()
     }
     assert labels[12] == "Foxhole" and labels[47] == "Teutoburg Forest"
-    assert labels[13] == "Pyramids Of Giza"
-    assert sum(label == "Whispers of Nzoth" for label in labels.values()) == 1
+    assert labels[13] == "Pyramids of Giza" and labels[50] == "Jamyla's Grove"
+    assert labels[25] == "Crow's Nest" and labels[39] == "UFO"
+    assert sum(label == "Whispers of N'Zoth" for label in labels.values()) == 1
 
 
 @pytest.mark.parametrize("corruption", ["missing", "duplicate", "name", "geometry"])
