@@ -34,6 +34,8 @@ and a fake Hugging Face client. They check these contracts of
   keeps its program, weights and memory bytes.
 - Cards cite the paper from the README's citation, never the software;
   ``with_citation`` replaces only that section and adds the arXiv tag. The
+  organization card shows the arXiv badge only when the citation has an
+  arXiv id. The
   real README's paper citation names the same title and authors, in order, as
   ``CITATION.cff``'s preferred citation.
 """
@@ -710,6 +712,11 @@ def test_cards_cite_the_paper_and_take_its_arxiv_number(paper_readme: Path) -> N
     assert "Paper: https://arxiv.org/abs/2610.01234" in new and numbered in new
     assert new.endswith("## License\n\nApache.\n")
     assert publish.with_citation(new, numbered, "2610.01234") == new
+    badge = "[![arXiv](https://img.shields.io/badge/arXiv-2610.01234-b31b1b.svg)]"
+    assert badge + "(https://arxiv.org/abs/2610.01234)\n" in publish.org_card(
+        [], (numbered, "2610.01234")
+    )
+    assert "img.shields.io/badge/arXiv" not in publish.org_card([], (entry, None))
 
 
 def test_readme_citation_matches_citation_cff() -> None:

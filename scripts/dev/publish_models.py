@@ -1878,13 +1878,21 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     -------
     str
         Space YAML metadata (static SDK), then the card in plain English: the
-        tagline, what MARL-BGs is, what wins and what its leaderboard rewards,
-        the models with their Season 0 results, the one-line names, three
-        lines of code, who may enter the leaderboard, links, the citation and
-        the contact. Hugging Face shows this file as the
-        organization card when the Space has no ``index.html``.
+        tagline, the arXiv badge (when ``citation`` has an arXiv id), what
+        MARL-BGs is, what wins and what its leaderboard rewards, the models
+        with their Season 0 results, the one-line names, three lines of code,
+        who may enter the leaderboard, links, the citation and the contact.
+        Hugging Face shows this file as the organization card when the Space
+        has no ``index.html``.
     """
     example = f"{ORG}/tdm-season-0-recurrent-ippo"
+    arxiv = citation[1]
+    badge = (
+        f"[![arXiv](https://img.shields.io/badge/arXiv-{arxiv}-b31b1b.svg)]"
+        f"(https://arxiv.org/abs/{arxiv})\n\n"
+        if arxiv
+        else ""
+    )
     table = "\n".join(
         f"| [{row.label}](https://huggingface.co/{ORG}/{row.repo}) | {row.rank} | "
         f"{round(row.elo):,} | {row.tier} | {row.saves:,} |"
@@ -1900,7 +1908,7 @@ pinned: false
 
 **The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning: built from scratch by researchers, for researchers.**
 
-[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
+{badge}[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
 benchmark for heterogeneous and competitive team-vs-team multi-agent
 reinforcement learning (MARL). MARL-BGs fills the missing middle: rich team
 play, with fast and cheap experiments on one GPU. Its five classes are built
