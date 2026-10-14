@@ -36,6 +36,7 @@ preferred-citation:
       family-names: "Altmann"
     - given-names: "Ignacio"
       family-names: "Carlucho"
-  journal: "arXiv preprint"
+  journal: "arXiv preprint arXiv:2610.14883"
+  url: "https://arxiv.org/abs/2610.14883"
   year: 2026
   month: 10

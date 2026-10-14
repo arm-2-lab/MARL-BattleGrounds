@@ -251,7 +251,7 @@ If you use MARL-BattleGrounds in your work, please cite the paper:
 @article{hawili2026marlbattlegrounds,
   title   = {{MARL-BattleGrounds}: A Novel {JAX}-native Benchmark for Heterogeneous and Competitive Multi-agent {RL}},
   author  = {Hawili, Ulixes Tariq and Ramamoorthy, Subramanian and Altmann, Yoann and Carlucho, Ignacio},
-  journal = {arXiv preprint},
+  journal = {arXiv preprint arXiv:2610.14883},
   month   = oct,
   year    = {2026}
 }
