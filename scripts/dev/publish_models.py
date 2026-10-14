@@ -1878,9 +1878,10 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     -------
     str
         Space YAML metadata (static SDK), then the card in plain English: the
-        tagline, what MARL-BGs is and what its leaderboard rewards, the models
-        with their Season 0 results, the one-line names, three lines of code,
-        links, the citation and the contact. Hugging Face shows this file as the
+        tagline, what MARL-BGs is, what wins and what its leaderboard rewards,
+        the models with their Season 0 results, the one-line names, three
+        lines of code, who may enter the leaderboard, links, the citation and
+        the contact. Hugging Face shows this file as the
         organization card when the Space has no ``index.html``.
     """
     example = f"{ORG}/tdm-season-0-recurrent-ippo"
@@ -1902,7 +1903,9 @@ pinned: false
 [MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
 benchmark for heterogeneous and competitive team-vs-team multi-agent
 reinforcement learning (MARL). MARL-BGs fills the missing middle: rich team
-play, with fast and cheap experiments on one GPU.
+play, with fast and cheap experiments on one GPU. Its five classes are built
+to help allies and counter enemies, so the team that wins is the one that
+coordinates its specialists best, not the one with the best individual agents.
 
 Every entry on its [leaderboard]({RULES_URL}) gets the same budget on the same
 machine, so the leaderboard rewards MARL methods that are efficient in both
@@ -1938,6 +1941,15 @@ Add `@final` (the last save), `@100M` (the nearest save at or before
 no `@`, a name gives the save that played Season 0. Each file downloads once and
 is checked before use. Saved results record the exact file and commit, so
 resuming a run loads the same file. No account or token is needed.
+
+## Enter the Leaderboard
+
+Any method that runs as pure JAX may enter, not only MARL: learned, scripted,
+search-based, hybrid or built on a language model. Each entry plays the current
+Big Nine, so the benchmark's difficulty grows with the quality of its entries.
+Every entrant and its saved models are released here with its season's table,
+so the opponent pool grows for every researcher. The [rules]({RULES_URL}) give each
+season's dates, and the [README]({CODE_URL}#leaderboard) shows how to enter.
 
 ## Links
 
