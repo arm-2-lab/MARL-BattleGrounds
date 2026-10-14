@@ -146,7 +146,7 @@ In PowerShell opened as administrator (Windows 10 version 2004 or newer, or Wind
 
 ## Colab
 
-[Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb). It opens on a free T4 GPU. Its first cell installs MARL-BattleGrounds with the JAX build for that GPU and restarts the runtime once by itself (Colab says the session crashed; that is expected), then Runtime > Run all again. It walks through the API with a drawn game, the speed, a short training run with the released curve, and the trained Season 0 teams from Hugging Face.
+[Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb). It opens on a free T4 GPU. Its first cell installs MARL-BattleGrounds with the JAX build for that GPU, and the notebook carries straight on. Only if pip replaced a package Colab had already loaded does it restart the runtime once by itself (Colab then says the session crashed, which is expected); then click Runtime > Run all again. It walks through the API with a drawn game, the speed, a short training run with the released curve, and the trained Season 0 teams from Hugging Face.
 The browser clients (BattleClient and Replay Viewer) do not run inside Colab, because their pages only accept `127.0.0.1`. Use the one command or Docker on your own machine for them.
 
 ## Clusters and Remote Machines
