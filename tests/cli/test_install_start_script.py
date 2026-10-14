@@ -41,7 +41,8 @@ pip-installs ``marl-battlegrounds[all]==VERSION`` plus the build of the JAX
 plugin already there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else
 none. It then carries on without a restart, unless pip replaced a package
 that is already loaded or JAX fails to import and run; only then it restarts
-the runtime with ``exit(0)``.
+the runtime with ``exit(0)``. A change means a new (name, version) pair, so a
+package Colab keeps twice with two versions does not count when pip leaves it.
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
@@ -288,6 +289,7 @@ def _run_install_cell(
     replaced: tuple[str, ...] = (),
     loaded: tuple[str, ...] = (),
     jax_imports: bool = True,
+    twice: tuple[str, ...] = (),
 ) -> tuple[list[list[str]], bool]:
     cell = _install_cells()[0]
     calls: list[list[str]] = []
@@ -305,11 +307,17 @@ def _run_install_cell(
     def distributions() -> list[SimpleNamespace]:
         after = "2" if calls else "1"
         rows = [SimpleNamespace(metadata={"Name": n}, version="1") for n in plugins]
+        # Two installed copies with different versions, both untouched by pip.
+        rows += [
+            SimpleNamespace(metadata={"Name": n}, version=v)
+            for n in twice
+            for v in ("1", "9")
+        ]
         return rows + [
             SimpleNamespace(metadata={"Name": n}, version=after) for n in replaced
         ]
 
-    owners = {name: [name] for name in (*plugins, *replaced)}
+    owners = {name: [name] for name in (*plugins, *replaced, *twice)}
     monkeypatch.setattr(subprocess, "run", record)
     monkeypatch.setattr(importlib.metadata, "distributions", distributions)
     monkeypatch.setattr(importlib.metadata, "packages_distributions", lambda: owners)
@@ -367,6 +375,16 @@ def test_colab_restarts_when_pip_replaced_a_loaded_package(
     )
     assert len(calls) == 1
     assert restarted
+
+
+def test_colab_ignores_a_loaded_package_kept_twice_that_pip_left_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, restarted = _run_install_cell(
+        monkeypatch, colab=True, twice=("systemdep",), loaded=("systemdep",)
+    )
+    assert len(calls) == 1
+    assert not restarted
 
 
 def test_colab_restarts_when_jax_does_not_import(
