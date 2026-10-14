@@ -25,15 +25,17 @@ play, with fast and cheap experiments on one GPU.
 - **The Game.** In Team Deathmatch, two teams of up to five agents fight
   on 52 hand-designed maps. Each agent is a Mage, Warrior, Hunter, Rogue
   or Priest. Each class has its own Basic ability, passive and Ultimate,
-  built to help allies and counter enemies, so a team wins by working
-  together. Obstacles block sight and attacks, so each agent sees only
+  built to help allies and counter enemies, so the team that wins is the
+  one that coordinates its specialists best, not the one with the best
+  individual agents. Obstacles block sight and attacks, so each agent sees only
   part of the map. Maps 0-11 form a curriculum, maps 0-41 are for
   training, maps 42-46 for validation and maps 47-51 for testing.
 - **The Evaluation.** Eight hand-crafted endgame scenarios, each with a
   verified winning line, test skills such as agent modeling and
-  multi-step planning. A monthly tournament retrains every entry on equal
-  compute, plays it against the current "Big Nine" on the test maps, and
-  rates it with draw-aware Elo and confidence intervals. Every entrant is
+  multi-step planning. Each season's tournament retrains every entry on
+  equal compute, plays it against the current "Big Nine" on the test maps,
+  and rates it with draw-aware Elo and confidence intervals, so the
+  benchmark's difficulty grows with the quality of its entries. Every entrant is
   released as a downloadable opponent. Up to 11,192 metrics per game, in
   28 topics, show how a team won, such as how much the Priest healed each
   ally.
@@ -187,7 +189,7 @@ actions: a network, a planner, a language model or a mix.
 
 **Season 1:** submissions are open until 00:00 UK time on December 29, 2026, and its table is published at 00:00 UK time on January 1, 2027, on the [leaderboard](https://marl-battlegrounds.com/#leaderboard). Season 2 is February 2027, and after that there is one season a month.
 
-We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Every entry gets the same budget on the same machine, so the leaderboard rewards MARL methods that are efficient in both samples and compute. Your entry then plays the current Big Nine (at the start of Season 1, Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. The table also shows what each entry cost to train and to play. Every entrant is released as a downloadable opponent.
+Any method that runs as pure JAX may enter, not only MARL: learned, scripted, search-based, hybrid or built on a language model. We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Every entry gets the same budget on the same machine, so the leaderboard rewards MARL methods that are efficient in both samples and compute. Your entry then plays the current Big Nine (at the start of Season 1, Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. The table also shows what each entry cost to train and to play. Every entrant is released as a downloadable opponent.
 
 ```bash
 python -m marl_battlegrounds entry new my-entry   # a starter entry
