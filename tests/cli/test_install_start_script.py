@@ -41,8 +41,10 @@ pip-installs ``marl-battlegrounds[all]==VERSION`` plus the build of the JAX
 plugin already there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else
 none. It then carries on without a restart, unless pip replaced a package
 that is already loaded or JAX fails to import and run; only then it restarts
-the runtime with ``exit(0)``. A change means a new (name, version) pair, so a
-package Colab keeps twice with two versions does not count when pip leaves it.
+the runtime with ``exit(0)``. It restarts only when a loaded module's file is
+one pip just wrote: a package Colab keeps twice that pip left alone, or a new
+file in a shared folder (omegaconf's debugger plugin) loaded from elsewhere,
+does not count.
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
@@ -287,9 +289,10 @@ def _run_install_cell(
     plugins: tuple[str, ...] = ("jax",),
     installed: str | None = None,
     replaced: tuple[str, ...] = (),
-    loaded: tuple[str, ...] = (),
-    jax_imports: bool = True,
+    shared: tuple[str, ...] = (),
     twice: tuple[str, ...] = (),
+    loaded: dict[str, str] | None = None,
+    jax_imports: bool = True,
 ) -> tuple[list[list[str]], bool]:
     cell = _install_cells()[0]
     calls: list[list[str]] = []
@@ -304,26 +307,38 @@ def _run_install_cell(
             raise importlib.metadata.PackageNotFoundError(name)
         return installed
 
+    def release(
+        name: str, number: str, root: str, extra: tuple[str, ...] = ()
+    ) -> SimpleNamespace:
+        files = [f"{name}/__init__.py", *(f"{folder}/__init__.py" for folder in extra)]
+
+        def locate_file(file: str) -> str:
+            return f"{root}/{file}"
+
+        return SimpleNamespace(
+            metadata={"Name": name},
+            version=number,
+            files=files,
+            locate_file=locate_file,
+        )
+
     def distributions() -> list[SimpleNamespace]:
         after = "2" if calls else "1"
-        rows = [SimpleNamespace(metadata={"Name": n}, version="1") for n in plugins]
+        rows = [release(n, "1", "/site") for n in plugins]
         # Two installed copies with different versions, both untouched by pip.
         rows += [
-            SimpleNamespace(metadata={"Name": n}, version=v)
-            for n in twice
-            for v in ("1", "9")
+            release(n, v, r) for n in twice for v, r in (("1", "/sys"), ("9", "/site"))
         ]
-        return rows + [
-            SimpleNamespace(metadata={"Name": n}, version=after) for n in replaced
-        ]
+        # Replaced in place; it may also add a file to a shared folder.
+        return rows + [release(n, after, "/site", shared) for n in replaced]
 
-    owners = {name: [name] for name in (*plugins, *replaced, *twice)}
     monkeypatch.setattr(subprocess, "run", record)
     monkeypatch.setattr(importlib.metadata, "distributions", distributions)
-    monkeypatch.setattr(importlib.metadata, "packages_distributions", lambda: owners)
     monkeypatch.setattr(importlib.metadata, "version", version)
-    for name in loaded:
-        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    for name, file in (loaded or {}).items():
+        module = ModuleType(name)
+        module.__file__ = file
+        monkeypatch.setitem(sys.modules, name, module)
     if not jax_imports:
         monkeypatch.setitem(sys.modules, "jax", None)
     monkeypatch.delitem(sys.modules, "google.colab", raising=False)
@@ -371,7 +386,10 @@ def test_colab_restarts_when_pip_replaced_a_loaded_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls, restarted = _run_install_cell(
-        monkeypatch, colab=True, replaced=("loadeddep",), loaded=("loadeddep",)
+        monkeypatch,
+        colab=True,
+        replaced=("loadeddep",),
+        loaded={"loadeddep": "/site/loadeddep/__init__.py"},
     )
     assert len(calls) == 1
     assert restarted
@@ -381,7 +399,24 @@ def test_colab_ignores_a_loaded_package_kept_twice_that_pip_left_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls, restarted = _run_install_cell(
-        monkeypatch, colab=True, twice=("systemdep",), loaded=("systemdep",)
+        monkeypatch,
+        colab=True,
+        twice=("systemdep",),
+        loaded={"systemdep": "/sys/systemdep/__init__.py"},
+    )
+    assert len(calls) == 1
+    assert not restarted
+
+
+def test_colab_ignores_a_new_file_in_a_shared_folder_loaded_from_elsewhere(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, restarted = _run_install_cell(
+        monkeypatch,
+        colab=True,
+        replaced=("newdep",),
+        shared=("pydevd_plugins",),
+        loaded={"pydevd_plugins": "/debugger/pydevd_plugins/__init__.py"},
     )
     assert len(calls) == 1
     assert not restarted
