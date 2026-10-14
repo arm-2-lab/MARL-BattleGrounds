@@ -2,6 +2,7 @@
 
 **The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning: built from scratch by researchers, for researchers.**
 
+[![arXiv](https://img.shields.io/badge/arXiv-2610.14883-b31b1b.svg)](https://arxiv.org/abs/2610.14883)
 [![PyPI](https://img.shields.io/pypi/v/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![Python](https://img.shields.io/pypi/pyversions/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/LICENSE)
