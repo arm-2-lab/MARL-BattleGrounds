@@ -13,7 +13,7 @@ body:
   - type: textarea
     id: team
     attributes:
-      label: Team Members And Labs
+      label: Team Members and Labs
       description: Every person on your team, each with their lab. A team is its people and their labs (Rule 6.1).
     validations:
       required: true
@@ -74,7 +74,7 @@ body:
   - type: textarea
     id: config-and-maps
     attributes:
-      label: Config And Training Maps
+      label: Config and Training Maps
       description: Your config, pasted or as a path in your repository, and the maps your run trains and validates on (Rule 6.3). Maps 0 to 46 are yours to use (Rule 3.4).
     validations:
       required: true

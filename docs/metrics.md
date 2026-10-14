@@ -45,7 +45,7 @@ Names read left to right: `agent_5_to_agent_3_...` is Agent 5 acting on Agent 3,
 and `agent_0_and_agent_1_...` is a pair of teammates. Slots 0-4 are Team A, 5-9 Team B.
 
 <!-- metric-family-summary:start -->
-| Measurement family | Numerical columns | What the family describes |
+| Measurement Family | Numerical Columns | What the Family Describes |
 | --- | ---: | --- |
 | Episode results | 16 | Episode length, outcomes, returns, scores, kills, and deaths. |
 | Ability use and action acceptance | 754 | How often abilities were used, who they targeted, and which actions the game rejected. |
@@ -77,7 +77,7 @@ plain words or exact CSV names, and hovering a row shows its CSV column, numerat
 denominator and blank rule. Agent POV still shows the full record.
 
 <!-- metric-navigation:start -->
-| Topic | Primary columns in Totals | Primary columns By Recipient | Primary columns in single view |
+| Topic | Primary Columns in Totals | Primary Columns By Recipient | Primary Columns in Single View |
 | --- | ---: | ---: | ---: |
 | Episode Results | — | — | 16 |
 | Ability Activations | 24 | 640 | — |

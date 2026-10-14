@@ -7962,7 +7962,7 @@ async function dispatchCommand(
   }
   if (liveScriptedInspectionOnly() && !allowedDuringLiveScriptedInspection(command)) {
     setNotice(
-      "Scripted live view is inspection-only. Use Advance scripted frame for the next authorized step.",
+      "Scripted live view is inspection-only. Use Advance Scripted Frame for the next authorized step.",
       "warning",
     );
     renderConnection();

@@ -39,7 +39,7 @@ body:
   - type: textarea
     id: read-or-tried
     attributes:
-      label: What You Read Or Tried
+      label: What You Read or Tried
       description: The guides or examples you read, and what you tried. Paste any code and the full error text.
     validations:
       required: true

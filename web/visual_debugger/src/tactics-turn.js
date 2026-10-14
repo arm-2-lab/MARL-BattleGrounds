@@ -2838,7 +2838,7 @@ export function createTacticsTurn(context) {
    * Watching bar's Play One Turn also stay disabled while the page's own Run
    * plays and, after Pause, until Run's last tick has played to its end
    * (state.pageRunLoop): main.js ignores their keys then. In scripted
-   * playback the button becomes "Advance scripted frame" and sends N, and the
+   * playback the button becomes "Advance Scripted Frame" and sends N, and the
    * Watching bar's Play One Turn (the deck shown when nobody is Manual) also
    * sends N, stays enabled until the script ends and shows N as its key, so
    * the control on screen always advances the next scripted frame. In the
@@ -2876,7 +2876,7 @@ export function createTacticsTurn(context) {
       if (watchKey) watchKey.textContent = scriptedAdvance ? "N" : "Space";
     }
     if (scriptedAdvance) {
-      elements.submitTurnButton.textContent = "Advance scripted frame";
+      elements.submitTurnButton.textContent = "Advance Scripted Frame";
       elements.submitTurnButton.removeAttribute("aria-label");
     } else {
       // The vision's two lines: <b id="lock-label"> (the phase label) and its

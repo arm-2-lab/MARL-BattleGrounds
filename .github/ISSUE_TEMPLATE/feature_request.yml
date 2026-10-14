@@ -64,7 +64,7 @@ body:
   - type: dropdown
     id: changes-rules
     attributes:
-      label: Does This Change Game Rules, What An Agent May See, Or Saved Formats?
+      label: Does This Change Game Rules, What an Agent May See, or Saved Formats?
       description: Saved formats include saved runs, results, replays and model files. Changes like these are agreed in this issue before anyone writes code.
       options:
         - "Yes"
@@ -76,7 +76,7 @@ body:
   - type: dropdown
     id: pull-request
     attributes:
-      label: Would You Send A Pull Request?
+      label: Would You Send a Pull Request?
       options:
         - "Yes"
         - With help

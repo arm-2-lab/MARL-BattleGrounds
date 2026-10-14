@@ -37,7 +37,7 @@ Website: https://marl-battlegrounds.com/#leaderboard-rules
 
 ## The Season
 
-- **One table a month.** A new table is published at 00:00 UK time
+- **One table a month, from January 2027.** A new table is published at 00:00 UK time
   (Europe/London) on the first day of each month and stays the same all
   month. Each season gives the exact instant in UTC and in your local time.
 - **Cutoff: 72 hours before.** Submissions for a season close 72 elapsed
@@ -64,7 +64,7 @@ portable file.
 1.2 The table shows each entry's type (Learned, Scripted, Hybrid or Language
 Model) and whether it uses an outside pretrained model. It also shows five
 costs from our official run and our Rule 4 check: Steps to Entry (the game
-steps of training behind the entered save), Run Steps (every game the run
+steps of training behind the entered save), Run Steps (every game step the run
 played, as counted in Rule 2.1), Training Time, Play Speed and Play Memory.
 They never change rank, rating or admission.
 

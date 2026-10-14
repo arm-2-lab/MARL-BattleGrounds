@@ -38,7 +38,7 @@ to play your own methods, or `num_episodes=32` for a quick check.
 20261006, priority metrics, and XLA's deterministic GPU mode, so a repeat run
 plays the same games.
 
-**Hardware and cost.** One NVIDIA RTX 5090, JAX 0.10.1. All 20,480 games
+**Hardware and Cost.** One NVIDIA RTX 5090, JAX 0.10.1. All 20,480 games
 (10 systems × 8 scenarios × 256) took 297 seconds of wall time, including
 loading and compiling every system, with a peak of 5.3 GiB of RAM. Each system
 took 6 to 44 seconds. An earlier run of the nine field members alone played the
@@ -62,7 +62,7 @@ follow the Season 0 ranking, then Random.
 
 The same counts are in [`results/season_0_scenarios.csv`](results/season_0_scenarios.csv).
 
-**What it shows.**
+**What It Shows.**
 
 - No member of the field solves any scenario. The best cell is 8 wins in 256
   games (feedforward IPPO in Scenario 1), and the field wins 23 of its 18,432
@@ -106,7 +106,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.sce
     output_dir=artifacts/paper-experiments/scenario-evaluation-season-0-full-metrics/analysis
 ```
 
-**Hardware and cost.** Playing all 20,480 games with full metrics took 367
+**Hardware and Cost.** Playing all 20,480 games with full metrics took 367
 seconds on one NVIDIA RTX 5090, with a peak of 6.9 GiB of RAM, and saved 524 MB
 of results. Every win, draw and loss matched the run above. The analysis took
 45 seconds, with a peak of 1.2 GiB of RAM.
@@ -114,7 +114,7 @@ of results. Every win, draw and loss matched the run above. The analysis took
 **Results.** Counts pool all ten systems, 2,560 games per scenario. HP is the
 agent's health at the start.
 
-| Scenario | Games lost | Lost within 2 ticks | Team A deaths in lost games |
+| Scenario | Games Lost | Lost Within 2 Ticks | Team A Deaths in Lost Games |
 | --- | ---: | ---: | --- |
 | 1 | 707 (27.6%) | 0 (0.0%) | Hunter (41 HP), Rogue (12 HP) and Priest (1 HP) each 707 (100%) |
 | 2 | 2,553 (99.7%) | 2,538 (99.4%) | Priest (8 HP) 2,289 (89.7%), Warrior (35 HP) 556 (21.8%) |
@@ -132,7 +132,7 @@ recurrent IPPO's 7 give p = 0.176. The full tables are in
 [`results/season_0_scenario_games.csv`](results/season_0_scenario_games.csv) and
 [`results/season_0_scenario_reference.csv`](results/season_0_scenario_reference.csv).
 
-**What it shows.**
+**What It Shows.**
 
 - In Scenarios 2 and 5 to 8, Team B starts at 19 of the 20 points it needs, so
   one Team A death loses the game. Across all ten systems, Random included,
@@ -163,7 +163,7 @@ comparisons; correcting would only raise the p-values.
 **Question.** Can a language-model team be evaluated for team coordination
 with the same tools as any other System, and how does a small one do?
 
-**Prompt version.** The results below were made with prompt version 1
+**Prompt Version.** The results below were made with prompt version 1
 (`actor-text-v1`). The stage now sends version 2 (see What the Model Reads),
 so the commands below play version 2 games, and the stage refuses to add them
 to a folder of version 1 games.
@@ -193,7 +193,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds.experiments.llm
     output_dir=artifacts/paper-experiments/llm-challenge-season-0/analysis
 ```
 
-**Hardware and cost.** Each experiment had its own NVIDIA RTX 5090 for the
+**Hardware and Cost.** Each experiment had its own NVIDIA RTX 5090 for the
 model server, which used at most half its memory. The 90 field games took 3.5
 hours (12,503 seconds) and saved 1.2 GB, mostly replays. The 2,048 scenario
 games took 22 minutes, with a peak of 2.4 GiB of RAM, and saved 60 MB. The
@@ -229,7 +229,7 @@ of two games side by side 1.70 seconds.
 The metrics show how its teamwork differs from its opponents' in the same 90
 games ([season_0_llm_behavior.csv](results/season_0_llm_behavior.csv)):
 
-| Per game | Language model | Its opponents |
+| Per Game | Language Model | Its Opponents |
 | --- | ---: | ---: |
 | Basic uses | 31.2 | 271.1 |
 | Damage done | 152 | 1,526 |
@@ -325,7 +325,7 @@ intervals of about ±0.02 (Mage) to ±0.06 (Rogue); recurrent IPPO alone scores
 +4.42 points per game against the nine members. The last column is each
 method's mean change in point margin per game over its five classes.
 
-| Stranger (Season 0 Elo) | Mage | Warrior | Hunter | Rogue | Priest | Mean change |
+| Stranger (Season 0 Elo) | Mage | Warrior | Hunter | Rogue | Priest | Mean Change |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Recurrent MAPPO (1,304) | 0.91 | 0.89 | 0.90 | 0.96 | 0.83 | −1.17 |
 | QMIX (1,300) | 0.81 | 0.83 | 0.71 | 0.61 | 0.90 | −2.07 |
@@ -451,7 +451,7 @@ rules as the tournament. The against games use seeds 20261007 to 20261009; the
 alongside games use 20261013 to 20261015. Both were declared before the games
 were played.
 
-**Saved files.** Each game has its own folder, for example
+**Saved Files.** Each game has its own folder, for example
 `game-04-alongside-map-47-left/`, holding every replay attempt,
 `full_metrics.csv` (the game, its replay and the replay's digest, then all
 11,192 metric columns; an empty cell is a metric that does not apply) and
@@ -461,7 +461,7 @@ its end, how long the BattleClient was open, and Team A's result, points, point
 margin (`score_difference`), kills, deaths and game length. The series folder
 holds `settings.json`, `results.csv` and `results.md`.
 
-**Hardware and cost.** One NVIDIA RTX 5090 and JAX 0.10.1. Measuring the three against games with
+**Hardware and Cost.** One NVIDIA RTX 5090 and JAX 0.10.1. Measuring the three against games with
 `marl_bgs.replay_metrics` on the CPU took 16 seconds, including loading, with a
 peak of 1.8 GB of RAM. Each replay takes 15 to 29 MB.
 

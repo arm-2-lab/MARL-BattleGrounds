@@ -1,4 +1,4 @@
-# Contributing To MARL-BattleGrounds
+# Contributing to MARL-BattleGrounds
 
 Thank you for helping. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 Report security problems privately, as [SECURITY.md](SECURITY.md) explains.
@@ -62,7 +62,7 @@ Run the command; never edit these files by hand. Add `--check` to compare only.
 | `docs/metric_columns.csv` and the generated tables in `docs/metrics.md` | `uv run --no-sync python -m scripts.dev.export_metric_dictionary` |
 | Hydra configs in `src/marl_battlegrounds/experiments/configs/` | `uv run --no-sync python scripts/dev/generate_experiment_configs.py` |
 
-## Full Checks Before A Release
+## Full Checks Before a Release
 
 | Command | What It Checks |
 |---|---|
@@ -80,7 +80,7 @@ flashbax stops saved runs from being extended or saved tournaments from adding
 games, so such bumps are deliberate. Before moving to a newer JAX, maintainers
 follow the JAX refresh rule at the top of `scripts/dev/publish_models.py`.
 
-## Rules, Commits And License
+## Rules, Commits and License
 
 - A change to the game rules, or to what an agent may see, starts with an
   issue. Open one before you write code, so we can agree on the change first.

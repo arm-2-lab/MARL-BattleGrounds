@@ -385,11 +385,11 @@ test("replay transport exposes the exact CP8 controls, rates, and truthful help"
   assert.match(markup, /id="replay-transport-status"[^>]*aria-live="polite"/u);
   assert.match(
     markup,
-    /Frame slider<\/dt><dd>Drag to pick a tick; the replay jumps there when you let go<\/dd>/u,
+    /Frame Slider<\/dt><dd>Drag to pick a tick; the replay jumps there when you let go<\/dd>/u,
   );
   assert.match(
     markup,
-    /Playback speed<\/dt><dd>Change how fast the replay plays<\/dd>/u,
+    /Playback Speed<\/dt><dd>Change how fast the replay plays<\/dd>/u,
   );
   assert.doesNotMatch(markup, /Home \/ End|Shift\+Left|Shift\+Right|short debounce/u);
   assert.match(

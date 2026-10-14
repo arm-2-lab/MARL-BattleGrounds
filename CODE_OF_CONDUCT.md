@@ -1,4 +1,4 @@
-# Code Of Conduct
+# Code of Conduct
 
 MARL-BattleGrounds follows the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 In short: treat everyone with respect, and help keep this project a

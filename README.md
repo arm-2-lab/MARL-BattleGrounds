@@ -1,6 +1,6 @@
 # MARL-BattleGrounds
 
-**The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning.**
+**The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning: built from scratch by researchers, for researchers.**
 
 [![PyPI](https://img.shields.io/pypi/v/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
 [![Python](https://img.shields.io/pypi/pyversions/marl-battlegrounds)](https://pypi.org/project/marl-battlegrounds/)
@@ -54,7 +54,7 @@ Try it in your browser: the [walkthrough](https://colab.research.google.com/gith
 
 Start here:
 
-| You want to | Do this |
+| You Want To | Do This |
 |---|---|
 | Look around in your browser, with nothing to install | [Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb): the API, the speed, training a team and the trained Season 0 teams |
 | Play the game | The one command below |
@@ -94,7 +94,7 @@ docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/wo
 
 Docker runs everything: play, replays, training, evaluation, tournaments, analysis and notebooks. Its limits:
 
-| Limit | What to do |
+| Limit | What to Do |
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
@@ -185,9 +185,9 @@ actions: a network, a planner, a language model or a mix.
 
 ## Leaderboard
 
-**Season 1:** submissions are open until 00:00 UK time on December 29, 2026, and the first table is published at 00:00 UK time on January 1, 2027, on the [leaderboard](https://marl-battlegrounds.com/#leaderboard). Season 2 follows, with a new table each month.
+**Season 1:** submissions are open until 00:00 UK time on December 29, 2026, and its table is published at 00:00 UK time on January 1, 2027, on the [leaderboard](https://marl-battlegrounds.com/#leaderboard). Season 2 is February 2027, and after that there is one season a month.
 
-We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Every entry gets the same budget on the same machine, so the leaderboard rewards MARL methods that are efficient in both samples and compute. Your entry then plays the current Big Nine (Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. The table also shows what each entry cost to train and to play. Every entrant is released as a downloadable opponent.
+We run your training script once on our RTX 5090: at most 255 million game steps and 8 hours. Every entry gets the same budget on the same machine, so the leaderboard rewards MARL methods that are efficient in both samples and compute. Your entry then plays the current Big Nine (at the start of Season 1, Season 0's six baselines and three scripted bots) on the test maps and is rated with draw-aware Elo. The table also shows what each entry cost to train and to play. Every entrant is released as a downloadable opponent.
 
 ```bash
 python -m marl_battlegrounds entry new my-entry   # a starter entry

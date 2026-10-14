@@ -1555,9 +1555,9 @@ export function publicAudienceLabel(value) {
 // Battlefield labels and instructions for each interaction state. Only
 // applyBattlefieldBoundaryCopy reads them.
 const SCRIPTED_BATTLEFIELD_LABEL =
-  "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.";
+  "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance Scripted Frame for the next authorized step.";
 const SCRIPTED_BATTLEFIELD_INSTRUCTIONS =
-  "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step.";
+  "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance Scripted Frame for the next authorized step.";
 const FENCED_LIVE_BATTLEFIELD_LABEL =
   "Read-only live battlefield. Simulator and actor activation controls are unavailable.";
 const FENCED_LIVE_BATTLEFIELD_INSTRUCTIONS =

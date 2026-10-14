@@ -1,4 +1,4 @@
-## What And Why
+## What and Why
 
 <!-- What does this pull request change, and why? -->
 
@@ -11,12 +11,12 @@
 <!-- Paste the commands, for example scripts/dev/check.sh --static-only
 and JAX_PLATFORMS=cpu uv run --no-sync pytest tests/<folder>/<file>.py -->
 
-## Docs And Tests
+## Docs and Tests
 
 - [ ] I updated the docstrings and guides this change affects.
 - [ ] I added or updated tests.
 
-## Game Rules And Information Limits
+## Game Rules and Information Limits
 
 Does it change game rules or information limits? If yes, open an issue first.
 

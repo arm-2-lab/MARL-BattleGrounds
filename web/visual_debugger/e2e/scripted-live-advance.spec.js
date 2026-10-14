@@ -3,7 +3,7 @@
  * recording completion. Nobody is Manual in scripted playback, so the deck
  * shows the Watching bar: its Play One Turn (the control on screen) sends N,
  * the next scripted frame, and shows N as its key, while the hidden Lock In
- * button reads "Advance scripted frame" and sends N too. Hovering Play One
+ * button reads "Advance Scripted Frame" and sends N too. Hovering Play One
  * Turn opens no card (the vision gives the deck no hover card). A champion is
  * inspected by clicking or pressing its arena body: no command is sent and the
  * frame does not change; the hidden legacy roster names it "Agent ID N" and
@@ -92,7 +92,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(page.locator("#scenario-select, #advance-script-button")).toHaveCount(0);
 
   const submit = page.locator("#submit-turn-button");
-  await expect(submit).toHaveText("Advance scripted frame");
+  await expect(submit).toHaveText("Advance Scripted Frame");
   await expect(submit).toHaveAttribute("data-key", "n");
   await expect(submit).toHaveAttribute(
     "aria-description",
@@ -107,12 +107,12 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(playOne.locator("kbd")).toHaveText("N");
   await expect(page.locator("#battlefield")).toHaveAttribute(
     "aria-label",
-    "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.",
+    "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance Scripted Frame for the next authorized step.",
   );
   await expect(page.locator("#battlefield")).toHaveAttribute("role", "group");
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step.",
+    "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance Scripted Frame for the next authorized step.",
   );
   await expect(page.locator("#command-commit-title")).toHaveText(
     "Advance the registered script",
@@ -155,7 +155,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
     {
       id: "submit-turn-button",
       key: "n",
-      label: "Advance scripted frame",
+      label: "Advance Scripted Frame",
     },
     {
       id: "watch-submit",
@@ -171,7 +171,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   await expect(rosterActions).toHaveCount(await rosterRows.count());
   await expect(
     page.getByRole("group", {
-      name: "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.",
+      name: "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance Scripted Frame for the next authorized step.",
     }),
   ).toHaveCount(1);
   await expect(page.locator('#battlefield .agent[role="button"]')).toHaveCount(
@@ -305,12 +305,12 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
   );
   await expect(page.locator("#battlefield")).toHaveAttribute(
     "aria-label",
-    "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step.",
+    "Inspection-only scripted battlefield. Authorized bodies can be inspected; use Advance Scripted Frame for the next authorized step.",
   );
   await expect(page.locator("#battlefield")).toHaveAttribute("role", "group");
   await expect(page.locator("#battlefield")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#battlefield-instructions")).toHaveText(
-    "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step.",
+    "Scripted live view is inspection-only. Activate an authorized body to inspect current facts; use Advance Scripted Frame for the next authorized step.",
   );
 
   const responsePromise = page.waitForResponse(
@@ -369,7 +369,7 @@ test("scripted live Submit advances once, installs T0, and seals at completion",
     presentation.latest_transition.action_rows.length,
   );
 
-  await expect(submit).toHaveText("Advance scripted frame");
+  await expect(submit).toHaveText("Advance Scripted Frame");
   await expect(submit).toHaveAttribute("data-key", "n");
   await expect(submit).toBeDisabled();
   await expect(playOne).toBeDisabled();

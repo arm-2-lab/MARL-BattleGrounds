@@ -148,7 +148,7 @@ def family_summary_markdown() -> str:
         )
     lines = [
         _SUMMARY_START,
-        "| Measurement family | Numerical columns | What the family describes |",
+        "| Measurement Family | Numerical Columns | What the Family Describes |",
         "| --- | ---: | --- |",
     ]
     for label, families, description in _MANUSCRIPT_FAMILIES:
@@ -213,8 +213,8 @@ def navigation_markdown() -> str:
     counts = Counter(metric_primary_location(column) for column in METRIC_COLUMNS)
     lines = [
         _NAVIGATION_START,
-        "| Topic | Primary columns in Totals | Primary columns By Recipient | "
-        "Primary columns in single view |",
+        "| Topic | Primary Columns in Totals | Primary Columns By Recipient | "
+        "Primary Columns in Single View |",
         "| --- | ---: | ---: | ---: |",
     ]
     for topic in METRIC_TOPICS:

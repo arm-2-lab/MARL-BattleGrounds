@@ -63,7 +63,7 @@ Every run adds the combat and support reward to the game's own reward. The
 game pays +1 for a win, -1 for a loss and 0 for a draw, to every configured
 Team A slot. Built-in score shaping is off.
 
-| Part | Amount | Who receives it in the per-agent form |
+| Part | Amount | Who Receives It in the Per-Agent Form |
 | --- | ---: | --- |
 | `enemy_death_credit` | +0.05 per enemy death | Each credited agent: every agent whose attack landed on the enemy on the tick it died, and any Priest whose useful healing reached one of those agents on that tick |
 | `enemy_red_zone_death_credit` | +0.10 extra per enemy death in its own Red Zone | Each credited agent |
@@ -77,7 +77,7 @@ Team A slot. Built-in score shaping is off.
 The first four parts and `own_zone_ticks` belong to the agent who earned them.
 The other three are shared: every agent receives the same amount.
 
-**Recurrent MAPPO, recurrent IPPO and feedforward IPPO:**
+**Recurrent MAPPO, Recurrent IPPO and Feedforward IPPO:**
 [`combat_support_reward`](../../src/marl_battlegrounds/training/reward_recipes.py).
 Each agent learns from its own reward: the game reward, the shared parts and
 its own parts.
@@ -204,7 +204,7 @@ team-reward run) choose the recipes. Study 3 continues one run per method from
 its saved 40M state to 250,675,200 transitions, and the six continued policies
 play the tournament.
 
-| Study | Runs | What it decides |
+| Study | Runs | What It Decides |
 | --- | ---: | --- |
 | 1, `shapes_and_ppo` | 54 | QMIX and PQN-VDN batch size and rollout length; the PPO methods' learning rates |
 | 2, `q_settings` | 30 | One-at-a-time changes around each Q method's chosen shape |
@@ -220,7 +220,7 @@ settings.
 
 **Fair rules for batch size (B) and rollout length (T).**
 
-| Method | Held fixed across shapes | How |
+| Method | Held Fixed Across Shapes | How |
 | --- | --- | --- |
 | QMIX | 1 optimizer step per 512 new steps, 4.75 training pairs per new step, a target copy every 131,072 new steps, 132,096 replay rows in total | `epochs = B x T / 512`, `update_period = 256`, `buffer_size = 132,096 / B`, `sample_batch_size = 128`, `sample_sequence_length = 20` |
 | PQN-VDN | Optimizer steps per new step and a minibatch of 8,192 new steps | `num_minibatches = B x T / 8,192`, `epochs = 4` |
@@ -237,7 +237,7 @@ settings.
   `td_lambda = 0.85`, exploration from 1.0 to 0.01 over the first 5% of the
   run, BatchNorm, `reward_scale = 1.0`, `input_scale = 1.0`, shared
   parameters, left spawn frame.
-- **PPO family (`reference`):** `actor_lr = 0.0001`, `critic_lr = 0.00025`,
+- **PPO Family (`reference`):** `actor_lr = 0.0001`, `critic_lr = 0.00025`,
   `epochs = 4`, `minibatches = 2`, `groups = 2`, `gamma = 0.999`,
   `gae_lambda = 0.95`, `clip_epsilon = 0.2`, `entropy_coefficient = 0.01`,
   `value_coefficient = 0.5`, `max_grad_norm = 0.5`, `adam_epsilon = 0.00001`,
@@ -246,7 +246,7 @@ settings.
 
 **Study 1 recipes** (3 runs each):
 
-| Method | Recipe | Change from the base | Basis |
+| Method | Recipe | Change From the Base | Basis |
 | --- | --- | --- | --- |
 | QMIX | `b768-t32` | B768, T32 | Middle of the earlier range |
 | QMIX | `b768-t128` | B768, T128 | Long rollouts |
@@ -700,7 +700,7 @@ Study 1 ran all 54 runs to 40,108,032 transitions with no failed run. It took
 
 **Recipes** (mean over three seeds):
 
-| Method | Recipe | Mean Margin | SD | Seed 12259871 | Seed 20261001 | Seed 20261002 | Kills | Deaths | K/D | Red Zone Kills (Ours / Theirs) | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma |
+| Method | Recipe | Mean Margin | SD | Seed 12259871 | Seed 20261001 | Seed 20261002 | Kills | Deaths | K/D | Red Zone Kills (Ours / Theirs) | W-D-L | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Recurrent MAPPO | `critic-lr-1e-3` | −9.8 | 1.4 | −9.5 | −11.3 | −8.6 | 6.6 | 15.3 | 0.43 | 0.44 / 1.47 | 8-173-587 | −6.2 | −10.2 | −11.7 | −11.0 |
 | Recurrent MAPPO | `reference` | −8.8 | 0.8 | −9.5 | −9.0 | −7.9 | 8.3 | 15.2 | 0.55 | 0.27 / 2.24 | 13-143-612 | −9.0 | −8.0 | −9.5 | −8.8 |
@@ -721,9 +721,9 @@ Study 1 ran all 54 runs to 40,108,032 transitions with no failed run. It took
 | PQN-VDN | `b768-t32` | −9.7 | 0.5 | −10.1 | −9.1 | −9.9 | 0.3 | 5.4 | 0.05 | 0.01 / 4.61 | 0-404-364 | −19.3 | 0.0 | 0.0 | −19.5 |
 | PQN-VDN | `b768-t64` | −15.0 | 1.3 | −13.5 | −15.5 | −15.9 | 1.5 | 10.8 | 0.14 | 0.02 / 5.69 | 0-213-555 | −17.0 | −11.7 | −13.0 | −18.1 |
 
-**Kills / deaths per game by opponent:**
+**Kills / Deaths per Game by Opponent:**
 
-| Method | Recipe | vs 250M | vs Alpha | vs Beta | vs Gamma |
+| Method | Recipe | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Recurrent MAPPO | `critic-lr-1e-3` | 0.7 / 5.3 | 9.1 / 18.7 | 7.8 / 18.6 | 8.5 / 18.8 |
 | Recurrent MAPPO | `reference` | 0.6 / 5.8 | 11.6 / 18.2 | 10.3 / 18.3 | 10.8 / 18.4 |
@@ -744,7 +744,7 @@ Study 1 ran all 54 runs to 40,108,032 transitions with no failed run. It took
 | PQN-VDN | `b768-t32` | 0.3 / 10.1 | 0.0 / 0.0 | 0.0 / 0.0 | 0.8 / 11.4 |
 | PQN-VDN | `b768-t64` | 0.5 / 9.8 | 2.0 / 10.2 | 1.2 / 9.9 | 2.2 / 13.1 |
 
-**Picks under the declared rules.** No searched change passed. The rule needs
+**Picks Under the Declared Rules.** No searched change passed. The rule needs
 a mean gain above 2 points and a win on at least 2 of 3 seeds.
 
 Each candidate shows its mean margin / kills / deaths per game. Margin alone
@@ -810,7 +810,7 @@ PQN-VDN B768 T128.
    study 2 (study 2 finding 2). Kills and deaths are therefore reported beside
    every margin, and study 2 adds an engagement floor to its picks.
 
-**Learning curves.** Margin / kills per game at each routine check, mean over
+**Learning Curves.** Margin / kills per game at each routine check, mean over
 the three seeds. Checks come every 10% of training (about 4M transitions);
 0% is the untrained policy. Exact check steps differ slightly between batch
 shapes.
@@ -836,9 +836,9 @@ shapes.
 | PQN-VDN | `b768-t32` | −17.3 / 0.6 | −15.0 / 1.1 | −17.3 / 0.3 | −17.0 / 1.3 | −15.4 / 0.3 | −14.5 / 0.7 | −17.4 / 0.4 | −15.6 / 0.5 | −18.1 / 1.1 | −17.3 / 1.1 | −16.2 / 1.4 |
 | PQN-VDN | `b768-t64` | −17.3 / 0.6 | −18.4 / 0.3 | −17.1 / 0.3 | −19.3 / 0.7 | −18.4 / 1.6 | −16.4 / 1.8 | −17.7 / 1.4 | −17.9 / 1.5 | −16.6 / 1.0 | −16.6 / 1.5 | −16.1 / 1.9 |
 
-**Every run:**
+**Every Run:**
 
-| Method | Recipe | Seed | Selected Step | Margin | Kills | Deaths | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma | Minutes |
+| Method | Recipe | Seed | Selected Step | Margin | Kills | Deaths | W-D-L | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma | Minutes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Recurrent MAPPO | `critic-lr-1e-3` | 12259871 ⭐ | 12,042,240 | −9.5 | 6.5 | 14.6 | 0-61-195 | −3.9 | −10.4 | −12.4 | −11.2 | 41 |
 | Recurrent MAPPO | `critic-lr-1e-3` | 20261001 | 32,096,256 | −11.3 | 4.6 | 16.5 | 0-64-192 | −5.2 | −12.7 | −13.8 | −13.5 | 41 |
@@ -917,7 +917,7 @@ those base runs appear below as `base`. QMIX's base is B768 T32 with
 
 **Recipes** (mean over three seeds):
 
-| Method | Recipe | Mean Margin | SD | Seed 12259871 | Seed 20261001 | Seed 20261002 | Kills | Deaths | K/D | Red Zone Kills (Ours / Theirs) | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma |
+| Method | Recipe | Mean Margin | SD | Seed 12259871 | Seed 20261001 | Seed 20261002 | Kills | Deaths | K/D | Red Zone Kills (Ours / Theirs) | W-D-L | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | QMIX | `base` | −10.2 | 1.1 | −11.5 | −9.6 | −9.5 | 6.2 | 16.4 | 0.38 | 1.17 / 1.16 | 21-150-597 | −6.3 | −10.7 | −11.7 | −12.1 |
 | QMIX | `gamma-0995` | −12.1 | 1.2 | −12.0 | −13.3 | −10.9 | 4.8 | 16.2 | 0.29 | 0.98 / 1.65 | 13-163-592 | −7.7 | −12.7 | −14.3 | −13.7 |
@@ -932,9 +932,9 @@ those base runs appear below as `base`. QMIX's base is B768 T32 with
 | PQN-VDN | `lr-1e-4` | −15.0 | 0.7 | −15.3 | −14.1 | −15.4 | 2.7 | 15.8 | 0.17 | 0.45 / 2.31 | 7-179-582 | −9.1 | −16.6 | −17.1 | −17.0 |
 | PQN-VDN | `reward-x10` | −8.7 | 3.3 | −5.1 | −11.4 | −9.7 | 10.5 | 17.8 | 0.59 | 0.15 / 1.58 | 88-47-633 | −12.4 | −6.1 | −8.5 | −7.9 |
 
-**Kills / deaths per game by opponent:**
+**Kills / Deaths per Game by Opponent:**
 
-| Method | Recipe | vs 250M | vs Alpha | vs Beta | vs Gamma |
+| Method | Recipe | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma |
 | --- | --- | ---: | ---: | ---: | ---: |
 | QMIX | `base` | 3.3 / 8.2 | 7.7 / 19.2 | 6.9 / 19.3 | 7.0 / 19.0 |
 | QMIX | `gamma-0995` | 2.7 / 8.7 | 5.8 / 18.8 | 5.2 / 18.6 | 5.4 / 18.5 |
@@ -949,7 +949,7 @@ those base runs appear below as `base`. QMIX's base is B768 T32 with
 | PQN-VDN | `lr-1e-4` | 2.7 / 10.8 | 3.0 / 17.7 | 2.7 / 17.6 | 2.7 / 17.2 |
 | PQN-VDN | `reward-x10` | 7.0 / 18.5 | 12.3 / 17.2 | 11.1 / 18.0 | 11.5 / 17.3 |
 
-**Picks under the declared rules.** A change replaces its base only if its
+**Picks Under the Declared Rules.** A change replaces its base only if its
 mean margin beats the base by more than 2 points, it wins on at least 2 of 3
 seeds, and it makes at least 2 kills per game against each scripted bot (the
 engagement floor). Each candidate shows its mean margin / kills / deaths per
@@ -1012,7 +1012,7 @@ final recipe. For PQN-VDN only `reward_scale = 10` passes.
    better than any reward-scale-10 run. Recipes are chosen by their
    three-seed mean, where reward scale 10 leads (−4.3 against −5.2).
 
-**Learning curves.** Margin / kills per game at each routine check, mean over
+**Learning Curves.** Margin / kills per game at each routine check, mean over
 the three seeds; checks as in study 1.
 
 | Method | Recipe | 0% | 10% | 20% | 30% | 40% | 50% | 60% | 70% | 80% | 90% | 100% |
@@ -1030,9 +1030,9 @@ the three seeds; checks as in study 1.
 | PQN-VDN | `lr-1e-4` | −17.3 / 0.6 | −18.6 / 1.1 | −17.8 / 1.3 | −16.4 / 1.7 | −17.3 / 1.2 | −18.3 / 1.0 | −16.9 / 2.3 | −15.6 / 1.9 | −15.0 / 2.5 | −15.3 / 2.4 | −16.0 / 2.1 |
 | PQN-VDN | `reward-x10` | −17.3 / 0.6 | −14.7 / 2.9 | −16.2 / 2.6 | −15.7 / 2.9 | −15.3 / 3.1 | −14.7 / 3.8 | −12.7 / 5.7 | −12.5 / 6.8 | −10.5 / 8.7 | −10.5 / 9.1 | −8.6 / 10.5 |
 
-**Every run:**
+**Every Run:**
 
-| Method | Recipe | Seed | Selected Step | Margin | Kills | Deaths | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma | Minutes |
+| Method | Recipe | Seed | Selected Step | Margin | Kills | Deaths | W-D-L | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma | Minutes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | QMIX | `base` | 12259871 ⭐ | 20,054,016 | −11.5 | 4.0 | 15.0 | 0-64-192 | −3.5 | −14.5 | −13.9 | −14.0 | 54 |
 | QMIX | `base` | 20261001 | 40,108,032 | −9.6 | 7.8 | 16.7 | 4-50-202 | −7.4 | −10.1 | −11.0 | −10.0 | 55 |
@@ -1106,7 +1106,7 @@ GPU-hours. Each lineage is represented by its selected checkpoint, chosen and
 confirmed exactly as in studies 1 and 2, with the parent's checkpoints eligible
 too. ⭐ marks seed 12259871.
 
-| Method | Run | Seed | Selected Checkpoint | Margin | Kills | Deaths | W-D-L | vs 250M | vs Alpha | vs Beta | vs Gamma | 40M Run's Selection: Margin / Kills / Deaths | Final Check at 250.7M: Margin / Kills / Deaths |
+| Method | Run | Seed | Selected Checkpoint | Margin | Kills | Deaths | W-D-L | Vs 250M | Vs Alpha | Vs Beta | Vs Gamma | 40M Run's Selection: Margin / Kills / Deaths | Final Check at 250.7M: Margin / Kills / Deaths |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
 | PQN-VDN | `reward-x10` | 12259871 ⭐ | 240,156,672 | +7.3 | 19.4 | 12.4 | 234-16-6 | +3.2 | +8.5 | +8.9 | +8.6 | −5.1 / 13.1 / 17.1 | +5.2 / 19.2 / 14.4 |
 | Recurrent IPPO | `reference` | 20261001 | 250,675,200 | +5.9 | 19.1 | 12.6 | 205-26-25 | +0.9 | +8.3 | +7.7 | +6.8 | −8.5 / 11.1 / 15.4 | +5.9 / 19.1 / 12.6 |
@@ -1198,7 +1198,7 @@ deterministic GPU mode. Each entrant played 1,600 games. Score counts a win as
 **Head to head: the row's margin against the column** (row's kills / deaths
 per game).
 
-| Row against column | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
+| Row Against Column | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **Rec. IPPO** | — | +3.2 (14.9/13.6) | +1.0 (17.4/15.9) | +2.2 (17.9/14.9) | +3.4 (17.1/13.8) | +7.5 (17.0/10.6) | +8.7 (19.9/10.6) | +7.6 (19.9/11.6) | +8.1 (19.8/10.9) |
 | **PQN-VDN** | −3.2 (13.6/14.9) | — | −3.4 (13.7/15.2) | +3.2 (15.1/11.7) | −1.6 (13.4/13.6) | +5.4 (14.1/8.9) | +4.5 (15.5/10.7) | +0.9 (16.6/13.5) | +4.6 (16.0/11.2) |
@@ -1213,7 +1213,7 @@ per game).
 **Head to head: the row's wins-draws-losses against the column** (200 games
 per pair).
 
-| Row against column | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
+| Row Against Column | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **Rec. IPPO** | — | 73-51-76 | 95-44-61 | 92-55-53 | 86-97-17 | 113-87-0 | 192-1-7 | 195-1-4 | 192-0-8 |
 | **PQN-VDN** | 76-51-73 | — | 61-70-69 | 100-80-20 | 68-95-37 | 122-43-35 | 140-40-20 | 140-0-60 | 160-40-0 |
@@ -1350,7 +1350,7 @@ mode and the same code, on the same day. Time runs from the creation of the
 run folder to the saved results; peak GPU memory was sampled every 0.5 s with
 preallocation off.
 
-| Metrics recorded | Time | Peak RAM | Peak GPU memory | Disk |
+| Metrics Recorded | Time | Peak RAM | Peak GPU Memory | Disk |
 | --- | ---: | ---: | ---: | ---: |
 | Priority, as in the tournament | 488 s (8.1 minutes) | 6.5 GB | 924 MiB | 40 MB |
 | Full, for every game | 834 s (13.9 minutes) | 9.5 GB, with an earlier analysis | 980 MiB | 392 MB |
@@ -1364,7 +1364,7 @@ Values and rank correlations in this table are per game; the findings below
 use the screen's per-tick values and length-free shares where game length
 matters.
 
-| Measure | Rank correlation with Elo | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
+| Measure | Rank Correlation With Elo | Rec. IPPO | PQN-VDN | Rec. MAPPO | QMIX | FF IPPO | FF MAPPO | Beta | Gamma | Alpha |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Elo | | 1,441 | 1,358 | 1,304 | 1,300 | 1,240 | 1,140 | 1,043 | 1,000 | 974 |
 | Margin per game | | +5.2 | +1.3 | +2.3 | +0.6 | +1.8 | −2.7 | −3.0 | −2.4 | −3.1 |
@@ -1387,7 +1387,7 @@ matters.
 **Who the Priest healed, and who took the damage** (shares of the team's
 useful Priest healing and of the damage it received).
 
-| Entrant | Healing: Mage | Warrior | Hunter | Rogue | Priest | Damage taken: Mage | Warrior | Hunter | Rogue | Priest |
+| Entrant | Healing: Mage | Warrior | Hunter | Rogue | Priest | Damage Taken: Mage | Warrior | Hunter | Rogue | Priest |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Recurrent IPPO | 34.6% | 32.6% | 13.8% | 8.5% | 10.5% | 25.9% | 34.2% | 13.2% | 19.1% | 7.6% |
 | Feedforward IPPO | 25.3% | 26.3% | 12.4% | 20.2% | 15.9% | 19.9% | 29.0% | 15.0% | 25.8% | 10.4% |

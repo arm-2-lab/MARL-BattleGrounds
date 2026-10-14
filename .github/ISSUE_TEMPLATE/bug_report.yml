@@ -48,7 +48,7 @@ body:
   - type: textarea
     id: reproduction
     attributes:
-      label: Smallest Code Or Command That Shows It
+      label: Smallest Code or Command That Shows It
       description: The shortest code or command that shows the bug. Include every import and setting it needs.
       render: python
     validations:

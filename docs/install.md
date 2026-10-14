@@ -6,7 +6,7 @@ Website: https://marl-battlegrounds.com/#start
 
 ## Start Here
 
-| You want to | Do this |
+| You Want To | Do This |
 |---|---|
 | Look around in your browser, with nothing to install | Open the [Colab notebook](#colab): the API, the speed, training a team and the trained Season 0 teams (no game window) |
 | Play the game | The [one command](#one-command): three lines on Linux, an Apple Silicon Mac or Windows with WSL2 |
@@ -17,7 +17,7 @@ An NVIDIA GPU is optional but recommended: without one, everything runs on the C
 
 ## Pick Your Route
 
-| Your machine | Route | GPU | Tested |
+| Your Machine | Route | GPU | Tested |
 |---|---|---|---|
 | Linux (x86_64 or ARM), glibc 2.28 or newer (Ubuntu 20.04+, Debian 10+, RHEL 8+) | [One command](#one-command) | NVIDIA, picked for you | Tested: x86_64 with an NVIDIA RTX 5090; x86_64 and ARM on the CPU |
 | Apple Silicon Mac, macOS 12 or newer | [One command](#one-command) | CPU only (JAX has no Apple GPU support) | Tested (macOS 26, CPU) |
@@ -52,7 +52,7 @@ uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponen
 
 Open the example notebooks with `uv run --no-sync jupyter lab`, then `examples/quickstart.ipynb`.
 
-| Option | What it does |
+| Option | What It Does |
 |---|---|
 | `sh start.sh --team-b qmix --map 12` | Another opponent and map. Teams: `manual` (you), `mappo`, `ippo`, `ff-mappo`, `ff-ippo`, `qmix`, `pqn-vdn`, `tdm-alpha`, `tdm-beta`, `tdm-gamma`, `random` |
 | `sh start.sh --team-a ippo --team-b mappo` | Watch two trained teams play |
@@ -110,7 +110,7 @@ This opens the BattleClient: open the `http://127.0.0.1:8765/...` link it prints
 NVIDIA GPU: add `--gpus all` and use the `1.0.2-cuda12` tag (driver 525 or newer; on Linux it needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), on Windows Docker Desktop with WSL2). The CUDA 12 image is for x86_64 computers; on an ARM computer with an NVIDIA GPU, use the one command.
 In Windows Command Prompt, write `-v "%cd%:/work"` instead. PowerShell, bash and zsh use the command as shown.
 
-| Command after the image name | What it does |
+| Command After the Image Name | What It Does |
 |---|---|
 | (nothing), or `play --team-b qmix --map 12` | The BattleClient, with the same team and map options as `start.sh` |
 | `replay recordings/<file>.marlbg-replay.json` | Opens a saved replay in the analytical Replay Viewer |
@@ -131,7 +131,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/m
 - A GPU image on a machine without a usable GPU (for example, run without `--gpus all`) prints a long "Jax plugin configuration error", then runs on the CPU.
 - Docker Desktop is free for personal use, education, non-commercial open source and small businesses; larger organizations and government bodies need a paid plan. Podman works the same way: write `podman` for `docker`.
 
-| Limit | What to do |
+| Limit | What to Do |
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |

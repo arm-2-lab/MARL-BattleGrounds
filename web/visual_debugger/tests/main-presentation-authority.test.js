@@ -1446,7 +1446,7 @@ test("main describes live Agent POV as following the played champion while prese
   );
   assert.match(
     shell,
-    /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step\./u,
+    /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance Scripted Frame for the next authorized step\./u,
   );
   assert.match(
     source,
@@ -1614,7 +1614,7 @@ test("main reuses only the deck's submit controls for coherent scripted-live adv
   );
   assert.match(
     availabilitySource,
-    /if \(scriptedAdvance\) \{\s*elements\.submitTurnButton\.textContent = "Advance scripted frame";[\s\S]*?\} else \{[\s\S]*?DECK_LABELS\.lockInButton[\s\S]*?DECK_LABELS\.lockInKeys[\s\S]*?elements\.submitTurnButton\.setAttribute\("aria-label", DECK_LABELS\.lockInButton\);/u,
+    /if \(scriptedAdvance\) \{\s*elements\.submitTurnButton\.textContent = "Advance Scripted Frame";[\s\S]*?\} else \{[\s\S]*?DECK_LABELS\.lockInButton[\s\S]*?DECK_LABELS\.lockInKeys[\s\S]*?elements\.submitTurnButton\.setAttribute\("aria-label", DECK_LABELS\.lockInButton\);/u,
   );
   assert.doesNotMatch(availabilitySource, /controlled_actor|fixedAgentRecipient/u);
   assert.doesNotMatch(availabilitySource, /button\.dataset\.key === "Tab"/u);
@@ -1656,11 +1656,11 @@ test("main reuses only the deck's submit controls for coherent scripted-live adv
   );
   assert.match(
     shell,
-    /Inspection-only scripted battlefield\. Authorized bodies can be inspected; use Advance scripted frame for the next authorized step\./u,
+    /Inspection-only scripted battlefield\. Authorized bodies can be inspected; use Advance Scripted Frame for the next authorized step\./u,
   );
   assert.match(
     shell,
-    /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance scripted frame for the next authorized step\./u,
+    /Scripted live view is inspection-only\. Activate an authorized body to inspect current facts; use Advance Scripted Frame for the next authorized step\./u,
   );
   assert.match(
     shell,
@@ -1691,7 +1691,7 @@ test("main reuses only the deck's submit controls for coherent scripted-live adv
   );
   assert.match(
     dispatchSource,
-    /liveScriptedInspectionOnly\(\) &&\s*!allowedDuringLiveScriptedInspection\(command\)[\s\S]*Use Advance scripted frame[\s\S]*return;/u,
+    /liveScriptedInspectionOnly\(\) &&\s*!allowedDuringLiveScriptedInspection\(command\)[\s\S]*Use Advance Scripted Frame[\s\S]*return;/u,
   );
   assertSourceOrder(
     dispatchSource,
