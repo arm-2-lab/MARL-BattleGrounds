@@ -1235,11 +1235,11 @@ holds a portable model file for every save of its training and the training
 records.
 
 - **Method:** {entrant.label} (`{entrant.method}`)
-- **Training recipe:** `{entrant.recipe}`
-- **Training seed:** {entrant.seed}
+- **Training Recipe:** `{entrant.recipe}`
+- **Training Seed:** {entrant.seed}
 - **Saves:** {len(steps):,}, from step {first:,} to step {last:,}
-- **Season 0 save:** step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
-- **Season 0 rank:** {entrant.rank} of {entrant.field}
+- **Season 0 Save:** step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
+- **Season 0 Rank:** {entrant.rank} of {entrant.field}
 - **Season 0 Elo:** {round(entrant.elo):,} (95% interval {round(entrant.elo_low):,} \
 to {round(entrant.elo_high):,}), tier {entrant.tier}
 
@@ -1877,10 +1877,10 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     Returns
     -------
     str
-        Space YAML metadata (static SDK), then the card in plain English: what
-        MARL-BGs is and what its leaderboard rewards, the models with their
-        Season 0 results, the one-line names, three lines of code, links, the
-        citation and the contact. Hugging Face shows this file as the
+        Space YAML metadata (static SDK), then the card in plain English: the
+        tagline, what MARL-BGs is and what its leaderboard rewards, the models
+        with their Season 0 results, the one-line names, three lines of code,
+        links, the citation and the contact. Hugging Face shows this file as the
         organization card when the Space has no ``index.html``.
     """
     example = f"{ORG}/tdm-season-0-recurrent-ippo"
@@ -1896,6 +1896,8 @@ pinned: false
 ---
 
 # MARL-BattleGrounds
+
+**The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning: built from scratch by researchers, for researchers.**
 
 [MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
 benchmark for heterogeneous and competitive team-vs-team multi-agent
@@ -1914,7 +1916,7 @@ save, with its validation result where training checked that save) and the
 training records. Use them as opponents, as teammates, or as starting points
 for your own training.
 
-| Model | Season 0 rank | Elo | Tier | Saves |
+| Model | Season 0 Rank | Elo | Tier | Saves |
 |---|---|---|---|---|
 {table}
 
@@ -1950,7 +1952,7 @@ resuming a run loads the same file. No account or token is needed.
 ## Contact
 
 Questions: {CONTACT}. Everything here is released under Apache-2.0.
-"""
+"""  # noqa: E501
 
 
 _SAVE_STEP = re.compile(r"_(?:actor|checkpoint|past)_step_(\d+)_")
