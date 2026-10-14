@@ -35,14 +35,14 @@ Python 3.12, 3.13 and 3.14 all work. Python 3.14 is recommended: official leader
 ## One Command
 
 ```bash
-curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.1.tar.gz | tar xz
-cd MARL-BattleGrounds-1.0.1
+curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.2.tar.gz | tar xz
+cd MARL-BattleGrounds-1.0.2
 sh start.sh
 ```
 
 `start.sh` installs [uv](https://docs.astral.sh/uv/) if you do not have it, picks the right JAX build for your machine, installs Python 3.14 and the exact tested packages, then opens the BattleClient in your browser. The first run downloads up to 3.5 GB with a GPU build (about 0.3 GB on the CPU); later runs start in seconds.
 By default you play Team A against the trained Recurrent MAPPO team on map 47. Press `?` in the page for How to Play. Each game's replay is saved in `recordings/`.
-Without curl, use `wget -qO- <the same link> | tar xz`. With git: `git clone --branch v1.0.1 https://github.com/arm-2-lab/MARL-BattleGrounds.git`, then `cd MARL-BattleGrounds` and `sh start.sh`.
+Without curl, use `wget -qO- <the same link> | tar xz`. With git: `git clone --branch v1.0.2 https://github.com/arm-2-lab/MARL-BattleGrounds.git`, then `cd MARL-BattleGrounds` and `sh start.sh`.
 
 Run everything else from the same folder with `uv run`, for example:
 
@@ -93,7 +93,7 @@ You do not need to install JAX first: the extra installs JAX 0.10.1 for your GPU
 `all` adds training, Hydra, notebooks and plots to the core package. For the exact versions we test with, add the release's constraints file for your build (`cpu`, `cuda13`, `cuda12`, `rocm` or `tpu`):
 
 ```bash
-pip install "marl-battlegrounds[all,cuda13]==1.0.1" -c https://github.com/arm-2-lab/MARL-BattleGrounds/releases/download/v1.0.1/constraints-cuda13.txt
+pip install "marl-battlegrounds[all,cuda13]==1.0.2" -c https://github.com/arm-2-lab/MARL-BattleGrounds/releases/download/v1.0.2/constraints-cuda13.txt
 ```
 
 No install at all, with uv: `uv run --no-project --python 3.14 --with "marl-battlegrounds[all]" python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
@@ -103,11 +103,11 @@ No install at all, with uv: `uv run --no-project --python 3.14 --with "marl-batt
 ## Docker
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1
+docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2
 ```
 
 This opens the BattleClient: open the `http://127.0.0.1:8765/...` link it prints. The image holds Python 3.14.5, the tested packages and the six trained Season 0 models. Your current folder is `/work` in the container, so replays and results land next to you.
-NVIDIA GPU: add `--gpus all` and use the `1.0.1-cuda12` tag (driver 525 or newer; on Linux it needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), on Windows Docker Desktop with WSL2). The CUDA 12 image is for x86_64 computers; on an ARM computer with an NVIDIA GPU, use the one command.
+NVIDIA GPU: add `--gpus all` and use the `1.0.2-cuda12` tag (driver 525 or newer; on Linux it needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), on Windows Docker Desktop with WSL2). The CUDA 12 image is for x86_64 computers; on an ARM computer with an NVIDIA GPU, use the one command.
 In Windows Command Prompt, write `-v "%cd%:/work"` instead. PowerShell, bash and zsh use the command as shown.
 
 | Command after the image name | What it does |
@@ -120,7 +120,7 @@ In Windows Command Prompt, write `-v "%cd%:/work"` instead. PowerShell, bash and
 JupyterLab, run from the unpacked release folder so `examples/` is there:
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1 jupyter lab --ip 0.0.0.0 --no-browser --allow-root -y
+docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2 jupyter lab --ip 0.0.0.0 --no-browser --allow-root -y
 ```
 
 **Watch Out**
@@ -135,7 +135,7 @@ docker run --rm -it -p 127.0.0.1:8888:8888 -v "${PWD}:/work" ghcr.io/arm-2-lab/m
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
-| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1`, then `RUN uv pip install <package>` |
+| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2`, then `RUN uv pip install <package>` |
 | Docker Desktop (Mac, Windows) limits the container's memory | Raise the memory limit in Docker Desktop's settings for large training runs |
 
 ## Windows
@@ -152,7 +152,7 @@ The browser clients (BattleClient and Replay Viewer) do not run inside Colab, be
 ## Clusters and Remote Machines
 
 Remote GPU machine: start the client there with `sh start.sh --port 8765 --replay-port 8767 --no-browser`. On your laptop run `ssh -N -L 8765:127.0.0.1:8765 -L 8767:127.0.0.1:8767 <host>`, then open the printed `127.0.0.1` link.
-Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then, in a scratch folder, run `apptainer pull marl-bgs.sif docker://ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1-cuda12` once (the image file lands in the current folder). On a compute node, in that folder: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
+Cluster with Apptainer: on the login node, set `APPTAINER_CACHEDIR` and `APPTAINER_TMPDIR` to scratch storage (the image is about 4 GB to download), then, in a scratch folder, run `apptainer pull marl-bgs.sif docker://ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2-cuda12` once (the image file lands in the current folder). On a compute node, in that folder: `apptainer exec --nv marl-bgs.sif python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`.
 Cluster with uv: unpack the release on scratch storage (the environment is about 6 GB), set `UV_CACHE_DIR` there, run `MARL_BGS_ACCELERATOR=cuda12 sh start.sh --help` on the login node, open a new shell (so `uv` is on your `PATH`), and on a compute node `uv run --no-sync python -m marl_battlegrounds evaluate --system random --opponent tdm-alpha --episodes 32 --output-dir runs/check`. Compute nodes often have no internet: on the login node, download the models first with `uv run --no-sync python -m marl_battlegrounds models download MARL-BattleGrounds/tdm-season-0-recurrent-mappo` (and any others), then set `HF_HUB_OFFLINE=1` on the compute node. On Linux older than glibc 2.28, use Apptainer.
 
 ## Offline Use

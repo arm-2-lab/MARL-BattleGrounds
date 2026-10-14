@@ -66,8 +66,8 @@ An NVIDIA GPU is optional but recommended: without one, everything runs on the C
 On Linux, an Apple Silicon Mac or [Windows with WSL2](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md#windows), one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
 
 ```bash
-curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.1.tar.gz | tar xz
-cd MARL-BattleGrounds-1.0.1 && sh start.sh
+curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.2.tar.gz | tar xz
+cd MARL-BattleGrounds-1.0.2 && sh start.sh
 ```
 
 In your own Python project (Python 3.12 to 3.14; 3.14 recommended):
@@ -77,10 +77,10 @@ pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA GPU, driver 580 or newer
 ```
 
-With Docker or Podman, on any system (add `--gpus all` and the `1.0.1-cuda12` tag for an NVIDIA GPU):
+With Docker or Podman, on any system (add `--gpus all` and the `1.0.2-cuda12` tag for an NVIDIA GPU):
 
 ```bash
-docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1
+docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2
 ```
 
 | Route | For | Tested |
@@ -98,7 +98,7 @@ Docker runs everything: play, replays, training, evaluation, tournaments, analys
 |---|---|
 | No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
 | `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
-| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.1`, then `RUN uv pip install <package>` |
+| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2`, then `RUN uv pip install <package>` |
 | Docker Desktop (Mac, Windows) limits the container's memory | Raise the memory limit in Docker Desktop's settings for large training runs |
 
 Every route, the GPU builds, Windows, clusters and offline use: [the install guide](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md).
