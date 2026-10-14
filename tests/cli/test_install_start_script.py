@@ -43,8 +43,8 @@ none. It then carries on without a restart, unless pip replaced a package
 that is already loaded or JAX fails to import and run; only then it restarts
 the runtime with ``exit(0)``. It restarts only when a loaded module's file is
 one pip just wrote: a package Colab keeps twice that pip left alone, or a new
-file in a shared folder (omegaconf's debugger plugin) loaded from elsewhere,
-does not count.
+file in a shared folder loaded from elsewhere, or a replaced debugger plugin
+(``pydevd_plugins``, such as omegaconf's), does not count.
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
@@ -417,6 +417,23 @@ def test_colab_ignores_a_new_file_in_a_shared_folder_loaded_from_elsewhere(
         replaced=("newdep",),
         shared=("pydevd_plugins",),
         loaded={"pydevd_plugins": "/debugger/pydevd_plugins/__init__.py"},
+    )
+    assert len(calls) == 1
+    assert not restarted
+
+
+def test_colab_ignores_a_replaced_debugger_plugin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin = "pydevd_plugins.extensions.pydevd_plugin_newdep"
+    calls, restarted = _run_install_cell(
+        monkeypatch,
+        colab=True,
+        replaced=("newdep",),
+        shared=("pydevd_plugins/extensions/pydevd_plugin_newdep",),
+        loaded={
+            plugin: "/site/pydevd_plugins/extensions/pydevd_plugin_newdep/__init__.py"
+        },
     )
     assert len(calls) == 1
     assert not restarted
