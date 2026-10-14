@@ -39,7 +39,9 @@ installs nothing outside Colab. In Colab, when its ``VERSION`` (always the
 package's own version) is already installed, it installs nothing; otherwise it
 pip-installs ``marl-battlegrounds[all]==VERSION`` plus the build of the JAX
 plugin already there: ``cuda13``, ``cuda12`` or ``tpu`` (``libtpu``), else
-none, and then restarts the runtime with ``exit(0)``.
+none. It then carries on without a restart, unless pip replaced a package
+that is already loaded or JAX fails to import and run; only then it restarts
+the runtime with ``exit(0)``.
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
@@ -283,9 +285,14 @@ def _run_install_cell(
     colab: bool,
     plugins: tuple[str, ...] = ("jax",),
     installed: str | None = None,
+    replaced: tuple[str, ...] = (),
+    loaded: tuple[str, ...] = (),
+    jax_imports: bool = True,
 ) -> tuple[list[list[str]], bool]:
     cell = _install_cells()[0]
     calls: list[list[str]] = []
+    # Start JAX before the fakes below: its first run looks up its plugins.
+    importlib.import_module("jax").numpy.zeros(1).block_until_ready()
 
     def record(command: list[str], **_kwargs: object) -> None:
         calls.append(command)
@@ -295,10 +302,22 @@ def _run_install_cell(
             raise importlib.metadata.PackageNotFoundError(name)
         return installed
 
-    distributions = [SimpleNamespace(metadata={"Name": name}) for name in plugins]
+    def distributions() -> list[SimpleNamespace]:
+        after = "2" if calls else "1"
+        rows = [SimpleNamespace(metadata={"Name": n}, version="1") for n in plugins]
+        return rows + [
+            SimpleNamespace(metadata={"Name": n}, version=after) for n in replaced
+        ]
+
+    owners = {name: [name] for name in (*plugins, *replaced)}
     monkeypatch.setattr(subprocess, "run", record)
-    monkeypatch.setattr(importlib.metadata, "distributions", lambda: distributions)
+    monkeypatch.setattr(importlib.metadata, "distributions", distributions)
+    monkeypatch.setattr(importlib.metadata, "packages_distributions", lambda: owners)
     monkeypatch.setattr(importlib.metadata, "version", version)
+    for name in loaded:
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    if not jax_imports:
+        monkeypatch.setitem(sys.modules, "jax", None)
     monkeypatch.delitem(sys.modules, "google.colab", raising=False)
     if colab:
         monkeypatch.setitem(sys.modules, "google.colab", ModuleType("google.colab"))
@@ -329,12 +348,32 @@ def test_both_notebooks_start_with_the_same_install_cell() -> None:
         (("jax",), "all"),
     ],
 )
-def test_colab_installs_the_matching_build_and_restarts(
+def test_colab_installs_the_matching_build_and_carries_on(
     monkeypatch: pytest.MonkeyPatch, plugins: tuple[str, ...], extras: str
 ) -> None:
-    calls, restarted = _run_install_cell(monkeypatch, colab=True, plugins=plugins)
+    calls, restarted = _run_install_cell(
+        monkeypatch, colab=True, plugins=plugins, replaced=("newdep",)
+    )
     package = f"marl-battlegrounds[{extras}]=={_package_version()}"
     assert calls == [[sys.executable, "-m", "pip", "install", "-q", package]]
+    assert not restarted
+
+
+def test_colab_restarts_when_pip_replaced_a_loaded_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, restarted = _run_install_cell(
+        monkeypatch, colab=True, replaced=("loadeddep",), loaded=("loadeddep",)
+    )
+    assert len(calls) == 1
+    assert restarted
+
+
+def test_colab_restarts_when_jax_does_not_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, restarted = _run_install_cell(monkeypatch, colab=True, jax_imports=False)
+    assert len(calls) == 1
     assert restarted
 
 
