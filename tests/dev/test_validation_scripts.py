@@ -4,6 +4,7 @@ and per browser profile.
 All Python shards and static checks start together without a worker cap.
 Shards and the browser profile run every test, even after a failure; the Python
 gate then lists each failing test once and prints one command that reruns them.
+In hosted CI, one failing Python shard does not cancel the other shards.
 Copied candidate indexes stay with the parent gate; child checks use their own
 repositories. Raw donor fixtures keep their bytes without weakening source checks.
 """
@@ -34,7 +35,7 @@ def test_hosted_ci_preserves_main_runs_without_explicit_job_timeouts() -> None:
         "&& github.run_id || github.ref }}"
     ) in workflow
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("fail-fast: true") == 2
+    assert workflow.count("fail-fast: true") == 1
     assert "timeout-minutes:" not in workflow
     assert "max-parallel: 19" in workflow
     assert "shard: [1]" in workflow
