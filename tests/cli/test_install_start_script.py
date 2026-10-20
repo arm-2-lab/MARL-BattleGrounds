@@ -48,8 +48,9 @@ file in a shared folder loaded from elsewhere, or a replaced debugger plugin
 
 One list of names: ``start.sh``'s builds are exactly the GPU extras in
 ``pyproject.toml`` (plus ``cpu``), ``play.py`` and the Dockerfile name the same
-six released Season 0 models, and every released model the quick start
-notebook names is one of them.
+six released Season 0 models, the Dockerfile also downloads the released
+training-opponent pool, and every released model the quick start notebook
+names is one of the six.
 
 ``play.py`` prints a plain message instead of a traceback when the
 BattleClient refuses a setting (status 2) or the system refuses (status 1),
@@ -71,6 +72,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+
+from marl_battlegrounds.released_models import RESULTS_DATASET, TRAINING_OPPONENTS
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _START = _REPOSITORY / "start.sh"
@@ -479,13 +482,14 @@ def test_one_list_of_builds_and_released_models() -> None:
     }
     play = _play_module()
     released = {play.RELEASED_PREFIX + name for name in play.TRAINED_TEAMS.values()}
+    pool = f"{RESULTS_DATASET}/{TRAINING_OPPONENTS}"
     pattern = r"MARL-BattleGrounds/tdm-season-0-[a-z-]+"
     dockerfile = (_REPOSITORY / "docker" / "Dockerfile").read_text(encoding="utf-8")
     notebook = (_REPOSITORY / "examples" / "quickstart.ipynb").read_text(
         encoding="utf-8"
     )
     assert len(released) == 6
-    assert set(re.findall(pattern, dockerfile)) == released
+    assert set(re.findall(pattern + "(?:/[a-z-]+)?", dockerfile)) == released | {pool}
     named = set(re.findall(pattern, notebook))
     assert named and named <= released
 

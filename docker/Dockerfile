@@ -16,9 +16,11 @@
 #                   in this image can be extended in this image.
 #   BUILD           cpu (default), cuda12 or cuda13. rocm and tpu images are
 #                   not supported: they need software from the host machine.
-#   SEASON_0_MODELS 1 (default) downloads the six trained Season 0 models into
-#                   the image from Hugging Face; 0 skips them (they then
-#                   download on first use).
+#   SEASON_0_MODELS 1 (default) downloads the six trained Season 0 models and
+#                   the Season 0 training-opponent pool into the image from
+#                   Hugging Face, so a read-only image (Apptainer) can train
+#                   against them offline; 0 skips them (they then download on
+#                   first use).
 # An optional build secret hf_token (--secret id=hf_token,src=FILE) lets the
 # download read private Hugging Face repositories; it never enters the image.
 ARG PYTHON_VERSION=3.14.5
@@ -68,7 +70,8 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN,required=false \
             MARL-BattleGrounds/tdm-season-0-feedforward-mappo \
             MARL-BattleGrounds/tdm-season-0-feedforward-ippo \
             MARL-BattleGrounds/tdm-season-0-qmix \
-            MARL-BattleGrounds/tdm-season-0-pqn-vdn; \
+            MARL-BattleGrounds/tdm-season-0-pqn-vdn \
+            MARL-BattleGrounds/tdm-season-0-results/training-opponents; \
     fi \
     && chmod -R a+rwX "$HF_HUB_CACHE" \
     && rm -rf /root/.cache
