@@ -1,0 +1,89 @@
+# HAPPO's short TDM screen: does the learner learn?
+#
+# This is a plain study declaration for training.run_study. Prepare it first,
+# against the search's expected opponent identities; preparation checks the
+# opponent bundle and writes protocol/study.yaml with each name bound to its
+# checked model folder:
+#
+#   JAX_PLATFORMS=cpu python scripts/paper_experiments/prepare.py \
+#     protocol=declared_study \
+#     declaration=scripts/paper_experiments/baseline_screens/happo.yaml \
+#     expected_opponents=scripts/paper_experiments/hyperparameter_search/opponents.yaml \
+#     opponent_bundle=/path/opponents output_dir=/path/happo-screen
+#   XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
+#     --config /path/happo-screen/protocol/study.yaml \
+#     --output-dir /path/happo-screen/study
+#
+# One case x the search's three seeds = 3 runs of 40,108,032 transitions.
+# Everything matches the search's mappo-reference case
+# (hyperparameter_search/shapes_and_ppo.yaml): seeds, opponent mix and fixed
+# models, validation panel and maps, seed pairs, actor retention and every PPO
+# setting. Three things differ, because they are what HAPPO is: method happo,
+# one actor per class (parameter_sharing: class), and the team reward that
+# HAPPO's theory assumes. No setting is tuned. The comparison is with the
+# search's three mappo-reference runs at the same steps.
+schema_version: 1
+name: HAPPO Short TDM Screen
+failure_policy: continue
+resources:
+  devices:
+    - device: GPU-6b11a0c4-14e8-6782-8932-1df56d599796
+      max_workers: 1
+cases:
+  - id: happo-reference
+    seeds: [12259871, 20261001, 20261002]
+    runtime:
+      # Same order as opponents.yaml; preparation refuses another order.
+      validation_opponents:
+        - recurrent-mappo-combat-support-pooled-step-250675200
+        - tdm-alpha
+        - tdm-beta
+        - tdm-gamma
+    config:
+      total_env_steps: 40108032
+      curriculum: false
+      score_threshold_curriculum: false
+      red_zone_depth: 5.0
+      shaping: false
+      opponents:
+        self: 0.6
+        past: 0.2
+        recurrent-mappo-combat-support-low-amounts-step-30081024: 0.025
+        recurrent-mappo-combat-support-step-35094528: 0.025
+        recurrent-mappo-tactical-support-step-40108032: 0.025
+        recurrent-mappo-tactical-support-high-amounts-step-25067520: 0.025
+        recurrent-mappo-tactical-support-zero-sum-step-35094528: 0.025
+        recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032: 0.025
+        tdm-alpha: 0.025
+        tdm-beta: 0.025
+      keep_past: 12
+      past_capture_interval: 1376256
+      validation_maps: [42, 43, 44, 46]
+      validation_fractions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      routine_seed_pairs: 4
+      confirmation_seed_pairs: 8
+      metrics: priority
+      recording: false
+      retain_all_actors: true
+      method: happo
+      reward: marl_battlegrounds.training.reward_recipes:combat_support_team_reward
+      checkpoint_interval_updates: 25
+      num_envs: 512
+      ppo:
+        actor_lr: 0.0001
+        critic_lr: 0.00025
+        rollout_length: 32
+        epochs: 4
+        minibatches: 2
+        groups: 2
+        gamma: 0.999
+        gae_lambda: 0.95
+        clip_epsilon: 0.2
+        entropy_coefficient: 0.01
+        value_coefficient: 0.5
+        max_grad_norm: 0.5
+        adam_epsilon: 0.00001
+        input_scale: 0.01
+        spawn_frame: left
+        value_normalization: true
+        parameter_sharing: class
