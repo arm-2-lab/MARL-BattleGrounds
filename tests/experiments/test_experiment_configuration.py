@@ -5,7 +5,9 @@ The default recipe applies the settings of each method's tournament policy run
 settings, games, reward, the 250,675,200-transition budget with the lineage's
 30 check steps, and the search's past-copy, validation-map, seed-pair and
 actor-retention settings. The expected values below are those runs' saved
-settings, written out independently of the generator.
+settings, written out independently of the generator. HAPPO, which has no
+tournament run yet, takes recurrent MAPPO's recipe with the team reward and
+one actor per class.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
 PQN normalization and validation_maps, whose default is left out of saved
 configs), six method groups, complete pool replacement, ordinary
@@ -59,6 +61,7 @@ SELECTED: dict[str, tuple[int, int, dict[str, Any]]] = {
     "ippo": (20261001, 512, PPO_SELECTED),
     "ff_mappo": (12259871, 512, {**PPO_SELECTED, "actor_lr": 0.0003}),
     "ff_ippo": (20261001, 512, PPO_SELECTED),
+    "happo": (20261002, 512, {**PPO_SELECTED, "parameter_sharing": "class"}),
     "qmix": (
         12259871,
         768,
@@ -91,6 +94,7 @@ REWARD = {
     "ippo": PER_AGENT,
     "ff_mappo": TEAM,
     "ff_ippo": PER_AGENT,
+    "happo": TEAM,
     "qmix": TEAM,
     "pqn_vdn": TEAM,
 }
@@ -146,9 +150,11 @@ def test_default_recipe_is_the_selected_search_recipe(
     actual = config_to_dict(
         resolve_training_config(composed(f"method={method}"), base_dir=tmp_path)
     )
+    # The defaults fixture predates HAPPO, whose defaults are MAPPO's.
     defaults: dict[str, Any] = json.loads(
         (ROOT / "tests/fixtures/training_config_defaults.json").read_text()
-    )[method]
+    )["mappo" if method == "happo" else method]
+    defaults = {**defaults, "method": method}
     block = method_settings_field(method)
     seed, games, settings = SELECTED[method]
     assert actual == {

@@ -609,6 +609,11 @@ class PPOMinibatch(NamedTuple):
         Optional int32 with actions.shape, using group IDs 0..4 from raw
         self classes or physical slots. This is actor weight ownership,
         distinct from the leading G gradient groups. Class mode requires it.
+    actor_weight : Array or None, default=None
+        Optional float32 with actions.shape: HAPPO's fixed weight on each
+        row's clipped surrogate (the product of the earlier-updated groups'
+        probability ratios at that step and game). None means weight 1, the
+        ordinary PPO objective.
 
     Notes
     -----
@@ -633,6 +638,7 @@ class PPOMinibatch(NamedTuple):
     actor_memory: Tree
     critic_memory: Tree
     actor_group: Array | None = None
+    actor_weight: Array | None = None
 
 
 class PPOMetrics(NamedTuple):
@@ -1097,7 +1103,7 @@ def initialize_ppo(
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static optimizer and input-scale settings. The default uses the pinned
         donor settings. Scaling preserves the initialized parameter tree/bytes.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static network choice. IPPO uses local critic inputs; feedforward methods
         initialize two-layer models without recurrent parameters or memory.
 
@@ -1714,7 +1720,7 @@ def make_ppo_system(
     ----------
     actor_params : PyTree
         Actor-only variables matching method. No critic or optimizer is used.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static architecture choice. Recurrent methods retain separate actor
         memory; feedforward methods have init=None and use empty memory tuples.
     input_scale : float, default=1.0
@@ -1990,20 +1996,15 @@ def _actor_loss(  # pyright: ignore[reportUnusedFunction]
     return loss, diagnostics[0]
 
 
-def _actor_loss_with_metrics(
-    params: Tree, batch: PPOMinibatch, config: PPOConfig, *, method: str = "mappo"
-) -> tuple[Array, tuple[Array, Array, Array]]:
-    """Return one group's masked actor loss and unscaled policy entropy.
+def _actor_logits(
+    params: Tree, batch: PPOMinibatch, config: PPOConfig, *, method: str
+) -> Array:
+    """Return one gradient group's action logits from its encoded actor inputs.
 
-    params is the actor variable tree for the selected sharing mode. batch is
-    one PPOMinibatch gradient group,
-    with no leading G axis. config fixes clipping and the
-    entropy weight. Standardize only that group's eligible advantages with the
-    donor epsilon. Return two float32 scalars; the loss includes entropy's
-    coefficient. Return loss plus (entropy, sampled KL, ratio clip fraction),
-    all scalar float32. Entropy and KL use natural-log units. method defaults to
-    mappo and selects a recurrent (T,E,5) or feedforward (Q,5) sample layout.
-    The actor call samples no actions and changes no parameters or input arrays.
+    params is the actor tree for the selected sharing mode; batch is one
+    PPOMinibatch group with no leading G axis. Recurrent methods replay each
+    selected sequence from its stored memory; feedforward methods read single
+    rows. Return float32 (T,E,5,198) or (Q,5,198) logits. Samples no actions.
     """
     groups = _batch_actor_groups(
         config.parameter_sharing, batch.actor_group, batch.actions.shape
@@ -2027,6 +2028,28 @@ def _actor_loss_with_metrics(
                 params, batch.actor_features, actor_group=groups
             ),
         )
+    return logits
+
+
+def _actor_loss_with_metrics(
+    params: Tree, batch: PPOMinibatch, config: PPOConfig, *, method: str = "mappo"
+) -> tuple[Array, tuple[Array, Array, Array]]:
+    """Return one group's masked actor loss and unscaled policy entropy.
+
+    params is the actor variable tree for the selected sharing mode. batch is
+    one PPOMinibatch gradient group,
+    with no leading G axis. config fixes clipping and the
+    entropy weight. Standardize only that group's eligible advantages with the
+    donor epsilon. When batch.actor_weight is set (HAPPO), each row's clipped
+    surrogate is multiplied by its fixed weight after standardization, as in
+    HARL's ``factor * min(surr1, surr2)``; entropy is not weighted. Return two
+    float32 scalars; the loss includes entropy's
+    coefficient. Return loss plus (entropy, sampled KL, ratio clip fraction),
+    all scalar float32. Entropy and KL use natural-log units. method defaults to
+    mappo and selects a recurrent (T,E,5) or feedforward (Q,5) sample layout.
+    The actor call samples no actions and changes no parameters or input arrays.
+    """
+    logits = _actor_logits(params, batch, config, method=method)
     logp = action_log_prob(logits, batch.action_mask, batch.actions)
     mean = _mean(batch.advantages, batch.actor_samples)
     variance = _mean(jnp.square(batch.advantages - mean), batch.actor_samples)
@@ -2034,9 +2057,10 @@ def _actor_loss_with_metrics(
     log_ratio = logp - batch.old_log_prob
     ratio = jnp.exp(log_ratio)
     clipped = jnp.clip(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon)
-    policy = -_mean(
-        jnp.minimum(ratio * advantages, clipped * advantages), batch.actor_samples
-    )
+    surrogate = jnp.minimum(ratio * advantages, clipped * advantages)
+    if batch.actor_weight is not None:
+        surrogate = batch.actor_weight * surrogate
+    policy = -_mean(surrogate, batch.actor_samples)
     entropy = _mean(action_entropy(logits, batch.action_mask), batch.actor_samples)
     diagnostics = (
         entropy,
@@ -2137,7 +2161,7 @@ def update_minibatch(
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static clipping, optimizer and loss settings. Use the same optimizer
         structure that created state's actor and critic optimizer trees.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static model choice. Recurrent samples use (G,T,E,5); feedforward samples
         use (G,Q,5). Empty groups contribute no gradient weight in either case.
 
@@ -2461,7 +2485,7 @@ def update_ppo(
         keys. Group/epoch splitting follows the pinned donor.
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static loss, input-frame, normalization and update settings.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static actor/critic and minibatch choice. IPPO shares each selected
         actor's encoded features with its separate local critic.
 
@@ -2475,10 +2499,16 @@ def update_ppo(
     ------
     ValueError
         Method, Threefry key, shapes, minibatch divisibility or clipping-anchor
-        presence is incompatible with the static settings.
+        presence is incompatible with the static settings, or method is
+        "happo" with parameter_sharing "all".
 
     Notes
     -----
+    method "happo" keeps every input and the critic update of MAPPO and
+    replaces the joint actor step with HAPPO's sequence (``_sequential_update``):
+    one random group order per update, each group trained alone and weighted
+    by the earlier groups' probability ratios.
+
     Compute GAE before shuffling. Recurrent updates keep whole game sequences
     and actor order. Feedforward updates shuffle time/game rows within each
     fixed group, retaining all five actors together. They require B divisible
@@ -2496,6 +2526,11 @@ def update_ppo(
     if length != config.rollout_length or actors != 5:
         raise ValueError("PPO needs T=rollout_length and five actor slots")
     validate_ppo_batch_size(games, config, method=method)
+    if method == "happo" and config.parameter_sharing == "all":
+        raise ValueError(
+            "HAPPO updates one actor group at a time; use parameter_sharing "
+            "'class' (one actor per class) or 'none' (one per slot)"
+        )
     if (batch.training_state is None) != uses_local_critic(method):
         raise ValueError("PPO method and critic training-state payload disagree")
     if not recurrent and any(
@@ -2537,103 +2572,329 @@ def update_ppo(
     minibatch_rows = group_rows // config.minibatches
     keys = jax.random.split(key, config.groups)
 
-    def epoch(
-        carry: tuple[PPOTrainState, Array], unused: None
-    ) -> tuple[tuple[PPOTrainState, Array], PPOMetrics]:
-        """Shuffle whole recurrent sequences or feedforward time/game rows."""
-        del unused
-        current, epoch_keys = carry
-        split = jax.vmap(functools.partial(jax.random.split, num=3))(epoch_keys)
-        next_keys, shuffle_keys = split[:, 0], split[:, 1]
-        permutations = jax.vmap(
-            functools.partial(jax.random.permutation, x=group_rows)
-        )(shuffle_keys)
-        indices = permutations
+    def take(value: Array, selected: Array) -> Array:
+        """Gather selected sequences or time/game rows from compact data."""
+        if recurrent:
+            return jnp.swapaxes(jnp.take(value, selected, axis=1), 0, 1)
+        time = selected // group_games
+        lane = selected % group_games + jnp.arange(config.groups)[:, None] * group_games
+        return value[time, lane]
+
+    def minibatch_rows_of(order: Array) -> Array:
+        """Turn per-group row orders (G,rows) into (minibatches,G,rows) picks."""
+        indices = order
         if recurrent:
             indices = indices + jnp.arange(config.groups)[:, None] * group_games
-        indices = indices.reshape(
+        return indices.reshape(
             config.groups, config.minibatches, minibatch_rows
         ).swapaxes(0, 1)
 
-        def minibatch(
-            current: PPOTrainState, selected: Array
-        ) -> tuple[PPOTrainState, PPOMetrics]:
-            """Expand only selected compact observations for this optimizer step."""
+    def encode(selected: Array) -> PPOMinibatch:
+        """Expand only selected compact observations into one minibatch."""
 
-            def take(value: Array) -> Array:
-                """Gather selected sequences or time/game rows from compact data."""
-                if recurrent:
-                    return jnp.swapaxes(jnp.take(value, selected, axis=1), 0, 1)
-                time = selected // group_games
-                lane = (
-                    selected % group_games
-                    + jnp.arange(config.groups)[:, None] * group_games
-                )
-                return value[time, lane]
+        def pick(value: Array) -> Array:
+            """Gather this minibatch's rows of one compact field."""
+            return take(value, selected)
 
-            compact = jax.tree.map(take, batch.observations)
-            expand = build_team_actor_input
-            for _ in range(3 if recurrent else 2):
-                expand = jax.vmap(expand, in_axes=(0, None))
-            actor_inputs = expand(compact, 0)
-            if config.spawn_frame == "world":
-                canonical = None
-                features = encode_actor_inputs(actor_inputs)
-            else:
-                canonical = _reflected_minibatch(
-                    actor_inputs,
-                    jax.tree.map(take, batch.action_mask),
-                    take(batch.actions),
-                    config.spawn_frame,
-                )
-                features = encode_actor_inputs(canonical[0])
-            critic = features
-            if batch.training_state is not None:
-                physical = take(batch.training_state)
-                critic = (
-                    jnp.broadcast_to(
-                        physical[..., None, :],
-                        (*features.shape[:-1], physical.shape[-1]),
-                    )
-                    if recurrent
-                    else physical
-                )
-            lane_shape = features.shape[:-1]
-            valid = jnp.broadcast_to(take(batch.valid)[..., None], lane_shape)
-            starts = jnp.broadcast_to(take(batch.episode_start)[..., None], lane_shape)
-            member = take(owned)
-            if canonical is None:
-                mask = categorical_action_mask(jax.tree.map(take, batch.action_mask))
-                actions = take(batch.actions)
-            else:
-                _, mask, actions = canonical
-            encoded = PPOMinibatch(
-                features,
-                critic,
-                mask,
-                actions,
-                take(batch.old_log_prob),
-                take(
-                    batch.old_values
-                    if batch.old_normalized_values is None
-                    else batch.old_normalized_values
-                ),
-                take(advantages),
-                take(targets),
-                starts,
-                valid,
-                valid & member & take(batch.alive),
-                valid & member,
-                batch.actor_memory[selected] if recurrent else (),
-                batch.critic_memory[selected] if recurrent else (),
-                None
-                if config.parameter_sharing == "all"
-                else _actor_groups(actor_inputs, config.parameter_sharing),
+        compact = jax.tree.map(pick, batch.observations)
+        expand = build_team_actor_input
+        for _ in range(3 if recurrent else 2):
+            expand = jax.vmap(expand, in_axes=(0, None))
+        actor_inputs = expand(compact, 0)
+        if config.spawn_frame == "world":
+            canonical = None
+            features = encode_actor_inputs(actor_inputs)
+        else:
+            canonical = _reflected_minibatch(
+                actor_inputs,
+                jax.tree.map(pick, batch.action_mask),
+                pick(batch.actions),
+                config.spawn_frame,
             )
-            return update_minibatch(current, encoded, config, method=method)
+            features = encode_actor_inputs(canonical[0])
+        critic = features
+        if batch.training_state is not None:
+            physical = pick(batch.training_state)
+            critic = (
+                jnp.broadcast_to(
+                    physical[..., None, :],
+                    (*features.shape[:-1], physical.shape[-1]),
+                )
+                if recurrent
+                else physical
+            )
+        lane_shape = features.shape[:-1]
+        valid = jnp.broadcast_to(pick(batch.valid)[..., None], lane_shape)
+        starts = jnp.broadcast_to(pick(batch.episode_start)[..., None], lane_shape)
+        member = pick(owned)
+        if canonical is None:
+            mask = categorical_action_mask(jax.tree.map(pick, batch.action_mask))
+            actions = pick(batch.actions)
+        else:
+            _, mask, actions = canonical
+        return PPOMinibatch(
+            features,
+            critic,
+            mask,
+            actions,
+            pick(batch.old_log_prob),
+            pick(
+                batch.old_values
+                if batch.old_normalized_values is None
+                else batch.old_normalized_values
+            ),
+            pick(advantages),
+            pick(targets),
+            starts,
+            valid,
+            valid & member & pick(batch.alive),
+            valid & member,
+            batch.actor_memory[selected] if recurrent else (),
+            batch.critic_memory[selected] if recurrent else (),
+            None
+            if config.parameter_sharing == "all"
+            else _actor_groups(actor_inputs, config.parameter_sharing),
+        )
 
-        current, metrics = jax.lax.scan(minibatch, current, indices)
-        return (current, next_keys), metrics
+    def run_epochs(
+        current: PPOTrainState,
+        epoch_keys: Array,
+        prepare: Callable[[PPOMinibatch, Array], PPOMinibatch],
+    ) -> tuple[PPOTrainState, Array, PPOMetrics]:
+        """Run config.epochs shuffled passes; prepare edits each minibatch."""
 
-    (state, _), metrics = jax.lax.scan(epoch, (state, keys), None, length=config.epochs)
-    return state, metrics
+        def epoch(
+            carry: tuple[PPOTrainState, Array], unused: None
+        ) -> tuple[tuple[PPOTrainState, Array], PPOMetrics]:
+            """Shuffle whole recurrent sequences or feedforward time/game rows."""
+            del unused
+            current, epoch_keys = carry
+            split = jax.vmap(functools.partial(jax.random.split, num=3))(epoch_keys)
+            next_keys, shuffle_keys = split[:, 0], split[:, 1]
+            permutations = jax.vmap(
+                functools.partial(jax.random.permutation, x=group_rows)
+            )(shuffle_keys)
+
+            def minibatch(
+                current: PPOTrainState, selected: Array
+            ) -> tuple[PPOTrainState, PPOMetrics]:
+                """Apply one optimizer step to one prepared minibatch."""
+                return update_minibatch(
+                    current, prepare(encode(selected), selected), config, method=method
+                )
+
+            current, metrics = jax.lax.scan(
+                minibatch, current, minibatch_rows_of(permutations)
+            )
+            return (current, next_keys), metrics
+
+        (current, epoch_keys), metrics = jax.lax.scan(
+            epoch, (current, epoch_keys), None, length=config.epochs
+        )
+        return current, epoch_keys, metrics
+
+    if method != "happo":
+        state, _, metrics = run_epochs(state, keys, lambda encoded, _: encoded)
+        return state, metrics
+    return _sequential_update(
+        state,
+        batch,
+        config,
+        method=method,
+        order_key=jax.random.fold_in(key, 1),
+        keys=keys,
+        eligible=samples & batch.alive,
+        run_epochs=run_epochs,
+        encode=encode,
+        take=take,
+        unshuffled=minibatch_rows_of(
+            jnp.broadcast_to(jnp.arange(group_rows), (config.groups, group_rows))
+        ),
+    )
+
+
+def _happo_factor(
+    factor: Array, new_log_prob: Array, old_log_prob: Array, updated: Array
+) -> Array:
+    """Fold one updated group's probability ratios into HAPPO's factor.
+
+    Parameters
+    ----------
+    factor : Array
+        Float32 (T,B): the product of the earlier groups' ratios at each step
+        and game, 1 before the first group.
+    new_log_prob, old_log_prob : Array
+        Float32 (T,B,5) log probabilities of the taken actions under the
+        just-updated actor and at action time.
+    updated : Array
+        Bool (T,B,5): rows of the just-updated group that had a policy sample.
+        Every other row (another group's, or dead, inactive or padded)
+        contributes 1.
+
+    Returns
+    -------
+    Array
+        Float32 (T,B): factor times the product of
+        ``exp(new_log_prob - old_log_prob)`` over the updated rows, with no
+        gradient.
+    """
+    ratio = jnp.exp(new_log_prob - old_log_prob)
+    return jax.lax.stop_gradient(
+        factor * jnp.prod(jnp.where(updated, ratio, 1.0), axis=-1)
+    )
+
+
+def _sequential_update(
+    state: PPOTrainState,
+    batch: PPOBatch,
+    config: PPOConfig,
+    *,
+    method: str,
+    order_key: Array,
+    keys: Array,
+    eligible: Array,
+    run_epochs: Callable[
+        [PPOTrainState, Array, Callable[[PPOMinibatch, Array], PPOMinibatch]],
+        tuple[PPOTrainState, Array, PPOMetrics],
+    ],
+    encode: Callable[[Array], PPOMinibatch],
+    take: Callable[[Array, Array], Array],
+    unshuffled: Array,
+) -> tuple[PPOTrainState, PPOMetrics]:
+    """Apply HAPPO's update: the critic once, then each actor group in turn.
+
+    Parameters
+    ----------
+    state : PPOTrainState
+        The learner before this update; its actor has one parameter group per
+        class (or slot), each with its own optimizer state.
+    batch : PPOBatch
+        The owned compact rollout, actions (T,B,5).
+    config : PPOConfig
+        Static settings; parameter_sharing is "class" or "none".
+    method : str
+        "happo".
+    order_key : Array
+        Key for this update's random group order (one permutation of five).
+    keys : Array
+        Per-gradient-group shuffle keys, continued through every pass.
+    eligible : Array
+        Bool (T,B,5): rows with a policy sample (real, owned, alive).
+    run_epochs, encode, take : callable
+        update_ppo's shuffled epoch loop, minibatch builder and row gatherer,
+        so every pass prepares minibatches exactly as the joint update does.
+    unshuffled : Array
+        (minibatches,G,rows) picks covering every row once, in order, for the
+        log-probability passes.
+
+    Returns
+    -------
+    tuple[PPOTrainState, PPOMetrics]
+        The updated learner and (epochs,minibatches) metrics: critic fields
+        from the critic pass; actor fields averaged over the five group passes,
+        weighted by their actor sample counts (summed in actor_samples).
+
+    Notes
+    -----
+    Kuba et al., ICLR 2022, as in HARL's ``on_policy_ha_runner``: one random
+    group order per update; the factor starts at 1 for every step and game and,
+    after each group's epochs, is multiplied by that group's new-to-old
+    probability ratios on its own rows. A row with no policy sample
+    contributes 1. The factor weights the next groups' clipped surrogates
+    (``PPOMinibatch.actor_weight``); it carries no gradient. Advantages are the
+    joint update's and are standardized per gradient group as in every PPO
+    method here. The critic pass equals MAPPO's critic update, and an actor pass
+    moves only its own group's parameters and optimizer state, because the
+    other groups have no actor samples in it. Pure JAX; no I/O.
+    """
+
+    def critic_only(encoded: PPOMinibatch, _: Array) -> PPOMinibatch:
+        """Keep every critic sample and no actor sample."""
+        return encoded._replace(actor_samples=jnp.zeros_like(encoded.actor_samples))
+
+    state, keys, critic_metrics = run_epochs(state, keys, critic_only)
+
+    def log_probs(params: Tree) -> tuple[Array, Array]:
+        """Return (T,B,5) log probabilities of the taken actions and group IDs."""
+
+        def one(
+            carry: tuple[Array, Array], selected: Array
+        ) -> tuple[tuple[Array, Array], None]:
+            """Fill one unshuffled minibatch's rows."""
+            out, groups = carry
+            encoded = encode(selected)
+
+            def group_logits(group: PPOMinibatch) -> Array:
+                """Return one gradient group's logits under the given actor."""
+                return _actor_logits(params, group, config, method=method)
+
+            logits = cast(Array, jax.lax.map(group_logits, encoded))
+            logp = action_log_prob(logits, encoded.action_mask, encoded.actions)
+            owner = cast(Array, encoded.actor_group)
+            if is_recurrent_method(method):
+                rows = selected.reshape(-1)
+                flat = jnp.swapaxes(logp, 0, 1).reshape(logp.shape[1], -1, 5)
+                owners = jnp.swapaxes(owner, 0, 1).reshape(owner.shape[1], -1, 5)
+                return (
+                    out.at[:, rows].set(flat),
+                    groups.at[:, rows].set(owners),
+                ), None
+            time = selected // (batch.actions.shape[1] // config.groups)
+            lane = selected % (batch.actions.shape[1] // config.groups) + (
+                jnp.arange(config.groups)[:, None]
+                * (batch.actions.shape[1] // config.groups)
+            )
+            return (
+                out.at[time, lane].set(logp),
+                groups.at[time, lane].set(owner),
+            ), None
+
+        start = (
+            jnp.zeros(batch.actions.shape, jnp.float32),
+            jnp.zeros(batch.actions.shape, jnp.int32),
+        )
+        (logp, groups), _ = jax.lax.scan(one, start, unshuffled)
+        return logp, groups
+
+    def one_group(
+        carry: tuple[PPOTrainState, Array, Array], group: Array
+    ) -> tuple[tuple[PPOTrainState, Array, Array], PPOMetrics]:
+        """Update one actor group with the factor, then fold its ratios in."""
+        current, pass_keys, factor = carry
+
+        def actor_only(encoded: PPOMinibatch, selected: Array) -> PPOMinibatch:
+            """Keep only this group's actor samples, weighted by the factor."""
+            mine = cast(Array, encoded.actor_group) == group
+            return encoded._replace(
+                actor_samples=encoded.actor_samples & mine,
+                critic_samples=jnp.zeros_like(encoded.critic_samples),
+                actor_weight=jnp.broadcast_to(
+                    take(factor, selected)[..., None], encoded.actions.shape
+                ),
+            )
+
+        current, pass_keys, metrics = run_epochs(current, pass_keys, actor_only)
+        logp, owners = log_probs(current.actor_params)
+        factor = _happo_factor(
+            factor, logp, batch.old_log_prob, eligible & (owners == group)
+        )
+        return (current, pass_keys, factor), metrics
+
+    order = jax.random.permutation(order_key, 5)
+    start = (state, keys, jnp.ones(batch.actions.shape[:2], jnp.float32))
+    (state, _, _), actor_metrics = jax.lax.scan(one_group, start, order)
+    counts = actor_metrics.actor_samples.astype(jnp.float32)
+    total = jnp.sum(counts, axis=0)
+
+    def weighted(value: Array) -> Array:
+        """Average one actor field over the group passes by sample count."""
+        return jnp.sum(value * counts, axis=0) / jnp.maximum(total, 1.0)
+
+    return state, critic_metrics._replace(
+        actor_loss=weighted(actor_metrics.actor_loss),
+        entropy=weighted(actor_metrics.entropy),
+        actor_samples=jnp.sum(actor_metrics.actor_samples, axis=0),
+        approx_kl=weighted(actor_metrics.approx_kl),
+        policy_clip_fraction=weighted(actor_metrics.policy_clip_fraction),
+        actor_grad_norm=weighted(actor_metrics.actor_grad_norm),
+    )

@@ -133,13 +133,20 @@ class TrainConfig:
     ----------
     seed : int, default=42
         Root seed for model and independent collection/shuffle/sampling streams.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
-default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", \
+"pqn_vdn"}, default="mappo"
         Learner saved with the run. MAPPO uses physical critic inputs; IPPO
         uses each actor's permitted inputs. The ff_ methods use two 128-wide
-        layers without recurrent memory. "qmix" is recurrent QMIX with compact
-        replay, configured by qmix instead of ppo. "pqn_vdn" is recurrent
-        PQN-VDN (no replay or target network), configured by pqn.
+        layers without recurrent memory. "happo" (HAPPO, Kuba et al., ICLR
+        2022) keeps recurrent MAPPO's networks and critic inputs but updates
+        one actor group at a time, in a random order, each weighted by the
+        earlier groups' policy change. It needs per-group actors: the default
+        ppo becomes PPOConfig(parameter_sharing="class"), one actor per class;
+        a custom ppo must set parameter_sharing "class" or "none", and "all" is
+        refused. It assumes one shared team reward, such as
+        combat_support_team_reward. "qmix" is recurrent QMIX
+        with compact replay, configured by qmix instead of ppo. "pqn_vdn" is
+        recurrent PQN-VDN (no replay or target network), configured by pqn.
     num_envs : int, default=32
         Fixed even environment batch. Recurrent PPO methods require
         divisibility by PPO groups times minibatches. Feedforward methods
@@ -440,8 +447,10 @@ default="mappo"
         """Reject invalid host settings without allocating numerical arrays.
 
         Resolves qmix=None to DEFAULT_QMIX_CONFIG for QMIX runs, pqn=None to
-        DEFAULT_PQN_CONFIG for PQN-VDN runs and checkpoint_interval_updates=None
-        to 25 (PPO) or 1600 (QMIX and PQN-VDN). red_zone_depth is checked by
+        DEFAULT_PQN_CONFIG for PQN-VDN runs, the untouched default ppo to
+        PPOConfig(parameter_sharing="class") for HAPPO runs and
+        checkpoint_interval_updates=None to 25 (PPO) or 1600 (QMIX and
+        PQN-VDN). red_zone_depth is checked by
         the shared host copy of Core's scalar rules
         (``_validate_red_zone_depth``); map widths are checked later,
         when train prepares the content.
@@ -475,6 +484,14 @@ default="mappo"
                 if method == "qmix"
                 else "A PPO run takes no PQN settings"
             )
+        if method == "happo" and self.ppo.parameter_sharing == "all":
+            if self.ppo != PPOConfig():
+                raise ValueError(
+                    "HAPPO updates one actor group at a time; give its ppo "
+                    "settings parameter_sharing='class' (one actor per class) "
+                    "or 'none' (one per slot)"
+                )
+            object.__setattr__(self, "ppo", PPOConfig(parameter_sharing="class"))
         if self.checkpoint_interval_updates is None:
             object.__setattr__(
                 self,

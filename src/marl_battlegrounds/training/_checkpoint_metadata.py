@@ -62,6 +62,7 @@ _MODELS = {
     "ippo": "recurrent_ippo_128",
     "ff_mappo": "feedforward_mappo_128x128",
     "ff_ippo": "feedforward_ippo_128x128",
+    "happo": "recurrent_happo_128",
     "qmix": "recurrent_qmix_256",
     "pqn_vdn": "recurrent_pqn_vdn_512",
 }
@@ -243,8 +244,9 @@ def _schema_method(schemas: object) -> str:
     schemas must exactly match either checkpoint_schemas for a known model
     (the current dictionary) or that model's frozen pre-Red-Zone dictionary in
     _ACTOR_INPUT_1_SCHEMAS (actor input 1, and training state 1 where the
-    method has it). A mixed dictionary, such as actor input 2 with training
-    state 1, matches neither and is rejected. Reject unknown models, altered
+    method has it). HAPPO, added after the Red Zone, has only the current
+    one. A mixed dictionary, such as actor input 2 with training state 1,
+    matches neither and is rejected. Reject unknown models, altered
     versions/types, missing fields and extra fields with ValueError. Each
     method's own dictionary sets the types, so Boolean or float versions (such
     as a forged ``"replay": true``) do not stand in for integers. This
@@ -253,7 +255,9 @@ def _schema_method(schemas: object) -> str:
     """
     value = _object(schemas, "Checkpoint schemas")
     for method, model in _MODELS.items():
-        for expected in (checkpoint_schemas(method), _ACTOR_INPUT_1_SCHEMAS[method]):
+        historical = _ACTOR_INPUT_1_SCHEMAS.get(method)
+        current = checkpoint_schemas(method)
+        for expected in (current,) if historical is None else (current, historical):
             if (
                 value.get("model") == model
                 and value == expected
@@ -604,7 +608,7 @@ def checkpoint_schemas(method: str = "mappo") -> dict[str, int | str]:
 
     Parameters
     ----------
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
 default="mappo"
         Static method. Unknown values raise ValueError through the shared
         method check. MAPPO keeps its historical keys, including learner_keys.

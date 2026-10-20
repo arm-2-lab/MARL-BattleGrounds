@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from typing import Any, cast
 
-_PPO_METHODS = frozenset(("mappo", "ippo", "ff_mappo", "ff_ippo"))
+_PPO_METHODS = frozenset(("mappo", "ippo", "ff_mappo", "ff_ippo", "happo"))
 _MAX_COUNT = 2**31 - 1
 _PQN_FLOOR = 1e-10
 CONTINUATION_CHANGE_KEYS = frozenset(

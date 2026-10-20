@@ -4,7 +4,8 @@ Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or 
 ``--check`` to reject drift without writing. Requires the hydra extra. Only packaged
 YAML changes. This tool starts no numerical backend or training; software_check values
 exercise wiring and are not paper hyperparameters. The default recipe holds the settings
-of each method's tournament policy run (SELECTED_RECIPES;
+of each method's tournament policy run (HAPPO, which has none yet, takes recurrent
+MAPPO's with the team reward and one actor per class) (SELECTED_RECIPES;
 scripts/paper_experiments/hyperparameter_search.md, Final Policies): its seed, learner
 settings, games, reward and 250,675,200-transition budget, and the search's training and
 validation settings. The dataclass defaults are unchanged.
@@ -101,6 +102,15 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
         "num_envs": 512,
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
+    },
+    # HAPPO has no tournament run yet: recurrent MAPPO's, untuned (decision 80),
+    # with the team reward HAPPO's theory assumes and one actor per class.
+    "happo": {
+        **_TOURNAMENT_PROTOCOL,
+        "seed": 20261002,
+        "num_envs": 512,
+        "reward": _TEAM_REWARD,
+        "ppo": {**_PPO_SELECTED, "parameter_sharing": "class"},
     },
     "qmix": {
         **_TOURNAMENT_PROTOCOL,
@@ -840,6 +850,9 @@ def presets() -> dict[str, dict[str, Any]]:
             "method": method,
             field: _defaults(settings[field]),
         }
+        if method == "happo":
+            # HAPPO updates one actor group at a time, so it needs one per class.
+            result["method/happo.yaml"]["ppo"]["parameter_sharing"] = "class"
         result[f"recipe_settings/default_{method}.yaml"] = deepcopy(
             SELECTED_RECIPES[method]
         )

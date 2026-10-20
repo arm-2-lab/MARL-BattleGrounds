@@ -58,13 +58,14 @@ from dataclasses import asdict, dataclass
 from numbers import Real
 from typing import Literal, cast
 
-type PPOMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo"]
+type PPOMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo", "happo"]
 
 _METHODS = {
     "mappo": (True, False, "Recurrent MAPPO"),
     "ippo": (True, True, "Recurrent IPPO"),
     "ff_mappo": (False, False, "Feedforward MAPPO"),
     "ff_ippo": (False, True, "Feedforward IPPO"),
+    "happo": (True, False, "Recurrent HAPPO"),
 }
 
 _PARAMETER_SHARING = ("all", "class", "none")
@@ -83,11 +84,14 @@ SPAWN_FRAMES = ("world", "left")
 def validate_ppo_method(method: str) -> PPOMethod:
     """Return a supported static PPO method name or raise ValueError.
 
-    Accept mappo, ippo, ff_mappo and ff_ippo. This host-only check allocates no
+    Accept mappo, ippo, ff_mappo, ff_ippo and happo. HAPPO (Kuba et al., ICLR
+    2022) uses recurrent MAPPO's networks and training-only critic view and
+    differs only in its update: one actor group at a time, in a random order.
+    This host-only check allocates no
     arrays and owns the method choices shared by models, training and storage.
     """
     if not isinstance(cast(object, method), str) or method not in _METHODS:
-        raise ValueError("PPO method must be mappo, ippo, ff_mappo or ff_ippo")
+        raise ValueError("PPO method must be mappo, ippo, ff_mappo, ff_ippo or happo")
     return cast(PPOMethod, method)
 
 

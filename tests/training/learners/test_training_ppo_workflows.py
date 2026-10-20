@@ -2,8 +2,9 @@
 
 Real Alpha validation, interrupted resume, checkpoint selection, actor loading
 and evaluation share the existing owners. Validation must not change learner
-leaves; saved results must keep exact counts and method/actor identity. These
-four CPU cases establish workflow correctness, not learning or GPU speed.
+leaves; saved results must keep exact counts and method/actor identity. HAPPO
+runs the same workflow with one actor per class. These five CPU cases
+establish workflow correctness, not learning or GPU speed.
 """
 
 import json
@@ -18,7 +19,7 @@ from marl_battlegrounds.baselines.ppo import PPOConfig, PPOMethod
 from marl_battlegrounds.training.learner import LearnerState
 
 
-@pytest.mark.parametrize("method", ("mappo", "ippo", "ff_mappo", "ff_ippo"))
+@pytest.mark.parametrize("method", ("mappo", "ippo", "ff_mappo", "ff_ippo", "happo"))
 def test_public_variant_train_validate_resume_select_load_and_evaluate(
     method: PPOMethod,
     tmp_path: Path,
@@ -51,7 +52,13 @@ def test_public_variant_train_validate_resume_select_load_and_evaluate(
         seed=19047101,
         num_envs=4,
         total_env_steps=32,
-        ppo=PPOConfig(rollout_length=4, groups=2, minibatches=2, epochs=1),
+        ppo=PPOConfig(
+            rollout_length=4,
+            groups=2,
+            minibatches=2,
+            epochs=1,
+            parameter_sharing="class" if method == "happo" else "all",
+        ),
         checkpoint_interval_updates=1,
         validation_fractions=(0.5, 1.0),
         routine_seed_pairs=1,

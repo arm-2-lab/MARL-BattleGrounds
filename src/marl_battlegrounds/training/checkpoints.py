@@ -1023,7 +1023,7 @@ def save_checkpoint(
         input scale, spawn frame and value-normalization setting must equal the
         saved config's, and the state must carry matching statistics, else the
         save is refused before any file changes. The default's frame is "left".
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
 default="mappo"
         Static learner method, matching metadata.config.method and the complete
         numerical state. Missing historical config method means MAPPO. Conflicts
@@ -1303,7 +1303,7 @@ def restore_checkpoint(
         checkpoint's, else restore
         is refused before arrays are read. The default's frame is "left", so a
         checkpoint trained in "world" needs the matching config passed here.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
 default="mappo"
         Static requested method. It must agree with saved/expected config and
         the model schema before any numerical arrays are restored. Missing
@@ -1683,7 +1683,7 @@ def _actor_template(
     Parameters
     ----------
     method : str, default="mappo"
-        Training method: "mappo", "ippo", "ff_mappo", "ff_ippo", "qmix" or
+        Training method: "mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix" or
         "pqn_vdn".
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         2 for the current 5,165-feature actors, or 1 for actors saved before
@@ -1860,7 +1860,7 @@ def export_system(
         the description and the inference identity; "world" writes no key, so
         world exports keep their historical description bytes. PQN-VDN
         exports always write the frame.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
 default="mappo"
         Method that trained these weights. Its model schema is the export's
         sole method authority. Equal actor shapes/bytes do not make different
@@ -2439,7 +2439,7 @@ def checkpoint_dependencies(method: str = "mappo") -> dict[str, str]:
 
     Parameters
     ----------
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"}, \
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
 default="mappo"
         Training method. QMIX also records Flashbax; PPO and PQN-VDN record
         exactly the historical set, so PPO identities keep their bytes.

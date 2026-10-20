@@ -463,7 +463,7 @@ def init_learner(
         default's frame is "left".
         Counters and per-minibatch sample counts must fit int32 for the
         complete scheduled run.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static actor/critic choice. IPPO uses only local critic inputs and omits
         physical-state collection. Feedforward methods keep empty actor/critic
         memory and require T*B, rather than B, divisible by groups*minibatches.
@@ -732,7 +732,7 @@ def build_ppo_batch(
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Original learner settings. The critic uses its fixed input scale for
         both sequence values and the final bootstrap value.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static initialized method. IPPO reconstructs only permitted local inputs,
         using the actor's saved frame and the critic's independent memory.
 
@@ -1159,7 +1159,7 @@ def update_learner(
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Same static settings used at initialization. Capture these in the jit
         wrapper; changing ordinary state/data values does not make them static.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Same static method used at initialization. Keep it in the compiled
         wrapper; it is not stored as a dynamic learner-state leaf.
 
@@ -1316,7 +1316,7 @@ def validate_learner(
         Fully restored numerical boundary, including initialization at update 0.
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Original static learner settings; optimizer/network shapes must agree.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Original static method; memory, critic payload and model shapes must
         match. Never infer it from actor shapes, which MAPPO and IPPO share.
     recheck_installed_content : bool, default=True

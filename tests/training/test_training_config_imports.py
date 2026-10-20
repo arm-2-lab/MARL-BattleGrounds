@@ -3,8 +3,11 @@
 Fresh processes keep these checks independent of pytest's numerical fixtures.
 The public export list must include every registered lazy helper without
 importing those helpers or their optional dependencies.
-The JSON fixture was captured before the configuration extraction. Numerical
-module aliases are checked separately, since those modules require training.
+The JSON fixture was captured before the configuration extraction, for the
+six methods that existed then; HAPPO's defaults are recurrent MAPPO's with
+its own method name and one actor per class, and a custom HAPPO ppo that
+shares one actor is refused. Numerical module aliases are checked separately,
+since those modules require training.
 """
 
 import json
@@ -25,7 +28,7 @@ from marl_battlegrounds.training.config import (
 )
 
 
-def test_six_methods_and_full_host_validation_without_numerical_imports() -> None:
+def test_every_method_and_full_host_validation_without_numerical_imports() -> None:
     script = """
 import sys
 from importlib.abc import MetaPathFinder
@@ -83,7 +86,10 @@ assert not {'jax', 'flax', 'optax', 'flashbax', 'numpy'} & sys.modules.keys()
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("method", TRAINING_METHODS)
+HISTORICAL_METHODS = ("mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn")
+
+
+@pytest.mark.parametrize("method", HISTORICAL_METHODS)
 def test_all_configuration_defaults_match_before_extraction(method: str) -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "training_config_defaults.json"
     expected = json.loads(fixture.read_text())[method]
@@ -92,6 +98,22 @@ def test_all_configuration_defaults_match_before_extraction(method: str) -> None
     expected = {**expected, "retain_all_actors": False}
     assert actual == expected
     assert config_to_dict(config_from_dict(actual)) == expected
+
+
+def test_happo_defaults_are_mappo_with_one_actor_per_class() -> None:
+    assert set(TRAINING_METHODS) == {*HISTORICAL_METHODS, "happo"}
+    mappo = config_to_dict(config_from_dict({"method": "mappo"}))
+    happo = config_to_dict(config_from_dict({"method": "happo"}))
+    assert happo == {
+        **mappo,
+        "method": "happo",
+        "ppo": {**mappo["ppo"], "parameter_sharing": "class"},
+    }
+    assert config_from_dict(happo) == config_from_dict({"method": "happo"})
+    custom = TrainConfig(method="happo", ppo=PPOConfig(parameter_sharing="none"))
+    assert custom.ppo.parameter_sharing == "none"
+    with pytest.raises(ValueError, match="one actor group at a time"):
+        TrainConfig(method="happo", ppo=PPOConfig(actor_lr=0.0001))
 
 
 def test_old_imports_are_the_same_objects() -> None:

@@ -3,7 +3,7 @@
 Three routes write a protocol/ folder that later stages read:
 
 - analysis_software_check copies labelled synthetic saved results.
-- software_check verifies the frozen opponent pool and writes a six-method
+- software_check verifies the frozen opponent pool and writes an every-method
   wiring-check declaration with small settings.
 - declared_study verifies an opponent bundle against a committed list of
   expected identities, binds a committed study declaration's public opponent
@@ -250,7 +250,7 @@ def _publish_protocol(root: Path, records: Mapping[str, str]) -> Path:
 
 
 def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) -> Path:
-    """Prepare the six-method wiring check from an explicit frozen opponent pool.
+    """Prepare the every-method wiring check from an explicit frozen opponent pool.
 
     opponent_bundle names a local folder containing pool.json and its declared
     actors. Verify the selected eight identities and three scripted names before
@@ -309,7 +309,7 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
         else value
         for name, value in references.items()
     }
-    order = ("mappo", "ff_mappo", "ippo", "ff_ippo", "qmix", "pqn_vdn")
+    order = ("mappo", "ff_mappo", "ippo", "ff_ippo", "happo", "qmix", "pqn_vdn")
     if set(order) != set(TRAINING_METHODS):
         raise ValueError("Software-check method census differs from training methods")
     cases: list[dict[str, Any]] = []
@@ -372,7 +372,7 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
         )
     study = {
         "schema_version": 1,
-        "name": "Six Method Software Check",
+        "name": "Built-In Method Software Check",
         "failure_policy": "stop",
         "cases": cases,
     }
@@ -613,7 +613,7 @@ def prepare_declared_study(
 
     See Also
     --------
-    prepare_software_check : The small six-method wiring check.
+    prepare_software_check : The small every-method wiring check.
     marl_battlegrounds.training.preview_study : Lists the prepared runs.
     """
     from marl_battlegrounds.experiments.hydra import (

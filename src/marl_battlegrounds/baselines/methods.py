@@ -11,14 +11,16 @@ registry.
 
 from typing import Literal
 
-type TrainingMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo", "qmix", "pqn_vdn"]
+type TrainingMethod = Literal[
+    "mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"
+]
 """A built-in training method name."""
 
 type SettingsField = Literal["ppo", "qmix", "pqn"]
 """The TrainConfig field that holds one method's settings."""
 
-PPO_METHODS = ("mappo", "ippo", "ff_mappo", "ff_ippo")
-"""The four PPO method names, in their historical order."""
+PPO_METHODS = ("mappo", "ippo", "ff_mappo", "ff_ippo", "happo")
+"""The five PPO method names: the four historical ones, then HAPPO."""
 TRAINING_METHODS = (*PPO_METHODS, "qmix", "pqn_vdn")
 """Every built-in training method name."""
 
@@ -48,13 +50,14 @@ def validate_training_method(method: object) -> TrainingMethod:
     """
     if not isinstance(method, str) or method not in TRAINING_METHODS:
         raise ValueError(
-            "Training method must be mappo, ippo, ff_mappo, ff_ippo, qmix or pqn_vdn"
+            "Training method must be mappo, ippo, ff_mappo, ff_ippo, happo, qmix "
+            "or pqn_vdn"
         )
     return method
 
 
 def is_ppo_method(method: object) -> bool:
-    """Return True for the four PPO names; raise ValueError for unknown names.
+    """Return True for the five PPO names; raise ValueError for unknown names.
 
     Parameters
     ----------
@@ -64,13 +67,13 @@ def is_ppo_method(method: object) -> bool:
     Returns
     -------
     bool
-        True for mappo, ippo, ff_mappo and ff_ippo; False for qmix and
+        True for mappo, ippo, ff_mappo, ff_ippo and happo; False for qmix and
         pqn_vdn.
 
     Raises
     ------
     ValueError
-        method is not one of the six training method names.
+        method is not one of the seven training method names.
     """
     return validate_training_method(method) in PPO_METHODS
 
@@ -86,13 +89,13 @@ def method_settings_field(method: object) -> SettingsField:
     Returns
     -------
     SettingsField
-        "ppo" for the four PPO methods, "qmix" for qmix and "pqn" for
+        "ppo" for the five PPO methods, "qmix" for qmix and "pqn" for
         pqn_vdn. Saved configs keep each method's settings under this key.
 
     Raises
     ------
     ValueError
-        method is not one of the six training method names.
+        method is not one of the seven training method names.
 
     Examples
     --------
