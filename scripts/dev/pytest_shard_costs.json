@@ -28,6 +28,7 @@
   "reserved_reason": "Hosted CI runs Pyright before the tests of shard 19.",
   "files": {
     "tests/baselines/test_baseline_actions.py": 32,
+    "tests/baselines/test_baseline_happo_reference.py": 71,
     "tests/baselines/test_baseline_inputs.py": 88,
     "tests/baselines/test_baseline_parameter_sharing.py": 140,
     "tests/baselines/test_baseline_ppo.py": 174,
@@ -270,7 +271,7 @@
     "tests/training/continuation/test_training_warm_start_placement.py": 156,
     "tests/training/learners/test_training_learner.py": 620,
     "tests/training/learners/test_training_ppo_variants.py": 690,
-    "tests/training/learners/test_training_ppo_workflows.py": 1296,
+    "tests/training/learners/test_training_ppo_workflows.py": 1626,
     "tests/training/learners/test_training_pqn_checkpoints.py": 684,
     "tests/training/learners/test_training_pqn_learner.py": 200,
     "tests/training/learners/test_training_pqn_offsets.py": 454,
