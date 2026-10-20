@@ -2,10 +2,11 @@
 
 These tests use temporary local files and a loopback HTTP server. They check
 bounded integrity reads, missing/corrupt data, custom caches, metadata closure,
-truthful controller evidence and failure before actions. No released Big 12,
-external downloads, games or public catalog mutation are needed. Reference
-loading keeps saved sampling facts; client scope checks live in the cached
-tournament execution tests.
+truthful controller evidence and failure before actions. The environment
+source manifest takes Core with or without core/objectives.py and refuses an
+incomplete one. No released Big 12, external downloads, games or public
+catalog mutation are needed. Reference loading keeps saved sampling facts;
+client scope checks live in the cached tournament execution tests.
 """
 
 from __future__ import annotations
@@ -657,6 +658,33 @@ def test_environment_execution_checks_source_and_dependency_identity(
     config["compatibility"]["environment_id"] = "0" * 64
     with pytest.raises(ValueError, match="differs from environment_id"):
         assets.verify_tournament_environment(config, verifier, execution=False)
+
+
+def test_source_manifest_takes_core_with_or_without_its_objective_file(
+    tmp_path: Path,
+) -> None:
+    from marl_battlegrounds.evaluation.tournament_config import canonical_json
+
+    def verify(files: list[dict[str, str]]) -> None:
+        config = _environment_config(tmp_path)
+        sources = {"format": "marlbg-environment-sources", "version": 1, "files": files}
+        config["assets"]["source"] = _asset(
+            tmp_path, "source", canonical_json(sources), "qualification"
+        )
+        config["compatibility"]["environment_id"] = sha256(
+            canonical_json(sources)
+        ).hexdigest()
+        assets.verify_tournament_environment(
+            config, assets.AssetVerifier(config), execution=False
+        )
+
+    installed = assets.environment_source_manifest()["files"]
+    eight = [entry for entry in installed if entry["path"] != "core/objectives.py"]
+    verify(eight)
+    objective = {"path": "core/objectives.py", "sha256": "0" * 64}
+    verify(sorted([*eight, objective], key=lambda entry: entry["path"]))
+    with pytest.raises(ValueError, match="complete, unique and ordered"):
+        verify([entry for entry in eight if entry["path"] != "core/env.py"])
 
 
 def test_reuse_can_analyze_recorded_versions_without_importing_the_runtime(

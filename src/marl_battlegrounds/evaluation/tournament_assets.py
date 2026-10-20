@@ -42,6 +42,21 @@ if TYPE_CHECKING:
 
 _BUFFER_BYTES = 1024 * 1024
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+# The source files every environment manifest lists. Core's objective rules
+# file arrived with Capture the Flag, so manifests recorded earlier lack it.
+_ENVIRONMENT_SOURCE_PATHS = frozenset(
+    {
+        "core/__init__.py",
+        "core/axis_mappings.py",
+        "core/combat.py",
+        "core/config.py",
+        "core/env.py",
+        "core/geometry.py",
+        "core/types.py",
+        "tasks.py",
+    }
+)
+_OBJECTIVE_SOURCE_PATH = "core/objectives.py"
 _PAYLOAD_ROLES = frozenset({"model", "outcomes_priority", "full_report", "replay"})
 _METADATA_ROLES = frozenset(
     {
@@ -1321,10 +1336,13 @@ def verify_tournament_environment(
 
     config is the resolved tournament descriptor. The shared verifier checks its
     source manifest and inference lock assets. Both need supported format-1
-    structures, exact ordered paths, hashes and versions. When execution is True,
-    the current installed Core/task bytes, Python and declared distributions must
-    match. False validates recorded evidence without requiring a simulation
-    runtime: complete reuse reads games produced by that recorded environment.
+    structures, exact ordered paths, hashes and versions. The manifest lists
+    Core's seven files and tasks.py, plus core/objectives.py when the recorded
+    install had it (manifests from before Capture the Flag do not). When
+    execution is True, the current installed Core/task bytes, Python and
+    declared distributions must match. False validates recorded evidence
+    without requiring a simulation runtime: complete reuse reads games produced
+    by that recorded environment.
 
     Missing/changed assets or incompatible evidence raise ValueError. This never
     imports JAX, queries devices, executes a factory or alters a run. Unknown
@@ -1369,16 +1387,11 @@ def verify_tournament_environment(
         ):
             raise ValueError("Environment source path leaves Core/task ownership")
         paths.append(path)
-    if paths != sorted(set(paths)) or set(paths) != {
-        "core/__init__.py",
-        "core/axis_mappings.py",
-        "core/combat.py",
-        "core/config.py",
-        "core/env.py",
-        "core/geometry.py",
-        "core/types.py",
-        "tasks.py",
-    }:
+    if paths != sorted(set(paths)) or not (
+        _ENVIRONMENT_SOURCE_PATHS
+        <= set(paths)
+        <= _ENVIRONMENT_SOURCE_PATHS | {_OBJECTIVE_SOURCE_PATH}
+    ):
         raise ValueError(
             "Environment source paths must be complete, unique and ordered"
         )
