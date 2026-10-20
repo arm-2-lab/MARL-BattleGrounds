@@ -829,10 +829,12 @@ def main(config: DictConfig) -> Path:
         declaration, uses opponent_bundle, and reads the optional
         expected_opponents (default: opponents.yaml beside the declaration)
         and recipe_selection files. Without opponent_bundle, declared_study
-        downloads the released training opponents into
-        output_dir/opponents/training-opponents (ordinary files; Hugging Face
-        records the exact commit under output_dir/opponents/.cache) and print
-        their exact ``hf://datasets/...`` address. Relative command paths use
+        fetches the released training opponents into Hugging Face's standard
+        cache (or uses them there, offline, after ``models download
+        MARL-BattleGrounds/tdm-season-0-results/training-opponents``), copies
+        them into output_dir/opponents/training-opponents as ordinary files,
+        and prints their exact ``hf://datasets/...@<commit>/...`` address.
+        Relative command paths use
         the original working directory; "~" expands to the home folder.
 
     Returns

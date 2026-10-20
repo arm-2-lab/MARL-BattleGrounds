@@ -439,7 +439,9 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help=(
             "Released model names to download for offline use, for example "
-            "MARL-BattleGrounds/tdm-season-0-qmix@final; omit for tournament assets"
+            "MARL-BattleGrounds/tdm-season-0-qmix@final, or a training-opponent "
+            "pool such as MARL-BattleGrounds/tdm-season-0-results/"
+            "training-opponents; omit for tournament assets"
         ),
     )
     download.add_argument(
@@ -608,7 +610,7 @@ def _load_method(reference: str) -> System | Policy | str:
 def _download_names(
     namespace: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> int:
-    """Download released models named on the command line and print each file.
+    """Download released models or opponent pools named on the command line.
 
     Parameters
     ----------
@@ -626,13 +628,15 @@ def _download_names(
 
     Notes
     -----
-    Prints, for each name, its exact saved address and its local file in
-    Hugging Face's standard cache. Errors from released_models propagate to
-    main, which prints them and returns 1. Afterwards the files load with
+    Prints, for each name, ``<name>: <exact saved address>`` and then
+    ``Local File: <file>`` for a model or ``Local Folder: <folder>`` for a
+    training-opponent pool, in Hugging Face's standard cache. ``entry check``
+    reads these lines. Errors from released_models propagate to main, which
+    prints them and returns 1. Afterwards the files load with
     ``HF_HUB_OFFLINE=1``.
     """
     from marl_battlegrounds.released_models import (
-        _fetch,  # pyright: ignore[reportPrivateUsage]
+        _download,  # pyright: ignore[reportPrivateUsage]
     )
 
     if (
@@ -647,9 +651,9 @@ def _download_names(
             "--cache-dir or --dry-run; Hugging Face's HF_HOME chooses the cache"
         )
     for name in namespace.names:
-        save = _fetch(name)
-        print(f"{name}: {save.reference}")
-        print(f"Local File: {save.path}")
+        reference, path = _download(name)
+        print(f"{name}: {reference}")
+        print(f"Local {'Folder' if path.is_dir() else 'File'}: {path}")
     return 0
 
 

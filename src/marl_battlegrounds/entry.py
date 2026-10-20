@@ -17,7 +17,8 @@ calls these functions (``python -m marl_battlegrounds entry new|check|submit``):
 Who owns what. The rules live in ``docs/tournament_rules.md``; the rule numbers
 here are that file's numbers. Existing owners do the real work: the entry's own
 train command trains, ``load_factory`` (``module:function`` loading) loads,
-``export_model`` exports, ``models download`` fetches released models,
+``export_model`` exports, ``models download`` fetches released models and
+training-opponent pools (``released_models`` decides which name is a pool),
 ``training.current_choice`` names a built-in run's choice, and ``evaluate``
 plays the games. Researcher code (train, load, export, play) always runs in
 child processes inside the entry's own locked environment, never in the
@@ -47,6 +48,9 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from marl_battlegrounds._browser import open_in_browser
+from marl_battlegrounds.released_models import (
+    _pool,  # pyright: ignore[reportPrivateUsage]
+)
 
 FORM_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues/new"
 """The GitHub page that opens a new issue in the MARL-BattleGrounds repository."""
@@ -464,7 +468,11 @@ def _read_entry(folder: Path) -> _Entry:
     ``load`` is ``module:function``. ``training_maps`` holds the lists
     ``training`` (not empty) and ``validation``, each map inside 0-46
     (Rule 3.4). Each starting model is ``{model: ..., sha256: <64 hex>}``
-    (Rules 3.1 and 6.3). Needs PyYAML, which the hydra extra installs.
+    (Rules 3.1 and 6.3), except a released training-opponent pool, such as
+    ``MARL-BattleGrounds/tdm-season-0-results/training-opponents``, which is
+    ``{model: ..., commit: <40 hex>}``: a folder has no single SHA-256, and its
+    commit fixes every byte. ``starting_models`` keeps (model, digest) pairs,
+    the digest lowercased. Needs PyYAML, which the hydra extra installs.
     Raises FileNotFoundError when the file is missing.
     """
     import yaml
@@ -516,17 +524,21 @@ def _read_entry(folder: Path) -> _Entry:
         raise ValueError(f"{_ENTRY_FILE}: starting_models must be a list ([] for none)")
     for item in cast(list[object], listed):
         fields = cast(dict[str, object], item) if isinstance(item, dict) else {}
-        model, digest = fields.get("model"), fields.get("sha256")
+        model = fields.get("model")
+        pool = isinstance(model, str) and _pool(model.strip()) is not None
+        key, length = ("commit", 40) if pool else ("sha256", 64)
+        digest = fields.get(key)
         if (
-            set(fields) != {"model", "sha256"}
+            set(fields) != {"model", key}
             or not isinstance(model, str)
             or not model.strip()
             or not isinstance(digest, str)
-            or not re.fullmatch(r"[0-9a-fA-F]{64}", digest)
+            or not re.fullmatch(f"[0-9a-fA-F]{{{length}}}", digest)
         ):
             raise ValueError(
                 f"{_ENTRY_FILE}: each starting model needs model and sha256 "
-                f"(64 hex characters); found {item!r} (Rules 3.1, 6.3)"
+                "(64 hex characters), and a training-opponent pool needs model "
+                f"and commit (40 hex characters); found {item!r} (Rules 3.1, 6.3)"
             )
         models.append((model.strip(), digest.lower()))
     return _Entry(
@@ -603,9 +615,12 @@ config: {train}
 
 # Every model your run uses (opponents, teammates and starting weights), each
 # with its SHA-256 (Rules 3.1 and 6.3): a released name or a file in this
-# repository. The scripted pool needs none. For example:
+# repository. A released opponent pool is a folder, so it takes the commit that
+# `models download` prints instead. The scripted pool needs none. For example:
 #   - model: MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final
 #     sha256: <the file's 64-character SHA-256>
+#   - model: MARL-BattleGrounds/tdm-season-0-results/training-opponents
+#     commit: <the pool's 40-character commit>
 starting_models: []
 """,
         "my_entry/__init__.py": '''\
@@ -1067,13 +1082,14 @@ class _Checker:
         Before installing, uv.lock must exist and install a released
         marl-battlegrounds from PyPI (``_released_package``). Then
         ``uv sync --locked`` runs with the GPU hidden, uv.lock must hold a CUDA
-        build of JAX, and every starting model is fetched and its SHA-256
-        compared.
+        build of JAX, and every starting model is fetched and its SHA-256 (a
+        pool's commit) compared (see fetch).
         """
         assert self.entry is not None
         if shutil.which("uv") is None:
             raise _StepFailedError(
-                f"uv is not installed. Install it with:\n  {UV_INSTALL}\n{UV_INSTALL_NOTE}"
+                "uv is not installed. Install it with:\n"
+                f"  {UV_INSTALL}\n{UV_INSTALL_NOTE}"
             )
         lock_file = self.clone / "uv.lock"
         if not lock_file.is_file():
@@ -1114,11 +1130,14 @@ class _Checker:
         )
 
     def fetch(self, model: str, digest: str) -> None:
-        """Find or download one starting model and compare its SHA-256 (step 4).
+        """Find or download one starting model and compare its digest (step 4).
 
         A path that exists inside the clone must be a file. A released name
-        (``MARL-BattleGrounds/...`` or ``hf://...``) is downloaded with
-        ``models download`` into the check's HF_HOME. Anything else fails.
+        (``MARL-BattleGrounds/...`` or ``hf://...``) is downloaded with the
+        entry's own ``models download`` into the check's HF_HOME, which the
+        offline training in step 5 reads. A file's SHA-256 must equal
+        ``digest``. A training-opponent pool's commit, read from the address
+        ``models download`` prints, must equal ``digest``. Anything else fails.
         """
         local = (self.clone / model).resolve()
         if local.is_relative_to(self.clone.resolve()) and local.exists():
@@ -1137,6 +1156,21 @@ class _Checker:
                 env=self.env(offline=False),
                 timeout=_INSTALL_SECONDS,
             )
+            if _pool(model) is not None:
+                pools = [
+                    _pool(line.removeprefix(f"{model}: "))
+                    for line in out.splitlines()
+                    if line.startswith(f"{model}: ")
+                ]
+                if code != 0 or not pools or pools[-1] is None:
+                    raise _StepFailedError(
+                        f"models download {model} failed:\n{_tail(err)}"
+                    )
+                if pools[-1][1] != digest:
+                    raise _StepFailedError(
+                        f"{model}: its commit is not the one in entry.yaml."
+                    )
+                return
             found = [
                 line.split(":", 1)[1].strip()
                 for line in out.splitlines()
@@ -1346,7 +1380,8 @@ def check_entry(
        version (checked before installing); ``uv sync --locked`` with the
        GPU hidden, in at most 1 hour; ``uv.lock`` holds a CUDA build of JAX;
        every starting model is fetched into a fresh ``HF_HOME`` in the clone
-       and its SHA-256 checked (Rules 2.3, 6.3).
+       and its SHA-256 checked, or a training-opponent pool's commit
+       (Rules 2.3, 6.3).
     5. The train command runs for ``train_minutes`` with ``HF_HUB_OFFLINE=1``,
        then gets a stop signal (SIGINT) to its process group, 60 seconds'
        grace, then a kill (Rules 2.2, 6.5).
@@ -1612,7 +1647,8 @@ def submit_entry(
         "load-function": entry.load,
         "config-and-maps": f"Config: {entry.config}\n{maps}",
         "starting-models": "\n".join(
-            f"{m} sha256:{d}" for m, d in entry.starting_models
+            f"{m} {'commit' if _pool(m) else 'sha256'}:{d}"
+            for m, d in entry.starting_models
         )
         or "none",
     }

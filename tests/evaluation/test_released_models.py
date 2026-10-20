@@ -29,6 +29,11 @@ Contracts checked:
   population, the setup cache key, collection evidence, saved-reference and
   tournament descriptor checks) all use the one shared helper.
 - download_models and ``models download`` fetch named files only.
+- A training-opponent pool downloads by name into the HF cache at its pinned
+  commit, ``models download`` prints its exact address and folder, and the
+  trainer's released opponents then come from that cache with HF offline, as
+  plain files (the cache's links followed); offline with no cached copy fails
+  with the prefetch command.
 - initial_actor from a released save gives the same System as the original
   actor folder.
 """
@@ -360,6 +365,53 @@ def test_download_models_and_command_fetch_named_files_only(
     ]
     assert _cli.main(["models", "download", REPO + "@0"]) == 0
     assert f"{REPO}@0: {_address(0)}" in capsys.readouterr().out
+
+
+def test_opponent_pool_by_name_reaches_an_offline_run_as_plain_files(
+    hub: FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = f"{ORG}/tdm-season-0-results"
+    pool = f"{dataset}/training-opponents"
+    monkeypatch.setattr(released_models, "PINNED_COMMITS", {dataset: COMMIT})
+    bundle = {"pool.json": b'{"members": []}', "models/a/actor.bin": b"weights"}
+
+    def snapshot(repo_id: str, *, revision: str, **options: object) -> str:
+        root = (
+            hub.cache / f"datasets--{repo_id.replace('/', '--')}/snapshots/{revision}"
+        )
+        if not hub.network:
+            if not root.is_dir():
+                raise huggingface_hub.errors.LocalEntryNotFoundError("offline")
+            return str(root)
+        for name, data in bundle.items():
+            blob = hub.cache / "blobs" / hashlib.sha256(data).hexdigest()
+            blob.parent.mkdir(parents=True, exist_ok=True)
+            blob.write_bytes(data)
+            link = root / "training-opponents" / name
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(blob)
+        return str(root)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot)
+    address = f"hf://datasets/{dataset}@{COMMIT}/training-opponents"
+    assert _cli.main(["models", "download", pool]) == 0
+    printed = capsys.readouterr().out
+    assert f"{pool}: {address}\nLocal Folder: " in printed
+    hub.network = False
+    destination = tmp_path / "run" / "opponents"
+    target = destination / "training-opponents"
+    assert released_models._released_training_opponents(destination) == (
+        address,
+        target,
+    )
+    copied = target / "models/a/actor.bin"
+    assert copied.read_bytes() == b"weights" and not copied.is_symlink()
+    monkeypatch.setattr(released_models, "PINNED_COMMITS", {dataset: NEWER})
+    with pytest.raises(ValueError, match=f"models download {pool}"):
+        released_models._released_training_opponents(destination)
 
 
 def test_initial_actor_from_a_released_save_equals_the_original_folder(
