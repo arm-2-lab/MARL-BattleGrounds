@@ -23,6 +23,12 @@ A local folder in the released layout (it holds ``steps.csv`` and
 ``config.json``, for example after ``hf download --local-dir``) takes the same
 ``@`` rules. A local path that exists always wins over a typed name.
 
+A training-opponent pool is a whole folder, not one model: the
+``training-opponents`` folder of a released results dataset, typed as
+``MARL-BattleGrounds/tdm-season-0-results/training-opponents`` or given by its
+exact address. It is fetched at the dataset's pinned commit (see _fetch_pool),
+so an entry lists it by name and its commit instead of copying it.
+
 What gets saved: wherever MARL-BGs saves a model reference, a typed name becomes
 HF's exact file address, ``hf://<owner>/<repo>@<40-character commit>/<file>``,
 and a released-layout folder becomes the absolute path of the chosen file.
@@ -31,7 +37,7 @@ Original actor folders in a released dataset use
 model form; a dataset folder is used from a local copy (see
 _dataset_folder_error). Resume and reproduction always use the recorded commit.
 
-Public entry point: download_models, the prefetch used by
+Public entry point: download_models, the prefetch of models and pools used by
 ``python -m marl_battlegrounds models download <name>...``. The other helpers
 are private and shared by the package's loading and saving owners
 (_method_loading, training, evaluation, experiments and the BattleClient).
@@ -54,6 +60,7 @@ import io
 import json
 import os
 import re
+import shutil
 import warnings
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -70,7 +77,10 @@ RESULTS_DATASET = "MARL-BattleGrounds/tdm-season-0-results"
 """The dataset repo with Season 0 results and the original opponent folders."""
 
 TRAINING_OPPONENTS = "training-opponents"
-"""Folder in RESULTS_DATASET with the training and validation opponent bundle."""
+"""Folder of a released results dataset that holds its training-opponent pool.
+
+RESULTS_DATASET's pool is the training and validation opponent bundle; its
+``pool.json`` names every member."""
 
 PINNED_COMMITS: dict[str, str] = {
     "MARL-BattleGrounds/tdm-season-0-recurrent-ippo": (
@@ -1096,14 +1106,143 @@ def _dataset_folder_error(reference: str) -> ValueError:
     )
 
 
+def _pool(text: str) -> tuple[str, str | None] | None:
+    """Say whether text names a training-opponent pool; check spelling only.
+
+    Parameters
+    ----------
+    text : str
+        Any reference text.
+
+    Returns
+    -------
+    tuple of (str, str or None), or None
+        (dataset repo id, commit) for a pool. The typed name
+        ``MARL-BattleGrounds/<dataset>/training-opponents`` (organization in
+        any letter case) gives commit None: the pinned or latest commit is
+        used. The exact address
+        ``hf://datasets/<owner>/<dataset>@<commit>/training-opponents`` gives
+        its commit. None for every other text, including a model name, a
+        model address and any other dataset folder.
+
+    Notes
+    -----
+    Reads no file and makes no network call.
+    """
+    if text.startswith("hf://"):
+        try:
+            address = _parse_address(text)
+        except ValueError:
+            return None
+        if address.dataset and address.path == TRAINING_OPPONENTS:
+            return address.repo, address.commit
+        return None
+    repo, _, folder = text.rpartition("/")
+    split = _split_name(repo)
+    if folder != TRAINING_OPPONENTS or split is None or split[1] is not None:
+        return None
+    return split[0], None
+
+
+def _fetch_pool(reference: str) -> tuple[str, Path]:
+    """Download one training-opponent pool into HF's standard cache.
+
+    Parameters
+    ----------
+    reference : str
+        A pool's typed name or exact address (see _pool).
+
+    Returns
+    -------
+    tuple of (str, Path)
+        The pool's exact address
+        ``hf://datasets/<owner>/<dataset>@<commit>/training-opponents`` and
+        its folder in HF's cache snapshot. On Linux and macOS the folder's
+        files are links into HF's blob store.
+
+    Raises
+    ------
+    ValueError
+        reference is not a pool; the dataset or commit does not exist (or
+        needs a login token); HF cannot be reached and the cache does not hold
+        the whole folder (the message gives the prefetch command); or the
+        folder has no ``pool.json``.
+
+    Warns
+    -----
+    UserWarning
+        A typed name's dataset is not pinned, so its latest commit is used.
+
+    Notes
+    -----
+    A typed name uses the dataset's pinned commit (see _commit_for), never a
+    moving branch. Offline, huggingface_hub (2.2 and newer) refuses a cached
+    folder that misses any file of the commit's file list, so a partial
+    download fails here instead of later.
+    """
+    pool = _pool(reference)
+    if pool is None:
+        raise ValueError(
+            f"{reference!r} is not a training-opponent pool; use "
+            f"MARL-BattleGrounds/<dataset>/{TRAINING_OPPONENTS}"
+        )
+    repo, commit = pool
+    if commit is None:
+        repo, commit = _commit_for(repo, None, dataset=True, reference=reference)
+    hub = _hub()
+    errors = hub.errors
+    try:
+        root = hub.snapshot_download(
+            repo,
+            repo_type="dataset",
+            revision=commit,
+            allow_patterns=[f"{TRAINING_OPPONENTS}/*"],
+            library_name=_LIBRARY,
+        )
+    except (errors.LocalEntryNotFoundError, errors.OfflineModeIsEnabled) as error:
+        raise ValueError(
+            f"{reference!r} needs {repo}/{TRAINING_OPPONENTS} at commit {commit}, "
+            "which is not complete in the local Hugging Face cache, and Hugging "
+            "Face cannot be reached (HF_HUB_OFFLINE or no network). Run "
+            f"`{_prefetch_hint(reference)}` on a machine with network access first"
+        ) from error
+    except (errors.RepositoryNotFoundError, errors.RevisionNotFoundError) as error:
+        raise ValueError(
+            f"{reference!r}: Hugging Face has no dataset {repo} at commit {commit} "
+            "(or it needs a login token)"
+        ) from error
+    folder = Path(root) / TRAINING_OPPONENTS
+    if not (folder / "pool.json").is_file():
+        raise ValueError(
+            f"{reference!r}: {repo} has no {TRAINING_OPPONENTS}/pool.json at "
+            f"commit {commit}"
+        )
+    return f"hf://datasets/{repo}@{commit}/{TRAINING_OPPONENTS}", folder
+
+
+def _download(reference: str) -> tuple[str, Path]:
+    """Fetch one model or pool for later offline use; the prefetch's one rule.
+
+    Returns the saved form and the local copy in HF's cache: for a pool (see
+    _pool), its exact address and folder (_fetch_pool); otherwise the model's
+    saved form and its checked file (_fetch). Raises ValueError as those do.
+    """
+    if _pool(reference) is not None:
+        return _fetch_pool(reference)
+    save = _fetch(reference)
+    assert save.path is not None
+    return save.reference, save.path
+
+
 def _released_training_opponents(destination: Path) -> tuple[str, Path]:
-    """Download the released training-opponent bundle into a chosen folder.
+    """Put the released training-opponent bundle into a chosen folder.
 
     Parameters
     ----------
     destination : Path
         Folder that receives ordinary files (not links), for example an
-        experiment's ``opponents`` folder. Existing identical files are reused.
+        experiment's ``opponents`` folder. Files already there with the same
+        names are replaced; other files are kept.
 
     Returns
     -------
@@ -1115,39 +1254,30 @@ def _released_training_opponents(destination: Path) -> tuple[str, Path]:
     Raises
     ------
     ValueError
-        The dataset cannot be resolved or Hugging Face cannot be reached and
-        the files are not already there; the message names opponent_bundle.
+        The dataset cannot be resolved, or Hugging Face cannot be reached and
+        the cache does not hold the whole bundle; the message names the
+        prefetch command and opponent_bundle.
 
     Notes
     -----
     Uses the pinned commit of RESULTS_DATASET, or its latest commit with a
-    warning. Writes HF's small download records under ``destination/.cache``.
+    warning. The bundle lands in HF's standard cache first (_fetch_pool) and
+    is then copied, following the cache's links, because folder loaders
+    refuse links. So an offline run works after
+    ``python -m marl_battlegrounds models download
+    MARL-BattleGrounds/tdm-season-0-results/training-opponents`` filled the
+    same cache.
     """
-    hub = _hub()
     try:
-        repo, commit = _commit_for(
-            RESULTS_DATASET, None, dataset=True, reference=RESULTS_DATASET
-        )
-        hub.snapshot_download(
-            repo,
-            repo_type="dataset",
-            revision=commit,
-            allow_patterns=[f"{TRAINING_OPPONENTS}/*"],
-            local_dir=destination,
-            library_name=_LIBRARY,
-        )
-    except (
-        ValueError,
-        hub.errors.LocalEntryNotFoundError,
-        hub.errors.OfflineModeIsEnabled,
-    ) as error:
+        address, folder = _fetch_pool(f"{RESULTS_DATASET}/{TRAINING_OPPONENTS}")
+    except ValueError as error:
         raise ValueError(
             "The released training opponents could not be found or downloaded "
             f"({error}); give opponent_bundle=/path/opponents instead"
         ) from error
-    return f"hf://datasets/{repo}@{commit}/{TRAINING_OPPONENTS}", (
-        destination / TRAINING_OPPONENTS
-    )
+    target = destination / TRAINING_OPPONENTS
+    shutil.copytree(folder, target, symlinks=False, dirs_exist_ok=True)
+    return address, target
 
 
 def _training_records(
@@ -1222,30 +1352,35 @@ def _training_records(
 
 
 def download_models(*names: str) -> list[Path]:
-    """Download released models by name so later runs work offline.
+    """Download released models and opponent pools by name for offline runs.
 
     Parameters
     ----------
     *names : str
         Released names, each as typed anywhere MARL-BGs takes a model: a typed
         name such as ``"MARL-BattleGrounds/tdm-season-0-qmix@100M"``, an exact
-        ``hf://`` file address, or a local released-layout folder. No names
+        ``hf://`` file address, or a local released-layout folder. A
+        training-opponent pool, such as
+        ``"MARL-BattleGrounds/tdm-season-0-results/training-opponents"``,
+        downloads its whole folder at the dataset's pinned commit. No names
         means nothing to do.
 
     Returns
     -------
     list of Path
-        The checked local file of each name, in the order given. Files live in
-        Hugging Face's standard cache, which ``HF_HOME`` and ``HF_HUB_CACHE``
-        choose; ``hf cache`` lists and removes them.
+        The checked local file of each model name, or the folder of each pool,
+        in the order given. They live in Hugging Face's standard cache, which
+        ``HF_HOME`` and ``HF_HUB_CACHE`` choose; ``hf cache`` lists and
+        removes them.
 
     Raises
     ------
     ValueError
         A name is not a released name, its step does not exist (the message
         lists the nearest saves), a download fails, a file's SHA-256 differs
-        from the repo's ``steps.csv``, or the name is a dataset folder address
-        (the message gives the ``hf download`` command for a local copy).
+        from the repo's ``steps.csv``, a pool has no ``pool.json``, or the
+        name is another dataset folder's address (the message gives the
+        ``hf download`` command for a local copy).
     TypeError
         A name is not a string.
 
@@ -1256,9 +1391,10 @@ def download_models(*names: str) -> list[Path]:
 
     Notes
     -----
-    Each name downloads its repo's small ``steps.csv`` and ``config.json`` and
-    one model file, unless they are already cached. After this, compute nodes
-    can run with ``HF_HUB_OFFLINE=1``.
+    Each model name downloads its repo's small ``steps.csv`` and
+    ``config.json`` and one model file, unless they are already cached. After
+    this, compute nodes can run with ``HF_HUB_OFFLINE=1``, and the trainer's
+    released opponents come from the same cache.
 
     Examples
     --------
@@ -1266,13 +1402,12 @@ def download_models(*names: str) -> list[Path]:
     >>> marl_bgs.download_models(  # doctest: +SKIP
     ...     "MARL-BattleGrounds/tdm-season-0-qmix@final",
     ...     "MARL-BattleGrounds/tdm-season-0-recurrent-ippo@100M",
+    ...     "MARL-BattleGrounds/tdm-season-0-results/training-opponents",
     ... )
     """
     paths: list[Path] = []
     for name in names:
         if not isinstance(cast(object, name), str):
             raise TypeError("Released model names must be strings")
-        save = _fetch(name)
-        assert save.path is not None
-        paths.append(save.path)
+        paths.append(_download(name)[1])
     return paths

@@ -9,7 +9,9 @@ recipe (250,675,200 steps, 512 games, every actor kept), validating on the
 maps entry.yaml declares. Without uv it prints the uv install line, then the
 note that an installer ERROR about ~/.config still leaves uv installed, and
 stops before locking. entry.yaml refuses maps outside 0-46 and models without a
-SHA-256.
+SHA-256. A released training-opponent pool is listed by its 40-character
+commit instead (a SHA-256 for it is refused), and step 4 passes it only when
+the address ``models download`` prints carries that commit.
 
 Step 4 accepts a uv.lock only when every marl-battlegrounds in it is a release
 from PyPI's index, with each file that version's own file on PyPI's file
@@ -53,6 +55,7 @@ import yaml
 from marl_battlegrounds import entry
 
 FORM = Path(__file__).parents[2] / ".github/ISSUE_TEMPLATE/leaderboard_submission.yml"
+POOL = "MARL-BattleGrounds/tdm-season-0-results/training-opponents"
 
 
 def _git(folder: Path, *args: str) -> str:
@@ -125,6 +128,7 @@ def test_starter_files_parse_and_match_the_recipe(starter: Path) -> None:
     [
         ({"training_maps": {"training": ["0-47"], "validation": []}}, "Rule 3.4"),
         ({"starting_models": [{"model": "a.zip", "sha256": "abc"}]}, "sha256"),
+        ({"starting_models": [{"model": POOL, "sha256": "a" * 64}]}, "commit"),
         ({"load": "my_entry.load"}, "module:function"),
     ],
 )
@@ -135,6 +139,28 @@ def test_entry_yaml_refuses_bad_settings(
     path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **change}))
     with pytest.raises(ValueError, match=message):
         entry._read_entry(starter)
+
+
+def test_an_opponent_pool_is_listed_and_checked_by_its_commit(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit = "a" * 40
+    path = starter / "entry.yaml"
+    listed = {"starting_models": [{"model": POOL, "commit": commit}]}
+    path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **listed}))
+    checker = entry._Checker(str(starter), None, starter.parent, 1.0, None)
+    checker.clone, checker.entry = starter, entry._read_entry(starter)
+    assert checker.entry.starting_models == ((POOL, commit),)
+    address = f"hf://datasets/{POOL.rpartition('/')[0]}@{commit}/training-opponents"
+    printed = f"{POOL}: {address}\nLocal Folder: /cache/training-opponents\n"
+
+    def downloaded(*args: object, **kwargs: object) -> tuple[int, str, str]:
+        return 0, printed, ""
+
+    monkeypatch.setattr(entry, "_run", downloaded)
+    checker.fetch(POOL, commit)
+    with pytest.raises(entry._StepFailedError, match="its commit is not"):
+        checker.fetch(POOL, "b" * 40)
 
 
 PYPI_FILES = "https://files.pythonhosted.org/packages/89/5d/0d"
