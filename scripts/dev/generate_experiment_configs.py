@@ -666,6 +666,47 @@ def presets() -> dict[str, dict[str, Any]]:
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
     }
+    # PSRO: the oracle is a training method with its tournament recipe; the seeded
+    # members and the panel are the Season 0 training opponents and validation
+    # panel, read from the released opponent bundle by name.
+    result["psro.yaml"] = {
+        "defaults": [
+            "_self_",
+            {"method": "ippo"},
+            {"recipe": "default"},
+            {"recipe_settings": "${recipe}_${method}"},
+        ],
+        **base,
+        "psro": {
+            "seed_members": [
+                "recurrent-mappo-combat-support-low-amounts-step-30081024",
+                "recurrent-mappo-combat-support-step-35094528",
+                "recurrent-mappo-tactical-support-step-40108032",
+                "recurrent-mappo-tactical-support-high-amounts-step-25067520",
+                "recurrent-mappo-tactical-support-zero-sum-step-35094528",
+                "recurrent-mappo-tactical-support-high-amounts-zero-sum-step-40108032",
+                "tdm-alpha",
+                "tdm-beta",
+            ],
+            "panel": [
+                "tdm-alpha",
+                "tdm-beta",
+                "tdm-gamma",
+                "recurrent-mappo-combat-support-pooled-step-250675200",
+            ],
+            "opponent_bundle": None,
+            "round_env_steps": 20054016,
+            "payoff_games": 48,
+            "payoff_maps": list(range(42)),
+            "payoff_seed": 20261021,
+            "validation_seed": 20261022,
+            "confirmation_seed": 20261023,
+            "eval_num_envs": 64,
+            "shortlist": 2,
+        },
+        "output_dir": "???",
+        "hydra": deepcopy(stage_hydra),
+    }
     # Home games: the Season 0 tournament replayed with full metrics by the
     # tournament_analysis stage, read by display name like the teamwork study.
     result["zero_shot_coordination_analysis.yaml"] = {

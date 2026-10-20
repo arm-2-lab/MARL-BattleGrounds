@@ -7,7 +7,8 @@ load_system reads frozen actors and analyze uses the optional viz extra for
 saved-result plots. current_choice names the actor a run counts as its choice
 while it trains or after it ends. reselect_checkpoint writes a separate
 decision from saved actor and game evidence; it never replaces the original
-run selection.
+run selection. train_psro grows a PSRO population of train and extend_training
+runs and load_psro_entrant loads its chosen mixture.
 """
 
 # pyright: reportUnsupportedDunderAll=false
@@ -104,6 +105,10 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.opponents import (
         refresh_opponents as refresh_opponents,
     )
+    from marl_battlegrounds.training.psro import (
+        load_psro_entrant as load_psro_entrant,
+    )
+    from marl_battlegrounds.training.psro import train_psro as train_psro
     from marl_battlegrounds.training.reward_recipes import (
         combat_support_reward as combat_support_reward,
     )
@@ -169,6 +174,8 @@ _OWNERS = {
     "start_study": "study",
     "stop_study": "study",
     "study_status": "study",
+    "train_psro": "psro",
+    "load_psro_entrant": "psro",
     "PreparedTrainingContent": "_content",
     "TrainingContentBinding": "_content",
     "prepare_training_content": "_content",
@@ -235,6 +242,7 @@ __all__ = [
     "init_training_collection",
     "list_runs",
     "load_panel",
+    "load_psro_entrant",
     "load_run",
     "load_study_data",
     "load_system",
@@ -255,6 +263,7 @@ __all__ = [
     "team_potential_shaping",
     "team_score_delta_shaping",
     "train",
+    "train_psro",
     "training_keys",
     "training_summary",
     "validate_checkpoint",
