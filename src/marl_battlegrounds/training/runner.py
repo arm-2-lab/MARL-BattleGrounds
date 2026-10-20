@@ -62,6 +62,9 @@ from marl_battlegrounds.training.config import (
     TrainConfig as TrainConfig,
 )
 from marl_battlegrounds.training.config import (
+    _check_happo_rosters,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.training.config import (
     config_from_dict as config_from_dict,
 )
 from marl_battlegrounds.training.config import (
@@ -2572,6 +2575,7 @@ def _prepare_extension(
         history_threshold_rounds=thresholds,
         curriculum=changes.get("curriculum"),
     )
+    _check_happo_rosters(config.method, config.ppo, changes.get("curriculum"))
     collection, carry = _begin_training_segment(
         collection, state.carry, schedule=schedule
     )

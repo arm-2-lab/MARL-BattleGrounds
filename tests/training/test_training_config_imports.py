@@ -5,9 +5,10 @@ The public export list must include every registered lazy helper without
 importing those helpers or their optional dependencies.
 The JSON fixture was captured before the configuration extraction, for the
 six methods that existed then; HAPPO's defaults are recurrent MAPPO's with
-its own method name and one actor per class, and a custom HAPPO ppo that
-shares one actor is refused. Numerical module aliases are checked separately,
-since those modules require training.
+its own method name and one actor per class, a custom HAPPO ppo that
+shares one actor is refused, and so is class sharing when a curriculum's
+system roster repeats a class, which one actor per slot accepts. Numerical
+module aliases are checked separately, since those modules require training.
 """
 
 import json
@@ -53,7 +54,7 @@ assert canonical_tournament_rosters() == (roster, roster)
 from pathlib import Path
 for method in TRAINING_METHODS:
     c = TrainConfig(method=method, curriculum=[{'share': 1, 'maps': [0, 1],
-        'rosters': {'system': ['priest', 'priest'], 'opponent': ['hunter']}}],
+        'rosters': {'system': ['priest', 'mage'], 'opponent': ['hunter', 'hunter']}}],
         opponents={'self': .6, 'past': .2, 'tdm-alpha': .2},
         partners=['tdm-beta'],
         validation_opponents=('tdm-gamma', '/tmp/actor', 'custom:factory'),
@@ -114,6 +115,14 @@ def test_happo_defaults_are_mappo_with_one_actor_per_class() -> None:
     assert custom.ppo.parameter_sharing == "none"
     with pytest.raises(ValueError, match="one actor group at a time"):
         TrainConfig(method="happo", ppo=PPOConfig(actor_lr=0.0001))
+    stage = {
+        "share": 1.0,
+        "maps": [0],
+        "rosters": {"system": ["mage", "mage"], "opponent": ["warrior"]},
+    }
+    with pytest.raises(ValueError, match="repeats a class"):
+        TrainConfig(method="happo", curriculum=[stage])
+    TrainConfig(method="happo", curriculum=[stage], ppo=custom.ppo)
 
 
 def test_old_imports_are_the_same_objects() -> None:

@@ -8,8 +8,9 @@ pair with its seed and game steps; keeps every game step (training, payoff
 and validation) inside total_env_steps; validates each round's newest member
 and candidate mixture on the panel; and writes entrant.json naming the
 confirmed round, its members with positive weight and the shortlist, which
-always holds the last round. A run stopped by an error during a round's
-validation continues on the next call without retraining a round or
+always holds the last round. A run stopped inside round 2's training, after
+its first update, continues through the trainer's own resume, and a run
+stopped during a round's validation continues without retraining a round or
 replaying a recorded pair; a call on a finished run plays no game and returns
 the same entrant; a call with other settings and a seeded name starting with
 "psro-" are refused. load_psro_entrant returns a System that plays a game, and
@@ -51,20 +52,30 @@ def test_small_run_records_resumes_and_loads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run = tmp_path / "run"
-    real_validate = psro.validate
-    calls = {"validate": 0}
+    real_extend, real_validate = training.extend_training, psro.validate
 
-    def stop_once(*args: object, **kwargs: object) -> dict[str, Any]:
-        calls["validate"] += 1
-        if calls["validate"] == 3:
-            raise RuntimeError("stopped")
-        return real_validate(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+    def stop_in_training(*args: Any, **kwargs: Any) -> object:  # noqa: ANN401
+        def stop(row: object) -> None:
+            raise RuntimeError("stopped in training")
 
-    monkeypatch.setattr(psro, "validate", stop_once)
-    with pytest.raises(RuntimeError, match="stopped"):
+        return real_extend(*args, on_update=stop, **kwargs)
+
+    def stop_in_validation(*args: object, **kwargs: object) -> dict[str, Any]:
+        raise RuntimeError("stopped in validation")
+
+    def statuses() -> list[str]:
+        rounds = json.loads((run / "rounds.json").read_text(encoding="utf-8"))
+        return [entry["status"] for entry in rounds]
+
+    monkeypatch.setattr(training, "extend_training", stop_in_training)
+    with pytest.raises(RuntimeError, match="on_update failed"):
         training.train_psro(ORACLE, output_dir=run, **ARGUMENTS)
-    stopped = json.loads((run / "rounds.json").read_text(encoding="utf-8"))
-    assert [entry["status"] for entry in stopped] == ["complete", "trained"]
+    assert statuses() == ["complete", "training"]
+    monkeypatch.setattr(training, "extend_training", real_extend)
+    monkeypatch.setattr(psro, "validate", stop_in_validation)
+    with pytest.raises(RuntimeError, match="stopped in validation"):
+        training.train_psro(ORACLE, output_dir=run, **ARGUMENTS)
+    assert statuses() == ["complete", "trained"]
     monkeypatch.setattr(psro, "validate", real_validate)
     result = training.train_psro(ORACLE, output_dir=run, **ARGUMENTS)
 

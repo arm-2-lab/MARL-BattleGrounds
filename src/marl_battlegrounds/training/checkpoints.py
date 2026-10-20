@@ -199,7 +199,7 @@ class RestoredCheckpoint:
     """Hold a fully checked learner before any recording or log rewind.
 
     state is the complete restored numerical learner: a PPO LearnerState for
-    the four PPO methods, a QMIXLearnerState for ``method="qmix"`` or a
+    the five PPO methods, a QMIXLearnerState for ``method="qmix"`` or a
     PQNLearnerState for ``method="pqn_vdn"``, as the saved model schema says.
     It is typed ``Any`` so existing PPO code keeps reading its fields without
     casts; check the method (or use isinstance) when a caller handles more

@@ -262,9 +262,10 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
     refused before any write. Load only the validator to obtain its panel identity;
     run no games or learning. Use JAX_PLATFORMS=cpu for this preparation command.
     Missing/corrupt inputs raise before publication. These fixed small settings
-    test software and are never presented as paper hyperparameters. The four
-    PPO methods use combat_support_reward; QMIX and PQN-VDN, which train on one
-    team reward, use its team form combat_support_team_reward. The bundle check
+    test software and are never presented as paper hyperparameters. MAPPO, IPPO
+    and their feedforward forms use combat_support_reward; HAPPO, whose theory
+    assumes one team reward, and QMIX and PQN-VDN, which train on one, use its
+    team form combat_support_team_reward. The bundle check
     and publication are shared with prepare_declared_study.
     """
     from marl_battlegrounds.experiments.hydra import (
@@ -333,7 +334,7 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
             reward="marl_battlegrounds.training.reward_recipes:"
             + (
                 "combat_support_team_reward"
-                if method in ("qmix", "pqn_vdn")
+                if method in ("happo", "qmix", "pqn_vdn")
                 else "combat_support_reward"
             ),
             opponents={

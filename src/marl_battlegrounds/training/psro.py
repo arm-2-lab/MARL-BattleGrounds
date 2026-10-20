@@ -1,7 +1,8 @@
 """Train a PSRO population with the public training tools and choose its entrant.
 
-``train_psro`` runs PSRO from Python with any built-in training method as its
-oracle; ``load_psro_entrant`` loads the chosen mixture as one System. The
+``train_psro`` runs PSRO from Python with a built-in training method as its
+oracle (tested with recurrent IPPO; the others are accepted but untested);
+``load_psro_entrant`` loads the chosen mixture as one System. The
 optional Hydra launcher ``python -m marl_battlegrounds.experiments.psro``
 calls the same function with the Season 0 recipe and opponents.
 
@@ -55,6 +56,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import optimize  # pyright: ignore[reportMissingTypeStubs]
+
+from marl_battlegrounds.training._run_io import atomic_json
 
 if TYPE_CHECKING:
     from marl_battlegrounds import Policy, System
@@ -281,13 +284,6 @@ def worst_case_score(scores: ArrayLike, weights: ArrayLike) -> float:
     return float((mixture @ table).min())
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    """Write text to path through a sibling temporary file and one rename."""
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, path)
-
-
 def bundle_references(bundle: Path, names: Sequence[str]) -> dict[str, str]:
     """Look up members of an opponent bundle by name.
 
@@ -388,7 +384,8 @@ def play_pair(
         Evaluation seed for this pair.
     num_envs : int
         Lanes per batch. The batch keeps this size (``keep_batch_size``), so
-        every pair reuses one compiled program for methods of one structure.
+        every pair of methods with the same two structures reuses one
+        compiled program.
 
     Returns
     -------
@@ -438,7 +435,7 @@ def validate(
     system : System or Policy
         The method being validated, as Team A.
     panel : mapping of str to System or Policy
-        Panel members by name, each played as Team B.
+        Panel members by name, each played as Team B; at least one.
     maps : sequence of int
         Validation map IDs. Each panel member plays ``2 * seed_pairs`` games
         on every map, spawn ends exchanged.
@@ -461,10 +458,7 @@ def validate(
     """
     from marl_battlegrounds import evaluate
 
-    rows: dict[str, dict[str, float]] = {}
-    totals: dict[str, float] = dict.fromkeys(
-        ("games", "points_for", "points_against", "kills_for", "kills_against"), 0.0
-    )
+    sums: dict[str, dict[str, float]] = {}
     steps = 0
     for name, opponent in panel.items():
         result = evaluate(
@@ -478,30 +472,28 @@ def validate(
             keep_batch_size=True,
             metrics="priority",
         )
-        games = len(result.episodes)
-        sums = {
-            "points_for": sum(e.team_a_score for e in result.episodes),
-            "points_against": sum(e.team_b_score for e in result.episodes),
+        episodes = result.episodes
+        sums[name] = {
+            "games": len(episodes),
+            "points_for": sum(e.team_a_score for e in episodes),
+            "points_against": sum(e.team_b_score for e in episodes),
             "kills_for": float(np.sum(result.priority_metrics["team_a_kills"])),
             "kills_against": float(np.sum(result.priority_metrics["team_b_kills"])),
         }
-        steps += sum(e.episode_length for e in result.episodes)
-        totals["games"] += games
-        for key, value in sums.items():
-            totals[key] += value
-        rows[name] = {key: value / games for key, value in sums.items()}
-        rows[name]["point_margin"] = (
-            rows[name]["points_for"] - rows[name]["points_against"]
-        )
-        rows[name]["games"] = games
-    games = totals["games"]
-    summary = {key: totals[key] / games for key in totals if key != "games"}
+        steps += sum(e.episode_length for e in episodes)
+
+    def means(row: Mapping[str, float]) -> dict[str, Any]:
+        """Turn summed counts into per-game means beside the point margin."""
+        mean = {key: value / row["games"] for key, value in row.items()}
+        mean["games"] = int(row["games"])
+        return {"point_margin": mean["points_for"] - mean["points_against"], **mean}
+
+    first = next(iter(sums.values()))
+    total = {key: sum(row[key] for row in sums.values()) for key in first}
     return {
-        "games": int(games),
-        "point_margin": summary["points_for"] - summary["points_against"],
-        **summary,
+        **means(total),
         "game_steps": steps,
-        "by_opponent": rows,
+        "by_opponent": {name: means(row) for name, row in sums.items()},
     }
 
 
@@ -556,7 +548,11 @@ def train_psro(
         games, Rule 2.1). ``validation_maps`` (all five validation maps when
         None), ``routine_seed_pairs`` and ``confirmation_seed_pairs`` set the
         validation games. Its own opponents, history, explicit saves and
-        validation panel are replaced in every round.
+        validation panel are replaced in every round, and its Random
+        diagnostic games and extra actor exports are turned off, so every
+        game step is counted and only each round's final actor is saved. A
+        PQN-VDN oracle needs ``pqn.lr_linear_decay=False``: a decaying rate
+        would end inside round 1, and later rounds could not continue it.
     output_dir : str or Path
         The run folder. A new or existing folder; an existing one must hold
         the same settings.
@@ -573,8 +569,10 @@ def train_psro(
     payoff_games : int, default=48
         Positive even number of games per member pair, spawn ends exchanged.
     payoff_maps : sequence of int, default=range(42)
-        Maps for payoff games (the training maps 0-41). Pair k starts at a
-        different map, so pairs spread over all of them.
+        Maps for payoff games (the training maps 0-41), at least one. Pair k
+        starts where the pairs before it stopped (map index
+        ``k * payoff_games / 2``, wrapping round), so the games spread evenly
+        over the maps.
     payoff_seed : int, default=20261021
         Pair k (in the order played) uses ``payoff_seed + k``.
     validation_seed : int, default=20261022
@@ -582,11 +580,11 @@ def train_psro(
     confirmation_seed : int, default=20261023
         Seed of the confirmation games, which differ from the routine ones.
     eval_num_envs : int, default=64
-        Lanes for payoff and validation games, kept fixed so one compiled
-        program serves every call.
+        Lanes for payoff and validation games, kept fixed, so every pair of
+        methods with the same two structures reuses one compiled program.
     shortlist : int, default=2
         Rounds confirmed besides the last one: the best by routine candidate
-        point margin.
+        point margin. Zero or more.
 
     Returns
     -------
@@ -601,7 +599,11 @@ def train_psro(
     ------
     ValueError
         The folder was started with other settings, a count is out of range,
-        a seeded name starts with ``psro-``, or no round fits the budget.
+        ``payoff_maps`` is empty, a seeded name starts with ``psro-``, the
+        oracle is PQN-VDN with a decaying learning rate, no round fits the
+        budget, or a round's folder stopped before its first save (delete
+        that folder and call again). All but the last are raised before any
+        file is written or game played.
 
     Notes
     -----
@@ -629,8 +631,40 @@ def train_psro(
         raise ValueError("seed_members and panel need at least one member each")
     if any(name.startswith("psro-") for name in seed_members):
         raise ValueError("seeded member names must not start with 'psro-'")
-    if round_env_steps <= 0 or eval_num_envs <= 0 or shortlist < 0:
+    if round_env_steps <= 0 or eval_num_envs <= 0:
         raise ValueError("round_env_steps and eval_num_envs must be positive")
+    if shortlist < 0:
+        raise ValueError("shortlist must be zero or more")
+    if not payoff_maps:
+        raise ValueError("payoff_maps needs at least one map")
+    if config.pqn is not None and config.pqn.lr_linear_decay:
+        raise ValueError(
+            "A PQN-VDN oracle's decaying learning rate would end inside round 1, "
+            "so later rounds could not continue it; set pqn.lr_linear_decay=False"
+        )
+    validation_maps = list(config.validation_maps or VALIDATION_MAPS)
+    panel_games = 2 * len(validation_maps) * len(panel)
+
+    def round_size(used: int, members: int, unplayed_pairs: int = 0) -> int:
+        """Size the next round after reserving every later game at full length.
+
+        used is the steps already spent; the new member will play members
+        pairs, after unplayed_pairs recorded pairs (the seeded ones) are played.
+        """
+        later = (
+            (unplayed_pairs + members) * payoff_games
+            + 2 * config.routine_seed_pairs * panel_games
+            + (shortlist + 1) * config.confirmation_seed_pairs * panel_games
+        )
+        return _round_steps(
+            remaining=config.total_env_steps - used - later * _MAX_GAME_STEPS,
+            round_env_steps=round_env_steps,
+            num_envs=config.num_envs,
+        )
+
+    seeded_pairs = len(seed_members) * (len(seed_members) - 1) // 2
+    if round_size(0, len(seed_members), seeded_pairs) == 0:
+        raise ValueError("no PSRO round fits in total_env_steps")
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     saved: dict[str, Any] = {
@@ -653,7 +687,7 @@ def train_psro(
                 f"{output_dir} was started with other settings; use a new output_dir"
             )
     else:
-        _write_atomic(settings_path, json.dumps(saved, indent=2) + "\n")
+        atomic_json(settings_path, saved)
 
     loaded: dict[str, System | Policy] = {}
 
@@ -680,12 +714,7 @@ def train_psro(
         },
     }
     maps_ = saved["payoff_maps"]
-    validation_maps = list(config.validation_maps or VALIDATION_MAPS)
     panel_systems = {name: method(reference) for name, reference in panel.items()}
-    routine_games = 2 * config.routine_seed_pairs * len(validation_maps) * len(panel)
-    confirmation_games = (
-        2 * config.confirmation_seed_pairs * len(validation_maps) * len(panel)
-    )
 
     def play_missing(members: Sequence[str]) -> None:
         """Play and record every pair among members that has no payoff row."""
@@ -732,10 +761,9 @@ def train_psro(
 
     def save_rounds() -> None:
         """Write rounds.json with every round record."""
-        _write_atomic(rounds_path, json.dumps(rounds, indent=2) + "\n")
+        atomic_json(rounds_path, rounds)
 
     play_missing(list(seeded))
-    budget = config.total_env_steps
     while True:
         entry: dict[str, Any]
         population = [*seeded, *(record["member"] for record in rounds)]
@@ -744,19 +772,9 @@ def train_psro(
         else:
             if rounds and rounds[-1].get("last"):
                 break
-            later = (
-                (len(population) + 1) * payoff_games
-                + 2 * routine_games
-                + (shortlist + 1) * confirmation_games
-            ) * _MAX_GAME_STEPS
-            steps = _round_steps(
-                remaining=budget - used_steps() - later,
-                round_env_steps=round_env_steps,
-                num_envs=config.num_envs,
-            )
+            # Round 1 always fits: the check before the seeded games reserved them.
+            steps = round_size(used_steps(), len(population))
             if steps == 0:
-                if not rounds:
-                    raise ValueError("no PSRO round fits in total_env_steps")
                 rounds[-1]["last"] = True
                 save_rounds()
                 break
@@ -777,8 +795,13 @@ def train_psro(
         if entry["status"] == "training":
             run_dir = output_dir / entry["run_dir"]
             bindings = {name: references[name] for name in entry["opponent_weights"]}
-            if (run_dir / "run_details.json").exists():
+            if (run_dir / "latest_checkpoint.json").exists():
                 result = training.train(resume_from=run_dir, opponents=bindings)
+            elif run_dir.exists() and any(run_dir.iterdir()):
+                raise ValueError(
+                    f"{run_dir} stopped before its first save; delete that "
+                    "folder and call again"
+                )
             elif entry["round"] == 1:
                 round_config = replace(
                     config,
@@ -790,6 +813,9 @@ def train_psro(
                     total_env_steps=entry["round_env_steps"],
                     validation_panel=None,
                     validation_opponents=None,
+                    random_diagnostic_seed_pairs=None,
+                    random_initialization_result=None,
+                    retain_all_actors=False,
                 )
                 result = training.train(
                     round_config, output_dir=run_dir, opponents=bindings
@@ -849,8 +875,8 @@ def train_psro(
         save=save_rounds,
     )
     entrant["ledger_env_steps"] = used_steps()
-    entrant["budget_env_steps"] = budget
-    _write_atomic(output_dir / "entrant.json", json.dumps(entrant, indent=2) + "\n")
+    entrant["budget_env_steps"] = config.total_env_steps
+    atomic_json(output_dir / "entrant.json", entrant)
     return {"settings": saved, "rounds": rounds, "entrant": entrant}
 
 
@@ -947,6 +973,12 @@ def load_psro_entrant(output_dir: str | Path) -> System:
     ------
     ValueError
         The folder has no ``entrant.json`` (the run has not finished).
+
+    Notes
+    -----
+    An entrant is a weighted set of saved actors, not one actor folder, so it
+    loads through this function: ``load_method`` and the command-line tools
+    do not read ``entrant.json``.
     """
     import marl_battlegrounds as marl_bgs
 

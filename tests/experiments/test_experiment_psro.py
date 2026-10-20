@@ -3,8 +3,8 @@
 Contracts: the packaged psro settings compose to a recurrent IPPO oracle on
 its 250,675,200-transition tournament recipe with the Season 0 validation
 maps, the eight Season 0 training opponents as seeded members, the
-four-member Season 0 validation panel, the released bundle (no folder given),
-20,054,016-transition rounds and 48 payoff games per pair on maps 0-41. run
+four-member Season 0 validation panel, the released bundle (no folder given)
+and train_psro's own defaults for every other population setting. run
 resolves the oracle through the shared training parser, reads output_dir and
 opponent_bundle from the launch folder, finds the seeded members and the
 panel in the bundle by name, and passes every population setting to
@@ -13,6 +13,7 @@ replaces train_psro, so no game is played.
 """
 
 import copy
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -46,9 +47,12 @@ def test_settings_compose() -> None:
         "tdm-gamma",
         "recurrent-mappo-combat-support-pooled-step-250675200",
     ]
-    assert settings["opponent_bundle"] is None
-    assert (settings["round_env_steps"], settings["payoff_games"]) == (20054016, 48)
-    assert settings["payoff_maps"] == list(range(42))
+    assert settings.pop("opponent_bundle") is None
+    del settings["seed_members"], settings["panel"]
+    defaults = inspect.signature(training.train_psro).parameters
+    assert settings == {name: defaults[name].default for name in settings} | {
+        "payoff_maps": list(range(42))
+    }
 
 
 def test_run_resolves_and_calls_train_psro(

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import inspect
 import json
 from copy import deepcopy
 from dataclasses import MISSING, asdict, fields, is_dataclass
@@ -26,6 +27,7 @@ from omegaconf import OmegaConf
 from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
 from marl_battlegrounds.baselines.methods import TRAINING_METHODS, method_settings_field
 from marl_battlegrounds.training.config import TrainConfig
+from marl_battlegrounds.training.psro import train_psro
 
 ROOT = (
     Path(__file__).resolve().parents[2] / "src/marl_battlegrounds/experiments/configs"
@@ -678,7 +680,17 @@ def presets() -> dict[str, dict[str, Any]]:
     }
     # PSRO: the oracle is a training method with its tournament recipe; the seeded
     # members and the panel are the Season 0 training opponents and validation
-    # panel, read from the released opponent bundle by name.
+    # panel, read from the released opponent bundle by name. Every other
+    # population setting is train_psro's own default.
+    population: dict[str, Any] = json.loads(
+        json.dumps(
+            {
+                name: parameter.default
+                for name, parameter in inspect.signature(train_psro).parameters.items()
+                if parameter.default is not inspect.Parameter.empty
+            }
+        )
+    )
     result["psro.yaml"] = {
         "defaults": [
             "_self_",
@@ -705,14 +717,7 @@ def presets() -> dict[str, dict[str, Any]]:
                 "recurrent-mappo-combat-support-pooled-step-250675200",
             ],
             "opponent_bundle": None,
-            "round_env_steps": 20054016,
-            "payoff_games": 48,
-            "payoff_maps": list(range(42)),
-            "payoff_seed": 20261021,
-            "validation_seed": 20261022,
-            "confirmation_seed": 20261023,
-            "eval_num_envs": 64,
-            "shortlist": 2,
+            **population,
         },
         "output_dir": "???",
         "hydra": deepcopy(stage_hydra),
@@ -879,6 +884,8 @@ def presets() -> dict[str, dict[str, Any]]:
                 "groups": 2,
                 "minibatches": 2,
             }
+            if method == "happo":
+                software[field]["parameter_sharing"] = "class"
         elif field == "qmix":
             software[field] = {
                 "rollout_length": 4,

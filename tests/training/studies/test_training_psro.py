@@ -2,9 +2,12 @@
 
 Contracts: bundle_references maps a pool.json name to its absolute actor
 folder or a scripted name to itself, and refuses a missing pool.json, another
-schema, an unknown name and an actor folder that is missing or outside the
-bundle; _round_steps gives a full round, all that remains below 1.5 rounds,
-rounded down to whole environment batches, and zero when nothing fits.
+schema, an unknown name and an actor folder that is missing or that exists
+outside the bundle; train_psro refuses a negative shortlist, empty
+payoff_maps, a PQN-VDN oracle whose learning rate decays and a budget with no
+room for one round, before it writes a file or plays a game; _round_steps
+gives a full round, all that remains below 1.5 rounds, rounded down to whole
+environment batches, and zero when nothing fits.
 score_table fills each played pair both ways (score of j against i is 1 minus
 i against j, draws count 1/2) with 1/2 on the diagonal, accepts a pair in
 either order, and refuses no members, repeated names, unknown members, a
@@ -21,11 +24,14 @@ game is played.
 """
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
+from marl_battlegrounds.training import TrainConfig, psro
 from marl_battlegrounds.training.psro import (
     PairResult,
     _round_steps,  # pyright: ignore[reportPrivateUsage]
@@ -143,7 +149,9 @@ def test_worst_case_score() -> None:
 
 
 def test_bundle_references(tmp_path: Path) -> None:
-    (tmp_path / "models" / "fixed").mkdir(parents=True)
+    bundle = tmp_path / "bundle"
+    (bundle / "models" / "fixed").mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
     pool = {
         "schema_version": 1,
         "members": [
@@ -153,10 +161,10 @@ def test_bundle_references(tmp_path: Path) -> None:
             {"name": "tdm-alpha", "kind": "scripted"},
         ],
     }
-    (tmp_path / "pool.json").write_text(json.dumps(pool), encoding="utf-8")
-    assert bundle_references(tmp_path, ["tdm-alpha", "fixed"]) == {
+    (bundle / "pool.json").write_text(json.dumps(pool), encoding="utf-8")
+    assert bundle_references(bundle, ["tdm-alpha", "fixed"]) == {
         "tdm-alpha": "tdm-alpha",
-        "fixed": str((tmp_path / "models" / "fixed").resolve()),
+        "fixed": str((bundle / "models" / "fixed").resolve()),
     }
     for name, message in (
         ("missing", "is not in"),
@@ -164,12 +172,38 @@ def test_bundle_references(tmp_path: Path) -> None:
         ("gone", "no actor folder"),
     ):
         with pytest.raises(ValueError, match=message):
-            bundle_references(tmp_path, [name])
-    (tmp_path / "pool.json").write_text('{"schema_version": 2}', encoding="utf-8")
+            bundle_references(bundle, [name])
+    (bundle / "pool.json").write_text('{"schema_version": 2}', encoding="utf-8")
     with pytest.raises(ValueError, match="schema 1"):
-        bundle_references(tmp_path, ["fixed"])
+        bundle_references(bundle, ["fixed"])
     with pytest.raises(ValueError, match=r"no pool\.json"):
-        bundle_references(tmp_path / "models", ["fixed"])
+        bundle_references(bundle / "models", ["fixed"])
+
+
+def test_train_psro_refuses_before_any_file_or_game(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_games(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a game was played")
+
+    monkeypatch.setattr(psro, "play_pair", no_games)
+    oracle = TrainConfig(method="ippo", total_env_steps=20_000_000)
+    cases: list[tuple[TrainConfig, dict[str, Any], str]] = [
+        (oracle, {"shortlist": -1}, "shortlist"),
+        (oracle, {"payoff_maps": ()}, "payoff_maps"),
+        (TrainConfig(method="pqn_vdn"), {}, "lr_linear_decay"),
+        (replace(oracle, total_env_steps=100_000), {}, "no PSRO round fits"),
+    ]
+    for config, extra, message in cases:
+        with pytest.raises(ValueError, match=message):
+            psro.train_psro(
+                config,
+                output_dir=tmp_path / "run",
+                seed_members={"random": "random", "tdm-alpha": "tdm-alpha"},
+                panel={"tdm-beta": "tdm-beta"},
+                **extra,
+            )
+    assert not (tmp_path / "run").exists()
 
 
 def test_round_steps() -> None:

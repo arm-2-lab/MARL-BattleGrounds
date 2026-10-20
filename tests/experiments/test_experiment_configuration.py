@@ -10,8 +10,10 @@ tournament run yet, takes recurrent MAPPO's recipe with the team reward and
 one actor per class.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
 PQN normalization and validation_maps, whose default is left out of saved
-configs), six method groups, complete pool replacement, ordinary
-Hydra overrides and rejection paths. Subprocess probes forbid numerical imports,
+configs), seven method groups, complete pool replacement, ordinary
+Hydra overrides and rejection paths. Each method's software_check settings
+file also builds a valid TrainConfig on its own, as the every-method software
+check reads it without the method group. Subprocess probes forbid numerical imports,
 factory calls and workers. These are software checks, not learning experiments.
 """
 
@@ -31,7 +33,11 @@ from omegaconf.errors import OmegaConfBaseException
 from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
 from marl_battlegrounds.baselines.methods import TRAINING_METHODS, method_settings_field
 from marl_battlegrounds.experiments.hydra import resolve_training_config, run_training
-from marl_battlegrounds.training.config import TrainConfig, config_to_dict
+from marl_battlegrounds.training.config import (
+    TrainConfig,
+    config_from_dict,
+    config_to_dict,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIELDS = [
@@ -233,6 +239,19 @@ def test_method_switch_keeps_only_selected_settings(
     assert result.total_env_steps == 20480
     assert result.num_envs == 32
     assert result.retain_all_actors is True
+
+
+@pytest.mark.parametrize("method", TRAINING_METHODS)
+def test_software_check_settings_are_valid_without_the_method_group(
+    method: str,
+) -> None:
+    path = ROOT / "src/marl_battlegrounds/experiments/configs/recipe_settings"
+    settings = cast(
+        dict[str, Any],
+        OmegaConf.to_container(OmegaConf.load(path / f"software_check_{method}.yaml")),
+    )
+    del settings["seed"]
+    assert config_from_dict({**settings, "method": method}).method == method
 
 
 @pytest.mark.parametrize("method", TRAINING_METHODS)

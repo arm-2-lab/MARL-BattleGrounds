@@ -1,10 +1,14 @@
 """Check HAPPO's sequential update against independent references on the CPU.
 
-Contracts: _happo_factor multiplies the factor by exp(new - old) over the
-updated group's sample rows only, with every other row counting 1, matching a
-NumPy reference; the actor loss weights each row's clipped surrogate by
-actor_weight after standardizing advantages, and entropy not at all, matching
-a NumPy recomputation, while no weight leaves the ordinary objective. On a
+Contracts: _happo_factor multiplies the factor by exp(new - old) where the
+updated group had a sample, with every other step and game counting 1,
+matching a NumPy reference; with two gradient groups and two minibatches,
+under class and slot sharing, every group pass receives as its weight exactly
+the product of the earlier groups' new-to-old ratios on their own rows, each
+game once, recomputed from the parameters each earlier pass left; the actor
+loss weights each row's clipped surrogate by actor_weight after standardizing
+advantages, and entropy not at all, matching a NumPy recomputation, while no
+weight leaves the ordinary objective. On a
 small real three-agent rollout (Mage, Warrior, Priest), one "happo" update
 leaves the critic exactly where a recurrent MAPPO update with class sharing
 puts it, keeps the absent Hunter and Rogue groups' actor parameters and
@@ -14,6 +18,8 @@ slots does; "happo" with parameter_sharing "all" is refused. No learning run.
 """
 
 # pyright: reportPrivateUsage=false, reportUnknownLambdaType=false
+import contextlib
+import dataclasses
 import functools
 from typing import Any
 
@@ -47,24 +53,29 @@ CONFIG = ppo.PPOConfig(
 def test_happo_factor_matches_numpy() -> None:
     generator = np.random.default_rng(5)
     factor = generator.uniform(0.5, 1.5, (3, 2)).astype(np.float32)
-    new = generator.normal(-2, 0.3, (3, 2, 5)).astype(np.float32)
-    old = generator.normal(-2, 0.3, (3, 2, 5)).astype(np.float32)
-    updated = generator.random((3, 2, 5)) < 0.4
-    expected = factor * np.prod(np.where(updated, np.exp(new - old), 1.0), axis=-1)
+    log_ratio = generator.normal(0, 0.3, (3, 2)).astype(np.float32)
+    updated = generator.random((3, 2)) < 0.4
+    expected = factor * np.where(updated, np.exp(log_ratio), 1.0)
     actual = ppo._happo_factor(
-        jnp.asarray(factor), jnp.asarray(new), jnp.asarray(old), jnp.asarray(updated)
+        jnp.asarray(factor), jnp.asarray(log_ratio), jnp.asarray(updated)
     )
     np.testing.assert_allclose(actual, expected, rtol=1e-6)
     none = ppo._happo_factor(
-        jnp.asarray(factor), jnp.asarray(new), jnp.asarray(old), jnp.zeros_like(updated)
+        jnp.asarray(factor), jnp.asarray(log_ratio), jnp.zeros_like(updated)
     )
     np.testing.assert_array_equal(none, factor)
 
 
-def _rollout(team_sizes: tuple[int, int]) -> tuple[ppo.PPOBatch, ppo.PPOTrainState]:
+def _learner(config: ppo.PPOConfig = CONFIG) -> ppo.PPOTrainState:
+    return ppo.initialize_ppo(jax.random.key(4), config, method="happo")
+
+
+@functools.cache
+def _rollout() -> ppo.PPOBatch:
+    # Team A holds a Mage, a Warrior and a Priest; Team B two actors.
     env = make(
         "tdm",
-        env_config=evaluation_env_config(team_sizes=team_sizes),
+        env_config=evaluation_env_config(team_sizes=(3, 2)),
         num_envs=GAMES,
         metrics="none",
     )
@@ -98,8 +109,7 @@ def _rollout(team_sizes: tuple[int, int]) -> tuple[ppo.PPOBatch, ppo.PPOTrainSta
     active = jnp.stack(rows["active"])
     shape = (LENGTH, GAMES, 5)
     generator = np.random.default_rng(7)
-    learner = ppo.initialize_ppo(jax.random.key(4), CONFIG, method="happo")
-    batch = ppo.PPOBatch(
+    return ppo.PPOBatch(
         stack(*rows["obs"]),
         jnp.stack(rows["physical"]),
         stack(*rows["mask"]),
@@ -116,15 +126,107 @@ def _rollout(team_sizes: tuple[int, int]) -> tuple[ppo.PPOBatch, ppo.PPOTrainSta
         jnp.zeros((GAMES, 5, 128), jnp.float32),
         jnp.zeros((GAMES, 5, 128), jnp.float32),
     )
-    return batch, learner
 
 
 def _group(tree: object, group: int) -> list[Array]:
     return [leaf[group] for leaf in jax.tree.leaves(tree)]
 
 
+class _CapturedError(Exception):
+    pass
+
+
+def _captured_update(
+    batch: ppo.PPOBatch,
+    learner: ppo.PPOTrainState,
+    key: Array,
+    config: ppo.PPOConfig,
+    *,
+    method: str,
+    calls: int | None = None,
+) -> tuple[list[tuple[ppo.PPOTrainState, ppo.PPOMinibatch]], ppo.PPOTrainState | None]:
+    captured: list[tuple[ppo.PPOTrainState, ppo.PPOMinibatch]] = []
+    original = ppo.update_minibatch
+
+    def capture(
+        state: ppo.PPOTrainState,
+        minibatch: ppo.PPOMinibatch,
+        config: ppo.PPOConfig = ppo.DEFAULT_PPO_CONFIG,
+        *,
+        method: str = "mappo",
+    ) -> tuple[ppo.PPOTrainState, ppo.PPOMetrics]:
+        captured.append((state, minibatch))
+        if len(captured) == calls:
+            raise _CapturedError
+        return original(state, minibatch, config, method=method)
+
+    final = None
+    with pytest.MonkeyPatch.context() as patch, jax.disable_jit():
+        patch.setattr(ppo, "update_minibatch", capture)
+        with contextlib.suppress(_CapturedError):
+            final, _ = ppo.update_ppo(learner, batch, key, config, method=method)
+    return captured, final
+
+
+@pytest.mark.parametrize("sharing", ["class", "none"])
+def test_each_group_pass_is_weighted_by_the_earlier_groups_ratios(
+    sharing: str,
+) -> None:
+    config = dataclasses.replace(
+        CONFIG, minibatches=2, groups=2, parameter_sharing=sharing
+    )
+    batch = _rollout()
+    calls, final = _captured_update(
+        batch, _learner(config), jax.random.key(21), config, method="happo"
+    )
+    assert final is not None
+    per_pass = config.epochs * config.minibatches
+    assert len(calls) == 6 * per_pass
+    old = np.asarray(batch.old_log_prob)
+    factor = np.ones(old.shape[:2])
+    for group_pass in range(1, 6):
+        after = (
+            calls[(group_pass + 1) * per_pass][0].actor_params
+            if group_pass < 5
+            else final.actor_params
+        )
+        ratio = np.ones_like(factor)
+        seen: list[int] = []
+        for _, minibatch in calls[group_pass * per_pass : (group_pass + 1) * per_pass]:
+            logits = jax.lax.map(
+                functools.partial(
+                    ppo._actor_logits, after, config=config, method="happo"
+                ),
+                minibatch,
+            )
+            logp = np.asarray(
+                action_log_prob(logits, minibatch.action_mask, minibatch.actions)
+            )
+            rows = np.asarray(minibatch.old_log_prob)
+            for gradient_group, row in np.ndindex(rows.shape[0], rows.shape[2]):
+                column = rows[gradient_group, :, row, 0]
+                (game,) = {
+                    game
+                    for game, slot in np.ndindex(*old.shape[1:])
+                    if np.array_equal(old[:, game, slot], column)
+                }
+                seen.append(game)
+                np.testing.assert_allclose(
+                    np.asarray(minibatch.actor_weight)[gradient_group, :, row, 0],
+                    factor[:, game],
+                    rtol=1e-5,
+                )
+                sampled = np.asarray(minibatch.actor_samples)[gradient_group, :, row, 0]
+                ratio[:, game] = np.where(
+                    sampled, np.exp(logp[gradient_group, :, row, 0] - column), 1.0
+                )
+        assert sorted(seen) == list(range(GAMES))
+        factor = factor * ratio
+    assert np.ptp(factor) > 0
+
+
 def test_one_happo_update_against_mappo_references() -> None:
-    batch, learner = _rollout((3, 2))
+    batch, learner = _rollout(), _learner()
     key = jax.random.key(21)
     happo, metrics = ppo.update_ppo(learner, batch, key, CONFIG, method="happo")
     mappo, _ = ppo.update_ppo(learner, batch, key, CONFIG, method="mappo")
@@ -152,7 +254,8 @@ def test_one_happo_update_against_mappo_references() -> None:
             )
         )
     assert int(np.sum(metrics.actor_samples)) == int(np.sum(batch.active))
-    order = list(np.asarray(jax.random.permutation(jax.random.fold_in(key, 1), 5)))
+    order_key = jax.random.fold_in(key, ppo._HAPPO_ORDER_TAG)
+    order = list(np.asarray(jax.random.permutation(order_key, 5)))
     first = next(group for group in order if group in (0, 1, 4))
     # Slots 0-2 hold the Mage, Warrior and Priest (class groups 0, 1, 4).
     slot_groups = np.asarray([0, 1, 4, -1, -1])
@@ -171,27 +274,13 @@ def test_one_happo_update_against_mappo_references() -> None:
 
 
 def test_weighted_surrogate_matches_numpy() -> None:
-    batch, learner = _rollout((3, 2))
+    batch, learner = _rollout(), _learner()
     key = jax.random.key(31)
     weight = jax.random.uniform(key, batch.actions.shape, minval=0.5, maxval=1.5)
-    captured: list[ppo.PPOMinibatch] = []
-    original = ppo.update_minibatch
-
-    def capture(
-        state: ppo.PPOTrainState,
-        minibatch: ppo.PPOMinibatch,
-        config: ppo.PPOConfig = ppo.DEFAULT_PPO_CONFIG,
-        *,
-        method: str = "mappo",
-    ) -> tuple[ppo.PPOTrainState, ppo.PPOMetrics]:
-        captured.append(minibatch)
-        return original(state, minibatch, config, method=method)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(ppo, "update_minibatch", capture)
-        with jax.disable_jit():
-            ppo.update_ppo(learner, batch, key, CONFIG, method="mappo")
-    group: ppo.PPOMinibatch = jax.tree.map(lambda value: value[0], captured[0])  # pyright: ignore[reportUnknownArgumentType]
+    [(_, captured)], _ = _captured_update(
+        batch, learner, key, CONFIG, method="mappo", calls=1
+    )
+    group: ppo.PPOMinibatch = jax.tree.map(lambda value: value[0], captured)  # pyright: ignore[reportUnknownArgumentType]
     weighted = group._replace(actor_weight=weight)
     loss, (entropy, _, _) = ppo._actor_loss_with_metrics(
         learner.actor_params, weighted, CONFIG
@@ -218,7 +307,7 @@ def test_weighted_surrogate_matches_numpy() -> None:
 
 
 def test_happo_refuses_shared_actors() -> None:
-    batch, learner = _rollout((3, 2))
+    batch, learner = _rollout(), _learner()
     config = ppo.PPOConfig(
         rollout_length=LENGTH,
         epochs=1,

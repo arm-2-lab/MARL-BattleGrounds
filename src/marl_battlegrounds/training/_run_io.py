@@ -1186,7 +1186,9 @@ def validate_host_state(
     carry that depth. System-panel records may require loading an actor to verify its
     registration; learner arrays are not restored here. No games run and no
     writer or log is changed. Child runs use their frozen future points and
-    effective roots. Their local actor map stays local; explicit checked ancestor
+    effective roots; a pending capture may sit at a validation point, an
+    explicit save step, the run's start (0, or a child's start step) or its
+    end. Their local actor map stays local; explicit checked ancestor
     references may supply a selected actor or an actor for child confirmation.
     Parent games do not count as new child work. Call this after complete learner
     restore and before resume_recording.
@@ -1785,7 +1787,9 @@ def validate_host_state(
             raise ValueError(
                 "Saved pending Random diagnostic differs from its schedule"
             )
-        if steps not in points | set(config["checkpoint_env_steps"]) | {0, total}:
+        # A run's first save sits at its start: 0, or a child's parent boundary.
+        start = 0 if continuation is None else continuation["start_env_steps"]
+        if steps not in points | set(config["checkpoint_env_steps"]) | {start, total}:
             raise ValueError("Saved pending capture is outside its declared schedule")
     if host["final_actor"] is not None:
         if steps != total or host["final_actor"] not in actors.values():

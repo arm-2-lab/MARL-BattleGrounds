@@ -140,11 +140,16 @@ class TrainConfig:
         layers without recurrent memory. "happo" (HAPPO, Kuba et al., ICLR
         2022) keeps recurrent MAPPO's networks and critic inputs but updates
         one actor group at a time, in a random order, each weighted by the
-        earlier groups' policy change. It needs per-group actors: the default
-        ppo becomes PPOConfig(parameter_sharing="class"), one actor per class;
-        a custom ppo must set parameter_sharing "class" or "none", and "all" is
-        refused. It assumes one shared team reward, such as
-        combat_support_team_reward. "qmix" is recurrent QMIX
+        earlier groups' policy change. It needs per-group actors: a ppo equal
+        to the default PPOConfig() becomes PPOConfig(parameter_sharing="class"),
+        one actor per class; any other ppo must set parameter_sharing "class"
+        or "none" (one actor per slot), and "all" is refused. Class sharing
+        refuses a curriculum system roster that repeats a class. HAPPO's theory
+        assumes every actor gets the same team reward, as the native win/loss
+        reward and this recipe do:
+        ``marl_battlegrounds.training.reward_recipes:combat_support_team_reward``.
+        A per-agent reward still runs but breaks that assumption, and nothing
+        checks it. "qmix" is recurrent QMIX
         with compact replay, configured by qmix instead of ppo. "pqn_vdn" is
         recurrent PQN-VDN (no replay or target network), configured by pqn.
     num_envs : int, default=32
@@ -530,6 +535,7 @@ class TrainConfig:
                 "curriculum",
                 json.loads(json.dumps(self.curriculum, allow_nan=False)),
             )
+        _check_happo_rosters(self.method, self.ppo, self.curriculum)
         if self.curriculum and self.score_threshold_curriculum:
             raise ValueError("Choose team/map curriculum or score-threshold curriculum")
 
@@ -988,6 +994,51 @@ _STAGES = 17
 
 
 _MAPS = 42
+
+
+def _check_happo_rosters(method: str, ppo: PPOConfig, curriculum: object) -> None:
+    """Refuse HAPPO class sharing when a learner roster repeats a class.
+
+    Parameters
+    ----------
+    method : str
+        The run's method name; only "happo" is checked.
+    ppo : PPOConfig
+        The run's PPO settings; only parameter_sharing "class" is checked.
+    curriculum : object
+        A TrainConfig curriculum (bool) or a custom stage list, already
+        checked by ``_custom_stages``; None means no curriculum change.
+
+    Raises
+    ------
+    ValueError
+        A stage's "system" roster names a class twice. HAPPO's class update
+        trains each class's actor on that class's one row per game, so the
+        second row would never train. Default and team_size rosters never
+        repeat a class; parameter_sharing "none" accepts any roster.
+
+    Notes
+    -----
+    TrainConfig checks its own curriculum; extend_training checks a
+    changes.curriculum the same way. No I/O.
+    """
+    if (
+        method != "happo"
+        or ppo.parameter_sharing != "class"
+        or curriculum is None
+        or type(curriculum) is bool
+    ):
+        return
+    for stage in cast(Sequence[Mapping[str, Any]], curriculum):
+        roster = cast(Mapping[str, Sequence[str]], stage.get("rosters", {})).get(
+            "system", ()
+        )
+        if len(set(roster)) != len(roster):
+            raise ValueError(
+                "HAPPO with parameter_sharing 'class' trains one row per class, "
+                f"but a system roster repeats a class: {list(roster)}; use "
+                "parameter_sharing 'none' (one actor per slot) for it"
+            )
 
 
 def _custom_stages(value: object) -> tuple[Mapping[str, object], ...]:
