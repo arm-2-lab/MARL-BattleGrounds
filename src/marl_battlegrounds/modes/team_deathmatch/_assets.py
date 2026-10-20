@@ -298,14 +298,16 @@ class ScenarioContent(EvaluationModel):
 
 
 def _resource_bytes(relative_path: str) -> bytes:
-    """Read one known resource below the installed package's data/tdm directory.
+    """Read one known resource below the installed modes/team_deathmatch/data folder.
 
     relative_path is an internal package-relative name. Return raw bytes; ordinary
     resource and file errors propagate. This helper does not sanitize arbitrary
     external paths and must only be called with owned resource names.
     """
     return (
-        files("marl_battlegrounds").joinpath("data", "tdm", relative_path).read_bytes()
+        files("marl_battlegrounds")
+        .joinpath("modes", "team_deathmatch", "data", relative_path)
+        .read_bytes()
     )
 
 

@@ -108,6 +108,19 @@ from marl_battlegrounds.core.types import (
     Reward,
 )
 from marl_battlegrounds.evaluation.recording_identity import canonical_digest_sha256
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    HUNTER_CLOSE_DISTANCE,
+    HUNTER_FAR_DISTANCE,
+    HUNTER_TRAP_DISTANCE,
+    reactive_tdm_alpha_controller_descriptor,
+    reactive_tdm_alpha_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
+    reactive_tdm_beta_controller_descriptor,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
+    reactive_tdm_gamma_policy,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
@@ -117,17 +130,6 @@ from marl_battlegrounds.policies.reactive_common import (
     centers,
     refine_movement,
 )
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
-    HUNTER_CLOSE_DISTANCE,
-    HUNTER_FAR_DISTANCE,
-    HUNTER_TRAP_DISTANCE,
-    reactive_tdm_alpha_controller_descriptor,
-    reactive_tdm_alpha_policy,
-)
-from marl_battlegrounds.policies.reactive_tdm_beta import (
-    reactive_tdm_beta_controller_descriptor,
-)
-from marl_battlegrounds.policies.reactive_tdm_gamma import reactive_tdm_gamma_policy
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsSensorSourceBankV2,
     build_default_shared_obs_information_availability,

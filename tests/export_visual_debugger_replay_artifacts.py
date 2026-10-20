@@ -289,7 +289,7 @@ def export_artifacts(output_directory: Path) -> dict[str, str]:
 
 
 def export_acceptance_artifacts(output_directory: Path) -> dict[str, object]:
-    from scripts.dev.qualify_tdm_scenarios import (
+    from scripts.dev.modes.team_deathmatch.qualify_scenarios import (
         _planned_episode,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -298,7 +298,7 @@ def export_acceptance_artifacts(output_directory: Path) -> dict[str, object]:
     from marl_battlegrounds.evaluation.evaluate import evaluate_episodes
     from marl_battlegrounds.evaluation.policy_execution import policy
     from marl_battlegrounds.evaluation.replay_io import save_replay
-    from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import TDM_BETA_SCENARIO_IDS
 
     output_directory.mkdir(parents=True, exist_ok=True)
     paths = [""] * 8

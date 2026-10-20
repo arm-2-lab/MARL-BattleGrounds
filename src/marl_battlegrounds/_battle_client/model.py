@@ -34,7 +34,6 @@ from marl_battlegrounds.evaluation._replays.wire_shapes import (
 if TYPE_CHECKING:
     from jax import Array
 
-    from marl_battlegrounds._tdm_assets import TDMMapInfo
     from marl_battlegrounds.core.types import (
         ActionMask,
         EnvConfig,
@@ -51,6 +50,7 @@ if TYPE_CHECKING:
     )
     from marl_battlegrounds.evaluation.policy_execution import System, SystemState
     from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
+    from marl_battlegrounds.modes.team_deathmatch._assets import TDMMapInfo
     from marl_battlegrounds.rendering.scene import StatusSourceEvidenceStateV2
     from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
     from marl_battlegrounds.viewer.match_moments import MatchMomentHistoryV1
@@ -578,7 +578,7 @@ class DebuggerScenario:
             if self.mode != "interactive":
                 raise ValueError("Fixed scenarios use interactive controls")
         if self.packaged_map is not None:
-            from marl_battlegrounds._tdm_assets import TDMMapInfo
+            from marl_battlegrounds.modes.team_deathmatch._assets import TDMMapInfo
 
             if type(self.packaged_map) is not TDMMapInfo:
                 raise TypeError("Packaged maps require their installed catalog entry")

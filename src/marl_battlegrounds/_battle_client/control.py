@@ -1149,7 +1149,7 @@ def _validate_fixed_setup(
     identifier = scenario.packaged_scenario_id
     if identifier is None:
         return 1
-    from marl_battlegrounds.evaluation.tdm_scenarios import (
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import (
         TDM_BETA_SCENARIO_IDS,
         _pressure_identity,  # pyright: ignore[reportPrivateUsage]
         build_tdm_qualification_seed_schedule,

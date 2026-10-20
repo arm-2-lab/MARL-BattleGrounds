@@ -18,20 +18,20 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
-from marl_battlegrounds._tdm_assets import (
-    MapGeometry,
-    TDMMapInfo,
-    asset_manifest,
-    map_geometry,
-    map_history,
-    map_id_aliases,
-)
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     EvaluationEpisodeContext,
     EvaluationModel,
     ResolvedEnvConfigV1,
     ResolvedEnvConfigV2,
+)
+from marl_battlegrounds.modes.team_deathmatch._assets import (
+    MapGeometry,
+    TDMMapInfo,
+    asset_manifest,
+    map_geometry,
+    map_history,
+    map_id_aliases,
 )
 
 

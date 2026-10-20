@@ -710,7 +710,7 @@ def test_early_resume_preserves_unplayed_maps_without_current_lookup(
     if historical_map:
         import jax.numpy as jnp
 
-        from marl_battlegrounds._tdm_assets import map_history
+        from marl_battlegrounds.modes.team_deathmatch._assets import map_history
 
         historical = next(
             entry

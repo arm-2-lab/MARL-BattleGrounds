@@ -33,11 +33,11 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import reactive_tdm_beta_policy
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
 )
-from marl_battlegrounds.policies.reactive_tdm_beta import reactive_tdm_beta_policy
 from marl_battlegrounds.policies.shared_obs import (
     build_default_shared_obs_information_availability,
     build_shared_obs_sensor_source_bank,
@@ -78,7 +78,7 @@ def _run_witness(scenario: TDMScenario) -> list[WitnessTransition]:
         scenario.config.agent_profile.team_ids,
     )
     expected = json.loads(
-        (Path(__file__).parents[1] / "fixtures" / "scenario_5_witness.json").read_text()
+        (Path(__file__).parents[2] / "fixtures" / "scenario_5_witness.json").read_text()
     )
     assert scenario.info.source.revision == expected["source_revision"]
     assert scenario.info.source.semantic_digest == expected["semantic_digest"]

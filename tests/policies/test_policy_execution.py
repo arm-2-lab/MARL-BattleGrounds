@@ -32,6 +32,13 @@ from marl_battlegrounds.evaluation.policy_execution import (
     policy,
     select_policy_carry,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import reactive_tdm_beta_policy
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
+    reactive_tdm_gamma_policy,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
@@ -43,9 +50,6 @@ from marl_battlegrounds.policies.input import (
 )
 from marl_battlegrounds.policies.no_shared_obs import execute_no_shared_obs_team_policy
 from marl_battlegrounds.policies.random_valid import random_policy
-from marl_battlegrounds.policies.reactive_tdm_alpha import reactive_tdm_alpha_policy
-from marl_battlegrounds.policies.reactive_tdm_beta import reactive_tdm_beta_policy
-from marl_battlegrounds.policies.reactive_tdm_gamma import reactive_tdm_gamma_policy
 from marl_battlegrounds.policies.shared_obs import (
     build_shared_obs_sensor_source_bank,
     execute_shared_obs_team_policy,

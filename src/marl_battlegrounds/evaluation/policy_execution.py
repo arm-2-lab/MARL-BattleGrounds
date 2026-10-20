@@ -33,6 +33,18 @@ from jax.core import Tracer
 from marl_battlegrounds.core.types import AGENT_FEATURE_CLASS_ID, Action, ActionMask
 from marl_battlegrounds.evaluation.host_evidence import team_scope
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_controller_descriptor,
+    reactive_tdm_alpha_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
+    reactive_tdm_beta_controller_descriptor,
+    reactive_tdm_beta_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
+    reactive_tdm_gamma_controller_descriptor,
+    reactive_tdm_gamma_policy,
+)
 
 # Private System adapter fields are shared only by their owning module's helpers.
 # pyright: reportPrivateUsage=false
@@ -49,18 +61,6 @@ from marl_battlegrounds.policies.input import (
     build_team_actor_input,
 )
 from marl_battlegrounds.policies.random_valid import random_policy
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
-    reactive_tdm_alpha_controller_descriptor,
-    reactive_tdm_alpha_policy,
-)
-from marl_battlegrounds.policies.reactive_tdm_beta import (
-    reactive_tdm_beta_controller_descriptor,
-    reactive_tdm_beta_policy,
-)
-from marl_battlegrounds.policies.reactive_tdm_gamma import (
-    reactive_tdm_gamma_controller_descriptor,
-    reactive_tdm_gamma_policy,
-)
 from marl_battlegrounds.policies.shared_obs import SharedObsPolicy
 
 if TYPE_CHECKING:

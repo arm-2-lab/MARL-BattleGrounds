@@ -59,12 +59,14 @@ from marl_battlegrounds.evaluation.models import (
     VersionedIdentityV1,
     canonical_digest_sha256,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_policy,
+)
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.no_shared_obs import (
     execute_no_shared_obs_team_policy,
 )
 from marl_battlegrounds.policies.random_valid import random_policy
-from marl_battlegrounds.policies.reactive_tdm_alpha import reactive_tdm_alpha_policy
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsSensorSourceBankV1,
     SharedObsSensorSourceBankV2,

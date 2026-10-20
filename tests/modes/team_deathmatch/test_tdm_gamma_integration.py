@@ -58,18 +58,18 @@ from marl_battlegrounds.evaluation.policy_execution import (
 )
 from marl_battlegrounds.evaluation.recording_identity import canonical_digest_sha256
 from marl_battlegrounds.evaluation.system_evaluation import freeze_evaluation_method
-from marl_battlegrounds.policies import reactive_tdm_gamma
-from marl_battlegrounds.policies.input import Observations
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
+from marl_battlegrounds.modes.team_deathmatch.bots import gamma as reactive_tdm_gamma
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
     reactive_tdm_alpha_controller_descriptor,
 )
-from marl_battlegrounds.policies.reactive_tdm_beta import (
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
     reactive_tdm_beta_controller_descriptor,
 )
-from marl_battlegrounds.policies.reactive_tdm_gamma import (
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
     reactive_tdm_gamma_controller_descriptor,
     reactive_tdm_gamma_policy,
 )
+from marl_battlegrounds.policies.input import Observations
 from marl_battlegrounds.training._content import (
     PreparedTrainingContent,
     pinned_opponent_evidence,

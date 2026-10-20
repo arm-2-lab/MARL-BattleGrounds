@@ -28,7 +28,7 @@ from jax import Array
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds import llm
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     TDM_BETA_SCENARIO_IDS,
     build_tdm_qualification_seed_schedule,
     build_tdm_scenario_specification,

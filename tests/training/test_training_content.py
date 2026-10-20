@@ -34,8 +34,6 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from marl_battlegrounds import _tdm_assets
-from marl_battlegrounds._tdm_assets import MapGeometry
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.models import (
     REQUIRED_SCHEMA_BINDINGS_V3,
@@ -51,6 +49,8 @@ from marl_battlegrounds.evaluation.policy_execution import (
 from marl_battlegrounds.evaluation.recording_identity import (
     ordered_source_bank_identity,
 )
+from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
+from marl_battlegrounds.modes.team_deathmatch._assets import MapGeometry
 from marl_battlegrounds.tasks import (
     balanced_spawn_configs,
     canonical_tournament_rosters,

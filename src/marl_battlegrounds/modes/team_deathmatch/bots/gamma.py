@@ -50,6 +50,17 @@ from marl_battlegrounds.core.types import (
     ActionMask,
     Observation,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    HUNTER_CLOSE_DISTANCE,
+    HUNTER_FAR_DISTANCE,
+    MAGE_DISTANCE,
+    PRIEST_ULTIMATE_HEALTH,
+    WARRIOR_CHARGE_HEALTH,
+    _priest_direction,  # pyright: ignore[reportPrivateUsage]
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
+    reactive_tdm_beta_controller_descriptor,
+)
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.reactive_common import (
     _body_aware_move,  # pyright: ignore[reportPrivateUsage]
@@ -58,17 +69,6 @@ from marl_battlegrounds.policies.reactive_common import (
     lowest_health_row,
     nearest_row,
     refine_movement,
-)
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
-    HUNTER_CLOSE_DISTANCE,
-    HUNTER_FAR_DISTANCE,
-    MAGE_DISTANCE,
-    PRIEST_ULTIMATE_HEALTH,
-    WARRIOR_CHARGE_HEALTH,
-    _priest_direction,  # pyright: ignore[reportPrivateUsage]
-)
-from marl_battlegrounds.policies.reactive_tdm_beta import (
-    reactive_tdm_beta_controller_descriptor,
 )
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsSensorSourceBankV2,

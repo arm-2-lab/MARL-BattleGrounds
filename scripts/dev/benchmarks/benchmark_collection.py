@@ -249,7 +249,10 @@ def run(args: argparse.Namespace) -> int:
     ):
         raise ValueError("Collection cannot be combined with another benchmark mode")
     package = (args.package_root or Path(__file__).resolve().parents[3]).resolve()
-    assets = (args.assets_root or package / "src/marl_battlegrounds/data/tdm").resolve()
+    assets = (
+        args.assets_root
+        or package / "src/marl_battlegrounds/modes/team_deathmatch/data"
+    ).resolve()
     identity = _foundation_identity(package, assets)
     identity["collection_harness_sha256"] = sha256(
         Path(__file__).read_bytes()

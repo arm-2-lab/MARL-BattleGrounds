@@ -24,12 +24,12 @@ from marl_battlegrounds._battle_client.model import (
     DebuggerScenario,
 )
 from marl_battlegrounds._config_checks import run_config_check
-from marl_battlegrounds._tdm_assets import scenario_content
 from marl_battlegrounds.core.config import validate_env_config
 from marl_battlegrounds.core.env import reset
 from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
 from marl_battlegrounds.evaluation.policy_execution import Policy, System
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch._assets import scenario_content
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     TDM_BETA_SCENARIO_IDS,
     _prepared_scenario_specification,
     build_tdm_qualification_seed_schedule,

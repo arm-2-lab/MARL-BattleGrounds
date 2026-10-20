@@ -37,11 +37,13 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_policy,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
 )
-from marl_battlegrounds.policies.reactive_tdm_alpha import reactive_tdm_alpha_policy
 from marl_battlegrounds.policies.shared_obs import (
     build_default_shared_obs_information_availability,
     build_shared_obs_sensor_source_bank,

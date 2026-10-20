@@ -17,7 +17,6 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from marl_battlegrounds import _tdm_assets
 from marl_battlegrounds.evaluation import revision
 from marl_battlegrounds.evaluation._recording.recording_context import (
     build_recording_context,
@@ -32,6 +31,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
 )
 from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
+from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
 from marl_battlegrounds.tasks import make_standard_team_deathmatch_config
 
 
@@ -567,7 +567,7 @@ def test_scenario_metadata_preserves_actual_controller_and_execution_facts() -> 
         controller_identity,
         policy,
     )
-    from marl_battlegrounds.evaluation.tdm_scenarios import (
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import (
         TDM_SCENARIO_PUBLIC_AGENT_IDS,
         build_tdm_qualification_seed_schedule,
     )
@@ -644,7 +644,7 @@ def test_scenario_metadata_cannot_replace_execution_authority(conflict: str) -> 
         controller_identity,
         policy,
     )
-    from marl_battlegrounds.evaluation.tdm_scenarios import (
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import (
         build_tdm_qualification_seed_schedule,
     )
 

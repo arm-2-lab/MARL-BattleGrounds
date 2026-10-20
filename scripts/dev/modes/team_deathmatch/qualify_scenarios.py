@@ -39,7 +39,7 @@ from marl_battlegrounds.evaluation.scenario import (
     ResolvedScenarioSpecificationV3,
     ScenarioEvaluationRecordV5,
 )
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     TDM_BETA_SCENARIO_IDS,
     TDM_SCENARIO_PUBLIC_AGENT_IDS,
     build_tdm_qualification_seed_schedule,

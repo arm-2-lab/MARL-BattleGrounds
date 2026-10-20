@@ -34,13 +34,13 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
+    reactive_tdm_beta_controller_descriptor,
+    reactive_tdm_beta_policy,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
-)
-from marl_battlegrounds.policies.reactive_tdm_beta import (
-    reactive_tdm_beta_controller_descriptor,
-    reactive_tdm_beta_policy,
 )
 from marl_battlegrounds.policies.shared_obs import (
     build_default_shared_obs_information_availability,
@@ -57,7 +57,7 @@ _STEP = cast(
     Callable[..., tuple[EnvState, Observation, Reward, DoneFlags, ActionMask, Info]],
     jax.jit(step),
 )
-_EXPECTED_PATH = Path(__file__).parents[1] / "fixtures" / "scenario_3_witness.json"
+_EXPECTED_PATH = Path(__file__).parents[2] / "fixtures" / "scenario_3_witness.json"
 # The user lists Hunter first and Warrior second. Simulator slots are 2 and 1.
 _HUNTER_WARRIOR_MOVES = (
     (MOVE_NORTH, MOVE_NORTH),

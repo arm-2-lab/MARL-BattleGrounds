@@ -22,11 +22,12 @@ from jax import Array
 from jax.typing import ArrayLike
 
 import marl_battlegrounds as marl_bgs
-from marl_battlegrounds import _tdm_assets, tasks
+from marl_battlegrounds import tasks
 from marl_battlegrounds.core.config import resolve_agent_profile
 from marl_battlegrounds.core.types import Action, EnvConfig
 from marl_battlegrounds.environment import EnvironmentState
 from marl_battlegrounds.episode_tracking import StepResult
+from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
 from marl_battlegrounds.tasks import (
     _source_config_with_class_ids,
     canonical_tournament_rosters,

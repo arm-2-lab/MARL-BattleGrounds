@@ -478,7 +478,10 @@ def run(args: argparse.Namespace) -> int:
     workload_path = args.canonical_workload.resolve()
     workload = _read_workload(workload_path)
     package = (args.package_root or Path.cwd()).resolve()
-    assets = (args.assets_root or package / "src/marl_battlegrounds/data/tdm").resolve()
+    assets = (
+        args.assets_root
+        or package / "src/marl_battlegrounds/modes/team_deathmatch/data"
+    ).resolve()
     _foundation_assets(assets)
     identity = _foundation_identity(package, assets)
     identity["canonical_harness_sha256"] = sha256(

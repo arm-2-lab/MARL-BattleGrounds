@@ -21,7 +21,7 @@ from tests.helpers.scenario_controller_fixtures import (
     load_controller_input,
     load_scenario_1,
 )
-from tests.policies.test_reactive_tdm import (
+from tests.modes.team_deathmatch.test_reactive_tdm import (
     _mask,  # pyright: ignore[reportPrivateUsage]
     _observation,  # pyright: ignore[reportPrivateUsage]
     _scalar,  # pyright: ignore[reportPrivateUsage]

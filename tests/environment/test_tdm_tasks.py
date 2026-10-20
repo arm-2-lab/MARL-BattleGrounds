@@ -29,8 +29,6 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from marl_battlegrounds import _tdm_assets
-from marl_battlegrounds._tdm_assets import ScenarioContent, scenario_content
 from marl_battlegrounds.core.config import (
     resolve_agent_profile,
     validate_env_config,
@@ -63,6 +61,11 @@ from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.models import (
     ResolvedEnvConfigV2,
     canonical_digest_sha256,
+)
+from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
+from marl_battlegrounds.modes.team_deathmatch._assets import (
+    ScenarioContent,
+    scenario_content,
 )
 from marl_battlegrounds.tasks import (
     CANONICAL_TDM_EVALUATION_MAP_IDS,
@@ -830,7 +833,7 @@ def test_public_loading_works_away_from_repo_without_development_imports(
 ) -> None:
     script = """
 import sys
-from marl_battlegrounds import _tdm_assets
+from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
 from marl_battlegrounds.tasks import (
     load_tdm_scenario, make_canonical_team_deathmatch_evaluation_config,
 )

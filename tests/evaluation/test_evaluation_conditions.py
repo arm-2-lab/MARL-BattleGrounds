@@ -389,9 +389,9 @@ def test_adapter_roster_failure_does_not_open_writer(tmp_path: Path) -> None:
 def test_pinned_source_map_keeps_approved_historical_geometry() -> None:
     import jax.numpy as jnp
 
-    from marl_battlegrounds._tdm_assets import map_history
     from marl_battlegrounds.evaluation.evaluate import EpisodeSpec
     from marl_battlegrounds.evaluation.evaluation_conditions import prepare_schedule
+    from marl_battlegrounds.modes.team_deathmatch._assets import map_history
     from marl_battlegrounds.tasks import (
         make_canonical_team_deathmatch_evaluation_config,
     )

@@ -5,7 +5,7 @@
  *
  * GENERATED FILE. Do not edit by hand. The maintainers' map-skin converter
  * writes it from their tale skins and the
- * real map catalogue (`src/marl_battlegrounds/data/tdm`). One hand edit:
+ * real map catalogue (`src/marl_battlegrounds/modes/team_deathmatch/data`). One hand edit:
  * scenario 5's title reads "Turning the Tide", in the AP heading case that
  * shell.js uses. Plain data and small pure lookups only: no DOM, network, storage or timers. `map-skins.js` reads
  * the floors; `obstacles.js` may read the stones through `map-skins.js`.

@@ -38,7 +38,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     SystemOutput,
 )
 from marl_battlegrounds.evaluation.replay_io import load_replay
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     TDM_BETA_SCENARIO_IDS,
     build_tdm_qualification_seed_schedule,
     build_tdm_scenario_specification,
@@ -346,7 +346,7 @@ def test_fixed_restart_and_turn_do_not_reload_packaged_content(
 ) -> None:
     session = _session(6)
     from marl_battlegrounds import tasks
-    from marl_battlegrounds.evaluation import tdm_scenarios
+    from marl_battlegrounds.modes.team_deathmatch import scenarios as tdm_scenarios
 
     def unexpected(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError(

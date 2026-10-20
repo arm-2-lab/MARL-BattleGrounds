@@ -6,17 +6,19 @@ republished Red Zone versions: each loads at Red Zone depth 5.0, and its
 manifest digest, its specification digest, the config digest rebuilt from the
 loaded scenario and the config its replay records are one value. Current
 evidence is replay V4 with context V4 and scenario record V5, and both round
-trip through their loaders.
+trip through their loaders. The scenario module's 1.0.x import path still
+gives its six public names, the same objects as the moved module's.
 """
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
 import pytest
-from scripts.dev.qualify_tdm_scenarios import (
+from scripts.dev.modes.team_deathmatch.qualify_scenarios import (
     QualificationEpisode,
     capture_tdm_qualification_episode,
 )
@@ -45,7 +47,7 @@ from marl_battlegrounds.evaluation.replay_io import (
 )
 from marl_battlegrounds.evaluation.run_writer import IDENTITY_COLUMNS
 from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     TDM_SCENARIO_PUBLIC_AGENT_IDS,
     build_tdm_qualification_seed_schedule,
     build_tdm_scenario_evaluation_record,
@@ -324,3 +326,17 @@ def test_changed_policy_role_cannot_join_frozen_scenario() -> None:
         build_tdm_scenario_evaluation_record(
             1, evidence.specification, changed, schedule_coordinate=0
         )
+
+
+def test_the_1_0_import_path_gives_the_same_six_objects() -> None:
+    old = importlib.import_module("marl_battlegrounds.evaluation.tdm_scenarios")
+    new = importlib.import_module("marl_battlegrounds.modes.team_deathmatch.scenarios")
+    assert old.__all__ == [
+        "TDM_BETA_SCENARIO_IDS",
+        "TDM_SCENARIO_PUBLIC_AGENT_IDS",
+        "build_tdm_qualification_seed_schedule",
+        "build_tdm_scenario_evaluation_record",
+        "build_tdm_scenario_specification",
+        "tdm_scenario_pressure_identity",
+    ]
+    assert all(getattr(old, name) is getattr(new, name) for name in old.__all__)

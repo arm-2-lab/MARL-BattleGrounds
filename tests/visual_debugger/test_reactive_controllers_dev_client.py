@@ -77,15 +77,17 @@ from marl_battlegrounds.evaluation.replay_io import (
     preflight_replay_destination,
     save_replay,
 )
-from marl_battlegrounds.policies.actor import ActorAction
-from marl_battlegrounds.policies.input import ActorInput, Observations
-from marl_battlegrounds.policies.reactive_tdm_alpha import reactive_tdm_alpha_policy
-from marl_battlegrounds.policies.reactive_tdm_beta import (
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
     reactive_tdm_beta_controller_descriptor,
 )
-from marl_battlegrounds.policies.reactive_tdm_gamma import (
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
     reactive_tdm_gamma_controller_descriptor,
 )
+from marl_battlegrounds.policies.actor import ActorAction
+from marl_battlegrounds.policies.input import ActorInput, Observations
 from marl_battlegrounds.policies.shared_obs import (
     build_shared_obs_sensor_source_bank,
     execute_shared_obs_team_policy,

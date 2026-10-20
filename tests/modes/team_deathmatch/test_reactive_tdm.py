@@ -65,15 +65,15 @@ from marl_battlegrounds.core.types import (
     Observation,
     Reward,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_controller_descriptor,
+    reactive_tdm_alpha_policy,
+)
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
 )
 from marl_battlegrounds.policies.reactive_common import refine_movement
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
-    reactive_tdm_alpha_controller_descriptor,
-    reactive_tdm_alpha_policy,
-)
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsPolicy,
     SharedObsSensorSourceBankV2,

@@ -47,17 +47,17 @@ from marl_battlegrounds.evaluation.models import (
     red_zone_team_on_right,
     red_zone_x_range,
 )
-from marl_battlegrounds.policies.actor import (
-    ActorAction,
-    build_joint_action_from_actor_actions,
-)
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
     reactive_tdm_alpha_controller_descriptor,
     reactive_tdm_alpha_policy,
 )
-from marl_battlegrounds.policies.reactive_tdm_beta import (
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
     reactive_tdm_beta_controller_descriptor,
     reactive_tdm_beta_policy,
+)
+from marl_battlegrounds.policies.actor import (
+    ActorAction,
+    build_joint_action_from_actor_actions,
 )
 from marl_battlegrounds.policies.shared_obs import (
     build_default_shared_obs_information_availability,
@@ -74,7 +74,7 @@ _STEP = cast(
     Callable[..., tuple[EnvState, Observation, Reward, DoneFlags, ActionMask, Info]],
     jax.jit(step),
 )
-_FIXTURES = Path(__file__).parents[1] / "fixtures"
+_FIXTURES = Path(__file__).parents[2] / "fixtures"
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,7 @@ def test_witness_positions_stay_outside_red_zones(
     scenario_id: int, case_name: str
 ) -> None:
     expected = json.loads((_FIXTURES / f"{case_name}_witness.json").read_text())
-    package = files("marl_battlegrounds").joinpath("data", "tdm")
+    package = files("marl_battlegrounds").joinpath("modes", "team_deathmatch", "data")
     info = json.loads(package.joinpath("manifest.json").read_bytes())["scenarios"][
         scenario_id - 1
     ]

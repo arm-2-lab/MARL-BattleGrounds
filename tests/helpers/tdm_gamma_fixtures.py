@@ -58,10 +58,14 @@ from marl_battlegrounds.core.types import (
     ActionMask,
     Observation,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_policy,
+)
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import reactive_tdm_beta_policy
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
+    reactive_tdm_gamma_policy,
+)
 from marl_battlegrounds.policies.actor import ActorAction
-from marl_battlegrounds.policies.reactive_tdm_alpha import reactive_tdm_alpha_policy
-from marl_battlegrounds.policies.reactive_tdm_beta import reactive_tdm_beta_policy
-from marl_battlegrounds.policies.reactive_tdm_gamma import reactive_tdm_gamma_policy
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsPolicy,
     SharedObsSensorSourceBankV2,

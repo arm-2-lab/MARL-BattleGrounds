@@ -346,7 +346,10 @@ def run(args: argparse.Namespace) -> int:
     if args.sizes not in (None, [_BATCH]) or args.lengths not in (None, [_CHUNK]):
         raise ValueError("evaluation access uses only batch 32 and chunk 16")
     package = (args.package_root or Path.cwd()).resolve()
-    assets = (args.assets_root or package / "src/marl_battlegrounds/data/tdm").resolve()
+    assets = (
+        args.assets_root
+        or package / "src/marl_battlegrounds/modes/team_deathmatch/data"
+    ).resolve()
     _foundation_assets(assets)
     identity = _foundation_identity(package, assets)
     identity["evaluation_harness_sha256"] = sha256(

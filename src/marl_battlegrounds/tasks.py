@@ -38,16 +38,6 @@ from marl_battlegrounds._task_settings import (
 from marl_battlegrounds._task_settings import (
     canonical_tournament_rosters as canonical_tournament_rosters,
 )
-from marl_battlegrounds._tdm_assets import (
-    MapGeometry,
-    ScenarioContent,
-    TDMAssetSource,
-    TDMMapInfo,
-    TDMScenarioInfo,
-    asset_manifest,
-    map_geometry,
-    scenario_content,
-)
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
     resolve_agent_profile,
@@ -76,6 +66,16 @@ from marl_battlegrounds.core.types import (
 )
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
+from marl_battlegrounds.modes.team_deathmatch._assets import (
+    MapGeometry,
+    ScenarioContent,
+    TDMAssetSource,
+    TDMMapInfo,
+    TDMScenarioInfo,
+    asset_manifest,
+    map_geometry,
+    scenario_content,
+)
 
 _CLASS_IDS: dict[AgentClassName, int] = {
     "mage": MAGE_CLASS_ID,

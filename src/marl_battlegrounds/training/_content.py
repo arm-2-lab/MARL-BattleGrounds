@@ -33,13 +33,6 @@ from pydantic import (
     model_validator,
 )
 
-from marl_battlegrounds._tdm_assets import (
-    MapGeometry,
-    TDMMapInfo,
-    TDMScenarioInfo,
-    asset_manifest,
-    scenario_content,
-)
 from marl_battlegrounds.core.config import maximum_team_deathmatch_score_threshold
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.evaluation.catalog import (
@@ -57,7 +50,14 @@ from marl_battlegrounds.evaluation.recording_identity import (
     ordered_source_bank_identity,
 )
 from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
-from marl_battlegrounds.evaluation.tdm_scenarios import (
+from marl_battlegrounds.modes.team_deathmatch._assets import (
+    MapGeometry,
+    TDMMapInfo,
+    TDMScenarioInfo,
+    asset_manifest,
+    scenario_content,
+)
+from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     _prepared_scenario_specification,  # pyright: ignore[reportPrivateUsage]
     build_tdm_qualification_seed_schedule,
 )
@@ -949,7 +949,7 @@ def pinned_opponent_evidence(
         controller_identity,
         policy,
     )
-    from marl_battlegrounds.policies.reactive_tdm_gamma import (
+    from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
         reactive_tdm_gamma_controller_descriptor,
     )
 

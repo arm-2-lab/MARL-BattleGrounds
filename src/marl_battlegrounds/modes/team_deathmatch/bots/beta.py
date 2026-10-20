@@ -23,6 +23,10 @@ from marl_battlegrounds.core.types import (
     ActionMask,
     Observation,
 )
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
+    reactive_tdm_alpha_controller_descriptor,
+    reactive_tdm_alpha_policy,
+)
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.reactive_common import (
     BYPASS_MINIMUM_CONTACT_ANGLE_DEGREES,
@@ -31,10 +35,6 @@ from marl_battlegrounds.policies.reactive_common import (
     centers,
     living_candidates,
     lowest_health_row,
-)
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
-    reactive_tdm_alpha_controller_descriptor,
-    reactive_tdm_alpha_policy,
 )
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsSensorSourceBankV2,

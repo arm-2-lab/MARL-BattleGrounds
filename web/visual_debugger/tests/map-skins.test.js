@@ -37,7 +37,10 @@ import {
   update,
 } from "../src/looks/map-skins.js";
 
-const DATA = new URL("../../../src/marl_battlegrounds/data/tdm/", import.meta.url);
+const DATA = new URL(
+  "../../../src/marl_battlegrounds/modes/team_deathmatch/data/",
+  import.meta.url,
+);
 const MANIFEST = JSON.parse(readFileSync(new URL("manifest.json", DATA), "utf8"));
 const MAP_47 = "tdm_map_id_47_teutoburg_forest_test";
 const MAP_50 = "tdm_map_id_50_jamylas_grove_test";

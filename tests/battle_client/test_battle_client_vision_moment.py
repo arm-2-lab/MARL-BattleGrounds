@@ -107,8 +107,8 @@ from marl_battlegrounds.core.types import (
     EnvState,
 )
 from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import reactive_tdm_beta_policy
 from marl_battlegrounds.policies.actor import ActorAction
-from marl_battlegrounds.policies.reactive_tdm_beta import reactive_tdm_beta_policy
 from marl_battlegrounds.policies.shared_obs import (
     build_default_shared_obs_information_availability,
     build_shared_obs_sensor_source_bank,

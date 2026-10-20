@@ -22,7 +22,6 @@ from typing import Any, cast
 import jax
 import numpy as np
 
-from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.environment import MetricMode, _episode_selection, make
 from marl_battlegrounds.evaluation._metrics.scalar_reports import iter_scalar_rows
@@ -60,6 +59,7 @@ from marl_battlegrounds.evaluation.tournament_statistics import (
     summarize_tournament,
     validate_opponent_weights,
 )
+from marl_battlegrounds.modes.team_deathmatch._assets import current_map_id
 from marl_battlegrounds.tasks import (
     CANONICAL_TDM_EVALUATION_MAP_IDS,
     TDMMapInfo,
@@ -117,11 +117,11 @@ def _saved_registered_maps(
     evidence raises ValueError before opening the writer. Completed runs do not
     need this recovery helper. Inputs and historical records stay unchanged.
     """
-    from marl_battlegrounds._tdm_assets import map_history
     from marl_battlegrounds.evaluation._recording.map_identity import (
         _snapshot_map_metadata,
     )
     from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
+    from marl_battlegrounds.modes.team_deathmatch._assets import map_history
 
     saved = details.get("registered_maps")
     result: dict[int, Mapping[str, Any]] = {}

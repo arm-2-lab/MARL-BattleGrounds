@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from marl_battlegrounds._method_loading import _reference_kind, load_method
-from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     method_sampling_fact,
 )
@@ -71,6 +70,7 @@ from marl_battlegrounds.evaluation.tournament_reuse import CHALLENGER_PLACEHOLDE
 from marl_battlegrounds.evaluation.tournament_statistics import (
     validate_opponent_weights,
 )
+from marl_battlegrounds.modes.team_deathmatch._assets import current_map_id
 from marl_battlegrounds.tasks import (
     CANONICAL_TDM_EVALUATION_MAP_IDS,
     AgentClassName,

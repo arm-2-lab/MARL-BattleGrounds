@@ -1038,7 +1038,7 @@ def _foundation_assets(assets_root: Path) -> None:
     ValueError
         If a requested resource escapes the frozen asset directory.
     """
-    from marl_battlegrounds import _tdm_assets
+    from marl_battlegrounds.modes.team_deathmatch import _assets as _tdm_assets
 
     def read(relative_path: str) -> bytes:
         """Read one loader-requested resource without leaving the frozen directory."""
@@ -2150,7 +2150,8 @@ def _run_foundations(args: argparse.Namespace) -> int:
     """
     package_root = (args.package_root or Path(__file__).resolve().parents[3]).resolve()
     assets_root = (
-        args.assets_root or package_root / "src/marl_battlegrounds/data/tdm"
+        args.assets_root
+        or package_root / "src/marl_battlegrounds/modes/team_deathmatch/data"
     ).resolve()
     args.package_root, args.assets_root = package_root, assets_root
     args.backend = args.backend or "gpu"
@@ -3164,7 +3165,8 @@ def _run_systems(args: argparse.Namespace) -> int:
     root = Path(__file__).resolve().parents[3]
     args.package_root = (args.package_root or root).resolve()
     args.assets_root = (
-        args.assets_root or args.package_root / "src/marl_battlegrounds/data/tdm"
+        args.assets_root
+        or args.package_root / "src/marl_battlegrounds/modes/team_deathmatch/data"
     ).resolve()
     args.backend = args.backend or "gpu"
     args.map_id = 12 if args.map_id is None else args.map_id
@@ -3507,7 +3509,8 @@ def _run_recording_contracts(args: argparse.Namespace) -> int:
     root = Path(__file__).resolve().parents[3]
     args.package_root = (args.package_root or root).resolve()
     args.assets_root = (
-        args.assets_root or args.package_root / "src/marl_battlegrounds/data/tdm"
+        args.assets_root
+        or args.package_root / "src/marl_battlegrounds/modes/team_deathmatch/data"
     ).resolve()
     args.backend = args.backend or "gpu"
     args.map_id = 12 if args.map_id is None else args.map_id

@@ -790,7 +790,7 @@ def test_scenario_entry_uses_exact_starts_shared_pressure_and_sparse_resume(
 
     from examples.evaluate import scenario_evaluation
 
-    from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import TDM_BETA_SCENARIO_IDS
 
     owner = importlib.import_module("marl_battlegrounds.evaluation.evaluate")
     live = marl_bgs.shared_policy(marl_bgs.policy("tdm-alpha"))

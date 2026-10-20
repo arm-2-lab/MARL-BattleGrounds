@@ -71,13 +71,13 @@ from marl_battlegrounds.evaluation.models import (
     canonical_digest_sha256,
     canonical_json_bytes,
 )
-from marl_battlegrounds.policies.reactive_tdm_alpha import (
+from marl_battlegrounds.modes.team_deathmatch.bots.alpha import (
     reactive_tdm_alpha_controller_descriptor,
 )
-from marl_battlegrounds.policies.reactive_tdm_beta import (
+from marl_battlegrounds.modes.team_deathmatch.bots.beta import (
     reactive_tdm_beta_controller_descriptor,
 )
-from marl_battlegrounds.policies.reactive_tdm_gamma import (
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
     reactive_tdm_gamma_controller_descriptor,
 )
 

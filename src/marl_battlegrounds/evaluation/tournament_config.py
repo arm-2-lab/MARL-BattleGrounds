@@ -474,7 +474,7 @@ def _conditions(
         _asset_ref(item["source_config_asset"], assets, "source_config_asset")
         _digest(item["source_config_id"], "source_config_id")
         if item["registered_map"] is not None:
-            from marl_battlegrounds._tdm_assets import TDMMapInfo
+            from marl_battlegrounds.modes.team_deathmatch._assets import TDMMapInfo
 
             registered = TDMMapInfo.model_validate(item["registered_map"])
             if registered.map_id != identifier or registered.split != item["split"]:

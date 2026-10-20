@@ -28,7 +28,6 @@ from jax import Array
 from numpy.typing import NDArray
 
 from marl_battlegrounds._config_checks import run_config_check
-from marl_battlegrounds._tdm_assets import current_map_id
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.config import (
     validate_env_config,
@@ -123,6 +122,7 @@ from marl_battlegrounds.evaluation.system_evaluation import (
     replace_initialization_roots,
     validate_evaluation_rosters,
 )
+from marl_battlegrounds.modes.team_deathmatch._assets import current_map_id
 from marl_battlegrounds.policies.input import Observations
 from marl_battlegrounds.tasks import (
     CANONICAL_TDM_EVALUATION_MAP_IDS,
@@ -2044,7 +2044,7 @@ def evaluate_scenarios(
         _method_output_paths,
         load_method,
     )
-    from marl_battlegrounds.evaluation.tdm_scenarios import TDM_BETA_SCENARIO_IDS
+    from marl_battlegrounds.modes.team_deathmatch.scenarios import TDM_BETA_SCENARIO_IDS
     from marl_battlegrounds.tasks import load_tdm_scenario
 
     if not scenario_ids or any(

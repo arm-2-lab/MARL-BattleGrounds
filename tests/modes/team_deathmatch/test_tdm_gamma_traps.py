@@ -67,14 +67,14 @@ from marl_battlegrounds.core.types import (
     ActionMask,
     Observation,
 )
-from marl_battlegrounds.policies.reactive_common import (
-    _body_aware_move,  # pyright: ignore[reportPrivateUsage]
-    refine_movement,
-)
-from marl_battlegrounds.policies.reactive_tdm_gamma import (
+from marl_battlegrounds.modes.team_deathmatch.bots.gamma import (
     TRAP_ORDER,
     _trap_ready,  # pyright: ignore[reportPrivateUsage]
     reactive_tdm_gamma_controller_descriptor,
+)
+from marl_battlegrounds.policies.reactive_common import (
+    _body_aware_move,  # pyright: ignore[reportPrivateUsage]
+    refine_movement,
 )
 
 Action = tuple[int, int, int]
