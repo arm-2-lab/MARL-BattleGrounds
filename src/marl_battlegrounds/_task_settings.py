@@ -10,6 +10,9 @@ from typing import Literal, cast, get_args
 type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
 
 
+# The one default Team Deathmatch Red Zone depth, in map units. Fresh map
+# configs, default evaluation, new training runs and new DevClient drafts use it;
+# 0.0 keeps one point per death. Saved records keep the depth they recorded.
 DEFAULT_TDM_RED_ZONE_DEPTH = 5.0
 
 

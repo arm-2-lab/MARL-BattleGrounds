@@ -85,10 +85,14 @@ _CLASS_IDS: dict[AgentClassName, int] = {
     "priest": PRIEST_CLASS_ID,
 }
 CANONICAL_TDM_EVALUATION_MAP_IDS = (47, 48, 49, 50, 51)
-# The one default Team Deathmatch Red Zone depth, in map units. Fresh map
-# configs, default evaluation, new training runs and new DevClient drafts use it;
-# 0.0 keeps one point per death. Saved records keep the depth they recorded.
-
+# Every Capture the Flag flag home keeps this distance from every obstacle, in map
+# units: the larger of the default touch and capture distances (both 1.25).
+_CAPTURE_THE_FLAG_HOME_CLEARANCE = 1.25
+# Team A's flag home is its spawn center, the middle of its pad bank. On these
+# maps an obstacle comes closer than that clearance to the center, so the home
+# moves along the spawn edge to this y: the nearest clear point in 0.25-unit
+# steps, the lower one on a tie. Team B's home is always Team A's mirror image.
+_CAPTURE_THE_FLAG_MOVED_HOME_Y = {29: 3.75, 43: 3.5, 45: 4.5, 46: 3.25, 49: 5.75}
 # These describe Core's array layout only; Core still owns value/geometry checks.
 _CONFIG_ARRAY_SHAPES = {
     "obstacles": (MAX_OBSTACLE_SLOTS, OBSTACLE_FEATURES),
@@ -635,6 +639,26 @@ def _map_info(map_id: int) -> TDMMapInfo:
     if type(map_id) is not int or not 0 <= map_id < len(list_tdm_maps()):
         raise ValueError("map_id must be an approved integer from 0 through 51")
     return list_tdm_maps()[map_id]
+
+
+def _capture_the_flag_flag_homes(  # pyright: ignore[reportUnusedFunction]
+    map_id: int,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return Team A's and Team B's Capture the Flag flag homes on one map.
+
+    map_id is a plain int from 0 through 51; anything else raises ValueError, as
+    in _map_info. Team A's home is its spawn center, or the point along its spawn
+    edge listed in _CAPTURE_THE_FLAG_MOVED_HOME_Y; Team B's home is its mirror
+    image across the map's vertical center line. Return ((x, y), (x, y)) in map
+    units, Team A first, in the map's own frame, where Team A spawns at the left
+    end. scripts/dev/modes/capture_the_flag/place_flag_bases.py places and checks
+    them on every map.
+    """
+    geometry = map_geometry(_map_info(map_id))
+    center = np.mean(np.asarray(geometry.team_spawn_pad_positions[0]), axis=0)
+    x = float(center[0])
+    y = _CAPTURE_THE_FLAG_MOVED_HOME_Y.get(map_id, float(center[1]))
+    return (x, y), (geometry.map_width - x, y)
 
 
 def _roster_ids(roster: Sequence[AgentClassName], *, name: str) -> tuple[int, ...]:
