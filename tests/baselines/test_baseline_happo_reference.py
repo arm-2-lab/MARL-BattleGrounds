@@ -5,10 +5,13 @@ updated group had a sample, with every other step and game counting 1,
 matching a NumPy reference; with two gradient groups and two minibatches,
 under class and slot sharing, every group pass receives as its weight exactly
 the product of the earlier groups' new-to-old ratios on their own rows, each
-game once, recomputed from the parameters each earlier pass left; the actor
-loss weights each row's clipped surrogate by actor_weight after standardizing
-advantages, and entropy not at all, matching a NumPy recomputation, while no
-weight leaves the ordinary objective. On a
+game once, recomputed from the parameters each earlier pass left; an
+actor_group naming one group for every row gives, for each of the five
+groups, the logits the grouped route gives with that group on every row (the
+dense one-group path); the actor loss weights each row's clipped surrogate
+by actor_weight after standardizing advantages, and entropy not at all,
+matching a NumPy recomputation, while no weight leaves the ordinary
+objective. On a
 small real three-agent rollout (Mage, Warrior, Priest), one "happo" update
 leaves the critic exactly where a recurrent MAPPO update with class sharing
 puts it, keeps the absent Hunter and Rogue groups' actor parameters and
@@ -21,7 +24,7 @@ slots does; "happo" with parameter_sharing "all" is refused. No learning run.
 import contextlib
 import dataclasses
 import functools
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -193,11 +196,14 @@ def test_each_group_pass_is_weighted_by_the_earlier_groups_ratios(
         ratio = np.ones_like(factor)
         seen: list[int] = []
         for _, minibatch in calls[group_pass * per_pass : (group_pass + 1) * per_pass]:
-            logits = jax.lax.map(
-                functools.partial(
-                    ppo._actor_logits, after, config=config, method="happo"
+            logits = cast(
+                Array,
+                jax.lax.map(
+                    functools.partial(
+                        ppo._actor_logits, after, config=config, method="happo"
+                    ),
+                    minibatch,
                 ),
-                minibatch,
             )
             logp = np.asarray(
                 action_log_prob(logits, minibatch.action_mask, minibatch.actions)
@@ -223,6 +229,26 @@ def test_each_group_pass_is_weighted_by_the_earlier_groups_ratios(
         assert sorted(seen) == list(range(GAMES))
         factor = factor * ratio
     assert np.ptp(factor) > 0
+
+
+def test_one_group_actor_group_runs_that_groups_weights() -> None:
+    batch, learner = _rollout(), _learner()
+    [(_, captured)], _ = _captured_update(
+        batch, learner, jax.random.key(41), CONFIG, method="mappo", calls=1
+    )
+    minibatch: ppo.PPOMinibatch = jax.tree.map(lambda value: value[0], captured)  # pyright: ignore[reportUnknownArgumentType]
+    owners = cast(Array, minibatch.actor_group)
+    for group in range(5):
+        every_row = minibatch._replace(actor_group=jnp.full_like(owners, group))
+        one_group = minibatch._replace(
+            actor_group=jnp.full((1, 1, 1), group, jnp.int32)
+        )
+        np.testing.assert_allclose(
+            ppo._actor_logits(learner.actor_params, one_group, CONFIG, method="happo"),
+            ppo._actor_logits(learner.actor_params, every_row, CONFIG, method="happo"),
+            rtol=1e-5,
+            atol=1e-5,
+        )
 
 
 def test_one_happo_update_against_mappo_references() -> None:

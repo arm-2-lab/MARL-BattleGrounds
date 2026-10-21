@@ -615,6 +615,8 @@ class PPOMinibatch(NamedTuple):
         Optional int32 with actions.shape, using group IDs 0..4 from raw
         self classes or physical slots. This is actor weight ownership,
         distinct from the leading G gradient groups. Class mode requires it.
+        HAPPO's one-group passes use (G,1,1,1) instead: one group for every
+        row of a gradient group, whose weights then run as one dense network.
     actor_weight : Array or None, default=None
         Optional float32 with actions.shape: HAPPO's fixed weight on each
         row's clipped surrogate (the product of the earlier-updated groups'
@@ -626,7 +628,7 @@ class PPOMinibatch(NamedTuple):
     Expanded inputs are temporary and are not the stored rollout format.
     HAPPO's one-group passes (``update_ppo`` with method "happo") use the same
     recurrent fields with an actor slot axis of 1 instead of 5: each step and
-    game keeps only the updated group's row.
+    game keeps only the updated group's row, and actor_group is (G,1,1,1).
     This lower-level numerical boundary also supports fixed-input comparisons.
     It performs no environment stepping or privilege routing: the caller must
     provide actor features produced solely from permitted actor inputs.
@@ -2013,11 +2015,27 @@ def _actor_logits(
     params is the actor tree for the selected sharing mode; batch is one
     PPOMinibatch group with no leading G axis. Recurrent methods replay each
     selected sequence from its stored memory; feedforward methods read single
-    rows. Return float32 (T,E,5,198) or (Q,5,198) logits. Samples no actions.
+    rows. Return float32 (T,E,S,198) or (Q,S,198) logits for S actor slots
+    (5, or 1 in HAPPO's one-group passes). Samples no actions. An actor_group
+    of size one under class or slot sharing names one group for every row:
+    that group's weights then run as one dense network, the grouped route's
+    calculation (equal up to float rounding) without its per-step sorting.
     """
-    groups = _batch_actor_groups(
-        config.parameter_sharing, batch.actor_group, batch.actions.shape
-    )
+    if config.parameter_sharing != "all" and (
+        batch.actor_group is not None and batch.actor_group.size == 1
+    ):
+        group = batch.actor_group.reshape(())
+
+        def weights(leaf: Array) -> Array:
+            """Select the named group's weights from one stacked leaf."""
+            return leaf[group]
+
+        params = jax.tree.map(weights, params)
+        groups = None
+    else:
+        groups = _batch_actor_groups(
+            config.parameter_sharing, batch.actor_group, batch.actions.shape
+        )
     if is_recurrent_method(method):
         _, logits = cast(
             tuple[Array, Array],
@@ -2332,7 +2350,11 @@ def update_minibatch(
         )
 
     groups = _batch_actor_groups(
-        config.parameter_sharing, batch.actor_group, batch.actions.shape
+        config.parameter_sharing,
+        None
+        if batch.actor_group is None
+        else jnp.broadcast_to(batch.actor_group, batch.actions.shape),
+        batch.actions.shape,
     )
     if groups is None:
         actor, actor_state = update(
@@ -2608,7 +2630,9 @@ def update_ppo(
         repeated a class, which HAPPO's settings refuse), its memory from the
         sequence's first step, and samples only where that slot is the group's.
         A slot changes only at a reset, where memory restarts, so the kept rows
-        replay its recurrence exactly. None keeps all five actors.
+        replay its recurrence exactly. actor_group is then (G,1,1,1), naming
+        that one group for every row, so the actor runs as one dense network
+        on its weights. None keeps all five actors.
         """
 
         def pick(value: Array) -> Array:
@@ -2635,10 +2659,12 @@ def update_ppo(
             )
         member = pick(owned)
         slot = None
+        owners = groups
         if group is not None:
             mine = cast(Array, groups) == group
             slot = jnp.argmax(mine, axis=-1)
             member = member & mine
+            owners = jnp.broadcast_to(group.astype(jnp.int32), (len(selected), 1, 1, 1))
 
         def keep(value: Array) -> Array:
             """Keep all five slots, or the group's slot of a (G,T,E,5,...) field."""
@@ -2690,7 +2716,7 @@ def update_ppo(
             valid & member,
             first(batch.actor_memory[selected]) if recurrent else (),
             first(batch.critic_memory[selected]) if recurrent else (),
-            None if groups is None else keep(groups),
+            owners,
         )
 
     def run_epochs(
@@ -2827,9 +2853,9 @@ def _sequential_update(
     factor weights the next groups' clipped surrogates
     (``PPOMinibatch.actor_weight``); it carries no gradient. The critic pass
     equals MAPPO's critic update. Each actor pass and log-probability pass
-    encodes and runs the actor on its group's row only, so its feature and
-    network cost is about a fifth of a joint update's, and it moves only that
-    group's parameters and optimizer state. Advantages are the joint update's;
+    encodes and runs the actor on its group's row only, as one dense network
+    on that group's weights (no grouped route), and moves only that group's
+    parameters and optimizer state. Advantages are the joint update's;
     each actor pass standardizes them over its own group's rows, where MAPPO
     standardizes over all five actors' rows together. Pure JAX; no I/O.
     """
