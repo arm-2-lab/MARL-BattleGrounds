@@ -5,6 +5,10 @@ Tests reject replacements, missing catalog rows and changed provenance; old
 missing exports stay unavailable. Relocated and parent-owned captures remain
 usable. Public train/extend setup restores real learners but stops before an
 update, isolating recovery scan counts from later saves or evaluation work.
+A run stopped after a past-copy export and before its next save resumes:
+the export from the abandoned updates (changed here, as a GPU replay's
+rounding would change it) moves under attempts/ with an event, the replay
+writes its own, and past_copies/ then holds exactly the final save's catalog.
 These CPU software checks make no learning or GPU-performance claim.
 """
 
@@ -309,6 +313,62 @@ def test_public_resume_and_continuation_verify_learner_inventory_once(
             indent=2,
         )
     )
+
+
+def test_resume_sets_aside_exports_from_abandoned_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.helpers.training_continuation_helpers import fixed_source
+
+    from marl_battlegrounds.baselines.config import PPOConfig
+    from marl_battlegrounds.training import runner
+
+    fixed_source(monkeypatch, "mappo")
+    config = runner.TrainConfig(
+        num_envs=4,
+        total_env_steps=64,
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        opponents={"self": 0.5, "past": 0.5},
+        keep_past=2,
+        history_capture_env_steps=(16,),
+        checkpoint_interval_updates=4,
+        metrics="none",
+        verbose=False,
+    )
+    root = tmp_path / "run"
+
+    def stop_after_capture(row: dict[str, Any]) -> None:
+        if row["update_index"] == 3:
+            raise RuntimeError("stopped between an export and the next save")
+
+    with pytest.raises(RuntimeError, match="on_update failed"):
+        runner.train(config, output_dir=root, on_update=stop_after_capture)
+    [orphan] = [path for path in (root / "past_copies").iterdir()]
+    details_path = orphan / "actor_details.json"
+    details = json.loads(details_path.read_text())
+    details["metadata"]["display_name"] = "Abandoned trajectory"
+    details_path.write_text(json.dumps(details))
+    result = runner.train(resume_from=root)
+    assert result.completed_env_steps == 64
+    events = _run_io.read_run_events(root / "run_events.jsonl")
+    [moved] = [row for row in events if row["event"] == "abandoned_export_preserved"]
+    assert moved["path"] == str(orphan)
+    kept = json.loads(
+        (Path(moved["preserved_path"]) / "actor_details.json").read_text()
+    )
+    assert kept["metadata"]["display_name"] == "Abandoned trajectory"
+    final = checkpoints.read_checkpoint_details(result.final_checkpoint)
+    catalog = final["metadata"]["host_state"]["past_copies"]
+    assert sorted(path.name for path in (root / "past_copies").iterdir()) == sorted(
+        Path(entry["path"]).name for entry in catalog.values()
+    )
+    for entry in catalog.values():
+        assert (
+            checkpoints.read_checkpoint_description(Path(entry["path"]))[
+                "checkpoint_id"
+            ]
+            == entry["artifact_id"]
+        )
 
 
 def test_relocated_capture_retry_keeps_checked_original_provenance() -> None:

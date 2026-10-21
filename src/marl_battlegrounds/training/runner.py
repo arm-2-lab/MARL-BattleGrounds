@@ -52,6 +52,7 @@ from marl_battlegrounds.training._run_io import (
     qmix_fixed_block_counts,
     restore_log_cursor,
     run_lock,
+    set_aside_abandoned_exports,
     study_attempt_binding,
     unused_run_folder,
     utc_now,
@@ -845,7 +846,11 @@ def train(
         changing any file, so a delayed resume never rolls the run back. An
         exact checkpoint folder is resumed as named, even an older one. Discover
         the containing run, verify scientific/source/content facts, execution
-        identity and numerical state before writer rewind. The saved compiler policy,
+        identity and numerical state before writer rewind. Exports saved after
+        the resumed checkpoint (checkpoints, actors and past copies from the
+        updates a resume abandons) then move whole under the run's attempts/
+        folder, each with an abandoned_export_preserved event, so the run's
+        folders hold one trajectory. The saved compiler policy,
         backend, device kind, runtime and numerical settings must match.
         Older checkpoints without that identity remain readable but cannot
         resume. A saved config without ppo.spawn_frame means "world" whatever
@@ -2171,6 +2176,21 @@ def _train(
                         },
                         durable=True,
                     )
+            for old, new in set_aside_abandoned_exports(
+                root, host["env_steps"], root / "attempts" / metadata["attempt_id"]
+            ):
+                append_jsonl(
+                    root / "run_events.jsonl",
+                    {
+                        "event": "abandoned_export_preserved",
+                        "time_utc": utc_now(),
+                        "attempt_id": metadata["attempt_id"],
+                        "path": str(old),
+                        "preserved_path": str(new),
+                        "restore_checkpoint": saved["checkpoint_id"],
+                    },
+                    durable=True,
+                )
             abandoned = preserve_log_suffix(
                 root / "training_updates.jsonl",
                 cursors["training_updates.jsonl"],
@@ -4323,8 +4343,10 @@ class _Run:
 
         The artifact records its capture origin and sampled exploration. It owns
         no recovery payload, so normal checkpoint pruning cannot remove it.
-        Resume may repeat an already exported capture: the existing exporter
-        verifies every byte and the whole declaration before allowing that reuse.
+        A resume first sets aside every export from after its restored save
+        (``set_aside_abandoned_exports``), so a replayed capture writes a fresh
+        export; the existing exporter still verifies every byte and the whole
+        declaration before reusing one already in place.
         """
         if not bool(event.created):
             return

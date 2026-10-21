@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import time
 import uuid
@@ -235,6 +236,66 @@ def preserve_log_suffix(
         return destination
     finally:
         temporary.unlink(missing_ok=True)
+
+
+# The step in a checkpoint, actor or past-copy folder name, such as
+# happo_past_step_2752512_capture_000001 or happo_actor_step_000002457600_<id>.
+_EXPORT_STEP = re.compile(r"_step_(\d+)_")
+
+
+def set_aside_abandoned_exports(
+    root: Path, steps: int, directory: Path
+) -> list[tuple[Path, Path]]:
+    """Move exports written after a restored save out of the run's folders.
+
+    Parameters
+    ----------
+    root : Path
+        The run folder, under the caller's run lock and recovery marker, after
+        its pending-write cleanup.
+    steps : int
+        Environment steps of the save the resume restored.
+    directory : Path
+        Evidence folder of the abandoned work, ``root/attempts/<attempt ID>``.
+
+    Returns
+    -------
+    list of tuple[Path, Path]
+        Each moved export's old and new path, by folder then name; empty when
+        no export is later than ``steps``.
+
+    Notes
+    -----
+    A resume restores one save and replays its updates from there, so every
+    checkpoint, actor or past copy whose name records a later step came from
+    updates the resume abandons. On the GPU the replay rounds differently: its
+    own export at that step would meet different bytes and be refused, and an
+    old export left in place would still look like part of the run to tools
+    that scan these folders. Each one moves whole to
+    ``directory/<folder>/<random ID>/<name>``, so repeated recoveries never
+    collide and nothing is deleted. An export at the restored step itself is
+    part of that save (its record lists it) and stays, as do names with no
+    step and hidden or temporary files. Host-only; nothing is copied or read.
+    """
+    moved: list[tuple[Path, Path]] = []
+    for folder in ("checkpoints", "actors", "past_copies"):
+        source = root / folder
+        if not source.is_dir():
+            continue
+        for path in sorted(source.iterdir()):
+            match = _EXPORT_STEP.search(path.name)
+            if (
+                path.name.startswith(".")
+                or path.name.endswith(".tmp")
+                or match is None
+                or int(match.group(1)) <= steps
+            ):
+                continue
+            target = directory / folder / uuid.uuid4().hex / path.name
+            target.parent.mkdir(parents=True)
+            os.replace(path, target)
+            moved.append((path, target))
+    return moved
 
 
 RUN_LOCK_FILE = ".training.lock"
