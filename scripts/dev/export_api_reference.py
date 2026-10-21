@@ -17,14 +17,13 @@ JSON for the website's API page, so both come from this one tool.
 Signatures are read as parameter names only, never as annotation text, so a
 name imported only for type checking cannot break the run and the output is the
 same on Python 3.12, 3.13 and 3.14. The run fails if any text holds a home
-folder, the current user name or an internal project label.
+folder (``/home/`` or ``/Users/``) or an internal project label.
 """
 
 from __future__ import annotations
 
 import argparse
 import enum
-import getpass
 import importlib
 import inspect
 import json
@@ -270,7 +269,8 @@ def collect() -> list[dict[str, str]]:
     Raises
     ------
     SystemExit
-        Generated text holds a home folder, the user name or an internal label.
+        Generated text holds a home folder (``/home/`` or ``/Users/``) or an
+        internal label.
     """
     rows: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -315,8 +315,10 @@ def collect() -> list[dict[str, str]]:
                 module_name,
             )
     text = json.dumps(rows)
-    for forbidden in ("/home/", "/Users/", getpass.getuser()):
-        if forbidden and forbidden in text:
+    # No search for the bare user name: on GitHub's machines it is "runner",
+    # an ordinary word here (training.runner). A leaked name sits in a path.
+    for forbidden in ("/home/", "/Users/"):
+        if forbidden in text:
             raise SystemExit(
                 f"refusing to write: generated text contains {forbidden!r}"
             )
