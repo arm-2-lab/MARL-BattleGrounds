@@ -69,7 +69,7 @@ psro:
   - recurrent-mappo-combat-support-pooled-step-250675200
   opponent_bundle: null
   round_env_steps: 20054016
-  payoff_games: 48
+  payoff_games: 64
   payoff_maps:
   - 0
   - 1

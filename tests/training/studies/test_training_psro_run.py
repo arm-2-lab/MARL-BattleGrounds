@@ -6,7 +6,8 @@ train and later rounds with extend_training into rounds/round-NN, with the
 earlier members as weighted opponents; records one payoff row per member
 pair with its seed and game steps; keeps every game step (training, payoff
 and validation) inside total_env_steps; validates each round's newest member
-and candidate mixture on the panel; and writes entrant.json naming the
+on the panel and scores its candidate mixture, with no games, as the Nash
+weighted mean of the members' own routine results; and writes entrant.json naming the
 confirmed round, its members with positive weight and the shortlist, which
 always holds the last round. A run stopped inside round 2's training, after
 its first update, continues through the trainer's own resume, and a run
@@ -92,9 +93,17 @@ def test_small_run_records_resumes_and_loads(
     assert len(pairs) == len(set(pairs)) == len(names) * (len(names) - 1) // 2
     assert [row["seed"] for row in rows] == [20261021 + k for k in range(len(rows))]
     assert all(row["wins"] + row["draws"] + row["losses"] == 2 for row in rows)
+    members = {entry["member"]: entry["validation"]["member"] for entry in rounds}
     for entry in rounds:
-        assert {"member", "candidate"} <= entry["validation"].keys()
         assert entry["validation"]["member"]["games"] == 2
+        candidate = entry["validation"]["candidate"]
+        assert (candidate["games"], candidate["game_steps"]) == (0, 0)
+        assert candidate["point_margin"] == pytest.approx(
+            sum(
+                weight * members[name]["point_margin"]
+                for name, weight in entry["candidate_weights"].items()
+            )
+        )
     entrant = result["entrant"]
     assert entrant["ledger_env_steps"] <= entrant["budget_env_steps"] == 12288
     assert entrant["round"] in entrant["shortlist"]

@@ -23,8 +23,10 @@ the game in which each side picks one member. A run does this, in order:
    ends exchanged, scored win 1, draw 1/2, loss 0.
 4. **Candidate.** The Nash mixture over PSRO's own members only (no seeded
    member, so the entrant holds no outside model or bot) is this round's
-   candidate entrant. The newest member and the candidate each play the
-   validation panel (routine games).
+   candidate entrant. The newest member plays the validation panel (routine
+   games). The candidate's routine score is computed from its members' own
+   routine results, weighted by the Nash weights: the exact expected score of
+   a mixture that picks one member per game, with no extra games.
 5. **Entrant.** After the last round, the best candidates by routine point
    margin and the last round's candidate play confirmation games; the
    highest confirmed point margin wins, ties to the earlier round (the
@@ -529,7 +531,7 @@ def train_psro(
     seed_members: Mapping[str, str],
     panel: Mapping[str, str],
     round_env_steps: int = 20_054_016,
-    payoff_games: int = 48,
+    payoff_games: int = 64,
     payoff_maps: Sequence[int] = tuple(range(42)),
     payoff_seed: int = 20261021,
     validation_seed: int = 20261022,
@@ -566,7 +568,7 @@ def train_psro(
     round_env_steps : int, default=20_054_016
         Training transitions per round. A round shrinks to fit the budget, and
         the last round takes what is left once less than 1.5 rounds remain.
-    payoff_games : int, default=48
+    payoff_games : int, default=64
         Positive even number of games per member pair, spawn ends exchanged.
     payoff_maps : sequence of int, default=range(42)
         Maps for payoff games (the training maps 0-41), at least one. Pair k
@@ -653,7 +655,7 @@ def train_psro(
         """
         later = (
             (unplayed_pairs + members) * payoff_games
-            + 2 * config.routine_seed_pairs * panel_games
+            + config.routine_seed_pairs * panel_games
             + (shortlist + 1) * config.confirmation_seed_pairs * panel_games
         )
         return _round_steps(
@@ -844,20 +846,19 @@ def train_psro(
         candidate = dict(zip(own, nash_mixture(table).tolist(), strict=True))
         entry["candidate_weights"] = candidate
         validation = entry.setdefault("validation", {})
-        for label, system in (
-            ("member", method(references[entry["member"]])),
-            ("candidate", _mixture(candidate, references, method)),
-        ):
-            if label not in validation:
-                validation[label] = validate(
-                    system,
-                    panel_systems,
-                    maps=validation_maps,
-                    seed_pairs=config.routine_seed_pairs,
-                    seed=validation_seed,
-                    num_envs=eval_num_envs,
-                )
-                save_rounds()
+        if "member" not in validation:
+            validation["member"] = validate(
+                method(references[entry["member"]]),
+                panel_systems,
+                maps=validation_maps,
+                seed_pairs=config.routine_seed_pairs,
+                seed=validation_seed,
+                num_envs=eval_num_envs,
+            )
+            save_rounds()
+        validation["candidate"] = _mixture_record(
+            candidate, {e["member"]: e["validation"]["member"] for e in rounds}
+        )
         entry["status"] = "complete"
         entry["ledger_env_steps"] = used_steps()
         save_rounds()
@@ -878,6 +879,54 @@ def train_psro(
     entrant["budget_env_steps"] = config.total_env_steps
     atomic_json(output_dir / "entrant.json", entrant)
     return {"settings": saved, "rounds": rounds, "entrant": entrant}
+
+
+def _mixture_record(
+    weights: Mapping[str, float], records: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
+    """Compute a mixture's validation record from its members' records.
+
+    Parameters
+    ----------
+    weights : mapping of str to float
+        Member name to Nash weight; nonnegative, summing to 1.
+    records : mapping of str to mapping
+        Member name to that member's own ``validate`` record. Every weighted
+        member needs one, and all come from the same panel, maps, seed pairs
+        and seed.
+
+    Returns
+    -------
+    dict
+        ``validate``'s per-game means (``point_margin``, ``points_for``,
+        ``points_against``, ``kills_for``, ``kills_against``), overall and in
+        ``by_opponent``, each the weighted mean of the members' values: the
+        exact expected score, on the same games, of a System that picks one
+        member per game with these weights (``pool``). ``games`` and
+        ``game_steps`` are 0, because no game is played.
+    """
+    fields = ("point_margin", "points_for", "points_against")
+    fields += ("kills_for", "kills_against")
+
+    def mix(rows: Mapping[str, Mapping[str, Any]]) -> dict[str, float]:
+        """Weight one set of member rows field by field."""
+        return {
+            key: sum(weight * rows[name][key] for name, weight in weights.items())
+            for key in fields
+        }
+
+    first = records[next(iter(weights))]["by_opponent"]
+    return {
+        "games": 0,
+        **mix(records),
+        "game_steps": 0,
+        "by_opponent": {
+            opponent: mix(
+                {name: records[name]["by_opponent"][opponent] for name in weights}
+            )
+            for opponent in first
+        },
+    }
 
 
 def _mixture(
