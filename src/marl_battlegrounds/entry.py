@@ -1073,7 +1073,8 @@ class _Checker:
         assert self.entry is not None
         if shutil.which("uv") is None:
             raise _StepFailedError(
-                f"uv is not installed. Install it with:\n  {UV_INSTALL}\n{UV_INSTALL_NOTE}"
+                "uv is not installed. Install it with:\n"
+                f"  {UV_INSTALL}\n{UV_INSTALL_NOTE}"
             )
         lock_file = self.clone / "uv.lock"
         if not lock_file.is_file():
