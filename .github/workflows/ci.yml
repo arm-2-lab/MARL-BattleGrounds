@@ -4,7 +4,9 @@
 # Local GPU qualification is separate; see CONTRIBUTING.md.
 # Runs on pull requests and on pushes to main. A feature branch is tested only
 # through its pull request, so one push starts one run, not two. The summary
-# jobs report after a failure but not after a cancel (!cancelled()).
+# jobs report after a failure but not after a cancel (!cancelled()). Every test
+# step runs all its tests, even after a failure or a failed static check before
+# it, so one run shows every failure.
 # A manual start also runs the Python 3.12 and 3.13 suites and the wheel check
 # on Linux and macOS; the weekly run does the same once the repository is
 # public. The wheel check builds the package, installs it in a clean
@@ -73,11 +75,11 @@ jobs:
         run: uv run --no-sync pyright
 
       - name: Run Python test shard
+        if: ${{ !cancelled() }}
         run: >-
           uv run --no-sync pytest
           -p scripts.dev.pytest_shard
           --ci-shard=${{ matrix.shard }}/19
-          --maxfail=1
 
   quality-gates:
     name: Quality gates
@@ -229,7 +231,7 @@ jobs:
     if: github.event_name != 'schedule' || !github.event.repository.private
     runs-on: ubuntu-24.04
     strategy:
-      fail-fast: true
+      fail-fast: false
       max-parallel: 1
       matrix:
         shard: [1]
@@ -266,14 +268,15 @@ jobs:
         run: scripts/dev/check_frontend.sh --static-only
 
       - name: Install Chromium
+        if: ${{ !cancelled() }}
         working-directory: web/visual_debugger
         run: npx playwright install --with-deps chromium
 
       - name: Run browser shard
+        if: ${{ !cancelled() }}
         run: >-
           scripts/dev/check_frontend.sh
           --e2e-shard ${{ matrix.shard }}/1
-          --max-failures=1
 
       - name: Upload browser failure artifacts
         if: failure()

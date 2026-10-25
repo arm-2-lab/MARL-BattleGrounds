@@ -4,7 +4,8 @@ and per browser profile.
 All Python shards and static checks start together without a worker cap.
 Shards and the browser profile run every test, even after a failure; the Python
 gate then lists each failing test once and prints one command that reruns them.
-In hosted CI, one failing Python shard does not cancel the other shards.
+In hosted CI, every shard runs all its tests even after a failure, and a failed
+static check does not skip them.
 Copied candidate indexes stay with the parent gate; child checks use their own
 repositories. Raw donor fixtures keep their bytes without weakening source checks.
 """
@@ -23,24 +24,32 @@ import pytest
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIRECTORY = _REPOSITORY_ROOT / "scripts" / "dev"
 _PARALLEL_SCRIPT = "validation_parallel.sh"
+_WORKFLOW = _REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def test_hosted_ci_preserves_main_runs_without_explicit_job_timeouts() -> None:
-    workflow = (_REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
 
     assert (
         "group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' "
         "&& github.run_id || github.ref }}"
     ) in workflow
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("fail-fast: true") == 1
     assert "timeout-minutes:" not in workflow
     assert "max-parallel: 19" in workflow
     assert "shard: [1]" in workflow
     assert "--ci-shard=${{ matrix.shard }}/19" in workflow
     assert "--e2e-shard ${{ matrix.shard }}/1" in workflow
+
+
+def test_hosted_ci_runs_every_test_after_a_failure() -> None:
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
+
+    assert "fail-fast: true" not in workflow
+    assert "--maxfail" not in workflow
+    assert "--max-failures" not in workflow
+    # The Python test step and the browser's install and test steps.
+    assert workflow.count("if: ${{ !cancelled() }}") == 3
 
 
 def _run(
