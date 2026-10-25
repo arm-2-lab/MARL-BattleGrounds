@@ -191,25 +191,24 @@ _CONFIG_CLASSES = {
 }
 SAME_GAMES = {
     "identical": (
-        "Every file in this repository holds its save's exact weights and the "
-        "model's one decision program (checked for every save). The Season 0 "
-        "save's file plays the same games as the original save folder: in the "
-        "release check, 1,080 games against TDM-Alpha, TDM-Beta and TDM-Gamma "
-        "on test maps 47-51 (one RTX 5090, normal GPU mode, same seeds) matched "
-        "the original game for game."
+        "Every file holds its save's exact weights and the model's one decision "
+        "program (checked for every save). In the release check, the Season 0 "
+        "save's file matched the original save folder in all 1,080 games against "
+        "TDM-Alpha, TDM-Beta and TDM-Gamma on test maps 47-51 (one RTX 5090, "
+        "normal GPU mode, same seeds)."
     ),
     "slightly-different": (
-        "Every file in this repository holds its save's exact weights and the "
-        "model's one decision program (checked for every save). Its games can "
-        "differ slightly from the original save's recorded games, about as much "
-        "as the original differs from itself between two GPU runs."
+        "Every file holds its save's exact weights and the model's one decision "
+        "program (checked for every save). Its games can differ slightly from "
+        "the original save's, about as much as two GPU runs of the original "
+        "differ from each other."
     ),
 }
 _SAME_INPUTS = (
-    "On CPU, or on GPU in deterministic mode, the same file with the same inputs "
-    "and settings replays the same games. The Season 0 tournament played the "
-    "original save folder, which the results dataset keeps under "
-    "`season-0-originals/` with its weights unchanged."
+    "On CPU, or on GPU in deterministic mode, the same file, inputs and settings "
+    "replay the same games. The Season 0 tournament played the original save "
+    "folders, which the results dataset keeps under `season-0-originals/` with "
+    "their weights unchanged."
 )
 # One pattern per kind of secret. Each starts with fixed text, which lets the
 # regular expression engine skip quickly through large files.
@@ -1231,14 +1230,14 @@ def model_card(
 This is the {entrant.label} model that played Season 0 of Team Deathmatch in
 [MARL-BattleGrounds]({CODE_URL}) (MARL-BGs), a JAX benchmark where two teams of
 five agents (Mage, Warrior, Hunter, Rogue and Priest) fight. This repository
-holds a portable model file for every save of its training and the training
+holds a portable model file for every save of its training, and its training
 records.
 
 - **Method:** {entrant.label} (`{entrant.method}`)
 - **Training Recipe:** `{entrant.recipe}`
 - **Training Seed:** {entrant.seed}
 - **Saves:** {len(steps):,}, from step {first:,} to step {last:,}
-- **Season 0 Save:** step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
+- **Season 0 Save:** Step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
 - **Season 0 Rank:** {entrant.rank} of {entrant.field}
 - **Season 0 Elo:** {round(entrant.elo):,} (95% interval {round(entrant.elo_low):,} \
 to {round(entrant.elo_high):,}), tier {entrant.tier}
@@ -1255,19 +1254,15 @@ system = marl_bgs.load_method(name)  # the save that played Season 0
 result = marl_bgs.evaluate(system, "tdm-alpha", num_episodes=20)
 ```
 
-The examples below reuse `marl_bgs` and `name` from this one. Add `@` to the
-name to pick another save:
+Add `@` to the name to pick another save: `@final` is the last save (step
+{last:,}), `@100M` is the nearest save at or before 100,000,000 steps (step
+{near:,}), and `@{step_text(near)}` is exactly that save. A step with no save
+gives an error that lists the nearest saves.
 
-- `{name}@final` is the last save (step {last:,}).
-- `{name}@100M` is the nearest save at or before 100,000,000 steps (here step
-  {near:,}).
-- `{name}@{step_text(near)}` is exactly that save. A step with no save gives an
-  error that lists the nearest saves.
-
-A name works anywhere MARL-BGs takes a model: an opponent, a pool member, a
-teammate, an evaluation and the BattleClient. Each file downloads once and is
-checked against `steps.csv` before use. The
-[Released Models guide]({GUIDE_URL}) shows the whole workflow.
+A name works anywhere MARL-BGs takes a model, such as an opponent, a teammate,
+an evaluation or the BattleClient. Each file downloads once and is checked
+against `steps.csv` before use. The examples below reuse `marl_bgs` and `name`.
+The [Released Models guide]({GUIDE_URL}) shows the whole workflow.
 
 ### Train Against a Ladder of Its Saves
 
@@ -1300,10 +1295,9 @@ config = training.TrainConfig(
 ```
 
 The new run starts from this save's weights. The rest of the learner, such as
-the critic, the mixer and the optimizer state, starts fresh. The method and the
-input scale must match this model's. Training state is not released, so a
-released run cannot continue exactly where it stopped; start a new run from any
-save instead.
+the critic, the mixer or the optimizer state, starts fresh. The method and input
+scale must match this model's. Training state is not released, so the original
+run cannot be continued; start a new run from any save instead.
 
 ### Choose a Save by Its Validation Result
 
@@ -1326,8 +1320,9 @@ python -m marl_battlegrounds models download {name}@final
 HF_HUB_OFFLINE=1 python my_experiment.py
 ```
 
-The first command fills the Hugging Face cache. With `HF_HUB_OFFLINE=1`, later
-runs, for example on compute nodes that share the cache, never use the network.
+The first command fills the Hugging Face cache. Later runs with
+`HF_HUB_OFFLINE=1`, for example on compute nodes that share the cache, never use
+the network.
 
 ### Download the Files Yourself
 
@@ -1336,17 +1331,17 @@ hf download {name} --local-dir {model.repo}
 hf download {name} models/{model_file_name(near)} --local-dir {model.repo}
 ```
 
-The first command fetches the whole repository (about {_size(repo_bytes)}); the
-second fetches one file. A downloaded folder takes the same `@` names, as in
-`marl_bgs.load_method("{model.repo}@100M")`, and one file loads by its path,
-as in `marl_bgs.load_method("{model.repo}/models/{model_file_name(near)}")`.
+The first command fetches the whole repository (about {_size(repo_bytes)}), and
+the second fetches one file. A downloaded folder loads with the same `@` names,
+as in `marl_bgs.load_method("{model.repo}@100M")`, and a single file loads by its
+path.
 
 ## What Is in This Repository
 
 | Path | Holds |
 |---|---|
-| `models/step-XXX_XXX_XXX.zip` | One portable model file per save, named by its step in groups of three digits. Each file holds one agent's decision function, exported with `jax.export`, and its weights. It runs under `jit` and `vmap` without the original training code. |
-| `steps.csv` | One row per file: `step`, `kind`, `file`, `bytes`, `sha256`, `original_checkpoint_id` (the save's id in the training records), `actor_digest`, the validation result where the run checked that save, and `format`. |
+| `models/step-XXX_XXX_XXX.zip` | One portable model file per save, named by its step. It holds one agent's decision function (exported with `jax.export`) and its weights, and runs under `jit` and `vmap` without the training code. |
+| `steps.csv` | One row per file: `step`, `kind`, `file`, `bytes`, `sha256`, `original_checkpoint_id` (the save's id in the training records), `actor_digest`, the validation result where one exists, and `format`. |
 | `config.json` | The method, the Season 0 save and the SHA-256 of `steps.csv`. |
 | `training-records/{FIRST_RECORDS}/` | Records of the first training run, steps {first:,} to {boundary:,}: settings, learning curves, update logs and validation games. |
 | `training-records/{SECOND_RECORDS}/` | Records of the run that continued it, steps {boundary:,} to {last:,}. |
@@ -1356,32 +1351,28 @@ run's copy.
 
 ## Validation Results in `steps.csv`
 
-During training, the run checked some saves against a fixed panel: \
-{_members_text(panel)}, on validation maps {_numbers_text(panel.maps)}, \
-{games} games per check. `validation_point_margin` is our points minus the
-opponent's points per game; `validation_kills` and `validation_deaths` are our
-kills and deaths per game. Each averages the map and opponent groups with equal
-weight. An empty cell means the run did not check that save. These are the
-run's routine checks; its larger confirmation checks are in
+Training checked some saves against a fixed panel: {_members_text(panel)}. \
+Each check played {games} games on validation maps {_numbers_text(panel.maps)}. \
+`validation_point_margin` is this model's points minus its opponent's per game,
+and `validation_kills` and `validation_deaths` are its kills and deaths per game.
+All three are averaged over maps and opponents with equal weight. An empty cell
+means the save was not checked. Larger confirmation checks are in
 `training-records/*/validation_results.json`.
 
-## Same Model, Same Games?
+## Reproducibility
 
 {claim} {_SAME_INPUTS}
 
-## Keeping Files Loadable
-
-Each file runs on JAX up to 6 months newer than the JAX that made it, as
-[JAX promises for exported programs](https://docs.jax.dev/en/latest/export/export.html#compatibility-guarantees)
-(the JAX version is in the file's `model.json`). MARL-BGs pins its JAX version,
-so each MARL-BGs version runs the JAX its released files were made with. Before
-MARL-BGs moves to a JAX outside that window, every file is republished in a
-newer format as a new file.
+Files run on JAX up to 6 months newer than the JAX that made them, as
+[JAX promises for exported programs](https://docs.jax.dev/en/latest/export/export.html#compatibility-guarantees);
+each file's `model.json` names its JAX version. MARL-BGs pins the JAX its
+released files were made with and, before moving to a JAX outside that window,
+republishes the files in a newer format as new files.
 
 Every file was re-released once, on {RE_RELEASE_DAY}, to remove local folder
-paths from the saved descriptions; the programs and weights are byte-identical.
-Files are never replaced again: MARL-BGs 1.0.1 and later pin these exact
-commits.
+paths from the saved descriptions; programs and weights stayed byte-identical.
+Model files are never replaced again, and MARL-BGs 1.0.1 and later pin these
+exact commits.
 
 ## Season 0 Results
 
@@ -1612,9 +1603,8 @@ def dataset_card(
         ],
     ).to_yaml()
     panel = " and ".join(f"`{name}`" for name in panel_models)
-    rows = "\n".join(
-        f"| `{repo}` | [{ORG}/{repo}](https://huggingface.co/{ORG}/{repo}) |"
-        for repo in MODEL_REPOS
+    models = ", ".join(
+        f"[{repo}](https://huggingface.co/{ORG}/{repo})" for repo in MODEL_REPOS
     )
     return f"""---
 {metadata}
@@ -1628,24 +1618,17 @@ TDM-Alpha, TDM-Beta and TDM-Gamma, which ship inside the package. They played
 {games:,} games on test maps {_numbers_text(maps)}. This dataset holds every game,
 the ratings, the original save folders and the training opponents.
 
-Each of the six models comes from a run of about 250 million game steps.
-Every entry on the [leaderboard]({RULES_URL}) gets the same budget on the same
-machine, so the leaderboard rewards MARL methods that are efficient in both
-samples and compute.
+Each model comes from a training run of about 250 million game steps.
 
 | Path | Holds |
 |---|---|
 | `season-0-ratings/` | The Season 0 tables: `ratings.csv` (rank, Elo with its 95% interval, tier, wins, draws, losses, point margin, kills and deaths), `head_to_head.csv`, `map_results.csv`, `final_policies.csv` (each model's training settings) and `RESULTS.md`. |
-| `season-0-games/` | A replay of the Season 0 round robin that also saved every game's full metrics. Every game's result matches the original run game for game. One row per game (`match_results.csv`), per-pair and per-map tables, the tournament settings (`tournament_config.json`) and `full_metrics.csv`, every game's full metrics. That file has 11,222 columns, too wide for the viewer, so it stays a plain CSV file. |
+| `season-0-games/` | A rerun of the Season 0 round robin that also saved every game's full metrics; every result matches the original run game for game. It holds `match_results.csv` (one row per game), per-pair and per-map tables, the tournament settings (`tournament_config.json`) and `full_metrics.csv`. That file has 11,222 columns, too wide for the dataset viewer, so it stays a plain CSV file. |
 | `entrants.csv` | Each trained entrant's tournament name, released name, exact step and original checkpoint id. |
-| `season-0-originals/<repo>/` | The original save folder each model played Season 0 with, with its weights unchanged. The official Season 0 snapshot uses these, so its recorded games stay exact. |
+| `season-0-originals/<repo>/` | The original save folder that each model played Season 0 with. Its weights are unchanged. |
 | `training-opponents/` | The training and validation opponents (`pool.json` and `models/`). The model repositories' validation results were measured against {panel} from here, with TDM-Alpha, TDM-Beta and TDM-Gamma. |
 
-The six models, one portable file per save:
-
-| Model | Repository |
-|---|---|
-{rows}
+Each model has its own repository, with one portable file per save: {models}.
 
 ## Use It
 
@@ -1910,30 +1893,29 @@ pinned: false
 
 {badge}[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
 benchmark for heterogeneous and competitive team-vs-team multi-agent
-reinforcement learning (MARL). MARL-BGs fills the missing middle: rich team
-play, with fast and cheap experiments on one GPU. Its five classes are built
-to help allies and counter enemies, so the team that wins is the one that
-coordinates its specialists best, not the one with the best individual agents.
+reinforcement learning (MARL). It fills the missing middle: rich team play, with
+fast and cheap experiments on one GPU. Its five classes are built to help allies
+and counter enemies, so the team that best coordinates its specialists wins,
+not the team with the best individual agents.
 
 Every entry on its [leaderboard]({RULES_URL}) gets the same budget on the same
-machine, so the leaderboard rewards MARL methods that are efficient in both
-samples and compute.
+machine, so the leaderboard rewards methods that are efficient in both samples
+and compute.
 
 ## The Season 0 Models
 
-Each repository holds one trained model: a portable JAX file for every save
-from the start of its training to 250 million steps, `steps.csv` (one row per
-save, with its validation result where training checked that save) and the
-training records. Use them as opponents, as teammates, or as starting points
-for your own training.
+Each repository holds one trained Team Deathmatch (TDM) model: a portable JAX
+file for every save up to 250 million steps, `steps.csv` (one row per save, with
+its validation result where one exists) and the training records. Use them as
+opponents, teammates or starting points for your own training.
 
 | Model | Season 0 Rank | Elo | Tier | Saves |
 |---|---|---|---|---|
 {table}
 
-The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package,
-so the Season 0 field is nine. Every game, rating and original save folder is in
-the dataset [{ORG}/{DATASET_REPO}]({DATASET_URL}).
+The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package and
+complete the Big Nine, the nine systems in the Season 0 table. Every game, rating
+and original save folder is in the dataset [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
 ## Use One in Three Lines
 
@@ -1944,20 +1926,21 @@ system = marl_bgs.load_method("{example}@final")
 result = marl_bgs.evaluate(system, "tdm-alpha", num_episodes=20)
 ```
 
-Add `@final` (the last save), `@100M` (the nearest save at or before
-100,000,000 steps) or an exact step such as `@99_942_400` to pick a save; with
-no `@`, a name gives the save that played Season 0. Each file downloads once and
-is checked before use. Saved results record the exact file and commit, so
-resuming a run loads the same file. No account or token is needed.
+With no `@`, a name gives the save that played Season 0. Add `@final` (the last
+save), `@100M` (the nearest save at or before 100,000,000 steps) or an exact step
+such as `@99_942_400` to pick another. Each file downloads once, is checked
+before use and needs no account or token. Saved results record the exact file
+and commit, so a resumed run loads the same file.
 
 ## Enter the Leaderboard
 
 Any method that runs as pure JAX may enter, not only MARL: learned, scripted,
 search-based, hybrid or built on a language model. Each entry plays the current
-Big Nine, so the benchmark's difficulty grows with the quality of its entries.
-Every entrant and its saved models are released here with its season's table,
-so the opponent pool grows for every researcher. The [rules]({RULES_URL}) give each
-season's dates, and the [README]({CODE_URL}#leaderboard) shows how to enter.
+Big Nine and takes the lowest member's place if its Elo is higher, so the
+benchmark gets harder as entries improve. Every entrant and its
+saved models are released here with its season's table, so the opponent pool
+keeps growing. The [rules]({RULES_URL}) give each season's dates, and the
+[README]({CODE_URL}#leaderboard) shows how to enter.
 
 ## Links
 
