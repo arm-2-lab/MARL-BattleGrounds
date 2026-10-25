@@ -123,11 +123,9 @@ from marl_battlegrounds.baselines.ppo import (
     _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
     _group_dense,  # pyright: ignore[reportPrivateUsage]
     _group_gru,  # pyright: ignore[reportPrivateUsage]
-    _group_order,  # pyright: ignore[reportPrivateUsage]
     _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
     _input_scale,  # pyright: ignore[reportPrivateUsage]
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
-    _restore_group_rows,  # pyright: ignore[reportPrivateUsage]
     _spawn_frame,  # pyright: ignore[reportPrivateUsage]
     _update_actor_groups,  # pyright: ignore[reportPrivateUsage]
 )
@@ -623,12 +621,10 @@ class PQNNetwork(nn.Module):
         if actor_group is not None:
             params = self.variables["params"]
             statistics = self.variables["batch_stats"]
-            order, groups, sizes = _group_order(actor_group)
-            x = jnp.where(row[..., None], features, 0.0).reshape(
-                -1, features.shape[-1]
-            )[order]
+            groups = actor_group.reshape(-1)
+            x = jnp.where(row[..., None], features, 0.0).reshape(-1, features.shape[-1])
             eligible = row if normalization_mask is None else row & normalization_mask
-            weights = eligible.reshape(-1)[order].astype(jnp.float32)
+            weights = eligible.reshape(-1).astype(jnp.float32)
             counts = jax.ops.segment_sum(weights, groups, num_segments=5)
 
             def normalize_group(value: Array, index: int) -> Array:
@@ -692,13 +688,13 @@ class PQNNetwork(nn.Module):
 
             x = normalize_group(x, 0)
             for index in range(2):
-                hidden = _group_dense(x, params[f"Dense_{index}"], groups, sizes)
+                hidden = _group_dense(x, params[f"Dense_{index}"], groups)
                 x = nn.relu(
                     layer_normalize_group(hidden, index)
                     if layer_norm
                     else normalize_group(hidden, index + 1)
                 )
-            embedding = _restore_group_rows(x, order, features.shape[:-1])
+            embedding = x.reshape(*features.shape[:-1], x.shape[-1])
             starts = jnp.broadcast_to(episode_start[..., None], actor_group.shape)
             real = jnp.broadcast_to(valid[..., None], actor_group.shape)
             carry, embedding = _group_gru(
@@ -710,9 +706,7 @@ class PQNNetwork(nn.Module):
                 actor_group,
                 active,
             )
-            x = embedding.reshape(-1, embedding.shape[-1])[order]
-            x = _group_dense(x, params["Dense_2"], groups, sizes)
-            values = _restore_group_rows(x, order, features.shape[:-1])
+            values = _group_dense(embedding, params["Dense_2"], actor_group)
             return carry, jnp.where(active[..., None], values, 0.0)
         x = jnp.where(row[..., None], features, 0.0).reshape(rows, actors, -1)
         mask = row.reshape(rows, actors, 1) if train else None

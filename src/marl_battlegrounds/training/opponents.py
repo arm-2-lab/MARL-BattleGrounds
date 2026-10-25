@@ -1050,10 +1050,10 @@ def make_opponent_system(
         and runs the host method through HostOpponent.
 
     vectorize_lanes : bool, default=True
-        Map frozen-copy lanes with vmap. Built-in grouped models use False
-        because their grouped dot primitive lacks this extra batching rule;
-        lax.map then preserves their results. Current-weight lanes always share
-        one full-batch actor call.
+        Map frozen-copy lanes with vmap, which every built-in model supports.
+        False maps them one game at a time with lax.map, for an actor whose
+        operations have no vmap rule; it gives the same results, much more
+        slowly. Current-weight lanes always share one full-batch actor call.
 
     Returns
     -------

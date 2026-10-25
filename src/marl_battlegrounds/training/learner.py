@@ -602,7 +602,6 @@ def init_learner(
         learner_slots=learner_slots,
         partner_population=partner_population,
         partner_selection=partner_selection,
-        vectorize_opponent_lanes=ppo.parameter_sharing == "all",
     )
     state = LearnerState(
         carry,

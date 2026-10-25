@@ -3,9 +3,9 @@
 CPU tests use the public repeated-class and unequal-roster curriculum setup.
 Every built-in method must update its owned actor groups, retain absent local
 optimizer counts, pass saved-boundary validation and run a mixed current/history
-collection. The history assignment is a numerical test fixture; it does not
-claim an episode reset or a new sampling rule. These checks prove integration,
-not learned behavior or GPU speed.
+collection, mapping its past-copy lanes with vmap. The history assignment is a
+numerical test fixture; it does not claim an episode reset or a new sampling
+rule. These checks prove integration, not learned behavior or GPU speed.
 """
 
 # pyright: reportPrivateUsage=false
@@ -124,7 +124,7 @@ def test_grouped_learners_update_and_collect_mixed_frozen_history(
         collection, state = learner.init_learner(**options, ppo=settings, method=method)
         updater = partial(learner.update_learner, ppo=settings, method=method)
         validate = partial(learner.validate_learner, ppo=settings, method=method)
-    assert not collection.vectorize_opponent_lanes
+    assert collection.vectorize_opponent_lanes
     validate(collection, state)
     update = cast(Callable[..., Tree], jax.jit(updater))
     for length in (2, 1, 2) if method == "pqn_vdn" else (2,):

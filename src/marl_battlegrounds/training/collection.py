@@ -1771,9 +1771,10 @@ def init_training_collection(
         interval uses only the schedule's explicit thresholds.
 
     vectorize_opponent_lanes : bool, default=True
-        Internal built-in actor execution choice. False uses lax.map for mixed
-        opponent lanes when grouped models cannot use an outer vmap. The shared
-        default and full-current batch call keep their existing compiled routes.
+        Internal actor execution choice; every built-in model uses True. False
+        maps mixed opponent lanes one game at a time with lax.map, for an actor
+        that cannot use an outer vmap. The full-current batch call is the same
+        either way.
 
     reward : callable or None, default=None
         Pure JAX callback from shaping.resolve_reward. It receives one game's

@@ -807,7 +807,6 @@ def init_pqn_learner(
         learner_slots=learner_slots,
         partner_population=partner_population,
         partner_selection=partner_selection,
-        vectorize_opponent_lanes=pqn.parameter_sharing == "all",
         actor_variables_at_step=None,
     )
     state = PQNLearnerState(

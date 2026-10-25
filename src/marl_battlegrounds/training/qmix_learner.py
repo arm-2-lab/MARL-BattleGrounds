@@ -844,7 +844,6 @@ def init_qmix_learner(
         learner_slots=learner_slots,
         partner_population=partner_population,
         partner_selection=partner_selection,
-        vectorize_opponent_lanes=qmix.parameter_sharing == "all",
         actor_variables_at_step=QMIXExploration(qmix.eps_min, qmix.eps_decay, games),
     )
     state = QMIXLearnerState(

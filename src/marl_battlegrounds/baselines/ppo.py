@@ -303,40 +303,36 @@ def _actor_groups(actors: ActorInput, sharing: str) -> Array:
     )
 
 
-def _group_order(groups: Array) -> tuple[Array, Array, Array]:
-    """Sort row indices by five group IDs and count rows, keeping shapes fixed.
+def _group_dense(values: Array, params: Tree, groups: Array) -> Array:
+    """Apply each row's own Dense layer out of five stacked ones.
 
-    groups is int32 with arbitrary row axes and values 0..4. Returns flat row
-    order, sorted group IDs and five int32 counts. Features and weights stay
-    separate: no parameter tree is copied for each actor.
+    Parameters
+    ----------
+    values : Array
+        Float32 (...,F) rows with any leading axes.
+    params : Tree
+        One Dense layer per group: kernel (5,F,H) and optional bias (5,H).
+    groups : Array
+        Int32 (...), the leading axes of values, with group IDs 0..4.
+
+    Returns
+    -------
+    Array
+        Float32 (...,H): each row through its own group's layer.
+
+    Notes
+    -----
+    All five layers run on every row and each row keeps its own result. That
+    is five times the arithmetic of one layer, but it needs no sorting,
+    gathering or scattering of rows, and it works under vmap, so grouped
+    models can map game lanes and gradient groups like shared models. Pure
+    JAX.
     """
-    flat = groups.reshape(-1)
-    order = jnp.argsort(flat, stable=True)
-    sorted_groups = flat[order]
-    sizes = jnp.bincount(flat, length=5).astype(jnp.int32)
-    return order, sorted_groups, sizes
-
-
-def _group_dense(values: Array, params: Tree, groups: Array, sizes: Array) -> Array:
-    """Apply five Dense kernels to their sorted rows with one ragged dot.
-
-    values is float32 (N,F), params has kernel (5,F,H) and optional bias
-    (5,H), groups is sorted int32 (N,), and sizes is its five row counts.
-    Returns (N,H) in the same sorted order. Uses JAX's existing contraction;
-    its CPU fallback can expand groups, so CPU tests establish correctness,
-    not GPU cost. No full parameter tree is gathered per actor.
-    """
-    result = jax.lax.ragged_dot(values, params["kernel"], sizes)
+    every = jnp.einsum("...f,gfh->...gh", values, params["kernel"])
+    result = jnp.take_along_axis(every, groups[..., None, None], axis=-2)[..., 0, :]
     if "bias" in params:
         result = result + params["bias"][groups]
     return result
-
-
-def _restore_group_rows(values: Array, order: Array, shape: tuple[int, ...]) -> Array:
-    """Return sorted (N,H) values to their original row axes plus width H."""
-    return (
-        jnp.zeros_like(values).at[order].set(values).reshape(*shape, values.shape[-1])
-    )
 
 
 def _group_gru(
@@ -351,33 +347,28 @@ def _group_gru(
     """Scan Flax's GRU gates with selected weights and physical actor memory.
 
     memory is (B,5,H); features is (T,B,5,H); starts, valid and groups are
-    (T,B,5). Group IDs may change at episode resets. Each time row is sorted
-    independently and restored before carrying memory to the next row.
+    (T,B,5). Group IDs may change at episode resets: each step uses its own
+    rows' groups (``_group_dense``), and memory stays in physical slot order.
     Optional active uses PQN's rule: a valid inactive actor clears memory;
     invalid rows always preserve it. Without active, invalid outputs are zero.
     The six gate parameter paths and equations are Flax GRUCell's defaults.
     """
 
     def step(carry: Array, row: tuple[Array, ...]) -> tuple[Array, Array]:
-        """Apply one current group assignment, then restore physical slot order."""
+        """Apply one step's group assignment to every slot's memory."""
         x, reset, keep, group, present = row
-        before = jnp.where((reset & keep)[..., None], 0.0, carry)
-        order, selected, sizes = _group_order(group)
-        x = x.reshape(-1, x.shape[-1])[order]
-        h = before.reshape(-1, before.shape[-1])[order]
+        h = jnp.where((reset & keep)[..., None], 0.0, carry)
         r = nn.sigmoid(
-            _group_dense(x, params["ir"], selected, sizes)
-            + _group_dense(h, params["hr"], selected, sizes)
+            _group_dense(x, params["ir"], group) + _group_dense(h, params["hr"], group)
         )
         z = nn.sigmoid(
-            _group_dense(x, params["iz"], selected, sizes)
-            + _group_dense(h, params["hz"], selected, sizes)
+            _group_dense(x, params["iz"], group) + _group_dense(h, params["hz"], group)
         )
         n = jnp.tanh(
-            _group_dense(x, params["in"], selected, sizes)
-            + r * _group_dense(h, params["hn"], selected, sizes)
+            _group_dense(x, params["in"], group)
+            + r * _group_dense(h, params["hn"], group)
         )
-        output = _restore_group_rows((1.0 - z) * n + z * h, order, carry.shape[:-1])
+        output = (1.0 - z) * n + z * h
         moved = jnp.where(present[..., None], output, 0.0)
         next_memory = jnp.where(keep[..., None], moved, carry)
         if active is None:
@@ -877,22 +868,21 @@ class RecurrentActor(nn.Module):
             features = features * scale
         if actor_group is not None:
             params = self.variables["params"]
-            order, groups, sizes = _group_order(actor_group)
-            x = features.reshape(-1, features.shape[-1])[order]
-            x = nn.relu(_group_dense(x, params["pre_torso"]["Dense_0"], groups, sizes))
-            embedding = _restore_group_rows(x, order, features.shape[:-1])
+            x = nn.relu(
+                _group_dense(features, params["pre_torso"]["Dense_0"], actor_group)
+            )
             carry, embedding = _group_gru(
                 params["ScannedRNN_0"]["GRUCell_1"],
                 carry,
-                embedding,
+                x,
                 resets,
                 valid,
                 actor_group,
             )
-            x = embedding.reshape(-1, embedding.shape[-1])[order]
-            x = nn.relu(_group_dense(x, params["post_torso"]["Dense_0"], groups, sizes))
-            x = _group_dense(x, params["action_head"]["Dense_0"], groups, sizes)
-            return carry, _restore_group_rows(x, order, features.shape[:-1])
+            x = nn.relu(
+                _group_dense(embedding, params["post_torso"]["Dense_0"], actor_group)
+            )
+            return carry, _group_dense(x, params["action_head"]["Dense_0"], actor_group)
         embedding = MLPTorso(name="pre_torso")(features)
         carry, embedding = ScannedRNN()(carry, (embedding, resets, valid))
         embedding = MLPTorso(name="post_torso")(embedding)
@@ -978,14 +968,12 @@ class FeedForwardActor(nn.Module):
             features = features * scale
         if actor_group is not None:
             params = self.variables["params"]
-            order, groups, sizes = _group_order(actor_group)
-            x = features.reshape(-1, features.shape[-1])[order]
+            x = features
             for index in range(2):
                 x = nn.relu(
-                    _group_dense(x, params["torso"][f"Dense_{index}"], groups, sizes)
+                    _group_dense(x, params["torso"][f"Dense_{index}"], actor_group)
                 )
-            x = _group_dense(x, params["action_head"]["Dense_0"], groups, sizes)
-            return _restore_group_rows(x, order, features.shape[:-1])
+            return _group_dense(x, params["action_head"]["Dense_0"], actor_group)
         embedding = MLPTorso((HIDDEN_SIZE, HIDDEN_SIZE), name="torso")(features)
         return DiscreteActionHead(name="action_head")(embedding)
 
@@ -2260,17 +2248,9 @@ def update_minibatch(
             functools.partial(_actor_loss_with_metrics, method=method),
             has_aux=True,
         )
-        if config.parameter_sharing == "all":
-            return jax.vmap(gradient, in_axes=(None, 0, None))(
-                state.actor_params, batch, config
-            )
-
-        def one(group: PPOMinibatch) -> Tree:
-            """Keep the original gradient-group objective and normalization."""
-            return gradient(state.actor_params, group, config)
-
-        # ragged_dot does not support this extra mapped batch axis.
-        return cast(Tree, jax.lax.map(one, batch))
+        return jax.vmap(gradient, in_axes=(None, 0, None))(
+            state.actor_params, batch, config
+        )
 
     def empty_actor(_: None) -> Tree:
         """Supply zero metrics and gradients for an entirely absent actor loss."""
@@ -2878,7 +2858,7 @@ def _sequential_update(
         def one(carry: None, selected: Array) -> tuple[None, tuple[Array, Array]]:
             """Read one unshuffled minibatch's group rows."""
             column = encode(selected, group)
-            logits = cast(Array, jax.lax.map(group_logits, column))
+            logits = jax.vmap(group_logits)(column)
             logp = action_log_prob(logits, column.action_mask, column.actions)
             return carry, (
                 (logp - column.old_log_prob)[..., 0],

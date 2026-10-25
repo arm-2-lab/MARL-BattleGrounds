@@ -3,7 +3,8 @@
 Small encoded inputs prove routing, physical actor memory, reset-time class
 changes, unused groups, differentiated contractions and PQN's eligible-only
 normalization. Existing donor and registration tests protect the shared path.
-CPU ragged-dot fallback proves correctness, not the GPU implementation's cost.
+Grouped layers compute all five groups and keep each row's own result, on CPU
+and GPU alike; these checks prove correctness, not GPU cost.
 """
 
 # pyright: reportPrivateUsage=false, reportUnknownLambdaType=false
@@ -163,8 +164,7 @@ def test_grouped_contraction_gradient_matches_selected_matrices() -> None:
     }
 
     def grouped(value: Tree) -> Array:
-        order, selected, sizes = ppo._group_order(groups)
-        y = ppo._group_dense(x[order], value, selected, sizes)
+        y = ppo._group_dense(x, value, groups)
         return jnp.square(y).sum()
 
     def reference(value: Tree) -> Array:

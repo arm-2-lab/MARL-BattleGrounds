@@ -116,11 +116,9 @@ from marl_battlegrounds.baselines.ppo import (
     _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
     _group_dense,  # pyright: ignore[reportPrivateUsage]
     _group_gru,  # pyright: ignore[reportPrivateUsage]
-    _group_order,  # pyright: ignore[reportPrivateUsage]
     _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
     _input_scale,  # pyright: ignore[reportPrivateUsage]
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
-    _restore_group_rows,  # pyright: ignore[reportPrivateUsage]
     _spawn_frame,  # pyright: ignore[reportPrivateUsage]
     _update_actor_groups,  # pyright: ignore[reportPrivateUsage]
 )
@@ -417,22 +415,21 @@ class RecurrentQNetwork(nn.Module):
             features = features * scale
         if actor_group is not None:
             params = self.variables["params"]
-            order, groups, sizes = _group_order(actor_group)
-            x = features.reshape(-1, features.shape[-1])[order]
-            x = nn.relu(_group_dense(x, params["pre_torso"]["Dense_0"], groups, sizes))
-            embedding = _restore_group_rows(x, order, features.shape[:-1])
+            x = nn.relu(
+                _group_dense(features, params["pre_torso"]["Dense_0"], actor_group)
+            )
             carry, embedding = _group_gru(
                 params["ScannedRNN_0"]["GRUCell_1"],
                 carry,
-                embedding,
+                x,
                 resets,
                 valid,
                 actor_group,
             )
-            x = embedding.reshape(-1, embedding.shape[-1])[order]
-            x = nn.relu(_group_dense(x, params["post_torso"]["Dense_0"], groups, sizes))
-            x = _group_dense(x, params["Dense_0"], groups, sizes)
-            return carry, _restore_group_rows(x, order, features.shape[:-1])
+            x = nn.relu(
+                _group_dense(embedding, params["post_torso"]["Dense_0"], actor_group)
+            )
+            return carry, _group_dense(x, params["Dense_0"], actor_group)
         embedding = MLPTorso((QMIX_HIDDEN_SIZE,), name="pre_torso")(features)
         carry, embedding = QMIXScannedGRU(name="ScannedRNN_0")(
             carry, (embedding, resets, valid)
