@@ -9,8 +9,8 @@ settings, written out independently of the generator. HAPPO, which has no
 tournament run yet, takes recurrent MAPPO's recipe with the team reward and
 one actor per class.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
-PQN normalization and validation_maps, whose default is left out of saved
-configs), seven method groups, complete pool replacement, ordinary
+PQN normalization, and validation_maps and task, whose defaults are left out
+of saved configs), seven method groups, complete pool replacement, ordinary
 Hydra overrides and rejection paths. Each method's software_check settings
 file also builds a valid TrainConfig on its own, as the every-method software
 check reads it without the method group. Subprocess probes forbid numerical imports,
@@ -205,6 +205,10 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
             composed("validation_maps=[46,42,43,44]"), base_dir=tmp_path
         )
         assert config_to_dict(chosen)["validation_maps"] == [42, 43, 44, 46]
+    elif field == "task":
+        # Every recipe trains Team Deathmatch, which saved configs leave out.
+        assert cfg[field] == resolved.task == "tdm"
+        assert field not in effective
     else:
         assert field in cfg
         assert field in effective
@@ -212,8 +216,8 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
 
 def test_original_census_and_generated_presets_do_not_drift() -> None:
     # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale,
-    # PQN normalization and the validation map choice.
-    assert len(FIELDS) == 93
+    # PQN normalization, the validation map choice and the task.
+    assert len(FIELDS) == 94
     result = subprocess.run(
         [
             sys.executable,

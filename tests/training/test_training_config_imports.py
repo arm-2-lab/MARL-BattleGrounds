@@ -9,6 +9,10 @@ its own method name and one actor per class, a custom HAPPO ppo that
 shares one actor is refused, and so is class sharing when a curriculum's
 system roster repeats a class, which one actor per slot accepts. Numerical
 module aliases are checked separately, since those modules require training.
+TrainConfig.task defaults to "tdm" and is left out of the saved config when it
+is "tdm", so saved bytes stay unchanged; a saved config without it reads back
+as "tdm"; and a name that make() does not accept is refused with the accepted
+names.
 """
 
 import json
@@ -176,3 +180,11 @@ def test_config_preserves_legacy_scalar_integer_boundary(coefficient: float) -> 
     validate_shaping(discount=0.99, coefficient=coefficient)
     config = TrainConfig(shaping_coefficient=coefficient)
     assert config_to_dict(config)["shaping_coefficient"] == coefficient
+
+
+def test_task_defaults_to_tdm_and_is_left_out_of_the_saved_config() -> None:
+    saved = config_to_dict(TrainConfig(task="tdm"))
+    assert "task" not in saved
+    assert config_from_dict(saved).task == "tdm"
+    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', not 'ctf'$"):
+        TrainConfig(task="ctf")  # pyright: ignore[reportArgumentType]

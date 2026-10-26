@@ -5,6 +5,7 @@ defaults:
 - recipe: default
 - recipe_settings: ${recipe}_${method}
 seed: 42
+task: tdm
 num_envs: 32
 total_env_steps: 10000000
 curriculum: false

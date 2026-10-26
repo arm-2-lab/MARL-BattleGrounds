@@ -22,7 +22,9 @@ from typing import Any, Literal, cast
 from marl_battlegrounds._method_loading import validate_saved_method_reference
 from marl_battlegrounds._task_settings import (
     DEFAULT_TDM_RED_ZONE_DEPTH,
+    TASK_NAMES,
     AgentClassName,
+    TaskName,
     _validate_roster,  # pyright: ignore[reportPrivateUsage]
 )
 from marl_battlegrounds.baselines.config import (
@@ -152,6 +154,12 @@ class TrainConfig:
         checks it. "qmix" is recurrent QMIX
         with compact replay, configured by qmix instead of ppo. "pqn_vdn" is
         recurrent PQN-VDN (no replay or target network), configured by pqn.
+    task : str, default="tdm"
+        The game mode every training and validation game of this run plays: a
+        task name that ``make`` accepts, today only "tdm" (Team Deathmatch).
+        Saved configs leave it out when it is "tdm", so every Team Deathmatch
+        run keeps the bytes it had before the setting existed, and a saved
+        config without it reads as "tdm". A continuation cannot change it.
     num_envs : int, default=32
         Fixed even environment batch. Recurrent PPO methods require
         divisibility by PPO groups times minibatches. Feedforward methods
@@ -407,6 +415,7 @@ class TrainConfig:
 
     seed: int = 42
     method: TrainingMethod = "mappo"
+    task: TaskName = "tdm"
     num_envs: int = 32
     total_env_steps: int = 10_000_000
     curriculum: bool | Sequence[Mapping[str, object]] = False
@@ -461,6 +470,11 @@ class TrainConfig:
         when train prepares the content.
         """
         method = validate_training_method(self.method)
+        if self.task not in TASK_NAMES:
+            raise ValueError(
+                f"task must be one of {', '.join(map(repr, TASK_NAMES))}, "
+                f"not {self.task!r}"
+            )
         if not isinstance(cast(object, self.ppo), PPOConfig):
             raise TypeError("ppo must be PPOConfig")
         if method == "qmix":
@@ -866,7 +880,8 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
         stays 1 (a config saved before the rule lacks the key).
         validation_maps is written as a sorted list only when it is set;
         None (all five validation maps) is left out, so default runs keep
-        the exact bytes they had before the setting existed.
+        the exact bytes they had before the setting existed. task is left out
+        when it is "tdm", for the same reason.
 
     Notes
     -----
@@ -875,10 +890,12 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
     them to check a resume config. config_from_dict reads it back.
     """
     data = json.loads(json.dumps(asdict(config)))
+    # Older runs never saved these keys; leaving their defaults out keeps
+    # their saved configs and every comparison with them unchanged.
     if data["validation_maps"] is None:
-        # Older runs never saved this key; leaving the default out keeps
-        # their saved configs and every comparison with them unchanged.
         del data["validation_maps"]
+    if data["task"] == "tdm":
+        del data["task"]
     kept = method_settings_field(config.method)
     for name in ("ppo", "qmix", "pqn"):
         if name != kept:
@@ -902,7 +919,8 @@ def config_from_dict(value: dict[str, Any]) -> TrainConfig:
         defaults to "mappo"). red_zone_depth is the Red Zone depth in map
         units; 0.0 turns the rule off. An omitted validation_maps means None,
         all five validation maps, which is also how every config saved before
-        the setting existed reads.
+        the setting existed reads. An omitted task means "tdm", for the same
+        reason.
 
     Returns
     -------
