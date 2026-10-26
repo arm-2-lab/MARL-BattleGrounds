@@ -16,8 +16,12 @@ twice and a missing pair. nash_mixture gives weight 1 to a single member,
 equal weights in rock-paper-scissors, all weight to a member that beats every
 other, weight 0 to a dominated member, and on random fair tables weights that
 score at least 1/2 against every member (the Nash property, checked
-independently of the solver); it refuses tables that are empty, not square,
-outside [0, 1] or not filled both ways. worst_case_score reports the
+independently of the solver); with a preference it picks the preferred member
+of two that always draw, leaves a unique Nash mixture unchanged, and on random
+fair tables still meets the Nash property with a preference value at least
+that of the mixture found without one; it refuses tables that are empty, not
+square, outside [0, 1] or not filled both ways, and a preference of the wrong
+length or with a value that is not finite. worst_case_score reports the
 mixture's lowest expected score over the members and refuses weights of the
 wrong shape, negative or not summing to 1. Plain NumPy and small files; no
 game is played.
@@ -119,6 +123,30 @@ def test_nash_mixture_meets_the_nash_property_on_random_fair_tables() -> None:
             assert worst_case_score(table, weights) == pytest.approx(
                 (weights @ table).min()
             )
+            preference = generator.normal(size=size)
+            preferred = nash_mixture(table, preference=preference)
+            assert preferred.min() >= 0.0
+            assert abs(preferred.sum() - 1.0) < 1e-12
+            assert (preferred @ table).min() >= 0.5 - 1e-8
+            assert preferred @ preference >= weights @ preference - 1e-7
+
+
+def test_nash_mixture_preference_picks_among_tied_mixtures() -> None:
+    draws = [[0.5, 0.5], [0.5, 0.5]]
+    np.testing.assert_allclose(
+        nash_mixture(draws, preference=[-19.2, -8.0]), [0.0, 1.0], atol=1e-9
+    )
+    np.testing.assert_allclose(
+        nash_mixture(draws, preference=[-8.0, -19.2]), [1.0, 0.0], atol=1e-9
+    )
+    np.testing.assert_allclose(
+        nash_mixture(ROCK_PAPER_SCISSORS, preference=[9.0, 0.0, -9.0]),
+        [1 / 3] * 3,
+        atol=1e-9,
+    )
+    for preference in ([1.0], [0.0, np.inf]):
+        with pytest.raises(ValueError, match="2 finite values"):
+            nash_mixture(draws, preference=preference)
 
 
 @pytest.mark.parametrize(

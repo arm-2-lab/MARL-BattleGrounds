@@ -21,12 +21,13 @@ the game in which each side picks one member. A run does this, in order:
 3. **Payoff games.** The round's final actor joins as a member and plays every
    other member: ``payoff_games`` games per pair on the training maps, spawn
    ends exchanged, scored win 1, draw 1/2, loss 0.
-4. **Candidate.** The Nash mixture over PSRO's own members only (no seeded
-   member, so the entrant holds no outside model or bot) is this round's
-   candidate entrant. The newest member plays the validation panel (routine
-   games). The candidate's routine score is computed from its members' own
-   routine results, weighted by the Nash weights: the exact expected score of
-   a mixture that picks one member per game, with no extra games.
+4. **Candidate.** The newest member plays the validation panel (routine
+   games). The Nash mixture over PSRO's own members only (no seeded member,
+   so the entrant holds no outside model or bot) is this round's candidate
+   entrant; when several Nash mixtures exist, the one with the best routine
+   point margin. The candidate's routine score is computed from its members'
+   own routine results, weighted by the Nash weights: the exact expected
+   score of a mixture that picks one member per game, with no extra games.
 5. **Entrant.** After the last round, the best candidates by routine point
    margin and the last round's candidate play confirmation games; the
    highest confirmed point margin wins, ties to the earlier round (the
@@ -182,7 +183,9 @@ def _checked_table(scores: ArrayLike) -> NDArray[np.float64]:
     return table
 
 
-def nash_mixture(scores: ArrayLike) -> NDArray[np.float64]:
+def nash_mixture(
+    scores: ArrayLike, preference: ArrayLike | None = None
+) -> NDArray[np.float64]:
     """Find member weights that no single member beats on average.
 
     The game: each team picks one member, and member i scores ``scores[i, j]``
@@ -197,6 +200,13 @@ def nash_mixture(scores: ArrayLike) -> NDArray[np.float64]:
         Square table of shape ``(n, n)`` as returned by ``score_table``:
         finite values between 0 and 1, ``scores[i, j] + scores[j, i] == 1``
         within 1e-9, so 1/2 on the diagonal.
+    preference : array_like, optional
+        Shape ``(n,)``, one finite value per member in table order, such as
+        each member's validation point margin. When several Nash mixtures
+        exist (for example two members that draw every game with each other),
+        the one with the highest ``weights @ preference`` is returned. It
+        never changes a unique Nash mixture. None (the default) returns
+        whichever Nash mixture the solver finds.
 
     Returns
     -------
@@ -208,17 +218,20 @@ def nash_mixture(scores: ArrayLike) -> NDArray[np.float64]:
     ------
     ValueError
         The table is empty, not square, not finite, outside [0, 1] or not
-        filled both ways as described above.
+        filled both ways as described above; or ``preference`` does not hold
+        ``n`` finite values.
     RuntimeError
-        The linear program fails, which a valid table should never cause.
+        A linear program fails, which valid inputs should never cause.
 
     Notes
     -----
     One linear program, solved by SciPy's HiGHS: maximize v subject to
     ``weights @ scores[:, j] >= v`` for every member j, weights nonnegative and
-    summing to 1. When several Nash mixtures exist (for example two identical
-    members), the solver returns one of them; the same table gives the same
-    answer. Weights below 1e-12 become 0 before the final normalization.
+    summing to 1. With ``preference``, a second program keeps those
+    constraints with v at least the first program's value less 1e-9, and
+    maximizes ``weights @ preference``. Without it, the solver returns one of
+    several Nash mixtures; the same table gives the same answer. Weights below
+    1e-12 become 0 before the final normalization.
 
     Examples
     --------
@@ -227,29 +240,50 @@ def nash_mixture(scores: ArrayLike) -> NDArray[np.float64]:
     >>> from marl_battlegrounds.training.psro import nash_mixture
     >>> nash_mixture([[0.5, 0.0, 1.0], [1.0, 0.5, 0.0], [0.0, 1.0, 0.5]]).round(3)
     array([0.333, 0.333, 0.333])
+
+    Two members that always draw are both Nash mixtures; the preference picks:
+
+    >>> nash_mixture([[0.5, 0.5], [0.5, 0.5]], preference=[-19.2, -8.0])
+    array([0., 1.])
     """
     table = _checked_table(scores)
     size = table.shape[0]
+    values = None if preference is None else np.array(preference, dtype=np.float64)
+    if values is not None and (
+        values.shape != (size,) or not np.all(np.isfinite(values))
+    ):
+        raise ValueError(
+            f"preference must hold {size} finite values, got shape {values.shape}"
+        )
     if size == 1:
         return np.ones(1)
-    # Variables: the n weights, then the value v. Minimize -v.
-    objective = np.zeros(size + 1)
-    objective[-1] = -1.0
+    # Variables: the n weights, then the value v.
     # For every column j: v - weights @ scores[:, j] <= 0.
     upper = np.hstack([-table.T, np.ones((size, 1))])
     equal = np.hstack([np.ones((1, size)), np.zeros((1, 1))])
-    solved: Any = optimize.linprog(  # pyright: ignore[reportUnknownMemberType]
-        objective,
-        A_ub=upper,
-        b_ub=np.zeros(size),
-        A_eq=equal,
-        b_eq=np.ones(1),
-        bounds=[(0.0, None)] * size + [(None, None)],
-        method="highs",
-    )
-    if solved.status != 0:
-        raise RuntimeError(f"the Nash linear program failed: {solved.message}")
-    weights = np.asarray(solved.x[:size], dtype=np.float64)
+    bounds: list[tuple[float | None, float | None]] = [(0.0, None)] * size
+    bounds.append((None, None))
+
+    def solve(objective: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Minimize objective @ (weights, v) under the constraints above."""
+        solved: Any = optimize.linprog(  # pyright: ignore[reportUnknownMemberType]
+            objective,
+            A_ub=upper,
+            b_ub=np.zeros(size),
+            A_eq=equal,
+            b_eq=np.ones(1),
+            bounds=bounds,
+            method="highs",
+        )
+        if solved.status != 0:
+            raise RuntimeError(f"the Nash linear program failed: {solved.message}")
+        return np.asarray(solved.x, dtype=np.float64)
+
+    solution = solve(np.append(np.zeros(size), -1.0))
+    if values is not None:
+        bounds[-1] = (solution[-1] - _TOLERANCE, None)
+        solution = solve(np.append(-values, 0.0))
+    weights = solution[:size]
     weights[weights < 1e-12] = 0.0
     return weights / weights.sum()
 
@@ -839,12 +873,6 @@ def train_psro(
             save_rounds()
         references[entry["member"]] = str(output_dir / entry["actor"])
         play_missing([*seeded, *(e["member"] for e in rounds)])
-        own = [e["member"] for e in rounds]
-        table = score_table(
-            own, [r for r in results() if {r.member, r.opponent} <= set(own)]
-        )
-        candidate = dict(zip(own, nash_mixture(table).tolist(), strict=True))
-        entry["candidate_weights"] = candidate
         validation = entry.setdefault("validation", {})
         if "member" not in validation:
             validation["member"] = validate(
@@ -856,9 +884,15 @@ def train_psro(
                 num_envs=eval_num_envs,
             )
             save_rounds()
-        validation["candidate"] = _mixture_record(
-            candidate, {e["member"]: e["validation"]["member"] for e in rounds}
+        own = {e["member"]: e["validation"]["member"] for e in rounds}
+        table = score_table(
+            list(own), [r for r in results() if {r.member, r.opponent} <= set(own)]
         )
+        margins = [record["point_margin"] for record in own.values()]
+        weights = nash_mixture(table, preference=margins)
+        candidate = dict(zip(own, weights.tolist(), strict=True))
+        entry["candidate_weights"] = candidate
+        validation["candidate"] = _mixture_record(candidate, own)
         entry["status"] = "complete"
         entry["ledger_env_steps"] = used_steps()
         save_rounds()
