@@ -39,7 +39,9 @@
 #       owner of the mounted folder.
 #   check_install.sh apptainer IMAGE
 #       Turn the Docker image IMAGE into an Apptainer file and run the install
-#       guide's evaluate command with apptainer exec, on the CPU.
+#       guide's evaluate command with apptainer exec, on the CPU. As the guide
+#       says, Apptainer's cache and temporary files go to roomy storage (beside
+#       the Apptainer file), because /tmp may be too small for the image.
 #
 # Files go under $RUNNER_TEMP (a new temporary folder when it is not set).
 set -eu
@@ -194,7 +196,8 @@ container_route() {
 
 apptainer_route() {
   place="$work/apptainer"
-  mkdir -p "$place"
+  export APPTAINER_CACHEDIR="$place/cache" APPTAINER_TMPDIR="$place/tmp"
+  mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
   cd "$place"
   apptainer build marl-bgs.sif "docker-daemon://$1"
   apptainer exec marl-bgs.sif python -m marl_battlegrounds evaluate \
