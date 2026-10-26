@@ -4,7 +4,7 @@
 # learner or every adapter. CONTRIBUTING.md explains the dependency rules.
 [project]
 name = "marl-battlegrounds"
-version = "1.0.2"
+version = "1.0.3"
 description = "The JAX-native Benchmark for Heterogeneous and Competitive Multi-agent Reinforcement Learning: built from scratch by researchers, for researchers."
 readme = "README.md"
 requires-python = ">=3.12"
