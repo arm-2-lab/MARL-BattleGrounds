@@ -9,6 +9,10 @@ from typing import Literal, cast, get_args
 
 type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
 
+# Task names that make() accepts; training configs check against the same list.
+type TaskName = Literal["tdm"]
+TASK_NAMES: tuple[TaskName, ...] = get_args(TaskName.__value__)
+
 
 # The one default Team Deathmatch Red Zone depth, in map units. Fresh map
 # configs, default evaluation, new training runs and new DevClient drafts use it;

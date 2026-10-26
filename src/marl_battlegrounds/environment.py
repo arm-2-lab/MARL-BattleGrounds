@@ -23,6 +23,7 @@ from jax import Array
 from jax.core import Tracer
 from numpy.typing import NDArray
 
+from marl_battlegrounds._task_settings import TASK_NAMES
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
@@ -1577,7 +1578,7 @@ def make(
     Parameters
     ----------
     task : str
-        Supported task name, currently ``"tdm"``.
+        A supported task name, currently only ``"tdm"``.
     map_id : int | None, default=None
         Public map ID from list_tdm_maps. Omission with no env_config
         makes an unconfigured handle that needs an exact config at reset.
@@ -1640,8 +1641,9 @@ def make(
     Raises
     ------
     ValueError
-        Unsupported task/mode, invalid batch or selection IDs,
-        conflicting setup inputs, or invalid map/roster/config values.
+        An unsupported task name (the message lists the supported ones), an
+        unsupported mode, invalid batch or selection IDs, conflicting setup
+        inputs, or invalid map/roster/config values.
     TypeError
         Unsupported config/roster structure or a non-Boolean balance/facts
         setting. Physical validation uses the existing Core validators.
@@ -1664,8 +1666,10 @@ def make(
     >>> actions = env.sample_actions(jax.random.key(1), state)
     >>> obs, state, reward, done, info = env.step(jax.random.key(2), state, actions)
     """
-    if task != "tdm":
-        raise ValueError("the supported task is 'tdm'")
+    if task not in TASK_NAMES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
     if num_envs is not None and (
         type(num_envs) is not int or not 1 <= num_envs <= np.iinfo(np.int32).max
     ):

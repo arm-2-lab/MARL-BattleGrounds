@@ -6,7 +6,8 @@ leave actor inputs and native rewards unchanged, and retain producing terminal
 facts through AutoReset while using neutral values for padding. make refuses
 any supplied Red Zone depth, even the
 default 5.0 or 0.0, when an exact env_config owns the rules, and refuses one
-with neither map_id nor env_config.
+with neither map_id nor env_config. make refuses a task name that is not
+supported, and its message lists the supported names.
 """
 
 from collections.abc import Callable
@@ -385,6 +386,11 @@ def test_make_refuses_a_supplied_red_zone_depth_without_a_map_or_with_env_config
     with pytest.raises(ValueError, match=r"^roster and rule inputs require map_id$"):
         make("tdm", red_zone_depth=red_zone_depth)
     make("tdm", env_config=config)
+
+
+def test_make_refuses_an_unsupported_task_and_names_the_supported_ones() -> None:
+    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', not 'ctf'$"):
+        make("ctf")
 
 
 def test_terminal_win_counts_observed_kills_separately_from_initialized_score(
