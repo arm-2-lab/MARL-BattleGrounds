@@ -1170,8 +1170,8 @@ def model_card(
     input_scale : float
         The model's input scale; starting training from it needs the same.
     repo_bytes : int
-        Total size in bytes of the repository's other files, for the
-        download note.
+        Total size in bytes of the repository's other files, for the card's
+        "This repository is about ..." sentence.
     citation : tuple of (str, str or None)
         The paper's BibTeX entry and arXiv id (see paper_citation).
 
@@ -1264,23 +1264,6 @@ an evaluation or the BattleClient. Each file downloads once and is checked
 against `steps.csv` before use. The examples below reuse `marl_bgs` and `name`.
 The [Released Models guide]({GUIDE_URL}) shows the whole workflow.
 
-### Train Against a Ladder of Its Saves
-
-```python
-from marl_battlegrounds import training
-
-ladder = [f"{{name}}@{{millions}}M" for millions in (50, 100, 150, 200)]
-config = training.TrainConfig(
-    method="mappo",
-    opponents={{"self": 0.2, **dict.fromkeys(ladder, 0.2)}},
-    validation_opponents=(name, "tdm-alpha"),
-)
-training.train(config, output_dir="runs/ladder")
-```
-
-To play a mix of saves in your own evaluation, use
-`marl_bgs.pool({{f"{{name}}@50M": 1.0, f"{{name}}@final": 1.0}})`.
-
 ### Start Training From It
 
 ```python
@@ -1299,42 +1282,7 @@ the critic, the mixer or the optimizer state, starts fresh. The method and input
 scale must match this model's. Training state is not released, so the original
 run cannot be continued; start a new run from any save instead.
 
-### Choose a Save by Its Validation Result
-
-```python
-import csv
-
-from huggingface_hub import hf_hub_download
-
-path = hf_hub_download("{name}", "steps.csv")
-with open(path, newline="") as file:
-    rows = [row for row in csv.DictReader(file) if row["validation_games"]]
-best = max(rows, key=lambda row: float(row["validation_point_margin"]))
-system = marl_bgs.load_method(f"{{name}}@{{best['step']}}")
-```
-
-### Offline Use and Clusters
-
-```bash
-python -m marl_battlegrounds models download {name}@final
-HF_HUB_OFFLINE=1 python my_experiment.py
-```
-
-The first command fills the Hugging Face cache. Later runs with
-`HF_HUB_OFFLINE=1`, for example on compute nodes that share the cache, never use
-the network.
-
-### Download the Files Yourself
-
-```bash
-hf download {name} --local-dir {model.repo}
-hf download {name} models/{model_file_name(near)} --local-dir {model.repo}
-```
-
-The first command fetches the whole repository (about {_size(repo_bytes)}), and
-the second fetches one file. A downloaded folder loads with the same `@` names,
-as in `marl_bgs.load_method("{model.repo}@100M")`, and a single file loads by its
-path.
+The [Released Models guide]({GUIDE_URL}) also shows how to train against a ladder of saves, choose a save by its validation result, work offline and download the files. This repository is about {_size(repo_bytes)}.
 
 ## What Is in This Repository
 
