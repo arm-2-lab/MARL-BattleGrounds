@@ -368,7 +368,9 @@ jobs:
   docker-cuda12:
     name: Docker image (NVIDIA CUDA 12, amd64)
     needs: [smoke-test]
-    runs-on: ubuntu-latest
+    # On Ubuntu 26.04 runners, apt installs Ubuntu's older Apptainer instead of
+    # the Apptainer PPA's, and it cannot start a container there.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
