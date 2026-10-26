@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "0.11.16"
 
@@ -94,7 +94,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "0.11.16"
 
@@ -138,7 +138,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "0.11.16"
 
@@ -216,7 +216,7 @@ jobs:
           path: dist
 
       - name: Upload to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
 
   attach-files:
     name: Attach the files to the Release
@@ -403,12 +403,16 @@ jobs:
           sh .github/scripts/check_install.sh container docker "${IMAGE}:${VERSION}"
 
       # The install guide's cluster route; this runner has no GPU, so no --nv.
+      # The runner's apt reads the amd64v3 package lists, and the Apptainer PPA's
+      # amd64v3 list is empty, so apt would install Ubuntu's older Apptainer,
+      # which cannot start a container here. amd64v1 reads the plain amd64 lists.
       - name: Run the image with Apptainer on the CPU
         if: github.event_name != 'release'
         run: |
           sudo add-apt-repository -y ppa:apptainer/ppa
-          sudo apt-get update -q
-          sudo apt-get install -y -q apptainer
+          sudo apt-get update -q -o APT::Architecture-Variants=amd64v1
+          sudo apt-get install -y -q -o APT::Architecture-Variants=amd64v1 apptainer
+          apptainer --version
           sh .github/scripts/check_install.sh apptainer "${IMAGE}:${VERSION}"
 
       - name: Push to GHCR
