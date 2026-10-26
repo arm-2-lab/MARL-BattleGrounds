@@ -140,7 +140,7 @@ conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }, { extra = "rocm" }, { 
 constraint-dependencies = [
   "fsspec>=2026.6.0",
   "msgpack>=1.2.1",
-  "pillow>=12.3.0",
+  "pillow>=13.0.0",
   "virtualenv>=21.7.13",
 ]
 
