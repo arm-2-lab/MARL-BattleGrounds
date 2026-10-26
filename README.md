@@ -16,40 +16,24 @@
 
 **MARL-BattleGrounds (MARL-BGs)** is an easy-to-use, JAX-native benchmark
 for heterogeneous and competitive team-vs-team multi-agent reinforcement
-learning (MARL). It is designed to be sample-efficient, computationally
-efficient and researcher-centric. Most MARL benchmarks are either fast
-but simple, like SMAX, where winning comes down to unit micromanagement,
-or rich but costly, like Dota 2, which took OpenAI Five ten months of
-training on large clusters. MARL-BGs fills the missing middle: rich team
-play, with fast and cheap experiments on one GPU.
+learning (MARL). MARL environments tend to be fast and simple, like SMAX,
+or rich and costly, like Dota 2. MARL-BGs fills the missing middle, giving
+you rich team play with fast, cheap experiments on one GPU.
 
-- **The Game.** In Team Deathmatch, two teams of up to five agents fight
-  on 52 hand-designed maps. Each agent is a Mage, Warrior, Hunter, Rogue
-  or Priest. Each class has its own Basic ability, passive and Ultimate,
-  built to help allies and counter enemies, so the team that wins is the
-  one that coordinates its specialists best, not the one with the best
-  individual agents. Obstacles block sight and attacks, so each agent sees only
-  part of the map. Maps 0-11 form a curriculum, maps 0-41 are for
-  training, maps 42-46 for validation and maps 47-51 for testing.
-- **The Evaluation.** Eight hand-crafted endgame scenarios, each with a
-  verified winning line, test skills such as agent modeling and
-  multi-step planning. Each season's tournament retrains every entry on
-  equal compute, plays it against the current "Big Nine" on the test maps,
-  and rates it with draw-aware Elo and confidence intervals, so the
-  benchmark's difficulty grows with the quality of its entries. Every entrant is
-  released as a downloadable opponent. Up to 11,192 metrics per game, in
-  28 topics, show how a team won, such as how much the Priest healed each
-  ally.
-- **The Tools.** Bring your own learner through plain JAX `reset` and
-  `step`, or start from six tuned baselines. Their trained Season 0
-  models, and every save from 0 to 250 million steps, load by name from
-  Hugging Face. Training helpers cover self-play, opponent pools,
-  curricula and reward shaping. One call evaluates any mix of policies,
-  so cross-play and zero-shot coordination tests come out of the box.
-  MARL-BGs also ships three strong scripted opponents, an LLM API that
-  turns a language model into a team, the BattleClient for playing
-  alongside or against your policies, and the analytical Replay Viewer
-  for stepping through any game tick by tick.
+Two teams of up to five agents fight on 52 hand-designed maps. Each agent is
+a Mage, Warrior, Hunter, Rogue or Priest, classes inspired by World of
+Warcraft®.
+
+- **Bring any method.** Use plain JAX `reset` and `step`, or start from six
+  tuned baselines whose trained models load by name from Hugging Face.
+- **Test it fairly.** One call plays any mix of policies against each other.
+  Eight endgame scenarios, each with a verified winning plan, test skills such
+  as agent modeling and multi-step planning.
+- **Enter the leaderboard.** Each season retrains every entry on the same GPU
+  budget and adds it to a round-robin tournament on held-out test maps, which
+  gives it an Elo. Can your method break into the Big Nine?
+- **Watch and play.** Step through any game in the Replay Viewer, or play with
+  or against your agents in the BattleClient.
 
 Try it in your browser: the [walkthrough](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) covers the API, the speed, training a team and the trained Season 0 teams, and the [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) rebuilds the paper's analysis of all 7,200 Season 0 games.
 
@@ -93,7 +77,7 @@ docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/wo
 | Docker | Any system with Docker or Podman; NVIDIA GPUs on Linux and Windows | Tested: Linux with Docker (CPU, and an NVIDIA GPU with the CUDA 12 image), Linux with Podman, the ARM image on ARM Linux, Docker Desktop on Windows 11 (CPU, and an NVIDIA RTX 5090 with the CUDA 12 image), Docker Desktop on an Apple Silicon Mac (macOS 26). Not tested yet; it should work: Docker Desktop on an Intel Mac |
 | Colab, [Open in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) | A browser | Tested: Colab's free T4 GPU |
 
-"Tested" means we ran exactly these instructions on that system for this release.
+"Tested" means we ran exactly these instructions on that system, for this release or an earlier one with the same install steps.
 
 Docker runs everything: play, replays, training, evaluation, tournaments, analysis and notebooks. Its limits:
 
