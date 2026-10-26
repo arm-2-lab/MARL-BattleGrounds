@@ -1810,7 +1810,8 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
     str
         Space YAML metadata (static SDK), then the card in plain English: the
         tagline, the arXiv badge (when ``citation`` has an arXiv id), what
-        MARL-BGs is, what wins and what its leaderboard rewards, the models
+        MARL-BGs is (its opening follows the repository README's), the game
+        and its classes, what wins and what its leaderboard rewards, the models
         with their Season 0 results, the one-line names, three lines of code,
         who may enter the leaderboard, links, the citation and the contact.
         Hugging Face shows this file as the organization card when the Space
@@ -1841,10 +1842,14 @@ pinned: false
 
 {badge}[MARL-BattleGrounds]({CODE_URL}) (MARL-BGs) is an easy-to-use, JAX-native
 benchmark for heterogeneous and competitive team-vs-team multi-agent
-reinforcement learning (MARL). It fills the missing middle: rich team play, with
-fast and cheap experiments on one GPU. Its five classes are built to help allies
-and counter enemies, so the team that best coordinates its specialists wins,
-not the team with the best individual agents.
+reinforcement learning (MARL). MARL environments tend to be fast and simple, like
+SMAX, or rich and costly, like Dota 2. MARL-BGs fills the missing middle, giving
+you rich team play with fast, cheap experiments on one GPU.
+
+Two teams of up to five agents fight on 52 hand-designed maps. Each agent is a
+Mage, Warrior, Hunter, Rogue or Priest, classes inspired by World of Warcraft®.
+Each class is built to help allies and counter enemies, so the team that best
+coordinates its specialists wins, not the team with the best individual agents.
 
 Every entry on its [leaderboard]({RULES_URL}) gets the same budget on the same
 machine, so the leaderboard rewards methods that are efficient in both samples
