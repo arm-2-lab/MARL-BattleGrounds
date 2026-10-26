@@ -16,57 +16,34 @@
 
 **MARL-BattleGrounds (MARL-BGs)** is an easy-to-use, JAX-native benchmark
 for heterogeneous and competitive team-vs-team multi-agent reinforcement
-learning (MARL). It is designed to be sample-efficient, computationally
-efficient and researcher-centric. Most MARL benchmarks are either fast
-but simple, like SMAX, where winning comes down to unit micromanagement,
-or rich but costly, like Dota 2, which took OpenAI Five ten months of
-training on large clusters. MARL-BGs fills the missing middle: rich team
-play, with fast and cheap experiments on one GPU.
+learning (MARL). MARL environments tend to be fast and simple, like SMAX,
+or rich and costly, like Dota 2. MARL-BGs fills the missing middle, giving
+you rich team play with fast, cheap experiments on one GPU.
 
-- **The Game.** In Team Deathmatch, two teams of up to five agents fight
-  on 52 hand-designed maps. Each agent is a Mage, Warrior, Hunter, Rogue
-  or Priest. Each class has its own Basic ability, passive and Ultimate,
-  built to help allies and counter enemies, so the team that wins is the
-  one that coordinates its specialists best, not the one with the best
-  individual agents. Obstacles block sight and attacks, so each agent sees only
-  part of the map. Maps 0-11 form a curriculum, maps 0-41 are for
-  training, maps 42-46 for validation and maps 47-51 for testing.
-- **The Evaluation.** Eight hand-crafted endgame scenarios, each with a
-  verified winning line, test skills such as agent modeling and
-  multi-step planning. Each season's tournament retrains every entry on
-  equal compute, plays it against the current "Big Nine" on the test maps,
-  and rates it with draw-aware Elo and confidence intervals, so the
-  benchmark's difficulty grows with the quality of its entries. Every entrant is
-  released as a downloadable opponent. Up to 11,192 metrics per game, in
-  28 topics, show how a team won, such as how much the Priest healed each
-  ally.
-- **The Tools.** Bring your own learner through plain JAX `reset` and
-  `step`, or start from six tuned baselines. Their trained Season 0
-  models, and every save from 0 to 250 million steps, load by name from
-  Hugging Face. Training helpers cover self-play, opponent pools,
-  curricula and reward shaping. One call evaluates any mix of policies,
-  so cross-play and zero-shot coordination tests come out of the box.
-  MARL-BGs also ships three strong scripted opponents, an LLM API that
-  turns a language model into a team, the BattleClient for playing
-  alongside or against your policies, and the analytical Replay Viewer
-  for stepping through any game tick by tick.
+Two teams of up to five agents fight on 52 hand-designed maps. Each agent is
+a Mage, Warrior, Hunter, Rogue or Priest, classes inspired by World of
+Warcraft®.
+
+- **Bring any method.** Use plain JAX `reset` and `step`, or start from six
+  tuned baselines whose trained models load by name from Hugging Face.
+- **Test it fairly.** One call plays any mix of policies against each other.
+  Eight endgame scenarios, each with a verified winning plan, test skills such
+  as agent modeling and multi-step planning.
+- **Enter the leaderboard.** Each season retrains every entry on the same GPU
+  budget and adds it to a round-robin tournament on held-out test maps, which
+  gives it an Elo. Can your method break into the Big Nine?
+- **Watch and play.** Step through any game in the Replay Viewer, or play with
+  or against your agents in the BattleClient.
 
 Try it in your browser: the [walkthrough](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) covers the API, the speed, training a team and the trained Season 0 teams, and the [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) rebuilds the paper's analysis of all 7,200 Season 0 games.
 
 ## Installation
 
-Start here:
+You do not need to install JAX first: each route installs the right JAX for
+your machine. An NVIDIA GPU is optional but recommended: without one,
+everything runs on the CPU, only slower.
 
-| You Want To | Do This |
-|---|---|
-| Look around in your browser, with nothing to install | [Open the walkthrough in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb): the API, the speed, training a team and the trained Season 0 teams |
-| Play the game | The one command below |
-| Use MARL-BattleGrounds in your own project | pip, below |
-
-You do not need to install JAX first: each route installs the right JAX for your machine.
-An NVIDIA GPU is optional but recommended: without one, everything runs on the CPU, only slower.
-
-On Linux, an Apple Silicon Mac or [Windows with WSL2](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md#windows), one command installs everything and opens the BattleClient. It picks the right JAX build for your GPU:
+To play the game on Linux, an Apple Silicon Mac or [Windows with WSL2](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md#windows), one command installs everything and opens the BattleClient:
 
 ```bash
 curl -L https://github.com/arm-2-lab/MARL-BattleGrounds/archive/refs/tags/v1.0.2.tar.gz | tar xz
@@ -80,31 +57,13 @@ pip install "marl-battlegrounds[all]"           # CPU
 pip install "marl-battlegrounds[all,cuda13]"    # NVIDIA GPU, driver 580 or newer
 ```
 
-With Docker or Podman, on any system (add `--gpus all` and the `1.0.2-cuda12` tag for an NVIDIA GPU):
+With Docker or Podman, on any system (for an NVIDIA GPU, add `--gpus all` and use the `1.0.2-cuda12` tag):
 
 ```bash
 docker run --rm -it -p 127.0.0.1:8765:8766 -p 127.0.0.1:8767:8768 -v "${PWD}:/work" ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2
 ```
 
-| Route | For | Tested |
-|---|---|---|
-| One command, `sh start.sh` | Linux (x86_64 and ARM), Apple Silicon Mac, Windows with WSL2 | Tested: Linux x86_64 with an NVIDIA RTX 5090; Linux x86_64 and ARM, and an Apple Silicon Mac, on the CPU; Windows 11 with WSL2 (Ubuntu 24.04) and an NVIDIA RTX 5090 |
-| pip | Linux, Apple Silicon Mac, WSL2; Python 3.12 to 3.14 | Tested: Linux x86_64 and ARM, and an Apple Silicon Mac, each with Python 3.12, 3.13 and 3.14; Windows 11 with WSL2 (Ubuntu 24.04, Python 3.12) and an NVIDIA RTX 5090 |
-| Docker | Any system with Docker or Podman; NVIDIA GPUs on Linux and Windows | Tested: Linux with Docker (CPU, and an NVIDIA GPU with the CUDA 12 image), Linux with Podman, the ARM image on ARM Linux, Docker Desktop on Windows 11 (CPU, and an NVIDIA RTX 5090 with the CUDA 12 image), Docker Desktop on an Apple Silicon Mac (macOS 26). Not tested yet; it should work: Docker Desktop on an Intel Mac |
-| Colab, [Open in Colab](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/quickstart.ipynb) | A browser | Tested: Colab's free T4 GPU |
-
-"Tested" means we ran exactly these instructions on that system for this release.
-
-Docker runs everything: play, replays, training, evaluation, tournaments, analysis and notebooks. Its limits:
-
-| Limit | What to Do |
-|---|---|
-| No GPU in Docker on a Mac | Use the CPU image; Docker cannot reach Apple GPUs |
-| `study` (big multi-run jobs) is not tested in containers and stops when the container stops | Start the container with `-d`; not tested yet |
-| You cannot add packages to a running container | Build a two-line Dockerfile: `FROM ghcr.io/arm-2-lab/marl-battlegrounds:1.0.2`, then `RUN uv pip install <package>` |
-| Docker Desktop (Mac, Windows) limits the container's memory | Raise the memory limit in Docker Desktop's settings for large training runs |
-
-Every route, the GPU builds, Windows, clusters and offline use: [the install guide](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md).
+[The install guide](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/install.md) says which systems we tested each route on, and covers the GPU builds, Docker's limits, clusters and offline use.
 
 ## Quick Start
 
@@ -149,11 +108,8 @@ print(results.head_to_head())  # games, wins, draws, losses, point margin
 ```
 
 Your method is always Team A, and paired games swap the spawn ends, so a map's
-layout cannot favor either side.
-
-The [analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) shows what full metrics
-reveal: the Season 0 ladder, who beats whom on each map, the teamwork that follows
-Elo and who helps whom. Point it at your own tournament with `MARL_BGS_RESULTS`.
+layout cannot favor either side. To analyze your own tournament, point the
+[analysis notebook](https://colab.research.google.com/github/arm-2-lab/MARL-BattleGrounds/blob/main/examples/evaluate/evaluation_analysis.ipynb) at it with `MARL_BGS_RESULTS`.
 
 ## Watch and Play
 
@@ -182,9 +138,6 @@ Every save of the six Season 0 models, from 0 to 250 million steps, loads by nam
 [Hugging Face](https://huggingface.co/MARL-BattleGrounds), for example
 `marl_bgs.load_method("MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final")`
 ([Released Models](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/released_models.md)).
-
-Your own method can be anything that turns permitted observations into legal
-actions: a network, a planner, a language model or a mix.
 
 ## Leaderboard
 

@@ -28,7 +28,7 @@ An NVIDIA GPU is optional but recommended: without one, everything runs on the C
 | A cluster or a remote GPU machine | [Clusters and remote machines](#clusters-and-remote-machines) | NVIDIA | Tested on Linux: the uv steps with the network cut off, and the image under Apptainer on the CPU. Not tested yet; it should work: a real cluster, Apptainer with a GPU, `apptainer pull` from the registry, the SSH tunnel |
 | AMD GPU or Google TPU | [GPU builds](#gpu-builds) | AMD or TPU | Not tested yet; it should work |
 
-"Tested" means we ran exactly these instructions on that system for this release.
+"Tested" means we ran exactly these instructions on that system, for this release or an earlier one with the same install steps.
 
 Python 3.12, 3.13 and 3.14 all work. Python 3.14 is recommended: official leaderboard runs use it, and extending a saved training run needs the exact Python it was saved with (see [Watch Out](#watch-out-saved-runs-need-the-same-python)). The one command and Docker use Python 3.14 for you. Native Windows without WSL2 is not supported.
 
