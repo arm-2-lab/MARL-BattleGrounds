@@ -84,7 +84,7 @@ notebook = [
   "pandas",
   "ipykernel",
   "ipywidgets",
-  "nbconvert",
+  "nbconvert>=7.17.2",
 ]
 
 wandb = [
@@ -139,8 +139,10 @@ jupyter = ["jupyterlab"]
 conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }, { extra = "rocm" }, { extra = "tpu" }]]
 # Minimum safe versions of indirect dependencies with known vulnerabilities.
 constraint-dependencies = [
+  "certifi>=2026.10.19",
   "fsspec>=2026.6.0",
   "msgpack>=1.2.1",
+  "opentelemetry-api>=1.45.1",
   "pillow>=13.0.0",
   "virtualenv>=21.7.13",
 ]
