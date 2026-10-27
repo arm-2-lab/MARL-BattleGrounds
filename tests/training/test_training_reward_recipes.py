@@ -7,13 +7,20 @@ ownership. Every scene also checks the team form: each configured Team A slot
 gets the three shared parts once plus the Team A total of the five own-agent
 parts, and the QMIX/PQN-VDN team average of that form keeps each event's
 per-agent price (+0.05 kill credit, -0.05 teammate death, own-zone ticks per
-player). Both recipes' saved identities bind the shared combat helper.
-These authored transitions prove software meaning, not learning.
+player). Across these scenes all eight parts take nonzero values, so the oracle
+pins the recipes' frozen version 1 rewards. Both recipes declare the reward
+identity their saved Season 0 runs recorded (copied from real checkpoints into
+tests/fixtures/training/combat_support_reward_identities_v1.json), and a
+functools.wraps wrapper of a recipe is fingerprinted instead of inheriting that
+declaration. These authored transitions prove software meaning, not learning.
 """
 
 # Tests inspect the compact numerical contract without exposing it to actors.
 # pyright: reportPrivateUsage=false
+import functools
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 import jax
@@ -496,14 +503,44 @@ def test_team_average_keeps_each_event_at_its_per_agent_price() -> None:
 @pytest.mark.parametrize(
     "name", ["combat_support_reward", "combat_support_team_reward"]
 )
-def test_both_recipe_identities_bind_the_shared_combat_helper(name: str) -> None:
+def test_both_recipes_declare_the_identity_their_saved_runs_recorded(
+    name: str,
+) -> None:
     from marl_battlegrounds.training.shaping import resolve_reward
 
-    reward, identity = resolve_reward(
-        f"marl_battlegrounds.training.reward_recipes:{name}"
-    )
-    assert reward is not None and identity is not None
-    reference = identity["reference"]
-    assert isinstance(reference, str) and reference.endswith(name)
-    assert isinstance(identity["combat_source_digest"], str)
-    assert identity["call_contract"] == "producing_config_keyword_v1"
+    saved = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "fixtures/training/combat_support_reward_identities_v1.json"
+        ).read_text(encoding="utf-8")
+    )["identities"][name]
+    _, identity = resolve_reward(f"marl_battlegrounds.training.reward_recipes:{name}")
+    assert identity == saved
+
+
+def test_a_wrapped_recipe_is_fingerprinted_instead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds import _method_loading
+    from marl_battlegrounds.training.shaping import resolve_reward
+
+    @functools.wraps(combat_support_reward)
+    def doubled(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        config: EnvConfig,
+    ) -> RewardOutput:
+        output = combat_support_reward(before, facts, after, progress, config=config)
+        return RewardOutput(2 * output.adjustments, output.components)
+
+    def load(reference: str) -> Callable[..., RewardOutput]:
+        return doubled
+
+    assert hasattr(doubled, "reward_identity")
+    monkeypatch.setattr(_method_loading, "installed_callable", load)
+    _, identity = resolve_reward("example:doubled")
+    assert identity is not None and "combat_source_digest" not in identity
+    assert identity["source_scope"] == "defining_module"

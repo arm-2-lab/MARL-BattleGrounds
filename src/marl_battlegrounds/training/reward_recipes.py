@@ -4,21 +4,32 @@ combat_support_reward adds an explicit combat/support objective to native task
 reward, one amount per agent, for learners that train each agent on its own
 reward (the PPO family). combat_support_team_reward gives the same terms as one
 shared team amount, for learners that train on one team reward (QMIX, PQN-VDN).
-Both use compact producing facts, never full metrics or replay capture. Their
-coefficients are fixed here so the saved source identity binds their values.
+Both use compact producing facts, never full metrics or replay capture.
+
+Both recipes are frozen at version 1, the definition every run of them has
+used. They compute damage, healing and kill credit with their own copy of the
+Season 0 rule (``_observed_combat``), so later changes to the evaluation
+metrics never change these rewards, and each declares the reward identity its
+runs saved (``reward_identity``), so an edit to this file that keeps the
+rewards still resumes those runs. tests/training/test_training_reward_recipes.py
+pins the rewards against independent arithmetic; a change to any reward value
+needs a new recipe name.
 """
 
-# The observed-combat helper is shared with metrics; Core is only read.
-# pyright: reportPrivateUsage=false
 from typing import cast
 
+import jax
 import jax.numpy as jnp
 from jax import Array
 
 from marl_battlegrounds.core.env import red_zone_death_mask
-from marl_battlegrounds.core.types import PRIEST_CLASS_ID, EnvConfig, EnvState
+from marl_battlegrounds.core.types import (
+    MAX_AGENT_SLOTS,
+    PRIEST_CLASS_ID,
+    EnvConfig,
+    EnvState,
+)
 from marl_battlegrounds.environment import TrainingFacts
-from marl_battlegrounds.evaluation.combat_metrics import _observed_combat_quantities
 from marl_battlegrounds.training.shaping import RewardOutput
 
 _KILL = 0.05
@@ -34,6 +45,95 @@ _ZONE_TICK = 0.002
 _SHARED_PARTS = frozenset(
     ("own_team_deaths", "own_red_zone_deaths", "priest_heal_range_pairs")
 )
+
+
+def _observed_combat(
+    config: EnvConfig, state: EnvState, facts: TrainingFacts
+) -> tuple[Array, Array, Array, Array]:
+    """Return one transition's damage, healing, excess healing and kill credit.
+
+    A deliberate copy of the evaluation metrics' observed-combat rule as it
+    stood for Season 0 (``evaluation.combat_metrics``, 30 September 2026). The
+    metrics may change that rule (for example to credit Blessing of Freedom);
+    this copy stays fixed so the recipes' rewards never move with them.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        The producing game's scalar configuration.
+    state : EnvState
+        The pre-action state; only its current health is read.
+    facts : TrainingFacts
+        The same transition's compact facts, with routing validity and
+        post-combat health present.
+
+    Returns
+    -------
+    tuple of Array
+        Damage, healing and excess healing, float32 (10, 10), then kill
+        credit, bool (10, 10). Axes are global source slot, then recipient.
+        Kill credit marks direct damage to a newly dead recipient, plus each
+        Priest who usefully healed one of those direct attackers (one hop,
+        not recursive).
+
+    Raises
+    ------
+    ValueError
+        The facts lack routing validity or post-combat health (at setup or
+        tracing).
+    """
+    if (
+        facts.combat_effect_has_recipient_by_source is None
+        or facts.health_after_combat_resolution_by_recipient is None
+    ):
+        raise ValueError(
+            "Observed combat needs routing validity and post-combat health facts"
+        )
+    routing = (
+        jax.nn.one_hot(
+            facts.combat_effect_recipient_global_slot_by_source,
+            MAX_AGENT_SLOTS,
+            dtype=jnp.float32,
+        )
+        * facts.combat_effect_has_recipient_by_source[:, None]
+    )
+    damage = (
+        routing
+        * (
+            facts.source_modified_damage_output_by_source
+            * facts.recipient_damage_modifier_by_source
+        )[:, None]
+    )
+    healing = (
+        routing
+        * (
+            facts.source_modified_healing_output_by_source
+            * facts.recipient_healing_modifier_by_source
+        )[:, None]
+    )
+    total_healing = facts.total_effective_healing_by_recipient
+    uncapped = state.current_health + (
+        total_healing - facts.total_effective_damage_by_recipient
+    )
+    excess = jnp.clip(
+        uncapped - facts.health_after_combat_resolution_by_recipient,
+        min=0,
+        max=total_healing,
+    )
+    # Compare recipient totals, so rounding cannot leave a false useful heal.
+    useful = (
+        (healing > 0)
+        & (total_healing > excess)[None, :]
+        & (config.agent_profile.class_ids == PRIEST_CLASS_ID)[:, None]
+    )
+    direct = (
+        routing.astype(jnp.bool_) & facts.contributed_to_new_death_by_source[:, None]
+    )
+    kill_credit = direct | jnp.any(useful[:, :, None] & direct[None, :, :], axis=1)
+    excess_healing = (
+        healing * (excess / jnp.where(total_healing > 0, total_healing, 1))[None, :]
+    )
+    return damage, healing, excess_healing, kill_credit
 
 
 def combat_support_reward(
@@ -102,10 +202,8 @@ def combat_support_reward(
     in_zone = red_zone_death_mask(
         config, after.agent_positions, after.alive_mask & active
     )
-    _, damage, healing, excess, combat = _observed_combat_quantities(
-        config, before, facts, facts.contributed_to_new_death_by_source
-    )
-    credit = combat.kill_contributions[:5, 5:] & dead[None, 5:]
+    damage, healing, excess, kill_credit = _observed_combat(config, before, facts)
+    credit = kill_credit[:5, 5:] & dead[None, 5:]
     red_zone_credit = credit & red_zone_dead[None, 5:]
     effective = jnp.maximum(healing - excess, 0.0)
     health_limit = before.current_health[5:] + effective[:, 5:].sum(0)
@@ -232,3 +330,47 @@ def combat_support_team_reward(
         for name, value in output.components.items()
     }
     return RewardOutput(jnp.stack(tuple(parts.values())).sum(0), parts)
+
+
+# Version 1 of both recipes: the reward identity every run of them saved
+# (shaping.resolve_reward adds the reference). Its digests describe the files
+# as they stood when those runs began; the rewards are pinned by tests, not by
+# these digests, so an edit that keeps the rewards still resumes the runs.
+_SAVED_IDENTITY_V1: dict[str, dict[str, object]] = {
+    name: {
+        "callable": {
+            "callable_name": f"marl_battlegrounds.training.reward_recipes.{name}",
+            "code_digest": code_digest,
+            "code_scope": "python_function_bytecode",
+            "closure_content": "none",
+            "defaults_digest": (
+                "4dbd94257a409786a8b0f5a10c8e3e0fc8453c7c81f70c61a81a0bf3bdf9f746"
+            ),
+            "external_state": "unknown",
+        },
+        "source_digest": (
+            "73df677933b043d9eb2d601a65719e73bd26030066f0086ba8c3f595d251bdd6"
+        ),
+        "source_scope": "defining_module",
+        "configuration_scope": "source_and_defaults_only",
+        "external_state": "unknown",
+        "progress_clock": "completed_training_rounds_before_step",
+        "call_contract": "producing_config_keyword_v1",
+        "combat_source_digest": (
+            "afb0c609d63efad4b7c1c61fb6831ff91efee20951d0834fd33f074adb5e39ed"
+        ),
+    }
+    for name, code_digest in (
+        (
+            "combat_support_reward",
+            "1dfa534d83faff7767cd9047f47e76202b964baebcaf605c51ad7e3815f11d25",
+        ),
+        (
+            "combat_support_team_reward",
+            "ed9ff0d11578cdd569554709238a91e48faa281e4b7025b4147aaa9a74ce7a7c",
+        ),
+    )
+}
+# setattr, because the type checker refuses attribute assignment on functions.
+for _recipe in (combat_support_reward, combat_support_team_reward):
+    setattr(_recipe, "reward_identity", _SAVED_IDENTITY_V1[_recipe.__name__])  # noqa: B010

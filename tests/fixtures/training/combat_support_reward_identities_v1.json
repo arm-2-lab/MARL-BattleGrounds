@@ -1,0 +1,45 @@
+{
+  "meaning": "The reward identity each built-in combat-support recipe saved in the released Season 0 250M runs (the run's checkpoint_details.json, collection.reward_identity, without the component keys that collection adds). Recipe version 1 must keep reproducing it.",
+  "sources": {
+    "combat_support_reward": "Season 0 Recurrent IPPO 250M run, final checkpoint",
+    "combat_support_team_reward": "Season 0 Feedforward MAPPO 250M run (team reward), final checkpoint"
+  },
+  "identities": {
+    "combat_support_reward": {
+      "call_contract": "producing_config_keyword_v1",
+      "callable": {
+        "callable_name": "marl_battlegrounds.training.reward_recipes.combat_support_reward",
+        "closure_content": "none",
+        "code_digest": "1dfa534d83faff7767cd9047f47e76202b964baebcaf605c51ad7e3815f11d25",
+        "code_scope": "python_function_bytecode",
+        "defaults_digest": "4dbd94257a409786a8b0f5a10c8e3e0fc8453c7c81f70c61a81a0bf3bdf9f746",
+        "external_state": "unknown"
+      },
+      "combat_source_digest": "afb0c609d63efad4b7c1c61fb6831ff91efee20951d0834fd33f074adb5e39ed",
+      "configuration_scope": "source_and_defaults_only",
+      "external_state": "unknown",
+      "progress_clock": "completed_training_rounds_before_step",
+      "reference": "marl_battlegrounds.training.reward_recipes:combat_support_reward",
+      "source_digest": "73df677933b043d9eb2d601a65719e73bd26030066f0086ba8c3f595d251bdd6",
+      "source_scope": "defining_module"
+    },
+    "combat_support_team_reward": {
+      "call_contract": "producing_config_keyword_v1",
+      "callable": {
+        "callable_name": "marl_battlegrounds.training.reward_recipes.combat_support_team_reward",
+        "closure_content": "none",
+        "code_digest": "ed9ff0d11578cdd569554709238a91e48faa281e4b7025b4147aaa9a74ce7a7c",
+        "code_scope": "python_function_bytecode",
+        "defaults_digest": "4dbd94257a409786a8b0f5a10c8e3e0fc8453c7c81f70c61a81a0bf3bdf9f746",
+        "external_state": "unknown"
+      },
+      "combat_source_digest": "afb0c609d63efad4b7c1c61fb6831ff91efee20951d0834fd33f074adb5e39ed",
+      "configuration_scope": "source_and_defaults_only",
+      "external_state": "unknown",
+      "progress_clock": "completed_training_rounds_before_step",
+      "reference": "marl_battlegrounds.training.reward_recipes:combat_support_team_reward",
+      "source_digest": "73df677933b043d9eb2d601a65719e73bd26030066f0086ba8c3f595d251bdd6",
+      "source_scope": "defining_module"
+    }
+  }
+}

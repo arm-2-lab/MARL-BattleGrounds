@@ -123,20 +123,32 @@ def resolve_reward(
         The callable and its JSON-ready declaration. The record includes the
         reference, existing bytecode/default evidence, the defining module's
         source hash when readable, and the completed-rounds progress clock.
-        Save this record with collection settings and compare it before resume.
-        Validate shapes separately with validate_reward after preparing inputs.
+        A reward function that carries a ``reward_identity`` attribute (a
+        dict that survives a JSON round trip) declares its own record
+        instead: the result is the reference followed by a copy of that dict,
+        and no code evidence is gathered. A wrapper (a function with
+        ``__wrapped__``) is always fingerprinted, even when it copied the
+        attribute from the function it wraps. Save this record with
+        collection settings and compare it before resume. Validate shapes
+        separately with validate_reward after preparing inputs.
 
     Raises
     ------
     ValueError, ImportError, AttributeError
         The shared installed-callable loader rejects the reference, import or
         attribute. Its original error is retained.
+    TypeError
+        A declared ``reward_identity`` is not a dict that JSON can encode.
 
     Notes
     -----
-    Host setup only. Source hashing binds declared wrapped callable files and
-    the built-in recipes' shared combat helper. Other imported or hidden state
-    remains unknown unless separately declared. No callback, numerical
+    Host setup only. Source hashing binds declared wrapped callable files.
+    Other imported or hidden state remains unknown unless separately declared.
+    A declared ``reward_identity`` lets a reward's owner version it: edits to
+    its files that keep the reward then still resume saved runs, so the owner
+    must pin the reward's values with tests and change the declaration (or
+    the name) when the reward changes. The built-in combat-support recipes
+    declare the identity their runs saved (version 1). No callback, numerical
     transition or output write occurs. Reuse the returned callable during the
     run. A source hash covers constants written in that module, but does not
     prove imported configuration, mutable globals, closures or external state.
@@ -147,6 +159,7 @@ def resolve_reward(
     if reference is None:
         return None, None
     import inspect
+    import json
     from hashlib import sha256
     from pathlib import Path
 
@@ -156,6 +169,13 @@ def resolve_reward(
     )
 
     reward = cast(RewardFunction, installed_callable(reference))
+    declared: object = getattr(reward, "reward_identity", None)
+    # functools.wraps copies the attribute onto wrappers, whose code may change
+    # the reward, so only an unwrapped function's declaration counts.
+    if declared is not None and not hasattr(reward, "__wrapped__"):
+        if not isinstance(declared, dict):
+            raise TypeError("A declared reward_identity must be a dict")
+        return reward, {"reference": reference, **json.loads(json.dumps(declared))}
     try:
         source = inspect.getsourcefile(reward)
         source_digest = (
@@ -183,16 +203,6 @@ def resolve_reward(
         identity["wrapped_callables"] = _reference_identity(reference).get(
             "wrapped_callables", []
         )
-    if getattr(
-        reward, "__module__", None
-    ) == "marl_battlegrounds.training.reward_recipes" and getattr(
-        reward, "__name__", None
-    ) in ("combat_support_reward", "combat_support_team_reward"):
-        from marl_battlegrounds.evaluation import combat_metrics
-
-        identity["combat_source_digest"] = sha256(
-            Path(cast(str, inspect.getsourcefile(combat_metrics))).read_bytes()
-        ).hexdigest()
     return reward, identity
 
 
