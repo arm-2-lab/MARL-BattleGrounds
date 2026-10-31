@@ -105,8 +105,9 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
     },
-    # HAPPO has no tournament run yet: recurrent MAPPO's, untuned (decision 80),
-    # with the team reward HAPPO's theory assumes and one actor per class.
+    # HAPPO has no tournament run yet, so it reuses recurrent MAPPO's recipe
+    # without tuning of its own, with the team reward HAPPO's theory assumes
+    # and one actor per class.
     "happo": {
         **_TOURNAMENT_PROTOCOL,
         "seed": 20261002,
