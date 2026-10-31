@@ -6,7 +6,9 @@ it admits no external datasets, replays, feedback or seed schedules. New
 bindings are version 3: they record the declared winning scores and the Team
 Deathmatch Red Zone depth every source configuration uses. Version 1 and 2
 bindings (saved before Red Zone scoring) stay readable as records, but
-prepare_training_content refuses to rebuild or resume them.
+prepare_training_content refuses to rebuild or resume them. read_saved_binding
+reads a binding saved under Season 0's Core rules as one under this code's,
+because their Team Deathmatch rules are equal.
 pinned_opponent_evidence records what is known about a pinned training
 opponent's own training content and controller exposure; it never refuses a
 method, and it cannot certify a researcher's undeclared outside influences. The returned
@@ -82,6 +84,16 @@ _SAVED_BEFORE_RED_ZONE = (
     "version {version}, one point per kill). This version cannot rebuild it. "
     "Resuming that experiment needs the original source environment that "
     "created it."
+)
+# Simulator-rules identities of earlier Core code whose Team Deathmatch rules
+# equal this code's. The one entry is Season 0's Core, the last before the
+# Capture the Flag and King of the Hills fields, and the Core the Team
+# Deathmatch goldens were recorded under (tests/environment/test_tdm_goldens.py).
+# It holds only while those goldens pass: a Core change that alters Team
+# Deathmatch play on purpose must remove it, so old runs are then refused.
+# Only Team Deathmatch content was ever saved under these rules.
+_TDM_EQUIVALENT_SIMULATOR_RULES = frozenset(
+    {"a6854eb7721cfbeb027dacca1aa9205ff64a9502cca71ab4458b1b655ca1f893"}
 )
 
 
@@ -497,6 +509,63 @@ def _shared_definitions() -> tuple[ContentAddressedIdentityV1, ...]:
     )
 
 
+def read_saved_binding(
+    saved: TrainingContentBinding | Mapping[str, object],
+) -> TrainingContentBinding:
+    """Check a saved binding and state it under this code's equivalent Core rules.
+
+    Parameters
+    ----------
+    saved : TrainingContentBinding or Mapping[str, object]
+        A binding, or its JSON mapping, as a checkpoint or run saved it.
+
+    Returns
+    -------
+    TrainingContentBinding
+        The saved binding. When its simulator-rules identity is one that
+        ``_TDM_EQUIVALENT_SIMULATOR_RULES`` lists, that identity is replaced by
+        this code's and the record digest recomputed, so a run saved under
+        Season 0's Core compares equal to the same content under this Core.
+        Every other field keeps its saved value.
+
+    Raises
+    ------
+    ValueError
+        The saved record fails validation, including its own digest check,
+        which runs on the saved bytes before any replacement.
+
+    Notes
+    -----
+    Host-only. Reads the six Core sources once (``_shared_definitions``) only
+    when a listed identity is found. Writes no files.
+    """
+    binding = TrainingContentBinding.model_validate_json(canonical_json_bytes(saved))
+    if not any(
+        row.identifier == "simulator-rules"
+        and row.canonical_digest in _TDM_EQUIVALENT_SIMULATOR_RULES
+        for row in binding.shared_definitions
+    ):
+        return binding
+    rules = next(
+        row for row in _shared_definitions() if row.identifier == "simulator-rules"
+    )
+    restated = binding.model_copy(
+        update={
+            "shared_definitions": tuple(
+                rules if row.identifier == "simulator-rules" else row
+                for row in binding.shared_definitions
+            )
+        }
+    )
+    return restated.model_copy(
+        update={
+            "canonical_digest": canonical_digest_sha256(
+                restated, exclude={"canonical_digest"}
+            )
+        }
+    )
+
+
 def _maximum_score_threshold(red_zone_depth: float | None) -> int:
     """Return the largest winning score a training content binding may declare.
 
@@ -573,7 +642,9 @@ def prepare_training_content(
         Saved version 3 binding, or its JSON mapping. Defaults to a fresh
         setup. Revalidate its structure and digest, then compare scientific
         content with the installed package. Historical locations and harmless
-        labels may differ. A version 1 or 2 binding (saved before Red Zone
+        labels may differ. A binding saved under Season 0's Core rules is read
+        through read_saved_binding, so it compares equal to the same content
+        under this Core. A version 1 or 2 binding (saved before Red Zone
         scoring) is refused first, before any validation or file read.
     score_thresholds : tuple[int, ...] or None, default=None
         Distinct supported positive integer winning scores, in source-bank order.
@@ -627,9 +698,7 @@ def prepare_training_content(
         # A record without a version validates as version 1, so it is refused too.
         if type(version) is int and version in (1, 2):
             raise ValueError(_SAVED_BEFORE_RED_ZONE.format(version=version))
-        saved = TrainingContentBinding.model_validate_json(
-            canonical_json_bytes(expected)
-        )
+        saved = read_saved_binding(expected)
     if score_thresholds is None:
         score_thresholds = saved.score_thresholds if saved is not None else (20,)
     if red_zone_depth is None:

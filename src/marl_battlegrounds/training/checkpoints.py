@@ -17,6 +17,8 @@ Artifacts saved before Red Zone use actor input schema 1 (5,164 features).
 load_system still loads them, through the schema-1 System hooks, so they play
 exactly as before and keep their identities. They cannot be exported again,
 and their learner checkpoints cannot resume training in this version.
+Learners saved before the Capture the Flag and King of the Hills fields
+existed (all Team Deathmatch) restore with those fields at their neutral values.
 
 load_initial_actor also starts a new run from a portable model file or a
 released model: the file's weights rebuild the same System load_system gives
@@ -82,6 +84,7 @@ from marl_battlegrounds.baselines.qmix import (
     make_qmix_system,
     qmix_actor_template,
 )
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.evaluation.recording_identity import tree_digest
 from marl_battlegrounds.training._checkpoint_metadata import (
     _ACTOR_DESCRIPTION as _ACTOR_DESCRIPTION,
@@ -540,6 +543,59 @@ def _layout(tree: Tree) -> list[dict[str, object]]:
     return rows
 
 
+def _row_field(row: Mapping[str, object]) -> str:
+    """Return the last field name in a layout row's path; "" when it ends in a key."""
+    return cast(list[dict[str, str]], row["path"])[-1].get("field", "")
+
+
+def _saved_row_numbers(
+    saved: list[dict[str, object]], current: list[dict[str, object]]
+) -> list[int | None]:
+    """Match each current learner row to its row number in a saved checkpoint.
+
+    A Team Deathmatch learner saved before ``EnvConfig`` and ``EnvState``
+    gained the Capture the Flag and King of the Hills fields has every current
+    row except those fields' leaves. Restore fills them with the values from
+    ``neutral_objective_fields``, which are Team Deathmatch's own: only Team
+    Deathmatch learners existed then, and restore has already required the
+    saved and current configs to be equal.
+
+    Parameters
+    ----------
+    saved : list of dict
+        The checkpoint's recorded ``layout`` (rows from ``_layout``).
+    current : list of dict
+        ``_layout`` of the fresh template built by this code.
+
+    Returns
+    -------
+    list of int or None
+        One entry per row of ``current``: the saved row number that holds the
+        array, or None for an objective field the checkpoint predates. Equal
+        layouts give ``0, 1, 2, ...`` with no None.
+
+    Raises
+    ------
+    ValueError
+        The layouts differ in any other way: a missing, extra, reordered or
+        reshaped row.
+    """
+    if saved == current:
+        return list(range(len(current)))
+    objective = neutral_objective_fields(host=True).keys()
+    numbers: list[int | None] = []
+    kept: list[dict[str, object]] = []
+    for row in current:
+        if _row_field(row) in objective:
+            numbers.append(None)
+        else:
+            numbers.append(len(kept))
+            kept.append(row)
+    if kept != saved:
+        raise ValueError("Checkpoint array paths, shapes or dtypes differ")
+    return numbers
+
+
 def _is_actor(row: dict[str, object], method: str = "mappo") -> bool:
     """Identify the learner's actor payload rows by their exact record path.
 
@@ -897,7 +953,10 @@ def _check_collection_compatibility(
     """Check bound members and collection rules without arrays, hashes or writes.
 
     details is an already checked learner description. Preserve historical
-    defaults and compare all collection settings. Only identical saved artifacts
+    defaults and compare all collection settings. A saved content binding is
+    read through read_saved_binding first, so one saved under Season 0's Core
+    rules compares equal to the same content under this Core. Only identical
+    saved artifacts
     may change their reload path; checked saved exposure stays attached to those
     members. Return a collection carrying the current paths and preserved facts.
     Reuse this preflight before output setup and inside numerical restore so both
@@ -936,6 +995,12 @@ def _check_collection_compatibility(
             current[key] = previous
     saved.pop("pinned_opponent", None)
     current.pop("pinned_opponent", None)
+    if saved.get("content_binding") != current["content_binding"]:
+        from marl_battlegrounds.training._content import read_saved_binding
+
+        saved["content_binding"] = read_saved_binding(
+            saved["content_binding"]
+        ).model_dump(mode="json")
     if saved != current:
         raise ValueError("Checkpoint content or collection settings differ")
     return replace(collection, **replacements)
@@ -1348,6 +1413,13 @@ default="mappo"
         A learner saved before Red Zone (actor input schema 1) is refused by
         _require_current_schemas right after the checkpoint kind check.
         No recording files or trainer logs have been changed.
+
+    Notes
+    -----
+    A Team Deathmatch learner saved before ``EnvConfig`` and ``EnvState``
+    gained the Capture the Flag and King of the Hills fields restores with
+    those fields at their neutral values from ``neutral_objective_fields``.
+    Every other row of its layout must match the template exactly.
     """
     method = validate_training_method(method)
     root = _directory(Path(path))
@@ -1454,9 +1526,9 @@ default="mappo"
         _check_recording_registration(
             record, _relative(root.parent.parent, record["relative_path"])
         )
-    if details["layout"] != _layout(template) or details["actor_layout"] != _layout(
-        _actor_payload(template, method)
-    ):
+    layout = _layout(template)
+    saved_rows = _saved_row_numbers(details["layout"], layout)
+    if details["actor_layout"] != _layout(_actor_payload(template, method)):
         raise ValueError("Checkpoint array paths, shapes or dtypes differ")
     selected_device = cast(Any, jax.devices()[0] if device is None else device)
     runtime = expected["execution"]["runtime"]
@@ -1470,31 +1542,43 @@ default="mappo"
     )
     if tree_digest(actor) != details["actor_digest"]:
         raise ValueError("Restored actor digest differs")
+    initials = jax.tree.leaves(template)
+    # Payload keys are the saved row numbers (see _state_payload).
     payload = _restore_arrays(
-        root / "state", _state_payload(template, method), selected_device
+        root / "state",
+        {
+            f"leaf_{saved:05d}": initial
+            for saved, row, initial in zip(saved_rows, layout, initials, strict=True)
+            if saved is not None and not _is_actor(row, method) and initial.size
+        },
+        selected_device,
     )
     # A PQN-VDN item's leaves are in sorted-key order (statistics first); the
     # full state holds the network in NamedTuple order, so rebuild it by name.
     actor_leaves = iter(
         jax.tree.leaves(_pqn_network(actor) if method == "pqn_vdn" else actor)
     )
+    neutral = neutral_objective_fields(host=True)
     leaves: list[Any] = []
-    for index, (row, initial) in enumerate(
-        zip(details["layout"], jax.tree.leaves(template), strict=True)
-    ):
-        if _is_actor(row, method):
+    for saved, row, initial in zip(saved_rows, layout, initials, strict=True):
+        if saved is None:
+            value = np.asarray(neutral[_row_field(row)], initial.dtype)
+            leaves.append(
+                jax.device_put(np.broadcast_to(value, initial.shape), selected_device)
+            )
+        elif _is_actor(row, method):
             leaves.append(next(actor_leaves))
         elif initial.size == 0:
             leaves.append(
                 jax.device_put(np.empty(initial.shape, initial.dtype), selected_device)
             )
         else:
-            leaves.append(payload[f"leaf_{index:05d}"])
+            leaves.append(payload[f"leaf_{saved:05d}"])
     state = cast(
         "LearnerState | QMIXLearnerState | PQNLearnerState",
         jax.tree.unflatten(cast(Any, jax.tree.structure(template)), leaves),
     )
-    if _layout(state) != details["layout"]:
+    if _layout(state) != layout:
         raise ValueError("Restored array schema differs")
     # The pinned checks read a few restored arrays; they run before the full
     # learner validation, which re-checks the installed content and is slow.
