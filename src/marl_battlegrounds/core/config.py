@@ -3,7 +3,9 @@
 resolve_agent_profile performs a pure JAX catalog lookup with team padding.
 maximum_team_deathmatch_score_increment and maximum_team_deathmatch_score_threshold
 own the Team Deathmatch score bounds, which depend on the Red Zone depth.
-The validators check complete configurations, product movement calibration,
+neutral_objective_fields owns the value every Capture the Flag and King of the
+Hills field holds outside its own mode, and the validators enforce it. The
+validators check complete configurations, product movement calibration,
 runtime states and authored starts. Runtime states allow the geometry solver's
 remaining body overlap; authored living starts require strict clearance.
 
@@ -13,7 +15,7 @@ boundaries, outside compiled reset/step loops. These checks do not change inputs
 or create policies, episodes, logs or replay files."""
 
 import math
-from typing import Final
+from typing import Any, Final
 
 import jax.numpy as jnp
 import numpy as np
@@ -50,6 +52,7 @@ from marl_battlegrounds.core.types import (
     MAGE_CLASS_ID,
     MAX_AGENT_SLOTS,
     MAX_AGENTS_PER_TEAM,
+    MAX_HILL_SLOTS,
     MAX_OBSTACLE_SLOTS,
     NEUTRAL_CLASS_ID,
     NO_TEAM_ID,
@@ -148,6 +151,100 @@ def maximum_team_deathmatch_score_threshold(red_zone_depth: float) -> int:
     return _MAX_EXACT_FLOAT32_INTEGER - (
         maximum_team_deathmatch_score_increment(red_zone_depth) - 1
     )
+
+
+def _neutral_fields_by_mode() -> dict[int, dict[str, Any]]:
+    """Return each objective mode's settings and state fields with neutral values.
+
+    The keys are TASK_MODE_CTF and TASK_MODE_KOTH. Each inner dict maps the
+    mode's EnvConfig and EnvState field names to one game's neutral value as a
+    Python scalar or a new NumPy array; see neutral_objective_fields. No device
+    work.
+    """
+    team_points = np.zeros((NUM_TEAMS, ENVIRONMENT_DIMENSIONS), np.float32)
+    hill_points = np.zeros((MAX_HILL_SLOTS, ENVIRONMENT_DIMENSIONS), np.float32)
+    return {
+        TASK_MODE_CTF: {
+            "capture_the_flag_score_threshold": 0,
+            "capture_the_flag_flag_home_positions": team_points.copy(),
+            "capture_the_flag_flag_interaction_distance": 0.0,
+            "capture_the_flag_flag_capture_distance": 0.0,
+            "capture_the_flag_dropped_flag_auto_return_steps": 0,
+            "capture_the_flag_scores": np.zeros(NUM_TEAMS, np.int32),
+            "capture_the_flag_flag_positions": team_points.copy(),
+            "capture_the_flag_flag_carrier_slots": np.full(NUM_TEAMS, -1, np.int32),
+            "capture_the_flag_dropped_flag_countdowns": np.zeros(NUM_TEAMS, np.int32),
+        },
+        TASK_MODE_KOTH: {
+            "king_of_the_hills_score_threshold": 0,
+            "king_of_the_hills_hill_positions": hill_points,
+            "king_of_the_hills_hill_radii": np.zeros(MAX_HILL_SLOTS, np.float32),
+            "king_of_the_hills_hill_points_per_step": 0,
+            "king_of_the_hills_three_hill_sweep_bonus_points_per_step": 0,
+            "king_of_the_hills_empty_hill_ownership_steps": 0,
+            "king_of_the_hills_scores": np.zeros(NUM_TEAMS, np.int32),
+            "king_of_the_hills_hill_is_contested": np.zeros(MAX_HILL_SLOTS, np.bool_),
+            "king_of_the_hills_hill_owners": np.zeros(MAX_HILL_SLOTS, np.int32),
+            "king_of_the_hills_empty_hill_ownership_countdowns": np.zeros(
+                MAX_HILL_SLOTS, np.int32
+            ),
+        },
+    }
+
+
+def neutral_objective_fields(
+    record_type: type[EnvConfig] | type[EnvState] | None = None,
+    *,
+    host: bool = False,
+) -> dict[str, Any]:
+    """Return the neutral value of every Capture the Flag and King of the Hills field.
+
+    A mode's settings and state fields hold these values in every other mode,
+    and the validators require them there. Host code that builds a config or
+    state for another mode, or reads a record saved before these fields
+    existed, fills them from here, so no caller writes a neutral value by hand.
+
+    Parameters
+    ----------
+    record_type : type[EnvConfig] | type[EnvState] | None, optional
+        EnvConfig or EnvState keeps only that record's fields, ready for
+        ``EnvConfig(**values, **neutral_objective_fields(EnvConfig))``. The
+        default None returns the fields of both records; their names never
+        clash.
+    host : bool, default=False
+        False returns array fields as JAX arrays on the default device, the
+        storage Core and its validators need. True returns NumPy arrays and
+        does no device work, for host readers that batch leaves before one
+        later transfer.
+
+    Returns
+    -------
+    dict[str, Any]
+        A new dict from each field name to one game's neutral value. Python
+        int and float settings are 0 and 0.0. Array fields are new arrays with
+        the field's own per-game shape and dtype: all zero, except
+        ``capture_the_flag_flag_carrier_slots``, which is -1 for "no carrier",
+        and ``king_of_the_hills_hill_is_contested``, which is all False.
+        Callers broadcast an array to their batch themselves.
+
+    Notes
+    -----
+    Host only; reads nothing. The values also fix each field's storage: the
+    validators require a Python int or float where the neutral value is one,
+    and a JAX array with the neutral array's shape and dtype otherwise.
+
+    Examples
+    --------
+    >>> from marl_battlegrounds.core.types import EnvState
+    >>> neutral_objective_fields(EnvState)["capture_the_flag_flag_carrier_slots"]
+    Array([-1, -1], dtype=int32)
+    """
+    return {
+        name: value if host or not isinstance(value, np.ndarray) else jnp.asarray(value)
+        for neutral in _neutral_fields_by_mode().values()
+        for name, value in neutral.items()
+        if record_type is None or name in record_type._fields
+    }
 
 
 def resolve_agent_profile(
@@ -734,7 +831,7 @@ def _validate_red_zone_depth(config: EnvConfig) -> None:
         scalars are rejected, as for map_width.
     ValueError
         The depth is not finite; has a negative sign (including -0.0, so
-        "off" has one encoding); is not 0.0 in neutral mode; or, when
+        "off" has one encoding); is not 0.0 outside Team Deathmatch; or, when
         positive, its float32 value is not finite, is below the smallest
         normal float32 (JAX treats smaller values as zero, which would
         silently switch the rule off) or exceeds the float32 map_width.
@@ -758,9 +855,10 @@ def _validate_red_zone_depth(config: EnvConfig) -> None:
         raise ValueError(
             f"team_deathmatch_red_zone_depth must be nonnegative, not {depth}."
         )
-    if config.task_mode == TASK_MODE_NEUTRAL and depth != 0.0:
+    if config.task_mode != TASK_MODE_TDM and depth != 0.0:
         raise ValueError(
-            f"team_deathmatch_red_zone_depth must be 0.0 in neutral mode, not {depth}."
+            "team_deathmatch_red_zone_depth must be 0.0 outside Team Deathmatch, "
+            f"not {depth}."
         )
     if depth == 0.0:
         return
@@ -785,6 +883,128 @@ def _validate_red_zone_depth(config: EnvConfig) -> None:
         )
 
 
+def _validate_objective_fields(record: EnvConfig | EnvState, task_mode: int) -> None:
+    """Check every objective field's storage, and its neutral value outside its mode.
+
+    Parameters
+    ----------
+    record : EnvConfig | EnvState
+        One scalar configuration or snapshot; only its Capture the Flag and King
+        of the Hills fields are read.
+    task_mode : int
+        The matching configuration's already checked task_mode.
+
+    Raises
+    ------
+    TypeError
+        A field's storage differs from its neutral value's: a Python int or
+        float where the neutral value is one, otherwise a JAX array of the
+        same dtype.
+    ValueError
+        An array field has the wrong shape, or a field outside its own mode
+        differs from its neutral value. The comparison is bit for bit, so -0.0
+        is refused where 0.0 is neutral and each "unused" value has one
+        encoding.
+
+    Notes
+    -----
+    Host only; reads array values. neutral_objective_fields owns the storage
+    and the neutral values this check enforces.
+    """
+    mode_names = {
+        TASK_MODE_CTF: "Capture the Flag",
+        TASK_MODE_KOTH: "King of the Hills",
+    }
+    for mode, neutral_fields in _neutral_fields_by_mode().items():
+        for field_name, neutral_value in neutral_fields.items():
+            if field_name not in type(record)._fields:
+                continue
+            value = getattr(record, field_name)
+            if isinstance(neutral_value, int | float):
+                if type(value) is not type(neutral_value):
+                    kind = "an int" if type(neutral_value) is int else "a float"
+                    raise TypeError(
+                        f"{field_name} must be {kind}, not {type(value).__name__}."
+                    )
+            else:
+                _require_jax_array(
+                    value,
+                    field_name=field_name,
+                    expected_shape=neutral_value.shape,
+                    expected_dtype=neutral_value.dtype,
+                )
+            host_value = np.asarray(value)
+            host_neutral = np.asarray(neutral_value)
+            if task_mode != mode and host_value.tobytes() != host_neutral.tobytes():
+                raise ValueError(
+                    f"{field_name} must be {host_neutral.tolist()} outside "
+                    f"{mode_names[mode]}, not {host_value.tolist()}."
+                )
+
+
+def _validate_capture_the_flag_settings(config: EnvConfig) -> None:
+    """Check the Capture the Flag settings of one config in that mode.
+
+    config's map size and objective field storage have already passed their
+    checks. The score threshold must be in [1, 2**24], so every score stays
+    exact in float32 context features. Each flag home must lie on the map,
+    with x in [0, map_width] and y in [0, map_height]. Both distances must stay
+    finite and at least the smallest normal float32 after conversion, because
+    JAX treats smaller values as zero, which would make every flag untouchable.
+    The two homes must be farther apart than the interaction distance plus the
+    capture distance, in float32, so no agent can take the enemy flag from its
+    home and capture it on the same tick. The dropped-flag return time must be
+    in [1, 2**31 - 1] ticks. Raise ValueError naming the first failing
+    setting. Host only.
+    """
+    threshold = config.capture_the_flag_score_threshold
+    if not 1 <= threshold <= _MAX_EXACT_FLOAT32_INTEGER:
+        raise ValueError(
+            "capture_the_flag_score_threshold must be in "
+            f"[1, {_MAX_EXACT_FLOAT32_INTEGER}] in Capture the Flag, not {threshold}."
+        )
+    homes = np.asarray(config.capture_the_flag_flag_home_positions)
+    map_size = np.asarray((config.map_width, config.map_height), dtype=np.float32)
+    if not bool(np.all(np.isfinite(homes) & (homes >= 0.0) & (homes <= map_size))):
+        raise ValueError(
+            "capture_the_flag_flag_home_positions must lie on the map, with "
+            f"x in [0, map_width] and y in [0, map_height], not {homes.tolist()}."
+        )
+    for field_name in (
+        "capture_the_flag_flag_interaction_distance",
+        "capture_the_flag_flag_capture_distance",
+    ):
+        distance = getattr(config, field_name)
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            execution_distance = np.float32(distance)
+        if not (
+            bool(np.isfinite(execution_distance))
+            and execution_distance >= _FLOAT32_SMALLEST_NORMAL
+        ):
+            raise ValueError(
+                f"{field_name} must stay finite and at least "
+                f"{float(_FLOAT32_SMALLEST_NORMAL)} after conversion to float32, "
+                f"not {distance}."
+            )
+    home_gap = np.linalg.norm(homes[0] - homes[1])
+    reach = np.float32(config.capture_the_flag_flag_interaction_distance) + np.float32(
+        config.capture_the_flag_flag_capture_distance
+    )
+    if not home_gap > reach:
+        raise ValueError(
+            "capture_the_flag_flag_home_positions must be farther apart than "
+            "capture_the_flag_flag_interaction_distance plus "
+            f"capture_the_flag_flag_capture_distance ({float(reach)}), not "
+            f"{float(home_gap)}."
+        )
+    return_steps = config.capture_the_flag_dropped_flag_auto_return_steps
+    if not 1 <= return_steps <= _INT32_MAX:
+        raise ValueError(
+            "capture_the_flag_dropped_flag_auto_return_steps must be in "
+            f"[1, {_INT32_MAX}], not {return_steps}."
+        )
+
+
 def validate_env_config(config: EnvConfig) -> None:
     """Validate one resolved episode configuration on the host before reset.
 
@@ -793,7 +1013,7 @@ def validate_env_config(config: EnvConfig) -> None:
     config : EnvConfig
         One scalar configuration. Python int/float settings and JAX array
         fields must meet the types, bounds and shapes documented by EnvConfig.
-        The supported modes are neutral and Team Deathmatch.
+        The supported modes are neutral, Team Deathmatch and Capture the Flag.
 
     Returns
     -------
@@ -808,7 +1028,11 @@ def validate_env_config(config: EnvConfig) -> None:
         A container, Python scalar, JAX array or dtype is wrong.
     ValueError
         A shape, finite-value check, bound, mode, padding, catalog agreement or
-        geometry rule fails. Reserved KOTH and CTF modes are rejected.
+        geometry rule fails. The reserved King of the Hills mode is rejected.
+        Each mode's own settings must hold their neutral values in every other
+        mode: the Team Deathmatch threshold and Red Zone depth are 0 outside
+        Team Deathmatch, and the Capture the Flag and King of the Hills
+        settings equal neutral_objective_fields outside their modes.
 
     Notes
     -----
@@ -817,8 +1041,9 @@ def validate_env_config(config: EnvConfig) -> None:
     scientific configurations may use a validated movement scale in (0, 1];
     validate_product_env_config adds the product's fixed calibration. The Red
     Zone depth is checked after the map size and before the Team Deathmatch
-    threshold range, so a config with several faults reports the first in
-    that order.
+    threshold range, and the objective settings after that, so a config with
+    several faults reports the first in that order. Team Deathmatch and Capture
+    the Flag need at least one active member on each team.
     """
     if type(config) is not EnvConfig:
         raise TypeError(f"config must be an EnvConfig, not {type(config).__name__}.")
@@ -827,15 +1052,15 @@ def validate_env_config(config: EnvConfig) -> None:
         raise TypeError(
             f"task_mode must be an int, not {type(config.task_mode).__name__}."
         )
-    if config.task_mode in (TASK_MODE_KOTH, TASK_MODE_CTF):
+    if config.task_mode == TASK_MODE_KOTH:
         raise ValueError(
             f"task_mode {config.task_mode} is reserved but is not implemented."
         )
-    if config.task_mode not in (TASK_MODE_NEUTRAL, TASK_MODE_TDM):
+    if config.task_mode not in (TASK_MODE_NEUTRAL, TASK_MODE_TDM, TASK_MODE_CTF):
         raise ValueError(
             "task_mode must identify an available mode: "
-            f"{TASK_MODE_NEUTRAL} (neutral) or {TASK_MODE_TDM} "
-            f"(Team Deathmatch), not {config.task_mode}."
+            f"{TASK_MODE_NEUTRAL} (neutral), {TASK_MODE_TDM} (Team Deathmatch) "
+            f"or {TASK_MODE_CTF} (Capture the Flag), not {config.task_mode}."
         )
 
     if type(config.team_deathmatch_score_threshold) is not int:
@@ -844,11 +1069,11 @@ def validate_env_config(config: EnvConfig) -> None:
             f"{type(config.team_deathmatch_score_threshold).__name__}."
         )
     if (
-        config.task_mode == TASK_MODE_NEUTRAL
+        config.task_mode != TASK_MODE_TDM
         and config.team_deathmatch_score_threshold != 0
     ):
         raise ValueError(
-            "team_deathmatch_score_threshold must be zero in neutral mode, "
+            "team_deathmatch_score_threshold must be zero outside Team Deathmatch, "
             f"not {config.team_deathmatch_score_threshold}."
         )
 
@@ -895,6 +1120,9 @@ def validate_env_config(config: EnvConfig) -> None:
             f"[1, {maximum_threshold}] in Team Deathmatch, "
             f"not {config.team_deathmatch_score_threshold}."
         )
+    _validate_objective_fields(config, config.task_mode)
+    if config.task_mode == TASK_MODE_CTF:
+        _validate_capture_the_flag_settings(config)
 
     if type(config.ordinary_movement_distance_scale) is not float:
         raise TypeError(
@@ -968,14 +1196,14 @@ def validate_env_config(config: EnvConfig) -> None:
         recovery_delay_catalog=recovery_delay_catalog,
         recovery_regeneration_fraction_catalog=(recovery_regeneration_fraction_catalog),
     )
-    if config.task_mode == TASK_MODE_TDM:
+    if config.task_mode in (TASK_MODE_TDM, TASK_MODE_CTF):
         host_active_mask = np.asarray(profile.active_mask)
         team_a_has_active_member = bool(np.any(host_active_mask[:MAX_AGENTS_PER_TEAM]))
         team_b_has_active_member = bool(np.any(host_active_mask[MAX_AGENTS_PER_TEAM:]))
         if not team_a_has_active_member or not team_b_has_active_member:
             raise ValueError(
-                "Team Deathmatch requires at least one configured active member "
-                "on each team."
+                "Team Deathmatch and Capture the Flag require at least one "
+                "configured active member on each team."
             )
     _validate_team_spawn_pad_positions(
         config.team_spawn_pad_positions,
@@ -1189,7 +1417,11 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
     an old action mask or prove that submitted external mask history was correct.
     Team Deathmatch scores may reach the threshold plus
     maximum_team_deathmatch_score_increment(depth) - 1 (K + 4 at depth 0,
-    K + 9 at a positive Red Zone depth).
+    K + 9 at a positive Red Zone depth), and are zero in every other mode.
+    Every Capture the Flag and King of the Hills field must have its
+    neutral_objective_fields storage, and its neutral value outside its own
+    mode. Inside Capture the Flag the captures and the three flag states are
+    checked too (_validate_capture_the_flag_state).
     """
     if type(config) is not EnvConfig:
         raise TypeError(f"config must be an EnvConfig, not {type(config).__name__}.")
@@ -1314,10 +1546,10 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
     host_team_deathmatch_scores = np.asarray(team_deathmatch_scores)
     if bool(np.any(host_team_deathmatch_scores < 0)):
         raise ValueError("team_deathmatch_scores must contain only nonnegative values.")
-    if config.task_mode == TASK_MODE_NEUTRAL:
+    if config.task_mode != TASK_MODE_TDM:
         if bool(np.any(host_team_deathmatch_scores != 0)):
             raise ValueError(
-                "team_deathmatch_scores must be exactly zero in neutral mode."
+                "team_deathmatch_scores must be exactly zero outside Team Deathmatch."
             )
     else:
         maximum_reachable_score = (
@@ -1332,6 +1564,8 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
                 "team_deathmatch_scores must not exceed the reachable terminal "
                 f"bound {maximum_reachable_score}."
             )
+
+    _validate_objective_fields(state, config.task_mode)
 
     configured_active = np.asarray(config.agent_profile.active_mask)
     host_alive = np.asarray(alive_mask)
@@ -1529,6 +1763,76 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
         config=config,
         active_mask=configured_active,
     )
+    if config.task_mode == TASK_MODE_CTF:
+        _validate_capture_the_flag_state(config, state)
+
+
+def _validate_capture_the_flag_state(config: EnvConfig, state: EnvState) -> None:
+    """Check one Capture the Flag snapshot's captures and flags.
+
+    config and state are scalar and have passed every other check, so storage,
+    team membership, the living mask and agent positions are known. Each team's
+    captures must be in [0, threshold]: at most one capture scores per tick, so
+    a finished game stops at the threshold. Each flag, indexed by the team that
+    owns it, must be in exactly one of three states. Carried: its carrier slot
+    is an active, living agent of the other team, the flag sits exactly at that
+    agent's position and its countdown is 0. Dropped: no carrier (-1), a
+    countdown in [1, capture_the_flag_dropped_flag_auto_return_steps] and a
+    position on the map. Home: no carrier, countdown 0 and the position equal
+    to its home. Raise ValueError naming the first failing score or flag. Host
+    only; reads array values.
+    """
+    threshold = config.capture_the_flag_score_threshold
+    scores = np.asarray(state.capture_the_flag_scores)
+    if bool(np.any((scores < 0) | (scores > threshold))):
+        raise ValueError(
+            f"capture_the_flag_scores must be in [0, {threshold}], "
+            f"not {scores.tolist()}."
+        )
+    flag_positions = np.asarray(state.capture_the_flag_flag_positions)
+    carriers = np.asarray(state.capture_the_flag_flag_carrier_slots)
+    countdowns = np.asarray(state.capture_the_flag_dropped_flag_countdowns)
+    homes = np.asarray(config.capture_the_flag_flag_home_positions)
+    agent_positions = np.asarray(state.agent_positions)
+    team_ids = np.asarray(config.agent_profile.team_ids)
+    can_carry = np.asarray(config.agent_profile.active_mask) & np.asarray(
+        state.alive_mask
+    )
+    map_size = np.asarray((config.map_width, config.map_height), dtype=np.float32)
+    return_steps = config.capture_the_flag_dropped_flag_auto_return_steps
+    for flag, (owner, enemy_id) in enumerate(
+        (("Team A", TEAM_B_ID), ("Team B", TEAM_A_ID))
+    ):
+        carrier, countdown = int(carriers[flag]), int(countdowns[flag])
+        position = flag_positions[flag]
+        if carrier != -1:
+            if not (
+                0 <= carrier < MAX_AGENT_SLOTS
+                and can_carry[carrier]
+                and team_ids[carrier] == enemy_id
+            ):
+                raise ValueError(
+                    f"{owner}'s flag carrier must be -1 or an active, living agent "
+                    f"of the other team, not slot {carrier}."
+                )
+            if countdown != 0 or not np.array_equal(position, agent_positions[carrier]):
+                raise ValueError(
+                    f"{owner}'s carried flag must sit at its carrier's position "
+                    "with countdown 0."
+                )
+        elif countdown != 0:
+            if not 1 <= countdown <= return_steps:
+                raise ValueError(
+                    f"{owner}'s dropped flag countdown must be in "
+                    f"[1, {return_steps}], not {countdown}."
+                )
+            if not bool(np.all((position >= 0.0) & (position <= map_size))):
+                raise ValueError(f"{owner}'s dropped flag must lie on the map.")
+        elif not np.array_equal(position, homes[flag]):
+            raise ValueError(
+                f"{owner}'s flag has no carrier and countdown 0, so it must be at "
+                "its home."
+            )
 
 
 def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
@@ -1540,7 +1844,8 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
         Matching scalar configuration, already checked by validate_env_config.
     state : EnvState
         Authored ten-slot snapshot satisfying the ordinary runtime schema.
-        A Team Deathmatch start must be below both the horizon and score limit.
+        A Team Deathmatch or Capture the Flag start must be below both the
+        horizon and its mode's score threshold.
 
     Returns
     -------
@@ -1554,8 +1859,8 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
     TypeError
         A runtime container, storage or dtype check fails.
     ValueError
-        A runtime check, Team Deathmatch start limit, shield-history rule or
-        living-body clearance rule fails.
+        A runtime check, Team Deathmatch or Capture the Flag start limit,
+        shield-history rule or living-body clearance rule fails.
     AssertionError
         An internal target mapping returns None for a validated nonzero category.
 
@@ -1570,19 +1875,27 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
     """
     validate_env_state(config, state)
 
-    if config.task_mode == TASK_MODE_TDM:
+    scored_modes = {
+        TASK_MODE_TDM: (
+            "Team Deathmatch",
+            state.team_deathmatch_scores,
+            config.team_deathmatch_score_threshold,
+        ),
+        TASK_MODE_CTF: (
+            "Capture the Flag",
+            state.capture_the_flag_scores,
+            config.capture_the_flag_score_threshold,
+        ),
+    }
+    if config.task_mode in scored_modes:
+        mode_name, scores, threshold = scored_modes[config.task_mode]
         if int(np.asarray(state.step_count)) >= config.max_steps:
             raise ValueError(
-                "Team Deathmatch scenario step_count must be strictly below max_steps."
+                f"{mode_name} scenario step_count must be strictly below max_steps."
             )
-        if bool(
-            np.any(
-                np.asarray(state.team_deathmatch_scores)
-                >= config.team_deathmatch_score_threshold
-            )
-        ):
+        if bool(np.any(np.asarray(scores) >= threshold)):
             raise ValueError(
-                "Team Deathmatch scenario scores must be strictly below the score "
+                f"{mode_name} scenario scores must be strictly below the score "
                 "threshold."
             )
 

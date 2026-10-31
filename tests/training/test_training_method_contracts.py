@@ -17,7 +17,10 @@ each right after its team_deathmatch_score_threshold leaf (the env default confi
 the state config (4,) and the tracked source configs (42,)). History captures add
 exactly the nine listed rolling-history fields, one spare history slot (20 to 21), and
 one permanent-pin counter row (21 to 22). Final leaf counts are 348 (MAPPO, IPPO), 275
-(FF) and 427 (QMIX). Collection details add history_capture_capacity=20 and
+(FF) and 427 (QMIX), not counting the Capture the Flag and King of the Hills
+fields that joined later: the learner state holds every field
+neutral_objective_fields names, and only rows of those fields are set aside
+before the exact comparison. Collection details add history_capture_capacity=20 and
 opponent_rows=22; only the existing content_binding may differ. In the schema dictionary
 only actor_input and training_state go from 1 to 2, and the frozen pre-Red-Zone
 dictionary equals the recorded one. The schema-1 actor template equals the old actor
@@ -54,6 +57,7 @@ from marl_battlegrounds.baselines import qmix as qmix_module
 from marl_battlegrounds.baselines.methods import TrainingMethod
 from marl_battlegrounds.baselines.ppo import PPOConfig
 from marl_battlegrounds.baselines.qmix import QMIXConfig
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.evaluation.recording_identity import (
     normalize_system_registration,
 )
@@ -337,7 +341,13 @@ def test_an_older_method_keeps_its_saved_contracts(method: TrainingMethod) -> No
     assert sum(_path(row) == _INPUT_KERNEL[method] for row in actor) == 1
     assert _inference(method) == expected["inference_digest"]
     collection, state = _learner(method)
-    layout = checkpoints._layout(jax.eval_shape(_same, state))
+    current = checkpoints._layout(jax.eval_shape(_same, state))
+    objective = neutral_objective_fields(host=True)
+    names = [_path(row).rsplit("/", 1)[-1] for row in current]
+    assert set(names) & set(objective) == set(objective)
+    layout = [
+        row for row, name in zip(current, names, strict=True) if name not in objective
+    ]
     widened, counts, added = _expected_state(old["state_layout"])
     assert counts == _STATE_CHANGES[method]
     assert [(_path(row), row["shape"]) for row in added] == list(_DEPTH_LEAVES)

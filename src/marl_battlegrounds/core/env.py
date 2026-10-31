@@ -96,6 +96,7 @@ from marl_battlegrounds.core.types import (
     MAGE_CLASS_ID,
     MAX_AGENT_SLOTS,
     MAX_AGENTS_PER_TEAM,
+    MAX_HILL_SLOTS,
     MAX_OBJECTIVE_SLOTS,
     MAX_OBSTACLE_SLOTS,
     MOVE_STAY,
@@ -137,12 +138,14 @@ from marl_battlegrounds.core.types import (
     ActionAcceptanceFacts,
     ActionMask,
     AuraTransitionFacts,
+    CaptureTheFlagTransitionFacts,
     CombatTransitionFacts,
     DeathTransitionFacts,
     DoneFlags,
     EnvConfig,
     EnvState,
     Info,
+    KingOfTheHillsTransitionFacts,
     Observation,
     PhysicalTransitionFacts,
     PreviousTimestepActionObservation,
@@ -730,7 +733,7 @@ def _build_context_features(state: EnvState, config: EnvConfig) -> Array:
     CONTEXT_FEATURE_* columns. Scores and sizes use own team before opponent;
     map coordinates are not reflected. Column 19 is the configured Team
     Deathmatch Red Zone depth, the same for every configured row (0 when the
-    rule is off or the task is neutral). Reserved task/objective fields are
+    rule is off or outside Team Deathmatch). Reserved task/objective fields are
     zero, as are unused observer rows. Configured dead observers retain context.
     """
 
@@ -3050,6 +3053,56 @@ def _build_death_transition_facts(
     )
 
 
+def build_reset_capture_the_flag_facts() -> CaptureTheFlagTransitionFacts:
+    """Return the neutral Capture the Flag fact record.
+
+    Returns
+    -------
+    CaptureTheFlagTransitionFacts
+        Every agent and team field False and outcome TASK_MODE_OUTCOME_ONGOING
+        (0), as new JAX arrays with one game's shapes: the record of a tick
+        with no Capture the Flag event, of every other mode, and of a record
+        with no transition.
+
+    Notes
+    -----
+    Takes no arguments, so host readers can build it without a state.
+    """
+    return CaptureTheFlagTransitionFacts(
+        flag_was_picked_up_by_agent=jnp.zeros((MAX_AGENT_SLOTS,), jnp.bool_),
+        flag_was_dropped_by_agent=jnp.zeros((MAX_AGENT_SLOTS,), jnp.bool_),
+        ally_flag_was_returned_by_agent=jnp.zeros((MAX_AGENT_SLOTS,), jnp.bool_),
+        enemy_flag_was_captured_by_agent=jnp.zeros((MAX_AGENT_SLOTS,), jnp.bool_),
+        flag_was_automatically_returned_by_team=jnp.zeros((NUM_TEAMS,), jnp.bool_),
+        outcome=jnp.asarray(TASK_MODE_OUTCOME_ONGOING, dtype=jnp.int32),
+    )
+
+
+def build_reset_king_of_the_hills_facts() -> KingOfTheHillsTransitionFacts:
+    """Return the neutral King of the Hills fact record.
+
+    Returns
+    -------
+    KingOfTheHillsTransitionFacts
+        Nobody on any hill, no owners, no points and outcome
+        TASK_MODE_OUTCOME_ONGOING (0), as new JAX arrays with one game's
+        shapes: the record of every other mode and of a record with no
+        transition.
+
+    Notes
+    -----
+    Takes no arguments, so host readers can build it without a state.
+    """
+    return KingOfTheHillsTransitionFacts(
+        is_on_hill_by_agent_by_hill=jnp.zeros(
+            (MAX_AGENT_SLOTS, MAX_HILL_SLOTS), jnp.bool_
+        ),
+        hill_owners=jnp.zeros((MAX_HILL_SLOTS,), jnp.int32),
+        points_scored_by_team=jnp.zeros((NUM_TEAMS,), jnp.int32),
+        outcome=jnp.asarray(TASK_MODE_OUTCOME_ONGOING, dtype=jnp.int32),
+    )
+
+
 def build_canonical_no_transition_info_object(initial_state: EnvState) -> Info:
     """Build neutral diagnostic facts for initialization or fixed-storage padding.
 
@@ -3179,6 +3232,9 @@ def build_canonical_no_transition_info_object(initial_state: EnvState) -> Info:
         outcome=jnp.asarray(TASK_MODE_OUTCOME_ONGOING, dtype=jnp.int32)
     )
 
+    reset_capture_the_flag_facts = build_reset_capture_the_flag_facts()
+    reset_king_of_the_hills_facts = build_reset_king_of_the_hills_facts()
+
     reset_transition_facts = TransitionFacts(
         has_transition=jnp.asarray(False),
         transition_start_step_count=jnp.asarray(-1, dtype=jnp.int32),
@@ -3192,6 +3248,8 @@ def build_canonical_no_transition_info_object(initial_state: EnvState) -> Info:
         aura_facts=reset_aura_facts,
         status_lifecycle_facts=reset_status_lifecycle_facts,
         team_deathmatch_facts=reset_team_deathmatch_facts,
+        capture_the_flag_facts=reset_capture_the_flag_facts,
+        king_of_the_hills_facts=reset_king_of_the_hills_facts,
     )
 
     return Info(transition_facts=reset_transition_facts)
@@ -3520,11 +3578,11 @@ def _handle_no_task_outcome_and_rewards(
 def _handle_capture_the_flag_outcome_and_rewards(
     next_state: EnvState, config: EnvConfig
 ) -> tuple[Reward, DoneFlags, Array]:
-    """Keep the reserved Capture the Flag branch structurally compatible.
+    """Return Capture the Flag's rewards, done flags and outcomes for one transition.
 
     next_state and config are passed to the shared neutral-output helper.
-    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,).
-    Host validation rejects this mode; this branch is not implemented CTF play.
+    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,):
+    captures and the Capture the Flag outcome are not scored yet.
     """
     return _canonical_no_outcome_and_rewards(next_state, config)
 
@@ -3776,7 +3834,9 @@ def reset(
         mask; and neutral no-transition facts. Configured agents start alive
         at their ordered pads with full health. Cooldowns, statuses, shields,
         combat delays and history are zero. Each team clock starts at period
-        minus one. Unused state rows are zero and inactive.
+        minus one. Unused state rows are zero and inactive. Capture the Flag
+        flags start at their homes with no carrier; every other objective
+        field starts at zero, and outside Capture the Flag the flags too.
 
     Notes
     -----
@@ -3810,6 +3870,22 @@ def reset(
 
     initial_state = EnvState(
         team_deathmatch_scores=jnp.zeros((NUM_TEAMS,), dtype=jnp.int32),
+        capture_the_flag_scores=jnp.zeros((NUM_TEAMS,), dtype=jnp.int32),
+        king_of_the_hills_scores=jnp.zeros((NUM_TEAMS,), dtype=jnp.int32),
+        capture_the_flag_flag_positions=config.capture_the_flag_flag_home_positions,
+        capture_the_flag_flag_carrier_slots=jnp.full(
+            (NUM_TEAMS,), fill_value=-1, dtype=jnp.int32
+        ),
+        capture_the_flag_dropped_flag_countdowns=jnp.zeros(
+            (NUM_TEAMS,), dtype=jnp.int32
+        ),
+        king_of_the_hills_hill_is_contested=jnp.zeros(
+            (MAX_HILL_SLOTS,), dtype=jnp.bool_
+        ),
+        king_of_the_hills_hill_owners=jnp.zeros((MAX_HILL_SLOTS,), dtype=jnp.int32),
+        king_of_the_hills_empty_hill_ownership_countdowns=jnp.zeros(
+            (MAX_HILL_SLOTS,), dtype=jnp.int32
+        ),
         step_count=jnp.array(0, dtype=jnp.int32),
         agent_positions=active_team_spawn_pad_positions.astype(jnp.float32),
         alive_mask=config.agent_profile.active_mask,
@@ -3825,8 +3901,8 @@ def reset(
             (MAX_AGENT_SLOTS,), dtype=jnp.int32
         ),
         team_respawn_wave_countdowns=config.team_respawn_wave_period_step_count - 1,
-        spawn_shield_durations=jnp.zeros((MAX_AGENT_SLOTS), dtype=jnp.int32),
-        steps_until_out_of_combat=jnp.zeros((MAX_AGENT_SLOTS), dtype=jnp.int32),
+        spawn_shield_durations=jnp.zeros((MAX_AGENT_SLOTS,), dtype=jnp.int32),
+        steps_until_out_of_combat=jnp.zeros((MAX_AGENT_SLOTS,), dtype=jnp.int32),
         previous_timestep_move_actions=jnp.zeros((MAX_AGENT_SLOTS,), dtype=jnp.int32),
         previous_timestep_select_target_actions=jnp.zeros(
             (MAX_AGENT_SLOTS,), dtype=jnp.int32
@@ -4128,6 +4204,15 @@ def step(
 
     next_state = EnvState(
         team_deathmatch_scores=next_team_deathmatch_scores,
+        # Carried unchanged for now: C1.2 moves the flags and K1 scores the hills.
+        capture_the_flag_scores=current_state.capture_the_flag_scores,
+        king_of_the_hills_scores=current_state.king_of_the_hills_scores,
+        capture_the_flag_flag_positions=current_state.capture_the_flag_flag_positions,
+        capture_the_flag_flag_carrier_slots=current_state.capture_the_flag_flag_carrier_slots,
+        capture_the_flag_dropped_flag_countdowns=current_state.capture_the_flag_dropped_flag_countdowns,
+        king_of_the_hills_hill_is_contested=current_state.king_of_the_hills_hill_is_contested,
+        king_of_the_hills_hill_owners=current_state.king_of_the_hills_hill_owners,
+        king_of_the_hills_empty_hill_ownership_countdowns=current_state.king_of_the_hills_empty_hill_ownership_countdowns,
         step_count=current_state.step_count + 1,
         agent_positions=next_agent_positions,
         alive_mask=next_alive_mask,
@@ -4184,6 +4269,9 @@ def step(
         team_deathmatch_facts=TeamDeathmatchTransitionFacts(
             outcome=task_outcomes[TASK_MODE_TDM]
         ),
+        # Neutral for now: C1.2 records the CTF events and K1 the KOTH events.
+        capture_the_flag_facts=build_reset_capture_the_flag_facts(),
+        king_of_the_hills_facts=build_reset_king_of_the_hills_facts(),
     )
 
     info = Info(

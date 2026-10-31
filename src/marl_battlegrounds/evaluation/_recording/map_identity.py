@@ -18,6 +18,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
+from marl_battlegrounds._task_settings import SPAWN_EXCHANGE_FIELDS
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     EvaluationEpisodeContext,
@@ -370,10 +371,12 @@ def _declared_source_geometry(
     """Return source-order geometry only for an explicit verified spawn marker.
 
     Older records without the namespaced marker keep their exact bank order.
-    New markers require a source-content ID and choice 0 or 1. Choice 1 exchanges
-    both complete banks for identity checking only; the replay's actual config
-    stays unchanged. This checks a declared map relationship, not an unspecified
-    geometry match. Writer creation separately verifies full source content.
+    New markers require a source-content ID and choice 0 or 1. Choice 1 reverses
+    the team axis of every recorded SPAWN_EXCHANGE_FIELDS field (both complete
+    banks, and the flag homes where the record has them) for identity checking
+    only; the replay's actual config stays unchanged. This checks a declared map
+    relationship, not an unspecified geometry match. Writer creation separately
+    verifies full source content.
     """
     names = {"marl_bgs.spawn_locations", "marl_bgs.source_config_id"}
     rows = tuple(row for row in context.aggregation_keys if row.name in names)
@@ -394,9 +397,9 @@ def _declared_source_geometry(
         return resolved
     return resolved.model_copy(
         update={
-            "team_spawn_pad_positions": tuple(
-                reversed(resolved.team_spawn_pad_positions)
-            )
+            name: tuple(reversed(getattr(resolved, name)))
+            for name in SPAWN_EXCHANGE_FIELDS
+            if name in type(resolved).model_fields
         }
     )
 

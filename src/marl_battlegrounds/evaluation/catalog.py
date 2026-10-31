@@ -65,6 +65,7 @@ from marl_battlegrounds.core.combat import (
     WARRIOR_DAMAGE_MITIGATION_AURA_RADIUS,
 )
 from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
     validate_env_config,
     validate_product_env_config,
     validate_scenario_initial_state,
@@ -84,6 +85,8 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURE_X,
     OBSTACLE_FEATURE_Y,
     OBSTACLE_FEATURES,
+    TASK_MODE_NEUTRAL,
+    TASK_MODE_TDM,
     EnvConfig,
     ResolvedAgentProfile,
 )
@@ -507,14 +510,17 @@ def build_resolved_env_config_v1(config: EnvConfig) -> ResolvedEnvConfigV1:
     -------
     ResolvedEnvConfigV1
         Strict V1 host record containing geometry, ten resolved slot profiles,
-        task rules, spawn settings, and a digest of all other fields.
+        task rules, spawn settings, and a SHA-256 digest of those recorded
+        values.
 
     Raises
     ------
     TypeError
         A config field has an unsupported host type or array dtype.
     ValueError
-        Core configuration validation or strict record validation fails.
+        Core configuration validation or strict record validation fails, the
+        config has a positive Red Zone depth, or it is a Capture the Flag
+        config, whose settings V1 cannot record.
 
     Notes
     -----
@@ -546,20 +552,24 @@ def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
     -------
     ResolvedEnvConfigV2
         The V1 contents plus team_deathmatch_red_zone_depth, always written
-        (0.0 included), and a digest of all other fields.
+        (0.0 included), and a SHA-256 digest of those recorded values.
 
     Raises
     ------
     TypeError
         A config field has an unsupported host type or array dtype.
     ValueError
-        Core configuration validation or strict record validation fails.
+        Core configuration validation or strict record validation fails, or the
+        config is a Capture the Flag config, whose settings V2 cannot record.
 
     Notes
     -----
     Host boundary, not a JIT operation; array conversion can synchronize
-    device data. This is the builder for every new recording, scenario and
-    training identity.
+    device data. This is the builder for every new Team Deathmatch recording,
+    scenario and training identity. V1 and V2 record only Team Deathmatch and
+    neutral configs, whose Capture the Flag and King of the Hills settings are
+    always neutral, so no Capture the Flag rule set gets an identity that
+    ignores its own settings.
     """
     run_config_check(validate_env_config, config)
     payload = _resolved_config_payload(config)
@@ -592,8 +602,15 @@ def _resolved_config_payload(config: EnvConfig) -> dict[str, object]:
     """Build the V1 record payload (with its digest) from a validated config.
 
     Shared by the V1 and V2 builders so both record the same values. Host
-    arrays are read once; the input is not changed.
+    arrays are read once; the input is not changed. Raise ValueError for a
+    mode other than neutral and Team Deathmatch, whose settings neither record
+    holds.
     """
+    if config.task_mode not in (TASK_MODE_NEUTRAL, TASK_MODE_TDM):
+        raise ValueError(
+            "ResolvedEnvConfigV1 and V2 record only Team Deathmatch and neutral "
+            f"configs, not task_mode {config.task_mode}"
+        )
     pads = np.asarray(config.team_spawn_pad_positions, dtype=np.float32)
     periods = np.asarray(config.team_respawn_wave_period_step_count, dtype=np.int32)
     payload: dict[str, object] = {
@@ -1276,7 +1293,9 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
         Unbatched EnvConfig with Python scalar rules and JAX int32, float32, and bool
         arrays. Recorded profile overrides, geometry, and spawn settings are retained.
         The Red Zone depth is the recorded one for a ResolvedEnvConfigV2 and 0.0
-        (the original one-point rule) for a ResolvedEnvConfigV1.
+        (the original one-point rule) for a ResolvedEnvConfigV1. The Capture the
+        Flag and King of the Hills settings are neutral, as in every config
+        these records can hold.
 
     Raises
     ------
@@ -1418,6 +1437,7 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
             resolved.team_respawn_wave_period_steps,
             field_name="resolved_env_config.team_respawn_wave_period_steps",
         ),
+        **neutral_objective_fields(EnvConfig),
     )
     return config
 

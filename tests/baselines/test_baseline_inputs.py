@@ -23,7 +23,10 @@ observer rows are never flagged, and "world", the removed "right" and any other
 name are refused by the flag helper. Actor input schema 2 is current: 5,165
 features with the Red Zone depth as context column 19 (flat feature 1128),
 and the training state is 920 features with the depth right after the score
-threshold (slice 391 to 392). Historical schema 1 (5,164 features) is reached
+threshold (slice 391 to 392). That schema names every state and config field
+except the Capture the Flag and King of the Hills ones (the
+neutral_objective_fields names), which it leaves out so Team Deathmatch critics
+keep their 920 features. Historical schema 1 (5,164 features) is reached
 only through schema_1_actor_input, which drops context column 19: its
 encoding equals the schema-2 encoding without feature 1128, eager and under
 jit, and it refuses a view that is not 20 columns wide. The encoder and the
@@ -63,6 +66,7 @@ from marl_battlegrounds.baselines.inputs import (
     team_obstacle_partners,
 )
 from marl_battlegrounds.core import env as core
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_ACTIVE,
     AGENT_FEATURE_CLASS_ID,
@@ -408,7 +412,7 @@ def test_actor_history_distinguishes_reset_absence_from_real_neutral_action(
             assert np.sum(present[region]) == 1
 
 
-def test_training_schema_covers_every_state_and_config_field(
+def test_training_schema_covers_every_team_deathmatch_field(
     snapshot: tuple[EnvConfig, EnvState, Observation, ActorInput],
 ) -> None:
     config, state, _, _ = snapshot
@@ -433,7 +437,12 @@ def test_training_schema_covers_every_state_and_config_field(
         previous_timestep_use_ultimate_actions=state.previous_timestep_use_ultimate_actions,
     )
     actual = np.asarray(encode_training_state(state, config))
-    fields = (*_leaves(state, "state"), *_leaves(config, "config"))
+    objective = neutral_objective_fields(host=True)
+    fields = tuple(
+        (name, value)
+        for name, value in (*_leaves(state, "state"), *_leaves(config, "config"))
+        if name.split(".", 1)[1] not in objective
+    )
     assert tuple(TRAINING_STATE_FEATURE_OFFSETS) == tuple(name for name, _ in fields)
     expected: list[np.ndarray] = []
     active = np.asarray(config.agent_profile.active_mask)

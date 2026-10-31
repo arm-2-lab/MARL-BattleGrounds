@@ -16,6 +16,7 @@ from typing import Any, cast
 import jax.numpy as jnp
 from jax import Array
 
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.core.env import initialize_scenario_state
 from marl_battlegrounds.core.types import (
     ActionMask,
@@ -68,15 +69,17 @@ def load_controller_input(name: str) -> ControllerScenario:
             for name, value in payload["config"]["agent_profile"].items()
         }
     )
-    config = EnvConfig(**config_values)
+    config = EnvConfig(**config_values, **neutral_objective_fields(EnvConfig))
     authored = EnvState(
-        **{name: _array(value) for name, value in payload["initial_state"].items()}
+        **{name: _array(value) for name, value in payload["initial_state"].items()},
+        **neutral_objective_fields(EnvState),
     )
     state, observation, mask, info = initialize_scenario_state(authored, config)
     if (
         build_resolved_env_config_v2(config).canonical_digest_sha256
         != payload["resolved_configuration_digest"]
-        or _initial_state_digest(state) != payload["resolved_initial_state_digest"]
+        or _initial_state_digest(state, config.task_mode)
+        != payload["resolved_initial_state_digest"]
     ):
         raise ValueError("Historical controller input does not match its saved digests")
     return ControllerScenario(

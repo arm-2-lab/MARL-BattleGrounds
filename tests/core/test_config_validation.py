@@ -2,8 +2,9 @@
 
 The Team Deathmatch Red Zone depth must be an exact Python float. It is 0.0,
 or a value whose float32 copy is a normal number no larger than the float32
-map width; neutral mode needs 0.0. Each refusal has an exact message, and the
-depth is checked after the map size and before the score threshold range.
+map width; every mode but Team Deathmatch needs 0.0, as it needs a threshold
+of 0. Each refusal has an exact message, and the depth is checked after the map
+size and before the score threshold range. King of the Hills stays reserved.
 
 The largest score threshold depends on the depth. One step can give a team 5
 points at depth 0.0 and 10 at a positive depth
@@ -29,6 +30,7 @@ from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
     maximum_team_deathmatch_score_increment,
     maximum_team_deathmatch_score_threshold,
+    neutral_objective_fields,
     resolve_agent_profile,
     validate_env_config,
     validate_product_env_config,
@@ -60,7 +62,6 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURES,
     OBSTACLE_TYPE_PILLAR,
     OBSTACLE_TYPE_WALL,
-    TASK_MODE_CTF,
     TASK_MODE_KOTH,
     TASK_MODE_NEUTRAL,
     TASK_MODE_TDM,
@@ -161,6 +162,7 @@ def _valid_config(
             if team_respawn_wave_period_step_count is None
             else team_respawn_wave_period_step_count
         ),
+        **neutral_objective_fields(EnvConfig),
     )
 
 
@@ -217,6 +219,17 @@ def test_validation_inventory_covers_current_public_schemas() -> None:
         "task_mode",
         "team_deathmatch_score_threshold",
         "team_deathmatch_red_zone_depth",
+        "capture_the_flag_score_threshold",
+        "capture_the_flag_flag_home_positions",
+        "capture_the_flag_flag_interaction_distance",
+        "capture_the_flag_flag_capture_distance",
+        "capture_the_flag_dropped_flag_auto_return_steps",
+        "king_of_the_hills_score_threshold",
+        "king_of_the_hills_hill_positions",
+        "king_of_the_hills_hill_radii",
+        "king_of_the_hills_hill_points_per_step",
+        "king_of_the_hills_three_hill_sweep_bonus_points_per_step",
+        "king_of_the_hills_empty_hill_ownership_steps",
         "max_steps",
         "map_width",
         "map_height",
@@ -272,14 +285,9 @@ def test_task_mode_requires_an_exact_python_integer(task_mode: object) -> None:
         validate_env_config(_replace_config(_valid_config(), task_mode=task_mode))
 
 
-@pytest.mark.parametrize(
-    "task_mode",
-    (TASK_MODE_KOTH, TASK_MODE_CTF),
-    ids=("king-of-the-hill", "capture-the-flag"),
-)
-def test_reserved_task_modes_remain_unavailable(task_mode: int) -> None:
+def test_king_of_the_hills_remains_unavailable() -> None:
     with pytest.raises(ValueError, match="reserved but is not implemented"):
-        validate_env_config(_replace_config(_valid_config(), task_mode=task_mode))
+        validate_env_config(_replace_config(_valid_config(), task_mode=TASK_MODE_KOTH))
 
 
 @pytest.mark.parametrize("task_mode", (-1, 4, 99))
@@ -312,7 +320,7 @@ def test_team_deathmatch_threshold_requires_an_exact_python_integer(
 def test_neutral_mode_requires_zero_team_deathmatch_threshold(
     threshold: int,
 ) -> None:
-    with pytest.raises(ValueError, match="must be zero in neutral mode"):
+    with pytest.raises(ValueError, match="must be zero outside Team Deathmatch"):
         validate_env_config(_valid_config(team_deathmatch_score_threshold=threshold))
 
 
@@ -528,7 +536,7 @@ def test_neutral_mode_requires_red_zone_depth_zero() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=_exact_message(f"{_DEPTH} must be 0.0 in neutral mode, not 5.0."),
+        match=_exact_message(f"{_DEPTH} must be 0.0 outside Team Deathmatch, not 5.0."),
     ):
         validate_env_config(_red_zone_config(5.0, task_mode=TASK_MODE_NEUTRAL))
 
@@ -1525,6 +1533,7 @@ def test_bounds_pillar_wall_and_agent_tangency_are_legal() -> None:
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 7), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
     assert validate_env_config(config) is None
 

@@ -17,7 +17,10 @@ import jax.numpy as jnp
 import pytest
 from jax import Array
 
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import initialize_scenario_state, reset, step
 from marl_battlegrounds.core.types import (
     CLASS_NEUTRAL,
@@ -116,6 +119,7 @@ def _task_config(
         team_respawn_wave_period_step_count=jnp.asarray(
             respawn_periods, dtype=jnp.int32
         ),
+        **neutral_objective_fields(EnvConfig),
     )
 
 

@@ -8,7 +8,9 @@ the bytes recorded before the rule (the pre-rule replay fixture captured at comm
 59c157c). A V2 record cannot be relabelled V1 or placed in a context V3, and a V1 record
 cannot sit in a context V4. BaseObservationV3 needs 20 context columns and V2 needs 19.
 evaluation_frame_type_for_context pairs contexts V1 and V2 with frame V1, V3 with V2 and
-V4 with V3.
+V4 with V3. Transition fact record V1 mirrors every Core fact subtree and leaf name
+except the Capture the Flag and King of the Hills records, which it leaves out because
+it holds Team Deathmatch games only.
 """
 
 import inspect
@@ -697,7 +699,13 @@ def test_package_exports_legacy_and_current_replay_public_functions() -> None:
 
 def test_transition_fact_models_mirror_every_core_subtree_and_leaf_name() -> None:
     root_fields = tuple(TransitionFactsV1.model_fields)
-    assert root_fields[2:] == CoreTransitionFacts._fields
+    # V1 records hold Team Deathmatch games only, so they leave out the two
+    # objective records, which readers fill with Core's neutral records.
+    assert (
+        *root_fields[2:],
+        "capture_the_flag_facts",
+        "king_of_the_hills_facts",
+    ) == CoreTransitionFacts._fields
 
     field_contracts = (
         (JointActionV1, CoreAction),

@@ -8,7 +8,10 @@ differ only in that column. V1 and V2 capture refuse a live 20-column
 observation, and each capture version refuses the other context versions.
 Frame validation catches a column 19 that disagrees with the recorded depth
 or is nonzero on a padded row; capture under context V4 leaves that check to
-validation and replay admission.
+validation and replay admission. Frames and transition records hold Team
+Deathmatch games only, so they leave out the Capture the Flag and King of the
+Hills state fields and facts, which a TDM game keeps neutral and the readers
+restore neutral: 57 fact leaves (1,761 bytes) round-trip losslessly.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from tests.helpers.evaluation_fixtures import historical_step as step
 
 import marl_battlegrounds.evaluation._recording.capture as capture_module
 from marl_battlegrounds.core import env as core_env
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.core.types import (
     CONTEXT_FEATURE_CURRENT_TIMESTEP,
     CONTEXT_FEATURE_EPISODE_HORIZON,
@@ -216,14 +220,24 @@ def _assert_frame_copies_every_dynamic_leaf(
     host_action_mask: ActionMask,
     frame: EvaluationFrameV1,
 ) -> None:
+    objective = neutral_objective_fields(EnvState, host=True)
     snapshot_fields = set(type(frame.snapshot).model_fields)
     assert snapshot_fields == {
         "schema_id",
         "schema_version",
-        *(field for field in EnvState._fields if field != "step_count"),
+        *(
+            field
+            for field in EnvState._fields
+            if field != "step_count" and field not in objective
+        ),
     }
     assert frame.simulator_step_count == int(host_state.step_count)
     for field_name in EnvState._fields:
+        if field_name in objective:
+            np.testing.assert_array_equal(
+                getattr(host_state, field_name), objective[field_name]
+            )
+            continue
         if field_name == "step_count":
             continue
         _assert_array_payload_equal(
@@ -631,12 +645,12 @@ def test_core_does_no_evaluation_work_when_capture_is_not_called(
     assert transfers == 0
 
 
-def test_fact_normalization_accounts_for_all_47_leaves_and_is_lossless() -> None:
+def test_fact_normalization_accounts_for_every_leaf_and_is_lossless() -> None:
     host_facts = _host_facts()
     leaves = jax.tree_util.tree_leaves(host_facts)
-    assert len(leaves) == 47
+    assert len(leaves) == 57
     assert all(type(leaf) is np.ndarray for leaf in leaves)
-    assert sum(cast(NDArray[np.generic], leaf).nbytes for leaf in leaves) == 1661
+    assert sum(cast(NDArray[np.generic], leaf).nbytes for leaf in leaves) == 1761
 
     normalized = normalize_transition_facts_v1(host_facts)
     json_roundtrip = TransitionFactsV1.model_validate_json(normalized.model_dump_json())

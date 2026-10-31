@@ -9,7 +9,10 @@ import pytest
 from jax import Array
 
 import marl_battlegrounds.core.combat as combat
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import (
     _build_observation_and_action_mask,
     reset,
@@ -114,6 +117,7 @@ def _target_scenario(actor_class_id: int = MAGE_CLASS_ID) -> tuple[EnvConfig, En
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 5), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
     state, *_ = reset(config, jax.random.key(1))
     return config, state

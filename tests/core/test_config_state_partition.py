@@ -10,7 +10,10 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import (
     _build_observation_and_action_mask,
     reset,
@@ -56,6 +59,14 @@ from marl_battlegrounds.core.types import (
 
 _FINAL_STATE_FIELDS = (
     "team_deathmatch_scores",
+    "capture_the_flag_scores",
+    "king_of_the_hills_scores",
+    "capture_the_flag_flag_positions",
+    "capture_the_flag_flag_carrier_slots",
+    "capture_the_flag_dropped_flag_countdowns",
+    "king_of_the_hills_hill_is_contested",
+    "king_of_the_hills_hill_owners",
+    "king_of_the_hills_empty_hill_ownership_countdowns",
     "step_count",
     "agent_positions",
     "alive_mask",
@@ -132,6 +143,7 @@ def _config(
         spawn_shield_duration_steps=spawn_shield_duration_steps,
         spawn_shield_movement_speed=spawn_shield_movement_speed,
         team_respawn_wave_period_step_count=jnp.asarray((5, 5), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
 
 

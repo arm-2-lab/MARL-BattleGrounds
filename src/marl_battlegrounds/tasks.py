@@ -30,6 +30,9 @@ from marl_battlegrounds._task_settings import (
     DEFAULT_TDM_RED_ZONE_DEPTH as DEFAULT_TDM_RED_ZONE_DEPTH,
 )
 from marl_battlegrounds._task_settings import (
+    SPAWN_EXCHANGE_FIELDS as SPAWN_EXCHANGE_FIELDS,
+)
+from marl_battlegrounds._task_settings import (
     AgentClassName as AgentClassName,
 )
 from marl_battlegrounds._task_settings import (
@@ -40,6 +43,7 @@ from marl_battlegrounds._task_settings import (
 )
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
+    neutral_objective_fields,
     resolve_agent_profile,
     validate_env_config,
     validate_product_env_config,
@@ -51,6 +55,7 @@ from marl_battlegrounds.core.types import (
     MAGE_CLASS_ID,
     MAX_AGENT_SLOTS,
     MAX_AGENTS_PER_TEAM,
+    MAX_HILL_SLOTS,
     MAX_OBSTACLE_SLOTS,
     NEUTRAL_CLASS_ID,
     NUM_CLASSES,
@@ -85,14 +90,6 @@ _CLASS_IDS: dict[AgentClassName, int] = {
     "priest": PRIEST_CLASS_ID,
 }
 CANONICAL_TDM_EVALUATION_MAP_IDS = (47, 48, 49, 50, 51)
-# Every Capture the Flag flag home keeps this distance from every obstacle, in map
-# units: the larger of the default touch and capture distances (both 1.25).
-_CAPTURE_THE_FLAG_HOME_CLEARANCE = 1.25
-# Team A's flag home is its spawn center, the middle of its pad bank. On these
-# maps an obstacle comes closer than that clearance to the center, so the home
-# moves along the spawn edge to this y: the nearest clear point in 0.25-unit
-# steps, the lower one on a tie. Team B's home is always Team A's mirror image.
-_CAPTURE_THE_FLAG_MOVED_HOME_Y = {29: 3.75, 43: 3.5, 45: 4.5, 46: 3.25, 49: 5.75}
 # These describe Core's array layout only; Core still owns value/geometry checks.
 _CONFIG_ARRAY_SHAPES = {
     "obstacles": (MAX_OBSTACLE_SLOTS, OBSTACLE_FEATURES),
@@ -102,6 +99,9 @@ _CONFIG_ARRAY_SHAPES = {
         ENVIRONMENT_DIMENSIONS,
     ),
     "team_respawn_wave_period_step_count": (NUM_TEAMS,),
+    "capture_the_flag_flag_home_positions": (NUM_TEAMS, ENVIRONMENT_DIMENSIONS),
+    "king_of_the_hills_hill_positions": (MAX_HILL_SLOTS, ENVIRONMENT_DIMENSIONS),
+    "king_of_the_hills_hill_radii": (MAX_HILL_SLOTS,),
 }
 
 
@@ -213,15 +213,24 @@ def _config_has_batch(env_config: EnvConfig, num_envs: int | None) -> bool:
 
 
 def _swap_spawn_banks(env_config: EnvConfig) -> EnvConfig:
-    """Exchange the two complete ordered spawn banks in a scalar or batched config.
+    """Exchange the two teams' spawn ends in a scalar or batched config.
 
-    env_config uses the validated (..., 2, 5, 2) pad layout. Return an EnvConfig
-    with only that field replaced. All ten pads move between teams, including
-    inactive slots and later respawn locations. Applying this twice restores the
-    original bank order; it is not an idempotent reset.
+    env_config has validated leaf shapes. Return an EnvConfig in which every
+    field named in SPAWN_EXCHANGE_FIELDS has its team axis reversed: all ten
+    pads move between teams, including inactive slots and later respawn
+    locations, and so do the two Capture the Flag flag homes. Every other field
+    is unchanged. Applying this twice restores the original order; it is not an
+    idempotent reset.
     """
+
+    def reversed_teams(name: str) -> Array:
+        """Return one field with its team axis, one game's first axis, reversed."""
+        value = getattr(env_config, name)
+        team_axis = jnp.ndim(value) - len(_CONFIG_ARRAY_SHAPES[name])
+        return value[(slice(None),) * team_axis + (slice(None, None, -1),)]
+
     return env_config._replace(
-        team_spawn_pad_positions=env_config.team_spawn_pad_positions[..., ::-1, :, :]
+        **{name: reversed_teams(name) for name in SPAWN_EXCHANGE_FIELDS}
     )
 
 
@@ -413,9 +422,11 @@ def balanced_spawn_configs(env_config: EnvConfig, *, num_envs: int) -> EnvConfig
     EnvConfig
         An ``EnvConfig`` with JAX array leaves and one leading ``num_envs`` axis.
         The first half of lanes keep their source's complete ordered spawn banks;
-        the second half exchange those two banks. All ten pad rows participate,
-        including inactive slots. Rosters, rules, obstacles and other values stay
-        unchanged. The helper uses the supplied sources; it does not select maps.
+        the second half exchange those two banks, and with them the two Capture
+        the Flag flag homes (SPAWN_EXCHANGE_FIELDS). All ten pad rows
+        participate, including inactive slots. Rosters, rules, obstacles and
+        other values stay unchanged. The helper uses the supplied sources; it
+        does not select maps.
 
     Raises
     ------
@@ -445,14 +456,14 @@ def balanced_spawn_configs(env_config: EnvConfig, *, num_envs: int) -> EnvConfig
     batched = _config_has_batch(env_config, num_envs)
     _validate_config_choices(env_config, batched=batched, both_spawn_choices=True)
     arrays = _config_arrays(env_config, num_envs=num_envs, batched=batched)
-    swapped = _swap_spawn_banks(arrays)
-    return arrays._replace(
-        team_spawn_pad_positions=jnp.where(
-            (jnp.arange(num_envs) >= num_envs // 2)[:, None, None, None],
-            swapped.team_spawn_pad_positions,
-            arrays.team_spawn_pad_positions,
-        )
-    )
+    exchanged_lane = jnp.arange(num_envs) >= num_envs // 2
+
+    def choose(source: Array, exchanged: Array) -> Array:
+        """Keep a source leaf in the first half and its exchange in the second."""
+        lane = exchanged_lane.reshape((num_envs,) + (1,) * (source.ndim - 1))
+        return jnp.where(lane, exchanged, source)
+
+    return jax.tree.map(choose, arrays, _swap_spawn_banks(arrays))
 
 
 def spawn_locations_for_source(
@@ -476,11 +487,13 @@ def spawn_locations_for_source(
     tuple[Array, Array]
         ``(matches_source, spawn_choice)`` as Boolean and int32 JAX arrays. Both
         have shape ``()`` for a scalar config or ``(B,)`` for a native batch.
-        A match requires every non-pad leaf to be equal and all ten pads to use
-        the complete source order or complete exchanged order. Choices are 0 for
-        source order, 1 for exchanged order, and -1 for no match or identical
-        source banks. ``matches_source`` distinguishes an invalid relationship
-        from valid but indistinguishable banks. No configuration is modified.
+        A match requires every leaf to equal the source's, either as supplied
+        or after one complete exchange, which reverses the team axis of every
+        field in SPAWN_EXCHANGE_FIELDS (all ten pads and the two Capture the
+        Flag flag homes). Choices are 0 for source order, 1 for exchanged
+        order, and -1 for no match or for a source whose exchange changes
+        nothing. ``matches_source`` distinguishes an invalid relationship from
+        a valid but indistinguishable one. No configuration is modified.
 
     Raises
     ------
@@ -500,26 +513,20 @@ def spawn_locations_for_source(
     batched = _config_has_batch(env_config, num_envs)
     _config_has_batch(source_config, num_envs)
     prefix = active_shape[:1] if batched else ()
-    unchanged = jnp.ones(prefix, dtype=jnp.bool_)
-    for name in EnvConfig._fields:
-        if name == "team_spawn_pad_positions":
-            continue
+
+    def equals(choice: EnvConfig) -> Array:
+        """Return, per game, whether every leaf of env_config equals choice's."""
+        equal_games = jnp.ones(prefix, dtype=jnp.bool_)
         for value, source in zip(
-            jax.tree.leaves(getattr(env_config, name)),
-            jax.tree.leaves(getattr(source_config, name)),
-            strict=True,
+            jax.tree.leaves(env_config), jax.tree.leaves(choice), strict=True
         ):
             equal = jnp.asarray(value) == jnp.asarray(source)
-            unchanged &= jnp.all(equal, axis=tuple(range(int(batched), equal.ndim)))
-    pads = env_config.team_spawn_pad_positions
-    source_order = jnp.all(
-        pads == source_config.team_spawn_pad_positions, axis=(-3, -2, -1)
-    )
-    exchanged_order = jnp.all(
-        pads == _swap_spawn_banks(source_config).team_spawn_pad_positions,
-        axis=(-3, -2, -1),
-    )
-    matches_source = unchanged & (source_order | exchanged_order)
+            equal_games &= jnp.all(equal, axis=tuple(range(int(batched), equal.ndim)))
+        return equal_games
+
+    source_order = equals(source_config)
+    exchanged_order = equals(_swap_spawn_banks(source_config))
+    matches_source = source_order | exchanged_order
     spawn_choice = jnp.where(
         matches_source & (source_order ^ exchanged_order),
         jnp.where(source_order, 0, 1),
@@ -641,26 +648,6 @@ def _map_info(map_id: int) -> TDMMapInfo:
     return list_tdm_maps()[map_id]
 
 
-def _capture_the_flag_flag_homes(  # pyright: ignore[reportUnusedFunction]
-    map_id: int,
-) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Return Team A's and Team B's Capture the Flag flag homes on one map.
-
-    map_id is a plain int from 0 through 51; anything else raises ValueError, as
-    in _map_info. Team A's home is its spawn center, or the point along its spawn
-    edge listed in _CAPTURE_THE_FLAG_MOVED_HOME_Y; Team B's home is its mirror
-    image across the map's vertical center line. Return ((x, y), (x, y)) in map
-    units, Team A first, in the map's own frame, where Team A spawns at the left
-    end. scripts/dev/modes/capture_the_flag/place_flag_bases.py places and checks
-    them on every map.
-    """
-    geometry = map_geometry(_map_info(map_id))
-    center = np.mean(np.asarray(geometry.team_spawn_pad_positions[0]), axis=0)
-    x = float(center[0])
-    y = _CAPTURE_THE_FLAG_MOVED_HOME_Y.get(map_id, float(center[1]))
-    return (x, y), (geometry.map_width - x, y)
-
-
 def _roster_ids(roster: Sequence[AgentClassName], *, name: str) -> tuple[int, ...]:
     """Convert ordered class names to five team-local class IDs.
 
@@ -719,7 +706,9 @@ def _make_config(
     Returns
     -------
     EnvConfig
-        A scalar configuration with resolved class facts and float32/int32 arrays.
+        A scalar Team Deathmatch configuration with resolved class facts and
+        float32/int32 arrays. Its Capture the Flag and King of the Hills
+        settings hold their neutral values (neutral_objective_fields).
 
     Notes
     -----
@@ -746,6 +735,7 @@ def _make_config(
         spawn_shield_duration_steps=shield_duration,
         spawn_shield_movement_speed=shield_speed,
         team_respawn_wave_period_step_count=jnp.asarray(wave_periods, dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
     run_config_check(validate_product_env_config, config)
     return config
@@ -864,16 +854,26 @@ def make_canonical_team_deathmatch_evaluation_config(
     )
 
 
-def _initial_state_digest(state: EnvState) -> str:
+def _initial_state_digest(state: EnvState, task_mode: int) -> str:
     """Hash all authored state leaves with their dtype, shape and values.
 
-    state is a concrete scalar EnvState. Read its arrays on the host and encode
-    the fixed dev-resolved-initial-state@1 payload before canonical hashing.
-    Return a SHA-256 hex digest. This may synchronize device work and belongs
+    state is a concrete scalar EnvState and task_mode its config's mode. A Team
+    Deathmatch start hashes the dev-resolved-initial-state@1 payload over the
+    fields that existed before Capture the Flag and King of the Hills, which
+    are always neutral there, so the installed scenarios keep their recorded
+    digests. Any other mode's start hashes the @2 payload over every field, so
+    an edited flag or hill fails the check. Read the arrays on the host and
+    return a SHA-256 hex digest. This may synchronize device work and belongs
     at the loading boundary, not inside a compiled rollout.
     """
-    payload: dict[str, object] = {"schema": "dev-resolved-initial-state@1"}
+    objective_fields = (
+        neutral_objective_fields(EnvState) if task_mode == TASK_MODE_TDM else {}
+    )
+    version = 1 if task_mode == TASK_MODE_TDM else 2
+    payload: dict[str, object] = {"schema": f"dev-resolved-initial-state@{version}"}
     for field_name, value in zip(state._fields, state, strict=True):
+        if field_name in objective_fields:
+            continue
         host = np.asarray(value)
         payload[field_name] = {
             "dtype": str(host.dtype),
@@ -977,8 +977,12 @@ def _load_tdm_scenario(info: TDMScenarioInfo, content: ScenarioContent) -> TDMSc
     snapshot["step_count"] = content.step_count
     float_fields = {"agent_positions", "current_health"}
     bool_fields = {"alive_mask", "has_previous_timestep_joint_action"}
-    state_values: dict[str, Array] = {}
+    # Authored Team Deathmatch snapshots predate the objective fields, which
+    # start neutral.
+    state_values: dict[str, Array] = neutral_objective_fields(EnvState)
     for field_name in EnvState._fields:
+        if field_name in state_values:
+            continue
         dtype = (
             jnp.float32
             if field_name in float_fields
@@ -989,7 +993,9 @@ def _load_tdm_scenario(info: TDMScenarioInfo, content: ScenarioContent) -> TDMSc
         state_values[field_name] = jnp.asarray(snapshot[field_name], dtype=dtype)
     state = EnvState(**state_values)
     validate_scenario_initial_state(config, state)
-    if _initial_state_digest(state) != info.resolved_initial_state_digest:
+    if _initial_state_digest(state, config.task_mode) != (
+        info.resolved_initial_state_digest
+    ):
         raise ValueError("packaged scenario initial-state digest mismatch")
     if config.max_steps - int(state.step_count) != info.horizon:
         raise ValueError("packaged scenario horizon disagrees with its manifest")

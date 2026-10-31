@@ -9,7 +9,10 @@ import jax.numpy as jnp
 import pytest
 from jax import Array
 
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import (
     _build_observation_and_action_mask,
     reset,
@@ -125,6 +128,7 @@ def _scenario(
         spawn_shield_duration_steps=shield_duration,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray(periods, dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
     state, observation, action_mask, info = reset(config, jax.random.key(1))
     return config, state, observation, action_mask, info

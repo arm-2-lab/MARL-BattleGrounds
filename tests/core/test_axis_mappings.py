@@ -56,7 +56,11 @@ from marl_battlegrounds.core.axis_mappings import (
     spawn_bank_on_right,
     target_action_to_global_slot,
 )
-from marl_battlegrounds.core.config import resolve_agent_profile, validate_env_config
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+    validate_env_config,
+)
 from marl_battlegrounds.core.env import (
     initialize_scenario_state,
     red_zone_death_mask,
@@ -182,6 +186,7 @@ def _real_core_mapping_parity_config() -> EnvConfig:
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 7), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
 
 

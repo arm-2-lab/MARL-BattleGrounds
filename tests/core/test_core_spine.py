@@ -10,7 +10,10 @@ from jax import Array
 
 import marl_battlegrounds.core.combat as combat
 import marl_battlegrounds.core.types as core_types
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import (
     _build_observation_and_action_mask,
     reset,
@@ -260,6 +263,7 @@ def _config(
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 5), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
 
 
@@ -786,6 +790,7 @@ def test_env_state_stores_slot_aligned_arrays() -> None:
         alive_mask=jnp.zeros(shape=(MAX_AGENT_SLOTS,), dtype=bool),
         team_respawn_wave_countdowns=jnp.asarray((4, 4), dtype=jnp.int32),
         **_inert_combat_state_fields(),
+        **neutral_objective_fields(EnvState),
     )
 
     _assert_state_contract(env_state)

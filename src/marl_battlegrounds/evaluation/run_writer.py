@@ -361,11 +361,15 @@ def configuration_identity(
     config : EnvConfig
         One environment-normalized scalar EnvConfig tree. Callers should
         normalize scalar/array dtypes before comparing configuration identity.
+        A Team Deathmatch or neutral config leaves its Capture the Flag and
+        King of the Hills settings out of the content and the digest: Core
+        requires them neutral there, so its identity is the one it had before
+        those settings existed. A config of any other mode records every field.
     historical : bool, default=False
-        False records every EnvConfig field. True reproduces the identity a
+        False records the fields above. True reproduces the identity a
         config had before the Team Deathmatch Red Zone field existed: the
         team_deathmatch_red_zone_depth key is left out of the content and the
-        digest. Only a depth of exactly +0.0 has a historical identity.
+        digest too. Only a depth of exactly +0.0 has a historical identity.
 
     Returns
     -------
@@ -388,7 +392,13 @@ def configuration_identity(
     """
     import jax
 
+    from marl_battlegrounds.core.config import neutral_objective_fields
+    from marl_battlegrounds.core.types import TASK_MODE_NEUTRAL, TASK_MODE_TDM
+
     content = cast(dict[str, object], _json_value(jax.device_get(config)))
+    if content["task_mode"] in (TASK_MODE_NEUTRAL, TASK_MODE_TDM):
+        for name in neutral_objective_fields(type(config)):
+            del content[name]
     if historical:
         depth = content.pop(_RED_ZONE_DEPTH_FIELD)
         if (
@@ -410,8 +420,8 @@ def configuration_content_identity(content: Mapping[str, object]) -> str:
     ----------
     content : Mapping[str, object]
         JSON-compatible configuration content, for example the dictionary a
-        run_details.json or tournament snapshot recorded. It may be current
-        (13 keys) or historical (12 keys, before the Red Zone field).
+        run_details.json or tournament snapshot recorded: any content
+        configuration_identity returns, historical included.
 
     Returns
     -------
@@ -1780,7 +1790,16 @@ class RunWriter:
                     relationship_key = (validation_key, source_id, roster)
                     choice = self._verified_source_choices.get(relationship_key)
                     if choice is None:
-                        source = configurations[source_id]
+                        from marl_battlegrounds.core.config import (
+                            neutral_objective_fields,
+                        )
+
+                        # A Team Deathmatch or neutral record leaves out the
+                        # objective settings, which are neutral there.
+                        source = {
+                            **neutral_objective_fields(type(config_tree), host=True),
+                            **cast(dict[str, object], configurations[source_id]),
+                        }
 
                         def restore(template: object, values: object) -> object:
                             """Restore source data using the actual tuple/dtype tree."""

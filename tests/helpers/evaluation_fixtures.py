@@ -15,7 +15,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import initialize_scenario_state, reset, step
 from marl_battlegrounds.core.types import (
     CONTEXT_FEATURE_TDM_ALLY_SCORE,
@@ -195,6 +198,7 @@ def evaluation_env_config(
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 7), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
 
 

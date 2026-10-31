@@ -15,8 +15,9 @@ Two paths play each game. ``core`` calls ``core.reset`` and ``core.step`` under
 ``make("tdm")`` with training facts on. The leaf list was fixed when the
 goldens were recorded at commit b4a5b39, before any Capture the Flag code. A
 check hashes only those leaves, and requires every leaf added since to hold
-its neutral value on every step: -1 for a leaf named ``*carrier_slots``, 0 for
-any other.
+its neutral value on every step: a config or state field's from
+``neutral_objective_fields``, a fact's from Core's neutral Capture the Flag
+and King of the Hills fact records. A new leaf with neither is a problem.
 
 Run from the repository root:
 
@@ -68,6 +69,7 @@ from numpy.typing import NDArray
 
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core import env as core
+from marl_battlegrounds.core.config import neutral_objective_fields
 from marl_battlegrounds.core.types import (
     Action,
     ActionMask,
@@ -131,6 +133,18 @@ MODELS = tuple(
 )
 MODEL_MAPS = tuple(range(36, 52))  # 32 games, an allowed GPU batch size.
 DETERMINISTIC = "--xla_gpu_deterministic_ops=true"
+# Each leaf added since b4a5b39, by its last field name, with its neutral value.
+_NEUTRAL: dict[str, object] = {
+    **neutral_objective_fields(host=True),
+    **{
+        name: np.asarray(value)
+        for record in (
+            core.build_reset_capture_the_flag_facts(),
+            core.build_reset_king_of_the_hills_facts(),
+        )
+        for name, value in record._asdict().items()
+    },
+}
 _ROOT = jax.random.PRNGKey(0)
 _ALPHA = policy("tdm-alpha").apply
 _BETA = policy("tdm-beta").apply
@@ -289,9 +303,13 @@ class _Trace:
                 key=lambda pair: order[pair[0]],
             )
             for name, x in pairs:
-                neutral = -1 if name.endswith("carrier_slots") else 0
-                if name not in expected and not np.all(x[self.live] == neutral):
-                    self._problem(f"{kind} leaf {name} is not neutral ({neutral})")
+                if name in expected:
+                    continue
+                neutral = _NEUTRAL.get(name.rsplit(".", 1)[-1])
+                if neutral is None:
+                    self._problem(f"{kind} leaf {name} has no neutral value")
+                elif not np.all(x[self.live] == neutral):
+                    self._problem(f"{kind} leaf {name} is not neutral")
         rows = np.concatenate(
             [
                 np.ascontiguousarray(x)

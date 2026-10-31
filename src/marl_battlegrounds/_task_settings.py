@@ -1,7 +1,8 @@
-"""Own host task names, canonical rosters and the default Red Zone depth.
+"""Own host task names, rosters, each mode's defaults and the spawn exchange.
 
 Configuration checks use these names without constructing numerical class IDs.
 The tasks module owns class-ID conversion and re-exports the existing names.
+This module imports no JAX, so record readers can use it too.
 """
 
 from collections.abc import Sequence
@@ -18,6 +19,27 @@ TASK_NAMES: tuple[TaskName, ...] = get_args(TaskName.__value__)
 # configs, default evaluation, new training runs and new DevClient drafts use it;
 # 0.0 keeps one point per death. Saved records keep the depth they recorded.
 DEFAULT_TDM_RED_ZONE_DEPTH = 5.0
+
+# The Capture the Flag defaults: captures needed to win; the largest distance,
+# in map units, from an agent's center to a flag for a pickup or a return, and
+# from a carrier's center to its own flag's home for a capture; and the ticks a
+# dropped flag waits before going home. Each flag home is its team's spawn
+# center, the same on every map, Team A's first, in the map's own frame.
+DEFAULT_CTF_SCORE_THRESHOLD = 3
+DEFAULT_CTF_FLAG_INTERACTION_DISTANCE = 1.25
+DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
+DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
+DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
+
+# The EnvConfig fields whose team axis, each game's first axis, a spawn exchange
+# reverses, so each team takes the other's spawn pads and flag home. Every
+# exchange (tasks._swap_spawn_banks) and every reader of an exchanged record
+# uses this one list. Hills need no entry: which hill is a team's Spawn Side
+# Hill follows from its pads.
+SPAWN_EXCHANGE_FIELDS = (
+    "team_spawn_pad_positions",
+    "capture_the_flag_flag_home_positions",
+)
 
 
 _CLASS_NAMES = get_args(AgentClassName.__value__)

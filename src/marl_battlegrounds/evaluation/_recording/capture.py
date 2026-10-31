@@ -10,6 +10,7 @@ and older contexts keep frame V1.
 
 from __future__ import annotations
 
+from functools import cache
 from typing import cast
 
 import jax
@@ -17,6 +18,11 @@ import jax.numpy as jnp
 import numpy as np
 from numpy.typing import DTypeLike, NDArray
 
+from marl_battlegrounds.core.config import neutral_objective_fields
+from marl_battlegrounds.core.env import (
+    build_reset_capture_the_flag_facts,
+    build_reset_king_of_the_hills_facts,
+)
 from marl_battlegrounds.core.types import (
     ENVIRONMENT_DIMENSIONS,
     MAX_AGENT_SLOTS,
@@ -37,10 +43,12 @@ from marl_battlegrounds.core.types import (
     ActionAcceptanceFacts,
     ActionMask,
     AuraTransitionFacts,
+    CaptureTheFlagTransitionFacts,
     CombatTransitionFacts,
     DeathTransitionFacts,
     DoneFlags,
     EnvState,
+    KingOfTheHillsTransitionFacts,
     Observation,
     PhysicalTransitionFacts,
     PreviousTimestepActionObservation,
@@ -1315,6 +1323,9 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
     EnvState
         Unbatched EnvState with the recorded simulator tick, ten global slots,
         two team rows, float32 position/health, int32 counters/actions, and bool flags.
+        The Capture the Flag and King of the Hills fields hold their neutral
+        values (neutral_objective_fields): the supported frames record only
+        Team Deathmatch games.
 
     Raises
     ------
@@ -1337,8 +1348,12 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
 
     values = frame.snapshot.model_dump(exclude={"schema_id", "schema_version"})
     values["step_count"] = frame.simulator_step_count
-    arrays: dict[str, jax.Array] = {}
+    # The supported frames record Team Deathmatch games, whose objective fields
+    # are always neutral.
+    arrays: dict[str, jax.Array] = neutral_objective_fields(EnvState, host=host)
     for name in EnvState._fields:
+        if name in arrays:
+            continue
         value = values[name]
         if name in ("alive_mask", "has_previous_timestep_joint_action"):
             array = np.asarray(value, dtype=np.bool_)
@@ -1353,6 +1368,29 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
                 value, field_name=f"frame.snapshot.{name}", host=host
             )
     return EnvState(**arrays)
+
+
+@cache
+def _neutral_objective_facts_on_host() -> tuple[
+    CaptureTheFlagTransitionFacts, KingOfTheHillsTransitionFacts
+]:
+    """Return Core's neutral Capture the Flag and King of the Hills fact records.
+
+    The leaves are read-only NumPy copies of Core's own neutral records, built
+    once per process, so the host reconstruction path does no device work per
+    frame. Callers share the arrays and must not change them.
+    """
+
+    def frozen(value: jax.Array) -> jax.Array:
+        """Copy one neutral leaf to the host and make the copy read-only."""
+        host = np.array(value)
+        host.flags.writeable = False
+        return cast(jax.Array, host)
+
+    return jax.tree.map(
+        frozen,
+        (build_reset_capture_the_flag_facts(), build_reset_king_of_the_hills_facts()),
+    )
 
 
 def _reconstruct_transition_facts(
@@ -1375,6 +1413,10 @@ def _reconstruct_transition_facts(
     TransitionFacts
         Unbatched Core TransitionFacts with bool, int32, and float32 leaves.
         Absent recipient routes are restored from None to Core's -1 sentinel.
+        The Capture the Flag and King of the Hills records are Core's neutral
+        ones (build_reset_capture_the_flag_facts and
+        build_reset_king_of_the_hills_facts): V1 records hold only Team
+        Deathmatch games. With host=True they are shared read-only arrays.
 
     Raises
     ------
@@ -1497,6 +1539,14 @@ def _reconstruct_transition_facts(
     shield = source.spawn_shield_facts
     respawn = source.respawn_facts
     regeneration = source.regeneration_facts
+    capture_the_flag_facts, king_of_the_hills_facts = (
+        _neutral_objective_facts_on_host()
+        if host
+        else (
+            build_reset_capture_the_flag_facts(),
+            build_reset_king_of_the_hills_facts(),
+        )
+    )
     physical = source.physical_facts
     aura = source.aura_facts
     lifecycle = source.status_lifecycle_facts
@@ -1572,6 +1622,8 @@ def _reconstruct_transition_facts(
         team_deathmatch_facts=TeamDeathmatchTransitionFacts(
             outcome=array(team_deathmatch.outcome, dtype=jnp.int32),
         ),
+        capture_the_flag_facts=capture_the_flag_facts,
+        king_of_the_hills_facts=king_of_the_hills_facts,
     )
 
 

@@ -29,6 +29,7 @@ from marl_battlegrounds.core.combat import (
     get_ultimate_cooldown_by_class_ids,
 )
 from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
     resolve_agent_profile,
     validate_env_state,
     validate_scenario_initial_state,
@@ -209,6 +210,7 @@ def _valid_config(
             (5, 7),
             dtype=jnp.int32,
         ),
+        **neutral_objective_fields(EnvConfig),
     )
 
 
@@ -358,7 +360,7 @@ def test_step_count_must_be_nonnegative() -> None:
 def test_neutral_mode_requires_canonical_zero_team_deathmatch_scores() -> None:
     config, state = _valid_state()
 
-    with pytest.raises(ValueError, match="exactly zero in neutral mode"):
+    with pytest.raises(ValueError, match="exactly zero outside Team Deathmatch"):
         validate_env_state(
             config,
             state._replace(team_deathmatch_scores=jnp.asarray((1, 0), dtype=jnp.int32)),

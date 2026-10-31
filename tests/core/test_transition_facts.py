@@ -1,4 +1,10 @@
-"""Check the fixed-shape facts Core reports for each transition."""
+"""Check the fixed-shape facts Core reports for each transition.
+
+Every record keeps its exact field names, shapes and dtypes from reset,
+scenario starts and real steps, under eager, jit, vmap and scan. The Capture
+the Flag and King of the Hills records are present in every mode and neutral
+outside their own: 57 leaves and 1,761 raw bytes in all.
+"""
 # pyright: reportPrivateUsage=false
 
 from typing import cast
@@ -9,7 +15,10 @@ import pytest
 from jax import Array
 
 import marl_battlegrounds.core.combat as combat
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import (
     _build_observation_and_action_mask,
     initialize_scenario_state,
@@ -49,12 +58,14 @@ from marl_battlegrounds.core.types import (
     ActionAcceptanceFacts,
     ActionMask,
     AuraTransitionFacts,
+    CaptureTheFlagTransitionFacts,
     CombatTransitionFacts,
     DeathTransitionFacts,
     DoneFlags,
     EnvConfig,
     EnvState,
     Info,
+    KingOfTheHillsTransitionFacts,
     Observation,
     PhysicalTransitionFacts,
     RegenerationTransitionFacts,
@@ -72,8 +83,8 @@ _TEAM_B_INDEX = 1
 _TARGET_NONE = 0
 _SELF_TARGET = 1
 _FIRST_ENEMY_TARGET = 1 + MAX_AGENTS_PER_TEAM
-_TRANSITION_FACT_LEAF_COUNT = 47
-_TRANSITION_FACT_RAW_BYTES = 1_661
+_TRANSITION_FACT_LEAF_COUNT = 57
+_TRANSITION_FACT_RAW_BYTES = 1_761
 
 _STATUS_CHANNEL_INDEX_BY_NAME = {
     "warrior-charge-slow": SLOW_CHANNEL_WARRIOR_CHARGE,
@@ -159,6 +170,7 @@ def _scenario(
         spawn_shield_duration_steps=3,
         spawn_shield_movement_speed=2.0,
         team_respawn_wave_period_step_count=jnp.asarray((5, 5), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
     state, _, action_mask, _ = reset(config, jax.random.key(1))
     return config, state, action_mask
@@ -609,6 +621,20 @@ def test_reset_scenario_and_real_step_share_the_exact_static_fact_schema() -> No
         "cleared_by_new_death_by_recipient_and_status_channel",
     )
     assert TeamDeathmatchTransitionFacts._fields == ("outcome",)
+    assert CaptureTheFlagTransitionFacts._fields == (
+        "flag_was_picked_up_by_agent",
+        "flag_was_dropped_by_agent",
+        "ally_flag_was_returned_by_agent",
+        "enemy_flag_was_captured_by_agent",
+        "flag_was_automatically_returned_by_team",
+        "outcome",
+    )
+    assert KingOfTheHillsTransitionFacts._fields == (
+        "is_on_hill_by_agent_by_hill",
+        "hill_owners",
+        "points_scored_by_team",
+        "outcome",
+    )
     assert TransitionFacts._fields == (
         "has_transition",
         "transition_start_step_count",
@@ -622,6 +648,8 @@ def test_reset_scenario_and_real_step_share_the_exact_static_fact_schema() -> No
         "aura_facts",
         "status_lifecycle_facts",
         "team_deathmatch_facts",
+        "capture_the_flag_facts",
+        "king_of_the_hills_facts",
     )
     assert Info._fields == ("transition_facts",)
     assert tuple(_STATUS_CHANNEL_INDEX_BY_NAME.values()) == tuple(

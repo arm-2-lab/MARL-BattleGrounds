@@ -8,7 +8,10 @@ import jax.numpy as jnp
 import pytest
 from jax import Array
 
-from marl_battlegrounds.core.config import resolve_agent_profile
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    resolve_agent_profile,
+)
 from marl_battlegrounds.core.env import _build_observation_and_action_mask, step
 from marl_battlegrounds.core.geometry import GEOMETRY_TOLERANCE
 from marl_battlegrounds.core.types import (
@@ -231,6 +234,7 @@ def _deterministic_config(
         spawn_shield_duration_steps=spawn_shield_duration_steps,
         spawn_shield_movement_speed=spawn_shield_movement_speed,
         team_respawn_wave_period_step_count=jnp.asarray((5, 5), dtype=jnp.int32),
+        **neutral_objective_fields(EnvConfig),
     )
 
 
@@ -331,6 +335,7 @@ def _state_with_single_active_alive_agent(
             (0, spawn_shield_duration),
         ),
         **_inert_combat_state_fields(active_mask),
+        **neutral_objective_fields(EnvState),
     )
     return config, state
 
@@ -410,6 +415,7 @@ def _state_with_two_agents(
             (agent_b_slot, agent_b_spawn_shield_duration),
         ),
         **_inert_combat_state_fields(alive_mask),
+        **neutral_objective_fields(EnvState),
     )
     return config, state
 
@@ -1455,6 +1461,7 @@ def test_active_alive_overlapping_agents_separate_in_free_space(
         team_respawn_wave_countdowns=config.team_respawn_wave_period_step_count - 1,
         spawn_shield_durations=jnp.zeros((MAX_AGENT_SLOTS,), dtype=jnp.int32),
         **_inert_combat_state_fields(active_mask),
+        **neutral_objective_fields(EnvState),
     )
 
     joint_action = _joint_action_with_moves(
@@ -1785,6 +1792,7 @@ def test_expiring_spawn_shield_rejects_charge_but_preserves_movement() -> None:
         team_respawn_wave_countdowns=config.team_respawn_wave_period_step_count - 1,
         spawn_shield_durations=_slot_int_vector(0, (0, 1)),
         **_inert_combat_state_fields(active_mask),
+        **neutral_objective_fields(EnvState),
     )
     movement_only_action = _joint_action_with_moves((0, MOVE_NORTH))
     charge_action = movement_only_action._replace(

@@ -59,6 +59,7 @@ NUM_CLASSES = 6
 SELF_FEATURES = 58
 UNIT_FEATURES = 58
 MAX_OBJECTIVE_SLOTS = 8
+MAX_HILL_SLOTS = 3
 OBJECTIVE_FEATURES = 12
 CONTEXT_FEATURES = 20
 
@@ -104,14 +105,49 @@ CONTEXT_FEATURE_TDM_ALLY_SCORE = 10
 CONTEXT_FEATURE_TDM_ENEMY_SCORE = 11
 CONTEXT_FEATURE_KOTH_ALLY_SCORE = 12
 CONTEXT_FEATURE_KOTH_ENEMY_SCORE = 13
-CONTEXT_FEATURE_CTF_ALLY_CAPTURE_COUNT = 14
-CONTEXT_FEATURE_CTF_ENEMY_CAPTURE_COUNT = 15
+CONTEXT_FEATURE_CTF_ALLY_SCORE = 14
+CONTEXT_FEATURE_CTF_ENEMY_SCORE = 15
 CONTEXT_FEATURE_TDM_SCORE_THRESHOLD = 16
 CONTEXT_FEATURE_KOTH_SCORE_THRESHOLD = 17
-CONTEXT_FEATURE_CTF_CAPTURE_THRESHOLD = 18
+CONTEXT_FEATURE_CTF_SCORE_THRESHOLD = 18
 # The configured Team Deathmatch Red Zone depth in map units; 0 when the rule is
 # off and in neutral mode. Appended so columns 0-18 keep their meaning.
 CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH = 19
+
+
+# Objective Slots
+OBJECTIVE_SLOT_ALLY_FLAG_HOME = 0
+OBJECTIVE_SLOT_ENEMY_FLAG_HOME = 1
+OBJECTIVE_SLOT_ALLY_FLAG = 2
+OBJECTIVE_SLOT_ENEMY_FLAG = 3
+OBJECTIVE_SLOT_SPAWN_SIDE_HILL = 4
+OBJECTIVE_SLOT_CENTER_HILL = 5
+OBJECTIVE_SLOT_FAR_SIDE_HILL = 6
+
+# Task Mode Agnostic Objective Features
+OBJECTIVE_FEATURE_IS_ACTIVE = 0
+OBJECTIVE_FEATURE_X = 1
+OBJECTIVE_FEATURE_Y = 2
+OBJECTIVE_FEATURE_INTERACTION_DISTANCE = 3
+OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM = 4
+OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM = 5
+
+# KOTH-specific Objective Features
+OBJECTIVE_FEATURE_HILL_IS_CONTESTED = 6
+OBJECTIVE_FEATURE_HILL_POINTS_PER_STEP = 7
+OBJECTIVE_FEATURE_THREE_HILL_SWEEP_BONUS_POINTS_PER_STEP = 8
+# Steps an owned hill can stay empty before it turns neutral: the full timer while
+# an owner's agent stands on it, then counting down; 0 when neutral or at timer 0
+OBJECTIVE_FEATURE_EMPTY_HILL_STEPS_UNTIL_OWNERSHIP_LOST = 9
+
+# CTF-specific Objective Features
+OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS = 6
+OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER = 7
+OBJECTIVE_FEATURE_UNIT_ROW_1_IS_FLAG_CARRIER = 8
+OBJECTIVE_FEATURE_UNIT_ROW_2_IS_FLAG_CARRIER = 9
+OBJECTIVE_FEATURE_UNIT_ROW_3_IS_FLAG_CARRIER = 10
+OBJECTIVE_FEATURE_UNIT_ROW_4_IS_FLAG_CARRIER = 11
+
 
 # Self rows and unit-candidate rows use one shared agent-feature schema.
 # self_features exists only for convenient actor conditioning; ally/enemy unit
@@ -328,13 +364,15 @@ class EnvConfig(NamedTuple):
     task_mode: int
     """The task selected for one episode.
 
-    Python int for one host config: 0 neutral or 1 Team Deathmatch. Modes 2
-    (KOTH) and 3 (CTF) are reserved and rejected by current validation.
+    Python int for one host config: 0 neutral, 1 Team Deathmatch or 3 Capture
+    the Flag. Mode 2 (King of the Hills) is reserved and rejected by current
+    validation. Each mode's own settings must be neutral in every other mode
+    (config.neutral_objective_fields).
     """
     team_deathmatch_score_threshold: int
     """The score threshold used to end a Team Deathmatch episode.
 
-    Python int: 0 in neutral mode. In Team Deathmatch 1..16,777,212 at Red Zone
+    Python int: 0 outside Team Deathmatch. In Team Deathmatch 1..16,777,212 at Red Zone
     depth 0.0 and 1..16,777,207 at a positive depth
     (config.maximum_team_deathmatch_score_threshold). The bound keeps the
     threshold and one-step score overshoot exact in float32.
@@ -345,11 +383,84 @@ class EnvConfig(NamedTuple):
     Python float in map units. Each team's Red Zone is a full-height strip on
     its own spawn side: x <= depth when the team spawns on the left, and
     x >= map_width - depth when it spawns on the right (both bounds included,
-    compared in float32). 0.0 turns the rule off and is required in neutral
-    mode. A positive depth must be finite and, after float32 conversion, at
+    compared in float32). 0.0 turns the rule off and is required outside Team
+    Deathmatch. A positive depth must be finite and, after float32 conversion, at
     least the smallest normal float32 and at most map_width. Every actor sees
     it in context column CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH.
     """
+
+    capture_the_flag_score_threshold: int
+    """The captures a team needs to win a Capture the Flag game.
+
+    Python int in [1, 2**24] in Capture the Flag, so scores stay exact in
+    float32 context features; 0 in every other mode.
+    """
+    capture_the_flag_flag_home_positions: Array  # (NUM_TEAMS, 2)
+    """Where each team's flag starts and goes back to.
+
+    Float32 (2, 2), [Team A's home, Team B's home], each [x, y] in map units.
+    Each team's capture zone is centered on its own home. In Capture the Flag
+    both homes lie on the map and are farther apart than the interaction
+    distance plus the capture distance; all zero in every other mode. A spawn
+    exchange swaps the two homes along with the spawn pads.
+    """
+    capture_the_flag_flag_interaction_distance: float
+    """The reach for picking up or returning a flag, in map units.
+
+    Python float: the largest distance from an agent's center to a flag for a
+    pickup or a return. In Capture the Flag it must stay finite and at least
+    the smallest normal float32 after conversion; 0.0 in every other mode.
+    """
+    capture_the_flag_flag_capture_distance: float
+    """The reach for a capture, in map units.
+
+    Python float: the largest distance from a carrier's center to its own
+    flag's home for a capture. Same bounds as the interaction distance.
+    """
+    capture_the_flag_dropped_flag_auto_return_steps: int
+    """How many ticks a dropped flag waits before it goes home by itself.
+
+    Python int in [1, 2**31 - 1] in Capture the Flag; 0 in every other mode.
+    """
+
+    king_of_the_hills_score_threshold: int
+    """The points a team needs to win a King of the Hills game.
+
+    Python int; 0 in every other mode. King of the Hills itself is not yet
+    accepted by validation, so this is 0 for now.
+    """
+    king_of_the_hills_hill_positions: Array  # (MAX_HILL_SLOTS, 2)
+    """Each hill's center, [x, y] in map units.
+
+    Float32 (3, 2). Slot 0 is the hill in the map's left half, slot 1 the hill
+    exactly on the midline, slot 2 the hill in the right half. An unused slot
+    is all zero. All zero outside King of the Hills.
+    """
+    king_of_the_hills_hill_radii: Array  # (MAX_HILL_SLOTS,)
+    """Each hill's radius in map units.
+
+    Float32 (3,). A radius of 0 marks an unused slot. All zero outside King of
+    the Hills.
+    """
+    king_of_the_hills_hill_points_per_step: int
+    """The points per tick a team scores for each owned hill that is not contested.
+
+    Python int. An owned hill scores while it stays owned, empty ticks
+    included. 0 outside King of the Hills.
+    """
+    king_of_the_hills_three_hill_sweep_bonus_points_per_step: int
+    """The extra points per tick while one team owns all three hills uncontested.
+
+    Python int, 0 or more; 0 means no bonus. 0 outside King of the Hills.
+    """
+    king_of_the_hills_empty_hill_ownership_steps: int
+    """How many empty ticks in a row a hill stays its owner's before turning neutral.
+
+    Python int, 0 or more. Empty means none of the owner's agents is on it. At
+    0 a hill turns neutral on its first empty tick. 0 outside King of the
+    Hills.
+    """
+
     max_steps: int
     """The episode step limit.
 
@@ -444,11 +555,74 @@ class EnvState(NamedTuple):
     team_deathmatch_scores: Array  # (NUM_TEAMS,)
     """Current integer team scores.
 
-    Int32 (2,) in [Team A, Team B] order. Neutral mode uses zero. Valid TDM
+    Int32 (2,) in [Team A, Team B] order. Every other mode uses zero. Valid TDM
     snapshots stay at or below the threshold plus four at Red Zone depth 0.0,
     or plus nine at a positive depth (config.maximum_team_deathmatch_score_increment
     minus one); both teams may score in one transition.
     """
+    capture_the_flag_scores: Array  # (NUM_TEAMS,)
+    """Each team's captures so far.
+
+    Int32 (2,) in [Team A, Team B] order, from 0 up to the threshold in Capture
+    the Flag; zero in every other mode.
+    """
+    king_of_the_hills_scores: Array  # (NUM_TEAMS,)
+    """Each team's King of the Hills points so far.
+
+    Int32 (2,) in [Team A, Team B] order; zero outside King of the Hills.
+    """
+
+    capture_the_flag_flag_positions: Array  # (NUM_TEAMS, 2)
+    """Where each team's flag is now.
+
+    Float32 (2, 2), [Team A's flag, Team B's flag], each [x, y] in map units.
+    A flag at home sits at its home, a carried flag at its carrier's position,
+    a dropped flag where it fell. A flag is carried when its carrier slot is 0
+    or more, dropped when its countdown is above 0, and home otherwise. Reset
+    starts both flags at their homes. Zero outside Capture the Flag.
+    """
+    capture_the_flag_flag_carrier_slots: Array  # int32 (NUM_TEAMS,)
+    """Which agent carries each team's flag.
+
+    Int32 (2,), [Team A's flag, Team B's flag]: the carrier's global slot (0-4
+    Team A, 5-9 Team B; always an enemy of the flag's team), or -1 when nobody
+    carries it, as in every other mode. Check that a slot is 0 or more before
+    indexing with it: JAX reads slot 9 for -1 without an error. Never a raw
+    learning input: give it to a learner only relative to the observer, as
+    the flag rows' columns 7-11 do with a one-hot over the observer's own
+    unit rows. A one-hot in global slot order would tell a learner its team.
+    """
+    capture_the_flag_dropped_flag_countdowns: Array  # (NUM_TEAMS,)
+    """Ticks left before each dropped flag goes home by itself.
+
+    Int32 (2,), [Team A's flag, Team B's flag]: from 1 up to
+    capture_the_flag_dropped_flag_auto_return_steps while the flag is dropped;
+    0 otherwise and in every other mode.
+    """
+
+    king_of_the_hills_hill_is_contested: Array  # bool (MAX_HILL_SLOTS,)
+    """Whether each hill is contested after the tick.
+
+    Bool (3,): at least one eligible agent of each team stands on it. Stored,
+    not rebuilt, because eligibility reads who was alive and unshielded at
+    the start of the tick.
+    False outside King of the Hills.
+    """
+    king_of_the_hills_hill_owners: Array  # int32 (MAX_HILL_SLOTS,)
+    """Each hill's owner: 0 nobody, 1 Team A, 2 Team B.
+
+    Int32 (3,). The owner stays through a contest, and an empty owned hill
+    stays owned while its countdown runs. Zero outside King of the Hills.
+    """
+    king_of_the_hills_empty_hill_ownership_countdowns: Array  # int32 (MAX_HILL_SLOTS,)
+    """How many more empty ticks each hill stays its owner's.
+
+    Int32 (3,). Reset to king_of_the_hills_empty_hill_ownership_steps while an
+    owner's agent stands on the hill, minus 1 on each empty tick; an empty
+    tick at 0 makes the hill neutral. Always 0 on a neutral hill, at the
+    default timer of 0, and outside King of the Hills.
+    """
+
     step_count: Array
     """The current episode step.
 
@@ -1332,6 +1506,75 @@ class TeamDeathmatchTransitionFacts(NamedTuple):
     """
 
 
+class CaptureTheFlagTransitionFacts(NamedTuple):
+    """Record the Capture the Flag events of one completed simulator transition.
+
+    Every field is required. Agent fields use global slot order and team fields
+    [Team A, Team B]. In every other mode, and in a record with no transition,
+    every field is neutral: all False and outcome 0
+    (env.build_reset_capture_the_flag_facts). Native batching adds B. This
+    immutable record computes nothing.
+    """
+
+    flag_was_picked_up_by_agent: Array  # boolean (MAX_AGENT_SLOTS,)
+    """Which agents picked up a flag this tick. Bool (10,)."""
+    flag_was_dropped_by_agent: Array
+    """Which carriers dropped a flag this tick by dying. Bool (10,)."""
+    ally_flag_was_returned_by_agent: Array
+    """Which agents returned their own team's dropped flag this tick.
+
+    Bool (10,): every eligible teammate touching a flag that went home by
+    touch. Eligible means active, and alive and unshielded at the start of the
+    tick.
+    """
+    enemy_flag_was_captured_by_agent: Array
+    """Which carrier scored a capture this tick. Bool (10,); at most one True."""
+    flag_was_automatically_returned_by_team: Array  # (NUM_TEAMS,)
+    """Whose dropped flag went home on its own timer this tick.
+
+    Bool (2,), indexed by team: entry t is True when team t's own flag went
+    home this tick because its dropped-flag countdown ran out.
+    """
+    outcome: Array
+    """The categorical Capture the Flag result.
+
+    Int32 scalar (): 0 ongoing, 1 Team A wins, 2 Team B wins, 3 draw.
+    """
+
+
+class KingOfTheHillsTransitionFacts(NamedTuple):
+    """Record the King of the Hills facts of one completed simulator transition.
+
+    Every field is required. In every other mode, and in a record with no
+    transition, every field is neutral: all False or 0
+    (env.build_reset_king_of_the_hills_facts). Native batching adds B. Points
+    per hill and three-hill sweeps are read from hill_owners and
+    is_on_hill_by_agent_by_hill, not stored again.
+    """
+
+    is_on_hill_by_agent_by_hill: Array  # (MAX_AGENT_SLOTS, MAX_HILL_SLOTS)
+    """Which eligible agents stood on which used hill after the tick.
+
+    Bool (10, 3), at end-of-movement positions. Eligible means active, and
+    alive and without a spawn shield at the start of the tick, so an agent
+    this tick's combat kills still counts; a hill is used when its radius is
+    above 0.
+    """
+    hill_owners: Array  # (MAX_HILL_SLOTS,)
+    """Each hill's owner after the tick: 0 nobody, 1 Team A, 2 Team B. Int32 (3,)."""
+    points_scored_by_team: Array  # (NUM_TEAMS,)
+    """Each team's King of the Hills points this tick.
+
+    Int32 (2,), [Team A, Team B]: the per-hill rate for each owned hill with no
+    eligible enemy on it, plus the sweep bonus while one team owns all three.
+    """
+    outcome: Array
+    """The categorical King of the Hills result.
+
+    Int32 scalar (): 0 ongoing, 1 Team A wins, 2 Team B wins, 3 draw.
+    """
+
+
 class TransitionFacts(NamedTuple):
     """Group authoritative facts for one transition or an absent-transition row.
 
@@ -1380,6 +1623,11 @@ class TransitionFacts(NamedTuple):
     """Independent recipient status-ageing, break, refresh and death causes."""
     team_deathmatch_facts: TeamDeathmatchTransitionFacts
     """The Team Deathmatch result after scoring this transition."""
+
+    capture_the_flag_facts: CaptureTheFlagTransitionFacts
+    """The Capture the Flag events of this transition; neutral in every other mode."""
+    king_of_the_hills_facts: KingOfTheHillsTransitionFacts
+    """The King of the Hills facts of this transition; neutral in every other mode."""
 
 
 class Info(NamedTuple):

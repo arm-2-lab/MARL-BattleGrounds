@@ -26,7 +26,10 @@ import jax.numpy as jnp
 import numpy as np
 
 from marl_battlegrounds._config_checks import run_config_check
-from marl_battlegrounds.core.config import validate_env_config
+from marl_battlegrounds.core.config import (
+    neutral_objective_fields,
+    validate_env_config,
+)
 from marl_battlegrounds.core.types import EnvConfig, ResolvedAgentProfile
 from marl_battlegrounds.evaluation.run_writer import (
     configuration_content_identity,
@@ -279,12 +282,14 @@ def restore_config(content: Mapping[str, Any], *, validate: bool = True) -> EnvC
     ----------
     content : Mapping[str, Any]
         Saved configuration content in the existing configuration-identity
-        JSON layout. Its key set must equal EnvConfig's fields exactly (13
-        keys), or equal them minus team_deathmatch_red_zone_depth (12 keys).
-        The 12-key form is content saved before the Red Zone rule; it is
-        restored at depth 0.0, its original one-point scoring. Its
-        agent_profile must be a mapping with exactly ResolvedAgentProfile's
-        fields.
+        JSON layout. Its key set must be one of three: every EnvConfig field;
+        every field except the Capture the Flag and King of the Hills settings
+        (13 keys), the content of a Team Deathmatch or neutral config, whose
+        objective settings are restored neutral (neutral_objective_fields); or
+        those 13 minus team_deathmatch_red_zone_depth (12 keys), content saved
+        before the Red Zone rule, also restored at depth 0.0, its original
+        one-point scoring. Its agent_profile must be a mapping with exactly
+        ResolvedAgentProfile's fields.
     validate : bool, default=True
         True also checks physical validity with validate_env_config.
         Source-only evidence may use False when its unused banks need not be
@@ -298,7 +303,8 @@ def restore_config(content: Mapping[str, Any], *, validate: bool = True) -> EnvC
         config dtypes: active_mask is bool; team_ids, class_ids,
         out_of_combat_delay_steps and team_respawn_wave_period_step_count are
         int32; the other roster arrays, obstacles and team_spawn_pad_positions
-        are float32. Scalar rules stay Python values. content is not changed.
+        are float32; each objective array takes its neutral value's dtype.
+        Scalar rules stay Python values. content is not changed.
 
     Raises
     ------
@@ -321,9 +327,12 @@ def restore_config(content: Mapping[str, Any], *, validate: bool = True) -> EnvC
     content against its recorded identity; to do that too, use
     restore_recorded_config.
     """
+    objective = neutral_objective_fields(EnvConfig)
     fields = set(EnvConfig._fields)
-    if set(content) == fields - {_RED_ZONE_DEPTH_FIELD}:
+    if set(content) == fields - objective.keys() - {_RED_ZONE_DEPTH_FIELD}:
         content = {**content, _RED_ZONE_DEPTH_FIELD: 0.0}
+    if set(content) == fields - objective.keys():
+        content = {**content, **objective}
     elif set(content) != fields:
         raise ValueError("saved configuration fields do not match EnvConfig")
     profile = content["agent_profile"]
@@ -352,6 +361,9 @@ def restore_config(content: Mapping[str, Any], *, validate: bool = True) -> EnvC
     data["team_respawn_wave_period_step_count"] = jnp.asarray(
         data["team_respawn_wave_period_step_count"], dtype=jnp.int32
     )
+    for name, neutral_value in objective.items():
+        if isinstance(neutral_value, jax.Array):
+            data[name] = jnp.asarray(data[name], dtype=neutral_value.dtype)
     config = EnvConfig(**data)
     if validate:
         run_config_check(validate_env_config, config)
@@ -404,8 +416,7 @@ def restore_recorded_config(
     Parameters
     ----------
     content : Mapping[str, Any]
-        Saved configuration content: current (13 keys) or recorded before the
-        Red Zone rule (12 keys).
+        Saved configuration content in any key set restore_config accepts.
     identifier : str
         The SHA-256 identity recorded beside the content.
     validate : bool, default=True
