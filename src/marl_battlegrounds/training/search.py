@@ -1,4 +1,4 @@
-"""Run the declared recurrent MAPPO search without an attached assistant.
+"""Run the declared recurrent MAPPO search unattended.
 
 Run ``python -m marl_battlegrounds.training.search --help`` for preparation,
 bounded calibration, detached launch, status, stop, resume and reporting.
