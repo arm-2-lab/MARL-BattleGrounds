@@ -7,8 +7,8 @@ call uses package resources; code running from a source checkout, which has no
 packaged page, uses that same checkout's page and never searches anywhere else.
 The public BattleClient opens in Agent POV; private callers (the browser test
 harness, the DevClient) pass ``view_mode="researcher"`` to ``_launch_setup`` to
-keep Oracle View. Every launch opens with the reach rings shown (the owner's
-1 October 2026 decision for the BattleClient and the DevClient; G hides them).
+keep Oracle View. Every launch opens with the reach rings shown, in the
+BattleClient and the DevClient alike; G hides them.
 Every launch compiles the first turn before the page opens, so no Lock In
 waits for compilation. A finished game saves its replay in the background, and
 a Replay Viewer opened with Open Replay keeps serving after Exit until its own

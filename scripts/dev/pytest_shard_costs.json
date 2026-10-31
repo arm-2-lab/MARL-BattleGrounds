@@ -1,7 +1,7 @@
 {
   "schema": "marl-bgs-pytest-shard-costs@1",
   "measured_on": "2026-10-20",
-  "measured_with": "Complete passing set of nineteen Python shard reports from /home/ulixes/projects/MARL-BattleGrounds/artifacts/v1.1.0-council/tdm-move/gate-round-1/all-shards. Per-test JUnit time includes setup and teardown, summed per file and rounded up to whole seconds. Report origins, tested source and run conditions are recorded in timing_sources.md beside those reports. measured_commit is HEAD at refresh; it does not prove that clean HEAD was tested or qualify a candidate.",
+  "measured_with": "Complete passing set of nineteen Python shard reports from one full gate run with --timings. Per-test JUnit time includes setup and teardown, summed per file and rounded up to whole seconds. Report origins, tested source and run conditions are recorded in timing_sources.md beside those reports. measured_commit is HEAD at refresh; it does not prove that clean HEAD was tested or qualify a candidate.",
   "reserved_seconds": {
     "19": [
       0,

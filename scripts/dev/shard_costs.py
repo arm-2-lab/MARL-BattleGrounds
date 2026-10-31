@@ -746,8 +746,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             measured_on=datetime.now(UTC).date().isoformat(),
             measured_with=(
                 "Complete passing set of nineteen Python shard reports from "
-                f"{arguments.timings}. Per-test JUnit time includes setup and "
-                "teardown, summed per file and rounded up to whole seconds. "
+                "one full gate run with --timings. Per-test JUnit time includes "
+                "setup and teardown, summed per file and rounded up to whole "
+                "seconds. "
                 "Report origins, tested source and run conditions are recorded "
                 "in timing_sources.md beside those reports. measured_commit is "
                 "HEAD at refresh; it does not prove that clean HEAD was tested "
