@@ -7,7 +7,11 @@ facts through AutoReset while using neutral values for padding. make refuses
 any supplied Red Zone depth, even the
 default 5.0 or 0.0, when an exact env_config owns the rules, and refuses one
 with neither map_id nor env_config. make refuses a task name that is not
-supported, and its message lists the supported names.
+supported, and its message lists the supported names. Each handle plays one
+task mode: Team Deathmatch, or its env_config's mode. reset refuses a host
+config of another mode, make refuses a batch that mixes modes, and inside vmap
+Core receives the handle's mode as one unbatched value, so a mode branch stays
+a cond instead of a select over every mode.
 """
 
 from collections.abc import Callable
@@ -730,3 +734,31 @@ def test_training_facts_keep_terminal_deaths_through_autoreset() -> None:
 def test_training_facts_requires_an_explicit_boolean(value: object) -> None:
     with pytest.raises(TypeError, match="training_facts must be a boolean"):
         make("tdm", training_facts=cast(bool, value))
+
+
+def test_a_handle_refuses_a_config_of_another_mode() -> None:
+    env = make("tdm", map_id=0, num_envs=2, metrics="none")
+    with pytest.raises(ValueError, match="this environment plays task_mode 1"):
+        env.reset(jax.random.key(0), evaluation_env_config())
+
+
+def test_make_refuses_a_batch_that_mixes_modes() -> None:
+    mixed = jax.tree.map(
+        _stack,
+        evaluation_env_config(),
+        evaluation_env_config(
+            task_mode=TASK_MODE_TDM, team_deathmatch_score_threshold=5
+        ),
+    )
+    with pytest.raises(ValueError, match="mixes task modes"):
+        make("tdm", env_config=mixed, num_envs=2, metrics="none")
+
+
+def test_a_mode_branch_stays_a_branch_inside_vmap() -> None:
+    env = make("tdm", map_id=0, num_envs=2, metrics="none")
+    _, state = env.reset(jax.random.key(0))
+    program = jax.make_jaxpr(env.step)(
+        jax.random.key(1), state, env.sample_actions(jax.random.key(2), state)
+    )
+    # A mode batched across games turns every mode cond into select_n.
+    assert "cond[" in str(program)

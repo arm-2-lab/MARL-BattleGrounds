@@ -316,8 +316,6 @@ def test_dynamic_variables_and_recurrent_memory_do_not_retrace_or_share_actors()
 
 
 def test_recurrent_mixture_scan_and_partial_reset_reuse_compilation() -> None:
-    env = make("tdm", num_envs=2, metrics="none")
-
     def stack(first: Array, second: Array) -> Array:
         return jnp.stack((first, second))
 
@@ -326,6 +324,7 @@ def test_recurrent_mixture_scan_and_partial_reset_reuse_compilation() -> None:
         evaluation_env_config(team_sizes=(3, 2), max_steps=1),
         evaluation_env_config(team_sizes=(1, 5), max_steps=3),
     )
+    env = make("tdm", env_config=configs, num_envs=2, metrics="none")
     traces: list[int] = []
 
     def mixture(

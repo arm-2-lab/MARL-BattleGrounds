@@ -771,7 +771,8 @@ def _initial_system_state(
         return None, None, None
     if availability is None:
         raise ValueError("Systems require SharedObs source permissions")
-    env = make("tdm", metrics="none", balance_spawn_locations=False)
+    # The handle plays the snapshot config's own mode, neutral for lab scenes.
+    env = make("tdm", env_config=config, metrics="none")
     if context.seed_protocol.seed_protocol.identifier == "episode-fold-in-v1":
         from marl_battlegrounds.evaluation.evaluate import episode_keys
 

@@ -27,6 +27,7 @@ from marl_battlegrounds._task_settings import TASK_NAMES
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
+    TASK_MODE_TDM,
     TEAM_A_ID,
     TEAM_B_ID,
     Action,
@@ -495,6 +496,9 @@ class _Execution:
         Number of distinct explicitly selected full-metric episode IDs.
     replay_capacity : int
         Number of distinct explicitly selected replay episode IDs.
+    task_mode : int
+        The one task mode every game on this handle plays, a Core TASK_MODE_*
+        value fixed by make. Core receives it as an int32 constant.
     training_facts : bool
         Whether step retains the optional privileged training-facts view.
 
@@ -509,6 +513,7 @@ class _Execution:
     metrics: MetricMode
     full_capacity: int
     replay_capacity: int
+    task_mode: int
     training_facts: bool = False
 
 
@@ -526,6 +531,8 @@ class Environment:
     Pass each returned state onward and supply distinct random keys as needed.
     Prepared config values are dynamic; batch shape, metric mode and capture
     capacities and optional training facts determine the compiled structure.
+    One handle plays one task mode, which Core receives as a constant, so the
+    compiled program keeps only that mode's code.
     """
 
     _execution: _Execution = field(metadata={"static": True})
@@ -802,6 +809,20 @@ class Environment:
         """
         return state.core_state
 
+    def _core_config(self, config: EnvConfig) -> EnvConfig:
+        """Give Core this handle's task mode as a constant for one scalar game.
+
+        config is one game's config, a lane inside vmap whose task_mode may be a
+        batched value. Core receives an int32 constant instead, so the compiler
+        drops the other modes' code and a mode branch stays a branch under vmap.
+        make and reset have already checked that the configs hold this mode.
+        """
+        # Core reads the mode as an array in compiled code; EnvConfig's int
+        # annotation describes host configs.
+        return config._replace(
+            task_mode=cast(int, jnp.int32(self._execution.task_mode))
+        )
+
     def _reset_one(
         self, key: Array, config: EnvConfig, episode_id: Array
     ) -> EnvironmentState:
@@ -812,7 +833,9 @@ class Environment:
         The returned EnvironmentState adds fresh metric and lifecycle fields without
         writing a record or changing constructor defaults.
         """
-        core_state, observation, action_mask, _ = core.reset(config, key)
+        core_state, observation, action_mask, _ = core.reset(
+            self._core_config(config), key
+        )
         return self._initialize_one(
             config, episode_id, core_state, observation, action_mask
         )
@@ -929,8 +952,10 @@ class Environment:
         ValueError
             No configuration is available; mask/ID shapes or values
             are invalid; native IDs conflict; scenario inputs conflict; or
-            scenario= is requested while tracing a compiled call; or a native
-            random-key array has the wrong shape.
+            scenario= is requested while tracing a compiled call; a native
+            random-key array has the wrong shape; or a supplied env_config's
+            task mode differs from the one this handle plays (checked on the
+            host, not for a config traced inside jit).
         TypeError
             A supplied config has an unsupported structure or dtype.
             Core's existing validators also reject invalid concrete configs.
@@ -940,8 +965,12 @@ class Environment:
         This call consumes no transition and writes no records. Exact overrides
         are retained by later resets that reuse state. Config values may change
         inside jit/scan when selected from a source pool validated on the host;
-        there are no per-step Python callbacks. Compiled callers also own valid
-        paired initial snapshots and nonconflicting explicit IDs. Out-of-range
+        there are no per-step Python callbacks. Every game plays this handle's
+        task mode: a host config with another mode is refused, but a config
+        traced inside jit cannot be read and plays this handle's mode, so a
+        compiled caller selects only configs of that mode, for example by making
+        the handle from them (make(..., env_config=...)). Compiled callers also
+        own valid paired initial snapshots and nonconflicting explicit IDs. Out-of-range
         numerical IDs or exhausted int32 counters set sticky lifecycle_error.
         Resetting zero lanes reserves no IDs. Separate native batches or external
         vmap contexts do not share an allocator; use explicit schedule IDs when
@@ -989,6 +1018,12 @@ class Environment:
             origin = RESET_AUTHORED
         if env_config is not None:
             config = prepare_exact_env_config(env_config, num_envs=self.num_envs)
+            mode = _config_task_mode(config)
+            if mode is not None and mode != self._execution.task_mode:
+                raise ValueError(
+                    f"env_config has task_mode {mode}, but this environment plays "
+                    f"task_mode {self._execution.task_mode}"
+                )
         elif state is not None:
             config = state.config
             if initial is None:
@@ -1225,7 +1260,11 @@ class Environment:
         def advance() -> CoreStepResult:
             """Pass one game's exact state, mask, submitted actions and key to Core."""
             return core.step(
-                state.config, state.core_state, state.action_mask, actions, key
+                self._core_config(state.config),
+                state.core_state,
+                state.action_mask,
+                actions,
+                key,
             )
 
         def pad() -> CoreStepResult:
@@ -1515,6 +1554,24 @@ def _sample_actions(env: Environment, key: Array, state: EnvironmentState) -> Ac
     return jax.vmap(_sample_one)(keys, state.observation, state.action_mask)
 
 
+def _config_task_mode(config: EnvConfig) -> int | None:
+    """Return the one task mode a scalar or batched host config holds.
+
+    Return None for a config traced inside jit, whose values cannot be read.
+    Raise ValueError when a batch mixes modes, because one handle plays one
+    mode. Reading a device batch copies its B mode values to the host.
+    """
+    if isinstance(config.task_mode, Tracer):
+        return None
+    modes = np.unique(np.asarray(config.task_mode))
+    if modes.size != 1:
+        raise ValueError(
+            f"env_config mixes task modes {modes.tolist()}; one environment plays "
+            "one task mode"
+        )
+    return int(modes[0])
+
+
 @jax.jit
 def _reset_environment(
     env: Environment,
@@ -1637,13 +1694,18 @@ def make(
     Environment
         An immutable Environment. Map/exact-config handles are ready for
         ``env.reset(key)``. No game has started and no hidden RNG is allocated.
+        It plays one task mode: Team Deathmatch, or env_config's own mode when
+        one is given (Team Deathmatch or neutral, the only modes Core
+        validation accepts today). reset refuses a later env_config with a
+        different mode.
 
     Raises
     ------
     ValueError
         An unsupported task name (the message lists the supported ones), an
         unsupported mode, invalid batch or selection IDs, conflicting setup
-        inputs, or invalid map/roster/config values.
+        inputs, invalid map/roster/config values, or an env_config batch that
+        mixes task modes.
     TypeError
         Unsupported config/roster structure or a non-Boolean balance/facts
         setting. Physical validation uses the existing Core validators.
@@ -1728,8 +1790,17 @@ def make(
     replay_array = np.asarray(replay_ids, np.int32)
     full_array.flags.writeable = False
     replay_array.flags.writeable = False
+    task_mode = TASK_MODE_TDM if defaults is None else _config_task_mode(defaults)
+    assert task_mode is not None  # make runs on the host; its config is never traced
     return Environment(
-        _Execution(num_envs, metrics, len(full_ids), len(replay_ids), training_facts),
+        _Execution(
+            num_envs,
+            metrics,
+            len(full_ids),
+            len(replay_ids),
+            task_mode,
+            training_facts,
+        ),
         full_array,
         replay_array,
         defaults,

@@ -107,9 +107,7 @@ def test_system_memory_matches_public_apply_and_single_step(
             wrapped,
             jax.random.fold_in(jax.random.key(cast(int, initial_root)), turn),
         )
-        _, expected, *_ = make(
-            "tdm", metrics="none", balance_spawn_locations=False
-        ).step(
+        _, expected, *_ = make("tdm", env_config=wrapped.config, metrics="none").step(
             jax.random.split(session.key)[1],
             wrapped,
             action,
