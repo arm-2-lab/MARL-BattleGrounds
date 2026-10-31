@@ -3,7 +3,7 @@
  * presentation frames, measured layout assertions and the hover-help
  * inventory. The browser tests keep no screenshot baselines; they check
  * layout with measured assertions. MINIMUM_VIEWPORT is the smallest window
- * the clients support (1366 x 768, the owner's minimum).
+ * the clients support (1366 x 768, the chosen minimum).
  */
 import { expect } from "@playwright/test";
 

@@ -5148,7 +5148,7 @@ function buildAuthorizedPresentationChoreographyPlan(
  *
  * nodes, animations and persistentNodes cap the painter's SVG nodes, its event
  * animations and the nodes a persistent cue keeps after settling: 1024 each
- * (owner, 4 Oct 2026; 512 before). The plan counts each row's largest possible
+ * (4 Oct 2026; 512 before). The plan counts each row's largest possible
  * drawing, so a busy tick could ask for more than 512 while it really draws far
  * fewer, and the budget then dropped its Herald Card and Fallen rows (map 47
  * ticks 105, 110, 225 and 245 asked for 535 to 637). At 1024 they keep them; the

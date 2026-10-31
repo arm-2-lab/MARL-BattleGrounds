@@ -1094,7 +1094,7 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  *   champion or a record with no life numbers. speedText is the champion's
  *   speed now, after its statuses ("Effective Speed 0.85", from the record's
  *   effective_movement_speed), or null for a fallen champion or a record
- *   without it (owner, 4 Oct 2026, Micro List M22). nextText is null outside a
+ *   without it (4 Oct 2026, Micro List M22). nextText is null outside a
  *   replay.
  * @typedef {EmptyChampionFrameView | SelectedChampionFrameView} ChampionFrameView
  * @typedef {(

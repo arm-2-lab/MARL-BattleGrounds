@@ -2,7 +2,7 @@
  * @file Own the one command set: every key the BattleClient, the DevClient
  * combat screen and the Replay Viewer know, and the job each key does in each.
  *
- * The rule (owner, 30 Sep and 1 Oct 2026): a key does the same job in every
+ * The rule (30 Sep and 1 Oct 2026): a key does the same job in every
  * client, or nothing. COMMAND_SET encodes the plan's command table row by row.
  * Each row names its keys, how they print on a keycap, and for each product
  * ("combat_debugger" is the BattleClient and the DevClient combat screen,
@@ -85,8 +85,8 @@ export const COMMAND_PRODUCTS = Object.freeze(
 export const PYTHON_HANDLER = "python";
 
 /**
- * Keys the owner has not approved (plan P29). No row may bind them; they are
- * listed so the owner can decide later: H (Clean Screen), [ and ], { and },
+ * Keys not yet approved (plan P29). No row may bind them; they are
+ * listed so they can be decided later: H (Clean Screen), [ and ], { and },
  * M, < and >, Home, End and /.
  */
 export const UNAPPROVED_KEYS = Object.freeze([
@@ -154,7 +154,7 @@ export const COMMAND_SET = Object.freeze([
     // In interactive play Python treats it as Space (Manual: Lock In; Policies
     // Only: play one turn), and the page queues and refuses it as it does
     // Space; in scripted play it shows the next frame, as before. In the
-    // Replay Viewer it does exactly what +1 and Arrow Right do (owner, 3 Oct
+    // Replay Viewer it does exactly what +1 and Arrow Right do (3 Oct
     // 2026).
     combat: forwarded("one_tick", "One tick (Lock In; scripted play: next frame)"),
     replay: local("one_tick", "Forward one tick, the same as +1", "replay_one_tick"),

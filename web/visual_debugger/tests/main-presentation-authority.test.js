@@ -14,7 +14,7 @@
  * Tick in the Actions tab, and leaving Agent POV empties the hidden POV agent
  * chip (button content, its aria-label and the picker) like a fresh page. Frames are presented and reprojected on the
  * page's choreography surface (the renderer's surface plus the HUD and panel
- * beat-hold roots), no Visual Key is mounted (owner, 4 Oct 2026), and the
+ * beat-hold roots), no Visual Key is mounted (4 Oct 2026), and the
  * live Lock In copy comes from the Tactics Turn deck labels. In scripted live
  * playback the deck's submit controls (Lock In, which reads "Advance scripted
  * frame", and the Watching bar's Play One Turn) both send N. The transport no

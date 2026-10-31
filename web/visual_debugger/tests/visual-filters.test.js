@@ -7,7 +7,7 @@
  * both off), with no switch for an unbuilt part such as instant replay, none
  * of the removed Chronicle and Scribe's Ledger switches (Fight Chapters,
  * Bookmarks, Ledger Heraldry, Actions in Words, Seen and Not Seen, Reference
- * Chip) and no Camera Inset; the owner's 4 Oct 2026 defaults (High Contrast,
+ * Chip) and no Camera Inset; the 4 Oct 2026 defaults (High Contrast,
  * Class Seals, Moon Motes, Death Dimming, Spawn Shield Expiry, Saved Beat,
  * Champion Streaks, Momentum, Kill Cam and Kill Slow Motion on; Moonlight,
  * Floor Grid and Time of Night off); each

@@ -1,5 +1,5 @@
 /**
- * @file The Replay Viewer's right-hand rail (the Arena Stage panels, owner,
+ * @file The Replay Viewer's right-hand rail (the Arena Stage panels,
  * 3 Oct 2026): its six tabs and the parts of their content this module draws.
  * The content follows Scribe's Ledger's (full Metrics, Actions as This Tick
  * and Next Tick, the Visuals organization); the look is the BattleClient
@@ -844,7 +844,7 @@ export function mountLedgerHeader(doc) {
   summary.hidden = true;
   const header = doc.createElement("div");
   header.className = "ledger-header";
-  // The header is its own block before the card (owner, 4 Oct 2026): in the
+  // The header is its own block before the card (4 Oct 2026): in the
   // Replay Viewer's Metrics tab only the card under it scrolls.
   body.prepend(summary);
   card.before(header);

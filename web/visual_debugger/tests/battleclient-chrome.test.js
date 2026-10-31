@@ -1,14 +1,14 @@
 /**
  * @file Check the BattleClient's top bar, arena view tag, hover card, How to
  * Play rule cards and Visual Filters drawer list against the approved vision
- * page and the owner's 1 October 2026 decisions.
+ * page and the 1 October 2026 decisions.
  *
  * Contracts: the place line splits into a bold map name and "Map 47 · Team
  * Deathmatch" (a scenario shows its tale title; matchPlaceTitle keeps its old
  * words); the view tag reads "Oracle View · You See Everything" or "Agent POV ·
  * Your Team's Sight · N Unseen" ("Team A's" when nobody plays by hand), with N
  * counted from the Agent POV scene's own spawn pads and bodies, never from the
- * researcher view; the hover card is the Champion Card (design C, owner, 2
+ * researcher view; the hover card is the Champion Card (design C, 2
  * October 2026: name and calling, Agent ID, Life and Ultimate bars, one
  * two-line row per status, who plays it, "Your Target"), an unseen champion's
  * card names no life, place, Ultimate or status but always its name and

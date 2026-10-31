@@ -1,6 +1,6 @@
 /**
- * @file The arena's on-screen keys, stacked at its top right, key only (owner,
- * 4 Oct 2026; earlier, 3 Oct: one button for each job, in the place that
+ * @file The arena's on-screen keys, stacked at its top right, key only
+ * (4 Oct 2026; earlier, 3 Oct: one button for each job, in the place that
  * leaves the battlefield the most room): V Everyone in View, B Battle Cam
  * (Replay Viewer only), F Frame Explanation and Esc Clear Selection (Replay
  * Viewer only). Each button's name is its aria-label and its hover card

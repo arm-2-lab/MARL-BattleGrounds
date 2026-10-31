@@ -880,7 +880,7 @@ export function records(input) {
     letters: on.class_letters,
     segments: on.life_segments,
   });
-  // Heraldic Tokens is part of the game, not a switch (owner, 3 Oct 2026).
+  // Heraldic Tokens is part of the game, not a switch (3 Oct 2026).
   const look = "heraldic";
   const lifeStyle = look === "heraldic" && on.life_vessels ? "vessel" : "arc";
 

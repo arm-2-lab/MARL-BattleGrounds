@@ -3,7 +3,7 @@
  * createHoverCard, the #hcard of the BattleClient and DevClient) on a small
  * stand-in page.
  *
- * Contracts (owner, 2 October 2026): a card never keeps an earlier frame's
+ * Contracts (2 October 2026): a card never keeps an earlier frame's
  * facts. While the pointer rests on a champion, the returned refresh (main.js
  * calls it through shell.js after every installed frame: a new tick, or Tab
  * giving Agent POV to the other team) finds the champion element under the
@@ -17,7 +17,7 @@
  * that already shows all of its fresh statuses, and the expanded card shows
  * the fresh rows, not the rows captured when the pointer arrived.
  *
- * "Fewer rows" (owner, 2 October 2026): in a short arena box (290 px, as at
+ * "Fewer rows" (2 October 2026): in a short arena box (290 px, as at
  * 1280x720) the plain card stays one column and shows only the leading rows
  * that fit, in order, then "+N more" with "Hold Shift for All", inside the
  * box; Hold Shift shows every row in two columns, inside the box (four rows
@@ -26,7 +26,7 @@
  * Shift does not expand it; and a taller box (a resize, then refresh) fits
  * all four rows again.
  *
- * "Grow past arena" (owner, 2 October 2026): in the DevClient's 227 px arena
+ * "Grow past arena" (2 October 2026): in the DevClient's 227 px arena
  * box in a 1280x720 window, an eight-status Hold Shift card that would need a
  * scale below 0.85 inside the box takes four columns at scale 1, marks itself
  * data-past-arena, and sits 12 px below the champion, past the box and inside
@@ -481,7 +481,7 @@ test("Hold Shift starts and expands from fresh facts only", (t) => {
   });
 });
 
-// A layout for the drawn Champion Card (owner, 2 October 2026: "Fewer
+// A layout for the drawn Champion Card (2 October 2026: "Fewer
 // rows"): 110 px above the rows, 50 px rows 7 px apart, a 29 px footer and
 // 24 px below; the Hold Shift card's columns split the rows evenly.
 /** @param {StandInElement} card @returns {(node: StandInElement) => any} */

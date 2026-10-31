@@ -1408,7 +1408,7 @@ function ghostShape(tag, attributes) {
 
 /**
  * The Last Seen ghost emblems, copied from the store pick
- * (skins/fog-and-vision.js EMBLEM, "Codex shapes, outline only"): one hollow
+ * (skins/fog-and-vision.js EMBLEM, "Lore Codex shapes, outline only"): one hollow
  * line drawing per class token id in a 24-unit box, as [tag, attributes]
  * shapes. buildLastSeen draws them unfilled in Moon Silver.
  *

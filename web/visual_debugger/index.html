@@ -14,7 +14,7 @@
   How to Play, Finish and Save, Restart, Exit), the scorebug
   (#scorebug), the stage (#stage: the arena box #arena and the deck
   #command-deck, whose header line #status-line holds the message and Keys
-  On or Off; owner, 4 Oct 2026: no status line under the deck) and a 340 px
+  On or Off; 4 Oct 2026: no status line under the deck) and a 340 px
   rail (#rail: Your Turn #turn-card, Class Guide
   #class-card, How to Play #howto-card). Floating parts: the hover card
   (#hcard), the How to Play overlay over the arena (#htp), the Replay
@@ -27,7 +27,7 @@
   a rule for one client names its product kind alone, and
   src/styles/battleclient/deck.css stays live only.
 
-  The Replay Viewer (owner, 3 Oct 2026) uses the same #bc grid and the same
+  The Replay Viewer (3 Oct 2026) uses the same #bc grid and the same
   BattleClient styles: the top bar (with its POV agent chip and a Frame
   Explanation button), the scorebug, the stage (the arena box #arena, the
   Arena Frames #team-rosters and the Rune Scrubber dock #replay-timeline,
@@ -46,7 +46,7 @@
   waits for the module that will fill and show it. They carry no data-live-only
   or data-replay-only marker, because the page shows those for their product.
 
-  Brand: the owner's emblem appears only in the page chrome (the tab icon, the
+  Brand: the MARL-BGs emblem appears only in the page chrome (the tab icon, the
   header lockup and the Title Card), never on the battlefield or in an exported
   PNG. Help key lists (dl data-command-help) are written by src/shell.js from
   the one command set, so Help always matches what each key does.
@@ -345,8 +345,8 @@
             Oracle View <span>· You See Everything</span>
           </p>
         </div>
-          <!-- On-screen keys, stacked at the arena's top right, key only (owner,
-               4 Oct 2026; the name is the button's label and its hover card):
+          <!-- On-screen keys, stacked at the arena's top right, key only
+               (4 Oct 2026; the name is the button's label and its hover card):
                V Everyone in View, B Battle Cam (Replay Viewer only), F Frame
                Explanation and Esc Clear Selection (Replay Viewer only). Each
                does exactly what its key does (src/arena-buttons.js wires and
@@ -618,7 +618,7 @@
         </section>
         <!-- Empty slot: the Fallen panel (falls of the last 8 ticks). In live
              play it sits right under Your Turn, so it shows without scrolling
-             (owner, 4 Oct 2026); in the Replay Viewer the live cards are
+             (4 Oct 2026); in the Replay Viewer the live cards are
              hidden, so it stays at the top of the rail. -->
         <section id="fallen-feed" hidden></section>
         <!-- Live play: the Class Guide of the champion in view. -->

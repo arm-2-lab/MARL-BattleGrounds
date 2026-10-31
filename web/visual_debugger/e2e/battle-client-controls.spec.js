@@ -168,7 +168,7 @@ test("every BattleClient control sends its command and shows its effect", async 
   await page.locator("#pop-finish").click();
   await expect(page.locator("#rec-pop")).toBeHidden();
   await expect(page.locator("#rec-pill-text")).toHaveText("Saved");
-  // The top bar's save button turns into Open Replay (owner, 4 Oct 2026).
+  // The top bar's save button turns into Open Replay (4 Oct 2026).
   await expect(page.locator("#recording-finish-button")).toHaveText("Open Replay");
   await expect(page.locator("#recording-finish-button")).toBeEnabled();
   expect(commands.at(-1)).toMatchObject({ command_type: "finish_and_review" });

@@ -12,7 +12,7 @@
  * the save buttons), a Details popover with Step, Transition, Copy and the
  * replay badges, and the toolbar actions; the dock (#replay-timeline) sits under the
  * arena with the transport and export actions; the amber Oracle View tag sits
- * on the field. There is no Visual Key (owner, 4 Oct 2026: no button, no
+ * on the field. There is no Visual Key (4 Oct 2026: no button, no
  * sidebar key) and the Replay Viewer's #champion-frame slot sits before
  * #team-rosters (the Arena Frames). The #roster-details card is marked for
  * no product: the live DevClient shows it in its Developer drawer and the
@@ -212,7 +212,7 @@ test("every CP3 disclosure keeps its scientific content in one stable direct bod
       );
     }
   }
-  // Restart sits in the top bar beside Exit (owner, 4 Oct 2026); the deck's
+  // Restart sits in the top bar beside Exit (4 Oct 2026); the deck's
   // header line (the message and Keys On or Off) is the deck body's first row.
   const toolbar = /<div class="toolbar-actions">([\s\S]*?)\n {6}<\/div>/u.exec(markup);
   assert.ok(toolbar);
@@ -238,7 +238,7 @@ test("shared shell uses the requested details and visual-filter controls without
     markup,
     /<button type="button" class="sbtn" id="prev-actor-button" data-key="Tab" data-shift="true">‹ Prev<\/button><button type="button" class="sbtn" id="next-actor-button" data-key="Tab">Next › <kbd>Tab<\/kbd><\/button>/u,
   );
-  // No Visual Key in any client (owner, 4 Oct 2026): no button, no sidebar key.
+  // No Visual Key in any client (4 Oct 2026): no button, no sidebar key.
   assert.doesNotMatch(markup, /<summary>Visual Key<\/summary>/u);
   assert.doesNotMatch(markup, /id="(?:live|replay)-visual-key"/u);
   assert.doesNotMatch(markup, /id="visual-key-button"/u);

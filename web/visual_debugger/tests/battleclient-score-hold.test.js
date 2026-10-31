@@ -10,7 +10,7 @@
  *   are the very same nodes the choreographer is timing, and #score-a stays
  *   the "after" node. A new tick rebuilds them, and a tick without a score
  *   change leaves no "before" node.
- * - renderMatchSummary in the Replay Viewer (owner, 3 Oct 2026: one score
+ * - renderMatchSummary in the Replay Viewer (3 Oct 2026: one score
  *   display at the top, in the BattleClient's style): a replay frame paints
  *   the same #scorebug (scores, "/ 20", bars, "Tick N of L") and shows it,
  *   and leaves the old strip root hidden and empty.

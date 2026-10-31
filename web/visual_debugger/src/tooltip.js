@@ -22,7 +22,7 @@
  * hover card.
  *
  * It also owns the Champion Card, the one card every client shows for a
- * hovered champion (design C "Clean List", owner, 2 October 2026): the name
+ * hovered champion (design C "Clean List", 2 October 2026): the name
  * and calling, the Agent ID with its team crest, the shared Life bar
  * (`life-bar.js`: "77 / 80"; green above half, yellow at half or less, red at
  * 30% or less), a thin bar named after the Ultimate ("Burst", filling as it
@@ -37,9 +37,9 @@
  * championCardModel turns facts into words and shares, renderChampionCard
  * draws it, and championCardText writes it as text.
  *
- * The plain card never leaves the arena box (owner, 2 October 2026):
+ * The plain card never leaves the arena box (2 October 2026):
  * placeChampionCard places it beside the pointer, fully inside the arena box.
- * The plain card is always one column ("Fewer rows", owner, 2 October 2026):
+ * The plain card is always one column ("Fewer rows", 2 October 2026):
  * when the box is too short for all its rows, renderFittedChampionCard draws
  * it with as many rows as fit (at least one; championCardRowsThatFit decides
  * from measured heights), then "+N more · Hold Shift for All". Only the Hold
@@ -47,7 +47,7 @@
  * columns when it would be taller than the box; only when even that is too
  * tall is a card scaled down to fit. When the Hold Shift card would need a
  * scale below 0.85 inside the box (CHAMPION_CARD_MIN_INSIDE_SCALE), it grows
- * past the box instead ("Grow past arena", owner, 2 October 2026): normal
+ * past the box instead ("Grow past arena", 2 October 2026): normal
  * size, the column count that makes it shortest, over the panels and fully
  * inside the window (championCardLayout decides, championCardPastArenaPosition
  * places it).
@@ -1454,7 +1454,7 @@ export function createTooltipController(options) {
 
     if (championBox !== null) {
       // The Champion Card is placed by the live hover card's own rule: fully
-      // inside the arena box (owner, 2 October 2026), except a Hold Shift
+      // inside the arena box (2 October 2026), except a Hold Shift
       // card that grows past it ("Grow past arena").
       tooltip.style.maxWidth = "";
       tooltip.style.maxHeight = "";
@@ -2051,7 +2051,7 @@ export function createTooltipController(options) {
 export const HOVER_CARD_SELECTOR =
   "#battlefield .agent[data-presentation-key], .por[data-slot], .cl-row[data-slot], .pick[data-target], [data-public-agent-id]";
 
-/** The most status rows a Champion Card shows before "+N more" (owner, 2 October 2026). */
+/** The most status rows a Champion Card shows before "+N more" (2 October 2026). */
 export const CHAMPION_CARD_STATUS_LIMIT = 4;
 
 /** The descriptor kind of a Champion Card shown by the shared tooltip controller. */
@@ -2066,7 +2066,7 @@ const championFactsByDescriptor = new WeakMap();
 /**
  * How long Shift must be held by itself, with the pointer resting on the
  * hovered champion, before its Champion Card shows every status, in
- * milliseconds (owner, 2 October 2026: "about 300 ms").
+ * milliseconds (2 October 2026: "about 300 ms").
  */
 export const CHAMPION_CARD_HOLD_MS = 300;
 
@@ -2403,7 +2403,7 @@ export function championCardFactsFromAgent(agent, context = {}) {
 
 /**
  * Turn a champion's facts into the Champion Card model (design C "Clean
- * List", owner, 2 October 2026). Pure.
+ * List", 2 October 2026). Pure.
  *
  * Seen champion: the title "Mage · The Astral Walker", "Agent ID 5", the life
  * bar (`life-bar.js` lifeBarModel: "77" of "80", colored green, yellow or
@@ -2544,7 +2544,7 @@ export function championCardModel(facts, options = {}) {
  * when it has none: ["+3 more", "Hold Shift for All"] when rows were left out
  * (by the four-row limit, or by a short arena box's rowLimit), and ["All 7
  * statuses", "Release Shift to Shrink"] for the Hold Shift card when it shows
- * more than CHAMPION_CARD_STATUS_LIMIT rows (owner, 2 October 2026). A Hold
+ * more than CHAMPION_CARD_STATUS_LIMIT rows (2 October 2026). A Hold
  * Shift card of four rows or fewer (a short arena box had cut the plain card)
  * has no footer, so it needs no extra height in that short box. Pure.
  *
@@ -2838,7 +2838,7 @@ function hoverCardCrest(doc, teamId) {
 
 /**
  * Place a Champion Card beside the pointer and keep it inside the arena box
- * (owner, 2 October 2026: the plain card never leaves the arena box; a Hold
+ * (2 October 2026: the plain card never leaves the arena box; a Hold
  * Shift card that grows past the box is placed by
  * championCardPastArenaPosition instead): 16 px right
  * of and below the pointer; flipped to the left (card width + 16 px back) when
@@ -2908,7 +2908,7 @@ export const CHAMPION_CARD_MAX_COLUMNS = 4;
 
 /**
  * Decide how many status rows a plain Champion Card (not the Hold Shift card)
- * shows, so the whole card fits the height the arena box gives it (owner, 2
+ * shows, so the whole card fits the height the arena box gives it (2
  * October 2026: "Fewer rows"; a plain card is always one column). Pure: the
  * caller measures, this only decides.
  *
@@ -2964,7 +2964,7 @@ export function championCardRowsThatFit(input) {
 /**
  * Draw a plain Champion Card (not the Hold Shift card) into host with as many
  * status rows as fit the arena box, the one row-fitting rule of every client
- * (owner, 2 October 2026: "Fewer rows"). The live hover card (#hcard,
+ * (2 October 2026: "Fewer rows"). The live hover card (#hcard,
  * createHoverCard) and the Replay Viewer's tooltip card (the tooltip
  * controller) both call it, each time they draw or refresh the card (a new
  * frame, a view change, a resize), and then place the card with
@@ -3053,7 +3053,7 @@ export function renderFittedChampionCard(input) {
 
 /**
  * The smallest scale the Hold Shift card may be drawn at inside the arena box
- * ("Grow past arena", owner, 2 October 2026). When its best layout inside the
+ * ("Grow past arena", 2 October 2026). When its best layout inside the
  * box needs a smaller scale, it grows past the box instead, at its normal size
  * (championCardLayout).
  */
@@ -3101,7 +3101,7 @@ function championCardColumnsWithin(width) {
  * the room gets scale room / height; otherwise its scale is 1. A card with no
  * rows (the reduced "Unseen" card) is never scaled.
  *
- * Past the box ("Grow past arena", owner, 2 October 2026): only a Hold Shift
+ * Past the box ("Grow past arena", 2 October 2026): only a Hold Shift
  * card with status rows, only when viewport is not null, and only when the
  * inside layout above needs a scale below CHAMPION_CARD_MIN_INSIDE_SCALE
  * (0.85). Then it takes the column count that makes it shortest among the
@@ -3327,12 +3327,12 @@ function viewportOf(element) {
  * tooltip card both call it.
  *
  * The plain card (root without data-expanded "true") always stays fully
- * inside the arena box, one column wide (owner, 2 October 2026: "Fewer rows";
+ * inside the arena box, one column wide (2 October 2026: "Fewer rows";
  * renderFittedChampionCard has already left out the rows that do not fit).
  * The Hold Shift card (data-expanded "true") stays inside the box too, spread
  * into more columns when that makes it fit, unless the best layout inside
  * would need a scale below CHAMPION_CARD_MIN_INSIDE_SCALE (0.85): then it
- * grows past the box ("Grow past arena", owner, 2 October 2026) at its normal
+ * grows past the box ("Grow past arena", 2 October 2026) at its normal
  * size, in the column count that makes it shortest, over the panels and fully
  * inside the viewport. championCardLayout owns these rules.
  *
@@ -3483,7 +3483,7 @@ function areaOf(getter) {
 }
 
 /**
- * Watch the window for the Champion Card's Hold Shift gesture (owner, 2
+ * Watch the window for the Champion Card's Hold Shift gesture (2
  * October 2026) and report when the card should show every status.
  *
  * The card expands when Shift is pressed by itself (no Ctrl, Alt or Meta,
@@ -3642,7 +3642,7 @@ export function hoverCardSubject(element) {
  * (factsFor returns null, for example an unseen arena body that is no longer
  * drawn), and on Escape.
  *
- * Placement (owner, 2 October 2026): the plain card is always placed fully
+ * Placement (2 October 2026): the plain card is always placed fully
  * inside the arena box that box() returns (#arena), never over the deck,
  * rail, Lock In, scorebug or top bar. The plain card is always one column:
  * renderFittedChampionCard draws it with as many status rows as fit the box
@@ -3652,7 +3652,7 @@ export function hoverCardSubject(element) {
  * only the Hold Shift card into more columns, and keeps it 8 px inside the
  * box. Without a box (box missing, or it returns a hidden element) the card's
  * offset parent is the box. It also never covers the elements avoid()
- * returns. One exception ("Grow past arena", owner, 2 October 2026): a Hold
+ * returns. One exception ("Grow past arena", 2 October 2026): a Hold
  * Shift card that would need a scale below 0.85 inside the box grows past
  * it, at its normal size, over the panels and fully inside the window, and
  * off the hovered element and the avoid() elements when it can be

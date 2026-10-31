@@ -835,7 +835,7 @@ function exactSpawnShieldMechanics(rawMechanics) {
  *
  * The descriptor (the Spawn Ward's tip on an arena body and a scorebug
  * portrait, in every client) says what the Champion Card's Spawn Shield row
- * says, in a normal-size tip (owner, 2 October 2026: every status display
+ * says, in a normal-size tip (2 October 2026: every status display
  * uses the approved status names and the card's own sentences):
  * - title: "Spawn Shield (Invulnerable)" for V2 mechanics, which record that
  *   protection, and the plain "Spawn Shield" otherwise;
@@ -1546,7 +1546,7 @@ export function explainClassDocumentation(rawOwner, rawClassMechanics) {
  * never named by Agent ID, so Agent POV and Oracle View give the same card
  * (owner rulings, 2 October 2026), and the status's direct_sources are never
  * read. The tip (compact surface) is the Champion Card's row in a normal-size
- * tip (owner, 2 October 2026): the title, that sentence and one row, "Time
+ * tip (2 October 2026): the title, that sentence and one row, "Time
  * Left" ("3 ticks left", statusTimeText; "Unavailable" without a count),
  * shown in the tip only. Every other row is full-only, for the full surface:
  * the matching magnitude, the configured and remaining durations ("Effect
@@ -1632,7 +1632,7 @@ export function explainPovStatus(rawStatus, rawRecipient = {}) {
 }
 
 /**
- * Describe an authorized status for researcher inspection. Since the owner's
+ * Describe an authorized status for researcher inspection. Since the
  * 2 October 2026 rulings it gives exactly explainPovStatus's descriptor: the
  * source is named by class only, so the third argument is ignored and kept
  * only so callers keep one call shape. rawRecipient defaults to {}. Return

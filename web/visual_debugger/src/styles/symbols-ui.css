@@ -392,7 +392,7 @@ html[data-product-kind="combat_debugger"]:has(#hcard:not([hidden]))
   display: none;
 }
 
-/* "Grow past arena" (owner, 2 October 2026): a Hold Shift card that leaves
+/* "Grow past arena" (2 October 2026): a Hold Shift card that leaves
    the arena box (data-past-arena, set by src/tooltip.js placeChampionCard)
    is drawn over every panel, the top bar (z-index 30) included, so all of it
    shows. The Replay Viewer's card is in the browser's top layer already. */

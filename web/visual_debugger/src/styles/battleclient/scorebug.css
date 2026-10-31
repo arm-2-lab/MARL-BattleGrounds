@@ -18,7 +18,7 @@
  * (src/looks/camera.js). It is placed in the right-hand score column's grid
  * area as an absolute box, so it takes no grid space, and it leaves the
  * column's outer 7.5rem to the score and its bar: the tips sit in the empty
- * inner half next to the middle and cover nothing (owner, 3 Oct 2026, Micro
+ * inner half next to the middle and cover nothing (3 Oct 2026, Micro
  * List M7). Every other client keeps it hidden.
  *
  * Who fills it: src/match-summary.js writes the scores, bars, the middle,
@@ -49,7 +49,7 @@
  * fills rightward (flex row), -1px for one that fills leftward (row-reverse).
  *
  * Scope: live play and the Replay Viewer, which takes the BattleClient's look
- * (owner, 3 Oct 2026). Shared rules start with
+ * (3 Oct 2026). Shared rules start with
  * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
  * a rule for only one client names its product kind alone.
  */

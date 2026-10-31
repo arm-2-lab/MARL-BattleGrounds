@@ -741,7 +741,7 @@ export function liveScorebugView(summary, options = {}) {
  * anchor is any element of the page (its document is searched). Every client
  * draws the BattleClient vision's scorebug: the BattleClient, the DevClient
  * combat screen and, since the Replay Viewer took the BattleClient's look
- * (owner, 3 Oct 2026: one score display at the top), the Replay Viewer too.
+ * (3 Oct 2026: one score display at the top), the Replay Viewer too.
  * A document without an element with id "scorebug", or without
  * getElementById (unit tests with a fake DOM), gives null, so the old strip
  * in #match-scoreboard is drawn instead. Pure apart from the DOM lookup.
@@ -778,7 +778,7 @@ const paintedLiveScorebugs = new WeakMap();
  * last recent one, for Momentum); the tick, First To and wave lines (an
  * empty line is hidden).
  *
- * Fall beat (owner, 1 Oct 2026: the score waits for the Fall beat, like the
+ * Fall beat (1 Oct 2026: the score waits for the Fall beat, like the
  * life bars): when a team's score changed this tick, its #score element and
  * bar become the "after" nodes of a "score" beat hold (opacity 0 until the
  * beat), and a "before" copy of the old number (span.n before #score) and of

@@ -127,7 +127,7 @@ async function selectMetricScope(page, scope, tick) {
 }
 
 /**
- * Check the shared scorebug's two scores and their "/ N" target. Owner, 3 Oct
+ * Check the shared scorebug's two scores and their "/ N" target. 3 Oct
  * 2026: the scorebug (#scorebug) is the one score display in every client;
  * the result words are the Verdict card's (completion frame only).
  *
@@ -763,7 +763,7 @@ async function installReplayView(page, view) {
 }
 
 /**
- * Open the Rune Scrubber's Export menu. Owner, 3 Oct 2026: Export PNG,
+ * Open the Rune Scrubber's Export menu. 3 Oct 2026: Export PNG,
  * Download Metrics CSV and Episode Details sit inside it, so a press on one
  * of them first opens the menu (pressing a menu button closes it again).
  * Notices such as "Exported ..." then show under the readout
@@ -1500,7 +1500,7 @@ async function proveReplayLeafExports(page, options) {
   await installReplayView(page, options.view);
   await installFirstFrame(page);
   await enableAllReplayVisualFilters(page);
-  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+  // 2 Oct 2026: the smallest supported screen is 1366 x 768.
   await page.setViewportSize({ width: 1366, height: 768 });
   await waitForStablePresentation(page);
   await waitForSettledReplayArtifactActions(page);
@@ -1698,11 +1698,11 @@ test("canonical complete and partial artifacts join their frame-zero and capture
     page.locator("#replay-timeline #replay-clear-reference-button"),
   ).toHaveCount(0);
   await expect(page.locator("#battlefield-shell #replay-ranges-button")).toHaveCount(0);
-  // No client has a Visual Key button (owner, 4 Oct 2026): hover tips, the
+  // No client has a Visual Key button (4 Oct 2026): hover tips, the
   // Champion Card and Frame Explanation explain each mark where it shows.
   await expect(page.locator("#visual-key-button")).toHaveCount(0);
   await expect(page.locator("#roster-details")).toHaveAttribute("open", "");
-  // Owner, 3 Oct 2026 (B8): the long agent details card left the Replay
+  // 3 Oct 2026 (B8): the long agent details card left the Replay
   // Viewer rail; the Agent tab holds the Champion Frame and the Class Guide.
   await expect(page.locator("#replay-rail #agent-details")).toHaveCount(0);
   await expect(page.locator("#replay-rail-agent #champion-frame")).toHaveCount(1);
@@ -1759,7 +1759,7 @@ test("canonical complete and partial artifacts join their frame-zero and capture
   await expect(page.getByRole("button", { name: "Submit joint turn" })).toHaveCount(0);
 
   const frameIdentityBeforeResize = frame.frame_id;
-  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768; below it
+  // 2 Oct 2026: the smallest supported screen is 1366 x 768; below it
   // the page may run off the screen.
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.evaluate(
@@ -1821,7 +1821,7 @@ test("replay transport keeps its controls inside the minimum supported viewport"
   ]);
   expectResearcherJoin(frame, timeline, 0);
   expect(timeline.final_frame_index).toBe(5);
-  // Owner, 4 Oct 2026: the 960 x 600 screenshot baseline is dropped, because
+  // 4 Oct 2026: the 960 x 600 screenshot baseline is dropped, because
   // the smallest supported screen is 1366 x 768.
   await expectReplayTransportAtViewport(page, { width: 1366, height: 768 });
   expectNoBrowserErrors(page);
@@ -1895,7 +1895,7 @@ test("replay reconnect rejects a valid live frame without crossing the viewer bo
     "offline",
   );
   // The notice tells the person in plain words, not the raw join error
-  // (owner's plain-English rule).
+  // (the plain-English rule).
   await expect
     .poll(() => page.evaluate(() => /** @type {any} */ (window).noticeTexts))
     .toContain("Could not load the match. Press Reconnect.");
@@ -1975,7 +1975,7 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   };
   page.on("request", recordReplayPost);
 
-  // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+  // 2 Oct 2026: the smallest supported screen is 1366 x 768.
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1366, height: 768 },
@@ -2094,7 +2094,7 @@ test("one replay transport trajectory keeps static seeks, playback, rates, and r
   await clickReplayCommand(page, "#replay-first-button");
   await clickReplayCommand(page, "#replay-next-button");
   await expectReplayFrameIndex(page, 1);
-  // Shift + Arrow Left is Back Ten Ticks in the one command set (owner's V5
+  // Shift + Arrow Left is Back Ten Ticks in the one command set (the V5
   // decision): from tick 1 it snaps to tick 0 with one seek.
   const keyboardBackTen = await pressReplayCommand(page, "Shift+ArrowLeft");
   expect(keyboardBackTen).toMatchObject({ frame: { cursor: { frame_index: 0 } } });
@@ -2783,7 +2783,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
         ).toHaveText(effect);
       }
       await selectMetricTable(page, "ultimate_warrior");
-      // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768, so the
+      // 2 Oct 2026: the smallest supported screen is 1366 x 768, so the
       // metric help must stay inside that window.
       await page.setViewportSize({ width: 1366, height: 768 });
       const narrowMeasure = page.locator(
@@ -2972,7 +2972,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
       const hiddenHealing = page.locator(
         '#metric-search-results [data-measurement="agent_0_healing_done"]',
       );
-      // The tag is a label, so it reads in Title Case (owner's label rule).
+      // The tag is a label, so it reads in Title Case (the label rule).
       await expect(hiddenHealing).toContainText("Not Applicable to This Roster");
       await hiddenHealing.click();
       await expect(page.locator("#metric-search-definition")).toBeFocused();
@@ -3180,7 +3180,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await expect(
       page.locator('[data-metric="team_a_damage_to_hunter_trap_recipient"]'),
     ).toContainText("Hunter Trap");
-    // The header stays put while the card under it scrolls (owner, 4 Oct 2026).
+    // The header stays put while the card under it scrolls (4 Oct 2026).
     const controlsBefore = await page.locator("#metric-scope").boundingBox();
     const scrolled = await page.locator("#evaluation-metrics").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
@@ -3606,7 +3606,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     await page.locator("#metric-rows tbody").focus();
     await page.mouse.move(0, 0);
     await expect(page.locator("#visual-tooltip")).toBeHidden();
-    // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+    // 2 Oct 2026: the smallest supported screen is 1366 x 768.
     for (const [width, height] of [
       [1440, 900],
       [1366, 768],
@@ -3801,7 +3801,7 @@ test("all eight scenario identities and dense authoritative deaths render in bot
     await page.locator("#replay-rail-tab-visuals").click();
     await page.locator("#visual-filter-death-announcer").check();
     const fallenRows = page.locator("#fallen-feed .fallen-feed__row");
-    // Owner, 2 Oct 2026: the smallest supported screen is 1366 x 768.
+    // 2 Oct 2026: the smallest supported screen is 1366 x 768.
     for (const viewport of [
       { width: 1440, height: 900 },
       { width: 1366, height: 768 },
@@ -4342,7 +4342,7 @@ test("a stale cross-tab command atomically installs the latest audience without 
   ]);
   await expect(page.locator("#connection-status")).toHaveText("Connected");
   await expect(page.locator("#view-select")).toHaveValue("pov");
-  // Owner, 3 Oct 2026 (B9): Replay Viewer notices show under the readout for
+  // 3 Oct 2026 (B9): Replay Viewer notices show under the readout for
   // about 4 s, in plain words; a stale tab says it was behind.
   await expect(page.locator("#rune-scrubber-notice")).toContainText(
     "This tab was behind, so it now shows the latest tick. Your press was not repeated.",

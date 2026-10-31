@@ -1,7 +1,7 @@
 /**
  * @file Check real browser resizing, installed authority, the exact debugger grid
  * and independently scrolling panels. The BattleClient's supported windows are
- * 1280 x 720 and larger (owner, 2 Oct 2026), so its checks run at 1440 x 900
+ * 1280 x 720 and larger (2 Oct 2026), so its checks run at 1440 x 900
  * and 1280 x 720. Floor Grid is off by default; once its Visual Filters switch
  * is on, the BattleClient draws a one-unit grid that is exact, the lowest
  * layer and click-transparent. Resizing keeps the installed authority, the
@@ -57,7 +57,7 @@ async function settleResponsiveLayout(page) {
 const GRID_ROUNDING_PX = 0.015 + 1e-9;
 
 // The BattleClient's two supported sizes: a common desktop window and the
-// smallest supported laptop screen (owner, 2 Oct 2026; layout.css).
+// smallest supported laptop screen (2 Oct 2026; layout.css).
 const BATTLE_CLIENT_VIEWPORTS = Object.freeze([
   { width: 1440, height: 900 },
   { width: 1280, height: 720 },
@@ -436,7 +436,7 @@ test("real Debugger grid is exact, lowest, and click-transparent", async ({ page
   const stepBefore = await page.locator("#step-value").textContent();
   const transitionBefore = await page.locator("#transition-value").textContent();
 
-  // Floor Grid is off by default (owner, 4 Oct 2026): no grid line until its
+  // Floor Grid is off by default (4 Oct 2026): no grid line until its
   // switch is on.
   const gridLines = page.locator("#battlefield .map-grid-line");
   await expect(gridLines).toHaveCount(0);
@@ -595,7 +595,7 @@ test("panels scroll independently at both supported viewports", async ({ page })
     sampleReplay: "death-respawn-shield",
   });
   try {
-    // Owner, 2 Oct 2026: the Replay Viewer's smallest supported screen is
+    // 2 Oct 2026: the Replay Viewer's smallest supported screen is
     // 1366 x 768; below it the page may run off the screen.
     for (const viewport of [
       { width: 1440, height: 900 },

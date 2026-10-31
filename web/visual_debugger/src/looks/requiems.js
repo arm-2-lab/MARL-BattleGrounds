@@ -230,7 +230,7 @@ export const FEED_ID_ADVANCE_PX = 5.6;
 
 /**
  * How much bigger than the store's sizes a Fallen row is drawn on the page
- * (owner, 3 Oct 2026: option A, "bigger emblems", so the row reads at a
+ * (3 Oct 2026: option A, "bigger emblems", so the row reads at a
  * glance). The row is laid out in store units (feedLineNode) and its svg is
  * shown this many times as wide and tall; its viewBox keeps the store units.
  */

@@ -10,7 +10,7 @@
  * values, never touches `--export-backdrop`, `--export-backdrop-grid` or the
  * battlefield shell's background, and every token it sets exists in
  * styles.css or obstacles.css. One High Contrast switch (high_contrast) is
- * the palette control in all three clients, on by default (owner, 4 Oct
+ * the palette control in all three clients, on by default (4 Oct
  * 2026); there is no Palette select and no switch named "palette".
  */
 import assert from "node:assert/strict";

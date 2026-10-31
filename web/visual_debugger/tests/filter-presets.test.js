@@ -1,7 +1,7 @@
 /**
- * @file Check the Visual Filter presets and the owner's naming rules for every
- * switch: four presets with Default Configuration first (the owner removed
- * Broadcast on 4 Oct 2026; its spectacle switches, Moon Motes and Death
+ * @file Check the Visual Filter presets and the naming rules for every
+ * switch: four presets with Default Configuration first (Broadcast was
+ * removed on 4 Oct 2026; its spectacle switches, Moon Motes and Death
  * Dimming among them, are now on by default); each preset's exact switch
  * choices (the approved store presets kept to the built switches); preset
  * states are full switch states that never carry View, Ranges, Layout, Motion
@@ -179,7 +179,7 @@ const EXPECTED_PRESETS = [
   ],
 ];
 
-// Words the owner banned from viewer-facing text, plus retired names.
+// Words banned from viewer-facing text, plus retired names.
 const BANNED = [
   /\bHosts?\b/u,
   /\bAzure\b/u,
@@ -221,7 +221,7 @@ test("four presets, Default Configuration first, with the approved switch choice
     assert.equal(typeof entry.purpose, "string");
     assert.ok(entry.purpose.length > 10);
   }
-  // Broadcast is gone; the owner's defaults keep its motes and dimming on and
+  // Broadcast is gone; the defaults keep its motes and dimming on and
   // Time of Night off (4 Oct 2026).
   assert.throws(() => visualFilterPresetState("broadcast"), RangeError);
   for (const [id, on] of /** @type {const} */ ([
@@ -346,7 +346,7 @@ test("Reset to Default Configuration returns the shipped defaults from any state
   );
 });
 
-test("labels and help follow the owner's naming rules; help always says what Off shows", () => {
+test("labels and help follow the naming rules; help always says what Off shows", () => {
   /** @type {Array<[string, string]>} */
   const texts = [];
   for (const { id, label, help, group } of VISUAL_FILTER_REGISTRY) {

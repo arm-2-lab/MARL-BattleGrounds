@@ -15,13 +15,13 @@
  * hide or retitle, and one hidden, empty slot per planned interface piece, none
  * marked for a product (the shell would un-hide it). The side rail (#rail)
  * starts with the live Your Turn card, then the Fallen panel (right under Your
- * Turn in live play, owner 4 Oct 2026), the Class Guide and How to Play
+ * Turn in live play, 4 Oct 2026), the Class Guide and How to Play
  * cards, the This Turn and How to Play slots and the Replay Viewer rail,
  * whose six tab panels start with Roster. The toolbar holds Help,
  * Visual Filters (starting hidden and marked for no product; it opens and
  * closes the #visual-filters-drawer popover), Finish and Save (starting
  * hidden, unmarked), Restart (live only) and Exit; no Visual Key and no
- * top-bar Frame Explanation (owner, 3 and 4 Oct 2026).
+ * top-bar Frame Explanation (3 and 4 Oct 2026).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";

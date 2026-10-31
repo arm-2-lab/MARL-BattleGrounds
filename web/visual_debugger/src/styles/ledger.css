@@ -5,7 +5,7 @@
  * the Match Summary and the measurement table), the Technical
  * Frame groups (This Frame, This Game, This File) with Copy, the Replay File
  * facts and the Full Record chip. The content is Scribe's Ledger's; the look
- * is the BattleClient rail's (owner, 3 Oct 2026): the BattleClient's tokens
+ * is the BattleClient rail's (3 Oct 2026): the BattleClient's tokens
  * on #bc (--panel, --edge, --raise, --text, --muted, --moon), eyebrow
  * headings, plain values, its switch style. The tab bar and the tab panels
  * themselves are styled in src/styles/battleclient/rail.css. styles.css
@@ -57,7 +57,7 @@
 
 /* Ledger header: Scope, Topic, View and Find a Measurement. In the Replay
    Viewer it is its own block at the top of the Metrics tab, outside the card
-   that scrolls (owner, 4 Oct 2026: nothing scrolls behind it); the rules here
+   that scrolls (4 Oct 2026: nothing scrolls behind it); the rules here
    are scoped to the card or the tab so they reach it in either place. */
 :is(#evaluation-metrics.ledger, #replay-rail-metrics) .disclosure-body {
   display: grid;

@@ -42,7 +42,7 @@
  * as the vision's do. The hotbar's own marks are styled in styles/hotbar.css.
  *
  * Scope: live play and the Replay Viewer, which takes the BattleClient's look
- * (owner, 3 Oct 2026). Shared rules start with
+ * (3 Oct 2026). Shared rules start with
  * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
  * a rule for only one client names its product kind alone.
  */
@@ -237,7 +237,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 }
 
 /* The on-screen key stack in the arena's top-right corner (#arena-buttons,
-   src/arena-buttons.js; owner, 4 Oct 2026): small key-only buttons stacked
+   src/arena-buttons.js; 4 Oct 2026): small key-only buttons stacked
    top to bottom over the Surround, beside the battlefield, so they fit the
    room right of the floor on laptop screens and the arena keeps its size.
    Each shows only its keycap (V, B, F, Esc); its name is its aria-label and

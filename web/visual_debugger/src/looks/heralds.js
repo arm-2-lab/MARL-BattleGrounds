@@ -46,7 +46,7 @@
  *     fallen; "CHARGE · TEAM A +1").
  *   - Trade: both teams lost champions this tick (the fallen of each team
  *     with a divider; "TEAM A LOST 1 · TEAM B LOST 1"; neutral).
- *   - Scores Level (the owner's "Comeback"): the scores became level this
+ *   - Scores Level (once called "Comeback"): the scores became level this
  *     tick after one team had led by 3 or more (the row's largestLeadBefore
  *     host fact): both teams' crests; "7 – 7" / "Scores Level"; neutral.
  *   - Ultimate Combo: two or more damaging Ultimates struck the same
@@ -64,7 +64,7 @@
  *   color at 35% across the arena's top band, behind the card. Each card's
  *   group carries `data-herald-moments`, the kinds it names in order (for
  *   example "multi trade"). Every moment card is this plate: there is no
- *   one-line band or chip form (owner, 4 Oct 2026). The plate enters at the
+ *   one-line band or chip form (4 Oct 2026). The plate enters at the
  *   row's phaseStart (the plan's: the first Fall beat, or the tick's settled
  *   time when only a Rescue, Ticks Left or a Combo without a fall is named,
  *   or the later time the painter's card queue gives it) and, when the
@@ -85,7 +85,7 @@
  * `match_moments` off nothing is drawn (the scorebug still shows score and
  * result).
  *
- * Placement (Sliding Top Placement, owner 4 Oct 2026): a herald plate always
+ * Placement (Sliding Top Placement, 4 Oct 2026): a herald plate always
  * hugs the top edge of the arena's visible area. It tries spots across the
  * whole width and picks the one that covers the fewest champions, then the
  * least champion area, then the one nearest the centre. Only when every
@@ -336,7 +336,7 @@ const DEFAULT_BOUNDS = Object.freeze({
 const MULTI_NAMES = Object.freeze(["", "", "Double", "Triple", "Quadruple", "Penta"]);
 
 /**
- * The Minimum Card Time (owner, 4 Oct 2026): a moment card stays on screen at
+ * The Minimum Card Time (4 Oct 2026): a moment card stays on screen at
  * least this long, in replay time ms (2 s at 1x, 1 s at 2x), before the next
  * card may replace it. The painter's card queue (choreography-painter.js)
  * owns the waiting; this look only draws the times it is given.
@@ -591,7 +591,7 @@ function streakFacts(event) {
  * The store's headline order (match-moments.js RANK): when several moments
  * share a tick, the lowest number heads the card and the next two join its
  * eyebrow. The Verdict (0) is drawn by the clients' renderer, not here.
- * Penta Takedown (0.5, owner 4 Oct 2026) heads the Team Wiped it causes.
+ * Penta Takedown (0.5, 4 Oct 2026) heads the Team Wiped it causes.
  */
 export const MOMENT_RANK = Object.freeze({
   penta: 0.5,
@@ -633,7 +633,7 @@ const FALL_KINDS = Object.freeze(
 
 /**
  * Ticks before the draw tick on which a Ticks Left card is born (store
- * moonset). Only 30 since the owner removed the 10, 5, 4, 3, 2 and 1 cards
+ * moonset). Only 30 since the 10, 5, 4, 3, 2 and 1 cards were removed
  * (4 Oct 2026).
  */
 const TICKS_LEFT_MARKS = Object.freeze([30]);
@@ -1369,7 +1369,7 @@ function glyphLayout(spec, medallions, dividerAfter) {
  * it on a held card, or on a card that enters and leaves in one tick).
  *
  * The card names cardMoments(event, filters) (null when there are none). It
- * is always a "herald-plate" record (owner, 4 Oct 2026: one plate style)
+ * is always a "herald-plate" record (4 Oct 2026: one plate style)
  * with title, eyebrow, ruleTeam, medallions (at most PLATE_MEDALLIONS_MAX),
  * dividerAfter, diamondClassKey, glyphs (glyphLayout's PlacedGlyph list) and
  * glyphWidth; a tier-1 plate (Penta Takedown, Team Wiped, First Blood, Match
@@ -1474,7 +1474,7 @@ function heraldRecord(
 
 /**
  * Choose the spot for a card in the arena's top band: Sliding Top Placement
- * (owner, 4 Oct 2026). Pure.
+ * (4 Oct 2026). Pure.
  *
  * bounds is the arena rectangle; slot comes from slotOf (its top is the
  * card's top, so the card hugs the top edge, and the middle of x0 and x1 is
@@ -1899,7 +1899,7 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
   };
   const scoreOf = (/** @type {1 | 2} */ team) => Number(verdict.scores[team]);
   if (!full) {
-    // The folded Verdict is always its herald plate (one plate style, owner
+    // The folded Verdict is always its herald plate (one plate style,
     // 4 Oct 2026), placed by the same Sliding Top Placement as moment cards.
     const size = FOOTPRINT.plate;
     const glyphWidth = 116;
@@ -1948,7 +1948,7 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
   // A name that does not fit at 15 px uses its short line when the caller
   // gives one ("2 Policies"); without one (a single policy) it shrinks to 13
   // or 11 px and is cut with "…" only if it still does not fit, so a team
-  // keeps its policy's own name (owner, 4 Oct 2026).
+  // keeps its policy's own name (4 Oct 2026).
   const nameOf = (/** @type {1 | 2} */ team) => {
     const entry = isRecord(teams[team]) ? teams[team] : {};
     const name = String(entry.name ?? "").trim();

@@ -141,7 +141,7 @@ button.token-chip:hover .token-chip__text {
 
 /* The Replay Viewer's Full Class Details (main.js renderReplayClassDetails):
    a closed disclosure under the Class Guide in the Agent tab that holds the
-   old Agent card's class facts (owner, 4 Oct 2026). Its summary reads like the
+   old Agent card's class facts (4 Oct 2026). Its summary reads like the
    rail's eyebrows; the body reuses the semantic inspector's own styles. */
 .replay-class-details {
   margin: 0.5rem 0 0;

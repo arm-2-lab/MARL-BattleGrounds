@@ -15,7 +15,7 @@
  * motion). In the Replay Viewer the change tip and the first-open tip sit in
  * the scorebug's #camera-tips box (the empty inner half of the right-hand
  * score column, placed by battleclient/scorebug.css), so they cover nothing
- * (owner, 3 Oct 2026, Micro List M7). They take no space, so showing or
+ * (3 Oct 2026, Micro List M7). They take no space, so showing or
  * hiding them never changes the arena's size, and a fresh page and a round
  * trip draw the same arena. Colors come only from the tokens in styles.css (the live tip
  * uses the vision tokens on .bc). styles.css imports this file.

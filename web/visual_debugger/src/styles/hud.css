@@ -6,7 +6,7 @@
  * the Arena Frames party frames (class "arena-frames"). Every client now
  * shows the vision page's scorebug (src/styles/battleclient/scorebug.css)
  * instead of the strip; live play hides #party-frames too. In the Replay
- * Viewer (owner, 3 Oct 2026) the Arena Frames sit at the bottom of the
+ * Viewer (3 Oct 2026) the Arena Frames sit at the bottom of the
  * stage, League of Legends style: both docks side by side, the right one
  * mirrored, the left dock for the team whose home end is on the arena's left
  * (data-team-a-side), compact 22 px rows (the last section of this file).
@@ -801,7 +801,7 @@
 }
 
 /*
- * Replay Viewer (owner, 3 Oct 2026): the Arena Frames sit at the bottom of
+ * Replay Viewer (3 Oct 2026): the Arena Frames sit at the bottom of
  * the stage, League of Legends style, in the BattleClient's look (#bc panel
  * tokens). Both teams' docks sit side by side under the arena. The team
  * whose home end is on the arena's left gets the left dock (data-team-a-side
@@ -810,7 +810,7 @@
  * sigils sit on the outer edges and the status trays meet in the middle; its
  * text still reads left to right. Each frame is one compact 22 px row: the
  * sigil, "Agent 5" beside its class, the life bar with its number, then the
- * status tray. There is no header line, to keep the band thin (owner, 3 Oct
+ * status tray. There is no header line, to keep the band thin (3 Oct
  * 2026): the scorebug above names each team on the same side, and hud.js
  * moves "Standing 4 of 5" under that name. In Agent POV the Full Record chip
  * sits on the docks' top edge, where it takes no height, so changing the

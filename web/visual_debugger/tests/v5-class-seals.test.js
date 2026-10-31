@@ -4,7 +4,7 @@
  * Contracts checked: classSealPaths and tokenGeometry(R).sealRadius give the
  * spec's seal shapes and radius (Mage octagon, Warrior boss and rivets, Hunter
  * quatrefoil, Rogue cushion lozenge, Priest sun); the switch class_seals is on
- * by default (owner, 4 Oct 2026); switched off, every token keeps its plain
+ * by default (4 Oct 2026); switched off, every token keeps its plain
  * halo and an empty seal group;
  * switched on, every heraldic token of 18 px or more stands on its class seal
  * instead of the halo (engraved from 22 px), and a small token or an unknown

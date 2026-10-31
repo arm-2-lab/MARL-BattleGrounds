@@ -10,7 +10,7 @@
  * View or Battle Cam) and the switches that draw on the battlefield, except the
  * match moment cards (EXPORT_OMIT_SELECTOR: every herald plate, the Lineup and
  * the Verdict), which are never exported because a figure shows the game
- * (owner, 4 Oct 2026). New
+ * (4 Oct 2026). New
  * exports write provenance version 5, which records those switches and the
  * camera frame as a world rectangle (Whole Map when the caller gives none).
  * Versions 1 to 4 still read. The backdrop is locked to #111827 with its grid;
@@ -157,7 +157,7 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V4 = Object.freeze([
   "all_staged_orders",
 ]);
 // The filter IDs of version-5 provenance: High Contrast became a Replay Viewer
-// switch that changes the battlefield's colors (owner, 4 Oct 2026), so it is
+// switch that changes the battlefield's colors (4 Oct 2026), so it is
 // recorded, in registry order before the two Replay Tools switches. Frozen for
 // the same reason as version 3.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V5 = Object.freeze([

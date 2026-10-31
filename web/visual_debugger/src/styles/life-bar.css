@@ -1,5 +1,5 @@
 /*
- * The one Life bar (src/life-bar.js createLifeBar; owner, 2 October 2026):
+ * The one Life bar (src/life-bar.js createLifeBar; 2 October 2026):
  * "Life", a thin 6 px track and "77 / 80" in one row. The fill is green above
  * half (data-life="good"), yellow at half or less ("warn") and red at 30% or
  * less ("low"). The BattleClient, the DevClient combat screen and the Replay

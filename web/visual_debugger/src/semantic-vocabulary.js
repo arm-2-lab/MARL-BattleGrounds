@@ -456,7 +456,7 @@ export function auraPresentation(auraId) {
 
 /**
  * Write how much time a status has left, the way the Champion Card's row
- * reads it (owner, 2 October 2026).
+ * reads it (2 October 2026).
  *
  * id is any ID `symbols.js` statusNameFor accepts. Its time kind decides the
  * words: "ticks" gives "1 tick left" or "5 ticks left" (empty when ticks is
@@ -564,7 +564,7 @@ function statusAmountWords(kind, amount) {
  * with no number uses the sentence without a number. recipientClassId is the
  * class (1 Mage to 5 Priest) of the champion that has the status: when it is
  * the status's own source class and the status has a `fromOwn` (the two
- * auras), the source reads "From its own aura." (owner, 2 October 2026).
+ * auras), the source reads "From its own aura." (2 October 2026).
  *
  * Returns {sentence, from, line}: sentence is "It moves at ×0.5 speed."; from
  * is where it comes from by class ("From a Warrior.", "From its own
@@ -573,7 +573,7 @@ function statusAmountWords(kind, amount) {
  * id gives {sentence: "The recording names a status this viewer does not
  * recognize.", from: null, line: the same}. Sources are named by class only,
  * never by Agent ID, so the words are the same in Agent POV and Oracle View
- * (owner, 2 October 2026). Pure.
+ * (2 October 2026). Pure.
  *
  * @param {unknown} id
  * @param {unknown} [amount] Default null.

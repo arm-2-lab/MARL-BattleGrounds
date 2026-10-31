@@ -28,13 +28,13 @@
  *   the Armed, Auto and Not Allowed tags, and a shake on a refused press) and
  *   4 Lock In (the button label Lock In Turn, Orders Sent, Policies
  *   Choosing… or Everyone Acts, plus Cancel Policy Work). The deck has no
- *   order list of its own (owner, 4 Oct 2026: the rail's This Turn checklist
+ *   order list of its own (4 Oct 2026: the rail's This Turn checklist
  *   already lists every order, so the deck is shorter and the arena taller).
  * - The deck overlays: Watch Only (a policy's champion is in view, with its
  *   life; Back to Your Warrior), Stopped (policy work was cancelled; Finish and Save; the
  *   phases then rest on You Plan with the policies Waiting) and
  *   the Watching bar when nobody is Manual (Run or Pause and Play One Turn).
- * - The deck's header line (#status-line, owner, 4 Oct 2026: it replaced the
+ * - The deck's header line (#status-line, 4 Oct 2026: it replaced the
  *   status line under the deck): the one message line (#msg; the vision's
  *   refusal sentences, written from the host's masks before anything is
  *   sent; the first sentence true for the roster mix, startGreeting; on the
@@ -56,7 +56,7 @@
  *
  * Life: Your Champion's life, the target chip's and Watch Only's are the one
  * shared Life bar (`life-bar.js`: "Life", a thin bar colored green, yellow or
- * red, and "200 / 200"; owner, 2 October 2026), or words where the champion
+ * red, and "200 / 200"; 2 October 2026), or words where the champion
  * has fallen or is out of sight (paintLife).
  *
  * Controller names: the Policies block, the "Played by" names (the deck's
@@ -99,7 +99,7 @@
  * keeps its clickable rail row with no order, which reads "Out of Sight"
  * when this view cannot see it and "In Sight · Order Hidden" when it can).
  * "Set" in the pill and the rail means the server holds an order that is not
- * the default Stay + No Combat (owner, 3 Oct 2026), so a reload and both
+ * the default Stay + No Combat (3 Oct 2026), so a reload and both
  * views agree. A champion not
  * in view takes its staged order from the server's pending rows
  * (servedManualOrdersOf: the Oracle frame's own rows, or in Agent POV the
@@ -1148,7 +1148,7 @@ export function saveFailedReason(recording) {
 
 /**
  * Pick what live play's save button in the top bar (#recording-finish-button)
- * shows for one recording state. Owner, 4 Oct 2026: Finish and Save turns
+ * shows for one recording state. 4 Oct 2026: Finish and Save turns
  * into Open Replay once the replay is saved, instead of disappearing.
  *
  * - "recording": "Finish and Save" (action "finish"); usable while
@@ -1993,7 +1993,7 @@ export function fallenWords(fallen) {
 /**
  * Return whether an order counts as Set in the "N of M Set" pill and the
  * rail's Set or Default tag: the server holds an order for the champion
- * that is not the default one, Stay with No Combat (owner, 3 Oct 2026). A
+ * that is not the default one, Stay with No Combat (3 Oct 2026). A
  * kept target with No Combat is still the default (the server sends no
  * target for it), and Stay + No Combat reads Default even when it was
  * chosen on purpose, so a freshly loaded page and both views agree.
@@ -2012,7 +2012,7 @@ export function orderIsSet(order) {
 /**
  * Return the line of another team's Manual champion's rail row in Agent POV,
  * a row that shows no order (ruling L18): "Out of Sight" when this view
- * cannot see the champion (the owner's wording, 3 Oct 2026; the row then
+ * cannot see the champion (the wording of 3 Oct 2026; the row then
  * shows nothing else about it), else "In Sight · Order Hidden". Never "Not
  * Observed".
  *
@@ -3340,7 +3340,7 @@ export function createTacticsTurn(context) {
 
   /**
    * Show a champion's life in host: the one shared Life bar (`life-bar.js`:
-   * "Life", a thin bar colored green, yellow or red, and "77 / 80"; owner, 2
+   * "Life", a thin bar colored green, yellow or red, and "77 / 80"; 2
    * October 2026) when words is null and model is given, else words as a
    * muted `span.life-words` ("Fallen · Returns in 3 Ticks", "Out of Sight"), or
    * nothing for "". The bar is rebuilt on every call, so it always shows the
@@ -3510,7 +3510,7 @@ export function createTacticsTurn(context) {
    * Return the champions whose fall on the tick now playing has not reached
    * its Fall beat yet, so the deck and the rail say "fallen" at the same
    * moment the arena shows the fall and the scorebug changes the score
-   * (owner: life and score wait for the Fall beat).
+   * (life and score wait for the Fall beat).
    *
    * Times come from the one owner of held values, beatView in
    * choreography-plan.js: each fall the audience saw has its Fall beat time
@@ -4421,7 +4421,7 @@ export function createTacticsTurn(context) {
    * the server's staged order (data.servedOrders: every Manual champion in
    * Oracle View, the viewing team's own in Agent POV); else from this page's
    * memory of this tick. Callers pass only data.shownManualIds, never another
-   * team's champion in Agent POV. "Set" (touched) is server truth (owner, 3
+   * team's champion in Agent POV. "Set" (touched) is server truth (3
    * Oct 2026): the order the server holds is not the default (Stay, No
    * Combat), so a freshly loaded page and both views count the same; Stay +
    * No Combat reads Default even when chosen on purpose, and a target kept
@@ -4720,7 +4720,7 @@ export function createTacticsTurn(context) {
             : `Played by&nbsp;${controllerHtml}`,
       );
     }
-    // The champion in view's life: the shared Life bar (owner, 2 October
+    // The champion in view's life: the shared Life bar (2 October
     // 2026), or words when it has fallen or is out of sight. The Watch Only
     // overlay shows the same.
     const lifeWords =
@@ -4911,7 +4911,7 @@ export function createTacticsTurn(context) {
     }
 
     // 4 Lock In: the button only. The rail's This Turn checklist lists each
-    // champion's order (owner, 4 Oct 2026: no second list in the deck).
+    // champion's order (4 Oct 2026: no second list in the deck).
     // Agent POV: only the viewing team's orders (L18).
     const manualRows = data.shownManualIds.map((publicId) => manualRow(data, publicId));
     const titles = turnTitles({
@@ -5127,7 +5127,7 @@ export function createTacticsTurn(context) {
    * data-observed="false", no order and no Set or Default, yet a click on it
    * still gives that champion orders. When this view cannot see it
    * (data-sight="out") it shows only the champion's class and calling, the
-   * unseen token and "Out of Sight" (owner, 3 Oct 2026); when this view sees
+   * unseen token and "Out of Sight" (3 Oct 2026); when this view sees
    * it (data-sight="in") its token from the audience's scene and "In Sight ·
    * Order Hidden". Its title says why (HIDDEN_ORDER_TITLE). Then the Policies block: every
    * policy of both teams from the one controller model (policyListRows of
@@ -5153,7 +5153,7 @@ export function createTacticsTurn(context) {
       // Every Manual champion keeps its row (a click gives it orders); a row
       // whose order this view may not show (Agent POV: another team's,
       // ruling L18) has no order and no Set or Default. Out of this view's
-      // sight it reads "Out of Sight" (owner, 3 Oct 2026) with the unseen
+      // sight it reads "Out of Sight" (3 Oct 2026) with the unseen
       // token and nothing else; in sight it reads "In Sight · Order Hidden".
       const knownById = new Map(view.manualRows.map((row) => [row.publicId, row]));
       for (const team of /** @type {const} */ (["A", "B"])) {

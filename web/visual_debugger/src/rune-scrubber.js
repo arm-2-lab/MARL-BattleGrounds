@@ -1195,7 +1195,7 @@ function dockReplayTransport(container, parts) {
  * outside the menu, focus leaving it, or a press of one of its buttons closes
  * the menu. The Export button itself is never disabled.
  *
- * Notices (owner, 3 Oct 2026): showNotice() puts a Replay Viewer notice under
+ * Notices (3 Oct 2026): showNotice() puts a Replay Viewer notice under
  * the readout, on the beat label's line and in the free space beside it up to
  * Speed, for SCRUBBER_NOTICE_MS (4 s); then the beat label comes back. The
  * whole sentence shows: a long one wraps upward over the tick line and the

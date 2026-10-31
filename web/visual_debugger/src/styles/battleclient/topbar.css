@@ -3,13 +3,13 @@
  * from the approved vision page: brand lockup (emblem, "MARL-BGs", product
  * name), the place line, the View switch, the Connected and Recording pills,
  * then the Visual Filters, How to Play (Help in the Replay Viewer) and Exit
- * buttons (owner, 4 Oct 2026: no Visual Key; hover tips, the Champion Card
+ * buttons (4 Oct 2026: no Visual Key; hover tips, the Champion Card
  * and Frame Explanation explain every mark where it shows). Live play adds Finish and Save (it reads Saving
  * Replay… while the server saves and Open Replay once saved) and Restart
- * just before Exit (owner, 4 Oct 2026: they left the status line under the
+ * just before Exit (4 Oct 2026: they left the status line under the
  * deck); the Replay Viewer never shows them. The Replay Viewer adds its POV
  * agent chip. Frame Explanation's one button is in the arena's corner in
- * every client, not here (owner, 3 Oct 2026: one button for each job).
+ * every client, not here (3 Oct 2026: one button for each job).
  *
  * The rune wordmark, divider and long name give way to the vision's plain
  * "MARL-BGs" (.bname), and the h1 product name becomes the gray .bprod.
@@ -27,13 +27,13 @@
  * it would be cut (src/shell.js marks it data-cut). The
  * map name ("Teutoburg Forest · Map 47"), "MARL-BGs", the pills and the
  * buttons never shrink, so the full map name shows at every supported size
- * (1366 x 768 and up) and in every phase (owner, 3 Oct 2026). At game over
+ * (1366 x 768 and up) and in every phase (3 Oct 2026). At game over
  * src/shell.js writes the short "Game Over" in the terminal pill for the
  * same reason. The private DevClient turns wrapping back on for its own
  * second line (its setup bar). The old #notice pill is never shown: in live
  * play the vision has no notice and src/main.js setNotice also sends each
  * notice to the deck's message line (#msg); in the Replay Viewer setNotice
- * shows it under the Rune Scrubber's readout (owner, 3 Oct 2026), whose line
+ * shows it under the Rune Scrubber's readout (3 Oct 2026), whose line
  * is the one screen-reader status.
  *
  * The emblem is the 64 px PNG shown at 26 px (src/shell.js drops the WebP
@@ -42,7 +42,7 @@
  * message of the deck's header line).
  *
  * Scope: live play and the Replay Viewer, which takes the BattleClient's look
- * (owner, 3 Oct 2026). Shared rules start with
+ * (3 Oct 2026). Shared rules start with
  * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
  * a rule for only one client names its product kind alone.
  */
@@ -87,7 +87,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 }
 
 /* The plain name "MARL-BGs" is the one brand spelling in every client
-   (owner, 3 Oct 2026); only a page with no known product keeps the rune
+   (3 Oct 2026); only a page with no known product keeps the rune
    wordmark. */
 html:not([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .brand
@@ -165,7 +165,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   white-space: nowrap;
 }
 
-/* A cut product name hides whole (owner, 3 Oct 2026: never cut halfway);
+/* A cut product name hides whole (3 Oct 2026: never cut halfway);
    src/shell.js marks it data-cut, and visibility keeps its box so it can be
    measured again when the bar grows. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
@@ -208,7 +208,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 /* The place line: "Teutoburg Forest · Map 47 · Team Deathmatch", written by
    src/shell.js as two spans. span.where__name ("Teutoburg Forest · Map 47")
    never shrinks: the full map name shows at every supported size (1366 x 768
-   and up) and in every phase, game over included (owner, 3 Oct 2026).
+   and up) and in every phase, game over included (3 Oct 2026).
    span.where__more (" · Team Deathmatch") gives way first; once it is cut,
    src/shell.js marks it data-cut and it hides whole (no cut "Team Deathm…").
    The grid's second column is minmax(0, auto), so the line's smallest width

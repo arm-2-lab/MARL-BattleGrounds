@@ -1048,7 +1048,7 @@ function setBeatHold(element, kind, key, side) {
 /**
  * Write a champion's life (and, with withUltimate, its Ultimate) into
  * element: the shared Life bar of `life-bar.js` ("Life", a thin bar and
- * "87 / 100", owner, 2 October 2026), then, with withUltimate, the words
+ * "87 / 100", 2 October 2026), then, with withUltimate, the words
  * "Ultimate Ready in 3 Ticks" in a `span.panel-life__ultimate`; "Fallen" for
  * a fallen champion. A record without life numbers falls back to the words
  * "Life — / —". When fall is a beat-view entry (the champion fell this tick
@@ -1284,7 +1284,7 @@ function livePovTransitionRows(presentation) {
 
 /**
  * Build the Pending Manual Actions rows for a BattleClient or DevClient frame
- * in Agent POV (owner's Agent POV rule: a panel in Agent POV never reads the
+ * in Agent POV (the Agent POV rule: a panel in Agent POV never reads the
  * researcher branch for what it shows). The POV agent's own row takes its
  * staged order from the frame's own POV branch: the audience's live draft
  * (authorizedPresentationInspectionState, the same draft the deck and the
@@ -1359,7 +1359,7 @@ function livePovPendingRows(presentation, views) {
 }
 
 /**
- * Write one status line for the agent details by the owner's status rule
+ * Write one status line for the agent details by the status rule
  * (statusLineV1): the Champion Card row's words, "Charge (Slow) · 5 ticks
  * left · It moves at ×0.5 speed. From a Warrior." The source is named by
  * class only (owner ruling, 2 October 2026), so the line is the same in
@@ -2204,7 +2204,7 @@ export class DebuggerPanels {
    * Sections, in order: the Full Record chip (Replay Viewer Agent POV), Who
    * (the champion's chip, class and calling, team, order and home), Right Now
    * (life, Ultimate, combat, effective speed; life waits for the Fall beat),
-   * Statuses (one line each by the owner's status rule: "Serrated Arrows
+   * Statuses (one line each by the status rule: "Serrated Arrows
    * (Slow) · x0.85 speed · 1 tick left · from Hunter ID 7's Serrated
    * Arrows"), then the
    * class card from explanations.js (overview; role, strength and weakness;

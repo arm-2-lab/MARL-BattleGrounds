@@ -6,7 +6,7 @@
  * launcher's product identity, renderCommandHelpLists once, and createShell
  * once at startup. main.js then calls the returned renderers on every repaint.
  *
- * What it owns: the brand lockup (the owner's emblem, the rune-cut "MARL-BGs"
+ * What it owns: the brand lockup (the MARL-BGs emblem, the rune-cut "MARL-BGs"
  * wordmark, whose flat hyphen keeps the one spelling "MARL-BGs", and the
  * product name) and the tab title; the place line (the map or a scenario's
  * tale title in bold, then "Map 47" or "Scenario 1" and "Team Deathmatch",
@@ -233,7 +233,7 @@ const B = 9.1;
  * chamfers only; the A's crossbar and the hyphen are small lozenges. The
  * hyphen's lozenge is flat (3.8 units wide, 1.9 tall, about one stroke), so
  * the carved name reads "MARL-BGs", the one spelling every client shows
- * (owner, 3 Oct 2026). The store's upright lozenge (2.5 wide, 4.2 tall) read
+ * (3 Oct 2026). The store's upright lozenge (2.5 wide, 4.2 tall) read
  * as a middle dot: "MARL·BGs".
  *
  * @type {Readonly<Record<string, readonly [number, ReadonlyArray<ReadonlyArray<readonly [number, number]>>, ReadonlyArray<boolean> | null, ReadonlyArray<readonly [number, number, number, number]> | null]>>}
@@ -557,7 +557,7 @@ export function matchPlaceParts(matchSummary) {
  * lead keeps the details that say where the match is ("Map 47" or
  * "Scenario 1"; empty for a map without a registered ID). The top bar always
  * shows the bold name and lead whole, for example "Teutoburg Forest · Map
- * 47" (owner, 3 Oct 2026: the full map name at every supported size and in
+ * 47" (3 Oct 2026: the full map name at every supported size and in
  * every phase). more keeps the rest ("Team Deathmatch"), which the top-bar
  * styles cut with "…" first when the bar runs short. Both keep their order
  * in parts.details. Pure.
@@ -581,7 +581,7 @@ export function placeLineSplit(parts) {
 /**
  * Whether the top bar cuts the place line's second part (span.where__more,
  * " · Team Deathmatch"): its text is wider than its box. A cut part is then
- * hidden whole rather than shown ending in "…" (owner, 3 Oct 2026).
+ * hidden whole rather than shown ending in "…" (3 Oct 2026).
  *
  * Pure.
  *
@@ -1820,7 +1820,7 @@ export function createShell(context) {
    * Show the Title Card after TITLE_CARD_DELAY_MS with no frame, and hide it
    * for good once any frame arrives.
    *
-   * The card holds the owner's emblem, the rune-cut "MARL-BGs", the official
+   * The card holds the MARL-BGs emblem, the rune-cut "MARL-BGs", the official
    * title "MARL-BattleGrounds" in mixed case and a ward rule with a lozenge.
    * It is decorative (aria-hidden); the waiting sentence under it stays the
    * message. Its lozenge breathes only while the page is still trying to
@@ -1919,7 +1919,7 @@ export function createShell(context) {
 
   /**
    * Make the page palette follow the High Contrast switch (high_contrast,
-   * Arena group, on by default), in all three clients (owner, 4 Oct 2026:
+   * Arena group, on by default), in all three clients (4 Oct 2026:
    * one switch everywhere; the Replay Viewer's Palette select is gone).
    *
    * On: palette.js's High Contrast palette (`data-palette="high-contrast"` on
@@ -1942,7 +1942,7 @@ export function createShell(context) {
    * HUD group, off by default).
    *
    * The signature is page chrome inside the arena box (#arena), never part of the
-   * battlefield SVG, so it can never reach an exported PNG: the owner's
+   * battlefield SVG, so it can never reach an exported PNG: the MARL-BGs
    * emblem (18 px) and the rune-cut "MARL-BGs" (cap 10 px, UI Muted strokes,
    * no keyline), placed by brandSignaturePlacement in the margin by the
    * floor's bottom-right corner. Off: hidden at once. On: one placement in the
@@ -2376,7 +2376,7 @@ export function createShell(context) {
             return lockIn === null ? [] : [lockIn];
           },
           // The card stays inside the arena box; only a Hold Shift card that
-          // would shrink below 85% there grows past it (owner, 2 October 2026).
+          // would shrink below 85% there grows past it (2 October 2026).
           box: () => byId("arena"),
         })
       : null;
@@ -2504,7 +2504,7 @@ export function createShell(context) {
   /**
    * Mark the parts of the top bar that may give way with `data-cut` while the
    * bar cuts them (placeRestIsCut), so the top-bar styles hide them whole
-   * instead of showing them cut with "…" (owner, 3 Oct 2026: a part that does
+   * instead of showing them cut with "…" (3 Oct 2026: a part that does
    * not fit hides whole, never cut halfway): the place line's
    * span.where__more (" · Team Deathmatch") and the brand's product name
    * (h1#app-title, "Replay Viewer" or "BattleClient"). Runs after each place

@@ -432,7 +432,7 @@ html[data-product-kind="replay_viewer"]
   gap: 4px;
 }
 
-/* The camera switch takes no room in the row (owner, 4 Oct 2026: its
+/* The camera switch takes no room in the row (4 Oct 2026: its
    buttons are the arena's V and B keys; the Camera Inset is gone):
    - no "CAMERA" eyebrow (the empty button group keeps its name "Camera"
      through its aria-label);

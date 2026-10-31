@@ -3,7 +3,7 @@
  *
  * Contracts: Brand Signature is listed only in live play (the BattleClient
  * and DevClient), off by default, in the HUD group; High Contrast is listed
- * in all three clients, on by default, in the Arena group (owner, 4 Oct 2026:
+ * in all three clients, on by default, in the Arena group (4 Oct 2026:
  * one High Contrast switch). brandSignaturePlacement (src/shell.js) puts the signature
  * only in clear space: a stack in the margin right of the battlefield picture
  * with its bottom on the floor's bottom edge at the 1440 x 900 Vision Moment,

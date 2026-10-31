@@ -23,7 +23,7 @@
  *
  * The one thing it remembers between plans is the moment card of the tick it
  * last painted for one audience (carryFromEarlierTicks): its herald row, so a
- * Herald Card holds through the next tick, and the card queue (owner, 4 Oct
+ * Herald Card holds through the next tick, and the card queue (4 Oct
  * 2026: one card at a time, each at least heralds.MINIMUM_CARD_MS of replay
  * time, a later card waiting its turn). Only a move of exactly one tick for
  * the same audience keeps it; a seek, skip, view or recipient change forgets
@@ -407,7 +407,7 @@ function episodeOf(transitionId) {
  * change, or a plan without audienceKey or simulatorStep) carries nothing, so
  * the paint equals a fresh render.
  *
- * The card queue (owner, 4 Oct 2026; timing.queue true, one tick later only):
+ * The card queue (4 Oct 2026; timing.queue true, one tick later only):
  * one moment card is on screen at a time and each stays at least
  * heralds.MINIMUM_CARD_MS of replay time (page time x rate), in continuous
  * time, so a card whose turn comes mid-tick starts then.
@@ -552,7 +552,7 @@ export function carryFromEarlierTicks(memory, plan, timing = null) {
  * (see carryFromEarlierTicks for the rules). Pure.
  *
  * Time runs in replay ms from this tick's start (page time x rate), so a card
- * whose turn comes mid-tick starts then, exactly as the owner's approved demo
+ * whose turn comes mid-tick starts then, exactly as the approved demo
  * showed: the waiting card starts when the card on screen has had its
  * minimum (plus the fade), even before this tick's own card arrives; this
  * tick's own card then shows, waits or competes for the one waiting spot.

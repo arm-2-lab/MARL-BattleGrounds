@@ -4,7 +4,7 @@
  * card, the Verdict card (by product, through installedProductKind; the Replay
  * Viewer and live game over), in its own group in the renderer's herald
  * layer, after the choreographer presents each tick and after a resize; it
- * asks for no state chip (owner, 4 Oct 2026: no countdown and no "Match Point
+ * asks for no state chip (4 Oct 2026: no countdown and no "Match Point
  * · Needs 1"). Both cards put the team on the field's left on the left (Team B
  * when the spawn ends are swapped), from the scoreboard's team sides.
  * Champions on the cards come only from the audience's authorized scene; the

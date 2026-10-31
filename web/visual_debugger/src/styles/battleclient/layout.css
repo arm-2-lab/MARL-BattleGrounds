@@ -3,14 +3,14 @@
  * BattleClient and the DevClient combat screen), ported from the approved
  * vision page. Four areas: the top bar across the top, the scorebug under
  * it, then the stage (arena and deck) beside a 340 px rail that scrolls on
- * its own. Owner, 4 Oct 2026: no status line under the deck; its message is
+ * its own. 4 Oct 2026: no status line under the deck; its message is
  * the deck's header line and its buttons are in the top bar.
  *
  * Height: as in the vision, #bc is as tall as its content, but never
  * taller than the window. When the content would be taller, the stage row
  * takes what the top bar and the scorebug leave, the deck keeps its size,
  * and only the arena gets shorter (arena.css). So the arena, the deck and
- * Lock In are always on one screen (owner, 2 Oct: at 1280 x 720,
+ * Lock In are always on one screen (2 Oct: at 1280 x 720,
  * 1280 x 800, 1366 x 768, 1440 x 900, 1536 x 864 and 1920 x 1080, in every
  * "Who Plays" mode and in the DevClient below its setup line). The deck's
  * header line must stay on screen because refusals and host messages appear
@@ -47,7 +47,7 @@
  * Turn and How to Play slots.
  *
  * Scope: live play and the Replay Viewer, which takes the BattleClient's look
- * (owner, 3 Oct 2026). Shared rules start with
+ * (3 Oct 2026). Shared rules start with
  * html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]);
  * a rule for only one client names its product kind alone.
  */
@@ -136,7 +136,7 @@ html[data-product-kind="combat_debugger"] .bc #team-rosters {
   display: none;
 }
 
-/* Replay Viewer (owner, 3 Oct 2026): the same grid, top bar, scorebug and
+/* Replay Viewer (3 Oct 2026): the same grid, top bar, scorebug and
    rail as live play. The stage holds, top to bottom, the arena, the Arena
    Frames (#team-rosters, both teams' party frames, League of Legends
    style) and the Rune Scrubber dock (#replay-timeline); the Arena Frames

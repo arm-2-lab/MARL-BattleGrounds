@@ -20,14 +20,14 @@
  * focuses a seen champion (onSelect) or explains an unseen one (onRefuse).
  * The Arena Frames below are then not drawn.
  *
- * The Replay Viewer (owner, 3 Oct 2026) shows the same scorebug for its one
+ * The Replay Viewer (3 Oct 2026) shows the same scorebug for its one
  * score display and the Arena Frames along the bottom of the stage, League
  * of Legends style: this file paints the scorebug's two team lines from the
  * replay's controller model with no "Yours" tag and no portraits
  * (paintReplayScorebugHosts; the Arena Frames show every champion), and
  * writes data-team-a-side on the frames container so hud.css gives the team
  * whose home end is on the arena's left the left dock. Its docks have no
- * header row (owner, 3 Oct 2026: keep the bottom band thin; the scorebug
+ * header row (3 Oct 2026: keep the bottom band thin; the scorebug
  * above already names each team on the same side): render moves each
  * team's "Standing 4 of 5" under that team's name in the scorebug, and in
  * Agent POV only the viewing team's (placeReplayStanding). The Replay
@@ -736,7 +736,7 @@ function creditsFor(sources, victimId, falls) {
  * status_marks_icons, is off: the same mark drawn as thin lines, never
  * today's old glyph). Return null for no statuses.
  *
- * Sources are named by class only (owner, 2 October 2026), so Agent POV and
+ * Sources are named by class only (2 October 2026), so Agent POV and
  * Oracle View read the same words. When context.cardAgent is null (an Agent
  * POV champion the team cannot see) the line is the plain name only: its tips
  * then say only LIMITED_TIP_TEXT. Pure.
@@ -1640,7 +1640,7 @@ export function yoursTeam(controllers) {
  * fallen champion keeps its label with an empty life bar. A champion that
  * falls this tick holds its living look with its life from before the blow
  * until its Fall beat; one that returns holds its fallen look until its
- * Return beat (owner, 1 Oct 2026: life bars and the score wait for the Fall
+ * Return beat (1 Oct 2026: life bars and the score wait for the Fall
  * beat; a returning champion reappears at its Return beat).
  *
  * Agent POV: an unseen champion's portrait comes from identity fields only
@@ -1939,7 +1939,7 @@ function clearLiveScorebug(scorebug) {
  * (sources.controllerRoster, the same model the Arena Frames headers and the
  * Verdict read), no "Yours" tag (a replay has no player at the keyboard), and
  * empty, hidden portrait rows, because the Arena Frames under the arena show
- * every champion (owner, 3 Oct 2026: one score display at the top, the party
+ * every champion (3 Oct 2026: one score display at the top, the party
  * frames at the bottom). sources null, or a frame without a roster, paints
  * both lines empty. The scores and the middle lines come from
  * match-summary.js. Side effects: DOM inside scorebug's hosts and parties and
@@ -1980,7 +1980,7 @@ function paintReplayScorebugHosts(scorebug, sources) {
  * view the hud_view record (null when nothing was drawn). First removes any
  * Standing count an earlier render put in the scorebug. Then, for every
  * dock: gives the dock an accessible name ("Team B Arena Frames", from its
- * header's eyebrow), removes its header row (the owner's thin bottom band;
+ * header's eyebrow), removes its header row (the thin bottom band;
  * the scorebug above names each team on the same side), and appends the
  * header's `span.arena-frames__standing` (with its Fall or Return beat hold
  * nodes and its Fighters Standing tip, moved, not copied) to the scorebug
@@ -2075,7 +2075,7 @@ function portraitNode(doc, portrait, context) {
   holdBefore(before, portrait.hold.kind, portrait.hold.beatKey);
   holdAfter(node, portrait.hold.kind, portrait.hold.beatKey);
   // The life bars carry the same hold, so each bar's own opacity changes at
-  // the beat too (the owner's rule names the life bar).
+  // the beat too (the rule names the life bar).
   const beforeBar = before.querySelector(".lb");
   const endBar = node.querySelector(".lb");
   if (beforeBar instanceof HTMLElement)

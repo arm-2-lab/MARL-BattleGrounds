@@ -1,7 +1,7 @@
 /**
  * @file Check the words the rail's This Turn checklist uses for each order
  * (src/tactics-turn.js checklistLine, the one owner of these words since the
- * deck lost its own order list, owner, 4 Oct 2026): an action reads its step,
+ * deck lost its own order list, 4 Oct 2026): an action reads its step,
  * then its ability and target ("Step: Stay · Action: Arcane Blast → Warrior
  * 6"); No Combat reads its step; an Ultimate with no target names only the
  * Ultimate; a Basic with no target reads No Combat. A fallen champion reads

@@ -1281,7 +1281,7 @@ const tooltipController = createTooltipController({
   tooltip: elements.visualTooltip,
   title: elements.visualTooltipTitle,
   details: elements.visualTooltipDetails,
-  // The Champion Card's box (owner, 2 October 2026): the Replay Viewer's
+  // The Champion Card's box (2 October 2026): the Replay Viewer's
   // field (its #arena adds no box there), live play's #arena. The card stays
   // inside it; only a Hold Shift card that would shrink below 85% there grows
   // past it.
@@ -1334,7 +1334,7 @@ const replayClassGuide = (() => {
 })();
 
 /**
- * The Replay Viewer's Full Class Details (owner, 4 Oct 2026, Micro List M22): a
+ * The Replay Viewer's Full Class Details (4 Oct 2026, Micro List M22): a
  * closed disclosure under the Class Guide holding the facts only the old long
  * Agent card showed: the order name, then the old card's own class part
  * (panels.js renderSemanticInspector: Class Overview, the Tactical Guide's
@@ -1384,10 +1384,10 @@ const cameraSwitch =
         getFilters: () => visualFilterState,
         reducedMotion: () => choreographer.snapshot().motionMode !== "normal",
         applyFrame: (frame, { ease }) => applyCameraFrameWithEase(frame, ease),
-        // The camera's buttons are the arena's V and B keys (owner, 4 Oct
+        // The camera's buttons are the arena's V and B keys (4 Oct
         // 2026: no camera buttons in the bottom row; no lit key is Whole Map).
         // Its tips sit in the scorebug's empty score half, covering nothing
-        // (owner, 3 Oct 2026, Micro List M7).
+        // (3 Oct 2026, Micro List M7).
         ...(replayProductPage
           ? {
               switchCameras: /** @type {const} */ ([]),
@@ -1422,7 +1422,7 @@ const frameExplanation =
         getLayer: () => battlefieldRenderer.layers.explain,
         listHost: frameExplanationList,
         // Every client's one Frame Explanation button is the arena's corner
-        // key (owner, 3 Oct 2026; live play since 4 Oct 2026).
+        // key (3 Oct 2026; live play since 4 Oct 2026).
         button: elements.arenaFrameExplanationButton,
         isPaused: () => !replayPlayback.snapshot().playing,
         pause: () => replayPlayback.pause("frame_explanation"),
@@ -1438,7 +1438,7 @@ const frameExplanation =
         },
       });
 
-// The arena's on-screen keys, stacked at its top right (owner, 4 Oct 2026):
+// The arena's on-screen keys, stacked at its top right (4 Oct 2026):
 // the only Everyone in View (V), Battle Cam (B), Frame Explanation (F) and
 // Clear Selection (Esc) buttons. V, B and Esc press their key through the one
 // command set; Frame Explanation is createFrameExplanation's own button
@@ -1455,7 +1455,7 @@ if (replayProductPage && productIdentity !== null) {
   });
 }
 
-// Live play: the same two keys (owner, 4 Oct 2026). A click on Everyone in
+// Live play: the same two keys (4 Oct 2026). A click on Everyone in
 // View passes the same {interactive} fact the arena's V key passes
 // (controls.js bindBattlefieldControls), and its lit state follows the live
 // camera slot.
@@ -2430,7 +2430,7 @@ function capturePresentationPreference(preference, presentation) {
  * only for a recognized primary agent action. Do nothing without matching authority.
  * Focus on the battlefield element itself stays there: the clear empties the
  * battlefield but keeps the element, so keys stay on across a view switch
- * (Agent POV <-> Oracle View), as the owner asked on 3 October 2026. Only
+ * (Agent POV <-> Oracle View), as asked on 3 October 2026. Only
  * focus on something inside it (a body, a mark) or in a disclosure panel,
  * which the clear removes, moves to Help.
  */
@@ -4276,7 +4276,7 @@ function renderReplayMetricSearch() {
       `${Math.min(matches.length, replayMetricSearchLimit)} of ${matches.length} measurements found.`)
     : "Search includes every numerical CSV column, including those that do not apply to this roster.";
   // The catalog's agent list gives every team, agent and recipient row its
-  // crest or class emblem beside the words (owner, 4 Oct 2026).
+  // crest or class emblem beside the words (4 Oct 2026).
   renderMetricSearchResults(
     elements.metricSearchResults,
     matches,
@@ -4872,7 +4872,7 @@ function paintSaveFailedReason(recording) {
  * failed save the reason line under it (#pop-reason, paintSaveFailedReason), with the
  * `saved` class once saved, and the top bar's save button through
  * saveButtonState and paintSaveButton (Finish and Save, Saving Replay…, Open
- * Replay or Retry Save; owner, 4 Oct 2026: it turns into Open Replay instead
+ * Replay or Retry Save; 4 Oct 2026: it turns into Open Replay instead
  * of disappearing). Finish and Save in the popover and the Stopped overlay
  * and Retry Save show only when they work; the popover's Open Replay stays
  * visible and is disabled until a save exists; after an accepted Exit, the
@@ -5368,7 +5368,7 @@ function setNotice(message, level = "info") {
 
 /**
  * Write a raw error to the browser console as one line, for developers
- * (owner, 4 Oct 2026, Micro List M15). The Replay Viewer page shows only plain
+ * (4 Oct 2026, Micro List M15). The Replay Viewer page shows only plain
  * words; this keeps the exact text a bug report needs.
  *
  * @param {string} context What failed, in a few words ("PNG export failed").
@@ -5874,7 +5874,7 @@ function renderInstalledMatch(presentation) {
  *   viewer/match_summary.py). options.tucked draws its herald plate (Show
  *   Arena).
  * Any other tick gives no card here: the countdown chip and the "Match Point ·
- * Needs 1" chip were removed (owner, 4 Oct 2026); moment cards, 30 Ticks Left
+ * Needs 1" chip were removed (4 Oct 2026); moment cards, 30 Ticks Left
  * included, come from the choreography plan's herald rows.
  *
  * Agent POV: nothing here reads a champion the POV team cannot see. Champions
@@ -5953,7 +5953,7 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
     );
     // A team's line names its controllers. The short line ("4 Policies")
     // stands in only when the team has two or more policies; a single policy
-    // keeps its own name, shrunk or cut by the card (owner, 4 Oct 2026: never
+    // keeps its own name, shrunk or cut by the card (4 Oct 2026: never
     // "1 Policy").
     /** @param {1 | 2} teamId */
     const lineOf = (teamId) => {
@@ -6053,7 +6053,7 @@ function renderMatchMomentCards(presentation) {
   );
   // The arena's Match Summary key opens the sheet again while the Verdict is
   // folded into its plate (Show Arena, or Full Cards off), which has no
-  // buttons of its own (owner, 4 Oct 2026).
+  // buttons of its own (4 Oct 2026).
   const verdictFolded = records.some((row) => row.kind === "herald-verdict-plate");
   elements.arenaMatchSummaryButton.hidden = !verdictFolded;
   if (!verdictShown && !verdictFolded) closeMatchSummarySheet();
@@ -6924,7 +6924,7 @@ let lastLivePlanShown = null;
  * view switch after a tick played would glide that tick again under the new
  * view, and during that replay the deck counts the tick as All Act, so a step
  * key or 0 1 2 pressed right after the switch was dropped without a word.
- * A view change only changes what the human sees (owner's rule), so it must
+ * A view change only changes what the human sees (a standing rule), so it must
  * not replay motion or close orders.
  *
  * Call it right after choreographer.presentFrame with the plan it installed.
@@ -7889,7 +7889,7 @@ async function dispatchCommand(
     return;
   }
   // Tab, Shift+Tab, ‹ Prev and Next › visit only your champions that can take
-  // orders (owner's ruling, 3 October 2026): worked out here, at send time,
+  // orders (the ruling of 3 October 2026): worked out here, at send time,
   // from the newest frame, so a Tab queued behind an earlier order moves on
   // from where that order left the focus.
   const tabStep = ownChampionTabStep(command);
@@ -8545,7 +8545,7 @@ function dispatchCommandFromDraftControl(command, { restoreFocusTo = null } = {}
 
 /**
  * Work out what Tab or Shift+Tab does in live play with Manual champions
- * (owner's ruling, 3 October 2026): it gives the orders to your next (or
+ * (the ruling of 3 October 2026): it gives the orders to your next (or
  * previous) champion that can take orders, in slot order, and never to a
  * policy's champion. The deck's ‹ Prev and Next › send the same key, so they
  * follow the same rule. "Can take orders" means a Manual slot of the match
@@ -8805,7 +8805,7 @@ const KEYS_KEPT_BUTTONS =
   ".app-header button, .arena-buttons button, .herald-verdict-actions__button, .match-summary-sheet__close";
 
 /**
- * Keep keys on when a top-bar button is pressed with the mouse (owner, 3
+ * Keep keys on when a top-bar button is pressed with the mouse (3
  * October 2026): Agent POV, Oracle View, the Recording pill, How to Play,
  * Visual Filters, Finish and Save, Restart and Exit, the arena's Everyone in
  * View and Frame Explanation keys (4 Oct 2026), plus the game-over Verdict
@@ -8837,7 +8837,7 @@ function keepKeysOnForTopBarPress(event) {
 }
 
 /**
- * Give keys back after a dialog opened from the top bar closes (owner, 3
+ * Give keys back after a dialog opened from the top bar closes (3
  * October 2026). A modal dialog such as the Restart dialog takes focus while it is
  * open, and on close it hands focus to its own top-bar button. When that
  * button's press had kept keys on (topBarPressKeptKeys), focus goes back to the
@@ -8872,7 +8872,7 @@ document.addEventListener("close", giveKeysBackAfterTopBarDialog, true);
 
 /**
  * Make a plain click on the arena only turn keys on, never pin a card
- * (owner, 3 October 2026). The tooltip controller pins a symbol's card (a
+ * (3 October 2026). The tooltip controller pins a symbol's card (a
  * stone, a waystone, a mark) when it is clicked; in the BattleClient and
  * DevClient a click on the arena is the click that gives keys, so a pin on a
  * mark inside the battlefield is dropped right after the click, and the card

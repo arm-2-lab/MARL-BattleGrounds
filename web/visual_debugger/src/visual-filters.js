@@ -6,7 +6,7 @@
  * Which client lists which switch: each row names its products. A switch whose
  * drawing belongs to the match itself is listed in live play (the BattleClient
  * and the DevClient combat screen) and in the Replay Viewer, with the default
- * of the owner's V5 pick, and the shared look modules under `src/looks/` draw
+ * of the V5 pick, and the shared look modules under `src/looks/` draw
  * it the same way in every client. That includes the V5 add-ons Class Seals,
  * Aura Glints, Barrier Held (on by default), Saved Beat, Last Breath, Battle
  * Text Detail, Kill Credit Glint, Champion Streaks and Momentum. Replay tools
@@ -19,7 +19,7 @@
  * outline emblem (P26, never today's old glyph) everywhere an emblem shows:
  * main.js passes the choice to icons.js (setIconStyleDefaults), so bodies,
  * frames, rail and cards all change. Live
- * play shows the owner's V5 label and group (LIVE_SWITCH_NAMES) where the
+ * play shows the V5 label and group (LIVE_SWITCH_NAMES) where the
  * Replay Viewer still uses its older name. Two V5 switches are live only:
  * Palette: High Contrast (the Full Moon Contrast pick; shell.js applies it as
  * the page palette from palette.js, while the Replay Viewer keeps its Palette
@@ -38,7 +38,7 @@
  * fingerprint. A skin switch turned off falls back to a plain, truthful drawing
  * (for example a flat stone with its true footprint); it never hides a fact of
  * the game. Champions are always drawn as heraldic tokens: that look is part of
- * the game, not a switch (owner, 3 Oct 2026). Every help line says
+ * the game, not a switch (3 Oct 2026). Every help line says
  * what Off shows. In Agent POV, no switch can show a champion the team cannot
  * see. Presets set switches only: they never touch View, Ranges, Layout or
  * Motion (the animation setting), because those are not switches.
@@ -223,7 +223,7 @@ const LIVE = Object.freeze(/** @type {VisualFilterProduct[]} */ (["combat_debugg
 // One row per switch: id, label, group, default, surface, products, help.
 // The first twenty rows are the switches the clients had before V5 (their ids
 // and order never change, so old settings and PNGs still read). The rest are
-// the switches of the V5-picked looks. Help lines follow the owner's naming
+// the switches of the V5-picked looks. Help lines follow the naming
 // rules: Team A and Team B only, plain words, and each says what Off shows.
 /** @type {ReadonlyArray<readonly [string, string, string, boolean, VisualFilterSurface, ReadonlyArray<VisualFilterProduct>, string]>} */
 const REGISTRY_ROWS = [
@@ -1173,7 +1173,7 @@ const DISABLED_VISUAL_FILTER_STATE = freezeVisualFilterState(
  * registry row, keyed by switch ID.
  *
  * The BattleClient and the DevClient combat screen (the Visual Filters drawer)
- * show the label and group the owner picked in V5. The registry row keeps the
+ * show the label and group picked in V5. The registry row keeps the
  * name the Replay Viewer shows today, because the Replay Viewer's own list is
  * reviewed in a later pass. Only the shown words differ: the switch ID, its
  * default, its help line and what it draws are the same in every client.

@@ -21,7 +21,7 @@ import {
   tickCountText,
 } from "../src/agent-identity.js";
 
-test("labels follow the owner's forms and never name a team", () => {
+test("labels follow the agreed forms and never name a team", () => {
   const identity = exactAuthorizedAgentIdentityV1({
     presentation_key: "scene:warrior",
     public_agent_id: "agent-slot-6",

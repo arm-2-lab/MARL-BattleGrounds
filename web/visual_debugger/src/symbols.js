@@ -8,12 +8,12 @@
  * Frame Explanation and the website's plain-English page read this list, so
  * a name is written once.
  *
- * Subtitle rule (owner, 1 October 2026): only statuses ("Charge (Stun)"),
+ * Subtitle rule (1 October 2026): only statuses ("Charge (Stun)"),
  * class callings ("Hunter (The Sentinel)") and ability labels ("Arcane Blast
  * (Mage Basic)") carry a subtitle. Every other symbol shows its plain name
  * only, for example "Champion", "Red Zone" or "Whole Map".
  *
- * Status names (owner, 2 October 2026; "Don't give new names to things"): a
+ * Status names (2 October 2026; "Don't give new names to things"): a
  * status is named by what causes it, then its plain effect in brackets:
  * "Charge (Stun)", "Serrated Arrows (Slow)", "Burst (Damage Boost)". In
  * Combat has no brackets. STATUS_NAMES below holds all fifteen names, one
@@ -34,7 +34,7 @@
  * field of the host's authorized presentation (the class mechanics catalogue,
  * the scene, the match summary or a recorded event) that holds the number at
  * run time. The explanations carry no tuning numbers. The only numbers in them
- * are game facts with no host field that the owner wrote into the look itself:
+ * are game facts with no host field written into the look itself:
  * a fall is worth 1 point, or 2 in a Red Zone (the "x2 Mark"), and life 0 means
  * a fall. A status sentence in STATUS_NAMES holds the mark "{amount}" where the
  * caller's number goes (statusCardSentence in `semantic-vocabulary.js` fills it).
@@ -1314,7 +1314,7 @@ export function symbolChipText(idOrAlias, count) {
 
 /**
  * Where a status sits on the Champion Card: "stun" rows come first, then
- * "slow" rows, then "other" rows (owner, 2 October 2026).
+ * "slow" rows, then "other" rows (2 October 2026).
  *
  * @typedef {"stun" | "slow" | "other"} StatusRowGroup
  */
@@ -1355,7 +1355,7 @@ export function symbolChipText(idOrAlias, count) {
  * - fromOwn: what `from` reads instead when the champion that has it is of
  *   the source class itself, or null when `from` always applies. Only the two
  *   auras have one: a Mage's own Sorcerer's Empowerment and a Warrior's own
- *   Guardian's Barrier read "From its own aura." (owner, 2 October 2026).
+ *   Guardian's Barrier read "From its own aura." (2 October 2026).
  * - sentence: what it does, in one plain sentence. "{amount}" marks where the
  *   exact number goes; statusCardSentence in `semantic-vocabulary.js` fills it.
  * - plainSentence: the same sentence for when the number is missing.
@@ -1408,7 +1408,7 @@ const STUN_SENTENCE = "It can't move or act.";
 const SLOW_SENTENCE = "It moves at {amount} speed.";
 
 /**
- * The fifteen approved status names (owner, 2 October 2026), in Champion Card
+ * The fifteen approved status names (2 October 2026), in Champion Card
  * order: stuns first, then slows, then the rest. Frozen.
  *
  * @type {readonly StatusName[]}

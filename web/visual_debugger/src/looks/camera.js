@@ -1,7 +1,7 @@
 /**
  * @file The Camera look: Whole Map, Everyone in View (key V) and Battle Cam
  * (key B, Replay Viewer only), with the camera switch and its tips. (The
- * Camera Inset picture was removed, owner 4 Oct 2026.)
+ * Camera Inset picture was removed, 4 Oct 2026.)
  *
  * What it owns:
  * - The camera rules as pure functions of one tick (no memory of earlier
@@ -9,17 +9,17 @@
  *   killSlowMotion, and records(input), which turns them into drawing records.
  *   Every frame is a world rectangle in world units with y counting up.
  * - The words: camera names, keycaps and the tip texts, quoted exactly as the
- *   plan (section 4.4) and the owner's row 12 give them.
+ *   plan (section 4.4) and its row 12 give them.
  * - The camera switch (createCameraSwitch): a self-contained component the
  *   shell (Replay Viewer, slot #replay-camera-switch) and the BattleClient
  *   screen (slot #live-camera-switch) mount. In the Replay Viewer it shows no
- *   buttons since 4 Oct 2026 (the owner's key stack: the arena's V and B keys,
+ *   buttons since 4 Oct 2026 (the key stack: the arena's V and B keys,
  *   src/arena-buttons.js, are the camera's buttons, and no lit key means
  *   Whole Map); it owns the change tip, the one-time first-open tip (both
  *   shown in the scorebug's empty score half, #camera-tips, so they cover
  *   nothing) and the Battle Cam words (for screen readers only), and
  *   remembers the last camera in localStorage. In the BattleClient and the DevClient combat
- *   screen no switch shows (owner, 1 October 2026): V alone toggles Everyone
+ *   screen no switch shows (1 October 2026): V alone toggles Everyone
  *   in View, and the change tip (#camera-tip, "Everyone in View on · V: back
  *   to Whole Map" or "Whole Map on · V: Everyone in View") shows under the
  *   arena, over the deck header line's message, and goes after about 4 s or at
@@ -423,7 +423,7 @@ function leftHomeEndX(redZone, worldWidth) {
  *
  * The arena's view tag (#pov-tag, "Agent POV · …" or "Oracle View · …") sits
  * on the arena's frame under the floor, starting just past the left home strip
- * and its corner bracket (the owner's store rule of 30 September 2026), so it
+ * and its corner bracket (the store rule of 30 September 2026), so it
  * never covers the left home end's bracket lines, a floor mark or the herald
  * cards' top band (owner ruling M3, 3 October 2026). This returns the two
  * lengths that spot needs, as shares of the field's width (the battlefield
@@ -866,7 +866,7 @@ export function records(input) {
 
 /**
  * Build arena nodes for camera records: none. The camera draws nothing on the
- * arena (its picture inset was removed, owner 4 Oct 2026); this keeps the
+ * arena (its picture inset was removed, 4 Oct 2026); this keeps the
  * shared look contract (records, build, update, tooltip). Returns a new empty
  * array whatever it is given.
  *
@@ -976,7 +976,7 @@ export function tooltip(record) {
  *   Its children are replaced and it gets class "camera-switch". In the
  *   Replay Viewer its hidden attribute is removed while camera_framing is on
  *   (set while off). In the BattleClient and the DevClient the slot stays
- *   hidden and empty: there is no switch on screen (owner, 1 October 2026).
+ *   hidden and empty: there is no switch on screen (1 October 2026).
  * - product: "replay_viewer" (three cameras, a button each unless
  *   switchCameras leaves one out, B, remembered camera, first-open
  *   tip and Battle Cam words) or "combat_debugger" (Whole Map and
@@ -988,8 +988,8 @@ export function tooltip(record) {
  *   deck header line's message (#msg: its offsetLeft, offsetTop, offsetWidth and
  *   offsetHeight in CSS px, written as the tip's inline left, top, width and
  *   height), and src/styles/battleclient/overlays.css draws it there. So it
- *   never covers the arena, the scorebug, the rail or any control (owner,
- *   3 Oct 2026); the message shows again when the tip goes. Without a status
+ *   never covers the arena, the scorebug, the rail or any control
+ *   (3 Oct 2026); the message shows again when the tip goes. Without a status
  *   line, styles/camera.css places it at the bottom right of the window. A
  *   second mount replaces an older `#camera-tip`; destroy() removes it.
  * - applyFrame(frame, {ease}): called with the new camera frame (null for
@@ -1011,12 +1011,12 @@ export function tooltip(record) {
  *   by its key and its other on-screen button; the slot's data-camera names
  *   it while it is on, and no switch button is lit then. The Replay Viewer
  *   passes ["whole_map", "battle_cam"]: Everyone in View has its one button
- *   in the arena's corner (src/arena-buttons.js; owner, 3 Oct 2026).
+ *   in the arena's corner (src/arena-buttons.js; 3 Oct 2026).
  * - tipHost: Replay Viewer only, the element that holds the change tip and
  *   the first-open tip (default null: the slot holds them). The Replay
  *   Viewer passes the scorebug's #camera-tips (index.html), the empty inner
- *   half of the right-hand score column, so a tip covers nothing (owner,
- *   3 Oct 2026, Micro List M7). Its children are replaced at mount and its
+ *   half of the right-hand score column, so a tip covers nothing
+ *   (3 Oct 2026, Micro List M7). Its children are replaced at mount and its
  *   hidden attribute is removed; the tips keep their own hidden flags.
  *   Ignored for "combat_debugger" (its tip goes to the deck's header line).
  *
@@ -1121,7 +1121,7 @@ export function createCameraSwitch(options) {
     group.append(button);
   }
   const words = element(doc, "span", "camera-switch__words");
-  // The BattleClient and DevClient show no switch (owner, 1 October 2026):
+  // The BattleClient and DevClient show no switch (1 October 2026):
   // V alone changes the camera, and its tip (#camera-tip) sits over the
   // deck header line's message under the arena, never over the arena, the HUD,
   // the rail or a control.

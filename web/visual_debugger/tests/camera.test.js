@@ -12,7 +12,7 @@
  * play. Camera switches: framing off gives Whole Map; B does nothing outside
  * the Replay Viewer. Tip texts are quoted exactly. The remembered camera maps
  * the old "director" value to Battle Cam, and every storage failure is safe.
- * There is no Camera Inset any more (owner, 4 Oct 2026): records never give
+ * There is no Camera Inset any more (4 Oct 2026): records never give
  * a "camera-inset" record and the switch draws no picture.
  * Agent POV: over the browser fixture's POV frames, changing hidden champions'
  * researcher rows and match summary rows gives identical camera records in
@@ -21,7 +21,7 @@
  * right ease. The New Camera Tip switch is read live: Off hides a showing
  * first-open tip at once, On shows a tip not seen yet, and once seen it stays
  * seen. The first-open tip button has its own Battle Cam hover help.
- * switchCameras: the Replay Viewer's switch with [] (the owner's 4 Oct 2026
+ * switchCameras: the Replay Viewer's switch with [] (the 4 Oct 2026
  * key stack: the arena's V and B keys are the camera's buttons) has no
  * buttons; V and B still change the camera and the slot's data-camera names
  * it. tipHost: the

@@ -117,7 +117,7 @@ export const BUDGET = Object.freeze({ ...EMPTY_BUDGET, nodesPerRecord: 3 });
 
 /**
  * No switch: Frame Explanation shows only when asked (F or its button), so it
- * has no visual filter (owner, 1 October 2026).
+ * has no visual filter (1 October 2026).
  *
  * @type {ReadonlyArray<import("./look-support.js").PaintPartRegistration>}
  */

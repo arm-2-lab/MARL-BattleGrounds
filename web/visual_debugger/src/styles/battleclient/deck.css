@@ -1,6 +1,6 @@
 /*
  * BattleClient deck (#command-deck) and its header line (#status-line),
- * ported from the approved vision page and compressed by the owner's
+ * ported from the approved vision page and compressed by the
  * decisions of 4 Oct 2026: the status line under the deck is gone (Finish
  * and Save and Restart moved to the top bar, topbar.css; its sentence moved
  * into the deck's header line), the Lock In column lost its order list (the
@@ -26,7 +26,7 @@
  * Under 956 px of stage width (narrower than this client supports) the deck
  * folds to two rows.
  *
- * One height from turn to turn (owner, 3 Oct 2026: the arena never changes
+ * One height from turn to turn (3 Oct 2026: the arena never changes
  * size when Allowed Now grows): the row is as tall as its fixed columns
  * (Your Champion, 1 Step and 3 Action). 2 Target and 4 Lock In never add
  * height (contain: size). When the stage is at least 1230 px wide (1920 px
@@ -296,7 +296,7 @@ html[data-product-kind="combat_debugger"] .bc .key[aria-pressed="true"] {
   background: #1d2944;
 }
 
-/* The chosen step's name, in the Step heading (owner, 4 Oct 2026: it was a
+/* The chosen step's name, in the Step heading (4 Oct 2026: it was a
    two-line note under the pad). */
 html[data-product-kind="combat_debugger"] .bc .dh .pad-note b {
   color: var(--text);
@@ -451,7 +451,7 @@ html[data-product-kind="combat_debugger"] .bc .picks[data-count="many"] .pick em
 
 /* 3 Action: three 86 px slots with a key, a kind, an icon, a name and a tag
    that hangs under the slot (Armed, Auto or Not Allowed), 100 px tall
-   (owner, 4 Oct 2026: shorter than the vision's 116 px). The row keeps 9 px
+   (4 Oct 2026: shorter than the vision's 116 px). The row keeps 9 px
    under the slots for the hanging tag (.slot .tag, bottom: -9px), so the
    column's height holds the tag and the deck grows to fit it rather than
    letting it hang out of the deck body. */
@@ -599,7 +599,7 @@ html[data-product-kind="combat_debugger"] .bc .slot.shake {
   }
 }
 
-/* 4 Lock In: the big Moon Silver button under the heading (owner, 4 Oct
+/* 4 Lock In: the big Moon Silver button under the heading (4 Oct
    2026: no order list; the rail's This Turn checklist lists every order). */
 html[data-product-kind="combat_debugger"] .bc .lockbtn {
   position: relative;
@@ -684,7 +684,7 @@ html[data-product-kind="combat_debugger"] .bc .deck-body > div.overlay {
 }
 
 /*
- * Watch Only never covers Lock In (owner, 3 October 2026). While the deck
+ * Watch Only never covers Lock In (3 October 2026). While the deck
  * shows it (data-state="watchonly"), the deck body is the overlay's box and
  * the overlay spans its grid from agent-start to action-end, so the Lock In
  * column stays visible and clickable. The negative insets reach half of the

@@ -20,7 +20,7 @@
  * their one owner, recordingWords in tactics-turn.js, and after a failed save
  * the popover's reason line, from saveFailedReason there (one plain sentence
  * per save error code, "" otherwise); the top bar's save
- * button follows saveButtonState (owner, 4 Oct 2026) and its click answers
+ * button follows saveButtonState (4 Oct 2026) and its click answers
  * its data-action (finish, open, retry); the arena's Match Summary key shows
  * only while the Verdict is folded into its plate and opens or closes the
  * sheet; every command dispatchCommand sends makes the deck forget the

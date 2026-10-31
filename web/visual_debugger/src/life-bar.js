@@ -1,5 +1,5 @@
 /**
- * @file The one Life bar every client draws for a champion's life (owner, 2
+ * @file The one Life bar every client draws for a champion's life (2
  * October 2026): the word "Life", a thin 6 px track whose fill is the share of
  * life left, and the value "77 / 80" beside it, all in one row. The fill is
  * green above half, yellow at half or less and red at 30% or less

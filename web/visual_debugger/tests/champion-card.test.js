@@ -1,6 +1,6 @@
 /**
  * @file Check the Champion Card (src/tooltip.js), the one card every client
- * shows for a hovered champion (design C "Clean List", owner, 2 October 2026).
+ * shows for a hovered champion (design C "Clean List", 2 October 2026).
  *
  * Contracts: the fifteen approved status names (`symbols.js` STATUS_NAMES)
  * name the card's rows, one per status, each with its own drawn icon (Rest
@@ -32,7 +32,7 @@
  * spreads into two, three or four columns (as many as the box's width allows)
  * and, only when even that is too tall, is scaled down to fit; a card that
  * fits again drops the wide look and the scale.
- * "Fewer rows" (owner, 2 October 2026): a plain card never widens, it stays
+ * "Fewer rows" (2 October 2026): a plain card never widens, it stays
  * one column (scaled down only when even one row cannot fit);
  * championCardRowsThatFit shows every row that fits, else the most leading
  * rows that fit with the "+N more" footer, never fewer than one, counting
@@ -635,7 +635,7 @@ test("Hold Shift: the card shows every status, the footer says how to shrink it"
   assert.ok(
     championCardText(expanded).includes("All 7 statuses · Release Shift to Shrink"),
   );
-  // A Mage's own aura reads "From its own aura." (owner, 2 October 2026).
+  // A Mage's own aura reads "From its own aura." (2 October 2026).
   assert.equal(
     expanded.rows.find((row) => row.id === "mage_amplification")?.line,
     "It deals ×1.15 damage near a Mage. From its own aura.",

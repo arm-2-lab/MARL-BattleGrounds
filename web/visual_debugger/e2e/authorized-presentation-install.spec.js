@@ -1318,7 +1318,7 @@ const NEXT_TICK_TITLE = "Next Tick (What Happens Next)";
 // The Replay Viewer tab that replaces a live disclosure there. The Champion
 // Frame in the Agent tab replaces Agent Details, and the Actions tab shows This
 // Tick and Next Tick with no disclosure; the older Actions cards are not on the
-// Replay Viewer page (owner decisions, 3 October 2026).
+// Replay Viewer page (decisions of 3 October 2026).
 const REPLAY_TAB_OF_LIVE_DISCLOSURE = Object.freeze({
   "#agent-details": "agent",
   "#pending-turn-details": "actions",
@@ -1428,8 +1428,8 @@ async function closeDetails(page, selectors) {
 }
 
 // The Replay Viewer's disclosures. Its Actions tab replaced the two Actions
-// disclosures (owner decision, 3 October 2026) and there is no Visual Key
-// (owner, 4 October 2026); the selected rail tab is part of the state. A card
+// disclosures (decision of 3 October 2026) and there is no Visual Key
+// (4 October 2026); the selected rail tab is part of the state. A card
 // left in the hidden Developer drawer is not on the page, so it is not part
 // of the state: in the Replay Viewer that is Agent Details, whose place the
 // Agent tab's Champion Frame took.
@@ -1842,7 +1842,7 @@ async function expectReplayInspectionDom(
     "Selection and exact actor-owned legality",
   );
   // The Actions tab shows This Tick and Next Tick, each with the older name as
-  // its subtitle (owner decisions, 3 October 2026); no client has a Visual
+  // its subtitle (decisions of 3 October 2026); no client has a Visual
   // Key (4 October 2026).
   const thisTick = await actionRowsHost(page, "this");
   const nextTick = await actionRowsHost(page, "next");
@@ -2119,7 +2119,7 @@ async function expectAgentAuthoritySurface(
           ),
         ),
     ).toBe(true);
-    // Roster words (owner, 3 Oct 2026): "10 Champions · 4 Seen · 6 Not Seen".
+    // Roster words (3 Oct 2026): "10 Champions · 4 Seen · 6 Not Seen".
     await expect(page.locator("#roster-count")).toHaveText(
       `${expectedRosterCount} ${expectedRosterCount === 1 ? "Champion" : "Champions"} · ${visibleRosterCount} Seen · ${notVisibleRosterCount} Not Seen`,
     );
@@ -2237,7 +2237,7 @@ async function expectPendingAuthorityIsEmpty(
   }));
   expect(pendingTooltip.hidden || pendingTooltip.kind === "control").toBe(true);
   // The Replay Viewer's Actions tab replaces the two Actions cards and their
-  // disclosures there (owner decision, 3 October 2026).
+  // disclosures there (decision of 3 October 2026).
   const replayRail = await replayRailMounted(page);
   const actionSurfaces = replayRail
     ? ["#replay-rail-actions"]
@@ -2352,7 +2352,7 @@ test(CP5_C_SLICE_TEST_TITLE, async ({ page }) => {
     });
 
     // Three distinct supported Replay Viewer sizes (its smallest supported
-    // screen is 1366 x 768; owner, 2 Oct 2026).
+    // screen is 1366 x 768; 2 Oct 2026).
     const combatMatrixViewports = [
       { width: 1440, height: 900 },
       { width: 1600, height: 1000 },
@@ -5313,7 +5313,7 @@ test("real Shared replay installs frame zero, middle, final, then rejects a forg
         "#pending-turn-details",
       ]);
       // The Actions tab has no disclosure to scroll, so the Technical Frame
-      // carries the scroll check (owner decision, 3 October 2026).
+      // carries the scroll check (decision of 3 October 2026).
       await openDetails(page, ["#technical-frame-details"]);
       await installScientificDisclosureScroll(page, "#technical-frame-details", 29);
       const disclosureBeforeSwitch = await scientificDisclosureState(page);
@@ -5751,8 +5751,8 @@ test("real death cycle retains truthful outward lifecycle cues at both review vi
   if (!deathReplay) {
     throw new Error("Death replay service is unavailable.");
   }
-  // The Replay Viewer's smallest supported screen and its usual one (owner,
-  // 2 Oct 2026).
+  // The Replay Viewer's smallest supported screen and its usual one
+  // (2 Oct 2026).
   for (const viewport of [
     { width: 1366, height: 768 },
     { width: 1440, height: 900 },

@@ -1,7 +1,7 @@
 /*
  * Styles for the Champion Frame (src/looks/champion-frame.js): the selection
  * and inspection marks on the arena, and the frame in the Replay Viewer
- * rail's Agent tab (owner, 3 Oct 2026; src/ledger.js moves #champion-frame
+ * rail's Agent tab (3 Oct 2026; src/ledger.js moves #champion-frame
  * there). styles.css imports this file.
  *
  * Colours come only from the :root tokens in styles.css (Moon Silver, Ink,

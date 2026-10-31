@@ -1,5 +1,5 @@
 /**
- * @file Check the keys and clicks rules of the BattleClient (owner, 3 October
+ * @file Check the keys and clicks rules of the BattleClient (3 October
  * 2026):
  * - keepKeysOnForTopBarPress (main.js) prevents the mouse press default on a
  *   button inside the top bar, on the arena's two on-screen keys (Everyone in
@@ -244,7 +244,7 @@ test("Watch Only covers every deck column but Lock In", () => {
     /\.deck\[data-state="watchonly"\] \.deck-body \{\s+position: relative;\s+\}/u,
   );
   // It covers the five columns' row from Your Champion to 3 Action, never
-  // 4 Lock In or the deck's header line above it (owner, 4 Oct 2026).
+  // 4 Lock In or the deck's header line above it (4 Oct 2026).
   assert.match(
     DECK_CSS,
     /\.deck-body > div#watch-only \{\s+grid-row: agent-start \/ agent-end;\s+grid-column: agent-start \/ action-end;\s+inset: -4px -7px -12px -12px;\s+\}/u,

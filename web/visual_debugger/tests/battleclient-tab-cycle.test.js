@@ -1,6 +1,6 @@
 /**
  * @file Check that Tab, Shift+Tab, ‹ Prev and Next › give the orders only to
- * your champions that can take orders (owner's ruling, 3 October 2026):
+ * your champions that can take orders (the ruling of 3 October 2026):
  * - nextOrderSlot (controls.js) walks the living Manual slots in slot order,
  *   wraps around, skips fallen ones, starts from a policy champion that is
  *   looked at (Watch Only), stays on the only ready champion, and returns

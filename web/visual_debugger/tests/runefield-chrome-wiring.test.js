@@ -16,7 +16,7 @@
  * each plan through the choreographer's beforeBeatHolds hook, hides every painter
  * herald card (a plate: data-herald-moments) while the Verdict card or its
  * tucked plate shows, and draws no state chip (no countdown, no "Match Point ·
- * Needs 1"; owner, 4 Oct 2026). In the Replay Viewer a click on an
+ * Needs 1"; 4 Oct 2026). In the Replay Viewer a click on an
  * Arena Frame (selectAgentFromHud) sends that champion's Roster row command
  * through panels.pickAgent, so in Agent POV it moves the view to any
  * champion, as the roster does.
@@ -354,7 +354,7 @@ test("main.js mounts the Fallen panel from each plan and hides plates under the 
     main,
     /const verdictShown = records\.some\(\s*\(row\) => row\.kind === "herald-verdict" \|\| row\.kind === "herald-verdict-plate",?\s*\);[\s\S]*?querySelectorAll\("\[data-herald-moments\]"\)[\s\S]*?card\.setAttribute\("visibility", "hidden"\)/u,
   );
-  // There is no state chip any more (owner, 4 Oct 2026): no countdown and no
+  // There is no state chip any more (4 Oct 2026): no countdown and no
   // "Match Point · Needs 1"; only the Lineup and Verdict are drawn here.
   assert.doesNotMatch(main, /herald-state|part: "state"/u);
   assert.match(main, /if \(records\.length === 0\) return;/u);

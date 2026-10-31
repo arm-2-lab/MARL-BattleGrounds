@@ -1,6 +1,6 @@
 /**
  * @file Check the BattleClient chrome that must never cut the map name or
- * cover the scorebug or the rail (owner, 3 Oct 2026).
+ * cover the scorebug or the rail (3 Oct 2026).
  *
  * Contracts checked:
  * - placeLineSplit (src/shell.js): the place line's "Map 47" or
@@ -97,7 +97,7 @@ test("the top bar gives way in order: Team Deathmatch, then the product name", (
   assert.match(brand, /grid-template-columns: auto auto minmax\(0, auto\);/u);
   assert.match(brand, /flex: 0 1 auto;/u);
   assert.match(rule("SCOPE .bc .bc-top .brand .bprod"), /min-width: 0;/u);
-  // A cut product name hides whole, never cut halfway (owner, 3 Oct 2026).
+  // A cut product name hides whole, never cut halfway (3 Oct 2026).
   assert.match(
     rule("SCOPE .bc .bc-top .brand .bprod[data-cut]"),
     /visibility: hidden;/u,

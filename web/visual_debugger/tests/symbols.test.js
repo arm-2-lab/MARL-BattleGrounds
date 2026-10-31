@@ -1,9 +1,9 @@
 /**
  * @file Check the one symbol list in symbols.js: 58 frozen symbols in the nine
- * symbol groups with unique IDs and aliases; the owner's subtitle rule
+ * symbol groups with unique IDs and aliases; the subtitle rule
  * (subtitles only for status effects, class callings and ability labels; every
  * other symbol shows its plain name); the fifteen approved status names in
- * STATUS_NAMES (owner, 2 October 2026: the cause's name, then the plain
+ * STATUS_NAMES (2 October 2026: the cause's name, then the plain
  * effect, "Charge (Stun)" and the rest, in Champion Card order with a
  * class-only source sentence each), a two-cause mark listing both names (the
  * stun stars: Charge (Stun) and Crippling Poison (Stun)) and no old flavor
@@ -174,7 +174,7 @@ test("only statuses, callings and ability labels carry a subtitle", () => {
   }
 });
 
-test("status symbols carry the owner's status names", () => {
+test("status symbols carry the approved status names", () => {
   assert.deepEqual(
     STATUS_NAMES.map((entry) => [entry.id, entry.title, entry.group, entry.from]),
     [
@@ -318,7 +318,7 @@ test("the sight veil says it darkens every blind spot, stone shadows included", 
 });
 
 test("explanations are short plain sentences with no tuning numbers", () => {
-  // Only game facts the owner wrote into the look carry a digit: life 0 means a
+  // Only game facts written into the look carry a digit: life 0 means a
   // fall, and a fall is worth 1 point, or 2 in a Red Zone (the x2 Mark).
   const allowedDigits = new Set([
     "life_bar",

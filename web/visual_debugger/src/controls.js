@@ -408,7 +408,7 @@ export function isDebuggerKey(event) {
 /**
  * Return the global slot that Tab (direction 1) or Shift+Tab (direction -1)
  * gives the orders to in live play: the next champion you command that can
- * take orders, in slot order, wrapping around (owner's ruling, 3 October
+ * take orders, in slot order, wrapping around (the ruling of 3 October
  * 2026).
  *
  * A champion can take orders when it is Manual (in manualSlots) and is not in
@@ -514,7 +514,7 @@ function pointInSvg(svg, event) {
  * onFencedCommand does not keep has its browser default stopped while
  * ownsFencedTabDefault() is true, so Tab never moves focus from the arena
  * onto the marks drawn inside it (stones, champions) while the policies
- * choose or at game over (owner, 3 Oct 2026); it does nothing there.
+ * choose or at game over (3 Oct 2026); it does nothing there.
  *
  * Pointer input: the primary button sends a "primary" battlefield_pointer and
  * a right click (button 2) sends a "secondary" one at the same world point

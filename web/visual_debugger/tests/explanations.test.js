@@ -854,7 +854,7 @@ test("aggregate aura cards require one exact authorized recipient identity", () 
 });
 
 test("spawn shield view is exact across V1/V2/unavailable and every audience", () => {
-  // The tip says the Champion Card's words (owner, 2 October 2026); the long
+  // The tip says the Champion Card's words (2 October 2026); the long
   // rules stay on the full surface only.
   const v2Summary = "It can't be seen or hit, and can't strike yet.";
   const v2Rules =

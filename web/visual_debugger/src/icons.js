@@ -561,7 +561,7 @@ const PRIEST_CROSS = deepFreeze(
  * format (glyphs.<name>.std = [[d, paint, fillOpacity, keyline]], a 24-unit
  * box; no "mic" set, so every size draws "std"). One so far:
  * - rest_vessel: the icon of Rest (Regeneration), made from its arena mark
- *   (owner, 2 October 2026: "Rest needs a small readable icon made from its
+ *   (2 October 2026: "Rest needs a small readable icon made from its
  *   real mark"): the life vessel ring, its pale Rest level and the drop that
  *   pours in, all in the Rest color (paint "dew", the --moon-dew token).
  *

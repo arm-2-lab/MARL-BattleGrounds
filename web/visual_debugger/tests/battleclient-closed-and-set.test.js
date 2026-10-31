@@ -8,7 +8,7 @@
  * - recordingWords is the one owner of the Recording pill and popover words,
  *   and once closed while still "recording" with no tick kept it says "No
  *   Replay" instead of a stale "Recording · Tick 0".
- * - saveButtonState (owner, 4 Oct 2026): the top bar's save button reads
+ * - saveButtonState (4 Oct 2026): the top bar's save button reads
  *   Finish and Save while recording, Saving Replay… while the server saves
  *   or this page's save request is out (no action, never usable), Open
  *   Replay once saved (usable the first time through the server, then again

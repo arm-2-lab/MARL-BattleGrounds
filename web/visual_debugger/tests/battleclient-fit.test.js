@@ -1,7 +1,7 @@
 /**
  * @file Check the CSS rules that keep the live combat screen (the BattleClient
  * and the DevClient combat screen) on one screen at every desktop and laptop
- * size (owner, 2 Oct: 1280 x 720 up to 1920 x 1080): #bc is never taller than
+ * size (2 Oct: 1280 x 720 up to 1920 x 1080): #bc is never taller than
  * the window (max-height 100dvh); its top bar and scorebug rows are
  * max-content, so the grid never shrinks them to their min-height and the
  * DevClient's setup line never runs over the scorebug; the stage row is at

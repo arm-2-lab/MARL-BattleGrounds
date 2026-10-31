@@ -1,7 +1,7 @@
 /**
  * @file Check page-local visual preferences across live/replay audiences and dense
  * real scenario displays. A fresh page starts with every listed switch at its
- * shipped default (the owner's defaults of 4 Oct 2026): 67 of the 84 live
+ * shipped default (the defaults of 4 Oct 2026): 67 of the 84 live
  * (DevClient combat screen) switches, 66 of the BattleClient's 83 (it leaves
  * Panel Tokens out: no docked panels) and 76 of the 95 Replay Viewer switches,
  * including Cooldown Effects and Red Zone Floors; the Replay Viewer starts with
@@ -635,7 +635,7 @@ async function scientificSignature(page, replay) {
       return element.innerHTML;
     };
     // The Replay Viewer shows This Tick and Next Tick in its Actions tab, each
-    // part found by its heading words (owner's Actions tab structure, 3 October
+    // part found by its heading words (the Actions tab structure, 3 October
     // 2026); live play keeps #pending-card and #accepted-card.
     /** @param {string} title */
     const actionsPartHtml = (title) => {
@@ -2027,7 +2027,7 @@ test("amended regular and stress scenarios retain Oracle-Agent presentation cont
         "#battlefield [data-global-slot], #battlefield [data-team-local-slot]",
       ),
     ).toHaveCount(0);
-    // Replay Viewer notices show under the readout (owner, 3 Oct 2026, B9).
+    // Replay Viewer notices show under the readout (3 Oct 2026, B9).
     const notice = page.locator(
       "#notice:not([hidden]), #rune-scrubber-notice:not([hidden])",
     );
