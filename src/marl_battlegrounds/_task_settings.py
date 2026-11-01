@@ -26,7 +26,7 @@ DEFAULT_TDM_RED_ZONE_DEPTH = 5.0
 # dropped flag waits before going home. Each flag home is its team's spawn
 # center, the same on every map, Team A's first, in the map's own frame.
 DEFAULT_CTF_SCORE_THRESHOLD = 3
-DEFAULT_CTF_FLAG_INTERACTION_DISTANCE = 1.25
+DEFAULT_CTF_FLAG_INTERACTION_DISTANCE = 0.75
 DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
 DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
 DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
