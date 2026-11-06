@@ -484,6 +484,28 @@ def _is_released_folder(path: Path) -> bool:
     )
 
 
+def _full_name_hint(reference: str) -> str:
+    """Suggest the full released name for a model repo typed without it.
+
+    Returns `` Did you mean '<name>'?`` (with a leading space, and "or" between
+    several names) when ``reference``, before any ``@`` step, matches a pinned
+    model repo's name without its organization (``"tdm-season-0-qmix"``) or
+    without its ladder and season too (``"qmix"``, ``"recurrent-mappo"``),
+    ignoring case. The ``@`` step is kept in the suggestion. Otherwise returns
+    an empty string. Only full names load: a short one could also be a learner
+    name or a local folder. ``load_method`` adds this to its error.
+    """
+    typed, at, step = reference.partition("@")
+    wanted = typed.strip().lower()
+    names: list[str] = []
+    for name in PINNED_COMMITS:
+        repo = name.split("/", 1)[1].lower()
+        short = re.sub(r"^[a-z]+-season-\d+-", "", repo)
+        if name != RESULTS_DATASET and wanted in (repo, short):
+            names.append(f"{name}{at}{step}")
+    return f" Did you mean {' or '.join(map(repr, names))}?" if names else ""
+
+
 def _released_form(
     reference: str, base_dir: Path | None = None
 ) -> Literal["address", "folder", "name"] | None:
