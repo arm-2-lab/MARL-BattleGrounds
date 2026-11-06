@@ -37,10 +37,11 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from importlib import metadata
@@ -389,13 +390,59 @@ def _stop_group(process: subprocess.Popen[str], grace: float) -> bool:
         return False
 
 
+@contextlib.contextmanager
+def _group_stopped_on_error(process: subprocess.Popen[str]) -> Generator[None]:
+    """Kill a child's process group at once if the block stops with any error.
+
+    The children run in their own process groups, so nothing else stops them
+    when the check itself is interrupted (Ctrl-C, or a stop signal turned into
+    KeyboardInterrupt by ``_stop_signals_interrupt``). The error is raised again.
+    """
+    try:
+        yield
+    except BaseException:
+        _stop_group(process, 0)
+        raise
+
+
+@contextlib.contextmanager
+def _stop_signals_interrupt() -> Generator[None]:
+    """Make SIGTERM and SIGHUP raise KeyboardInterrupt, as Ctrl-C does, for a while.
+
+    By default these signals end Python at once, skipping every cleanup, so a
+    training run the check started (in its own process group) kept running
+    after ``timeout``, ``kill`` or a closed terminal. The previous handlers come
+    back when the block ends. Python lets only the main thread set handlers;
+    elsewhere nothing changes.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def interrupt(number: int, frame: object) -> None:
+        """Raise KeyboardInterrupt in the main thread for a stop signal."""
+        del number, frame
+        raise KeyboardInterrupt
+
+    previous = {
+        number: signal.signal(number, interrupt)
+        for number in (signal.SIGTERM, signal.SIGHUP)
+    }
+    try:
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+
 def _run(
     command: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
 ) -> tuple[int | None, str, str]:
     """Run a child in its own process group and return (exit code, stdout, stderr).
 
     The exit code is None when the child ran past ``timeout`` seconds; its whole
-    process group is then killed. Output is collected as text.
+    process group is then killed, as it is when this call is interrupted. Output
+    is collected as text.
     """
     process = subprocess.Popen(
         list(command),
@@ -406,12 +453,13 @@ def _run(
         text=True,
         start_new_session=True,
     )
-    try:
-        out, err = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _stop_group(process, 0)
-        out, err = process.communicate()
-        return None, out, err
+    with _group_stopped_on_error(process):
+        try:
+            out, err = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _stop_group(process, 0)
+            out, err = process.communicate()
+            return None, out, err
     return process.returncode, out, err
 
 
@@ -766,7 +814,7 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     print(
         "Next:\n"
         f"  cd {folder}\n"
-        '  git add -A && git commit -m "Start my entry"\n'
+        '  git add . && git commit -m "First entry"\n'
         "  uv run python -m marl_battlegrounds entry check"
     )
     return folder
@@ -1205,11 +1253,12 @@ class _Checker:
                 text=True,
                 start_new_session=True,
             )
-            try:
-                code = process.wait(timeout=self.train_minutes * 60.0)
-            except subprocess.TimeoutExpired:
-                code = None
-                calm = _stop_group(process, _STOP_GRACE_SECONDS)
+            with _group_stopped_on_error(process):
+                try:
+                    code = process.wait(timeout=self.train_minutes * 60.0)
+                except subprocess.TimeoutExpired:
+                    code = None
+                    calm = _stop_group(process, _STOP_GRACE_SECONDS)
         if code is not None and code != 0:
             output = _tail(log_path.read_text(encoding="utf-8", errors="replace"))
             raise _StepFailedError(
@@ -1427,9 +1476,17 @@ def check_entry(
         become failed steps.
     OSError
         The record could not be written.
+    KeyboardInterrupt
+        Ctrl-C, SIGTERM or SIGHUP stopped the check. The running child's whole
+        process group (the training run in step 5) is killed first, and the
+        temporary folder is removed. The CLI prints "Interrupted" and exits 130.
 
     Notes
     -----
+    Signals: while the check runs in the main thread, SIGTERM and SIGHUP raise
+    KeyboardInterrupt, as Ctrl-C does; the previous handlers come back
+    afterwards. Called from another thread, Python's defaults stay.
+
     Files: the record is saved as JSON at
     ``.git/marl-bgs-entry-check/<commit>.json`` of the checked repository
     (never committed). With ``repository``, it goes to
@@ -1465,9 +1522,12 @@ def check_entry(
     folder = Path(path).expanduser().absolute()
     machine = _machine()
     records = None if repository is None else folder / _RECORD_FOLDER
-    with tempfile.TemporaryDirectory(
-        prefix="marl-bgs-entry-check-", ignore_cleanup_errors=True
-    ) as work:
+    with (
+        _stop_signals_interrupt(),
+        tempfile.TemporaryDirectory(
+            prefix="marl-bgs-entry-check-", ignore_cleanup_errors=True
+        ) as work,
+    ):
         checker = _Checker(
             repository or str(folder),
             commit,

@@ -34,6 +34,10 @@ other than team (read from .github/ISSUE_TEMPLATE/leaderboard_submission.yml)
 plus the title; a link over the length limit falls back to the title alone
 and prints the values. play_limits plays 2 self-play games on the CPU through
 the real evaluate path and reports them as not a GPU measurement.
+
+While entry check runs, SIGTERM and SIGHUP raise KeyboardInterrupt like Ctrl-C,
+the running child's whole process group is killed, and the old signal handlers
+come back afterwards.
 """
 
 # pyright: reportPrivateUsage=false
@@ -41,8 +45,10 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import shlex
 import shutil
+import signal
 import subprocess
 import tomllib
 import urllib.parse
@@ -330,3 +336,20 @@ def test_play_limits_plays_on_the_cpu() -> None:
     assert json.loads(json.dumps(reading.to_dict()))["games"] == 2
     with pytest.raises(ValueError, match="even"):
         entry.play_limits("random", games=3)
+
+
+@pytest.mark.parametrize("number", [signal.SIGTERM, signal.SIGHUP])
+def test_a_stop_signal_interrupts_the_check_and_kills_its_child_group(
+    number: signal.Signals,
+) -> None:
+    before = signal.getsignal(number)
+    child = subprocess.Popen(["sleep", "60"], start_new_session=True, text=True)
+    with (
+        pytest.raises(KeyboardInterrupt),
+        entry._stop_signals_interrupt(),
+        entry._group_stopped_on_error(child),
+    ):
+        os.kill(os.getpid(), number)
+        child.wait()
+    assert child.poll() is not None
+    assert signal.getsignal(number) is before
