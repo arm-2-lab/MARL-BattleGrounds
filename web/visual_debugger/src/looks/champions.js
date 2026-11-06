@@ -796,7 +796,7 @@ function classSeal(context) {
  * in CSS pixels; layoutSlot never shown as a public fact) and adds:
  * - classKey and teamKey (CSS keys), geometry (tokenGeometry(radius)).
  * - look: always "heraldic" (Heraldic Tokens is part of the game, not a switch;
- *   the "plain" branches below are kept only until the M12b clean-up);
+ *   the "plain" branches below are kept only until a later clean-up);
  *   lifeStyle: "vessel" or "arc" (the ivory life ring when Life Vessels is off).
  * - state: "living", "fallen", "falling" (this audience saw it die this tick: it
  *   keeps its living look until its Fall beat) or "returning" (this audience saw

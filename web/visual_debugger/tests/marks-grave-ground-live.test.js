@@ -2,7 +2,7 @@
  * @file Check the live Grave Ground skull-and-"×2" marks
  * (src/looks/red-zone.js records with `vision: true`, the BattleClient and
  * the DevClient): they are the store's marks (skins/red-zone.js graveMarks
- * and clearSpots), not the vision page's split layout. Each mark is one
+ * and clearSpots), not the BattleClient vision's split layout. Each mark is one
  * centered record with no separate skull or text centers, sized 12 px times
  * the field scale (px per unit over 50), on the same world spots the store
  * finds at its own scale, with its whole clear box off the gravestone border;

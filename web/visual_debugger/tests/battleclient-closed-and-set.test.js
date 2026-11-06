@@ -1,6 +1,6 @@
 /**
- * @file Check the BattleClient's words after Exit and its Set rule (owner and
- * main-session rulings, 3 Oct 2026), in src/tactics-turn.js and main.js:
+ * @file Check the BattleClient's words after Exit and its Set rule (3 Oct
+ * 2026), in src/tactics-turn.js and main.js:
  * - closedSentence says the match is closed and, from the Exit answer's
  *   recording status, that the game is saved, that no tick was played so no
  *   replay was saved (Exit before the first tick), or nothing about a replay

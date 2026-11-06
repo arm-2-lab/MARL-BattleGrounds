@@ -22,7 +22,7 @@
  * or any live fact. Agent POV: the caller decides whether the champion is seen;
  * for an unseen champion over the arena or in a BattleClient panel it passes
  * outOfSight: true, which drops the team ring. Labels come from
- * agent-identity.js, the one label owner (plan P7).
+ * agent-identity.js, the one label owner.
  */
 import { canonicalAgentIdentity } from "./agent-identity.js";
 import { classNamesV1 } from "./class-documentation.js";

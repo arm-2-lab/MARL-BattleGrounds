@@ -1,10 +1,10 @@
-"""Measure one explicit Packet 7 tournament workload without changing defaults.
+"""Measure one explicit canonical tournament workload without changing defaults.
 
 Use benchmark_evaluation --canonical-contracts --canonical-case CASE
 --canonical-workload WORKLOAD.json --output DIRECTORY. Cases are shared,
 canonical, capture and reuse. The workload supplies immutable custom configs and
 the same resolved jobs in a baseline-readable format. The shared case also runs
-on the committed Packet 6 package; it deliberately excludes tournament analysis.
+on a committed baseline package; it deliberately excludes tournament analysis.
 Fresh cases use three models, batch 32, chunk 16 and 64 games per matchup. Reuse
 uses artificial twelve-entry records and never presents them as played results.
 

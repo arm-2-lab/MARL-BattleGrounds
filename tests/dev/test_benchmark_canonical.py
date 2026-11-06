@@ -2,7 +2,7 @@
 
 The fixtures prove explicit workload limits, dynamic model parameters, original
 to logical row joins, and instrumentation that restores wrapped owners. They do
-not establish tournament correctness or GPU speed; packet evidence owns those.
+not establish tournament correctness or GPU speed.
 """
 
 # The developer harness deliberately inspects existing private measurement owners.

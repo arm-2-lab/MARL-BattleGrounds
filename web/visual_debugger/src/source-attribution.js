@@ -11,9 +11,9 @@
  * come from `agent-identity.js`. Callers: `explanations.js`.
  *
  * Statuses no longer use it: since the owner's 2 October 2026 rulings every
- * status display names its source by class only ("From a Hunter."), from
- * `symbols.js` STATUS_NAMES through `semantic-vocabulary.js`
- * statusCardSentence, the same in Agent POV and Oracle View.
+ * only ("From a Hunter."), from `symbols.js` STATUS_NAMES through
+ * `semantic-vocabulary.js` statusCardSentence, the same in Agent POV and
+ * Oracle View.
  */
 import { exactAuthorizedAgentIdentityV1 } from "./agent-identity.js";
 

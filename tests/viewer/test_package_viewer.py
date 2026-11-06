@@ -4,7 +4,7 @@ Old developer imports must share exact objects and patched globals. Installed
 browser resources stay alive until serving ends; invalid inputs cannot start a server.
 launch_replay builds every agent's Agent POV work (prepare_agent_pov) before it
 takes the browser resources and serves.
-Installed-wheel HTTP/browser evidence is collected separately at packet closeout.
+This file does not check HTTP serving or a browser from an installed wheel.
 """
 
 from __future__ import annotations

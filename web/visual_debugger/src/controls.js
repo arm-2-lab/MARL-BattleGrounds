@@ -14,7 +14,7 @@
  * (Python clears the target), and the browser's own menu stays closed there.
  *
  * It also owns the status line's plain sentences for the player's own commands
- * (statusSentence): the vision page's words for steps, actions, targets,
+ * (statusSentence): the BattleClient vision's words for steps, actions, targets,
  * focus, Lock In, views, Restart and refusals. They are pure text builders;
  * main.js decides when to show them. audienceSwitchKeepsTick decides when a
  * view switch shows the tick already played at its end instead of replaying
@@ -409,7 +409,7 @@ export function isDebuggerKey(event) {
  * Return the global slot that Tab (direction 1) or Shift+Tab (direction -1)
  * gives the orders to in live play: the next champion you command that can
  * take orders, in slot order, wrapping around (owner's ruling, 3 October
- * 2026).
+ * the first, for Shift+Tab).
  *
  * A champion can take orders when it is Manual (in manualSlots) and is not in
  * fallenSlots. With one Manual champion on each team, both count. A policy's
@@ -696,7 +696,7 @@ export function bindBattlefieldControls({
 }
 
 /**
- * The vision page's names for the nine movement ids (0 Stay, 1 North,
+ * The BattleClient vision's names for the nine movement ids (0 Stay, 1 North,
  * 2 South, 3 East, 4 West, 5 North-East, 6 North-West, 7 South-East,
  * 8 South-West), as Core numbers them.
  */
@@ -751,7 +751,7 @@ export const WAITING_FOR_PLAYERS = "Waiting for all players to submit their acti
 
 /**
  * Return the status line's plain sentence for one of the player's own
- * commands, in the vision page's exact words.
+ * commands, in the BattleClient vision's exact words.
  *
  * Pure: it reads only its argument. Names come from the caller already
  * formatted ("Mage (ID 5)", "Shield Bash"); the caller owns Agent POV limits

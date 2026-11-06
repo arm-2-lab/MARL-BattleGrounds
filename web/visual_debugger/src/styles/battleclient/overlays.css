@@ -1,5 +1,5 @@
 /*
- * BattleClient floating parts, ported from the approved vision page:
+ * BattleClient floating parts, ported from the BattleClient vision:
  *
  * - The hover card (#hcard): the holder of the Champion Card that follows the
  *   pointer over a champion, a portrait, an Allowed Now button or a checklist
@@ -341,7 +341,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 /* Replay Recording popover: over the rail's cards and exactly as wide as
    they are (268 to 318 px), below the scorebug, where the Visual Filters
    drawer opens; a 300 px box would leave a sliver of the card under it. So it
-   never covers the scorebug or the arena (owner ruling M3, 3 Oct 2026). Its
+   never covers the scorebug or the arena (3 Oct 2026). Its
    top is the rail's first card: the drawer's --vf-drawer-top fallback, 144 px
    (the 48 px top bar, the 84 px scorebug and the rail's 12 px padding). */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
@@ -606,7 +606,7 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
 /* The view tag's spot: on the arena's frame under the floor, starting 8 px
    past the left home strip and its corner bracket (the store's Agent POV
    caption rule), so it never covers the left home end's bracket lines, a
-   floor mark or the herald cards' top band (owner ruling M3, 3 Oct 2026).
+   floor mark or the herald cards' top band (3 Oct 2026).
    src/looks/camera.js writes --left-home-end (where the left strip ends) and
    --floor-band (the frame's height under the floor), both shares of the
    field's width, on #arena; the field is the battlefield shell, as wide as

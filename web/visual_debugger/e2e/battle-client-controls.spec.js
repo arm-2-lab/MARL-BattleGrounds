@@ -234,8 +234,8 @@ test("Policies Only Run plays one turn at a time and Pause stops after the curre
   await expect(run).toHaveText("Pause");
   await expect(run).toHaveAttribute("aria-pressed", "true");
   await expect(playOne).toBeDisabled();
-  // Space and N on the focused arena while Run plays are ignored, as on the
-  // vision page: only Run sends turns, so no key " " or "n" command may go out
+  // Space and N on the focused arena while Run plays are ignored. Only Run
+  // sends turns, so no key " " or "n" command may go out
   // (checked below: every command during Run is Run's own Enter).
   await page.locator("#battlefield").focus();
   await page.keyboard.press("Space");

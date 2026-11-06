@@ -2112,7 +2112,7 @@ function fillWardMarks(doc, marks, record) {
 
 /**
  * Return the status tray of one champion for the HUD and cards: at most limit
- * chips (default 2, plan P15) and how many more statuses there are ("+N").
+ * chips (default 2) and how many more statuses there are ("+N").
  *
  * statuses: the champion's status rows from the audience's own scene (Agent
  * POV: only a seen champion's). In Combat, Spawn Shield and unknown tokens are

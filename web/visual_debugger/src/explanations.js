@@ -1544,7 +1544,7 @@ export function explainClassDocumentation(rawOwner, rawClassMechanics) {
  * it comes from by class only ("It moves at ×0.85 speed. From a Hunter.";
  * an aura of the recipient's own class: "From its own aura."). Sources are
  * never named by Agent ID, so Agent POV and Oracle View give the same card
- * (owner rulings, 2 October 2026), and the status's direct_sources are never
+ * (2 October 2026), and the status's direct_sources are never
  * read. The tip (compact surface) is the Champion Card's row in a normal-size
  * tip (owner, 2 October 2026): the title, that sentence and one row, "Time
  * Left" ("3 ticks left", statusTimeText; "Unavailable" without a count),
@@ -1633,7 +1633,7 @@ export function explainPovStatus(rawStatus, rawRecipient = {}) {
 
 /**
  * Describe an authorized status for researcher inspection. Since the owner's
- * 2 October 2026 rulings it gives exactly explainPovStatus's descriptor: the
+ * explainPovStatus's descriptor: the
  * source is named by class only, so the third argument is ignored and kept
  * only so callers keep one call shape. rawRecipient defaults to {}. Return
  * the shared durable-status descriptor without changing any record.

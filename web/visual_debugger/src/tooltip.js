@@ -18,8 +18,8 @@
  * keeps keyboard focus on the same symbol across redraws and turns symbol tips
  * off when the symbol_explanations switch is off (setSymbolTipsEnabled). It
  * opens no card over the live Command Deck (#command-deck,
- * insideLiveCommandDeck): the approved vision gives the deck's controls no
- * hover card.
+ * insideLiveCommandDeck): the BattleClient vision gives the deck's
+ * controls no hover card.
  *
  * It also owns the Champion Card, the one card every client shows for a
  * hovered champion (design C "Clean List", owner, 2 October 2026): the name
@@ -99,7 +99,7 @@ export const SYMBOL_TIP_KIND = "symbol";
 /**
  * The element ID of the live Command Deck (the BattleClient's and the DevClient
  * combat screen's deck: steps, targets, actions and Lock In). The controller
- * never opens a card for an owner inside it, because the approved vision page
+ * never opens a card for an owner inside it, because the BattleClient vision
  * gives the deck's controls no hover card: they show their state with their
  * own tags ("Not Allowed", "Armed") and refusals go to the status line. The
  * owners keep their aria-description, so a screen reader still reads the
@@ -1113,7 +1113,7 @@ function measureTooltipForPlacement(input) {
  * safe to repeat. Owner registrations remain weakly held. The caller owns
  * persistent inspector rendering and disposal.
  *
- * Symbol Tip behavior (owner rules, 1 October 2026):
+ * Symbol Tip behavior (1 October 2026):
  * - Top layer: when the browser has the Popover API, the card gets
  *   popover="manual" and is shown with showPopover, so it is drawn over a
  *   modal dialog. When a modal dialog is open, each show puts the card back on
@@ -2044,9 +2044,9 @@ export function createTooltipController(options) {
 // ---------------------------------------------------------------------------
 
 /**
- * The elements the live hover card answers to, as in the vision page: a
- * champion's body in the arena, a scorebug portrait, a Turn Checklist row, an
- * Allowed Now button, or any element that names a champion by public ID.
+ * The elements the live hover card answers to, as in the BattleClient vision:
+ * a champion's body in the arena, a scorebug portrait, a Turn Checklist row,
+ * an Allowed Now button, or any element that names a champion by public ID.
  */
 export const HOVER_CARD_SELECTOR =
   "#battlefield .agent[data-presentation-key], .por[data-slot], .cl-row[data-slot], .pick[data-target], [data-public-agent-id]";
@@ -2420,7 +2420,7 @@ export function championCardFactsFromAgent(agent, context = {}) {
  * shows at most CHAMPION_CARD_STATUS_LIMIT rows (or options.rowLimit, the
  * fewer rows a short arena box has room for: renderFittedChampionCard picks
  * it), with `more` counting the rest; options.expanded (the Hold Shift card,
- * owner, 2 October 2026) shows every row and `more` is 0. Then the note,
+ * 2 October 2026) shows every row and `more` is 0. Then the note,
  * "Played by <who>" (left out when you play it) and the you and yourTarget
  * flags. Unseen champion: the title, the ID line and unseenText only
  * (expanded and rowLimit change nothing). A missing fact leaves its part out.
@@ -3181,7 +3181,7 @@ export function championCardLayout(input) {
 
 /**
  * Place a Champion Card that grows past the arena box ("Grow past arena",
- * owner, 2 October 2026): fully inside the viewport (CHAMPION_CARD_BOX_MARGIN,
+ * 2 October 2026): fully inside the viewport (CHAMPION_CARD_BOX_MARGIN,
  * 8 px, inside every edge), over the panels, as close to its champion as it
  * can be and never over the champion when that can be avoided. Pure.
  *

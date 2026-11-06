@@ -16,8 +16,8 @@ stored SMAX YAML plus recorded per-case overrides (PyYAML reads ``1e7`` as a
 string, and ``TOTAL_TIMESTEPS`` is set so the donor's floor rule gives the
 case's learning blocks).
 
-Run as a script inside the isolated CPU environment
-``/tmp/packet7-pqn-reference-env`` (the exact versions in
+Run as a script inside an isolated CPU environment
+(with the exact versions in
 ``pqn-reference-requirements.txt``), ``--generate DIRECTORY`` writes candidate
 ``pqn.npz`` and ``pqn_reference.json`` files: exact initialization digests and
 the three orthogonal GRU recurrent kernels; inference and training forwards

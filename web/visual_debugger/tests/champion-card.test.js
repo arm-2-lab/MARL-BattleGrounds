@@ -24,7 +24,7 @@
  * Champion Card descriptor carries its model for the Replay Viewer's tooltip
  * controller.
  *
- * Owner rulings of 2 October 2026: the one shared Life bar (`life-bar.js`:
+ * Since 2 October 2026: the one shared Life bar (`life-bar.js`:
  * its tones at the same lines, its numbers, its fill width and its three
  * parts); a champion's own aura reads "From its own aura."; the card is placed
  * fully inside the arena box (8 px margin), also for a pointer outside the box

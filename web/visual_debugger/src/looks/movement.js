@@ -13,7 +13,7 @@
  *   (paused frames never show it) and only an animation makes it visible.
  * - Focus Trail (switch focus_trail): eight fading dots along the selected
  *   champion's path of this tick only, start to end. There is no history of
- *   earlier ticks (plan P17).
+ *   earlier ticks.
  *
  * The glide itself is not drawn here: the choreographer moves each body's
  * `g.agent-glide` wrapper with a temporary transform. This file gives the

@@ -7,7 +7,7 @@ Factories reset through Core with a fixed key, then install authored positions
 or lifecycle state for demonstration. These are debugger scenes, not the
 packaged TDM benchmark tasks, with one exception outside the registry: the
 Vision Moment (``build_vision_moment`` and ``vision_moment_scenario``), a real
-map 47 state equal to the BattleClient vision page's frozen frame (its scene
+map 47 state equal to the frozen frame of the BattleClient vision (its scene
 declares packaged map 47 with exchanged spawn banks, so the client names the
 map), with eleven other starts built from it (``VISION_MOMENT_STARTS``: four
 near-end starts and seven that make one Visual Filters event happen), which
@@ -1508,7 +1508,7 @@ def cycle_scenario_name(
     return names[(current_index + direction) % len(names)]
 
 
-# The Vision Moment: the frozen frame of the approved BattleClient vision page
+# The Vision Moment: the frozen frame of the BattleClient vision
 # (map 47 Teutoburg Forest, tick 91 of a recorded game whose spawn ends were
 # exchanged, so Team A starts on the right). Values are slot-ordered, Team A
 # slots 0-4 then Team B slots 5-9, each team Mage, Warrior, Hunter, Rogue,
@@ -1548,12 +1548,12 @@ VISION_MOMENT_SCORES = (2, 4)
 # Respawn-wave clocks: (2, 2), one less than the recorded frame's (3, 3). Core
 # brings the fallen back in the transition that starts when a clock reads 0
 # (core/env.py, _build_was_respawned_this_transition_by_agent_array), so a
-# clock of c means "back in c + 1 ticks". The vision page writes "Respawn Wave
+# clock of c means "back in c + 1 ticks". The vision shows "Respawn Wave
 # in 3 Ticks"; the owner's 2 Oct decision sets the clocks so that text is true.
 VISION_MOMENT_RESPAWN_WAVES = (2, 2)
 # The Vision Moment and its other starts, each a small change away from it so
 # the parity tools reach a rare state in one turn instead of a long game:
-# "vision" is the vision page's frame; "fall" leaves the Team B Mage (slot 5)
+# "vision" is the vision's frame; "fall" leaves the Team B Mage (slot 5)
 # 1 life and the Team B Priest's Ultimate cooling down, so the staged Charge
 # on the Mage makes it fall in the next turn (with the Ultimate ready, the
 # tdm-beta Priest saves it: seen 1 Oct 2026); "own_return" has the Team A
@@ -1648,7 +1648,7 @@ def _stun_all_but(state: EnvState, free: tuple[int, ...]) -> EnvState:
 
 
 def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
-    """Build the real map 47 game state that the BattleClient vision page shows.
+    """Build the real map 47 game state that the BattleClient vision shows.
 
     The vision page (the owner-approved BattleClient design) freezes one moment
     of a recorded game on map 47, Teutoburg Forest: tick 91 of 300, Team A 2
@@ -1659,8 +1659,8 @@ def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
     Parameters
     ----------
     start : str, default "vision"
-        Which start of ``VISION_MOMENT_STARTS``: ``"vision"`` is the vision
-        page's frame. Each other start changes one thing so a rare state comes
+        Which start of ``VISION_MOMENT_STARTS``: ``"vision"`` is the
+        vision's frame. Each other start changes one thing so a rare state comes
         in the next turn: ``"fall"`` sets the Team B Mage's life to 1 (it falls
         in the next turn when any blow lands, such as the staged Charge) and
         puts the Team B Priest's Ultimate on a 30-tick cooldown (when ready,
@@ -1730,7 +1730,7 @@ def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
         cooldowns; the Team A Rogue's 2-tick spawn shield (it just respawned);
         the Team B Mage's 5 ticks of Burst; Blessing of Freedom (1 tick) on
         both Mages; respawn-wave clocks (2, 2), so the next wave brings the
-        fallen back in 3 ticks, as the vision page says (see Notes); and
+        fallen back in 3 ticks, as the vision says (see Notes); and
         out-of-combat countdowns. This is the ``"vision"`` start; every other
         start then changes only what ``start`` above says.
 
@@ -1739,7 +1739,7 @@ def build_vision_moment(start: str = "vision") -> tuple[EnvConfig, EnvState]:
     The respawn-wave clocks are the one value set apart from the recording,
     which reads (3, 3) at tick 91. Core respawns the fallen in the transition
     that starts when a team's clock reads 0, so a clock of c brings them back
-    in c + 1 ticks. The vision page's "Respawn Wave in 3 Ticks" is therefore
+    in c + 1 ticks. The vision's "Respawn Wave in 3 Ticks" is therefore
     true only for clocks of 2; the owner decided on 2 Oct 2026 that the moment
     must make the vision's text true, so the clocks are (2, 2).
 

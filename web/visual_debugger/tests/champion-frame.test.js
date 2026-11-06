@@ -50,8 +50,8 @@ import {
   classifyVisualPaintPart,
 } from "../src/visual-filters.js";
 
-// The frame's input, read from a frame the way main.js does (see the OWNER-FILE
-// note of this lane): the look itself never reads a frame.
+// The frame's input, read from a frame the way main.js does; the look itself
+// never reads a frame.
 /** @param {any} presentation @param {string | null} selectedPublicAgentId */
 function frameInput(presentation, selectedPublicAgentId) {
   const pov = authorizedPresentationAudience(presentation) === "agent_pov";

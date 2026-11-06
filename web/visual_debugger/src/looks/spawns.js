@@ -16,7 +16,7 @@
  * The DOM always holds the END state. A stone that changes this tick carries
  * `data-beat-hold` attributes so the choreographer shows the earlier look until
  * the beat: Wake from the Return beat, Vigil from the Fall beat (300 ms fades).
- * With Spawn Waystones off a plain thin ring marks each pad (plan P26).
+ * With Spawn Waystones off a plain thin ring marks each pad.
  *
  * The Call (event part, `records({part: "call", event})`): when a champion this
  * audience saw comes back, its whole rune circle blazes in Team Light (up to 90%:

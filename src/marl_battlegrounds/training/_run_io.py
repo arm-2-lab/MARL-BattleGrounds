@@ -767,7 +767,7 @@ def _check_validation_interval(result: Mapping[str, Any]) -> None:
             cast(Mapping[str, Any], evidence),
             pairs,
         )
-        # Earlier closeout records used independent_blocks for the supported
+        # Earlier saved records used independent_blocks for the supported
         # count. Keep reading those original bytes; new records separate counts.
         historical_counts = "supported_independent_sampling_units" not in result
         if historical_counts:

@@ -406,7 +406,7 @@ export function renderRuneWordmark(svg, text = BRAND_NAME, cap = 11) {
  * (when `elements.helpButton` is given) and, when the page has an empty
  * `#brand-wordmark` SVG, carves "MARL-BGs" into it. For "combat_debugger" it
  * also removes the WebP choice from the top bar's emblem `<picture>`, so the
- * emblem shows its 64 px PNG, the same picture the approved vision page draws
+ * emblem shows its 64 px PNG, the same picture the BattleClient vision shows
  * (the lossy WebP copy differs from it by up to 42 color levels at the edges;
  * the browser may already have fetched the 4 KB WebP once). The Replay Viewer
  * keeps the WebP. It reads no frame, so it is the same in Oracle View and
@@ -1177,7 +1177,7 @@ export function renderCommandHelpLists(root) {
 
 /**
  * The four rule cards of the How to Play overlay, in order, word for word from
- * the approved vision page: [title, sentence].
+ * the BattleClient vision: [title, sentence].
  *
  * @type {ReadonlyArray<readonly [string, string]>}
  */
@@ -1385,7 +1385,7 @@ function ruleToken(doc, classId, teamId, fallen = false) {
 }
 
 /**
- * Build the picture (.ill) of one rule card, as in the vision page.
+ * Build the picture (.ill) of one rule card, as in the BattleClient vision.
  *
  * Rule 1: Team A Warrior and Team B Mage, a dot, Team A Hunter and Team B
  * Rogue (everyone decides at once). Rule 2: a 3 by 3 step pad with North lit,
@@ -1502,7 +1502,7 @@ function rulePicture(doc, index) {
 
 /**
  * Fill the How to Play overlay's body (#htp-body) with the four rule cards,
- * as the vision page does when the overlay first opens.
+ * when the overlay first opens, as in the BattleClient vision.
  *
  * Writes one `.rules` grid with four `.rule` cards (picture, title h3 and
  * sentence p, from HELP_OVERLAY_RULES). Does nothing when root has no
