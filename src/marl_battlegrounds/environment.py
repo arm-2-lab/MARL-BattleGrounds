@@ -314,16 +314,17 @@ def _training_facts(info: Info, task_mode: int) -> TrainingFacts:
     )
 
 
-def _team_scores(core_state: EnvState, task_mode: int) -> Array:
-    """Return each team's score in the handle's own mode.
+def team_scores_for_mode(core_state: EnvState, task_mode: int) -> Array:
+    """Return each team's score in one mode.
 
     Parameters
     ----------
     core_state : EnvState
         Core state after the transition, with any leading axes.
     task_mode : int
-        The handle's fixed Python mode, so a branch is chosen at trace time and
-        a Team Deathmatch program stays exactly as before.
+        A Python mode constant, such as a handle's fixed mode, so the branch is
+        chosen at trace time and a Team Deathmatch program stays exactly as
+        before.
 
     Returns
     -------
@@ -331,6 +332,10 @@ def _team_scores(core_state: EnvState, task_mode: int) -> Array:
         Int32 (..., 2) in Team A, Team B order: points from kills in Team
         Deathmatch (and the neutral mode), captures in Capture the Flag, hill
         points in King of the Hills.
+
+    See Also
+    --------
+    score_threshold_for_mode : The score in the same mode that wins.
     """
     if task_mode == TASK_MODE_CTF:
         return core_state.capture_the_flag_scores
@@ -339,11 +344,12 @@ def _team_scores(core_state: EnvState, task_mode: int) -> Array:
     return core_state.team_deathmatch_scores
 
 
-def _outcome(info: Info, task_mode: int) -> Array:
-    """Return Core's categorical result for the handle's own mode.
+def outcome_for_mode(info: Info, task_mode: int) -> Array:
+    """Return Core's categorical result in one mode.
 
     0 ongoing, 1 Team A wins, 2 Team B wins, 3 draw, read from the mode's own
-    facts record; task_mode is the handle's fixed Python mode.
+    facts record; task_mode is a Python mode constant, such as a handle's
+    fixed mode, so the branch is chosen at trace time.
     """
     facts = info.transition_facts
     if task_mode == TASK_MODE_CTF:
@@ -351,6 +357,32 @@ def _outcome(info: Info, task_mode: int) -> Array:
     if task_mode == TASK_MODE_KOTH:
         return facts.king_of_the_hills_facts.outcome
     return facts.team_deathmatch_facts.outcome
+
+
+def score_threshold_for_mode(config: EnvConfig, task_mode: int) -> Array:
+    """Return the score that wins a game in one mode.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        A config or config batch, with any leading axes.
+    task_mode : int
+        A Python mode constant, such as a handle's fixed mode, chosen at trace
+        time like team_scores_for_mode.
+
+    Returns
+    -------
+    Array
+        Int32 with the config's leading axes: points in Team Deathmatch (and
+        the neutral mode, whose threshold is 0), captures in Capture the Flag,
+        hill points in King of the Hills. It is the value the mode's
+        team_scores_for_mode must reach.
+    """
+    if task_mode == TASK_MODE_CTF:
+        return jnp.asarray(config.capture_the_flag_score_threshold)
+    if task_mode == TASK_MODE_KOTH:
+        return jnp.asarray(config.king_of_the_hills_score_threshold)
+    return jnp.asarray(config.team_deathmatch_score_threshold)
 
 
 class EpisodeInfo(NamedTuple):
@@ -1360,7 +1392,7 @@ class Environment:
                 core_state,
                 state.initial_step_count,
                 totals,
-                _outcome(info, self._execution.task_mode),
+                outcome_for_mode(info, self._execution.task_mode),
             )
             values = values._replace(valid=values.valid & state.collect_metrics)
         advances, overflow = _checked_increment(
@@ -1381,7 +1413,7 @@ class Environment:
         result = EpisodeInfo(
             state.episode_id,
             completed,
-            _outcome(info, mode),
+            outcome_for_mode(info, mode),
             state.config,
             values,
             None,
@@ -1392,7 +1424,7 @@ class Environment:
                 jnp.asarray(-1, jnp.int32),
             ),
             core_state.step_count - state.initial_step_count,
-            _team_scores(core_state, mode),
+            team_scores_for_mode(core_state, mode),
             successor.lifecycle_error,
             training_facts=_training_facts(info, mode) if self.training_facts else None,
         )

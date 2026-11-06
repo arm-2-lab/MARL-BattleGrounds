@@ -7,11 +7,13 @@ team's within half a fine cell. A spawn exchange swaps the two flag homes with
 the pads: balanced_spawn_configs keeps them in the first half of the batch and
 swaps them in the second, and spawn_locations_for_source names an exchanged
 Capture the Flag config choice 1 but refuses one whose pads were exchanged
-without its homes. A handle reports its own mode's scores and outcome (captures
-and the Capture the Flag result on a Capture the Flag handle, points and the
-Team Deathmatch result otherwise), and its training facts keep only its own
-mode's objective record: Core's Capture the Flag record on a Capture the Flag
-handle, nothing on a Team Deathmatch handle. make_standard_capture_the_flag_config
+without its homes. team_scores_for_mode, outcome_for_mode and
+score_threshold_for_mode read each mode's own scores, result and winning score,
+so a handle reports its own mode's (captures and the Capture the Flag result on
+a Capture the Flag handle, points and the Team Deathmatch result otherwise),
+and its training facts keep only its own mode's objective record: Core's
+Capture the Flag record on a Capture the Flag handle, nothing on a Team
+Deathmatch handle. make_standard_capture_the_flag_config
 builds the same config as converting the Team Deathmatch one, with its settings
 passed through; list_ctf_maps and maps_for_task give each mode's 52 maps.
 make("ctf") plays Capture the Flag on a listed map with the mode's default
@@ -31,6 +33,11 @@ from marl_battlegrounds import environment, make
 from marl_battlegrounds._task_settings import DEFAULT_CTF_FLAG_HOME_POSITIONS
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import TASK_MODE_CTF, TASK_MODE_KOTH, TASK_MODE_TDM
+from marl_battlegrounds.environment import (
+    outcome_for_mode,
+    score_threshold_for_mode,
+    team_scores_for_mode,
+)
 from marl_battlegrounds.modes.team_deathmatch._assets import map_geometry
 from marl_battlegrounds.policies.route_field import (
     FINE_CELL_SIZE,
@@ -50,8 +57,6 @@ from marl_battlegrounds.tasks import (
 )
 
 _HOMES = np.asarray(DEFAULT_CTF_FLAG_HOME_POSITIONS, dtype=np.float32)
-_outcome = environment._outcome  # pyright: ignore[reportPrivateUsage]
-_team_scores = environment._team_scores  # pyright: ignore[reportPrivateUsage]
 _training_facts = environment._training_facts  # pyright: ignore[reportPrivateUsage]
 _TEAM_A: tuple[AgentClassName, ...] = ("mage", "rogue")
 _TEAM_B: tuple[AgentClassName, ...] = ("priest",)
@@ -126,13 +131,17 @@ def test_each_mode_reads_its_own_scores_outcome_and_facts() -> None:
             ),
         )
     )
-    for mode, scores, outcome in (
-        (TASK_MODE_TDM, [1, 2], 1),
-        (TASK_MODE_CTF, [3, 0], 2),
-        (TASK_MODE_KOTH, [5, 6], 3),
+    config = _CONFIG._replace(
+        team_deathmatch_score_threshold=7, king_of_the_hills_score_threshold=9
+    )
+    for mode, scores, outcome, threshold in (
+        (TASK_MODE_TDM, [1, 2], 1, 7),
+        (TASK_MODE_CTF, [3, 0], 2, 3),
+        (TASK_MODE_KOTH, [5, 6], 3, 9),
     ):
-        assert _team_scores(state, mode).tolist() == scores
-        assert int(_outcome(info, mode)) == outcome
+        assert team_scores_for_mode(state, mode).tolist() == scores
+        assert int(outcome_for_mode(info, mode)) == outcome
+        assert int(score_threshold_for_mode(config, mode)) == threshold
     ctf = _training_facts(info, TASK_MODE_CTF)
     assert ctf.capture_the_flag_facts is info.transition_facts.capture_the_flag_facts
     assert ctf.king_of_the_hills_facts is None
