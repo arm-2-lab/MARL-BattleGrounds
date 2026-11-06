@@ -6,9 +6,10 @@ System for such an export, which then plays a complete two-entrant
 tournament), and a module:function factory
 into the Policy or System it returns. Complete learner folders use the same
 actor-only loader. Malformed folders, empty or unknown references and wrong
-factory return types fail. A factory's own error keeps its type. The CLI factory
-branch calls the same factory loader, load_factory, and wraps every error with
-its cause kept.
+factory return types fail; a released model typed without its organization
+fails with the full name suggested, its @ step kept. A factory's own error
+keeps its type. The CLI factory branch calls the same factory loader,
+load_factory, and wraps every error with its cause kept.
 pinned_opponent_evidence records the built-in Random team as installed with no
 controller exposure, tdm-alpha, tdm-beta and tdm-gamma (through its recorded
 Beta ancestry) as installed with known exposure that makes all eight protected
@@ -162,7 +163,12 @@ def test_bad_references_are_refused_with_clear_errors(
     with pytest.raises(ValueError, match="Checkpoint ID"):
         load_method(str(learner))
     for text in ("", "   ", "unknown-team", "a:b:c"):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError) as refused:
+            load_method(text)
+        assert "Did you mean" not in str(refused.value)
+    full = "'MARL-BattleGrounds/tdm-season-0-qmix@100M'"
+    for text in ("tdm-season-0-qmix@100M", "QMIX@100M"):
+        with pytest.raises(ValueError, match=f"Did you mean {full}\\?$"):
             load_method(text)
     with pytest.raises(TypeError, match="System or Policy"):
         load_method(_factory_module(monkeypatch, object()))

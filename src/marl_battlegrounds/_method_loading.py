@@ -307,13 +307,16 @@ def load_method(reference: str) -> Policy | System:
     ValueError
         The text is empty, names no built-in, directory, model file, released
         model or valid factory, the directory is incomplete, or its files fail
-        their checks. For a released model: the step does not exist (the
-        message lists the nearest saves), the ``@`` suffix is not a step, the
-        repo does not exist, a downloaded file's SHA-256 differs from its
-        repo's ``steps.csv``, the address names an original actor folder in a
-        dataset (download it to a local folder first), or Hugging Face is
-        offline and the file is not cached (the message gives the
-        ``models download`` command).
+        their checks. A released model typed without its organization
+        (``"tdm-season-0-qmix"`` or ``"qmix"``) is refused too, and the message
+        suggests the full name (``"MARL-BattleGrounds/tdm-season-0-qmix"``).
+        For a released model: the step does not exist (the message lists the
+        nearest saves), the ``@`` suffix is not a step, the repo does not
+        exist, a downloaded file's SHA-256 differs from its repo's
+        ``steps.csv``, the address names an original actor folder in a dataset
+        (download it to a local folder first), or Hugging Face is offline and
+        the file is not cached (the message gives the ``models download``
+        command).
     OSError
         An actor directory or model file cannot be read.
     ImportError
@@ -373,10 +376,15 @@ def load_method(reference: str) -> Policy | System:
 
             value = load_system(path)
     else:
+        from marl_battlegrounds.released_models import (
+            _full_name_hint,  # pyright: ignore[reportPrivateUsage]
+        )
+
         raise ValueError(
             f"Method reference {reference!r} is not a built-in name, an existing "
             "actor export/checkpoint directory, a model file, a released model "
-            "name or address, or a module:function factory"
+            "name or address, or a module:function factory."
+            + _full_name_hint(reference)
         )
     if cached is not None:
         cached[0][key] = value
