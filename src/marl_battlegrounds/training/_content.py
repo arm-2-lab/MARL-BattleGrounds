@@ -474,34 +474,50 @@ def _scenario_root(info: TDMScenarioInfo) -> ContentAddressedIdentityV1:
     )
 
 
+def _executable_tree(source: str) -> str:
+    """Return one Python source's syntax tree without its bare strings, as text.
+
+    Every statement that is only a string is removed: module, class and
+    function docstrings, and later ones such as a NamedTuple field's docstring.
+    Such a statement does nothing when the code runs, so documentation,
+    comments and formatting never change the result, and any other edit does.
+    Host-only; source must parse (SyntaxError otherwise).
+    """
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            statements = getattr(node, field, None)
+            if isinstance(statements, list):
+                statements[:] = [
+                    statement
+                    for statement in cast(list[ast.stmt], statements)
+                    if not (
+                        isinstance(statement, ast.Expr)
+                        and isinstance(statement.value, ast.Constant)
+                        and isinstance(statement.value.value, str)
+                    )
+                ]
+    return ast.dump(tree, include_attributes=False)
+
+
 def _shared_definitions() -> tuple[ContentAddressedIdentityV1, ...]:
     """Identify common rules without treating shared use as protected leakage.
 
-    Read six installed Core Python sources and remove documentation strings before
-    hashing their syntax trees. Formatting, comments and docstrings do not change
-    this executable identity. The mechanics catalog and schema versions retain
-    their existing owners. The evaluation-schemas identity hashes
-    REQUIRED_SCHEMA_BINDINGS_V4, the bindings of version 3 content; version 1
-    and 2 bindings recorded REQUIRED_SCHEMA_BINDINGS_V3 and keep those saved
-    bytes, which are never rebuilt. This finite read belongs only at setup.
+    Read six installed Core Python sources and hash their syntax trees without
+    bare strings (_executable_tree). Formatting, comments and docstrings, field
+    docstrings included, do not change this executable identity. The mechanics
+    catalog and schema versions retain their existing owners. The
+    evaluation-schemas identity hashes REQUIRED_SCHEMA_BINDINGS_V4, the bindings
+    of version 3 content; version 1 and 2 bindings recorded
+    REQUIRED_SCHEMA_BINDINGS_V3 and keep those saved bytes, which are never
+    rebuilt. This finite read belongs only at setup.
     """
-    bodies: dict[str, str] = {}
-    for name in ("types", "axis_mappings", "combat", "config", "geometry", "env"):
-        source = files("marl_battlegrounds").joinpath("core", f"{name}.py").read_text()
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if (
-                isinstance(
-                    node,
-                    (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef),
-                )
-                and node.body
-                and isinstance(node.body[0], ast.Expr)
-            ):
-                value = node.body[0].value
-                if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                    node.body.pop(0)
-        bodies[name] = ast.dump(tree, include_attributes=False)
+    bodies = {
+        name: _executable_tree(
+            files("marl_battlegrounds").joinpath("core", f"{name}.py").read_text()
+        )
+        for name in ("types", "axis_mappings", "combat", "config", "geometry", "env")
+    }
     return (
         _identity("static-mechanics", {"catalog": build_static_mechanics_catalog_v1()}),
         _identity("evaluation-schemas", {"bindings": REQUIRED_SCHEMA_BINDINGS_V4}),

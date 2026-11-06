@@ -16,6 +16,8 @@ or 2 binding under a different protected scenario closure (as after the
 scenario republish) links as a declared export with unknown exposure and all
 eight scenarios familiar, without an error; this holds against today's real
 republished binding as well as a binding whose protected roots alone differ.
+The simulator-rules identity ignores every bare string (module, class,
+function and field docstrings), comments and formatting, and changes with code.
 No learner or training run is created.
 """
 
@@ -142,6 +144,35 @@ def test_prepared_bank_matches_verified_maps_and_both_spawn_choices(
     identifier, references, _ = ordered_source_bank_identity(prepared.source_configs)
     assert prepared.binding.source_bank.canonical_digest == identifier
     assert prepared.binding.source_configurations == tuple(references)
+
+
+def test_simulator_rules_ignore_every_docstring_but_not_code() -> None:
+    documented = '''"""Module."""
+from typing import NamedTuple
+
+
+class State(NamedTuple):
+    """Class."""
+
+    alive: bool
+    """Field."""
+
+
+def step(x: int) -> int:
+    """Function."""
+    # Comment.
+    if x:
+        "Branch."
+    return x + 1
+'''
+    plain = (
+        "from typing import NamedTuple\nclass State(NamedTuple):\n    alive: bool\n"
+        'def step(x: int) -> int:\n    if x:\n        "Other."\n    return x + 1\n'
+    )
+    assert _content._executable_tree(documented) == _content._executable_tree(plain)
+    assert _content._executable_tree(plain) != _content._executable_tree(
+        plain.replace("x + 1", "x + 2")
+    )
 
 
 def test_layout_identity_uses_float32_values_and_order_not_wrappers() -> None:
