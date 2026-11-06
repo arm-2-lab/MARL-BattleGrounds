@@ -2,7 +2,8 @@
 
 The tests cover configuration ownership, metric selection, batched execution
 and episode bookkeeping. Optional training facts must match Core exactly,
-leave actor inputs and native rewards unchanged, and retain producing terminal
+carry no objective records on a Team Deathmatch handle, leave actor inputs
+and native rewards unchanged, and retain producing terminal
 facts through AutoReset while using neutral values for padding. make refuses
 any supplied Red Zone depth, even the
 default 5.0 or 0.0, when an exact env_config owns the rules, and refuses one
@@ -694,9 +695,14 @@ def test_optional_training_facts_match_core_without_changing_public_step(
         **expected.combat_transition_facts._asdict(),
         **expected.death_facts._asdict(),
     }
-    for name, value in facts._asdict().items():
+    assert facts.capture_the_flag_facts is None
+    assert facts.king_of_the_hills_facts is None
+    arrays = {k: v for k, v in facts._asdict().items() if v is not None}
+    for name, value in arrays.items():
         np.testing.assert_array_equal(value, authority[name])
-    assert sum(np.asarray(value).nbytes for value in facts) == 391 * (batch or 1)
+    assert sum(np.asarray(value).nbytes for value in arrays.values()) == 391 * (
+        batch or 1
+    )
     _assert_tree_exact(original[:4], actual[:4])
     _assert_tree_exact(original[4], actual[4]._replace(training_facts=None))
     for side in (0, 1):
@@ -707,6 +713,8 @@ def test_optional_training_facts_match_core_without_changing_public_step(
     padded = enabled.step(key, actual[1], actions)[4].training_facts
     assert padded is not None and not np.any(padded.has_transition)
     for name, value in padded._asdict().items():
+        if value is None:
+            continue
         expected_value = -1 if name.endswith("global_slot_by_source") else 0
         np.testing.assert_array_equal(value, np.full_like(value, expected_value))
 

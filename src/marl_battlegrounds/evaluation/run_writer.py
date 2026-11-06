@@ -446,26 +446,44 @@ def configuration_content_identity(content: Mapping[str, object]) -> str:
 def _replay_summaries(packets: ReplayPackets) -> dict[int, tuple[int, int, int, int]]:
     """Read terminal outcome, local length and scores from authoritative packet facts.
 
-    Transfer only these small leaves when packets are still on device. This
-    performs no simulator calculation and leaves unfinished episodes absent.
+    Each episode's outcome and scores come from its own mode's record: points
+    and the Team Deathmatch result, captures and the Capture the Flag result,
+    or hill points and the King of the Hills result, as EpisodeInfo reports
+    them. Transfer only these small leaves when packets are still on device.
+    This performs no simulator calculation and leaves unfinished episodes
+    absent.
     """
     import jax
 
+    facts = packets.info.transition_facts
     valid, ended, ids, indices, outcomes, scores = jax.device_get(
         (
             packets.valid,
             packets.done.done,
             packets.episode_id,
             packets.transition_index,
-            packets.info.transition_facts.team_deathmatch_facts.outcome,
-            packets.state.team_deathmatch_scores,
+            (
+                facts.team_deathmatch_facts.outcome,
+                facts.capture_the_flag_facts.outcome,
+                facts.king_of_the_hills_facts.outcome,
+            ),
+            (
+                packets.state.team_deathmatch_scores,
+                packets.state.capture_the_flag_scores,
+                packets.state.king_of_the_hills_scores,
+            ),
         )
     )
+    # Only a terminal row's own mode writes its result: Core keeps every other
+    # mode's outcome 0 and scores zero, so each sum is that mode's value. The
+    # packet config cannot say the mode, since it is filled on first rows only.
+    outcome = np.stack([np.asarray(item).reshape(-1) for item in outcomes]).sum(0)
+    score_rows = np.stack([np.asarray(item).reshape(-1, 2) for item in scores]).sum(0)
     result: dict[int, tuple[int, int, int, int]] = {}
     for index in np.flatnonzero(np.asarray(valid) & np.asarray(ended)):
-        score = np.asarray(scores).reshape(-1, 2)[index]
+        score = score_rows[index]
         result[int(np.asarray(ids).reshape(-1)[index])] = (
-            int(np.asarray(outcomes).reshape(-1)[index]),
+            int(outcome[index]),
             int(np.asarray(indices).reshape(-1)[index]) + 1,
             int(score[0]),
             int(score[1]),

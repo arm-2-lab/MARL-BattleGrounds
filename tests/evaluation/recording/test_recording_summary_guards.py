@@ -5,6 +5,9 @@ summaries must fail before completion publication, including when a replay was
 saved earlier or recovered. Replay configurations must agree with earlier
 schedule, start, trace and completion evidence. Partial priority prefixes and
 contradictory outcome flags must not be accepted as complete optional reports.
+A terminal replay summary reads the outcome and scores from whichever mode's
+record holds them, Capture the Flag and King of the Hills as well as Team
+Deathmatch.
 """
 
 import json
@@ -18,6 +21,7 @@ import pytest
 import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core.types import Action
 from marl_battlegrounds.environment import EpisodeInfo
+from marl_battlegrounds.evaluation import run_writer
 from marl_battlegrounds.evaluation._recording.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
 from marl_battlegrounds.evaluation.metric_catalog import PRIORITY_METRIC_NAMES
@@ -105,6 +109,44 @@ def test_replay_summary_mismatch_never_publishes_completion(
             assert not list(path.glob("replays/*.json"))
     finally:
         writer.close()
+
+
+@pytest.mark.parametrize("mode", ["capture_the_flag", "king_of_the_hills"])
+def test_replay_summary_reads_the_mode_that_holds_the_result(
+    terminal_info: EpisodeInfo, mode: str
+) -> None:
+    summaries = run_writer._replay_summaries  # pyright: ignore[reportPrivateUsage]
+    packets = cast(ReplayPackets, terminal_info.replay)
+    facts = packets.info.transition_facts
+    state = packets.state
+    deathmatch = facts.team_deathmatch_facts
+    moved = packets._replace(
+        info=packets.info._replace(
+            transition_facts=facts._replace(
+                **{
+                    "team_deathmatch_facts": deathmatch._replace(
+                        outcome=jnp.zeros_like(deathmatch.outcome)
+                    ),
+                    f"{mode}_facts": getattr(facts, f"{mode}_facts")._replace(
+                        outcome=deathmatch.outcome
+                    ),
+                }
+            )
+        ),
+        state=state._replace(
+            **{
+                "team_deathmatch_scores": jnp.zeros_like(state.team_deathmatch_scores),
+                f"{mode}_scores": jnp.broadcast_to(
+                    jnp.asarray([2, 1], jnp.int32), state.team_deathmatch_scores.shape
+                ),
+            }
+        ),
+    )
+    expected = {
+        episode: (outcome, length, 2, 1)
+        for episode, (outcome, length, _, _) in summaries(packets).items()
+    }
+    assert expected and summaries(moved) == expected
 
 
 @pytest.mark.parametrize("mode", ["priority", "full"])

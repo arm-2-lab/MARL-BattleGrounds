@@ -27,15 +27,19 @@ from marl_battlegrounds._task_settings import TASK_NAMES
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
+    TASK_MODE_CTF,
+    TASK_MODE_KOTH,
     TASK_MODE_TDM,
     TEAM_A_ID,
     TEAM_B_ID,
     Action,
     ActionMask,
+    CaptureTheFlagTransitionFacts,
     DoneFlags,
     EnvConfig,
     EnvState,
     Info,
+    KingOfTheHillsTransitionFacts,
     Observation,
     Reward,
 )
@@ -245,11 +249,20 @@ class TrainingFacts(NamedTuple):
         Float32 (10,) health immediately after combat, before regeneration.
         Environment always supplies it. None means an older manual constructor
         did not supply this fact; recipes requiring it reject that input.
+    capture_the_flag_facts : CaptureTheFlagTransitionFacts or None, default=None
+        Core's whole Capture the Flag record for this transition (pickups,
+        drops, returns, captures, timer returns, outcome). A Capture the Flag
+        handle always supplies it; every other handle leaves it None, so its
+        rollouts store nothing new. Recipes that need it reject None.
+    king_of_the_hills_facts : KingOfTheHillsTransitionFacts or None, default=None
+        Core's whole King of the Hills record, supplied the same way on a King
+        of the Hills handle and None elsewhere.
 
     Notes
     -----
     This immutable tuple selects existing arrays without copying or changing
-    them. It retains 391 numerical bytes per game per step when returned.
+    them. It retains 391 numerical bytes per game per step when returned, and
+    46 more on a Capture the Flag handle.
     Padding has recipient IDs -1 and other values zero/False. Terminal facts
     describe the old game even if AutoReset returns a replacement state.
     The normal recording path excludes this optional training-only payload.
@@ -268,10 +281,16 @@ class TrainingFacts(NamedTuple):
     attributed_death_damage_by_source: Array
     combat_effect_has_recipient_by_source: Array | None = None
     health_after_combat_resolution_by_recipient: Array | None = None
+    capture_the_flag_facts: CaptureTheFlagTransitionFacts | None = None
+    king_of_the_hills_facts: KingOfTheHillsTransitionFacts | None = None
 
 
-def _training_facts(info: Info) -> TrainingFacts:
-    """Select existing combat/death arrays without recomputing any Core fact."""
+def _training_facts(info: Info, task_mode: int) -> TrainingFacts:
+    """Select existing Core facts without recomputing any of them.
+
+    task_mode is the handle's fixed Python int: only its own mode's objective
+    record is kept, so a Team Deathmatch rollout stores no objective facts.
+    """
     facts = info.transition_facts
     combat, deaths = facts.combat_transition_facts, facts.death_facts
     return TrainingFacts(
@@ -288,7 +307,48 @@ def _training_facts(info: Info) -> TrainingFacts:
         deaths.attributed_death_damage_by_source,
         combat.combat_effect_has_recipient_by_source,
         combat.health_after_combat_resolution_by_recipient,
+        facts.capture_the_flag_facts if task_mode == TASK_MODE_CTF else None,
+        facts.king_of_the_hills_facts if task_mode == TASK_MODE_KOTH else None,
     )
+
+
+def _team_scores(core_state: EnvState, task_mode: int) -> Array:
+    """Return each team's score in the handle's own mode.
+
+    Parameters
+    ----------
+    core_state : EnvState
+        Core state after the transition, with any leading axes.
+    task_mode : int
+        The handle's fixed Python mode, so a branch is chosen at trace time and
+        a Team Deathmatch program stays exactly as before.
+
+    Returns
+    -------
+    Array
+        Int32 (..., 2) in Team A, Team B order: points from kills in Team
+        Deathmatch (and the neutral mode), captures in Capture the Flag, hill
+        points in King of the Hills.
+    """
+    if task_mode == TASK_MODE_CTF:
+        return core_state.capture_the_flag_scores
+    if task_mode == TASK_MODE_KOTH:
+        return core_state.king_of_the_hills_scores
+    return core_state.team_deathmatch_scores
+
+
+def _outcome(info: Info, task_mode: int) -> Array:
+    """Return Core's categorical result for the handle's own mode.
+
+    0 ongoing, 1 Team A wins, 2 Team B wins, 3 draw, read from the mode's own
+    facts record; task_mode is the handle's fixed Python mode.
+    """
+    facts = info.transition_facts
+    if task_mode == TASK_MODE_CTF:
+        return facts.capture_the_flag_facts.outcome
+    if task_mode == TASK_MODE_KOTH:
+        return facts.king_of_the_hills_facts.outcome
+    return facts.team_deathmatch_facts.outcome
 
 
 class EpisodeInfo(NamedTuple):
@@ -304,7 +364,8 @@ class EpisodeInfo(NamedTuple):
     completed : Array
         Boolean scalar or ``(B,)``; true only on its final real step.
     outcome : Array
-        Core's outcome code, meaningful for completed games.
+        Core's outcome code for the handle's mode, meaningful for completed
+        games: 0 ongoing, 1 Team A wins, 2 Team B wins, 3 draw.
     config : EnvConfig
         The producing game's exact EnvConfig, for participant ownership.
     priority : MetricValues | None
@@ -320,8 +381,10 @@ class EpisodeInfo(NamedTuple):
         Int32 number of real transitions since this episode's start, including
         the current transition. Reset calls and terminal padding do not count.
     team_scores : Array
-        Int32 resulting scores, shaped ``(..., 2)`` in Team A/Team B order.
-        These include authored starting scores; they are not observed kills.
+        Int32 resulting scores in the handle's mode, shaped ``(..., 2)`` in
+        Team A/Team B order: points in Team Deathmatch, captures in Capture the
+        Flag, hill points in King of the Hills. These include authored starting
+        scores; they are not observed kills.
     lifecycle_error : Array
         Boolean sticky wrapper failure, including invalid IDs and exhausted
         counters. Recording must reject it even without a completed episode.
@@ -1295,7 +1358,7 @@ class Environment:
                 core_state,
                 state.initial_step_count,
                 totals,
-                info.transition_facts.team_deathmatch_facts.outcome,
+                _outcome(info, self._execution.task_mode),
             )
             values = values._replace(valid=values.valid & state.collect_metrics)
         advances, overflow = _checked_increment(
@@ -1312,10 +1375,11 @@ class Environment:
             cumulative_transition_count=advances,
             lifecycle_error=state.lifecycle_error | overflow,
         )
+        mode = self._execution.task_mode
         result = EpisodeInfo(
             state.episode_id,
             completed,
-            info.transition_facts.team_deathmatch_facts.outcome,
+            _outcome(info, mode),
             state.config,
             values,
             None,
@@ -1326,9 +1390,9 @@ class Environment:
                 jnp.asarray(-1, jnp.int32),
             ),
             core_state.step_count - state.initial_step_count,
-            core_state.team_deathmatch_scores,
+            _team_scores(core_state, mode),
             successor.lifecycle_error,
-            training_facts=_training_facts(info) if self.training_facts else None,
+            training_facts=_training_facts(info, mode) if self.training_facts else None,
         )
         return successor, reward, result, info
 
@@ -1695,9 +1759,9 @@ def make(
         An immutable Environment. Map/exact-config handles are ready for
         ``env.reset(key)``. No game has started and no hidden RNG is allocated.
         It plays one task mode: Team Deathmatch, or env_config's own mode when
-        one is given (Team Deathmatch or neutral, the only modes Core
-        validation accepts today). reset refuses a later env_config with a
-        different mode.
+        one is given (Team Deathmatch, Capture the Flag or neutral; Core
+        validation still refuses King of the Hills). reset refuses a later
+        env_config with a different mode.
 
     Raises
     ------
