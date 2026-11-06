@@ -9,10 +9,10 @@ any supplied Red Zone depth, even the
 default 5.0 or 0.0, when an exact env_config owns the rules, and refuses one
 with neither map_id nor env_config. make refuses a task name that is not
 supported, and its message lists the supported names. Each handle plays one
-task mode: Team Deathmatch, or its env_config's mode. reset refuses a host
-config of another mode, make refuses a batch that mixes modes, and inside vmap
-Core receives the handle's mode as one unbatched value, so a mode branch stays
-a cond instead of a select over every mode.
+task mode: its task's, or neutral for "tdm" given a neutral env_config. reset
+refuses a host config of another mode, make refuses a batch that mixes modes,
+and inside vmap Core receives the handle's mode as one unbatched value, so a
+mode branch stays a cond instead of a select over every mode.
 """
 
 from collections.abc import Callable
@@ -394,8 +394,10 @@ def test_make_refuses_a_supplied_red_zone_depth_without_a_map_or_with_env_config
 
 
 def test_make_refuses_an_unsupported_task_and_names_the_supported_ones() -> None:
-    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', not 'ctf'$"):
-        make("ctf")
+    with pytest.raises(
+        ValueError, match=r"^task must be one of 'tdm', 'ctf', not 'koth'$"
+    ):
+        make("koth")
 
 
 def test_terminal_win_counts_observed_kills_separately_from_initialized_score(

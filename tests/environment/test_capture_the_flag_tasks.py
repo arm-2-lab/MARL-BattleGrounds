@@ -11,7 +11,12 @@ without its homes. A handle reports its own mode's scores and outcome (captures
 and the Capture the Flag result on a Capture the Flag handle, points and the
 Team Deathmatch result otherwise), and its training facts keep only its own
 mode's objective record: Core's Capture the Flag record on a Capture the Flag
-handle, nothing on a Team Deathmatch handle.
+handle, nothing on a Team Deathmatch handle. make_standard_capture_the_flag_config
+builds the same config as converting the Team Deathmatch one, with its settings
+passed through; list_ctf_maps and maps_for_task give each mode's 52 maps.
+make("ctf") plays Capture the Flag on a listed map with the mode's default
+threshold, refuses a Red Zone depth, and a task name and its exact config must
+share a mode.
 """
 
 import math
@@ -19,6 +24,7 @@ import math
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 from tests.helpers.capture_the_flag_fixtures import capture_the_flag_config
 
 from marl_battlegrounds import environment, make
@@ -33,9 +39,13 @@ from marl_battlegrounds.policies.route_field import (
     route_distances,
 )
 from marl_battlegrounds.tasks import (
+    AgentClassName,
     balanced_spawn_configs,
+    list_ctf_maps,
     list_tdm_maps,
+    make_standard_capture_the_flag_config,
     make_standard_team_deathmatch_config,
+    maps_for_task,
     spawn_locations_for_source,
 )
 
@@ -43,10 +53,10 @@ _HOMES = np.asarray(DEFAULT_CTF_FLAG_HOME_POSITIONS, dtype=np.float32)
 _outcome = environment._outcome  # pyright: ignore[reportPrivateUsage]
 _team_scores = environment._team_scores  # pyright: ignore[reportPrivateUsage]
 _training_facts = environment._training_facts  # pyright: ignore[reportPrivateUsage]
-_CONFIG = capture_the_flag_config(
-    make_standard_team_deathmatch_config(
-        map_id=29, team_a_roster=("mage", "rogue"), team_b_roster=("priest",)
-    )
+_TEAM_A: tuple[AgentClassName, ...] = ("mage", "rogue")
+_TEAM_B: tuple[AgentClassName, ...] = ("priest",)
+_CONFIG = make_standard_capture_the_flag_config(
+    map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
 )
 
 
@@ -136,9 +146,12 @@ def test_only_a_capture_the_flag_handle_returns_capture_the_flag_training_facts(
     tdm_config = make_standard_team_deathmatch_config(
         map_id=29, team_a_roster=("mage", "rogue"), team_b_roster=("priest",)
     )
-    for config, expect_record in ((_CONFIG, True), (tdm_config, False)):
+    for task, config, expect_record in (
+        ("ctf", _CONFIG, True),
+        ("tdm", tdm_config, False),
+    ):
         env = make(
-            "tdm", env_config=config, num_envs=2, metrics="none", training_facts=True
+            task, env_config=config, num_envs=2, metrics="none", training_facts=True
         )
         _, state = env.reset(jax.random.key(0))
         key = jax.random.key(1)
@@ -153,3 +166,77 @@ def test_only_a_capture_the_flag_handle_returns_capture_the_flag_training_facts(
             )
         else:
             assert facts.capture_the_flag_facts is None
+
+
+def test_the_factory_matches_the_converted_team_deathmatch_config() -> None:
+    converted = capture_the_flag_config(
+        make_standard_team_deathmatch_config(
+            map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+        )
+    )
+    leaves = jax.tree.leaves(jax.tree.map(np.array_equal, _CONFIG, converted))
+    assert all(leaves)
+    changed = make_standard_capture_the_flag_config(
+        map_id=29,
+        score_threshold=5,
+        max_steps=200,
+        flag_interaction_distance=0.5,
+        flag_capture_distance=1.0,
+        dropped_flag_auto_return_steps=10,
+        team_a_roster=_TEAM_A,
+        team_b_roster=_TEAM_B,
+    )
+    assert (
+        int(changed.capture_the_flag_score_threshold),
+        int(changed.max_steps),
+        float(changed.capture_the_flag_flag_interaction_distance),
+        float(changed.capture_the_flag_flag_capture_distance),
+        int(changed.capture_the_flag_dropped_flag_auto_return_steps),
+    ) == (5, 200, 0.5, 1.0, 10)
+
+
+def test_each_mode_lists_its_maps_through_one_dispatcher() -> None:
+    assert list_ctf_maps() == list_tdm_maps()
+    assert maps_for_task("ctf") == list_ctf_maps()
+    assert maps_for_task("tdm") == list_tdm_maps()
+    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', 'ctf'"):
+        maps_for_task("koth")  # pyright: ignore[reportArgumentType]
+
+
+def test_make_ctf_plays_capture_the_flag_on_a_listed_map() -> None:
+    env = make(
+        "ctf",
+        map_id=29,
+        num_envs=2,
+        metrics="none",
+        team_a_roster=_TEAM_A,
+        team_b_roster=_TEAM_B,
+    )
+    _, state = env.reset(jax.random.key(0))
+    config = state.config
+    np.testing.assert_array_equal(np.asarray(config.task_mode), [TASK_MODE_CTF] * 2)
+    np.testing.assert_array_equal(
+        np.asarray(config.capture_the_flag_score_threshold), [3, 3]
+    )
+    homes = np.asarray(config.capture_the_flag_flag_home_positions)
+    np.testing.assert_array_equal(homes[0], _HOMES)
+    np.testing.assert_array_equal(homes[1], _HOMES[::-1])
+    five = make("ctf", map_id=29, score_threshold=5, num_envs=2, metrics="none")
+    _, state = five.reset(jax.random.key(0))
+    np.testing.assert_array_equal(
+        np.asarray(state.config.capture_the_flag_score_threshold), [5, 5]
+    )
+
+
+def test_a_task_and_its_exact_config_share_one_mode() -> None:
+    with pytest.raises(ValueError, match=r"^red_zone_depth is a Team Deathmatch"):
+        make("ctf", map_id=29, red_zone_depth=0.0, num_envs=2)
+    tdm_config = make_standard_team_deathmatch_config(
+        map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+    )
+    with pytest.raises(ValueError, match=r"which task 'ctf' does not play"):
+        make("ctf", env_config=tdm_config)
+    with pytest.raises(ValueError, match=r"which task 'tdm' does not play"):
+        make("tdm", env_config=_CONFIG)
+    with pytest.raises(ValueError, match=r"this environment plays task_mode 3$"):
+        make("ctf").reset(jax.random.key(0), tdm_config)

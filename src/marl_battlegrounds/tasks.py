@@ -27,6 +27,15 @@ from jax.core import Tracer
 
 from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._task_settings import (
+    DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS,
+    DEFAULT_CTF_FLAG_CAPTURE_DISTANCE,
+    DEFAULT_CTF_FLAG_HOME_POSITIONS,
+    DEFAULT_CTF_FLAG_INTERACTION_DISTANCE,
+    DEFAULT_CTF_SCORE_THRESHOLD,
+    TASK_NAMES,
+    TaskName,
+)
+from marl_battlegrounds._task_settings import (
     DEFAULT_TDM_RED_ZONE_DEPTH as DEFAULT_TDM_RED_ZONE_DEPTH,
 )
 from marl_battlegrounds._task_settings import (
@@ -63,6 +72,7 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURES,
     PRIEST_CLASS_ID,
     ROGUE_CLASS_ID,
+    TASK_MODE_CTF,
     TASK_MODE_TDM,
     WARRIOR_CLASS_ID,
     EnvConfig,
@@ -155,6 +165,58 @@ def list_tdm_maps() -> tuple[TDMMapInfo, ...]:
     Package read or validation errors propagate to the caller.
     """
     return asset_manifest().maps
+
+
+def list_ctf_maps() -> tuple[TDMMapInfo, ...]:
+    """Return the Capture the Flag map catalog in public ID order.
+
+    Returns
+    -------
+    tuple[TDMMapInfo, ...]
+        The 52 entries, split as in Team Deathmatch: curriculum and other
+        training maps, then validation and test maps. Until Capture the Flag
+        has its own map folder, these are Team Deathmatch's entries: the same
+        geometry under the same IDs.
+
+    Notes
+    -----
+    The one owner of Capture the Flag's map list, so callers keep working when
+    the mode's own maps arrive. Reads the same cached, validated package
+    manifest as list_tdm_maps; package errors propagate.
+    """
+    return asset_manifest().maps
+
+
+def maps_for_task(task: TaskName) -> tuple[TDMMapInfo, ...]:
+    """Return one mode's map catalog, for code that serves every mode.
+
+    Parameters
+    ----------
+    task : TaskName
+        ``"tdm"`` or ``"ctf"``, the names make accepts.
+
+    Returns
+    -------
+    tuple[TDMMapInfo, ...]
+        list_tdm_maps() or list_ctf_maps(): 52 entries in public ID order,
+        training maps, then validation and test maps.
+
+    Raises
+    ------
+    ValueError
+        task is not a supported task name.
+
+    Notes
+    -----
+    The one place that knows which listing belongs to which mode. Host-only.
+    """
+    if task == "tdm":
+        return list_tdm_maps()
+    if task == "ctf":
+        return list_ctf_maps()
+    raise ValueError(
+        f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+    )
 
 
 def list_tdm_scenarios() -> tuple[TDMScenarioInfo, ...]:
@@ -668,15 +730,14 @@ def _make_config(
     class_ids: tuple[int, ...],
     team_sizes: tuple[int, int],
     *,
-    score_threshold: int,
-    red_zone_depth: float,
+    rules: dict[str, Any],
     max_steps: int,
     movement_scale: float = float(CANONICAL_PRODUCT_MOVEMENT_SCALE),
     shield_duration: int = 3,
     shield_speed: float = 2.0,
     wave_periods: tuple[int, int] = (5, 5),
 ) -> EnvConfig:
-    """Combine map geometry, resolved roster choices and TDM rules at host setup.
+    """Combine map geometry, resolved roster choices and one mode's rules.
 
     Parameters
     ----------
@@ -686,11 +747,11 @@ def _make_config(
         Ten class IDs in Team A then Team B order, including inactive padding.
     team_sizes : tuple[int, int]
         Active counts for Team A and Team B.
-    score_threshold : int
-        Required TDM winning score threshold.
-    red_zone_depth : float
-        Required Red Zone depth in map units (EnvConfig field
-        team_deathmatch_red_zone_depth). 0.0 keeps one point per death.
+    rules : dict[str, Any]
+        The mode's own EnvConfig fields, from _team_deathmatch_rules or
+        _capture_the_flag_rules: task_mode, the Team Deathmatch threshold and
+        Red Zone depth, and any Capture the Flag settings. Every Capture the
+        Flag and King of the Hills field it leaves out takes its neutral value.
     max_steps : int
         Required episode step limit.
     movement_scale : float, optional
@@ -706,9 +767,9 @@ def _make_config(
     Returns
     -------
     EnvConfig
-        A scalar Team Deathmatch configuration with resolved class facts and
-        float32/int32 arrays. Its Capture the Flag and King of the Hills
-        settings hold their neutral values (neutral_objective_fields).
+        A scalar configuration in the rules' mode, with resolved class facts
+        and float32/int32 arrays. Objective settings the rules leave out hold
+        their neutral values (neutral_objective_fields).
 
     Notes
     -----
@@ -717,9 +778,7 @@ def _make_config(
     Ordinary Core reset and later respawns use the supplied pad order.
     """
     config = EnvConfig(
-        task_mode=TASK_MODE_TDM,
-        team_deathmatch_score_threshold=score_threshold,
-        team_deathmatch_red_zone_depth=red_zone_depth,
+        **{**neutral_objective_fields(EnvConfig), **rules},
         max_steps=max_steps,
         map_width=geometry.map_width,
         map_height=geometry.map_height,
@@ -735,10 +794,54 @@ def _make_config(
         spawn_shield_duration_steps=shield_duration,
         spawn_shield_movement_speed=shield_speed,
         team_respawn_wave_period_step_count=jnp.asarray(wave_periods, dtype=jnp.int32),
-        **neutral_objective_fields(EnvConfig),
     )
     run_config_check(validate_product_env_config, config)
     return config
+
+
+def _team_deathmatch_rules(
+    score_threshold: int, red_zone_depth: float
+) -> dict[str, Any]:
+    """Return a Team Deathmatch config's own fields for _make_config.
+
+    score_threshold is the winning score; red_zone_depth is in map units (0.0
+    keeps one point per death). Core's validators check both later.
+    """
+    return {
+        "task_mode": TASK_MODE_TDM,
+        "team_deathmatch_score_threshold": score_threshold,
+        "team_deathmatch_red_zone_depth": red_zone_depth,
+    }
+
+
+def _capture_the_flag_rules(
+    *,
+    score_threshold: int,
+    flag_interaction_distance: float,
+    flag_capture_distance: float,
+    dropped_flag_auto_return_steps: int,
+) -> dict[str, Any]:
+    """Return a Capture the Flag config's own fields for _make_config.
+
+    The Team Deathmatch threshold and Red Zone depth are 0, their neutral
+    values outside Team Deathmatch. The flag homes are the fixed spawn centers
+    (DEFAULT_CTF_FLAG_HOME_POSITIONS). Distances are in map units and the
+    countdown in ticks; Core's validators check every value later.
+    """
+    return {
+        "task_mode": TASK_MODE_CTF,
+        "team_deathmatch_score_threshold": 0,
+        "team_deathmatch_red_zone_depth": 0.0,
+        "capture_the_flag_score_threshold": score_threshold,
+        "capture_the_flag_flag_home_positions": jnp.asarray(
+            DEFAULT_CTF_FLAG_HOME_POSITIONS, dtype=jnp.float32
+        ),
+        "capture_the_flag_flag_interaction_distance": flag_interaction_distance,
+        "capture_the_flag_flag_capture_distance": flag_capture_distance,
+        "capture_the_flag_dropped_flag_auto_return_steps": (
+            dropped_flag_auto_return_steps
+        ),
+    }
 
 
 def make_standard_team_deathmatch_config(
@@ -800,8 +903,83 @@ def make_standard_team_deathmatch_config(
         map_geometry(_map_info(map_id)),
         ids,
         (len(team_a_roster), len(team_b_roster)),
-        score_threshold=score_threshold,
-        red_zone_depth=red_zone_depth,
+        rules=_team_deathmatch_rules(score_threshold, red_zone_depth),
+        max_steps=max_steps,
+    )
+
+
+def make_standard_capture_the_flag_config(
+    *,
+    map_id: int,
+    team_a_roster: Sequence[AgentClassName],
+    team_b_roster: Sequence[AgentClassName],
+    score_threshold: int = DEFAULT_CTF_SCORE_THRESHOLD,
+    max_steps: int = 300,
+    flag_interaction_distance: float = DEFAULT_CTF_FLAG_INTERACTION_DISTANCE,
+    flag_capture_distance: float = DEFAULT_CTF_FLAG_CAPTURE_DISTANCE,
+    dropped_flag_auto_return_steps: int = DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS,
+) -> EnvConfig:
+    """Build Capture the Flag on an installed map with the supplied roster order.
+
+    Parameters
+    ----------
+    map_id : int
+        Map ID from 0 through 51. Use list_ctf_maps to inspect choices.
+    team_a_roster, team_b_roster : sequence of str
+        Each team's ordered one-to-five class names, as in
+        make_standard_team_deathmatch_config.
+    score_threshold : int, default=3
+        Captures a team needs to win (DEFAULT_CTF_SCORE_THRESHOLD), subject to
+        Core's bounds.
+    max_steps : int, default=300
+        Episode step limit, subject to Core's valid range. Reaching it without
+        a winner is a draw.
+    flag_interaction_distance : float, default=0.75
+        Largest distance, in map units, from an agent's center to a flag for a
+        pickup or a return (DEFAULT_CTF_FLAG_INTERACTION_DISTANCE).
+    flag_capture_distance : float, default=1.25
+        Largest distance, in map units, from a carrier's center to its own
+        flag's home for a capture (DEFAULT_CTF_FLAG_CAPTURE_DISTANCE).
+    dropped_flag_auto_return_steps : int, default=30
+        Ticks a dropped flag waits before it goes home by itself
+        (DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS).
+
+    Returns
+    -------
+    EnvConfig
+        Scalar configuration with exact source spawn banks. Each flag home is
+        its team's spawn center (DEFAULT_CTF_FLAG_HOME_POSITIONS), the same on
+        every map. The Team Deathmatch threshold and Red Zone depth are 0.
+        Rosters, movement, waves and the spawn shield are as in
+        make_standard_team_deathmatch_config.
+
+    Raises
+    ------
+    TypeError
+        A roster container or configuration scalar has an unsupported type.
+    ValueError
+        A map ID, roster entry/size, rule value or requested configuration fails
+        its existing catalog or Core check.
+
+    Notes
+    -----
+    Like the Team Deathmatch factory, this does not balance spawn locations;
+    the spawn exchange (balanced_spawn_configs) also swaps the flag homes. It
+    does not run games, draw randomness or modify the installed assets.
+    """
+    ids = _roster_ids(team_a_roster, name="team_a_roster") + _roster_ids(
+        team_b_roster, name="team_b_roster"
+    )
+    return _make_config(
+        map_geometry(_map_info(map_id)),
+        ids,
+        (len(team_a_roster), len(team_b_roster)),
+        rules=_capture_the_flag_rules(
+            score_threshold=score_threshold,
+            flag_interaction_distance=flag_interaction_distance,
+            flag_capture_distance=flag_capture_distance,
+            dropped_flag_auto_return_steps=dropped_flag_auto_return_steps,
+        ),
         max_steps=max_steps,
     )
 
@@ -956,8 +1134,10 @@ def _load_tdm_scenario(info: TDMScenarioInfo, content: ScenarioContent) -> TDMSc
         geometry,
         info.class_ids,
         info.team_sizes,
-        score_threshold=resolved.team_deathmatch_score_threshold,
-        red_zone_depth=resolved.team_deathmatch_red_zone_depth,
+        rules=_team_deathmatch_rules(
+            resolved.team_deathmatch_score_threshold,
+            resolved.team_deathmatch_red_zone_depth,
+        ),
         max_steps=resolved.maximum_episode_steps,
         movement_scale=resolved.ordinary_movement_distance_scale,
         shield_duration=resolved.spawn_shield_duration_steps,

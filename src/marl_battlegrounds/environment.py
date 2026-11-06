@@ -29,6 +29,7 @@ from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
     TASK_MODE_CTF,
     TASK_MODE_KOTH,
+    TASK_MODE_NEUTRAL,
     TASK_MODE_TDM,
     TEAM_A_ID,
     TEAM_B_ID,
@@ -87,6 +88,7 @@ from marl_battlegrounds.tasks import (
     TDMScenario,
     balanced_spawn_configs,
     canonical_tournament_rosters,
+    make_standard_capture_the_flag_config,
     make_standard_team_deathmatch_config,
     prepare_exact_env_config,
 )
@@ -1684,7 +1686,7 @@ def make(
     env_config: EnvConfig | None = None,
     team_a_roster: Sequence[AgentClassName] | None = None,
     team_b_roster: Sequence[AgentClassName] | None = None,
-    score_threshold: int = 20,
+    score_threshold: int | None = None,
     max_steps: int = 300,
     red_zone_depth: float | Omitted = OMITTED,
     num_envs: int | None = None,
@@ -1699,24 +1701,30 @@ def make(
     Parameters
     ----------
     task : str
-        A supported task name, currently only ``"tdm"``.
+        A supported task name: ``"tdm"`` (Team Deathmatch) or ``"ctf"``
+        (Capture the Flag). The handle plays that mode only.
     map_id : int | None, default=None
-        Public map ID from list_tdm_maps. Omission with no env_config
-        makes an unconfigured handle that needs an exact config at reset.
+        Public map ID from the mode's list (list_tdm_maps or list_ctf_maps).
+        Omission with no env_config makes an unconfigured handle that needs an
+        exact config of the task's mode at reset.
     env_config : EnvConfig | None, default=None
-        Exact EnvConfig or ready batch. Scalar values broadcast to
-        num_envs; batched leaves must all match it. Bypasses automatic spawn
-        balance. Cannot accompany map_id, rosters or nondefault game rules.
+        Exact EnvConfig or ready batch in the task's mode: Team Deathmatch or
+        neutral for ``"tdm"``, Capture the Flag for ``"ctf"``. Scalar values
+        broadcast to num_envs; batched leaves must all match it. Bypasses
+        automatic spawn balance. Cannot accompany map_id, rosters or game rules.
     team_a_roster : Sequence[AgentClassName] | None, default=None
         Ordered class names for Team A in map-based setup. Defaults
         to the first canonical_tournament_rosters entry. One to five agents;
         repeated classes are distinct agents. Supplied order fills first slots.
     team_b_roster : Sequence[AgentClassName] | None, default=None
         Same rule for Team B; defaults to the second canonical entry.
-    score_threshold : int, default=20
-        Map-based TDM winning score. Exact Python int in 1..16,777,212 at
-        red_zone_depth 0.0, or 1..16,777,207 at a positive depth (so also at
-        the default 5.0); default 20.
+    score_threshold : int | None, default=None
+        Map-based winning score in the task's mode; None uses the mode's
+        default. Team Deathmatch counts points (default 20), an exact Python
+        int in 1..16,777,212 at red_zone_depth 0.0, or 1..16,777,207 at a
+        positive depth (so also at the default 5.0). Capture the Flag counts
+        captures (default 3, DEFAULT_CTF_SCORE_THRESHOLD), within Core's
+        bound.
     max_steps : int, default=300
         Map-based episode limit in transitions. Exact Python int in
         1..16,777,216; default 300.
@@ -1727,7 +1735,8 @@ def make(
         gets 2 points instead of 1; it is still one kill and one death. 0.0
         keeps one point per death. Omit it for the default. Supplying any
         value, including 5.0, together with env_config raises ValueError,
-        because an exact config owns its rules.
+        because an exact config owns its rules. A Team Deathmatch rule only:
+        supplying it with ``"ctf"`` raises ValueError.
     num_envs : int | None, default=None
         Exact Python int B in 1..2,147,483,647, or None for scalar execution.
         This integer bound is not a memory-capacity promise. Batch size is
@@ -1758,18 +1767,17 @@ def make(
     Environment
         An immutable Environment. Map/exact-config handles are ready for
         ``env.reset(key)``. No game has started and no hidden RNG is allocated.
-        It plays one task mode: Team Deathmatch, or env_config's own mode when
-        one is given (Team Deathmatch, Capture the Flag or neutral; Core
-        validation still refuses King of the Hills). reset refuses a later
-        env_config with a different mode.
+        It plays one task mode: the task's, or for ``"tdm"`` with a neutral
+        env_config, the neutral mode. reset refuses a later env_config with a
+        different mode.
 
     Raises
     ------
     ValueError
         An unsupported task name (the message lists the supported ones), an
-        unsupported mode, invalid batch or selection IDs, conflicting setup
-        inputs, invalid map/roster/config values, or an env_config batch that
-        mixes task modes.
+        env_config in another mode than the task's, invalid batch or selection
+        IDs, conflicting setup inputs, red_zone_depth with ``"ctf"``, invalid
+        map/roster/config values, or an env_config batch that mixes task modes.
     TypeError
         Unsupported config/roster structure or a non-Boolean balance/facts
         setting. Physical validation uses the existing Core validators.
@@ -1806,10 +1814,13 @@ def make(
         raise TypeError("balance_spawn_locations must be a boolean")
     if type(training_facts) is not bool:
         raise TypeError("training_facts must be a boolean")
+    capture_the_flag = task == "ctf"
+    if capture_the_flag and not isinstance(red_zone_depth, Omitted):
+        raise ValueError("red_zone_depth is a Team Deathmatch rule; ctf has none")
     has_rules = (
         team_a_roster is not None
         or team_b_roster is not None
-        or score_threshold != 20
+        or score_threshold is not None
         or max_steps != 300
         or not isinstance(red_zone_depth, Omitted)
     )
@@ -1823,18 +1834,33 @@ def make(
     defaults = None
     if map_id is not None:
         rosters = canonical_tournament_rosters()
-        source = make_standard_team_deathmatch_config(
-            map_id=map_id,
-            team_a_roster=rosters[0] if team_a_roster is None else team_a_roster,
-            team_b_roster=rosters[1] if team_b_roster is None else team_b_roster,
-            score_threshold=score_threshold,
-            max_steps=max_steps,
-            red_zone_depth=(
-                DEFAULT_TDM_RED_ZONE_DEPTH
-                if isinstance(red_zone_depth, Omitted)
-                else red_zone_depth
-            ),
-        )
+        team_a = rosters[0] if team_a_roster is None else team_a_roster
+        team_b = rosters[1] if team_b_roster is None else team_b_roster
+        if capture_the_flag:
+            source = make_standard_capture_the_flag_config(
+                map_id=map_id,
+                team_a_roster=team_a,
+                team_b_roster=team_b,
+                max_steps=max_steps,
+                **(
+                    {}
+                    if score_threshold is None
+                    else {"score_threshold": score_threshold}
+                ),
+            )
+        else:
+            source = make_standard_team_deathmatch_config(
+                map_id=map_id,
+                team_a_roster=team_a,
+                team_b_roster=team_b,
+                score_threshold=20 if score_threshold is None else score_threshold,
+                max_steps=max_steps,
+                red_zone_depth=(
+                    DEFAULT_TDM_RED_ZONE_DEPTH
+                    if isinstance(red_zone_depth, Omitted)
+                    else red_zone_depth
+                ),
+            )
         if balance_spawn_locations:
             if num_envs is None:
                 raise ValueError(
@@ -1854,8 +1880,17 @@ def make(
     replay_array = np.asarray(replay_ids, np.int32)
     full_array.flags.writeable = False
     replay_array.flags.writeable = False
-    task_mode = TASK_MODE_TDM if defaults is None else _config_task_mode(defaults)
-    assert task_mode is not None  # make runs on the host; its config is never traced
+    task_mode = TASK_MODE_CTF if capture_the_flag else TASK_MODE_TDM
+    if defaults is not None:
+        config_mode = _config_task_mode(defaults)
+        assert config_mode is not None  # make runs on the host; never traced
+        allowed = (task_mode,) if capture_the_flag else (task_mode, TASK_MODE_NEUTRAL)
+        if config_mode not in allowed:
+            raise ValueError(
+                f"env_config has task_mode {config_mode}, which task {task!r} "
+                "does not play; use the task of the config's own mode"
+            )
+        task_mode = config_mode
     return Environment(
         _Execution(
             num_envs,

@@ -10,8 +10,9 @@ from typing import Literal, cast, get_args
 
 type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
 
-# Task names that make() accepts; training configs check against the same list.
-type TaskName = Literal["tdm"]
+# Task names that make() accepts, one per mode: "tdm" (Team Deathmatch) and
+# "ctf" (Capture the Flag). Training configs check against the same list.
+type TaskName = Literal["tdm", "ctf"]
 TASK_NAMES: tuple[TaskName, ...] = get_args(TaskName.__value__)
 
 

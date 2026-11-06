@@ -156,7 +156,8 @@ class TrainConfig:
         recurrent PQN-VDN (no replay or target network), configured by pqn.
     task : str, default="tdm"
         The game mode every training and validation game of this run plays: a
-        task name that ``make`` accepts, today only "tdm" (Team Deathmatch).
+        task name that ``make`` accepts. Only "tdm" (Team Deathmatch) trains
+        today; "ctf" raises ValueError until the training sites play it.
         Saved configs leave it out when it is "tdm", so every Team Deathmatch
         run keeps the bytes it had before the setting existed, and a saved
         config without it reads as "tdm". A continuation cannot change it.
@@ -474,6 +475,11 @@ class TrainConfig:
             raise ValueError(
                 f"task must be one of {', '.join(map(repr, TASK_NAMES))}, "
                 f"not {self.task!r}"
+            )
+        if self.task != "tdm":
+            raise ValueError(
+                f"Training on task {self.task!r} is not ready yet; "
+                'only "tdm" trains today'
             )
         if not isinstance(cast(object, self.ppo), PPOConfig):
             raise TypeError("ppo must be PPOConfig")
