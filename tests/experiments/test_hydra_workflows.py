@@ -131,7 +131,7 @@ def test_unqualified_hydra_version_is_rejected(monkeypatch: pytest.MonkeyPatch) 
         return "0.0.0"
 
     monkeypatch.setattr(adapter, "version", other_version)
-    with pytest.raises(RuntimeError, match=r"qualified hydra-core==1\.3\.7"):
+    with pytest.raises(RuntimeError, match=r"qualified hydra-core==1\.3\.8"):
         adapter.prepare_hydra()
 
 
