@@ -441,7 +441,7 @@ class RecordingDebuggerCoordinator:
 
         Return exit code zero after a successful save and one after a failed
         save. The service supplies the host-only message. Always close the child
-        even if the recording closeout raises; the launcher reports that error.
+        even if closing the recording raises; the launcher reports that error.
         """
         try:
             result = self._service.close_recording_for_keyboard_interrupt()

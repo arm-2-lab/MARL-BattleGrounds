@@ -337,7 +337,7 @@ class PQNLearningOutputs(NamedTuple):
     ----------
     pre_memory : Array
         Float32 (B,5,512) memory each actor held immediately before this
-        decision, after M8 reset finished lanes. The learner stores it so a
+        decision, after apply_systems reset finished lanes. The learner stores it so a
         later unroll can start from the exact action-time memory without
         running the actor again.
     """

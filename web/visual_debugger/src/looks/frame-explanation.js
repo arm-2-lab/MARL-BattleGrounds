@@ -931,7 +931,7 @@ function healthDraft(payload, audience, agents, activationsByRecipient) {
 
 /**
  * Build the item of one new status in the Champion Card row's words
- * (statusLineV1, owner ruling, 2 October 2026): "Mage ID 5: Charge (Slow) ·
+ * (statusLineV1, 2 October 2026): "Mage ID 5: Charge (Slow) ·
  * 5 ticks left · It moves at ×0.5 speed. From a Warrior." The source is named
  * by class only, in Agent POV and Oracle View alike; the event lines keep
  * their own sight rule for naming who did what.

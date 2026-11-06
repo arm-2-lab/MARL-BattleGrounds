@@ -13,7 +13,7 @@
  *
  *   "Serrated Arrows (Slow) · 1 tick left · It moves at ×0.85 speed. From a Hunter."
  *
- * Every status display uses these words (owner rulings, 2 October 2026): the
+ * Every status display uses these words (2 October 2026): the
  * card, Frame Explanation's status items, the agent details panel, the Replay
  * Viewer's Champion Frame and the status tips. Sources are named by class
  * only, never by Agent ID and never "a hidden source", so the words are the
@@ -481,14 +481,14 @@ export function statusTimeText(id, ticks) {
 
 /**
  * Write one status as a single line, in the same words as its Champion Card
- * row (owner rulings, 2 October 2026: every status display uses the card's
- * approved names and names the source by class only).
+ * row. Every status display uses the card's status names and names the
+ * source by class only.
  *
  * Example: "Charge (Slow) · 5 ticks left · It moves at ×0.5 speed. From a
  * Warrior." Parts, joined by " · ":
  *
  * 1. The status title (`symbols.js` statusNameFor: any of the fifteen
- *    approved names, auras, Rest and Freezing Trap (Stun Broken) included);
+ *    status names, auras, Rest and Freezing Trap (Stun Broken) included);
  *    an unknown token gives "Recorded Status".
  * 2. The time left (statusTimeText), only when it has words.
  * 3. What it does with its exact number and where it comes from by class

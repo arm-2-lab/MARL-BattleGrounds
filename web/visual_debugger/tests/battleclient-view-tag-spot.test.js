@@ -1,6 +1,6 @@
 /**
  * @file Check where live play puts the arena's view tag and the Replay
- * Recording popover (owner ruling M3, 3 Oct 2026).
+ * Recording popover (3 Oct 2026).
  *
  * Contracts checked:
  * - viewTagPlace (src/looks/camera.js): on the Whole Map it gives where the

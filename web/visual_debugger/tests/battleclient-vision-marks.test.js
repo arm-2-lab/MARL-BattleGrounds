@@ -1,12 +1,12 @@
 /**
- * @file Check the live arena marks that follow the BattleClient vision page
+ * @file Check the live arena marks that follow the BattleClient vision
  * exactly: the corner brackets' "vision" shape (src/looks/champion-frame.js
  * bracketPath and the selection-marks records: half-size 1.48 R, arms 0.45 R,
  * at any radius, with the Replay Viewer's "ladder" shape unchanged), and the
  * Look Ring of the Champion's Hotbar (src/looks/hotbar.js), which the
  * Selection Moonlight switch turns off (`selection_moonlight: false` drops
  * only the ring; your champion's dimmed Command Ring stays). The live Grave
- * Ground marks follow the store, not the vision page, and are checked in
+ * Ground marks follow the store, not the BattleClient vision, and are checked in
  * tests/marks-grave-ground-live.test.js.
  */
 import assert from "node:assert/strict";

@@ -1,6 +1,6 @@
 /**
  * @file Check the BattleClient's top bar, arena view tag, hover card, How to
- * Play rule cards and Visual Filters drawer list against the approved vision
+ * Play rule cards and Visual Filters drawer list against the BattleClient
  * page and the owner's 1 October 2026 decisions.
  *
  * Contracts: the place line splits into a bold map name and "Map 47 · Team

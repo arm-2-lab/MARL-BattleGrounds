@@ -2,9 +2,9 @@
  * Styles for the HUD (src/looks/hud.js and src/match-summary.js): the old
  * score strip in #match-scoreboard (class "match-strip": crest, names, a 32
  * px score with its "/ N" goal, the First To bar, Momentum's recent points
- * and the wave pips), drawn only on a page without the vision scorebug, and
+ * and the wave pips), drawn only on a page with no BattleClient scorebug, and
  * the Arena Frames party frames (class "arena-frames"). Every client now
- * shows the vision page's scorebug (src/styles/battleclient/scorebug.css)
+ * shows the BattleClient scorebug (src/styles/battleclient/scorebug.css)
  * instead of the strip; live play hides #party-frames too. In the Replay
  * Viewer (owner, 3 Oct 2026) the Arena Frames sit at the bottom of the
  * stage, League of Legends style: both docks side by side, the right one

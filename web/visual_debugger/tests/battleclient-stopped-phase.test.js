@@ -3,8 +3,8 @@
  * turnPhase and turnTitles): after Cancel Policy Work the host asks for a fresh
  * start (`fresh_launch_required`), and the phase is "plan" whatever else is
  * true, even while the cancelled policy work still winds down ("cancelling"),
- * a Lock In is still out, the tick still plays or Run is on. So, as on the
- * vision page, the phases show You Plan, the Lock In label reads "Lock In
+ * a Lock In is still out, the tick still plays or Run is on. So the
+ * phases show You Plan, the Lock In label reads "Lock In
  * Turn" and the title reads "Game Stopped". Without a stop, "cancelling"
  * still reads as Policies Choose.
  */

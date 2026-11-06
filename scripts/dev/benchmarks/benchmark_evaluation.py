@@ -2,7 +2,7 @@ r"""Qualify complete JAX metric collection and native rollout cost on CPU/GPU.
 
 Run with the CUDA environment, for example:
   python -m scripts.dev.benchmarks.benchmark_evaluation \
-      --output artifacts/m8-performance
+      --output artifacts/evaluation-performance
 Add --metrics-only --map-id 48 to simulate each fixed-map ALPHA/BETA batch once,
 then compare CPU/GPU metric passes over those same facts.
 Each requested size uses a fresh process. No result silently substitutes a smaller
@@ -15,19 +15,19 @@ Use --setup-only for preparation checks, or --action-workload sample to include
 legal action sampling. GPU environment sizes are 32, 64, 128, 512 and 1024.
 
 Use --systems --package-root CANDIDATE --baseline-root BASELINE --output RESULTS
-for the bounded Packet 2 comparisons: raw B32/L16, raw B128/L128, mixed B32/L16,
+for the bounded System comparisons: raw B32/L16, raw B128/L128, mixed B32/L16,
 and the old/new Policy evaluator at B128/chunk128. --systems-case selects one.
 The same frozen --assets-root and this harness serve both package revisions.
 Systems workers save matching retained payloads, five or more warmed samples,
 compilation/load evidence and memory limits. The fake host method uses no network.
-Use --recording-contracts for only Packet 3: batch 32, rollout 16 and five warm
+Use --recording-contracts for recording costs only: batch 32, rollout 16 and five warm
 samples of none/priority/full plus separate host save costs. Set PYTHONPATH to
 the selected --package-root/src when comparing committed and current sources.
-Use --tracking for only Packet 4: batch 32, rollout 16, manual/tracked reset
+Use --tracking for reset tracking only: batch 32, rollout 16, manual/tracked reset
 comparisons and optional recording/final-state payload costs.
 Use --collection for bounded collection and recorded restart at batch 32,
 rollout 16. Existing modes and their default workloads stay unchanged.
-Use --evaluation-access --evaluation-case CASE for the bounded Packet 6
+Use --evaluation-access --evaluation-case CASE for the bounded batch-32
 evaluation, raw reference, mixed-provider and saved-result comparisons.
 No mode establishes learning efficiency or proves theoretical optimality.
 """
@@ -3492,7 +3492,7 @@ def _recording_save_costs(
 
 
 def _run_recording_contracts(args: argparse.Namespace) -> int:
-    """Measure only the Packet 3 batch-32, length-16 recording contract.
+    """Measure only the batch-32, length-16 recording contract.
 
     Run this harness in separate processes with PYTHONPATH selecting the declared
     package root. Output stores each mode's exact source/assets, final common

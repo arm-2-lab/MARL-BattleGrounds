@@ -8,7 +8,7 @@
  *   ticks): everyoneInViewFrame, battleCamFrame, killCamLean and
  *   killSlowMotion, and records(input), which turns them into drawing records.
  *   Every frame is a world rectangle in world units with y counting up.
- * - The words: camera names, keycaps and the tip texts, quoted exactly as the
+ * - The words: the camera names, the keycaps and the exact texts of the
  *   plan (section 4.4) and the owner's row 12 give them.
  * - The camera switch (createCameraSwitch): a self-contained component the
  *   shell (Replay Viewer, slot #replay-camera-switch) and the BattleClient
@@ -126,7 +126,7 @@ export const CAMERA_KEYCAPS = Object.freeze({
   battle_cam: "B",
 });
 
-/** The Replay Viewer's one-time first-open tip (plan 4.4, quoted exactly). */
+/** The Replay Viewer's one-time first-open tip. */
 export const FIRST_OPEN_TIP =
   "New: Battle Cam follows the fights for you. Click here or press B.";
 
@@ -294,7 +294,7 @@ export function nextCamera(current, key, product) {
 }
 
 /**
- * Return the change tip for a camera, quoted exactly (plan 4.4, row 12).
+ * Return the change tip for a camera.
  *
  * In the Replay Viewer: "Battle Cam on · B: back to Whole Map · V: Everyone in
  * View", "Everyone in View on · V: back to Whole Map · B: Battle Cam" and, for
@@ -425,7 +425,7 @@ function leftHomeEndX(redZone, worldWidth) {
  * on the arena's frame under the floor, starting just past the left home strip
  * and its corner bracket (the owner's store rule of 30 September 2026), so it
  * never covers the left home end's bracket lines, a floor mark or the herald
- * cards' top band (owner ruling M3, 3 October 2026). This returns the two
+ * cards' top band (3 October 2026). This returns the two
  * lengths that spot needs, as shares of the field's width (the battlefield
  * SVG's viewport width), so a resize keeps them true:
  * - homeEnd: where the left home strip ends (leftHomeEndX of the scene's map

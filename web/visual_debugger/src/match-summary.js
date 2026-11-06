@@ -245,8 +245,8 @@ export function matchSummaryView(presentation) {
  *
  * elements supplies root (#match-scoreboard), task (the center text node,
  * #match-task) and two team containers, Team A first then Team B. Team A
- * always goes in the first (left) container, whatever its spawn side (plan
- * P12). presentation is passed to matchSummaryView. If it gives null, hide the
+ * always goes in the first (left) container, whatever its spawn side.
+ * presentation is passed to matchSummaryView. If it gives null, hide the
  * root, write "Task unavailable" and clear both teams. Otherwise show the strip
  * (see the file description) or, with options.filters.scorebug false, today's
  * plain text line ("Task mode: TDM · Map: …", team label, name, "Score: 6/7",
@@ -606,7 +606,7 @@ export function momentumBaselineFromFrame(presentation, filters) {
  * Work out the live scorebug's scores, middle and side. Pure: no DOM.
  *
  * The live scorebug is the BattleClient's (and the DevClient combat
- * screen's) top strip from the approved vision page. This function gives its
+ * screen's) top strip from the BattleClient vision. This function gives its
  * match facts; looks/hud.js fills its hosts and portraits.
  *
  * summary is matchSummaryView(presentation), or null when no match summary is

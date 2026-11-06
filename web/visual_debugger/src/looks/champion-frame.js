@@ -44,7 +44,7 @@
  * Viewer shows none. `scene.js` calls records, then build, and update for the
  * retained marks.
  *
- * In the Replay Viewer rail's Agent tab (DOM, Replay Viewer only, plan P10;
+ * In the Replay Viewer rail's Agent tab (DOM, Replay Viewer only;
  * src/ledger.js moves #champion-frame there) it builds the Champion Frame: a
  * hint row ("Select a Champion to Inspect · Click Its Body or Its Arena
  * Frame") until a champion is selected, then its token as a portrait (drawn by
@@ -62,7 +62,7 @@
  *   kept by the caller). The adapter gives a pending route only for the POV
  *   agent's own next action. Nothing here draws legality, so the selected
  *   pair's mask facts (`scene.selected_legality`) never reach the arena.
- * - The docked frame is a researcher panel (owner rule, 1 Oct, row 3): in the
+ * - The docked frame is a researcher panel (1 Oct): in the
  *   Replay Viewer's Agent POV the caller passes the selected champion's full
  *   record, shown under the "Full Record" chip. Only its Recent Ticks cell is
  *   limited to the audience's own events; it says "Not Visible" when the POV
@@ -1157,8 +1157,8 @@ const FRAME_TIP_METADATA = Object.freeze({ compact: true, full: true });
  * status in Champion Card order (stuns, then slows, then the rest) by the
  * status rule (statusLineV1: the card row's words, the source named by class
  * only), the Recent Ticks cell (recentTickCell: only the audience's own events) and
- * Next Target (nextActionText). The Replay Viewer alone mounts this frame (plan
- * P10); the arena marks of this look never use these inputs.
+ * Next Target (nextActionText). The Replay Viewer alone mounts this frame;
+ * the arena marks of this look never use these inputs.
  *
  * @param {ChampionFrameInput} input
  * @returns {ChampionFrameView}
@@ -1229,7 +1229,7 @@ export function championFrameView(input) {
 /**
  * Write one status line by the status rule (statusLineV1), in the Champion
  * Card row's words: "Charge (Slow) · 5 ticks left · It moves at ×0.5 speed.
- * From a Warrior." The source is named by class only (owner ruling, 2
+ * From a Warrior." The source is named by class only (2
  * October 2026), so the line never names an Agent ID. The status's catalog ID
  * (status_id) is turned into its display token first
  * (statusTokenIdFromCatalogId). Pure.

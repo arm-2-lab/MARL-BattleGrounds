@@ -1,5 +1,5 @@
 /*
- * BattleClient arena box (#arena), ported from the approved vision page: a
+ * BattleClient arena box (#arena), from the BattleClient vision: a
  * bordered box in the Surround color that holds the battlefield SVG, the
  * view tag (#pov-tag; its spot on the frame under the floor is set in
  * overlays.css), the How to Play overlay (#htp, styled in overlays.css) and

@@ -15,8 +15,8 @@
  * in the Replay Viewer, and the live play marks (Command Marks, Reach Marks,
  * Step Ghost) only in live play. Lore Emblems is
  * listed in both clients: its V5 pick (Heraldic Sigils) draws every token's
- * class emblem, so the approved parity plan keeps it (P25). Off draws a plain
- * outline emblem (P26, never today's old glyph) everywhere an emblem shows:
+ * class emblem. Off draws a plain
+ * outline emblem (never today's old glyph) everywhere an emblem shows:
  * main.js passes the choice to icons.js (setIconStyleDefaults), so bodies,
  * frames, rail and cards all change. Live
  * play shows the owner's V5 label and group (LIVE_SWITCH_NAMES) where the
@@ -1230,8 +1230,8 @@ export function visualFiltersForProduct(product) {
 // Presets
 // ---------------------------------------------------------------------------
 
-// Preset contents come from the approved store presets, kept to the switches
-// built here. The owner removed Broadcast on 4 Oct 2026: its spectacle switches
+// Preset contents come from the store presets, kept to the switches
+// built here. Broadcast was removed on 4 Oct 2026: its spectacle switches
 // are now the Default Configuration.
 /** @type {ReadonlyArray<VisualFilterPreset>} */
 export const VISUAL_FILTER_PRESETS = Object.freeze([

@@ -2,7 +2,7 @@
  * @file Check which staged Manual orders the BattleClient deck and rail may
  * show (src/tactics-turn.js), on the real presentation fixtures:
  * - shownManualIdsOf: in Agent POV only the Manual champions on the POV
- *   recipient's team (ruling L18: another team's staged order is never shown
+ *   recipient's team (another team's staged order is never shown
  *   in Agent POV), in roster order; an empty list when the POV scene does not
  *   draw the recipient; Oracle View keeps every Manual champion. It reads only
  *   the recipient, the POV scene and the identity rows, so changing the
@@ -12,7 +12,7 @@
  *   decoded like core/axis_mappings.py: 1 to 5 the actor's own team, 6 to 10
  *   the other team, 0 none), so a fresh page and a page that switched views
  *   agree; in Agent POV the viewing team's own staged orders from the
- *   researcher branch (ruling P1, 3 Oct 2026: your own orders always show),
+ *   researcher branch (your own orders always show),
  *   never another team's even when its IDs are passed in, and nothing
  *   without the shown IDs.
  */

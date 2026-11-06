@@ -1,6 +1,6 @@
 /**
  * @file Check the Reach Mark size rule of the Champion's Hotbar
- * (src/looks/hotbar.js), as the BattleClient vision page draws it
+ * (src/looks/hotbar.js), as the BattleClient vision draws it
  * (`isManual(b) ? BAND + 5 : BAND`): a Reach Mark around any Manual champion,
  * yours or another team's, is 5 vision pixels (scaled by body radius / 25)
  * wider than the Command Ring band, so it clears that champion's ring; a

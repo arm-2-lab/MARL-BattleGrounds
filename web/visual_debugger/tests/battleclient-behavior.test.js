@@ -1,6 +1,6 @@
 /**
  * @file Check the BattleClient's own behavior contracts that need no server.
- * (1) statusSentence writes the vision page's exact words for steps, actions,
+ * (1) statusSentence writes the vision's exact words for steps, actions,
  * targets (Auto, Press 2 For, Nothing Allowed), refusals ("needs a target
  * first", "not allowed on this target right now", "It is ready in N ticks"),
  * focus, Lock In, views, ranges, Restart, Run and Pause. (The first sentence
@@ -13,7 +13,7 @@
  * Tab it does not keep has its browser default stopped in live play
  * (ownsFencedTabDefault), so focus never walks onto the arena's marks; the
  * Replay Viewer's Tab is left alone.
- * (3) main.js wires the controls the vision page shows: How to Play on #htp,
+ * (3) main.js wires the controls the vision shows: How to Play on #htp,
  * the Recording popover's Finish and Save, Open Replay kept visible, the
  * Restart dialog's Save focus and "Restart cancelled" sentence (read from
  * its source), and the pill and popover words, which main.js imports from
@@ -43,7 +43,7 @@
  * settled), pageRunOwnsLockIn claims Space, Enter and N (any case, any
  * modifiers) and nothing else, and dispatchCommand drops such a command
  * silently unless it is Run's own quiet turn, so no second turn is sent and no
- * glide is cut short, as on the vision page. For that whole time the loop's
+ * glide is cut short, as in the vision. For that whole time the loop's
  * flag lives in the page state (state.pageRunLoop), and the deck keeps Lock In
  * and Play One Turn disabled while it is true, so neither looks ready while
  * its press would be dropped.

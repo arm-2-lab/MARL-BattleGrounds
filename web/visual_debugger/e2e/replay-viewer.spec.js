@@ -2566,7 +2566,7 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
               row.name,
               row.topic_text?.[topic]?.label ?? row.label,
             ]);
-          // Only the five ability views have approved local wording.
+          // Only the five ability views have their own local wording.
           expect([...shown].sort()).toEqual(declared.sort());
           if (view === "totals" && ["healing_done", "excess_healing"].includes(topic)) {
             expect(

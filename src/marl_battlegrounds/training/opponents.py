@@ -1547,18 +1547,18 @@ class HostOpponent:
     Attributes
     ----------
     execution : _SystemExecution
-        Stable M8 execution descriptor of the method.
+        Stable System execution descriptor of the method.
     variables, template : Any
         Frozen parameters and memory template from prepare_evaluation_system.
     memory : Any
-        The method's current memory for all B lanes, in M8's host layout.
+        The method's current memory for all B lanes, in the host System layout.
         Only pinned lanes ever change it.
     generations : numpy.ndarray
         Int64 (B,) reset generation each lane's memory belongs to; -1 means
         never served, so the lane initializes on its first pinned decision.
     stateful : bool
         False only when the method has no init, no reset_memory hook and an
-        empty memory template; M8's reset rule then keeps its memory empty and
+        empty memory template; the System reset rule then keeps its memory empty and
         refuses anything else. Every other host method counts as stateful,
         because it may build memory while it plays.
     next_round : int or None

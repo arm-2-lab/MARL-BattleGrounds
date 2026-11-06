@@ -15,8 +15,8 @@
  *   screen) and a Stone Cap crescent on the upper half of each pillar.
  * Below 22 screen px per world unit the caps, tops and End Stones are dropped
  * and the lines thin (detail ladder 40 / 22 px per unit, as in the design store).
- * With Obstacle Skins off every stone is a plain flat shape on its true footprint
- * (plan P26): nothing about the stone is hidden.
+ * With Obstacle Skins off every stone is a plain flat shape on its true
+ * footprint: nothing about the stone is hidden.
  *
  * The tooltip (a Symbol Tip) uses the design store's plain words (spec
  * `specs/obstacles.json`, Tooltip): the title "Pillar", "Wall" or "Thin Wall";

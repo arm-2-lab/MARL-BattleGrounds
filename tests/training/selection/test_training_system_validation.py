@@ -16,7 +16,7 @@ frozen identities before allocation and no output before roster preflight.
 Continuation binding tests complete real short CPU training and one-step evaluation
 validation, then resume with retained clients. They omit inherited candidate
 discovery; separate H300 tests verify inherited games and parent ranking. Their
-runtime identity and recording provenance stay fixed while other packet files
+runtime identity and recording provenance stay fixed while other source files
 change, so these checks do not qualify source compatibility.
 A shared factory reference is loaded once across training and validation roles;
 its reload reference and nested resource cleanup survive a setup interruption.
