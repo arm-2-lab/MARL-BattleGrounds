@@ -270,7 +270,11 @@ def method_sampling_fact(method: object) -> Record:
     for the games. Exact built-in callable objects and known actor factory hooks
     establish behavior; display names and checkpoint labels never do. Greedy
     Q-value hooks also require their factory's initializer, no custom reset hook,
-    and scalar epsilon zero. Positive epsilon and PPO hooks use actor keys.
+    and scalar epsilon zero. Positive epsilon and PPO hooks use actor keys. A
+    System that ``portable_models.load_portable_model`` built from a file of a
+    built-in family gets that family's answer from ``portable_models`` (PPO
+    families sample; QMIX and PQN-VDN files are greedy); a file made from a
+    Policy stays unknown.
 
     Return a small record with lower-case determinism and a plain source basis.
     Unknown or host methods return unknown. Adapter policies are checked one by
@@ -304,6 +308,16 @@ def method_sampling_fact(method: object) -> Record:
             return unknown
         facts = [method_sampling_fact(item) for item in method._policies]  # pyright: ignore[reportPrivateUsage]
         return combine_sampling_facts(facts)
+    # A loaded portable model exists only once its module is imported.
+    portable_models = sys.modules.get("marl_battlegrounds.portable_models")
+    portable = (
+        None if portable_models is None else portable_models._portable_sampling(method)  # pyright: ignore[reportPrivateUsage]
+    )
+    if portable is not None:
+        return {
+            "determinism": portable,
+            "basis": "Portable model file of a built-in family, as loaded",
+        }
     if method.reset_memory is not None or not isinstance(method.apply, FunctionType):
         return unknown
     module_name = method.apply.__module__

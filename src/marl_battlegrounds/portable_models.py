@@ -16,7 +16,9 @@ names and downloads. The per-agent decision functions for the built-in
 families (recurrent and feedforward PPO, QMIX, PQN-VDN) repeat the per-agent
 part of the frozen team hooks in ``baselines``. That repetition is deliberate:
 the team hooks are frozen, and the per-call tests compare both on the same
-inputs.
+inputs. This module also says which of those families sample
+(``_portable_sampling``), so tournaments know how a loaded file chooses
+actions.
 
 File layout: an uncompressed ZIP with exactly these parts.
 
@@ -57,7 +59,7 @@ import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -587,6 +589,9 @@ def _portable_init(variables: PortableVariables, inputs: SystemInput) -> PolicyT
 
 
 _PROGRAMS: dict[str, tuple[Any, Any]] = {}
+# The "method" that the first loaded file of each program recorded, keyed like
+# _PROGRAMS; _portable_sampling reads it.
+_PROGRAM_METHODS: dict[str, str] = {}
 
 
 def _program(
@@ -634,7 +639,47 @@ def _program(
         return _portable_init(variables, inputs)
 
     _PROGRAMS[blob_sha256] = (_declare_lane_independent(apply), init)
+    _PROGRAM_METHODS[blob_sha256] = str(model.get("method"))
     return _PROGRAMS[blob_sha256]
+
+
+def _portable_sampling(  # pyright: ignore[reportUnusedFunction] - Read by sampling_evidence.
+    system: object,
+) -> Literal["deterministic", "stochastic"] | None:
+    """Say how a loaded portable model of a built-in family chooses its actions.
+
+    Parameters
+    ----------
+    system : object
+        Any method. Only a System that ``load_portable_model`` built can get an
+        answer: its one ``components`` entry names a loaded program
+        (``code_digest``), and its apply hook is that program's own.
+
+    Returns
+    -------
+    {"deterministic", "stochastic"} or None
+        "stochastic" for the PPO families (mappo, ippo, ff_mappo, ff_ippo),
+        whose programs sample from their log-probabilities with the agent's
+        key; "deterministic" for qmix and pqn_vdn, whose programs choose
+        greedily and ignore the key (see ``_builtin_decide``). None for a file
+        made from a Policy, a wrapped or copied hook, and any other method.
+
+    Notes
+    -----
+    Host-only; it loads and runs nothing. The answer follows the method that the
+    first loaded file of the program recorded. ``method_sampling_fact`` in
+    ``evaluation._recording.sampling_evidence`` uses it.
+    """
+    if not isinstance(system, System) or len(system.components or ()) != 1:
+        return None
+    digest = cast(tuple[dict[str, Any]], system.components)[0].get("code_digest")
+    hooks = _PROGRAMS.get(digest) if isinstance(digest, str) else None
+    if hooks is None or system.apply is not hooks[0]:
+        return None
+    kind = _TEACHER_KINDS.get(_PROGRAM_METHODS[cast(str, digest)])
+    if kind is None:
+        return None
+    return "stochastic" if kind == "log_probabilities" else "deterministic"
 
 
 def load_portable_model(path: str | Path) -> System:
