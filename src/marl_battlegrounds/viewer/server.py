@@ -2110,7 +2110,10 @@ def serve_debugger_server(
                     exit_code = close_result.exit_code
         finally:
             if server_thread is not None and server_thread.ident is not None:
-                if server_thread.is_alive():
+                # shutdown() waits for the request loop to say it stopped, so
+                # call it only while that loop still runs. serving_done says so
+                # exactly; is_alive() stays True for a moment after the loop ends.
+                if not serving_done.is_set():
                     server.shutdown()
                 server_thread.join()
     return exit_code
