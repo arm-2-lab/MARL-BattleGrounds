@@ -953,12 +953,16 @@ def _check_collection_compatibility(
     """Check bound members and collection rules without arrays, hashes or writes.
 
     details is an already checked learner description. Preserve historical
-    defaults and compare all collection settings. A saved content binding is
-    read through read_saved_binding first, so one saved under Season 0's Core
-    rules compares equal to the same content under this Core. Only identical
-    saved artifacts
-    may change their reload path; checked saved exposure stays attached to those
-    members. Return a collection carrying the current paths and preserved facts.
+    defaults and compare all collection settings. A saved content binding that
+    differs from the installed one must match it scientifically: its
+    scientific_projection, read through read_saved_binding (so Season 0's Core
+    rules count as this Core's), must equal the installed binding's. Display
+    wording, packaging hashes and equivalent Core rules may then differ, and
+    the returned collection keeps the saved binding, so every record of the
+    run, history actors included, keeps one binding. Only identical saved
+    artifacts may change their reload path; checked saved exposure stays
+    attached to those members. Return a collection carrying the current paths
+    and preserved facts.
     Reuse this preflight before output setup and inside numerical restore so both
     routes enforce the same rule. No member is loaded or called here.
     """
@@ -996,11 +1000,21 @@ def _check_collection_compatibility(
     saved.pop("pinned_opponent", None)
     current.pop("pinned_opponent", None)
     if saved.get("content_binding") != current["content_binding"]:
+        from marl_battlegrounds.evaluation.models import (
+            canonical_digest_sha256,
+            canonical_json_bytes,
+        )
         from marl_battlegrounds.training._content import read_saved_binding
 
-        saved["content_binding"] = read_saved_binding(
-            saved["content_binding"]
-        ).model_dump(mode="json")
+        kept = read_saved_binding(saved["content_binding"])
+        if canonical_digest_sha256(
+            kept.scientific_projection()
+        ) != canonical_digest_sha256(collection.binding.scientific_projection()):
+            raise ValueError("Checkpoint content or collection settings differ")
+        replacements["binding"] = type(kept).model_validate_json(
+            canonical_json_bytes(saved["content_binding"])
+        )
+        current["content_binding"] = saved["content_binding"]
     if saved != current:
         raise ValueError("Checkpoint content or collection settings differ")
     return replace(collection, **replacements)
