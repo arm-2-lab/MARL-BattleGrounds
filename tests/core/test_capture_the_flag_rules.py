@@ -95,7 +95,7 @@ def test_core_steps_keep_the_objective_facts_neutral() -> None:
 
 
 def test_twenty_ticks_leave_the_flags_and_hills_as_they_started() -> None:
-    env = make("tdm", env_config=_CONFIG, num_envs=2, metrics="none")
+    env = make("ctf", env_config=_CONFIG, num_envs=2, metrics="none")
     _, state = env.reset(jax.random.key(0))
     start = state.core_state
     for tick in range(20):
@@ -110,7 +110,7 @@ def test_twenty_ticks_leave_the_flags_and_hills_as_they_started() -> None:
 
 
 def test_a_new_map_home_or_value_reuses_the_compiled_game() -> None:
-    env = make("tdm", env_config=_CONFIG, num_envs=2, metrics="none")
+    env = make("ctf", env_config=_CONFIG, num_envs=2, metrics="none")
     other = capture_the_flag_config(
         make_standard_team_deathmatch_config(
             map_id=29, team_a_roster=_ROSTER, team_b_roster=_ROSTER
