@@ -17,6 +17,10 @@ Contracts checked with a tiny untrained per-agent Policy on CPU:
   passes the shared local-path rule;
 - tampered, padded and non-format files are refused or recognized;
 - host Policies are refused;
+- a loaded file says how it chooses actions: a file of a PPO family is
+  stochastic, a QMIX or PQN-VDN file is deterministic, and a file made from a
+  Policy, or a System that copies a loaded file's record but not its hook,
+  stays unknown;
 - the loader's apply and init hooks keep their pinned code digests, because
   saved runs record them (checked on Python 3.14, which made the pins: the
   digest is of Python bytecode, which differs between versions).
@@ -42,6 +46,9 @@ import marl_battlegrounds as marl_bgs
 from marl_battlegrounds import portable_models
 from marl_battlegrounds.core.types import ActionMask
 from marl_battlegrounds.environment import Environment
+from marl_battlegrounds.evaluation._recording.sampling_evidence import (
+    method_sampling_fact,
+)
 from marl_battlegrounds.evaluation.policy_execution import (
     PolicyTree,
     System,
@@ -356,3 +363,27 @@ def test_loader_hooks_keep_their_recorded_code_digest(
     apply, init = _callable_evidence(system.apply), _callable_evidence(system.init)
     assert apply is not None and apply["code_digest"] == APPLY_CODE_DIGEST
     assert init is not None and init["code_digest"] == INIT_CODE_DIGEST
+
+
+def test_loaded_files_declare_how_their_family_samples(
+    made: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    system = portable_models.load_portable_model(made[1])
+    assert method_sampling_fact(system)["determinism"] == "unknown"
+    digest = cast(tuple[dict[str, Any]], system.components)[0]["code_digest"]
+    for method, expected in (
+        ("mappo", "stochastic"),
+        ("ff_ippo", "stochastic"),
+        ("qmix", "deterministic"),
+        ("pqn_vdn", "deterministic"),
+    ):
+        monkeypatch.setitem(portable_models._PROGRAM_METHODS, digest, method)
+        assert method_sampling_fact(system)["determinism"] == expected
+    copy = System(
+        "copy",
+        cast(Any, _apply),
+        variables=system.variables,
+        init=system.init,
+        components=system.components,
+    )
+    assert method_sampling_fact(copy)["determinism"] == "unknown"
