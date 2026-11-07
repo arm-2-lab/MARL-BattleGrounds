@@ -57,6 +57,7 @@ from typing import Any, Literal, cast
 from marl_battlegrounds._browser import open_in_browser
 from marl_battlegrounds.released_models import (
     RELEASE_ORGANIZATION,
+    _full_name_hint,  # pyright: ignore[reportPrivateUsage]
     _parse_address,  # pyright: ignore[reportPrivateUsage]
     _pool,  # pyright: ignore[reportPrivateUsage]
     _typed_name,  # pyright: ignore[reportPrivateUsage]
@@ -70,6 +71,9 @@ FORM_TEMPLATE = "leaderboard_submission.yml"
 
 OFFICIAL_TRAIN_MINUTES = 480.0
 """How long our official run trains each entry, in minutes (8 hours)."""
+
+OFFICIAL_GPU = "NVIDIA GeForce RTX 5090"
+"""The name JAX and nvidia-smi give our run's card. Step 9 decides only there."""
 
 MIN_GAME_STEPS_PER_SECOND = 5000
 """The slowest allowed playing speed, in game steps per second (one tick of one
@@ -115,19 +119,6 @@ _REPO_PATTERN = "tdm-season-<N>-{}"
 _INSTALL_LIMIT = "Installing and downloading took more than 1 hour."
 _EXPORT_FILE = ".entry-check-model.zip"
 _HF_FOLDER = ".entry-check-hf"
-
-Sandbox = Callable[[Path, bool], Sequence[str]]
-"""A maintainers' seal: ``sandbox(clone, online)`` returns a command prefix.
-
-``check_entry`` puts the prefix (a list of strings, for example a ``bwrap``
-command) in front of every child that runs the entry's code. ``clone`` is the
-clone's folder, the only folder such a child writes. ``online`` is True in
-step 4 (the install and the released-model downloads need the network) and
-False in steps 5 to 7. The prefix must keep the environment the check gives
-the child, keep the child in the check's process group (no new session) and
-let SIGINT reach it, or step 5 cannot stop the run politely. Outside ``hf://``
-models are not downloaded behind it: the check's own Python fetches them.
-"""
 
 StepGroup = Literal["must pass", "measured here"]
 """Must-pass steps block ``entry submit``; measured-here steps never do."""
@@ -540,8 +531,8 @@ def _read_entry(folder: Path) -> _Entry:
     (``MARL-BattleGrounds/<repo>@final`` or a training-opponent pool such as
     ``MARL-BattleGrounds/tdm-season-0-results/training-opponents``), or an
     exact address, ``hf://<owner>/<repo>@<40-character commit>/<path>``.
-    1.0.3's mapping form, ``{model: ..., sha256: ...}`` (``commit:`` for a
-    pool), is read by ``model`` alone. A path inside the repository needs no
+    A mapping such as 1.0.3's ``{model: ..., sha256: ...}`` is read by
+    ``model`` alone. A path inside the repository needs no
     line, because the commit fixes its bytes; one that is listed is left
     out. Needs PyYAML, which the hydra extra installs.
     """
@@ -613,7 +604,7 @@ def _read_entry(folder: Path) -> _Entry:
                     continue
                 raise ValueError(
                     f"{model!r} is not a released name, an hf:// address or a "
-                    "path inside this repository"
+                    f"path inside this repository.{_full_name_hint(model)}"
                 )
         except ValueError as error:
             raise ValueError(f"{_ENTRY_FILE}: starting_models: {error}") from None
@@ -678,8 +669,8 @@ name: {json.dumps(name)}
 # the output folder below.
 train: {train}
 
-# The folder the train command saves into, inside this repository. Commit
-# nothing in it: our run needs it empty.
+# The folder the train command saves into, inside this repository. Save only
+# models there (logs go elsewhere), and commit nothing in it.
 output: runs/entry
 
 # The function that loads the model your run chose, written as
@@ -935,8 +926,9 @@ def entry_environment(clone: Path, *, offline: bool) -> dict[str, str]:
         ``VIRTUAL_ENV``, and its ``.entry-check-hf`` folder is ``HF_HOME``, the
         model cache that step 4 fills.
     offline : bool
-        True sets ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``, as in steps 5 to 9
-        and our run. False removes both, even when this process has them.
+        True sets ``HF_HUB_OFFLINE=1``, ``UV_OFFLINE=1`` and
+        ``WANDB_MODE=offline``, as in steps 5 to 9 and our run. False removes
+        all three, even when this process has them.
 
     Returns
     -------
@@ -954,9 +946,13 @@ def entry_environment(clone: Path, *, offline: bool) -> dict[str, str]:
         HF_HOME=str(clone / _HF_FOLDER),
         UV_NO_SYNC="1",
     )
-    for key in ("HF_HUB_OFFLINE", "UV_OFFLINE"):
+    for key, value in (
+        ("HF_HUB_OFFLINE", "1"),
+        ("UV_OFFLINE", "1"),
+        ("WANDB_MODE", "offline"),
+    ):
         if offline:
-            env[key] = "1"
+            env[key] = value
         else:
             env.pop(key, None)
     return env
@@ -1098,7 +1094,8 @@ class _Checker:
     or the kept folder); the clone goes to ``work/entry`` and its Hugging Face
     cache to ``entry/.entry-check-hf``. ``bundle`` is where step 2 keeps a copy
     of the commit (maintainers only), or None. ``sandbox`` seals every child
-    that runs the entry's code (see Sandbox), or None.
+    that runs the entry's code (see check_entry), or None. ``machine`` is the
+    record's GPU label (see _machine), used only when step 9 has no reading.
     """
 
     def __init__(
@@ -1108,11 +1105,12 @@ class _Checker:
         work: Path,
         train_minutes: float,
         bundle: Path | None,
-        sandbox: Sandbox | None = None,
+        sandbox: Callable[[Path, bool], Sequence[str]] | None = None,
+        machine: str = "",
     ) -> None:
         self.source, self.commit, self.train_minutes = source, commit, train_minutes
         self.work, self.clone, self.bundle = work, work / "entry", bundle
-        self.sandbox = sandbox
+        self.sandbox, self.machine = sandbox, machine
         self.hf_home = self.clone / _HF_FOLDER
         self.entry: _Entry | None = None
         self.stopped = False
@@ -1155,7 +1153,7 @@ class _Checker:
                 self.record(number, "skipped", reason)
 
     def sealed(self, command: Sequence[str], *, online: bool) -> list[str]:
-        """Return ``command`` behind the sandbox's prefix (see Sandbox), if any."""
+        """Return ``command`` behind the sandbox's prefix, if there is a sandbox."""
         prefix = () if self.sandbox is None else self.sandbox(self.clone, online)
         return [*prefix, *command]
 
@@ -1443,7 +1441,8 @@ class _Checker:
         """Step 8's detail when the run saved something to enter, else None.
 
         A built-in run must have a choice; an own training loop must have
-        written something into its output folder.
+        written something into its output folder, which is why that folder
+        holds saved models only.
         """
         assert self.entry is not None
         if self.builtin_run:
@@ -1533,9 +1532,10 @@ class _Checker:
         ``work/model.zip``, so no entry code runs and the reading cannot be
         forged by the entry.
 
-        Only a reading on an RTX 5090, the card our run uses, with its memory
+        Only a reading on OFFICIAL_GPU, the card our run uses, with its memory
         known, passes or fails; any other reading is "not measured". A crash
-        or games past 30 minutes fail on any machine.
+        or games past 30 minutes fail on that card (named by ``machine``) and
+        are "not measured" elsewhere.
         """
         assert self.entry is not None
         flags = f"{os.environ.get('XLA_FLAGS', '')} {_DETERMINISTIC}".strip()
@@ -1548,10 +1548,15 @@ class _Checker:
             timeout=_PLAY_SECONDS,
         )
         result = _last_json(out) if code == 0 else None
-        if code is None:
-            return "failed", "The games took more than 30 minutes: far too slow."
         if result is None:
-            return "failed", f"The play check failed:\n{_tail(err)}"
+            problem = (
+                "The games took more than 30 minutes: far too slow."
+                if code is None
+                else f"The play check failed:\n{_tail(err)}"
+            )
+            if self.machine != OFFICIAL_GPU:
+                return "not measured", problem + " We decide this on our RTX 5090."
+            return "failed", problem
         if not result["on_gpu"]:
             return "not measured", (
                 f"No GPU here (JAX found {result['device']}). We measure this on "
@@ -1567,7 +1572,7 @@ class _Checker:
             + ("unknown" if peak is None else f"{peak / 1e9:.2f} GB")
             + " of GPU memory (at most 10 GB allowed)."
         )
-        if "RTX 5090" not in self.play.device:
+        if self.play.device != OFFICIAL_GPU:
             return "not measured", detail + " We decide this on our RTX 5090."
         if peak is None:
             return "not measured", detail + " The GPU did not report its memory."
@@ -1618,6 +1623,8 @@ class _Checker:
             self.record(9, "skipped", waiting)
             return
         ok = self.attempt(6, self.step_6) and self.attempt(7, self.step_7)
+        if 7 not in self.steps:
+            self.record(7, "skipped", "Not run: step 6 failed.")
         self.record(8, "passed", saved)
         if ok:
             try:
@@ -1633,7 +1640,7 @@ def check_entry(
     repository: str | None = None,
     commit: str | None = None,
     train_minutes: float = 15.0,
-    sandbox: Sandbox | None = None,
+    sandbox: Callable[[Path, bool], Sequence[str]] | None = None,
     keep_folder: str | os.PathLike[str] | None = None,
 ) -> EntryCheck:
     """Check one commit of an entry the way we will, and save the result.
@@ -1676,10 +1683,10 @@ def check_entry(
     9. ``play_limits`` on the check's copy of the exported file, the one our
        games play, in a fresh child of this Python (no entry code runs), with
        XLA's deterministic mode.
-       Its reading passes or fails only on an RTX 5090 that reports its
-       memory; on another GPU it is "not measured" with the reading, and
-       without a GPU "not measured". A crash, or games that run past 30
-       minutes, fail it on any machine.
+       Its reading passes or fails only on the desktop RTX 5090
+       (OFFICIAL_GPU) when the card reports its memory; anywhere else it is
+       "not measured" with the reading or the error. A crash, or games that
+       run past 30 minutes, fail it only on that card.
 
     Parameters
     ----------
@@ -1698,14 +1705,16 @@ def check_entry(
     sandbox : callable or None, default=None
         For maintainers: a function ``sandbox(clone, online)`` that returns a
         command prefix (a list of strings, for example a ``bwrap`` command).
-        The check puts it in front of every child that runs the entry's code
-        (see Sandbox). ``clone`` is the clone's folder, the only folder those
-        children write. ``online`` is True for step 4's install and
-        released-model downloads and False for every child in steps 5 to 7.
-        The prefix must keep the environment the check gives each child
-        (``HF_HOME``, ``HF_HUB_OFFLINE`` and the rest) and keep the child in
-        the check's process group. An error it raises fails that step. None
-        runs the children unsealed.
+        The check puts it in front of every child that runs the entry's code.
+        ``clone`` is the clone's folder, the only folder those children
+        write. ``online`` is True for step 4's install and released-model
+        downloads and False for every child in steps 5 to 7. The prefix must
+        keep the environment the check gives each child (see
+        entry_environment), keep the child in the check's process group (no
+        new session) and let SIGINT reach it, or step 5 cannot stop the run
+        politely. An error it raises fails that step. Outside ``hf://`` models
+        and step 9 run in this Python's own children, behind no prefix. None
+        runs every child unsealed.
     keep_folder : str or os.PathLike or None, default=None
         For maintainers: a new folder to work in and keep, for our official
         run. It holds the clone (``entry``, with its environment, the run's
@@ -1798,6 +1807,7 @@ def check_entry(
             train_minutes,
             None if records is None else records / f"{commit}.bundle",
             sandbox,
+            machine,
         )
         if repository is None:
             ok = checker.attempt(1, lambda: checker.step_1(folder))
@@ -2088,6 +2098,7 @@ __all__ = [
     "EntryCheck",
     "PlayLimits",
     "check_entry",
+    "entry_environment",
     "new_entry",
     "play_limits",
     "submit_entry",
