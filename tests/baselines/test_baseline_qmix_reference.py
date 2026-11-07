@@ -57,7 +57,7 @@ from tests.baseline_donor_reference import (
 from marl_battlegrounds.baselines import qmix
 from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_SIZE,
-    TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
 )
 
 type Tree = Any
@@ -297,14 +297,14 @@ def test_initialization_matches_current_stack_donor_exactly(
     init_obs = ns["ObservationGlobalState"](
         jnp.zeros((1, 1, agents, ACTOR_FEATURE_SIZE)),
         jnp.ones((1, 1, agents, 198), bool),
-        jnp.zeros((1, 1, agents, TRAINING_STATE_FEATURE_SIZE)),
+        jnp.zeros((1, 1, agents, TRAINING_STATE_FEATURE_SIZES[2])),
     )
     hidden = ns["ScannedRNN"].initialize_carry((32, agents), qmix.QMIX_HIDDEN_SIZE)
     donor_q = reference.q_net.init(key, hidden, (init_obs, jnp.zeros((1, 1, 1), bool)))
     donor_mixer = reference.mixer.init(
         key,
         jnp.zeros((128, 19, agents)),
-        jnp.zeros((128, 19, TRAINING_STATE_FEATURE_SIZE)),
+        jnp.zeros((128, 19, TRAINING_STATE_FEATURE_SIZES[2])),
     )
     for actual in (state.online_q, state.target_q):
         _compare(actual, donor_q, exact=True)

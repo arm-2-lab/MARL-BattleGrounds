@@ -20,13 +20,20 @@ refusing inputs without a team axis; mirrored twin rollouts without combat agree
 twenty pre-contact steps; and twins with one authored death per team agree
 through the respawn wave for a full and a padded roster, in both teams. Unused
 observer rows are never flagged, and "world", the removed "right" and any other
-name are refused by the flag helper. Actor input schema 2 is current: 5,165
+name are refused by the flag helper. Actor input schemas 2 and 3 share the
+current layout (ACTOR_INPUT_SCHEMA_VERSION is 3): 5,165
 features with the Red Zone depth as context column 19 (flat feature 1128),
 and the training state is 920 features with the depth right after the score
 threshold (slice 391 to 392). That schema names every state and config field
 except the Capture the Flag and King of the Hills ones (the
 neutral_objective_fields names), which it leaves out so Team Deathmatch critics
-keep their 920 features. Historical schema 1 (5,164 features) is reached
+keep their 920 features. Training state schema 3 (973 features, the default
+and TRAINING_STATE_FEATURE_SIZE) appends exactly those fields in declaration
+order, and its first 920 features equal schema 2's. A hand-built state with
+both teams' scores, both flags carried, and a contested hill and two owned
+ones checks every new feature: the carriers are one indicator per agent row,
+and each hill's owner is two indicators, both 0 for nobody. Historical
+schema 1 (5,164 features) is reached
 only through schema_1_actor_input, which drops context column 19: its
 encoding equals the schema-2 encoding without feature 1128, eager and under
 jit, and it refuses a view that is not 20 columns wide. The encoder and the
@@ -58,9 +65,11 @@ from marl_battlegrounds.baselines.inputs import (
     ACTOR_INPUT_SCHEMA_VERSION,
     TRAINING_STATE_FEATURE_OFFSETS,
     TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
     TRAINING_STATE_SCHEMA_VERSION,
     encode_actor_inputs,
     encode_training_state,
+    historical_actor_input,
     schema_1_actor_input,
     spawn_frame_flag,
     team_obstacle_partners,
@@ -259,9 +268,9 @@ def test_actor_schema_covers_every_field_with_distinct_values(
             encoded = np.asarray(value)
         expected.append(encoded.reshape(-1))
         offset += width
-    assert ACTOR_INPUT_SCHEMA_VERSION == 2
+    assert ACTOR_INPUT_SCHEMA_VERSION == 3
     assert offset == ACTOR_FEATURE_SIZE == 5165
-    assert dict(ACTOR_FEATURE_SIZES) == {1: 5164, 2: 5165}
+    assert dict(ACTOR_FEATURE_SIZES) == {1: 5164, 2: 5165, 3: 5165}
     assert CONTEXT_FEATURES == 20
     assert ACTOR_FEATURE_OFFSETS["observation.context_features"] == slice(1109, 1129)
     assert 1109 + CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH == 1128
@@ -436,14 +445,19 @@ def test_training_schema_covers_every_team_deathmatch_field(
         previous_timestep_select_target_actions=state.previous_timestep_select_target_actions,
         previous_timestep_use_ultimate_actions=state.previous_timestep_use_ultimate_actions,
     )
-    actual = np.asarray(encode_training_state(state, config))
+    actual = np.asarray(encode_training_state(state, config, schema=2))
     objective = neutral_objective_fields(host=True)
+    leaves = (*_leaves(state, "state"), *_leaves(config, "config"))
     fields = tuple(
         (name, value)
-        for name, value in (*_leaves(state, "state"), *_leaves(config, "config"))
+        for name, value in leaves
         if name.split(".", 1)[1] not in objective
     )
-    assert tuple(TRAINING_STATE_FEATURE_OFFSETS) == tuple(name for name, _ in fields)
+    later = tuple(name for name, _ in leaves if name.split(".", 1)[1] in objective)
+    assert tuple(TRAINING_STATE_FEATURE_OFFSETS) == (
+        *(name for name, _ in fields),
+        *later,
+    )
     expected: list[np.ndarray] = []
     active = np.asarray(config.agent_profile.active_mask)
     offset = 0
@@ -471,13 +485,64 @@ def test_training_schema_covers_every_team_deathmatch_field(
         assert TRAINING_STATE_FEATURE_OFFSETS[name] == slice(offset, offset + flat.size)
         expected.append(flat)
         offset += flat.size
-    assert TRAINING_STATE_SCHEMA_VERSION == 2
-    assert offset == TRAINING_STATE_FEATURE_SIZE == 920
+    assert TRAINING_STATE_SCHEMA_VERSION == 3
+    assert offset == TRAINING_STATE_FEATURE_SIZES[2] == 920
+    assert TRAINING_STATE_FEATURE_SIZE == TRAINING_STATE_FEATURE_SIZES[3] == 973
+    newest = np.asarray(encode_training_state(state, config))
+    np.testing.assert_array_equal(newest[:920], actual)
     depth = TRAINING_STATE_FEATURE_OFFSETS["config.team_deathmatch_red_zone_depth"]
     assert depth == slice(391, 392)
     assert actual[391] == np.float32(config.team_deathmatch_red_zone_depth)
     assert actual.dtype == np.float32
     np.testing.assert_array_equal(actual, np.concatenate(expected).astype(np.float32))
+
+
+def test_training_schema_3_encodes_each_objective_feature(
+    snapshot: tuple[EnvConfig, EnvState, Observation, ActorInput],
+) -> None:
+    config, state, _, _ = snapshot
+    state = state._replace(
+        capture_the_flag_scores=jnp.array([2, 1], jnp.int32),
+        king_of_the_hills_scores=jnp.array([30, 7], jnp.int32),
+        capture_the_flag_flag_positions=jnp.array([[3.0, 4.0], [20.0, 6.0]]),
+        # Team B's slot 6 carries Team A's flag; Team A's slot 2 carries Team B's.
+        capture_the_flag_flag_carrier_slots=jnp.array([6, 2], jnp.int32),
+        capture_the_flag_dropped_flag_countdowns=jnp.array([0, 4], jnp.int32),
+        king_of_the_hills_hill_is_contested=jnp.array([False, True, False]),
+        king_of_the_hills_hill_owners=jnp.array([0, 1, 2], jnp.int32),
+        king_of_the_hills_empty_hill_ownership_countdowns=jnp.array(
+            [0, 5, 9], jnp.int32
+        ),
+    )
+    actual = np.asarray(encode_training_state(state, config))
+    np.testing.assert_array_equal(
+        actual[:920], np.asarray(encode_training_state(state, config, schema=2))
+    )
+
+    def part(name: str) -> np.ndarray:
+        return actual[TRAINING_STATE_FEATURE_OFFSETS[name]]
+
+    carriers = np.zeros(10)
+    carriers[[2, 6]] = 1
+    expected = {
+        "state.capture_the_flag_scores": [2, 1],
+        "state.king_of_the_hills_scores": [30, 7],
+        "state.capture_the_flag_flag_positions": [3, 4, 20, 6],
+        "state.capture_the_flag_flag_carrier_slots": carriers,
+        "state.capture_the_flag_dropped_flag_countdowns": [0, 4],
+        "state.king_of_the_hills_hill_is_contested": [0, 1, 0],
+        "state.king_of_the_hills_hill_owners": [0, 0, 1, 0, 0, 1],
+        "state.king_of_the_hills_empty_hill_ownership_countdowns": [0, 5, 9],
+    }
+    for name, value in expected.items():
+        np.testing.assert_array_equal(part(name), np.asarray(value, np.float32))
+    for name in tuple(TRAINING_STATE_FEATURE_OFFSETS)[-11:]:
+        field = name.removeprefix("config.")
+        np.testing.assert_array_equal(
+            part(name), np.asarray(getattr(config, field), np.float32).reshape(-1)
+        )
+    with pytest.raises(ValueError, match="schema must be 2 or 3"):
+        encode_training_state(state, config, schema=4)
 
 
 def test_training_history_preserves_dead_members_and_hides_unused_slots(
@@ -601,11 +666,14 @@ def test_training_config_broadcast_matches_mapped_calls_and_reuses_compilation(
         ),
     )
     assert traces == [1]
-    assert first.shape == (2, 3, 920)
+    assert first.shape == (2, 3, TRAINING_STATE_FEATURE_SIZE)
     assert not np.array_equal(first, second)
     constant = encode_training_state(states, config)
     np.testing.assert_array_equal(
-        constant, np.broadcast_to(encode_training_state(state, config), (2, 3, 920))
+        constant,
+        np.broadcast_to(
+            encode_training_state(state, config), (2, 3, TRAINING_STATE_FEATURE_SIZE)
+        ),
     )
 
 
@@ -1178,3 +1246,62 @@ def test_team_obstacle_partners_equals_per_actor_partners(
 
     with pytest.raises(ValueError, match="team axis"):
         team_obstacle_partners(jax.tree.map(pair, single_actors))
+
+
+def test_old_schema_actors_see_their_team_deathmatch_layout_in_other_modes(
+    snapshot: tuple[EnvConfig, EnvState, Observation, ActorInput],
+) -> None:
+    # Every observer of a 3v2 game, so unused rows are covered too.
+    actors = build_actor_input(snapshot[2], snapshot[0])
+
+    def convert(view: ActorInput, schema: int) -> ActorInput:
+        return historical_actor_input(
+            view, schema, score_threshold=7, red_zone_depth=2.5
+        )
+
+    for schema in (2, 3):
+        same = convert(actors, schema)
+        jax.tree.map(np.testing.assert_array_equal, same, actors)
+    jax.tree.map(
+        np.testing.assert_array_equal,
+        convert(actors, 1),
+        schema_1_actor_input(actors),
+    )
+    context = actors.observation.context_features
+    used = context[..., 6] == 1
+    other = context.at[..., 6].set(0).at[..., 8].set(1).at[..., 9].set(4)
+    other = other.at[..., (14, 15, 18)].set(jnp.array([2.0, 1.0, 3.0]))
+    other = other.at[..., (16, 19)].set(0)
+    ones = jnp.where(used[:, None, None], 1.0, actors.observation.objective_features)
+    bank = actors.source_bank.objective_features_by_source
+    ctf = actors._replace(
+        observation=actors.observation._replace(
+            context_features=jnp.where(used[:, None], other, context),
+            objective_features=ones,
+        ),
+        source_bank=actors.source_bank._replace(
+            objective_features_by_source=jnp.where(used[:, None, None, None], 1.0, bank)
+        ),
+    )
+    held = convert(ctf, 2)
+    expected = context.at[..., 16].set(7).at[..., 19].set(2.5)
+    np.testing.assert_array_equal(
+        held.observation.context_features, jnp.where(used[:, None], expected, context)
+    )
+    np.testing.assert_array_equal(
+        held.observation.objective_features,
+        jnp.where(used[:, None, None], 0.0, actors.observation.objective_features),
+    )
+    np.testing.assert_array_equal(
+        held.source_bank.objective_features_by_source,
+        jnp.where(used[:, None, None, None], 0.0, bank),
+    )
+    np.testing.assert_array_equal(
+        convert(ctf, 1).observation.context_features,
+        held.observation.context_features[..., :19],
+    )
+    jax.tree.map(np.testing.assert_array_equal, convert(ctf, 3), ctf)
+    compiled = cast(ActorInput, jax.jit(convert, static_argnums=1)(ctf, 2))
+    jax.tree.map(np.testing.assert_array_equal, compiled, held)
+    with pytest.raises(ValueError, match="schema must be 1, 2 or 3"):
+        convert(actors, 4)

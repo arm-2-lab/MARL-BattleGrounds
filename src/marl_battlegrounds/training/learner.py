@@ -17,6 +17,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
+from marl_battlegrounds._task_settings import TaskName
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
     categorical_action_mask,
@@ -28,10 +29,11 @@ from marl_battlegrounds.baselines.config import (
     validate_ppo_batch_size,
 )
 from marl_battlegrounds.baselines.inputs import (
-    TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
     encode_actor_inputs,
     spawn_frame_flag,
     team_obstacle_partners,
+    training_state_schema,
 )
 from marl_battlegrounds.baselines.ppo import (
     HIDDEN_SIZE,
@@ -294,7 +296,10 @@ def _rollout_shapes(
     """Check static PPO rollout leaves before tracing critic or update work.
 
     Require positive output capacity, the method's critic features and the existing
-    PPOLearningOutputs record. Real-prefix length remains a numerical guard.
+    PPOLearningOutputs record. A centralized critic's rows and final state carry
+    one training-state schema's width (920 or 973), the same in both; the run's
+    own schema is checked where the learner is set up and validated.
+    Real-prefix length remains a numerical guard.
     Return (capacity, games); these are structural Python integers.
     """
     games = _state_shapes(state, method=method)
@@ -310,15 +315,18 @@ def _rollout_shapes(
     else:
         if rows.training_state is None or rollout.final_training_state is None:
             raise ValueError("MAPPO collection must enable collect_training_state")
+        width = rows.training_state.shape[-1]
+        if width not in TRAINING_STATE_FEATURE_SIZES.values():
+            raise ValueError(
+                f"training_state has {width} features, not a training-state "
+                "schema's width (920 or 973)"
+            )
         _array(
-            rows.training_state,
-            (length, games, TRAINING_STATE_FEATURE_SIZE),
-            jnp.float32,
-            "training_state",
+            rows.training_state, (length, games, width), jnp.float32, "training_state"
         )
         _array(
             rollout.final_training_state,
-            (games, TRAINING_STATE_FEATURE_SIZE),
+            (games, width),
             jnp.float32,
             "final_training_state",
         )
@@ -404,17 +412,27 @@ def _ppo_state(state: LearnerState) -> PPOTrainState:
 
 
 @lru_cache(maxsize=16)
-def _ppo_spec(ppo: PPOConfig, method: str = "mappo") -> PPOTrainState:
+def _ppo_spec(
+    ppo: PPOConfig, method: str = "mappo", training_state_schema: int = 2
+) -> PPOTrainState:
     """Trace the known initializer once per static config to obtain safe leaf specs.
 
     This host helper executes no network initialization or optimizer step. The
     cached tree contains only shapes/dtypes, not weights or experiment arrays.
-    The cache includes method, which defaults to recurrent MAPPO.
+    The cache includes method, which defaults to recurrent MAPPO, and the
+    training-state schema that sets a centralized critic's input width (2, the
+    Team Deathmatch schema, by default).
     """
     return cast(
         PPOTrainState,
         jax.eval_shape(
-            partial(initialize_ppo, config=ppo, method=method), jax.random.key(0)
+            partial(
+                initialize_ppo,
+                config=ppo,
+                method=method,
+                training_state_schema=training_state_schema,
+            ),
+            jax.random.key(0),
         ),
     )
 
@@ -445,6 +463,7 @@ def init_learner(
     learner_slots: tuple[int, ...] | None = None,
     partner_population: Mapping[str, System | Policy | str] | None = None,
     partner_selection: Mapping[str, float] | Sequence[str] | None = None,
+    task: TaskName = "tdm",
 ) -> tuple[TrainingCollection, LearnerState]:
     """Initialize one untrained PPO learner and its verified collection setup.
 
@@ -521,6 +540,10 @@ def init_learner(
     partner_population, partner_selection : mapping, sequence or None
         Frozen named partners and their future-game shares or repeating order.
         Forwarded to init_training_collection with learner_slots.
+    task : str, default="tdm"
+        The run's mode name, as TrainConfig.task holds it. A centralized
+        critic's input width follows its training-state schema (920 features
+        for "tdm", 973 for other modes), and the collection keeps the task.
 
     Returns
     -------
@@ -559,7 +582,10 @@ def init_learner(
         raise ValueError("Learner optimizer or block sample counts exceed int32")
     root = jax.random.key(seed, impl="threefry2x32")
     initialized = initialize_ppo(
-        jax.random.fold_in(root, MODEL_INITIALIZATION_TAG), ppo, method=method
+        jax.random.fold_in(root, MODEL_INITIALIZATION_TAG),
+        ppo,
+        method=method,
+        training_state_schema=training_state_schema(task),
     )
     if initial_actor is not None:
         from marl_battlegrounds.training.checkpoints import initial_actor_variables
@@ -602,6 +628,7 @@ def init_learner(
         learner_slots=learner_slots,
         partner_population=partner_population,
         partner_selection=partner_selection,
+        task=task,
     )
     state = LearnerState(
         carry,
@@ -696,7 +723,8 @@ def _feedforward_physical_values(
 ) -> tuple[tuple[()], Array]:
     """Value each physical game row once and share its value across five actors.
 
-    params is a feedforward MAPPO critic tree; features is float32 (T,B,920),
+    params is a feedforward MAPPO critic tree; features is float32 (T,B,F_S),
+    F_S being the run's training-state width (920 or 973),
     valid is bool (T,B) and input_scale is the saved positive multiplier.
     Return empty memory and float32 (T,B,5) raw network predictions, zero on
     invalid rows. This has no recurrent calculation or hidden state. Sharing
@@ -1317,7 +1345,8 @@ def validate_learner(
         Original static learner settings; optimizer/network shapes must agree.
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Original static method; memory, critic payload and model shapes must
-        match. Never infer it from actor shapes, which MAPPO and IPPO share.
+        match. Never infer it from actor shapes, which MAPPO and IPPO share. A
+        centralized critic's input width follows collection.training_state_schema.
     recheck_installed_content : bool, default=True
         Python bool. True reruns installed-content preflight, as restore requires.
         Checkpoint saves use False to reuse the immutable descriptor verified
@@ -1369,7 +1398,7 @@ def validate_learner(
     ):
         raise ValueError("Learner shuffle key does not match the run root")
     numerical = _ppo_state(state)
-    spec = _ppo_spec(ppo, method)
+    spec = _ppo_spec(ppo, method, collection.training_state_schema)
     if jax.tree.structure(numerical) != jax.tree.structure(spec):
         raise ValueError("Learner network or optimizer structure is incompatible")
     for actual, expected in zip(

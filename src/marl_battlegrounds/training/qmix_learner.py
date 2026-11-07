@@ -43,6 +43,7 @@ except ImportError as error:
 
 import numpy as np
 
+from marl_battlegrounds._task_settings import TaskName
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
     categorical_action_mask,
@@ -58,6 +59,7 @@ from marl_battlegrounds.baselines.inputs import (
     encode_actor_inputs,
     spawn_frame_flag,
     team_obstacle_partners,
+    training_state_schema,
 )
 from marl_battlegrounds.baselines.ppo import (
     _actor_groups,  # pyright: ignore[reportPrivateUsage]
@@ -714,6 +716,7 @@ def init_qmix_learner(
     partner_population: Mapping[str, System | Policy | str] | None = None,
     partner_selection: Mapping[str, float] | Sequence[str] | None = None,
     qmix: QMIXConfig = DEFAULT_QMIX_CONFIG,
+    task: TaskName = "tdm",
 ) -> tuple[TrainingCollection, QMIXLearnerState]:
     """Initialize one untrained QMIX learner and its verified collection setup.
 
@@ -767,6 +770,10 @@ def init_qmix_learner(
     partner_population, partner_selection : mapping, sequence or None
         Frozen named partners and their future-game shares or repeating order.
         Forwarded to init_training_collection with learner_slots.
+    task : str, default="tdm"
+        The run's mode name, as TrainConfig.task holds it. The mixer's state
+        width follows its training-state schema (920 features for "tdm", 973
+        for other modes), and the collection keeps the task.
 
     Returns
     -------
@@ -800,7 +807,9 @@ def init_qmix_learner(
         raise ValueError("QMIX optimizer counts for this budget exceed int32")
     root = jax.random.key(seed, impl="threefry2x32")
     initialized = initialize_qmix(
-        jax.random.fold_in(root, QMIX_MODEL_INITIALIZATION_TAG), qmix
+        jax.random.fold_in(root, QMIX_MODEL_INITIALIZATION_TAG),
+        qmix,
+        training_state_schema=training_state_schema(task),
     )
     if initial_actor is not None:
         from marl_battlegrounds.training.checkpoints import initial_actor_variables
@@ -845,6 +854,7 @@ def init_qmix_learner(
         partner_population=partner_population,
         partner_selection=partner_selection,
         actor_variables_at_step=QMIXExploration(qmix.eps_min, qmix.eps_decay, games),
+        task=task,
     )
     state = QMIXLearnerState(
         carry,
@@ -1425,12 +1435,16 @@ def update_qmix_learner(
 
 
 @lru_cache(maxsize=16)
-def _qmix_spec(qmix: QMIXConfig) -> QMIXTrainState:
-    """Trace initialize_qmix once per config for shape-only leaf specs."""
+def _qmix_spec(qmix: QMIXConfig, training_state_schema: int = 2) -> QMIXTrainState:
+    """Trace initialize_qmix once per config and training-state schema for specs.
+
+    The schema (2, the Team Deathmatch schema, by default) sets the mixer's state
+    width. Only shapes and dtypes are kept; nothing is initialized.
+    """
 
     def build(key: Array) -> QMIXTrainState:
-        """Initialize with this config; only shapes are kept."""
-        return initialize_qmix(key, qmix)
+        """Initialize with this config and schema; only shapes are kept."""
+        return initialize_qmix(key, qmix, training_state_schema=training_state_schema)
 
     return cast(QMIXTrainState, jax.eval_shape(build, jax.random.key(0)))
 
@@ -1573,7 +1587,7 @@ def validate_qmix_learner(
     ):
         raise ValueError("QMIX replay layout is incompatible")
     numerical = _train_state(state)
-    template = _qmix_spec(qmix)
+    template = _qmix_spec(qmix, collection.training_state_schema)
     if jax.tree.structure(numerical) != jax.tree.structure(template):
         raise ValueError("QMIX network or optimizer structure is incompatible")
     for actual, expected in zip(

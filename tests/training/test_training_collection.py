@@ -368,7 +368,8 @@ def test_each_stored_epoch_matches_public_reset_step_and_producing_info(
         current, (row, info, _) = step(before)
         _equal(row.observations, observations)
         _equal(
-            row.training_state, encode_training_state(state.core_state, state.config)
+            row.training_state,
+            encode_training_state(state.core_state, state.config, schema=2),
         )
         _equal(row.action_mask, jax.tree.map(_team_a, state.action_mask))
         np.testing.assert_array_equal(
@@ -692,12 +693,12 @@ def test_untrained_mappo_retains_same_call_native_choices_and_probabilities(
     assert row.training_state is not None
     np.testing.assert_array_equal(
         row.training_state[0],
-        encode_training_state(carry.state.core_state, carry.state.config),
+        encode_training_state(carry.state.core_state, carry.state.config, schema=2),
     )
     assert rollout.final_training_state is not None
     np.testing.assert_array_equal(
         rollout.final_training_state,
-        encode_training_state(final.state.core_state, final.state.config),
+        encode_training_state(final.state.core_state, final.state.config, schema=2),
     )
 
 

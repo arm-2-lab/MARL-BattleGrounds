@@ -21,6 +21,7 @@ import pytest
 from tests.helpers.training_continuation_helpers import fixed_source
 
 import marl_battlegrounds.training._content as _content
+from marl_battlegrounds._task_settings import TaskName
 from marl_battlegrounds.baselines.config import PPOConfig
 from marl_battlegrounds.modes.team_deathmatch._assets import TDMScenarioInfo
 from marl_battlegrounds.training import checkpoints, runner
@@ -50,17 +51,15 @@ def _stop_at(update: int) -> Callable[[dict[str, Any]], None]:
 
 
 def _scenario_reworded(monkeypatch: pytest.MonkeyPatch) -> None:
-    manifest = _content.asset_manifest()
-    original = manifest.scenarios[0]
+    scenarios = _content.scenarios_for_task("tdm")
+    original = scenarios[0]
     reworded = original.model_copy(update={"resource_sha256": "0" * 64})
     read = _content.scenario_content
-    monkeypatch.setattr(
-        _content,
-        "asset_manifest",
-        lambda: manifest.model_copy(
-            update={"scenarios": (reworded, *manifest.scenarios[1:])}
-        ),
-    )
+
+    def listed(task: TaskName) -> tuple[TDMScenarioInfo, ...]:
+        return (reworded, *scenarios[1:]) if task == "tdm" else ()
+
+    monkeypatch.setattr(_content, "scenarios_for_task", listed)
 
     def read_reworded(info: TDMScenarioInfo) -> object:
         return read(original if info == reworded else info)
@@ -82,10 +81,11 @@ def _other_depth(monkeypatch: pytest.MonkeyPatch) -> None:
         expected: object = None,
         score_thresholds: tuple[int, ...] | None = None,
         red_zone_depth: float | None = None,
+        task: TaskName | None = None,
     ) -> _content.PreparedTrainingContent:
         # Skip the early saved-content check so the collection check decides.
         del expected, red_zone_depth
-        return prepare(score_thresholds=score_thresholds, red_zone_depth=0.0)
+        return prepare(score_thresholds=score_thresholds, red_zone_depth=0.0, task=task)
 
     monkeypatch.setattr(_content, "prepare_training_content", other_depth)
 

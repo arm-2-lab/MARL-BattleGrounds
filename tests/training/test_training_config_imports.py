@@ -12,7 +12,9 @@ module aliases are checked separately, since those modules require training.
 TrainConfig.task defaults to "tdm" and is left out of the saved config when it
 is "tdm", so saved bytes stay unchanged; a saved config without it reads back
 as "tdm"; a name that make() does not accept is refused with the accepted
-names; and "ctf" is refused until training plays it.
+names. The Red Zone depth defaults to the task's: a default config saves 5.0,
+and a "ctf" config resolves to 0.0, saves its task and depth and reads back
+equal, while a "ctf" depth of 5.0 or the score-threshold curriculum is refused.
 """
 
 import json
@@ -190,5 +192,20 @@ def test_task_defaults_to_tdm_and_is_left_out_of_the_saved_config() -> None:
         ValueError, match=r"^task must be one of 'tdm', 'ctf', not 'koth'$"
     ):
         TrainConfig(task="koth")  # pyright: ignore[reportArgumentType]
-    with pytest.raises(ValueError, match=r"^Training on task 'ctf' is not ready yet"):
-        TrainConfig(task="ctf")
+    assert (
+        TrainConfig().red_zone_depth
+        == config_to_dict(TrainConfig())["red_zone_depth"]
+        == 5.0
+    )
+    flags = TrainConfig(task="ctf")
+    assert flags.red_zone_depth == 0.0
+    assert {"task": "ctf", "red_zone_depth": 0.0}.items() <= config_to_dict(
+        flags
+    ).items()
+    assert config_from_dict(config_to_dict(flags)) == flags
+    with pytest.raises(ValueError, match="has no Red Zone"):
+        TrainConfig(task="ctf", red_zone_depth=5.0)
+    with pytest.raises(
+        ValueError, match="score_threshold_curriculum is Team Deathmatch"
+    ):
+        TrainConfig(task="ctf", score_threshold_curriculum=True)

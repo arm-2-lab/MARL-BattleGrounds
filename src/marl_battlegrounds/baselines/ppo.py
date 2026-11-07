@@ -127,7 +127,7 @@ from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_SIZES,
     ACTOR_INPUT_SCHEMA_VERSION,
     SPAWN_FRAMES,
-    TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
     encode_actor_inputs,
     schema_1_actor_input,
     spawn_frame_flag,
@@ -272,14 +272,15 @@ def _update_value_norm(
 def _actor_input_schema(value: object) -> int:
     """Check an actor input schema version and return it as a Python int.
 
-    This host check accepts exactly the int keys of ACTOR_FEATURE_SIZES: 2,
-    the current schema, and 1, the historical schema of actors trained
+    This host check accepts exactly the int keys of ACTOR_FEATURE_SIZES: 3
+    and 2, which share the current layout (Team Deathmatch runs record 2,
+    other modes' runs 3), and 1, the historical schema of actors trained
     before Red Zone. Booleans, floats, strings, arrays and other versions
     raise ValueError. It performs no device work. The System factories use
     it; they do not compare weight widths with the schema.
     """
     if type(value) is not int or value not in ACTOR_FEATURE_SIZES:
-        raise ValueError("actor_input_schema must be 1 or 2.")
+        raise ValueError("actor_input_schema must be 1, 2 or 3.")
     return value
 
 
@@ -469,8 +470,9 @@ class PPOBatch(NamedTuple):
         Compact observations with leading (T,B), ten base rows and permissions.
         T is time and B is the number of games. Actor expansion stays temporary.
     training_state : Array or None
-        Float32 (T,B,920) versioned physical-state features, stored once per game.
-        This input is available to MAPPO critics only. IPPO uses None.
+        Float32 (T,B,F_S) versioned physical-state features, stored once per
+        game: F_S is 920 in Team Deathmatch (schema 2) and 973 in other modes
+        (schema 3). This input is available to MAPPO critics only. IPPO uses None.
     action_mask : ActionMask
         Team A's action-time native masks, with leading (T,B,5).
     actions : Array
@@ -893,7 +895,8 @@ class RecurrentValueNet(nn.Module):
     """Apply the separate donor critic to physical or permitted local features.
 
     Carry and masks follow RecurrentActor. Features use (T,E,5,F), normally a
-    temporary broadcast of one 920-value physical view per game for MAPPO, or
+    temporary broadcast of one physical view per game for MAPPO (920 values in
+    Team Deathmatch, 973 in other modes), or
     each actor's 5165-value permitted view for IPPO. Output values
     have shape (T,E,5). This module is never part of the actor-producing System.
     input_scale is a fixed positive finite real multiplier, default 1.0, applied
@@ -913,7 +916,8 @@ class RecurrentValueNet(nn.Module):
         carry : Array
             Float32 (E,5,128) critic memory before the sequence.
         features : Array
-            Float32 (T,E,5,F) critic features, F=920 for MAPPO or 5165 for IPPO.
+            Float32 (T,E,5,F) critic features: for MAPPO, F is 920 in Team
+            Deathmatch and 973 in other modes; for IPPO, 5165.
             The width must match the initialized critic. Actor code may not
             read this data.
         resets, valid : Array
@@ -1090,7 +1094,11 @@ def _optimizers(
 
 
 def initialize_ppo(
-    key: Array, config: PPOConfig = DEFAULT_PPO_CONFIG, *, method: str = "mappo"
+    key: Array,
+    config: PPOConfig = DEFAULT_PPO_CONFIG,
+    *,
+    method: str = "mappo",
+    training_state_schema: int = 2,
 ) -> PPOTrainState:
     """Initialize untrained BG-width actor/critic parameters and optimizers.
 
@@ -1105,6 +1113,11 @@ def initialize_ppo(
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static network choice. IPPO uses local critic inputs; feedforward methods
         initialize two-layer models without recurrent parameters or memory.
+    training_state_schema : {2, 3}, default=2
+        The run's training-state schema, which sets a centralized critic's
+        input width: 920 features for 2 (Team Deathmatch) and 973 for 3
+        (``baselines.inputs.training_state_schema``). Methods with a local
+        critic (IPPO, FF-IPPO) ignore it.
 
     Returns
     -------
@@ -1117,7 +1130,8 @@ def initialize_ppo(
     Raises
     ------
     ValueError
-        The key does not use Threefry or the method is unsupported.
+        The key does not use Threefry, the method is unsupported or
+        training_state_schema is not 2 or 3.
 
     Notes
     -----
@@ -1130,8 +1144,14 @@ def initialize_ppo(
     if str(jax.random.key_impl(key)) != "threefry2x32":
         raise ValueError("PPO initialization requires Threefry random keys.")
     actor_key, critic_key = jax.random.split(key)
+    if training_state_schema not in TRAINING_STATE_FEATURE_SIZES:
+        raise ValueError(
+            f"Training state schema must be 2 or 3; received {training_state_schema!r}"
+        )
     critic_width = (
-        ACTOR_FEATURE_SIZE if uses_local_critic(method) else TRAINING_STATE_FEATURE_SIZE
+        ACTOR_FEATURE_SIZE
+        if uses_local_critic(method)
+        else TRAINING_STATE_FEATURE_SIZES[training_state_schema]
     )
     if is_recurrent_method(method):
         memory = jnp.zeros((1, 5, HIDDEN_SIZE), jnp.float32)
@@ -1536,10 +1556,7 @@ def make_recurrent_mappo_system(
     scale = _input_scale(input_scale)
     frame = _spawn_frame(spawn_frame)
     sharing = _parameter_sharing(parameter_sharing)
-    if (
-        sharing != "all"
-        and _actor_input_schema(actor_input_schema) != ACTOR_INPUT_SCHEMA_VERSION
-    ):
+    if sharing != "all" and _actor_input_schema(actor_input_schema) == 1:
         raise ValueError("Grouped actors require the current actor input schema")
     if sharing != "all":
         apply = _grouped_ppo_actor_apply(scale, frame, sharing, True)
@@ -1780,7 +1797,7 @@ def make_ppo_system(
         if _actor_input_schema(actor_input_schema) == 1
         else _feedforward_actor_apply
     )
-    if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
+    if sharing != "all" and actor_input_schema == 1:
         raise ValueError("Grouped actors require the current actor input schema")
     apply = _declare_lane_independent(
         hook(scale, frame)
@@ -1814,8 +1831,9 @@ def critic_values(
     memory : Array
         Float32 (B,5,128) critic memory before the sequence.
     features : Array
-        Float32 (T,B,920) versioned physical-state features. Store one row per
-        game; the function broadcasts to actor rows only during this call.
+        Float32 (T,B,F_S) versioned physical-state features (F_S is 920 in Team
+        Deathmatch, 973 in other modes). Store one row per game; the function
+        broadcasts to actor rows only during this call.
     episode_start : Array
         Boolean (T,B) resets before decisions. Death and respawn are not resets.
     valid : Array
@@ -1866,7 +1884,7 @@ def _critic_network_values(
 ) -> tuple[Array, Array]:
     """Read exact network outputs once for raw values and frozen clipping anchors.
 
-    Arguments follow critic_values: physical features (T,B,920), memory
+    Arguments follow critic_values: physical features (T,B,F_S), memory
     (B,5,128), and decision flags (T,B). Return final memory and float32
     (T,B,5) network outputs. Enabled critics produce normalized outputs;
     the caller rescales with their matching statistics. No extra forward pass,

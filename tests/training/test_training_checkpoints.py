@@ -1789,7 +1789,7 @@ def test_actor_templates_cache_only_abstract_selected_method_leaves() -> None:
             for shape, other in changed
         )
         assert len(changed) == (5 if method == "pqn_vdn" else 1)
-    for schema in (0, 3, True):
+    for schema in (0, 4, True):
         with pytest.raises(ValueError, match="actor_input_schema"):
             checkpoints._actor_template("mappo", schema)  # pyright: ignore[reportPrivateUsage]
 

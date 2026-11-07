@@ -1,14 +1,15 @@
 """Verify the built-in training split before collection or recording recovery.
 
-Preparation reads installed TDM resources and their scientific authorities once
-at host setup. The frozen binding records the finite built-in content closure;
-it admits no external datasets, replays, feedback or seed schedules. New
-bindings are version 3: they record the declared winning scores and the Team
-Deathmatch Red Zone depth every source configuration uses. Version 1 and 2
-bindings (saved before Red Zone scoring) stay readable as records, but
-prepare_training_content refuses to rebuild or resume them. read_saved_binding
-reads a binding saved under Season 0's Core rules as one under this code's,
-because their Team Deathmatch rules are equal.
+Preparation reads one mode's installed resources and their scientific
+authorities once at host setup. The frozen binding records the finite built-in
+content closure; it admits no external datasets, replays, feedback or seed
+schedules. New Team Deathmatch bindings are version 3: they record the declared
+winning scores and the Red Zone depth every source configuration uses. Other
+modes' bindings are version 4, which adds the task and records its own maps'
+resolved config V3 identities. Version 1 and 2 bindings (saved before Red Zone
+scoring) stay readable as records, but prepare_training_content refuses to
+rebuild or resume them. read_saved_binding reads a binding saved under earlier
+Core rules that its mode's equivalent set lists as one under this code's.
 pinned_opponent_evidence records what is known about a pinned training
 opponent's own training content and controller exposure; it never refuses a
 method, and it cannot certify a researcher's undeclared outside influences. The returned
@@ -35,10 +36,15 @@ from pydantic import (
     model_validator,
 )
 
+from marl_battlegrounds._task_settings import (
+    DEFAULT_RED_ZONE_DEPTHS,
+    DEFAULT_SCORE_THRESHOLDS,
+    TaskName,
+)
 from marl_battlegrounds.core.config import maximum_team_deathmatch_score_threshold
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.evaluation.catalog import (
-    build_resolved_env_config_v2,
+    build_resolved_env_config,
     build_static_mechanics_catalog_v1,
 )
 from marl_battlegrounds.evaluation.models import (
@@ -56,7 +62,6 @@ from marl_battlegrounds.modes.team_deathmatch._assets import (
     MapGeometry,
     TDMMapInfo,
     TDMScenarioInfo,
-    asset_manifest,
     scenario_content,
 )
 from marl_battlegrounds.modes.team_deathmatch.scenarios import (
@@ -64,11 +69,12 @@ from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     build_tdm_qualification_seed_schedule,
 )
 from marl_battlegrounds.tasks import (
-    DEFAULT_TDM_RED_ZONE_DEPTH,
     _load_tdm_scenario,  # pyright: ignore[reportPrivateUsage]
     balanced_spawn_configs,
     canonical_tournament_rosters,
-    make_standard_team_deathmatch_config,
+    make_standard_config,
+    maps_for_task,
+    scenarios_for_task,
 )
 from marl_battlegrounds.training.config import (
     _validate_red_zone_depth as _validate_red_zone_depth,  # pyright: ignore[reportPrivateUsage]
@@ -85,16 +91,20 @@ _SAVED_BEFORE_RED_ZONE = (
     "Resuming that experiment needs the original source environment that "
     "created it."
 )
-# Simulator-rules identities of earlier Core code whose Team Deathmatch rules
-# equal this code's. The one entry is Season 0's Core, the last before the
-# Capture the Flag and King of the Hills fields, and the Core the Team
-# Deathmatch goldens were recorded under (tests/environment/test_tdm_goldens.py).
-# It holds only while those goldens pass: a Core change that alters Team
-# Deathmatch play on purpose must remove it, so old runs are then refused.
-# Only Team Deathmatch content was ever saved under these rules.
-_TDM_EQUIVALENT_SIMULATOR_RULES = frozenset(
-    {"a6854eb7721cfbeb027dacca1aa9205ff64a9502cca71ab4458b1b655ca1f893"}
-)
+# Simulator-rules identities of earlier Core code whose rules for one mode equal
+# this code's, one set per mode, so a change to one mode's rules strands no other
+# mode's runs. An entry is admitted only on that mode's evidence (its goldens or
+# the resimulation check) and holds only while that evidence passes: a Core
+# change that alters a mode's play on purpose removes the entry. Team
+# Deathmatch's one entry is Season 0's Core, the last before the Capture the
+# Flag and King of the Hills fields, under which its goldens were recorded
+# (tests/environment/test_tdm_goldens.py). Capture the Flag has none yet.
+_EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
+    "tdm": frozenset(
+        {"a6854eb7721cfbeb027dacca1aa9205ff64a9502cca71ab4458b1b655ca1f893"}
+    ),
+    "ctf": frozenset(),
+}
 
 
 class _MapContent(EvaluationModel):
@@ -143,17 +153,23 @@ class TrainingContentBinding(EvaluationModel):
         (one point per kill), record resolved-env-config version 1 map
         identities and hash REQUIRED_SCHEMA_BINDINGS_V3; their saved bytes stay
         valid, but prepare_training_content no longer builds or resumes them.
-        Version 3, the only version built today, requires score_thresholds and
+        Version 3, built for Team Deathmatch, requires score_thresholds and
         red_zone_depth, records resolved-env-config version 2 map identities
-        and hashes REQUIRED_SCHEMA_BINDINGS_V4. The content use rules
-        (eligibility_version) remain version 1 throughout.
+        and hashes REQUIRED_SCHEMA_BINDINGS_V4. Version 4, built for every
+        other mode, adds task and records its own maps' resolved-env-config
+        version 3 identities; it hashes the same REQUIRED_SCHEMA_BINDINGS_V4.
+        The content use rules (eligibility_version) remain version 1
+        throughout.
     maps
-        Ordered 52 verified map records. IDs 0-41 are training, 42-46 validation,
-        and 47-51 test. Scientific layouts are distinct across all map roots.
+        Ordered 52 verified map records of the binding's mode
+        (tasks.maps_for_task). IDs 0-41 are training, 42-46 validation, and
+        47-51 test. Scientific layouts are distinct across all map roots.
         Every map configuration identity uses the binding's Red Zone depth.
     protected_scenarios
-        Ordered eight protected starts, controllers and recording-check
-        specifications. Their layouts cannot occur in training or validation.
+        The mode's ordered protected starts (tasks.scenarios_for_task): Team
+        Deathmatch's eight, Capture the Flag's none yet, with their
+        controllers and recording-check specifications. Their layouts cannot
+        occur in training or validation.
     shared_definitions
         Ordered identities for mechanics, supported schemas and executable Core
         rules. These shared dependencies are allowed in every content role.
@@ -179,6 +195,12 @@ class TrainingContentBinding(EvaluationModel):
         refused) and, when positive, a normal float32 value (Core's scalar
         rules; Core checks the map width while the bank is built). None in
         versions 1 and 2, which reject the field and omit it when saved.
+        Version 4 requires 0.0: other modes have no Red Zone.
+    task
+        The mode the content plays, a name tasks.make accepts. Version 4 must
+        state a task other than "tdm"; versions 1 to 3 are Team Deathmatch's,
+        reject the field and omit it when saved, so their bytes and digests
+        stay as they were.
 
     Notes
     -----
@@ -193,7 +215,7 @@ class TrainingContentBinding(EvaluationModel):
     schema_id: Literal["marl_battlegrounds.training_content"] = (
         "marl_battlegrounds.training_content"
     )
-    schema_version: Literal[1, 2, 3] = 1
+    schema_version: Literal[1, 2, 3, 4] = 1
     eligibility_version: Literal[1] = 1
     maps: tuple[_MapContent, ...]
     protected_scenarios: tuple[_ProtectedScenario, ...]
@@ -203,15 +225,18 @@ class TrainingContentBinding(EvaluationModel):
     canonical_digest: _Digest
     score_thresholds: tuple[int, ...] = (20,)
     red_zone_depth: float | None = None
+    task: TaskName = "tdm"
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
         """Keep version-1 and version-2 serialization unchanged, with their digests.
 
         Version 1 drops score_thresholds and red_zone_depth; version 2 drops
-        red_zone_depth; version 3 writes both.
+        red_zone_depth; version 3 writes both; only version 4 writes task.
         """
         result = handler(self)
+        if self.schema_version < 4:
+            result.pop("task", None)
         if self.schema_version < 3:
             result.pop("red_zone_depth", None)
         if self.schema_version == 1:
@@ -223,20 +248,33 @@ class TrainingContentBinding(EvaluationModel):
         """Reject incomplete closure, forbidden overlap or a false record digest.
 
         Validation reads no files. Fresh preparation separately verifies current
-        resources. Version 3 must state score_thresholds and red_zone_depth, and
-        the depth must pass Core's scalar rules; versions 1 and 2 must not carry
-        a depth. Return this frozen record; raise ValueError on disagreement.
+        resources. Versions 3 and 4 must state score_thresholds and
+        red_zone_depth, and the depth must pass Core's scalar rules; versions 1
+        and 2 must not carry a depth. Version 4 must state a task other than
+        "tdm" and depth 0.0; versions 1 to 3 must not carry a task. Return this
+        frozen record; raise ValueError on disagreement.
         """
-        if self.schema_version == 3:
+        if (self.schema_version == 4) != ("task" in self.model_fields_set) or (
+            self.schema_version == 4 and self.task == "tdm"
+        ):
+            raise ValueError(
+                'Version-4 training content states a task other than "tdm"; '
+                "versions 1 to 3 are Team Deathmatch's and carry no task"
+            )
+        if self.schema_version >= 3:
             if (
                 "score_thresholds" not in self.model_fields_set
                 or self.red_zone_depth is None
             ):
                 raise ValueError(
-                    "Version-3 training content requires score_thresholds and "
-                    "red_zone_depth"
+                    f"Version-{self.schema_version} training content requires "
+                    "score_thresholds and red_zone_depth"
                 )
             _validate_red_zone_depth(self.red_zone_depth)
+            if self.schema_version == 4 and self.red_zone_depth != 0.0:
+                raise ValueError(
+                    f"Task {self.task!r} has no Red Zone; its depth must be 0.0"
+                )
         elif (
             "red_zone_depth" in self.model_fields_set or self.red_zone_depth is not None
         ):
@@ -254,12 +292,13 @@ class TrainingContentBinding(EvaluationModel):
         if tuple(row.info.map_id for row in self.maps) != tuple(range(52)):
             raise ValueError("training content requires ordered maps 0 through 51")
         if tuple(row.info.scenario_id for row in self.protected_scenarios) != tuple(
-            range(1, 9)
+            info.scenario_id for info in scenarios_for_task(self.task)
         ):
             raise ValueError(
-                "training content requires protected scenarios 1 through 8"
+                f"training content requires the protected scenarios of task "
+                f"{self.task!r}"
             )
-        configuration_version = 2 if self.schema_version == 3 else 1
+        configuration_version = {1: 1, 2: 1, 3: 2, 4: 3}[self.schema_version]
         for row in self.maps:
             expected = (
                 "training"
@@ -348,10 +387,10 @@ class TrainingContentBinding(EvaluationModel):
     def scientific_projection(self) -> dict[str, object]:
         """Return the path-independent comparison used for training resume.
 
-        Preserve resolved content, use roles, source order, controller rules,
-        seed membership and specification endpoints. Versions 2 and 3 add
-        score_thresholds; version 3 also adds red_zone_depth, so a resume at
-        another depth is incompatible. Exclude display wording, authored
+        Preserve resolved content, use roles, source order, controller rules, seed
+        membership and specification endpoints. Versions 2 to 4 add score_thresholds;
+        versions 3 and 4 also add red_zone_depth, so a resume at another depth is
+        incompatible, and version 4 adds task. Exclude display wording, authored
         paths/revisions and raw-resource packaging. No files are read.
         """
         protected: list[dict[str, object]] = []
@@ -392,8 +431,10 @@ class TrainingContentBinding(EvaluationModel):
         }
         if self.schema_version >= 2:
             result["score_thresholds"] = self.score_thresholds
-        if self.schema_version == 3:
+        if self.schema_version >= 3:
             result["red_zone_depth"] = self.red_zone_depth
+        if self.schema_version == 4:
+            result["task"] = self.task
         return result
 
 
@@ -544,11 +585,12 @@ def read_saved_binding(
     Returns
     -------
     TrainingContentBinding
-        The saved binding. When its simulator-rules identity is one that
-        ``_TDM_EQUIVALENT_SIMULATOR_RULES`` lists, that identity is replaced by
-        this code's and the record digest recomputed, so a run saved under
-        Season 0's Core compares equal to the same content under this Core.
-        Every other field keeps its saved value.
+        The saved binding. When its simulator-rules identity is one that its
+        own mode's set in ``_EQUIVALENT_SIMULATOR_RULES`` lists (the binding's
+        task; versions 1 to 3 are Team Deathmatch's), that identity is replaced
+        by this code's and the record digest recomputed, so a run saved under
+        earlier, equivalent Core rules compares equal to the same content under
+        this Core. Every other field keeps its saved value.
 
     Raises
     ------
@@ -562,9 +604,9 @@ def read_saved_binding(
     when a listed identity is found. Writes no files.
     """
     binding = TrainingContentBinding.model_validate_json(canonical_json_bytes(saved))
+    equivalent = _EQUIVALENT_SIMULATOR_RULES[binding.task]
     if not any(
-        row.identifier == "simulator-rules"
-        and row.canonical_digest in _TDM_EQUIVALENT_SIMULATOR_RULES
+        row.identifier == "simulator-rules" and row.canonical_digest in equivalent
         for row in binding.shared_definitions
     ):
         return binding
@@ -655,13 +697,14 @@ def prepare_training_content(
     expected: TrainingContentBinding | Mapping[str, object] | None = None,
     score_thresholds: tuple[int, ...] | None = None,
     red_zone_depth: float | None = None,
+    task: TaskName | None = None,
 ) -> PreparedTrainingContent:
-    """Verify built-in content and prepare canonical sources for declared scores.
+    """Verify one mode's built-in content and prepare sources for declared scores.
 
     Parameters
     ----------
     expected : TrainingContentBinding | Mapping[str, object] | None
-        Saved version 3 binding, or its JSON mapping. Defaults to a fresh
+        Saved version 3 or 4 binding, or its JSON mapping. Defaults to a fresh
         setup. Revalidate its structure and digest, then compare scientific
         content with the installed package. Historical locations and harmless
         labels may differ. A binding saved under Season 0's Core rules is read
@@ -670,23 +713,31 @@ def prepare_training_content(
         scoring) is refused first, before any validation or file read.
     score_thresholds : tuple[int, ...] or None, default=None
         Distinct supported positive integer winning scores, in source-bank order.
-        None uses expected.score_thresholds when resuming, otherwise (20,).
-        Each score adds maps 0..41 as a complete block. Other rules stay unchanged.
+        None uses expected.score_thresholds when resuming, otherwise the
+        task's winning score alone ((20,) for "tdm", (3,) for "ctf"). Each
+        score adds maps 0..41 as a complete block. Other rules stay unchanged.
     red_zone_depth : float or None, default=None
         Team Deathmatch Red Zone depth in map units for every map and source
         configuration. 0.0 keeps one point per kill. None uses
-        expected.red_zone_depth when resuming, otherwise
-        DEFAULT_TDM_RED_ZONE_DEPTH (5.0). A given value must be a Python float
-        that Core accepts on every installed map (finite, positive sign, a
-        normal float32 value when positive, at most the map width). A value
-        that differs from the saved depth makes a resume incompatible.
+        expected.red_zone_depth when resuming, otherwise the task's
+        DEFAULT_RED_ZONE_DEPTHS entry (5.0 for "tdm", 0.0 for "ctf", which
+        accepts only 0.0). A given value must be a Python float that Core
+        accepts on every installed map (finite, positive sign, a normal float32
+        value when positive, at most the map width). A value that differs from
+        the saved depth makes a resume incompatible.
+    task : TaskName or None, default=None
+        The mode whose maps, scenarios and configs to prepare. None uses
+        expected's task when resuming (a version 3 binding is "tdm"),
+        otherwise "tdm". "tdm" builds a version 3 binding byte for byte as
+        before; any other task builds version 4. A task that differs from the
+        saved one makes a resume incompatible.
 
     Returns
     -------
     PreparedTrainingContent
-        Current immutable version 3 binding and shared EnvConfig bank with
-        float32, int32 and Boolean leaves. Source order is threshold, then
-        map 0..41.
+        Current immutable binding (version 3 for "tdm", 4 otherwise) and
+        shared EnvConfig bank of that mode's configs, with float32, int32 and
+        Boolean leaves. Source order is threshold, then map 0..41.
 
     Raises
     ------
@@ -721,22 +772,28 @@ def prepare_training_content(
         if type(version) is int and version in (1, 2):
             raise ValueError(_SAVED_BEFORE_RED_ZONE.format(version=version))
         saved = read_saved_binding(expected)
+    if task is None:
+        task = saved.task if saved is not None else "tdm"
     if score_thresholds is None:
-        score_thresholds = saved.score_thresholds if saved is not None else (20,)
+        score_thresholds = (
+            saved.score_thresholds
+            if saved is not None
+            else (DEFAULT_SCORE_THRESHOLDS[task],)
+        )
     if red_zone_depth is None:
         red_zone_depth = (
             saved.red_zone_depth
             if saved is not None and saved.red_zone_depth is not None
-            else DEFAULT_TDM_RED_ZONE_DEPTH
+            else DEFAULT_RED_ZONE_DEPTHS[task]
         )
     depth = _validate_red_zone_depth(red_zone_depth)
     _validate_score_thresholds(score_thresholds, red_zone_depth=depth)
-    manifest = asset_manifest()
     team_a, team_b = canonical_tournament_rosters()
     maps: list[_MapContent] = []
     configs: list[EnvConfig] = []
-    for info in manifest.maps:
-        config = make_standard_team_deathmatch_config(
+    for info in maps_for_task(task):
+        config = make_standard_config(
+            task,
             map_id=info.map_id,
             team_a_roster=team_a,
             team_b_roster=team_b,
@@ -747,22 +804,21 @@ def prepare_training_content(
         if info.map_id < 42:
             balanced_spawn_configs(config, num_envs=2)
             configs.append(config)
+        record = build_resolved_env_config(config)
         maps.append(
             _MapContent(
                 info=info,
                 layout=layout,
                 configuration=ContentAddressedIdentityV1(
                     identifier="resolved-env-config",
-                    version=2,
-                    canonical_digest=build_resolved_env_config_v2(
-                        config
-                    ).canonical_digest_sha256,
+                    version=record.schema_version,
+                    canonical_digest=record.canonical_digest_sha256,
                 ),
             )
         )
     schedule = build_tdm_qualification_seed_schedule()
     scenarios: list[_ProtectedScenario] = []
-    for info in manifest.scenarios:
+    for info in scenarios_for_task(task):
         content = scenario_content(info)
         scenario = _load_tdm_scenario(info, content)
         specification = _prepared_scenario_specification(scenario, content, schedule)
@@ -778,17 +834,24 @@ def prepare_training_content(
                 qualification_specification=specification,
             )
         )
-    if score_thresholds != (20,):
+    if score_thresholds != (DEFAULT_SCORE_THRESHOLDS[task],):
         configs = [
-            config._replace(team_deathmatch_score_threshold=threshold)
+            make_standard_config(
+                task,
+                map_id=info.map_id,
+                team_a_roster=team_a,
+                team_b_roster=team_b,
+                score_threshold=threshold,
+                red_zone_depth=depth,
+            )
             for threshold in score_thresholds
-            for config in configs
+            for info in maps_for_task(task)[:42]
         ]
     bank = jax.tree.map(lambda *rows: jnp.stack(rows), *configs)
     bank_digest, references, _ = ordered_source_bank_identity(bank)
     payload: dict[str, object] = {
         "schema_id": "marl_battlegrounds.training_content",
-        "schema_version": 3,
+        "schema_version": 3 if task == "tdm" else 4,
         "eligibility_version": 1,
         "maps": tuple(maps),
         "protected_scenarios": tuple(scenarios),
@@ -801,6 +864,7 @@ def prepare_training_content(
         "source_configurations": tuple(references),
         "score_thresholds": score_thresholds,
         "red_zone_depth": depth,
+        **({} if task == "tdm" else {"task": task}),
     }
     binding = TrainingContentBinding.model_validate(
         {

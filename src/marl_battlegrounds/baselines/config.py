@@ -830,8 +830,61 @@ DEFAULT_PQN_CONFIG = PQNConfig()
 # Host-readable format versions shared by model code and saved descriptions.
 ACTION_SCHEMA_VERSION = 1
 
-ACTOR_INPUT_SCHEMA_VERSION = 2
-TRAINING_STATE_SCHEMA_VERSION = 2
+# The newest actor input schema. 3 has schema 2's layout; Team Deathmatch runs
+# record 2 and other modes' runs 3 (actor_input_schema), so a converted old
+# actor can tell a Team Deathmatch-only view from one that saw objectives.
+ACTOR_INPUT_SCHEMA_VERSION = 3
+# The newest training-state schema. Team Deathmatch runs record 2
+# (training_state_schema).
+TRAINING_STATE_SCHEMA_VERSION = 3
+
+
+def training_state_schema(task: str) -> int:
+    """Return the training-state schema that a new run of one mode records.
+
+    Parameters
+    ----------
+    task : str
+        The run's mode name, as ``TrainConfig.task`` accepts it, such as "tdm".
+
+    Returns
+    -------
+    int
+        2 for "tdm", so Team Deathmatch networks and saved records stay as they
+        were; TRAINING_STATE_SCHEMA_VERSION (3) for every other mode. The run's
+        critic or mixer reads baselines.inputs.TRAINING_STATE_FEATURE_SIZES of
+        this schema.
+
+    Notes
+    -----
+    Host-only and static. It checks nothing, so the caller validates the name.
+    """
+    return 2 if task == "tdm" else TRAINING_STATE_SCHEMA_VERSION
+
+
+def actor_input_schema(task: str) -> int:
+    """Return the actor input schema that a new run of one mode records.
+
+    Parameters
+    ----------
+    task : str
+        The run's mode name, as ``TrainConfig.task`` accepts it, such as "tdm".
+
+    Returns
+    -------
+    int
+        2 for "tdm", so Team Deathmatch records stay as they were;
+        ACTOR_INPUT_SCHEMA_VERSION (3) for every other mode. Schemas 2 and 3
+        share one layout (5,165 features); the version records which games the
+        actor learned from.
+
+    Notes
+    -----
+    Host-only and static. It checks nothing, so the caller validates the name.
+    The mirror of training_state_schema.
+    """
+    return 2 if task == "tdm" else ACTOR_INPUT_SCHEMA_VERSION
+
 
 QMIX_TIE_RULE = "first_legal_maximum"
 """Greedy rule: the lowest legal action index among equal best scores wins."""

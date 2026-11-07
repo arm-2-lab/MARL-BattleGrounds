@@ -21,7 +21,7 @@ from typing import Any, Literal, cast
 
 from marl_battlegrounds._method_loading import validate_saved_method_reference
 from marl_battlegrounds._task_settings import (
-    DEFAULT_TDM_RED_ZONE_DEPTH,
+    DEFAULT_RED_ZONE_DEPTHS,
     TASK_NAMES,
     AgentClassName,
     TaskName,
@@ -156,8 +156,8 @@ class TrainConfig:
         recurrent PQN-VDN (no replay or target network), configured by pqn.
     task : str, default="tdm"
         The game mode every training and validation game of this run plays: a
-        task name that ``make`` accepts. Only "tdm" (Team Deathmatch) trains
-        today; "ctf" raises ValueError until the training sites play it.
+        task name that ``make`` accepts: "tdm" (Team Deathmatch) or "ctf"
+        (Capture the Flag).
         Saved configs leave it out when it is "tdm", so every Team Deathmatch
         run keeps the bytes it had before the setting existed, and a saved
         config without it reads as "tdm". A continuation cannot change it.
@@ -190,9 +190,14 @@ class TrainConfig:
         of 1/30, 5%, 5% and 50% of requested experience. Keeps canonical 5v5
         and all training maps. Cannot be combined with curriculum=True.
         Evaluation stays K20/H300. Actual played shares can lag stage changes.
-    red_zone_depth : float, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
+        It is Team Deathmatch's curriculum: another task raises ValueError.
+    red_zone_depth : float or None, default=None
         Team Deathmatch Red Zone depth in map units for every training game
-        and every validation game of this run. When an agent dies inside its
+        and every validation game of this run. None means the task's default
+        from DEFAULT_RED_ZONE_DEPTHS: 5.0 for "tdm" and 0.0 for "ctf", which
+        has no Red Zone, so a Capture the Flag run accepts only None or 0.0.
+        The config keeps the resolved float and saved configs write it, so a
+        Team Deathmatch run still saves 5.0. When an agent dies inside its
         own team's Red Zone (the strip this deep at its own spawn side), the
         enemy team gets 2 points instead of 1; it is still one kill and one
         death. 0.0 keeps one point per death. It must be a Python float that
@@ -421,7 +426,7 @@ class TrainConfig:
     total_env_steps: int = 10_000_000
     curriculum: bool | Sequence[Mapping[str, object]] = False
     score_threshold_curriculum: bool = False
-    red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH
+    red_zone_depth: float | None = None
     shaping: bool = False
     reward: str | None = None
     shaping_coefficient: float = 0.01
@@ -475,11 +480,6 @@ class TrainConfig:
             raise ValueError(
                 f"task must be one of {', '.join(map(repr, TASK_NAMES))}, "
                 f"not {self.task!r}"
-            )
-        if self.task != "tdm":
-            raise ValueError(
-                f"Training on task {self.task!r} is not ready yet; "
-                'only "tdm" trains today'
             )
         if not isinstance(cast(object, self.ppo), PPOConfig):
             raise TypeError("ppo must be PPOConfig")
@@ -558,8 +558,23 @@ class TrainConfig:
         _check_happo_rosters(self.method, self.ppo, self.curriculum)
         if self.curriculum and self.score_threshold_curriculum:
             raise ValueError("Choose team/map curriculum or score-threshold curriculum")
+        if self.score_threshold_curriculum and self.task != "tdm":
+            raise ValueError(
+                f"score_threshold_curriculum is Team Deathmatch's; task {self.task!r} "
+                "cannot use it"
+            )
 
-        _validate_red_zone_depth(self.red_zone_depth)
+        depth = (
+            DEFAULT_RED_ZONE_DEPTHS[self.task]
+            if self.red_zone_depth is None
+            else self.red_zone_depth
+        )
+        object.__setattr__(self, "red_zone_depth", _validate_red_zone_depth(depth))
+        if self.task != "tdm" and depth != 0.0:
+            raise ValueError(
+                f"red_zone_depth must be 0.0 or left out for task {self.task!r}, "
+                "which has no Red Zone"
+            )
         if self.num_envs % 2:
             raise ValueError("num_envs must be even for paired spawn ends")
         if self.total_env_steps % self.num_envs:
@@ -936,7 +951,7 @@ def config_from_dict(value: dict[str, Any]) -> TrainConfig:
         become tuples. A JSON
         integer red_zone_depth (not true or false) becomes the equal float, so
         6 reads as 6.0; an omitted depth takes the TrainConfig default
-        (DEFAULT_TDM_RED_ZONE_DEPTH, 5.0).
+        (the task's DEFAULT_RED_ZONE_DEPTHS entry: 5.0 for "tdm").
 
     Raises
     ------

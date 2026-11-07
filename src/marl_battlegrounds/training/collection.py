@@ -29,12 +29,14 @@ from marl_battlegrounds._method_loading import (
     _reference_kind,  # pyright: ignore[reportPrivateUsage]
     load_method,
 )
+from marl_battlegrounds._task_settings import TASK_MODES, TaskName
 
 # Shared private helpers retain one owner for execution and stage accounting.
 # pyright: reportPrivateUsage=false
 from marl_battlegrounds.baselines.inputs import (
-    TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
     encode_training_state,
+    training_state_schema,
 )
 from marl_battlegrounds.collection import _check_collection_writer, collect_rollout
 from marl_battlegrounds.core.types import Action, ActionMask
@@ -43,6 +45,8 @@ from marl_battlegrounds.environment import (
     EnvironmentState,
     EpisodeInfo,
     make,
+    score_threshold_for_mode,
+    team_scores_for_mode,
 )
 from marl_battlegrounds.episode_tracking import (
     EpisodeTrackingState,
@@ -347,6 +351,8 @@ class TrainingCollection:
     binding contract. host_partners holds separate full-batch A/B memories.
     Named opponents control their whole team; only native self/past/permanent
     actor copies use the mirrored learner slots and a separate partner draw.
+    task is the run's mode name, "tdm" by default; training_state_schema
+    follows from it and sets the encoded training-state width.
     Reuse this descriptor across blocks to reuse compiled functions. It is not
     a PyTree or a durable checkpoint and must stay outside numerical carry.
     """
@@ -386,6 +392,12 @@ class TrainingCollection:
     partner_trace_rows: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
     pinned_system: System | None = None
     reward_component_keys: tuple[str, ...] = ()
+    task: TaskName = "tdm"
+
+    @property
+    def training_state_schema(self) -> int:
+        """The run's training-state schema: 2 for "tdm", 3 for other modes."""
+        return training_state_schema(self.task)
 
 
 def _frozen_host_values(
@@ -899,12 +911,13 @@ def _validate_training_continuation(  # pyright: ignore[reportUnusedFunction]
     ) or not np.array_equal(carry.source_class_ids, carry.tracking.source_class_ids):
         raise ValueError("Continuation source declarations changed")
     indices = np.asarray(carry.source_indices)
+    mode = TASK_MODES[collection.task]
     bank_thresholds = np.asarray(
-        carry.tracking.source_configs.team_deathmatch_score_threshold
+        score_threshold_for_mode(carry.tracking.source_configs, mode)
     )
     if np.any(indices < 0) or np.any(indices >= len(bank_thresholds)):
         raise ValueError("Continuation source indices are outside the verified bank")
-    actual_thresholds = np.asarray(carry.state.config.team_deathmatch_score_threshold)
+    actual_thresholds = np.asarray(score_threshold_for_mode(carry.state.config, mode))
     episode_stages = np.asarray(carry.progress.episode_stage)
     if np.any(episode_stages < 0) or np.any(episode_stages >= distributions):
         raise ValueError("Continuation episode stages are outside the schedule")
@@ -1086,7 +1099,9 @@ def _expanded_stage_sources(
     if scores[: len(old_scores)] != old_scores:
         raise ValueError("Child source scores must preserve the original bank prefix")
     prepared = prepare_training_content(
-        score_thresholds=scores, red_zone_depth=collection.binding.red_zone_depth
+        score_thresholds=scores,
+        red_zone_depth=collection.binding.red_zone_depth,
+        task=collection.binding.task,
     )
     omitted = {"source_bank", "source_configurations", "score_thresholds"}
     old_content = {
@@ -1694,6 +1709,7 @@ def init_training_collection(
     learner_slots: tuple[int, ...] | None = None,
     partner_population: Mapping[str, System | Policy | str] | None = None,
     partner_selection: Mapping[str, float] | Sequence[str] | None = None,
+    task: TaskName = "tdm",
 ) -> tuple[TrainingCollection, TrainingCarry]:
     """Verify and initialize one fixed-batch experiment without choosing actions.
 
@@ -1822,6 +1838,12 @@ def init_training_collection(
         and the same dense game index for lists. A living game keeps its member.
         Named external opponents remain whole-team replacements. Open resource
         scopes before setup and retain them through collection, as the runner does.
+    task : TaskName, default="tdm"
+        The run's mode name, as TrainConfig.task holds it. Games are made with
+        make(task), content is prepared for it when prepared is None, and a
+        given prepared binding must play it. It also sets the collection's
+        training_state_schema (2 for "tdm", 3 for other modes), so
+        collect_training_state rows have that schema's width.
 
     Returns
     -------
@@ -1898,7 +1920,9 @@ def init_training_collection(
     if actor_variables_at_step is not None:
         _check_variables_hook(actor_variables_at_step, actor_variables)
     if prepared is None:
-        prepared = prepare_training_content(score_thresholds=schedule.score_thresholds)
+        prepared = prepare_training_content(
+            score_thresholds=schedule.score_thresholds, task=task
+        )
     elif not isinstance(cast(object, prepared), PreparedTrainingContent):
         raise TypeError("prepared must be verified PreparedTrainingContent")
     elif (
@@ -1910,6 +1934,10 @@ def init_training_collection(
         )
     if prepared.binding.score_thresholds != schedule.score_thresholds:
         raise ValueError("Prepared score thresholds differ from the training schedule")
+    if prepared.binding.task != task:
+        raise ValueError(
+            f"Prepared content plays task {prepared.binding.task!r}, not {task!r}"
+        )
     generic = opponent_selection is not None or opponent_population is not None
     frozen_members: list[System] = []
     names: tuple[str, ...] = ()
@@ -2055,6 +2083,7 @@ def init_training_collection(
         prepared.source_configs,
         root,
         generation,
+        task=task,
         eligible_maps=schedule.arrays.eligible_maps[0],
         team_size=schedule.arrays.team_sizes[0],
         score_threshold=schedule.arrays.score_thresholds[0],
@@ -2063,7 +2092,7 @@ def init_training_collection(
         else schedule.arrays.roster_class_ids[0],
     )
     env = make(
-        "tdm",
+        task,
         env_config=sampled.config,
         num_envs=schedule.num_envs,
         metrics=cast(Any, metrics),
@@ -2244,6 +2273,7 @@ def init_training_collection(
         partner_systems=tuple(partner_systems),
         host_partners=host_partners,
         pinned_system=pinned_system,
+        task=task,
     )
     return _opponent_component_table(collection, carry), carry
 
@@ -2407,7 +2437,10 @@ def _padding(
         absent,
         absent,
         absent,
-        jnp.zeros((b, TRAINING_STATE_FEATURE_SIZE), jnp.float32)
+        jnp.zeros(
+            (b, TRAINING_STATE_FEATURE_SIZES[collection.training_state_schema]),
+            jnp.float32,
+        )
         if collection.collect_training_state
         else None,
         custom_rewards=jnp.zeros((b, 5), jnp.float32)
@@ -2587,14 +2620,14 @@ def _real_step(
         shaping = jnp.zeros_like(rewards.rewards[:, 0])
     elif collection.shaping_mode == "potential":
         shaping = team_potential_shaping(
-            before.core_state.team_deathmatch_scores,
+            team_scores_for_mode(before.core_state, TASK_MODES[collection.task]),
             info,
             discount=carry.discount,
             coefficient=carry.coefficient,
         )[:, 0]
     else:
         shaping = team_score_delta_shaping(
-            before.core_state.team_deathmatch_scores,
+            team_scores_for_mode(before.core_state, TASK_MODES[collection.task]),
             info,
             coefficient=carry.coefficient,
         )[:, 0]
@@ -2651,7 +2684,11 @@ def _real_step(
         jnp.full_like(info.episode_id, carry.history.current_update),
         opponent_update,
         opponent_snapshot,
-        encode_training_state(before.core_state, before.config)
+        encode_training_state(
+            before.core_state,
+            before.config,
+            schema=collection.training_state_schema,
+        )
         if collection.collect_training_state
         else None,
         custom_rewards=custom,
@@ -2793,7 +2830,9 @@ def _package(
         state.config.agent_profile.active_mask[:, :5],
         state.core_state.alive_mask[:, :5],
         state.done.done,
-        encode_training_state(state.core_state, state.config)
+        encode_training_state(
+            state.core_state, state.config, schema=collection.training_state_schema
+        )
         if collection.collect_training_state
         else None,
         carry.progress.rounds - initial.progress.rounds,

@@ -108,7 +108,8 @@ def _reset_finished(
     have the sampler's bool (42,) and scalar int32 shapes. The root is Threefry.
     roster_class_ids is optional int32 (10,) for the sampler's explicit roster;
     None or ten zeros keeps its existing team-size route. score_threshold is
-    scalar int32, or None for K20, and must name a prepared
+    scalar int32, or None for the handle's task's winning score (K20 in Team
+    Deathmatch, K3 in Capture the Flag), and must name a prepared
     source block. Only reset lanes adopt it; continuing games retain their K.
     Optional sampled choices and lane reset keys supply an exact benchmark
     reference; ordinary callers omit both. Return observations, state, source
@@ -132,6 +133,7 @@ def _reset_finished(
                 team_size=team_size,
                 score_threshold=score_threshold,
                 roster_class_ids=roster_class_ids,
+                task=env.task,
             )
         )
         keys = (

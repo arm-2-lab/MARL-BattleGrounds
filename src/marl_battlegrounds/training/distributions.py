@@ -15,12 +15,18 @@ import numpy as np
 from jax import Array
 from jax.core import Tracer
 
+from marl_battlegrounds._task_settings import (
+    DEFAULT_SCORE_THRESHOLDS,
+    TASK_MODES,
+    TaskName,
+)
 from marl_battlegrounds.core.types import (
     MAX_AGENTS_PER_TEAM,
     NUM_CLASSES,
     PRIEST_CLASS_ID,
     EnvConfig,
 )
+from marl_battlegrounds.environment import score_threshold_for_mode
 from marl_battlegrounds.tasks import (
     _config_has_batch,  # pyright: ignore[reportPrivateUsage]
     _roster_ids,  # pyright: ignore[reportPrivateUsage]
@@ -279,6 +285,7 @@ def sample_training_configs(
     team_size: Array,
     score_threshold: Array | None = None,
     roster_class_ids: Array | None = None,
+    task: TaskName = "tdm",
 ) -> SampledTrainingConfigs:
     """Sample approved maps and independent equal-size teams for reset.
 
@@ -298,7 +305,8 @@ def sample_training_configs(
         Scalar int32 in 1..5. Both teams draw independently without replacement;
         Priest is excluded only at size one. Five uses exact canonical rosters.
     score_threshold : Array or None, default=None
-        Scalar int32 score present in the prepared bank. None selects K20.
+        Scalar int32 score present in the prepared bank. None selects the
+        task's winning score (K20 for "tdm", K3 for "ctf").
         This changes only the selected source block, not map/roster random keys.
         Validate concrete values before passing them through jit or scan.
     roster_class_ids : Array or None, default=None
@@ -306,6 +314,11 @@ def sample_training_configs(
         and zero padding. A nonzero row replaces random roster selection and
         may contain repeated classes or unequal team sizes. None or an all-zero
         row retains the existing team_size distribution and its random keys.
+    task : TaskName, default="tdm"
+        The mode the bank's configs play, a static Python value: it picks the
+        winning-score field each stage's block is found by
+        (environment.score_threshold_for_mode). Pass the environment handle's
+        own task, as training does.
 
     Returns
     -------
@@ -334,7 +347,9 @@ def sample_training_configs(
     if roster_class_ids is not None:
         _roster_shape(roster_class_ids)
     threshold = (
-        jnp.asarray(20, jnp.int32) if score_threshold is None else score_threshold
+        jnp.asarray(DEFAULT_SCORE_THRESHOLDS[task], jnp.int32)
+        if score_threshold is None
+        else score_threshold
     )
     if np.shape(threshold) != () or getattr(threshold, "dtype", None) != jnp.int32:
         raise TypeError("score_threshold must be scalar int32")
@@ -354,7 +369,7 @@ def sample_training_configs(
     count = np.shape(bank.agent_profile.active_mask)[0]
     if count < _MAP_COUNT or count % _MAP_COUNT or not _config_has_batch(bank, count):
         raise ValueError("bank must have 42 source rows per threshold")
-    scores = jnp.asarray(bank.team_deathmatch_score_threshold)[::_MAP_COUNT]
+    scores = score_threshold_for_mode(bank, TASK_MODES[task])[::_MAP_COUNT]
     if (
         not isinstance(threshold, Tracer)
         and not isinstance(scores, Tracer)

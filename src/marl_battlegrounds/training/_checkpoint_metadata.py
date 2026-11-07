@@ -17,9 +17,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
+from marl_battlegrounds._task_settings import TASK_NAMES, TaskName
 from marl_battlegrounds.baselines.config import (
     ACTION_SCHEMA_VERSION,
-    ACTOR_INPUT_SCHEMA_VERSION,
     PQN_KEY_SCHEMA_VERSION,
     PQN_NORMALIZATION_SCHEMA_VERSION,
     PQN_RECENT_WINDOW_SCHEMA_VERSION,
@@ -27,10 +27,11 @@ from marl_battlegrounds.baselines.config import (
     QMIX_KEY_SCHEMA_VERSION,
     QMIX_REPLAY_SCHEMA_VERSION,
     QMIX_TIE_RULE,
-    TRAINING_STATE_SCHEMA_VERSION,
     PPOConfig,
     _parameter_sharing,
     _pqn_normalization,
+    actor_input_schema,
+    training_state_schema,
     validate_ppo_method,
 )
 from marl_battlegrounds.baselines.methods import (
@@ -50,8 +51,8 @@ _ACTOR_DESCRIPTION = "actor_details.json"
 _SCHEMAS = {
     "checkpoint": 1,
     "model": "recurrent_mappo_128",
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
-    "training_state": TRAINING_STATE_SCHEMA_VERSION,
+    "actor_input": actor_input_schema("tdm"),
+    "training_state": training_state_schema("tdm"),
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
     "learner_keys": 1,
@@ -70,8 +71,8 @@ _MODELS = {
 _QMIX_SCHEMAS = {
     "checkpoint": 1,
     "model": _MODELS["qmix"],
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
-    "training_state": TRAINING_STATE_SCHEMA_VERSION,
+    "actor_input": actor_input_schema("tdm"),
+    "training_state": training_state_schema("tdm"),
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
     "qmix_keys": QMIX_KEY_SCHEMA_VERSION,
@@ -83,7 +84,7 @@ _QMIX_COUNTERS = {"updates", "env_steps", "completed_blocks", "learning_blocks"}
 _PQN_SCHEMAS = {
     "checkpoint": 1,
     "model": _MODELS["pqn_vdn"],
-    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
+    "actor_input": actor_input_schema("tdm"),
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
     "pqn_keys": PQN_KEY_SCHEMA_VERSION,
@@ -242,7 +243,8 @@ def _schema_method(schemas: object) -> str:
     """Return the method named by one complete supported schema dictionary.
 
     schemas must exactly match either checkpoint_schemas for a known model
-    (the current dictionary) or that model's frozen pre-Red-Zone dictionary in
+    and any task (a current dictionary) or that model's frozen pre-Red-Zone
+    dictionary in
     _ACTOR_INPUT_1_SCHEMAS (actor input 1, and training state 1 where the
     method has it). HAPPO, added after the Red Zone, has only the current
     one. A mixed dictionary, such as actor input 2 with training state 1,
@@ -256,8 +258,8 @@ def _schema_method(schemas: object) -> str:
     value = _object(schemas, "Checkpoint schemas")
     for method, model in _MODELS.items():
         historical = _ACTOR_INPUT_1_SCHEMAS.get(method)
-        current = checkpoint_schemas(method)
-        for expected in (current,) if historical is None else (current, historical):
+        current = _current_schemas(method)
+        for expected in current if historical is None else (*current, historical):
             if (
                 value.get("model") == model
                 and value == expected
@@ -295,7 +297,7 @@ def _require_current_schemas(details: dict[str, Any]) -> None:  # pyright: ignor
     analysis can still read old descriptions. Host-only; reads no files.
     """
     schemas = _object(details["schemas"], "Checkpoint schemas")
-    if schemas != checkpoint_schemas(_schema_method(schemas)):
+    if schemas not in _current_schemas(_schema_method(schemas)):
         raise ValueError(
             "This checkpoint was saved before Red Zone scoring (historical "
             "actor input schema 1, 5,164 features). This version cannot resume "
@@ -603,7 +605,9 @@ def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
     return details
 
 
-def checkpoint_schemas(method: str = "mappo") -> dict[str, int | str]:
+def checkpoint_schemas(
+    method: str = "mappo", task: TaskName = "tdm"
+) -> dict[str, int | str]:
     """Return the installed checkpoint and selected model format identifiers.
 
     Parameters
@@ -612,30 +616,57 @@ def checkpoint_schemas(method: str = "mappo") -> dict[str, int | str]:
 default="mappo"
         Static method. Unknown values raise ValueError through the shared
         method check. MAPPO keeps its historical keys, including learner_keys.
+    task : str, default="tdm"
+        The run's mode name, as TrainConfig.task holds it. It sets the actor
+        input and training-state versions (baselines.config.actor_input_schema
+        and training_state_schema): 2 for "tdm", 3 for other modes. The caller
+        validates the name.
 
     Returns
     -------
     dict[str, int or str]
-        A fresh JSON-ready copy of the checkpoint version, model name, actor
-        input (2), training-state (2) and action versions, and collection/learner
-        key versions. QMIX replaces learner_keys with qmix_keys and adds its
-        replay row version. PQN-VDN has no training-state entry (it keeps no
-        physical state) and adds pqn_keys, recent_window and normalization
-        versions. These are the same identifiers checked during restore; new
-        saves and exports write them. Artifacts saved before Red Zone carry
-        the frozen dictionaries with actor input 1 (and training state 1),
-        which load_system reads but export and resume refuse. Changing the
-        returned dictionary does not change the shared authority.
+        A fresh JSON-ready copy of the checkpoint version, model name, the task's actor
+        input and training-state versions, the action version, and the
+        collection/learner key versions. QMIX replaces learner_keys with qmix_keys and
+        adds its replay row version. PQN-VDN has no training-state entry (it keeps no
+        physical state) and adds pqn_keys, recent_window and normalization versions.
+        These are the same identifiers checked during restore; new saves and exports
+        write them. Artifacts saved before Red Zone carry the frozen dictionaries with
+        actor input 1 (and training state 1), which load_system reads but export and
+        resume refuse. Changing the returned dictionary does not change the shared
+        authority.
 
     Notes
     -----
     Reads only fixed metadata; no file access or device initialization occurs.
     """
+    inputs = {"actor_input": actor_input_schema(task)}
     if validate_training_method(method) == "qmix":
-        return dict(_QMIX_SCHEMAS)
+        return {
+            **_QMIX_SCHEMAS,
+            **inputs,
+            "training_state": training_state_schema(task),
+        }
     if method == "pqn_vdn":
-        return dict(_PQN_SCHEMAS)
-    return {**_SCHEMAS, "model": _MODELS[validate_ppo_method(method)]}
+        return {**_PQN_SCHEMAS, **inputs}
+    return {
+        **_SCHEMAS,
+        "model": _MODELS[validate_ppo_method(method)],
+        **inputs,
+        "training_state": training_state_schema(task),
+    }
+
+
+def _current_schemas(method: str) -> tuple[dict[str, int | str], ...]:
+    """Return method's current schema dictionary for each supported task.
+
+    One dictionary per name in TASK_NAMES, in that order, from
+    checkpoint_schemas; two tasks with the same training-state schema give
+    equal dictionaries. Saved descriptions do not name their task, so a reader
+    that only needs "is this current?" accepts any of them. Host-only; method
+    must be a supported training method (ValueError otherwise).
+    """
+    return tuple(checkpoint_schemas(method, task) for task in TASK_NAMES)
 
 
 def _latest_checkpoint(root: Path) -> tuple[Path, dict[str, Any]] | None:

@@ -1536,7 +1536,7 @@ def _worker(root: Path, job: Path, *, mode: str, resume: bool = False) -> None:
                     + (1000 if opponent == "beta" else 0)
                     + repeat,
                     num_envs=32,
-                    red_zone_depth=config.red_zone_depth,
+                    red_zone_depth=cast(float, config.red_zone_depth),
                 )
                 (cold if repeat == 0 else validation)[identifier] = (
                     time.monotonic() - start

@@ -953,7 +953,7 @@ def _worker(
             result.final_actor,
             output_dir=job / "timing-validation",
             seed_pairs=4,
-            red_zone_depth=config.red_zone_depth,
+            red_zone_depth=cast(float, config.red_zone_depth),
         )
         record["validation_seconds"] = time.monotonic() - started
         record["engineering_validation_games"] = 40

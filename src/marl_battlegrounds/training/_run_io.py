@@ -1286,7 +1286,7 @@ def validate_host_state(
     settings = config[method_settings_field(method)]
     # The run's Red Zone depth sets the layout of its saved validation tasks.
     depth = checkpoints._config_red_zone_depth(config)  # pyright: ignore[reportPrivateUsage]
-    schemas = checkpoints.checkpoint_schemas(method)
+    schemas = checkpoints.checkpoint_schemas(method, config.get("task", "tdm"))
     if checkpoint_details["schemas"] != schemas:
         raise ValueError("Saved model schema differs from the training method")
     value: object = metadata.get("host_state")

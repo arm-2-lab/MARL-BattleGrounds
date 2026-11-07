@@ -33,6 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
+from marl_battlegrounds._task_settings import TaskName
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
     categorical_action_mask,
@@ -668,6 +669,7 @@ def init_pqn_learner(
     partner_population: Mapping[str, System | Policy | str] | None = None,
     partner_selection: Mapping[str, float] | Sequence[str] | None = None,
     pqn: PQNConfig = DEFAULT_PQN_CONFIG,
+    task: TaskName = "tdm",
 ) -> tuple[TrainingCollection, PQNLearnerState]:
     """Initialize one untrained PQN-VDN learner and its verified collection setup.
 
@@ -723,6 +725,9 @@ def init_pqn_learner(
     partner_population, partner_selection : mapping, sequence or None
         Frozen named partners and their future-game shares or repeating order.
         Forwarded to init_training_collection with learner_slots.
+    task : str, default="tdm"
+        The run's mode name, as TrainConfig.task holds it. The collection
+        keeps it; PQN-VDN keeps no training state, so no width depends on it.
 
     Returns
     -------
@@ -808,6 +813,7 @@ def init_pqn_learner(
         partner_population=partner_population,
         partner_selection=partner_selection,
         actor_variables_at_step=None,
+        task=task,
     )
     state = PQNLearnerState(
         carry,

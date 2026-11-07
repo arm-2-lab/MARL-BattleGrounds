@@ -102,7 +102,7 @@ from marl_battlegrounds.baselines.inputs import (
     ACTOR_FEATURE_SIZE,
     ACTOR_INPUT_SCHEMA_VERSION,
     SPAWN_FRAMES,
-    TRAINING_STATE_FEATURE_SIZE,
+    TRAINING_STATE_FEATURE_SIZES,
     encode_actor_inputs,
     schema_1_actor_input,
     spawn_frame_flag,
@@ -234,7 +234,8 @@ class QMIXBatch(NamedTuple):
         configured actors stay active.
     training_state : Array
         Float32 (M,S,F_S) world-frame physical state for the mixer only. F_S is
-        TRAINING_STATE_FEATURE_SIZE (920) for real inputs.
+        the run's TRAINING_STATE_FEATURE_SIZES entry for real inputs: 920 in
+        Team Deathmatch, 973 in the other modes.
 
     actor_group : Array or None, default=None
         Optional int32 with active.shape, group IDs 0..4 from raw self classes
@@ -564,7 +565,10 @@ def _q_network_variables(key: Array, config: QMIXConfig) -> Tree:
 
 
 def initialize_qmix(
-    key: Array, config: QMIXConfig = DEFAULT_QMIX_CONFIG
+    key: Array,
+    config: QMIXConfig = DEFAULT_QMIX_CONFIG,
+    *,
+    training_state_schema: int = 2,
 ) -> QMIXTrainState:
     """Create untrained QMIX networks, equal targets and complete Adam states.
 
@@ -579,6 +583,10 @@ def initialize_qmix(
     config : QMIXConfig, default=DEFAULT_QMIX_CONFIG
         Settings for input_scale, parameter_sharing, q_lr and Adam (QMIX does
         not clip gradients).
+    training_state_schema : {2, 3}, default=2
+        The run's training-state schema, which sets the mixer's state width:
+        920 features for 2 (Team Deathmatch) and 973 for 3
+        (``baselines.inputs.training_state_schema``).
 
     Returns
     -------
@@ -590,7 +598,7 @@ def initialize_qmix(
     Raises
     ------
     ValueError
-        key is not one Threefry key.
+        key is not one Threefry key, or training_state_schema is not 2 or 3.
 
     Notes
     -----
@@ -600,11 +608,17 @@ def initialize_qmix(
     under ``jax.eval_shape``.
     """
     _check_key(key)
+    if training_state_schema not in TRAINING_STATE_FEATURE_SIZES:
+        raise ValueError(
+            f"Training state schema must be 2 or 3; received {training_state_schema!r}"
+        )
     q_variables = _q_network_variables(key, config)
     mixer_variables = QMixingNetwork().init(
         key,
         jnp.zeros((1, 1, TEAM_SLOTS), jnp.float32),
-        jnp.zeros((1, 1, TRAINING_STATE_FEATURE_SIZE), jnp.float32),
+        jnp.zeros(
+            (1, 1, TRAINING_STATE_FEATURE_SIZES[training_state_schema]), jnp.float32
+        ),
     )
     return QMIXTrainState(
         q_variables,
@@ -1221,7 +1235,7 @@ def make_qmix_system(
         else _q_actor_apply
     )
     sharing = _parameter_sharing(parameter_sharing)
-    if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
+    if sharing != "all" and actor_input_schema == 1:
         raise ValueError("Grouped actors require the current actor input schema")
     apply = _declare_lane_independent(
         hook(scale, frame)

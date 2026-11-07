@@ -355,7 +355,11 @@ def _manual_step(
         opponent_update=opponent_update,
         opponent_snapshot=carry.history.lane_snapshot,
         training_state=(
-            encode_training_state(before.core_state, before.config)
+            encode_training_state(
+                before.core_state,
+                before.config,
+                schema=collection.training_state_schema,
+            )
             if collection.collect_training_state
             else None
         ),
@@ -416,7 +420,11 @@ def _reference(
         final_alive=carry.state.core_state.alive_mask[:, :5],
         final_ended=carry.state.done.done,
         final_training_state=(
-            encode_training_state(carry.state.core_state, carry.state.config)
+            encode_training_state(
+                carry.state.core_state,
+                carry.state.config,
+                schema=collection.training_state_schema,
+            )
             if collection.collect_training_state
             else None
         ),

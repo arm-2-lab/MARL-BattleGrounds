@@ -20,6 +20,11 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
+from marl_battlegrounds._task_settings import (
+    DEFAULT_SCORE_THRESHOLDS,
+    TASK_NAMES,
+    TaskName,
+)
 from marl_battlegrounds.environment import (
     EnvironmentState,
     EpisodeInfo,
@@ -163,6 +168,9 @@ class TrainingSchedule:
         Optional explicit fresh-run capture targets. Empty disables explicit
         captures; None keeps the original defaults. Use the checked helper
         _with_history_capture_rounds rather than replacing numerical leaves.
+    task : str, default="tdm"
+        The run's mode name. Stages without their own score_threshold use the
+        mode's winning score (DEFAULT_SCORE_THRESHOLDS).
 
     Notes
     -----
@@ -180,6 +188,7 @@ class TrainingSchedule:
     early_history_capture: bool = False
     continuation: Mapping[str, object] | None = None
     history_capture_rounds: tuple[int, ...] | None = None
+    task: TaskName = "tdm"
 
     @property
     def score_thresholds(self) -> tuple[int, ...]:
@@ -258,6 +267,7 @@ def make_training_schedule(
     curriculum: Curriculum = False,
     score_threshold_curriculum: bool = False,
     early_history_capture: bool = False,
+    task: TaskName = "tdm",
 ) -> TrainingSchedule:
     """Allocate exact whole-batch experience to the approved training stages.
 
@@ -276,9 +286,10 @@ def make_training_schedule(
         1..17 stages. Each stage gives a positive share, nonempty distinct maps
         from 0..41, and either team_size (1..5) or rosters with system/opponent
         class-name lists. Explicit rosters permit repeated classes and unequal
-        sizes. Shares must sum to one. Optional score_threshold defaults to 20
-        and means the winning score, not a test for promotion. Custom stages
-        cannot be combined with score_threshold_curriculum.
+        sizes. Shares must sum to one. Optional score_threshold defaults to the
+        task's winning score (20 for "tdm", 3 for "ctf") and means the winning
+        score, not a test for promotion. Custom stages cannot be combined with
+        score_threshold_curriculum.
     score_threshold_curriculum : bool, default=False
         Request K1 for 10% of transitions, K2..10 for 1/30 each, K12 and K15
         for 5% each, and K20 for 50%. All stages use canonical 5v5 and all 42
@@ -289,6 +300,11 @@ def make_training_schedule(
         through 95% thresholds, dropping the 100% capture that no later game can
         play. False keeps the 5% through 100% thresholds unchanged. Use True
         only together with a positive pinned opponent share in collection.
+    task : str, default="tdm"
+        The run's mode name, one of TASK_NAMES. Every stage without its own
+        score_threshold uses the mode's winning score from
+        DEFAULT_SCORE_THRESHOLDS. score_threshold_curriculum is Team
+        Deathmatch's and needs "tdm".
 
     Returns
     -------
@@ -303,7 +319,8 @@ def make_training_schedule(
         Counts are not Python integers, are bool, or a switch is not bool.
     ValueError
         Counts are nonpositive, the batch is odd, the total is not divisible,
-        per-lane rounds exceed int32, or any active stage receives zero rounds.
+        per-lane rounds exceed int32, any active stage receives zero rounds,
+        task is unknown, or score_threshold_curriculum asks for another task.
 
     Notes
     -----
@@ -326,6 +343,15 @@ def make_training_schedule(
             raise TypeError(f"{name} must be bool")
     if curriculum and score_threshold_curriculum:
         raise ValueError("Choose team/map curriculum or score-threshold curriculum")
+    if task not in TASK_NAMES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
+    if score_threshold_curriculum and task != "tdm":
+        raise ValueError(
+            f"score_threshold_curriculum is Team Deathmatch's; task {task!r} "
+            "cannot use it"
+        )
     if num_envs % 2:
         raise ValueError("num_envs must be even")
     if total_env_steps % num_envs:
@@ -357,7 +383,8 @@ def make_training_schedule(
     ends = np.cumsum(budgets, dtype=np.int64).astype(np.int32)
     sizes = np.full(_STAGES, 5, np.int32)
     pools = np.ones((_STAGES, _MAPS), np.bool_)
-    thresholds = np.full(_STAGES, 20, np.int32)
+    winning_score = DEFAULT_SCORE_THRESHOLDS[task]
+    thresholds = np.full(_STAGES, winning_score, np.int32)
     if score_threshold_curriculum:
         thresholds[: len(_SCORE_THRESHOLDS)] = _SCORE_THRESHOLDS
     roster_ids = None
@@ -367,7 +394,7 @@ def make_training_schedule(
             pools[index] = np.isin(
                 np.arange(_MAPS), cast(tuple[int, ...], stage["maps"])
             )
-            thresholds[index] = cast(int, stage.get("score_threshold", 20))
+            thresholds[index] = cast(int, stage.get("score_threshold", winning_score))
             if "team_size" in stage:
                 sizes[index] = cast(int, stage["team_size"])
             else:
@@ -450,6 +477,7 @@ def make_training_schedule(
         report,
         score_threshold_curriculum,
         early_history_capture,
+        task=task,
     )
 
 
@@ -517,7 +545,10 @@ def _distribution_schedule(
             )
         stages = _custom_stages(change["curriculum"])
         new = make_training_schedule(
-            total_env_steps=added, num_envs=root.num_envs, curriculum=stages
+            total_env_steps=added,
+            num_envs=root.num_envs,
+            curriculum=stages,
+            task=root.task,
         )
         added_count = int(new.arrays.stage_count)
         if count + added_count > _STAGES:
@@ -707,6 +738,8 @@ def _make_continuation_schedule(  # pyright: ignore[reportUnusedFunction]
             "curriculum": parent_schedule.curriculum,
             "score_threshold_curriculum": parent_schedule.score_threshold_curriculum,
             "early_history_capture": parent_schedule.early_history_capture,
+            # Team Deathmatch roots leave the task out, keeping their bytes.
+            **({} if parent_schedule.task == "tdm" else {"task": parent_schedule.task}),
             **(
                 {}
                 if parent_schedule.history_capture_rounds is None
@@ -834,7 +867,7 @@ def _build_continuation_schedule(
         "score_threshold_curriculum",
         "early_history_capture",
     }
-    if set(root_record) - {"history_capture_rounds"} != root_keys:
+    if set(root_record) - {"history_capture_rounds", "task"} != root_keys:
         raise ValueError("Continuation root schedule fields differ")
     root_arguments = dict(root_record)
     capture_rounds = root_arguments.pop("history_capture_rounds", None)
@@ -1135,6 +1168,7 @@ def _check_training_schedule(schedule: TrainingSchedule) -> None:
             curriculum=schedule.curriculum,
             score_threshold_curriculum=schedule.score_threshold_curriculum,
             early_history_capture=schedule.early_history_capture,
+            task=schedule.task,
         )
         if schedule.continuation is None
         else _restore_continuation_schedule(schedule.continuation)
@@ -1148,6 +1182,7 @@ def _check_training_schedule(schedule: TrainingSchedule) -> None:
             schedule.curriculum,
             schedule.score_threshold_curriculum,
             schedule.early_history_capture,
+            schedule.task,
         )
         != (
             checked.total_env_steps,
@@ -1155,6 +1190,7 @@ def _check_training_schedule(schedule: TrainingSchedule) -> None:
             checked.curriculum,
             checked.score_threshold_curriculum,
             checked.early_history_capture,
+            checked.task,
         )
         or jax.tree.structure(schedule.arrays) != jax.tree.structure(checked.arrays)
         or any(

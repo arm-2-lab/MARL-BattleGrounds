@@ -12,13 +12,19 @@ category meanings. This module needs only the ordinary JAX environment install.
 Changing feature order, category meaning, masking or numeric representation
 requires a new version of the affected schema.
 
-Actor input schema 2 (5,165 features) is current: it adds context column 19,
-the Team Deathmatch Red Zone depth. Historical schema 1 (5,164 features) is
-kept only so actors trained before Red Zone still play exactly as before.
+Actor input schema 2 (5,165 features) adds context column 19, the Team
+Deathmatch Red Zone depth. Schema 3, the newest, has the same layout: Team
+Deathmatch runs record 2 and other modes' runs record 3 (actor_input_schema),
+so a converted old actor can tell which games it learned from. Historical
+schema 1 (5,164 features) is kept only so actors trained before Red Zone still
+play exactly as before.
 schema_1_actor_input turns a current view into the old 19-column view; the
 encoder and spawn_frame_flag then pick the old layout and the old spawn-side
 formula from that static width. Training state schema 2 (920 features) adds
-the same depth after the score threshold.
+the same depth after the score threshold. Training state schema 3 (973
+features, the default) keeps schema 2's features and offsets and appends the
+Capture the Flag and King of the Hills state and settings. Team Deathmatch
+runs keep schema 2; training_state_schema says which schema a run records.
 
 Values keep their existing units. Integer conversion uses ordinary float32
 rounding: integers above 16,777,216 are not all represented exactly. Encoding is
@@ -43,10 +49,28 @@ from marl_battlegrounds.baselines.config import (
 from marl_battlegrounds.baselines.config import (
     TRAINING_STATE_SCHEMA_VERSION as TRAINING_STATE_SCHEMA_VERSION,
 )
+from marl_battlegrounds.baselines.config import (
+    actor_input_schema as actor_input_schema,
+)
+from marl_battlegrounds.baselines.config import (
+    training_state_schema as training_state_schema,
+)
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_ACTIVE,
     AGENT_FEATURE_CLASS_ID,
+    CONTEXT_FEATURE_ACTIVE_OBJECTIVE_COUNT,
+    CONTEXT_FEATURE_CTF_ALLY_SCORE,
+    CONTEXT_FEATURE_CTF_ENEMY_SCORE,
+    CONTEXT_FEATURE_CTF_SCORE_THRESHOLD,
+    CONTEXT_FEATURE_IS_CTF,
+    CONTEXT_FEATURE_IS_KOTH,
+    CONTEXT_FEATURE_IS_TDM,
+    CONTEXT_FEATURE_KOTH_ALLY_SCORE,
+    CONTEXT_FEATURE_KOTH_ENEMY_SCORE,
+    CONTEXT_FEATURE_KOTH_SCORE_THRESHOLD,
     CONTEXT_FEATURE_MAP_WIDTH,
+    CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH,
+    CONTEXT_FEATURE_TDM_SCORE_THRESHOLD,
     MAX_AGENT_SLOTS,
     MAX_AGENTS_PER_TEAM,
     NUM_CLASSES,
@@ -138,6 +162,116 @@ def schema_1_actor_input(actors: ActorInput) -> ActorInput:
             context_features=context[..., : _CONTEXT_WIDTHS[1]]
         )
     )
+
+
+# Context columns an actor trained only on Team Deathmatch saw as 0 in every
+# game: the other modes' indicators, scores and thresholds, and the count of
+# active objective rows.
+_OTHER_MODE_CONTEXT = (
+    CONTEXT_FEATURE_IS_KOTH,
+    CONTEXT_FEATURE_IS_CTF,
+    CONTEXT_FEATURE_ACTIVE_OBJECTIVE_COUNT,
+    CONTEXT_FEATURE_KOTH_ALLY_SCORE,
+    CONTEXT_FEATURE_KOTH_ENEMY_SCORE,
+    CONTEXT_FEATURE_CTF_ALLY_SCORE,
+    CONTEXT_FEATURE_CTF_ENEMY_SCORE,
+    CONTEXT_FEATURE_KOTH_SCORE_THRESHOLD,
+    CONTEXT_FEATURE_CTF_SCORE_THRESHOLD,
+)
+
+
+def historical_actor_input(
+    actors: ActorInput, schema: int, *, score_threshold: int, red_zone_depth: float
+) -> ActorInput:
+    """Give an actor of an older input schema the view it learned on, in any mode.
+
+    Parameters
+    ----------
+    actors : ActorInput
+        Permitted current inputs (20 context columns) with any leading shape L.
+    schema : {1, 2, 3}
+        The actor's recorded actor input schema, a static Python int.
+    score_threshold : int
+        The Team Deathmatch winning score the actor trained with, from its
+        record (its curriculum's final value if it used one; 20 for a record
+        that names none). Only used outside Team Deathmatch.
+    red_zone_depth : float
+        The Team Deathmatch Red Zone depth the actor trained with, in map units,
+        from its record (5.0 for a record that names none). Only used outside
+        Team Deathmatch.
+
+    Returns
+    -------
+    ActorInput
+        Schema 3: ``actors`` itself. Schema 2: in a Team Deathmatch game, the
+        same values; in a Capture the Flag or King of the Hills game (context
+        column 7 or 8 is 1), the view a Team Deathmatch game would have shown:
+        column 6 (Team Deathmatch) 1; columns 7-9, 12-15, 17 and 18 0; column
+        16 ``score_threshold``; column 19 ``red_zone_depth``; every objective
+        row zero, in the observation and in the source bank. Schema 1: the
+        schema 2 result without context column 19 (``schema_1_actor_input``).
+
+    Raises
+    ------
+    ValueError
+        schema is not 1, 2 or 3, or context_features does not end in 20
+        columns.
+
+    Notes
+    -----
+    Actors trained only on Team Deathmatch (schemas 1 and 2) never saw the
+    objective rows or another mode's columns change, so they play other modes
+    on exactly the layout they learned. Unused observer rows, which are all
+    zero, stay unchanged. The conversion only removes or fixes information,
+    so it widens no information right. Pure JAX on static shapes; works under
+    jit and vmap; inputs are unchanged.
+    """
+    if schema == 3:
+        return actors
+    if schema not in (1, 2):
+        raise ValueError(f"Actor input schema must be 1, 2 or 3; received {schema!r}")
+    context = actors.observation.context_features
+    if jnp.shape(context)[-1:] != (_CONTEXT_WIDTHS[2],):
+        raise ValueError(
+            "historical_actor_input needs the current 20 context columns; "
+            f"received shape {jnp.shape(context)}"
+        )
+    other_mode = (context[..., CONTEXT_FEATURE_IS_CTF] == 1) | (
+        context[..., CONTEXT_FEATURE_IS_KOTH] == 1
+    )
+    held = (
+        context.at[..., CONTEXT_FEATURE_IS_TDM]
+        .set(1)
+        .at[..., list(_OTHER_MODE_CONTEXT)]
+        .set(0)
+        .at[..., CONTEXT_FEATURE_TDM_SCORE_THRESHOLD]
+        .set(score_threshold)
+        .at[..., CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH]
+        .set(red_zone_depth)
+    )
+
+    def unless_other_mode(value: Array, replacement: Array) -> Array:
+        """Keep value in Team Deathmatch; use replacement in another mode."""
+        mask = other_mode.reshape(
+            other_mode.shape + (1,) * (value.ndim - other_mode.ndim)
+        )
+        return jnp.where(mask, replacement, value)
+
+    observation = actors.observation._replace(
+        context_features=unless_other_mode(context, held),
+        objective_features=unless_other_mode(
+            actors.observation.objective_features,
+            jnp.zeros_like(actors.observation.objective_features),
+        ),
+    )
+    bank = actors.source_bank._replace(
+        objective_features_by_source=unless_other_mode(
+            actors.source_bank.objective_features_by_source,
+            jnp.zeros_like(actors.source_bank.objective_features_by_source),
+        )
+    )
+    view = actors._replace(observation=observation, source_bank=bank)
+    return schema_1_actor_input(view) if schema == 1 else view
 
 
 def spawn_frame_flag(actors: ActorInput, spawn_frame: str) -> Array:
@@ -305,7 +439,7 @@ _ACTOR_LAYOUT: _Layout = tuple(
     for name, shape, width in _ACTOR_LAYOUT_1
 )
 _ACTOR_LAYOUTS: Mapping[int, _Layout] = MappingProxyType(
-    {1: _ACTOR_LAYOUT_1, 2: _ACTOR_LAYOUT}
+    {1: _ACTOR_LAYOUT_1, 2: _ACTOR_LAYOUT, 3: _ACTOR_LAYOUT}
 )
 
 _TRAINING_STATE_LAYOUT: _Layout = (
@@ -351,6 +485,39 @@ _TRAINING_STATE_LAYOUT: _Layout = (
     ("config.spawn_shield_movement_speed", (), 1),
     ("config.team_respawn_wave_period_step_count", (2,), 2),
 )
+# Training state schema 3: schema 2's 920 features with their offsets, then the
+# Capture the Flag and King of the Hills state and settings in declaration
+# order (53 more). Teams stay in world order, Team A first; nothing reflects.
+# The flag carriers become one indicator per agent row, in the same order as
+# alive_mask: 1 when that agent carries the enemy flag (only the enemy flag can
+# be carried), so no slot number is ever a feature value. Each hill's owner is
+# two indicators, Team A then Team B (both zero when nobody owns it). Outside
+# their mode all 53 features are zero.
+_TRAINING_STATE_LAYOUT_3: _Layout = (
+    *_TRAINING_STATE_LAYOUT,
+    ("state.capture_the_flag_scores", (2,), 2),
+    ("state.king_of_the_hills_scores", (2,), 2),
+    ("state.capture_the_flag_flag_positions", (2, 2), 4),
+    ("state.capture_the_flag_flag_carrier_slots", (2,), 10),
+    ("state.capture_the_flag_dropped_flag_countdowns", (2,), 2),
+    ("state.king_of_the_hills_hill_is_contested", (3,), 3),
+    ("state.king_of_the_hills_hill_owners", (3,), 6),
+    ("state.king_of_the_hills_empty_hill_ownership_countdowns", (3,), 3),
+    ("config.capture_the_flag_score_threshold", (), 1),
+    ("config.capture_the_flag_flag_home_positions", (2, 2), 4),
+    ("config.capture_the_flag_flag_interaction_distance", (), 1),
+    ("config.capture_the_flag_flag_capture_distance", (), 1),
+    ("config.capture_the_flag_dropped_flag_auto_return_steps", (), 1),
+    ("config.king_of_the_hills_score_threshold", (), 1),
+    ("config.king_of_the_hills_hill_positions", (3, 2), 6),
+    ("config.king_of_the_hills_hill_radii", (3,), 3),
+    ("config.king_of_the_hills_hill_points_per_step", (), 1),
+    ("config.king_of_the_hills_three_hill_sweep_bonus_points_per_step", (), 1),
+    ("config.king_of_the_hills_empty_hill_ownership_steps", (), 1),
+)
+_TRAINING_STATE_LAYOUTS: Mapping[int, _Layout] = MappingProxyType(
+    {2: _TRAINING_STATE_LAYOUT, 3: _TRAINING_STATE_LAYOUT_3}
+)
 
 
 def _offsets(layout: _Layout) -> Mapping[str, slice]:
@@ -368,16 +535,26 @@ def _offsets(layout: _Layout) -> Mapping[str, slice]:
 
 
 ACTOR_FEATURE_OFFSETS = _offsets(_ACTOR_LAYOUT)
-TRAINING_STATE_FEATURE_OFFSETS = _offsets(_TRAINING_STATE_LAYOUT)
+TRAINING_STATE_FEATURE_OFFSETS = _offsets(_TRAINING_STATE_LAYOUT_3)
 ACTOR_FEATURE_SIZE = sum(width for _, _, width in _ACTOR_LAYOUT)
-# Encoded actor width per actor input schema: {1: 5164, 2: 5165}. Read-only.
+# Encoded actor width per actor input schema: {1: 5164, 2: 5165, 3: 5165}. Read-only.
 ACTOR_FEATURE_SIZES: Mapping[int, int] = MappingProxyType(
     {
         version: sum(width for _, _, width in layout)
         for version, layout in _ACTOR_LAYOUTS.items()
     }
 )
-TRAINING_STATE_FEATURE_SIZE = sum(width for _, _, width in _TRAINING_STATE_LAYOUT)
+# Encoded training-state width per schema: {2: 920, 3: 973}. Read-only.
+TRAINING_STATE_FEATURE_SIZES: Mapping[int, int] = MappingProxyType(
+    {
+        version: sum(width for _, _, width in layout)
+        for version, layout in _TRAINING_STATE_LAYOUTS.items()
+    }
+)
+# The newest schema's width (973), which encode_training_state gives by default.
+TRAINING_STATE_FEATURE_SIZE = TRAINING_STATE_FEATURE_SIZES[
+    TRAINING_STATE_SCHEMA_VERSION
+]
 
 
 def _read_field(root: object, path: str) -> ArrayLike:
@@ -513,8 +690,8 @@ def encode_actor_inputs(inputs: ActorInput) -> Array:
     -------
     Array
         Float32 shape (*L, F). For a 20-column view F is ACTOR_FEATURE_SIZE
-        (5,165), ordered by ACTOR_FEATURE_OFFSETS under
-        ACTOR_INPUT_SCHEMA_VERSION 2. For a 19-column view F is 5,164, the
+        (5,165), ordered by ACTOR_FEATURE_OFFSETS under actor input schemas 2
+        and 3, which share this layout. For a 19-column view F is 5,164, the
         frozen schema-1 order: the same features without context column 19
         (flat feature 1128 of schema 2). Each family keeps row-major order.
         Class and obstacle IDs become masked indicators. Other values retain
@@ -573,7 +750,9 @@ def encode_actor_inputs(inputs: ActorInput) -> Array:
     return _pack(fields, layout, leading)
 
 
-def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
+def encode_training_state(
+    state: EnvState, config: EnvConfig, *, schema: int = TRAINING_STATE_SCHEMA_VERSION
+) -> Array:
     """Encode one privileged physical-state view per game for training only.
 
     Parameters
@@ -587,14 +766,25 @@ def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
         axes may broadcast to L, using ordinary right-aligned broadcasting. For
         example, scalar-game config works with (B,) states, and (B,) config works
         with (T, B) states. Keep values paired with their actual game/decision.
+    schema : {3, 2}, default=TRAINING_STATE_SCHEMA_VERSION (3)
+        The training-state schema, a static Python int. 3 gives every mode's
+        fields. 2 is the 920-feature view that Team Deathmatch runs use, as
+        every run saved before schema 3 did (training_state_schema).
 
     Returns
     -------
     Array
-        Float32 (*L, TRAINING_STATE_FEATURE_SIZE), 920 features under
-        TRAINING_STATE_SCHEMA_VERSION 2 and TRAINING_STATE_FEATURE_OFFSETS. State
-        fields precede config fields in declaration order, so the Red Zone
-        depth (map units) follows the score threshold. Task IDs have four
+        Float32 (*L, TRAINING_STATE_FEATURE_SIZES[schema]): 973 features
+        under schema 3 and 920 under schema 2, at TRAINING_STATE_FEATURE_OFFSETS
+        (schema 2's offsets are the same). In schema 2, state fields precede
+        config fields in declaration order, so the Red Zone depth (map units)
+        follows the score threshold. Schema 3 appends the Capture the Flag and
+        King of the Hills state, then their settings. The flag carriers are
+        one indicator per agent row, in alive_mask's order: 1 when that agent
+        carries the enemy flag, so no slot number is a feature value. Each
+        hill's owner is two indicators, Team A then Team B, both zero when
+        nobody owns it; contested hills are 1. Outside their mode these 53
+        features are zero. Task IDs have four
         indicators, including Neutral and reserved KOTH/CTF; profile team IDs
         have three. Class, team and accepted-action indicators for unused slots
         are zero. Dead members keep physical state and history. All ordered
@@ -603,8 +793,8 @@ def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
     Raises
     ------
     ValueError
-        State axes disagree, a per-game field shape is wrong, or config leading
-        axes cannot broadcast to the state axes.
+        schema is not 2 or 3, state axes disagree, a per-game field shape is
+        wrong, or config leading axes cannot broadcast to the state axes.
 
     Notes
     -----
@@ -617,9 +807,12 @@ def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
     Store this view once per game, not once per teammate; any critic broadcast
     belongs at network application. No normalization or recurrent reset occurs.
     """
+    if schema not in _TRAINING_STATE_LAYOUTS:
+        raise ValueError(f"Training state schema must be 2 or 3; received {schema!r}")
+    layout = _TRAINING_STATE_LAYOUTS[schema]
     leading = state.step_count.shape
     fields: dict[str, Array] = {}
-    for name, suffix, _ in _TRAINING_STATE_LAYOUT:
+    for name, suffix, _ in layout:
         owner, path = name.split(".", maxsplit=1)
         fields[name] = _checked_array(
             _read_field(state if owner == "state" else config, path),
@@ -629,7 +822,7 @@ def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
             broadcast=owner == "config",
         )
     active = fields["config.agent_profile.active_mask"]
-    for name, suffix, _ in _TRAINING_STATE_LAYOUT:
+    for name, suffix, _ in layout:
         if suffix and suffix[0] == MAX_AGENT_SLOTS:
             mask = active.reshape(
                 (*leading, MAX_AGENT_SLOTS, *((1,) * (len(suffix) - 1)))
@@ -651,4 +844,13 @@ def encode_training_state(state: EnvState, config: EnvConfig) -> Array:
     for field, count in (("class_ids", NUM_CLASSES), ("team_ids", TEAM_B_ID + 1)):
         name = f"config.agent_profile.{field}"
         fields[name] = _categories(fields[name], count, active)
-    return _pack(fields, _TRAINING_STATE_LAYOUT, leading)
+    if schema == 3:
+        carriers = fields["state.capture_the_flag_flag_carrier_slots"]
+        fields["state.capture_the_flag_flag_carrier_slots"] = _categories(
+            carriers, MAX_AGENT_SLOTS, carriers >= 0
+        ).max(axis=-2)
+        owners = fields["state.king_of_the_hills_hill_owners"]
+        fields["state.king_of_the_hills_hill_owners"] = _categories(
+            owners - 1, 2, owners > 0
+        )
+    return _pack(fields, layout, leading)

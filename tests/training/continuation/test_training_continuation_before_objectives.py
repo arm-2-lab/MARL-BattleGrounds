@@ -93,7 +93,7 @@ def pinned_learner() -> tuple[TrainConfig, TrainingCollection, LearnerState]:
     return config, collection, state
 
 
-SEASON_0_RULES = next(iter(_content._TDM_EQUIVALENT_SIMULATOR_RULES))  # pyright: ignore[reportPrivateUsage]
+SEASON_0_RULES = next(iter(_content._EQUIVALENT_SIMULATOR_RULES["tdm"]))  # pyright: ignore[reportPrivateUsage]
 
 
 def _saved_before(path: Path, fields: Collection[str], rules: str) -> Path:

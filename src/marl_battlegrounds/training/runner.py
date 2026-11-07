@@ -1528,6 +1528,7 @@ def _train(
         curriculum=setup_config.curriculum,
         score_threshold_curriculum=setup_config.score_threshold_curriculum,
         early_history_capture=setup_config.pinned_opponent_share > 0,
+        task=setup_config.task,
     )
     # Prepare the content (every map checks the depth against its width)
     # before a new panel can be published, so a bad setting leaves no file.
@@ -1535,6 +1536,7 @@ def _train(
     prepared = prepare_training_content(
         score_thresholds=schedule.score_thresholds,
         red_zone_depth=config.red_zone_depth,
+        task=config.task,
     )
     setup_seconds["content"] = time.monotonic() - setup_stage_started
     schedule, history_options = _history_setup(
@@ -1682,6 +1684,7 @@ def _train(
                 reward=reward,
                 reward_identity=reward_identity,
                 qmix=config.qmix,
+                task=config.task,
             )
         elif config.pqn is not None:
             from marl_battlegrounds.training import pqn_learner
@@ -1710,6 +1713,7 @@ def _train(
                 reward=reward,
                 reward_identity=reward_identity,
                 pqn=config.pqn,
+                task=config.task,
             )
         else:
             collection, state = learner.init_learner(
@@ -1737,6 +1741,7 @@ def _train(
                 capture_interval_rounds=history_options["capture_interval_rounds"],
                 reward=reward,
                 reward_identity=reward_identity,
+                task=config.task,
             )
         setup_seconds["learner_initialization"] = time.monotonic() - setup_stage_started
         from marl_battlegrounds.training.collection import (
@@ -1817,7 +1822,7 @@ def _train(
                 "actor_digest": tree_digest(payload),
                 "input_scale": settings.input_scale,
                 "spawn_frame": settings.spawn_frame,
-                "schemas": checkpoints.checkpoint_schemas(config.method),
+                "schemas": checkpoints.checkpoint_schemas(config.method, config.task),
                 "parameter_sharing": settings.parameter_sharing,
             }
             if not is_ppo_method(config.method):
@@ -1985,7 +1990,7 @@ def _train(
             validation.prepare_validation_teams(
                 collection.learner_actor or collection.actor,
                 methods,
-                red_zone_depth=config.red_zone_depth,
+                red_zone_depth=cast(float, config.red_zone_depth),
                 **preflight_options,
             )
         prepared_recording = None
@@ -2308,7 +2313,9 @@ def _train(
                     "config": metadata["config"],
                     "source": source,
                     "dependencies": dependencies,
-                    "schemas": checkpoints.checkpoint_schemas(config.method),
+                    "schemas": checkpoints.checkpoint_schemas(
+                        config.method, config.task
+                    ),
                     "execution": execution_identity_now,
                     "runtime": runtime,
                     "content_binding": collection.binding.model_dump(mode="json"),
@@ -3019,7 +3026,7 @@ def _start_extension(
             "config": metadata["config"],
             "source": source,
             "dependencies": dependencies,
-            "schemas": checkpoints.checkpoint_schemas(config.method),
+            "schemas": checkpoints.checkpoint_schemas(config.method, config.task),
             "execution": execution,
             "runtime": runtime,
             "content_binding": collection.binding.model_dump(mode="json"),
@@ -4331,6 +4338,7 @@ class _Run:
             parameter_sharing=settings.parameter_sharing,
             normalization="batch_norm" if self.pqn is None else self.pqn.normalization,
             metadata=provenance,
+            task=self.config.task,
         )
         self.host["actors"][self.checkpoint_id] = str(destination)
         self.event(
@@ -4438,6 +4446,7 @@ class _Run:
             normalization="batch_norm" if self.pqn is None else self.pqn.normalization,
             input_scale=settings.input_scale,
             spawn_frame=settings.spawn_frame,
+            task=self.config.task,
         )
         self.host["past_copies"][str(capture_id)] = {
             "env_steps": steps,
@@ -4508,7 +4517,7 @@ class _Run:
             else min(32, self.config.num_envs),
             chunk_size=128,
             event_callback=lambda record: self.event("validation_segment", **record),
-            red_zone_depth=self.config.red_zone_depth,
+            red_zone_depth=cast(float, self.config.red_zone_depth),
             **validation_options,
         )
         key = "routine_results" if purpose == "routine" else "confirmation_results"
@@ -4611,7 +4620,7 @@ class _Run:
                 event_callback=lambda record: self.event(
                     "random_validation_segment", **record
                 ),
-                red_zone_depth=self.config.red_zone_depth,
+                red_zone_depth=cast(float, self.config.red_zone_depth),
                 **self.validation_options,
             )
             record = {
@@ -5667,7 +5676,7 @@ class _Run:
             / "slot_diagnostic"
             / Path(self.host["final_actor"]).name,
             event_callback=lambda record: self.event("slot_segment", **record),
-            red_zone_depth=self.config.red_zone_depth,
+            red_zone_depth=cast(float, self.config.red_zone_depth),
         )
         atomic_json(self.root / "slot_diagnostic.json", result)
         self.host["slot_complete"] = True

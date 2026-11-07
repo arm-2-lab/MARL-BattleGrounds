@@ -1467,10 +1467,10 @@ def make_pqn_system(
         else _pqn_actor_apply
     )
     sharing = _parameter_sharing(parameter_sharing)
-    if sharing != "all" and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
+    if sharing != "all" and actor_input_schema == 1:
         raise ValueError("Grouped actors require the current actor input schema")
     layer_norm = _pqn_normalization(normalization) == "layer_norm"
-    if layer_norm and actor_input_schema != ACTOR_INPUT_SCHEMA_VERSION:
+    if layer_norm and actor_input_schema == 1:
         raise ValueError("LayerNorm actors require the current actor input schema")
     if layer_norm:
         selected = (

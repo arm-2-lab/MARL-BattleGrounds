@@ -23,6 +23,14 @@ moved Core file changes it, and its
 value for the committed Core is pinned: a Core commit that changes executable
 code fails the pin until its fingerprint is updated (and, when old games still
 play the same, the previous one is listed as equivalent).
+Capture the Flag content is binding version 4: it states its task, plays
+Capture the Flag's own 52 maps (configuration identities at resolved config
+version 3, score 3, depth 0.0) with no protected scenarios yet, round-trips
+through JSON and resumes, while another task or depth is refused, and a version
+4 record naming "tdm" or a version 3 record naming a task is refused. Team
+Deathmatch content stays version 3 with no task key. The equivalent Core rules
+are one set per mode: a fingerprint only Team Deathmatch's set lists does not
+restate a Capture the Flag binding.
 No learner or training run is created.
 """
 
@@ -89,6 +97,27 @@ _BEFORE_RED_ZONE = (
 @pytest.fixture(scope="module")
 def prepared() -> PreparedTrainingContent:
     return prepare_training_content()
+
+
+@pytest.fixture(scope="module")
+def flags() -> PreparedTrainingContent:
+    return prepare_training_content(task="ctf")
+
+
+def _with_rules(binding: TrainingContentBinding, digest: str) -> TrainingContentBinding:
+    rules = binding.shared_definitions[2].model_copy(
+        update={"canonical_digest": digest}
+    )
+    changed = binding.model_copy(
+        update={"shared_definitions": (*binding.shared_definitions[:2], rules)}
+    )
+    return changed.model_copy(
+        update={
+            "canonical_digest": canonical_digest_sha256(
+                changed, exclude={"canonical_digest"}
+            )
+        }
+    )
 
 
 def _rehash(payload: dict[str, Any]) -> dict[str, Any]:
@@ -222,6 +251,49 @@ def test_simulator_rules_cover_every_core_file(
     (copy / "core" / "flags").mkdir()
     (copy / "core" / "rules.py").rename(copy / "core" / "flags" / "rules.py")
     assert _rules_digest() not in (_SIMULATOR_RULES, added)
+
+
+def test_capture_the_flag_content_is_version_4_on_its_own_maps(
+    prepared: PreparedTrainingContent, flags: PreparedTrainingContent
+) -> None:
+    binding = flags.binding
+    saved = json.loads(canonical_json_bytes(binding))
+    assert (binding.schema_version, binding.task) == (4, "ctf")
+    assert (binding.score_thresholds, binding.red_zone_depth) == ((3,), 0.0)
+    assert binding.protected_scenarios == ()
+    assert all(row.info.name.startswith("ctf_map_id_") for row in binding.maps)
+    assert {row.configuration.version for row in binding.maps} == {3}
+    assert set(np.asarray(flags.source_configs.task_mode).tolist()) == {3}
+    assert set(np.asarray(flags.source_configs.capture_the_flag_score_threshold)) == {3}
+    assert saved["task"] == "ctf"
+    assert "task" not in json.loads(canonical_json_bytes(prepared.binding))
+    assert prepared.binding.schema_version == 3
+    resumed = prepare_training_content(expected=saved)
+    assert resumed.binding.canonical_digest == binding.canonical_digest
+    for changed in ({"task": "tdm"}, {"red_zone_depth": 5.0}):
+        with pytest.raises(ValueError):
+            prepare_training_content(expected=saved, **cast(Any, changed))
+    team_deathmatch = json.loads(canonical_json_bytes(prepared.binding))
+    for record in ({**saved, "task": "tdm"}, {**team_deathmatch, "task": "ctf"}):
+        with pytest.raises(ValidationError, match="Version-4 training content"):
+            TrainingContentBinding.model_validate_json(json.dumps(record))
+
+
+def test_equivalent_core_rules_are_kept_per_mode(
+    flags: PreparedTrainingContent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    season_0 = next(iter(_content._EQUIVALENT_SIMULATOR_RULES["tdm"]))
+    old = _with_rules(flags.binding, season_0)
+    assert _content.read_saved_binding(old) == old
+    with pytest.raises(ValueError, match="incompatible"):
+        prepare_training_content(expected=old)
+    monkeypatch.setitem(
+        cast(dict[str, frozenset[str]], _content._EQUIVALENT_SIMULATOR_RULES),
+        "ctf",
+        frozenset({season_0}),
+    )
+    restated = _content.read_saved_binding(old)
+    assert restated.canonical_digest == flags.binding.canonical_digest
 
 
 def test_layout_identity_uses_float32_values_and_order_not_wrappers() -> None:
@@ -406,23 +478,24 @@ def test_protected_layout_cannot_be_renamed_as_installed_training_map(
     prepared: PreparedTrainingContent,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_factory = _content.make_standard_team_deathmatch_config
+    original_factory = _content.make_standard_config
     scenario = load_tdm_scenario(1)
     ordinary = original_factory(
+        "tdm",
         map_id=0,
         team_a_roster=canonical_tournament_rosters()[0],
         team_b_roster=canonical_tournament_rosters()[1],
     )
     renamed = scenario.config._replace(agent_profile=ordinary.agent_profile)
 
-    def factory(**kwargs: object) -> object:
+    def factory(task: str, **kwargs: object) -> object:
         return (
             renamed
             if kwargs["map_id"] == 0
-            else cast(Callable[..., object], original_factory)(**kwargs)
+            else cast(Callable[..., object], original_factory)(task, **kwargs)
         )
 
-    monkeypatch.setattr(_content, "make_standard_team_deathmatch_config", factory)
+    monkeypatch.setattr(_content, "make_standard_config", factory)
     with pytest.raises(ValueError, match="protected scenario layout"):
         prepare_training_content()
     assert (
@@ -628,10 +701,10 @@ def test_bindings_saved_before_red_zone_keep_their_bytes_and_are_refused(
     assert "red_zone_depth" not in version_2.model_dump(mode="json")
     assert version_2.model_dump(mode="json")["score_thresholds"] == [19, 20]
 
-    def no_preparation() -> object:
+    def no_preparation(task: str) -> object:
         pytest.fail("A binding saved before Red Zone scoring reached preparation")
 
-    monkeypatch.setattr(_content, "asset_manifest", no_preparation)
+    monkeypatch.setattr(_content, "maps_for_task", no_preparation)
     for version, expected in (
         (1, saved),
         (1, json.loads(raw)),

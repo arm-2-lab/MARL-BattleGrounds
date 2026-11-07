@@ -3,9 +3,10 @@
 Validate settings once on the host with validate_shaping. Potential feedback
 preserves the discounted task objective; score-delta feedback adds a separate
 combat objective. Both use the producing transition's pre-action scores even
-when AutoReset returns a replacement game. Scores are Team Deathmatch points,
-so both follow the task's scoring: with a positive Red Zone depth a Red Zone
-death moves a team's score, and this feedback, by 2 instead of 1. There is no
+when AutoReset returns a replacement game. Scores are the mode's own (Team
+Deathmatch points, Capture the Flag captures), so both follow the task's
+scoring: in Team Deathmatch with a positive Red Zone depth, a Red Zone death
+moves a team's score, and this feedback, by 2 instead of 1. There is no
 separate Red Zone reward. These pure adjustments belong to learner feedback,
 never actor inputs or official benchmark scores. Custom reward_adjustments
 uses selected Core facts and the existing training-round clock. validate_reward

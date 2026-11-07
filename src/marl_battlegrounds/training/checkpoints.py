@@ -48,6 +48,7 @@ import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint as ocp  # pyright: ignore[reportMissingTypeStubs]
 
+from marl_battlegrounds._task_settings import TaskName
 from marl_battlegrounds.baselines.config import (
     DEFAULT_PPO_CONFIG,
     DEFAULT_PQN_CONFIG,
@@ -139,6 +140,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _config_spawn_frame as _config_spawn_frame,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _current_schemas as _current_schemas,
 )
 from marl_battlegrounds.training._checkpoint_metadata import _digest as _digest
 from marl_battlegrounds.training._checkpoint_metadata import _directory as _directory
@@ -1221,7 +1225,7 @@ default="mappo"
         details: dict[str, Any] = {
             "schema_version": 1,
             "kind": "learner",
-            "schemas": checkpoint_schemas(method),
+            "schemas": checkpoint_schemas(method, collection.task),
             "metadata": context,
             "collection": _collection_details(collection),
             "layout": _layout(state),
@@ -1826,7 +1830,7 @@ def _actor_template(
         type(actor_input_schema) is not int
         or actor_input_schema not in ACTOR_FEATURE_SIZES
     ):
-        raise ValueError("actor_input_schema must be 1 or 2.")
+        raise ValueError("actor_input_schema must be 1, 2 or 3.")
     if _pqn_normalization(normalization) != "batch_norm" and method != "pqn_vdn":
         raise ValueError("Only PQN-VDN models have a normalization choice")
     if method == "qmix":
@@ -1925,6 +1929,7 @@ def export_system(
     method: str = "mappo",
     parameter_sharing: str = "all",
     normalization: str = "batch_norm",
+    task: TaskName = "tdm",
 ) -> Path:
     """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
 
@@ -1973,6 +1978,10 @@ default="mappo"
         (``PQNConfig.normalization``). Only "layer_norm" writes a
         "normalization" key, so BatchNorm exports keep their historical
         description bytes. Other methods accept only "batch_norm".
+    task : str, default="tdm"
+        The training run's mode name, as TrainConfig.task holds it. The
+        description records that task's schemas (checkpoint_schemas), so a
+        Team Deathmatch export keeps its bytes. The caller validates the name.
 
     Returns
     -------
@@ -2044,7 +2053,7 @@ default="mappo"
         saved = read_checkpoint_details(target)
         if (
             saved["kind"] == "actor"
-            and saved["schemas"] == checkpoint_schemas(method)
+            and saved["schemas"] == checkpoint_schemas(method, task)
             and saved["actor_digest"] == digest
             and _actor_input_scale(saved) == input_scale
             and _actor_spawn_frame(saved) == spawn_frame
@@ -2061,7 +2070,7 @@ default="mappo"
         details: dict[str, Any] = {
             "schema_version": 1,
             "kind": "actor",
-            "schemas": checkpoint_schemas(method),
+            "schemas": checkpoint_schemas(method, task),
             "metadata": context,
             "actor_layout": _layout(actor_variables),
             "actor_digest": digest,
@@ -2510,7 +2519,7 @@ def load_initial_actor(
         details = read_checkpoint_description(path)
     if _schema_method(details["schemas"]) != method:
         raise ValueError("Initial actor method differs from the new learner")
-    if details["schemas"] != checkpoint_schemas(method):
+    if details["schemas"] not in _current_schemas(method):
         raise ValueError("Initial actor schema differs from the installed learner")
     if _actor_input_scale(details) != input_scale:
         raise ValueError("Initial actor input_scale differs from the new learner")
