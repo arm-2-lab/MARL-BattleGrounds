@@ -1767,8 +1767,10 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         # Agent POV merged team sight (live and replayed); Oracle View leaves it
         # None. Both flags in a Capture the Flag game; None in other modes.
         "root.$defs.AuthorizedBattlefieldSceneV1": {"team_sight", "capture_the_flag"},
-        # Both flags at both ends of the transition; None outside Capture the Flag.
+        # Both flags at both ends of the transition, in Oracle View and in each
+        # Agent POV's own view; None outside Capture the Flag.
         "root.$defs.ReplayIncomingSummaryV1": {"flag_trajectories"},
+        "root.$defs.AgentPovVisualIncomingSummaryV1": {"flag_trajectories"},
     }
     team_properties = cast(
         dict[str, dict[str, object]], definitions["MatchTeamV1"]["properties"]

@@ -7959,6 +7959,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_recipient_transition_id": "service-shared:shared-obs-visual-union:agent-slot-0:transition:0",
           "incoming_start_recipient_frame_id": "service-shared:shared-obs-visual-union:agent-slot-0:frame:0",
           "incoming_start_simulator_step_count": 0,
@@ -18950,6 +18951,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_recipient_transition_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:transition:0",
           "incoming_start_recipient_frame_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:frame:0",
           "incoming_start_simulator_step_count": 0,
@@ -22315,6 +22317,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_recipient_transition_id": "service-complete:actor-pov:agent-slot-0:transition:0",
           "incoming_start_recipient_frame_id": "service-complete:actor-pov:agent-slot-0:frame:0",
           "incoming_start_simulator_step_count": 0,
@@ -28999,6 +29002,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_recipient_transition_id": "service-shared:shared-obs-visual-union:agent-slot-0:transition:0",
           "incoming_start_recipient_frame_id": "service-shared:shared-obs-visual-union:agent-slot-0:frame:0",
           "incoming_start_simulator_step_count": 0,
@@ -31262,6 +31266,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -37212,6 +37217,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:transition:0",
         "incoming_start_recipient_frame_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -39264,6 +39270,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -43081,6 +43088,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:shared-obs-visual-union:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "episode-001:shared-obs-visual-union:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -60379,6 +60387,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -65624,6 +65633,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:shared-obs-visual-union:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "episode-001:shared-obs-visual-union:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -73195,6 +73205,7 @@
             "phase_rank": 50
           }
         ],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:2",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:2",
         "incoming_start_simulator_step_count": 2,
@@ -74876,6 +74887,7 @@
             }
           }
         ],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:2",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:2",
         "incoming_start_simulator_step_count": 2,
@@ -78904,6 +78916,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:actor-pov:agent-slot-0:transition:2",
         "incoming_start_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:2",
         "incoming_start_simulator_step_count": 2,
@@ -83413,6 +83426,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "browser-corpse-overlay-no_shared_obs:actor-pov:agent-slot-0:transition:0",
         "incoming_start_recipient_frame_id": "browser-corpse-overlay-no_shared_obs:actor-pov:agent-slot-0:frame:0",
         "incoming_start_simulator_step_count": 0,
@@ -88663,6 +88677,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_recipient_transition_id": "episode-001:shared-obs-visual-union:agent-slot-0:transition:2",
         "incoming_start_recipient_frame_id": "episode-001:shared-obs-visual-union:agent-slot-0:frame:2",
         "incoming_start_simulator_step_count": 2,

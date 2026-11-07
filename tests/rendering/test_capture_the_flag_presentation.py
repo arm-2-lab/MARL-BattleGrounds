@@ -13,10 +13,13 @@ A NoSharedObs Agent POV scene reads both flags from the recipient's own
 objective rows only (decision 139's state bits): it names a carrier it sees by
 POV key, leaves an unseen carrier unnamed, has no return ticks (None), and
 refuses rows Core has not filled yet, a named carrier the view does not hold
-and bits that break decision 139. Real games come once Core scores Capture the
-Flag (his C1.3 and C1.4); these frames and rows are hand-set, and the scene
-test uses frame 1 because today's Core leaves frame 0's Capture the Flag
-context rows at zero. Host only, on CPU.
+and bits that break decision 139. Its event summary gets one flag_changed line
+per flag whose state changed between its two scenes (a pickup names the
+teammate it sees, at successor), never one of the six Oracle flag events, and
+refuses flag lines without flag trajectories. Real games come once Core
+scores Capture the Flag (his C1.3 and C1.4); these frames and rows are
+hand-set, and the scene test uses frame 1 because today's Core leaves frame
+0's Capture the Flag context rows at zero. Host only, on CPU.
 """
 
 import dataclasses
@@ -59,6 +62,7 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     AuthorizedBattlefieldSceneV1,
     _agent_pov_visual_event_is_authorized,  # pyright: ignore[reportPrivateUsage]
     _project_replay_incoming_summary_v1,  # pyright: ignore[reportPrivateUsage]
+    build_agent_pov_visual_incoming_summary_v1,
     build_oracle_authorized_scene_v1,
 )
 from marl_battlegrounds.rendering.evaluation_adapter import (
@@ -139,7 +143,8 @@ def _view(
     }
     flags["flag_was_automatically_returned_by_team"] = (False, False)
     for name, slots in agent_facts.items():
-        flags[name] = tuple(i in slots for i in range(len(flags[name])))  # pyright: ignore[reportArgumentType]
+        length = 2 if name.endswith("_by_team") else 10
+        flags[name] = tuple(i in slots for i in range(length))
     facts = transition.facts.model_copy(
         update={
             "capture_the_flag_facts": CaptureTheFlagTransitionFactsV1.model_validate(
@@ -156,7 +161,7 @@ def _view(
     )
 
 
-def _flag_rows(batch: VisualEventBatchV2) -> list[tuple[object, ...]]:
+def _flag_rows_of(batch: VisualEventBatchV2) -> list[tuple[object, ...]]:
     return [
         (
             event.event_type,
@@ -256,7 +261,7 @@ def test_all_six_flag_events_reach_oracle_view_and_never_agent_pov(
     batches = [
         build_visual_event_batch_v2(view) for view in (grab_and_fall, capture, returns)
     ]
-    assert [_flag_rows(batch) for batch in batches] == [
+    assert [_flag_rows_of(batch) for batch in batches] == [
         [("flag_picked_up", 0, 1), ("flag_dropped", 0, 1)],
         [("flag_captured", 1, 1), ("capture_the_flag_completed", None, None)],
         [("flag_returned", 1, 0), ("flag_automatically_returned", None, 1)],
@@ -387,53 +392,67 @@ def _row(
     return (1.0, point[0], point[1], reach, ally, enemy, 0.0, *one_hot)
 
 
-def _pov_scene(
-    game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
-    rows: list[tuple[float, ...]],
-) -> AuthorizedBattlefieldSceneV1:
-    # Only slot 0's own rows change; the snapshot keeps both flags home, so the
+def _with_rows(
+    frame: EvaluationFrameV4, rows: list[tuple[float, ...]]
+) -> EvaluationFrameV4:
+    # Only slot 0's own rows change; the snapshot is left as it is, so a POV
     # scene can only have read the flags from the actor's rows.
-    start, transition, successor = game
-    data = successor.model_dump()
+    data = frame.model_dump()
     observation = data["base_observation"]
     objective = [list(agent) for agent in observation["objective_features"]]
     objective[0][: len(rows)] = rows
     observation["objective_features"] = tuple(
         tuple(tuple(row) for row in agent) for agent in objective
     )
+    return EvaluationFrameV4.model_validate(data)
+
+
+def _pov_scene(
+    start: EvaluationFrameV4,
+    transition: EvaluationTransitionV2,
+    successor: EvaluationFrameV4,
+    frame_index: int,
+) -> AuthorizedBattlefieldSceneV1:
     replay = build_replay_v5(
-        _CONTEXT,
-        [start, EvaluationFrameV4.model_validate(data)],
-        [transition],
-        runtime_provenance=_RUNTIME,
+        _CONTEXT, [start, successor], [transition], runtime_provenance=_RUNTIME
     )
     return build_no_shared_obs_authorized_scene_v1(
         export_actor_pov_replay_v4(replay, global_slot=0).content,
         public_catalog=_CONTEXT.static_mechanics_catalog,
         authority_session_id="session-1",
-        frame_index=1,
+        frame_index=frame_index,
     ).scene
+
+
+def _flag_rows(
+    *, own: tuple[float, ...], enemy: tuple[float, ...]
+) -> list[tuple[float, ...]]:
+    config = _CONTEXT.resolved_env_config
+    homes = config.capture_the_flag_flag_home_positions
+    capture = config.capture_the_flag_flag_capture_distance
+    return [_row(homes[0], capture), _row(homes[1], capture), own, enemy]
 
 
 def test_agent_pov_reads_both_flags_from_its_own_rows(
     game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
 ) -> None:
+    start, transition, successor = game
     config = _CONTEXT.resolved_env_config
     homes = config.capture_the_flag_flag_home_positions
-    capture = config.capture_the_flag_flag_capture_distance
     touch = config.capture_the_flag_flag_interaction_distance
+    positions = successor.snapshot.agent_positions
+
+    def scene(
+        own: tuple[float, ...], enemy: tuple[float, ...]
+    ) -> AuthorizedBattlefieldSceneV1:
+        rows = _flag_rows(own=own, enemy=enemy)
+        return _pov_scene(start, transition, _with_rows(successor, rows), 1)
+
     with pytest.raises(ValueError, match="no flag rows"):
-        _pov_scene(game, [])
-    positions = game[2].snapshot.agent_positions
-    home_rows = [_row(homes[0], capture), _row(homes[1], capture)]
+        _pov_scene(start, transition, successor, 1)
     # Its own flag is home; its teammate in ally row 1 carries the enemy flag.
-    seen = _pov_scene(
-        game,
-        [
-            *home_rows,
-            _row(homes[0], touch, ally=1.0),
-            _row(positions[1], touch, ally=1.0, carrier=1),
-        ],
+    seen = scene(
+        _row(homes[0], touch, ally=1.0), _row(positions[1], touch, ally=1.0, carrier=1)
     )
     teammate = next(
         agent
@@ -447,13 +466,8 @@ def test_agent_pov_reads_both_flags_from_its_own_rows(
         for flag in seen.capture_the_flag.flags
     ] == [(1, "home", None), (2, "carried", teammate.presentation_key)]
     # The far enemy carries its own flag away: carried, but unnamed.
-    unseen = _pov_scene(
-        game,
-        [
-            *home_rows,
-            _row(positions[5], touch, enemy=1.0),
-            _row(homes[1], touch, enemy=1.0),
-        ],
+    unseen = scene(
+        _row(positions[5], touch, enemy=1.0), _row(homes[1], touch, enemy=1.0)
     )
     assert unseen.capture_the_flag is not None
     assert [
@@ -461,20 +475,77 @@ def test_agent_pov_reads_both_flags_from_its_own_rows(
         for flag in unseen.capture_the_flag.flags
     ] == [("carried", None), ("home", None)]
     with pytest.raises(ValueError, match="does not hold"):
-        _pov_scene(
-            game,
-            [
-                *home_rows,
-                _row(positions[5], touch, enemy=1.0, carrier=0),
-                _row(homes[1], touch, enemy=1.0),
-            ],
+        scene(
+            _row(positions[5], touch, enemy=1.0, carrier=0),
+            _row(homes[1], touch, enemy=1.0),
         )
     with pytest.raises(ValueError, match="decision 139"):
-        _pov_scene(
-            game,
-            [
-                *home_rows,
-                _row(homes[0], touch, ally=1.0, enemy=1.0),
-                _row(homes[1], touch, enemy=1.0),
-            ],
+        scene(
+            _row(homes[0], touch, ally=1.0, enemy=1.0), _row(homes[1], touch, enemy=1.0)
         )
+
+
+def test_agent_pov_gets_its_own_flag_lines_and_no_oracle_flag_event(
+    game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
+) -> None:
+    start, transition, successor = game
+    config = _CONTEXT.resolved_env_config
+    homes = config.capture_the_flag_flag_home_positions
+    touch = config.capture_the_flag_flag_interaction_distance
+    carrier = tuple(successor.snapshot.agent_positions[1])
+    at_home = _with_rows(
+        start,
+        _flag_rows(
+            own=_row(homes[0], touch, ally=1.0), enemy=_row(homes[1], touch, enemy=1.0)
+        ),
+    )
+    # Its teammate, agent 1, picks up the enemy flag from its home.
+    picked_up = _with_rows(
+        _frame(
+            successor, flag_carrier_slots=(None, 1), flag_positions=(homes[0], carrier)
+        ),
+        _flag_rows(
+            own=_row(homes[0], touch, ally=1.0),
+            enemy=_row(carrier, touch, ally=1.0, carrier=1),
+        ),
+    )
+    view = _view(at_home, transition, picked_up, flag_was_picked_up_by_agent={1})
+    batch = build_visual_event_batch_v2(view)
+    assert [row[0] for row in _flag_rows_of(batch)] == ["flag_picked_up"]
+    assert isinstance(view.transition, EvaluationTransitionV2)
+    start_scene, successor_scene = (
+        _pov_scene(at_home, view.transition, picked_up, index) for index in (0, 1)
+    )
+    prefix = f"{batch.episode_id}:actor-pov:{_CONTEXT.roster[0].public_agent_id}"
+    summary = build_agent_pov_visual_incoming_summary_v1(
+        batch,
+        transition_start_scene=start_scene,
+        successor_scene=successor_scene,
+        recipient_public_agent_id=_CONTEXT.roster[0].public_agent_id,
+        incoming_recipient_transition_id=f"{prefix}:transition:0",
+        incoming_start_recipient_frame_id=f"{prefix}:frame:0",
+        incoming_successor_recipient_frame_id=f"{prefix}:frame:1",
+    )
+    teammate = next(
+        agent
+        for agent in successor_scene.agents
+        if agent.public_agent_id == _CONTEXT.roster[1].public_agent_id
+    )
+    lines = [event for event in summary.events if event.event_kind == "flag_changed"]
+    assert len(lines) == 1 and not any(
+        event.event_kind.startswith("flag_") and event.event_kind != "flag_changed"
+        for event in summary.events
+    )
+    line = lines[0]
+    assert (line.flag_team_id, line.state_before, line.state_after) == (
+        2,
+        "home",
+        "carried",
+    )
+    assert line.agent_anchor is not None
+    assert (line.agent_anchor.presentation_key, line.agent_anchor.phase) == (
+        teammate.presentation_key,
+        "successor",
+    )
+    with pytest.raises(ValueError, match="need the flag trajectories"):
+        dataclasses.replace(summary, flag_trajectories=None)

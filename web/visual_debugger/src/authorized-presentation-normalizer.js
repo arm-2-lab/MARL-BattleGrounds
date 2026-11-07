@@ -266,6 +266,7 @@ const ORACLE_EVENT_PHASE_RANK = Object.freeze({
   flag_dropped: 133,
   flag_automatically_returned: 134,
   capture_the_flag_completed: 140,
+  flag_changed: 130,
 });
 const AGENT_VISUAL_EVENT_KINDS = new Set([
   "action_rejected",
@@ -283,6 +284,7 @@ const AGENT_VISUAL_EVENT_KINDS = new Set([
   "status_cleared_by_new_death",
   "spawn_shield_expired",
   "agent_respawned",
+  "flag_changed",
 ]);
 const TEAM_DEATHMATCH_OUTCOMES = new Set(["team_a_win", "team_b_win", "draw"]);
 const ORACLE_FLAG_EVENT_KINDS = new Set([
@@ -1703,6 +1705,12 @@ function oracleEventAnchors(event) {
     case "flag_dropped":
       add("agent_anchor", "successor");
       break;
+    case "flag_changed":
+      add(
+        "agent_anchor",
+        event.state_after === "carried" ? "successor" : "transition_start",
+      );
+      break;
   }
   return anchors;
 }
@@ -2378,9 +2386,9 @@ function validateLatestEvents(latest) {
         }
       }
     });
-    validateOracleFlagTrajectories(
+    validateIncomingFlagTrajectories(
       latest.flag_trajectories,
-      oracleEvents,
+      oracleEvents.some((event) => ORACLE_FLAG_EVENT_KINDS.has(event.event_kind)),
       trajectoryByKey,
     );
     return;
@@ -2592,6 +2600,25 @@ function validateAgentVisualEvents(visual) {
       }
     }
   });
+  const flagTrajectories = /** @type {any[] | null} */ (visual.flag_trajectories);
+  const lines = events.filter((event) => event.event_kind === "flag_changed");
+  validateIncomingFlagTrajectories(flagTrajectories, lines.length > 0, trajectoryByKey);
+  if (
+    !structurallyEqual(
+      lines.map((event) => [event.flag_team_id, event.state_before, event.state_after]),
+      (flagTrajectories ?? [])
+        .filter((row) => row.transition_start.state !== row.successor.state)
+        .map((row) => [row.team_id, row.transition_start.state, row.successor.state]),
+    ) ||
+    lines.some(
+      (event) =>
+        event.agent_anchor !== null &&
+        event.state_before !== "carried" &&
+        event.state_after !== "carried",
+    )
+  ) {
+    invalid("Agent visual flag lines do not equal the flag trajectories.");
+  }
 }
 
 /**
@@ -3245,31 +3272,32 @@ function validateAuthorizedFlag(flag, returnSteps) {
 }
 
 /**
- * Check an Oracle incoming summary's flag trajectories against its events.
+ * Check an incoming summary's flag trajectories, Oracle or Agent POV.
  *
- * `flagTrajectories` is null outside Capture the Flag, where no flag event may
- * appear. Otherwise it holds Team A's flag, then Team B's, each with start and
- * successor rows of that team that keep one home and follow validateAuthorizedFlag.
- * A named carrier is an agent of `trajectoryByKey` whose anchor at that end sits at
- * the flag. Returns undefined or throws TypeError.
+ * `flagTrajectories` is null outside Capture the Flag, where `needsFlags` (the
+ * summary holds a flag event or a flag line) must be false. Otherwise it holds Team
+ * A's flag, then Team B's, each with start and successor rows of that team that keep
+ * one home and follow validateAuthorizedFlag. A named carrier is an agent of
+ * `trajectoryByKey` whose anchor at that end exists and sits at the flag. Returns
+ * undefined or throws TypeError.
  *
  * @param {Record<string, any>[] | null} flagTrajectories
- * @param {Record<string, any>[]} oracleEvents
+ * @param {boolean} needsFlags
  * @param {Map<string, any>} trajectoryByKey
  */
-function validateOracleFlagTrajectories(
+function validateIncomingFlagTrajectories(
   flagTrajectories,
-  oracleEvents,
+  needsFlags,
   trajectoryByKey,
 ) {
   if (flagTrajectories === null) {
-    if (oracleEvents.some((event) => ORACLE_FLAG_EVENT_KINDS.has(event.event_kind))) {
-      invalid("Oracle flag events need the incoming flag trajectories.");
+    if (needsFlags) {
+      invalid("Flag events need the incoming flag trajectories.");
     }
     return;
   }
   if (flagTrajectories.map((row) => row.team_id).join(",") !== "1,2") {
-    invalid("Oracle flag trajectories must be Team A's flag, then Team B's.");
+    invalid("Incoming flag trajectories must be Team A's flag, then Team B's.");
   }
   for (const row of flagTrajectories) {
     for (const phase of ["transition_start", "successor"]) {
@@ -3283,18 +3311,15 @@ function validateOracleFlagTrajectories(
         end.team_id !== row.team_id ||
         !structurallyEqual(end.home_position, row.successor.home_position) ||
         (carrier !== null &&
-          (!carrier ||
+          (!carrier?.[phase] ||
             carrier.agent_public_agent_id !== end.carrier_public_agent_id ||
             !structurallyEqual(carrier[phase].position, end.position)))
       ) {
-        invalid("Oracle flag trajectory does not keep its team, home or carrier.");
+        invalid("Incoming flag trajectory does not keep its team, home or carrier.");
       }
     }
   }
 }
-
-/**
- * Check the drawing-only events visible to one actor across an incoming step.
 
 /**
  * Check that observed bodies use the recipient's declared actor-relative axis.
@@ -3652,6 +3677,14 @@ function validateAgentVisualStateMatrix(
     invalid("Noninitial Agent presentations require incoming visual events.");
   }
   validateAgentVisualEvents(visual);
+  if (
+    !structurallyEqual(
+      visual.flag_trajectories?.map((/** @type {any} */ row) => row.successor) ?? null,
+      renderedScene.capture_the_flag?.flags ?? null,
+    )
+  ) {
+    invalid("Agent visual flags do not end at the actor's own scene flags.");
+  }
   const recipient = source.source_recipient_public_agent_id;
   const prefix = `${source.episode_id}:${shared ? "shared-obs-visual-union" : "actor-pov"}:${recipient}`;
   const transitionId = `${prefix}:transition:${index - 1}`;

@@ -21,8 +21,9 @@ the veil passes through while the incoming turn plays
 (AuthorizedTeamSightTurnShapeV1). rendering.team_sight computes it; Oracle View
 scenes leave it None. A Capture the Flag Oracle scene carries
 AuthorizedCaptureTheFlagV1 (both flags, a carrier named only by its key), and
-its incoming summary both flags at each end of the transition; no flag event
-reaches an Agent POV.
+its incoming summary both flags at each end of the transition. No Oracle flag
+event reaches an Agent POV; its summary instead gets flag_changed lines and
+flag trajectories built from its own two scenes.
 Class docstrings also feed Pydantic schema descriptions; the compact browser
 schema strips that prose.
 """
@@ -3483,8 +3484,8 @@ class _ReplayIncomingEventBaseV1:
     def _validate_base(
         self,
         *,
-        event_kind: ReplayIncomingEventKindV1,
-        expected_kind: ReplayIncomingEventKindV1,
+        event_kind: ReplayIncomingEventKindV1 | Literal["flag_changed"],
+        expected_kind: ReplayIncomingEventKindV1 | Literal["flag_changed"],
         expected_phase_rank: int,
     ) -> None:
         """Validate shared event identity and canonical ordering fields.
@@ -5875,6 +5876,7 @@ type AgentPovVisualIncomingEventKindV1 = Literal[
     "status_cleared_by_new_death",
     "spawn_shield_expired",
     "agent_respawned",
+    "flag_changed",
 ]
 
 _AGENT_POV_VISUAL_INCOMING_EVENT_KINDS_V1 = frozenset(
@@ -5894,6 +5896,7 @@ _AGENT_POV_VISUAL_INCOMING_EVENT_KINDS_V1 = frozenset(
         "status_cleared_by_new_death",
         "spawn_shield_expired",
         "agent_respawned",
+        "flag_changed",
     )
 )
 
@@ -6060,6 +6063,81 @@ class AgentPovVisualIncomingRecipientHealthResolutionEventV1(
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class AgentPovVisualIncomingFlagChangedEventV1(_ReplayIncomingEventBaseV1):
+    """Tell one Agent POV that a flag's state changed across the transition.
+    Built from the recipient's own two scenes, never from an Oracle flag event,
+    so it says only what that view holds: the flag, its state before and after,
+    and the carrier when that view names one. Require event kind flag_changed,
+    phase rank 130 and two different states. The anchor is the carrier at
+    successor when the flag ends carried (a pickup), at transition_start when
+    it starts carried (a capture or a drop), and None otherwise (a return, or a
+    grab and fall, whose grabber is never named) or when that view did not see
+    the carrier.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_changed']
+        Exact event discriminator for this concrete row type.
+    flag_team_id : int
+        Whose flag: 1 for Team A's, 2 for Team B's.
+    state_before : CaptureTheFlagFlagState
+        "home", "carried" or "dropped" at transition_start.
+    state_after : CaptureTheFlagFlagState
+        The state at successor; never equal to state_before.
+    agent_anchor : ReplayIncomingAgentAnchorV1 | None
+        The carrier the view names, at the phase described above, or None.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_changed"]
+    """Exact event discriminator for this concrete row type."""
+    flag_team_id: int
+    """Whose flag: 1 for Team A's, 2 for Team B's."""
+    state_before: CaptureTheFlagFlagState
+    """"home", "carried" or "dropped" at transition_start."""
+    state_after: CaptureTheFlagFlagState
+    """The state at successor; never equal to state_before."""
+    agent_anchor: ReplayIncomingAgentAnchorV1 | None
+    """The carrier the view names, at the phase described above, or None."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_base(
+            event_kind=self.event_kind,
+            expected_kind="flag_changed",
+            expected_phase_rank=130,
+        )
+        _require_python_int(self.flag_team_id, name="flag_team_id", minimum=1)
+        states = ("home", "carried", "dropped")
+        if (
+            self.flag_team_id not in (1, 2)
+            or self.state_before not in states
+            or self.state_after not in states
+            or self.state_before == self.state_after
+        ):
+            raise ValueError("a flag change needs its flag and two different states.")
+        if self.agent_anchor is not None:
+            _require_incoming_anchor(
+                self.agent_anchor,
+                name="agent_anchor",
+                phase=(
+                    "successor" if self.state_after == "carried" else "transition_start"
+                ),
+            )
+            if "carried" not in (self.state_before, self.state_after):
+                raise ValueError("only a carried end of a flag change names an agent.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AgentPovVisualIncomingAgentRespawnedEventV1(_ReplayIncomingEventBaseV1):
     """Show an authorized respawn cue without unjoined team metadata.
     Require event kind agent_respawned, phase rank 120, and a successor agent
@@ -6119,7 +6197,8 @@ type AgentPovVisualIncomingEventV1 = Annotated[
     | ReplayIncomingStatusRefreshedOrExtendedEventV1
     | ReplayIncomingStatusClearedByNewDeathEventV1
     | ReplayIncomingSpawnShieldExpiredEventV1
-    | AgentPovVisualIncomingAgentRespawnedEventV1,
+    | AgentPovVisualIncomingAgentRespawnedEventV1
+    | AgentPovVisualIncomingFlagChangedEventV1,
     Field(discriminator="event_kind"),
 ]
 
@@ -6139,6 +6218,7 @@ _AGENT_POV_VISUAL_INCOMING_EVENT_TYPES_V1: tuple[type[object], ...] = (
     ReplayIncomingStatusClearedByNewDeathEventV1,
     ReplayIncomingSpawnShieldExpiredEventV1,
     AgentPovVisualIncomingAgentRespawnedEventV1,
+    AgentPovVisualIncomingFlagChangedEventV1,
 )
 
 
@@ -6186,6 +6266,11 @@ class AgentPovVisualIncomingSummaryV1:
         Concrete typed event rows in nondecreasing scientific phase order.
     event_count : int
         Nonnegative count equal to the ID, kind, and payload tuple lengths.
+    flag_trajectories : tuple of two ReplayIncomingFlagTrajectoryV1, or None
+        Both flags as this view's two scenes hold them, Team A's then Team B's,
+        in a Capture the Flag game; None (the default) in every other mode.
+        Each flag_changed row is one flag whose state differs between its ends,
+        in team order; a named carrier joins its agent trajectory at that end.
     Raises
     ------
     ValueError
@@ -6229,13 +6314,19 @@ class AgentPovVisualIncomingSummaryV1:
     """Concrete typed event rows in nondecreasing scientific phase order."""
     event_count: int
     """Nonnegative count equal to the ID, kind, and payload tuple lengths."""
+    flag_trajectories: (
+        tuple[ReplayIncomingFlagTrajectoryV1, ReplayIncomingFlagTrajectoryV1] | None
+    ) = None
+    """Both flags as this view holds them at both ends; None outside CTF."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.
         Require adjacent ticks, dense local IDs/order, unique endpoint trajectories,
         and the exact recipient at both endpoints. Event anchors must join
         authorized endpoints; after-state facts need an authorized successor and
-        rejections belong only to the recipient.
+        rejections belong only to the recipient. The flag_changed rows must be
+        exactly the flag trajectories' state changes, and named carriers join
+        their agent trajectories.
         Raises
         ------
         ValueError
@@ -6395,6 +6486,8 @@ class AgentPovVisualIncomingSummaryV1:
                 anchors = (event.recipient_anchor,)
             elif type(event) is AgentPovVisualIncomingAgentRespawnedEventV1:
                 anchors = (event.agent_anchor,)
+            elif type(event) is AgentPovVisualIncomingFlagChangedEventV1:
+                anchors = () if event.agent_anchor is None else (event.agent_anchor,)
             else:
                 anchors = _incoming_event_agent_anchors(
                     cast(ReplayIncomingEventV1, event)
@@ -6438,6 +6531,42 @@ class AgentPovVisualIncomingSummaryV1:
                     "Agent POV visual after-state event requires an authorized "
                     "successor."
                 )
+        changes = tuple(
+            (event.flag_team_id, event.state_before, event.state_after)
+            for event in self.events
+            if type(event) is AgentPovVisualIncomingFlagChangedEventV1
+        )
+        flags = self.flag_trajectories
+        if flags is None:
+            if changes:
+                raise ValueError("Agent POV flag changes need the flag trajectories.")
+            return
+        if (
+            type(flags) is not tuple
+            or any(type(row) is not ReplayIncomingFlagTrajectoryV1 for row in flags)
+            or tuple(row.team_id for row in flags) != (1, 2)
+        ):
+            raise ValueError("flag trajectories must be Team A's flag, then Team B's.")
+        if changes != tuple(
+            (row.team_id, row.transition_start.state, row.successor.state)
+            for row in flags
+            if row.transition_start.state != row.successor.state
+        ):
+            raise ValueError("Agent POV flag changes must equal the flag trajectories.")
+        for row in flags:
+            for phase, end in (
+                ("transition_start", row.transition_start),
+                ("successor", row.successor),
+            ):
+                if end.carrier_presentation_key is None:
+                    continue
+                carrier = trajectory_by_key.get(end.carrier_presentation_key)
+                if (
+                    carrier is None
+                    or carrier.agent_public_agent_id != end.carrier_public_agent_id
+                    or getattr(carrier, phase) is None
+                ):
+                    raise ValueError("a flag carrier must join its agent trajectory.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -8889,6 +9018,43 @@ def build_agent_pov_visual_incoming_summary_v1(
             ordinal=local_ordinal,
         )
         events.append(cast(AgentPovVisualIncomingEventV1, projected_event))
+    flag_trajectories = _agent_pov_flag_trajectories(
+        transition_start_scene.capture_the_flag, successor_scene.capture_the_flag
+    )
+    trajectory_by_key = {row.agent_presentation_key: row for row in trajectories}
+    for row in () if flag_trajectories is None else flag_trajectories:
+        before, after = row.transition_start, row.successor
+        if before.state == after.state:
+            continue
+        carrier_end, phase = (
+            (after, "successor")
+            if after.state == "carried"
+            else (before, "transition_start")
+        )
+        carrier_key = (
+            carrier_end.carrier_presentation_key
+            if carrier_end.state == "carried"
+            else None
+        )
+        local_ordinal = len(events)
+        events.append(
+            AgentPovVisualIncomingFlagChangedEventV1(
+                event_id=(
+                    f"{incoming_recipient_transition_id}:visual-event:{local_ordinal:04d}"
+                ),
+                ordinal=local_ordinal,
+                phase_rank=130,
+                event_kind="flag_changed",
+                flag_team_id=row.team_id,
+                state_before=before.state,
+                state_after=after.state,
+                agent_anchor=(
+                    None
+                    if carrier_key is None
+                    else getattr(trajectory_by_key[carrier_key], phase)
+                ),
+            )
+        )
     event_rows = tuple(events)
     return AgentPovVisualIncomingSummaryV1(
         schema_version=AUTHORIZED_PRESENTATION_SCHEMA_VERSION,
@@ -8911,7 +9077,31 @@ def build_agent_pov_visual_incoming_summary_v1(
         ordered_event_kinds=tuple(event.event_kind for event in event_rows),
         events=event_rows,
         event_count=len(event_rows),
+        flag_trajectories=flag_trajectories,
     )
+
+
+def _agent_pov_flag_trajectories(
+    transition_start: AuthorizedCaptureTheFlagV1 | None,
+    successor: AuthorizedCaptureTheFlagV1 | None,
+) -> tuple[ReplayIncomingFlagTrajectoryV1, ReplayIncomingFlagTrajectoryV1] | None:
+    """Pair one Agent POV's two scenes' flags, or return None outside CTF.
+
+    Both scenes come from the recipient's own rows, so the pair holds only what
+    that view saw. Raise ValueError when one scene has flags and the other has
+    none.
+    """
+    if transition_start is None or successor is None:
+        if (transition_start is None) != (successor is None):
+            raise ValueError("Agent POV endpoints must both hold the flags or neither.")
+        return None
+    team_a, team_b = (
+        ReplayIncomingFlagTrajectoryV1(
+            team_id=start.team_id, transition_start=start, successor=end
+        )
+        for start, end in zip(transition_start.flags, successor.flags, strict=True)
+    )
+    return (team_a, team_b)
 
 
 def _project_replay_incoming_summary_v1(
